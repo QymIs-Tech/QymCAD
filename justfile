@@ -31,8 +31,8 @@ pkg-linux: pkg-linux-image
 
 # --- Windows portable zip ---
 # The main path is GitHub Actions (.github/workflows/release.yml): push a vX.Y.Z tag, or Actions -> Run workflow.
-# Locally (in a Win10 VM, MSYS2/MINGW64) it goes like this:
-#   export OCCT_INCLUDE_DIR=/mingw64/include/opencascade OCCT_LIB_DIR=/mingw64/lib
+# Locally (in a Win10 VM, MSYS2/UCRT64) it goes like this:
+#   export OCCT_INCLUDE_DIR=/ucrt64/include/opencascade OCCT_LIB_DIR=/ucrt64/lib
 #   cargo build --release --bin qymcad && bash packaging/win/bundle.sh
 
 # clear out what packaging produced

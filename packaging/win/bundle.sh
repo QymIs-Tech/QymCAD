@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the portable ZIP for Windows. Runs under MSYS2/MINGW64 (see .github/workflows/release.yml): puts
+# Build the portable ZIP for Windows. Runs under MSYS2/UCRT64 (see .github/workflows/release.yml): puts
 # qymcad.exe next to every mingw DLL it depends on (OCCT TK*.dll, gcc/stdc++, tbb and so on) -> archive.
 set -euo pipefail
 
@@ -36,9 +36,12 @@ OUT=dist/qymcad
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp "$BIN" "$OUT/"
 
-# the dependent DLLs from /mingw64/bin (the system ones in C:\Windows\* are NOT carried: everyone has them)
+# The dependent DLLs from the MSYS2 prefix (the system ones in C:\Windows\* are NOT carried: everyone has
+# them). BOTH PREFIXES ARE MATCHED: builds run in ucrt64, but a local build in an older mingw64 shell must
+# not silently produce an archive with no DLLs in it - one that unpacks and refuses to start is worse than
+# one that fails to build.
 echo ">>> collecting the DLLs by ldd"
-ldd "$BIN" | awk '/mingw64\/bin/ {print $3}' | sort -u | while read -r dll; do
+ldd "$BIN" | awk '/(ucrt64|mingw64)\/bin/ {print $3}' | sort -u | while read -r dll; do
     [ -f "$dll" ] && cp -v "$dll" "$OUT/"
 done
 

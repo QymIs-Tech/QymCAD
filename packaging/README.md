@@ -31,16 +31,16 @@ The `.exe` with every DLL it needs beside it; unpack and run (Win10/11 x64).
   to the Release.
 - **By hand**: GitHub -> Actions -> `release` -> Run workflow -> download the `qymcad-win64` artifact.
 
-The build runs under MSYS2/MINGW64 (Rust and OCCT from one gnu toolchain). The config is
+The build runs under MSYS2/UCRT64 (Rust and OCCT from one gnu toolchain). The config is
 `.github/workflows/release.yml`.
 
 ### Locally in a Win10 VM (without CI)
 
-In the MSYS2 (MINGW64) shell:
+In the MSYS2 (UCRT64) shell:
 
 ```bash
-pacman -S mingw-w64-x86_64-{toolchain,rust,opencascade,pkgconf} zip
-export OCCT_INCLUDE_DIR=/mingw64/include/opencascade OCCT_LIB_DIR=/mingw64/lib
+pacman -S mingw-w64-ucrt-x86_64-{toolchain,rust,opencascade,pkgconf} zip
+export OCCT_INCLUDE_DIR=/ucrt64/include/opencascade OCCT_LIB_DIR=/ucrt64/lib
 cargo build --release --bin qymcad
 bash packaging/win/bundle.sh        # -> dist/qymcad-win64.zip
 ```
@@ -52,7 +52,7 @@ call for corrections:
 
 - Linux: the names of the OCCT modules and the cmake flags, the set of dev `.so` files for egui, the version
   of linuxdeploy.
-- Windows: the version of `mingw-w64-x86_64-rust` (1.85 or newer is needed), and whether the list of DLLs from
+- Windows: the version of `mingw-w64-ucrt-x86_64-rust` (1.85 or newer is needed), and whether the list of DLLs from
   `ldd` is complete.
 
 ## Later (closer to an alpha)

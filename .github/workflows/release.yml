@@ -11,8 +11,15 @@
 # download from without an account, kept for ever, named by the tag. That is a build for other people.
 # A tag carrying a hyphen (v0.1.0-dev.20260826) is marked a pre-release and never shows as "Latest".
 #
-# Windows: OCCT and Rust both come from MSYS2/MINGW64 - one gnu toolchain, so the ABI matches the
+# Windows: OCCT and Rust both come from MSYS2/UCRT64 - one gnu toolchain, so the ABI matches the
 # cc-compiled occt_bridge.cpp.
+#
+# UCRT64 AND NOT MINGW64. That environment is built around msvcrt.dll, the runtime of the Windows XP era,
+# and MSYS2 keeps it for compatibility only while its compilers march on: gcc reached 16.2.0 there while
+# the runtime stayed where it was. The seams gave way - a build that had worked for months stopped
+# linking with "undefined reference to `_fileno'" out of the CRT's own _assert.o, nothing to do with this
+# code. UCRT is the runtime Microsoft ships with Windows 10 and 11 - exactly the systems this program
+# declares - and it is the environment MSYS2 itself treats as the default.
 #
 # Linux: the very same Docker image a local build uses (`just pkg-linux`), so what CI produces and
 # what is built by hand are the same artifact. The image compiles OCCT 7.8.1 FROM SOURCE - apt on Ubuntu
@@ -61,22 +68,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup MSYS2 (MinGW64) + OCCT + Rust
+      - name: Setup MSYS2 (UCRT64) + OCCT + Rust
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-rust
-            mingw-w64-x86_64-opencascade
-            mingw-w64-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-rust
+            mingw-w64-ucrt-x86_64-opencascade
+            mingw-w64-ucrt-x86_64-pkgconf
             zip
 
       - name: Build (release)
         env:
-          OCCT_INCLUDE_DIR: /mingw64/include/opencascade
-          OCCT_LIB_DIR: /mingw64/lib
+          OCCT_INCLUDE_DIR: /ucrt64/include/opencascade
+          OCCT_LIB_DIR: /ucrt64/lib
         run: cargo build --release --locked --bin qymcad
 
       # THE TAG NAMES THE PACKAGE when the button was pressed against one; every other build is named by

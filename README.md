@@ -96,7 +96,7 @@ The script brings a document forward from any earlier version in one pass and is
 
 ## Building from source
 
-Linux — `just pkg-linux`, Docker required. Windows — MSYS2/MINGW64. The details are in
+Linux — `just pkg-linux`, Docker required. Windows — MSYS2/UCRT64. The details are in
 [`packaging/README.md`](packaging/README.md).
 
 ## Contributing
