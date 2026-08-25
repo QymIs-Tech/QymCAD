@@ -52,7 +52,7 @@ call for corrections:
 
 - Linux: the names of the OCCT modules and the cmake flags, the set of dev `.so` files for egui, the version
   of linuxdeploy.
-- Windows: the version of `mingw-w64-ucrt-x86_64-rust` (1.85 or newer is needed), and whether the list of DLLs from
+- Windows: the version of `mingw-w64-ucrt-x86_64-rust` (1.88 or newer is needed), and whether the list of DLLs from
   `ldd` is complete.
 
 ## Later (closer to an alpha)

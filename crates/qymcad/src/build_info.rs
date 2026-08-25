@@ -97,6 +97,39 @@ mod tests {
         }
     }
 
+    /// THE PACKAGING IMAGE MUST NOT BE OLDER THAN THE FLOOR IT CLAIMS TO BUILD.
+    ///
+    /// Both numbers live in files nobody compiles - a manifest field and a line in a Dockerfile - so they
+    /// drifted apart in silence and were found out only in the place that costs most: the packaging run
+    /// spent FORTY-FOUR MINUTES building OCCT from source and then refused at a two-second version check,
+    /// because the image was pinned to the floor and the floor was stale. Nobody had noticed for months,
+    /// since every machine here builds with something far newer.
+    ///
+    /// This is free and runs with every ordinary test.
+    #[test]
+    fn the_packaging_image_can_build_what_the_manifest_asks_for() {
+        fn version(text: &str, needle: &str) -> (u32, u32) {
+            let at = text.find(needle).unwrap_or_else(|| panic!("`{needle}` is no longer written where it was"));
+            let rest = &text[at + needle.len()..];
+            let num: String = rest.chars().skip_while(|c| !c.is_ascii_digit()).take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+            let mut parts = num.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+            (parts.next().unwrap_or(0), parts.next().unwrap_or(0))
+        }
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("the workspace manifest reads");
+        let dockerfile = std::fs::read_to_string(root.join("packaging/linux/Dockerfile")).expect("the packaging image reads");
+
+        let floor = version(&manifest, "rust-version = \"");
+        let pinned = version(&dockerfile, "--default-toolchain ");
+        assert!(
+            pinned >= floor,
+            "the packaging image is pinned to rust {}.{} while the manifest asks for {}.{} at least - \
+             the image will refuse AFTER building the kernel, which is the most expensive place to find out",
+            pinned.0, pinned.1, floor.0, floor.1
+        );
+    }
+
     /// NO PERSONAL PATHS IN THE LINE. It goes into a public issue tracker, and a build path carries the
     /// name of whoever built it.
     #[test]

@@ -39,7 +39,11 @@ edition = "2021"
 # the packages (`qymcad-<version>-win64.zip`, `qymcad-<version>-x86_64.AppImage`) and what a problem
 # report carries.
 version = "0.1.0"
-rust-version = "1.85"
+# THE FLOOR, MEASURED RATHER THAN GUESSED. It said 1.85 for months while the dependency graph moved on;
+# nobody noticed, because everyone here builds with a newer compiler. A packaging image pinned to the
+# declared floor then spent forty-four minutes building OCCT and refused at the two-second version check:
+# cavalier_contours and image want 1.88, nalgebra 1.87, the icu family 1.86. 1.88 is the highest of them.
+rust-version = "1.88"
 license = "AGPL-3.0-or-later"
 # WHERE THIS CODE LIVES, for whoever received a binary and wants the sources - AGPL-3.0 promises them
 # exactly that. The address is the public repository, not the one work happens in.

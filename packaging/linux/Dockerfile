@@ -35,8 +35,14 @@ RUN wget -q "https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/${OCCT_T
     && rm -rf /tmp/occt* \
     && echo "/opt/occt/lib" > /etc/ld.so.conf.d/occt.conf && ldconfig
 
-# --- Rust toolchain (pinned to the workspace rust-version = 1.85) ---
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.85.0 --profile minimal
+# --- Rust toolchain ---
+#
+# PINNED TO WHAT THE PACKAGE IS BUILT WITH BY HAND, not to the floor in the manifest. The two answer
+# different questions: `rust-version` is the oldest compiler that can build this at all - a courtesy to
+# whoever builds from source - while this line decides which compiler produces the file people download.
+# Those must be the same compiler as a local `just pkg-linux`, or a difference shows up only in the
+# package, where it is hardest to find.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.96.0 --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # --- linuxdeploy + appimagetool (AppDir -> .AppImage; extract-and-run, so that FUSE is not needed in Docker) ---
