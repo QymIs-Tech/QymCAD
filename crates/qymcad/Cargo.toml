@@ -1,0 +1,45 @@
+[package]
+name = "qymcad"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "QymCAD desktop app (egui + wgpu)"
+
+[[bin]]
+name = "qymcad"
+path = "src/main.rs"
+
+[dependencies]
+qymcad-core.workspace = true
+qymcad-kernel.workspace = true
+qymcad-io.workspace = true
+qymcad-cam.workspace = true
+qymcad-verify.workspace = true
+# glow stays (the default) as a compiled-in fallback; wgpu is the main path for the GPU viewport, chosen at runtime
+eframe = { version = "0.29", features = ["persistence", "wgpu"] }
+egui = "0.29"
+bytemuck = { version = "1", features = ["derive"] }
+rfd = "0.15"
+egui-phosphor = "0.7"
+ron.workspace = true
+serde = { workspace = true } # the view settings kept between sessions (ViewPrefs)
+directories = "5"
+include_dir = "0.7" # the parts library (library/parts) is compiled into the binary
+image = { version = "0.25", default-features = false, features = ["png"] } # decoding the logo for the splash screen
+fluent-bundle = "0.16.0"
+sys-locale = "0.3.2"
+unic-langid = "0.9.6"
+fluent-syntax = "0.12.0"
+ab_glyph = "0.2.32"
+
+# The icon is embedded into the .exe only when building FOR Windows (host = windows under CI/MSYS2). On Linux
+# and macOS the dependency is not pulled in at all, and build.rs cuts its windows block out through
+# cfg(windows).
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[lints]
+workspace = true

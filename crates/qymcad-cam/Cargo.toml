@@ -1,0 +1,16 @@
+[package]
+name = "qymcad-cam"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Postprocessor engine (Rhai) — toolpath IR to G-code dialects"
+
+[dependencies]
+qymcad-core.workspace = true
+# rhai = "1"       # to be wired in later: the post-processor engine
+
+[lints]
+workspace = true

@@ -1,0 +1,40 @@
+# QymCAD - development and packaging commands.
+# `just` = casey/just (Arch: pacman -S just). The list of commands: `just --list`.
+#
+# THE DEV WORKFLOW DOES NOT CHANGE: `cargo run` / `cargo test` in the dev profile, as always.
+# Packages are built SEPARATELY (release) and do not disturb the dev environment.
+
+set shell := ["bash", "-uc"]
+
+# run the application in dev mode (as usual)
+dev:
+    cargo run --bin qymcad
+
+# run the workspace tests
+test:
+    cargo test
+
+# --- Linux AppImage (locally, through Docker; OCCT 7.8 from source, glibc 2.35) ---
+IMG := "qymcad-appimage-builder"
+
+# once (and after every edit of the Dockerfile): build the builder image
+pkg-linux-image:
+    docker build -t {{IMG}} packaging/linux
+
+# build the AppImage -> dist/qymcad-<ver>-x86_64.AppImage
+pkg-linux: pkg-linux-image
+    mkdir -p dist
+    docker run --rm \
+        -v "$PWD":/src -v "$PWD/dist":/dist \
+        {{IMG}} bash packaging/linux/build-appimage.sh
+    @echo "-> the files are in ./dist"
+
+# --- Windows portable zip ---
+# The main path is GitHub Actions (.github/workflows/release.yml): push a vX.Y.Z tag, or Actions -> Run workflow.
+# Locally (in a Win10 VM, MSYS2/MINGW64) it goes like this:
+#   export OCCT_INCLUDE_DIR=/mingw64/include/opencascade OCCT_LIB_DIR=/mingw64/lib
+#   cargo build --release --bin qymcad && bash packaging/win/bundle.sh
+
+# clear out what packaging produced
+clean-dist:
+    rm -rf dist

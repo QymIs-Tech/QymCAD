@@ -1,0 +1,31 @@
+# The field ids below are what the program fills in through the address bar (see
+# crates/qymcad/src/gui/report_problem.rs, `report_url`). A guard holds the two sides together: when
+# they drift apart the prefilling stops SILENTLY and the form simply comes up empty.
+name: Problem report
+description: Something does not work, or works differently from what was expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write in English or Russian — both are read.
+
+        If the program has gathered a folder of files for you (Help -> Report a problem), drag them in
+        here: the picture of the window, the crash file, and the document if you chose to attach it.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: >
+        What was done, what was expected, and what happened instead. The environment block is filled in
+        automatically when the report comes from the program itself.
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: The line from Help -> About ("Build:"), for example 0.1.0 (a8f629971, 2026-08-25)
+      placeholder: 0.1.0 (a8f629971, 2026-08-25)
+    validations:
+      required: false

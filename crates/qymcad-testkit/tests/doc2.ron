@@ -1,0 +1,493 @@
+(
+    units: Mm,
+    next_id: 30,
+    contours: [
+        (
+            points: [
+                (
+                    x: 0.0,
+                    y: 0.0,
+                ),
+                (
+                    x: 30.0,
+                    y: 0.0,
+                ),
+                (
+                    x: 30.0,
+                    y: 15.0,
+                ),
+                (
+                    x: 75.0,
+                    y: 15.0,
+                ),
+                (
+                    x: 75.0,
+                    y: 0.0,
+                ),
+                (
+                    x: 100.0,
+                    y: 0.0,
+                ),
+                (
+                    x: 100.0,
+                    y: 5.0,
+                ),
+                (
+                    x: 85.0,
+                    y: 5.0,
+                ),
+                (
+                    x: 85.0,
+                    y: 25.0,
+                ),
+                (
+                    x: 20.0,
+                    y: 25.0,
+                ),
+                (
+                    x: 20.0,
+                    y: 10.0,
+                ),
+                (
+                    x: 0.0,
+                    y: 10.0,
+                ),
+            ],
+            closed: true,
+            edges: [
+                Line(
+                    a: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                    b: (
+                        x: 30.0,
+                        y: 0.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 30.0,
+                        y: 0.0,
+                    ),
+                    b: (
+                        x: 30.0,
+                        y: 15.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 30.0,
+                        y: 15.0,
+                    ),
+                    b: (
+                        x: 75.0,
+                        y: 15.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 75.0,
+                        y: 15.0,
+                    ),
+                    b: (
+                        x: 75.0,
+                        y: 0.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 75.0,
+                        y: 0.0,
+                    ),
+                    b: (
+                        x: 100.0,
+                        y: 0.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 100.0,
+                        y: 0.0,
+                    ),
+                    b: (
+                        x: 100.0,
+                        y: 5.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 100.0,
+                        y: 5.0,
+                    ),
+                    b: (
+                        x: 85.0,
+                        y: 5.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 85.0,
+                        y: 5.0,
+                    ),
+                    b: (
+                        x: 85.0,
+                        y: 25.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 85.0,
+                        y: 25.0,
+                    ),
+                    b: (
+                        x: 20.0,
+                        y: 25.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 20.0,
+                        y: 25.0,
+                    ),
+                    b: (
+                        x: 20.0,
+                        y: 10.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 20.0,
+                        y: 10.0,
+                    ),
+                    b: (
+                        x: 0.0,
+                        y: 10.0,
+                    ),
+                ),
+                Line(
+                    a: (
+                        x: 0.0,
+                        y: 10.0,
+                    ),
+                    b: (
+                        x: 0.0,
+                        y: 0.0,
+                    ),
+                ),
+            ],
+        ),
+    ],
+    contour_ids: [
+        29,
+    ],
+    meshes: [],
+    mesh_ids: [],
+    imported_bodies: [],
+    mesh_names: [],
+    part_colors: {},
+    tools: [],
+    operations: [],
+    setups: [],
+    stock: (
+        auto: true,
+        size: (100.0, 100.0, 10.0),
+        origin: (0.0, 0.0, 0.0),
+    ),
+    machine: (
+        name: "Generic router 600×400",
+        work_min: (0.0, 0.0, -100.0),
+        work_max: (600.0, 400.0, 0.0),
+        max_rapid: 5000.0,
+        max_feed: 3000.0,
+        max_rpm: 24000.0,
+        post: Mach3,
+        post_cfg: (
+            comments: true,
+            header: true,
+            line_numbers: false,
+            axis_precision: 3,
+            feed_precision: 3,
+            tlo: true,
+            translate_cycles: false,
+        ),
+    ),
+    planes: [],
+    sketches: [
+        (
+            id: 3,
+            name: "Эскиз 1",
+            contour_ids: [
+                29,
+            ],
+            source: None,
+            points: [
+                (
+                    id: 4,
+                    x: 0.0,
+                    y: 0.0,
+                ),
+                (
+                    id: 5,
+                    x: 30.0,
+                    y: 0.0,
+                ),
+                (
+                    id: 8,
+                    x: 30.0,
+                    y: 15.0,
+                ),
+                (
+                    id: 10,
+                    x: 75.0,
+                    y: 15.0,
+                ),
+                (
+                    id: 12,
+                    x: 75.0,
+                    y: 0.0,
+                ),
+                (
+                    id: 14,
+                    x: 100.0,
+                    y: 0.0,
+                ),
+                (
+                    id: 16,
+                    x: 100.0,
+                    y: 5.0,
+                ),
+                (
+                    id: 18,
+                    x: 85.0,
+                    y: 5.0,
+                ),
+                (
+                    id: 20,
+                    x: 85.0,
+                    y: 25.0,
+                ),
+                (
+                    id: 22,
+                    x: 20.0,
+                    y: 25.0,
+                ),
+                (
+                    id: 24,
+                    x: 20.0,
+                    y: 10.0,
+                ),
+                (
+                    id: 26,
+                    x: 0.0,
+                    y: 10.0,
+                ),
+            ],
+            entities: [
+                (
+                    id: 6,
+                    kind: Line(
+                        a: 4,
+                        b: 5,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 9,
+                    kind: Line(
+                        a: 5,
+                        b: 8,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 11,
+                    kind: Line(
+                        a: 8,
+                        b: 10,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 13,
+                    kind: Line(
+                        a: 10,
+                        b: 12,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 15,
+                    kind: Line(
+                        a: 12,
+                        b: 14,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 17,
+                    kind: Line(
+                        a: 14,
+                        b: 16,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 19,
+                    kind: Line(
+                        a: 16,
+                        b: 18,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 21,
+                    kind: Line(
+                        a: 18,
+                        b: 20,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 23,
+                    kind: Line(
+                        a: 20,
+                        b: 22,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 25,
+                    kind: Line(
+                        a: 22,
+                        b: 24,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 27,
+                    kind: Line(
+                        a: 24,
+                        b: 26,
+                    ),
+                    construction: false,
+                ),
+                (
+                    id: 28,
+                    kind: Line(
+                        a: 26,
+                        b: 4,
+                    ),
+                    construction: false,
+                ),
+            ],
+            closed: false,
+            constraints: [
+                Fixed(
+                    p: 4,
+                ),
+                Horizontal(
+                    a: 4,
+                    b: 5,
+                ),
+                Vertical(
+                    a: 5,
+                    b: 8,
+                ),
+                Horizontal(
+                    a: 8,
+                    b: 10,
+                ),
+                Vertical(
+                    a: 10,
+                    b: 12,
+                ),
+                Horizontal(
+                    a: 12,
+                    b: 14,
+                ),
+                Vertical(
+                    a: 14,
+                    b: 16,
+                ),
+                Horizontal(
+                    a: 16,
+                    b: 18,
+                ),
+                Vertical(
+                    a: 18,
+                    b: 20,
+                ),
+                Horizontal(
+                    a: 20,
+                    b: 22,
+                ),
+                Vertical(
+                    a: 22,
+                    b: 24,
+                ),
+                Horizontal(
+                    a: 24,
+                    b: 26,
+                ),
+                Vertical(
+                    a: 26,
+                    b: 4,
+                ),
+            ],
+            splines: [],
+            notes: [],
+            texts: [],
+            patterns: [],
+            plane: World(YZ),
+            origin: 4,
+            axis_pts: (0, 0),
+            origin_uv: None,
+        ),
+    ],
+    timeline: [
+        (
+            id: 3,
+            name: "Эскиз 1",
+            kind: Sketch(
+                sketch: 3,
+            ),
+            parent: Some(2),
+            dirty: false,
+            suppressed: false,
+        ),
+    ],
+    components: [
+        (
+            id: 1,
+            name: "Сборка",
+            kind: Assembly,
+            parent: None,
+            transform: (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            visible: true,
+            grounded: false,
+        ),
+        (
+            id: 2,
+            name: "Деталь1",
+            kind: Part,
+            parent: Some(1),
+            transform: (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            visible: true,
+            grounded: false,
+        ),
+    ],
+    root: 1,
+    active_component: Some(2),
+    datum_points: [],
+    datum_axes: [],
+    connectors: [],
+    joints: [],
+    external_refs: [],
+    named_dims: [],
+    sources: [],
+    parameters: [],
+    feat_dims: {},
+    edge_refs: {},
+    rollback: None,
+)

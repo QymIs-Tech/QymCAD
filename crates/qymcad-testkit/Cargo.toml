@@ -1,0 +1,18 @@
+[package]
+name = "qymcad-testkit"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Headless repro harness: load a .qcad document and regenerate it with the real OCCT kernel"
+
+[dependencies]
+qymcad-core.workspace = true
+qymcad-kernel.workspace = true
+qymcad-io.workspace = true
+ron.workspace = true
+
+[lints]
+workspace = true

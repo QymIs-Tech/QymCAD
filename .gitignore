@@ -1,0 +1,43 @@
+# Rust build artifacts
+/target
+**/target
+
+# What packaging produces (AppImage, zip): binaries are not committed
+/dist
+*.AppImage
+
+# Backups / debug
+**/*.rs.bk
+*.pdb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python bytecode (the publishing script lives in tools/)
+__pycache__/
+*.pyc
+
+# Editor
+*.swp
+*.swo
+.idea/
+*~
+
+# NOTE: Cargo.lock IS committed - this is a workspace with a binary, and a reproducible build matters more.
+# Not ignored.
+
+# Generated G-code (the examples)
+examples/*.tap
+*.tap
+
+# SCRATCH MEASUREMENTS AGAINST PERSONAL DOCUMENTS - they do not belong in the repository.
+# They reach into files outside the tree by absolute paths and build nowhere except on one machine. Such a
+# file once went into a commit through `git add -A`, so what holds the rule now is this line rather than
+# memory. The crate that held them is gone; the pattern stays, because the habit is what it guards against.
+**/zzz_*.rs
+**/the_users_*.rs
+
+# Crash reports and gathered problem reports, if anyone ever points the program at the tree.
+crashes/
+reports/

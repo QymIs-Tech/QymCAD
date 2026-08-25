@@ -1,0 +1,157 @@
+# Building the release packages in CI: the Windows portable zip and the Linux AppImage.
+#
+# ONE TRIGGER: the button (Actions -> Run workflow). Nothing builds by itself - not on a push, not on a
+# tag. Commits may arrive daily; a package is made when it is asked for, and asking is a person pressing
+# a button.
+#
+# Run it against a BRANCH -> two artifacts, downloadable by whoever is signed in, kept 90 days. That is a
+# build for oneself.
+#
+# Run it against a TAG (the ref selector accepts one) -> the same two files, plus a Release page anyone can
+# download from without an account, kept for ever, named by the tag. That is a build for other people.
+# A tag carrying a hyphen (v0.1.0-dev.20260826) is marked a pre-release and never shows as "Latest".
+#
+# Windows: OCCT and Rust both come from MSYS2/MINGW64 - one gnu toolchain, so the ABI matches the
+# cc-compiled occt_bridge.cpp.
+#
+# Linux: the very same Docker image a local build uses (`just pkg-linux`), so what CI produces and
+# what is built by hand are the same artifact. The image compiles OCCT 7.8.1 FROM SOURCE - apt on Ubuntu
+# 22.04 carries only 7.5, while build.rs needs the merged modules of 7.8 - and that is slow, so the layers are
+# cached in the Actions cache. The first run pays for the compilation; the rest reuse it.
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # to attach the file to a Release on a tag
+
+jobs:
+  # FIFTEEN SECONDS BEFORE A QUARTER OF AN HOUR. A tag saying v0.2.0 while the manifest says 0.1.0 gives a
+  # package named by the tag and a program that calls itself the older number in its own About window - and
+  # the two are found out by whoever downloads it. Refused here, before anything is built.
+  agree:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag and the manifest must agree
+        run: |
+          VER=$(grep -m1 '^version' Cargo.toml | sed 's/[^0-9.]//g')
+          echo "the manifest says $VER"
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "not a tag - there is nothing to agree with"
+            exit 0
+          fi
+          TAG="${{ github.ref_name }}"
+          case "$TAG" in
+            "v$VER" | "v$VER-"*)
+              echo "the tag $TAG agrees" ;;
+            *)
+              echo "!!! the tag $TAG does not start with v$VER"
+              echo "!!! raise the version in Cargo.toml, or tag it v$VER (a suffix after a hyphen is allowed)"
+              exit 1 ;;
+          esac
+
+  windows:
+    needs: agree
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: 'msys2 {0}'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (MinGW64) + OCCT + Rust
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-rust
+            mingw-w64-x86_64-opencascade
+            mingw-w64-x86_64-pkgconf
+            zip
+
+      - name: Build (release)
+        env:
+          OCCT_INCLUDE_DIR: /mingw64/include/opencascade
+          OCCT_LIB_DIR: /mingw64/lib
+        run: cargo build --release --locked --bin qymcad
+
+      # THE TAG NAMES THE PACKAGE when the button was pressed against one; every other build is named by
+      # the manifest version plus the commit. Two dev builds three days apart must not share a file name.
+      - name: Bundle portable zip
+        env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: bash packaging/win/bundle.sh
+
+      - name: Upload artifact (for workflow_dispatch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: qymcad-win64
+          path: dist/*.zip
+
+  linux:
+    needs: agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # buildx, because only it can keep the layers in the Actions cache. Without that every run would
+      # recompile OCCT from source.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Builder image (OCCT 7.8.1 from source, Ubuntu 22.04 base)
+        uses: docker/build-push-action@v6
+        with:
+          context: packaging/linux
+          tags: qymcad-appimage-builder:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The sources are mounted rather than copied into the image: the image is the toolchain, the checkout is
+      # the code. That is exactly how `just pkg-linux` runs it, so the two paths cannot drift.
+      - name: Build the AppImage
+        env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          mkdir -p dist
+          docker run --rm -e QYMCAD_VERSION \
+            -v "$PWD":/src -v "$PWD/dist":/dist \
+            qymcad-appimage-builder:latest bash packaging/linux/build-appimage.sh
+
+      - name: Upload artifact (for workflow_dispatch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: qymcad-linux-appimage
+          path: dist/*.AppImage
+
+
+  # ONE JOB PUBLISHES, AND ONLY WHEN A TAG WAS BUILT.
+  #
+  # Both build jobs used to attach their own file to the Release. Two jobs finishing at the same second
+  # would then race to CREATE that Release, and the loser fails with a conflict - after a quarter of an
+  # hour of building. Here the files are collected first and the page is made once.
+  publish:
+    needs: [windows, linux]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: What was built
+        run: ls -lh dist
+
+      # A TAG THAT CARRIES A HYPHEN IS A PRE-RELEASE, by the rule semantic versioning already uses:
+      # v0.1.0 is a release, v0.1.0-dev.20260826 is not. That keeps a development build from ever showing
+      # up as "Latest" to somebody who came for a working program.
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true

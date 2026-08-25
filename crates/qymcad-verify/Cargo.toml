@@ -1,0 +1,15 @@
+[package]
+name = "qymcad-verify"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Lightweight pure-Rust G-code re-parser: bounds, time estimate, machine limits"
+
+[dependencies]
+qymcad-core.workspace = true
+
+[lints]
+workspace = true

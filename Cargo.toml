@@ -1,0 +1,109 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/qymcad-core",
+    "crates/qymcad-kernel",
+    "crates/qymcad-io",
+    "crates/qymcad-cam",
+    "crates/qymcad-verify",
+    "crates/qymcad",
+    "crates/qymcad-testkit",
+]
+
+# THE BAN ON "WRITTEN AND NEVER WIRED UP" - THE MOST IMPORTANT THING IN THIS FILE.
+#
+# There were 175 warnings, and real trouble drowned in them TWICE: F1 that never reached five written
+# articles, and a dimension field refusing in silence while the text explaining it stood ready beside it. Both
+# times the compiler said it plainly - "never used" - and both times it was inaudible among a hundred "unused
+# return value" lines from the headless checks.
+#
+# Now there are none, and this ban holds the zero. Two rules, both earned:
+#
+# * `dead_code` - the guard on what was never wired up. Write a function, never give it a path from the
+#   interface, and the build is red the same minute rather than a month later;
+# * `unused_must_use` - a thrown-away result. That is what the checks were noisy with, and that is what hides
+#   everything else unless it is held down.
+#
+# THE BAN LIVES HERE, NOT IN THE SOURCE. `#![deny(warnings)]` in the code would get in the way of working:
+# something half-written would stop compiling in the middle of an edit. In the manifest it strikes the
+# finished tree and leaves local work alone - `cargo check` shows the error where it would have shown the
+# warning.
+[workspace.lints.rust]
+dead_code = "deny"
+unused_must_use = "deny"
+
+[workspace.package]
+edition = "2021"
+# ONE NUMBER FOR THE WHOLE WORKSPACE, and it is raised by hand. Builds are made on purpose, not by a
+# push, so the number moves when there is something worth calling a new version - and it is what names
+# the packages (`qymcad-<version>-win64.zip`, `qymcad-<version>-x86_64.AppImage`) and what a problem
+# report carries.
+version = "0.1.0"
+rust-version = "1.85"
+license = "AGPL-3.0-or-later"
+# WHERE THIS CODE LIVES, for whoever received a binary and wants the sources - AGPL-3.0 promises them
+# exactly that. The address is the public repository, not the one work happens in.
+repository = "https://github.com/QymIs-Tech/QymCAD"
+homepage = "https://cad.qymis.tech"
+readme = "README.md"
+
+[workspace.dependencies]
+# --- internal crates ---
+qymcad-core = { path = "crates/qymcad-core" }
+qymcad-kernel = { path = "crates/qymcad-kernel" }
+qymcad-io = { path = "crates/qymcad-io" }
+qymcad-cam = { path = "crates/qymcad-cam" }
+qymcad-verify = { path = "crates/qymcad-verify" }
+
+# --- external (wired in per crate as each phase starts) ---
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"
+# nalgebra = "0.33"            # geometry and transforms
+# cavalier_contours = "0.3"   # arc-aware offset
+# rhai = "1"                  # the post-processor engine
+# eframe = "0.29"             # the egui + wgpu window
+# stl_io = "0.8"              # STL import
+# dxf = "0.6"                 # DXF import
+
+# Incremental compilation together with opt-level=3 and lld produces "undefined hidden symbol" at link time
+# (a bug in lld/codegen). Incremental is therefore off for dev: at opt-level=3 it barely speeds anything up,
+# and the build is steady again.
+[profile.dev]
+incremental = false
+# THE DEBUG INFORMATION SITS BESIDE THE BINARIES RATHER THAN INSIDE EVERY ONE OF THEM.
+#
+# The workspace holds around 130 `tests/*.rs` files, and each is a SEPARATE program statically linking
+# `qymcad-core`. By default on Linux the DWARF is compiled INTO the executable, so the same debug information
+# landed on disk 130 times over: measured on one test binary - 134 MB of file, of which 127.8 MB was debug
+# sections and 2.9 MB was code.
+#
+# `unpacked` leaves the DWARF in the `.o` files and the binary carries a reference. Debugging does not suffer
+# (gdb and lldb follow the reference; on macOS this is the default), and linking gets lighter - the linker no
+# longer copies a hundred megabytes into every target. The release profile is untouched.
+split-debuginfo = "unpacked"
+
+# Less weight in dev builds of the dependencies; the release profile is optimised anyway.
+[profile.dev.package."*"]
+opt-level = 2
+
+# The hot code (the software 3D rasteriser, the geometry) is optimised in dev as well: package."*" covers the
+# dependencies only, not the crates of this workspace.
+[profile.dev.package.qymcad]
+opt-level = 3
+[profile.dev.package.qymcad-core]
+opt-level = 3
+
+# THE TEST PROFILE IS SEPARATE FROM THE PROGRAM THAT RUNS - optimisation is not needed there.
+#
+# MEASURED (Xeon, 20 threads, an edit in `gui.rs` -> rebuild of `qymcad`):
+#   opt-level 3 - 67 s, opt-level 1 - 45 s, opt-level 0 - 12 s.
+# All of that minute is ONE unit: `cargo build --timings` shows 67.0 s out of 67.0 s on `qymcad`, the other
+# 485 crates being built already. Neither `-j` nor codegen-units changes anything (checked: 256 units gave the
+# same 68 s) - there is nothing to parallelise, it is a single crate.
+#
+# The optimisation is needed by the program that RUNS (the software 3D rasteriser lives in this crate), not by
+# the tests: at opt-level 0 the whole run takes the same ~17 s, and the peak of edge picking stays within
+# 0.09 ms against a frame budget of 16 ms. So `dev` (what is launched) stays at 3 and `test` goes to 0: the
+# "edit, then run" cycle drops from ~85 s to ~35 s and the behaviour of the program does not shift by a hair.
+[profile.test.package.qymcad]
+opt-level = 0
