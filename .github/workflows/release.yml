@@ -94,16 +94,20 @@ jobs:
           # support for saying that at all - the runner here carries the one shipped with Visual Studio
           # 2026. This is the escape hatch CMake itself names in the refusal. On Linux the question never
           # comes up: the builder image is Ubuntu 22.04, whose CMake is old enough to accept it as written.
+          # EVERY ARGUMENT IS QUOTED. PowerShell tore `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` in half - CMake
+          # received `3` and complained about a stray path `.5` - while the neighbouring flags survived
+          # only because none of them contains a dot. Quoting settles it whatever the parser was thinking.
           cmake -S $src -B occt-build -A x64 `
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
-            -DBUILD_LIBRARY_TYPE=Shared `
-            -DINSTALL_DIR=C:/occt `
-            -DINSTALL_DIR_LAYOUT=Unix `
-            -DBUILD_MODULE_Draw=OFF `
-            -DBUILD_MODULE_Visualization=OFF `
-            -DBUILD_DOC_Overview=OFF `
-            -DUSE_FREETYPE=OFF -DUSE_TK=OFF -DUSE_FREEIMAGE=OFF `
-            -DUSE_RAPIDJSON=OFF -DUSE_DRACO=OFF -DUSE_OPENGL=OFF -DUSE_GLES2=OFF
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+            "-DBUILD_LIBRARY_TYPE=Shared" `
+            "-DINSTALL_DIR=C:/occt" `
+            "-DINSTALL_DIR_LAYOUT=Unix" `
+            "-DBUILD_MODULE_Draw=OFF" `
+            "-DBUILD_MODULE_Visualization=OFF" `
+            "-DBUILD_DOC_Overview=OFF" `
+            "-DUSE_FREETYPE=OFF" "-DUSE_TK=OFF" "-DUSE_FREEIMAGE=OFF" `
+            "-DUSE_RAPIDJSON=OFF" "-DUSE_DRACO=OFF" "-DUSE_OPENGL=OFF" "-DUSE_GLES2=OFF"
+          if ($LASTEXITCODE -ne 0) { throw "the kernel would not configure" }
           cmake --build occt-build --config Release --target install -- /m
           Get-ChildItem C:\occt
 
