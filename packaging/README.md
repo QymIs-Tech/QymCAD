@@ -31,31 +31,38 @@ The `.exe` with every DLL it needs beside it; unpack and run (Win10/11 x64).
   to the Release.
 - **By hand**: GitHub -> Actions -> `release` -> Run workflow -> download the `qymcad-win64` artifact.
 
-The build runs under MSYS2/UCRT64 (Rust and OCCT from one gnu toolchain). The config is
-`.github/workflows/release.yml`.
+The build runs under MSVC - the mainstream Rust target on Windows, and the compiler the kernel is built
+with. The C++ ABI does not mix, so the bridge and OCCT must come from the same toolchain.
 
-### Locally in a Win10 VM (without CI)
+OCCT is built from source, the same 7.8.1 with the same modules switched off as on Linux. In a
+Developer PowerShell for VS 2022:
 
-In the MSYS2 (UCRT64) shell:
-
-```bash
-pacman -S mingw-w64-ucrt-x86_64-{toolchain,rust,opencascade,pkgconf} zip
-export OCCT_INCLUDE_DIR=/ucrt64/include/opencascade OCCT_LIB_DIR=/ucrt64/lib
-# Rust carries a libmsvcrt.a of its own, older than the system libmingwex.a it gets linked beside;
-# naming the system one by full path is the workaround from rust-lang/rust#60912.
-export RUSTFLAGS="-C link-arg=/ucrt64/lib/libmsvcrt.a"
-cargo build --release --bin qymcad
-bash packaging/win/bundle.sh        # -> dist/qymcad-win64.zip
+```powershell
+curl.exe -sSL -o occt.tar.gz https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V7_8_1.tar.gz
+tar xf occt.tar.gz
+cmake -S OCCT-V7_8_1 -B occt-build -A x64 `
+  -DBUILD_LIBRARY_TYPE=Shared -DINSTALL_DIR=C:/occt -DINSTALL_DIR_LAYOUT=Unix `
+  -DBUILD_MODULE_Draw=OFF -DBUILD_MODULE_Visualization=OFF -DBUILD_DOC_Overview=OFF `
+  -DUSE_FREETYPE=OFF -DUSE_TK=OFF -DUSE_FREEIMAGE=OFF `
+  -DUSE_RAPIDJSON=OFF -DUSE_DRACO=OFF -DUSE_OPENGL=OFF -DUSE_GLES2=OFF
+cmake --build occt-build --config Release --target install -- /m
 ```
 
-## The first real run - what to watch
+`INSTALL_DIR_LAYOUT=Unix` is not cosmetic: by default OCCT installs into `inc` and `win64/vc14/lib` on
+Windows, and then every place that names a path would need two answers. With Unix the layout is the one
+Linux already has.
 
-These scripts were never exercised in a sandbox (no Docker, no Windows there), so the first genuine run may
-call for corrections:
+Then the program itself:
 
-- Linux: the names of the OCCT modules and the cmake flags, the set of dev `.so` files for egui, the version
-  of linuxdeploy.
-- Windows: the version of `mingw-w64-ucrt-x86_64-rust` (1.88 or newer is needed), and whether the list of DLLs from
+```powershell
+$env:OCCT_INCLUDE_DIR = "C:\occt\include\opencascade"
+$env:OCCT_LIB_DIR     = "C:\occt\lib"
+$env:OCCT_ROOT        = "C:\occt"
+cargo build --release --bin qymcad
+pwsh -File packaging/win/bundle.ps1
+```
+
+- Windows: the Rust toolchain (1.88 or newer is needed), and whether the list of DLLs from
   `ldd` is complete.
 
 ## Later (closer to an alpha)

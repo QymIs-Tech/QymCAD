@@ -11,15 +11,13 @@
 # download from without an account, kept for ever, named by the tag. That is a build for other people.
 # A tag carrying a hyphen (v0.1.0-dev.20260826) is marked a pre-release and never shows as "Latest".
 #
-# Windows: OCCT and Rust both come from MSYS2/UCRT64 - one gnu toolchain, so the ABI matches the
-# cc-compiled occt_bridge.cpp.
+# Windows: MSVC, the mainstream target for Rust there and the compiler every desktop CAD is built with.
+# The kernel is built from source by the same compiler, because the C++ ABI does not mix: a bridge
+# compiled by one toolchain cannot link against a library built by another.
 #
-# UCRT64 AND NOT MINGW64. That environment is built around msvcrt.dll, the runtime of the Windows XP era,
-# and MSYS2 keeps it for compatibility only while its compilers march on: gcc reached 16.2.0 there while
-# the runtime stayed where it was. The seams gave way - a build that had worked for months stopped
-# linking with "undefined reference to `_fileno'" out of the CRT's own _assert.o, nothing to do with this
-# code. UCRT is the runtime Microsoft ships with Windows 10 and 11 - exactly the systems this program
-# declares - and it is the environment MSYS2 itself treats as the default.
+# It used to be MSYS2/MinGW, chosen because OCCT was one `pacman` line away. That path broke on a link
+# error that has been open upstream since 2019 (rust-lang/rust#60912): Rust carries a libmsvcrt.a of its
+# own, MSYS2 updated libmingwex.a, and the halves drifted apart. See docs/MSVC_MIGRATION.md.
 #
 # Linux: the very same Docker image a local build uses (`just pkg-linux`), so what CI produces and
 # what is built by hand are the same artifact. The image compiles OCCT 7.8.1 FROM SOURCE - apt on Ubuntu
@@ -62,49 +60,65 @@ jobs:
   windows:
     needs: agree
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: 'msys2 {0}'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup MSYS2 (UCRT64) + OCCT + Rust
-        uses: msys2/setup-msys2@v2
+      # THE KERNEL IS BUILT FROM SOURCE, exactly as it is for Linux: the same 7.8.1, the same modules
+      # switched off. The alternatives were binaries from Open Cascade (a download behind a registration,
+      # which no automated build can walk through) and vcpkg (whose port decides the version and the module
+      # set for us). One kernel for both systems beats two different ones.
+      #
+      # `INSTALL_DIR_LAYOUT=Unix` matters more than it looks: by default OCCT installs into `inc` and
+      # `win64/vc14/lib` on Windows, and then the two systems would need different paths in every place
+      # that names them. With Unix the layout is the same one Linux has.
+      - name: Restore the kernel build
+        id: occt
+        uses: actions/cache/restore@v4
         with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-toolchain
-            mingw-w64-ucrt-x86_64-rust
-            mingw-w64-ucrt-x86_64-opencascade
-            mingw-w64-ucrt-x86_64-pkgconf
-            zip
+          path: C:\occt
+          key: occt-7.8.1-msvc-x64-v1
 
-      # NAMING THE SYSTEM C RUNTIME BY ITS FULL PATH. Rust carries a libmsvcrt.a of its own and puts it
-      # ahead of the system one, while libmingwex.a comes from MSYS2 and is current. The two drifted apart,
-      # and the link broke on symbols the old copy never had:
-      #
-      #     __imp___msvcrt_assert   _fileno   _setmode
-      #
-      # A full path sidesteps the search order entirely: this exact archive is read, and it is read last.
-      # The workaround is the one named in rust-lang/rust#60912, an issue open since 2019.
-      #
-      # It cost four wrong guesses to get here - the environment, C++ on its own, the windowed subsystem,
-      # the trailing library order - and every one of them died on a toy case that linked. The lesson is
-      # cheap to write down: measure on the thing that actually breaks, and read the whole link line first.
+      - name: Build OCCT 7.8.1 (only when the cache missed)
+        if: steps.occt.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o occt.tar.gz https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V7_8_1.tar.gz
+          tar xf occt.tar.gz
+          cmake -S OCCT-V7_8_1 -B occt-build -A x64 `
+            -DBUILD_LIBRARY_TYPE=Shared `
+            -DINSTALL_DIR=C:/occt `
+            -DINSTALL_DIR_LAYOUT=Unix `
+            -DBUILD_MODULE_Draw=OFF `
+            -DBUILD_MODULE_Visualization=OFF `
+            -DBUILD_DOC_Overview=OFF `
+            -DUSE_FREETYPE=OFF -DUSE_TK=OFF -DUSE_FREEIMAGE=OFF `
+            -DUSE_RAPIDJSON=OFF -DUSE_DRACO=OFF -DUSE_OPENGL=OFF -DUSE_GLES2=OFF
+          cmake --build occt-build --config Release --target install -- /m
+          Get-ChildItem C:\occt
+
+      # SAVED BEFORE THE APPLICATION IS BUILT, on purpose. Put after it, a failure in our own code would
+      # throw away the kernel too, and every attempt at a fix would pay for it again.
+      - name: Save the kernel build
+        if: steps.occt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\occt
+          key: occt-7.8.1-msvc-x64-v1
+
       - name: Build (release)
         env:
-          OCCT_INCLUDE_DIR: /ucrt64/include/opencascade
-          OCCT_LIB_DIR: /ucrt64/lib
-          RUSTFLAGS: -C link-arg=/ucrt64/lib/libmsvcrt.a
+          OCCT_INCLUDE_DIR: C:\occt\include\opencascade
+          OCCT_LIB_DIR: C:\occt\lib
         run: cargo build --release --locked --bin qymcad
 
       # THE TAG NAMES THE PACKAGE when the button was pressed against one; every other build is named by
       # the manifest version plus the commit. Two dev builds three days apart must not share a file name.
       - name: Bundle portable zip
+        shell: pwsh
         env:
           QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-        run: bash packaging/win/bundle.sh
+          OCCT_ROOT: C:\occt
+        run: pwsh -File packaging/win/bundle.ps1
 
       - name: Upload artifact (for workflow_dispatch)
         uses: actions/upload-artifact@v4

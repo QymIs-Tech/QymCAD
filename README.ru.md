@@ -95,7 +95,7 @@ python3 convert_qcad.py part.qcad    # переводит на месте, ря�
 
 ## Сборка из исходников
 
-Linux — `just pkg-linux`, требуется Docker. Windows — MSYS2/UCRT64. Подробности:
+Linux — `just pkg-linux`, требуется Docker. Windows — MSVC, ядро собирается из исходников. Подробности:
 [`packaging/README.md`](packaging/README.md).
 
 ## Участие в разработке

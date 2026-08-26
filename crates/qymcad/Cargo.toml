@@ -35,7 +35,7 @@ unic-langid = "0.9.6"
 fluent-syntax = "0.12.0"
 ab_glyph = "0.2.32"
 
-# The icon is embedded into the .exe only when building FOR Windows (host = windows under CI/MSYS2). On Linux
+# The icon is embedded into the .exe only when building FOR Windows (host = windows under CI). On Linux
 # and macOS the dependency is not pulled in at all, and build.rs cuts its windows block out through
 # cfg(windows).
 [target.'cfg(windows)'.build-dependencies]

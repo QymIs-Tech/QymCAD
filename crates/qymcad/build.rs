@@ -1,7 +1,7 @@
-// Embedding resources into the .exe. This matters ONLY when building for Windows (MinGW/MSYS2 in
-// CI): winresource calls windres from the mingw toolchain and stitches the icon into the binary. On
-// Linux and macOS the whole block is cut out by cfg(windows), and the winresource dependency is not
-// pulled in there (it is target-scoped in Cargo.toml).
+// Embedding resources into the .exe. This matters ONLY when building for Windows: winresource calls the
+// resource compiler of whichever toolchain is in use and stitches the icon into the binary. On Linux and
+// macOS the whole block is cut out by cfg(windows), and the winresource dependency is not pulled in there
+// (it is target-scoped in Cargo.toml).
 fn main() {
     stamp_the_build();
 
