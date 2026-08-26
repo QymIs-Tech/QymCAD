@@ -90,7 +90,12 @@ jobs:
           $src = (Get-ChildItem -Directory -Filter 'OCCT-*' | Select-Object -First 1).FullName
           if (-not $src) { throw "the archive unpacked into nothing that looks like OCCT-*" }
           Write-Host ">>> sources at $src"
+          # OCCT 7.8.1 declares compatibility with CMake older than 3.5, and current CMake has dropped
+          # support for saying that at all - the runner here carries the one shipped with Visual Studio
+          # 2026. This is the escape hatch CMake itself names in the refusal. On Linux the question never
+          # comes up: the builder image is Ubuntu 22.04, whose CMake is old enough to accept it as written.
           cmake -S $src -B occt-build -A x64 `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
             -DBUILD_LIBRARY_TYPE=Shared `
             -DINSTALL_DIR=C:/occt `
             -DINSTALL_DIR_LAYOUT=Unix `
