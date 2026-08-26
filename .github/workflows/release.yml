@@ -84,7 +84,13 @@ jobs:
         run: |
           curl.exe -sSL -o occt.tar.gz https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V7_8_1.tar.gz
           tar xf occt.tar.gz
-          cmake -S OCCT-V7_8_1 -B occt-build -A x64 `
+          # THE NAME OF THE UNPACKED DIRECTORY IS NOT OURS TO ASSUME. GitHub strips the leading `V` from a
+          # tag when it names the folder inside an archive, so `V7_8_1` arrives as `OCCT-7_8_1`. The Linux
+          # build always matched it by pattern; this one spelled it out and failed on the first run.
+          $src = (Get-ChildItem -Directory -Filter 'OCCT-*' | Select-Object -First 1).FullName
+          if (-not $src) { throw "the archive unpacked into nothing that looks like OCCT-*" }
+          Write-Host ">>> sources at $src"
+          cmake -S $src -B occt-build -A x64 `
             -DBUILD_LIBRARY_TYPE=Shared `
             -DINSTALL_DIR=C:/occt `
             -DINSTALL_DIR_LAYOUT=Unix `
