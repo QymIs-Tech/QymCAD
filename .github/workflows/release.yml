@@ -201,11 +201,18 @@ jobs:
       - name: What was built
         run: ls -lh dist
 
-      # A TAG THAT CARRIES A HYPHEN IS A PRE-RELEASE, by the rule semantic versioning already uses:
-      # v0.1.0 is a release, v0.1.0-dev.20260826 is not. That keeps a development build from ever showing
-      # up as "Latest" to somebody who came for a working program.
+      # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
+      #
+      # The rule used to be the one semantic versioning suggests: a hyphen in the tag means a pre-release.
+      # It cost more than it gave. The Releases box on a repository's front page shows only the latest
+      # ORDINARY release and skips pre-releases entirely - so with every build being a development build,
+      # that box stayed empty and whoever arrived looking for a download found nothing but a tag count.
+      #
+      # Hiding the only thing there is to download is worse than the confusion the flag was meant to
+      # prevent, and the confusion is handled anyway: the tag says `dev`, the file name says `dev`, and
+      # the README says so in its second paragraph. Bring the flag back when there is a stable release for
+      # a newcomer to land on instead.
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
