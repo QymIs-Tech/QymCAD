@@ -80,10 +80,23 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             zip
 
+      # NAMING THE SYSTEM C RUNTIME BY ITS FULL PATH. Rust carries a libmsvcrt.a of its own and puts it
+      # ahead of the system one, while libmingwex.a comes from MSYS2 and is current. The two drifted apart,
+      # and the link broke on symbols the old copy never had:
+      #
+      #     __imp___msvcrt_assert   _fileno   _setmode
+      #
+      # A full path sidesteps the search order entirely: this exact archive is read, and it is read last.
+      # The workaround is the one named in rust-lang/rust#60912, an issue open since 2019.
+      #
+      # It cost four wrong guesses to get here - the environment, C++ on its own, the windowed subsystem,
+      # the trailing library order - and every one of them died on a toy case that linked. The lesson is
+      # cheap to write down: measure on the thing that actually breaks, and read the whole link line first.
       - name: Build (release)
         env:
           OCCT_INCLUDE_DIR: /ucrt64/include/opencascade
           OCCT_LIB_DIR: /ucrt64/lib
+          RUSTFLAGS: -C link-arg=/ucrt64/lib/libmsvcrt.a
         run: cargo build --release --locked --bin qymcad
 
       # THE TAG NAMES THE PACKAGE when the button was pressed against one; every other build is named by
@@ -109,8 +122,13 @@ jobs:
       # recompile OCCT from source.
       - uses: docker/setup-buildx-action@v3
 
+      # The build record this action uploads by itself is a 30 KB artifact nobody opens, sitting next to the
+      # 35 MB one that people came for. Off: the list of artifacts is read by a person looking for a package.
       - name: Builder image (OCCT 7.8.1 from source, Ubuntu 22.04 base)
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: packaging/linux
           tags: qymcad-appimage-builder:latest

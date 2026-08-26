@@ -41,6 +41,9 @@ In the MSYS2 (UCRT64) shell:
 ```bash
 pacman -S mingw-w64-ucrt-x86_64-{toolchain,rust,opencascade,pkgconf} zip
 export OCCT_INCLUDE_DIR=/ucrt64/include/opencascade OCCT_LIB_DIR=/ucrt64/lib
+# Rust carries a libmsvcrt.a of its own, older than the system libmingwex.a it gets linked beside;
+# naming the system one by full path is the workaround from rust-lang/rust#60912.
+export RUSTFLAGS="-C link-arg=/ucrt64/lib/libmsvcrt.a"
 cargo build --release --bin qymcad
 bash packaging/win/bundle.sh        # -> dist/qymcad-win64.zip
 ```
