@@ -269,11 +269,24 @@ jobs:
   # Both build jobs used to attach their own file to the Release. Two jobs finishing at the same second
   # would then race to CREATE that Release, and the loser fails with a conflict - after a quarter of an
   # hour of building. Here the files are collected first and the page is made once.
+  # THIS JOB RUNS EVERY TIME, AND ONLY ITS LAST STEP WAITS FOR A TAG.
+  #
+  # It used to be gated as a whole, so the only occasion it ever ran was a release - and a mistake in it
+  # showed up there and nowhere else. Reported behaviour: three builds went green, this job then unpacked
+  # the very packages it was meant to attach, and the release page was left with nothing. Half an hour of
+  # building, found at the last step, on the day the release was wanted.
+  #
+  # Now every run downloads the packages and checks them; only the page is made on a tag. A branch run
+  # costs a minute of downloading and proves the whole path.
   publish:
     needs: [windows, linux, macos]
-    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
+      # THE SOURCES ARE NEEDED HERE TOO, for one file: the text that goes onto the release page. This job
+      # never checked anything out - it only moved artifacts - and `body_path` would have pointed at
+      # nothing.
+      - uses: actions/checkout@v7
+
       # THE PACKAGES ARE FILES, NOT SOMETHING TO UNPACK. They are uploaded as they are (`archive: false`
       # at each build), and on the way back this action looks at the name: a `.zip` is decompressed unless
       # it is told otherwise. Reported behaviour: the Windows and macOS packages arrived UNPACKED and
@@ -309,6 +322,11 @@ jobs:
       # the README says so in its second paragraph. Bring the flag back when there is a stable release for
       # a newcomer to land on instead.
       - uses: softprops/action-gh-release@v3
+        if: github.ref_type == 'tag'
         with:
           files: dist/*
+          # WHAT TO DOWNLOAD AND HOW TO START IT, ON THE PAGE ITSELF. Generated notes alone are a line
+          # saying "Full Changelog" - which tells whoever arrives from a link neither which of the three
+          # files is theirs nor, on a mac, why the system calls the download damaged.
+          body_path: packaging/release-body.md
           generate_release_notes: true

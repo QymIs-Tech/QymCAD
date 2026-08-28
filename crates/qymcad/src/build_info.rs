@@ -130,6 +130,38 @@ mod tests {
         );
     }
 
+    /// A FILE THE RELEASE WORKFLOW NAMES MUST EXIST, and the job that reads it must have checked the
+    /// sources out.
+    ///
+    /// The text that goes onto the release page lives in a file, and the release job used to check
+    /// nothing out at all - it only moved artifacts about. A path pointing at nothing would have been
+    /// found where such things always are: on the day of the release, after half an hour of building.
+    #[test]
+    fn the_release_page_gets_the_text_the_workflow_promises() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let flow = std::fs::read_to_string(root.join(".github/workflows/release.yml")).expect("the release workflow reads");
+
+        let mut named = 0;
+        for line in flow.lines() {
+            let Some(path) = line.trim().strip_prefix("body_path:") else { continue };
+            let path = path.trim();
+            let text = std::fs::read_to_string(root.join(path))
+                .unwrap_or_else(|_| panic!("the workflow puts `{path}` on the release page and there is no such file"));
+            assert!(
+                text.contains("## What changed"),
+                "`{path}` is what people read on the release page and it no longer says what changed"
+            );
+            named += 1;
+        }
+        assert_eq!(named, 1, "the release page is made from exactly one text; found {named} of them");
+
+        // The job reads that file from the working directory, so it has to lay the sources down first.
+        let publish = flow.split("\n  publish:").nth(1).expect("the publishing job is still called `publish`");
+        let checkout = publish.find("actions/checkout").expect("the publishing job checks nothing out, so the text cannot be there");
+        let download = publish.find("download-artifact").expect("the publishing job no longer collects the packages");
+        assert!(checkout < download, "checkout runs after the packages are downloaded and wipes them from the working directory");
+    }
+
     /// NO PERSONAL PATHS IN THE LINE. It goes into a public issue tracker, and a build path carries the
     /// name of whoever built it.
     #[test]
