@@ -2345,14 +2345,14 @@ impl App {
                             let has_ent = self.sel_sk.items.iter().any(|(k, _)| *k == 1);
                             if ui.add_enabled(has_sel, egui::Button::new(format!("{} {}", ph::TRASH, crate::i18n::tr("props-delete")))).clicked() {
                                 self.delete_sketch_sel(si);
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.add_enabled(has_ent, egui::Button::new(&crate::i18n::tr("sk-construction-toggle"))).clicked() {
                                 let eids: Vec<Id> = self.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
                                 self.project.toggle_construction(si, &eids);
                                 self.project.solve_sketch(si);
                                 self.invalidate();
-                                ui.close_menu();
+                                ui.close();
                             }
                             // an arc length dimension, for the picked arc
                             let arc_eid = self.sel_sk.items.iter().filter(|(k, _)| *k == 1).find_map(|(_, id)| {
@@ -2364,7 +2364,7 @@ impl App {
                                         self.finish_dim(si, ci);
                                         self.place.dim = Some(ci);
                                     }
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                             // a tangent (edge-to-edge) dimension: two references are picked, at least one of
@@ -2392,21 +2392,21 @@ impl App {
                                 self.finish_dim(si, ci);
                                 self.gsel.constraint = Some(ci);
                                 self.invalidate();
-                                ui.close_menu();
+                                ui.close();
                             }
                             ui.separator();
                             ui.menu_button(&crate::i18n::tr("sk-constraint"), |ui| {
                                 for (label, code) in [(&crate::i18n::tr("sk-coincident"), 0u8), (&crate::i18n::tr("sk-horizontal"), 1), (&crate::i18n::tr("sk-vertical"), 2), (&crate::i18n::tr("sk-parallel"), 3), (&crate::i18n::tr("sk-perpendicular"), 4), (&crate::i18n::tr("sk-equal"), 5), (&crate::i18n::tr("sk-tangency"), 9), (&crate::i18n::tr("sk-midpoint"), 11), (&crate::i18n::tr("sk-fix"), 6)] {
                                     if ui.button(label).clicked() {
                                         self.constraint_button(code);
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                 }
                             });
                             ui.separator();
                             if ui.button(&crate::i18n::tr("sk-select-all")).clicked() {
                                 self.select_all_sketch(si);
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                     }
@@ -3365,7 +3365,7 @@ impl App {
                             if sel {
                                 if let Some((minx, miny, maxx, maxy)) = self.project.sketch_text_bbox(si, ti) {
                                     let bb = Rect::from_two_pos(self.to_screen(rect, Point2::new(minx, miny)), self.to_screen(rect, Point2::new(maxx, maxy))).expand(3.0);
-                                    painter.rect_stroke(bb, 0.0, Stroke::new(1.0, self.scheme.pal.selected()));
+                                    painter.rect_stroke(bb, 0.0, Stroke::new(1.0, self.scheme.pal.selected()), egui::StrokeKind::Middle);
                                 }
                             }
                         }
@@ -3406,7 +3406,7 @@ impl App {
                         0 => {
                             // a vertex is a yellow square
                             let r = 5.0;
-                            painter.rect_stroke(Rect::from_center_size(sp, egui::vec2(r * 2.0, r * 2.0)), 0.0, Stroke::new(1.5, yellow));
+                            painter.rect_stroke(Rect::from_center_size(sp, egui::vec2(r * 2.0, r * 2.0)), 0.0, Stroke::new(1.5, yellow), egui::StrokeKind::Middle);
                         }
                         3 => {
                             // a midpoint is a triangle
@@ -3482,7 +3482,7 @@ impl App {
                         }
                         painter.rect_filled(r, 0.0, crate::palette::a(self.scheme.pal.select_cross(), 20));
                     } else {
-                        painter.rect_stroke(r, 0.0, Stroke::new(1.2, self.scheme.pal.select_window()));
+                        painter.rect_stroke(r, 0.0, Stroke::new(1.2, self.scheme.pal.select_window()), egui::StrokeKind::Middle);
                         painter.rect_filled(r, 0.0, crate::palette::a(self.scheme.pal.select_window(), 20));
                     }
                 }

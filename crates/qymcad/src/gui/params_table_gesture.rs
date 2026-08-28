@@ -42,8 +42,8 @@ mod tests {
             // for the reported case (300 in the table while the part stayed as it was) would have been
             // green with the program broken.
             app.win.params = true;
-            let out = self.ctx.run(input, |ctx| {
-                app.params_window(ctx);
+            let out = self.ctx.run_ui(input, |ui| {
+                app.params_window(ui.ctx());
             });
             // The name fields stand in the first column; egui remembers their rectangles under our own
             // ids.

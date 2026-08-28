@@ -36,8 +36,8 @@ mod tests {
 
         let mut got_int = 0.0;
         let mut got_real = 0.0;
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 app.bar_exprs.insert("t_count", "n*2".into());
                 got_int = app.num_or_expr(ui, "t_count", 1.0, 1.0, 512.0, true, "");
                 app.bar_exprs.insert("t_rad", "w/2 + 0.5".into());
@@ -54,8 +54,8 @@ mod tests {
         let mut app = App::default();
         let ctx = egui::Context::default();
         let mut got = 0.0;
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 app.bar_exprs.insert("t_bad", "1/0".into());
                 got = app.num_or_expr(ui, "t_bad", 7.0, 0.0, 100.0, false, "");
             });

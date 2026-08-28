@@ -44,8 +44,8 @@ mod tests {
 
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        let _ = ctx.run(raw(), |c| app.crash_notice(c));
-        let out = ctx.run(raw(), |c| app.crash_notice(c));
+        let _ = ctx.run_ui(raw(), |c| app.crash_notice(c.ctx()));
+        let out = ctx.run_ui(raw(), |c| app.crash_notice(c.ctx()));
 
         let painted = texts(&out.shapes);
         let title = crate::i18n::tr("crash-title");
@@ -71,7 +71,7 @@ mod tests {
             ],
             ..raw()
         };
-        let _ = ctx.run(press, |c| app.crash_notice(c));
+        let _ = ctx.run_ui(press, |c| app.crash_notice(c.ctx()));
         let release = egui::RawInput {
             events: vec![egui::Event::PointerButton {
                 pos: spot,
@@ -81,7 +81,7 @@ mod tests {
             }],
             ..raw()
         };
-        let _ = ctx.run(release, |c| app.crash_notice(c));
+        let _ = ctx.run_ui(release, |c| app.crash_notice(c.ctx()));
 
         assert!(app.crash_report.is_none(), "the window stayed open after it was closed");
         assert!(!report.exists(), "the report was not marked seen");

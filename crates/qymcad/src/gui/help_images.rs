@@ -58,7 +58,7 @@ mod tests {
     /// fringe would appear along the outline.
     fn downscale(img: &ColorImage, k: usize) -> ColorImage {
         let (w, h) = (img.size[0] / k, img.size[1] / k);
-        let mut out = ColorImage::new([w, h], Color32::TRANSPARENT);
+        let mut out = ColorImage::filled([w, h], Color32::TRANSPARENT);
         for y in 0..h {
             for x in 0..w {
                 let (mut r, mut g, mut b, mut a) = (0u32, 0u32, 0u32, 0u32);
@@ -244,7 +244,7 @@ mod tests {
         let a = &*app;
         super::super::help_raster::shot_ui([w, h], a.scheme.pal.viewport_bg(), |ctx| {
             let tex = ctx.load_texture("body", egui::ImageData::Color(std::sync::Arc::new(body.clone())), egui::TextureOptions::LINEAR);
-            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| {
                 let painter = ui.painter().clone();
                 let r = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(w as f32, h as f32));
                 painter.image(tex.id(), r, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
@@ -287,16 +287,16 @@ mod tests {
     /// The background is the colour of the panels rather than transparency: an `egui` window has no
     /// translucent edges, but the text in it is antialiased, and over a transparent background the fringe of
     /// the letters would smear into dirt.
-    fn shot_panel(app: &mut App, w: usize, h: usize, draw: impl Fn(&mut App, &egui::Context)) -> ColorImage {
+    fn shot_panel(app: &mut App, w: usize, h: usize, draw: impl Fn(&mut App, &mut egui::Ui)) -> ColorImage {
         let bg = app.scheme.pal.viewport_bg();
-        super::super::help_raster::shot_ui([w, h], bg, |ctx| {
+        super::super::help_raster::shot_ui([w, h], bg, |ui| {
             // THE PROGRAM'S THEME GOES TO THE CONTEXT. Without it the windows are drawn in the STOCK `egui`
             // style: the panels our code paints came out exactly right while the windows came out dull, as
             // if under a dimming (reported from the shots of the settings and the keys). A scheme sets not
             // only the palette of the canvas but the look of `egui` itself - and a shot needs it exactly as
             // much as the program does.
-            app.apply_theme(ctx);
-            draw(app, ctx);
+            app.apply_theme(ui.ctx());
+            draw(app, ui);
         })
     }
 
@@ -312,9 +312,10 @@ mod tests {
         app.view.initialized = true;
         let bg = app.scheme.pal.viewport_bg();
         let a = &*app;
-        super::super::help_raster::shot_ui([640, 400], bg, |ctx| {
+        super::super::help_raster::shot_ui([640, 400], bg, |ui| {
+            let ctx = &ui.ctx().clone();
             ctx.set_visuals(if a.scheme.pal.light { egui::Visuals::light() } else { egui::Visuals::dark() });
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 let painter = ui.painter().clone();
                 let r = ui.available_rect_before_wrap();
                 painter.rect_filled(r, 0.0, bg);
@@ -344,8 +345,8 @@ mod tests {
         app.fit(Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(w as f32, h as f32)));
         let bg = app.scheme.pal.viewport_bg();
         let a = &*app;
-        super::super::help_raster::shot_ui([w, h], bg, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        super::super::help_raster::shot_ui([w, h], bg, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 let painter = ui.painter().clone();
                 let r = ui.available_rect_before_wrap();
                 painter.rect_filled(r, 0.0, bg);
@@ -968,14 +969,15 @@ mod tests {
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
-                super::super::help_raster::shot_ui([1100, 690], bg, |ctx| {
+                super::super::help_raster::shot_ui([1100, 690], bg, |ui| {
+            let ctx = &ui.ctx().clone();
                     a.apply_theme(ctx);
-                    a.menu_bar(ctx);
-                    a.toolbar(ctx);
-                    a.wb_toolbar(ctx);
-                    a.tree_panel(ctx);
-                    a.properties_panel(ctx);
-                    a.viewport(ctx);
+                    a.menu_bar(ui);
+                    a.toolbar(ui);
+                    a.wb_toolbar(ui);
+                    a.tree_panel(ui);
+                    a.properties_panel(ui);
+                    a.viewport(ui);
                 })
             };
             save("window.png", &img);
@@ -1093,7 +1095,7 @@ mod tests {
             // about the timeline, so the shot must come from where the timeline is visible.
             let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
             app.enter_component_for_test(part);
-            let img = shot_panel(&mut app, 300, 420, |a, ctx| a.tree_panel(ctx));
+            let img = shot_panel(&mut app, 300, 420, |a, ui| a.tree_panel(ui));
             save("tree.png", &img);
         }
 
@@ -1107,7 +1109,7 @@ mod tests {
                 qymcad_core::model::Param { name: "d".into(), expr: "w/6 + wall".into(), value: 13.0 },
             ];
             app.win.params = true;
-            let img = shot_panel(&mut app, 560, 320, |a, ctx| a.params_window(ctx));
+            let img = shot_panel(&mut app, 560, 320, |a, ui| a.params_window(ui.ctx()));
             save("params.png", &img);
         }
 
@@ -1115,7 +1117,7 @@ mod tests {
         {
             let mut app = App::default();
             app.win.settings = true;
-            let img = shot_panel(&mut app, 900, 560, |a, ctx| a.settings_window(ctx));
+            let img = shot_panel(&mut app, 900, 560, |a, ui| a.settings_window(ui.ctx()));
             save("settings.png", &img);
         }
 
@@ -1148,14 +1150,15 @@ mod tests {
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
-                super::super::help_raster::shot_ui([1200, 700], bg, |ctx| {
+                super::super::help_raster::shot_ui([1200, 700], bg, |ui| {
+            let ctx = &ui.ctx().clone();
                     a.apply_theme(ctx);
-                    a.menu_bar(ctx);
-                    a.toolbar(ctx);
-                    a.wb_toolbar(ctx);
-                    a.tree_panel(ctx);
-                    a.properties_panel(ctx);
-                    a.viewport(ctx);
+                    a.menu_bar(ui);
+                    a.toolbar(ui);
+                    a.wb_toolbar(ui);
+                    a.tree_panel(ui);
+                    a.properties_panel(ui);
+                    a.viewport(ui);
                 })
             };
             save(&format!("scheme-{id}.png"), &img);
@@ -1165,7 +1168,7 @@ mod tests {
         {
             let mut app = App::default();
             app.win.hotkeys = true;
-            let img = shot_panel(&mut app, 720, 640, |a, ctx| a.hotkeys_window(ctx));
+            let img = shot_panel(&mut app, 720, 640, |a, ui| a.hotkeys_window(ui.ctx()));
             save("hotkeys.png", &img);
         }
 
@@ -1173,7 +1176,7 @@ mod tests {
         {
             let mut app = plate(10.0);
             app.win.doc_props = true;
-            let img = shot_panel(&mut app, 640, 460, |a, ctx| a.doc_props_window(ctx));
+            let img = shot_panel(&mut app, 640, 460, |a, ui| a.doc_props_window(ui.ctx()));
             save("doc-props.png", &img);
         }
 
@@ -1193,9 +1196,10 @@ mod tests {
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
-                super::super::help_raster::shot_ui([640, 420], bg, |ctx| {
+                super::super::help_raster::shot_ui([640, 420], bg, |ui| {
+            let ctx = &ui.ctx().clone();
                     a.apply_theme(ctx);
-                    a.viewport(ctx);
+                    a.viewport(ui);
                 })
             };
             save("viewport.png", &img);
@@ -1228,9 +1232,10 @@ mod tests {
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
-                super::super::help_raster::shot_ui([640, 420], bg, |ctx| {
+                super::super::help_raster::shot_ui([640, 420], bg, |ui| {
+            let ctx = &ui.ctx().clone();
                     a.apply_theme(ctx);
-                    a.viewport(ctx);
+                    a.viewport(ui);
                 })
             };
             save("assembly-joint.png", &img);
@@ -1329,9 +1334,10 @@ mod tests {
                 let bg = app.scheme.pal.viewport_bg();
                 let img = {
                     let a = &mut app;
-                    super::super::help_raster::shot_ui([640, 420], bg, |ctx| {
+                    super::super::help_raster::shot_ui([640, 420], bg, |ui| {
+            let ctx = &ui.ctx().clone();
                         a.apply_theme(ctx);
-                        a.viewport(ctx);
+                        a.viewport(ui);
                     })
                 };
                 save(&format!("assembly-drive/{i:02}.png"), &img);
@@ -1355,7 +1361,7 @@ mod tests {
             app.rebuild_if_dirty();
             app.set.show_interference = true;
             app.refresh_interference();
-            let img = shot_panel(&mut app, 320, 300, |a, ctx| a.tree_panel(ctx));
+            let img = shot_panel(&mut app, 320, 300, |a, ui| a.tree_panel(ui));
             save("interference.png", &img);
         }
 
@@ -1656,9 +1662,10 @@ mod tests {
                 let bg = app.scheme.pal.viewport_bg();
                 let img = {
                     let a = &mut app;
-                    super::super::help_raster::shot_ui([640, 420], bg, |ctx| {
+                    super::super::help_raster::shot_ui([640, 420], bg, |ui| {
+            let ctx = &ui.ctx().clone();
                         a.apply_theme(ctx);
-                        a.viewport(ctx);
+                        a.viewport(ui);
                     })
                 };
                 save(&format!("assembly-relation/{i:02}.png"), &img);
@@ -1688,7 +1695,7 @@ mod tests {
         {
             let mut app = App::default();
             app.win.parts_library = true;
-            let img = shot_panel(&mut app, 760, 520, |a, ctx| a.parts_library_window(ctx));
+            let img = shot_panel(&mut app, 760, 520, |a, ui| a.parts_library_window(ui.ctx()));
             save("library.png", &img);
         }
 
@@ -1712,9 +1719,10 @@ mod tests {
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
-                super::super::help_raster::shot_ui([640, 440], bg, |ctx| {
+                super::super::help_raster::shot_ui([640, 440], bg, |ui| {
+            let ctx = &ui.ctx().clone();
                     a.apply_theme(ctx);
-                    a.viewport(ctx);
+                    a.viewport(ui);
                 })
             };
             save("datum-plane.png", &img);
@@ -1724,7 +1732,7 @@ mod tests {
         {
             let mut app = App::default();
             app.open_help("index");
-            let img = shot_panel(&mut app, 900, 620, |a, ctx| a.help_window(ctx));
+            let img = shot_panel(&mut app, 900, 620, |a, ui| a.help_window(ui.ctx()));
             save("help-window.png", &img);
         }
 

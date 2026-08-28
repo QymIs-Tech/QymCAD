@@ -41,7 +41,9 @@ A development build. The program works and is fit for real parts, but it is upda
 - **The CNC (CAM) module does not work.** The settings do carry a “Machining” tab (CAM) checkbox, but
   what is behind it is groundwork: part of the code came from an earlier version and is not
   maintained. The module returns for the stable alpha.
-- **There are no macOS builds.** Windows and Linux are supported.
+- **The macOS build carries no Apple signature.** macOS marks a downloaded application as quarantined
+  and refuses to open it, saying it is damaged - it is not. The mark is cleared once, with one command,
+  written out step by step in the notes inside the archive. Apple Silicon only; there is no Intel build.
 
 ## Features
 
@@ -79,6 +81,10 @@ chmod +x qymcad-*.AppImage
 ./qymcad-*.AppImage
 ```
 
+**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Unpack it and read `README.txt` lying beside
+the application: the build carries no Apple signature, so the quarantine mark has to be cleared once,
+before the first launch. It takes one command and is written out step by step.
+
 ## Help
 
 The built-in help opens with **F1**. The articles, with illustrations, live in [`docs/help`](docs/help).
@@ -96,7 +102,8 @@ The script brings a document forward from any earlier version in one pass and is
 
 ## Building from source
 
-Linux — `just pkg-linux`, Docker required. Windows — MSVC with the kernel built from source. The details are in
+Linux — `just pkg-linux`, Docker required. Windows — MSVC with the kernel built from source. macOS — the
+kernel from source as well, then `packaging/macos/bundle.sh`. The details are in
 [`packaging/README.md`](packaging/README.md).
 
 ## Contributing

@@ -145,7 +145,7 @@ impl super::App {
 
         if self.report.attach_shot {
             // The picture comes back as an event, a frame or more later; `take_screenshot` writes it.
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
             self.report.awaiting_shot = true;
         }
 
@@ -256,7 +256,7 @@ impl super::App {
                     ui.label(&crate::i18n::tr("report-collected"));
                     ui.label(egui::RichText::new(crate::crash::without_home(&dir.to_string_lossy())).monospace().small());
                     if ui.button(format!("{} {}", ph::COPY, crate::i18n::tr("report-copy-path"))).clicked() {
-                        ui.output_mut(|o| o.copied_text = dir.to_string_lossy().into_owned());
+                        ui.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText(dir.to_string_lossy().into_owned())));
                     }
                 }
             });
@@ -386,8 +386,8 @@ mod tests {
         }
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        let _ = ctx.run(raw(), |c| app.report_window(c));
-        let out = ctx.run(raw(), |c| app.report_window(c));
+        let _ = ctx.run_ui(raw(), |c| app.report_window(c.ctx()));
+        let out = ctx.run_ui(raw(), |c| app.report_window(c.ctx()));
         let mut found = Vec::new();
         for cs in &out.shapes {
             walk(&cs.shape, &mut found);

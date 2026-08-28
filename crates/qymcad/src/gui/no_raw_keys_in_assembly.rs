@@ -94,10 +94,10 @@ mod tests {
                 super::super::install_fonts(&ctx);
                 let mut texts: Vec<String> = Vec::new();
                 for _ in 0..2 {
-                    let out = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+                    let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                         app.joint_tool_bar_for_test(c);
                         app.joint_popup_for_test(c, viewport());
-                        egui::SidePanel::right("props").show(c, |ui| app.joints_panel_for_test(ui));
+                        egui::Panel::right("props").show(c, |ui| app.joints_panel_for_test(ui));
                     });
                     texts.clear();
                     for cs in &out.shapes {

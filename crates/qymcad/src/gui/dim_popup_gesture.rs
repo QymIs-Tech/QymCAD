@@ -61,8 +61,10 @@ mod tests {
         fn frame(&mut self, app: &mut App, si: usize, ci: usize) -> &mut Self {
             let input = egui::RawInput { screen_rect: Some(self.rect), events: std::mem::take(&mut self.events), ..Default::default() };
             let rect = self.rect;
-            let out = self.ctx.run(input, |ctx| {
-                egui::CentralPanel::default().show(ctx, |_ui| {});
+            let out = self.ctx.run_ui(input, |ui| {
+            // The frame hands in the root `Ui` now; the context comes from it.
+            let ctx = &ui.ctx().clone();
+                egui::CentralPanel::default().show(ui, |_ui| {});
                 // THE PRODUCTION ORDER: the frame's keys are handled BEFORE anything is drawn (`update` calls
                 // `handle_key_commands` and only then paints). Drawing the popup alone checks a program that
                 // does not exist - and it was exactly this omission that made an Escape check green while a

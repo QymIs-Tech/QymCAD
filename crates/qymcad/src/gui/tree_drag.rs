@@ -221,13 +221,13 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let draw = |app: &mut App, ctx: &egui::Context| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let draw = |app: &mut App, ui: &mut egui::Ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 app.build_tree(ui);
             });
         };
         // frame 1 — find out where the rows are
-        let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| draw(app, c));
+        let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| draw(app, c));
         let rect_of = |app: &App, id: Id| app.tree.row_rects.iter().find(|(c, _)| *c == id).map(|(_, r)| *r);
         let (Some(a), Some(b)) = (rect_of(app, from), rect_of(app, to)) else {
             return false;
@@ -244,16 +244,16 @@ mod tests {
         let mut i2 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i2.events.push(egui::Event::PointerMoved(start));
         i2.events.push(ev(start, true));
-        let _ = ctx.run(i2, |c| draw(app, c));
+        let _ = ctx.run_ui(i2, |c| draw(app, c));
         // dragged
         let mut i3 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i3.events.push(egui::Event::PointerMoved(end));
-        let _ = ctx.run(i3, |c| draw(app, c));
+        let _ = ctx.run_ui(i3, |c| draw(app, c));
         // released
         let mut i4 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i4.events.push(egui::Event::PointerMoved(end));
         i4.events.push(ev(end, false));
-        let _ = ctx.run(i4, |c| draw(app, c));
+        let _ = ctx.run_ui(i4, |c| draw(app, c));
         true
     }
 
@@ -302,12 +302,12 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let draw = |app: &mut App, ctx: &egui::Context| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let draw = |app: &mut App, ui: &mut egui::Ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 app.build_tree(ui);
             });
         };
-        let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| draw(&mut app, c));
+        let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| draw(&mut app, c));
         let at = app.tree.row_rects.iter().find(|(c, _)| *c == a).map(|(_, r)| r.center()).expect("row A is in the frame");
 
         let ev = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
@@ -320,7 +320,7 @@ mod tests {
         i2.events.push(egui::Event::PointerMoved(at));
         i2.events.push(ev(at, true));
         i2.events.push(ev(at, false));
-        let _ = ctx.run(i2, |c| draw(&mut app, c));
+        let _ = ctx.run_ui(i2, |c| draw(&mut app, c));
 
         let picked = match app.sel {
             Sel::Component(ci) => app.project.components.get(ci).map(|x| x.id),
@@ -362,12 +362,12 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let draw = |app: &mut App, ctx: &egui::Context| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let draw = |app: &mut App, ui: &mut egui::Ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 app.build_tree(ui);
             });
         };
-        let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |x| draw(&mut app, x));
         let rect_of = |app: &App, id: Id| app.tree.row_rects.iter().find(|(x, _)| *x == id).map(|(_, r)| *r);
         let (start, end) = (rect_of(&app, c).expect("the row C").center(), rect_of(&app, a).expect("the row A"));
         let end = egui::pos2(end.center().x, end.top() + end.height() * 0.05);
@@ -376,24 +376,24 @@ mod tests {
         let mut i2 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i2.events.push(egui::Event::PointerMoved(start));
         i2.events.push(ev(start, true));
-        let _ = ctx.run(i2, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(i2, |x| draw(&mut app, x));
 
         let mut i3 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i3.events.push(egui::Event::PointerMoved(end));
-        let _ = ctx.run(i3, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(i3, |x| draw(&mut app, x));
 
         // ESCAPE, without releasing the button.
         let mut i4 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         for pressed in [true, false] {
             i4.events.push(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed, repeat: false, modifiers: Default::default() });
         }
-        let _ = ctx.run(i4, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(i4, |x| draw(&mut app, x));
 
         // And only now released — there is nothing left to drop.
         let mut i5 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i5.events.push(egui::Event::PointerMoved(end));
         i5.events.push(ev(end, false));
-        let _ = ctx.run(i5, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(i5, |x| draw(&mut app, x));
 
         assert_eq!(order_in(&app.project, asm), before, "Escape did not cancel the drag — the tree got reordered all the same");
     }
@@ -413,12 +413,12 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let draw = |app: &mut App, ctx: &egui::Context| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let draw = |app: &mut App, ui: &mut egui::Ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 app.build_tree(ui);
             });
         };
-        let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |x| draw(&mut app, x));
         let rect_of = |app: &App, id: Id| app.tree.row_rects.iter().find(|(x, _)| *x == id).map(|(_, r)| *r);
         let (start, end) = (rect_of(&app, c).expect("the row C").center(), rect_of(&app, a).expect("the row A").center());
         let ev = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
@@ -426,11 +426,11 @@ mod tests {
         let mut i2 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i2.events.push(egui::Event::PointerMoved(start));
         i2.events.push(ev(start, true));
-        let _ = ctx.run(i2, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(i2, |x| draw(&mut app, x));
 
         let mut i3 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i3.events.push(egui::Event::PointerMoved(end));
-        let out = ctx.run(i3, |x| draw(&mut app, x));
+        let out = ctx.run_ui(i3, |x| draw(&mut app, x));
 
         let mut texts = Vec::new();
         for cs in &out.shapes {
@@ -489,14 +489,14 @@ mod tests {
         super::super::install_fonts(&ctx);
         // THE TREE LIVES IN A SCROLL AREA — as in the right-hand panel of the program. Without one there
         // is nothing to scroll and the check would be empty.
-        let draw = |app: &mut App, ctx: &egui::Context| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let draw = |app: &mut App, ui: &mut egui::Ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 egui::ScrollArea::vertical().id_salt("geomscroll").max_height(240.0).show(ui, |ui| {
                     app.build_tree(ui);
                 });
             });
         };
-        let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| draw(&mut app, c));
+        let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| draw(&mut app, c));
         let first = app.tree.row_rects.first().copied().expect("the rows of the tree are in the frame");
         let ev = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
 
@@ -505,7 +505,7 @@ mod tests {
         let mut i2 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i2.events.push(egui::Event::PointerMoved(start));
         i2.events.push(ev(start, true));
-        let _ = ctx.run(i2, |c| draw(&mut app, c));
+        let _ = ctx.run_ui(i2, |c| draw(&mut app, c));
 
         let edge = egui::pos2(start.x, 236.0);
         let before = app.tree.row_rects.first().copied().expect("the rows are in place").1.top();
@@ -520,7 +520,7 @@ mod tests {
                 ..Default::default()
             };
             i3.events.push(egui::Event::PointerMoved(edge));
-            let _ = ctx.run(i3, |c| draw(&mut app, c));
+            let _ = ctx.run_ui(i3, |c| draw(&mut app, c));
         }
         let after = app.tree.row_rects.first().copied().expect("the rows are in place").1.top();
 

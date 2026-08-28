@@ -396,8 +396,8 @@ mod tests {
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(input.clone(), |c| app.help_window(c));
-        let out = ctx.run(input, |c| app.help_window(c));
+        let _ = ctx.run_ui(input.clone(), |c| app.help_window(c.ctx()));
+        let out = ctx.run_ui(input, |c| app.help_window(c.ctx()));
 
         /// The left edges of every caption in the frame.
         fn lefts(s: &egui::Shape, out: &mut Vec<f32>) {

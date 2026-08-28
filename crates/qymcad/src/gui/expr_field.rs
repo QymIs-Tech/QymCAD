@@ -109,7 +109,7 @@ pub(super) fn take_list_open(ctx: &egui::Context) -> bool {
 /// alphabet, so confusing the two cuts a string in the middle of a letter. With no state yet (the first
 /// frame) the caret is taken to be at the end — that is where a person who has just typed something is.
 fn caret_byte(ctx: &egui::Context, id: egui::Id, buf: &str) -> usize {
-    let chars = egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range()).map(|r| r.primary.index).unwrap_or_else(|| buf.chars().count());
+    let chars = egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range()).map(|r| r.primary.index.0).unwrap_or_else(|| buf.chars().count());
     buf.char_indices().nth(chars).map(|(i, _)| i).unwrap_or(buf.len())
 }
 
@@ -300,7 +300,20 @@ fn field(
 
     // COMMIT AND CANCELLATION. With the list CLOSED, Escape cancels the whole edit; with it open Escape
     // closes the list (above) and the popup of the tool stays where it is.
-    let mut committed = resp.lost_focus() && !took && !escaped;
+    // THE COMMIT IS AN EDGE, NOT A STATE. It used to hang on `lost_focus()` alone, and that worked while
+    // the flag lasted exactly one frame. Since egui 0.35 it stays raised longer, and the edit went into
+    // the model TWICE - the guard beside this file caught it on the very first run after the upgrade.
+    //
+    // What is asked instead is the transition: the field HAD the focus and no longer has it. That is the
+    // moment a person finished typing, and it happens once however long any flag lingers.
+    let has_focus = ui.memory(|m| m.has_focus(id));
+    let had_focus = ui.data_mut(|d| {
+        let key = id.with("was-focused");
+        let was = d.get_temp::<bool>(key).unwrap_or(false);
+        d.insert_temp(key, has_focus);
+        was
+    });
+    let mut committed = had_focus && !has_focus && !took && !escaped;
     let cancelled = escaped;
     if escaped {
         committed = false;

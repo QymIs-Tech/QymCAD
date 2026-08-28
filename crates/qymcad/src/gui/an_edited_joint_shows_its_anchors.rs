@@ -25,7 +25,7 @@ mod tests {
         app.refresh_edges();
         let mut count = 0;
         for _ in 0..2 {
-            let out = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+            let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| {
                     let painter = ui.painter().clone();
                     app.draw_pick_highlights_for_test(&painter, viewport());

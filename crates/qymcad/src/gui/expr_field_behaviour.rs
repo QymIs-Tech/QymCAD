@@ -102,8 +102,8 @@ mod tests {
             let id = egui::Id::new("field_under_test");
             let (mut committed, mut cancelled, mut text) = (false, false, String::new());
             let mut rect = egui::Rect::NOTHING;
-            let out = self.ctx.run(input, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let out = self.ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     let o = super::super::expr_field::expr_field(ui, &app.project, id, model, 160.0, "");
                     committed = o.committed;
                     cancelled = o.cancelled;
@@ -148,8 +148,10 @@ mod tests {
             let input = egui::RawInput { screen_rect: Some(self.screen), events: std::mem::take(&mut self.events), ..Default::default() };
             let id = egui::Id::new("field_under_test");
             let mut rect = egui::Rect::NOTHING;
-            let out = self.ctx.run(input, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let out = self.ctx.run_ui(input, |ui| {
+            // The frame hands in the root `Ui` now; the context comes from it.
+            let ctx = &ui.ctx().clone();
+                egui::CentralPanel::default().show(ui, |ui| {
                     ui.label("SCENE");
                 });
                 egui::Area::new(egui::Id::new("tool_popup")).order(egui::Order::Foreground).fixed_pos(egui::pos2(20.0, 20.0)).show(ctx, |ui| {

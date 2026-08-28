@@ -44,8 +44,8 @@ mod tests {
 
         fn frame(&mut self, app: &mut App, ti: usize) -> &mut Self {
             let input = egui::RawInput { screen_rect: Some(self.screen), events: std::mem::take(&mut self.events), ..Default::default() };
-            let out = self.ctx.run(input, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let out = self.ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     app.feature_props(ui, ti);
                 });
             });

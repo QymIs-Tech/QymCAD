@@ -5,6 +5,7 @@ The project changes its format straight, without readers for the old shape: a re
 fail to load, `serde` fills a default, and the part quietly builds differently. This script is the
 other half of that decision - the one-shot that brings an existing document forward.
 
+    python3 convert_qcad.py --self-test               # check the script itself, in four cases
     python3 convert_qcad.py part.qcam                 # renames to part.qcad, keeping part.qcam.bak
     python3 convert_qcad.py part.qcad                 # in place, keeping part.qcad.bak
     python3 convert_qcad.py part.qcam converted.qcad  # leaving the original alone
@@ -249,11 +250,28 @@ def convert_document(text):
     return text, counts
 
 
-def report(src, dst, counts):
-    if not counts or not any(counts.values()):
-        print("nothing to convert: %s already speaks the current shape" % src)
+def report(src, dst, counts, renamed):
+    """SAY WHAT HAPPENED, not what did not.
+
+    The first version printed "nothing to convert" and stopped there - while a converted copy had just
+    appeared beside the original under the new extension. Reported behaviour: the script "did not rename
+    anything", because nothing it said mentioned the file it had made. A message that names only what was
+    skipped reads as "nothing was done".
+    """
+    changed = ", ".join("%s %d" % (k, n) for k, n in counts.items() if n) if counts else ""
+    if changed and renamed:
+        print("converted and renamed: %s -> %s" % (src, dst))
+        print("  what changed: %s" % changed)
+        print("  the old file stays as %s" % src)
+    elif changed:
+        print("converted in place: %s" % dst)
+        print("  what changed: %s" % changed)
+    elif renamed:
+        print("renamed: %s -> %s" % (src, dst))
+        print("  the document already spoke the current shape - only the extension was old")
+        print("  the old file stays as %s" % src)
     else:
-        print("converted %s -> %s: %s" % (src, dst, ", ".join("%s %d" % (k, n) for k, n in counts.items() if n)))
+        print("nothing to do: %s already speaks the current shape, and the extension is current too" % src)
 
 
 def main(argv):
@@ -268,9 +286,26 @@ def main(argv):
     if src.endswith(".ron"):
         text, counts = convert_document(pathlib.Path(src).read_text())
         pathlib.Path(dst).write_text(text)
-        report(src, dst, counts)
+        report(src, dst, counts, False)
         return 0
     renamed = dst != src and len(argv) == 2
+
+    # READ AND CONVERT FIRST, DECIDE AFTERWARDS. The earlier order made a backup and rewrote the file
+    # before it knew whether anything needed doing, so a document that was already current came away with
+    # a `.bak` beside it and a fresh timestamp for nothing.
+    with zipfile.ZipFile(src) as bundle:
+        entries = [(info, bundle.read(info.filename)) for info in bundle.infolist()]
+    counts = {}
+    for i, (info, data) in enumerate(entries):
+        if info.filename == "document.ron":
+            text, counts = convert_document(data.decode("utf-8"))
+            entries[i] = (info, text.encode("utf-8"))
+    changed = any(counts.values()) if counts else False
+
+    if not changed and src == dst:
+        report(src, dst, counts, renamed)
+        return 0
+
     if src == dst:
         # A second conversion must not overwrite the first backup: that one holds the ORIGINAL, and the
         # numbered ones hold each intermediate shape.
@@ -280,21 +315,111 @@ def main(argv):
             backup = "%s.bak.%d" % (src, n)
         shutil.copyfile(src, backup)
         print("the original is kept as %s" % backup)
-    with zipfile.ZipFile(src) as bundle:
-        entries = [(info, bundle.read(info.filename)) for info in bundle.infolist()]
-    counts = {}
-    for i, (info, data) in enumerate(entries):
-        if info.filename == "document.ron":
-            text, counts = convert_document(data.decode("utf-8"))
-            entries[i] = (info, text.encode("utf-8"))
+
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as out:
         for info, data in entries:
             out.writestr(info, data)
-    report(src, dst, counts)
-    if renamed:
-        print("the old file stays as %s" % src)
+    report(src, dst, counts, renamed)
+    return 0
+
+
+def self_test():
+    """WHAT THE SCRIPT SAYS IS PART OF WHAT IT DOES.
+
+    Reported behaviour: run on a document under the old extension, the script answered "nothing to
+    convert" and the person concluded it had renamed nothing - while a converted copy had just appeared
+    beside the original. The words are the whole interface here: there is no window to look at.
+
+    Run with `python3 convert_qcad.py --self-test`.
+    """
+    import io
+    import tempfile
+
+    # THE SAMPLES LOOK LIKE A REAL DOCUMENT: one field per line, indented. The rules match a field of the
+    # block ITSELF, not of anything nested in it, and they replace it together with its newline - a sample
+    # written on one line is a sample no rule can touch.
+    #
+    # The reference is already in its current shape in both, so only the thing under test moves. A bare
+    # `faces: []` would be rewritten into a `Ref` as well - correctly, mirroring `Ref::picks`, where an
+    # empty pick set is `Query::Id(0)` - and then a sample meant to need nothing would need something.
+    def doc(tail):
+        return (
+            "(\n    timeline: [\n        (\n            kind: Shell(\n"
+            "                faces: (query: Id(5), expect: Some, hint: (centroid: (0.0, 0.0, 0.0), normal: (0.0, 0.0, 0.0))),\n"
+            "                thickness: 1.0,\n"
+            + tail
+            + "            ),\n        ),\n    ],\n)\n"
+        )
+
+    old_shape = doc("                outward: true,\n                center: false,\n")
+    current_shape = doc("                side: Outward,\n")
+
+    def bundle(path, body):
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("document.ron", body)
+
+    def run(*args):
+        out = io.StringIO()
+        keep = sys.stdout
+        sys.stdout = out
+        try:
+            main(["convert_qcad.py", *args])
+        finally:
+            sys.stdout = keep
+        return out.getvalue()
+
+    bad = []
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = pathlib.Path(tmp)
+
+        # 1. The old extension over a document that is already current: renamed, and SAID so.
+        a = tmp / "a.qcam"
+        bundle(a, current_shape)
+        said = run(str(a))
+        if "renamed:" not in said or not (tmp / "a.qcad").exists():
+            bad.append("an old extension over a current document: %r" % said)
+        if "nothing to convert" in said:
+            bad.append("it still says nothing was done although it renamed the file")
+
+        # 2. A current document under the current extension: nothing to do, and NO litter beside it.
+        b = tmp / "b.qcad"
+        bundle(b, current_shape)
+        said = run(str(b))
+        if "nothing to do" not in said:
+            bad.append("a document needing nothing: %r" % said)
+        if (tmp / "b.qcad.bak").exists():
+            bad.append("it left a backup for a file it did not change")
+
+        # 3. A document that really needs converting: says what changed.
+        c = tmp / "c.qcad"
+        bundle(c, old_shape)
+        said = run(str(c))
+        if "converted in place" not in said or "Shell" not in said:
+            bad.append("a document that needed converting: %r" % said)
+        if not (tmp / "c.qcad.bak").exists():
+            bad.append("it changed a file in place and kept no original")
+        with zipfile.ZipFile(c) as z:
+            after = z.read("document.ron").decode()
+        if "side: Outward" not in after or "outward:" in after:
+            bad.append("the document did not come out in the current shape: %r" % after)
+
+        # 4. Both at once: converted AND renamed.
+        d = tmp / "d.qcam"
+        bundle(d, old_shape)
+        said = run(str(d))
+        if "converted and renamed" not in said or not (tmp / "d.qcad").exists():
+            bad.append("a document that needed both: %r" % said)
+
+    if bad:
+        print("SELF-TEST FAILED:")
+        for line in bad:
+            print("  " + line)
+        return 1
+    print("self-test: all four outcomes report what actually happened")
     return 0
 
 
 if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        sys.exit(self_test())
     sys.exit(main(sys.argv))

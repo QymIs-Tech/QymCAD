@@ -46,7 +46,7 @@ pub(in crate::gui) mod tests {
         let mut texts = Vec::new();
         // TWO FRAMES: egui areas and tooltips fall into place on the second pass.
         for _ in 0..2 {
-            let out = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+            let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| app.joints_panel_for_test(ui));
             });
             texts.clear();
@@ -157,7 +157,7 @@ pub(in crate::gui) mod tests {
         let mut found = None;
         // TWO FRAMES: egui areas fall into place on the second pass.
         for _ in 0..2 {
-            let out = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+            let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| app.joints_panel_for_test(ui));
             });
             found = None;
@@ -173,7 +173,7 @@ pub(in crate::gui) mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let mut frame = |events: Vec<egui::Event>| {
-            let _ = ctx.run(egui::RawInput { screen_rect: Some(viewport()), events, ..Default::default() }, |c| {
+            let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), events, ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| app.joints_panel_for_test(ui));
             });
         };

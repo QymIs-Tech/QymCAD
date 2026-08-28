@@ -118,7 +118,7 @@ mod tests {
         let mut texts = Vec::new();
         // an egui popup settles on the SECOND frame — draw it twice
         for _ in 0..2 {
-            let out = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+            let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 app.joint_popup_for_test(c, viewport());
             });
             texts.clear();

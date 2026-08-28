@@ -85,20 +85,20 @@ mod tests {
         let (body, comp) = a_slider_pair(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
 
         let basis = app.cam.basis();
         let at = app.project3(aim(&app, body), viewport(), &basis).0;
         let was = origin_of(&app, comp);
 
         // HOVER, PRESS, LEAD OVER SEVERAL FRAMES, RELEASE — exactly like a hand.
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
         for k in 1..=6 {
             let p = at + egui::vec2(14.0 * k as f32, 0.0);
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
         }
-        let _ = ctx.run(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport_for_test(c));
 
         let now = origin_of(&app, comp);
         let moved = ((now[0] - was[0]).powi(2) + (now[1] - was[1]).powi(2) + (now[2] - was[2]).powi(2)).sqrt();
@@ -129,17 +129,17 @@ mod tests {
 
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
         let basis = app.cam.basis();
         let at = app.project3(aim(&app, body), viewport(), &basis).0;
         let was = origin_of(&app, comp);
 
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
         for k in 1..=6 {
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at + egui::vec2(14.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(14.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
         }
-        let _ = ctx.run(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport_for_test(c));
 
         let now = origin_of(&app, comp);
         let moved = ((now[0] - was[0]).powi(2) + (now[1] - was[1]).powi(2) + (now[2] - was[2]).powi(2)).sqrt();
@@ -161,14 +161,14 @@ mod tests {
         let (body, _comp) = a_slider_pair(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
 
         let basis = app.cam.basis();
         let at = app.project3(aim(&app, body), viewport(), &basis).0;
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at + egui::vec2(30.0, 0.0))]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(at + egui::vec2(30.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(30.0, 0.0))]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(30.0, 0.0), false)]), |c| app.viewport_for_test(c));
 
         assert!(!app.joint_drag_active(), "after the release the hand stayed busy: the next drag will go to the part instead of the view");
     }

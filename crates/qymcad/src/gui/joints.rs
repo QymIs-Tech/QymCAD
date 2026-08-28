@@ -81,18 +81,22 @@ pub(super) fn joint_slot_drag(ui: &mut egui::Ui, jj: &mut qymcad_core::feature::
 impl App {
     /// The assembly tool bar in one call - a door for checks that look AT A FRAME.
     #[cfg(test)]
-    pub(crate) fn joint_tool_bar_for_test(&mut self, ctx: &egui::Context) {
-        self.joint_tool_bar(ctx);
+    pub(crate) fn joint_tool_bar_for_test(&mut self, ui: &mut egui::Ui) {
+        self.joint_tool_bar(ui);
     }
 
 
-    pub(super) fn joint_tool_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn joint_tool_bar(&mut self, ui: &mut egui::Ui) {
+        // The panel lives inside a `Ui` now; the context is still wanted for windows,
+        // input and viewport commands, and it comes from the same place.
+        let ctx = &ui.ctx().clone();
         use qymcad_core::feature::JointKind;
         // the tangency tool bar - a hint and a way out. There is nothing to confirm: the condition is set
         // on the second pick, and tangency has no connectors.
         if let Some(sel) = self.joint.tangent_pick.clone() {
             let mut cancel = false;
-            egui::TopBottomPanel::top("tangent_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("tangent_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::CIRCLE_HALF_TILT, crate::i18n::tr("j-tangent-made"))).strong());
                     ui.separator();
@@ -117,7 +121,8 @@ impl App {
         // the width tool bar - how many anchors are shown, a "make it" button and a way out.
         if let Some(sel) = self.joint.width_pick.clone() {
             let (mut make, mut cancel) = (false, false);
-            egui::TopBottomPanel::top("width_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("width_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::ARROWS_OUT_LINE_HORIZONTAL, crate::i18n::tr("j-width-made"))).strong());
                     ui.separator();
@@ -150,7 +155,8 @@ impl App {
         // as every other tool: the hint on top, Enter confirms, Esc cancels.
         if let Some(sel) = self.joint.group_pick.clone() {
             let (mut make, mut cancel) = (false, false);
-            egui::TopBottomPanel::top("group_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("group_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::SELECTION_ALL, crate::i18n::tr("j-group-made"))).strong());
                     ui.separator();
@@ -182,7 +188,8 @@ impl App {
         // the grounding tool bar - a hint and a way out
         if self.joint.ground_pick {
             let mut cancel = false;
-            egui::TopBottomPanel::top("ground_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("ground_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::ANCHOR, crate::i18n::tr("jt-ground-btn"))).strong());
                     ui.separator();
@@ -203,7 +210,8 @@ impl App {
         // THE ANCHOR TOOL BAR: the kind of anchor and a hint about where to click.
         if self.joint.conn_pick {
             let mut cancel = false;
-            egui::TopBottomPanel::top("conn_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("conn_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::CROSSHAIR, crate::i18n::tr("j-conn-new"))).strong());
                     ui.separator();
@@ -233,7 +241,8 @@ impl App {
             let pick = self.joint.relation_pick.clone().unwrap_or_default();
             let need = Self::relation_picks_needed(pick.kind);
             let have = if need == 1 { pick.picks.len() / 2 } else { pick.picks.len() };
-            egui::TopBottomPanel::top("relation_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("relation_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::GEAR_SIX, crate::i18n::tr("j-relation-btn"))).strong());
                     ui.separator();
@@ -300,7 +309,8 @@ impl App {
         let target = &target;
         let hint = if self.joint.pick_first.is_some() { crate::i18n::tr1("jt-click-b", "what", &target) } else { crate::i18n::tr1("jt-click-a", "what", &target) };
         let mut cancel = false;
-        egui::TopBottomPanel::top("joint_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+        egui::Panel::top("joint_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::MAGNET, crate::i18n::tr("jt-joint-btn"))).strong());
                 ui.separator();
@@ -385,7 +395,7 @@ impl App {
     /// new face, edge or vertex on the fly. The parameters (angle, offset, limits, flip, global) live in
     /// the popup at the glyph (`joint_popup`). One tool-command experience, with no trips to the right-hand
     /// panel.
-    pub(super) fn joint_edit_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn joint_edit_bar(&mut self, ui: &mut egui::Ui) {
         let Some(jid) = self.joint.edit else { return };
         if !matches!(self.workbench, Workbench::Assembly) || !self.mode_3d {
             return;
@@ -401,7 +411,8 @@ impl App {
         let mut set_repick: Option<Option<(Id, bool)>> = None;
         let mut set_kind: Option<qymcad_core::feature::JointKind> = None;
         let (mut flip_axis, mut swap_roles) = (false, false);
-        egui::TopBottomPanel::top("joint_edit_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+        egui::Panel::top("joint_edit_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
             use qymcad_core::feature::JointKind;
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::LINK, crate::i18n::tr1("jt-editing", "name", &crate::i18n::name(&j.name)))).strong());
@@ -435,11 +446,11 @@ impl App {
                 ui.menu_button(format!("{} {}", ph::MAGNET, crate::i18n::tr("jt-swap-anchor")), |ui| {
                     if ui.button(format!("A: {desc_a}")).clicked() {
                         set_repick = Some(Some((jid, false)));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("B: {desc_b}")).clicked() {
                         set_repick = Some(Some((jid, true)));
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 // THE JOINT CONSOLE: flip the main axis, and swap the roles of the parts.
@@ -1018,7 +1029,7 @@ impl App {
         if k.is_empty() {
             return String::new();
         }
-        if ctx.wants_keyboard_input() {
+        if ctx.egui_wants_keyboard_input() {
             format!("Alt+{k}")
         } else {
             k

@@ -604,7 +604,7 @@ pub(in crate::gui) mod tests {
         super::super::install_fonts(&ctx);
         let mut at = None;
         for _ in 0..2 {
-            let out = ctx.run(egui::RawInput { screen_rect: Some(rect), ..Default::default() }, |c| {
+            let out = ctx.run_ui(egui::RawInput { screen_rect: Some(rect), ..Default::default() }, |c| {
                 app.joint_popup_for_test(c, rect);
             });
             at = None;
@@ -615,7 +615,7 @@ pub(in crate::gui) mod tests {
         let at = at.expect("the point-at-the-axis button is in the frame");
         let btn = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         for events in [vec![egui::Event::PointerMoved(at)], vec![egui::Event::PointerMoved(at), btn(true)], vec![btn(false)]] {
-            let _ = ctx.run(egui::RawInput { screen_rect: Some(rect), events, ..Default::default() }, |c| {
+            let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(rect), events, ..Default::default() }, |c| {
                 app.joint_popup_for_test(c, rect);
             });
         }

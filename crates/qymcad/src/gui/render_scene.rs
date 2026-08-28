@@ -307,7 +307,7 @@ impl App {
                 }
             }
         }
-        Some(egui::ColorImage { size: [TS, TS], pixels: color })
+        Some(egui::ColorImage { size: [TS, TS], source_size: egui::Vec2::new([TS, TS][0] as f32, [TS, TS][1] as f32), pixels: color })
     }
 
     /// THE SECTION CAPS: an exact planar cut of every visible body, in world coordinates, cached by (plane,

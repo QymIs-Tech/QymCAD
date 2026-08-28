@@ -11,12 +11,12 @@ description = "Headless core: the document model, geometry, the feature timeline
 [dependencies]
 serde.workspace = true
 ron.workspace = true
-cavalier_contours = "0.7"
+cavalier_contours = "0.9"
 ttf-parser = "0.25"
-nalgebra = "0.33.3"
+nalgebra = "0.35"
 levenberg-marquardt = "0.15.0"
 petgraph = "0.8.3"
-num-dual = "0.11.2"
+num-dual = "0.15"
 
 [lints]
 workspace = true

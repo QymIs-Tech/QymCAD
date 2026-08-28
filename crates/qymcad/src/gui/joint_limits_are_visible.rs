@@ -45,7 +45,7 @@ mod tests {
         let mut out = Vec::new();
         // TWO FRAMES: egui areas settle into place on the second pass.
         for _ in 0..2 {
-            let res = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+            let res = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| {
                     let painter = ui.painter().clone();
                     app.draw_joint_gizmo_for_test(&painter, viewport(), jid);

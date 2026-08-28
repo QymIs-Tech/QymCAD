@@ -90,13 +90,13 @@ mod tests {
         let body = a_slider_scene(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
         let _ = app.gpu_scene_for_test(); // the first pass: there are no blocks yet, everything is built — that is legitimate
 
         let basis = app.cam.basis();
         let at = app.project3(aim(&app, body), viewport(), &basis).0;
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
 
         // THE FIRST STEP IS NOT JUDGED: on it the part becomes selected, the highlight changes the
         // APPEARANCE of the body, and rebuilding its block is legitimate. What is judged is the
@@ -104,7 +104,7 @@ mod tests {
         let mut rebuilt = 0u32;
         let mut shifted = 0u32;
         for k in 1..=6 {
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at + egui::vec2(12.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(12.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
             let _ = app.gpu_scene_for_test();
             if k >= 3 {
                 let st = app.scene_stats_for_test();
@@ -112,7 +112,7 @@ mod tests {
                 shifted += st[1];
             }
         }
-        let _ = ctx.run(frame(vec![press(at + egui::vec2(72.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(72.0, 0.0), false)]), |c| app.viewport_for_test(c));
 
         assert!(shifted > 0, "not one shift: the part was led and the buffer never learned of it — so the wrong thing is being measured");
         assert_eq!(rebuilt, 0, "moving the part rebuilt {rebuilt} chunks of the buffer: on a real assembly that is 63 chunks and 80 ms per frame instead of 13");
@@ -153,7 +153,7 @@ mod tests {
         let comp = app.project.body_owner(body).expect("the owner");
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
         let _ = app.gpu_scene_for_test();
         let _ = app.gpu_scene_for_test();
         assert_eq!(app.scene_stats_for_test()[0], 0, "setup: with no motion there is nothing to rebuild");

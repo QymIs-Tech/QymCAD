@@ -31,7 +31,8 @@ mod tests {
         let canvas = egui::Rect::from_min_max(egui::pos2(0.0, 200.0), egui::pos2(800.0, 600.0));
         let at_in = canvas.center();
         let at_out = egui::pos2(400.0, 100.0);
-        let draw = |ctx: &egui::Context| {
+        let draw = |ui: &mut egui::Ui| {
+            let ctx = &ui.ctx().clone();
             let put = |id: &str, r: egui::Rect, flag: &std::cell::Cell<bool>| {
                 egui::Area::new(egui::Id::new(id)).fixed_pos(r.min).show(ctx, |ui| {
                     if ui.add_sized(r.size(), egui::Button::new(id)).clicked() {
@@ -45,13 +46,13 @@ mod tests {
         };
         let frame = |events: Vec<egui::Event>| egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
         let click = |at: egui::Pos2| {
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at)]), &draw);
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), &draw);
             let press = egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() };
-            let _ = ctx.run(frame(vec![press]), &draw);
+            let _ = ctx.run_ui(frame(vec![press]), &draw);
             let release = egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() };
-            let _ = ctx.run(frame(vec![release]), &draw);
+            let _ = ctx.run_ui(frame(vec![release]), &draw);
         };
-        let _ = ctx.run(frame(vec![]), &draw); // lay out
+        let _ = ctx.run_ui(frame(vec![]), &draw); // lay out
         click(at_in);
         click(at_out);
         (inside.get(), outside.get())
@@ -87,7 +88,7 @@ mod tests {
         app.waiting.splash_until = None; // the startup splash is a separate case, it mutes the frame legitimately
         app.regen.busy = Some(super::super::Busy { label: "rebuild".into(), rx, kind: super::super::BgKind::Regen, pulse: None, quiet: false });
         let mut swallowed = true;
-        let _ = ctx.run(Default::default(), |c| swallowed = app.tick_async_for_test(c));
+        let _ = ctx.run_ui(Default::default(), |c| swallowed = app.tick_async_for_test(c.ctx()));
         assert!(app.regen_running_for_test(), "setup: the rebuild must be running");
         assert!(!swallowed, "the frame was aborted during a rebuild — the window would seize up and the scene would vanish");
     }
@@ -166,7 +167,7 @@ mod quiet_is_visible {
         app.waiting.splash_until = None;
         app.regen.busy = Some(super::super::Busy { label: "rebuild".into(), rx, kind: super::super::BgKind::Regen, pulse: None, quiet: true });
         let mut swallowed = true;
-        let _ = ctx.run(Default::default(), |c| swallowed = app.tick_async_for_test(c));
+        let _ = ctx.run_ui(Default::default(), |c| swallowed = app.tick_async_for_test(c.ctx()));
         assert!(!swallowed, "a quiet rebuild has no right to eat the frame");
         assert!(app.dim.spinner, "a quiet rebuild must leave a sign on the canvas: otherwise a person takes what is shown for the truth");
         assert!(app.dim.overlay.is_none(), "a quiet rebuild has no right to raise a window — nobody is holding a person");

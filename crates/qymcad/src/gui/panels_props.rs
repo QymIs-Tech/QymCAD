@@ -783,7 +783,7 @@ impl App {
                                     if self.project.apply_limit_position(e.id, slot, up) {
                                         put_to_limit = true;
                                     }
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                         })

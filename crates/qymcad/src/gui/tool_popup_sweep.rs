@@ -239,7 +239,7 @@ mod tests {
                         input.events.push(egui::Event::Text(c.to_string()));
                     }
                 }
-                let out = ctx.run(input, |c| {
+                let out = ctx.run_ui(input, |c| {
                     egui::CentralPanel::default().show(c, |_ui| {});
                     app.feat_cmd_popup(c, rect);
                 });

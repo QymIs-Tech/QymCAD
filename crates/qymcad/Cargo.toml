@@ -19,14 +19,18 @@ qymcad-io.workspace = true
 qymcad-cam.workspace = true
 qymcad-verify.workspace = true
 # glow stays (the default) as a compiled-in fallback; wgpu is the main path for the GPU viewport, chosen at runtime
-eframe = { version = "0.29", features = ["persistence", "wgpu"] }
-egui = "0.29"
+eframe = { version = "0.35", features = ["persistence", "wgpu"] }
+egui = "0.35"
 bytemuck = { version = "1", features = ["derive"] }
-rfd = "0.15"
-egui-phosphor = "0.7"
+rfd = "0.17"
+# holding the file chooser's answer on a worker thread - the future is built on the frame thread, and
+# waiting for it there is what made the program stop drawing (see gui/file_ask.rs). Already in the tree
+# through wgpu and rfd itself, so it costs nothing new.
+pollster = "0.4"
+egui-phosphor = "0.13"
 ron.workspace = true
 serde = { workspace = true } # the view settings kept between sessions (ViewPrefs)
-directories = "5"
+directories = "6"
 include_dir = "0.7" # the parts library (library/parts) is compiled into the binary
 image = { version = "0.25", default-features = false, features = ["png"] } # decoding the logo for the splash screen
 fluent-bundle = "0.16.0"

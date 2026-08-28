@@ -146,8 +146,8 @@ mod tests {
             if pass == 4 {
                 input.events.push(egui::Event::Text("n".into()));
             }
-            let out = ctx.run(input, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let out = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     app.num_or_expr(ui, "t_h", 10.0, 0.0, 100.0, false, "mm");
                 });
             });

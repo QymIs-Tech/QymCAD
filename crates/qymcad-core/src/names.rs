@@ -214,8 +214,13 @@ pub struct NameTable {
     /// edit could lose six walls and eighteen edge names, leaving a fillet without its edges. The yielding name
     /// is now remembered, so a reference to it finds that shared face. This is a record of the merge having
     /// happened, not a fallback that guesses from geometry.
+    ///
+    /// ORDERED, because it is WRITTEN to the file. The reverse indices below are derived and never
+    /// serialised, so their order is nobody's business; this one ends up in `document.ron`, and a hash
+    /// order changes between runs of the same binary - saving one document twice gave two files
+    /// differing in thousands of lines with nothing edited in between.
     #[serde(default)]
-    absorbed: std::collections::HashMap<u32, u32>,
+    absorbed: std::collections::BTreeMap<u32, u32>,
     /// reverse indices are derived and are not written to the file; they are rebuilt on load
     #[serde(skip)]
     index: std::collections::HashMap<GeoName, u32>,

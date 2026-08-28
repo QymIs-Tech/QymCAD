@@ -71,12 +71,12 @@ mod tests {
         app.set.scheme = "dark".into();
         app.apply_theme(&ctx);
         let dark_bg = app.palette_pub().viewport_bg();
-        assert!(ctx.style().visuals.dark_mode, "the dark scheme sets the dark look of egui");
+        assert!(ctx.style_of(ctx.theme()).visuals.dark_mode, "the dark scheme sets the dark look of egui");
 
         app.set.scheme = "light".into();
         app.apply_theme(&ctx);
         let light_bg = app.palette_pub().viewport_bg();
-        assert!(!ctx.style().visuals.dark_mode, "the light scheme sets the light look of egui");
+        assert!(!ctx.style_of(ctx.theme()).visuals.dark_mode, "the light scheme sets the light look of egui");
         assert!(luma(light_bg) > luma(dark_bg) + 100.0, "the canvas must lighten: {} -> {}", luma(dark_bg), luma(light_bg));
     }
 

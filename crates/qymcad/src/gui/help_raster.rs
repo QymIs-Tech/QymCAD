@@ -23,7 +23,7 @@ use egui::{Color32, ColorImage};
 /// `draw` paints exactly what must land in the frame; the background is given separately, because a
 /// transparent background is meaningless for A CAPTURE OF THE INTERFACE — text is drawn with
 /// semi-transparent antialiasing and spreads into mud over transparency.
-pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&egui::Context)) -> ColorImage {
+pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&mut egui::Ui)) -> ColorImage {
     const SS: usize = 2;
     let (w, h) = (size[0] * SS, size[1] * SS);
     let ctx = egui::Context::default();
@@ -48,14 +48,14 @@ pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&egui:
     // the middle, and the moment two frames became eight it disappeared from the assembly: the body
     // was drawn SOLID WHITE — without a texture the sampling honestly returns white.
     let mut texes: std::collections::HashMap<egui::TextureId, Tex> = std::collections::HashMap::new();
-    let mut out = ctx.run(input.clone(), &mut draw);
+    let mut out = ctx.run_ui(input.clone(), &mut draw);
     for (id, delta) in &out.textures_delta.set {
         apply_delta(&mut texes, *id, delta);
     }
     for i in 1..8 {
         let mut inp = input.clone();
         inp.time = Some(i as f64 * 0.25);
-        out = ctx.run(inp, &mut draw);
+        out = ctx.run_ui(inp, &mut draw);
         for (id, delta) in &out.textures_delta.set {
             apply_delta(&mut texes, *id, delta);
         }
@@ -66,7 +66,7 @@ pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&egui:
     // texture) turned into white noise: the letters read, the body did not. Everything the frame loaded
     // is collected, by the frame's own identifiers.
     let prims = ctx.tessellate(out.shapes, SS as f32);
-    let mut img = ColorImage::new([w, h], bg);
+    let mut img = ColorImage::filled([w, h], bg);
     for p in &prims {
         if let egui::epaint::Primitive::Mesh(mesh) = &p.primitive {
             let tex = texes.get(&mesh.texture_id);
@@ -79,38 +79,26 @@ pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&egui:
     downscale(&img, SS)
 }
 
-/// A texture of the frame: either coverage (the font atlas) or colour (the viewport picture, icons).
-pub(super) enum Tex {
-    Cover { size: [usize; 2], px: Vec<f32> },
-    Color { size: [usize; 2], px: Vec<Color32> },
+/// A texture of the frame.
+///
+/// It used to have a second shape - `Cover`, a plane of coverage values - because the font atlas arrived
+/// as its own kind of image. Since egui 0.35 the atlas comes as colour like everything else, so one shape
+/// answers for all of them. The struct stays a struct rather than collapsing into a pair: it is passed
+/// around by name, and a name says more than a tuple.
+pub(super) struct Tex {
+    pub size: [usize; 2],
+    pub px: Vec<Color32>,
 }
 
 /// Apply a texture change sent by the frame. `pos` = Some means a PIECE was updated (the font atlas
 /// is appended to as new letters appear), otherwise it was loaded whole.
 fn apply_delta(texes: &mut std::collections::HashMap<egui::TextureId, Tex>, id: egui::TextureId, d: &egui::epaint::ImageDelta) {
+    // ONE KIND OF IMAGE SINCE egui 0.35. The font atlas used to arrive as its own `Font` variant, a
+    // plane of coverage values, and there was a separate branch to blend it. Now it comes as colour like
+    // everything else, and the special case - along with the `Tex::Cover` it fed - is simply gone.
     match &d.image {
-        egui::ImageData::Font(f) => {
-            let e = texes.entry(id).or_insert_with(|| Tex::Cover { size: f.size, px: vec![0.0; f.size[0] * f.size[1]] });
-            if let Tex::Cover { size, px } = e {
-                match d.pos {
-                    None => {
-                        *size = f.size;
-                        *px = f.pixels.clone();
-                    }
-                    Some([ox, oy]) => {
-                        for y in 0..f.size[1] {
-                            for x in 0..f.size[0] {
-                                if let Some(dst) = px.get_mut((oy + y) * size[0] + ox + x) {
-                                    *dst = f.pixels[y * f.size[0] + x];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
         egui::ImageData::Color(c) => {
-            texes.insert(id, Tex::Color { size: c.size, px: c.pixels.clone() });
+            texes.insert(id, Tex { size: c.size, px: c.pixels.clone() });
         }
     }
 }
@@ -209,14 +197,13 @@ fn sample(tex: Option<&Tex>, uv: egui::Pos2) -> (Color32, f32) {
         let y = (uv.y * size[1] as f32).round().clamp(0.0, size[1] as f32 - 1.0) as usize;
         y * size[0] + x
     };
+    // ONE BRANCH SINCE egui 0.35. There used to be a second one for the font atlas, which arrived as
+    // coverage values and needed a gamma of 0.55 - the same lightening egui applied when it loaded the
+    // atlas itself. Without it text came out TWICE as dim: a white meant to be 140 landed as 68, and a
+    // window capture read "as if under a shade". Now the atlas comes as colour already gamma-corrected,
+    // and the correction would double up.
     match tex {
-        // A COVERAGE GAMMA OF 0.55 is not decoration but what `egui` itself does when loading the
-        // atlas (`FontImage::srgba_pixels`). Without it the text comes out TWICE as dim: a white meant
-        // to be 140 landed as 68, and every capture of a window read "as if under a shade". The thin
-        // strokes of letters cover a pixel halfway, and without the lightening they simply
-        // disappear.
-        Some(Tex::Cover { size, px }) => (Color32::WHITE, px.get(at(*size)).copied().unwrap_or(1.0).powf(0.55)),
-        Some(Tex::Color { size, px }) => (px.get(at(*size)).copied().unwrap_or(Color32::WHITE), 1.0),
+        Some(Tex { size, px }) => (px.get(at(*size)).copied().unwrap_or(Color32::WHITE), 1.0),
         None => (Color32::WHITE, 1.0),
     }
 }
@@ -224,7 +211,7 @@ fn sample(tex: Option<&Tex>, uv: egui::Pos2) -> (Color32, f32) {
 /// Average `k` by `k` pixels. The background is opaque, so there is nothing to premultiply.
 fn downscale(img: &ColorImage, k: usize) -> ColorImage {
     let (w, h) = (img.size[0] / k, img.size[1] / k);
-    let mut out = ColorImage::new([w, h], Color32::BLACK);
+    let mut out = ColorImage::filled([w, h], Color32::BLACK);
     let n = (k * k) as u32;
     for y in 0..h {
         for x in 0..w {

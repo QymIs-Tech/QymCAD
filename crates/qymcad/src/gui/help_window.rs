@@ -9,7 +9,9 @@ use egui_phosphor::regular as ph;
 
 /// THE MARGINS OF AN ARTICLE, in pixels. Here rather than as a number in two places: a guard checks
 /// the indent against this value.
-pub(super) const HELP_PAD: f32 = 8.0;
+// A WHOLE NUMBER since egui 0.35: frame margins are integers there, and half a pixel of padding was
+// never worth anything anyway.
+pub(super) const HELP_PAD: i8 = 8;
 
 /// HOW LONG A FRAME of an animation is held. Half a second: faster and it flickers, leaving no time to
 /// read what changed; slower and the program looks as though it were thinking.
@@ -236,7 +238,7 @@ impl App {
             .show(ctx, |ui| {
                 // THE CONTENTS ON THE LEFT — AS A PANEL OF ITS OWN of fixed width: the help is not one
                 // page, and without a permanent list there is no knowing what is in it at all.
-                egui::SidePanel::left("help_toc").resizable(false).exact_width(240.0).show_inside(ui, |ui| {
+                egui::Panel::left("help_toc").resizable(false).exact_size(240.0).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(ph::MAGNIFYING_GLASS);
                         ui.add(egui::TextEdit::singleline(&mut self.win.help_query).desired_width(f32::INFINITY).hint_text(crate::i18n::tr("help-search")));
@@ -292,7 +294,7 @@ impl App {
                     // to read: the eye has nothing to catch on when the line comes back. The indent goes
                     // on both sides and not only on the left — the right edge ran into the scrollbar just
                     // the same.
-                    egui::Frame::none().inner_margin(egui::Margin { left: HELP_PAD, right: HELP_PAD, top: 0.0, bottom: 0.0 }).show(ui, |ui| match crate::help::article(&article) {
+                    egui::Frame::NONE.inner_margin(egui::Margin { left: HELP_PAD, right: HELP_PAD, top: 0, bottom: 0 }).show(ui, |ui| match crate::help::article(&article) {
                         Some(md) => {
                             if let Some(to) = self.draw_markdown(ui, md) {
                                 link = Some(to);
@@ -366,7 +368,7 @@ impl App {
                 Block::Quote(spans) => self.md_line(ui, &spans, 14.0, false, self.scheme.pal.text_dim(), 14.0, &mut clicked),
                 Block::Code(text) => {
                     ui.add_space(3.0);
-                    egui::Frame::none().fill(self.scheme.pal.panel_bg()).inner_margin(6.0).rounding(4.0).show(ui, |ui| {
+                    egui::Frame::NONE.fill(self.scheme.pal.panel_bg()).inner_margin(6.0).corner_radius(4.0).show(ui, |ui| {
                         ui.label(egui::RichText::new(text.trim_end()).monospace().color(self.scheme.pal.text_strong()));
                     });
                 }
@@ -396,7 +398,7 @@ impl App {
                             // made out in it.
                             let native = tex.size_vec2();
                             let w = native.x.min(ui.available_width());
-                            ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(w, native.y * w / native.x.max(1.0))).rounding(4.0));
+                            ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(w, native.y * w / native.x.max(1.0))).corner_radius(4.0));
                         }
                         // THERE IS NO IMAGE — THE PATH IS SAID. An empty space is read as a breakage of
                         // the program; a guard would not let that through, but an article may also arrive

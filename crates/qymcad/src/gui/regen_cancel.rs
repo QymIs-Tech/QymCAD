@@ -92,10 +92,10 @@ mod tests {
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(input.clone(), |c| {
+        let _ = ctx.run_ui(input.clone(), |c| {
             app.draw_regen_overlay_for_test(c, 7, 40);
         });
-        let out = ctx.run(input, |c| {
+        let out = ctx.run_ui(input, |c| {
             app.draw_regen_overlay_for_test(c, 7, 40);
         });
         let mut texts = Vec::new();

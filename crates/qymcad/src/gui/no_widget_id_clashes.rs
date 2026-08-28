@@ -91,11 +91,11 @@ mod tests {
         super::super::install_fonts(&ctx);
         let mut texts: Vec<String> = Vec::new();
         for _ in 0..3 {
-            let out = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+            let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 // THE TREE AND THE PANEL AND THE POPUP TOGETHER, as a person sees them: the id
                 // collision is born precisely from simultaneity; each piece alone is flawless.
-                egui::SidePanel::left("tree").show(c, |ui| app.build_tree_for_test(ui));
-                egui::SidePanel::right("props").show(c, |ui| app.joints_panel_for_test(ui));
+                egui::Panel::left("tree").show(c, |ui| app.build_tree_for_test(ui));
+                egui::Panel::right("props").show(c, |ui| app.joints_panel_for_test(ui));
                 app.joint_popup_for_test(c, viewport());
             });
             texts.clear();

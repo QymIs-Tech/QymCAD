@@ -255,16 +255,13 @@ impl App {
     /// Save As (Ctrl+Shift+S): always ask for the path and the name.
     pub(super) fn save_project_as(&mut self) {
         let start = self.project_path.clone().unwrap_or_else(|| "project.qcad".into());
-        if let Some(path) = rfd::FileDialog::new()
-            .set_file_name(std::path::Path::new(&start).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default())
-            .add_filter("QymCAD project", &["qcad", "ron"])
-            .save_file()
-        {
+        let name = std::path::Path::new(&start).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(name).add_filter("QymCAD project", &["qcad", "ron"]), |app, path| {
             let path = path.to_string_lossy().into_owned();
-            self.set_project_path(path.clone());
-            self.io.saved_key = Some(self.edit_key()); // confirmed once the write actually succeeds
-            self.spawn_save(path, false); // the write goes to the background
-        }
+            app.set_project_path(path.clone());
+            app.io.saved_key = Some(app.edit_key()); // confirmed once the write actually succeeds
+            app.spawn_save(path, false); // the write goes to the background
+        });
     }
 
 
@@ -351,16 +348,12 @@ impl App {
             return;
         }
         let gcode = post_for(&program, self.project.machine.post, &self.post_options());
-        if let Some(path) = rfd::FileDialog::new()
-            .set_file_name(format!("{prog_name}.tap"))
-            .add_filter("G-code", &["tap", "nc", "ngc"])
-            .save_file()
-        {
+        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(format!("{prog_name}.tap")).add_filter("G-code", &["tap", "nc", "ngc"]), move |app, path| {
             match std::fs::write(&path, &gcode) {
-                Ok(()) => self.status = crate::i18n::tr1("io-op-written", "path", &path.display().to_string()),
-                Err(e) => self.status = crate::i18n::tr1("io-write-error", "error", &crate::i18n::name(&e.to_string())),
+                Ok(()) => app.status = crate::i18n::tr1("io-op-written", "path", &path.display().to_string()),
+                Err(e) => app.status = crate::i18n::tr1("io-write-error", "error", &crate::i18n::name(&e.to_string())),
             }
-        }
+        });
     }
 
 
@@ -396,11 +389,10 @@ impl App {
     /// of the assembly).
     pub(super) fn export_step(&mut self, target: ExportTarget) {
         self.ensure_brep(); // without a live B-rep the sort would count every body as B-rep-less and the file would come out empty
-        // the list of bodies and the world transforms are computed on the UI thread (self is needed)
+        // the sort into "has a B-rep" and "has not" is done on the UI thread (self is needed)
         let plan = self.export_plan(target); // the same sort STL uses
         let note = plan.note(true);
-        let items: Vec<(Id, [f64; 12])> = plan.brep.iter().map(|&b| (b, self.project.body_world_transform(b))).collect();
-        if items.is_empty() {
+        if plan.brep.is_empty() {
             self.status = if plan.mesh_only.len() + plan.stale.len() > 0 {
                 format!("{} {}{}", ph::WARNING, crate::i18n::tr("io-step-no-brep"), note)
             } else {
@@ -409,18 +401,40 @@ impl App {
             return;
         }
         let default = format!("{}.step", self.export_base_name(target));
-        let Some(path) = rfd::FileDialog::new().set_file_name(default).add_filter("STEP", &["step", "stp"]).save_file() else { return };
+        let bodies = plan.brep.clone();
+        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(default).add_filter("STEP", &["step", "stp"]), move |app, path| app.write_step_to(&path, &bodies, &note));
+    }
+
+
+    /// Writing the STEP, once a name has been given. The bodies were sorted before the chooser went up; the
+    /// SOLIDS are gathered only here, because the chooser is answered at leisure and the program keeps
+    /// running the whole time - a cache emptied while somebody types a file name is a cache the viewport
+    /// then draws from.
+    pub(super) fn write_step_to(&mut self, path: &std::path::Path, bodies: &[Id], note: &str) {
+        // THE MODAL SLOT HOLDS ONE JOB. Frames go on running while the chooser is open, so a rebuild may
+        // have been started behind it; claiming the slot over that one would drop its channel and the
+        // rebuild would never land. Said out loud rather than written over.
+        if self.regen.busy.is_some() {
+            self.status = crate::i18n::tr("io-export-busy");
+            return;
+        }
         let p = path.to_string_lossy().into_owned();
         // writing the STEP goes to a worker. The `Shape`s (which are not Clone) are moved into the thread
         // TEMPORARILY and returned to the cache when it finishes. While the export runs the overlay is modal
         // (no edits are possible), so losing the cache is ruled out.
-        let mut moved: Vec<(Id, qymcad_kernel::Shape, [f64; 12])> = Vec::with_capacity(items.len());
-        for (id, m) in items {
+        let mut moved: Vec<(Id, qymcad_kernel::Shape, [f64; 12])> = Vec::with_capacity(bodies.len());
+        for &id in bodies {
+            let m = self.project.body_world_transform(id);
             if let Some(s) = self.live.shapes.remove(&id) {
                 moved.push((id, s, m));
             }
         }
+        if moved.is_empty() {
+            self.status = crate::i18n::tr("io-step-no-bodies"); // everything that was to be written is gone from the document
+            return;
+        }
         let n = moved.len();
+        let note = note.to_string();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let pairs: Vec<(&qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(_, s, m)| (s, *m)).collect();
@@ -448,30 +462,42 @@ impl App {
         // split into bodies with a live shape (tessellated in the worker) and raw meshes (a data clone is Send)
         let plan = self.export_plan(target); // the same sort STEP uses
         let note = plan.note(false);
+        let bodies = plan.stl_bodies();
+        if bodies.is_empty() {
+            self.status = crate::i18n::tr("io-stl-no-bodies");
+            return;
+        }
+        let default = format!("{}.stl", self.export_base_name(target));
+        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(default).add_filter("STL", &["stl"]), move |app, path| app.write_stl_to(&path, &bodies, &note, deflection));
+    }
+
+
+    /// Writing the STL, once a name has been given. Like STEP, the solids leave the cache only here: while
+    /// the chooser is up the program goes on drawing, and a viewport whose bodies were taken out from under
+    /// it draws nothing.
+    pub(super) fn write_stl_to(&mut self, path: &std::path::Path, bodies: &[Id], note: &str, deflection: f64) {
+        // THE MODAL SLOT HOLDS ONE JOB. Frames go on running while the chooser is open, so a rebuild may
+        // have been started behind it; claiming the slot over that one would drop its channel and the
+        // rebuild would never land. Said out loud rather than written over.
+        if self.regen.busy.is_some() {
+            self.status = crate::i18n::tr("io-export-busy");
+            return;
+        }
         let mut moved: Vec<(Id, qymcad_kernel::Shape, [f64; 12])> = Vec::new();
         let mut raw: Vec<(qymcad_core::geom::Mesh, [f64; 12])> = Vec::new();
-        for b in plan.stl_bodies() {
+        for &b in bodies {
             let m = self.project.body_world_transform(b);
-            if self.live.shapes.contains_key(&b) {
-                if let Some(s) = self.live.shapes.remove(&b) {
-                    moved.push((b, s, m));
-                }
+            if let Some(s) = self.live.shapes.remove(&b) {
+                moved.push((b, s, m));
             } else if let Some(i) = self.project.mesh_index(b) {
                 raw.push((self.project.bodies[i].mesh.clone(), m));
             }
         }
         if moved.is_empty() && raw.is_empty() {
-            self.status = crate::i18n::tr("io-stl-no-bodies");
+            self.status = crate::i18n::tr("io-stl-no-bodies"); // everything that was to be written is gone from the document
             return;
         }
-        let default = format!("{}.stl", self.export_base_name(target));
-        let Some(path) = rfd::FileDialog::new().set_file_name(default).add_filter("STL", &["stl"]).save_file() else {
-            // the dialog was cancelled - put the moved shapes back into the cache
-            for (id, s, _) in moved {
-                self.live.shapes.insert(id, s);
-            }
-            return;
-        };
+        let note = note.to_string();
         let p = path.to_string_lossy().into_owned();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -514,14 +540,14 @@ impl App {
         }
         let name = self.project.sketches.get(si).map(|s| crate::i18n::name(&s.name)).unwrap_or_else(|| crate::i18n::tr("io-sketch-lower"));
         let (ext, filter) = if dxf { ("dxf", "DXF") } else { ("svg", "SVG") };
-        if let Some(path) = rfd::FileDialog::new().set_file_name(format!("{name}.{ext}")).add_filter(filter, &[ext]).save_file() {
+        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(format!("{name}.{ext}")).add_filter(filter, &[ext]), move |app, path| {
             let p = path.to_string_lossy();
             let res = if dxf { qymcad_io::export_dxf(&edges, &p) } else { qymcad_io::export_svg(&edges, &p) };
             match res {
-                Ok(()) => self.status = format!("{filter} -> {}", path.display()),
-                Err(e) => self.status = crate::i18n::name(&e),
+                Ok(()) => app.status = format!("{filter} -> {}", path.display()),
+                Err(e) => app.status = crate::i18n::name(&e),
             }
-        }
+        });
     }
 
 
@@ -548,7 +574,7 @@ impl App {
                 ui.horizontal(|ui| {
                     // the preview on the left
                     if let Some(t) = &d.tex {
-                        ui.add(egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), egui::vec2(150.0, 150.0))).rounding(4.0));
+                        ui.add(egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), egui::vec2(150.0, 150.0))).corner_radius(4.0));
                     } else {
                         ui.add_sized([150.0, 150.0], egui::Label::new(egui::RichText::new(format!("{}\n{}", ph::CUBE, crate::i18n::tr("io-no-preview"))).weak()));
                     }
@@ -620,12 +646,12 @@ impl App {
         let Some(verify) = &self.cam_job.verify else { return };
         let html = self.setup_sheet_html(verify);
         let default = format!("{}_setup.html", self.program_name());
-        if let Some(path) = rfd::FileDialog::new().set_file_name(default).add_filter("HTML", &["html"]).save_file() {
+        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(default).add_filter("HTML", &["html"]), move |app, path| {
             match std::fs::write(&path, html) {
-                Ok(()) => self.status = crate::i18n::tr1("io-setup-sheet", "path", &path.display().to_string()),
-                Err(e) => self.status = crate::i18n::tr1("io-write-error", "error", &crate::i18n::name(&e.to_string())),
+                Ok(()) => app.status = crate::i18n::tr1("io-setup-sheet", "path", &path.display().to_string()),
+                Err(e) => app.status = crate::i18n::tr1("io-write-error", "error", &crate::i18n::name(&e.to_string())),
             }
-        }
+        });
     }
 
 

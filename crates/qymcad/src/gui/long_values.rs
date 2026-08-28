@@ -22,9 +22,9 @@ mod tests {
             ..Default::default()
         };
         // two frames: the first lays out, the second shows the SETTLED width
-        let _ = ctx.run(input.clone(), |c| app.tree_panel(c));
-        let _ = ctx.run(input, |c| app.tree_panel(c));
-        egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.rect.width()).unwrap_or(0.0)
+        let _ = ctx.run_ui(input.clone(), |c| app.tree_panel(c));
+        let _ = ctx.run_ui(input, |c| app.tree_panel(c));
+        egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.outer_rect.width()).unwrap_or(0.0)
     }
 
     fn part_with_a_body() -> (App, u64) {

@@ -12,12 +12,13 @@ impl App {
     /// The bars used to be 645 lines sitting straight inside `update`: two thirds of what was left in the frame
     /// after the earlier extractions. While a panel lives in the frame's body, "what the frame does" and "what it
     /// draws" cannot be told apart, and editing one command touches the whole life cycle of the frame.
-    pub(super) fn comp_array_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn comp_array_bar(&mut self, ui: &mut egui::Ui) {
         if self.carr.mode == 0 {
             return;
         }
         let (mut apply, mut cancel) = (false, false);
-        egui::TopBottomPanel::top("comp_array_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+        egui::Panel::top("comp_array_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 let title = if self.carr.mode == 2 { crate::i18n::tr("cmd-comp-circ-array") } else { crate::i18n::tr("cmd-comp-lin-array") };
                 ui.label(egui::RichText::new(format!("{} {title}", ph::STACK)).strong());
@@ -60,7 +61,10 @@ impl App {
         }
     }
 
-    pub(super) fn feat_command_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn feat_command_bar(&mut self, ui: &mut egui::Ui) {
+        // The panel lives inside a `Ui` now; the context is still wanted for windows,
+        // input and viewport commands, and it comes from the same place.
+        let ctx = &ui.ctx().clone();
         // the top row of the active Part command: the options + Apply/Cancel.
         // The SIZE itself is set on the canvas (the gizmo arrow or a field at the geometry), not here.
         if self.cmd.active() {
@@ -90,7 +94,8 @@ impl App {
                 _ => &crate::i18n::tr("cmd-command"),
             };
             let (mut apply, mut cancel, mut reselect) = (false, false, false);
-            egui::TopBottomPanel::top("feat_cmd_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("feat_cmd_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {title}", ph::CUBE)).strong());
                     ui.separator();
@@ -796,12 +801,13 @@ impl App {
     /// This is PANEL DRAWING rather than a phase of the frame - yet it used to sit in the middle of `update`,
     /// mixed in with the prologue, the keyboard and holding the selection. While panels live in the shared body,
     /// "what the frame does" cannot be told from "what it draws", and editing one touches the other.
-    pub(super) fn section_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn section_bar(&mut self, ui: &mut egui::Ui) {
         // THE SECTION: the control bar (offset, tilts, flip, off) for as long as the section is active
         if self.section.plane.is_some() {
             let mut changed = false;
             let mut off = false;
-            egui::TopBottomPanel::top("section_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("section_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::SQUARE_HALF, crate::i18n::tr("sec-btn"))).strong());
                     ui.separator();
@@ -835,19 +841,23 @@ impl App {
         }
     }
 
-    pub(super) fn menu_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn menu_bar(&mut self, ui: &mut egui::Ui) {
+        // The panel lives inside a `Ui` now; the context is still wanted for windows,
+        // input and viewport commands, and it comes from the same place.
+        let ctx = &ui.ctx().clone();
         // The menu items belonging to CAM (the machine, the tools, the G-code, the setup, the rapids) appear only
         // when the machining module is enabled. That module is under development and hidden by default.
         let cam = self.set.cam_tab_enabled;
-        egui::TopBottomPanel::top("menubar").show(ctx, |ui| {
+        egui::Panel::top("menubar")
+.show(ui, |ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.menu_button(crate::i18n::tr("menu-file"), |ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     if ui.button(format!("{}  {}", ph::FILE, crate::i18n::tr("file-new"))).clicked() {
                         self.request_nav(Nav::New, ctx);
-                        ui.close_menu();
+                        ui.close();
                     }
                     // TEMPLATES: the item is disabled rather than hidden, as the recent files are. An empty
                     // submenu explains itself, while a vanishing item leaves one guessing whether it ever existed.
@@ -858,7 +868,7 @@ impl App {
                             for (name, path) in &tpls {
                                 if ui.button(name).on_hover_text(path).clicked() {
                                     self.request_nav(Nav::NewFromTemplate(path.clone()), ctx);
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                         });
@@ -866,12 +876,12 @@ impl App {
                     if ui.button(format!("{}  {}", ph::PACKAGE, crate::i18n::tr("file-save-as-template"))).on_hover_text(&crate::i18n::tr("file-save-as-template-hint")).clicked() {
                         self.win.tpl_name = self.project.meta.title.clone();
                         self.win.save_template = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("file-open"))).clicked() {
                         self.request_nav(Nav::OpenDialog, ctx);
-                        ui.close_menu();
+                        ui.close();
                     }
                     // RECENT FILES: a basic expectation of any program that has files. The item is disabled
                     // rather than hidden: an empty submenu explains itself, while a vanishing item leaves one
@@ -885,63 +895,63 @@ impl App {
                                 let name = std::path::Path::new(path).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.clone());
                                 if ui.button(name).on_hover_text(path).clicked() {
                                     self.request_nav(Nav::OpenPath(path.clone()), ctx);
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                             ui.separator();
                             if ui.button(format!("{}  {}", ph::TRASH, crate::i18n::tr("file-recent-clear"))).clicked() {
                                 self.set.recent.clear();
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                     });
                     if ui.add(egui::Button::new(format!("{}  {}", ph::FLOPPY_DISK, crate::i18n::tr("file-save"))).shortcut_text("Ctrl+S")).clicked() {
                         self.save_project();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{}  {}", ph::FILE_TEXT, crate::i18n::tr("file-doc-props"))).clicked() {
                         self.win.doc_props = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.add(egui::Button::new(format!("{}  {}", ph::FLOPPY_DISK, crate::i18n::tr("file-save-as"))).shortcut_text("Ctrl+Shift+S")).clicked() {
                         self.save_project_as();
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button(format!("{}  {}", ph::FILE, crate::i18n::tr("file-import-dxf"))).clicked() {
                         self.pick_dxf();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{}  {}", ph::CUBE, crate::i18n::tr("file-import-stl"))).clicked() {
                         self.pick_stl();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{}  {}", ph::CUBE, crate::i18n::tr("file-import-step"))).clicked() {
                         self.pick_step();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{}  {}", ph::POLYGON, crate::i18n::tr("file-import-svg"))).clicked() {
                         self.pick_svg();
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button(format!("{}  {}", ph::EXPORT, crate::i18n::tr("file-export-step"))).on_hover_text(&crate::i18n::tr("menu-export-step-hint")).clicked() {
                         self.export_step(ExportTarget::Project);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{}  {}", ph::EXPORT, crate::i18n::tr("file-export-stl"))).on_hover_text(&crate::i18n::tr("menu-export-stl-hint")).clicked() {
                         self.stl_export = Some(ExportTarget::Project);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if cam {
                         ui.separator();
                         if ui.add_enabled(self.cam_job.gcode.is_some(), egui::Button::new(format!("{}  {}", ph::EXPORT, crate::i18n::tr("menu-export-gcode")))).clicked() {
                             self.export();
-                            ui.close_menu();
+                            ui.close();
                         }
                         if ui.add_enabled(self.cam_job.gcode.is_some(), egui::Button::new(format!("{}  {}", ph::FILE_TEXT, crate::i18n::tr("menu-setup-sheet")))).clicked() {
                             self.export_setup_sheet();
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                     ui.separator();
@@ -959,7 +969,7 @@ impl App {
                     };
                     if ui.add_enabled(!self.edits.undo.is_empty(), egui::Button::new(undo_label).shortcut_text("Ctrl+Z")).clicked() {
                         self.undo();
-                        ui.close_menu();
+                        ui.close();
                     }
                     let redo_label = match self.edits.redo.last() {
                         Some(s) => format!("{}  {}", ph::ARROW_CLOCKWISE, crate::i18n::tr1("menu-redo-named", "what", &s.name)),
@@ -967,7 +977,7 @@ impl App {
                     };
                     if ui.add_enabled(!self.edits.redo.is_empty(), egui::Button::new(redo_label).shortcut_text("Ctrl+Shift+Z")).clicked() {
                         self.redo();
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     // The clipboard: sketches, parts and subassemblies in the tree, or geometry in the sketch editor.
@@ -975,15 +985,15 @@ impl App {
                     let can_paste = self.clip.tree.is_some() || self.clip.geom.is_some();
                     if ui.add_enabled(can_copy, egui::Button::new(format!("{}  {}", ph::COPY, crate::i18n::tr("menu-copy"))).shortcut_text("Ctrl+C")).clicked() {
                         self.clipboard_copy(false);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.add_enabled(can_copy, egui::Button::new(format!("{}  {}", ph::SCISSORS, crate::i18n::tr("menu-cut"))).shortcut_text("Ctrl+X")).clicked() {
                         self.clipboard_copy(true);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.add_enabled(can_paste, egui::Button::new(format!("{}  {}", ph::CLIPBOARD, crate::i18n::tr("win-insert"))).shortcut_text("Ctrl+V")).clicked() {
                         self.clipboard_paste();
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     // REBUILD EVERYTHING. The file stores finished meshes and computes nothing anew on opening -
@@ -997,7 +1007,7 @@ impl App {
                         .clicked()
                     {
                         self.rebuild_everything();
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 ui.menu_button(crate::i18n::tr("menu-view"), |ui| {
@@ -1009,11 +1019,11 @@ impl App {
                     if ui.button(format!("{}  {}", ph::CORNERS_OUT, crate::i18n::tr("menu-fit-view"))).clicked() {
                         self.view.initialized = false;
                         self.cam.init = false;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if cam && ui.add_enabled(self.cam_job.gcode.is_some(), egui::Button::new(format!("{}  {}", ph::CODE, crate::i18n::tr("menu-gcode-window")))).clicked() {
                         self.win.gcode = !self.win.gcode;
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     ui.label(crate::i18n::tr("settings-scheme"));
@@ -1031,7 +1041,7 @@ impl App {
                         if ui.button(format!("{icon}  {title}")).clicked() {
                             self.set.scheme = id.clone();
                             self.apply_theme(ctx);
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 });
@@ -1039,28 +1049,28 @@ impl App {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     if ui.button(format!("{}  {}", ph::GEAR, crate::i18n::tr("win-settings"))).clicked() {
                         self.win.settings = !self.win.settings;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{}  {}", ph::PACKAGE, crate::i18n::tr("win-parts-library"))).clicked() {
                         self.toggle_parts_library();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{}  {}", ph::HOUSE, crate::i18n::tr("win-start"))).clicked() {
                         self.win.start_asked = true; // it was ASKED for rather than raising itself - see `start_screen_visible`
-                        ui.close_menu();
+                        ui.close();
                     }
                     if cam {
                         if ui.button(format!("{}  {}", ph::WRENCH, crate::i18n::tr("menu-machine"))).clicked() {
                             self.win.machines = !self.win.machines;
-                            ui.close_menu();
+                            ui.close();
                         }
                         if ui.button(format!("{}  {}", ph::SCREWDRIVER, crate::i18n::tr("menu-tools"))).clicked() {
                             self.win.tools = !self.win.tools;
-                            ui.close_menu();
+                            ui.close();
                         }
                         if ui.add_enabled(self.cam_job.gcode.is_some(), egui::Button::new(format!("{}  G-code", ph::CODE))).clicked() {
                             self.win.gcode = !self.win.gcode;
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 });
@@ -1068,20 +1078,20 @@ impl App {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     if ui.button(format!("{} {}", ph::BOOK_OPEN, crate::i18n::tr("help-title"))).clicked() {
                         self.open_help("index");
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button(format!("{} {}", ph::KEYBOARD, crate::i18n::tr("help-hotkeys"))).clicked() {
                         self.win.hotkeys = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{} {}", ph::BUG, crate::i18n::tr("help-report"))).clicked() {
                         self.win.report = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button(format!("{} {}", ph::INFO, crate::i18n::tr("help-about"))).clicked() {
                         self.win.about = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1095,8 +1105,9 @@ impl App {
         });
     }
 
-    pub(super) fn toolbar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("toolbar")
+.show(ui, |ui| {
             ui.horizontal(|ui| {
                 // CONTEXT BREADCRUMBS instead of tabs (drilling in and out): Assembly > Part > ... (> Sketch)
                 self.ensure_active_path();
@@ -1227,14 +1238,15 @@ impl App {
         });
     }
 
-    pub(super) fn wb_toolbar(&mut self, ctx: &egui::Context) {
+    pub(super) fn wb_toolbar(&mut self, ui: &mut egui::Ui) {
         // Two columns of buttons (wrapping by width) + vertical scrolling - reliable at any window size.
         // The width 94 = 16 (the 8+8 margins) + 6 (the floating scrollbar) + 72 (two 34-wide button columns + a
         // 3-point gap + a margin). Before that, 90 with 38-wide buttons could not fit the second column, giving
         // one column and a wide empty strip on the right.
         // show_separator_line(false): by default egui draws a faint vertical line at the right edge of ANY panel,
         // and it read as a stray gap between the tools and the tree.
-        egui::SidePanel::left("wbtools").exact_width(108.0).resizable(false).show_separator_line(false).show(ctx, |ui| {
+        egui::Panel::left("wbtools").exact_size(108.0).resizable(false).show_separator_line(false)
+.show(ui, |ui| {
             ui.add_space(6.0);
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(3.0, 3.0);
@@ -1624,11 +1636,12 @@ impl App {
         });
     }
 
-    pub(super) fn tool_options_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn tool_options_bar(&mut self, ui: &mut egui::Ui) {
         if self.edit_si().is_none() {
             return;
         }
-        egui::TopBottomPanel::top("sk_tool_opts").frame(self.tool_bar_frame()).show(ctx, |ui| {
+        egui::Panel::top("sk_tool_opts").frame(self.tool_bar_frame())
+.show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 // the name of the active tool or operation
                 let name = if self.pat.op != 0 {

@@ -26,29 +26,30 @@ mod tests {
     }
 
     /// A capture of a surface with the theme of the program applied.
-    fn shot(app: &mut App, w: usize, h: usize, draw: impl Fn(&mut App, &egui::Context)) -> ColorImage {
+    fn shot(app: &mut App, w: usize, h: usize, draw: impl Fn(&mut App, &mut egui::Ui)) -> ColorImage {
         let bg = app.scheme.pal.viewport_bg();
-        super::super::help_raster::shot_ui([w, h], bg, |ctx| {
+        super::super::help_raster::shot_ui([w, h], bg, |ui| {
+            let ctx = &ui.ctx().clone();
             app.apply_theme(ctx);
-            draw(app, ctx);
+            draw(app, ui);
         })
     }
 
     /// THE WHOLE WINDOW — as a person sees it.
     fn whole(app: &mut App, name: &str) {
-        let img = shot(app, 1280, 800, |a, ctx| {
-            a.menu_bar(ctx);
-            a.toolbar(ctx);
-            a.wb_toolbar(ctx);
-            a.feat_command_bar(ctx);
-            a.tool_options_bar(ctx);
-            a.joint_tool_bar(ctx);
-            a.comp_array_bar(ctx);
-            a.section_bar(ctx);
-            a.tree_panel(ctx);
-            a.properties_panel(ctx);
-            a.viewport(ctx);
-            a.command_search_window(ctx); // over everything, as in the program
+        let img = shot(app, 1280, 800, |a, ui| {
+            a.menu_bar(ui);
+            a.toolbar(ui);
+            a.wb_toolbar(ui);
+            a.feat_command_bar(ui);
+            a.tool_options_bar(ui);
+            a.joint_tool_bar(ui);
+            a.comp_array_bar(ui);
+            a.section_bar(ui);
+            a.tree_panel(ui);
+            a.properties_panel(ui);
+            a.viewport(ui);
+            a.command_search_window(ui.ctx()); // over everything, as in the program
         });
         save(name, &img);
     }
@@ -200,7 +201,7 @@ mod tests {
         app.win.settings = true;
         for (i, sec) in super::super::settings_sections::SettingsSection::all().iter().enumerate() {
             app.scheme.section = *sec;
-            let img = shot(&mut app, 940, 620, |a, ctx| a.settings_window(ctx));
+            let img = shot(&mut app, 940, 620, |a, ui| a.settings_window(ui.ctx()));
             save(&format!("11-settings-{i}"), &img);
         }
 
@@ -211,7 +212,7 @@ mod tests {
             qymcad_core::model::Param { name: "h".into(), expr: "w/2".into(), value: 30.0 },
             qymcad_core::model::Param { name: "bad".into(), expr: "w/".into(), value: 0.0 },
         ];
-        let img = shot(&mut app, 700, 400, |a, ctx| a.params_window(ctx));
+        let img = shot(&mut app, 700, 400, |a, ui| a.params_window(ui.ctx()));
         save("12-params-with-error", &img);
 
         // A COMMAND FIELD WITH A TYPO — does it say what is wrong and in which field.
@@ -228,7 +229,7 @@ mod tests {
 
         let mut app = part();
         app.win.hotkeys = true;
-        let img = shot(&mut app, 820, 760, |a, ctx| a.hotkeys_window(ctx));
+        let img = shot(&mut app, 820, 760, |a, ui| a.hotkeys_window(ui.ctx()));
         save("13-hotkeys", &img);
 
         let mut app = part();
@@ -238,12 +239,12 @@ mod tests {
 
         let mut app = part();
         app.win.doc_props = true;
-        let img = shot(&mut app, 700, 520, |a, ctx| a.doc_props_window(ctx));
+        let img = shot(&mut app, 700, 520, |a, ui| a.doc_props_window(ui.ctx()));
         save("15-doc-props", &img);
 
         let mut app = part();
         app.win.parts_library = true;
-        let img = shot(&mut app, 900, 620, |a, ctx| a.parts_library_window(ctx));
+        let img = shot(&mut app, 900, 620, |a, ui| a.parts_library_window(ui.ctx()));
         save("16-parts-library", &img);
 
         // THE COMMAND SEARCH — a new window.
@@ -271,7 +272,7 @@ mod tests {
             app.set.scheme = id.into();
             app.win.settings = true;
             app.scheme.section = super::super::settings_sections::SettingsSection::Appearance;
-            let img = shot(&mut app, 940, 620, |a, ctx| a.settings_window(ctx));
+            let img = shot(&mut app, 940, 620, |a, ui| a.settings_window(ui.ctx()));
             save(&format!("21-scheme-{id}-settings"), &img);
 
             // THE SKETCH, THE TREE AND THE PROPERTIES — IN EVERY SCHEME, not only in the dark one.
@@ -293,12 +294,12 @@ mod tests {
 
             let mut app = part();
             app.set.scheme = id.into();
-            let img = shot(&mut app, 340, 800, |a, ctx| a.tree_panel(ctx));
+            let img = shot(&mut app, 340, 800, |a, ui| a.tree_panel(ui));
             save(&format!("23-scheme-{id}-tree"), &img);
 
             let mut app = part();
             app.set.scheme = id.into();
-            let img = shot(&mut app, 360, 800, |a, ctx| a.properties_panel(ctx));
+            let img = shot(&mut app, 360, 800, |a, ui| a.properties_panel(ui));
             save(&format!("24-scheme-{id}-properties"), &img);
         }
 

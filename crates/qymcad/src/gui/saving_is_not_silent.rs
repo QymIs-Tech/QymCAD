@@ -38,7 +38,7 @@ mod tests {
     /// One frame of the "save?" dialogue: what is painted.
     fn frame(app: &mut App, ctx: &egui::Context) -> Vec<String> {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
-        let out = ctx.run(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| {
+        let out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| {
             app.nav_dialog_for_test(c);
         });
         let mut texts = Vec::new();
@@ -215,5 +215,84 @@ mod tests {
         let _ = frame(&mut app, &ctx);
         let texts = frame(&mut app, &ctx);
         assert!(!texts.iter().any(|t| t.contains(&saying)), "the card stuck after the floor had passed: {texts:?}");
+    }
+
+    /// One frame that reports WHERE the text landed, so a button can be pressed rather than merely found.
+    fn frame_with_places(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> Vec<(String, egui::Rect)> {
+        fn walk(s: &egui::epaint::Shape, out: &mut Vec<(String, egui::Rect)>) {
+            match s {
+                egui::epaint::Shape::Text(t) => out.push((t.galley.text().to_string(), egui::Rect::from_min_size(t.pos, t.galley.size()))),
+                egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
+        let out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), events, ..Default::default() }, |c| {
+            app.nav_dialog_for_test(c);
+        });
+        let mut places = Vec::new();
+        for cs in &out.shapes {
+            walk(&cs.shape, &mut places);
+        }
+        places
+    }
+
+    /// "SAVE AND MOVE ON" ON A DOCUMENT THAT HAS NO NAME YET.
+    ///
+    /// Save As no longer holds the frame thread: it puts the chooser up and returns, and the write does
+    /// not begin until a name is given. So at the moment the "save?" dialogue looks at the world there is
+    /// no write running and the document is still dirty - which used to mean exactly one thing to it:
+    /// throw the navigation away. The person would name the file, watch it save, and never get the
+    /// document they asked to open.
+    ///
+    /// Pressed through a real frame, because it is the BUTTON's branch that decided to drop it. The
+    /// chooser is armed by hand first: a test cannot answer a system window, and with the slot already
+    /// taken the real Save As opens none - leaving exactly the state it would have left.
+    #[test]
+    fn a_document_with_no_name_still_gets_where_it_was_going() {
+        let (mut app, _path) = project_with_a_body("unnamed.qcad");
+        app.forget_project_path_for_test(); // never saved: Save turns into Save As
+        let ctx = egui::Context::default();
+        super::super::install_fonts(&ctx);
+
+        app.request_nav_for_test(Nav::New);
+        assert!(app.deferred_nav_is_set_for_test(), "setup: unsaved edits held the navigation back");
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.arm_file_ask(rx, |_app, _p| {});
+
+        // the window settles on the second pass, as everywhere else here
+        let _ = frame_with_places(&mut app, &ctx, Vec::new());
+        let places = frame_with_places(&mut app, &ctx, Vec::new());
+        // the button wears an icon in front of its name - matched by the name, with the icon dropped
+        let bare = |t: &str| t.chars().filter(|c| !('\u{e000}'..='\u{f8ff}').contains(c)).collect::<String>().trim().to_string();
+        let save = crate::i18n::tr("io-save");
+        let spot = places
+            .iter()
+            .find(|(t, _)| bare(t) == save.trim())
+            .map(|(_, r)| r.center())
+            .unwrap_or_else(|| panic!("the question has no Save button; it painted: {:?}", places.iter().map(|(t, _)| t.clone()).collect::<Vec<_>>()));
+        let click = vec![
+            egui::Event::PointerMoved(spot),
+            egui::Event::PointerButton { pos: spot, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+            egui::Event::PointerButton { pos: spot, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() },
+        ];
+        let _ = frame_with_places(&mut app, &ctx, click);
+
+        assert!(
+            app.asking_for_a_file() && !app.saving_now_for_test(),
+            "setup: pressing Save on an unnamed document must leave a chooser open and no write running"
+        );
+        let _ = frame_with_places(&mut app, &ctx, Vec::new());
+        assert!(
+            app.deferred_nav_is_set_for_test(),
+            "the navigation was thrown away while the person was still choosing a name - they save the file and never get the document they asked for"
+        );
+
+        // WALKING AWAY FROM THE CHOOSER LEAVES THEM WHERE THEY WERE. No write happened, so the navigation
+        // is cancelled - and the question is not put a second time, which would read as a loop.
+        tx.send(None).expect("the chooser is listening");
+        assert!(!app.poll_file_ask());
+        let _ = frame_with_places(&mut app, &ctx, Vec::new());
+        assert!(!app.deferred_nav_is_set_for_test(), "cancelling the chooser must leave the person where they were");
     }
 }

@@ -105,8 +105,8 @@ pub(in crate::gui) mod tests {
                 // TWO PASSES: an `Area` learns its size only after the first layout, and on the first
                 // frame the popup is not yet in place. The second one is what is looked at — the one a
                 // person sees.
-                let _ = ctx.run(input.clone(), |ctx| app.feat_cmd_popup(ctx, screen));
-                let out = ctx.run(input, |ctx| app.feat_cmd_popup(ctx, screen));
+                let _ = ctx.run_ui(input.clone(), |ctx| app.feat_cmd_popup(ctx, screen));
+                let out = ctx.run_ui(input, |ctx| app.feat_cmd_popup(ctx, screen));
                 let mut texts = Vec::new();
                 for cs in &out.shapes {
                     collect_text(&cs.shape, &mut texts);
@@ -150,13 +150,13 @@ pub(in crate::gui) mod tests {
 
     /// A frame of a surface: built TWICE (the first pass lays out, the second is what a person sees)
     /// and all the text is collected.
-    pub(in crate::gui) fn frame_text(app: &mut App, draw: impl Fn(&mut App, &egui::Context)) -> Vec<String> {
+    pub(in crate::gui) fn frame_text(app: &mut App, draw: impl Fn(&mut App, &mut egui::Ui)) -> Vec<String> {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(input.clone(), |c| draw(app, c));
-        let out = ctx.run(input, |c| draw(app, c));
+        let _ = ctx.run_ui(input.clone(), |c| draw(app, c));
+        let out = ctx.run_ui(input, |c| draw(app, c));
         let mut texts = Vec::new();
         for cs in &out.shapes {
             collect_text(&cs.shape, &mut texts);
@@ -176,7 +176,7 @@ pub(in crate::gui) mod tests {
         let keys = catalogue_keys();
         assert!(keys.len() > 500, "suspiciously few catalogue keys were collected: {}", keys.len());
 
-        type Surface = (&'static str, fn(&mut App, &egui::Context));
+        type Surface = (&'static str, fn(&mut App, &mut egui::Ui));
         let surfaces: &[Surface] = &[
             ("tree", |a, c| a.tree_panel(c)),
             ("properties", |a, c| a.properties_panel(c)),

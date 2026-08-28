@@ -3384,13 +3384,14 @@ impl App {
     /// The top bar of a body-to-body boolean, in the style of the sketcher: the kind of operation, the hint
     /// about picking body B, and a cancel. It is shown while body A is picked and the click on B is awaited
     /// (`bool_pick`).
-    pub(super) fn bool_tool_bar(&mut self, ctx: &egui::Context) {
+    pub(super) fn bool_tool_bar(&mut self, ui: &mut egui::Ui) {
         use qymcad_core::feature::FeatureKind;
         // CREATING: body A is picked, the click on B and the choice of kind are awaited
         if let Some((a, mut op)) = self.boolean.pick {
             let a_name = self.project.mesh_index(a).map(|mi| crate::i18n::name(&self.project.mesh_name(mi))).unwrap_or_else(|| "?".into());
             let mut cancel = false;
-            egui::TopBottomPanel::top("bool_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("bool_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::INTERSECT, crate::i18n::tr("bool-bodies-btn"))).strong());
                     ui.separator();
@@ -3419,7 +3420,8 @@ impl App {
             };
             let mut op = op;
             let (mut done, mut changed) = (false, false);
-            egui::TopBottomPanel::top("bool_tool_bar").frame(self.tool_bar_frame()).show(ctx, |ui| {
+            egui::Panel::top("bool_tool_bar").frame(self.tool_bar_frame())
+.show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("{} {}", ph::INTERSECT, crate::i18n::tr("bool-bodies-edit"))).strong());
                     ui.separator();

@@ -15,6 +15,10 @@
 use super::{App, Nav};
 use egui_phosphor::regular as ph;
 
+/// Where the start screen last drew itself. Published by the window, read by the guard beside it:
+/// a check must measure what the code says it drew, not rebuild somebody else's identifier.
+pub(super) const START_RECT: &str = "qym-start-screen-rect";
+
 impl App {
     /// Is the start screen visible right now.
     ///
@@ -41,7 +45,7 @@ impl App {
         // `set_min_width`): a minimum grows, an exact size does not.
         const COL_L: f32 = 300.0;
         const COL_R: f32 = 240.0;
-        egui::Window::new(format!("{} {}", ph::HOUSE, crate::i18n::tr("start-title")))
+        let shown = egui::Window::new(format!("{} {}", ph::HOUSE, crate::i18n::tr("start-title")))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -124,6 +128,18 @@ impl App {
                     ui.label(egui::RichText::new(crate::i18n::tr("start-hint")).weak().small());
                 });
             });
+        // WHAT WAS DRAWN, PUBLISHED BY THE CODE THAT DREW IT.
+        //
+        // The guard beside this file used to rebuild egui's own window identifier by hand and read the
+        // area state under it. That identifier is egui's business: in 0.35 a window derives it from
+        // `Atoms::text()`, which returns an `Option`, and hashing an `Option` is not hashing a string -
+        // so the guard found nothing and reported the start screen missing while it was on the screen.
+        //
+        // A check must not reconstruct somebody else's internals. The size is published here instead,
+        // under an identifier of ours, and read as it was written.
+        if let Some(r) = &shown {
+            ctx.data_mut(|d| d.insert_temp(egui::Id::new(START_RECT), r.response.rect));
+        }
         if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.win.start = false;
             self.win.start_asked = false;

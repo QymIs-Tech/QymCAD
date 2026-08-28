@@ -497,9 +497,10 @@ mod tests {
         app.view.initialized = true;
         let bg = app.scheme.pal.viewport_bg();
         let a = &*app;
-        super::super::help_raster::shot_ui([720, 460], bg, |ctx| {
+        super::super::help_raster::shot_ui([720, 460], bg, |ui| {
+            let ctx = &ui.ctx().clone();
             ctx.set_visuals(crate::palette::visuals(&a.scheme.pal));
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 let painter = ui.painter().clone();
                 let r = ui.available_rect_before_wrap();
                 painter.rect_filled(r, 0.0, bg);

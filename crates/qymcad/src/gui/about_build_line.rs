@@ -42,8 +42,8 @@ mod tests {
 
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        let _ = ctx.run(raw(), |c| app.about_dialog(c)); // the first frame lays the window out
-        let out = ctx.run(raw(), |c| app.about_dialog(c));
+        let _ = ctx.run_ui(raw(), |c| app.about_dialog(c)); // the first frame lays the window out
+        let out = ctx.run_ui(raw(), |c| app.about_dialog(c.ctx()));
 
         let painted = texts(&out.shapes);
         let line = crate::build_info::line();
@@ -61,8 +61,8 @@ mod tests {
 
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        let _ = ctx.run(raw(), |c| app.about_dialog(c));
-        let out = ctx.run(raw(), |c| app.about_dialog(c));
+        let _ = ctx.run_ui(raw(), |c| app.about_dialog(c.ctx()));
+        let out = ctx.run_ui(raw(), |c| app.about_dialog(c.ctx()));
 
         // The copy button carries the icon glyph as its whole label, so it is found by that glyph.
         let icon = egui_phosphor::regular::COPY;
@@ -79,7 +79,7 @@ mod tests {
             ],
             ..raw()
         };
-        let _ = ctx.run(press, |c| app.about_dialog(c));
+        let _ = ctx.run_ui(press, |c| app.about_dialog(c.ctx()));
         let release = egui::RawInput {
             events: vec![egui::Event::PointerButton {
                 pos: spot,
@@ -89,9 +89,19 @@ mod tests {
             }],
             ..raw()
         };
-        let out = ctx.run(release, |c| app.about_dialog(c));
+        let out = ctx.run_ui(release, |c| app.about_dialog(c.ctx()));
 
-        let copied = out.platform_output.copied_text;
+        // THE CLIPBOARD IS A COMMAND NOW, not a field: since egui 0.30 the frame reports what it did as a
+        // list, and copying is one entry in it. Reading the old field would have silently found nothing.
+        let copied: String = out
+            .platform_output
+            .commands
+            .iter()
+            .find_map(|c| match c {
+                egui::OutputCommand::CopyText(t) => Some(t.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
         assert!(!copied.is_empty(), "the click copied nothing");
         assert!(copied.starts_with("QymCAD "), "the copied block does not name the program: {copied:?}");
         assert!(

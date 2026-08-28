@@ -7,7 +7,6 @@
 #[cfg(test)]
 mod tests {
     use super::super::{App, Sel};
-    use egui_phosphor::regular as ph;
     use qymcad_core::feature::SketchPlane;
 
     /// On an empty program the screen is visible — otherwise it is useless.
@@ -142,9 +141,9 @@ mod tests {
         // MANY FRAMES RATHER THAN TWO: a window that asks for more than it has grows ONE FRAME AT A
         // TIME — exactly the way the tree panel used to slide. Over two frames the difference is not
         // noticeable yet.
-        let mut out = ctx.run(input.clone(), |c| app.start_screen(c));
+        let mut out = ctx.run_ui(input.clone(), |c| app.start_screen(c.ctx()));
         for _ in 0..30 {
-            out = ctx.run(input.clone(), |c| app.start_screen(c));
+            out = ctx.run_ui(input.clone(), |c| app.start_screen(c.ctx()));
         }
 
         // THE SIZE IS ASKED OF THE WINDOW ITSELF rather than worked out from the clips of the shapes:
@@ -152,9 +151,13 @@ mod tests {
         // check measured that — so it always read "the whole screen", both before the fix and after.
         // Such a check proves nothing.
         let _ = &out;
-        let title = format!("{} {}", ph::HOUSE, crate::i18n::tr("start-title"));
-        let area = egui::AreaState::load(&ctx, egui::Id::new(title)).expect("the start screen must be on the screen");
-        let size = area.size.expect("the window must have a size");
+        // READ WHAT THE CODE PUBLISHED, not egui's own identifier. Rebuilding that identifier by hand is
+        // what broke this check on the upgrade: a window derives it from `Atoms::text()`, which returns an
+        // `Option`, and hashing an `Option` is not hashing a string.
+        let rect: egui::Rect = ctx
+            .data(|d| d.get_temp(egui::Id::new(super::super::start_screen::START_RECT)))
+            .expect("the start screen must be on the screen");
+        let size = rect.size();
         assert!(size.x > 100.0, "the start screen was not drawn at all ({} px)", size.x);
         assert!(
             size.x <= screen.width() * 0.75,

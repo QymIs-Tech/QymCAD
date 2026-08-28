@@ -74,7 +74,7 @@ mod tests {
         app
     }
 
-    type Surface = (&'static str, fn(&mut App, &egui::Context));
+    type Surface = (&'static str, fn(&mut App, &mut egui::Ui));
     const SURFACES: &[Surface] = &[
         ("tree", |a, c| a.tree_panel(c)),
         ("properties", |a, c| a.properties_panel(c)),

@@ -139,6 +139,6 @@ mod tests {
         assert!(src.contains("!typing_now && !i.modifiers.any() && i.key_pressed(egui::Key::Space)"), "a space opens the search even from a field — there it must be typed");
         // AND THE KEYBOARD STATE IS ASKED OUTSIDE `ctx.input`: inside it is a deadlock, caught by a
         // full run (one at a time the tests passed, together they hung dead).
-        assert!(!src.contains("|| (!ctx.wants_keyboard_input()"), "`wants_keyboard_input` is called inside `ctx.input` again — that is a deadlock");
+        assert!(!src.contains("|| (!ctx.egui_wants_keyboard_input()"), "`wants_keyboard_input` is called inside `ctx.input` again — that is a deadlock");
     }
 }

@@ -32,8 +32,8 @@ mod tests {
     fn frame(app: &App, draw: bool) -> Vec<egui::epaint::ClippedShape> {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 let painter = ui.painter().clone();
                 if draw {
                     app.draw_contours(&painter, rect());

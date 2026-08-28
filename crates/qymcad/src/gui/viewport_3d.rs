@@ -95,7 +95,7 @@ impl App {
                             let on = cur.as_ref() == Some(&q);
                             if ui.selectable_label(on, crate::i18n::tr(key)).clicked() {
                                 self.apply_expansion(key, q);
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
                     });

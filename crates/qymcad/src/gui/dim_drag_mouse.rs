@@ -56,7 +56,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
         (app, ctx, si)
     }
 
@@ -83,18 +83,18 @@ mod tests {
 
         // the caption stands by the middle of the bottom side — exactly where it is drawn
         let mid = app.to_screen_for_test(rect, qymcad_core::geom::Point2::new(20.0, 0.0));
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(mid)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(mid, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(mid)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(mid, true)]), |c| app.viewport_for_test(c));
 
         // DRAG OVER SEVERAL FRAMES: the grab is decided not by the press but when the motion is
         // recognised as a drag
         let mut grabbed = false;
         for k in 1..=4 {
             let p = mid + egui::vec2(0.0, 12.0 * k as f32);
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
             grabbed |= matches!(app.drag, super::super::Dragging::Dim(_));
         }
-        let _ = ctx.run(frame(vec![press(mid + egui::vec2(0.0, 48.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(mid + egui::vec2(0.0, 48.0), false)]), |c| app.viewport_for_test(c));
 
         assert!(grabbed, "the dimension caption was not taken by the mouse: there is nothing to drag the leader aside with, and the dimensions keep crawling over each other");
         let after = label_offset(&app, si);
@@ -121,14 +121,14 @@ mod tests {
         let rect = app.view_rect_for_test();
 
         let far = egui::pos2(rect.min.x + 10.0, rect.min.y + 10.0);
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(far)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(far, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(far)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(far, true)]), |c| app.viewport_for_test(c));
         let mut box_started = false;
         for k in 1..=4 {
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(far + egui::vec2(15.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(far + egui::vec2(15.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
             box_started |= app.tree_sel.box_start.is_some();
         }
-        let _ = ctx.run(frame(vec![press(far + egui::vec2(60.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(far + egui::vec2(60.0, 0.0), false)]), |c| app.viewport_for_test(c));
 
         assert!(box_started, "a drag in empty space did not start a rubber band — the left button in a sketch must select with a band");
         assert!((label_offset(&app, si) - before).abs() < 1e-9, "a drag in empty space moved the dimension caption");

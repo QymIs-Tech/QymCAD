@@ -214,7 +214,7 @@ mod tests {
                 input.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE });
             }
             let mut buf = String::from("12");
-            let _ = ctx.run(input, |c| {
+            let _ = ctx.run_ui(input, |c| {
                 egui::Area::new(egui::Id::new("probe_field")).show(c, |ui| {
                     let r = ui.text_edit_singleline(&mut buf);
                     if grab {
@@ -226,11 +226,11 @@ mod tests {
         };
 
         step(&mut app, false, true);
-        assert!(ctx.wants_keyboard_input(), "the field did not take the focus — this is not the scene the complaint was about");
+        assert!(ctx.egui_wants_keyboard_input(), "the field did not take the focus — this is not the scene the complaint was about");
         assert!(app.cmd.active(), "the command closed by itself, without a single key");
 
         step(&mut app, true, false);
-        assert!(!ctx.wants_keyboard_input(), "Enter must release the field");
+        assert!(!ctx.egui_wants_keyboard_input(), "Enter must release the field");
         assert!(!app.cmd.active(), "Enter from a field did not apply the command — one will have to aim at the tick with the mouse");
         assert!(app.project.timeline.len() > feats_before, "the command \"applied\" and no feature appeared in the timeline");
     }

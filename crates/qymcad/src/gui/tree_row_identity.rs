@@ -96,8 +96,8 @@ mod tests {
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx);
             let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
-            let _ = ctx.run(input.clone(), |ctx| app.tree_panel(ctx));
-            let _ = ctx.run(input, |ctx| app.tree_panel(ctx));
+            let _ = ctx.run_ui(input.clone(), |ctx| app.tree_panel(ctx));
+            let _ = ctx.run_ui(input, |ctx| app.tree_panel(ctx));
         };
         draw(&mut app);
         if let Some(ti) = app.project.timeline_index(ids[1]) {

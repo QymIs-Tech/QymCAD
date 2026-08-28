@@ -276,7 +276,7 @@ impl App {
                         r.context_menu(|ui| {
                             if ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
                                 ren = true;
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                         if ren {
@@ -304,7 +304,7 @@ impl App {
                         r.context_menu(|ui| {
                             if ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
                                 ren = true;
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                         if ren {
@@ -332,7 +332,7 @@ impl App {
                         r.context_menu(|ui| {
                             if ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
                                 ren = true;
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                         if ren {
@@ -468,32 +468,32 @@ impl App {
             resp.context_menu(|ui| {
                 if ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
                     act = Some(1);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button(format!("{} {}", ph::ARROWS_OUT_CARDINAL, crate::i18n::tr("act-move-sketch"))).on_hover_text(&crate::i18n::tr("tree-sketch-move-hint")).clicked() {
                     act = Some(7);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button(format!("{} {}", ph::COPY, crate::i18n::tr("act-copy-ctrl-c"))).clicked() {
                     act = Some(3);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button(format!("{} {}", ph::SCISSORS, crate::i18n::tr("act-cut-ctrl-x"))).clicked() {
                     act = Some(4);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("act-delete-sketch"))).clicked() {
                     act = Some(2);
-                    ui.close_menu();
+                    ui.close();
                 }
                 ui.separator();
                 if ui.button(format!("{} {}", ph::EXPORT, crate::i18n::tr("act-export-svg"))).on_hover_text(&crate::i18n::tr("tree-export-svg-hint")).clicked() {
                     act = Some(5);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button(format!("{} {}", ph::EXPORT, crate::i18n::tr("act-export-dxf"))).on_hover_text(&crate::i18n::tr("tree-export-dxf-hint")).clicked() {
                     act = Some(6);
-                    ui.close_menu();
+                    ui.close();
                 }
             });
         });
@@ -746,39 +746,39 @@ impl App {
             resp.context_menu(|ui| {
                 if ui.button(format!("{} {}", ph::PENCIL_SIMPLE, crate::i18n::tr("act-edit"))).clicked() {
                     act = Some(1);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
                     act = Some(8);
-                    ui.close_menu();
+                    ui.close();
                 }
                 let supp_label = if node_suppressed { format!("{} {}", ph::CHECK, crate::i18n::tr("act-unsuppress")) } else { format!("{} {}", ph::PROHIBIT, crate::i18n::tr("act-suppress")) };
                 if ui.button(supp_label).on_hover_text(&crate::i18n::tr("tree-suppress-hint")).clicked() {
                     act = Some(7);
-                    ui.close_menu();
+                    ui.close();
                 }
                 ui.separator();
                 if ui.button(format!("{} {}", ph::ARROW_LINE_UP, crate::i18n::tr("act-rollback-here"))).on_hover_text(&crate::i18n::tr("tree-rollback-hint")).clicked() {
                     act = Some(2);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if self.project.rollback.is_some() && ui.button(format!("{} {}", ph::ARROW_LINE_DOWN, crate::i18n::tr("act-clear-rollback"))).clicked() {
                     act = Some(3);
-                    ui.close_menu();
+                    ui.close();
                 }
                 ui.separator();
                 if ui.add_enabled(can_up, egui::Button::new(format!("{} {}", ph::ARROW_UP, crate::i18n::tr("act-move-up")))).on_hover_text(&crate::i18n::tr("tree-move-up-hint")).clicked() {
                     act = Some(4);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.add_enabled(can_down, egui::Button::new(format!("{} {}", ph::ARROW_DOWN, crate::i18n::tr("act-move-down")))).on_hover_text(&crate::i18n::tr("tree-move-down-hint")).clicked() {
                     act = Some(5);
-                    ui.close_menu();
+                    ui.close();
                 }
                 ui.separator();
                 if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("act-delete-feature"))).clicked() {
                     act = Some(6);
-                    ui.close_menu();
+                    ui.close();
                 }
             });
         });
@@ -855,7 +855,7 @@ impl App {
             r.context_menu(|ui| {
                 if ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
                     ren = true;
-                    ui.close_menu();
+                    ui.close();
                 }
             });
             if ren {
@@ -866,12 +866,13 @@ impl App {
 
 
 
-    pub(super) fn tree_panel(&mut self, ctx: &egui::Context) {
+    pub(super) fn tree_panel(&mut self, ui: &mut egui::Ui) {
         let cam = self.workbench.is_cam();
-        egui::SidePanel::left("tree").resizable(true).default_width(260.0).show(ctx, |ui| {
+        egui::Panel::left("tree").resizable(true).default_size(260.0)
+.show(ui, |ui| {
             // the lower FIXED section: the tools and the operations (the CAM workbench only)
             if cam {
-                egui::TopBottomPanel::bottom("ops_tools").resizable(true).default_height(260.0).show_inside(ui, |ui| {
+                egui::Panel::bottom("ops_tools").resizable(true).default_size(260.0).show(ui, |ui| {
                     egui::ScrollArea::vertical().id_salt("opsscroll").show(ui, |ui| {
                         self.tools_tree(ui);
                         ui.separator();
@@ -1147,7 +1148,7 @@ impl App {
                         };
                         let resp = if carried {
                             let layer = egui::LayerId::new(egui::Order::Tooltip, ui.id().with(("carry", cid)));
-                            let inner = ui.with_layer_id(layer, |ui| row(ui, self));
+                            let inner = ui.scope_builder(egui::UiBuilder::new().layer_id(layer), |ui| row(ui, self));
                             // The shift follows the cursor, as the built-in `dnd_drag_source` does.
                             if let Some(at) = ui.ctx().pointer_interact_pos() {
                                 let delta = at - inner.inner.rect.center();
@@ -1183,7 +1184,7 @@ impl App {
                             if let Some(pid) = self.project.comp_pattern_of(cid).map(|p| p.id) {
                                 if ui.button(format!("{} {}", ph::DOTS_THREE_OUTLINE, crate::i18n::tr("act-edit-array"))).clicked() {
                                     self.start_comp_array_edit(pid);
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                                 ui.separator();
                             }
@@ -1192,7 +1193,7 @@ impl App {
                             // load would be worse than not offering it at all.
                             if cid != self.project.root && ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
                                 act = Some(6);
-                                ui.close_menu();
+                                ui.close();
                             }
                             ui.separator();
                             let (cl, xl) = if multi_n > 1 {
@@ -1202,29 +1203,29 @@ impl App {
                             };
                             if ui.button(cl).clicked() {
                                 act = Some(1);
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button(xl).clicked() {
                                 act = Some(2);
-                                ui.close_menu();
+                                ui.close();
                             }
                             if (self.clip.tree.is_some() || self.clip.tree_multi.is_some()) && ui.button(format!("{} {}", ph::CLIPBOARD, crate::i18n::tr("act-paste-here"))).clicked() {
                                 act = Some(3);
-                                ui.close_menu();
+                                ui.close();
                             }
                             ui.separator();
                             if ui.button(format!("{} {}", ph::EXPORT, crate::i18n::tr("act-export-step"))).on_hover_text(&crate::i18n::tr("tree-export-step-hint")).clicked() {
                                 act = Some(4);
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button(format!("{} {}", ph::EXPORT, crate::i18n::tr("act-export-stl"))).on_hover_text(&crate::i18n::tr("tree-export-stl-hint")).clicked() {
                                 act = Some(5);
-                                ui.close_menu();
+                                ui.close();
                             }
                             ui.separator();
                             if ui.button(format!("{} {}", ph::PACKAGE, crate::i18n::tr("act-save-as-part"))).on_hover_text(&crate::i18n::tr("tree-save-as-part-hint")).clicked() {
                                 act = Some(7);
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                         match act {
@@ -1309,7 +1310,7 @@ impl App {
                         }
                         super::TreeDrop::Onto => {
                             pnt.rect_filled(full.expand(1.0), 3.0, col.linear_multiply(0.25));
-                            pnt.rect_stroke(full.expand(1.0), 3.0, egui::Stroke::new(2.0, col));
+                            pnt.rect_stroke(full.expand(1.0), 3.0, egui::Stroke::new(2.0, col), egui::StrokeKind::Middle);
                         }
                     }
                     if ui.input(|i| i.pointer.any_released()) {
@@ -1405,7 +1406,7 @@ impl App {
                         }
                         self.project.operations.push(op);
                         self.sel = Sel::Op(self.project.operations.len() - 1);
-                        ui.close_menu();
+                        ui.close();
                     }
                 }
             });

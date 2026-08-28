@@ -17,6 +17,28 @@ use std::sync::Mutex;
 /// The graphics adapter and the drawing path, as one line. Empty until the window has started.
 static GPU: Mutex<Option<String>> = Mutex::new(None);
 
+/// EVERY adapter the machine offered, not only the one taken. A report from a computer that would not
+/// start is otherwise a blank page: "no graphics" and "three cards, none of which can draw into a window"
+/// need different answers, and only this line tells them apart.
+static ADAPTERS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Set when the chosen adapter draws on the processor. A person is owed the reason their model turns like
+/// treacle, and it is the same reason a report of "slow" would otherwise waste a round trip.
+static ON_THE_PROCESSOR: Mutex<Option<String>> = Mutex::new(None);
+
+/// Why the program never opened a window, where that was written down, and whether the reason was that no
+/// adapter would draw - which is the one cause with advice a person can act on.
+static START_FAILURE: Mutex<Option<StartFailure>> = Mutex::new(None);
+
+/// What is known about a run that never got a window.
+#[derive(Clone)]
+pub struct StartFailure {
+    pub reason: String,
+    pub report: Option<std::path::PathBuf>,
+    /// No adapter at all would draw into the window - almost always a missing graphics driver.
+    pub no_adapter: bool,
+}
+
 /// The canvas, in points, and the scale - three numbers, so no allocation happens per frame.
 static VIEW_W: AtomicU32 = AtomicU32::new(0);
 static VIEW_H: AtomicU32 = AtomicU32::new(0);
@@ -28,6 +50,47 @@ pub fn note_gpu(line: String) {
     if let Ok(mut g) = GPU.lock() {
         *g = Some(line);
     }
+}
+
+/// EVERY adapter that was offered. Called once, before one of them is chosen.
+pub fn note_adapters(lines: &[String]) {
+    if let Ok(mut a) = ADAPTERS.lock() {
+        *a = lines.to_vec();
+    }
+}
+
+/// The chosen adapter draws on the processor - there was no working card to draw on.
+pub fn note_drawing_on_the_processor(name: &str) {
+    if let Ok(mut p) = ON_THE_PROCESSOR.lock() {
+        *p = Some(name.to_string());
+    }
+}
+
+/// Is the viewport being drawn by the processor? Read by the window, to say so.
+pub fn drawing_on_the_processor() -> Option<String> {
+    ON_THE_PROCESSOR.lock().ok().and_then(|p| p.clone())
+}
+
+/// Not one adapter would draw into the window. Recorded by the chooser, read by whatever tells the person:
+/// the advice for this is different from the advice for anything else that can go wrong at the door.
+pub fn note_no_adapter() {
+    if let Ok(mut f) = START_FAILURE.lock() {
+        f.get_or_insert(StartFailure { reason: String::new(), report: None, no_adapter: false }).no_adapter = true;
+    }
+}
+
+/// The window never opened, and this is why.
+pub fn note_start_failure(reason: &str, report: Option<&std::path::Path>) {
+    if let Ok(mut f) = START_FAILURE.lock() {
+        let entry = f.get_or_insert(StartFailure { reason: String::new(), report: None, no_adapter: false });
+        entry.reason = reason.to_string();
+        entry.report = report.map(|p| p.to_path_buf());
+    }
+}
+
+/// Why the window never opened, if it did not. Read by whatever tells the person.
+pub fn start_failure() -> Option<StartFailure> {
+    START_FAILURE.lock().ok().and_then(|f| f.clone())
 }
 
 /// The canvas of the current frame. Called every frame, so it costs three atomic stores and nothing
@@ -67,6 +130,16 @@ pub fn block() -> String {
 
     let gpu = GPU.lock().ok().and_then(|g| g.clone()).unwrap_or_else(|| "(the window has not started)".into());
     s.push_str(&format!("Graphics: {gpu}\n"));
+    // WHAT ELSE WAS ON OFFER. On a machine that starts this is a curiosity; on one that does not it is
+    // the whole of the answer.
+    if let Ok(a) = ADAPTERS.lock() {
+        if !a.is_empty() {
+            s.push_str(&format!("Adapters offered: {}\n", a.join("; ")));
+        }
+    }
+    if let Some(name) = drawing_on_the_processor() {
+        s.push_str(&format!("Drawing on the processor: {name}\n"));
+    }
 
     let (w, h) = (VIEW_W.load(Ordering::Relaxed), VIEW_H.load(Ordering::Relaxed));
     let ppp = VIEW_PPP.load(Ordering::Relaxed) as f32 / 100.0;

@@ -12,9 +12,9 @@ description = "Import (DXF/SVG/STL/STEP) and project files for QymCAD"
 qymcad-core.workspace = true
 ron.workspace = true
 dxf = "0.6"
-stl_io = "0.8"
-usvg = "0.45.1"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+stl_io = "0.11"
+usvg = "0.48"
+zip = { version = "8", default-features = false, features = ["deflate"] }
 # STEP with nesting needs OpenCASCADE through the FFI - a block of its own. `truck` was tried and rolled
 # back as a dead end: it gives geometry without the assembly hierarchy.
 

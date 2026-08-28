@@ -15,13 +15,13 @@ mod tests {
     use crate::gui::App;
 
     /// Every text shape of the frame, with the rectangle it is clipped to.
-    fn painted(app: &mut App, draw: impl Fn(&mut App, &egui::Context)) -> Vec<(String, egui::Rect, egui::Rect)> {
+    fn painted(app: &mut App, draw: impl Fn(&mut App, &mut egui::Ui)) -> Vec<(String, egui::Rect, egui::Rect)> {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(700.0, 400.0));
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        let _ = ctx.run(input.clone(), |c| draw(app, c)); // the first pass lays out, the second is what is seen
-        let out = ctx.run(input, |c| draw(app, c));
+        let _ = ctx.run_ui(input.clone(), |c| draw(app, c)); // the first pass lays out, the second is what is seen
+        let out = ctx.run_ui(input, |c| draw(app, c));
         let mut found = Vec::new();
         for cs in &out.shapes {
             collect(&cs.shape, cs.clip_rect, &mut found);
@@ -86,7 +86,7 @@ mod tests {
         app.win.params = true;
         let whole = crate::i18n::expr_error_text(&app.project.eval_expr("w/").expect_err("the expression is broken"));
 
-        let texts = painted(&mut app, |a, ctx| a.params_window(ctx));
+        let texts = painted(&mut app, |a, ui| a.params_window(ui.ctx()));
         let (text, rect, clip) = texts
             .into_iter()
             .find(|(t, _, _)| t.contains(&whole))

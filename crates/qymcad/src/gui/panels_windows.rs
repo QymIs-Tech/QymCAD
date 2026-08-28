@@ -16,7 +16,7 @@ impl App {
         let mut rescan = false;
         egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("win-parts-library")))
             .open(&mut open)
-            .default_size([640.0, 440.0])
+            .default_width(640.0).default_height(440.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     if ui
@@ -39,17 +39,17 @@ impl App {
                 });
                 ui.separator();
                 let query = self.parts.search.trim().to_lowercase();
-                egui::SidePanel::left("parts_lib_tree")
+                egui::Panel::left("parts_lib_tree")
                     .resizable(true)
-                    .default_width(230.0)
-                    .show_inside(ui, |ui| {
+                    .default_size(230.0)
+                    .show(ui, |ui| {
                         egui::ScrollArea::vertical().id_salt("parts_lib_tree_scroll").show(ui, |ui| {
                             let mut path = Vec::new();
                             Self::parts_tree_node(ui, &tree.embedded, true, &mut path, &mut self.parts.sel);
                             Self::parts_tree_node(ui, &tree.user, false, &mut path, &mut self.parts.sel);
                         });
                     });
-                egui::CentralPanel::default().show_inside(ui, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     // The set on the right: while searching, every match in the catalogue; otherwise the direct products of the chosen category.
                     let mut entries: Vec<&crate::parts_library::PartEntry> = Vec::new();
                     if query.is_empty() {
@@ -86,7 +86,7 @@ impl App {
                                     // a preview thumbnail of the body (or a placeholder icon when the product has no thumb.png)
                                     match thumb {
                                         Some(t) => {
-                                            ui.add(egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), egui::vec2(52.0, 52.0))).rounding(3.0));
+                                            ui.add(egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), egui::vec2(52.0, 52.0))).corner_radius(3.0));
                                         }
                                         None => {
                                             ui.add_sized([52.0, 52.0], egui::Label::new(egui::RichText::new(ph::CUBE).size(24.0).weak()));
@@ -790,7 +790,7 @@ impl App {
             return;
         }
         let mut open = self.win.settings;
-        egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).open(&mut open).default_size([620.0, 460.0]).show(ctx, |ui| {
+        egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).open(&mut open).default_width(620.0).default_height(460.0).show(ctx, |ui| {
             let mut q = std::mem::take(&mut self.scheme.search);
             // the field's width does NOT come from the window's width - otherwise the window swells as text is typed (see the tree)
             ui.horizontal(|ui| {
@@ -831,7 +831,7 @@ impl App {
                 });
             } else {
                 let cur = self.scheme.section;
-                egui::SidePanel::left("settings_sections").resizable(false).exact_width(168.0).show_inside(ui, |ui| {
+                egui::Panel::left("settings_sections").resizable(false).exact_size(168.0).show(ui, |ui| {
                     for sec in &visible {
                         if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() {
                             self.scheme.section = *sec;
@@ -956,24 +956,25 @@ impl App {
                     ui.label(egui::RichText::new(&crate::i18n::tr("settings-profile")).strong());
                     ui.horizontal(|ui| {
                         if ui.button(format!("{}  {}", ph::EXPORT, crate::i18n::tr("settings-profile-export"))).clicked() {
-                            if let Some(p) = rfd::FileDialog::new().set_file_name("qym-cad-settings.ron").add_filter("qym-cad settings", &["ron"]).save_file() {
+                            self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name("qym-cad-settings.ron").add_filter("qym-cad settings", &["ron"]), |app, p| {
                                 let path = p.to_string_lossy().into_owned();
-                                self.scheme.note = match self.export_settings_to(&path) {
+                                app.scheme.note = match app.export_settings_to(&path) {
                                     Ok(()) => crate::i18n::tr1("settings-profile-saved", "path", &path),
                                     Err(e) => format!("{} {}", ph::WARNING, crate::i18n::tr1("settings-profile-failed", "error", &e)),
                                 };
-                            }
+                            });
                         }
                         if ui.button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-profile-import"))).clicked() {
-                            if let Some(p) = rfd::FileDialog::new().add_filter("qym-cad settings", &["ron"]).pick_file() {
+                            let ctx = ctx.clone();
+                            self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("qym-cad settings", &["ron"]), move |app, p| {
                                 let path = p.to_string_lossy().into_owned();
-                                self.scheme.note = match self.import_settings_from(&path, ctx) {
+                                app.scheme.note = match app.import_settings_from(&path, &ctx) {
                                     Ok(()) => crate::i18n::tr("settings-profile-loaded"),
                                     // A BROKEN FILE DOES NOT TOUCH THE CURRENT SETTINGS: it is said that it did not
                                     // work, and what was there stays.
                                     Err(e) => format!("{} {}", ph::WARNING, crate::i18n::tr1("settings-profile-failed", "error", &e)),
                                 };
-                            }
+                            });
                         }
                     });
                     ui.label(egui::RichText::new(&crate::i18n::tr("settings-profile-hint")).weak().small());
@@ -1395,7 +1396,7 @@ impl App {
             return;
         }
         let mut open = self.win.tools;
-        egui::Window::new(format!("{} {}", ph::SCREWDRIVER, crate::i18n::tr("cam-tool-library"))).open(&mut open).default_size([460.0, 320.0]).show(ctx, |ui| {
+        egui::Window::new(format!("{} {}", ph::SCREWDRIVER, crate::i18n::tr("cam-tool-library"))).open(&mut open).default_width(460.0).default_height(320.0).show(ctx, |ui| {
             if ui.button(format!("{} {}", ph::PLUS, crate::i18n::tr("cam-add"))).clicked() {
                 let next = self.project.tools.iter().map(|t| t.number).max().unwrap_or(0) + 1;
                 self.project.tools.push(default_tool(next));
@@ -1558,8 +1559,9 @@ impl App {
         ui.separator();
     }
 
-    pub(super) fn properties_panel(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::right("props").resizable(true).default_width(290.0).show(ctx, |ui| {
+    pub(super) fn properties_panel(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::right("props").resizable(true).default_size(290.0)
+.show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_space(4.0);
                 // the CAM properties (the machine, the stock, the tool, the setup, the operation) belong to the CAM workbench only
@@ -1748,7 +1750,7 @@ impl App {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if ui.button(format!("{} {}", ph::COPY, crate::i18n::tr("crash-copy-path"))).clicked() {
-                        ui.output_mut(|o| o.copied_text = path.to_string_lossy().into_owned());
+                        ui.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText(path.to_string_lossy().into_owned())));
                     }
                     if ui.button(&crate::i18n::tr("close")).clicked() {
                         dismiss = true;
@@ -1790,7 +1792,7 @@ impl App {
                         .on_hover_text(&crate::i18n::tr("about-copy-hint"))
                         .clicked()
                     {
-                        ui.output_mut(|o| o.copied_text = crate::diagnostics::block());
+                        ui.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText(crate::diagnostics::block())));
                     }
                 });
                 ui.add_space(8.0);
@@ -1862,6 +1864,13 @@ impl App {
         // and the navigation is being waited for; the window is alive and says what is going on.
         if self.deferred.nav_after_save {
             let now = std::time::Instant::now();
+            // THE NAME IS STILL BEING CHOSEN. Save As puts the chooser up and returns at once - it no
+            // longer holds the frame thread - so no write has started yet. Nothing is drawn over the
+            // window (the person is looking at the system chooser), but the navigation keeps waiting:
+            // dropping it here would save the file and never open the document that was asked for.
+            if self.asking_for_a_file() {
+                return;
+            }
             if self.saving_now() {
                 // THE CARD DOES NOT BLINK. A small document is written faster than an eye can catch, and a
                 // card flashing for one frame reads as a glitch rather than an answer: nothing is shown
@@ -1874,11 +1883,14 @@ impl App {
                 ctx.request_repaint();
                 return;
             }
-            // The write is over and no answer arrived (it was never started), so nobody is held up. The
-            // floor above has already had its say by this point.
+            // NO WRITE EVER HAPPENED, so the navigation goes no further: the chooser was closed without a
+            // name, or the request never reached a write. The person is left where they were, with their
+            // edits - which is what walking away from "where shall I put it?" means. The question is NOT
+            // asked a second time; that reads as a loop rather than an answer.
             self.waiting.save_since = None;
             self.waiting.save_shown = None;
             self.deferred.nav_after_save = false;
+            self.deferred.nav = None;
         }
         if self.deferred.nav.is_none() {
             return;
@@ -1913,8 +1925,9 @@ impl App {
                 // its turn, and a waiting card is drawn for the duration of the write.
                 //
                 // The request to save may never have reached a write (Save As was cancelled) - then there is no
-                // background task and the navigation is cancelled at once, as before.
-                if self.saving_now() {
+                // background task and the navigation is cancelled at once, as before. A chooser still open
+                // counts as a write on its way: the name has been asked for and not yet given.
+                if self.saving_now() || self.asking_for_a_file() {
                     self.deferred.nav_after_save = true;
                 } else if !self.is_dirty() {
                     if let Some(nav) = self.deferred.nav.take() {

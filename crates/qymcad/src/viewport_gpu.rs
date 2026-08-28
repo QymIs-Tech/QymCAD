@@ -325,8 +325,8 @@ impl GpuRenderer {
         // --- the mesh pipeline ---
         let mesh_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("qym_mesh_pl"),
-            bind_group_layouts: &[&cam_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&cam_layout)],
+            immediate_size: 0,
         });
         let vbl = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<GpuVert>() as u64,
@@ -340,23 +340,23 @@ impl GpuRenderer {
         let mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("qym_mesh_pipeline"),
             layout: Some(&mesh_pl),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_mesh", compilation_options: Default::default(), buffers: &[vbl.clone()] },
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_mesh"), compilation_options: Default::default(), buffers: &[vbl.clone()] },
             primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState { count: msaa_samples(), ..Default::default() },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_mesh",
+                entry_point: Some("fs_mesh"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState { format: OFFSCREEN_FORMAT, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -368,23 +368,23 @@ impl GpuRenderer {
         let mesh_pipeline_ghost = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("qym_mesh_pipeline_ghost"),
             layout: Some(&mesh_pl),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_mesh", compilation_options: Default::default(), buffers: &[vbl.clone()] },
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_mesh"), compilation_options: Default::default(), buffers: &[vbl.clone()] },
             primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState { count: msaa_samples(), ..Default::default() },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_mesh",
+                entry_point: Some("fs_mesh"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState { format: OFFSCREEN_FORMAT, blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -408,13 +408,13 @@ impl GpuRenderer {
         });
         let blit_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("qym_blit_pl"),
-            bind_group_layouts: &[&blit_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&blit_layout)],
+            immediate_size: 0,
         });
         let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("qym_blit_pipeline"),
             layout: Some(&blit_pl),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_blit", compilation_options: Default::default(), buffers: &[] },
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_blit"), compilation_options: Default::default(), buffers: &[] },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
@@ -422,11 +422,11 @@ impl GpuRenderer {
                 module: &shader,
                 // a gamma framebuffer (ordinary eframe) means a one-for-one carry; an sRGB-aware one
                 // means giving out linear for the hardware to encode
-                entry_point: if target_format.is_srgb() { "fs_blit_srgb" } else { "fs_blit_gamma" },
+                entry_point: Some(if target_format.is_srgb() { "fs_blit_srgb" } else { "fs_blit_gamma" }),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState { format: target_format, blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -571,9 +571,11 @@ impl egui_wgpu::CallbackTrait for MeshPaint {
         let (Some(mv), Some(cv), Some(dv)) = (gpu.msaa_view.as_ref(), gpu.color_view.as_ref(), gpu.depth_view.as_ref()) else { return Vec::new() };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("qym_offscreen_pass"),
+            multiview_mask: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: mv,
                 resolve_target: Some(cv),
+                depth_slice: None,
                 // the MSAA texture is needed only for the resolve, so it is not stored (Discard); the
                 // resolve happens all the same
                 ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Discard },

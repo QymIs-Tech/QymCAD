@@ -372,8 +372,8 @@ mod tests {
             app.cam.pitch = 0.6;
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx); // the same set of fonts as in a real window
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     let painter = ui.painter().clone();
                     // the same call a real frame makes
                     app.draw_viewcube_pub(&painter, rect());
@@ -393,8 +393,8 @@ mod tests {
             app.cam.pitch = pitch;
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx); // the same set of fonts as in a real window
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     let painter = ui.painter().clone();
                     app.draw_viewcube_pub(&painter, rect());
                 });

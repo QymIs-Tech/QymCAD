@@ -29,8 +29,8 @@ mod tests {
 
         let rect = std::cell::Cell::new(egui::Rect::NOTHING);
         let clicked = std::cell::Cell::new(false);
-        let draw = |ctx: &egui::Context| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let draw = |ui: &mut egui::Ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 let r = ui.button("a CAD button");
                 rect.set(r.rect);
                 if r.clicked() {
@@ -38,20 +38,20 @@ mod tests {
                 }
             });
             if let Some(label) = overlay {
-                app.draw_dim_overlay_for_test(ctx, label);
+                app.draw_dim_overlay_for_test(ui.ctx(), label);
             }
         };
         let frame = |events: Vec<egui::Event>| egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
 
-        let _ = ctx.run(frame(vec![]), &draw); // lay out and learn where the button is
+        let _ = ctx.run_ui(frame(vec![]), &draw); // lay out and learn where the button is
         let at = rect.get().center();
         assert!(rect.get().is_positive(), "setup: the button did not lay out");
 
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(at)]), &draw);
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), &draw);
         let press = egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() };
-        let _ = ctx.run(frame(vec![press]), &draw);
+        let _ = ctx.run_ui(frame(vec![press]), &draw);
         let release = egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() };
-        let _ = ctx.run(frame(vec![release]), &draw);
+        let _ = ctx.run_ui(frame(vec![release]), &draw);
         clicked.get()
     }
 
@@ -84,7 +84,7 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         for _ in 0..3 {
-            let _ = ctx.run(input.clone(), |c| app.draw_splash_for_test(c, "Opening the project..."));
+            let _ = ctx.run_ui(input.clone(), |c| app.draw_splash_for_test(c, "Opening the project..."));
         }
 
         let area = egui::AreaState::load(&ctx, egui::Id::new("splash")).expect("the splash must be on the screen");
@@ -121,7 +121,7 @@ mod tests {
         app.set_splash_for_test(std::time::Duration::from_millis(0));
         let mut eaten = true;
         for _ in 0..5 {
-            let _ = ctx.run(input.clone(), |c| eaten = app.tick_async_for_test(c));
+            let _ = ctx.run_ui(input.clone(), |c| eaten = app.tick_async_for_test(c.ctx()));
             if !eaten {
                 break;
             }
@@ -141,9 +141,9 @@ mod tests {
         super::super::install_fonts(&ctx);
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
-        let mut out = ctx.run(input.clone(), |c| app.draw_splash_for_test(c, "Starting"));
+        let mut out = ctx.run_ui(input.clone(), |c| app.draw_splash_for_test(c, "Starting"));
         for _ in 0..2 {
-            out = ctx.run(input.clone(), |c| app.draw_splash_for_test(c, "Starting"));
+            out = ctx.run_ui(input.clone(), |c| app.draw_splash_for_test(c, "Starting"));
         }
 
         // the order in the list of shapes is the order of drawing: later means on top
@@ -216,7 +216,7 @@ mod tests {
         let mut released = false;
         for _ in 0..400 {
             let mut eaten = true;
-            let _ = ctx.run(input.clone(), |c| eaten = app.tick_async_for_test(c));
+            let _ = ctx.run_ui(input.clone(), |c| eaten = app.tick_async_for_test(c.ctx()));
             if !eaten {
                 released = true;
                 break;

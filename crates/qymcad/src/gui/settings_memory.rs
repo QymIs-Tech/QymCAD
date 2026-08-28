@@ -121,10 +121,10 @@ mod tests {
         // runs
         let ctx = egui::Context::default();
         fresh.apply_theme(&ctx);
-        assert!(!ctx.style().visuals.dark_mode, "a loaded light scheme must be applied to egui");
+        assert!(!ctx.style_of(ctx.theme()).visuals.dark_mode, "a loaded light scheme must be applied to egui");
         fresh.set.scheme = "dark".into();
         fresh.apply_theme(&ctx);
-        assert!(ctx.style().visuals.dark_mode, "and back again as well");
+        assert!(ctx.style_of(ctx.theme()).visuals.dark_mode, "and back again as well");
     }
 
     /// THE SCALE OF THE INTERFACE SURVIVES A RESTART AND IS APPLIED AT STARTUP.
@@ -148,7 +148,7 @@ mod tests {
         assert_eq!(fresh.set.ui_scale, 1.6, "the scale must survive a restart");
         // `egui` takes a new scale AT THE START OF THE NEXT PASS, so a frame is built: that way the test
         // checks the real drawing rather than a field in memory.
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
         assert!((ctx.zoom_factor() - 1.6).abs() < 1e-6, "the loaded scale must be applied to egui, and out came {}", ctx.zoom_factor());
     }
 
@@ -163,7 +163,7 @@ mod tests {
         for bad in [0.0, -3.0, 99.0] {
             app.set.ui_scale = bad;
             app.apply_ui_scale(&ctx);
-            let _ = ctx.run(egui::RawInput::default(), |_| {});
+            let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
             let z = ctx.zoom_factor();
             assert!(z >= 0.5 && z <= 3.0, "the scale {bad} got into egui as {z} — the interface would become unrecoverable");
         }

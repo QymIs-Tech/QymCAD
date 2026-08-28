@@ -27,7 +27,16 @@ use crate::model::{
     Body, DatumAxis, DatumPoint, Id, Machine, NamedDim, OperationDef, Param, Project, Setup, Sketch, SourceFile, Stock, WorkPlane,
 };
 
-type Map<K, V> = std::collections::HashMap<K, V>;
+/// THE MAPS OF THE FILE ARE ORDERED, and that is about the file rather than about speed.
+///
+/// A `HashMap` iterates in whatever order its hashing feels like, and that order changes between runs of
+/// the SAME binary: saving one document twice gave two files differing in 6608 lines, byte for byte, with
+/// nothing edited in between. For a format that lives in a version control system this is poison - every
+/// save reads as a rewritten file, and a real change cannot be seen among the noise.
+///
+/// `BTreeMap` costs a little on lookup and pays it back in a file a person can diff. The document is
+/// written a few times a minute at most; the ordering is worth far more than the nanoseconds.
+type Map<K, V> = std::collections::BTreeMap<K, V>;
 
 /// The document as it lies in `document.ron`.
 #[derive(Serialize, Deserialize)]
@@ -139,11 +148,11 @@ impl DocumentFile {
             names: p.names.clone(),
             contours: parts.0.to_vec(),
             contour_ids: parts.1.to_vec(),
-            contour_ents: parts.2.clone(),
-            contour_parent: parts.3.clone(),
+            contour_ents: parts.2.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            contour_parent: parts.3.iter().map(|(k, v)| (*k, v.clone())).collect(),
             bodies: p.bodies.clone(),
             imported_bodies: p.imported_bodies.clone(),
-            part_colors: p.part_colors.clone(),
+            part_colors: p.part_colors.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             tools: p.tools.clone(),
             operations: p.operations.clone(),
             setups: p.setups.clone(),
@@ -166,9 +175,9 @@ impl DocumentFile {
             named_dims: p.named_dims.clone(),
             sources: p.sources.clone(),
             parameters: p.parameters.clone(),
-            feat_dims: p.feat_dims.clone(),
-            edge_refs: p.edge_refs.clone(),
-            face_refs: p.face_refs.clone(),
+            feat_dims: p.feat_dims.iter().map(|(k, v)| (*k, v.iter().map(|(a, b)| (a.clone(), b.clone())).collect())).collect(),
+            edge_refs: p.edge_refs.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            face_refs: p.face_refs.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             rollback: p.rollback.clone(),
         }
     }
@@ -182,10 +191,10 @@ impl DocumentFile {
             comp_patterns: self.comp_patterns,
             next_id: self.next_id,
             names: self.names,
-            contours: crate::model::contours::Contours::from_parts(self.contours, self.contour_ids, self.contour_ents, self.contour_parent),
+            contours: crate::model::contours::Contours::from_parts(self.contours, self.contour_ids, self.contour_ents.into_iter().collect(), self.contour_parent.into_iter().collect()),
             bodies: self.bodies,
             imported_bodies: self.imported_bodies,
-            part_colors: self.part_colors,
+            part_colors: self.part_colors.into_iter().collect(),
             tools: self.tools,
             operations: self.operations,
             setups: self.setups,
@@ -208,9 +217,9 @@ impl DocumentFile {
             named_dims: self.named_dims,
             sources: self.sources,
             parameters: self.parameters,
-            feat_dims: self.feat_dims,
-            edge_refs: self.edge_refs,
-            face_refs: self.face_refs,
+            feat_dims: self.feat_dims.into_iter().map(|(k, v)| (k, v.into_iter().collect())).collect(),
+            edge_refs: self.edge_refs.into_iter().collect(),
+            face_refs: self.face_refs.into_iter().collect(),
             rollback: self.rollback,
             ..Project::default()
         }

@@ -113,8 +113,8 @@ mod tests {
         // wide. A measurement over one frame would report "it did not stretch" even for a sound window
         // — that is the measuring, not a defect.
         for _ in 0..3 {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     // THE WIDTH IS SET BY ALLOCATING ROOM RATHER THAN BY `set_max_width`: the latter
                     // did not work in this context — the ui stayed 9984 wide, and the narrow and wide
                     // cases were identical. A measurement that does not tell cases apart proves

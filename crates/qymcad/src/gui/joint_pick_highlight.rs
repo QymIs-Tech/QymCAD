@@ -62,7 +62,7 @@ mod tests {
             if let Some(p) = at {
                 input.events.push(egui::Event::PointerMoved(p));
             }
-            let out = ctx.run(input, |c| {
+            let out = ctx.run_ui(input, |c| {
                 egui::CentralPanel::default().show(c, |ui| {
                     let painter = ui.painter().clone();
                     app.draw_joint_pick_highlight_for_test(&painter, viewport());

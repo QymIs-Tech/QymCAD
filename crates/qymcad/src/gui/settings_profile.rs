@@ -40,7 +40,7 @@ mod tests {
         assert_eq!(other.hotkey_key("part.extrude"), "W", "the rebound key did not carry over");
         // AND IT IS APPLIED, not merely recorded: the scale lives in the egui state rather than in
         // the record. A frame is run through — `set_zoom_factor` reaches the state on the next pass.
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
         assert!((ctx.zoom_factor() - 1.5).abs() < 1e-6, "the interface scale was not applied: {}", ctx.zoom_factor());
         let _ = std::fs::remove_file(&path);
     }

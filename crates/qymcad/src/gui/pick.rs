@@ -443,44 +443,36 @@ impl App {
 
     /// Choose a font of one's own (TTF or OTF) — the bytes go into the cache.
     pub(super) fn pick_font(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().add_filter(&crate::i18n::tr("pk-font"), &["ttf", "otf", "TTF", "OTF"]).pick_file() {
-            match std::fs::read(&p) {
-                Ok(b) => {
-                    self.font_cache = Some(b);
-                    self.status = crate::i18n::tr1("pk-font-is", "name", &p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
-                }
-                Err(e) => self.status = crate::i18n::tr1("pk-font-error", "error", &e.to_string()),
+        self.ask_open_file(rfd::AsyncFileDialog::new().add_filter(crate::i18n::tr("pk-font"), &["ttf", "otf", "TTF", "OTF"]), |app, p| match std::fs::read(&p) {
+            Ok(b) => {
+                app.font_cache = Some(b);
+                app.status = crate::i18n::tr1("pk-font-is", "name", &p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
             }
-        }
+            Err(e) => app.status = crate::i18n::tr1("pk-font-error", "error", &e.to_string()),
+        });
     }
 
 
     pub(super) fn pick_dxf(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().add_filter("DXF", &["dxf"]).pick_file() {
-            self.open_dxf(p.to_string_lossy().into_owned());
-        }
+        self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("DXF", &["dxf"]), |app, p| app.open_dxf(p.to_string_lossy().into_owned()));
     }
 
     pub(super) fn pick_stl(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().add_filter("STL", &["stl"]).pick_file() {
-            self.open_stl(p.to_string_lossy().into_owned());
-        }
+        self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("STL", &["stl"]), |app, p| app.open_stl(p.to_string_lossy().into_owned()));
     }
 
     pub(super) fn pick_step(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().add_filter("STEP", &["step", "stp"]).pick_file() {
-            self.open_step(p.to_string_lossy().into_owned());
-        }
+        self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("STEP", &["step", "stp"]), |app, p| app.open_step(p.to_string_lossy().into_owned()));
     }
 
     pub(super) fn pick_svg(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().add_filter("SVG", &["svg"]).pick_file() {
+        self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("SVG", &["svg"]), |app, p| {
             let path = p.to_string_lossy().into_owned();
             match import_svg(&path) {
-                Ok(sk) => self.arm_sketch_import(sk.curves, &path),
-                Err(e) => self.status = crate::i18n::tr1("pk-svg-error", "error", &e.to_string()),
+                Ok(sk) => app.arm_sketch_import(sk.curves, &path),
+                Err(e) => app.status = crate::i18n::tr1("pk-svg-error", "error", &e.to_string()),
             }
-        }
+        });
     }
 
 

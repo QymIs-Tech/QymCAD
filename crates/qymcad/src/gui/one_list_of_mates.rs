@@ -28,7 +28,7 @@ mod tests {
         app.mode_3d = true;
         let mut texts = Vec::new();
         for _ in 0..2 {
-            let out = ctx.run(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
+            let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| app.joints_panel_for_test(ui));
             });
             texts.clear();

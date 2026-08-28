@@ -380,7 +380,7 @@ fn label_texture(ctx: &egui::Context, cache: &mut std::collections::HashMap<Stri
     // THE COLOUR COMES FROM THE VERTICES OF THE MESH (multiplied by the texture), so only the alpha is
     // here: one texture serves a dark caption on a light face and the other way round alike.
     let pixels: Vec<Color32> = alpha.iter().map(|a| Color32::from_white_alpha(*a)).collect();
-    let img = egui::ColorImage { size: [w, h], pixels };
+    let img = egui::ColorImage { size: [w, h], source_size: egui::Vec2::new([w, h][0] as f32, [w, h][1] as f32), pixels };
     let tex = ctx.load_texture(&key, img, egui::TextureOptions::LINEAR);
     cache.insert(key, tex.clone());
     tex

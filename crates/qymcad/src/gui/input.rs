@@ -30,21 +30,21 @@ impl App {
         // holds the input, it DEADLOCKS. Caught by a full test run: separately the tests passed, together
         // they stood dead — "hanging for more than 60 seconds" and not one failure. The other lines below
         // ask it from outside and are therefore alive.
-        let typing_now = ctx.wants_keyboard_input();
+        let typing_now = ctx.egui_wants_keyboard_input();
         let open_search = ctx.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::K)) || (!typing_now && !i.modifiers.any() && i.key_pressed(egui::Key::Space)));
         if open_search {
             self.toggle_command_search();
         }
-        if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F1)) {
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F1)) {
             let a = self.help_for_context();
             self.open_help(a);
         }
         // Enter confirms an array if one is active and the focus is not in a text field
-        if self.pat.op != 0 && !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+        if self.pat.op != 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             self.confirm_pattern();
         }
         // Enter confirms A COMPONENT ARRAY (in an assembly)
-        if self.carr.mode != 0 && !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+        if self.carr.mode != 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             self.apply_comp_array();
         }
         // Returning to the choice of contours of an active sketch command goes by the "U" key through
@@ -53,7 +53,7 @@ impl App {
         // Enter inside a Part command. For a sketch command in 2D (choosing a profile, multi-select
         // included): the first Enter CONFIRMS the choice and takes one into 3D to set the dimension (the
         // gizmo or the field), the second applies it.
-        if self.cmd.active() && !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+        if self.cmd.active() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             let sketch_cmd = matches!(self.cmd.kind, 1 | 3);
             if self.picking.contour().is_some() {
                 // in the half-sketcher of choosing the contour of a slot a CLICK on the contour is
@@ -70,7 +70,7 @@ impl App {
         // those.
         if self.cmd.kind == 0
             && self.pat.op == 0
-            && !ctx.wants_keyboard_input()
+            && !ctx.egui_wants_keyboard_input()
             && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter))
         {
             self.exit_context();
@@ -95,7 +95,7 @@ impl App {
             // list, and everything downstream sees nothing.
             if list_was_open {
                 // the list takes it
-            } else if ctx.wants_keyboard_input() {
+            } else if ctx.egui_wants_keyboard_input() {
                 ctx.memory_mut(|m| {
                     if let Some(id) = m.focused() {
                         m.surrender_focus(id);
@@ -106,7 +106,7 @@ impl App {
             }
         }
         // Delete removes the selected entities of a sketch (while editing one)
-        if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
             // OUTSIDE the editing of a sketch: any structural node of the tree (a feature, a body, a
             // sketch, a datum, a mate) brings up a yes-or-no confirmation. DEL used to do nothing at all
             // for datums and sketches.
@@ -162,7 +162,7 @@ impl App {
             }
         }
         // Ctrl+A selects all the geometry of the active sketch (entities and points)
-        if !ctx.wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::A)) {
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::A)) {
             if let Sel::Sketch(si) = self.sel {
                 if self.edit_si() == Some(si) {
                     self.select_all_sketch(si);
@@ -170,7 +170,7 @@ impl App {
             }
         }
         // X switches the selected entities into or out of construction geometry
-        if !ctx.wants_keyboard_input() && ctx.input(|i| !i.modifiers.any() && i.key_pressed(egui::Key::X)) {
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| !i.modifiers.any() && i.key_pressed(egui::Key::X)) {
             if let Sel::Sketch(si) = self.sel {
                 if self.edit_si() == Some(si) {
                     let eids: Vec<Id> = self.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
@@ -189,7 +189,7 @@ impl App {
         // SUBASSEMBLIES.
         // egui translates Cmd+C/X/V into Event::Copy/Cut/Paste — THOSE are what get caught (otherwise
         // `key_pressed(C)` is empty), with the direct hotkey as a reserve.
-        if !ctx.wants_keyboard_input() {
+        if !ctx.egui_wants_keyboard_input() {
             let (do_copy, do_cut, do_paste) = ctx.input(|i| {
                 let cmd = i.modifiers.command;
                 let mut c = cmd && i.key_pressed(egui::Key::C);
@@ -217,10 +217,10 @@ impl App {
         // Event::Paste (that is, Ctrl+V) only when that clipboard is non-empty. Without this only the
         // Paste menu item worked while the Ctrl+V key stayed silent.
         if std::mem::take(&mut self.clip.os_ping) {
-            ctx.output_mut(|o| o.copied_text = "qymcad-tree-clip".to_string());
+            ctx.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText("qymcad-tree-clip".to_string())));
         }
         // Undo and redo: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (not taken away from text fields)
-        if !ctx.wants_keyboard_input() {
+        if !ctx.egui_wants_keyboard_input() {
             let (do_undo, do_redo) = ctx.input(|i| {
                 let cmd = i.modifiers.command;
                 let z = i.key_pressed(egui::Key::Z);
@@ -409,7 +409,7 @@ impl App {
         // A bare letter in a field is not intercepted — it must type itself: expressions contain both `w`
         // and `len`. But ALT plus a letter does not type itself in a field, and that is given to the
         // command. The rule is one: with no focus, the bare letter; with focus, Alt.
-        let typing = ctx.wants_keyboard_input();
+        let typing = ctx.egui_wants_keyboard_input();
         use egui::Key;
         let key = ctx.input(|i| {
             let ok = if typing { i.modifiers.alt && !i.modifiers.command && !i.modifiers.ctrl } else { !i.modifiers.any() };

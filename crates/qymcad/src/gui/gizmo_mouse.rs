@@ -39,7 +39,7 @@ mod tests {
         app.sel = super::super::Sel::Component(ci);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run(frame(Vec::new()), |c| app.viewport_for_test(c)); // lay out the canvas and learn its rectangle
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c)); // lay out the canvas and learn its rectangle
         (app, ctx, comp)
     }
 
@@ -69,14 +69,14 @@ mod tests {
         // PRESS AND LEAD. The handle is grabbed NOT on the press: `egui` declares a drag only after
         // accumulated movement, and the decision about what was grabbed is taken at exactly that
         // moment.
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(grab)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(grab, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(grab)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(grab, true)]), |c| app.viewport_for_test(c));
 
         let to = grab + (at_tip - at_origin) * 0.3;
         let mut grabbed = None;
         for k in 1..=4 {
             let p = grab + (to - grab) * (k as f32 / 4.0);
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
             grabbed = grabbed.or(app.comp_giz.axis);
         }
         assert_eq!(
@@ -84,7 +84,7 @@ mod tests {
             Some(0),
             "the mouse was led along the X arrow and the gizmo did not grab it; without that a drag turns into a camera rotation"
         );
-        let _ = ctx.run(frame(vec![press(to, false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(to, false)]), |c| app.viewport_for_test(c));
 
         let after = app.project.component_transform(comp);
         let moved = [after[3] - before[3], after[7] - before[7], after[11] - before[11]];
@@ -106,16 +106,16 @@ mod tests {
 
         let rect = app.view_rect_for_test();
         let far = egui::pos2(rect.min.x + 12.0, rect.min.y + 12.0); // the corner of the canvas — far from the gizmo
-        let _ = ctx.run(frame(vec![egui::Event::PointerMoved(far)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run(frame(vec![press(far, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(far)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(far, true)]), |c| app.viewport_for_test(c));
         assert!(app.comp_giz.axis.is_none(), "a click far from the gizmo grabbed a handle — then the view cannot be turned at all");
 
         let to = far + egui::vec2(60.0, 0.0);
         for k in 1..=4 {
             let p = far + egui::vec2(15.0 * k as f32, 0.0);
-            let _ = ctx.run(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
         }
-        let _ = ctx.run(frame(vec![press(to, false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(to, false)]), |c| app.viewport_for_test(c));
 
         let after = app.project.component_transform(comp);
         assert_eq!(before, after, "a drag away from the gizmo moved the part — a person would be turning the view and silently breaking the assembly");

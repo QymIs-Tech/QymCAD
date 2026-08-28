@@ -91,15 +91,7 @@ pub fn without_home(s: &str) -> String {
 }
 
 fn write_report(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf> {
-    let dir = dir()?;
-    std::fs::create_dir_all(&dir).ok()?;
-
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    // UNDERSCORE, NOT A DASH, and the reason is a guard rather than taste: `crash-` reads as a catalogue
-    // key (the window's strings live under that very prefix), and the check that no service name reaches
-    // the screen would flag this file name for ever.
-    let path = dir.join(format!("crash_{secs}.txt"));
-
+    let path = next_report_path()?;
     // The payload is a `&str` for `panic!("literal")` and a `String` for a formatted one; anything else
     // has no text to show.
     let message = info
@@ -109,7 +101,45 @@ fn write_report(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf> {
         .or_else(|| info.payload().downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "(the panic carried no message)".to_string());
     let place = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_else(|| "(unknown)".into());
+    write_note(&path, "Panic", &message, &without_home(&place))
+}
 
+/// A RUN THAT NEVER GOT AS FAR AS A WINDOW still leaves a report.
+///
+/// Reported behaviour: on a machine with an old card and no graphics driver the program starts, blinks and
+/// closes, AND THERE IS NOTHING IN THE CRASH FOLDER. There would not be: the framework hands a start-up
+/// failure back as an ordinary error, not a panic, so the hook above never sees it - and the message went
+/// to standard error, which a windowed build on Windows has nowhere to print to.
+pub fn note_failed_start(reason: &str) -> Option<PathBuf> {
+    let path = next_report_path()?;
+    write_note(&path, "Could not start", reason, "(before the window opened)")
+}
+
+/// A free name for the next report: `crash_<seconds>`, and `_2`, `_3` while one already exists.
+///
+/// A SECOND IS NOT UNIQUE ENOUGH. The name carried only the time in seconds, so two crashes inside one
+/// second wrote to the same path and the later one silently ate the earlier. That is not a theoretical
+/// worry - a panic in a loop crashes many times over, and those are exactly the reports worth having.
+/// Found by a guard: a second test panicked in the same second and the report under test disappeared.
+fn next_report_path() -> Option<PathBuf> {
+    let dir = dir()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    // UNDERSCORE, NOT A DASH, and the reason is a guard rather than taste: `crash-` reads as a catalogue
+    // key (the window's strings live under that very prefix), and the check that no service name reaches
+    // the screen would flag this file name for ever.
+    let mut path = dir.join(format!("crash_{secs}.txt"));
+    let mut n = 1;
+    while path.exists() {
+        n += 1;
+        path = dir.join(format!("crash_{secs}_{n}.txt"));
+    }
+    Some(path)
+}
+
+/// The body of a report: the same for a panic and for a start that never happened, so the one window that
+/// shows them and the one form that receives them read one shape.
+fn write_note(path: &Path, kind: &str, message: &str, place: &str) -> Option<PathBuf> {
     let (steps, doc, autosave) = match STATE.lock() {
         Ok(s) => (s.steps.clone(), s.doc.clone(), s.autosave.clone()),
         Err(_) => (Vec::new(), None, None),
@@ -118,7 +148,7 @@ fn write_report(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf> {
     let mut out = String::new();
     out.push_str(&crate::diagnostics::block());
     out.push_str(&format!("\nTime: {}\n", crate::gui::now_iso8601()));
-    out.push_str(&format!("Panic: {message}\nAt: {}\n", without_home(&place)));
+    out.push_str(&format!("{kind}: {message}\nAt: {place}\n"));
     out.push_str(&format!("Document: {}\n", doc.as_deref().map(without_home).unwrap_or_else(|| "(never saved)".into())));
     out.push_str(&format!("Autosave: {}\n", autosave.as_deref().map(without_home).unwrap_or_else(|| "(none)".into())));
 
@@ -134,8 +164,8 @@ fn write_report(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf> {
     // match a build of the same commit, and the commit is named at the top of this file.
     out.push_str(&format!("\nBacktrace:\n{}\n", without_home(&std::backtrace::Backtrace::force_capture().to_string())));
 
-    std::fs::write(&path, out).ok()?;
-    Some(path)
+    std::fs::write(path, out).ok()?;
+    Some(path.to_path_buf())
 }
 
 /// A REPORT LEFT BY AN EARLIER RUN, the newest first. Files already shown carry `.seen`.
@@ -167,6 +197,13 @@ pub fn mark_seen(path: &Path) {
     let _ = std::fs::rename(path, seen);
 }
 
+/// THE REPORT DIRECTORY IS ONE PER PROCESS. Every test that redirects it takes this turn first, or they
+/// interleave: one clears the directory the other is about to read, and the failure looks like a defect in
+/// the reports rather than in the tests. The turn lives HERE rather than in the tests below because the
+/// checks that need it live in other files too.
+#[cfg(test)]
+pub(crate) static TAKE_TURNS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 pub(crate) fn use_dir_for_test(d: Option<&Path>) {
     if let Ok(mut s) = STATE.lock() {
@@ -179,10 +216,6 @@ pub(crate) fn use_dir_for_test(d: Option<&Path>) {
 
 #[cfg(test)]
 mod tests {
-    /// THE STATE IS ONE PER PROCESS, so the tests that touch it take turns. Without this they interleave
-    /// and the failure looks like a defect in the trail rather than in the test.
-    static TAKE_TURNS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     /// A CRASH LEAVES A FILE, AND THE FILE ANSWERS THE QUESTIONS ASKED OF A CRASH.
     ///
     /// Before this there was no panic hook at all, so the answer to "what was it doing" was whatever the
@@ -190,7 +223,7 @@ mod tests {
     /// never exercised is a hook that quietly stops working.
     #[test]
     fn a_crash_leaves_a_report() {
-        let _turn = TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("qymcad-crash-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         super::use_dir_for_test(Some(&dir));
@@ -208,9 +241,17 @@ mod tests {
         let _ = std::panic::take_hook(); // back to the default hook for the rest of this binary
         assert!(outcome.is_err(), "the panic did not happen at all");
 
+        // OURS BY ITS MESSAGE, not by being the only one. The hook is installed for the whole process, so
+        // any other test that panics while this one runs writes a report into the same directory - and it
+        // showed: the run went red here only when two ratchets failed elsewhere, which is a fault in this
+        // test rather than in the hook.
         let reports = super::unseen_reports();
-        assert_eq!(reports.len(), 1, "expected exactly one report in {dir:?}, found {reports:?}");
-        let text = std::fs::read_to_string(&reports[0]).expect("the report reads");
+        let mine = reports
+            .iter()
+            .map(|p| (p.clone(), std::fs::read_to_string(p).unwrap_or_default()))
+            .find(|(_, t)| t.contains("a wall fell over"))
+            .map(|(p, t)| (p, t));
+        let (report, text) = mine.unwrap_or_else(|| panic!("no report carries our panic; found {reports:?}"));
 
         assert!(text.contains("a wall fell over"), "the report does not carry the message:\n{text}");
         assert!(text.contains("QymCAD "), "the report does not name the build:\n{text}");
@@ -232,9 +273,12 @@ mod tests {
         assert!(text.contains("~/parts/bracket.qcad") || text.contains("~\\parts\\bracket.qcad"), "the path was not masked, it was lost:\n{text}");
 
         // Shown once: after that it is renamed rather than deleted, so it can still be attached.
-        super::mark_seen(&reports[0]);
-        assert!(super::unseen_reports().is_empty(), "the report is offered a second time");
-        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "marking it seen deleted the file");
+        super::mark_seen(&report);
+        assert!(
+            !super::unseen_reports().contains(&report),
+            "the report is offered a second time"
+        );
+        assert!(report.with_extension("seen.txt").exists(), "marking it seen deleted the file");
 
         super::use_dir_for_test(None);
         let _ = std::fs::remove_dir_all(&dir);
@@ -243,7 +287,7 @@ mod tests {
     /// A repeated command must not fill the whole trail with one word.
     #[test]
     fn the_trail_does_not_repeat_itself() {
-        let _turn = TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("qymcad-trail-test-{}", std::process::id()));
         super::use_dir_for_test(Some(&dir));
         for _ in 0..50 {

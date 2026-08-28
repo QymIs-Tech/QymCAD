@@ -1,7 +1,7 @@
 //! FOCUS IN A FIELD DOES NOT TAKE THE KEYBOARD AWAY FROM THE COMMAND.
 //!
 //! It used to be: `handle_tool_hotkeys` began with an unconditional
-//! `if ctx.wants_keyboard_input() { return }`. One line put out ALL 23 tool keys in ALL commands the
+//! `if ctx.egui_wants_keyboard_input() { return }`. One line put out ALL 23 tool keys in ALL commands the
 //! moment the cursor landed in any input field. The most visible case was reported: in an extrude `U`
 //! ("re-pick the contour") could not be pressed until the focus was knocked off with the mouse. And
 //! the other half is right there: a second Enter did not apply the command — it never reached it
@@ -27,7 +27,7 @@ mod tests {
         super::super::install_fonts(&ctx);
         let mut input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         // the first frame lays out and, if needed, lets the field take the focus
-        let _ = ctx.run(input.clone(), |c| {
+        let _ = ctx.run_ui(input.clone(), |c| {
             frame(app, c, focus_field);
         });
         // THE MODIFIERS GO BOTH INTO THE EVENT AND INTO THE INPUT STATE. `i.modifiers` is read from
@@ -35,7 +35,7 @@ mod tests {
         // and the check never sees it.
         input.modifiers = modifiers;
         input.events.push(Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
-        let _ = ctx.run(input, |c| {
+        let _ = ctx.run_ui(input, |c| {
             frame(app, c, focus_field);
         });
     }
@@ -125,14 +125,14 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         // with no focus it is a bare letter
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
         let free = app.hotkey_hint(&ctx, "part.contour-reselect");
         assert_eq!(free, "U", "with no focus the hint should be a bare letter rather than \"{free}\"");
         // with focus it is Alt plus a letter
         let ctx2 = egui::Context::default();
         super::super::install_fonts(&ctx2);
         for _ in 0..2 {
-            let _ = ctx2.run(egui::RawInput::default(), |c| {
+            let _ = ctx2.run_ui(egui::RawInput::default(), |c| {
                 egui::Area::new(egui::Id::new("f")).show(c, |ui| {
                     let mut s = String::new();
                     ui.text_edit_singleline(&mut s).request_focus();
@@ -148,6 +148,6 @@ mod tests {
     fn the_rule_lives_in_one_place() {
         let src = include_str!("input.rs");
         assert!(src.contains("if typing { i.modifiers.alt"), "the \"with focus, use Alt\" rule is gone from the common place");
-        assert!(!src.contains("if ctx.wants_keyboard_input() {\n            return;\n        }\n        use egui::Key;"), "the unconditional muting of every key on focus has come back");
+        assert!(!src.contains("if ctx.egui_wants_keyboard_input() {\n            return;\n        }\n        use egui::Key;"), "the unconditional muting of every key on focus has come back");
     }
 }

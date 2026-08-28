@@ -24,6 +24,28 @@ use qymcad_verify::{verify_gcode, VerifyOptions, VerifyResult};
 /// directory that does not exist.
 pub(crate) const APP_ID: &str = "qymcad";
 
+/// THE NAME A PERSON READS, as against the identifier above that a machine stores things under. The
+/// window bar, the task bar and the About window all say this one.
+pub(crate) const APP_NAME: &str = "QymCAD";
+
+/// The window icon, decoded from the 256x256 PNG built into the binary.
+///
+/// The same image the splash screen shows. A window with no icon of its own is given the framework's,
+/// and a program that wears someone else's face in the task bar looks like a stray tool rather than the
+/// one that was installed.
+fn app_icon() -> egui::IconData {
+    const ICON: &[u8] = include_bytes!("../../../assets/icons/linux/256x256.png");
+    match image::load_from_memory(ICON) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            egui::IconData { rgba: rgba.into_raw(), width: w, height: h }
+        }
+        // An icon is worth nothing next to starting at all: a window without one still works.
+        Err(_) => egui::IconData::default(),
+    }
+}
+
 /// THE CURRENT TIME IN ISO-8601 (UTC, to the second).
 ///
 /// By its own arithmetic, without a date crate: exactly one string is needed in the whole project, and a
@@ -97,14 +119,21 @@ pub fn launch() -> eframe::Result<()> {
     // AND THE CRASH STOPS DISAPPEARING. Installed before anything can panic, for the same reason.
     crate::crash::install();
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]),
+    let mut options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1280.0, 800.0])
+            // WITHOUT THESE THE WINDOW BORROWS SOMEBODY ELSE'S FACE: the framework's own icon and the
+            // storage identifier `qymcad` as a title. Both are what a person sees first, in a task bar
+            // beside three other windows, and neither said anything about this program or its document.
+            .with_title(APP_NAME)
+            .with_icon(app_icon()),
         // the GPU viewport: egui on wgpu gives access to wgpu_render_state for the bodies' 3D paint callback.
         // glow stays compiled in as a fallback (the renderer is switched here).
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
-    eframe::run_native(
+    choose_the_adapter_ourselves(&mut options);
+    let started = eframe::run_native(
         APP_ID,
         options,
         Box::new(|cc| {
@@ -161,9 +190,103 @@ pub fn launch() -> eframe::Result<()> {
                 // "the viewport is slow" and "the viewport is black".
                 crate::diagnostics::note_gpu("glow (the CPU fallback path)".into());
             }
+            // DRAWING ON THE PROCESSOR IS SAID OUT LOUD, once, in the status line. Everything works and
+            // nothing is broken - but turning a model feels like wading, and a person owed no explanation
+            // reports it as a fault in the program rather than as a graphics driver they have not installed.
+            if let Some(name) = crate::diagnostics::drawing_on_the_processor() {
+                app.status = crate::i18n::tr1("gpu-on-the-processor", "name", &name);
+            }
             Ok(Box::new(app))
         }),
-    )
+    );
+    // A START THAT NEVER HAPPENED USED TO LEAVE NOTHING BEHIND. The framework hands this back as an
+    // ordinary error rather than a panic, so the crash hook never saw it, and the message went to standard
+    // error - which a windowed build on Windows has nowhere to print to. What a person saw was a window
+    // that blinked and closed, and the crash folder was empty.
+    if let Err(e) = &started {
+        let path = crate::crash::note_failed_start(&e.to_string());
+        crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
+    }
+    started
+}
+
+/// WHICH CARD DRAWS, DECIDED HERE AND WRITTEN DOWN.
+///
+/// Left to itself the framework asks for an adapter and, finding none, fails with an error nobody sees.
+/// Two things are wanted instead, and both need the list of adapters in hand: every one of them recorded
+/// (a report from a machine that would not start is otherwise a blank page), and the ONE ON THE PROCESSOR
+/// accepted rather than refused when it is all there is.
+///
+/// Reported behaviour: on Windows 11 with an old card and no driver installed the program would not start;
+/// there was no crash file and no falling back to drawing on the processor either. On the same version a
+/// virtual machine and a modern card both started without trouble.
+///
+/// Software rendering is slow, and on a big assembly it is very slow - but it is a program that runs and
+/// says why it is slow, against one that closes without a word.
+fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
+    use eframe::wgpu;
+    // THE FRAMEWORK'S OWN SETTINGS ARE KEPT and only two of them changed. Building the record from scratch
+    // would drop the display handle it fills in for us, which some systems will not open a window without.
+    let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup else { return };
+    // THE BACKENDS ARE LEFT AS THEY COME: the framework already asks for the primary ones plus GL, and on
+    // a desktop there is nothing else to add. What changes here is WHICH of the adapters they enumerate is
+    // taken, and that the list is written down either way.
+    setup.native_adapter_selector = Some(std::sync::Arc::new(|adapters: &[wgpu::Adapter], surface: Option<&wgpu::Surface<'_>>| {
+        let seen: Vec<String> = adapters.iter().map(describe_adapter).collect();
+        crate::diagnostics::note_adapters(&seen);
+        // a card that cannot draw into THIS window is no use, whatever else it can do
+        let best = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).max_by_key(|a| rank_adapter(a));
+        match best {
+            Some(a) => {
+                let info = a.get_info();
+                crate::diagnostics::note_gpu(format!("wgpu {:?}, {} ({:?}), driver {} {}", info.backend, info.name, info.device_type, info.driver, info.driver_info));
+                // A CPU ADAPTER IS A WORKING PROGRAM, and the person is told rather than left to wonder
+                // why turning a model feels like wading.
+                if info.device_type == wgpu::DeviceType::Cpu {
+                    crate::diagnostics::note_drawing_on_the_processor(&info.name);
+                }
+                Ok(a.clone())
+            }
+            // THE MESSAGE IS THE REPORT. This string is what reaches the file and the message box, so it
+            // says what was looked for and what was found rather than "no suitable adapter".
+            None => Err({
+                crate::diagnostics::note_no_adapter();
+                format!(
+                "no graphics adapter this window can draw on. Offered {}: {}",
+                adapters.len(),
+                if seen.is_empty() { "none at all - the machine has no working graphics driver".to_string() } else { seen.join("; ") }
+                )
+            }),
+        }
+    }));
+}
+
+/// One adapter in one line, for the report.
+fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
+    let i = a.get_info();
+    format!("{:?}/{:?} {} (driver {} {})", i.backend, i.device_type, i.name, i.driver, i.driver_info)
+}
+
+/// HOW GOOD AN ADAPTER IS, highest first. A real card beats a shared one, a shared one beats a virtual one,
+/// and everything beats the processor - which is taken only when nothing else answers.
+fn rank_adapter(a: &eframe::wgpu::Adapter) -> u8 {
+    rank_device_type(a.get_info().device_type)
+}
+
+/// The ranking itself, apart from any adapter: a machine with no graphics is exactly the machine a test
+/// cannot be run on, so the order is checked here instead.
+///
+/// NOTHING SCORES ZERO. The processor is the worst choice and the one that must still be TAKEN when it is
+/// the only one - refusing it is the program that would not start.
+pub(crate) fn rank_device_type(t: eframe::wgpu::DeviceType) -> u8 {
+    use eframe::wgpu::DeviceType;
+    match t {
+        DeviceType::DiscreteGpu => 5,
+        DeviceType::IntegratedGpu => 4,
+        DeviceType::VirtualGpu => 3,
+        DeviceType::Other => 2,
+        DeviceType::Cpu => 1,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1142,6 +1265,9 @@ pub(crate) struct App {
     /// Derived state that a frame may rebuild at will; see [`Caches`].
     cache: Caches,
     project: Project,
+    /// THE FILE CHOOSER THAT IS OPEN RIGHT NOW, and what its answer is for; see [`file_ask::FileAsk`].
+    /// `None` almost always: only one chooser can be up, and it is up only while someone is answering it.
+    file_ask: Option<file_ask::FileAsk>,
     dxf_path: Option<String>,
     project_path: Option<String>,
     /// A crash report left by an EARLIER run, waiting to be shown once. `None` means the last run ended
@@ -1149,6 +1275,8 @@ pub(crate) struct App {
     crash_report: Option<std::path::PathBuf>,
     /// What has been typed into "Report a problem" and what is to travel with it.
     report: crate::gui::report_problem::ReportDraft,
+    /// The title the window is wearing right now, so a new one is sent only when it has actually changed.
+    title_shown: String,
     /// The splash and its progress. The logo for the splash (its texture is loaded lazily on the first frame).
     logo_tex: Option<egui::TextureHandle>,
     /// The previous frame's canvas rectangle - the window in the rebuild barrier (see `draw_dim_overlay_with`).
@@ -2707,7 +2835,7 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
     // Liberation Sans Bold: OFL (the licence sits next to the file), Latin plus Cyrillic.
     fonts.font_data.insert(
         BOLD_FONT.to_string(),
-        egui::FontData::from_static(include_bytes!("../../../assets/fonts/LiberationSans-Bold.ttf")),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!("../../../assets/fonts/LiberationSans-Bold.ttf"))),
     );
     fonts.families.insert(egui::FontFamily::Name(BOLD_FONT.into()), vec![BOLD_FONT.to_string()]);
     ctx.set_fonts(fonts);
@@ -2845,10 +2973,12 @@ impl Default for App {
             edges: EdgeCache::default(),
             win: Windows { help_article: "index".into(), start: true, constraints: true, ..Default::default() },
             project,
+            file_ask: None,
             dxf_path: None,
             project_path: None,
             crash_report: None,
             report: Default::default(),
+            title_shown: APP_NAME.to_string(),
             logo_tex: None,
             io: DocIo::default(),
             view_rect: egui::Rect::NOTHING,
@@ -3174,9 +3304,9 @@ impl App {
             Nav::New => self.new_project(),
             Nav::NewAssembly => self.new_assembly_project(),
             Nav::OpenDialog => {
-                if let Some(p) = rfd::FileDialog::new().add_filter("QymCAD", &["qcad", "ron"]).pick_file() {
-                    self.spawn_project_load(p.to_string_lossy().into_owned());
-                }
+                self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("QymCAD", &["qcad", "ron"]), |app, p| {
+                    app.spawn_project_load(p.to_string_lossy().into_owned());
+                });
             }
             Nav::NewFromTemplate(path) => self.new_from_template(&path),
             Nav::OpenPath(path) => self.open_recent(path),
@@ -3876,7 +4006,7 @@ impl App {
         } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) && out.response.has_focus() {
             out.response.surrender_focus();
         }
-        out.response
+        out.response.response
     }
 
     /// Keep the ANCHOR of a dimension input popup inside the viewport `rect`, so that with large values
@@ -5735,6 +5865,24 @@ impl App {
         self.waiting.splash_until = Some(std::time::Instant::now() + hold);
     }
 
+    /// Past the greeting: a test drives frames one after another with no clock between them, and the
+    /// splash is held by wall time.
+    #[cfg(test)]
+    pub(crate) fn clear_splash_for_test(&mut self) {
+        self.waiting.splash_until = None;
+    }
+
+    /// Is the help window open? The thing F1 does, seen from outside.
+    #[cfg(test)]
+    pub(crate) fn help_is_open_for_test(&self) -> bool {
+        self.win.help
+    }
+
+    #[cfg(test)]
+    pub(crate) fn close_help_for_test(&mut self) {
+        self.win.help = false;
+    }
+
     #[cfg(test)]
     pub(crate) fn set_startup_for_test(&mut self, path: &str) {
         self.io.startup = Some(path.to_string());
@@ -5787,8 +5935,8 @@ impl App {
     /// `Response`, and faking one would mean checking the fake. This is the door that makes the mouse
     /// paths coverable.
     #[cfg(test)]
-    pub(crate) fn viewport_for_test(&mut self, ctx: &egui::Context) {
-        self.viewport(ctx);
+    pub(crate) fn viewport_for_test(&mut self, ui: &mut egui::Ui) {
+        self.viewport(ui);
     }
 
     /// A facade: whether a background rebuild is running right now.
@@ -5905,11 +6053,17 @@ impl App {
         self.saving_now()
     }
 
+    /// A document that has never been written: Save becomes Save As, which is where the chooser comes in.
+    #[cfg(test)]
+    pub(crate) fn forget_project_path_for_test(&mut self) {
+        self.project_path = None;
+    }
+
     /// Answer Save in the unsaved-work dialogue — the same as pressing the button.
     #[cfg(test)]
     pub(crate) fn answer_save_for_test(&mut self) {
         self.save_project();
-        if self.saving_now() {
+        if self.saving_now() || self.asking_for_a_file() {
             self.deferred.nav_after_save = true;
         }
     }
@@ -6321,7 +6475,7 @@ impl App {
         // removing the dimension or the shape as a whole). These states are cleared by any new action of
         // the tool, so they do not get stuck.
         let placing = self.place.dim.is_some() || self.place.active();
-        let busy = ctx.is_using_pointer() || ctx.wants_keyboard_input() || placing || self.edits.open.is_some();
+        let busy = ctx.egui_is_using_pointer() || ctx.egui_wants_keyboard_input() || placing || self.edits.open.is_some();
         if busy {
             return;
         }
@@ -6518,17 +6672,19 @@ impl App {
     }
 
     fn export(&mut self) {
-        let Some(gcode) = &self.cam_job.gcode else {
+        let Some(gcode) = self.cam_job.gcode.clone() else {
             self.status = crate::i18n::tr("cam-generate-first");
             return;
         };
+        // the text is taken NOW, not once a name has been given: the person may spend a minute in the
+        // chooser, and what gets written must be the program they asked to save
         let default = format!("{}.tap", self.program_name());
-        if let Some(path) = rfd::FileDialog::new().set_file_name(default).add_filter("G-code", &["tap", "nc", "ngc"]).save_file() {
-            match std::fs::write(&path, gcode) {
-                Ok(()) => self.status = crate::i18n::tr1("cam-saved-path", "path", &path.display().to_string()),
-                Err(e) => self.status = crate::i18n::tr1("io-write-error", "error", &e.to_string()),
+        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(default).add_filter("G-code", &["tap", "nc", "ngc"]), move |app, path| {
+            match std::fs::write(&path, &gcode) {
+                Ok(()) => app.status = crate::i18n::tr1("cam-saved-path", "path", &path.display().to_string()),
+                Err(e) => app.status = crate::i18n::tr1("io-write-error", "error", &e.to_string()),
             }
-        }
+        });
     }
 
     // --- Exporting 3D (STEP, STL) and sketches (SVG, DXF) ------------------------------------
@@ -6603,17 +6759,39 @@ impl eframe::App for App {
         eframe::set_value(storage, "last_project", &self.project_path); // the path of the current document
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// THE FRAME. Named `ui` rather than `update` since egui 0.36: panels now live inside a `Ui`, and
+    /// the framework hands the root one in. The context is still wanted for windows, input and viewport
+    /// commands, and it comes from the same place.
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.draw_frame(ui);
+    }
+}
+
+impl App {
+    /// THE WHOLE FRAME, in one method a test can call. `eframe::Frame` is not used by any of it and cannot be
+    /// built outside a live window, so the body lives here rather than in the trait: without this the frame -
+    /// the one place where the order of the phases is decided - could only be checked by reading it.
+    pub(crate) fn draw_frame(&mut self, ui: &mut egui::Ui) {
+        let ctx = &ui.ctx().clone();
         // The canvas of this frame, for a problem report: three atomic stores, so it costs nothing at
         // this rate. Taken before the prologue can return - a report is wanted most when the start-up
         // load is what went wrong.
-        crate::diagnostics::note_viewport(ctx.screen_rect().size(), ctx.pixels_per_point());
+        crate::diagnostics::note_viewport(ctx.viewport_rect().size(), ctx.pixels_per_point());
+        self.keep_the_title_current(ctx);
         // THE FRAME PROLOGUE: until it says "carry on", there is nothing to draw (the start-up load is running).
         if !self.frame_prologue(ctx) {
             return;
         }
+        // THE ANSWER FROM AN OPEN FILE CHOOSER, picked up at the top of the frame so the file is acted on in
+        // the same frame it was chosen in. While one is open the frames are asked for by hand: the answer
+        // comes from a thread, and egui, which sleeps between input events, hears nothing of it.
+        let choosing = self.poll_file_ask();
+        if choosing {
+            ctx.request_repaint();
+            self.inert_while_choosing(ui); // the system chooser is modal: nothing here answers until it does
+        }
         // Ctrl+S saves (silently into the current file, or a dialogue for a new one); Ctrl+Shift+S is "save as".
-        if !ctx.wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
+        if !choosing && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             if ctx.input(|i| i.modifiers.shift) {
                 self.save_project_as();
             } else {
@@ -6638,13 +6816,17 @@ impl eframe::App for App {
         self.sync_workbench(); // the workbench and the active context are derived from `active_path` (drill in and out)
         self.hover.joint = None; // the hovered joint is rebuilt every frame (by the panel and by 3D below)
         self.keep_selection_on_edited_sketch(); // the selection follows the sketch being edited — in one phase
-        self.handle_key_commands(ctx); // the frame's keyboard commands — in one phase
-        self.handle_tool_hotkeys(ctx); // the tool shortcuts (L/R/C/A/P/G/D/S, E)
+        // THE KEYBOARD IS THE CHOOSER'S while it is open: a barrier eats clicks, but these two read the
+        // input directly and would go on obeying Delete, Escape and every tool letter behind it.
+        if !choosing {
+            self.handle_key_commands(ctx); // the frame's keyboard commands — in one phase
+            self.handle_tool_hotkeys(ctx); // the tool shortcuts (L/R/C/A/P/G/D/S, E)
+        }
         self.maybe_autosave(false); // a silent autosave every 3 minutes while there are unsaved edits
         self.help_window(ctx); // the help window
         self.save_template_dialog(ctx); // "save as a template" — the name and the confirmation
         self.confirm_delete_popup(ctx); // the popup confirming the deletion of a tree node
-        self.menu_bar(ctx);
+        self.menu_bar(ui);
         self.take_screenshot(ctx); // the picture of the window for a report comes back as an event
         self.crash_notice(ctx); // "the last run ended in an error" - only after a crash
         self.report_window(ctx); // Help -> Report a problem
@@ -6653,20 +6835,21 @@ impl eframe::App for App {
         self.start_screen(ctx); // where to begin — only on a blank slate
         self.nav_dialog(ctx); // the modal "save the changes?" over the menu
         self.stl_quality_dialog(ctx); // choosing the STL quality before exporting
-        self.toolbar(ctx);
-        self.section_bar(ctx); // the section control bar — drawing the UI, not a phase of the frame
+        self.toolbar(ui);
+        self.section_bar(ui); // the section control bar — drawing the UI, not a phase of the frame
         // "Finish" lives in one place: the button in the breadcrumbs (the toolbar). There is no separate banner.
         self.tick_view_anim(ctx); // the smooth turn of the view (the ViewCube)
         self.tick_joint_anim(ctx); // sweeping a joint's degree of freedom
         self.hotkeys_window(ctx); // Help -> Shortcuts
         self.command_search_window(ctx); // the command search (Space or Ctrl+K)
-        self.comp_array_bar(ctx); // the component pattern bar (assembly)
-        self.feat_command_bar(ctx); // the bar of the active Part command — a panel, not a phase of the frame
-        self.tool_options_bar(ctx);
-        self.joint_tool_bar(ctx); // the top bar for creating a joint
-        self.joint_edit_bar(ctx); // the top bar for EDITING a joint (a double click on its glyph)
-        self.bool_tool_bar(ctx); // the top bar for body-to-body booleans: the kind, and picking body B
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+        self.comp_array_bar(ui); // the component pattern bar (assembly)
+        self.feat_command_bar(ui); // the bar of the active Part command — a panel, not a phase of the frame
+        self.tool_options_bar(ui);
+        self.joint_tool_bar(ui); // the top bar for creating a joint
+        self.joint_edit_bar(ui); // the top bar for EDITING a joint (a double click on its glyph)
+        self.bool_tool_bar(ui); // the top bar for body-to-body booleans: the kind, and picking body B
+        egui::Panel::bottom("status")
+.show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(&self.status);
                 // THE SKETCH'S DEFINEDNESS is the sketcher's main state, and in CAD it belongs in the status
@@ -6693,12 +6876,12 @@ impl eframe::App for App {
                 });
             });
         });
-        self.wb_toolbar(ctx);
+        self.wb_toolbar(ui);
         // while a sketch is being edited the tree on the left is not needed — only the tools
         if self.edit_si().is_none() {
-            self.tree_panel(ctx);
+            self.tree_panel(ui);
         }
-        self.properties_panel(ctx);
+        self.properties_panel(ui);
         if let Some(i) = self.io.export_op.take() {
             self.export_op(i);
         }
@@ -6709,7 +6892,7 @@ impl eframe::App for App {
         self.params_window(ctx);
         self.machines_window(ctx);
         self.settings_window(ctx);
-        self.viewport(ctx);
+        self.viewport(ui);
         // commit an undo step if the edit has finished
         self.maybe_commit(ctx);
     }
@@ -6721,7 +6904,7 @@ impl App {
             return;
         }
         let mut open = self.win.gcode;
-        egui::Window::new("G-code").open(&mut open).default_size([460.0, 560.0]).show(ctx, |ui| {
+        egui::Window::new("G-code").open(&mut open).default_width(460.0).default_height(560.0).show(ctx, |ui| {
             if let Some(g) = &self.cam_job.gcode {
                 ui.label(crate::i18n::tr1("cam-lines-count", "n", &g.lines().count().to_string()));
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -6944,7 +7127,7 @@ impl App {
             return;
         }
         let mut open = self.win.machines;
-        egui::Window::new(format!("{} {}", ph::WRENCH, crate::i18n::tr("cam-machine-title"))).open(&mut open).default_size([360.0, 420.0]).show(ctx, |ui| {
+        egui::Window::new(format!("{} {}", ph::WRENCH, crate::i18n::tr("cam-machine-title"))).open(&mut open).default_width(360.0).default_height(420.0).show(ctx, |ui| {
             self.machine_props(ui);
         });
         self.win.machines = open;
@@ -7044,6 +7227,19 @@ th{{background:#f0f0f0;text-align:left}}.k{{color:#666}}</style></head><body>\
     }
 
     // ============ The splash screen and the progress of background work ============
+
+    /// THE TITLE FOLLOWS THE DOCUMENT: which file is open, and whether it holds unsaved work.
+    ///
+    /// Sent only when it has changed. A viewport command every frame is a message to the window manager
+    /// sixty times a second for a string that moves a few times an hour, and on some of them it makes the
+    /// title flicker.
+    fn keep_the_title_current(&mut self, ctx: &egui::Context) {
+        let want = crate::gui::window_title::window_title(self.project_path.as_deref(), self.is_dirty());
+        if want != self.title_shown {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(want.clone()));
+            self.title_shown = want;
+        }
+    }
 
     /// Load the logo lazily (a 256x256 PNG embedded in the binary) into a texture for the splash screen.
     fn ensure_logo(&mut self, ctx: &egui::Context) {
@@ -7403,7 +7599,7 @@ th{{background:#f0f0f0;text-align:left}}.k{{color:#666}}</style></head><body>\
     /// THE ACTIVE TOOL'S BAR. This used to be a function WITHOUT `&self` — it simply could not look at the
     /// theme, even had it wanted to. Not "somebody forgot to colour it", but structurally impossible.
     fn tool_bar_frame(&self) -> egui::Frame {
-        egui::Frame::none().fill(self.scheme.pal.toolbar_bg()).inner_margin(egui::Margin::symmetric(8.0, 3.0))
+        egui::Frame::NONE.fill(self.scheme.pal.toolbar_bg()).inner_margin(egui::Margin::symmetric(8, 3))
     }
 
 
@@ -9168,8 +9364,11 @@ th{{background:#f0f0f0;text-align:left}}.k{{color:#666}}</style></head><body>\
 
 
 
-    fn viewport(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn viewport(&mut self, ui: &mut egui::Ui) {
+        // The panel lives inside a `Ui` now; the context is still wanted for windows,
+        // input and viewport commands, and it comes from the same place.
+        let ctx = &ui.ctx().clone();
+        egui::CentralPanel::default().show(ui, |ui| {
             let (resp, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
             let rect = resp.rect;
             self.view_rect = rect; // where the canvas stands: the rebuild overlay needs it so as not to blank it
@@ -9177,7 +9376,7 @@ th{{background:#f0f0f0;text-align:left}}.k{{color:#666}}</style></head><body>\
             // theme nothing at all: switch to the light one and the viewport and the sketcher stayed black.
             painter.rect_filled(rect, 0.0, self.scheme.pal.viewport_bg());
             let has_geom = !self.project.contours.is_empty() || !self.project.bodies.is_empty();
-            let scroll = ctx.input(|i| i.raw_scroll_delta.y);
+            let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
 
             if self.mode_3d {
                 self.viewport_3d(ctx, &resp, &painter, rect, has_geom, scroll);
@@ -10514,7 +10713,7 @@ fn paint_joint_glyph(p: &egui::Painter, c: Pos2, r: f32, k: qymcad_core::feature
             p.circle_filled(c, s * 0.85, col); // a ball: three rotations
         }
         J::PinSlot => {
-            p.rect_stroke(egui::Rect::from_center_size(c, v(s * 2.0, s * 1.05)), s * 0.5, st); // the slot
+            p.rect_stroke(egui::Rect::from_center_size(c, v(s * 2.0, s * 1.05)), s * 0.5, st, egui::StrokeKind::Middle); // the slot
             p.circle_filled(c + v(-s * 0.45, 0.0), s * 0.32, col); // the pin
         }
         J::Parallel => {
@@ -10583,7 +10782,7 @@ fn paint_gly(p: &egui::Painter, c: Pos2, h: f32, g: Gly, col: Color32) {
         }
         Gly::Fix => {
             let r = Rect::from_center_size(c, v(h * 1.5, h * 1.5));
-            p.rect_stroke(r, 1.0, st);
+            p.rect_stroke(r, 1.0, st, egui::StrokeKind::Middle);
             p.circle_filled(c, 1.6, col);
         }
         Gly::Construction => {
@@ -10623,7 +10822,7 @@ fn paint_gly(p: &egui::Painter, c: Pos2, h: f32, g: Gly, col: Color32) {
         Gly::ArrayLin => {
             for k in 0..3 {
                 let x = -h + k as f32 * h;
-                p.rect_stroke(Rect::from_center_size(c + v(x, 0.0), v(4.0, 4.0)), 0.0, st);
+                p.rect_stroke(Rect::from_center_size(c + v(x, 0.0), v(4.0, 4.0)), 0.0, st, egui::StrokeKind::Middle);
             }
         }
         Gly::ArrayCirc => {
@@ -10709,7 +10908,7 @@ fn sym_button(ui: &mut egui::Ui, g: Gly, tip: &str, active: bool) -> bool {
     // The size is THE SAME as `icon_tool`'s (40x34), otherwise a mismatch of widths breaks the wrap onto two columns.
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(40.0, 34.0), egui::Sense::click());
     let vis = ui.style().interact_selectable(&resp, active);
-    ui.painter().rect(rect, 3.0, vis.bg_fill, vis.bg_stroke);
+    ui.painter().rect(rect, 3.0, vis.bg_fill, vis.bg_stroke, egui::StrokeKind::Middle);
     paint_gly(ui.painter(), rect.center(), 9.0, g, vis.fg_stroke.color);
     resp.on_hover_text(tip).clicked()
 }
@@ -11501,6 +11700,7 @@ mod tests;
 
 /// Picking and hit-testing live in `gui/pick.rs`.
 mod report_problem;
+mod window_title;
 
 mod pick;
 
@@ -11543,3 +11743,9 @@ mod sketching;
 
 /// Files and background jobs live in `gui/io_jobs.rs`.
 mod io_jobs;
+
+/// Asking for a file without stopping the frames lives in `gui/file_ask.rs`.
+mod file_ask;
+mod deaf_while_the_system_asks;
+mod a_machine_with_no_graphics;
+mod the_card_holds_its_words;

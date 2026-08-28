@@ -279,7 +279,7 @@ impl App {
     /// This only works "from above": an interactive area in the upper layer takes the hit for itself, and the
     /// widgets below never get it.
     fn modal_input_barrier(&self, ctx: &egui::Context, salt: &'static str) {
-        let screen = ctx.screen_rect();
+        let screen = ctx.viewport_rect();
         egui::Area::new(egui::Id::new(salt)).order(egui::Order::Foreground).fixed_pos(screen.min).interactable(true).show(ctx, |ui| {
             ui.allocate_response(screen.size(), egui::Sense::click_and_drag());
         });
@@ -293,7 +293,7 @@ impl App {
     /// a dimmed screen and wait. The barrier stays where the buttons and panels live - an edit from there
     /// really would land on a stale copy.
     fn modal_input_barrier_except(&self, ctx: &egui::Context, hole: egui::Rect) {
-        let s = ctx.screen_rect();
+        let s = ctx.viewport_rect();
         if !hole.is_positive() {
             self.modal_input_barrier(ctx, "regen_modal_barrier");
             return;
@@ -319,7 +319,7 @@ impl App {
     /// Its only message: the body on show is STALE, a recompute is under way. No window, no barrier - the
     /// view orbits, selection works, edits are not blocked.
     pub(super) fn draw_quiet_spinner(&self, ctx: &egui::Context) {
-        let rect = if self.view_rect.is_positive() { self.view_rect } else { ctx.screen_rect() };
+        let rect = if self.view_rect.is_positive() { self.view_rect } else { ctx.viewport_rect() };
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("quiet_spinner")));
         // THE PART GOES SLIGHTLY GREY - that is the main sign, and the spinner only confirms it.
         //
@@ -354,9 +354,17 @@ impl App {
     /// needs something else: how much is left and whether they can change their mind. Both answers come from
     /// one place (the rebuild loop in the core, see `RegenWatch`), which is why they are shown together.
     pub(super) fn draw_dim_overlay_with(&self, ctx: &egui::Context, label: &str, progress: Option<(usize, usize)>, live: egui::Rect) -> bool {
-        let screen = ctx.screen_rect();
+        let screen = ctx.viewport_rect();
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("regen_dim")));
-        let tall = progress.is_some();
+        // WHAT IS TO BE SHOWN IS MEASURED FIRST, and the card is then made to fit it. It used to be a
+        // fixed 280 px wide with the label painted centred inside: a long line ("Rebuilding 28 nodes, one
+        // of them a thread") ran out past both edges of the card and stood on the dimmed viewport.
+        let prog_text = progress.map(|(done, total)| crate::i18n::tr2("io-rebuild-progress", "done", &done.to_string(), "total", &total.to_string()));
+        let wrap = (screen.width() - 96.0).clamp(200.0, 520.0); // wraps rather than growing off a narrow window
+        let title = painter.layout(label.to_owned(), egui::FontId::proportional(15.0), self.scheme.pal.text_strong(), wrap);
+        let prog = prog_text.map(|t| painter.layout(t, egui::FontId::proportional(13.0), self.scheme.pal.text_dim(), wrap));
+        let size = regen_card_size(title.size(), prog.as_ref().map(|g| g.size()), progress.is_some());
+
         // THE VIEWPORT STAYS LIVE AND UNDIMMED when it is given (`live`): the model is visible, the view
         // orbits, selection works. What gets dimmed and muted is exactly where the document is changed from.
         let card = if live.is_positive() {
@@ -373,38 +381,26 @@ impl App {
             }
             // the card sits AT THE BOTTOM of the viewport rather than in its centre: in the centre it would
             // cover exactly what the live window was kept for - the model itself
-            let h = if tall { 150.0 } else { 96.0 };
-            egui::Rect::from_center_size(egui::pos2(live.center().x, live.max.y - h / 2.0 - 16.0), egui::vec2(280.0, h))
+            egui::Rect::from_center_size(egui::pos2(live.center().x, live.max.y - size.y / 2.0 - 16.0), size)
         } else {
             self.modal_input_barrier(ctx, "regen_modal_barrier");
             painter.rect_filled(screen, 0.0, crate::palette::a(self.scheme.pal.scrim(), 120));
-            egui::Rect::from_center_size(screen.center(), egui::vec2(280.0, if tall { 150.0 } else { 96.0 }))
+            egui::Rect::from_center_size(screen.center(), size)
         };
+        let places = regen_card_places(card, title.size(), prog.as_ref().map(|g| g.size()), progress.is_some());
         painter.rect_filled(card, 10.0, self.scheme.pal.panel_bg());
-        painter.rect_stroke(card, 10.0, egui::Stroke::new(1.0, self.scheme.pal.panel_border()));
-        let text_y = if tall { -2.0 } else { 18.0 };
-        painter.text(
-            card.center() + egui::vec2(0.0, text_y),
-            egui::Align2::CENTER_CENTER,
-            label,
-            egui::FontId::proportional(15.0),
-            self.scheme.pal.text_strong(),
-        );
+        painter.rect_stroke(card, 10.0, egui::Stroke::new(1.0, self.scheme.pal.panel_border()), egui::StrokeKind::Middle);
+        painter.galley(places.title.min, title, self.scheme.pal.text_strong());
         let mut cancelled = false;
-        if let Some((done, total)) = progress {
-            // A NODE COUNT rather than a percentage: nodes are the timeline's unit of work, and a fraction
-            // of it would lie - a thread takes seconds, a datum is instant.
-            painter.text(
-                card.center() + egui::vec2(0.0, 20.0),
-                egui::Align2::CENTER_CENTER,
-                crate::i18n::tr2("io-rebuild-progress", "done", &done.to_string(), "total", &total.to_string()),
-                egui::FontId::proportional(13.0),
-                self.scheme.pal.text_dim(),
-            );
-            // THE BUTTON IS A REAL WIDGET AND SITS ABOVE THE BARRIER. The barrier mutes input across the
-            // whole screen, so the button's area is created AFTER it: otherwise the click would go to the
-            // barrier and the button would stay silent.
-            let bt = egui::Rect::from_center_size(card.center() + egui::vec2(0.0, 48.0), egui::vec2(150.0, 28.0));
+        // A NODE COUNT rather than a percentage: nodes are the timeline's unit of work, and a fraction of it
+        // would lie - a thread takes seconds, a datum is instant.
+        if let (Some(g), Some(at)) = (prog, places.progress) {
+            painter.galley(at.min, g, self.scheme.pal.text_dim());
+        }
+        // THE BUTTON IS A REAL WIDGET AND SITS ABOVE THE BARRIER. The barrier mutes input across the whole
+        // screen, so the button's area is created AFTER it: otherwise the click would go to the barrier and
+        // the button would stay silent.
+        if let Some(bt) = places.button {
             egui::Area::new(egui::Id::new("regen_cancel")).order(egui::Order::Tooltip).fixed_pos(bt.min).show(ctx, |ui| {
                 ui.set_max_size(bt.size());
                 if ui.add_sized(bt.size(), egui::Button::new(format!("{} {}", ph::X, crate::i18n::tr("io-rebuild-cancel")))).clicked() {
@@ -414,12 +410,11 @@ impl App {
         }
         // the "spinner" is drawn by hand: dots around a circle with a running brightness - no widget, over everything
         let t = ctx.input(|i| i.time) as f32;
-        let c = card.center() - egui::vec2(0.0, if tall { 36.0 } else { 16.0 });
         for k in 0..8 {
             let a = std::f32::consts::TAU * k as f32 / 8.0;
             let phase = (t * 2.0 - k as f32 / 8.0).fract();
             let alpha = (40.0 + 215.0 * (1.0 - phase)) as u8;
-            painter.circle_filled(c + egui::vec2(a.cos(), a.sin()) * 13.0, 2.6, crate::palette::a(self.scheme.pal.text_strong(), alpha));
+            painter.circle_filled(places.spinner + egui::vec2(a.cos(), a.sin()) * 13.0, 2.6, crate::palette::a(self.scheme.pal.text_strong(), alpha));
         }
         ctx.request_repaint();
         cancelled
@@ -432,7 +427,7 @@ impl App {
     /// is happening. A full-screen splash says no more than a card does, yet it hides the whole program, and
     /// on a small project it only manages to blink.
     pub(super) fn draw_splash(&self, ctx: &egui::Context, label: &str) {
-        let screen = ctx.screen_rect();
+        let screen = ctx.viewport_rect();
         self.modal_input_barrier(ctx, "splash_modal_barrier");
         // THE BACKGROUND GOES IN THE LOWER LAYER, THE CARD IN THE UPPER ONE. Once the fill was put into
         // `Foreground` while the card stayed an ordinary window (`Order::Middle`), and the fill painted over
@@ -1576,7 +1571,7 @@ impl App {
                 }
             });
         }
-        Some(egui::ColorImage { size: [w, h], pixels: color })
+        Some(egui::ColorImage { size: [w, h], source_size: egui::Vec2::new([w, h][0] as f32, [w, h][1] as f32), pixels: color })
     }
 
 
@@ -2272,7 +2267,7 @@ impl App {
         let a = self.to_screen(rect, Point2::new(m.work_min[0], m.work_min[1]));
         let b = self.to_screen(rect, Point2::new(m.work_max[0], m.work_max[1]));
         let table = Rect::from_two_pos(a, b);
-        painter.rect_stroke(table, 0.0, Stroke::new(1.0, self.scheme.pal.cam_table()));
+        painter.rect_stroke(table, 0.0, Stroke::new(1.0, self.scheme.pal.cam_table()), egui::StrokeKind::Middle);
     }
 
 
@@ -3179,7 +3174,7 @@ impl App {
                     // centre plus corner: the extent is mirrored through the centre
                     if let Some(&c) = self.tool.pts.first() {
                         let opp = self.to_screen(rect, Point2::new(2.0 * c.x - cur.x, 2.0 * c.y - cur.y));
-                        painter.rect_stroke(Rect::from_two_pos(opp, sc), 0.0, stroke);
+                        painter.rect_stroke(Rect::from_two_pos(opp, sc), 0.0, stroke, egui::StrokeKind::Middle);
                     }
                 }
                 2 => {
@@ -3200,7 +3195,7 @@ impl App {
                 }
                 _ => {
                     if let Some(&a) = self.tool.pts.first() {
-                        painter.rect_stroke(Rect::from_two_pos(self.to_screen(rect, a), sc), 0.0, stroke);
+                        painter.rect_stroke(Rect::from_two_pos(self.to_screen(rect, a), sc), 0.0, stroke, egui::StrokeKind::Middle);
                     }
                 }
             },
@@ -3668,4 +3663,61 @@ impl App {
             }
         }
     }
+}
+
+/// THE PADDING INSIDE THE REBUILD CARD, and the room its parts take. Named once, because the size of the
+/// card and the places of its pieces have to agree - when they did not, the text stood outside the card.
+const CARD_PAD: f32 = 16.0;
+const CARD_SPINNER: f32 = 34.0; // the ring of dots: radius 13 plus the dots themselves
+const CARD_GAP: f32 = 8.0;
+const CARD_BUTTON: egui::Vec2 = egui::vec2(150.0, 28.0);
+const CARD_MIN_W: f32 = 280.0;
+
+/// Where each piece of the rebuild card goes, once the card itself has been placed.
+pub(super) struct RegenCard {
+    /// the centre of the ring of dots
+    pub spinner: egui::Pos2,
+    pub title: egui::Rect,
+    pub progress: Option<egui::Rect>,
+    pub button: Option<egui::Rect>,
+}
+
+/// How big the card has to be to hold what is going into it.
+///
+/// It used to be a fixed 280x96 (150 with a counter) with the label painted centred inside, which held
+/// only as long as the label was short. Reported behaviour: the text runs out past the edges of the
+/// rebuild window - the line naming the node count and the thread is a good half wider than 280 px.
+pub(super) fn regen_card_size(title: egui::Vec2, progress: Option<egui::Vec2>, button: bool) -> egui::Vec2 {
+    let mut inner = egui::vec2(title.x, CARD_SPINNER + CARD_GAP + title.y);
+    if let Some(p) = progress {
+        inner.x = inner.x.max(p.x);
+        inner.y += CARD_GAP * 0.75 + p.y;
+    }
+    if button {
+        inner.x = inner.x.max(CARD_BUTTON.x);
+        inner.y += CARD_GAP + CARD_BUTTON.y;
+    }
+    egui::vec2((inner.x + CARD_PAD * 2.0).max(CARD_MIN_W), inner.y + CARD_PAD * 2.0)
+}
+
+/// The pieces laid out top-down inside `card`, each centred across it. Reads the same measurements
+/// [`regen_card_size`] reserved room for, so nothing can land outside.
+pub(super) fn regen_card_places(card: egui::Rect, title: egui::Vec2, progress: Option<egui::Vec2>, button: bool) -> RegenCard {
+    let mid = card.center().x;
+    let mut y = card.min.y + CARD_PAD;
+    let spinner = egui::pos2(mid, y + CARD_SPINNER / 2.0);
+    y += CARD_SPINNER + CARD_GAP;
+    let title_rect = egui::Rect::from_min_size(egui::pos2(mid - title.x / 2.0, y), title);
+    y = title_rect.max.y;
+    let progress = progress.map(|p| {
+        y += CARD_GAP * 0.75;
+        let r = egui::Rect::from_min_size(egui::pos2(mid - p.x / 2.0, y), p);
+        y = r.max.y;
+        r
+    });
+    let button = button.then(|| {
+        y += CARD_GAP;
+        egui::Rect::from_min_size(egui::pos2(mid - CARD_BUTTON.x / 2.0, y), CARD_BUTTON)
+    });
+    RegenCard { spinner, title: title_rect, progress, button }
 }

@@ -61,7 +61,7 @@ qymcad-verify = { path = "crates/qymcad-verify" }
 
 # --- external (wired in per crate as each phase starts) ---
 serde = { version = "1", features = ["derive"] }
-ron = "0.8"
+ron = "0.12"
 # nalgebra = "0.33"            # geometry and transforms
 # cavalier_contours = "0.3"   # arc-aware offset
 # rhai = "1"                  # the post-processor engine
