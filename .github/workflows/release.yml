@@ -11,6 +11,12 @@
 # download from without an account, kept for ever, named by the tag. That is a build for other people.
 # Nothing is marked a pre-release - the reason is written out at the `publish` job.
 #
+# RUN IT AGAINST THE BRANCH FIRST, AND THE TAG AFTER. A run can restore caches made on its own ref or on
+# the default branch, and nothing else. A cache saved by a run on a tag therefore belongs to THAT tag and
+# is invisible to the next one: measured on two consecutive tag builds, where the second rebuilt the very
+# kernel the first had cached and spent forty-five minutes doing it. One run against the branch puts the
+# kernels where every later tag can reach them.
+#
 # Windows: MSVC, the mainstream target for Rust there and the compiler every desktop CAD is built with.
 # The kernel is built from source by the same compiler, because the C++ ABI does not mix: a bridge
 # compiled by one toolchain cannot link against a library built by another.
@@ -268,10 +274,16 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
+      # THE PACKAGES ARE FILES, NOT SOMETHING TO UNPACK. They are uploaded as they are (`archive: false`
+      # at each build), and on the way back this action looks at the name: a `.zip` is decompressed unless
+      # it is told otherwise. Reported behaviour: the Windows and macOS packages arrived UNPACKED and
+      # merged into one pile - `QymCAD.app` as a directory, the Windows DLLs beside it - and there was
+      # nothing left to attach to the release. The AppImage came through untouched, being no archive.
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+          skip-decompress: true
 
       # THREE FILES, AND ALL THREE ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
