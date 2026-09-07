@@ -25,7 +25,7 @@ mod tests {
     }
 
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -52,8 +52,8 @@ mod tests {
         }
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 3, "setup: there should be three bodies of our own");
         let comps: Vec<Id> = mine.iter().map(|b| app.project.body_owner(*b).expect("the owner")).collect();
@@ -66,8 +66,8 @@ mod tests {
         let kc = app.project.add_connector(comps[2], AnchorRef::BasePlane(BasePlane::XY));
         app.project.add_joint(kb, kc, JointKind::Slider);
 
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mut hand = Hand::new(app);
         hand.look_at([60.0, 10.0, 5.0], 4.0);
         app.workbench = super::super::Workbench::Assembly;
@@ -82,20 +82,20 @@ mod tests {
         app.project.solve_joints();
         let (was_b, was_c) = (local_of(&app, comp_b), local_of(&app, comp_c));
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body_c), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body_c)).0;
         let by = egui::vec2(40.0, -40.0); // diagonally: no single axis of the chain leads that way
-        assert!(app.joint_grab_part_at_for_test(viewport(), at, by, &basis), "it must be possible to grab the part");
+        assert!(app.joint_grab_part_at(viewport(), at, by, &basis), "it must be possible to grab the part");
         // THE FRAME PASS MUST LEARN THAT THE HAND IS BUSY — otherwise the drag never reaches
         // `joint_giz_drag_to` and the whole pull is dead while the check stays green. That is exactly
         // what happened: the check called the drag directly, while the live application only asked
         // about the gizmo handle, and the reported behaviour was that a part cannot be moved with the
         // mouse anywhere, only the handles work.
-        assert!(app.joint_drag_active(), "the grab happened and the frame does not know about it: the drag will go to the camera, not the part");
+        assert!(qymcad_assembly::joint_drag_active(&app.side.joint, &app.dragged.part_pull), "the grab happened and the frame does not know about it: the drag will go to the camera, not the part");
         for k in 1..=8 {
-            app.joint_giz_drag_to_for_test(at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
         }
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
 
         let moved = |a: [f64; 3], b: [f64; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
         let (db, dc) = (moved(was_b, local_of(&app, comp_b)), moved(was_c, local_of(&app, comp_c)));

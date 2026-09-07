@@ -30,7 +30,7 @@ mod tests {
         let panels = [crate::gui::panels_source::PANELS, include_str!("../gui.rs")].concat();
         let missing: Vec<&str> = feat_kinds()
             .into_iter()
-            .filter(|(_, k)| !panels.contains(&format!("start_feat_cmd({k})")))
+            .filter(|(_, k)| !panels.contains(&format!("BarAsk::FeatCmd({k})")))
             .map(|(code, _)| code)
             .collect();
         assert!(missing.is_empty(), "the toolbar has no buttons for these commands: {}", missing.join(", "));
@@ -57,7 +57,7 @@ mod tests {
         let render = crate::gui::render_source::RENDER;
         let drawn: std::collections::HashSet<u8> = render
             .lines()
-            .filter(|l| l.contains("cmd.kind"))
+            .filter(|l| l.contains("armed.cmd_kind()"))
             .flat_map(|l| l.split(|c: char| !c.is_ascii_digit()).filter(|t| !t.is_empty()).filter_map(|t| t.parse::<u8>().ok()).collect::<Vec<u8>>())
             .collect();
         let missing: Vec<String> = feat_kinds()

@@ -1,0 +1,20 @@
+[package]
+name = "qymcad-pick"
+version = "0.1.0"
+edition = "2021"
+
+# WHAT THE CURSOR CATCHES, AND NOTHING ELSE. Given the document, the view and a point on screen, it says
+# what is under it: a vertex, an edge, a face, a body, a plane, a contour. It changes nothing and draws
+# nothing.
+#
+# WHY A CRATE. Every workbench picks - the sketch picks points and lines, the part picks faces and edges,
+# the assembly picks bodies. A module shared by three workbenches is a MODULE by the rule of the house,
+# and a module must not sit inside one of them nor inside the application.
+[dependencies]
+egui = "0.35"
+qymcad-core = { path = "../qymcad-core" }
+qymcad-ui-state = { path = "../qymcad-ui-state" }
+qymcad-scheme = { path = "../qymcad-scheme" }
+
+[lints]
+workspace = true

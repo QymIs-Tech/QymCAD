@@ -20,28 +20,28 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let a = app.project.mesh_id(0).expect("body A");
         let b = app.project.mesh_id(1).expect("body B");
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 6.0;
-        app.cam.target = [30.0, 10.0, 5.0];
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 6.0;
+        app.viewing.cam.target = [30.0, 10.0, 5.0];
         (a, b)
     }
 
     /// The screen point of the midpoint of an edge of the body.
     fn edge_mid_on_screen(app: &mut App, body: Id) -> egui::Pos2 {
-        app.refresh_edges();
-        app.ensure_brep_for_test();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         let e = app.project.regen_edges.get(&body).and_then(|es| es.first().cloned()).expect("the body has edges");
-        let basis = app.cam.basis();
-        app.project3(e.mid, viewport(), &basis).0
+        let basis = app.viewing.cam.basis();
+        qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(e.mid).0
     }
 
     /// How many shapes the highlight drew with the cursor at `at`.
@@ -49,9 +49,9 @@ mod tests {
     /// The SHAPES OF THE FRAME are counted, not the flags: a highlight is what a person sees. An empty
     /// frame means they are aiming blind.
     fn highlight_shapes(app: &mut App, at: Option<egui::Pos2>, mode: u8) -> usize {
-        app.set_joint_anchor_mode_for_test(mode);
+        qymcad_assembly::set_joint_anchor_mode_for_test(&mut app.joint_ctx(), mode);
         app.arm_joint_pick_for_test();
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let mut count = 0;
@@ -65,7 +65,7 @@ mod tests {
             let out = ctx.run_ui(input, |c| {
                 egui::CentralPanel::default().show(c, |ui| {
                     let painter = ui.painter().clone();
-                    app.draw_joint_pick_highlight_for_test(&painter, viewport());
+                    crate::gui::render::draw_joint_pick_highlight(&app.painting(), &painter, viewport());
                 });
             });
             count = out.shapes.len();
@@ -94,11 +94,11 @@ mod tests {
         let mut app = App::default();
         let (a, _b) = assembly_of_two(&mut app);
         // Aim at the END of the edge — that is where the vertex lives.
-        app.refresh_edges();
-        app.ensure_brep_for_test();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         let e = app.project.regen_edges.get(&a).and_then(|es| es.first().cloned()).expect("an edge");
-        let basis = app.cam.basis();
-        let at = app.project3(e.a, viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(e.a).0;
 
         let empty = highlight_shapes(&mut app, None, 2);
         let hovered = highlight_shapes(&mut app, Some(at), 2);
@@ -137,12 +137,12 @@ mod tests {
         let empty = highlight_shapes(&mut app, None, 1);
         assert!(highlight_shapes(&mut app, Some(at), 1) > empty, "setup: the edge is highlighted");
 
-        app.set_component_visible_for_test(owner, false);
-        app.rebuild_if_dirty_for_test();
+        crate::gui::set_component_visible(&mut app.project, &mut app.regen, owner, false);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert_eq!(highlight_shapes(&mut app, Some(at), 1), empty, "an edge of a HIDDEN part lit up");
 
-        app.set_component_visible_for_test(owner, true);
-        app.rebuild_if_dirty_for_test();
+        crate::gui::set_component_visible(&mut app.project, &mut app.regen, owner, true);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(
             highlight_shapes(&mut app, Some(at), 1) > empty,
             "after hiding and showing the highlight is gone — exactly what is seen as \"picking edges is not drawn\""

@@ -6,6 +6,20 @@
 use super::*;
 use super::tess::*; // 2D sketch geometry: profiles, tessellation, region analysis.
 
+/// A TEXT OBJECT IN A SKETCH: where it sits, how tall it stands, how it is turned, what it says and the
+/// outlines it was traced into.
+///
+/// The glyphs travel with the string because the fonts are not part of the document: the outlines are
+/// traced once, when the text is typed, and are what the rebuild actually extrudes. Adding a text and
+/// changing one took the same five things as five separate arguments each.
+pub struct TextSpec {
+    pub at: Point2,
+    pub height: f64,
+    pub angle: f64,
+    pub text: String,
+    pub glyphs: Vec<Vec<Point2>>,
+}
+
 impl Project {
     /// Add a contour and return its stable id.
     pub fn add_contour(&mut self, c: Contour) -> Id {
@@ -42,7 +56,8 @@ impl Project {
     /// `rot` is the rotation of the major axis in radians. Returns the id of the centre, which serves as the
     /// handle. The semi-axes are kept perpendicular by an implicit constraint, so the ellipse is parametric
     /// with five degrees of freedom rather than a polygon.
-    pub fn add_ellipse_entity(&mut self, si: usize, cx: f64, cy: f64, rx: f64, ry: f64, rot: f64, purpose: crate::feature::Purpose) -> Id {
+    pub fn add_ellipse_entity(&mut self, si: usize, c: crate::geom::Point2, rx: f64, ry: f64, rot: f64, purpose: crate::feature::Purpose) -> Id {
+        let (cx, cy) = (c.x, c.y);
         let construction = purpose == crate::feature::Purpose::Construction;
         let (rx, ry) = (rx.max(0.01), ry.max(0.01));
         let (ux, uy) = (rot.cos(), rot.sin());
@@ -354,27 +369,34 @@ impl Project {
         if !self.dim_redundant(si, ci) {
             return false;
         }
-        if let Some(c) = self.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci)) {
-            match c {
-                Constraint::AngleLines { driven, .. } | Constraint::Distance { driven, .. } | Constraint::Angle { driven, .. } | Constraint::DistancePL { driven, .. } | Constraint::Diameter { driven, .. } | Constraint::ArcLength { driven, .. } | Constraint::EdgeDistance { driven, .. } => {
-                    *driven = true;
-                    return true;
-                }
-                _ => {}
-            }
+        if let Some(
+            Constraint::AngleLines { driven, .. }
+            | Constraint::Distance { driven, .. }
+            | Constraint::Angle { driven, .. }
+            | Constraint::DistancePL { driven, .. }
+            | Constraint::Diameter { driven, .. }
+            | Constraint::ArcLength { driven, .. }
+            | Constraint::EdgeDistance { driven, .. },
+        ) = self.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci))
+        {
+            *driven = true;
+            return true;
         }
         false
     }
     /// Toggle dimension `ci` between driving and reference. Returns the new state.
     pub fn toggle_driven(&mut self, si: usize, ci: usize) -> bool {
-        if let Some(c) = self.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci)) {
-            match c {
-                Constraint::AngleLines { driven, .. } | Constraint::Distance { driven, .. } | Constraint::Angle { driven, .. } | Constraint::DistancePL { driven, .. } | Constraint::Diameter { driven, .. } | Constraint::ArcLength { driven, .. } => {
-                    *driven = !*driven;
-                    return *driven;
-                }
-                _ => {}
-            }
+        if let Some(
+            Constraint::AngleLines { driven, .. }
+            | Constraint::Distance { driven, .. }
+            | Constraint::Angle { driven, .. }
+            | Constraint::DistancePL { driven, .. }
+            | Constraint::Diameter { driven, .. }
+            | Constraint::ArcLength { driven, .. },
+        ) = self.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci))
+        {
+            *driven = !*driven;
+            return *driven;
         }
         false
     }
@@ -393,7 +415,9 @@ impl Project {
     }
     /// Add parametric text geometry. `glyphs` are the glyph polylines baked by the application (in world
     /// coordinates, since the font lives there). Returns the id of the text; the contours are updated.
-    pub fn add_sketch_text(&mut self, si: usize, x: f64, y: f64, height: f64, angle: f64, text: String, purpose: crate::feature::Purpose, glyphs: Vec<Vec<Point2>>) -> Id {
+    pub fn add_sketch_text(&mut self, si: usize, t: TextSpec, purpose: crate::feature::Purpose) -> Id {
+        let TextSpec { at, height, angle, text, glyphs } = t;
+        let (x, y) = (at.x, at.y);
         let construction = purpose == crate::feature::Purpose::Construction;
         let id = self.alloc_id();
         if let Some(s) = self.sketches.get_mut(si) {
@@ -404,7 +428,9 @@ impl Project {
     }
     /// Update the parameters of a text and its baked glyphs, after the application re-baked them for a new
     /// font or string.
-    pub fn set_sketch_text(&mut self, si: usize, ti: usize, x: f64, y: f64, height: f64, angle: f64, text: String, glyphs: Vec<Vec<Point2>>) {
+    pub fn set_sketch_text(&mut self, si: usize, ti: usize, t: TextSpec) {
+        let TextSpec { at, height, angle, text, glyphs } = t;
+        let (x, y) = (at.x, at.y);
         if let Some(t) = self.sketches.get_mut(si).and_then(|s| s.texts.get_mut(ti)) {
             t.x = x;
             t.y = y;
@@ -475,7 +501,7 @@ impl Project {
     pub fn spline_polyline(&self, si: usize, spi: usize) -> Vec<Point2> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         let Some(sp) = s.splines.get(spi) else { return Vec::new() };
-        let cps: Vec<Point2> = sp.points.iter().filter_map(|id| s.points.iter().find(|p| p.id == *id).map(|p| Point2::new(p.x, p.y))).collect();
+        let cps: Vec<Point2> = sp.points.iter().filter_map(|id| s.points.iter().find(|p| p.id == *id).map(|p| crate::geom::Point2::new(p.x, p.y))).collect();
         if cps.len() < 2 {
             return Vec::new();
         }
@@ -487,7 +513,7 @@ impl Project {
     pub fn spline_handles(&self, si: usize, spi: usize) -> Vec<(Point2, Point2)> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         let Some(sp) = s.splines.get(spi) else { return Vec::new() };
-        let pos = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+        let pos = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| crate::geom::Point2::new(p.x, p.y));
         let cps: Vec<Point2> = sp.points.iter().filter_map(|id| pos(*id)).collect();
         let n = cps.len();
         if n < 2 {
@@ -496,7 +522,7 @@ impl Project {
         (0..n)
             .map(|i| {
                 let m = spline_tangent_at(&cps, &sp.tangents, i, sp.closed);
-                (cps[i], Point2::new(cps[i].x + m.x, cps[i].y + m.y))
+                (cps[i], crate::geom::Point2::new(cps[i].x + m.x, cps[i].y + m.y))
             })
             .collect()
     }
@@ -680,7 +706,7 @@ impl Project {
         let mut now_construction = false;
         if let Some(s) = self.sketches.get_mut(si) {
             // The target state is the inverse of the first selected entity.
-            let target = !s.entities.iter().find(|e| eids.contains(&e.id)).map_or(false, |e| e.construction);
+            let target = !s.entities.iter().find(|e| eids.contains(&e.id)).is_some_and(|e| e.construction);
             for e in s.entities.iter_mut() {
                 if eids.contains(&e.id) {
                     e.construction = target;
@@ -1042,7 +1068,7 @@ impl Project {
             match e.kind {
                 EntityKind::Line { a: c, b: d } => {
                     if let (Some((cx, cy)), Some((dx, dy))) = (self.point_xy(si, c), self.point_xy(si, d)) {
-                        if let Some(t) = seg_seg_t(pax, pay, pbx, pby, cx, cy, dx, dy) {
+                        if let Some(t) = seg_seg_t([pax, pay], [pbx, pby], [cx, cy], [dx, dy]) {
                             cuts.push(t);
                         }
                     }
@@ -1055,7 +1081,7 @@ impl Project {
                 EntityKind::Ellipse { c, ma, mi } => {
                     if let (Some((ex, ey)), Some((mx, my)), Some((nx, ny))) = (self.point_xy(si, c), self.point_xy(si, ma), self.point_xy(si, mi)) {
                         let (ux, uy, major, minor) = ellipse_axes(ex, ey, mx, my, nx, ny);
-                        cuts.extend(seg_ellipse_t(pax, pay, pbx, pby, ex, ey, ux, uy, major, minor));
+                        cuts.extend(seg_ellipse_t([pax, pay], [pbx, pby], [ex, ey], [ux, uy], major, minor));
                     }
                 }
                 EntityKind::Arc { center, a: aa, b: bb, ccw } => {
@@ -1155,7 +1181,7 @@ impl Project {
             match e.kind {
                 EntityKind::Line { a: c, b: d } => {
                     if let (Some((cx, cy)), Some((dx, dy))) = (self.point_xy(si, c), self.point_xy(si, d)) {
-                        if let Some(t) = line_seg_t(pax, pay, pbx, pby, cx, cy, dx, dy) {
+                        if let Some(t) = line_seg_t([pax, pay], [pbx, pby], [cx, cy], [dx, dy]) {
                             cand.push(t);
                         }
                     }
@@ -1168,7 +1194,7 @@ impl Project {
                 EntityKind::Ellipse { c, ma, mi } => {
                     if let (Some((ex, ey)), Some((mx, my)), Some((nx, ny))) = (self.point_xy(si, c), self.point_xy(si, ma), self.point_xy(si, mi)) {
                         let (ux, uy, major, minor) = ellipse_axes(ex, ey, mx, my, nx, ny);
-                        cand.extend(line_ellipse_roots(pax, pay, pbx, pby, ex, ey, ux, uy, major, minor));
+                        cand.extend(line_ellipse_roots([pax, pay], [pbx, pby], [ex, ey], [ux, uy], major, minor));
                     }
                 }
                 EntityKind::Arc { center, a: aa, b: bb, ccw } => {
@@ -1311,7 +1337,7 @@ impl Project {
                 EntityKind::Ellipse { c, ma, mi } => {
                     if let (Some((ex, ey)), Some((mx, my)), Some((nx, ny))) = (p(c), p(ma), p(mi)) {
                         let (ux, uy, major, minor) = ellipse_axes(ex, ey, mx, my, nx, ny);
-                        pts.extend(circle_ellipse_pts(cx, cy, r, ex, ey, ux, uy, major, minor));
+                        pts.extend(circle_ellipse_pts([cx, cy], r, [ex, ey], [ux, uy], major, minor));
                     }
                 }
             }
@@ -1338,7 +1364,7 @@ impl Project {
                     match o.kind {
                         EntityKind::Line { a: c, b: d } => {
                             if let (Some((cx, cy)), Some((dx, dy))) = (p(c), p(d)) {
-                                if let Some(t) = seg_seg_t(ax, ay, bx, by, cx, cy, dx, dy) {
+                                if let Some(t) = seg_seg_t([ax, ay], [bx, by], [cx, cy], [dx, dy]) {
                                     if t > 1e-6 && t < 1.0 - 1e-6 {
                                         out.push((ax + (bx - ax) * t, ay + (by - ay) * t));
                                     }
@@ -1369,7 +1395,7 @@ impl Project {
                         EntityKind::Ellipse { c, ma, mi } => {
                             if let (Some((ex, ey)), Some((mx, my)), Some((nx, ny))) = (p(c), p(ma), p(mi)) {
                                 let (ux, uy, major, minor) = ellipse_axes(ex, ey, mx, my, nx, ny);
-                                for t in seg_ellipse_t(ax, ay, bx, by, ex, ey, ux, uy, major, minor) {
+                                for t in seg_ellipse_t([ax, ay], [bx, by], [ex, ey], [ux, uy], major, minor) {
                                     if t > 1e-6 && t < 1.0 - 1e-6 {
                                         out.push((ax + (bx - ax) * t, ay + (by - ay) * t));
                                     }
@@ -1408,22 +1434,7 @@ impl Project {
         let Some(s) = self.sketches.get(si) else { return false };
         let Some(e) = s.entities.iter().find(|e| e.id == eid) else { return false };
         let con = e.construction;
-        let p = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-        // Centre, radius and, for an arc, the angular range.
-        let (center_id, cx, cy, r, span): (Id, f64, f64, f64, Option<(f64, f64, bool)>) = match e.kind {
-            EntityKind::Circle { center, r } => match p(center) {
-                Some((cx, cy)) => (center, cx, cy, r, None),
-                None => return false,
-            },
-            EntityKind::Arc { center, a, b, ccw } => match (p(center), p(a), p(b)) {
-                (Some((cx, cy)), Some((ax, ay)), Some((bx, by))) => {
-                    let r = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt();
-                    (center, cx, cy, r, Some(((ay - cy).atan2(ax - cx), (by - cy).atan2(bx - cx), ccw)))
-                }
-                _ => return false,
-            },
-            _ => return false,
-        };
+        let Some(Round { center_id, cx, cy, r, span }) = round_entity(s, e) else { return false };
         let cuts = self.curve_cut_angles(si, eid, cx, cy, r);
         if cuts.is_empty() {
             return false;
@@ -1509,21 +1520,7 @@ impl Project {
         let Some(s) = self.sketches.get(si) else { return false };
         let Some(e) = s.entities.iter().find(|e| e.id == eid) else { return false };
         let con = e.construction;
-        let p = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-        let (center_id, cx, cy, r, span): (Id, f64, f64, f64, Option<(f64, f64, bool)>) = match e.kind {
-            EntityKind::Circle { center, r } => match p(center) {
-                Some((cx, cy)) => (center, cx, cy, r, None),
-                None => return false,
-            },
-            EntityKind::Arc { center, a, b, ccw } => match (p(center), p(a), p(b)) {
-                (Some((cx, cy)), Some((ax, ay)), Some((bx, by))) => {
-                    let r = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt();
-                    (center, cx, cy, r, Some(((ay - cy).atan2(ax - cx), (by - cy).atan2(bx - cx), ccw)))
-                }
-                _ => return false,
-            },
-            _ => return false,
-        };
+        let Some(Round { center_id, cx, cy, r, span }) = round_entity(s, e) else { return false };
         let ca = (clicky - cy).atan2(clickx - cx);
         let mk = |me: &mut Self, g0: f64, g1: f64, ccw: bool| {
             let pa = me.sketch_point_at(si, cx + r * g0.cos(), cy + r * g0.sin(), 1e-6);
@@ -1632,7 +1629,7 @@ impl Project {
         let (Some(o1), Some(o2)) = (self.line_other_end(si, t1, arc_eid), self.line_other_end(si, t2, arc_eid)) else { return false };
         let (Some((o1x, o1y)), Some((t1x, t1y)), Some((o2x, o2y)), Some((t2x, t2y))) = (self.point_xy(si, o1), self.point_xy(si, t1), self.point_xy(si, o2), self.point_xy(si, t2)) else { return false };
         // The corner is the intersection of the lines o1 to t1 and o2 to t2.
-        let Some((px, py)) = line_intersect_inf(o1x, o1y, t1x, t1y, o2x, o2y, t2x, t2y) else { return false };
+        let Some((px, py)) = line_intersect_inf([o1x, o1y], [t1x, t1y], [o2x, o2y], [t2x, t2y]) else { return false };
         let l1 = ((o1x - px).powi(2) + (o1y - py).powi(2)).sqrt();
         let l2 = ((o2x - px).powi(2) + (o2y - py).powi(2)).sqrt();
         if l1 < 1e-9 || l2 < 1e-9 {
@@ -1764,7 +1761,7 @@ impl Project {
     /// This keeps the dimensions and constraints on the corner valid while `pc` never reaches the contour. A
     /// real vertex, still needed by a third edge, is left alone.
     pub(super) fn keep_virtual_corner_lines(&mut self, si: usize, pc: Id, o1: Id, t1: Id, o2: Id, t2: Id) {
-        let pc_still_used = self.sketches.get(si).map_or(false, |s| {
+        let pc_still_used = self.sketches.get(si).is_some_and(|s| {
             s.entities.iter().any(|e| match e.kind {
                 EntityKind::Line { a, b } => a == pc || b == pc,
                 EntityKind::Arc { center, a, b, .. } => center == pc || a == pc || b == pc,
@@ -1939,19 +1936,33 @@ impl Project {
                 }
             }
         };
+        // A NAMED RECORD, not a four-place tuple of pairs: `(f64, (f64, f64), (f64, f64), (f64, f64))` needed
+        // a comment beside it saying which pair was the centre and which the tangency points, and a comment is
+        // not checked by anything.
+        #[derive(Clone, Copy)]
+        struct Candidate {
+            /// How far the centre is from the click - smaller wins.
+            score: f64,
+            /// The fillet's centre.
+            center: (f64, f64),
+            /// Where it touches the first edge.
+            t1: (f64, f64),
+            /// Where it touches the second.
+            t2: (f64, f64),
+        }
         // Choose the centre: tangency valid on both edges, and nearest to the click.
-        let mut best: Option<(f64, (f64, f64), (f64, f64), (f64, f64))> = None; // (score, C, t1, t2)
+        let mut best: Option<Candidate> = None;
         for (cx, cy) in centers {
             let (Some(t1), Some(t2)) = (tangent_pt(s1, cx, cy), tangent_pt(s2, cx, cy)) else { continue };
             // Both tangency points have to lie on the vertex side, between `pc` and `o`; `tangent_pt` checks
             // that for lines, while for an arc the radial projection is trusted. The score is the distance from
             // the centre to the click.
             let score = (cx - nearx).powi(2) + (cy - neary).powi(2);
-            if best.map_or(true, |(bs, ..)| score < bs) {
-                best = Some((score, (cx, cy), t1, t2));
+            if best.is_none_or(|b| score < b.score) {
+                best = Some(Candidate { score, center: (cx, cy), t1, t2 });
             }
         }
-        let Some((_, (cxx, cyy), (t1x, t1y), (t2x, t2y))) = best else { return false };
+        let Some(Candidate { center: (cxx, cyy), t1: (t1x, t1y), t2: (t2x, t2y), .. }) = best else { return false };
         // Build it.
         let t1 = self.sketch_point_at(si, t1x, t1y, 1e-9);
         let t2 = self.sketch_point_at(si, t2x, t2y, 1e-9);
@@ -2050,7 +2061,7 @@ impl Project {
         // `pc` is held against every support: a line by `PointOnLine` on its extension, an arc or circle by
         // `PointOnCircle`. When `pc` is still needed by a third edge (three or more edges met at the corner) it
         // is a real vertex already and is left alone.
-        let pc_still_used = self.sketches.get(si).map_or(false, |s| {
+        let pc_still_used = self.sketches.get(si).is_some_and(|s| {
             s.entities.iter().any(|e| match e.kind {
                 EntityKind::Line { a, b } => a == pc || b == pc,
                 EntityKind::Arc { center, a, b, .. } => center == pc || a == pc || b == pc,
@@ -2168,7 +2179,7 @@ impl Project {
         let mut done = 0;
         for pid in corners {
             // Is the vertex still intact, with two edges still meeting there?
-            if self.sketches.get(si).map_or(false, |s| s.points.iter().any(|q| q.id == pid)) && self.vertex_edges(si, pid).len() == 2 && self.fillet_at_vertex(si, pid, r) {
+            if self.sketches.get(si).is_some_and(|s| s.points.iter().any(|q| q.id == pid)) && self.vertex_edges(si, pid).len() == 2 && self.fillet_at_vertex(si, pid, r) {
                 done += 1;
             }
         }
@@ -2507,7 +2518,7 @@ impl Project {
             if sp.construction {
                 continue; // A construction spline never reaches a profile; it is drawn dashed.
             }
-            let cps: Vec<Point2> = sp.points.iter().filter_map(|id| pts.iter().find(|p| p.id == *id).map(|p| Point2::new(p.x, p.y))).collect();
+            let cps: Vec<Point2> = sp.points.iter().filter_map(|id| pts.iter().find(|p| p.id == *id).map(|p| crate::geom::Point2::new(p.x, p.y))).collect();
             if cps.len() >= 2 {
                 pairs.push((tessellate_spline_hermite(&cps, &sp.tangents, sp.closed), Vec::new()));
             }
@@ -2539,7 +2550,7 @@ impl Project {
                 let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
                 area += a.x * b.y - b.x * a.y;
             }
-            (Point2::new(sx / n, sy / n), (0.5 * area).abs())
+            (crate::geom::Point2::new(sx / n, sy / n), (0.5 * area).abs())
         };
         let old: Vec<(Id, Point2, f64, bool)> = entity_cids
             .iter()
@@ -2667,7 +2678,7 @@ impl Project {
         let o = self.ensure_origin(si);
         let w = which.min(1);
         let existing = self.sketches.get(si).map(|s| s.axis_pts[w]).unwrap_or(0);
-        if existing != 0 && self.sketches.get(si).map_or(false, |s| s.points.iter().any(|p| p.id == existing)) {
+        if existing != 0 && self.sketches.get(si).is_some_and(|s| s.points.iter().any(|p| p.id == existing)) {
             return (o, existing);
         }
         let id = self.alloc_id();
@@ -2822,7 +2833,8 @@ impl Project {
     }
     /// Like `add_polygon_entity`, but returns the id of the circumscribed circle centre together with the side
     /// ids.
-    pub fn add_polygon_param(&mut self, si: usize, cx: f64, cy: f64, vx: f64, vy: f64, n: u32, purpose: crate::feature::Purpose) -> (Id, Vec<Id>) {
+    pub fn add_polygon_param(&mut self, si: usize, c: crate::geom::Point2, v: crate::geom::Point2, n: u32, purpose: crate::feature::Purpose) -> (Id, Vec<Id>) {
+        let ((cx, cy), (vx, vy)) = ((c.x, c.y), (v.x, v.y));
         let construction = purpose == crate::feature::Purpose::Construction;
         let n = n.max(3) as usize;
         let r = ((vx - cx).powi(2) + (vy - cy).powi(2)).sqrt().max(0.01);
@@ -2866,7 +2878,8 @@ impl Project {
         (center, eids)
     }
     /// Add a slot between two centres with radius `r`: two lines plus two end arcs.
-    pub fn add_slot_entity(&mut self, si: usize, c1x: f64, c1y: f64, c2x: f64, c2y: f64, r: f64, purpose: crate::feature::Purpose) {
+    pub fn add_slot_entity(&mut self, si: usize, c1: crate::geom::Point2, c2: crate::geom::Point2, r: f64, purpose: crate::feature::Purpose) {
+        let ((c1x, c1y), (c2x, c2y)) = ((c1.x, c1.y), (c2.x, c2.y));
         let construction = purpose == crate::feature::Purpose::Construction;
         let r = r.max(0.01);
         let (dx, dy) = (c2x - c1x, c2y - c1y);
@@ -2906,7 +2919,8 @@ impl Project {
     /// A rotated rectangle from three points: p1 to p2 gives one side and its direction, p3 gives the height as
     /// a projection onto the normal. Returns the ids of the four sides. Opposite sides are held parallel and
     /// adjacent ones perpendicular, so it stays a rectangle under the solver.
-    pub fn add_rect3_entity(&mut self, si: usize, x1: f64, y1: f64, x2: f64, y2: f64, x3: f64, y3: f64, purpose: crate::feature::Purpose) -> Vec<Id> {
+    pub fn add_rect3_entity(&mut self, si: usize, p1: crate::geom::Point2, p2: crate::geom::Point2, p3: crate::geom::Point2, purpose: crate::feature::Purpose) -> Vec<Id> {
+        let ((x1, y1), (x2, y2), (x3, y3)) = ((p1.x, p1.y), (p2.x, p2.y), (p3.x, p3.y));
         let construction = purpose == crate::feature::Purpose::Construction;
         let (dx, dy) = (x2 - x1, y2 - y1);
         let len = (dx * dx + dy * dy).sqrt();
@@ -2935,7 +2949,8 @@ impl Project {
         eids
     }
     /// Add an arc entity (centre, start, end, direction).
-    pub fn add_arc_entity(&mut self, si: usize, cx: f64, cy: f64, ax: f64, ay: f64, bx: f64, by: f64, winding: crate::feature::Winding, purpose: crate::feature::Purpose) {
+    pub fn add_arc_entity(&mut self, si: usize, c: crate::geom::Point2, a: crate::geom::Point2, b: crate::geom::Point2, winding: crate::feature::Winding, purpose: crate::feature::Purpose) {
+        let ((cx, cy), (ax, ay), (bx, by)) = ((c.x, c.y), (a.x, a.y), (b.x, b.y));
         let construction = purpose == crate::feature::Purpose::Construction;
         let ccw = winding == crate::feature::Winding::Ccw;
         let center = self.radius_center_at(si, cx, cy); // Its own centre node (see `radius_center_at`).
@@ -3455,6 +3470,31 @@ impl Project {
         (len > 1e-9).then(|| ([pa.0, pa.1, 0.0], [dx / len, dy / len, 0.0]))
     }
     /// Add a work plane with a stable id (a timeline node). Returns its id.
+    /// THE TEXT OF A NOTE ON A SKETCH.
+    ///
+    /// Reaching two levels down (`sketches[si].notes[ni].text`) from a panel means the panel knows how
+    /// notes are stored. Here it knows only that a note has text.
+    pub fn set_note_text(&mut self, si: usize, ni: usize, text: impl Into<String>) -> bool {
+        match self.sketches.get_mut(si).and_then(|s| s.notes.get_mut(ni)) {
+            Some(n) => {
+                n.text = text.into();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// RENAME A WORK PLANE.
+    pub fn rename_plane(&mut self, id: Id, name: impl Into<String>) -> bool {
+        match self.planes.iter_mut().find(|p| p.id == id) {
+            Some(p) => {
+                p.name = name.into();
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn add_plane(&mut self, mut pl: WorkPlane) -> Id {
         use crate::feature::{FeatureKind, FeatureNode};
         if pl.id == 0 {
@@ -3531,7 +3571,7 @@ impl Project {
         // to extrude. It is detached onto the XY plane of the target part, which preserves the flat profile in
         // local 2D and makes the sketch self-contained.
         use crate::feature::{BasePlane, SketchPlane};
-        let carried = |slf: &Self, owner: Option<Id>| owner.map_or(true, |o| slf.component_is_within(o, target_parent));
+        let carried = |slf: &Self, owner: Option<Id>| owner.is_none_or(|o| slf.component_is_within(o, target_parent));
         let attached = match sk.plane {
             SketchPlane::Face(body, _) => carried(self, self.body_owner(body)),
             SketchPlane::Datum(p) => carried(self, self.plane_owner(p)),
@@ -3617,46 +3657,13 @@ impl Project {
                 acc = Some(match acc {
                     None => b,
                     Some(a) => Bbox {
-                        min: Point2::new(a.min.x.min(b.min.x), a.min.y.min(b.min.y)),
-                        max: Point2::new(a.max.x.max(b.max.x), a.max.y.max(b.max.y)),
+                        min: crate::geom::Point2::new(a.min.x.min(b.min.x), a.min.y.min(b.min.y)),
+                        max: crate::geom::Point2::new(a.max.x.max(b.max.x), a.max.y.max(b.max.y)),
                     },
                 });
             }
         }
         acc
-    }
-    /// Contours of an operation (selected by id, or all of them when the selection is empty), with their
-    /// indices.
-    pub(super) fn resolve_selection(&self, op: &OperationDef) -> Vec<(usize, &Contour)> {
-        if op.selection.is_empty() {
-            self.contours.iter().enumerate().collect()
-        } else {
-            op.selection.iter().filter_map(|&id| self.contour_index(id).map(|i| (i, &self.contours[i]))).collect()
-        }
-    }
-    /// The selected closed contours as a machining boundary; empty means the whole part.
-    pub(super) fn boundary_contours(&self, op: &OperationDef) -> Vec<Contour> {
-        op.selection
-            .iter()
-            .filter_map(|&id| self.contour_index(id).map(|i| &self.contours[i]))
-            .filter(|c| c.closed && c.points.len() >= 3)
-            .cloned()
-            .collect()
-    }
-    /// Resolve the side: `Auto` decides from the nesting depth of contour `idx`.
-    pub(super) fn resolve_side(&self, mode: SideMode, idx: usize) -> Side {
-        match mode {
-            SideMode::Outside => Side::Outside,
-            SideMode::Inside => Side::Inside,
-            SideMode::On => Side::On,
-            SideMode::Auto => {
-                if nesting_depth(&self.contours, idx) % 2 == 0 {
-                    Side::Outside
-                } else {
-                    Side::Inside
-                }
-            }
-        }
     }
 }
 
@@ -3681,4 +3688,37 @@ fn fillet_label_angle(points: &[SketchPoint], cen: Id, t1: Id, t2: Id) -> f64 {
         return 0.0; // The tangency points are diametrically opposite, so there is no bisector.
     }
     dy.atan2(-dx)
+}
+
+/// A CIRCLE OR AN ARC READ AS ONE THING: the centre, the radius, and for an arc the angular range.
+///
+/// It used to be built twice, in two commands, as the same five-place tuple with the same comment beside it -
+/// and `Option<(f64, f64, bool)>` in a signature says nothing about what the three are.
+struct Round {
+    /// The point that is the centre.
+    center_id: Id,
+    /// The centre, in sketch coordinates.
+    cx: f64,
+    cy: f64,
+    /// The radius.
+    r: f64,
+    /// `None` for a circle. For an arc: the start angle, the end angle, and whether it runs anticlockwise.
+    span: Option<(f64, f64, bool)>,
+}
+
+/// Read a circle or an arc; anything else, or a missing point, gives `None`.
+fn round_entity(s: &crate::model::Sketch, e: &crate::model::SketchEntity) -> Option<Round> {
+    let p = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+    match e.kind {
+        EntityKind::Circle { center, r } => {
+            let (cx, cy) = p(center)?;
+            Some(Round { center_id: center, cx, cy, r, span: None })
+        }
+        EntityKind::Arc { center, a, b, ccw } => {
+            let ((cx, cy), (ax, ay), (bx, by)) = (p(center)?, p(a)?, p(b)?);
+            let r = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt();
+            Some(Round { center_id: center, cx, cy, r, span: Some(((ay - cy).atan2(ax - cx), (by - cy).atan2(bx - cx), ccw)) })
+        }
+        _ => None,
+    }
 }

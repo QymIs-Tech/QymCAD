@@ -12,7 +12,7 @@ mod svg_import;
 pub use dxf_export::export_dxf;
 pub use dxf_import::import_dxf;
 pub use part_file::{load_part, load_part_bytes, load_part_manifest, load_part_manifest_bytes, load_part_thumb, load_part_thumb_bytes, save_part, LoadedPart};
-pub use project_file::{content_weight, load_project, load_project_with_brep, save_project, save_project_guarded, save_project_guarded_with_brep, save_project_with_brep};
+pub use project_file::{content_weight, load_project, load_project_with_brep, LoadedProject, save_project, save_project_guarded, save_project_guarded_with_brep, save_project_with_brep};
 pub use stl_export::export_stl;
 pub use stl_import::import_stl;
 pub use svg_export::export_svg;

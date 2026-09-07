@@ -11,17 +11,14 @@ use crate::model::Id;
 
 /// Base plane of the global coordinate system, used to place a sketch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum BasePlane {
+    #[default]
     XY,
     XZ,
     YZ,
 }
 
-impl Default for BasePlane {
-    fn default() -> Self {
-        BasePlane::XY
-    }
-}
 
 /// Stable key of a planar face of a body (topological naming).
 ///
@@ -838,6 +835,9 @@ impl Joint {
     }
 
     /// Apply the limits to every free slot of the joint, clamping angle, offset and offset2 in place.
+    // THE INDEX IS AN ARGUMENT, not a way of reaching an element: `clamp_slot(slot, v)` needs the slot's
+    // number to pick the right limit. An iterator would have to hand it back through `enumerate` anyway.
+    #[allow(clippy::needless_range_loop)]
     pub fn clamp_free(&mut self) {
         let free = self.kind.free_slots();
         for slot in 0..3 {
@@ -1603,10 +1603,95 @@ pub struct Helical<'a> {
 /// The kernel caches the B-rep shape by body id: modifier features (`combine`, `fillet`, `chamfer`) read the
 /// shape of their source body `src`. `place` is the 3x4 transform onto the sketch plane (`PLACE_IDENTITY` for
 /// primitives). Every method returns the mesh and the faces of the result.
+/// A LINE IN SPACE: a point on it and the direction along it.
+///
+/// It travelled as an unnamed pair - and as `Option<([f64; 3], [f64; 3])>` at that, where nothing said
+/// which of the two triples was the point and which the direction.
+#[derive(Clone, Copy)]
+pub struct AxisLine {
+    pub origin: [f64; 3],
+    pub dir: [f64; 3],
+}
+
+/// WHAT A REVOLVE TURNS ABOUT: a world axis by number, or a line given outright.
+///
+/// The two are exclusive - a line, when there is one, wins - and the kernel needs both to tell the
+/// refusal apart: turning about a world axis and about a given line fail for different reasons.
+#[derive(Clone, Copy)]
+pub struct RevolveAbout {
+    /// The world axis by number, used when `line` is `None`.
+    pub axis: u8,
+    pub line: Option<AxisLine>,
+}
+
+/// THE NAMES THE NEW SURFACES OF A BLEND WILL GET.
+///
+/// A fillet or a chamfer makes surfaces that did not exist before it, and each has to be named, or what
+/// refers to it does not survive the next rebuild. Three sets, and they are not interchangeable: one
+/// name per rounded edge, one per corner patch where blends meet, and the whole set for the "every edge"
+/// form, where the list of edges is not known before the kernel has looked.
+#[derive(Clone, Copy)]
+pub struct BlendNames<'a> {
+    /// One per edge being blended: the surface it turns into.
+    pub surfaces: &'a [u32],
+    /// One per vertex where blends meet: the patch that closes the corner.
+    pub corners: &'a [u32],
+    /// Every edge of the body, for the form that blends them all.
+    pub all: &'a [u32],
+}
+
+/// HOW FAR A DRAFT LEANS AND WHICH WAY THE MOULD COMES OUT.
+///
+/// The angle alone says nothing: the same lean tilts the faces one way or the other depending on the
+/// pull. The two are one instruction and were two arguments.
+#[derive(Clone, Copy)]
+pub struct DraftPull {
+    /// Degrees.
+    pub angle: f64,
+    /// The direction the mould is drawn in.
+    pub dir: [f64; 3],
+}
+
+/// A PLANE GIVEN BY A POINT ON IT AND ITS NORMAL.
+#[derive(Clone, Copy)]
+pub struct PlaneAt {
+    pub origin: [f64; 3],
+    pub normal: [f64; 3],
+}
+
+/// THE NAMES THE NEW SURFACES OF A THICKENING WILL GET: one per offset face, one per side wall.
+///
+/// They come from the recipe - the offset side is produced by its face, each wall by its boundary edge -
+/// and are prepared in advance, because interning a name mutates the name table while the kernel needs
+/// the finished substitution.
+#[derive(Clone, Copy)]
+pub struct NameMaps<'a> {
+    pub faces: &'a [u32],
+    pub edges: &'a [u32],
+}
+
+/// THE SECTIONS OF A LOFT: the encoded contours, where each begins, and where each is placed.
+///
+/// Three parallel arrays that are one thing; separately, nothing said that the second indexes into the
+/// first.
+#[derive(Clone, Copy)]
+pub struct LoftSections<'a> {
+    pub data: &'a [f64],
+    pub offsets: &'a [usize],
+    pub places: &'a [f64],
+}
+
+/// A PROFILE AND HOW FAR IT IS EXTRUDED - the pair that makes a solid out of a flat contour.
+#[derive(Clone, Copy)]
+pub struct Extruded<'a> {
+    pub profile: &'a [f64],
+    pub height: f64,
+}
+
 pub trait Kernel {
     fn extrude(&self, body: Id, profile: &[f64], height: f64, place: [f64; 12]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
     fn revolve(&self, body: Id, profile: &[f64], axis: u8, angle_deg: f64, place: [f64; 12]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
-    fn boolean(&self, body: Id, base: &[f64], base_h: f64, tool: &[f64], tool_h: f64, op: u8, place: [f64; 12]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
+    fn boolean(&self, body: Id, base: Extruded, tool: Extruded, op: u8, place: [f64; 12]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
     /// Extrude a region from the exact profile `profile` (the `geom::encode_profile` encoding: an outer
     /// contour plus holes made of real edges — lines, arcs, circles) to a height, giving a body with exact
     /// faces.
@@ -1624,13 +1709,13 @@ pub trait Kernel {
     /// `caps` holds the name descriptors of the start and end caps from the document name table: a cap is not
     /// produced by a profile edge, so its name arrives as a separate parameter rather than inside the
     /// encoding.
-    fn combine_region_multi(&self, body: Id, src: Id, profiles: &[Vec<f64>], height: f64, op: u8, place: [f64; 12], caps: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
+    fn combine_region_multi(&self, bo: crate::model::BodyOp, profiles: &[Vec<f64>], height: f64, place: [f64; 12], caps: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
     /// Revolve the exact profile `profile` about an axis (0 for X, 1 for Y) by an angle, giving a body with
     /// exact faces.
     fn revolve_region(&self, body: Id, profile: &[f64], axis: u8, angle_deg: f64, place: [f64; 12], caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
     /// Revolve a region about an arbitrary axis (`origin` and `dir` in profile local space), that is, a datum
     /// axis. The default implementation is a fallback for the mock: an ordinary revolve about X.
-    fn revolve_region_axis(&self, body: Id, profile: &[f64], _origin: [f64; 3], _dir: [f64; 3], angle_deg: f64, place: [f64; 12], caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+    fn revolve_region_axis(&self, body: Id, profile: &[f64], _line: AxisLine, angle_deg: f64, place: [f64; 12], caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
         self.revolve_region(body, profile, 0, angle_deg, place, caps)
     }
 
@@ -1644,16 +1729,14 @@ pub trait Kernel {
     /// is merging touching contours into one face.
     fn revolve_region_multi(
         &self,
-        body: Id,
-        src: Id,
+        bo: crate::model::BodyOp,
         profiles: &[Vec<f64>],
-        axis: u8,
-        origin_dir: Option<([f64; 3], [f64; 3])>,
+        about: RevolveAbout,
         angle_deg: f64,
         place: [f64; 12],
-        op: u8,
         caps: &[u32],
     ) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+        let crate::model::BodyOp { src, op, body } = bo;
         // The fallback is honest: a single profile without a boolean is reproduced exactly, arbitrary axis
         // included. Merging several profiles or combining with a body needs a real kernel, and silently
         // returning a boss instead of a cut would give a test a green light on the wrong shape.
@@ -1663,9 +1746,9 @@ pub trait Kernel {
         let _ = op;
         let first = profiles.first().ok_or(crate::errors::CoreError::NoContours)?;
         let cap2 = [caps.get(1).copied().unwrap_or(0), caps.get(2).copied().unwrap_or(0)];
-        match origin_dir {
-            Some((o, d)) => self.revolve_region_axis(body, first, o, d, angle_deg, place, cap2),
-            None => self.revolve_region(body, first, axis, angle_deg, place, cap2),
+        match about.line {
+            Some(line) => self.revolve_region_axis(body, first, line, angle_deg, place, cap2),
+            None => self.revolve_region(body, first, about.axis, angle_deg, place, cap2),
         }
     }
 
@@ -1673,15 +1756,14 @@ pub trait Kernel {
     /// [`Kernel::revolve_region_multi`].
     fn sweep_multi(
         &self,
-        body: Id,
-        src: Id,
+        bo: crate::model::BodyOp,
         profiles: &[Vec<f64>],
         profile_place: [f64; 12],
         path: &[f64],
         path_place: [f64; 12],
-        op: u8,
         caps: &[u32],
     ) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+        let crate::model::BodyOp { src, op, body } = bo;
         if src != 0 || profiles.len() > 1 {
             return Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Sweep));
         }
@@ -1702,32 +1784,32 @@ pub trait Kernel {
     /// placement per section (length nsec * 12). `ruled` gives straight faces and `solid` closes the result
     /// into a body. The default implementation is a fallback.
     #[allow(clippy::too_many_arguments)]
-    fn loft(&self, _body: Id, _sections: &[f64], _offsets: &[usize], _places: &[f64], _walls: LoftWalls, _kind: LoftBody, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+    fn loft(&self, _body: Id, _sections: LoftSections, _walls: LoftWalls, _kind: LoftBody, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Loft))
     }
     /// Lofted boolean: the lofted solid acts as a tool and is combined with body `src` (`op`: 0 cut, 1 union,
     /// 2 intersection). The section parameters are as in `loft`. The default implementation is a fallback.
     #[allow(clippy::too_many_arguments)]
-    fn loft_combine(&self, _body: Id, _src: Id, _sections: &[f64], _offsets: &[usize], _places: &[f64], _walls: LoftWalls, _op: u8, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+    fn loft_combine(&self, _bo: crate::model::BodyOp, _sections: &[f64], _offsets: &[usize], _places: &[f64], _walls: LoftWalls, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::LoftBoolean))
     }
-    /// Stepped hole: a cutting tool (a cylinder plus a counterbore or countersink) in frame `pl`. `kind` is 0
-    /// for a plain hole, 1 for a counterbore and 2 for a countersink. The mock default cuts a plain cylinder
-    /// through `combine_region`.
-    #[allow(clippy::too_many_arguments)]
-    fn hole(&self, body: Id, src: Id, _kind: u8, pl: [f64; 12], dia: f64, depth: f64, _dia2: f64, _depth2: f64, _bore: u32, _extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
-        let prof = crate::geom::encode_profile(&crate::geom::circle_contour(0.0, 0.0, dia / 2.0, 0.05), &[]);
-        self.combine_region(body, src, &prof, -depth.abs(), 0, pl)
+    /// Stepped hole: the tool (a cylinder plus a counterbore or countersink) in frame `pl`. What drills it
+    /// travels as one record - see `HoleTool` - because the five numbers describing it are one thing, and
+    /// the same record is what the timeline stores. The mock default cuts a plain cylinder through
+    /// `combine_region`.
+    fn hole(&self, body: Id, src: Id, tool: crate::model::HoleTool, pl: [f64; 12], _bore: u32, _extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+        let prof = crate::geom::encode_profile(&crate::geom::circle_contour(0.0, 0.0, tool.diameter / 2.0, 0.05), &[]);
+        self.combine_region(body, src, &prof, -tool.depth.abs(), 0, pl)
     }
     /// Many holes at once (at the points of a sketch): one cutting tool per frame in `pls`, all merged and
-    /// subtracted by a single boolean. `kind`, `dia`, `depth`, `dia2` and `depth2` are as in `hole`. The
-    /// default implementation applies `hole` for each point in turn.
-    #[allow(clippy::too_many_arguments)]
-    fn holes(&self, body: Id, src: Id, kind: u8, pls: &[[f64; 12]], dia: f64, depth: f64, dia2: f64, depth2: f64, bores: &[u32], extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+    /// subtracted by a single boolean. The default implementation applies `hole` for each point in turn.
+    fn holes(&self, body: Id, src: Id, tool: crate::model::HoleTool, pls: &[[f64; 12]], bores: &[u32], extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
         let mut cur = src;
         let mut out: Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> = Err(crate::errors::CoreError::NoPointsForHoles);
         for (i, pl) in pls.iter().enumerate() {
-            out = self.hole(body, cur, kind, *pl, dia, depth, dia2, depth2, bores.get(i).copied().unwrap_or(0), extra);
+            out = self.hole(body, cur, tool, *pl, bores.get(i).copied().unwrap_or(0), extra);
+            // NOT `out.as_ref()?`: that hands back a BORROWED error, which this signature cannot convert.
+            #[allow(clippy::question_mark)]
             if out.is_err() {
                 return out;
             }
@@ -1754,13 +1836,13 @@ pub trait Kernel {
     /// Exact torus (in the XY plane, axis Z).
     fn torus(&self, body: Id, major: f64, minor: f64, names: [u32; 3]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
     /// Fillet the edges of body `src` with radius `radius` (an empty `edges` means every edge).
-    fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], names: &[u32], corners: &[u32], all_names: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
+    fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], names: BlendNames) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
     /// Variable fillet specified at vertices: `verts` holds a vertex point and the radius there, and the
     /// kernel interpolates along the edge itself. A shared vertex has one radius for both neighbours, so a
     /// chain meets without a step — a property of the way it is specified rather than of any check. An
     /// endpoint without an entry uses `radius`. The mock default produces a constant fillet.
     fn fillet_at_vertices(&self, body: Id, src: Id, radius: f64, edges: &[u32], _verts: &[([f64; 3], f64)]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
-        self.fillet(body, src, radius, edges, &[], &[], &[])
+        self.fillet(body, src, radius, edges, BlendNames { surfaces: &[], corners: &[], all: &[] })
     }
     /// Copy faces into a separate sheet: the bridge from the parametric model into the surface layer. `names`
     /// holds the names of the copies, whose provenance the model knows. The default is an honest refusal:
@@ -1800,15 +1882,15 @@ pub trait Kernel {
     }
 
     /// Chamfer the edges of body `src` by `dist` (an empty `edges` means every edge).
-    fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], names: &[u32], corners: &[u32], all_names: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
+    fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], names: BlendNames) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError>;
     /// Asymmetric chamfer. `TwoDist` uses setbacks `d1` on the reference face and `d2` on the adjacent one;
     /// `DistAngle` uses setback `d1` plus angle `d2` in degrees; `flip` selects which face is the reference.
     /// `ref_face` is the persistent id of a manually chosen reference face (0 selects it automatically from
     /// `flip`). `Symmetric` falls through to a plain `chamfer(d1)`. It requires an explicit edge selection,
     /// since asymmetry is not defined for "every edge". The mock default is a symmetric `chamfer(d1)`.
     #[allow(clippy::too_many_arguments)]
-    fn chamfer_ex(&self, body: Id, src: Id, d1: f64, _d2: f64, _mode: ChamferMode, _flip: bool, _ref_face: u32, edges: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
-        self.chamfer(body, src, d1, edges, &[], &[], &[])
+    fn chamfer_ex(&self, body: Id, src: Id, d1: f64, _shape: crate::model::ChamferShape, edges: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+        self.chamfer(body, src, d1, edges, BlendNames { surfaces: &[], corners: &[], all: &[] })
     }
     /// Shell body `src`: open the faces named by `face_ids` (persistent ids) and leave walls of `thickness`.
     /// `outward` puts the wall outside instead of inside.
@@ -1840,7 +1922,7 @@ pub trait Kernel {
     }
     /// Thicken a face: face `face` of body `src` becomes a plate of `thickness` as a new body `body`. The
     /// source stays alive — the plate is a separate part rather than a reworking of the original.
-    fn thicken_face(&self, _body: Id, _src: Id, _face: u32, _thickness: f64, _join: Id, _fmap: &[u32], _emap: &[u32]) -> Result<(crate::geom::Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+    fn thicken_face(&self, _body: Id, _src: Id, _face: u32, _thickness: f64, _join: Id, _names: NameMaps) -> Result<(crate::geom::Mesh, Vec<MeshFace>), crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Thicken))
     }
     /// Split faces by a plane without cutting the body: the body stays one, and the faces the plane crosses
@@ -1861,7 +1943,7 @@ pub trait Kernel {
     /// plane (`np_origin`, `np_normal`) along the pull direction `pull`. Requires a real kernel; the mock is a
     /// stub.
     #[allow(clippy::too_many_arguments)]
-    fn draft(&self, _body: Id, _src: Id, _face_ids: &[u32], _angle: f64, _pull: [f64; 3], _np_origin: [f64; 3], _np_normal: [f64; 3], _sides: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
+    fn draft(&self, _body: Id, _src: Id, _face_ids: &[u32], _pull: DraftPull, _neutral: PlaneAt, _sides: &[u32]) -> Result<(Mesh, Vec<MeshFace>), crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Draft))
     }
     /// Pattern of body `src`: unite its copies placed by the transforms in `transforms`.

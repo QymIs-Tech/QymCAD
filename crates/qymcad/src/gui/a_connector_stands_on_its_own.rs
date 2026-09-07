@@ -41,12 +41,12 @@ mod tests {
             super::super::joint_flow::tests::add_part_at(app, x);
         }
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let mine: Vec<Id> = app
             .project
             .components
@@ -105,7 +105,7 @@ mod tests {
         let (ca, cb) = (app.project.add_connector(a, AnchorRef::Origin), app.project.add_connector(b, AnchorRef::Origin));
         app.project.add_joint(ca, cb, JointKind::Rigid);
 
-        app.delete_connector_asked_for_test(ca);
+        qymcad_assembly::delete_connector_asked(&mut app.joint_ctx(), ca);
         assert!(app.project.connector(ca).is_some(), "a connector under a joint must survive");
         assert!(
             app.status.contains(&crate::i18n::tr1("j-conn-in-use", "n", "1")),
@@ -115,7 +115,7 @@ mod tests {
 
         // and a free one is deleted
         let free = app.project.add_connector_standalone(a, AnchorRef::Origin);
-        app.delete_connector_asked_for_test(free);
+        qymcad_assembly::delete_connector_asked(&mut app.joint_ctx(), free);
         assert!(app.project.connector(free).is_none(), "a free connector must be deleted");
     }
 
@@ -125,15 +125,16 @@ mod tests {
         let mut app = App::default();
         let (a, _) = two_parts(&mut app);
         let before = app.project.connectors.len();
-        app.start_conn_pick_for_test();
-        assert!(app.conn_pick_active_for_test(), "the connector tool was not taken up");
-        app.joint_pick_origin_click_for_test(app.project.mesh_id(0).expect("the body of the first part"));
+        app.start_conn_pick();
+        assert!(app.side.joint.conn_pick, "the connector tool was not taken up");
+        let body = app.project.mesh_id(0).expect("the body of the first part");
+        qymcad_assembly::joint_pick_origin_click_for_test(&mut app.joint_ctx(), body);
         let _ = a;
 
         assert_eq!(app.project.connectors.len(), before + 1, "the connector was not created");
         assert!(app.project.joints.is_empty(), "the connector tool created a JOINT, which nobody asked it for");
         let made = app.project.connectors.last().expect("the new connector");
         assert!(made.standalone, "a connector created on its own must be marked as standalone");
-        assert!(!app.conn_pick_active_for_test(), "the tool must be released after the creation");
+        assert!(!app.side.joint.conn_pick, "the tool must be released after the creation");
     }
 }

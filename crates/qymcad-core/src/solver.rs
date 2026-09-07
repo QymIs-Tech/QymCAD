@@ -151,6 +151,9 @@ fn violated_axis_dims(points: &[SketchPoint], constraints: &[Constraint], limit:
 }
 
 /// A single Levenberg-Marquardt run, without the multi-start side flip.
+// THE INDEX IS THE MEANING: `a[i][i]` is the DIAGONAL of the normal matrix. An iterator over rows would
+// still have to index the column, and the damping would stop being visibly a diagonal one.
+#[allow(clippy::needless_range_loop)]
 fn solve_lm(points: &mut [SketchPoint], radii: &mut [RadiusVar], constraints: &[Constraint], drag: Option<(Id, f64, f64)>, max_iter: usize, w_reg: f64, lambda0: f64) -> f64 {
     if points.is_empty() {
         return 0.0;
@@ -162,7 +165,7 @@ fn solve_lm(points: &mut [SketchPoint], radii: &mut [RadiusVar], constraints: &[
 
     let has = |id: Id| idx.contains_key(&id);
     let is_center = |id: Id| ridx.contains_key(&id);
-    let cons: Vec<Constraint> = constraints.iter().cloned().filter(|c| cons_ok(c, &has, &is_center)).collect();
+    let cons: Vec<Constraint> = constraints.iter().filter(|&c| cons_ok(c, &has, &is_center)).cloned().collect();
     let drag = drag.and_then(|(id, x, y)| idx.get(&id).map(|&i| (i, x, y)));
     if cons.is_empty() && drag.is_none() {
         return 0.0;
@@ -400,7 +403,7 @@ fn solve_lm(points: &mut [SketchPoint], radii: &mut [RadiusVar], constraints: &[
             // iteration. A `break` here left the sketch under-solved on any momentary degeneracy, which showed
             // up as jerks.
             None => {
-                lambda = (lambda * 4.0).max(1e-12).min(1e6); // the `.max` also lifts λ back out of zero
+                lambda = (lambda * 4.0).clamp(1e-12, 1e6); // the lower bound also lifts lambda back out of zero
                 continue;
             }
         };
@@ -422,7 +425,7 @@ fn solve_lm(points: &mut [SketchPoint], radii: &mut [RadiusVar], constraints: &[
                 break;
             }
         } else {
-            lambda = (lambda * 4.0).max(1e-12).min(1e6);
+            lambda = (lambda * 4.0).clamp(1e-12, 1e6);
         }
     }
 
@@ -437,6 +440,9 @@ fn solve_lm(points: &mut [SketchPoint], radii: &mut [RadiusVar], constraints: &[
 }
 
 /// Direct solution of the linear system `a·x = b` by Gauss-Jordan elimination with partial pivoting.
+// THE INDEX IS THE MEANING: Gaussian elimination subtracts row `col` from row `r` starting at column
+// `col`. Rows and columns are what the method is about, and hiding them behind iterators hides the method.
+#[allow(clippy::needless_range_loop)]
 fn solve_linear(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     let n = a.len();
     for col in 0..n {
@@ -1217,7 +1223,7 @@ pub fn dof(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Constrain
     let ridx: HashMap<Id, usize> = radii.iter().enumerate().map(|(j, rv)| (rv.center, np * 2 + j)).collect();
     let has = |id: Id| idx.contains_key(&id);
     let is_center = |id: Id| ridx.contains_key(&id);
-    let cons: Vec<Constraint> = constraints.iter().cloned().filter(|c| cons_ok(c, &has, &is_center)).collect();
+    let cons: Vec<Constraint> = constraints.iter().filter(|&c| cons_ok(c, &has, &is_center)).cloned().collect();
     let nv = np * 2 + radii.len();
     let anchor: HashMap<Id, (f64, f64)> = cons
         .iter()
@@ -1276,7 +1282,7 @@ pub fn free_points(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[C
     let ridx: HashMap<Id, usize> = radii.iter().enumerate().map(|(j, rv)| (rv.center, n * 2 + j)).collect();
     let has = |id: Id| idx.contains_key(&id);
     let is_center = |id: Id| ridx.contains_key(&id);
-    let cons: Vec<Constraint> = constraints.iter().cloned().filter(|c| cons_ok(c, &has, &is_center)).collect();
+    let cons: Vec<Constraint> = constraints.iter().filter(|&c| cons_ok(c, &has, &is_center)).cloned().collect();
     let nv = n * 2 + radii.len();
     let anchor: HashMap<Id, (f64, f64)> = cons
         .iter()
@@ -1309,6 +1315,8 @@ pub fn free_points(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[C
 
 /// Pivot columns of a rows×cols matrix, by Gaussian elimination with partial pivoting. The number of pivot
 /// columns is the rank.
+// THE INDEX IS THE MEANING: the same elimination as above, over the columns of the Jacobian.
+#[allow(clippy::needless_range_loop)]
 fn pivot_columns(a: &mut [Vec<f64>], cols: usize) -> Vec<usize> {
     let rows = a.len();
     let mut pivots = Vec::new();

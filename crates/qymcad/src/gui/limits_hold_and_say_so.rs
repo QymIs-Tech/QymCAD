@@ -17,7 +17,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of the topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -34,8 +34,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -48,12 +48,12 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 6.0).mate(JointKind::Slider).anchor(3).click(pa).click(pb);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let jid = app.project.joints.last().map(|j| j.id).expect("two clicks must create the joint");
         (jid, mine[1])
     }
@@ -169,7 +169,7 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         app.workbench = super::super::Workbench::Assembly;
-        app.mode_3d = true;
+        app.viewing.mode_3d = true;
         let mut texts = Vec::new();
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {

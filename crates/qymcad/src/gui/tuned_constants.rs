@@ -10,6 +10,7 @@
 //! nothing.
 #[cfg(test)]
 mod tests {
+    use qymcad_ui_state::Projection;
     use super::super::App;
 
     /// NOT ONE OF THESE NUMBERS IS STILL A CONSTANT IN THE CODE.
@@ -18,7 +19,7 @@ mod tests {
         let gui = include_str!("../gui.rs");
         let input = include_str!("input.rs");
         for (name, src, where_) in [("UNDO_CAP", gui, "gui.rs"), ("GHOST_ALPHA", gui, "gui.rs"), ("PERSP_FOV_HALF_TAN", gui, "gui.rs"), ("PERIOD", input, "input.rs")] {
-            let code: String = super::super::super::i18n::ratchet::tests::working_part(src).lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+            let code: String = qymcad_i18n::ratchet::working_part(src).lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
             assert!(!code.contains(&format!("const {name}")), "{where_}: `{name}` is a constant again — the setting stopped affecting anything");
         }
     }
@@ -77,23 +78,23 @@ mod tests {
 
         // a document with unsaved work and a clock that has not ticked for a while
         let mut app = super::super::screen_keys::tests::plate();
-        app.set_project_path(path.clone());
-        app.set_last_autosave_ago_for_test(90); // a minute and a half has passed since the last write
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
+        app.disk.edits.last_autosave = std::time::Instant::now() - std::time::Duration::from_secs(90); // a minute and a half has passed since the last write
 
         app.set.autosave_secs = 0; // switched off: nothing is written however long has passed
-        app.maybe_autosave_for_test();
-        app.wait_bg_for_test();
+        app.maybe_autosave(false); // `false`: the autosave runs on its own timer rather than being forced
+        app.wait_bg();
         assert!(!std::path::Path::new(&auto).exists(), "the autosave is switched off and a copy appeared anyway");
 
         app.set.autosave_secs = 600; // the period is NOT UP yet (90 s of 600) — too early to write
-        app.maybe_autosave_for_test();
-        app.wait_bg_for_test();
+        app.maybe_autosave(false); // `false`: the autosave runs on its own timer rather than being forced
+        app.wait_bg();
         assert!(!std::path::Path::new(&auto).exists(), "the period is 600 s and 90 have passed — and a copy is already written: the value of the period is not read");
 
         app.set.autosave_secs = 60; // and now the period is up (90 s of 60)
-        app.set_last_autosave_ago_for_test(90);
-        app.maybe_autosave_for_test();
-        app.wait_bg_for_test();
+        app.disk.edits.last_autosave = std::time::Instant::now() - std::time::Duration::from_secs(90);
+        app.maybe_autosave(false); // `false`: the autosave runs on its own timer rather than being forced
+        app.wait_bg();
         assert!(std::path::Path::new(&auto).exists(), "the autosave period is up and there is no copy");
 
         let _ = std::fs::remove_file(&auto);
@@ -106,23 +107,23 @@ mod tests {
         let mut app = App::default();
         app.set.undo_cap = 3;
         for i in 0..10 {
-            app.begin_edit(&format!("step {i}"));
+            qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, format!("step {i}"));
             app.project.parameters.push(qymcad_core::model::Param { name: format!("p{i}"), expr: "1".into(), value: 1.0 });
-            app.commit_edit();
+            qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
         }
-        assert!(app.undo_len_for_test() <= 3, "{} undo steps with a limit of 3 — the setting has no effect", app.undo_len_for_test());
-        assert!(app.undo_len_for_test() > 0, "the limit ate the WHOLE history — there will be nothing left to undo");
+        assert!(app.disk.edits.undo.len() <= 3, "{} undo steps with a limit of 3 — the setting has no effect", app.disk.edits.undo.len());
+        assert!(app.disk.edits.undo.len() > 0, "the limit ate the WHOLE history — there will be nothing left to undo");
     }
 
     /// THE FIELD OF VIEW CHANGES THE PROJECTION rather than only a number in a window.
     #[test]
     fn the_field_of_view_changes_the_projection() {
         let mut app = App::default();
-        app.set.cam_perspective = true; // an orthographic projection has no field of view by definition
+        app.set.projection = Projection::Perspective; // an orthographic projection has no field of view by definition
         app.set.persp_fov_deg = 20.0;
-        let narrow = app.persp_inv_d_for_test(400.0);
+        let narrow = qymcad_ui_state::persp_inv_d_eye(&app.viewing.cam, &app.set, 400.0);
         app.set.persp_fov_deg = 80.0;
-        let wide = app.persp_inv_d_for_test(400.0);
+        let wide = qymcad_ui_state::persp_inv_d_eye(&app.viewing.cam, &app.set, 400.0);
         assert!(wide > narrow, "a wide angle must give a stronger perspective: {wide} against {narrow}");
     }
 
@@ -133,8 +134,8 @@ mod tests {
         let base = [160, 160, 160];
         let n = [0.0, 0.0, 1.0];
         let light = [0.0, 0.0, 1.0];
-        let faint = App::shade_tri_for_test(&pal, 40, false, true, base, n, light).a();
-        let solid = App::shade_tri_for_test(&pal, 240, false, true, base, n, light).a();
+        let faint = crate::gui::shade_tri_for_test(&pal, 40, false, true, base, n, light).a();
+        let solid = crate::gui::shade_tri_for_test(&pal, 240, false, true, base, n, light).a();
         assert_eq!(faint, 40, "the ghost did not take the transparency from the setting: {faint}");
         assert_eq!(solid, 240, "the ghost did not take the transparency from the setting: {solid}");
     }

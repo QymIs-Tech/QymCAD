@@ -11,7 +11,7 @@ fn sketch_extrudes() {
     eprintln!("closed contours of the sketch: {} ({closed:?})", closed.len());
     assert!(!closed.is_empty(), "the sketch has a closed contour to extrude");
     // create the extrusion as one node, as `apply_sketch_cmd` does with no part, giving a new body
-    let body = p.add_combine_multi_op(0, 3, closed.clone(), 10.0, 1, qymcad_core::feature::Extent::default(), 0.0, vec![]);
+    let body = p.add_combine_multi_op(0, 3, closed.clone(), qymcad_core::model::CombineSpan { height: 10.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 1);
     assert_ne!(body, 0, "the node was created");
     let (report, shapes) = qymcad_testkit::regenerate(&mut p);
     let _ = &report;

@@ -40,7 +40,7 @@ mod tests {
         let input = egui::RawInput { screen_rect: Some(SCREEN), events, ..Default::default() };
         let out = ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                app.build_tree(ui);
+                app.build_tree_for_test(ui);
             });
         });
         let mut texts = Vec::new();

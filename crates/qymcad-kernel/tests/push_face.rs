@@ -61,7 +61,7 @@ fn top_face_id(s: &qymcad_kernel::Shape) -> Option<u32> {
     for f in faces {
         if f.normal[2] > 0.9 {
             let z = f.centroid.z;
-            if best.map_or(true, |(bz, _)| z > bz) {
+            if best.is_none_or(|(bz, _)| z > bz) {
                 best = Some((z, f.id));
             }
         }

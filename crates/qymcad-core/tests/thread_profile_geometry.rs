@@ -12,8 +12,24 @@
 use qymcad_core::geom::{Point2, ProfEdge};
 use qymcad_core::thread::{ThreadSpec, ThreadStandard};
 
-const STDS: [ThreadStandard; 5] =
-    [ThreadStandard::MetricIso, ThreadStandard::TrapezoidalTr, ThreadStandard::Acme, ThreadStandard::RoundRd, ThreadStandard::Buttress];
+/// Every standard whose profile is fixed, walked from the full list rather than copied out of it.
+///
+/// This used to be five of the six written out by hand, and nothing said that the sixth was left out on
+/// purpose or that it was left out at all. A standard added to the type would not have reached the
+/// checks, and they would have stayed green.
+fn stds() -> Vec<ThreadStandard> {
+    ThreadStandard::ALL.into_iter().filter(|s| s.has_fixed_profile()).collect()
+}
+
+/// The full list must name every variant of the type.
+#[test]
+fn the_list_of_thread_standards_is_complete() {
+    let decl = include_str!("../src/thread.rs");
+    let body = decl.split("pub enum ThreadStandard {").nth(1).expect("the declaration of ThreadStandard");
+    let body = body.split("\n}").next().expect("the end of the declaration");
+    let declared = body.lines().filter(|l| l.trim().ends_with(',') && !l.trim().starts_with("//")).count();
+    assert_eq!(declared, ThreadStandard::ALL.len(), "ThreadStandard::ALL must list every variant");
+}
 
 fn ends(e: &ProfEdge) -> (Point2, Point2) {
     match *e {
@@ -73,7 +89,7 @@ fn segments_cross(p: Point2, q: Point2, r: Point2, s: Point2) -> bool {
 /// The profile is closed: the end of each edge is the start of the next.
 #[test]
 fn profile_is_closed_for_every_standard() {
-    for std in STDS {
+    for std in stds() {
         for pitch in [0.5, 1.5, 3.5, 8.0] {
             for internal in [false, true] {
                 let g = ThreadSpec { standard: std, nominal_d: 30.0, pitch, internal, ..Default::default() }.geometry();
@@ -91,7 +107,7 @@ fn profile_is_closed_for_every_standard() {
 /// nearly a full circle, the thread tore, and one face inflated to hundreds of thousands of triangles.
 #[test]
 fn every_arc_takes_the_short_way() {
-    for std in STDS {
+    for std in stds() {
         for pitch in [0.5, 1.5, 3.5, 8.0] {
             for internal in [false, true] {
                 let g = ThreadSpec { standard: std, nominal_d: 30.0, pitch, internal, ..Default::default() }.geometry();
@@ -117,7 +133,7 @@ fn every_arc_takes_the_short_way() {
 /// overlap, the swept body self-intersects and the boolean returns a torn surface.
 #[test]
 fn profile_fits_within_half_a_pitch() {
-    for std in STDS {
+    for std in stds() {
         for pitch in [0.5, 1.5, 3.5, 8.0] {
             for fit in [0.0, 0.2, 0.4] {
                 let spec = ThreadSpec { standard: std, nominal_d: 30.0, pitch, fit, ..Default::default() };
@@ -137,7 +153,7 @@ fn profile_fits_within_half_a_pitch() {
 /// swept body.
 #[test]
 fn profile_does_not_self_intersect() {
-    for std in STDS {
+    for std in stds() {
         for pitch in [1.5, 3.5, 8.0] {
             for internal in [false, true] {
                 let g = ThreadSpec { standard: std, nominal_d: 30.0, pitch, internal, ..Default::default() }.geometry();
@@ -163,7 +179,7 @@ fn profile_does_not_self_intersect() {
 /// misplaced root arc dropped 0.64 mm below its own depth, which is a different thread altogether.
 #[test]
 fn groove_reaches_exactly_the_standard_depth() {
-    for std in STDS {
+    for std in stds() {
         for pitch in [0.5, 1.5, 3.5, 8.0] {
             let g = ThreadSpec { standard: std, nominal_d: 30.0, pitch, ..Default::default() }.geometry();
             let min_y = polyline(&g.groove).iter().fold(0.0_f64, |m, p| m.min(p.y));
@@ -204,7 +220,7 @@ fn round_rd_has_real_radii_not_dust() {
 /// a torn fill, while a part without that contact sectioned cleanly.
 #[test]
 fn adjacent_turns_never_touch() {
-    for std in STDS {
+    for std in stds() {
         for pitch in [1.5, 3.5, 5.0, 8.0] {
             for fit in [0.0, 0.2, 0.4] {
                 let g = ThreadSpec { standard: std, nominal_d: 30.0, pitch, fit, ..Default::default() }.geometry();

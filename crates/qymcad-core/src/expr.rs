@@ -299,50 +299,6 @@ fn call_fn(name: &str, args: &[f64]) -> Result<f64, ExprError> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ev(s: &str) -> f64 {
-        eval(s, &HashMap::new()).unwrap()
-    }
-
-    #[test]
-    fn arithmetic_and_precedence() {
-        assert!((ev("2 + 3 * 4") - 14.0).abs() < 1e-9);
-        assert!((ev("(2 + 3) * 4") - 20.0).abs() < 1e-9);
-        assert!((ev("2 ^ 3 ^ 2") - 512.0).abs() < 1e-9); // right-associative
-        assert!((ev("-5 + 2") + 3.0).abs() < 1e-9);
-        assert!((ev("10 / 4") - 2.5).abs() < 1e-9);
-    }
-
-    #[test]
-    fn functions_and_constants() {
-        assert!((ev("sqrt(16)") - 4.0).abs() < 1e-9);
-        assert!((ev("sin(90)") - 1.0).abs() < 1e-9); // degrees
-        assert!((ev("max(3, 7)") - 7.0).abs() < 1e-9);
-        assert!((ev("2 * pi") - std::f64::consts::TAU).abs() < 1e-9);
-    }
-
-    #[test]
-    fn parameters() {
-        let mut v = HashMap::new();
-        v.insert("w".to_string(), 50.0);
-        v.insert("h".to_string(), 20.0);
-        assert!((eval("w / 2", &v).unwrap() - 25.0).abs() < 1e-9);
-        assert!((eval("w + h", &v).unwrap() - 70.0).abs() < 1e-9);
-        assert!((eval("W*2", &v).unwrap() - 100.0).abs() < 1e-9); // case-insensitive
-    }
-
-    #[test]
-    fn errors() {
-        assert!(eval("w + 1", &HashMap::new()).is_err()); // an unknown parameter
-        assert!(eval("2 +", &HashMap::new()).is_err());
-        assert!(eval("(2", &HashMap::new()).is_err());
-        assert!(eval("1/0", &HashMap::new()).is_err()); // not a number
-    }
-}
-
 /// Whether the parameter `name` is mentioned in an expression as an identifier of its own rather than as part
 /// of another name — `L` must not be found inside `Length`. Needed for targeted rebuilds: editing a parameter
 /// marks dirty only the features that actually reference it.
@@ -413,4 +369,48 @@ pub fn rename_ident(expr: &str, old: &str, new: &str) -> String {
     }
     out.push_str(&expr[cut..]);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(s: &str) -> f64 {
+        eval(s, &HashMap::new()).unwrap()
+    }
+
+    #[test]
+    fn arithmetic_and_precedence() {
+        assert!((ev("2 + 3 * 4") - 14.0).abs() < 1e-9);
+        assert!((ev("(2 + 3) * 4") - 20.0).abs() < 1e-9);
+        assert!((ev("2 ^ 3 ^ 2") - 512.0).abs() < 1e-9); // right-associative
+        assert!((ev("-5 + 2") + 3.0).abs() < 1e-9);
+        assert!((ev("10 / 4") - 2.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn functions_and_constants() {
+        assert!((ev("sqrt(16)") - 4.0).abs() < 1e-9);
+        assert!((ev("sin(90)") - 1.0).abs() < 1e-9); // degrees
+        assert!((ev("max(3, 7)") - 7.0).abs() < 1e-9);
+        assert!((ev("2 * pi") - std::f64::consts::TAU).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parameters() {
+        let mut v = HashMap::new();
+        v.insert("w".to_string(), 50.0);
+        v.insert("h".to_string(), 20.0);
+        assert!((eval("w / 2", &v).unwrap() - 25.0).abs() < 1e-9);
+        assert!((eval("w + h", &v).unwrap() - 70.0).abs() < 1e-9);
+        assert!((eval("W*2", &v).unwrap() - 100.0).abs() < 1e-9); // case-insensitive
+    }
+
+    #[test]
+    fn errors() {
+        assert!(eval("w + 1", &HashMap::new()).is_err()); // an unknown parameter
+        assert!(eval("2 +", &HashMap::new()).is_err());
+        assert!(eval("(2", &HashMap::new()).is_err());
+        assert!(eval("1/0", &HashMap::new()).is_err()); // not a number
+    }
 }

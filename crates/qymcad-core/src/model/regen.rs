@@ -22,6 +22,22 @@ use super::tess::*; // 2D sketch geometry: profiles, tessellation, region analys
 /// The fields are locals OF THE PASS, not parts of the document. That is what makes the split possible at
 /// all: a `&mut Project` and a `&mut Pass` are disjoint borrows, so a branch can take the document mutably
 /// and still write its findings here.
+/// WHERE THE RESULT OF ONE REBUILD LANDS: the node it belongs to, the kernel that built it, and the
+/// three books kept for the whole pass - what changed, what went wrong, and how edges were renamed.
+///
+/// Every branch of the rebuild ends by handing its result over with exactly these five, and they were
+/// spelled out at thirty-seven call sites.
+struct Landing<'a, 'b> {
+    /// The node being rebuilt: the owner of every name minted while it is built.
+    node: Id,
+    /// The bodies that changed, whose consumers must therefore rebuild.
+    dirty: &'a mut std::collections::HashSet<Id>,
+    report: &'a mut crate::feature::RegenReport,
+    kernel: &'b dyn crate::feature::Kernel,
+    /// "Old edge number -> new name" for the bodies built so far in this pass.
+    emap: &'a mut EdgeRenames,
+}
+
 struct Pass<'a> {
     kernel: &'a dyn crate::feature::Kernel,
     /// The values of the global parameters, for the dimension expressions.
@@ -61,6 +77,165 @@ fn walls(ruled: bool) -> crate::feature::LoftWalls {
         crate::feature::LoftWalls::Ruled
     } else {
         crate::feature::LoftWalls::Smooth
+    }
+}
+
+/// WHICH BODY IS BEING REBUILT, AND HOW THE RESULT JOINS IT.
+///
+/// The same three arguments trail the end of nearly every rebuild branch. Together they are one thing:
+/// take `src`, make something, and add or cut it into `body` according to `op`.
+#[derive(Clone, Copy)]
+pub struct BodyOp {
+    /// The body the operation reads.
+    pub src: Id,
+    /// The kernel's own code for join or cut.
+    pub op: u8,
+    /// The body the result lands in.
+    pub body: Id,
+}
+
+/// A HELICAL CUT ALONG AN EDGE: where it runs, how long, and how it eases in and out.
+///
+/// A thread and an auger differ only in the profile of the groove; everything about WHERE the helix goes
+/// is the same six things, and both branches took them one by one.
+#[derive(Clone, Copy)]
+pub(crate) struct HelixRun {
+    /// The body the helix is cut into.
+    pub src: Id,
+    /// The circular edge it follows.
+    pub edge: u32,
+    /// How far along the axis it runs.
+    pub length: f64,
+    /// A run-up before the full depth is reached, so the tool does not bite at once.
+    pub lead_in: f64,
+    /// The same at the far end.
+    pub lead_out: f64,
+    /// The body the result lands in.
+    pub body: Id,
+}
+
+/// THE DRAFT ITSELF, apart from the faces it is applied to: the face that stays put, the angle, and
+/// which side of it leans.
+pub(crate) struct DraftShape {
+    /// The neutral face - the one that keeps its size while the others lean.
+    pub neutral: crate::refs::Ref,
+    /// The lean, in degrees.
+    pub angle: f64,
+    /// Lean the other way.
+    pub flip: bool,
+}
+
+/// HOW FAR AN EXTRUSION RUNS AND WHICH CONTOURS STAY SOLID.
+///
+/// The body spans [-down, +height] along the sketch normal, `reach` says which of the two sides is
+/// actually used, and `fill` names the nested contours that are NOT to become holes.
+#[derive(Clone, Copy)]
+pub struct ExtrudeSpan<'a> {
+    pub height: f64,
+    pub down: f64,
+    pub reach: crate::feature::Reach,
+    pub fill: &'a [Id],
+}
+
+/// THE SAME FOR A JOIN OR A CUT, where the stop can also be "the whole way through".
+#[derive(Clone, Copy)]
+pub struct CombineSpan<'a> {
+    pub height: f64,
+    pub down: f64,
+    pub extent: crate::feature::Extent,
+    pub fill: &'a [Id],
+}
+
+/// WHICH PROFILE OF WHICH SKETCH. Never one without the other.
+#[derive(Clone, Copy)]
+pub(crate) struct Profile<'a> {
+    pub sketch: Id,
+    pub profiles: &'a [Id],
+}
+
+/// HOW FAR A REVOLVE TURNS, and which way it goes from the sketch plane.
+#[derive(Clone, Copy)]
+pub struct RevolveTurn {
+    /// Degrees. 360 makes a full body of revolution.
+    pub angle: f64,
+    pub reach: crate::feature::Reach,
+}
+
+/// THE AXIS A REVOLVE TURNS ABOUT, in the three ways it can be given.
+#[derive(Clone, Copy)]
+pub struct RevolveAxis {
+    /// A world axis by number, when neither of the two below is set.
+    pub axis: u8,
+    /// A datum axis.
+    pub datum: Id,
+    /// A line of the sketch itself.
+    pub line: Id,
+}
+
+/// THE SHAPE OF A CHAMFER: symmetric, two-distance or angled, and which face the sizes are measured from.
+#[derive(Clone, Copy)]
+pub struct ChamferShape {
+    pub mode: crate::feature::ChamferMode,
+    /// The second distance (or the angle), for the asymmetric modes.
+    pub d2: f64,
+    /// Measure from the other side of the edge.
+    pub flip: bool,
+    /// The face the distances are measured from; zero lets the kernel choose.
+    pub ref_face: u32,
+}
+
+/// WHERE A HOLE IS DRILLED: either a face found by recipe, or the isolated points of a sketch.
+///
+/// The two ways are exclusive - `sketch` non-zero means the points, and then `face` is not consulted -
+/// and they used to travel as five loose arguments in the middle of a signature of fourteen.
+pub(crate) struct HoleSite {
+    /// The face, found by recipe. Not consulted when a sketch places the holes.
+    pub face: crate::refs::Ref,
+    /// The point and the normal recorded when the reference was made - the fallback if the recipe misses.
+    pub point: [f64; 3],
+    pub normal: [f64; 3],
+    /// The sketch whose isolated points place the holes; zero means the face above.
+    pub sketch: Id,
+    /// Drill against the sketch's normal.
+    pub flip: bool,
+}
+
+/// WHAT DRILLS IT: the cylinder, and the counterbore or countersink above it.
+#[derive(Clone, Copy)]
+pub struct HoleTool {
+    /// Plain, counterbored or countersunk - the kernel's own code.
+    pub kind: u8,
+    /// The through cylinder.
+    pub diameter: f64,
+    pub depth: f64,
+    /// The wider part at the top; zero when there is none.
+    pub dia2: f64,
+    pub depth2: f64,
+}
+
+/// ONE DIRECTION OF A LINEAR PATTERN: the step vector and how many copies go along it.
+///
+/// The rebuild used to take these twelve numbers and three counts as fifteen separate arguments, and the
+/// signature ran to sixteen places. Reading it, one had to count commas to tell `dy2` from `dz2`.
+#[derive(Clone, Copy)]
+pub struct ArrayAxis {
+    /// The step, as a vector in the body's space.
+    pub d: [f64; 3],
+    /// How many copies along it, the original included. One or less means this direction is unused.
+    pub count: u32,
+}
+
+impl ArrayAxis {
+    /// A DIRECTION THAT IS NOT USED. A grid of one row still has three directions; two of them are this.
+    pub fn none() -> Self {
+        ArrayAxis { d: [0.0; 3], count: 1 }
+    }
+}
+
+impl<'a> Pass<'a> {
+    /// The five things a finished branch hands its result over with.
+    fn landing(&mut self) -> Landing<'_, 'a> {
+        Landing { node: self.node, dirty: self.dirty, report: self.report, kernel: self.kernel, emap: self.emap }
     }
 }
 
@@ -150,7 +325,7 @@ impl Project {
                     // the reference was correct all along and was merely re-checked; reporting that as a repair
                     // sends the reader to inspect something that did not change.
                     if let Some(newid) = candidate(key).filter(|&n| n != key.id) {
-                        sfix.push((sk.id, newid, format!("rebind-sketch-face#{} → {newid}", key.id)));
+                        sfix.push((sk.id, newid, format!("rebind-sketch-face#{} -> {newid}", key.id)));
                     }
                 }
             }
@@ -197,7 +372,17 @@ impl Project {
             let key = crate::feature::FaceKey { index: 0, centroid: [was.centroid.x, was.centroid.y, was.centroid.z], normal: was.normal, id: 0 };
             candidate(&key).filter(|&ni| ni != old_id)
         };
-        let mut nfix: Vec<(Id, Vec<(u32, u32)>, String)> = Vec::new();
+        // A NAMED RECORD, not a three-place tuple: the list is filled in one loop and read in another, and
+        // between the two `.0`, `.1`, `.2` say nothing about which is the node and which the mapping.
+        struct FaceRebind {
+            /// The timeline node whose face reference is being repaired.
+            node: Id,
+            /// Old face number -> new one.
+            map: Vec<(u32, u32)>,
+            /// What to write in the report.
+            what: String,
+        }
+        let mut nfix: Vec<FaceRebind> = Vec::new();
         for n in &self.timeline {
             let (src, ids): (Id, Vec<u32>) = match n.kind {
                 // Only the chamfer remains here: its reference face is still a bare number. Draft, face offset
@@ -211,20 +396,17 @@ impl Project {
             }
             let map: Vec<(u32, u32)> = ids.iter().filter_map(|&i| by_old(i).map(|ni| (i, ni))).collect();
             if !map.is_empty() {
-                nfix.push((n.id, map.clone(), format!("rebind-faces#{map:?}")));
+                nfix.push(FaceRebind { node: n.id, what: format!("rebind-faces#{map:?}"), map });
             }
         }
-        for (node, map, what) in nfix {
+        for FaceRebind { node, map, what } in nfix {
             if let Some(n) = self.timeline.iter_mut().find(|n| n.id == node) {
                 let fix = |v: &mut u32| {
                     if let Some(&(_, ni)) = map.iter().find(|(o, _)| o == v) {
                         *v = ni;
                     }
                 };
-                match &mut n.kind {
-                    FeatureKind::Chamfer { ref_face, .. } => fix(ref_face),
-                    _ => {}
-                }
+                if let FeatureKind::Chamfer { ref_face, .. } = &mut n.kind { fix(ref_face) }
             }
             report.rebinds.push(Rebind { node, body, what });
         }
@@ -575,7 +757,7 @@ impl Project {
                     // everything downstream continues.
                     if self_dirty || dirty.contains(&src) {
                         let res = kernel.transform_body(b, src, crate::feature::PLACE_IDENTITY);
-                        if self.apply_regen(node_id, b, res, &mut dirty, &mut report, kernel, &mut emap) {
+                        if self.apply_regen(Landing { node: node_id, dirty: &mut dirty, report: &mut report, kernel, emap: &mut emap }, b, res) {
                             self.timeline[i].dirty = false;
                         }
                     }
@@ -679,19 +861,21 @@ impl Project {
                 }
                 FeatureKind::Extrude { sketch, ref profiles, height, reach, down, ref fill, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_extrude(&mut p, sketch, profiles, height, reach, down, fill, body);
+                    clear = self.regen_extrude(&mut p, Profile { sketch, profiles }, ExtrudeSpan { height, down, reach, fill }, body);
                 }
                 FeatureKind::Revolve { sketch, ref profiles, axis, angle, axis_datum, axis_line, reach, src, op, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_revolve(&mut p, sketch, profiles, axis, angle, axis_datum, axis_line, reach, src, op, body);
+                    let prof = Profile { sketch, profiles };
+                    let ax = RevolveAxis { axis, datum: axis_datum, line: axis_line };
+                    clear = self.regen_revolve(&mut p, prof, ax, angle, reach, BodyOp { src, op, body });
                 }
                 FeatureKind::Sweep { sketch, ref profiles, path_sketch, path, src, op, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_sweep(&mut p, sketch, profiles, path_sketch, path, src, op, body);
+                    clear = self.regen_sweep(&mut p, Profile { sketch, profiles }, path_sketch, path, BodyOp { src, op, body });
                 }
                 FeatureKind::Loft { sketches, contours, ruled, src, op, surface, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_loft(&mut p, sketches, contours, ruled, src, op, surface, body);
+                    clear = self.regen_loft(&mut p, sketches, contours, ruled, surface, BodyOp { src, op, body });
                 }
                 FeatureKind::Box3 { dx, dy, dz, body } if needs => {
                     let mut p = pass!(node_id);
@@ -719,7 +903,8 @@ impl Project {
                 }
                 FeatureKind::Combine { src, sketch, ref profiles, height, op, extent, down, ref fill, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_combine(&mut p, src, sketch, profiles, height, op, extent, down, fill, body);
+                    let prof = Profile { sketch, profiles };
+                    clear = self.regen_combine(&mut p, prof, CombineSpan { height, down, extent, fill }, BodyOp { src, op, body });
                 }
                 FeatureKind::Fillet { src, radius, ref edges, ref at_vertices, body } if needs => {
                     let mut p = pass!(node_id);
@@ -727,7 +912,7 @@ impl Project {
                 }
                 FeatureKind::Chamfer { src, dist, ref edges, mode, d2, flip, ref_face, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_chamfer(&mut p, src, dist, edges, mode, d2, flip, ref_face, body);
+                    clear = self.regen_chamfer(&mut p, src, dist, edges, ChamferShape { mode, d2, flip, ref_face }, body);
                 }
                 FeatureKind::Shell { src, thickness, ref faces, side, body } if needs => {
                     let mut p = pass!(node_id);
@@ -775,11 +960,18 @@ impl Project {
                 }
                 FeatureKind::Draft { src, ref faces, neutral, angle, flip, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_draft(&mut p, src, faces, neutral, angle, flip, body);
+                    clear = self.regen_draft(&mut p, src, faces, DraftShape { neutral, angle, flip }, body);
                 }
                 FeatureKind::LinearArray { src, dx, dy, dz, count, dx2, dy2, dz2, count2, dx3, dy3, dz3, count3, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_lineararray(&mut p, src, dx, dy, dz, count, dx2, dy2, dz2, count2, dx3, dy3, dz3, count3, body);
+                    // THE THREE AXES GATHERED AT THE DOOR. The document still holds twelve loose fields (its
+                    // format is not being changed here), but nothing below has to carry them twelve at a time.
+                    let axes = [
+                        ArrayAxis { d: [dx, dy, dz], count },
+                        ArrayAxis { d: [dx2, dy2, dz2], count: count2 },
+                        ArrayAxis { d: [dx3, dy3, dz3], count: count3 },
+                    ];
+                    clear = self.regen_lineararray(&mut p, src, axes, body);
                 }
                 FeatureKind::CircularArray { src, count, angle, axis, body } if needs => {
                     let mut p = pass!(node_id);
@@ -803,7 +995,11 @@ impl Project {
                 }
                 FeatureKind::Hole { src, face, point, normal, diameter, depth, kind, dia2, depth2, sketch, flip, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_hole(&mut p, src, face, point, normal, diameter, depth, kind, dia2, depth2, sketch, flip, body);
+                    // WHERE it is drilled and WHAT drills it, told apart. The two halves never mix: the
+                    // site comes from the document's references, the tool from its numbers.
+                    let at = HoleSite { face, point, normal, sketch, flip };
+                    let tool = HoleTool { kind, diameter, depth, dia2, depth2 };
+                    clear = self.regen_hole(&mut p, src, at, tool, body);
                 }
                 FeatureKind::PartInstance { src_comp, body } if needs => {
                     let mut p = pass!(node_id);
@@ -815,11 +1011,11 @@ impl Project {
                 }
                 FeatureKind::Thread { src, edge, spec, length, lead_in, lead_out, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_thread(&mut p, src, edge, spec, length, lead_in, lead_out, body);
+                    clear = self.regen_thread(&mut p, HelixRun { src, edge, length, lead_in, lead_out, body }, spec);
                 }
                 FeatureKind::Auger { src, edge, spec, length, lead_in, lead_out, body } if needs => {
                     let mut p = pass!(node_id);
-                    clear = self.regen_auger(&mut p, src, edge, spec, length, lead_in, lead_out, body);
+                    clear = self.regen_auger(&mut p, HelixRun { src, edge, length, lead_in, lead_out, body }, spec);
                 }
                 _ => {}
             }
@@ -958,11 +1154,11 @@ impl Project {
             // Corner patch: a face produced by the vertex where fillets meet (see
             // `Role::Corner`).
             let corners: Vec<u32> = edges.iter().map(|e| self.intern_name(p.node, crate::names::Role::Corner, *e as Id)).collect();
-            p.kernel.fillet(body, src, radius, edges, &names, &corners, &self.blend_names_all(p.node, src, p.kernel))
+            p.kernel.fillet(body, src, radius, edges, crate::feature::BlendNames { surfaces: &names, corners: &corners, all: &self.blend_names_all(p.node, src, p.kernel) })
         };
         let res = if on_sheet { Err(crate::errors::CoreError::NeedsSolidNotSheet) } else { res };
         let res = if lost_edges { Err(crate::errors::CoreError::EdgesNotFound { asked: asked_count }) } else { res };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
 
@@ -970,7 +1166,8 @@ impl Project {
 
     /// Chamfer: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_chamfer(&mut self, p: &mut Pass, src: Id, dist: f64, edges: &crate::refs::Ref, mode: crate::feature::ChamferMode, d2: f64, flip: bool, ref_face: u32, body: Id) -> bool {
+    fn regen_chamfer(&mut self, p: &mut Pass, src: Id, dist: f64, edges: &crate::refs::Ref, shape: ChamferShape, body: Id) -> bool {
+        let ChamferShape { mode, d2, flip, ref_face } = shape;
         let dist = p.dim("dist", dist);
         let d2 = p.dim("d2", d2);
         // As for a fillet: an empty list means the whole part, and a lost reference must not
@@ -982,16 +1179,16 @@ impl Project {
         // Asymmetry (two setbacks, or setback plus angle) applies only to an explicit edge
         // selection; otherwise the chamfer is symmetric.
         let res = if mode != crate::feature::ChamferMode::Symmetric && !edges.is_empty() {
-            p.kernel.chamfer_ex(body, src, dist, d2, mode, flip, ref_face, edges)
+            p.kernel.chamfer_ex(body, src, dist, ChamferShape { mode, d2, flip, ref_face }, edges)
         } else {
             // The name of a chamfer surface comes from the edge that produced it and the patch name
             // from the vertex: the same recipe as for a fillet.
             let names: Vec<u32> = edges.iter().map(|e| self.intern_name(p.node, crate::names::Role::Blend, *e as Id)).collect();
             let corners: Vec<u32> = edges.iter().map(|e| self.intern_name(p.node, crate::names::Role::Corner, *e as Id)).collect();
-            p.kernel.chamfer(body, src, dist, edges, &names, &corners, &self.blend_names_all(p.node, src, p.kernel))
+            p.kernel.chamfer(body, src, dist, edges, crate::feature::BlendNames { surfaces: &names, corners: &corners, all: &self.blend_names_all(p.node, src, p.kernel) })
         };
         let res = if lost_edges { Err(crate::errors::CoreError::EdgesNotFound { asked: asked_count }) } else { res };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Shell: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1011,8 +1208,8 @@ impl Project {
         // The part looks similar but is closed on the side where an opening was expected. Only a
         // hand-picked set is checked this way: for a descriptive query the number of descriptors
         // says nothing about the result.
-        let asked_faces = faces.query.is_pick_list().then(|| faces.query.picked_descs().len()).unwrap_or(0);
-        let res = match self.faces_by_ref(p.node, src, &faces, "ref-what-shell-faces") {
+        let asked_faces = if faces.query.is_pick_list() { faces.query.picked_descs().len() } else { 0 };
+        let res = match self.faces_by_ref(p.node, src, faces, "ref-what-shell-faces") {
             Err(_) => Err(crate::errors::CoreError::FacesNotFound),
             Ok(ids) if asked_faces > 0 && ids.len() < asked_faces => Err(crate::errors::CoreError::FacesNotFound),
             Ok(ids) => match side {
@@ -1020,7 +1217,7 @@ impl Project {
                 side => p.kernel.shell_named(body, src, thickness, side == crate::feature::ShellSide::Outward, &ids, &walls),
             },
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// RemoveFace: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1030,11 +1227,11 @@ impl Project {
         // than removing something similar: the kernel would otherwise silently remove the wrong face,
         // or nothing at all, which is worse — the step exists in the timeline and the bodies are
         // unchanged.
-        let res = match self.faces_by_ref(p.node, src, &faces, "ref-what-removed-faces") {
+        let res = match self.faces_by_ref(p.node, src, faces, "ref-what-removed-faces") {
             Ok(ids) if !ids.is_empty() => p.kernel.remove_faces(body, src, &ids),
             _ => Err(crate::errors::CoreError::FacesNotFound),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Patch: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1046,7 +1243,7 @@ impl Project {
         let edges = edges.clone();
         let live = self.live_fillet_edges(p.node, src, &edges, p.emap, p.kernel);
         let res = if live.is_empty() { Err(crate::errors::CoreError::EdgesNotFound { asked: edges.query.picked_descs().len() }) } else { p.kernel.patch(body, src, &live, tangent, self.intern_name(p.node, crate::names::Role::Patch, 0)) };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Trim: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1055,7 +1252,7 @@ impl Project {
         // The sheet is cut by another body and the piece at the clicked point is kept. The tool is
         // not consumed: it usually trims several surfaces in turn.
         let res = p.kernel.trim(body, src, tool, keep);
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Stitch: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1064,8 +1261,8 @@ impl Project {
         // The pieces of a surface become one. The tolerance is parametric like any feature number;
         // the inputs are bodies, so there are no name references here and nothing to translate.
         let t = p.dim("tol", tol);
-        let res = if parts.len() < 2 { Err(crate::errors::CoreError::OpFailed(crate::errors::Op::Stitch)) } else { p.kernel.stitch(body, &parts, t) };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        let res = if parts.len() < 2 { Err(crate::errors::CoreError::OpFailed(crate::errors::Op::Stitch)) } else { p.kernel.stitch(body, parts, t) };
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// PushFace: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1087,13 +1284,13 @@ impl Project {
         let res = if sheet {
             Err(crate::errors::CoreError::PushFaceOnSheet)
         } else {
-            match self.face_by_ref(p.node, src, &face, "ref-what-pushed-face") {
+            match self.face_by_ref(p.node, src, face, "ref-what-pushed-face") {
                 Err(_) => Err(crate::errors::CoreError::FaceNotFound),
                 Ok(_) if dist.abs() < 1e-9 => Err(crate::errors::CoreError::ZeroPushDistance),
                 Ok(c) => p.kernel.push_face(body, src, c.desc, dist),
             }
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// SurfaceReplace: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1108,7 +1305,7 @@ impl Project {
             Ok(ids) if !ids.is_empty() => p.kernel.replace_faces(body, src, &ids, surface),
             _ => Err(crate::errors::CoreError::FacesNotFound),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// FaceCopy: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1125,7 +1322,7 @@ impl Project {
             }
             _ => Err(crate::errors::CoreError::FacesNotFound),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Thicken: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1153,9 +1350,9 @@ impl Project {
             // numbering. The pairs are prepared in advance, since interning mutates the name table
             // while the kernel only needs the finished substitution.
             let (face_names, edge_names) = self.thicken_names(p.node, src, p.kernel);
-            p.kernel.thicken_face(body, src, face, t, join, &face_names, &edge_names)
+            p.kernel.thicken_face(body, src, face, t, join, crate::feature::NameMaps { faces: &face_names, edges: &edge_names })
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// SplitFace: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1165,7 +1362,7 @@ impl Project {
         // world plane.
         let dpl = (datum != 0).then(|| self.planes.iter().find(|p| p.id == datum)).flatten().map(|p| (p.origin, p.normal));
         let lost = datum != 0 && dpl.is_none();
-        let (o0, n) = dpl.unwrap_or_else(|| match plane {
+        let (o0, n) = dpl.unwrap_or(match plane {
             1 => ([0.0; 3], [0.0, 1.0, 0.0]),
             2 => ([0.0; 3], [1.0, 0.0, 0.0]),
             _ => ([0.0; 3], [0.0, 0.0, 1.0]),
@@ -1180,12 +1377,13 @@ impl Project {
             let u = [n[0] / len, n[1] / len, n[2] / len];
             p.kernel.split_faces(body, src, [o0[0] + u[0] * d, o0[1] + u[1] * d, o0[2] + u[2] * d], u)
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Draft: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_draft(&mut self, p: &mut Pass, src: Id, faces: &crate::refs::Ref, neutral: crate::refs::Ref, angle: f64, flip: bool, body: Id) -> bool {
+    fn regen_draft(&mut self, p: &mut Pass, src: Id, faces: &crate::refs::Ref, shape: DraftShape, body: Id) -> bool {
+        let DraftShape { neutral, angle, flip } = shape;
         // The angle is parametric (the `angle` feature dimension); the neutral face resolves into an
         // origin and a normal from the rebuilt source, and the pull direction is that normal,
         // reversed by `flip`.
@@ -1198,8 +1396,8 @@ impl Project {
         // vertical — and the mould is cast against it. As for a shell, only a hand-picked set is
         // checked this way: for a descriptive query the number of descriptors says nothing about the
         // result.
-        let asked_faces = faces.query.is_pick_list().then(|| faces.query.picked_descs().len()).unwrap_or(0);
-        let res = match (self.faces_by_ref(p.node, src, &faces, "ref-what-draft-faces"), self.face_by_ref(p.node, src, &neutral, "ref-what-draft-neutral")) {
+        let asked_faces = if faces.query.is_pick_list() { faces.query.picked_descs().len() } else { 0 };
+        let res = match (self.faces_by_ref(p.node, src, faces, "ref-what-draft-faces"), self.face_by_ref(p.node, src, &neutral, "ref-what-draft-neutral")) {
             (Ok(ids), _) if asked_faces > 0 && ids.len() < asked_faces => Err(crate::errors::CoreError::DraftNeedsFaces),
             (Ok(ids), Ok(np)) if !ids.is_empty() => {
                 let np_o = np.centroid;
@@ -1213,12 +1411,12 @@ impl Project {
                         .filter(|f| crate::names::NameTable::is_named(**f))
                         .flat_map(|f| [*f, self.intern_name(p.node, crate::names::Role::DraftSide, *f as Id)])
                         .collect();
-                    p.kernel.draft(body, src, &ids, angle, np_n, np_o, np_n, &sides)
+                    p.kernel.draft(body, src, &ids, crate::feature::DraftPull { angle, dir: np_n }, crate::feature::PlaneAt { origin: np_o, normal: np_n }, &sides)
                 }
             }
             _ => Err(crate::errors::CoreError::DraftNeedsFaces),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Mirror: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1240,14 +1438,14 @@ impl Project {
             None if datum != 0 => Err(crate::errors::CoreError::MirrorPlaneDeleted),
             None => p.kernel.mirror_named(body, src, plane, keep, &seed),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Move: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
     fn regen_move(&mut self, p: &mut Pass, src: Id, mat: [f64; 12], body: Id) -> bool {
         let res = p.kernel.transform_body(body, src, mat);
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// BodyBoolean: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1256,7 +1454,7 @@ impl Project {
         // Parametric body-to-body boolean: `op` applied to the B-reps of `a` and `b`, producing
         // `body`; both operands are consumed.
         let res = p.kernel.body_boolean(body, a, b, op);
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Box3: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1264,7 +1462,7 @@ impl Project {
     fn regen_box3(&mut self, p: &mut Pass, dx: f64, dy: f64, dz: f64, body: Id) -> bool {
         let (dx, dy, dz) = (p.dim("dx", dx), p.dim("dy", dy), p.dim("dz", dz));
         let res = p.kernel.extrude(body, &rect_profile(dx, dy), dz, crate::feature::PLACE_IDENTITY);
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Cylinder: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1273,7 +1471,7 @@ impl Project {
         let (r, h) = (p.dim("r", r), p.dim("h", h));
         let nm = self.primitive_names(p.node);
         let res = p.kernel.cylinder(body, r, h, nm); // Exact B-rep cylinder, three faces.
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Sphere: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1282,7 +1480,7 @@ impl Project {
         let r = eval_dim(p.dims, "r", r, p.vars);
         let nm = self.primitive_names(p.node);
         let res = p.kernel.sphere(body, r, nm); // Exact sphere, one face.
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Cone: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1291,7 +1489,7 @@ impl Project {
         let (r1, r2, h) = (p.dim("r1", r1), p.dim("r2", r2), p.dim("h", h));
         let nm = self.primitive_names(p.node);
         let res = p.kernel.cone(body, r1, r2, h, nm); // Exact cone.
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Torus: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1300,7 +1498,7 @@ impl Project {
         let (major, minor) = (p.dim("major", major), p.dim("minor", minor));
         let nm = self.primitive_names(p.node);
         let res = p.kernel.torus(body, major, minor, nm); // Exact torus, one face.
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Prism: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1308,12 +1506,13 @@ impl Project {
     fn regen_prism(&mut self, p: &mut Pass, r: f64, n: u32, h: f64, body: Id) -> bool {
         let (r, h) = (p.dim("r", r), p.dim("h", h));
         let res = p.kernel.extrude(body, &polygon_profile(r, n), h, crate::feature::PLACE_IDENTITY);
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Loft: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_loft(&mut self, p: &mut Pass, sketches: Vec<Id>, contours: Vec<Id>, ruled: bool, src: Id, op: u8, surface: bool, body: Id) -> bool {
+    fn regen_loft(&mut self, p: &mut Pass, sketches: Vec<Id>, contours: Vec<Id>, ruled: bool, surface: bool, bo: BodyOp) -> bool {
+        let BodyOp { src, op, body } = bo;
         // Each section sits on its own plane (the placement is encoded in `places`), and two or more
         // sections produce a body. A zero `src` makes a separate body; otherwise the lofted solid is
         // combined with body `src` as a lofted cut or boss.
@@ -1321,11 +1520,11 @@ impl Project {
         let res = match self.loft_encoded_named(p.node, &sketches, &contours) {
             // A surface is the same loft, not closed into a solid. It admits no boolean: there is
             // nothing to combine a surface with a body by until it has been given a thickness.
-            Some((data, offsets, places)) if src == 0 => p.kernel.loft(body, &data, &offsets, &places, walls(ruled), if surface { crate::feature::LoftBody::Sheet } else { crate::feature::LoftBody::Solid }, caps),
-            Some((data, offsets, places)) => p.kernel.loft_combine(body, src, &data, &offsets, &places, walls(ruled), op, caps),
+            Some((data, offsets, places)) if src == 0 => p.kernel.loft(body, crate::feature::LoftSections { data: &data, offsets: &offsets, places: &places }, walls(ruled), if surface { crate::feature::LoftBody::Sheet } else { crate::feature::LoftBody::Solid }, caps),
+            Some((data, offsets, places)) => p.kernel.loft_combine(BodyOp { src, op, body }, &data, &offsets, &places, walls(ruled), caps),
             None => Err(crate::errors::CoreError::LoftNeedsTwoSections),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Import: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1355,7 +1554,7 @@ impl Project {
             None => Err(crate::errors::CoreError::SourcePartHasNoBody),
             Some(sb) => p.kernel.transform_body(body, sb, crate::feature::PLACE_IDENTITY),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// MirrorPart: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1382,12 +1581,13 @@ impl Project {
                 Some(sb) => p.kernel.mirror_plane(body, sb, [0.0; 3], ln, false),
             }
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Thread: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_thread(&mut self, p: &mut Pass, src: Id, edge: u32, spec: crate::thread::ThreadSpec, length: f64, lead_in: f64, lead_out: f64, body: Id) -> bool {
+    fn regen_thread(&mut self, p: &mut Pass, run: HelixRun, spec: crate::thread::ThreadSpec) -> bool {
+        let HelixRun { src, edge, length, lead_in, lead_out, body } = run;
         let mut spec = spec;
         // Parametric like every feature: the size, pitch and clearance may be expressions.
         spec.nominal_d = p.dim("nominal", spec.nominal_d);
@@ -1466,12 +1666,13 @@ impl Project {
             }
             None => Err(crate::errors::CoreError::ThreadRimNotFound),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Auger: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_auger(&mut self, p: &mut Pass, src: Id, edge: u32, spec: crate::thread::AugerSpec, length: f64, lead_in: f64, lead_out: f64, body: Id) -> bool {
+    fn regen_auger(&mut self, p: &mut Pass, run: HelixRun, spec: crate::thread::AugerSpec) -> bool {
+        let HelixRun { src, edge, length, lead_in, lead_out, body } = run;
         let mut spec = spec;
         spec.outer_d = p.dim("outer", spec.outer_d);
         spec.pitch = p.dim("pitch", spec.pitch);
@@ -1526,14 +1727,23 @@ impl Project {
             }
             None => Err(crate::errors::CoreError::AugerRimNotFound),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Hole: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_hole(&mut self, p: &mut Pass, src: Id, face: crate::refs::Ref, point: [f64; 3], normal: [f64; 3], diameter: f64, depth: f64, kind: u8, dia2: f64, depth2: f64, sketch: Id, flip: bool, body: Id) -> bool {
-        let (diameter, depth) = (p.dim("diameter", diameter), p.dim("depth", depth));
-        let (dia2, depth2) = (p.dim("dia2", dia2), p.dim("depth2", depth2));
+    fn regen_hole(&mut self, p: &mut Pass, src: Id, at: HoleSite, tool: HoleTool, body: Id) -> bool {
+        let HoleSite { face, point, normal, sketch, flip } = at;
+        // THE PARAMETRIC OVERRIDES ARE APPLIED HERE, and the tool is rebuilt from them. Handing the
+        // stored `tool` to the kernel would drop every expression driving a hole's diameter or depth -
+        // silently, because the numbers are of the right type either way.
+        let tool = HoleTool {
+            kind: tool.kind,
+            diameter: p.dim("diameter", tool.diameter),
+            depth: p.dim("depth", tool.depth).abs(),
+            dia2: p.dim("dia2", tool.dia2),
+            depth2: p.dim("depth2", tool.depth2),
+        };
         let res = if sketch != 0 {
             // At the isolated points of a sketch: one frame per point, with every cut applied by a
             // single boolean.
@@ -1545,7 +1755,7 @@ impl Project {
                 // point does not rename the neighbouring holes.
                 let pts = self.sketch_hole_point_ids(sketch);
                 let bores: Vec<u32> = (0..pls.len()).map(|i| self.intern_name(p.node, crate::names::Role::Hole, pts.get(i).copied().unwrap_or(i as Id + 1))).collect();
-                p.kernel.holes(body, src, kind, &pls, diameter, depth.abs(), dia2, depth2, &bores, &self.hole_tool_names(p.node))
+                p.kernel.holes(body, src, tool, &pls, &bores, &self.hole_tool_names(p.node))
             }
         } else {
             // The face is found by recipe through the query, and the hole travels with it.
@@ -1567,11 +1777,11 @@ impl Project {
                     // point along its normal and cuts inwards.
                     let pl = crate::feature::PlaneFrame::from_origin_normal(point, normal, 0.0).matrix12();
                     let bore = self.intern_name(p.node, crate::names::Role::Hole, 0);
-                    p.kernel.hole(body, src, kind, pl, diameter, depth.abs(), dia2, depth2, bore, &self.hole_tool_names(p.node))
+                    p.kernel.hole(body, src, tool, pl, bore, &self.hole_tool_names(p.node))
                 }
             }
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// SplitBody: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1586,7 +1796,7 @@ impl Project {
         // mirror about another plane is still a mirror, while a split along another plane breaks the
         // body in a different place, silently. A red node beats a quietly different part.
         let lost = datum != 0 && dpl.is_none();
-        let (o0, n) = dpl.unwrap_or_else(|| match plane {
+        let (o0, n) = dpl.unwrap_or(match plane {
             1 => ([0.0; 3], [0.0, 1.0, 0.0]),
             2 => ([0.0; 3], [1.0, 0.0, 0.0]),
             _ => ([0.0; 3], [0.0, 0.0, 1.0]),
@@ -1620,13 +1830,13 @@ impl Project {
                     clear = false;
                 } else {
                     for (b, part) in bodies.iter().zip(parts) {
-                        clear &= self.apply_regen(p.node, *b, Ok(part), p.dirty, p.report, p.kernel, p.emap);
+                        clear &= self.apply_regen(p.landing(), *b, Ok(part));
                     }
                 }
             }
             Err(e) => {
                 for &b in bodies {
-                    clear &= self.apply_regen(p.node, b, Err(e.clone()), p.dirty, p.report, p.kernel, p.emap);
+                    clear &= self.apply_regen(p.landing(), b, Err(e.clone()));
                 }
             }
         }
@@ -1635,30 +1845,34 @@ impl Project {
 
     /// LinearArray: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_lineararray(&mut self, p: &mut Pass, src: Id, dx: f64, dy: f64, dz: f64, count: u32, dx2: f64, dy2: f64, dz2: f64, count2: u32, dx3: f64, dy3: f64, dz3: f64, count3: u32, body: Id) -> bool {
-        // Parametric: the step lives as an expression per vector component (dx, dy, dz), so global
-        // parameters move the pattern. An empty expression keeps the stored number.
-        let (dx, dy, dz) = (p.dim("dx", dx), p.dim("dy", dy), p.dim("dz", dz));
-        let (dx2, dy2, dz2) = (p.dim("dx2", dx2), p.dim("dy2", dy2), p.dim("dz2", dz2));
-        let (dx3, dy3, dz3) = (p.dim("dx3", dx3), p.dim("dy3", dy3), p.dim("dz3", dz3));
+    fn regen_lineararray(&mut self, p: &mut Pass, src: Id, axes: [ArrayAxis; 3], body: Id) -> bool {
+        // Parametric: the step lives as an expression per vector component, so global parameters move
+        // the pattern. An empty expression keeps the stored number. The keys are the field names in the
+        // document ("dx", "dx2", "dx3"), so the suffix is the axis number - the first carries none.
+        let step: Vec<[f64; 3]> = axes
+            .iter()
+            .enumerate()
+            .map(|(n, a)| {
+                let sfx = if n == 0 { String::new() } else { (n + 1).to_string() };
+                [p.dim(&format!("dx{sfx}"), a.d[0]), p.dim(&format!("dy{sfx}"), a.d[1]), p.dim(&format!("dz{sfx}"), a.d[2])]
+            })
+            .collect();
         // A 3D grid: direction one (i*d1) by two (j*d2) by three (k*d3). A count of one or less in
         // the second or third direction reduces the dimensionality.
-        let (c1, c2, c3) = (count.max(1), count2.max(1), count3.max(1));
+        let (c1, c2, c3) = (axes[0].count.max(1), axes[1].count.max(1), axes[2].count.max(1));
         let mut ts: Vec<[f64; 12]> = Vec::with_capacity((c1 * c2 * c3) as usize);
         for i in 0..c1 {
             for j in 0..c2 {
                 for k in 0..c3 {
-                    ts.push(translate_mat(
-                        i as f64 * dx + j as f64 * dx2 + k as f64 * dx3,
-                        i as f64 * dy + j as f64 * dy2 + k as f64 * dy3,
-                        i as f64 * dz + j as f64 * dz2 + k as f64 * dz3,
-                    ));
+                    let n = [i as f64, j as f64, k as f64];
+                    let at = |c: usize| n[0] * step[0][c] + n[1] * step[1][c] + n[2] * step[2][c];
+                    ts.push(translate_mat(at(0), at(1), at(2)));
                 }
             }
         }
         let seeds = self.instance_name_seeds(p.node, src, ts.len());
         let res = p.kernel.pattern_named(body, src, &ts, &seeds);
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// CircularArray: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1679,7 +1893,7 @@ impl Project {
         let ts: Vec<[f64; 12]> = (0..c).map(|i| rot_about_axis(org, dir, i as f64 * step)).collect();
         let seeds = self.instance_name_seeds(p.node, src, ts.len());
         let res = p.kernel.pattern_named(body, src, &ts, &seeds);
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Live edges of a query reference: recorded names are translated, a description is asked again.
@@ -1704,7 +1918,8 @@ impl Project {
 
     /// Extrude: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_extrude(&mut self, p: &mut Pass, sketch: Id, profiles: &[Id], height: f64, reach: crate::feature::Reach, down: f64, fill: &[Id], body: Id) -> bool {
+    fn regen_extrude(&mut self, p: &mut Pass, prof: Profile, span: ExtrudeSpan, body: Id) -> bool {
+        let (Profile { sketch, profiles }, ExtrudeSpan { height, down, reach, fill }) = (prof, span);
         let mut pl = self.sketch_place(sketch);
         // Parametric dimension expressions, where present, override the stored numbers.
         let height = p.dim("height", height);
@@ -1724,14 +1939,17 @@ impl Project {
             .ok_or(crate::errors::CoreError::ProfileNotFound)
             .and_then(|profs| {
                 let caps = self.region_cap_names(p.node, &profs);
-                p.kernel.combine_region_multi(body, 0, &profs, total, 1, pl, &caps)
+                p.kernel.combine_region_multi(BodyOp { src: 0, op: 1, body }, &profs, total, pl, &caps)
             });
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Revolve: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_revolve(&mut self, p: &mut Pass, sketch: Id, profiles: &[Id], axis: u8, angle: f64, axis_datum: Id, axis_line: Id, reach: crate::feature::Reach, src: Id, op: u8, body: Id) -> bool {
+    fn regen_revolve(&mut self, p: &mut Pass, prof: Profile, ax: RevolveAxis, angle: f64, reach: crate::feature::Reach, t: BodyOp) -> bool {
+        let (sketch, profiles) = (prof.sketch, prof.profiles);
+        let (axis, axis_datum, axis_line) = (ax.axis, ax.datum, ax.line);
+        let (src, op, body) = (t.src, t.op, t.body);
         let pl = self.sketch_place(sketch);
         let angle = eval_dim(p.dims, "angle", angle, p.vars);
         // Axis priority: a sketch centreline (already in local space, so no inverse placement is
@@ -1755,7 +1973,7 @@ impl Project {
                 crate::feature::compose12(&pl, &crate::feature::rot12_axis(o, d, theta0))
             }
         };
-        let res = self.encode_profiles_role(p.node, sketch, &profiles, &[], crate::names::Role::Revolved).ok_or(crate::errors::CoreError::ProfileNotFound).and_then(|profs| {
+        let res = self.encode_profiles_role(p.node, sketch, profiles, &[], crate::names::Role::Revolved).ok_or(crate::errors::CoreError::ProfileNotFound).and_then(|profs| {
             let caps = self.region_cap_names(p.node, &profs);
             // Honest diagnostics before the kernel: a profile crossing the axis produces readable
             // text with a hint rather than a faceless "revolve failed".
@@ -1787,34 +2005,39 @@ impl Project {
                     }
                 }
             }
-            let od = (axis_ln.is_some() || axis_od.is_some()).then_some((ax_o, ax_d));
-            p.kernel.revolve_region_multi(body, src, &profs, axis, od, angle, with_start(ax_o, ax_d, pl), op, &caps)
+            let line = (axis_ln.is_some() || axis_od.is_some()).then_some(crate::feature::AxisLine { origin: ax_o, dir: ax_d });
+            let about = crate::feature::RevolveAbout { axis, line };
+            p.kernel.revolve_region_multi(BodyOp { src, op, body }, &profs, about, angle, with_start(ax_o, ax_d, pl), &caps)
         });
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Sweep: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_sweep(&mut self, p: &mut Pass, sketch: Id, profiles: &[Id], path_sketch: Id, path: Id, src: Id, op: u8, body: Id) -> bool {
+    fn regen_sweep(&mut self, p: &mut Pass, prof: Profile, path_sketch: Id, path: Id, bo: BodyOp) -> bool {
+        let (Profile { sketch, profiles }, BodyOp { src, op, body }) = (prof, bo);
         // The profile and the path are different sketches, each with its own placement (the frame
         // of its plane).
         let prof_pl = self.sketch_place(sketch);
         let path_pl = self.sketch_place(path_sketch);
         let pth = self.sweep_path_encoded(path_sketch, path);
-        let res = match (self.encode_profiles_role(p.node, sketch, &profiles, &[], crate::names::Role::Swept), pth) {
+        let res = match (self.encode_profiles_role(p.node, sketch, profiles, &[], crate::names::Role::Swept), pth) {
             (Some(profs), Some(pth)) => {
                 let caps = self.region_cap_names(p.node, &profs);
-                p.kernel.sweep_multi(body, src, &profs, prof_pl, &pth, path_pl, op, &caps)
+                p.kernel.sweep_multi(BodyOp { src, op, body }, &profs, prof_pl, &pth, path_pl, &caps)
             }
             (None, _) => Err(crate::errors::CoreError::SweepProfileMissing),
             (_, None) => Err(crate::errors::CoreError::SweepPathMissing),
         };
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     /// Combine: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    fn regen_combine(&mut self, p: &mut Pass, src: Id, sketch: Id, profiles: &[Id], height: f64, op: u8, extent: crate::feature::Extent, down: f64, fill: &[Id], body: Id) -> bool {
+    fn regen_combine(&mut self, p: &mut Pass, prof: Profile, span: CombineSpan, t: BodyOp) -> bool {
+        let CombineSpan { height, down, extent, fill } = span;
+        let (sketch, profiles) = (prof.sketch, prof.profiles);
+        let (src, op, body) = (t.src, t.op, t.body);
         let mut pl = self.sketch_place(sketch);
         let h0 = p.dim("height", height).abs();
         let down = p.dim("down", down);
@@ -1832,9 +2055,9 @@ impl Project {
             .ok_or(crate::errors::CoreError::ProfileNotFound)
             .and_then(|profs| {
                 let caps = self.region_cap_names(p.node, &profs);
-                p.kernel.combine_region_multi(body, src, &profs, h, op, pl, &caps)
+                p.kernel.combine_region_multi(BodyOp { src, op, body }, &profs, h, pl, &caps)
             });
-        self.apply_regen(p.node, body, res, p.dirty, p.report, p.kernel, p.emap)
+        self.apply_regen(p.landing(), body, res)
     }
 
     fn live_fillet_edges(&mut self, node_id: Id, src: Id, r: &crate::refs::Ref, emap: &EdgeRenames, kernel: &dyn crate::feature::Kernel) -> Vec<u32> {
@@ -1899,11 +2122,10 @@ impl Project {
     fn rewrite_edge_picks(&mut self, node_id: Id, found: &[u32]) {
         let Some(n) = self.timeline.iter_mut().find(|n| n.id == node_id) else { return };
         match &mut n.kind {
-            crate::feature::FeatureKind::Fillet { edges, .. } | crate::feature::FeatureKind::Chamfer { edges, .. } => {
-                if !edges.query.picked_descs().is_empty() {
+            crate::feature::FeatureKind::Fillet { edges, .. } | crate::feature::FeatureKind::Chamfer { edges, .. }
+                if !edges.query.picked_descs().is_empty() => {
                     *edges = crate::refs::Ref::picks(found);
                 }
-            }
             _ => {}
         }
     }
@@ -2216,16 +2438,8 @@ impl Project {
         (start, total)
     }
 
-    fn apply_regen(
-        &mut self,
-        node_id: Id,
-        body: Id,
-        res: Result<(crate::geom::Mesh, Vec<crate::geom::MeshFace>), crate::errors::CoreError>,
-        dirty: &mut std::collections::HashSet<Id>,
-        report: &mut crate::feature::RegenReport,
-        kernel: &dyn crate::feature::Kernel,
-        emap: &mut EdgeRenames,
-    ) -> bool {
+    fn apply_regen(&mut self, l: Landing, body: Id, res: Result<(crate::geom::Mesh, Vec<crate::geom::MeshFace>), crate::errors::CoreError>) -> bool {
+        let Landing { node: node_id, dirty, report, kernel, emap } = l;
         match res {
             Ok((mesh, faces)) => {
                 self.set_body_mesh(body, mesh);

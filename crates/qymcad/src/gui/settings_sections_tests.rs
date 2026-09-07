@@ -6,8 +6,9 @@
 //! the Sketch section and lose the language).
 #[cfg(test)]
 mod tests {
+    use qymcad_ui_state::{Projection, Shading};
     use super::super::settings_sections::SettingsSection as Sec;
-    use super::super::{App, Settings};
+    use super::super::Settings;
     use crate::i18n;
 
     /// THE SECTIONS AND THEIR ROWS ARE IN THE CATALOGUE IN BOTH LANGUAGES.
@@ -44,12 +45,12 @@ mod tests {
                     let label = i18n::tr(k);
                     // the search goes by the FIRST WORD of the label — that is how people type
                     let word = label.split_whitespace().next().unwrap_or(&label).to_string();
-                    assert!(Sec::row_matches(k, &word), "{code}: the row \"{label}\" is not found by the word \"{word}\"");
-                    assert!(sec.has_match(&word), "{code}: the section {:?} must show up when searching for \"{word}\"", sec);
+                    assert!(Sec::row_matches(k, &word, &|s: &str| crate::i18n::tr(s)), "{code}: the row \"{label}\" is not found by the word \"{word}\"");
+                    assert!(sec.has_match(&word, &|k: &str| crate::i18n::tr(k)), "{code}: the section {:?} must show up when searching for \"{word}\"", sec);
                 }
             }
             // rubbish finds nothing
-            assert!(!Sec::all().iter().any(|s| s.has_match("zzqqxx")), "{code}: a search for nonsense found something");
+            assert!(!Sec::all().iter().any(|s| s.has_match("zzqqxx", &|k: &str| crate::i18n::tr(k))), "{code}: a search for nonsense found something");
         }
         i18n::set_language(&prev);
     }
@@ -62,6 +63,9 @@ mod tests {
     /// into decoration.
     fn changed() -> Settings {
         Settings {
+            // MOVED AWAY FROM WHERE IT WAS REGISTERED. An empty list is the factory value, so leaving it
+            // empty would compare the default with itself and pass whatever the reset did.
+            layout: vec![("tree".to_string(), qymcad_shell::Slot::Right)],
             language: "en".into(),
             scheme: "light".into(),
             viewcube_size: 2,
@@ -73,11 +77,9 @@ mod tests {
             undo_cap: 7,
             ghost_alpha: 200,
             persp_fov_deg: 60.0,
-            show_rapids: true,
-            cam_tab_enabled: true,
             gpu_viewport: false,
-            cam_perspective: true,
-            smooth_shading: false,
+            projection: Projection::Perspective,
+            shading: Shading::Flat,
             show_contours: false,
             show_joints: false,
             show_interference: true,
@@ -116,7 +118,7 @@ mod tests {
                     Sec::Sketch => assert_eq!(s.snap.grid, c.snap.grid, "{sec:?}: the reset touched the sketch"),
                     Sec::Part => assert_eq!(s.defaults.extrude_h, c.defaults.extrude_h, "{sec:?}: the reset touched the part"),
                     Sec::Assembly => assert_eq!(s.show_joints, c.show_joints, "{sec:?}: the reset touched the assembly"),
-                    Sec::Cam => assert_eq!(s.cam_tab_enabled, c.cam_tab_enabled, "{sec:?}: the reset touched machining"),
+                    Sec::Layout => assert_eq!(s.layout, c.layout, "{sec:?}: the reset touched the panel layout"),
                 }
             }
         }
@@ -127,18 +129,17 @@ mod tests {
             sec.reset(&mut s);
             s
         };
+        assert_eq!(after(Sec::Layout).layout, d.layout, "the layout section must restore the registered places");
         assert_eq!(after(Sec::General).language, d.language);
         assert_eq!(after(Sec::Appearance).scheme, d.scheme);
         let v = after(Sec::Viewport);
-        assert_eq!((v.viewcube_size, v.gpu_viewport, v.cam_perspective, v.smooth_shading), (d.viewcube_size, d.gpu_viewport, d.cam_perspective, d.smooth_shading));
+        assert_eq!((v.viewcube_size, v.gpu_viewport, v.projection, v.shading), (d.viewcube_size, d.gpu_viewport, d.projection, d.shading));
         let sk = after(Sec::Sketch);
         assert_eq!((sk.snap.on, sk.snap.grid, sk.snap.rot_deg, sk.auto_constrain), (d.snap.on, d.snap.grid, d.snap.rot_deg, d.auto_constrain));
         let pt = after(Sec::Part);
         assert_eq!((pt.defaults.extrude_h, pt.defaults.offset_2d), (d.defaults.extrude_h, d.defaults.offset_2d));
         let asm = after(Sec::Assembly);
         assert_eq!((asm.show_contours, asm.show_joints, asm.show_interference), (d.show_contours, d.show_joints, d.show_interference));
-        let cam = after(Sec::Cam);
-        assert_eq!((cam.cam_tab_enabled, cam.show_rapids), (d.cam_tab_enabled, d.show_rapids));
     }
 
     /// THE SECTIONS COVER EVERY SETTING WHOLE: resetting them all in turn gives exactly the factory
@@ -220,16 +221,6 @@ mod tests {
         assert!(!code.contains("settings-units-mm"), "the label about millimetre units is back in the settings window while there is still no choice of units");
     }
 
-    /// THE MACHINING SECTION IS NOT SHOWN WHILE THE MODULE IS OFF.
-    #[test]
-    fn the_machining_section_hides_with_the_module() {
-        let mut app = App::default();
-        app.win.settings = true;
-        app.set_cam_tab_for_test(false);
-        assert!(!app.settings_sections_visible().iter().any(|s| s.is_cam()), "CAM is off and the machining section is visible in the settings window");
-        app.set_cam_tab_for_test(true);
-        assert!(app.settings_sections_visible().iter().any(|s| s.is_cam()), "CAM is on, so the machining section must come back");
-    }
 }
 
 /// A SETTING THAT DOES NOT APPLY DOES NOT PRETEND TO WORK.
@@ -240,6 +231,8 @@ mod tests {
 /// setting.
 #[cfg(test)]
 mod applicability_tests {
+    use qymcad_ui_state::Projection;
+    use crate::gui::WinKind;
     use super::super::App;
 
     /// UNDER ORTHO THE REASON THE FIELD OF VIEW DOES NOT WORK IS SAID; UNDER PERSPECTIVE NOTHING IS.
@@ -255,16 +248,16 @@ mod applicability_tests {
         // THE SECTION HAS TO BE OPENED: the window always starts on General, and the first edition of
         // the test looked for the field-of-view row where it could not be.
         let mut app = App::default();
-        app.win.settings = true;
+        app.win.open(WinKind::Settings);
         app.scheme.section = super::super::settings_sections::SettingsSection::Viewport;
-        app.set.cam_perspective = false;
-        let ortho = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.settings_window(c));
+        app.set.projection = Projection::Ortho;
+        let ortho = super::super::screen_keys::tests::frame_text(&mut app, |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); });
 
         let mut app2 = App::default();
-        app2.win.settings = true;
+        app2.win.open(WinKind::Settings);
         app2.scheme.section = super::super::settings_sections::SettingsSection::Viewport;
-        app2.set.cam_perspective = true;
-        let persp = super::super::screen_keys::tests::frame_text(&mut app2, |a, c| a.settings_window(c));
+        app2.set.projection = Projection::Perspective;
+        let persp = super::super::screen_keys::tests::frame_text(&mut app2, |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); });
         crate::i18n::set_language(&prev);
 
         assert!(ortho.iter().any(|t| t.contains(&why)), "under an orthographic projection it is not said why the field of view does not work: {ortho:?}");

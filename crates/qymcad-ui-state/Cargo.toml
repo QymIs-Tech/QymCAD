@@ -1,0 +1,29 @@
+[package]
+name = "qymcad-ui-state"
+version = "0.1.0"
+edition = "2021"
+
+# THE STATE OF THE INTERFACE, AND NOTHING ELSE. Eighty records: the tools with parameters of their own,
+# the selection, the view, the caches, the settings. It draws nothing, decides nothing and knows no
+# workbench - it is what the workbenches EDIT.
+#
+# WHY IT IS A CRATE. Every workbench context is built out of these records. While they were declared
+# beside the application, a workbench could not become a crate of its own: it would have to depend on the
+# crate holding the god object, which is the very dependency the rebuild is undoing.
+#
+# The dependencies are the document (records hold ids, planes, references), the kernel (a live shape is
+# cached by body), the shell (the layout of panels travels in the settings) and egui (a texture handle
+# and a couple of screen types). Nothing here reaches for the application.
+[dependencies]
+egui = "0.35"
+egui-phosphor = "0.11"
+serde = { version = "1", features = ["derive"] }
+bytemuck = { version = "1", features = ["derive"] }
+qymcad-core = { path = "../qymcad-core" }
+qymcad-kernel = { path = "../qymcad-kernel" }
+qymcad-shell = { path = "../qymcad-shell" }
+qymcad-scheme = { path = "../qymcad-scheme" }
+qymcad-i18n = { path = "../qymcad-i18n" }
+
+[lints]
+workspace = true

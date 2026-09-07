@@ -49,21 +49,21 @@ mod random_session {
         // A LEFTOVER MODE: after cancelling everything, NOT ONE mode may stay active.
         // This is the very class that was reported three times, and never by an invented scenario.
         if what == "cancel everything" {
-            let tail = app.tool.kind != 0
-                || app.tool.modify != 0
-                || app.dim.kind != 0
-                || app.measure.on
-                || !app.measure.pts.is_empty()
-                || app.corner.at.is_some()
-                || app.corner.only.is_some()
-                || app.pat.op != 0
-                || app.tool.move_op != 0
-                || app.pending_import.draw_pts.is_some()
-                || app.pending_import.curves.is_some()
-                || app.cmd.active();
+            let tail = app.tools.armed.draw_kind() != 0
+                || app.tools.armed.modify() != 0
+                || app.tools.armed.dim_kind() != 0
+                || app.tools.armed.measuring()
+                || !app.tools.measure.pts.is_empty()
+                || app.tools.corner.at.is_some()
+                || app.tools.corner.only.is_some()
+                || app.tools.armed.pat_op() != 0
+                || app.tools.armed.move_op() != 0
+                || app.tools.pending_import.draw_pts.is_some()
+                || app.tools.pending_import.curves.is_some()
+                || app.tools.armed.commanding();
             assert!(!tail, "step {step}: a mode is still active after cancelling everything");
         }
-        assert!(!app.doc_changed_outside_edit(), "step {step} ({what}): the document was changed outside an operation");
+        assert!(!crate::gui::doc_changed_outside_edit(&app.disk.edits, &app.project), "step {step} ({what}): the document was changed outside an operation");
     }
 
     #[test]
@@ -79,7 +79,7 @@ mod random_session {
                         app.project.add_rect_entity(si, x, y, x + r.f(5.0, 30.0), y + r.f(5.0, 30.0), qymcad_core::feature::Purpose::Real);
                         app.project.regen_sketch(si);
                         app.finish_sketch_edit();
-                        app.sel = Sel::Sketch(si);
+                        app.chosen.sel = Sel::Sketch(si);
                         "rectangle sketch"
                     }
                     1 => {
@@ -87,12 +87,12 @@ mod random_session {
                         app.project.add_circle_entity(si, r.f(-10.0, 10.0), r.f(-10.0, 10.0), r.f(2.0, 8.0), qymcad_core::feature::Purpose::Real);
                         app.project.regen_sketch(si);
                         app.finish_sketch_edit();
-                        app.sel = Sel::Sketch(si);
+                        app.chosen.sel = Sel::Sketch(si);
                         "circle sketch"
                     }
                     2 => {
                         app.start_feat_cmd(1);
-                        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+                        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                             p.val = r.f(2.0, 20.0);
                             p.txt = format!("{}", p.val);
                         }
@@ -108,19 +108,19 @@ mod random_session {
                         "sketch tool"
                     }
                     5 => {
-                        app.set_dim_tool((r.pick(3) + 1) as u8);
+                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, (r.pick(3) + 1) as u8);
                         "dimension tool"
                     }
                     6 => {
                         // measuring is a tool too: switch it on and click a point
-                        app.measure.on = true;
-                        app.measure.pts.push(qymcad_core::geom::Point2::new(r.f(-10.0, 10.0), r.f(-10.0, 10.0)));
+                        app.tools.armed = qymcad_ui_state::Armed::Measure;
+                        app.tools.measure.pts.push(qymcad_core::geom::Point2::new(r.f(-10.0, 10.0), r.f(-10.0, 10.0)));
                         "measure"
                     }
                     7 => {
                         // an unfinished corner fillet popup
-                        app.corner.at = Some((r.pick(4), 0, false));
-                        app.corner.only = Some(std::collections::HashSet::new());
+                        app.tools.corner.at = Some((r.pick(4), 0, false));
+                        app.tools.corner.only = Some(std::collections::HashSet::new());
                         "corner popup"
                     }
                     8 => {
@@ -128,20 +128,20 @@ mod random_session {
                         if let Some(b) = app.project.timeline.iter().rev().find_map(|n| n.kind.body()) {
                             let arr = app.project.add_linear_array(b, r.f(20.0, 60.0), 0.0, 0.0, (r.pick(3) + 2) as u32);
                             let _ = app.project.finish_base_body(arr, 1);
-                            app.mark_dirty_for_rebuild();
+                            qymcad_ui_state::mark_dirty_for_rebuild(&mut app.rebuild_ctx());
                         }
                         "pattern"
                     }
                     9 => {
                         // SAVE AND OPEN: the document must survive a round trip through a file
                         let path = std::env::temp_dir().join(format!("qym_fuzz_{seed}.qcad")).to_string_lossy().to_string();
-                        app.spawn_save(path.clone(), false);
+                        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path.clone(), false);
                         app.wait_bg();
                         if let Ok(proj) = qymcad_io::load_project(&path) {
                             let before = app.project.bodies.len();
                             let mut back = App::default();
                             back.finish_project_load(path, proj, Vec::new());
-                            back.ensure_brep();
+                            crate::gui::io_jobs::ensure_brep(&mut back.rebuild_ctx());
                             assert_eq!(back.project.bodies.len(), before, "step {step}: the round trip through a file lost bodies");
                         }
                         "save+open"
@@ -151,7 +151,7 @@ mod random_session {
                         "undo"
                     }
                 };
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 invariants(&app, step, what);
             }
         }

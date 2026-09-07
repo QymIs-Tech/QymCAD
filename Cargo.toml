@@ -4,9 +4,17 @@ members = [
     "crates/qymcad-core",
     "crates/qymcad-kernel",
     "crates/qymcad-io",
-    "crates/qymcad-cam",
-    "crates/qymcad-verify",
     "crates/qymcad",
+    "crates/qymcad-shell",
+    "crates/qymcad-i18n",
+    "crates/qymcad-scheme",
+    "crates/qymcad-help",
+    "crates/qymcad-ui-state",
+    "crates/qymcad-pick",
+    "crates/qymcad-render",
+    "crates/qymcad-assembly",
+    "crates/qymcad-sketch",
+    "crates/qymcad-part",
     "crates/qymcad-testkit",
 ]
 
@@ -32,6 +40,17 @@ members = [
 dead_code = "deny"
 unused_must_use = "deny"
 
+[workspace.lints.clippy]
+# THE ONLY THING SILENCED HERE, AND ONLY BECAUSE CLIPPY CANNOT MEND IT ITSELF. Everything the tool can
+# repair on its own has been repaired; what is left below needs a change of design, not of signature.
+#
+# A BAG OF PARAMETERS WHERE A STRUCT BELONGS. 31 functions, every one of them in `qymcad-core`:
+# `model/regen.rs` holds twelve and the worst takes SIXTEEN arguments. That is not a matter of style -
+# it is the regeneration code carrying its state by hand. Shuffling the signatures now would be work
+# that step 6 of the rebuild (the query graph, decision R4) undoes, so the count is kept VISIBLE in one
+# place rather than silenced function by function. See docs/ARCHITECTURE_PLAN.md.
+too_many_arguments = "allow"
+
 [workspace.package]
 edition = "2021"
 # ONE NUMBER FOR THE WHOLE WORKSPACE, and it is raised by hand. Builds are made on purpose, not by a
@@ -56,12 +75,15 @@ readme = "README.md"
 qymcad-core = { path = "crates/qymcad-core" }
 qymcad-kernel = { path = "crates/qymcad-kernel" }
 qymcad-io = { path = "crates/qymcad-io" }
-qymcad-cam = { path = "crates/qymcad-cam" }
-qymcad-verify = { path = "crates/qymcad-verify" }
 
 # --- external (wired in per crate as each phase starts) ---
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
+# THE CALENDAR, TAKEN RATHER THAN WRITTEN. Twenty lines of Gregorian arithmetic used to live in `gui.rs`,
+# tested against a table of leap centuries and year boundaries - correct, but a solved problem nobody
+# should have to review again. No formatting feature: the layout is built from the components, which keeps
+# the string byte for byte what it was.
+time = { version = "0.3", default-features = false, features = ["std"] }
 # nalgebra = "0.33"            # geometry and transforms
 # cavalier_contours = "0.3"   # arc-aware offset
 # rhai = "1"                  # the post-processor engine

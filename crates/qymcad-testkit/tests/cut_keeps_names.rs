@@ -58,7 +58,7 @@ fn moving_the_cut_sketch_keeps_the_face_names() {
     let profs: Vec<u64> = p.sketches[si2].contour_ids.clone();
     eprintln!("SETUP: {} profiles in the cut sketch", profs.len());
     // ALL profiles at once — the multi-region path of the cut, the one where the prism was built twice.
-    let cut = p.add_combine_multi_op(body, s2, profs.clone(), 30.0, 0, qymcad_core::feature::Extent::default(), 0.0, Vec::new());
+    let cut = p.add_combine_multi_op(body, s2, profs.clone(), qymcad_core::model::CombineSpan { height: 30.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
 
     // A FILLET ON TOP OF THE CUT — the next step towards the real part: there the fillet stands on the
     // body the cut produced, and its references were the ones falling off.

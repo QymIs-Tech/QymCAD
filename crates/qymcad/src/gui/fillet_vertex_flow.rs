@@ -20,27 +20,27 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
 
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         app.start_feat_cmd(4);
-        app.refresh_edges();
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 8.0;
-        app.cam.target = [30.0, 20.0, 6.0];
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 8.0;
+        app.viewing.cam.target = [30.0, 20.0, 6.0];
         // the edges of the top face
         let top: Vec<u32> = app.project.regen_edges[&body].iter().filter(|e| (e.a[2] - 12.0).abs() < 1e-6 && (e.b[2] - 12.0).abs() < 1e-6).map(|e| e.id).collect();
         assert_eq!(top.len(), 4, "setup: the top face has four edges, and {} were found", top.len());
-        app.gsel.edges = top.into_iter().collect();
+        app.tools.gsel.edges = top.into_iter().collect();
         (app, body)
     }
 
@@ -50,11 +50,11 @@ mod tests {
         let (mut app, body) = plate_in_fillet();
         let r = rect();
         let corner = app.project.vertex_spots(body).into_iter().find(|(p, _)| p[2] > 11.0 && p[0] < 1.0 && p[1] < 1.0).map(|(p, _)| p).expect("the top corner at (0,0)");
-        let basis = app.cam.basis();
-        let at = app.project3(corner, r, &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: r, basis: &basis }.at(corner).0;
 
         assert!(app.pick_fillet_vertex(r, at), "a click on a corner must land on the vertex");
-        let extra: Vec<_> = app.cmd.params.iter().filter(|p| p.key.starts_with("at")).collect();
+        let extra: Vec<_> = app.tools.cmd.params.iter().filter(|p| p.key.starts_with("at")).collect();
         assert_eq!(extra.len(), 1, "a clicked corner must get EXACTLY one field of its own");
         assert!(extra[0].at.is_some(), "the field must stand AT THE GEOMETRY — otherwise six identical fields in a column cannot be told apart");
         let placed = extra[0].at.expect("the place of the field");
@@ -62,7 +62,7 @@ mod tests {
 
         // a second click — the corner goes back to the common radius
         assert!(app.pick_fillet_vertex(r, at), "a second click must land in the same place");
-        assert!(!app.cmd.params.iter().any(|p| p.key.starts_with("at")), "a second click must REMOVE the field, not add a second one");
+        assert!(!app.tools.cmd.params.iter().any(|p| p.key.starts_with("at")), "a second click must REMOVE the field, not add a second one");
     }
 
     /// AND THE VALUE REACHES THE TIMELINE AS A VERTEX TABLE instead of being lost in the interface.
@@ -71,18 +71,18 @@ mod tests {
         let (mut app, body) = plate_in_fillet();
         let r = rect();
         let corner = app.project.vertex_spots(body).into_iter().find(|(p, _)| p[2] > 11.0 && p[0] < 1.0 && p[1] < 1.0).map(|(p, _)| p).expect("the top corner");
-        let basis = app.cam.basis();
-        app.pick_fillet_vertex(r, app.project3(corner, r, &basis).0);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key.starts_with("at")) {
+        let basis = app.viewing.cam.basis();
+        app.pick_fillet_vertex(r, qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: r, basis: &basis }.at(corner).0);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key.starts_with("at")) {
             p.val = 2.0;
             p.txt = "2".into();
         }
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 1.0;
             p.txt = "1".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let node = app
             .project

@@ -91,8 +91,8 @@ fn a_cube_corner_lands_exactly_halfway() {
     let h = 5.0;
     let limit = Cage::cube(2.0 * h).limit_points();
     for (vi, p) in limit.iter().enumerate() {
-        for k in 0..3 {
-            assert!((p[k].abs() - 0.5 * h).abs() < 1e-12, "corner {vi} along axis {k}: {} instead of {}", p[k].abs(), 0.5 * h);
+        for (k, c) in p.iter().enumerate() {
+            assert!((c.abs() - 0.5 * h).abs() < 1e-12, "corner {vi} along axis {k}: {} instead of {}", c.abs(), 0.5 * h);
         }
     }
 }
@@ -161,8 +161,8 @@ fn the_limit_mask_agrees_with_where_subdivision_actually_goes() {
         for _ in 0..8 {
             c = c.subdivide();
         }
-        for vi in 0..cage.verts.len() {
-            let d = dist(limit[vi], c.verts[vi]);
+        for (vi, (l, sub)) in limit.iter().zip(&c.verts).enumerate() {
+            let d = dist(*l, *sub);
             assert!(d < 1e-3, "{what}: the limit mask disagrees with subdivision at vertex {vi} by {d:.6} mm");
         }
     }
@@ -294,14 +294,6 @@ fn neighbouring_patches_meet_along_their_seam() {
             let b = f[(k + 1) % 4];
             let Some(nj) = refined.face_across_for_test(a, b, fi) else { continue };
             let Some(q) = refined.patch_of_face_for_test(nj) else { continue };
-            // take the seam points of both patches and compare them as sets
-            let edge_pts = |patch: &super::patch::BezierPatch, ea: u32, eb: u32| -> Vec<[f64; 3]> {
-                let g = &refined.faces[if std::ptr::eq(patch, patch) { 0 } else { 0 }];
-                let _ = g;
-                let _ = (ea, eb);
-                (0..=8).map(|i| i as f64 / 8.0).map(|t| patch.eval(t, 0.0)).collect()
-            };
-            let _ = edge_pts;
             // the direct way: on both patches find the side whose ends coincide with the ends of the shared
             // edge
             let side = |patch: &super::patch::BezierPatch| -> Option<Vec<[f64; 3]>> {

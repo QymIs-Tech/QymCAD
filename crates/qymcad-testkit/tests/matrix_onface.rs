@@ -34,7 +34,7 @@ fn build(h: f64) -> (Project, u64, u64, u64) {
     p.regen_sketch(s2);
     let cid2 = p.sketches[s2].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).unwrap();
     // a cut 5 deep INTO the body (flip=true: against the face normal, the interface's smart default)
-    let cut = p.add_combine_multi_op(cube, sid2, vec![cid2], 5.0, 0, qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, 0.0, vec![]);
+    let cut = p.add_combine_multi_op(cube, sid2, vec![cid2], qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, fill: &[] }, 0);
     (p, cube, cut, sid2)
 }
 

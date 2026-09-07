@@ -166,6 +166,61 @@ pub struct Shape {
     ptr: *mut QymShape,
 }
 
+/// A HELICAL RIB OR GROOVE, as the kernel needs it: where the helix runs, what is swept along it, and
+/// how its ends are eased.
+///
+/// Named after `qymcad_core::feature::Helical`, which says the same thing on the model's side, minus the
+/// two body numbers the kernel does not need here.
+pub struct HelicalCut<'a> {
+    /// A point on the axis and the direction along it.
+    pub axis: qymcad_core::feature::AxisLine,
+    /// The radius of the surface the profile is swept on.
+    pub radius: f64,
+    /// The axial section, encoded as an exact profile.
+    pub profile: &'a [f64],
+    /// How far the helix runs along the axis.
+    pub length: f64,
+    /// The rise of one turn.
+    pub lead: f64,
+    pub starts: u32,
+    pub hand: Hand,
+    /// Unite (a rib) or subtract (a groove).
+    pub kind: Helix,
+    /// The run-out at the start and at the end.
+    pub lead_in: f64,
+    pub lead_out: f64,
+    /// The names for the faces the groove produces, and for those the run-out produces.
+    pub gnames: &'a [u32],
+    pub rnames: &'a [u32],
+    /// How far the whole profile is moved in radially, to take up the clearance the groove could not.
+    pub crest_relief: f64,
+}
+
+/// A THREAD BY STANDARD, as the kernel needs it: the helix, the shape of the groove and the clearances.
+///
+/// The profile is computed inside from `form` rather than handed in - that is what tells this apart from
+/// `HelicalCut`, where the section is given outright.
+pub struct ThreadCut {
+    pub axis: qymcad_core::feature::AxisLine,
+    pub radius: f64,
+    pub length: f64,
+    pub pitch: f64,
+    /// The included angle of the profile, in degrees, and how deep it cuts.
+    pub angle_deg: f64,
+    pub depth: f64,
+    pub starts: u32,
+    pub hand: Hand,
+    /// On a shaft or in a bore.
+    pub site: Site,
+    /// The standard's own code.
+    pub form: u8,
+    /// Clearance at the crest and at the root, so that a pair screws together.
+    pub clearance_crest: f64,
+    pub clearance_root: f64,
+    pub lead_in: f64,
+    pub lead_out: f64,
+}
+
 impl Shape {
     /// A live body into bytes, together with the names of its faces and edges; see `qym_shape_to_brep`.
     ///
@@ -434,7 +489,7 @@ impl Shape {
     /// `caps` holds the names of the end faces of the loft, at the first and last sections.
     pub fn loft_sections_named(data: &[f64], offsets: &[usize], places: &[f64], walls: qymcad_core::feature::LoftWalls, kind: qymcad_core::feature::LoftBody, caps: [u32; 2]) -> Option<Shape> {
         let (ruled, solid) = (walls == qymcad_core::feature::LoftWalls::Ruled, kind == qymcad_core::feature::LoftBody::Solid);
-        let nsec = offsets.len().checked_sub(1).unwrap_or(0);
+        let nsec = offsets.len().saturating_sub(1);
         if nsec < 2 {
             return refuse("loft/asked", "a loft needs two sections or more, and it was given fewer");
         }
@@ -501,7 +556,9 @@ impl Shape {
     /// auger. The profile lies in the axial plane: x along the axis, y radially out from the surface of
     /// radius `radius`.
     #[allow(clippy::too_many_arguments)]
-    pub fn helical_profile(&self, origin: [f64; 3], dir: [f64; 3], radius: f64, profile: &[f64], length: f64, lead: f64, starts: u32, hand: Hand, helix: Helix, lead_in: f64, lead_out: f64, gnames: &[u32], rnames: &[u32], crest_relief: f64) -> Option<Shape> {
+    pub fn helical_profile(&self, h: HelicalCut) -> Option<Shape> {
+        let HelicalCut { axis, radius, profile, length, lead, starts, hand, kind: helix, lead_in, lead_out, gnames, rnames, crest_relief } = h;
+        let (origin, dir) = (axis.origin, axis.dir);
         unsafe {
             Self::wrap(qym_shape_helical_profile(
                 self.ptr,
@@ -526,7 +583,9 @@ impl Shape {
         }
     }
 
-    pub fn thread(&self, origin: [f64; 3], dir: [f64; 3], radius: f64, length: f64, pitch: f64, angle_deg: f64, depth: f64, starts: u32, hand: Hand, site: Site, form: u8, clearance_crest: f64, clearance_root: f64, lead_in: f64, lead_out: f64) -> Option<Shape> {
+    pub fn thread(&self, t: ThreadCut) -> Option<Shape> {
+        let ThreadCut { axis, radius, length, pitch, angle_deg, depth, starts, hand, site, form, clearance_crest, clearance_root, lead_in, lead_out } = t;
+        let (origin, dir) = (axis.origin, axis.dir);
         unsafe { Self::wrap(qym_shape_thread(self.ptr, origin.as_ptr(), dir.as_ptr(), radius, length, pitch, angle_deg, depth, starts.max(1) as i32, (hand == Hand::Left) as i32, (site == Site::Bore) as i32, form as i32, clearance_crest, clearance_root, lead_in, lead_out)) }
     }
     /// The volume of the body, in mm³, through `GProp`, for tests and geometric checks.
@@ -884,22 +943,24 @@ impl Shape {
     /// A stepped hole: a tool — the main cylinder plus a counterbore or countersink — cut in the frame `pl`,
     /// which maps local to world. `kind` is 0 for a plain hole, 1 for a counterbore and 2 for a countersink.
     /// The body with the cut comes back.
-    pub fn hole_stepped(&self, kind: u8, pl: [f64; 12], dia: f64, depth: f64, dia2: f64, depth2: f64, _extra: &[u32]) -> Option<Shape> {
-        self.hole_stepped_named(kind, pl, dia, depth, dia2, depth2, 0, &[])
+    pub fn hole_stepped(&self, tool: qymcad_core::model::HoleTool, pl: [f64; 12], _extra: &[u32]) -> Option<Shape> {
+        self.hole_stepped_named(tool, pl, 0, &[])
     }
 
     /// `bore` is the name of the wall of the main bore, the one fillets and sketches are placed against.
-    pub fn hole_stepped_named(&self, kind: u8, pl: [f64; 12], dia: f64, depth: f64, dia2: f64, depth2: f64, bore: u32, extra: &[u32]) -> Option<Shape> {
+    pub fn hole_stepped_named(&self, tool: qymcad_core::model::HoleTool, pl: [f64; 12], bore: u32, extra: &[u32]) -> Option<Shape> {
+        let qymcad_core::model::HoleTool { kind, diameter: dia, depth, dia2, depth2 } = tool;
         unsafe { Self::wrap(qym_shape_hole_stepped(self.ptr, kind as i32, pl.as_ptr(), dia, depth, dia2, depth2, bore, Self::opt_ptr(extra), extra.len())) }
     }
     /// Many holes at once, at the placements `pls`, each a 3×4 matrix. All the tools are fused and a single
     /// cut is taken.
-    pub fn holes_stepped(&self, kind: u8, pls: &[[f64; 12]], dia: f64, depth: f64, dia2: f64, depth2: f64) -> Option<Shape> {
-        self.holes_stepped_named(kind, pls, dia, depth, dia2, depth2, &vec![0u32; pls.len()], &[])
+    pub fn holes_stepped(&self, tool: qymcad_core::model::HoleTool, pls: &[[f64; 12]]) -> Option<Shape> {
+        self.holes_stepped_named(tool, pls, &vec![0u32; pls.len()], &[])
     }
 
     /// `bores` gives the wall name for each hole, one per placement.
-    pub fn holes_stepped_named(&self, kind: u8, pls: &[[f64; 12]], dia: f64, depth: f64, dia2: f64, depth2: f64, bores: &[u32], extra: &[u32]) -> Option<Shape> {
+    pub fn holes_stepped_named(&self, tool: qymcad_core::model::HoleTool, pls: &[[f64; 12]], bores: &[u32], extra: &[u32]) -> Option<Shape> {
+        let qymcad_core::model::HoleTool { kind, diameter: dia, depth, dia2, depth2 } = tool;
         if pls.is_empty() {
             return None;
         }
@@ -972,7 +1033,7 @@ impl Shape {
             let mut buf = vec![0u32; n * 3];
             let got = qym_shape_edge_end_faces(self.ptr, buf.as_mut_ptr(), buf.len());
             buf.truncate(got * 3);
-            buf.chunks_exact(3).map(|c| (c[0], c[1], c[2])).collect()
+            buf.as_chunks::<3>().0.iter().map(|c| (c[0], c[1], c[2])).collect()
         }
     }
 
@@ -985,7 +1046,7 @@ impl Shape {
             let mut buf = vec![0u32; n * 2];
             let got = qym_shape_absorbed(self.ptr, buf.as_mut_ptr(), n);
             buf.truncate(got * 2);
-            buf.chunks_exact(2).map(|c| (c[0], c[1])).collect()
+            buf.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect()
         }
     }
 
@@ -1006,7 +1067,7 @@ impl Shape {
             let mut buf = vec![0u32; n * 3];
             let got = qym_shape_face_splits(self.ptr, buf.as_mut_ptr(), buf.len());
             buf.truncate(got.min(n) * 3);
-            buf.chunks_exact(3).map(|c| (c[0], c[1], c[2])).collect()
+            buf.as_chunks::<3>().0.iter().map(|c| (c[0], c[1], c[2])).collect()
         }
     }
 
@@ -1030,7 +1091,7 @@ impl Shape {
             let mut buf = vec![0u32; n * 3];
             let got = qym_shape_edge_face_pairs(self.ptr, buf.as_mut_ptr(), buf.len());
             buf.truncate(got.min(n) * 3);
-            buf.chunks_exact(3).map(|c| (c[0], c[1], c[2])).collect()
+            buf.as_chunks::<3>().0.iter().map(|c| (c[0], c[1], c[2])).collect()
         }
     }
 
@@ -1206,8 +1267,8 @@ unsafe fn doc_to_bodies(d: *mut QymDoc) -> Vec<Body> {
         if tc > 0 {
             qym_body_copy_tris(d, i, tbuf.as_mut_ptr());
         }
-        let verts = vbuf.chunks_exact(3).map(|c| Point3::new(c[0] as f64, c[1] as f64, c[2] as f64)).collect();
-        let tris = tbuf.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+        let verts = vbuf.as_chunks::<3>().0.iter().map(|c| Point3::new(c[0] as f64, c[1] as f64, c[2] as f64)).collect();
+        let tris = tbuf.as_chunks::<3>().0.iter().map(|c| [c[0], c[1], c[2]]).collect();
         let mesh = Mesh { verts, tris };
 
         // faces from the B-rep: each is a contiguous range of triangles plus a persistent id

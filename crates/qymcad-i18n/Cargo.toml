@@ -1,0 +1,18 @@
+[package]
+name = "qymcad-i18n"
+version = "0.1.0"
+edition = "2021"
+
+# THE DICTIONARY IS A RESOURCE, AND A RESOURCE BELONGS TO NO WORKBENCH. Every workbench asks it for words,
+# so it cannot live inside any one of them; and it must not know what a panel is, or the rule "no string is
+# typed into the code" would have a hole exactly the size of this crate.
+[dependencies]
+qymcad-core = { path = "../qymcad-core" }
+fluent-bundle = "0.16.0"
+fluent-syntax = "0.12.0"
+unic-langid = "0.9.6"
+include_dir = "0.7"
+sys-locale = "0.3.2" # the language of the system, when nobody has chosen one
+
+[lints]
+workspace = true

@@ -5,30 +5,6 @@
 //! program through `Project::build_program`.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(test)]
-mod comment_ratchet;
-#[cfg(test)]
-mod dependency_ratchet;
-// The macOS bundling script, run here with the mac-only tools stubbed out. Unix only: it is a shell script.
-#[cfg(all(test, unix))]
-mod packaging_macos;
-mod build_info;
-mod crash;
-mod diagnostics;
-mod i18n;
-mod palette;
-mod help;
-mod help_map;
-mod command_catalog;
-mod templates;
-mod gui;
-mod library;
-mod parts_library;
-mod viewport_gpu;
-mod start_notice;
-
-use std::process::ExitCode;
-
 fn main() -> ExitCode {
     match gui::launch() {
         Ok(()) => ExitCode::SUCCESS,
@@ -45,3 +21,32 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod comment_ratchet;
+#[cfg(test)]
+mod dependency_ratchet;
+mod god_object_ratchet;
+// The macOS bundling script, run here with the mac-only tools stubbed out. Unix only: it is a shell script.
+#[cfg(all(test, unix))]
+mod packaging_macos;
+mod build_info;
+mod crash;
+mod diagnostics;
+/// THE DICTIONARY LIVES IN ITS OWN CRATE NOW. Re-exported under the old name because 2159 places say
+/// `crate::i18n::tr`, and rewriting every one of them would change no meaning at all.
+pub(crate) use qymcad_i18n as i18n;
+/// The colour schemes live in their own crate now; the old name is kept so nothing else has to change.
+pub(crate) use qymcad_scheme as palette;
+pub(crate) use qymcad_help as help;
+pub(crate) use qymcad_help::map as help_map;
+mod command_catalog;
+mod templates;
+mod gui;
+mod parts_library;
+mod viewport_gpu;
+mod start_notice;
+mod wide_signature_ratchet;
+
+use std::process::ExitCode;
+

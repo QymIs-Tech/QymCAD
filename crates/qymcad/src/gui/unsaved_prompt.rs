@@ -31,21 +31,21 @@ mod tests {
         app.project.add_rect_entity(si, -20.0, -20.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
         // THE PATH IS REMEMBERED, as "save as" does it: without it `save_project` goes into a file
         // dialogue, which a test does not have, and the save quietly writes nothing.
-        app.set_project_path(path.clone());
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
         // THROUGH A REAL SAVE: `spawn_save` only writes the file, while it is `save_project` that
         // marks the project saved — a fixture calling the write directly would leave it dirty and
         // check the wrong thing.
-        app.save_project_for_test();
-        app.wait_bg_for_test();
+        app.save_project();
+        app.wait_bg();
         (app, path)
     }
 
@@ -56,18 +56,18 @@ mod tests {
 
         let mut app = App::default();
         app.open_for_test(path.clone());
-        assert!(!app.is_dirty_for_test(), "right after opening there is nothing to save");
+        assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "right after opening there is nothing to save");
 
         // THE POINT IS THE REBUILD THE OPENING ITSELF SCHEDULES. A project from a bundle carries no
         // live B-rep: it is loaded in the background and a rebuild is asked for
         // (`mark_dirty_for_rebuild`). Without this step the test goes down the synchronous path, where
         // there is no rebuild at all, and stays green even with broken logic — that is exactly what
         // caught this check out during an honesty pass.
-        app.mark_dirty_for_rebuild_for_test();
+        qymcad_ui_state::mark_dirty_for_rebuild(&mut app.rebuild_ctx());
         for _ in 0..3 {
-            app.rebuild_if_dirty_for_test();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.drain_busy_for_test(); // the rebuild may have gone into a thread — carried through, as a frame does
-            assert!(!app.is_dirty_for_test(), "a rebuild is not a person's edit: after it the project must stay saved");
+            assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "a rebuild is not a person's edit: after it the project must stay saved");
         }
         let _ = std::fs::remove_file(&path);
     }
@@ -79,14 +79,14 @@ mod tests {
 
         let mut app = App::default();
         app.open_for_test(path.clone());
-        assert!(!app.is_dirty_for_test(), "setup: opened, and it is clean");
+        assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "setup: opened, and it is clean");
 
         let si = app.create_sketch_on(SketchPlane::default());
         app.project.add_rect_entity(si, 0.0, 0.0, 5.0, 5.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.rebuild_if_dirty_for_test();
-        assert!(app.is_dirty_for_test(), "an edit after opening must count as unsaved — otherwise the work is lost silently");
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "an edit after opening must count as unsaved — otherwise the work is lost silently");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -104,16 +104,16 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 5.0, 5.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.rebuild_if_dirty_for_test();
-        assert!(app.is_dirty_for_test(), "setup: after the edit the project is dirty");
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "setup: after the edit the project is dirty");
 
         app.request_nav_for_test(Nav::New);
-        assert!(app.deferred_nav_for_test(), "a dirty project must defer the navigation rather than carry it out silently");
+        assert!(app.deferred.nav.is_some(), "a dirty project must defer the navigation rather than carry it out silently");
 
         // the save: a background write plus the waiting — exactly what the dialogue does
-        app.save_project_for_test();
-        app.wait_bg_for_test();
-        assert!(!app.is_dirty_for_test(), "after a COMPLETED write the project must be clean — otherwise the dialogue throws the navigation away");
+        app.save_project();
+        app.wait_bg();
+        assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "after a COMPLETED write the project must be clean — otherwise the dialogue throws the navigation away");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -134,11 +134,14 @@ mod tests {
         let src = crate::gui::panels_source::PANELS;
         let code = src.split("#[cfg(test)]\nmod ").next().expect("the working part");
         let at = code.find("fn nav_dialog").expect("the dialogue is there");
-        let end = code[at + 10..].find("\n    pub(super) fn ").map(|i| at + 10 + i).unwrap_or(code.len());
+        // the boundary is the dialogue's OWN closing brace at column zero: it was a method once and is a
+        // free function now, and the rule guarded here has not changed
+        let end = code[at + 10..].find("\n}\n").map(|i| at + 10 + i).unwrap_or(code.len());
         let body = &code[at..end];
-        assert!(body.contains("self.save_project();"), "the save branch is there");
+        // the dialogue NAMES the save; who carries it out is not the rule here
+        assert!(body.contains("WinAsk::Save"), "the save branch is there");
         assert!(
-            !body.contains("self.wait_bg();"),
+            !body.contains(".wait_bg();"),
             "a blocking wait for the write is back in the dialogue — the window will freeze and a person will decide the program has hung"
         );
         assert!(body.contains("nav_after_save"), "the navigation must WAIT for the end of the write rather than be thrown away");
@@ -153,9 +156,9 @@ mod tests {
     fn changing_a_feature_parameter_counts_as_unsaved() {
         use qymcad_core::feature::FeatureKind as FK;
         let (mut app, path) = saved_project("param.qcad");
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.drain_busy_for_test();
-        assert!(!app.is_dirty_for_test(), "setup: a saved project is clean");
+        assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "setup: a saved project is clean");
 
         // change the HEIGHT of the extrude right in the recipe — the way the gizmo does it
         let mut touched = false;
@@ -167,7 +170,7 @@ mod tests {
             }
         }
         assert!(touched, "setup: the timeline must hold an extrude");
-        assert!(app.is_dirty_for_test(), "editing a PARAMETER of a feature must count as unsaved — otherwise the work is lost silently");
+        assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "editing a PARAMETER of a feature must count as unsaved — otherwise the work is lost silently");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -178,10 +181,10 @@ mod tests {
         let mut app = App::default();
         app.open_for_test(path.clone());
         for i in 0..10 {
-            app.mark_dirty_for_rebuild_for_test();
-            app.rebuild_if_dirty_for_test();
+            qymcad_ui_state::mark_dirty_for_rebuild(&mut app.rebuild_ctx());
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.drain_busy_for_test();
-            assert!(!app.is_dirty_for_test(), "after rebuild {} an untouched project became dirty", i + 1);
+            assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "after rebuild {} an untouched project became dirty", i + 1);
         }
         let _ = std::fs::remove_file(&path);
     }

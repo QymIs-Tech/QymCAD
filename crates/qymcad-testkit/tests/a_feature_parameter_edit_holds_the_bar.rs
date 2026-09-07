@@ -12,6 +12,7 @@
 //! What is required is not an equal count but that nothing old was lost.
 use qymcad_core::geom::Point2;
 use qymcad_core::model::{Id, Project};
+use qymcad_core::model::ArrayAxis;
 
 fn box_body(p: &mut Project, w: f64, h: f64, up: f64) -> Id {
     let sid = p.add_line_sketch(
@@ -153,7 +154,7 @@ fn an_extrude_height_edit_under_a_chain_keeps_every_name() {
     let open: Vec<u32> = p.regen_faces[&body].iter().filter(|f| f.normal[2] > 0.9).map(|f| f.id).collect();
     let sh = p.add_shell_mode(body, 2.0, open, qymcad_core::feature::ShellSide::Inward);
     qymcad_testkit::regenerate(&mut p);
-    let arr = p.add_linear_array_grid3(sh, 30.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(sh, [ArrayAxis { d: [30.0, 0.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     assert!(p.regen_faces.get(&arr).map(|f| f.len() >= 11).unwrap_or(false), "the chain did not build: {:?}", p.regen_errors);
     demand_after_param_edit("extrude height under a chain", &mut p, body, "height", "13");
@@ -176,7 +177,7 @@ fn a_topology_changing_param_returns_the_same_names() {
     p.add_sketch_node(hsk, "drill mark");
     p.sketch_point_at(hsi, 15.0, 10.0, 1e-6);
     // `flip=true` drills INTO the body: with `false` the operation leaves only an imprint of the circle (measured).
-    let h = p.add_hole_from_sketch(base, hsk, 5.0, 6.0, 0, 0.0, 0.0, true);
+    let h = p.add_hole_from_sketch(base, hsk, qymcad_core::model::HoleTool { kind: 0, diameter: 5.0, depth: 6.0, dia2: 0.0, depth2: 0.0 }, true);
     qymcad_testkit::regenerate(&mut p);
     let blind = live_names(&p);
     let blind_faces = p.regen_faces.get(&h).map(|f| f.len()).unwrap_or(0);

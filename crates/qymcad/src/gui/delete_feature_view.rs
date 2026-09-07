@@ -22,7 +22,7 @@ mod tests {
     /// A part with a cube; returns (mesh index, body id).
     fn part_with_cube(app: &mut App) -> (usize, u64) {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
@@ -44,13 +44,13 @@ mod tests {
 
     /// How many bodies are actually shown in the viewport.
     fn shown(app: &App) -> usize {
-        (0..app.project.bodies.len()).filter(|&i| app.body_shown(i)).count()
+        (0..app.project.bodies.len()).filter(|&i| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), i)).count()
     }
 
     /// Delete a timeline node by its Id — by exactly the path the feature tree uses.
     fn delete_node(app: &mut App, nid: u64) {
         let ti = app.project.timeline.iter().position(|n| n.id == nid).expect("the feature node in the timeline");
-        app.delete_feature(ti);
+        crate::gui::commands::delete_feature(&mut app.part_ctx(), ti);
     }
 
     /// PUSH FACE: deleted, and the source body stays on screen.
@@ -60,12 +60,12 @@ mod tests {
         let (mi, body) = part_with_cube(&mut app);
         let face = top_face(&app, mi);
         let nb = app.project.add_push_face(body, face, 5.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert_eq!(shown(&app), 1, "setup: exactly the result of the feature is visible");
 
         delete_node(&mut app, nb);
         assert_eq!(shown(&app), 1, "after the feature is deleted the source body must stay on screen rather than emptiness");
-        assert!(app.project.mesh_index(body).is_some_and(|i| app.body_shown(i)), "what is visible must be the source body itself");
+        assert!(app.project.mesh_index(body).is_some_and(|i| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), i)), "what is visible must be the source body itself");
     }
 
     /// SPLIT BODY: the cut is deleted, the whole body comes back and the pieces go.
@@ -76,14 +76,14 @@ mod tests {
         let face = top_face(&app, mi);
         let h = app.project.bodies[mi].mesh.bounds().map(|b| b.max.z - b.min.z).expect("the height");
         app.start_feat_cmd(27);
-        app.mode_3d = true;
-        app.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, face));
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "offset") {
+        app.viewing.mode_3d = true;
+        app.params.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, face));
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             p.val = -h * 0.5;
             p.txt = format!("{:.4}", -h * 0.5);
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let nid = app
             .project
             .timeline
@@ -96,7 +96,7 @@ mod tests {
 
         delete_node(&mut app, nid);
         assert_eq!(shown(&app), 1, "after the split is deleted the WHOLE body must stay on screen");
-        assert!(app.project.mesh_index(body).is_some_and(|i| app.body_shown(i)), "what is visible must be the source body");
+        assert!(app.project.mesh_index(body).is_some_and(|i| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), i)), "what is visible must be the source body");
         // the pieces went entirely rather than staying as ghosts with no recipe
         for p in pieces {
             assert!(app.project.mesh_index(p).is_none(), "piece {p} must disappear along with the split");
@@ -114,11 +114,11 @@ mod tests {
         let (mi, body) = part_with_cube(&mut app);
         let face = top_face(&app, mi);
         let nb = app.project.add_remove_face(body, vec![face]);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         delete_node(&mut app, nb);
         assert_eq!(shown(&app), 1, "after the feature is deleted the source body must stay on screen");
-        assert!(app.project.mesh_index(body).is_some_and(|i| app.body_shown(i)), "what is visible must be the source body");
+        assert!(app.project.mesh_index(body).is_some_and(|i| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), i)), "what is visible must be the source body");
     }
 
     /// A CHANGE OF TOPOLOGY ALWAYS MOVES `geom_rev` — even when there is nothing to rebuild.
@@ -132,7 +132,7 @@ mod tests {
         let (mi, body) = part_with_cube(&mut app);
         let face = top_face(&app, mi);
         let nb = app.project.add_push_face(body, face, 5.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(app.project.timeline.iter().all(|n| !n.dirty), "setup: after a rebuild there are no dirty nodes");
 
         let rev = app.regen.geom_rev;
@@ -153,17 +153,17 @@ mod tests {
         let (mi, body) = part_with_cube(&mut app);
         let face = top_face(&app, mi);
         let pid = app.project.add_plane_from_face(body, face, -5.0);
-        app.rebuild_if_dirty();
-        app.edits.committed_key = app.doc_key(); // the point of reckoning: the document is "handed in"
-        let undo_before = app.edits.undo.len();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.disk.edits.committed_key = qymcad_ui_state::doc_key(&app.project); // the point of reckoning: the document is "handed in"
+        let undo_before = app.disk.edits.undo.len();
 
         let i = app.project.planes.iter().position(|p| p.id == pid).expect("the plane in the list");
-        app.sel = Sel::Plane(i);
+        app.chosen.sel = Sel::Plane(i);
         app.execute_delete(Sel::Plane(i));
 
-        assert!(!app.doc_changed_outside_edit(), "deleting a datum must go through App::edit rather than past it");
-        assert_eq!(app.edits.undo.len(), undo_before + 1, "EXACTLY one undo step must appear");
-        assert_eq!(app.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("status-plane-delete")), "the step must be NAMED rather than picked up after the fact");
+        assert!(!crate::gui::doc_changed_outside_edit(&app.disk.edits, &app.project), "deleting a datum must go through App::edit rather than past it");
+        assert_eq!(app.disk.edits.undo.len(), undo_before + 1, "EXACTLY one undo step must appear");
+        assert_eq!(app.disk.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("status-plane-delete")), "the step must be NAMED rather than picked up after the fact");
     }
 
 }

@@ -31,13 +31,13 @@ mod tests {
         author.set.undo_cap = 7;
         author.set.persp_fov_deg = 55.0;
         author.set.hotkeys.insert("part.extrude".into(), "W".into());
-        author.export_settings_to(&path).expect("the profile writes");
+        crate::gui::export_settings_to(&author.set, &path).expect("the profile writes");
 
         let mut other = App::default();
         other.import_settings_from(&path, &ctx).expect("the profile reads");
         assert_eq!(other.set.language, "en", "the language did not carry over");
         assert_eq!(other.set.undo_cap, 7, "the undo depth did not carry over");
-        assert_eq!(other.hotkey_key("part.extrude"), "W", "the rebound key did not carry over");
+        assert_eq!(qymcad_ui_state::hotkey_key(&other.set, "part.extrude"), "W", "the rebound key did not carry over");
         // AND IT IS APPLIED, not merely recorded: the scale lives in the egui state rather than in
         // the record. A frame is run through — `set_zoom_factor` reaches the state on the next pass.
         let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
@@ -87,11 +87,14 @@ mod tests {
     #[test]
     fn startup_and_import_use_the_same_door() {
         let gui = include_str!("../gui.rs");
-        assert!(gui.contains("app.adopt_settings(v, &cc.egui_ctx)"), "startup stopped adopting the settings through the common handle");
-        assert!(gui.contains("self.adopt_settings(s, ctx)"), "import stopped adopting the settings through the common handle");
+        assert!(crate::gui::render_source::has(gui, "adopt_settings(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, v, &cc.egui_ctx)"), "startup stopped adopting the settings through the common handle");
+        assert!(crate::gui::render_source::has(gui, "adopt_settings(&mut self.regen, &mut self.scheme, &mut self.set, &mut self.status, s, ctx)"), "import stopped adopting the settings through the common handle");
         // and nothing assigns the record past it
-        let code: String = super::super::super::i18n::ratchet::tests::working_part(gui).lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
-        let direct = code.matches("self.set = ").count() + code.matches("app.set = ").count();
+        let code: String = qymcad_i18n::ratchet::working_part(gui).lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+        // EVERY SHAPE THE ASSIGNMENT CAN TAKE. Inside the handle the record is now reached through a
+        // borrowed field, so the line reads `*set = s`; counting only the `self.` and `app.` forms found
+        // nothing and reported the handle itself as missing.
+        let direct = code.matches("self.set = ").count() + code.matches("app.set = ").count() + code.matches("*set = ").count();
         assert_eq!(direct, 1, "the settings record is assigned past `adopt_settings` ({direct} places instead of one — the handle itself)");
     }
 }

@@ -70,8 +70,8 @@ pub fn problem_of_with_pins(project: &Project, pins: &std::collections::HashMap<
     let mut comps: Vec<Id> = Vec::new();
     let mut index: std::collections::HashMap<Id, usize> = std::collections::HashMap::new();
     let push = |c: Id, comps: &mut Vec<Id>, index: &mut std::collections::HashMap<Id, usize>| {
-        if !index.contains_key(&c) {
-            index.insert(c, comps.len());
+        if let std::collections::hash_map::Entry::Vacant(e) = index.entry(c) {
+            e.insert(comps.len());
             comps.push(c);
         }
     };
@@ -799,10 +799,12 @@ fn write_back_free_values(project: &mut Project, comps: &[Id], poses: &[Isometry
                 j.offset2 = v;
             }
             if hand_leads {
-                for slot in 0..3 {
-                    if j.drive[slot].is_some() {
-                        if let Some(v) = vals[slot] {
-                            j.drive[slot] = Some(v);
+                // Only a slot the joint already drives takes a new value: the two arrays walk together, so
+                // they are zipped rather than indexed - the index itself means nothing here.
+                for (drive, val) in j.drive.iter_mut().zip(vals) {
+                    if drive.is_some() {
+                        if let Some(v) = val {
+                            *drive = Some(v);
                         }
                     }
                 }

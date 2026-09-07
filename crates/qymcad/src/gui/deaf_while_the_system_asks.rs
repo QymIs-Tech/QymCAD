@@ -68,7 +68,7 @@ mod tests {
         let mut app = App::default();
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        app.clear_splash_for_test();
+        app.waiting.splash_until = None;
         for _ in 0..3 {
             frame(&mut app, &ctx, Vec::new()); // the splash and the areas settle
         }
@@ -82,17 +82,17 @@ mod tests {
 
         // FIRST WITHOUT ONE: the key has to do its job, or what follows proves nothing.
         frame(&mut app, &ctx, press(egui::Key::F1));
-        assert!(app.help_is_open_for_test(), "setup: F1 must open the help when nothing is in the way");
-        app.close_help_for_test();
+        assert!(app.win.help.open, "setup: F1 must open the help when nothing is in the way");
+        app.win.help.open = false;
         frame(&mut app, &ctx, Vec::new());
-        assert!(!app.help_is_open_for_test(), "setup: and close again");
+        assert!(!app.win.help.open, "setup: and close again");
 
         // NOW WITH ONE.
         let (_tx, rx) = std::sync::mpsc::channel();
         app.arm_file_ask(rx, |_app, _p| {});
         frame(&mut app, &ctx, press(egui::Key::F1));
         assert!(
-            !app.help_is_open_for_test(),
+            !app.win.help.open,
             "the help opened over an open file chooser - the interface is meant to be deaf until the system window is answered"
         );
     }
@@ -141,13 +141,13 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         app.arm_file_ask(rx, |_app, _p| {});
         frame(&mut app, &ctx, press(egui::Key::F1));
-        assert!(!app.help_is_open_for_test(), "setup: deaf while the chooser is up");
+        assert!(!app.win.help.open, "setup: deaf while the chooser is up");
 
         tx.send(None).expect("the chooser is listening"); // walked away from it
         frame(&mut app, &ctx, Vec::new());
         assert!(!app.asking_for_a_file(), "setup: the chooser is done with");
 
         frame(&mut app, &ctx, press(egui::Key::F1));
-        assert!(app.help_is_open_for_test(), "the interface stayed deaf after the chooser was gone");
+        assert!(app.win.help.open, "the interface stayed deaf after the chooser was gone");
     }
 }

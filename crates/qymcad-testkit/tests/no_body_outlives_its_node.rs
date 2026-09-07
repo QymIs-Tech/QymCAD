@@ -161,10 +161,10 @@ fn a_connector_does_not_outlive_its_body_after_a_cascade() {
     let comp = p.add_component("Part");
     p.set_active_component(Some(comp));
     let a = brick(&mut p, "First", 20.0, 14.0, 8.0);
-    let ka = p.regen_faces[&a].iter().next().map(key_of).expect("a face of the first body");
+    let ka = p.regen_faces[&a].first().map(key_of).expect("a face of the first body");
     let ca = p.add_connector(comp, AnchorRef::FaceCenter(a, ka));
     let b = brick(&mut p, "Second", 10.0, 10.0, 5.0);
-    let kb = p.regen_faces[&b].iter().next().map(key_of).expect("a face of the second body");
+    let kb = p.regen_faces[&b].first().map(key_of).expect("a face of the second body");
     let cb = p.add_connector(comp, AnchorRef::FaceCenter(b, kb));
     p.add_joint(ca, cb, JointKind::Rigid);
     assert_eq!(p.connectors.len(), 2, "two connectors");
@@ -208,7 +208,7 @@ fn a_connector_does_not_outlive_its_body_after_a_sketch_delete() {
     let closed: Vec<Id> = p.sketches[si].contour_ids.iter().copied().filter(|c| p.contour_profile_xy(*c).is_some()).collect();
     let body = p.add_extrude_multi(sid, closed, 5.0, qymcad_core::feature::Reach::Forward, 0.0, vec![]);
     qymcad_testkit::regenerate(&mut p);
-    let k = p.regen_faces[&body].iter().next().map(key_of).expect("a face of the body");
+    let k = p.regen_faces[&body].first().map(key_of).expect("a face of the body");
     p.add_connector(comp, AnchorRef::FaceCenter(body, k));
     assert_eq!(p.connectors.len(), 1, "the connector was placed");
 

@@ -32,8 +32,8 @@ mod tests {
             axis: 0,
         });
         let ci = app.project.sketches[si].constraints.len() - 1;
-        app.sel = Sel::Sketch(si);
-        app.inline = InlineEdit::Dim(ci);
+        app.chosen.sel = Sel::Sketch(si);
+        app.tools.inline = InlineEdit::Dim(ci);
         (si, ci)
     }
 
@@ -70,7 +70,7 @@ mod tests {
                 // does not exist - and it was exactly this omission that made an Escape check green while a
                 // person saw the operation cancelled.
                 app.handle_key_commands(ctx);
-                app.dim_editor(ctx, rect);
+                crate::gui::sketching::dim_editor(&mut app.sketch_ctx(), ctx, rect);
             });
             if let Some(r) = self.ctx.read_response(egui::Id::new(("dimdrv", si, ci))) {
                 self.name_rect = r.rect;
@@ -177,7 +177,7 @@ mod tests {
 
         p.key(egui::Key::Escape).frame(&mut app, si, ci);
         assert!(
-            matches!(app.inline, InlineEdit::Dim(_)),
+            matches!(app.tools.inline, InlineEdit::Dim(_)),
             "Escape with the list open closed the whole dimension popup instead of the list — the edit is lost"
         );
 
@@ -199,7 +199,7 @@ mod tests {
         p.key(egui::Key::Escape).frame(&mut app, si, ci); // the list
         p.key(egui::Key::Escape).frame(&mut app, si, ci); // out of the field
         p.key(egui::Key::Escape).frame(&mut app, si, ci); // the popup
-        assert!(matches!(app.inline, InlineEdit::None), "with the list closed Escape no longer closes the popup");
+        assert!(matches!(app.tools.inline, InlineEdit::None), "with the list closed Escape no longer closes the popup");
     }
 
     /// TYPING A DRIVER NAME DOES NOT TOUCH THE DOCUMENT.
@@ -214,14 +214,14 @@ mod tests {
 
         let mut p = Popup::new();
         p.into_driver_field(&mut app, si, ci);
-        let key_before = app.doc_key_for_test();
-        let undo_before = app.undo_len_for_test();
+        let key_before = qymcad_ui_state::doc_key(&app.project);
+        let undo_before = app.disk.edits.undo.len();
 
         for c in "dlina".chars() {
             p.type_text(&c.to_string()).frame(&mut app, si, ci);
-            assert_eq!(app.doc_key_for_test(), key_before, "the document changed on the letter \"{c}\" — the edit goes into the model under the fingers");
+            assert_eq!(qymcad_ui_state::doc_key(&app.project), key_before, "the document changed on the letter \"{c}\" — the edit goes into the model under the fingers");
         }
-        assert_eq!(app.undo_len_for_test(), undo_before, "typing bred undo steps");
+        assert_eq!(app.disk.edits.undo.len(), undo_before, "typing bred undo steps");
         assert!(app.project.named_dims.is_empty(), "the name was written into the model before it was committed: {:?}", app.project.named_dims);
     }
 
@@ -234,13 +234,13 @@ mod tests {
 
         let mut p = Popup::new();
         p.into_driver_field(&mut app, si, ci);
-        let undo_before = app.undo_len_for_test();
+        let undo_before = app.disk.edits.undo.len();
         p.type_text("dlina").frame(&mut app, si, ci);
         p.key(egui::Key::Enter).frame(&mut app, si, ci);
 
         assert_eq!(app.project.named_dims.len(), 1, "the dimension did not get a name on Enter: {:?}", app.project.named_dims);
         assert_eq!(app.project.named_dims[0].name, "dlina");
-        assert_eq!(app.undo_len_for_test(), undo_before + 1, "a driver name must be ONE undo step");
+        assert_eq!(app.disk.edits.undo.len(), undo_before + 1, "a driver name must be ONE undo step");
         assert_eq!(app.project.param_map().get("dlina"), Some(&40.0), "the driver is not visible in the formulas");
     }
 

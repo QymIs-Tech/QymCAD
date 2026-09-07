@@ -23,8 +23,8 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.sketch_ses.editing = None;
-        app.sel = Sel::Sketch(si);
-        app.view.scale = 6.0;
+        app.chosen.sel = Sel::Sketch(si);
+        app.viewing.view.scale = 6.0;
         (app, si)
     }
 
@@ -155,8 +155,8 @@ mod tests {
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx);
             app.set.scheme = scheme.into();
-            app.apply_theme(&ctx);
-            let bg = app.palette_pub().viewport_bg();
+            crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+            let bg = &app.scheme.pal.viewport_bg();
 
             let shapes = frame(&app, true);
             let mut seen = 0usize;

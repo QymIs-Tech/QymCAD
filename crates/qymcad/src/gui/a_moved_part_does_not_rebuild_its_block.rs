@@ -29,7 +29,7 @@ mod tests {
     }
 
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -47,11 +47,11 @@ mod tests {
             super::super::joint_flow::tests::add_part_at(app, k as f64 * 60.0);
         }
         let root = app.project.root;
-        while app.current_ctx_id_for_test() != root {
-            app.exit_context_for_test();
+        while qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) != root {
+            app.exit_context();
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         let comps: Vec<Id> = mine.iter().map(|b| app.project.body_owner(*b).expect("the owner")).collect();
         app.project.set_grounded(comps[0], true);
@@ -73,12 +73,12 @@ mod tests {
         let kc = app.project.add_connector(comps[2], AnchorRef::BasePlane(BasePlane::XY));
         app.project.add_joint(kb, kc, JointKind::Slider);
         app.project.solve_joints();
-        app.rebuild_if_dirty();
-        app.refresh_edges();
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 5.0;
-        app.cam.target = [60.0, 10.0, 5.0];
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 5.0;
+        app.viewing.cam.target = [60.0, 10.0, 5.0];
         app.workbench = super::super::Workbench::Assembly;
         mine[2]
     }
@@ -90,13 +90,13 @@ mod tests {
         let body = a_slider_scene(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
-        let _ = app.gpu_scene_for_test(); // the first pass: there are no blocks yet, everything is built — that is legitimate
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport(c));
+        let _ = { let (v, oc) = crate::gui::render_scene::gpu_scene(&app.painting()); (v.len(), oc) }; // the first pass: there are no blocks yet, everything is built — that is legitimate
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body), viewport(), &basis).0;
-        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body)).0;
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport(c));
 
         // THE FIRST STEP IS NOT JUDGED: on it the part becomes selected, the highlight changes the
         // APPEARANCE of the body, and rebuilding its block is legitimate. What is judged is the
@@ -104,15 +104,15 @@ mod tests {
         let mut rebuilt = 0u32;
         let mut shifted = 0u32;
         for k in 1..=6 {
-            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(12.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
-            let _ = app.gpu_scene_for_test();
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(12.0 * k as f32, 0.0))]), |c| app.viewport(c));
+            let _ = { let (v, oc) = crate::gui::render_scene::gpu_scene(&app.painting()); (v.len(), oc) };
             if k >= 3 {
-                let st = app.scene_stats_for_test();
+                let st = app.cache.scene_stats.get();
                 rebuilt += st[0];
                 shifted += st[1];
             }
         }
-        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(72.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(72.0, 0.0), false)]), |c| app.viewport(c));
 
         assert!(shifted > 0, "not one shift: the part was led and the buffer never learned of it — so the wrong thing is being measured");
         assert_eq!(rebuilt, 0, "moving the part rebuilt {rebuilt} chunks of the buffer: on a real assembly that is 63 chunks and 80 ms per frame instead of 13");
@@ -153,18 +153,18 @@ mod tests {
         let comp = app.project.body_owner(body).expect("the owner");
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
-        let _ = app.gpu_scene_for_test();
-        let _ = app.gpu_scene_for_test();
-        assert_eq!(app.scene_stats_for_test()[0], 0, "setup: with no motion there is nothing to rebuild");
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport(c));
+        let _ = { let (v, oc) = crate::gui::render_scene::gpu_scene(&app.painting()); (v.len(), oc) };
+        let _ = { let (v, oc) = crate::gui::render_scene::gpu_scene(&app.painting()); (v.len(), oc) };
+        assert_eq!(app.cache.scene_stats.get()[0], 0, "setup: with no motion there is nothing to rebuild");
 
         // turn the part 30 deg about Z — by the same means the document turns it
         let m = app.project.component_transform(comp);
         let (c, s) = (30.0f64.to_radians().cos(), 30.0f64.to_radians().sin());
         let r = [c, -s, 0.0, m[3], s, c, 0.0, m[7], 0.0, 0.0, 1.0, m[11]];
         app.project.set_component_transform(comp, r);
-        app.rebuild_if_dirty();
-        let _ = app.gpu_scene_for_test();
-        assert!(app.scene_stats_for_test()[0] > 0, "the part was turned and the block was not rebuilt: the shading is left over from the previous turn");
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        let _ = { let (v, oc) = crate::gui::render_scene::gpu_scene(&app.painting()); (v.len(), oc) };
+        assert!(app.cache.scene_stats.get()[0] > 0, "the part was turned and the block was not rebuilt: the shading is left over from the previous turn");
     }
 }

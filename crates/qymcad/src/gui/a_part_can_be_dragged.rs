@@ -20,7 +20,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of the topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -37,8 +37,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -51,26 +51,27 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 6.0).mate(JointKind::Slider).anchor(3).click(pa).click(pb);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let jid = app.project.joints.last().map(|j| j.id).expect("two clicks must create the joint");
         (jid, mine[1])
     }
 
     /// Where the degree goes ON SCREEN — a unit vector in pixels.
     fn screen_direction_of(app: &App, joint: Id, slot: usize) -> egui::Vec2 {
-        let ctx = app.current_ctx_id_for_test();
-        let basis = app.cam.basis();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
+        let basis = app.viewing.cam.basis();
         let m = app.project.joint_frame(joint, ctx).expect("the frame of the joint");
         let o = [m[3], m[7], m[11]];
         let d = app.project.joint_slot_axis(joint, slot, ctx).expect("the axis of the degree");
-        let len = 60.0 / app.cam.scale as f64;
+        let len = 60.0 / app.viewing.cam.scale as f64;
         let tip = [o[0] + d[0] * len, o[1] + d[1] * len, o[2] + d[2] * len];
-        let v = app.project3(tip, viewport(), &basis).0 - app.project3(o, viewport(), &basis).0;
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis };
+        let v = scr.at(tip).0 - scr.at(o).0;
         let n = (v.x * v.x + v.y * v.y).sqrt();
         assert!(n > 1e-3, "GUARD: the axis of the degree points straight into the screen — it cannot be pulled from such a view");
         v / n
@@ -78,17 +79,17 @@ mod tests {
 
     /// Lead the cursor `by` pixels from a point over the part, the way the mouse does.
     fn drag_the_part(app: &mut App, body: Id, by: egui::Vec2) -> bool {
-        let basis = app.cam.basis();
-        let at = app.project3(aim(app, body), viewport(), &basis).0;
-        if !app.joint_grab_part_at_for_test(viewport(), at, by, &basis) {
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(app, body)).0;
+        if !app.joint_grab_part_at(viewport(), at, by, &basis) {
             return false;
         }
         // lead in four steps — like a real drag rather than one jump
         for k in 1..=4 {
             let step = by * (k as f32 / 4.0);
-            app.joint_giz_drag_to_for_test(at + step, by / 4.0, viewport(), &basis);
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + step, by / 4.0, viewport(), &basis);
         }
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
         true
     }
 
@@ -98,7 +99,7 @@ mod tests {
         let mut app = App::default();
         let (jid, moving) = a_slider_by_hand(&mut app);
         let owner = app.project.body_owner(moving).expect("the owner of the driven part");
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let axis = app.project.joint_slot_axis(jid, 1, ctx).expect("the axis of travel of the slider");
         let m = app.project.world_transform(owner);
         let was = [m[3], m[7], m[11]];

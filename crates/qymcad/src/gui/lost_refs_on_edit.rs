@@ -18,13 +18,13 @@ mod tests {
     /// A cube in a part; returns (mesh index, body id).
     fn part_with_cube(app: &mut App) -> (usize, Id) {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
         }
         let mi = app.project.mesh_index(body).expect("the mesh");
-        app.sel = Sel::Mesh(mi);
+        app.chosen.sel = Sel::Mesh(mi);
         (mi, body)
     }
 
@@ -47,18 +47,18 @@ mod tests {
 
     /// A chamfer on four edges. Returns the node id.
     fn chamfer_on_four(app: &mut App, body: Id) -> Id {
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let four: Vec<u32> = live_edges(app, body).into_iter().take(4).collect();
         assert_eq!(four.len(), 4, "a cube must have at least four edges");
         app.start_feat_cmd(5);
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         // THE SELECTION IS PUT IN DIRECTLY, as the neighbouring sweep over the tools does
         // (`tool_popup_sweep`): aiming the mouse at four particular edges is not needed here — the
         // trouble is not in landing the click but in what stays in the feature AFTER the edit.
-        app.gsel.edges = four.iter().copied().collect();
-        app.gsel.faces_body = Some(body);
+        app.tools.gsel.edges = four.iter().copied().collect();
+        app.tools.gsel.faces_body = Some(body);
         app.apply_feat_cmd();
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.project
             .timeline
             .iter()
@@ -83,22 +83,22 @@ mod tests {
                 *edges = qymcad_core::refs::Ref::picks(&[900_001, 900_002, 900_003, 900_004]);
             }
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // THE PERSON OPENS THE EDIT AND PICKS FOUR LIVE EDGES.
-        app.start_feat_cmd_edit(fid);
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
         assert!(
-            app.gsel.edges.is_empty(),
+            app.tools.gsel.edges.is_empty(),
             "the edit raised LOST references into the selection ({} of them) — a person neither sees them nor picked them",
-            app.gsel.edges.len()
+            app.tools.gsel.edges.len()
         );
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let four: Vec<u32> = live_edges(&app, body).into_iter().take(4).collect();
         for e in &four {
-            app.gsel.edges.insert(*e);
+            app.tools.gsel.edges.insert(*e);
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         assert_eq!(
             refs_in_chamfer(&app),
@@ -143,7 +143,7 @@ mod tests {
         for (cmd, what, faces, n) in cases {
             let mut app = App::default();
             let (_mi, body) = part_with_cube(&mut app);
-            app.refresh_edges();
+            crate::gui::commands::refresh_edges(&mut app.part_ctx());
 
             let picks: Vec<u32> = if *faces { live_faces(&app, body) } else { live_edges(&app, body) }.into_iter().take(*n).collect();
             if picks.len() != *n {
@@ -151,13 +151,13 @@ mod tests {
                 continue;
             }
             app.start_feat_cmd(*cmd);
-            app.select_body(body);
+            qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
             if *faces {
-                app.gsel.faces = picks.iter().copied().collect();
+                app.tools.gsel.faces = picks.iter().copied().collect();
             } else {
-                app.gsel.edges = picks.iter().copied().collect();
+                app.tools.gsel.edges = picks.iter().copied().collect();
             }
-            app.gsel.faces_body = Some(body);
+            app.tools.gsel.faces_body = Some(body);
             // A DRAFT NEEDS A NEUTRAL FACE BESIDES the ones being tilted — that is why it stood outside this
             // list for a while, and why "the method is shared, so it holds" was all that covered it.
             if *cmd == 23 {
@@ -166,10 +166,10 @@ mod tests {
                     bad.push(format!("  {what}: the cube gave no face for the neutral one"));
                     continue;
                 };
-                app.draft.neutral = other;
+                app.params.draft.neutral = other;
             }
             app.apply_feat_cmd();
-            app.rebuild_if_dirty_for_test();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             let Some(fid) = app.project.timeline.last().map(|x| x.id) else {
                 bad.push(format!("  {what}: the feature was not created"));
                 continue;
@@ -189,26 +189,26 @@ mod tests {
                     _ => {}
                 }
             }
-            app.rebuild_if_dirty_for_test();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
             // THE PERSON OPENS THE EDIT: nothing lost may be raised into the selection.
-            app.start_feat_cmd_edit(fid);
-            let raised = if *faces { app.gsel.faces.len() } else { app.gsel.edges.len() };
+            crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+            let raised = if *faces { app.tools.gsel.faces.len() } else { app.tools.gsel.edges.len() };
             if raised != 0 {
                 bad.push(format!("  {what}: the edit raised {raised} LOST references — a person neither sees nor picked them"));
             }
 
-            app.refresh_edges();
+            crate::gui::commands::refresh_edges(&mut app.part_ctx());
             let again: Vec<u32> = if *faces { live_faces(&app, body) } else { live_edges(&app, body) }.into_iter().take(*n).collect();
             for id in &again {
                 if *faces {
-                    app.gsel.faces.insert(*id);
+                    app.tools.gsel.faces.insert(*id);
                 } else {
-                    app.gsel.edges.insert(*id);
+                    app.tools.gsel.edges.insert(*id);
                 }
             }
             app.apply_feat_cmd();
-            app.rebuild_if_dirty_for_test();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             let got = refs_in_last(&app);
             if got != *n {
                 bad.push(format!("  {what}: after the edit {got} references instead of {n} — the lost ones survived"));
@@ -224,10 +224,10 @@ mod tests {
         let (_mi, body) = part_with_cube(&mut app);
         let fid = chamfer_on_four(&mut app, body);
 
-        app.start_feat_cmd_edit(fid);
-        assert_eq!(app.gsel.edges.len(), 4, "the edit must raise into the selection exactly the four edges that were there");
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+        assert_eq!(app.tools.gsel.edges.len(), 4, "the edit must raise into the selection exactly the four edges that were there");
         app.apply_feat_cmd();
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert_eq!(refs_in_chamfer(&app), 4, "an edit with nothing lost changed the set of references");
     }
 }

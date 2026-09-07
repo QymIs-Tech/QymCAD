@@ -30,7 +30,7 @@ fn circle_r(p: &Project, si: usize) -> Option<f64> {
 fn arc_concentric_with_circle_keeps_distinct_centers() {
     let (mut p, si) = new_sketch();
     p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
-    p.add_arc_entity(si, 0.0, 0.0, 5.0, 0.0, 0.0, 5.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre at the same point (0,0)
+    p.add_arc_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(5.0, 0.0), qymcad_core::geom::Point2::new(0.0, 5.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre at the same point (0,0)
     let c = centers(&p, si);
     eprintln!("centres of circle and arc: {c:?}");
     p.solve_sketch(si);
@@ -45,7 +45,7 @@ fn arc_concentric_with_circle_keeps_distinct_centers() {
 fn polygon_concentric_with_circle_keeps_circle_radius() {
     let (mut p, si) = new_sketch();
     let ec = p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
-    p.add_polygon_entity(si, 0.0, 0.0, 5.0, 0.0, 6, qymcad_core::feature::Purpose::Real); // circumscribed circle of the polygon, r = 5 at (0,0)
+    p.add_polygon_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(5.0, 0.0), 6, qymcad_core::feature::Purpose::Real); // circumscribed circle of the polygon, r = 5 at (0,0)
     p.solve_sketch(si);
     let r = p.sketches[si].entities.iter().find_map(|e| match e.kind {
         EntityKind::Circle { center, r } if e.id == ec => Some((center, r)),
@@ -59,7 +59,7 @@ fn polygon_concentric_with_circle_keeps_circle_radius() {
 fn slot_end_on_circle_center_keeps_circle_radius() {
     let (mut p, si) = new_sketch();
     let ec = p.add_circle_entity(si, 0.0, 0.0, 8.0, qymcad_core::feature::Purpose::Real);
-    p.add_slot_entity(si, 0.0, 0.0, 30.0, 0.0, 4.0, qymcad_core::feature::Purpose::Real); // the slot end, an arc of r = 4, at the circle centre
+    p.add_slot_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(30.0, 0.0), 4.0, qymcad_core::feature::Purpose::Real); // the slot end, an arc of r = 4, at the circle centre
     p.solve_sketch(si);
     let r = p.sketches[si].entities.iter().find_map(|e| match e.kind {
         EntityKind::Circle { r, .. } if e.id == ec => Some(r),
@@ -181,7 +181,7 @@ fn merge_close_points_preserves_axis_points() {
 #[test]
 fn redundant_arclength_auto_drives() {
     let (mut p, si) = new_sketch();
-    p.add_arc_entity(si, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(10.0, 0.0), qymcad_core::geom::Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     let (arc_eid, center, a, b) = p.sketches[si].entities.iter().find_map(|e| match e.kind {
         EntityKind::Arc { center, a, b, .. } => Some((e.id, center, a, b)),
         _ => None,

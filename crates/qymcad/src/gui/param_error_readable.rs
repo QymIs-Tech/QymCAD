@@ -12,6 +12,7 @@
 //! is clipped to?
 #[cfg(test)]
 mod tests {
+    use crate::gui::WinKind;
     use crate::gui::App;
 
     /// Every text shape of the frame, with the rectangle it is clipped to.
@@ -49,16 +50,16 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = crate::gui::Sel::Sketch(si);
+        app.chosen.sel = qymcad_ui_state::Sel::Sketch(si);
         app.start_feat_cmd(1); // an extrude: its height is an expression field
-        if let Some(f) = app.cmd.params.first_mut() {
+        if let Some(f) = app.tools.cmd.params.first_mut() {
             f.txt = "10 /".into();
         }
         // THE EXPECTED WORDS COME FROM THE CATALOGUE, not from a literal: a literal would be one language's
         // and would quietly stop matching in the other.
-        let whole = crate::i18n::expr_error_text(&app.project.eval_expr("10 /").expect_err("the expression is broken"));
+        let whole = crate::gui::error_words::expr_error_text(&app.project.eval_expr("10 /").expect_err("the expression is broken"));
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
-        let texts = painted(&mut app, |a, ctx| a.feat_cmd_popup(ctx, rect));
+        let texts = painted(&mut app, |a, ctx| crate::gui::commands::feat_cmd_popup(&mut a.part_ctx(), ctx, rect));
         // NOT "if it drew nothing, there is nothing to check": a guard that passes by drawing no reason at all
         // is the blindness this file was rewritten to escape. The field holds a broken expression, so the
         // reason MUST be on the screen.
@@ -83,10 +84,10 @@ mod tests {
             qymcad_core::model::Param { name: "bad".into(), expr: "w/".into(), value: 0.0 },
         ];
         app.project.eval_parameters();
-        app.win.params = true;
-        let whole = crate::i18n::expr_error_text(&app.project.eval_expr("w/").expect_err("the expression is broken"));
+        app.win.open(WinKind::Params);
+        let whole = crate::gui::error_words::expr_error_text(&app.project.eval_expr("w/").expect_err("the expression is broken"));
 
-        let texts = painted(&mut app, |a, ui| a.params_window(ui.ctx()));
+        let texts = painted(&mut app, |a, ui| { let mut asks = Vec::new(); crate::gui::panels_windows::params_window(&mut a.win_ctx(&mut asks), ui.ctx()); a.do_win_asks(asks, ui.ctx()); });
         let (text, rect, clip) = texts
             .into_iter()
             .find(|(t, _, _)| t.contains(&whole))

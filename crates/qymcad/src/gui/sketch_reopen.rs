@@ -33,7 +33,7 @@ mod tests {
         app.project.add_rect_entity(si0, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si0);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si0);
+        app.chosen.sel = Sel::Sketch(si0);
         app.feat.op = 0;
         app.start_feat_cmd(1);
         app.apply_feat_cmd();
@@ -43,13 +43,13 @@ mod tests {
         app.project.add_rect_entity(si1, 10.0, 10.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si1);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si1);
+        app.chosen.sel = Sel::Sketch(si1);
         app.feat.op = 1; // cut
         app.start_feat_cmd(1);
         app.apply_feat_cmd();
         assert!(app.project.regen_errors.is_empty(), "the model built cleanly: {:?}", app.project.regen_errors);
 
-        app.project_path = Some(path.clone());
+        app.disk.project_path = Some(path.clone());
         app.save_project();
         app.wait_bg();
 
@@ -67,8 +67,8 @@ mod tests {
         assert!(app.live.shapes.is_empty(), "a freshly opened bundle has no live Shapes — that is the very condition of the defect");
         assert!(app.project.regen_errors.is_empty(), "an opened project shows no errors");
 
-        app.sel = Sel::Sketch(si);
-        app.enter_sketch_edit_pub(si);
+        app.chosen.sel = Sel::Sketch(si);
+        app.enter_sketch_edit(si);
         app.finish_sketch_edit(); // Ctrl+Enter — the sketch was NOT touched
 
         let errs: Vec<String> = app.project.regen_errors.values().map(|e| format!("{e:?}")).collect();
@@ -84,8 +84,8 @@ mod tests {
         let Some((mut app, path, si)) = saved_and_reopened() else { return };
         let before: f64 = app.project.bodies.iter().map(|b| b.mesh.verts.len() as f64).sum();
 
-        app.sel = Sel::Sketch(si);
-        app.enter_sketch_edit_pub(si);
+        app.chosen.sel = Sel::Sketch(si);
+        app.enter_sketch_edit(si);
         // move the cut: the edit is real, the body must rebuild and stay intact
         let sid = app.project.sketches[si].id;
         for p in app.project.sketches[si].points.iter_mut() {

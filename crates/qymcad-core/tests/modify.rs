@@ -1,4 +1,5 @@
 //! Modifying and replicating sketch entities.
+use qymcad_core::geom::Point2;
 use qymcad_core::model::Project;
 
 fn rect_sketch() -> (Project, usize, Vec<u64>) {
@@ -91,7 +92,6 @@ fn offset_makes_inner_loop() {
 
 #[test]
 fn trim_removes_middle_segment() {
-    use qymcad_core::geom::Point2;
     let mut p = Project::default();
     let si = p.new_sketch("t");
     // A horizontal line from 0 to 30 along y = 0.
@@ -171,7 +171,7 @@ fn ellipse_axes_editable() {
     // An ellipse is a real entity: its semi-axes are edited through the centre handle and the contour is rebuilt.
     let mut p = Project::default();
     let si = p.new_sketch("e");
-    let center = p.add_ellipse_entity(si, 0.0, 0.0, 5.0, 3.0, 0.0, qymcad_core::feature::Purpose::Real);
+    let center = p.add_ellipse_entity(si, Point2::new(0.0, 0.0), 5.0, 3.0, 0.0, qymcad_core::feature::Purpose::Real);
     assert!(p.set_ellipse_axes(si, center, 10.0, 4.0), "the axes of an ellipse must be editable");
     let (a, b) = p.ellipse_axes(si, center).unwrap();
     assert!((a - 10.0).abs() < 0.05 && (b - 4.0).abs() < 0.05, "the semi-axes must be 10 and 4: {a},{b}");
@@ -186,7 +186,7 @@ fn delete_ellipse_entity_removes_it() {
     use qymcad_core::model::EntityKind;
     let mut p = Project::default();
     let si = p.new_sketch("e");
-    p.add_ellipse_entity(si, 0.0, 0.0, 5.0, 3.0, 0.0, qymcad_core::feature::Purpose::Real);
+    p.add_ellipse_entity(si, Point2::new(0.0, 0.0), 5.0, 3.0, 0.0, qymcad_core::feature::Purpose::Real);
     let eid = p.sketches[si].entities.iter().find_map(|e| matches!(e.kind, EntityKind::Ellipse { .. }).then_some(e.id)).unwrap();
     assert_eq!(p.sketches[si].contour_ids.len(), 1, "the ellipse must have a contour");
     p.delete_entities(si, &[eid]);
@@ -220,7 +220,6 @@ fn break_splits_in_two() {
 
 #[test]
 fn spline_makes_smooth_contour() {
-    use qymcad_core::geom::Point2;
     let mut p = Project::default();
     let si = p.new_sketch("s");
     p.add_spline(si, vec![Point2::new(0.0, 0.0), Point2::new(10.0, 10.0), Point2::new(20.0, 0.0), Point2::new(30.0, 10.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real);
@@ -282,7 +281,7 @@ fn parametric_polygon_rebuilds_on_radius() {
     // stay equal.
     let mut p = Project::default();
     let si = p.new_sketch("poly");
-    let (center, sides) = p.add_polygon_param(si, 0.0, 0.0, 10.0, 0.0, 6, qymcad_core::feature::Purpose::Real);
+    let (center, sides) = p.add_polygon_param(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
     assert_eq!(sides.len(), 6, "six sides");
     let r0 = p.polygon_circle(si, center).map(|(_, _, r)| r).unwrap();
     assert!((r0 - 10.0).abs() < 0.1, "the circumscribed circle has r = 10, got {r0}");
@@ -381,7 +380,7 @@ fn trim_arc_shortens_it() {
     let mut p = Project::default();
     let si = p.new_sketch("ta");
     // An arc from (10,0) to (-10,0) counter-clockwise, the upper semicircle.
-    p.add_arc_entity(si, 0.0, 0.0, 10.0, 0.0, -10.0, 0.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(-10.0, 0.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(si, 0.0, -15.0, 0.0, 15.0, qymcad_core::feature::Purpose::Real); // The cutting line x = 0 meets the arc at (0,10).
     let aid = p.sketches[si].entities.iter().find_map(|e| matches!(e.kind, EntityKind::Arc { .. }).then_some(e.id)).unwrap();
     let n_before = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
@@ -432,7 +431,6 @@ fn offset_loop_with_arc_keeps_arcs() {
 fn spline_tessellation_is_adaptive() {
     // Tessellation is adaptive: a nearly straight spline yields few points and a curved one yields many, since
     // the density follows the curvature instead of a fixed 14 steps. The knots remain solver points.
-    use qymcad_core::geom::Point2;
     let count = |pts: Vec<Point2>| {
         let mut p = Project::default();
         let si = p.new_sketch("s");
@@ -452,7 +450,6 @@ fn spline_tessellation_is_adaptive() {
 fn spline_tangent_handle_changes_shape() {
     // Dragging the tangent handle of a knot changes the shape of the spline, which is a fit-point spline with
     // handles. The tangent is automatic to begin with (Catmull-Rom); `set_spline_handle` makes it explicit.
-    use qymcad_core::geom::Point2;
     let mut p = Project::default();
     let si = p.new_sketch("s");
     p.add_spline(si, vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(20.0, 0.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real);
@@ -568,7 +565,7 @@ fn slot_stays_parametric() {
     use qymcad_core::model::{Constraint, EntityKind};
     let mut p = Project::default();
     let si = p.new_sketch("slot");
-    p.add_slot_entity(si, 0.0, 0.0, 20.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real);
+    p.add_slot_entity(si, Point2::new(0.0, 0.0), Point2::new(20.0, 0.0), 5.0, qymcad_core::feature::Purpose::Real);
     let n_eq = p.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::EqualRadius { .. })).count();
     let n_tan = p.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::Tangent { .. })).count();
     assert_eq!(n_eq, 1, "the end radii must be equal");
@@ -595,7 +592,7 @@ fn rect3_is_a_rectangle() {
     use qymcad_core::model::EntityKind;
     let mut p = Project::default();
     let si = p.new_sketch("r3");
-    let ids = p.add_rect3_entity(si, 0.0, 0.0, 6.0, 8.0, -8.0, 6.0, qymcad_core::feature::Purpose::Real); // Side (0,0)-(6,8) of length 10, height 10.
+    let ids = p.add_rect3_entity(si, Point2::new(0.0, 0.0), Point2::new(6.0, 8.0), Point2::new(-8.0, 6.0), qymcad_core::feature::Purpose::Real); // Side (0,0)-(6,8) of length 10, height 10.
     assert_eq!(ids.len(), 4, "four sides");
     let mut per = 0.0;
     for e in &p.sketches[si].entities {
@@ -612,13 +609,12 @@ fn rect3_is_a_rectangle() {
 fn sketch_text_is_editable_object() {
     // Text is a parametric object: it moves, it is re-baked, it is deleted, and its glyphs become contours for the
     // profile and for CAM.
-    use qymcad_core::geom::Point2;
     let mut p = Project::default();
     let si = p.new_sketch("t");
     // Stand in for the glyphs the application bakes: two closed contours, the letters.
     let g0 = vec![Point2::new(0.0, 0.0), Point2::new(2.0, 0.0), Point2::new(2.0, 5.0), Point2::new(0.0, 5.0)];
     let g1 = vec![Point2::new(3.0, 0.0), Point2::new(5.0, 0.0), Point2::new(5.0, 5.0)];
-    let id = p.add_sketch_text(si, 0.0, 0.0, 5.0, 0.0, "AB".into(), qymcad_core::feature::Purpose::Real, vec![g0, g1]);
+    let id = p.add_sketch_text(si, qymcad_core::model::TextSpec { at: Point2::new(0.0, 0.0), height: 5.0, angle: 0.0, text: "AB".into(), glyphs: vec![g0, g1] }, qymcad_core::feature::Purpose::Real);
     assert!(id != 0 && p.sketches[si].texts.len() == 1, "the text object must be created");
     let contours_before = p.contours.len();
     assert!(contours_before >= 2, "the glyphs must become contours for the profile and CAM: {contours_before}");
@@ -629,7 +625,7 @@ fn sketch_text_is_editable_object() {
     assert!((t.glyphs[0][0].x - 10.0).abs() < 1e-9 && (t.glyphs[0][0].y - 4.0).abs() < 1e-9, "the glyphs must move");
     // Editing the string or the height replaces the glyphs.
     let newg = vec![vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(1.0, 9.0)]];
-    p.set_sketch_text(si, 0, 10.0, 4.0, 9.0, 0.0, "C".into(), newg);
+    p.set_sketch_text(si, 0, qymcad_core::model::TextSpec { at: Point2::new(10.0, 4.0), height: 9.0, angle: 0.0, text: "C".into(), glyphs: newg });
     assert_eq!(p.sketches[si].texts[0].text, "C");
     assert!((p.sketches[si].texts[0].height - 9.0).abs() < 1e-9, "the height must be updated");
     // Deleting removes the object together with its contours.
@@ -665,7 +661,7 @@ fn extend_curve_reaches_boundary_line() {
     let mut p = Project::default();
     let si = p.new_sketch("e");
     // A quarter arc of r = 10 from (10,0) at 0 degrees counter-clockwise to (0,10) at 90 degrees.
-    p.add_arc_entity(si, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     // The boundary is a segment along y = 0 with x in [-15,-5], meeting the circle at (-10,0), 180 degrees.
     p.add_line_entity(si, -15.0, 0.0, -5.0, 0.0, qymcad_core::feature::Purpose::Real);
     let arc_eid = p.sketches[si].entities.iter().find_map(|e| if matches!(e.kind, EntityKind::Arc { .. }) { Some(e.id) } else { None }).unwrap();
@@ -732,7 +728,7 @@ fn fillet_curves_line_arc_tangent() {
     let mut p = Project::default();
     let si = p.new_sketch("fa");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
-    p.add_arc_entity(si, 5.0, 5.0, 0.0, 0.0, 10.0, 10.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, Point2::new(5.0, 5.0), Point2::new(0.0, 0.0), Point2::new(10.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     let e1 = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Line { .. })).unwrap().id;
     let e2 = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Arc { .. })).unwrap().id;
     let r = 1.5;

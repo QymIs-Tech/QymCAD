@@ -148,7 +148,7 @@ mod tests {
             }
             let out = ctx.run_ui(input, |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
-                    app.num_or_expr(ui, "t_h", 10.0, 0.0, 100.0, false, "mm");
+                    qymcad_ui_state::num_or_expr(&mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme }, ui, "t_h", 10.0, qymcad_ui_state::NumFormat { lo: 0.0, hi: 100.0, integer: false, suffix: "mm" });
                 });
             });
             if let Some(r) = ctx.read_response(egui::Id::new(("bar_expr", "t_h"))) {

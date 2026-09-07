@@ -21,20 +21,20 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let a = app.project.mesh_id(0).and_then(|b| app.project.body_owner(b)).expect("part A");
         let b = app.project.mesh_id(1).and_then(|b| app.project.body_owner(b)).expect("part B");
         app.project.set_grounded(a, true);
         let ca = app.project.add_connector(a, AnchorRef::Origin);
         let cb = app.project.add_connector(b, AnchorRef::Origin);
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 6.0;
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 6.0;
         app.project.add_joint(ca, cb, JointKind::Slider)
     }
 
@@ -48,7 +48,7 @@ mod tests {
             let res = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| {
                     let painter = ui.painter().clone();
-                    app.draw_joint_gizmo_for_test(&painter, viewport(), jid);
+                    crate::gui::render::draw_joint_gizmo(&app.painting(), &painter, viewport(), jid);
                 });
             });
             out.clear();
@@ -109,12 +109,12 @@ mod tests {
         let segs = segments(&mut app, j);
 
         // Where the part will stop: the origin of the joint + 30 along the axis of travel.
-        let ctx_id = app.current_ctx_id_for_test();
+        let ctx_id = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let m = app.project.joint_frame(j, ctx_id).expect("the frame of the joint");
         let dir = app.project.joint_slot_axis(j, 1, ctx_id).expect("the axis of travel");
         let stop = [m[3] + dir[0] * 30.0, m[7] + dir[1] * 30.0, m[11] + dir[2] * 30.0];
-        let basis = app.cam.basis();
-        let want = app.project3(stop, viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let want = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(stop).0;
 
         let near = segs
             .iter()
@@ -137,9 +137,9 @@ mod tests {
 
         let mut app = App::default();
         let j = assembly_with_a_slider(&mut app);
-        app.cam.target = [30.0, 10.0, 5.0];
-        app.refresh_edges();
-        app.ensure_brep_for_test();
+        app.viewing.cam.target = [30.0, 10.0, 5.0];
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("body A");
         let e = app.project.regen_edges.get(&body).and_then(|es| es.iter().find(|e| !e.is_circular()).cloned()).expect("a straight edge");
 
@@ -150,10 +150,10 @@ mod tests {
         assert!(shown.len() > plain, "the axis that was pointed at is not drawn: {plain} segments without it, {} with it", shown.len());
 
         // AND IT IS DRAWN ON THAT VERY EDGE: the ends of the segment coincide with the ends of the edge.
-        let ctx_id = app.current_ctx_id_for_test();
+        let ctx_id = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let wt = app.project.body_display_transform(body, ctx_id);
-        let basis = app.cam.basis();
-        let pt = |v: [f64; 3]| app.project3(qymcad_core::feature::apply12(&wt, v), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let pt = |v: [f64; 3]| qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(qymcad_core::feature::apply12(&wt, v)).0;
         let (a, b) = (pt(e.a), pt(e.b));
         let hit = shown.iter().any(|[p, q]| ((*p - a).length() < 2.0 && (*q - b).length() < 2.0) || ((*p - b).length() < 2.0 && (*q - a).length() < 2.0));
         assert!(hit, "the axis is not drawn on the edge that was pointed at: the expected segment was {a:?}-{b:?}");

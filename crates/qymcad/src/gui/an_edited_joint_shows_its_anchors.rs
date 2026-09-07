@@ -22,13 +22,13 @@ mod tests {
     fn shapes(app: &mut App) -> usize {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mut count = 0;
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| {
                     let painter = ui.painter().clone();
-                    app.draw_pick_highlights_for_test(&painter, viewport());
+                    crate::gui::render::draw_joint_pick_highlight(&app.painting(), &painter, viewport());
                 });
             });
             count = out.shapes.len();
@@ -43,12 +43,12 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        app.viewing.mode_3d = true;
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let aim: Vec<[f64; 3]> = mine
             .iter()
             .map(|b| {
@@ -59,7 +59,7 @@ mod tests {
             .collect();
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 7.0).mate(JointKind::Slider).click(aim[0]).click(aim[1]);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.project.joints.last().map(|j| j.id).expect("the joint was created")
     }
 
@@ -69,11 +69,11 @@ mod tests {
         let jid = a_joint_being_edited(&mut app);
 
         // NO TOOL IN HAND — as it is when a person is simply editing an existing joint.
-        app.drop_assembly_tools();
-        app.joint.edit = None;
+        crate::gui::assembly_tools::drop_assembly_tools(&mut app.side.joint);
+        app.side.joint.edit = None;
         let quiet = shapes(&mut app);
 
-        app.joint.edit = Some(jid);
+        app.side.joint.edit = Some(jid);
         let lit = shapes(&mut app);
 
         // GUARD AGAINST A VACUOUS CHECK: without editing, the highlight stays silent (the frame only

@@ -295,11 +295,7 @@ impl Project {
             return false;
         }
         ents.iter().zip(want).all(|(e, w)| {
-            s.entities.iter().find(|x| x.id == *e).is_some_and(|ent| match (ent.kind, w) {
-                (EntityKind::Line { .. }, 0) => true,
-                (EntityKind::Circle { .. }, 1) => true,
-                _ => false,
-            })
+            s.entities.iter().find(|x| x.id == *e).is_some_and(|ent| matches!((ent.kind, w), (EntityKind::Line { .. }, 0) | (EntityKind::Circle { .. }, 1)))
         })
     }
 

@@ -23,12 +23,12 @@ mod tests {
     fn extruding_with_a_driver() -> App {
         let mut app = super::super::screen_keys::tests::plate();
         let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
-        app.enter_component_for_test(part);
-        app.sel = super::super::Sel::Sketch(0);
-        app.mode_3d = true;
+        app.enter_component(part);
+        app.chosen.sel = super::super::Sel::Sketch(0);
+        app.viewing.mode_3d = true;
         app.project.parameters.push(qymcad_core::model::Param { name: "width".into(), expr: "50".into(), value: 50.0 });
         app.start_feat_cmd(1);
-        assert!(app.cmd.active(), "setup: the extrude did not open — there is nothing to check");
+        assert!(app.tools.armed.commanding(), "setup: the extrude did not open — there is nothing to check");
         app
     }
 
@@ -69,7 +69,7 @@ mod tests {
             // The frame hands in the root `Ui` now; the context comes from it.
             let ctx = &ui.ctx().clone();
                 app.handle_key_commands(ctx);
-                app.feat_cmd_popup(ctx, rect);
+                crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), ctx, rect);
             });
             self.drawn.clear();
             for cs in &out.shapes {
@@ -99,7 +99,7 @@ mod tests {
         assert!(d.shows("width"), "setup: the list must be open before Escape, drawn: {:?}", d.drawn);
 
         d.key(egui::Key::Escape).frame(&mut app);
-        assert!(app.cmd.active(), "Escape with the list open cancelled the whole operation instead of closing the list");
+        assert!(app.tools.armed.commanding(), "Escape with the list open cancelled the whole operation instead of closing the list");
 
         d.frame(&mut app);
         assert!(!d.shows("width"), "the list stayed open after Escape: {:?}", d.drawn);
@@ -116,6 +116,6 @@ mod tests {
         d.key(egui::Key::Escape).frame(&mut app); // the list
         d.key(egui::Key::Escape).frame(&mut app); // out of the field
         d.key(egui::Key::Escape).frame(&mut app); // the command
-        assert!(!app.cmd.active(), "with the list closed and the field left, Escape no longer cancels the command");
+        assert!(!app.tools.armed.commanding(), "with the list closed and the field left, Escape no longer cancels the command");
     }
 }

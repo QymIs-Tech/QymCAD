@@ -12,7 +12,7 @@ fn removing_a_hole_restores_the_material() {
     let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 20.0, 0.0, 20.0, 20.0, 0.0, 20.0], 20.0).expect("the cube");
     let v0 = cube.volume();
     let pl = [1.0, 0.0, 0.0, 10.0, 0.0, 1.0, 0.0, 10.0, 0.0, 0.0, 1.0, 20.0];
-    let drilled = cube.hole_stepped(0, pl, 6.0, 25.0, 0.0, 0.0, &[]).expect("the hole was drilled");
+    let drilled = cube.hole_stepped(qymcad_core::model::HoleTool { kind: 0, diameter: 6.0, depth: 25.0, dia2: 0.0, depth2: 0.0 }, pl, &[]).expect("the hole was drilled");
     let v1 = drilled.volume();
     assert!(v1 < v0 - 100.0, "setup: the hole has to remove material ({v0} -> {v1})");
 
@@ -59,7 +59,7 @@ fn removing_a_through_hole_in_a_plate() {
     let plate = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 20.0, 0.0, 20.0, 20.0, 0.0, 20.0], 10.0).expect("the plate");
     let v0 = plate.volume();
     let pl = [1.0, 0.0, 0.0, 10.0, 0.0, 1.0, 0.0, 10.0, 0.0, 0.0, 1.0, 10.0];
-    let drilled = plate.hole_stepped(0, pl, 5.0, 20.0, 0.0, 0.0, &[]).expect("the through hole");
+    let drilled = plate.hole_stepped(qymcad_core::model::HoleTool { kind: 0, diameter: 5.0, depth: 20.0, dia2: 0.0, depth2: 0.0 }, pl, &[]).expect("the through hole");
     let ids: Vec<u32> = drilled
         .tessellate_auto(qymcad_core::model::GeomQuality::Normal.deflection_k())
         .first()

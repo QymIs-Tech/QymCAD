@@ -22,11 +22,11 @@ mod tests {
     fn an_edit_made_during_a_background_rebuild_is_not_lost() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // THE SNAPSHOT the background rebuild went off with
         let stale = app.project.clone_without_source_data();
-        let stamp = app.regen_doc_stamp();
+        let stamp = crate::gui::io_jobs::regen_doc_stamp(&app.project);
 
         // while it was computing, a person added a part
         super::super::joint_flow::tests::add_part_at(&mut app, 100.0);
@@ -51,7 +51,7 @@ mod tests {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         super::super::joint_flow::tests::add_part_at(&mut app, 100.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
 
         let first = app.project.timeline.iter().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the node of the body");
         app.project.mark_node_dirty(first);
@@ -59,7 +59,7 @@ mod tests {
         assert!(matches!(&app.regen.busy, Some(b) if b.quiet), "setup: editing one node must compute quietly");
 
         let stale = app.project.clone_without_source_data();
-        let stamp = app.regen_doc_stamp();
+        let stamp = crate::gui::io_jobs::regen_doc_stamp(&app.project);
         super::super::joint_flow::tests::add_part_at(&mut app, 200.0); // a person is working, nobody is holding them
         let after_edit = app.project.components.len();
 
@@ -77,9 +77,9 @@ mod tests {
     fn an_untouched_document_accepts_the_rebuild_result() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let mut rebuilt = app.project.clone_without_source_data();
-        let stamp = app.regen_doc_stamp();
+        let stamp = crate::gui::io_jobs::regen_doc_stamp(&app.project);
         rebuilt.add_part("came from the thread"); // a distinguishable sign that it was this one that was applied
         let want = rebuilt.components.len();
         app.finish_regen_checked(stamp, rebuilt, Vec::new(), Vec::new(), Vec::new(), false);
@@ -107,11 +107,11 @@ mod tests {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         super::super::joint_flow::tests::add_part_at(&mut app, 60.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // the rebuild went into the thread with this snapshot
         let mut rebuilt = app.project.clone_without_source_data();
-        let stamp = app.regen_doc_stamp();
+        let stamp = crate::gui::io_jobs::regen_doc_stamp(&app.project);
         rebuilt.add_part("came from the thread"); // a distinguishable sign that the result WAS APPLIED
 
         // while it was computing, a person was DRAGGING a part: the arrangement changed, the timeline did not

@@ -70,7 +70,7 @@ pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&mut e
     for p in &prims {
         if let egui::epaint::Primitive::Mesh(mesh) = &p.primitive {
             let tex = texes.get(&mesh.texture_id);
-            for tri in mesh.indices.chunks_exact(3) {
+            for tri in mesh.indices.as_chunks::<3>().0 {
                 let v = [&mesh.vertices[tri[0] as usize], &mesh.vertices[tri[1] as usize], &mesh.vertices[tri[2] as usize]];
                 fill_triangle(&mut img, tex, v, p.clip_rect, SS as f32);
             }

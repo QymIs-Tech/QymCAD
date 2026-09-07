@@ -62,7 +62,7 @@ mod tests {
 
         // THE PERSON POINTS EXACTLY THERE.
         let before = app.project.connectors.len();
-        app.joint_pick_anchor_click_for_test(sub, anchor);
+        qymcad_assembly::joint_pick_anchor_click_for_test(&mut app.joint_ctx(), sub, anchor);
 
         assert_eq!(
             app.project.connectors.len(),
@@ -85,8 +85,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let body = app.project.bodies.iter().map(|b| b.id).find(|b| !before.contains(b)).expect("the part appeared");
         let owner = app.project.body_owner(body).expect("the owner of the body");
         let f = app
@@ -99,9 +99,9 @@ mod tests {
         let key = qymcad_core::feature::FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id };
 
         let n = app.project.connectors.len();
-        app.joint_pick_anchor_click_for_test(owner, AnchorRef::FaceCenter(body, key));
+        qymcad_assembly::joint_pick_anchor_click_for_test(&mut app.joint_ctx(), owner, AnchorRef::FaceCenter(body, key));
         assert!(
-            app.project.connectors.len() > n || app.joint_pick_first_anchor_for_test().is_some(),
+            app.project.connectors.len() > n || qymcad_assembly::joint_pick_first_anchor_for_test(&mut app.joint_ctx()).is_some(),
             "an ordinary pick on stationary geometry was not accepted: {}",
             app.status
         );

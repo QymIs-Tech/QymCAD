@@ -9,13 +9,14 @@
 //! whole point of those checks is that a Russian substring finds the command.
 #[cfg(test)]
 mod tests {
+    use qymcad_ui_state::WinKind;
     use super::super::App;
 
     /// The scene: inside a part, so that the workbench is the Part.
     fn in_part() -> App {
         let mut app = super::super::screen_keys::tests::plate();
         let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
-        app.enter_component_for_test(part);
+        app.enter_component(part);
         app
     }
 
@@ -26,7 +27,7 @@ mod tests {
         crate::i18n::set_language("ru");
         crate::help::set_lang("ru");
         let app = in_part();
-        let hits = app.command_search_hits("скругл");
+        let hits = crate::gui::command_search::command_search_hits(app.workbench, "скругл");
         crate::i18n::set_language(&prev);
         crate::help::set_lang("");
         assert!(hits.iter().any(|c| c.code == "part.fillet"), "the Russian prefix did not find the fillet: {:?}", hits.iter().map(|c| c.code).collect::<Vec<_>>());
@@ -43,7 +44,7 @@ mod tests {
         crate::i18n::set_language("ru");
         crate::help::set_lang("ru");
         let app = in_part();
-        let hits = app.command_search_hits("fillet");
+        let hits = crate::gui::command_search::command_search_hits(app.workbench, "fillet");
         crate::i18n::set_language(&prev);
         crate::help::set_lang("");
         assert!(hits.iter().any(|c| c.code == "part.fillet"), "an English name is not searchable in a Russian interface: {:?}", hits.iter().map(|c| c.code).collect::<Vec<_>>());
@@ -69,7 +70,7 @@ mod tests {
     #[test]
     fn commands_of_the_current_workbench_come_first() {
         let app = in_part();
-        let hits = app.command_search_hits("mirror");
+        let hits = crate::gui::command_search::command_search_hits(app.workbench, "mirror");
         let codes: Vec<&str> = hits.iter().map(|c| c.code).collect();
         assert!(codes.len() >= 2, "\"mirror\" should find both the part one and the sketch one: {codes:?}");
         assert_eq!(codes.first(), Some(&"part.mirror"), "in the Part workbench its own command should come first: {codes:?}");
@@ -82,8 +83,8 @@ mod tests {
     #[test]
     fn an_empty_query_shows_nothing() {
         let app = in_part();
-        assert!(app.command_search_hits("").is_empty(), "an empty query produced a list");
-        assert!(app.command_search_hits("   ").is_empty(), "spaces are an empty query too");
+        assert!(crate::gui::command_search::command_search_hits(app.workbench, "").is_empty(), "an empty query produced a list");
+        assert!(crate::gui::command_search::command_search_hits(app.workbench, "   ").is_empty(), "spaces are an empty query too");
     }
 
     /// THE LAUNCH GOES THROUGH THE SHARED DOOR rather than by a path of its own.
@@ -94,7 +95,10 @@ mod tests {
     #[test]
     fn the_search_launches_through_the_shared_door() {
         let src = include_str!("command_search.rs");
-        assert!(src.contains("self.run_command(code)"), "the search launches commands past the shared door");
+        // THE SEARCH ASKS, and the application carries it out through `run_command`. Both halves are checked:
+        // a request that nothing performs would leave the search silent, and that is exactly as bad.
+        assert!(src.contains("WinAsk::RunCommand(code)"), "the search launches commands past the shared door");
+        assert!(crate::gui::render_source::has(include_str!("../gui.rs"), "WinAsk::RunCommand(code) => self.run_command(code)"), "nothing carries out the search's request");
         for own in ["start_feat_cmd(", "set_sk_tool(", "start_prim_cmd("] {
             assert!(!src.contains(own), "the search introduced a launch path of its own: {own}");
         }
@@ -104,11 +108,11 @@ mod tests {
     #[test]
     fn the_window_opens_and_closes() {
         let mut app = in_part();
-        assert!(!app.command_search_open_for_test(), "the search must not be open right away");
-        app.toggle_command_search();
-        assert!(app.command_search_open_for_test(), "the search did not open");
-        app.toggle_command_search();
-        assert!(!app.command_search_open_for_test(), "the search did not close");
+        assert!(!app.win.is(WinKind::CmdSearch), "the search must not be open right away");
+        crate::gui::command_search::toggle_command_search(&mut app.win);
+        assert!(app.win.is(WinKind::CmdSearch), "the search did not open");
+        crate::gui::command_search::toggle_command_search(&mut app.win);
+        assert!(!app.win.is(WinKind::CmdSearch), "the search did not close");
     }
 
     /// AND IT REACHES THE SCREEN — with the rows of results.
@@ -118,8 +122,8 @@ mod tests {
         crate::i18n::set_language("ru");
         crate::help::set_lang("ru");
         let mut app = in_part();
-        app.toggle_command_search();
-        app.set_command_search_query_for_test("отверст");
+        crate::gui::command_search::toggle_command_search(&mut app.win);
+        app.win.cmd_search_query = "отверст".to_string();
         let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.command_search_window(c));
         let want = crate::command_catalog::by_code("part.hole").expect("the hole in the catalogue").name();
         crate::i18n::set_language(&prev);
@@ -135,10 +139,10 @@ mod tests {
     #[test]
     fn there_are_two_ways_in_and_one_works_while_typing() {
         let src = include_str!("input.rs");
-        assert!(src.contains("i.modifiers.command && i.key_pressed(egui::Key::K)"), "Ctrl+K does not open the search");
-        assert!(src.contains("!typing_now && !i.modifiers.any() && i.key_pressed(egui::Key::Space)"), "a space opens the search even from a field — there it must be typed");
+        assert!(crate::gui::render_source::has(src, "i.modifiers.command && i.key_pressed(egui::Key::K)"), "Ctrl+K does not open the search");
+        assert!(crate::gui::render_source::has(src, "!typing_now && !i.modifiers.any() && i.key_pressed(egui::Key::Space)"), "a space opens the search even from a field — there it must be typed");
         // AND THE KEYBOARD STATE IS ASKED OUTSIDE `ctx.input`: inside it is a deadlock, caught by a
         // full run (one at a time the tests passed, together they hung dead).
-        assert!(!src.contains("|| (!ctx.egui_wants_keyboard_input()"), "`wants_keyboard_input` is called inside `ctx.input` again — that is a deadlock");
+        assert!(!crate::gui::render_source::has(src, "|| (!ctx.egui_wants_keyboard_input()"), "`wants_keyboard_input` is called inside `ctx.input` again — that is a deadlock");
     }
 }

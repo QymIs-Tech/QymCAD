@@ -34,16 +34,16 @@ mod command_flow_tests {
     fn empty_part_extrude_flow() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 30.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0; // the Extrude button
         app.start_feat_cmd(1);
-        assert_eq!(app.cmd.kind, 1, "the command started: {}", app.status);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        assert_eq!(app.tools.armed.cmd_kind(), 1, "the command started: {}", app.status);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the command finished (Enter worked): {}", app.status);
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the command finished (Enter worked): {}", app.status);
         let v = total_volume(&app);
         assert!((v - 9000.0).abs() < 90.0, "a 30x30x10 body was built, V={v:.0}; status: {}", app.status);
     }
@@ -53,12 +53,12 @@ mod command_flow_tests {
     fn stale_through_extent_does_not_leak() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-        app.cmd.extent = super::ExtentMode::Through; // the "previous command" left "through all" behind
-        app.sel = Sel::Sketch(si);
+        app.tools.cmd.extent = super::ExtentMode::Through; // the "previous command" left "through all" behind
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        assert!(matches!(app.cmd.extent, super::ExtentMode::Length), "the extent is reset when the command starts");
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        assert!(matches!(app.tools.cmd.extent, super::ExtentMode::Length), "the extent is reset when the command starts");
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
@@ -75,10 +75,10 @@ mod command_flow_tests {
         for (nm, extent, depth) in [("to a depth of 5", super::ExtentMode::Length, 5.0), ("through all", super::ExtentMode::Through, 5.0)] {
             let mut app = App::default();
             let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-            app.sel = Sel::Sketch(si);
+            app.chosen.sel = Sel::Sketch(si);
             app.feat.op = 0;
             app.start_feat_cmd(1);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 5.0;
                 p.txt = "5".into();
             }
@@ -88,16 +88,16 @@ mod command_flow_tests {
 
             // a 5x5 square inside the plate, sketched on the same base plane
             let si2 = sketch_rect(&mut app, 5.0, 5.0, 10.0, 10.0);
-            app.sel = Sel::Sketch(si2);
+            app.chosen.sel = Sel::Sketch(si2);
             app.feat.op = 2; // Cut
             app.start_feat_cmd(1);
-            app.cmd.extent = extent;
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            app.tools.cmd.extent = extent;
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = depth;
                 p.txt = format!("{depth}");
             }
             app.apply_feat_cmd();
-            assert_eq!(app.cmd.kind, 0, "{nm}: the cut finished: {}", app.status);
+            assert_eq!(app.tools.armed.cmd_kind(), 0, "{nm}: the cut finished: {}", app.status);
             let v = live_volume(&app);
             eprintln!("{nm}: V before {base:.1} -> after {v:.1} (removed {:.1}, expected 125)", base - v);
             assert!((base - v - 125.0).abs() < 1.5, "{nm}: {:.1} mm^3 removed instead of 125 - the wall stayed. Status: {}", base - v, app.status);
@@ -113,10 +113,10 @@ mod command_flow_tests {
     fn picking_a_sketch_plane_prepares_the_brep_for_origin_snap() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 30.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
@@ -127,20 +127,20 @@ mod command_flow_tests {
         app.live.shapes.clear();
         app.live.ready = false;
         app.live.tried_rev = None;
-        app.mode_3d = true;
-        app.refresh_edges();
+        app.viewing.mode_3d = true;
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         assert!(app.live.shapes.is_empty(), "a B-rep is not built for no reason - that is the point of the lazy build");
 
         // the plane pick for a new sketch is on, so the vertices and edges are needed to bind the origin
-        app.picking = Picking::SketchPlane(None);
-        app.refresh_edges();
+        app.tools.picking = Picking::SketchPlane(None);
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         assert!(!app.live.shapes.is_empty(), "the B-rep is ready for the sketch plane pick - there is something to bind the origin to");
 
         // and the axis candidates (a body's edge) are not found without a B-rep either
         app.live.shapes.clear();
         app.live.ready = false;
         app.live.tried_rev = None;
-        app.picking.clear();
+        app.tools.picking.clear();
         app.refresh_axis_edges();
         assert!(!app.edges.axes.is_empty(), "the body's straight edges are available as an axis");
     }
@@ -153,10 +153,10 @@ mod command_flow_tests {
     fn deleting_a_feature_does_not_silently_eat_the_cut_below() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 40.0, 40.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 20.0;
             p.txt = "20".into();
         }
@@ -164,10 +164,10 @@ mod command_flow_tests {
 
         // the intermediate operation (it gets deleted later)
         let si2 = sketch_rect(&mut app, 2.0, 2.0, 10.0, 10.0);
-        app.sel = Sel::Sketch(si2);
+        app.chosen.sel = Sel::Sketch(si2);
         app.feat.op = 2;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 3.0;
             p.txt = "3".into();
         }
@@ -176,10 +176,10 @@ mod command_flow_tests {
 
         // an INDEPENDENT cut further down the timeline: a different sketch in a different place
         let si3 = sketch_rect(&mut app, 25.0, 25.0, 30.0, 30.0);
-        app.sel = Sel::Sketch(si3);
+        app.chosen.sel = Sel::Sketch(si3);
         app.feat.op = 2;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 20.0;
             p.txt = "20".into();
         }
@@ -188,8 +188,8 @@ mod command_flow_tests {
         let v_before = live_volume(&app);
 
         let ti = app.project.timeline.iter().position(|n| n.id == mid_node).unwrap();
-        app.delete_feature(ti);
-        app.regenerate_now();
+        crate::gui::commands::delete_feature(&mut app.part_ctx(), ti);
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
 
         let cuts_after = app.project.timeline.iter().filter(|n| n.name.starts_with("feat-name-combine")).count();
         assert_eq!(cuts_after, cuts_before - 1, "exactly one operation was removed, not everything below it");
@@ -203,7 +203,7 @@ mod command_flow_tests {
     fn cut_in_empty_part_gives_message() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 2; // the Cut button
         app.start_feat_cmd(1);
         app.apply_feat_cmd();
@@ -216,10 +216,10 @@ mod command_flow_tests {
     fn extrude_then_cut_flow() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 20.0;
             p.txt = "20".into();
         }
@@ -227,18 +227,18 @@ mod command_flow_tests {
         assert!((total_volume(&app) - 8000.0).abs() < 80.0, "a 20-cubed base: {}", app.status);
         // the second sketch: a 10x10 pocket, cut to a depth of 5
         let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
-        app.sel = Sel::Sketch(s2);
+        app.chosen.sel = Sel::Sketch(s2);
         app.feat.op = 2;
         app.start_feat_cmd(1);
-        assert_eq!(app.cmd.kind, 1, "the cut started: {}", app.status);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        assert_eq!(app.tools.armed.cmd_kind(), 1, "the cut started: {}", app.status);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 5.0;
             p.txt = "5".into();
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the cut was applied: {}", app.status);
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the cut was applied: {}", app.status);
         // the consumed bodies are hidden; what is measured is the volume of THE RESULT (the last live body)
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         assert!((v - 7500.0).abs() < 75.0, "the pocket is cut: V={v:.0}; status: {}", app.status);
     }
@@ -249,25 +249,25 @@ mod command_flow_tests {
     fn two_extrudes_make_one_body() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
         // the second sketch OVERLAPS the first by half, so it becomes a boss
         let s2 = sketch_rect(&mut app, 10.0, 0.0, 30.0, 20.0);
-        app.sel = Sel::Sketch(s2);
+        app.chosen.sel = Sel::Sketch(s2);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let live: Vec<f64> = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).collect();
         assert_eq!(live.len(), 1, "a part is ONE live body, not {} (bodies are breeding); status: {}", live.len(), app.status);
         assert!((live[0] - 6000.0).abs() < 60.0, "the union of two 20x20x10 blocks overlapping by 10x20x10 is 6000, V={:.0}", live[0]);
@@ -277,13 +277,13 @@ mod command_flow_tests {
     fn build_shaft(app: &mut App, d: f64, h: f64) -> (u64, u32) {
         app.start_prim_cmd(11);
         for (k, v) in [("r", d * 0.5), ("h", h)] {
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == k) {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
                 p.val = v;
                 p.txt = format!("{v}");
             }
         }
         app.apply_feat_cmd();
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let body = *app.live.shapes.keys().find(|b| !consumed.contains(b)).expect("the shaft's body");
         let eid = app
             .project
@@ -298,7 +298,7 @@ mod command_flow_tests {
     /// off by whole multiples on helical surfaces (see `thread_profile_fidelity.rs`), so a thread cannot be
     /// measured with it.
     fn live_volume(app: &App) -> f64 {
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         app.live.shapes
             .iter()
             .filter(|(b, _)| !consumed.contains(b))
@@ -311,23 +311,23 @@ mod command_flow_tests {
         let mut app = App::default();
         let (body, eid) = build_shaft(&mut app, d, h);
         let before = live_volume(&app);
-        app.select_body(body);
-        app.start_thread_cmd();
-        app.thread.auger = auger;
-        app.set_thread_params();
-        app.thread.form = form;
-        app.thread.src = Some(body);
-        app.thread.edge = eid;
-        app.thread.radius = d * 0.5;
-        app.thread.axis = ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
+        crate::gui::commands::start_thread_cmd(&mut app.part_ctx());
+        app.params.thread.auger = auger;
+        qymcad_ui_state::set_thread_params(&mut app.tools.cmd, app.params.thread);
+        app.params.thread.form = form;
+        app.params.thread.src = Some(body);
+        app.params.thread.edge = eid;
+        app.params.thread.radius = d * 0.5;
+        app.params.thread.axis = ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
         for (k, v) in params {
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == *k) {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == *k) {
                 p.val = *v;
                 p.txt = format!("{v}");
             }
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the command finished: {}", app.status);
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the command finished: {}", app.status);
         (before - live_volume(&app), app)
     }
 
@@ -343,11 +343,11 @@ mod command_flow_tests {
         let l1 = app.project.add_line_entity(si, -10.0, -30.0, -10.0, 30.0, qymcad_core::feature::Purpose::Construction);
         let l2 = app.project.add_line_entity(si, 40.0, -30.0, 40.0, 30.0, qymcad_core::feature::Purpose::Construction);
         app.project.regen_sketch(si);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(3);
-        assert_eq!(app.cmd.kind, 3, "the revolve command started: {}", app.status);
-        let cands = app.profile_axis_lines(si);
+        assert_eq!(app.tools.armed.cmd_kind(), 3, "the revolve command started: {}", app.status);
+        let cands = qymcad_ui_state::profile_axis_lines(&app.project, si);
         assert!(cands.len() >= 2, "the sketch holds several candidate lines");
 
         use egui::{Pos2, Rect, Vec2};
@@ -358,32 +358,33 @@ mod command_flow_tests {
         // flags alone here, and it missed exactly the fault that was reported: the search returned the line's END
         // POINTS, they were compared against the list of LINES, and there was never a match - the sketch opened
         // flat and the clicks selected nothing.
-        app.rev.pick_line = true;
-        app.mode_3d = false;
-        app.view.center = Vec2::ZERO;
-        app.view.scale = 8.0;
+        app.params.rev.pick_line = true;
+        app.viewing.mode_3d = false;
+        app.viewing.view.center = Vec2::ZERO;
+        app.viewing.view.scale = 8.0;
         for (want, x) in [(l1, -10.0_f64), (l2, 40.0)] {
-            let pos = app.to_screen(rect, Point2::new(x, 5.0));
-            let got = app.nearest_line_id(rect, pos, si, &cands);
+            let pos = (qymcad_ui_state::Sheet { view: app.viewing.view, rect: rect }).at(Point2::new(x, 5.0));
+            let got = crate::gui::pick::nearest_line_id(&app.pick_ctx(), rect, pos, si, &cands);
             assert_eq!(got, Some(want), "a click on the line at x={x} picks THAT line (got {got:?})");
             assert!(cands.contains(&got.unwrap()), "what was picked is a LINE from the candidates, not one of its ends");
         }
         // a click into empty space picks nothing (otherwise the axis would jump on a miss)
-        assert_eq!(app.nearest_line_id(rect, app.to_screen(rect, Point2::new(150.0, 150.0)), si, &cands), None, "a miss picks no line");
+        assert_eq!(crate::gui::pick::nearest_line_id(&app.pick_ctx(), rect, (qymcad_ui_state::Sheet { view: app.viewing.view, rect: rect }).at(Point2::new(150.0, 150.0)), si, &cands), None, "a miss picks no line");
 
         // PICKING AN AXIS IN 3D: a datum axis built inside a part must both be drawn and be catchable by a click.
-        app.rev.pick_line = false;
-        app.rev.pick_axis = true;
-        app.mode_3d = true; // exactly what the button does: the candidates are hit-tested in 3D only
+        app.params.rev.pick_line = false;
+        app.params.rev.pick_axis = true;
+        app.viewing.mode_3d = true; // exactly what the button does: the candidates are hit-tested in 3D only
         let ax = app.project.add_datum_axis(qymcad_core::model::DatumAxis::manual("Axis 1", [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
         assert!(app.datum_render_transform(ax).is_some(), "the datum axis is visible in its own context - otherwise there is nothing to click");
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let (s3, e3) = super::axis_segment([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 45.0);
-        let (sa, sb) = (app.project3(s3, rect, &basis).0, app.project3(e3, rect, &basis).0);
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis };
+        let (sa, sb) = (scr.at(s3).0, scr.at(e3).0);
         assert!(sa.distance(sb) > 20.0, "the axis projects into a segment rather than a point - there is something to hit");
         let mid = Pos2::new(0.5 * (sa.x + sb.x), 0.5 * (sa.y + sb.y));
-        assert!(matches!(app.pick_axis_at(rect, mid), Some(super::AxisHit::Datum(id)) if id == ax), "a click on the datum axis picks it");
-        assert!(app.axis_ref_world(super::AxisHit::Datum(ax)).is_some(), "the datum axis resolves into a revolve axis");
+        assert!(matches!(crate::gui::pick::pick_axis_at(&app.painting(), rect, mid), Some(super::AxisHit::Datum(id)) if id == ax), "a click on the datum axis picks it");
+        assert!(crate::gui::axis_ref_world(&app.active_path, &app.edges, &app.live, &app.project, super::AxisHit::Datum(ax)).is_some(), "the datum axis resolves into a revolve axis");
     }
 
     /// Reported behaviour: the holes in a section were still there after the profile had been fixed and the
@@ -394,7 +395,7 @@ mod command_flow_tests {
     fn rebuild_everything_marks_the_whole_timeline_and_goes_background() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
         app.apply_feat_cmd();
@@ -419,27 +420,28 @@ mod command_flow_tests {
         let part = app.project.add_part("Part with an axis");
         app.enter_component(part); // as a double click on a part in the tree does
         let ax = app.project.add_datum_axis(qymcad_core::model::DatumAxis::manual("Axis 1", [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
-        assert_eq!(app.current_ctx_id(), part, "we are inside the part");
+        assert_eq!(qymcad_ui_state::current_ctx_id(&app.active_path, &app.project), part, "we are inside the part");
         assert!(app.datum_render_transform(ax).is_some(), "the part's own axis is visible from inside the part");
 
-        app.mode_3d = true;
-        app.cmd.kind = 3;
-        app.rev.pick_axis = true;
+        app.viewing.mode_3d = true;
+        app.tools.armed = qymcad_ui_state::Armed::Command(3);
+        app.params.rev.pick_axis = true;
         let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0));
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let (s3, e3) = super::axis_segment([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 45.0);
-        let (sa, sb) = (app.project3(s3, rect, &basis).0, app.project3(e3, rect, &basis).0);
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis };
+        let (sa, sb) = (scr.at(s3).0, scr.at(e3).0);
         let mid = Pos2::new(0.5 * (sa.x + sb.x), 0.5 * (sa.y + sb.y));
-        assert!(matches!(app.pick_axis_at(rect, mid), Some(super::AxisHit::Datum(id)) if id == ax), "the part's axis is caught by a click inside it");
+        assert!(matches!(crate::gui::pick::pick_axis_at(&app.painting(), rect, mid), Some(super::AxisHit::Datum(id)) if id == ax), "the part's axis is caught by a click inside it");
         // and THE CLICK really carries it into the command's parameter: the click-handling branch used to sit in the
         // 2D half of the viewport while the candidates are hit-tested in 3D only - the press did nothing at all
         assert!(app.rev_axis_pick_click(rect, mid), "the click on the axis was accepted");
-        assert_eq!(app.rev.axis_datum, ax, "the revolve axis is the datum axis that was clicked");
-        assert!(!app.rev.pick_axis, "the pick sub-mode closed after the choice");
+        assert_eq!(app.params.rev.axis_datum, ax, "the revolve axis is the datum axis that was clicked");
+        assert!(!app.params.rev.pick_axis, "the pick sub-mode closed after the choice");
         // a miss neither clears the axis already chosen nor leaves the mode silently
-        app.rev.pick_axis = true;
+        app.params.rev.pick_axis = true;
         assert!(!app.rev_axis_pick_click(rect, Pos2::new(rect.max.x - 2.0, rect.max.y - 2.0)), "a miss picks no axis");
-        assert!(app.rev.pick_axis, "after a miss the axis pick stays on");
+        assert!(app.params.rev.pick_axis, "after a miss the axis pick stays on");
 
         // and from THE ROOT (outside the part) it is neither shown nor caught - otherwise another part's geometry would litter the assembly
         let root = app.project.root;
@@ -454,32 +456,32 @@ mod command_flow_tests {
     fn section_cap_covers_the_threaded_zone_too() {
         let mut app = App::default();
         let (body, eid) = build_shaft(&mut app, 20.0, 60.0);
-        app.select_body(body);
-        app.start_thread_cmd();
-        app.thread.src = Some(body);
-        app.thread.edge = eid;
-        app.thread.radius = 10.0;
-        app.thread.axis = ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
+        crate::gui::commands::start_thread_cmd(&mut app.part_ctx());
+        app.params.thread.src = Some(body);
+        app.params.thread.edge = eid;
+        app.params.thread.radius = 10.0;
+        app.params.thread.axis = ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
         for (k, v) in [("nominal", 20.0), ("pitch", 2.5), ("length", 30.0), ("fit", 0.2), ("lead_in", 0.0), ("lead_out", 0.0)] {
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == k) {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
                 p.val = v;
                 p.txt = format!("{v}");
             }
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the thread was built: {}", app.status);
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the thread was built: {}", app.status);
 
         // a section ALONG the axis: a plane through the axis with a +Y normal
-        app.section.plane = Some(([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
-        let (verts, _) = app.gpu_scene();
+        app.side.section.plane = Some(([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+        let (verts, _) = crate::gui::render_scene::gpu_scene(&app.painting());
         let amber = u32::from_le_bytes([224, 168, 92, 255]);
         let amber_back = u32::from_le_bytes([176, 128, 66, 255]);
-        let cap: Vec<&crate::viewport_gpu::GpuVert> = verts.iter().filter(|v| v.color == amber || v.color == amber_back).collect();
+        let cap: Vec<&qymcad_ui_state::GpuVert> = verts.iter().filter(|v| v.color == amber || v.color == amber_back).collect();
         let _in_band = |a: f64, b: f64| cap.iter().filter(|v| (v.pos[2] as f64) >= a && (v.pos[2] as f64) <= b).count();
         eprintln!("cap vertices in the scene: {}", cap.len());
         // THE CAP MUST cover the whole outline of the cut. It is measured by area rather than by vertices in a
         // band: triangles can be long and their vertices may miss a narrow band entirely.
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         for (mi, m) in app.project.bodies.iter().map(|b| &b.mesh).enumerate() {
             let live = app.project.timeline.iter().any(|n| n.kind.body().map(|b| app.project.mesh_index(b) == Some(mi) && !consumed.contains(&b)).unwrap_or(false));
             if !live {
@@ -544,14 +546,14 @@ mod command_flow_tests {
         // the window has "started", so the rebuild is now deferred by a frame and goes into a thread
         app.regen.ui_running = true;
         app.project.mark_node_dirty(body);
-        app.regenerate_all();
+        qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
         assert!(app.regen.wanted, "the rebuild was queued rather than done on the spot");
         assert!(app.regen.busy.is_none(), "the work itself starts a frame later - the indicator is shown first");
 
         // as soon as the window is back in headless mode, the work happens immediately again
         app.regen.ui_running = false;
         app.regen.wanted = false;
-        app.regenerate_all();
+        qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
         assert!(!app.regen.wanted, "with no window the rebuild runs at once");
         assert!(live_volume(&app) > 0.0, "the model is there");
     }
@@ -655,15 +657,15 @@ mod command_flow_tests {
     /// A 20-cubed block through the full flows (sketch, then extrude). Returns the body's id.
     pub(super) fn build_cube(app: &mut App) -> u64 {
         let si = sketch_rect(app, 0.0, 0.0, 20.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 20.0;
             p.txt = "20".into();
         }
         app.apply_feat_cmd();
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         *app.live.shapes.keys().find(|b| !consumed.contains(b)).expect("the block's body")
     }
 
@@ -680,16 +682,16 @@ mod command_flow_tests {
             .map(|e| e.id)
             .expect("a vertical edge");
         app.start_feat_cmd(4);
-        assert_eq!(app.cmd.kind, 4, "the fillet started: {}", app.status);
-        app.gsel.edges.insert(eid);
+        assert_eq!(app.tools.armed.cmd_kind(), 4, "the fillet started: {}", app.status);
+        app.tools.gsel.edges.insert(eid);
         app.edges.body = Some(cube);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 4.0;
             p.txt = "4".into();
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the fillet was applied: {}", app.status);
-        let consumed = app.consumed_bodies();
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the fillet was applied: {}", app.status);
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         let exp = 8000.0 - (16.0 - std::f64::consts::PI * 4.0) * 20.0;
         assert!((v - exp).abs() < 10.0, "a fillet of r4: V={v:.1}, expected {exp:.1}");
@@ -708,9 +710,9 @@ mod command_flow_tests {
             .map(|e| e.id)
             .expect("an edge");
         app.start_feat_cmd(4);
-        app.gsel.edges.insert(eid);
+        app.tools.gsel.edges.insert(eid);
         app.edges.body = Some(cube);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 3.0;
             p.txt = "3".into();
         }
@@ -722,10 +724,10 @@ mod command_flow_tests {
             .find(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Fillet { .. }))
             .map(|n| n.id)
             .expect("the fillet's node");
-        app.start_feat_cmd_edit(fid);
-        app.refresh_edges(); // a UI frame: the edges must stay those of THE SOURCE and the selection must stay alive
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+        crate::gui::commands::refresh_edges(&mut app.part_ctx()); // a UI frame: the edges must stay those of THE SOURCE and the selection must stay alive
         assert_eq!(app.edges.body, Some(cube), "the edges aim at the SOURCE body, not at the fillet's output");
-        assert!(app.gsel.edges.contains(&eid), "the edges picked earlier are LIT while editing");
+        assert!(app.tools.gsel.edges.contains(&eid), "the edges picked earlier are LIT while editing");
     }
 
     /// EDITING A FEATURE (a double click, change the height, Enter): it updates IN PLACE and no nodes are bred.
@@ -741,15 +743,15 @@ mod command_flow_tests {
             .find(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. }))
             .map(|n| n.id)
             .expect("the extrude's node");
-        app.start_feat_cmd_edit(fid);
-        assert!(app.cmd.edit.is_some(), "the edit mode is open: {}", app.status);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+        assert!(app.tools.cmd.edit.is_some(), "the edit mode is open: {}", app.status);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 30.0;
             p.txt = "30".into();
         }
         app.apply_feat_cmd();
         assert_eq!(app.project.timeline.len(), nodes_before, "editing breeds NO nodes");
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         assert!((v - 12000.0).abs() < 120.0, "the height went 20 -> 30: V={v:.0}; status: {}", app.status);
     }
@@ -760,10 +762,10 @@ mod command_flow_tests {
         let mut app = App::default();
         let _cube = build_cube(&mut app);
         let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
-        app.sel = Sel::Sketch(s2);
+        app.chosen.sel = Sel::Sketch(s2);
         app.feat.op = 2;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 5.0;
             p.txt = "5".into();
         }
@@ -774,9 +776,9 @@ mod command_flow_tests {
             .iter()
             .position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Combine { .. }))
             .expect("the cut's node");
-        app.delete_feature(cut_ti);
-        app.regenerate_all();
-        let consumed = app.consumed_bodies();
+        crate::gui::commands::delete_feature(&mut app.part_ctx(), cut_ti);
+        qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let live: Vec<f64> = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).collect();
         assert_eq!(live.len(), 1, "after the cut is deleted there is one body");
         assert!((live[0] - 8000.0).abs() < 80.0, "the block is restored: V={:.0}", live[0]);
@@ -798,7 +800,7 @@ mod command_flow_tests {
         app.project.solve_sketch(si);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         assert!((v - 12000.0).abs() < 120.0, "stretched 20 -> 30 through the GUI cycle: V={v:.0}; status: {}", app.status);
     }
@@ -812,28 +814,28 @@ mod command_flow_tests {
         use qymcad_core::feature::FeatureKind;
         let mut app = App::default();
         let cube = build_cube(&mut app);
-        app.select_body(cube);
-        app.start_thread_cmd();
-        assert_eq!(app.cmd.kind, 24, "the thread command started: {}", app.status);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, cube);
+        crate::gui::commands::start_thread_cmd(&mut app.part_ctx());
+        assert_eq!(app.tools.armed.cmd_kind(), 24, "the thread command started: {}", app.status);
 
         // the fields are the size and the fit, NOT the angle and the depth
-        let keys: Vec<String> = app.cmd.params.iter().map(|p| p.key.to_string()).collect();
+        let keys: Vec<String> = app.tools.cmd.params.iter().map(|p| p.key.to_string()).collect();
         assert!(keys.iter().any(|k| k == "nominal") && keys.iter().any(|k| k == "pitch") && keys.iter().any(|k| k == "fit"), "the thread's fields: {keys:?}");
         assert!(!keys.iter().any(|k| k == "angle") && !keys.iter().any(|k| k == "depth"), "the angle and the thread depth are no longer typed by hand: {keys:?}");
-        assert!((app.cmd_val("pitch") - 0.0).abs() < 1e-9, "a default pitch of 0 means the standard coarse one");
+        assert!((qymcad_ui_state::cmd_val(&app.tools.cmd, "pitch") - 0.0).abs() < 1e-9, "a default pitch of 0 means the standard coarse one");
 
         // switching to the AUGER changes the set of fields to the ribbon's
-        app.thread.auger = true;
-        app.set_thread_params();
-        let keys: Vec<String> = app.cmd.params.iter().map(|p| p.key.to_string()).collect();
+        app.params.thread.auger = true;
+        qymcad_ui_state::set_thread_params(&mut app.tools.cmd, app.params.thread);
+        let keys: Vec<String> = app.tools.cmd.params.iter().map(|p| p.key.to_string()).collect();
         assert!(keys.iter().any(|k| k == "outer") && keys.iter().any(|k| k == "thickness") && keys.iter().any(|k| k == "edge_r"), "the auger's fields: {keys:?}");
 
         // applying the auger puts an Auger feature with its own specification into the timeline
-        app.thread.auger = true;
-        app.thread.src = Some(cube);
-        app.thread.edge = 1;
-        app.thread.radius = 5.0;
-        let body = app.apply_thread_cmd().expect("the auger's node was created");
+        app.params.thread.auger = true;
+        app.params.thread.src = Some(cube);
+        app.params.thread.edge = 1;
+        app.params.thread.radius = 5.0;
+        let body = crate::gui::commands::apply_thread_cmd(&app.tools.cmd, &mut app.project, &mut app.status, app.params.thread).expect("the auger's node was created");
         match app.project.timeline.iter().find(|n| n.id == body).map(|n| &n.kind) {
             Some(FeatureKind::Auger { spec, length, .. }) => {
                 assert!(spec.outer_d > spec.shaft_d, "the ribbon is wider than the shaft: {:.1} against a shaft of {:.1}", spec.outer_d, spec.shaft_d);
@@ -849,16 +851,16 @@ mod command_flow_tests {
         use qymcad_core::feature::FeatureKind;
         let mut app = App::default();
         let cube = build_cube(&mut app);
-        app.select_body(cube);
-        app.start_thread_cmd();
-        app.thread.src = Some(cube);
-        app.thread.edge = 1;
-        app.thread.radius = 5.0;
-        app.thread.form = 0; // metric ISO
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "nominal") {
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, cube);
+        crate::gui::commands::start_thread_cmd(&mut app.part_ctx());
+        app.params.thread.src = Some(cube);
+        app.params.thread.edge = 1;
+        app.params.thread.radius = 5.0;
+        app.params.thread.form = 0; // metric ISO
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "nominal") {
             p.val = 10.0;
         }
-        let body = app.apply_thread_cmd().expect("the thread's node was created");
+        let body = crate::gui::commands::apply_thread_cmd(&app.tools.cmd, &mut app.project, &mut app.status, app.params.thread).expect("the thread's node was created");
         match app.project.timeline.iter().find(|n| n.id == body).map(|n| &n.kind) {
             Some(FeatureKind::Thread { spec, .. }) => {
                 assert_eq!(spec.standard, qymcad_core::thread::ThreadStandard::MetricIso);
@@ -883,17 +885,17 @@ mod command_flow_tests {
         // an ordinary (NOT construction) line - that is exactly what gets drawn for an axis
         let plain = app.project.add_line_entity(si, 0.0, -50.0, 0.0, 50.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
-        let cands = app.profile_axis_lines(si);
+        let cands = qymcad_ui_state::profile_axis_lines(&app.project, si);
         assert!(cands.contains(&plain), "an ordinary line must be an axis candidate: {cands:?}");
-        assert_eq!(app.axis_line_label(si, plain, 1), crate::i18n::tr1("sk-line-n", "n", "1"), "the label says honestly that this is an ordinary line");
+        assert_eq!(qymcad_ui_state::axis_line_label(&app.project, si, plain, 1), crate::i18n::tr1("sk-line-n", "n", "1"), "the label says honestly that this is an ordinary line");
 
         // a construction line is a candidate too, and comes FIRST (it is drawn precisely to be an axis)
         let constr = app.project.add_line_entity(si, -50.0, 0.0, 50.0, 0.0, qymcad_core::feature::Purpose::Construction);
         app.project.regen_sketch(si);
-        let cands = app.profile_axis_lines(si);
+        let cands = qymcad_ui_state::profile_axis_lines(&app.project, si);
         assert_eq!(cands.first(), Some(&constr), "the construction line is offered first: {cands:?}");
         assert!(cands.contains(&plain), "the ordinary one has not gone anywhere");
-        assert_eq!(app.axis_line_label(si, constr, 1), crate::i18n::tr1("sk-axis-line-n", "n", "1"));
+        assert_eq!(qymcad_ui_state::axis_line_label(&app.project, si, constr, 1), crate::i18n::tr1("sk-axis-line-n", "n", "1"));
     }
 
     /// Reported behaviour: in a sketch, Esc with the measure tool active finished the sketch straight away, and
@@ -909,17 +911,17 @@ mod command_flow_tests {
         assert!(app.sketch_ses.editing.is_some(), "the sketch is open");
 
         // 1) the measure tool is active: Esc returns to Select and the sketch STAYS open
-        app.measure.on = true;
-        app.measure.pts.push(qymcad_core::geom::Point2::new(1.0, 1.0));
+        app.tools.armed = qymcad_ui_state::Armed::Measure;
+        app.tools.measure.pts.push(qymcad_core::geom::Point2::new(1.0, 1.0));
         app.on_escape();
-        assert!(!app.measure.on && app.measure.pts.is_empty(), "the measure tool is dropped: {}", app.status);
+        assert!(!app.tools.armed.measuring() && app.tools.measure.pts.is_empty(), "the measure tool is dropped: {}", app.status);
         assert!(app.sketch_ses.editing.is_some(), "the sketch was NOT closed by the very first Esc");
 
         // 2) there are selected elements: Esc clears the selection and the sketch is still open
         let ent = app.project.sketches[si].entities.first().map(|e| e.id).expect("an entity");
-        app.sel_sk.items.push((1, ent));
+        app.tools.sel_sk.items.push((1, ent));
         app.on_escape();
-        assert!(app.sel_sk.items.is_empty(), "the selection is cleared: {}", app.status);
+        assert!(app.tools.sel_sk.items.is_empty(), "the selection is cleared: {}", app.status);
         assert!(app.sketch_ses.editing.is_some(), "and the sketch is still open");
 
         // 3) nothing is active: only now does Esc finish the sketch
@@ -936,17 +938,17 @@ mod command_flow_tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
 
-        app.set_dim_tool(1); // the distance dimension
+        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 1); // the distance dimension
         app.on_escape();
-        assert_eq!(app.dim.kind, 0, "the dimension tool is dropped");
+        assert_eq!(app.tools.armed.dim_kind(), 0, "the dimension tool is dropped");
         assert!(app.sketch_ses.editing.is_some(), "the sketch is open");
 
-        app.tool.kind = 2; // a drawing tool
-        app.tool.pts.push(qymcad_core::geom::Point2::new(0.0, 0.0));
+        app.tools.armed = qymcad_ui_state::Armed::Draw(2); // a drawing tool
+        app.tools.tool.pts.push(qymcad_core::geom::Point2::new(0.0, 0.0));
         app.on_escape();
-        assert!(app.tool.pts.is_empty() && app.tool.kind == 2, "the first Esc aborts the UNFINISHED construction");
+        assert!(app.tools.tool.pts.is_empty() && app.tools.armed.draw_kind() == 2, "the first Esc aborts the UNFINISHED construction");
         app.on_escape();
-        assert_eq!(app.tool.kind, 0, "the second Esc leaves the tool for Select");
+        assert_eq!(app.tools.armed.draw_kind(), 0, "the second Esc leaves the tool for Select");
         assert!(app.sketch_ses.editing.is_some(), "and only after that may the sketch be closed");
     }
 
@@ -963,7 +965,7 @@ mod command_flow_tests {
         let _ = std::fs::remove_file(&path);
         let mut app = App::default();
         let cube = build_cube(&mut app);
-        app.project_path = Some(path.clone());
+        app.disk.project_path = Some(path.clone());
         app.save_project();
         app.wait_bg();
 
@@ -971,25 +973,25 @@ mod command_flow_tests {
         let loaded = qymcad_io::load_project(&path).expect("the bundle reads");
         let mut app2 = App::default();
         app2.finish_project_load(path.clone(), loaded, Vec::new());
-        assert!(!app2.is_dirty(), "a project just opened is clean");
+        assert!(!qymcad_ui_state::is_dirty(&mut app2.rebuild_ctx()), "a project just opened is clean");
 
         // a frame of the 3D viewport: the edges refresh every frame, but the B-rep must NOT be built eagerly
-        app2.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app2.part_ctx());
         assert!(!app2.live.ready && app2.live.shapes.is_empty(), "the B-rep stays lazy: brep_ready={}, shapes={}", app2.live.ready, app2.live.shapes.len());
-        assert!(!app2.is_dirty(), "looking at the model does not make the project dirty");
+        assert!(!qymcad_ui_state::is_dirty(&mut app2.rebuild_ctx()), "looking at the model does not make the project dirty");
 
         // and now an operation really asks for the B-rep: it gets built while the project stays CLEAN
-        app2.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app2.rebuild_ctx());
         assert!(app2.live.shapes.contains_key(&cube), "the B-rep was built on demand");
-        assert!(!app2.is_dirty(), "rebuilding a cache is not a person's edit; there is nothing to ask to save");
+        assert!(!qymcad_ui_state::is_dirty(&mut app2.rebuild_ctx()), "rebuilding a cache is not a person's edit; there is nothing to ask to save");
 
         // and only a real edit makes the project dirty
         let si = sketch_rect(&mut app2, 40.0, 0.0, 60.0, 20.0);
-        app2.sel = Sel::Sketch(si);
+        app2.chosen.sel = Sel::Sketch(si);
         app2.feat.op = 0;
         app2.start_feat_cmd(1);
         app2.apply_feat_cmd();
-        assert!(app2.is_dirty(), "after a real edit the project is dirty");
+        assert!(qymcad_ui_state::is_dirty(&mut app2.rebuild_ctx()), "after a real edit the project is dirty");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -1025,15 +1027,15 @@ mod command_flow_tests {
         let payload = vec![7u8; 3_000_000]; // an "embedded STEP" of 3 MB
         app.project.sources.push(qymcad_core::model::SourceFile { id: src_id, name: "big.step".into(), ext: "step".into(), data: payload.clone() });
 
-        let snap = app.snapshot();
+        let snap = crate::gui::snapshot(&app.project);
         let in_snap: usize = snap.project.sources.iter().map(|s| s.data.len()).sum();
         assert_eq!(in_snap, 0, "the snapshot holds NO source bytes (that would be a memcpy on every edit)");
         assert_eq!(snap.project.sources.len(), 1, "the source's record itself is in the snapshot (name, extension, id)");
 
         // and the undo still restores the state COMPLETELY: the bytes come back from the live project
-        app.edits.baseline = snap;
+        app.disk.edits.baseline = snap;
         let si = sketch_rect(&mut app, 40.0, 0.0, 60.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
         app.apply_feat_cmd();
@@ -1071,7 +1073,7 @@ mod command_flow_tests {
             dirty: false,
             suppressed: false,
         });
-        app.project_path = Some(proj_path.clone());
+        app.disk.project_path = Some(proj_path.clone());
 
         // BOTH tasks at once: topping up the import's B-rep and writing the project
         app.spawn_import_shapes(false);
@@ -1096,15 +1098,15 @@ mod command_flow_tests {
         let _ = std::fs::remove_file(&path);
         let mut app = App::default();
         let _cube = build_cube(&mut app);
-        app.project_path = Some(path.clone());
+        app.disk.project_path = Some(path.clone());
 
         app.save_project();
         app.save_project(); // the second request, while the first is still in flight
         assert_eq!(app.regen.bg.iter().filter(|b| b.kind == BgKind::Save).count(), 1, "there are no parallel writes");
-        assert!(app.io.save_request.is_some(), "the second request is deferred rather than thrown away");
+        assert!(app.disk.io.save_request.is_some(), "the second request is deferred rather than thrown away");
         app.wait_bg();
-        assert!(app.io.save_request.is_none(), "the deferred write was carried out");
-        assert!(std::path::Path::new(&path).exists() && !app.is_dirty(), "the file is written and the project is clean: {}", app.status);
+        assert!(app.disk.io.save_request.is_none(), "the deferred write was carried out");
+        assert!(std::path::Path::new(&path).exists() && !qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "the file is written and the project is clean: {}", app.status);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -1115,13 +1117,13 @@ mod command_flow_tests {
     fn failed_save_keeps_project_dirty() {
         let mut app = App::default();
         let _cube = build_cube(&mut app);
-        assert!(app.is_dirty(), "after building there are unsaved edits");
+        assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "after building there are unsaved edits");
         // a deliberately impossible path: a directory instead of a file, with non-existent parents
-        app.project_path = Some("/proc/qymcad-no-such/path/proj.qcad".into());
+        app.disk.project_path = Some("/proc/qymcad-no-such/path/proj.qcad".into());
         app.save_project();
         app.wait_bg();
         assert!(app.status.contains(&crate::i18n::tr_prefix("io-save-error", "error")), "the error is honestly in the status line: {}", app.status);
-        assert!(app.is_dirty(), "the project STAYS dirty - otherwise quitting without a warning would lose the work");
+        assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "the project STAYS dirty - otherwise quitting without a warning would lose the work");
     }
 
     /// A successful write, conversely, must clear the dirt - and by THE SNAPSHOT: an edit made while the write was
@@ -1134,18 +1136,18 @@ mod command_flow_tests {
         let _ = std::fs::remove_file(&path);
         let mut app = App::default();
         let _cube = build_cube(&mut app);
-        app.project_path = Some(path.clone());
+        app.disk.project_path = Some(path.clone());
         app.save_project();
         app.wait_bg();
-        assert!(!app.is_dirty(), "after a successful write the project is clean: {}", app.status);
+        assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "after a successful write the project is clean: {}", app.status);
         assert!(std::path::Path::new(&path).exists(), "the file is on disk");
         // an edit after the snapshot makes it dirty again (a full edit through the command layer)
         let si = sketch_rect(&mut app, 40.0, 40.0, 50.0, 50.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
         app.apply_feat_cmd();
-        assert!(app.is_dirty(), "a new edit makes the project dirty again");
+        assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "a new edit makes the project dirty again");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -1160,7 +1162,7 @@ mod command_flow_tests {
         // emulate opening from a bundle: the geometry is there and there is no live B-rep
         app.live.shapes.clear();
         app.live.ready = false;
-        app.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(app.live.ready && app.live.shapes.contains_key(&cube), "an ordinary feature rebuilds: {}", app.status);
 
         // and now a body there is NOTHING to rebuild from: an import node with no source in the kernel's cache
@@ -1174,7 +1176,7 @@ mod command_flow_tests {
             suppressed: false,
         });
         app.live.ready = false;
-        app.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(!app.live.ready, "the import's B-rep is not restored - the cache is NOT ready and the attempt must be repeated");
     }
 
@@ -1201,13 +1203,13 @@ mod command_flow_tests {
         app.live.ready = false;
         app.live.tried_rev = None;
 
-        app.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(!app.live.ready, "the cache is honestly NOT ready - there is nothing to rebuild the import from");
         let rev = app.regen.geom_rev;
 
         // the next frames of the plane pick: not one new rebuild while the geometry has not changed
         for _ in 0..5 {
-            app.ensure_brep();
+            crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         }
         assert_eq!(app.regen.geom_rev, rev, "there are no repeated rebuilds - the overlay does not flicker");
     }
@@ -1223,12 +1225,12 @@ mod command_flow_tests {
         let cube = build_cube(&mut app);
         let v0 = app.live.shapes.get(&cube).map(|s| s.volume()).unwrap_or(0.0);
         assert!((v0 - 8000.0).abs() < 1.0, "a 20-cubed block was built: {v0}");
-        app.edits.baseline = app.snapshot(); // as in the real cycle: the state before the edit is fixed
+        app.disk.edits.baseline = crate::gui::snapshot(&app.project); // as in the real cycle: the state before the edit is fixed
 
         // editing the extrude's HEIGHT from 20 to 30 (the same body, the Id does not change - the trickiest case)
         let fid = app.project.timeline.iter().find(|n| matches!(n.kind, FeatureKind::Extrude { .. })).map(|n| n.id).expect("the extrude's node");
-        app.start_feat_cmd_edit(fid);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 30.0;
             p.txt = "30".into();
         }
@@ -1260,16 +1262,16 @@ mod command_flow_tests {
         let mut app = App::default();
         let _cube = build_cube(&mut app);
         let volume = |a: &App| -> f64 {
-            let consumed = a.consumed_bodies();
+            let consumed = qymcad_ui_state::consumed_bodies(&a.project);
             a.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum()
         };
-        app.edits.baseline = app.snapshot();
+        app.disk.edits.baseline = crate::gui::snapshot(&app.project);
         let v0 = volume(&app);
 
         // stretch the base rectangle from 20 to 30 through the GUI cycle. In a live window this is a point DRAG,
         // which opens an edit of its own (see `drag_pt`): the same thing is done here by hand - an edit boundary.
         app.enter_sketch_edit(0);
-        app.begin_edit("Moving a point");
+        qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "Moving a point");
         for pt in &mut app.project.sketches[0].points {
             if (pt.x - 20.0).abs() < 1e-9 {
                 pt.x = 30.0;
@@ -1278,7 +1280,7 @@ mod command_flow_tests {
         app.project.solve_sketch(0);
         app.project.regen_sketch(0);
         app.finish_sketch_edit();
-        app.commit_edit();
+        qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
         let v1 = volume(&app);
         assert!((v1 - 12000.0).abs() < 120.0, "the sketch edit was applied: {v1:.0}");
         // the undo step is created by THE COMMAND itself (the edit boundary) - nothing has to be pushed by hand
@@ -1304,15 +1306,15 @@ mod command_flow_tests {
         app.enter_component(part2);
         let before: std::collections::HashSet<Id> = app.live.shapes.keys().copied().collect();
         let si = sketch_rect(&mut app, 40.0, 0.0, 60.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let victim = *app.live.shapes.keys().find(|b| !before.contains(b) && !consumed.contains(b)).expect("part two's body");
 
         // the trap: the mesh of an UNRELATED body is spoiled and its faces are remembered
@@ -1329,7 +1331,7 @@ mod command_flow_tests {
             .iter()
             .position(|n| n.kind.body() == Some(victim))
             .expect("the node of part two's body");
-        app.delete_feature(ti);
+        crate::gui::commands::delete_feature(&mut app.part_ctx(), ti);
 
         assert!(app.project.mesh_index(victim).is_none() && !app.live.shapes.contains_key(&victim), "the deleted body went away entirely");
         let ki = app.project.mesh_index(keep).expect("the unrelated body is still there");
@@ -1346,14 +1348,14 @@ mod command_flow_tests {
         let mut app = App::default();
         let cube = build_cube(&mut app); // a block from 0 to 20
         let mi = app.project.mesh_index(cube).expect("the block's mesh");
-        assert!(app.mesh_crosses_plane(mi, [0.0, 0.0, 10.0], [0.0, 0.0, 1.0]), "the plane goes through the body, so a cap is needed");
-        assert!(!app.mesh_crosses_plane(mi, [0.0, 0.0, 100.0], [0.0, 0.0, 1.0]), "the plane misses the body, so no cap is computed");
-        assert!(!app.mesh_crosses_plane(mi, [-50.0, 0.0, 0.0], [1.0, 0.0, 0.0]), "and a miss from the side counts the same");
+        assert!(qymcad_ui_state::mesh_crosses_plane(&app.painting(), mi, [0.0, 0.0, 10.0], [0.0, 0.0, 1.0]), "the plane goes through the body, so a cap is needed");
+        assert!(!qymcad_ui_state::mesh_crosses_plane(&app.painting(), mi, [0.0, 0.0, 100.0], [0.0, 0.0, 1.0]), "the plane misses the body, so no cap is computed");
+        assert!(!qymcad_ui_state::mesh_crosses_plane(&app.painting(), mi, [-50.0, 0.0, 0.0], [1.0, 0.0, 0.0]), "and a miss from the side counts the same");
 
         // THE KEY POINT: there is no live B-rep at all and the cap must still be there (it used to be computed by a kernel boolean)
         app.live.shapes.clear();
-        app.section.plane = Some(([0.0, 0.0, 10.0], [0.0, 0.0, 1.0]));
-        let caps = app.section_caps_for_frame();
+        app.side.section.plane = Some(([0.0, 0.0, 10.0], [0.0, 0.0, 1.0]));
+        let caps = crate::gui::render_scene::section_caps_for_frame(&app.painting());
         assert!(!caps.is_empty(), "the cap is there without a B-rep too");
         let area: f64 = caps
             .iter()
@@ -1367,13 +1369,13 @@ mod command_flow_tests {
         }
 
         // and during a gizmo drag the cap does NOT vanish (from the mesh this is cheap)
-        app.section.drag = true;
-        app.section.offset = 2.0;
-        assert!(!app.section_caps_for_frame().is_empty(), "during a drag the section stays a closed body");
+        app.side.section.drag = true;
+        app.side.section.offset = 2.0;
+        assert!(!crate::gui::render_scene::section_caps_for_frame(&app.painting()).is_empty(), "during a drag the section stays a closed body");
         // a plane that misses the whole scene gives no caps (and the kernel is not spent on it)
-        app.section.drag = false;
-        app.section.offset = 500.0;
-        assert!(app.section_caps_for_frame().is_empty(), "a plane outside the model gives no caps");
+        app.side.section.drag = false;
+        app.side.section.offset = 500.0;
+        assert!(crate::gui::render_scene::section_caps_for_frame(&app.painting()).is_empty(), "a plane outside the model gives no caps");
     }
 
     /// Reported behaviour: loading a large project froze it and brought up a "not responding" window. Opening now
@@ -1392,7 +1394,7 @@ mod command_flow_tests {
         let cube = build_cube(&mut app);
         let tris_before = app.project.mesh_index(cube).map(|i| app.project.bodies[i].mesh.tris.len()).unwrap_or(0);
         assert!(tris_before > 0, "the block was built");
-        app.project_path = Some(path.clone());
+        app.disk.project_path = Some(path.clone());
         app.save_project();
         app.wait_bg();
 
@@ -1413,7 +1415,7 @@ mod command_flow_tests {
         assert!(app2.project.regen_faces.contains_key(&cube), "the B-rep faces came back into the project (associativity)");
 
         // 3. the first operation that needs a B-rep brings the cache up itself (resolved on demand)
-        app2.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app2.rebuild_ctx());
         assert!(app2.live.ready && app2.live.shapes.contains_key(&cube), "the B-rep was built on demand: {}", app2.status);
         let v: f64 = app2.live.shapes.get(&cube).map(|s| s.volume()).unwrap_or(0.0);
         assert!((v - 8000.0).abs() < 80.0, "and it is the same geometry: V={v:.0}");
@@ -1439,12 +1441,12 @@ mod command_flow_tests {
             app.project.sketches[spath].plane = SketchPlane::World(BasePlane::XZ);
             app.project.add_line_entity(spath, 10.0, 0.0, 10.0, 30.0, qymcad_core::feature::Purpose::Real);
             app.project.regen_sketch(spath);
-            app.sweep.prof_sid = prof_sid;
-            app.sweep.path_sid = path_sid;
+            app.params.sweep.prof_sid = prof_sid;
+            app.params.sweep.path_sid = path_sid;
             app.feat.op = op;
-            app.apply_sweep_cmd();
-            app.regenerate_all();
-            let consumed = app.consumed_bodies();
+            crate::gui::commands::apply_sweep_cmd(app.feat, &mut app.project, &mut app.status, app.params.sweep);
+            qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
+            let consumed = qymcad_ui_state::consumed_bodies(&app.project);
             app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum()
         };
         let (add, cut) = (build(0), build(2));
@@ -1468,7 +1470,7 @@ mod command_flow_tests {
         use qymcad_core::feature::FeatureKind;
         let mut fails: Vec<String> = Vec::new();
         let live_volume = |app: &App| -> f64 {
-            let consumed = app.consumed_bodies();
+            let consumed = qymcad_ui_state::consumed_bodies(&app.project);
             app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum()
         };
         // stretch sketch `si`'s base rectangle along X from 20 to `to`
@@ -1497,9 +1499,9 @@ mod command_flow_tests {
                 .map(|e| e.id);
             if let Some(eid) = eid {
                 app.start_feat_cmd(4); // an edge fillet
-                app.gsel.edges.insert(eid);
+                app.tools.gsel.edges.insert(eid);
                 app.edges.body = Some(cube);
-                if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+                if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
                     p.val = 2.0;
                     p.txt = "2".into();
                 }
@@ -1529,8 +1531,8 @@ mod command_flow_tests {
             stretch(&mut app, 0, 40.0); // 40×20×20 = 16000
             let fid = app.project.timeline.iter().find(|n| matches!(n.kind, FeatureKind::Extrude { .. })).map(|n| n.id);
             if let Some(fid) = fid {
-                app.start_feat_cmd_edit(fid);
-                if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+                crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+                if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                     p.val = 10.0;
                     p.txt = "10".into();
                 }
@@ -1569,10 +1571,10 @@ mod command_flow_tests {
             let mut app = App::default();
             let _cube = build_cube(&mut app);
             let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
-            app.sel = Sel::Sketch(s2);
+            app.chosen.sel = Sel::Sketch(s2);
             app.feat.op = 2;
             app.start_feat_cmd(1);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 5.0;
                 p.txt = "5".into();
             }
@@ -1580,7 +1582,7 @@ mod command_flow_tests {
             let cut_ti = app.project.timeline.iter().position(|n| matches!(n.kind, FeatureKind::Combine { .. }));
             if let Some(cut_ti) = cut_ti {
                 app.project.rollback = Some(cut_ti); // the rollback sits BEFORE the cut
-                app.regenerate_all();
+                qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
                 stretch(&mut app, 0, 30.0);
                 let v = live_volume(&app);
                 if (v - 12000.0).abs() > 120.0 {
@@ -1599,16 +1601,16 @@ mod command_flow_tests {
     fn cancel_then_extrude_flow() {
         let mut app = App::default();
         let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 2; // a CUT was started (not allowed in an empty part, but the command can be opened)
         app.start_feat_cmd(1);
-        app.cancel_feat_cmd(); // Esc
-        assert_eq!(app.cmd.kind, 0, "the command was dropped");
+        crate::gui::cancel_feat_cmd(&mut app.part_ctx()); // Esc
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the command was dropped");
         // now an honest extrude - nothing leaked from the cut
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
@@ -1623,10 +1625,10 @@ mod command_flow_tests {
         let mut app = App::default();
         let _cube = build_cube(&mut app);
         let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
-        app.sel = Sel::Sketch(s2);
+        app.chosen.sel = Sel::Sketch(s2);
         app.feat.op = 2;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 5.0;
             p.txt = "5".into();
         }
@@ -1639,14 +1641,14 @@ mod command_flow_tests {
             .find(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Combine { .. }))
             .map(|n| n.id)
             .expect("the cut's node");
-        app.start_feat_cmd_edit(fid);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
         assert_eq!(app.project.timeline.len(), nodes_before, "editing a cut breeds no nodes");
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         assert!((v - 7000.0).abs() < 70.0, "the cut went 5 -> 10: V={v:.0} (8000 minus 1000); status: {}", app.status);
     }
@@ -1657,14 +1659,14 @@ mod command_flow_tests {
         let mut app = App::default();
         app.start_prim_cmd(10); // a box
         for (k, v) in [("dx", 20.0), ("dy", 20.0), ("dz", 20.0)] {
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == k) {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
                 p.val = v;
                 p.txt = format!("{v}");
             }
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the box was applied: {}", app.status);
-        let consumed = app.consumed_bodies();
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the box was applied: {}", app.status);
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let live: Vec<f64> = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).collect();
         assert_eq!(live.len(), 1, "one body after the box");
         assert!((live[0] - 8000.0).abs() < 80.0, "a 20-cubed box: V={:.0}", live[0]);
@@ -1683,16 +1685,16 @@ mod command_flow_tests {
             .map(|f| f.id)
             .expect("the top face");
         app.start_feat_cmd(6);
-        assert_eq!(app.cmd.kind, 6, "the shell started: {}", app.status);
-        app.gsel.faces.insert(top);
-        app.gsel.faces_body = Some(cube);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "thickness") {
+        assert_eq!(app.tools.armed.cmd_kind(), 6, "the shell started: {}", app.status);
+        app.tools.gsel.faces.insert(top);
+        app.tools.gsel.faces_body = Some(cube);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
             p.val = 2.0;
             p.txt = "2".into();
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the shell was applied: {}", app.status);
-        let consumed = app.consumed_bodies();
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the shell was applied: {}", app.status);
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         let exp = 8000.0 - 16.0 * 16.0 * 18.0;
         assert!((v - exp).abs() < 30.0, "a shell of t2: V={v:.0}, {exp:.0} expected");
@@ -1708,10 +1710,10 @@ mod command_flow_tests {
             app.project.add_line_entity(si, 0.0, 0.0, 30.0, 0.0, qymcad_core::feature::Purpose::Real);
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
-            app.sel = Sel::Sketch(si);
+            app.chosen.sel = Sel::Sketch(si);
             app.feat.op = 0;
             app.start_feat_cmd(1);
-            assert_eq!(app.cmd.kind, 0, "the command does NOT start without a closed contour");
+            assert_eq!(app.tools.armed.cmd_kind(), 0, "the command does NOT start without a closed contour");
             assert_eq!(app.status, crate::i18n::tr("msg-no-closed-contour"), "a clear status");
         }
         // 2) a cut ENTIRELY CLEAR of the body: the node is created, but the rebuild must give an honest error or
@@ -1720,15 +1722,15 @@ mod command_flow_tests {
             let mut app = App::default();
             let _cube = build_cube(&mut app);
             let s2 = sketch_rect(&mut app, 100.0, 100.0, 120.0, 120.0); // far from the block
-            app.sel = Sel::Sketch(s2);
+            app.chosen.sel = Sel::Sketch(s2);
             app.feat.op = 2;
             app.start_feat_cmd(1);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 5.0;
                 p.txt = "5".into();
             }
             app.apply_feat_cmd();
-            let consumed = app.consumed_bodies();
+            let consumed = qymcad_ui_state::consumed_bodies(&app.project);
             let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
             assert!((v - 8000.0).abs() < 80.0, "a cut that misses: the block neither changed nor multiplied, V={v:.0}; status: {}", app.status);
         }
@@ -1738,14 +1740,14 @@ mod command_flow_tests {
             let cube = build_cube(&mut app);
             let top = app.project.regen_faces.get(&cube).and_then(|fs| fs.iter().find(|f| f.normal[2] > 0.9)).map(|f| f.id).unwrap();
             app.start_feat_cmd(6);
-            app.gsel.faces.insert(top);
-            app.gsel.faces_body = Some(cube);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "thickness") {
+            app.tools.gsel.faces.insert(top);
+            app.tools.gsel.faces_body = Some(cube);
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
                 p.val = 15.0; // more than the half-body's 10
                 p.txt = "15".into();
             }
             app.apply_feat_cmd();
-            let consumed = app.consumed_bodies();
+            let consumed = qymcad_ui_state::consumed_bodies(&app.project);
             let live: Vec<f64> = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).collect();
             let errored = !app.project.regen_errors.is_empty();
             let sane = live.iter().all(|v| *v > 0.0 && *v <= 8000.0 + 1.0);
@@ -1757,14 +1759,14 @@ mod command_flow_tests {
             let cube = build_cube(&mut app);
             let eid = app.project.regen_edges.get(&cube).and_then(|es| es.first()).map(|e| e.id).unwrap();
             app.start_feat_cmd(4);
-            app.gsel.edges.insert(eid);
+            app.tools.gsel.edges.insert(eid);
             app.edges.body = Some(cube);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
                 p.val = 0.0;
                 p.txt = "0".into();
             }
             app.apply_feat_cmd();
-            let consumed = app.consumed_bodies();
+            let consumed = qymcad_ui_state::consumed_bodies(&app.project);
             let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
             assert!(v > 7900.0 && v < 8100.0, "a radius of 0: the body is alive (V={v:.0}) and not rubbish; status: {}", app.status);
         }
@@ -1776,12 +1778,12 @@ mod command_flow_tests {
         let mut app = App::default();
         let _cube = build_cube(&mut app); // a block from 0 to 20, touching the YZ plane along the face at x=0
         app.start_feat_cmd(16);
-        assert_eq!(app.cmd.kind, 16, "the mirror started: {}", app.status);
-        app.mirror.plane = Some(qymcad_core::feature::SketchPlane::World(qymcad_core::feature::BasePlane::YZ));
+        assert_eq!(app.tools.armed.cmd_kind(), 16, "the mirror started: {}", app.status);
+        app.params.mirror.plane = Some(qymcad_core::feature::SketchPlane::World(qymcad_core::feature::BasePlane::YZ));
         app.opts.mirror_keep = true;
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the mirror was applied: {}", app.status);
-        let consumed = app.consumed_bodies();
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the mirror was applied: {}", app.status);
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         assert!((v - 16000.0).abs() < 160.0, "a mirror keeping the original: V={v:.0}, 16000 expected");
     }
@@ -1792,16 +1794,16 @@ mod command_flow_tests {
         let mut app = App::default();
         let _cube = build_cube(&mut app);
         app.start_array_cmd(17);
-        assert_eq!(app.cmd.kind, 17, "the pattern started: {}", app.status);
-        app.arr.count = 3;
-        app.arr.two = false;
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "step") {
+        assert_eq!(app.tools.armed.cmd_kind(), 17, "the pattern started: {}", app.status);
+        app.params.arr.count = 3;
+        app.params.arr.two = false;
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "step") {
             p.val = 40.0;
             p.txt = "40".into();
         }
         app.apply_feat_cmd();
-        assert_eq!(app.cmd.kind, 0, "the pattern was applied: {}", app.status);
-        let consumed = app.consumed_bodies();
+        assert_eq!(app.tools.armed.cmd_kind(), 0, "the pattern was applied: {}", app.status);
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
         assert!((v - 24000.0).abs() < 240.0, "three blocks: V={v:.0}");
     }
@@ -1811,11 +1813,11 @@ mod command_flow_tests {
     fn section_view_hides_half() {
         let mut app = App::default();
         let _cube = build_cube(&mut app); // a block from 0 to 20
-        let (full, _) = app.gpu_scene();
+        let (full, _) = crate::gui::render_scene::gpu_scene(&app.painting());
         assert!(!full.is_empty(), "the scene is not empty");
         // a section through the centre with a +X normal, so the x>10 half is hidden
-        app.section.plane = Some(([10.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
-        let (half, _) = app.gpu_scene();
+        app.side.section.plane = Some(([10.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+        let (half, _) = crate::gui::render_scene::gpu_scene(&app.painting());
         assert!(!half.is_empty(), "the visible half is still there");
         // What is checked is THE BODY's clip: the section cap is not part of it - the cap is deliberately nudged a
         // hair beyond the plane, into the cut-away side, so that the clipped triangles of the thread turns do not
@@ -1835,20 +1837,20 @@ mod command_flow_tests {
         let wrong_side = half.iter().filter(|v| v.color == amber).any(|v| v.pos[0] < 10.0 - 1e-6);
         assert!(!wrong_side, "the cap is nudged into the CUT-AWAY side (x >= 10): inside the material the thread turns occlude it");
         // flip: the other half becomes visible
-        app.section.plane = Some(([10.0, 0.0, 0.0], [-1.0, 0.0, 0.0]));
-        let (other, _) = app.gpu_scene();
+        app.side.section.plane = Some(([10.0, 0.0, 0.0], [-1.0, 0.0, 0.0]));
+        let (other, _) = crate::gui::render_scene::gpu_scene(&app.painting());
         for v in other.iter().filter(|v| !amber_cap.contains(&v.color)) {
             assert!(v.pos[0] >= 10.0 - 1e-3, "after the flip every vertex has x>=10: {}", v.pos[0]);
         }
         // the offset moves the plane: a -X normal with an offset of 5 puts the plane at x=5 and shows x>=5
-        app.section.offset = 5.0;
-        let (shifted, _) = app.gpu_scene();
+        app.side.section.offset = 5.0;
+        let (shifted, _) = crate::gui::render_scene::gpu_scene(&app.painting());
         let minx = shifted.iter().filter(|v| !amber_cap.contains(&v.color)).map(|v| v.pos[0]).fold(f32::MAX, f32::min);
         assert!((minx - 5.0).abs() < 1e-3, "the cut moved to x=5 (min x = {minx})");
         // off: everything is back
-        app.section.plane = None;
-        app.section.offset = 0.0;
-        let (back, _) = app.gpu_scene();
+        app.side.section.plane = None;
+        app.side.section.offset = 0.0;
+        let (back, _) = crate::gui::render_scene::gpu_scene(&app.painting());
         assert_eq!(back.len(), full.len(), "Off brings the whole scene back");
     }
 
@@ -1862,7 +1864,7 @@ mod command_flow_tests {
         let auto = std::path::Path::new(&path).with_extension("").to_string_lossy().into_owned() + ".autosave.qcad";
         let _ = std::fs::remove_file(&auto);
         let mut app = App::default();
-        app.project_path = Some(path.clone());
+        app.disk.project_path = Some(path.clone());
         let _cube = build_cube(&mut app); // unsaved edits
         app.maybe_autosave(true);
         app.wait_bg(); // the write runs in the background, so the test synchronises explicitly
@@ -1893,11 +1895,11 @@ mod command_flow_tests {
             app.finish_sketch_edit();
             si
         };
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 2; // stale from a previous cut - the revolve must reset it to 0
         app.start_feat_cmd(3);
         assert_eq!(app.feat.op, 0, "the revolve starts on Add");
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "angle") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
             p.val = 360.0;
             p.txt = "360".into();
         }
@@ -1919,13 +1921,13 @@ mod command_flow_tests {
         let comp_b = app.project.add_part("B");
         app.enter_component(comp_b); // the context is now B (a neighbour of A, neither ancestor nor descendant)
         app.win.context = true;
-        // the camera aims EXACTLY at the centre of block A's top face, so project3(target) equals rect.center()
-        app.cam.target = [10.0, 10.0, 20.0];
+        // the camera aims EXACTLY at the centre of block A's top face, so Screen::at(target) equals rect.center()
+        app.viewing.cam.target = [10.0, 10.0, 20.0];
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
         let mi = app.project.mesh_index(cube_a).expect("block A's mesh");
-        assert!(app.body_shown(mi), "block A is shown in the background (show_context=true)");
-        assert!(app.body_is_ghost(mi), "block A is a ghost seen from context B (a neighbour, not one's own)");
-        app.mirror.part = Some(comp_a);
+        assert!(qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi), "block A is shown in the background (show_context=true)");
+        assert!(qymcad_ui_state::body_is_ghost(&app.draw_ctx(), mi), "block A is a ghost seen from context B (a neighbour, not one's own)");
+        app.params.mirror.part = Some(comp_a);
         // there is nothing behind the ghost at this point - the pick either misses or (plausibly) falls through it
         // to a base plane; what matters is that it is NOT a face of ghost A
         let hit = app.pick_sketch_plane_at(rect, rect.center());
@@ -1992,15 +1994,15 @@ mod command_flow_tests {
         app.enter_component(part2);
         let before: std::collections::HashSet<Id> = app.live.shapes.keys().copied().collect();
         let si = sketch_rect(&mut app, 40.0, 0.0, 60.0, 20.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 20.0;
             p.txt = "20".into();
         }
         app.apply_feat_cmd();
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         let stale = *app.live.shapes.keys().find(|b| !before.contains(b) && !consumed.contains(b)).expect("part two's body");
         app.live.shapes.remove(&stale); // the B-rep is gone, the node is red and the mesh stayed on screen
 
@@ -2008,7 +2010,7 @@ mod command_flow_tests {
         let mut mesh = qymcad_core::geom::Mesh::default();
         mesh.verts.extend([Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)]);
         mesh.tris.push([0, 1, 2]);
-        app.add_bodies(vec![(mesh, Vec::new())]);
+        crate::gui::add_bodies(&mut app.viewing.cam, &mut app.live, &mut app.project, &mut app.regen, &mut app.chosen.sel, &mut app.viewing.view, vec![(mesh, Vec::new())]);
         let mesh_only = app.project.bodies.last().map(|b| b.id).expect("the imported body");
 
         let plan = app.export_plan(ExportTarget::Project);
@@ -2047,11 +2049,11 @@ mod command_flow_tests {
         let comp_b = app.project.add_part("B");
         app.enter_component(comp_b); // we are inside the neighbouring part B
         app.win.context = true;
-        app.cam.target = [10.0, 10.0, 20.0]; // the centre of block A's top face is under the cursor
+        app.viewing.cam.target = [10.0, 10.0, 20.0]; // the centre of block A's top face is under the cursor
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
         let mi = app.project.mesh_index(cube_a).expect("block A's mesh");
-        assert!(app.body_is_ghost(mi), "block A is a ghost seen from context B");
-        assert!(app.mirror.part.is_none() && !app.section.pick, "an ordinary pick, not a mirror or a section");
+        assert!(qymcad_ui_state::body_is_ghost(&app.draw_ctx(), mi), "block A is a ghost seen from context B");
+        assert!(app.params.mirror.part.is_none() && !app.side.section.pick, "an ordinary pick, not a mirror or a section");
         let hit = app.pick_sketch_plane_at(rect, rect.center());
         match hit {
             Some(qymcad_core::feature::SketchPlane::Face(body, _)) => {
@@ -2076,7 +2078,7 @@ mod command_flow_tests {
         let wp = WorkPlane { name: "Datum".into(), origin: [0.0, 0.0, 5.0], normal: [0.0, 0.0, 1.0], def: PlaneDef::Manual, ..Default::default() };
         let datum_id = app.project.add_plane(wp);
         app.project.active_component = Some(app.project.root);
-        app.mirror.part = Some(asm); // the pick mode is active
+        app.params.mirror.part = Some(asm); // the pick mode is active
         // from THE ROOT: the Part (the datum's owner) is not the current context, so it is hidden
         assert!(app.datum_render_transform(datum_id).is_none(), "another component's datum is not visible from the root");
         // from the Assembly (the Part's direct parent, but NOT the owner itself) it is hidden too
@@ -2102,7 +2104,7 @@ mod section_clip_tests {
         assert_eq!(out.verts.len(), 4, "a quad of 4 vertices (2 original + 2 on the plane)");
         // the cut points carry weights that give d=0: w.d = 0
         for cv in &out.verts {
-            let d = cv.w[0] * -1.0 + cv.w[1] * -1.0 + cv.w[2] * 2.0;
+            let d = -cv.w[0] + -cv.w[1] + cv.w[2] * 2.0;
             assert!(d <= 1e-12, "the vertex is on the visible side or on the plane: d={d}");
         }
         // one visible vertex gives a triangle of 3
@@ -2374,7 +2376,7 @@ mod sketch_conflict_ui_tests {
     #[test]
     fn conflict_set_reaches_the_ui_with_its_geometry() {
         let (app, si) = app_with_conflict();
-        let diag = app.sketch_diag(si);
+        let diag = qymcad_ui_state::sketch_diag(&app.cache, &app.project, si);
         assert!(diag.conflicts.len() >= 2, "the arguing set is visible to the UI: {:?}", diag.conflicts);
         let mut hot: std::collections::HashSet<qymcad_core::model::Id> = std::collections::HashSet::new();
         for &ci in &diag.conflicts {
@@ -2389,12 +2391,12 @@ mod sketch_conflict_ui_tests {
         let (mut app, si) = app_with_geometric_conflict();
         let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
         app.win.constraints = true;
-        let all = app.visible_constraint_glyphs(rect, si).len();
+        let all = qymcad_pick::visible_constraint_glyphs(&app.painting(), rect, si).len();
         app.win.constraints = false;
-        let shown = app.visible_constraint_glyphs(rect, si);
+        let shown = qymcad_pick::visible_constraint_glyphs(&app.painting(), rect, si);
         assert!(all > shown.len(), "the toggle hides the ordinary glyphs: there were {all}, now {}", shown.len());
         assert!(!shown.is_empty(), "but the arguing ones stay visible with the toggle off");
-        let conflicts = app.sketch_diag(si).conflicts;
+        let conflicts = qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts;
         assert!(shown.iter().all(|(ci, _, _)| conflicts.contains(ci)), "EXACTLY the arguing ones are shown");
     }
 
@@ -2403,23 +2405,23 @@ mod sketch_conflict_ui_tests {
     fn no_conflict_means_nothing_is_forced_on_screen() {
         let (mut app, si) = app_with_geometric_conflict();
         // remove ANY constraint from the arguing set - by contract that is enough
-        let ci = *app.sketch_diag(si).conflicts.iter().next().expect("there is an argument");
+        let ci = *qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.iter().next().expect("there is an argument");
         app.project.delete_sketch_constraint(si, ci);
         app.project.solve_sketch(si);
-        assert!(app.sketch_diag(si).conflicts.is_empty(), "the argument is resolved");
+        assert!(qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "the argument is resolved");
         app.win.constraints = false;
         let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
-        assert!(app.visible_constraint_glyphs(rect, si).is_empty(), "with no argument the toggle is in charge again");
+        assert!(qymcad_pick::visible_constraint_glyphs(&app.painting(), rect, si).is_empty(), "with no argument the toggle is in charge again");
     }
 
     /// A ONE-CLICK RESOLUTION: the "make it a reference" button ends the argument and leaves the dimension on the drawing.
     #[test]
     fn making_the_conflicting_dimension_driven_from_the_panel_resolves_it() {
         let (mut app, si) = app_with_conflict();
-        let ci = *app.sketch_diag(si).conflicts.iter().max().expect("there is an argument");
+        let ci = *qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.iter().max().expect("there is an argument");
         let before = app.project.sketches[si].constraints.len();
-        assert!(app.make_dim_driven(si, ci), "the button worked: {}", app.status);
-        assert!(app.sketch_diag(si).conflicts.is_empty(), "the argument is over: {:?}", app.sketch_diag(si).conflicts);
+        assert!(crate::gui::sketching::make_dim_driven(&mut app.project, &mut app.regen, &mut app.status, si, ci), "the button worked: {}", app.status);
+        assert!(qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "the argument is over: {:?}", qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts);
         assert_eq!(app.project.sketches[si].constraints.len(), before, "the dimension stayed on the drawing rather than being deleted");
         assert!(app.project.sketches[si].constraints[ci].is_driven(), "it is a reference dimension now");
     }
@@ -2428,11 +2430,11 @@ mod sketch_conflict_ui_tests {
     #[test]
     fn the_diagnostic_cache_follows_edits() {
         let (mut app, si) = app_with_conflict();
-        assert!(!app.sketch_diag(si).conflicts.is_empty(), "there is an argument");
-        assert!(!app.sketch_diag(si).conflicts.is_empty(), "a second call (from the cache) answers the same");
+        assert!(!qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "there is an argument");
+        assert!(!qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "a second call (from the cache) answers the same");
         app.project.delete_sketch_constraint(si, 3);
         app.project.solve_sketch(si);
-        assert!(app.sketch_diag(si).conflicts.is_empty(), "after the edit the cache was recomputed rather than handing back the old answer");
+        assert!(qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "after the edit the cache was recomputed rather than handing back the old answer");
     }
 }
 
@@ -2463,16 +2465,16 @@ mod brep_warmup_tests {
     #[test]
     fn warmup_is_requested_once_not_every_frame() {
         let mut app = app_needing_brep();
-        app.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(app.regen.wanted, "the first frame asks for a rebuild");
         // the request has been taken up and the overlay is spinning. While it spins, THE GEOMETRY REVISION may
         // move - any background task moves it (and so does the rebuild itself, once it arrives).
         app.regen.wanted = false;
-        app.invalidate();
-        app.ensure_brep();
+        qymcad_ui_state::invalidate(&mut app.regen);
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(!app.regen.wanted, "no second request goes out: the preparation is ALREADY under way - otherwise the overlay flickers");
-        app.invalidate();
-        app.ensure_brep();
+        qymcad_ui_state::invalidate(&mut app.regen);
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(!app.regen.wanted, "nor a third");
     }
 
@@ -2480,7 +2482,7 @@ mod brep_warmup_tests {
     #[test]
     fn warmup_settles_when_the_background_rebuild_lands() {
         let mut app = app_needing_brep();
-        app.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(app.regen.wanted, "the preparation was requested");
         // as the scheduler does it: start the task and wait for its result
         app.regen.wanted = false;
@@ -2491,7 +2493,7 @@ mod brep_warmup_tests {
             _ => panic!("a rebuild result was expected"),
         }
         assert!(app.live.ready, "the live B-rep is built and the cache is ready: {} bodies without a shape", app.project.timeline.iter().filter_map(|n| n.kind.body()).filter(|b| !app.live.shapes.contains_key(b)).count());
-        app.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         assert!(!app.regen.wanted, "a ready cache asks for nothing more");
     }
 }
@@ -2507,7 +2509,7 @@ mod sketch_plane_pick_frames_tests {
     /// One frame of the scheduler: if a rebuild was requested and the queue is free, start it and wait.
     /// This is what `tick_async` does in a live window, only without egui.
     fn pump_frame(app: &mut App, regens: &mut usize) {
-        app.refresh_edges(); // in a live window this call happens EVERY frame
+        crate::gui::commands::refresh_edges(&mut app.part_ctx()); // in a live window this call happens EVERY frame
         if app.regen.wanted && app.regen.busy.is_none() {
             app.regen.wanted = false;
             app.spawn_regen();
@@ -2536,10 +2538,10 @@ mod sketch_plane_pick_frames_tests {
             app.finish_sketch_edit();
             si
         };
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
@@ -2560,8 +2562,8 @@ mod sketch_plane_pick_frames_tests {
         app.live.ready = false;
         app.live.tried_rev = None;
         app.regen.ui_running = true; // A LIVE WINDOW: the rebuild is asynchronous, and that is where the cycle lived
-        app.mode_3d = true;
-        app.picking = Picking::SketchPlane(None); // "create a sketch" was pressed
+        app.viewing.mode_3d = true;
+        app.tools.picking = Picking::SketchPlane(None); // "create a sketch" was pressed
 
         let mut regens = 0usize;
         for _ in 0..12 {

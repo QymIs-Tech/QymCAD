@@ -35,12 +35,12 @@ mod tests {
             j.limit_min[0] = Some(0.0);
             j.limit_max[0] = Some(40.0);
         }
-        assert!(app.start_joint_anim_for_test(hinge, 0), "the run of the angle must start: the limits are set");
+        assert!(qymcad_ui_state::start_joint_anim(&mut app.joint_anim, &mut app.project, hinge, 0), "the run of the angle must start: the limits are set");
 
         // step through the frames and watch THE TURN OF THE PART, not the field of the joint
         let mut seen: Vec<f64> = Vec::new();
         for _ in 0..40 {
-            app.step_joint_anim_for_test(0.1); // 0.1 s per frame — twenty steps for the way there
+            crate::gui::step_joint_anim(&mut app.joint_anim, &mut app.project, 0.1); // 0.1 s per frame — twenty steps for the way there
             seen.push(spin(&app, wheel));
         }
         assert_eq!(seen.len(), 40, "GUARD: there should be forty steps, and it came out {}", seen.len());
@@ -72,14 +72,14 @@ mod tests {
         let before = spin(&app, wheel);
         assert!((before - 15.0).abs() < 1e-2, "setup: the part must stand at the given 15 deg, and it stands at {before:.4}");
 
-        app.start_joint_anim_for_test(hinge, 0);
+        qymcad_ui_state::start_joint_anim(&mut app.joint_anim, &mut app.project, hinge, 0);
         for _ in 0..7 {
-            app.step_joint_anim_for_test(0.1);
+            crate::gui::step_joint_anim(&mut app.joint_anim, &mut app.project, 0.1);
         }
         assert!((spin(&app, wheel) - before).abs() > 5.0, "setup: in seven frames the part must move noticeably");
 
-        app.stop_joint_anim_for_test();
-        assert!(!app.joint_anim_active_for_test(), "the run must stop");
+        qymcad_assembly::stop_joint_anim(&mut app.joint_ctx());
+        assert!(!app.joint_anim.is_some(), "the run must stop");
         let after = spin(&app, wheel);
         assert!((after - before).abs() < 1e-2, "after the stop the part must come back to {before:.4} deg, and it stands at {after:.4} deg");
         let drive = app.project.joints.iter().find(|j| j.id == hinge).and_then(|j| j.drive[0]);
@@ -95,8 +95,8 @@ mod tests {
         let mut app = App::default();
         let ([hinge, _], _) = super::super::a_relation_is_made_by_hand::tests::two_hinges(&mut app);
         // a hinge has no travel at all
-        assert!(!app.start_joint_anim_for_test(hinge, 1), "a hinge has no travel — the run must not start");
-        assert!(!app.joint_anim_active_for_test(), "a run that never started must not count as running");
+        assert!(!qymcad_ui_state::start_joint_anim(&mut app.joint_anim, &mut app.project, hinge, 1), "a hinge has no travel — the run must not start");
+        assert!(!app.joint_anim.is_some(), "a run that never started must not count as running");
     }
 
     /// THE RUN BUTTON IS THERE IN THE JOINT POPUP.
@@ -113,13 +113,13 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         app.workbench = super::super::Workbench::Assembly;
-        app.mode_3d = true;
-        app.joint.edit = Some(hinge);
+        app.viewing.mode_3d = true;
+        app.side.joint.edit = Some(hinge);
         let mut texts = Vec::new();
         // an egui popup settles on the SECOND frame — draw it twice
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
-                app.joint_popup_for_test(c, viewport());
+                { app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id)); qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport()); }
             });
             texts.clear();
             for cs in &out.shapes {

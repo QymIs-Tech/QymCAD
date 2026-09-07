@@ -434,6 +434,64 @@ impl Project {
     }
 
     /// Index of a timeline node by id.
+    /// RENAME A NODE OF THE BUILD TREE.
+    ///
+    /// One line of work, but it was written out in the interface: find the node by id, assign the name.
+    /// Here it is a named operation instead, which is what the tree, a future rename from a script and a
+    /// test all want to call. Returns `false` when there is no such node, so a caller cannot take a miss
+    /// for a change.
+    pub fn rename_node(&mut self, id: Id, name: impl Into<String>) -> bool {
+        match self.timeline.iter_mut().find(|n| n.id == id) {
+            Some(n) => {
+                n.name = name.into();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// EVERY NODE IS STALE - the whole tree is to be built again.
+    ///
+    /// Asked for when what the tree was built ON has changed underneath it: the geometry kernel was
+    /// swapped, the document was reopened, a setting that every feature reads was moved. Marking is all
+    /// that happens here; WHO rebuilds and IN WHAT ORDER is the planner's business.
+    pub fn mark_all_dirty(&mut self) {
+        for n in self.timeline.iter_mut() {
+            n.dirty = true;
+        }
+    }
+
+    /// ADD A MOVE ON TOP OF THE MOVE A BODY ALREADY CARRIES.
+    ///
+    /// A body that has been moved once holds a `Move` node; moving it again must MULTIPLY the placements
+    /// rather than replace them, or the second drag would throw the first away. The interface used to walk
+    /// the tree, reach inside the node's kind and compose the matrices there - three steps in which the
+    /// order of multiplication is easy to get backwards and impossible to test without a window.
+    ///
+    /// Returns `false` when the body carries no `Move` node: the caller then has a different job to do
+    /// (make one), and telling the two apart is exactly what the answer is for.
+    pub fn accumulate_move(&mut self, body: Id, extra: &[f64; 12]) -> bool {
+        let Some(node) = self.timeline.iter_mut().find(|n| n.id == body) else { return false };
+        let crate::feature::FeatureKind::Move { mat, .. } = &mut node.kind else { return false };
+        // THE NEW MOVE GOES FIRST: what is being applied now acts on the result of what was applied
+        // before. Swapped, a drag after a turn would move along the OLD axes.
+        *mat = crate::feature::compose12(extra, mat);
+        node.dirty = true;
+        true
+    }
+
+    /// EVERY NODE THAT MAKES A BODY IS STALE - the shape has to be computed again.
+    ///
+    /// Narrower than [`Project::mark_all_dirty`] on purpose: a change of TOLERANCE alters the mesh and
+    /// nothing else, so sketches and datums in the tree have no reason to be rebuilt.
+    pub fn mark_bodies_dirty(&mut self) {
+        for n in self.timeline.iter_mut() {
+            if n.kind.body().is_some() {
+                n.dirty = true;
+            }
+        }
+    }
+
     pub fn timeline_index(&self, id: Id) -> Option<usize> {
         self.timeline.iter().position(|n| n.id == id)
     }
@@ -474,7 +532,7 @@ impl Project {
     /// the id of a sketch centreline (zero means none) and takes priority over the datum and the sketch axes.
     /// The axis has to lie in the sketch plane.
     pub fn add_revolve_axis(&mut self, sketch: Id, profiles: Vec<Id>, axis: u8, angle: f64, axis_datum: Id, axis_line: Id) -> Id {
-        self.add_revolve_multi_op(sketch, profiles, axis, angle, axis_datum, axis_line, crate::feature::Reach::default(), 0, 1)
+        self.add_revolve_multi_op(sketch, profiles, super::RevolveAxis { axis: axis, datum: axis_datum, line: axis_line }, super::RevolveTurn { angle: angle, reach: crate::feature::Reach::default() }, 0, 1)
     }
 
     /// Revolve every contour and apply the boolean against body `src` within one node.
@@ -484,7 +542,8 @@ impl Project {
     /// doing an add instead of a cut; it could only be edited one contour at a time, and deleting any of the
     /// nodes took the whole chain below with it. One operation is now one node, as for an extrude.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_revolve_multi_op(&mut self, sketch: Id, profiles: Vec<Id>, axis: u8, angle: f64, axis_datum: Id, axis_line: Id, reach: crate::feature::Reach, src: Id, op: u8) -> Id {
+    pub fn add_revolve_multi_op(&mut self, sketch: Id, profiles: Vec<Id>, ax: super::RevolveAxis, turn: super::RevolveTurn, src: Id, op: u8) -> Id {
+        let (super::RevolveAxis { axis, datum: axis_datum, line: axis_line }, super::RevolveTurn { angle, reach }) = (ax, turn);
         use crate::feature::{FeatureKind, FeatureNode};
         let body = self.alloc_id();
         let parent = Some(self.body_parent());
@@ -500,8 +559,9 @@ impl Project {
     }
 
     /// Revolve with the direction the angle is swept in: forwards, back, or half each way.
-    pub fn add_revolve_axis_ex(&mut self, sketch: Id, profiles: Vec<Id>, axis: u8, angle: f64, axis_datum: Id, axis_line: Id, reach: crate::feature::Reach) -> Id {
-        self.add_revolve_multi_op(sketch, profiles, axis, angle, axis_datum, axis_line, reach, 0, 1)
+    pub fn add_revolve_axis_ex(&mut self, sketch: Id, profiles: Vec<Id>, ax: super::RevolveAxis, turn: super::RevolveTurn) -> Id {
+        let (super::RevolveAxis { axis, datum: axis_datum, line: axis_line }, super::RevolveTurn { angle, reach }) = (ax, turn);
+        self.add_revolve_multi_op(sketch, profiles, super::RevolveAxis { axis: axis, datum: axis_datum, line: axis_line }, super::RevolveTurn { angle: angle, reach: reach }, 0, 1)
     }
 
     /// Sweep: a profile (`sketch`, `profile`) along a path (`path_sketch`, `path`). A zero `profile` or `path`
@@ -746,16 +806,15 @@ impl Project {
 
         // Clone the timeline nodes in their original order, remapping the references and the profiles and
         // marking the bodies dirty.
-        let mut insert_at = dest.timeline.len();
-        for n in &sub_nodes {
+        let base = dest.timeline.len();
+        for (offset, n) in sub_nodes.iter().enumerate() {
             let mut kind = n.kind.clone();
             kind.remap_ids(&map);
             kind.remap_names(&nmap);
             kind.remap_profile(&cmap);
             let parent = n.parent.and_then(|p| map.get(&p).copied());
             let dirty = kind.body().is_some();
-            dest.timeline.insert(insert_at, FeatureNode { id: map[&n.id], name: n.name.clone(), kind, parent, dirty, suppressed: n.suppressed });
-            insert_at += 1;
+            dest.timeline.insert(base + offset, FeatureNode { id: map[&n.id], name: n.name.clone(), kind, parent, dirty, suppressed: n.suppressed });
         }
 
         // Clone the parametric body dimensions (`feat_dims` under the new body ids).
@@ -842,19 +901,16 @@ impl Project {
     /// Operation on body `src` using a specific sketch contour `profile` (`op` is 0 cut, 1 boss, 2
     /// intersection). How far the tool goes is `ext`; `down` behaves as for an extrude when the extent is not
     /// a through one.
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_combine_on(&mut self, src: Id, sketch: Id, profile: Id, height: f64, op: u8, ext: crate::feature::Extent, down: f64) -> Id {
-        use crate::feature::{FeatureKind, FeatureNode};
-        let body = self.alloc_id();
-        let parent = Some(self.body_parent());
-        let name = ["feat-name-combine-cut", "feat-name-combine-boss", "feat-name-combine-intersect"][(op as usize).min(2)].to_string();
-        self.push_timeline(FeatureNode { id: body, name, kind: FeatureKind::Combine { src, sketch, profiles: vec![profile], height, op, extent: ext, down, fill: Vec::new(), body }, parent, dirty: true, suppressed: false });
-        body
+    pub fn add_combine_on(&mut self, src: Id, sketch: Id, profile: Id, span: super::CombineSpan, op: u8) -> Id {
+        // One contour is the many-contour case with a list of one. It used to be a second copy of the same
+        // eight lines, and the copy quietly dropped `fill`.
+        self.add_combine_multi_op(src, sketch, vec![profile], span, op)
     }
 
     /// Operation on body `src` using several contours `profiles` within one node: one boolean, one body.
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_combine_multi_op(&mut self, src: Id, sketch: Id, profiles: Vec<Id>, height: f64, op: u8, ext: crate::feature::Extent, down: f64, fill: Vec<Id>) -> Id {
+    pub fn add_combine_multi_op(&mut self, src: Id, sketch: Id, profiles: Vec<Id>, span: super::CombineSpan, op: u8) -> Id {
+        let super::CombineSpan { height, down, extent: ext, fill } = span;
+        let fill = fill.to_vec();
         use crate::feature::{FeatureKind, FeatureNode};
         let body = self.alloc_id();
         let parent = Some(self.body_parent());
@@ -993,7 +1049,8 @@ impl Project {
     /// selects it automatically from `flip`). Asymmetry requires an explicit edge selection; for "every edge"
     /// the kernel falls back to a symmetric chamfer.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_chamfer_ex(&mut self, src: Id, dist: f64, d2: f64, mode: crate::feature::ChamferMode, flip: bool, ref_face: u32, edges: Vec<u32>) -> Id {
+    pub fn add_chamfer_ex(&mut self, src: Id, dist: f64, shape: super::ChamferShape, edges: Vec<u32>) -> Id {
+        let super::ChamferShape { mode, d2, flip, ref_face } = shape;
         use crate::feature::{FeatureKind, FeatureNode};
         let body = self.alloc_id();
         let parent = Some(self.body_parent());
@@ -1123,8 +1180,11 @@ impl Project {
 
     /// Linear pattern as a full 3D grid: three independent directions (count by count2 by count3).
     #[allow(clippy::too_many_arguments)]
-    pub fn add_linear_array_grid3(&mut self, src: Id, dx: f64, dy: f64, dz: f64, count: u32, dx2: f64, dy2: f64, dz2: f64, count2: u32, dx3: f64, dy3: f64, dz3: f64, count3: u32) -> Id {
+    pub fn add_linear_array_grid3(&mut self, src: Id, axes: [crate::model::ArrayAxis; 3]) -> Id {
         use crate::feature::{FeatureKind, FeatureNode};
+        // The document still holds the twelve numbers loose; only the way in is named.
+        let ([dx, dy, dz], [dx2, dy2, dz2], [dx3, dy3, dz3]) = (axes[0].d, axes[1].d, axes[2].d);
+        let (count, count2, count3) = (axes[0].count, axes[1].count, axes[2].count);
         let body = self.alloc_id();
         let parent = Some(self.body_parent());
         self.push_timeline(FeatureNode { id: body, name: "feat-name-linear-array".into(), kind: FeatureKind::LinearArray { src, dx, dy, dz, count, dx2, dy2, dz2, count2, dx3, dy3, dz3, count3, body }, parent, dirty: true, suppressed: false });
@@ -1161,7 +1221,8 @@ impl Project {
     /// Hole with a type: `kind` is 0 for a plain hole, 1 for a counterbore and 2 for a countersink; `dia2` and
     /// `depth2` are the parameters of the recess.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_hole_typed(&mut self, src: Id, face: crate::feature::FaceKey, diameter: f64, depth: f64, kind: u8, dia2: f64, depth2: f64) -> Id {
+    pub fn add_hole_typed(&mut self, src: Id, face: crate::feature::FaceKey, tool: super::HoleTool) -> Id {
+        let super::HoleTool { kind, diameter, depth, dia2, depth2 } = tool;
         use crate::feature::{FeatureKind, FeatureNode};
         let body = self.alloc_id();
         let parent = Some(self.body_parent());
@@ -1177,7 +1238,8 @@ impl Project {
     /// the sketch normal (`flip` reverses it). The hole parameters (`kind`, `dia2`, `depth2`) are as for a
     /// single hole. One timeline node covers every hole.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_hole_from_sketch(&mut self, src: Id, sketch: Id, diameter: f64, depth: f64, kind: u8, dia2: f64, depth2: f64, flip: bool) -> Id {
+    pub fn add_hole_from_sketch(&mut self, src: Id, sketch: Id, tool: super::HoleTool, flip: bool) -> Id {
+        let super::HoleTool { kind, diameter, depth, dia2, depth2 } = tool;
         use crate::feature::{FeatureKind, FeatureNode};
         let body = self.alloc_id();
         let parent = Some(self.body_parent());
@@ -1579,18 +1641,17 @@ impl Project {
             match &mut n.kind {
                 // Translated names are written back only for a hand-picked set: a descriptive query stores no
                 // names, and replacing it with a list of numbers would take away everything it exists for.
-                crate::feature::FeatureKind::Fillet { edges, .. } | crate::feature::FeatureKind::Chamfer { edges, .. } => {
-                    if !edges.query.picked_descs().is_empty() {
+                crate::feature::FeatureKind::Fillet { edges, .. } | crate::feature::FeatureKind::Chamfer { edges, .. }
+                    if !edges.query.picked_descs().is_empty() => {
                         *edges = crate::refs::Ref::picks(&out);
                     }
-                }
                 _ => {}
             }
         }
         if let Some(snaps) = self.edge_refs.get_mut(&node_id) {
-            for (id, _, _) in snaps.iter_mut() {
-                if let Some(&new) = map.get(id) {
-                    *id = new;
+            for snap in snaps.iter_mut() {
+                if let Some(&new) = map.get(&snap.id) {
+                    snap.id = new;
                 }
             }
         }

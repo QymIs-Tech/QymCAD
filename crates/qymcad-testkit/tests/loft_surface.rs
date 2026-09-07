@@ -17,7 +17,7 @@ fn two_sections() -> (Project, Vec<u64>, Vec<u64>) {
     let mut sids = Vec::new();
     let mut cids = Vec::new();
     for (i, (half, z)) in [(20.0_f64, 0.0_f64), (10.0, 30.0)].into_iter().enumerate() {
-        let si = p.new_sketch(&format!("section {}", i + 1));
+        let si = p.new_sketch(format!("section {}", i + 1));
         let sid = p.sketches[si].id;
         if z != 0.0 {
             let pl = p.add_plane(qymcad_core::model::WorkPlane { id: 0, name: format!("z{z}"), origin: [0.0, 0.0, z], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
@@ -25,7 +25,7 @@ fn two_sections() -> (Project, Vec<u64>, Vec<u64>) {
         }
         p.add_rect_entity(si, -half, -half, half, half, qymcad_core::feature::Purpose::Real);
         p.regen_sketch(si);
-        p.add_sketch_node(sid, &format!("section {}", i + 1));
+        p.add_sketch_node(sid, format!("section {}", i + 1));
         let cid = p.sketches[si].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("the section contour");
         sids.push(sid);
         cids.push(cid);

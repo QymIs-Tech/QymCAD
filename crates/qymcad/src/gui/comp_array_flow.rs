@@ -12,7 +12,7 @@ pub(super) mod tests {
     /// An assembly with one cube part; returns its component.
     pub(in crate::gui) fn assembly_with_part(app: &mut App) -> u64 {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         let comp = app.project.body_owner(body).expect("the owner");
         let root = app.project.root;
@@ -24,8 +24,8 @@ pub(super) mod tests {
     #[test]
     fn the_tools_have_buttons() {
         let src = crate::gui::panels_source::PANELS;
-        assert!(src.contains("self.start_comp_array(1);"), "a linear component array without a button does not exist");
-        assert!(src.contains("self.start_comp_array(2);"), "a circular component array without a button does not exist");
+        assert!(src.contains("BarAsk::CompArray(1)"), "a linear component array without a button does not exist");
+        assert!(src.contains("BarAsk::CompArray(2)"), "a circular component array without a button does not exist");
     }
 
     /// THE WHOLE PATH: pick a part -> the button -> the count and the step -> Enter -> the copies stand.
@@ -34,20 +34,20 @@ pub(super) mod tests {
         let mut app = App::default();
         let comp = assembly_with_part(&mut app);
         let ci = app.project.components.iter().position(|c| c.id == comp).expect("the index");
-        app.sel = Sel::Component(ci);
+        app.chosen.sel = Sel::Component(ci);
 
         app.start_comp_array(1);
-        assert_eq!(app.carr.mode, 1, "the command must open; the status line: {}", app.status);
-        assert_eq!(app.carr.src, comp, "the source is the selected part");
-        assert!(app.cmd.params.iter().any(|p| p.key == "cstep"), "a linear array must have a step field");
+        assert_eq!(app.side.carr.mode, 1, "the command must open; the status line: {}", app.status);
+        assert_eq!(app.side.carr.src, comp, "the source is the selected part");
+        assert!(app.tools.cmd.params.iter().any(|p| p.key == "cstep"), "a linear array must have a step field");
 
-        app.arr.count = 4;
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "cstep") {
+        app.params.arr.count = 4;
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "cstep") {
             p.val = 30.0;
             p.txt = "30".into();
         }
-        app.apply_comp_array();
-        app.rebuild_if_dirty();
+        crate::gui::commands::apply_comp_array(&mut app.part_ctx());
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let pat = app.project.comp_pattern_of(comp).expect("the array is created");
         assert_eq!(pat.copies.len(), 3, "4 instances = the source + 3 copies; the status line: {}", app.status);
@@ -58,7 +58,7 @@ pub(super) mod tests {
             let v = app.project.component_bodies(*c).first().and_then(|b| app.project.mesh_index(*b)).map(|m| app.project.bodies[m].mesh.volume()).unwrap_or(0.0);
             assert!(v > 1.0, "copy {i} must have A BODY, and its volume is {v}");
         }
-        assert_eq!(app.carr.mode, 0, "after applying, the command closes");
+        assert_eq!(app.side.carr.mode, 0, "after applying, the command closes");
     }
 
     /// With no part selected the command does not start and says why.
@@ -66,9 +66,9 @@ pub(super) mod tests {
     fn without_a_part_the_command_refuses() {
         let mut app = App::default();
         assembly_with_part(&mut app);
-        app.sel = Sel::None;
+        app.chosen.sel = Sel::None;
         app.start_comp_array(1);
-        assert_eq!(app.carr.mode, 0, "the command must not open without a source");
+        assert_eq!(app.side.carr.mode, 0, "the command must not open without a source");
         assert_eq!(app.status, crate::i18n::tr("msg-pick-part-first"), "the reason must be said out loud");
     }
 
@@ -78,10 +78,10 @@ pub(super) mod tests {
         let mut app = App::default();
         let comp = assembly_with_part(&mut app);
         let ci = app.project.components.iter().position(|c| c.id == comp).expect("the index");
-        app.sel = Sel::Component(ci);
+        app.chosen.sel = Sel::Component(ci);
         app.start_comp_array(1);
         app.on_escape();
-        assert_eq!(app.carr.mode, 0, "the command is closed");
+        assert_eq!(app.side.carr.mode, 0, "the command is closed");
         assert!(app.project.comp_patterns.is_empty(), "nothing was created");
     }
 
@@ -89,13 +89,13 @@ pub(super) mod tests {
     #[test]
     fn the_ghosts_are_drawn_before_enter() {
         let src = crate::gui::render_source::RENDER;
-        assert!(src.contains("pub(super) fn draw_comp_array_preview"), "a component array must have a preview");
-        assert!(src.contains("self.draw_comp_array_preview(painter, rect);"), "the preview must be called from the frame");
+        assert!(crate::gui::render_source::has(src, "fn draw_comp_array_preview"), "a component array must have a preview");
+        assert!(crate::gui::render_source::has(src, "draw_comp_array_preview(pn, painter, rect);"), "the preview must be called from the frame");
         // THE COMPUTATION OF THE GHOSTS LIVES APART from the drawing — so that it can be checked with
         // numbers rather than by reading the source (see `preview_matches_result`).
-        assert!(src.contains("pub(super) fn comp_array_ghosts"), "the computation of the ghosts must be a function of its own");
-        let a = src.find("pub(super) fn comp_array_ghosts").expect("the block");
-        let b = src[a..].find("\n    pub(super) fn draw_comp_array_preview").map(|i| a + i).unwrap_or(src.len());
+        assert!(crate::gui::render_source::has(src, "fn comp_array_ghosts"), "the computation of the ghosts must be a function of its own");
+        let a = src.find("fn comp_array_ghosts").expect("the block");
+        let b = src[a..].find("\nfn draw_comp_array_preview").map(|i| a + i).unwrap_or(src.len());
         assert!(src[a..b].contains("(1..kind.count())"), "the ghosts are for THE COPIES only: the source is on screen anyway");
     }
 
@@ -111,15 +111,21 @@ pub(super) mod tests {
         // THE PATH TO EDITING EXISTS IN THE INTERFACE: an item in the context menu of a component.
         // Without this check the editing function would live "for the test" — and it did live that way
         // until a compiler warning caught it.
-        assert!(crate::gui::panels_source::PANELS.contains("self.start_comp_array_edit(pid);"), "editing an array must be callable from the tree");
+        // BOTH HALVES OF THE PATH. The tree no longer acts by itself - it names a request, and the frame
+        // carries it out - so a single needle would guard only one end of a road that has two.
+        assert!(crate::gui::panels_source::PANELS.contains("TreeAsk::EditCompArray(pid)"), "the tree must offer the editing of an array");
+        assert!(
+            crate::gui::render_source::has(include_str!("../gui.rs"), "TreeAsk::EditCompArray(pid) => self.start_comp_array_edit(pid)"),
+            "the request must be carried out - a request nobody performs is a dead menu item"
+        );
         app.start_comp_array_edit(pid);
-        assert_eq!(app.carr.mode, 1, "editing must open the same command");
-        assert_eq!(app.carr.edit, pid, "it is THIS array that is being edited");
-        assert_eq!(app.arr.count, 3, "the number of instances must be restored");
-        assert!((app.cmd_val("cstep") - 30.0).abs() < 1e-9, "the step must be restored");
+        assert_eq!(app.side.carr.mode, 1, "editing must open the same command");
+        assert_eq!(app.side.carr.edit, pid, "it is THIS array that is being edited");
+        assert_eq!(app.params.arr.count, 3, "the number of instances must be restored");
+        assert!((qymcad_ui_state::cmd_val(&app.tools.cmd, "cstep") - 30.0).abs() < 1e-9, "the step must be restored");
 
-        app.arr.count = 5;
-        app.apply_comp_array();
+        app.params.arr.count = 5;
+        crate::gui::commands::apply_comp_array(&mut app.part_ctx());
         assert_eq!(app.project.comp_patterns.len(), 1, "a second array must not appear");
         let after = app.project.comp_pattern_of(comp).expect("the array").copies.clone();
         assert_eq!(after.len(), 4, "there are 5 instances now");
@@ -134,7 +140,7 @@ pub(super) mod tests {
         let mut app = App::default();
         let comp = assembly_with_part(&mut app);
         app.project.add_comp_pattern(comp, CompPatternKind::Linear { dir: [1.0, 0.0, 0.0], step: 30.0, count: 4 });
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let copies = app.project.comp_pattern_of(comp).expect("the array").copies.clone();
 
         let ci = app.project.components.iter().position(|c| c.id == copies[1]).expect("the index of the copy");
@@ -151,9 +157,9 @@ pub(super) mod tests {
     /// The instance row is visible in the tree — otherwise a copy looks like a part with no recipe.
     #[test]
     fn the_instance_is_visible_in_the_tree() {
-        assert!(crate::gui::panels_source::PANELS.contains("FeatureKind::PartInstance { src_comp, .. } =>"), "the row in the tree");
+        assert!(crate::gui::render_source::has(crate::gui::panels_source::PANELS, "FeatureKind::PartInstance { src_comp, .. } =>"), "the row in the tree");
         let gui = include_str!("../gui.rs");
-        assert!(gui.contains("FK::PartInstance { .. } => ph::"), "the icon");
+        assert!(crate::gui::render_source::has(gui, "FK::PartInstance { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-instance").is_empty() && crate::i18n::tr("feat-name-instance") != "feat-name-instance", "the default name of the feature must have a translation");
     }
 
@@ -213,17 +219,17 @@ mod preview_matches_result {
         off[3] = 37.0; // a shifted source: with a correct computation the ghost travels with it
         app.project.set_component_transform(src, off);
 
-        app.carr.mode = 1;
-        app.carr.src = src;
-        let ctx = app.current_ctx_id();
+        app.side.carr.mode = 1;
+        app.side.carr.src = src;
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let parent = app.project.components.iter().find(|c| c.id == src).and_then(|c| c.parent).unwrap_or(app.project.root);
         let base = app.project.components.iter().find(|c| c.id == src).map(|c| c.transform).expect("the source");
         let pre = app.project.relative_transform(parent, ctx);
-        let ghosts = app.comp_array_ghosts(&pre, &base, 0);
+        let ghosts = crate::gui::render::comp_array_ghosts(&app.painting(), &pre, &base, 0);
         assert!(!ghosts.is_empty(), "setup: the ghosts must exist");
 
         // and now the array IS APPLIED — and the copies must stand in exactly the same places
-        let kind = app.comp_array_kind();
+        let kind = qymcad_ui_state::comp_array_kind(app.params.arr, &app.side.carr, &app.tools.cmd);
         let want: Vec<[f64; 12]> = (1..kind.count()).map(|i| mat_mul12(&pre, &mat_mul12(&kind.step_transform(i), &base))).collect();
         for (g, w) in ghosts.iter().zip(want.iter()) {
             for k in 0..12 {
@@ -233,7 +239,7 @@ mod preview_matches_result {
         // AND SHIFTING THE SOURCE DRAGS THE GHOSTS ALONG. The check goes by the difference and not by an
         // absolute: the default step of an array may well be zero, and then an absolute number proves
         // nothing.
-        let at_zero = app.comp_array_ghosts(&pre, &PLACE_IDENTITY, 0);
+        let at_zero = crate::gui::render::comp_array_ghosts(&app.painting(), &pre, &PLACE_IDENTITY, 0);
         for (moved, still) in ghosts.iter().zip(at_zero.iter()) {
             assert!((moved[3] - still[3] - 37.0).abs() < 1e-9, "the ghost did not travel with the source: {} against {}", moved[3], still[3]);
         }
@@ -244,11 +250,11 @@ mod preview_matches_result {
     fn editing_an_existing_pattern_does_not_double_the_frames() {
         let mut app = App::default();
         let src = super::tests::assembly_with_part(&mut app);
-        app.carr.mode = 1;
-        app.carr.src = src;
-        let all = app.comp_array_ghosts(&PLACE_IDENTITY, &PLACE_IDENTITY, 0).len();
+        app.side.carr.mode = 1;
+        app.side.carr.src = src;
+        let all = crate::gui::render::comp_array_ghosts(&app.painting(), &PLACE_IDENTITY, &PLACE_IDENTITY, 0).len();
         assert!(all >= 1, "setup: with no copies placed the ghosts must exist");
-        let with_one_placed = app.comp_array_ghosts(&PLACE_IDENTITY, &PLACE_IDENTITY, 1).len();
+        let with_one_placed = crate::gui::render::comp_array_ghosts(&app.painting(), &PLACE_IDENTITY, &PLACE_IDENTITY, 1).len();
         assert_eq!(with_one_placed, all - 1, "a copy that is placed must remove its own ghost, otherwise there are twice as many frames as bodies");
     }
 }

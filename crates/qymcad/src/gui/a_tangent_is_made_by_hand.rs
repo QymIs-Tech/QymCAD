@@ -22,25 +22,25 @@ mod tests {
         let root = app.project.root;
         app.project.set_active_component(Some(root));
         let part = app.project.add_part("shaft");
-        app.enter_component_for_test(part);
+        app.enter_component(part);
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         app.project.add_circle_entity(si, 80.0, 10.0, 5.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 40.0;
             p.txt = "40".into();
         }
         app.apply_feat_cmd();
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         (app.project.mesh_id(0).expect("the plate"), app.project.mesh_id(1).expect("the shaft"))
     }
 
@@ -88,16 +88,18 @@ mod tests {
     fn a_person_can_point_at_a_plane_and_a_cylinder() {
         let mut app = App::default();
         let (plate, shaft) = plate_and_shaft(&mut app);
-        app.start_tangent_pick_for_test();
-        assert!(app.tangent_pick_active_for_test(), "the Tangency tool was not taken");
+        app.start_tangent_pick();
+        assert!(app.side.joint.tangent_pick.is_some(), "the Tangency tool was not taken");
 
-        app.tangent_pick_click_for_test(plate, flat_face(&app, plate));
-        app.tangent_pick_click_for_test(shaft, round_face(&app, shaft));
+        let face = flat_face(&app, plate);
+        qymcad_assembly::tangent_pick_click(&mut app.joint_ctx(), plate, face);
+        let face = round_face(&app, shaft);
+        qymcad_assembly::tangent_pick_click(&mut app.joint_ctx(), shaft, face);
 
         let c = app.project.mate_constraints.first().cloned().expect("the tangency was not created");
         assert_eq!(c.kind, ConstraintKind::Tangent, "the wrong constraint was created: {:?}", c.kind);
         assert_eq!(c.faces.len(), 2, "a tangency must have two surfaces: {:?}", c.faces);
-        assert!(!app.tangent_pick_active_for_test(), "the tool was not released after the second pick");
+        assert!(!app.side.joint.tangent_pick.is_some(), "the tool was not released after the second pick");
 
         let texts = panel_text(&mut app);
         let want = crate::i18n::name(&c.name);
@@ -114,12 +116,12 @@ mod tests {
         let mut app = App::default();
         let (plate, _shaft) = plate_and_shaft(&mut app);
         let f = flat_face(&app, plate);
-        app.start_tangent_pick_for_test();
-        app.tangent_pick_click_for_test(plate, f.clone());
-        app.tangent_pick_click_for_test(plate, f);
+        app.start_tangent_pick();
+        qymcad_assembly::tangent_pick_click(&mut app.joint_ctx(), plate, f);
+        qymcad_assembly::tangent_pick_click(&mut app.joint_ctx(), plate, f);
 
         assert!(app.project.mate_constraints.is_empty(), "a tangency was assembled from two planes");
-        assert!(app.tangent_pick_active_for_test(), "the tool was dropped instead of letting a cylinder be pointed at");
+        assert!(app.side.joint.tangent_pick.is_some(), "the tool was dropped instead of letting a cylinder be pointed at");
         assert_eq!(app.status, crate::i18n::tr("j-tangent-need-cylinder"), "the person was not told what is wrong: {}", app.status);
     }
 }

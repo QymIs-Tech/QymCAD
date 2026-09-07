@@ -3,7 +3,7 @@
 //! In the thread popup the captions read `f-nominal-d`, `f-pitch-std`, `f-length` — catalogue keys
 //! instead of words. Not one of the localisation tests caught that, and none could: the keys WERE in
 //! the catalogue and were translated correctly. The field was drawn past the translation —
-//! `ui.label(p.label)` instead of `p.label()`, a difference of two brackets, and the compiler stayed
+//! `ui.label(p.label)` instead of `crate::i18n::tr(p.label_key())`, a difference of two brackets, and the compiler stayed
 //! silent because `ui.label` accepts a `&str`.
 //!
 //! Hence the only way to check: BUILD A FRAME and look at what ended up in it. The same lesson had
@@ -11,6 +11,7 @@
 //! checking the shape and checking the source are no substitute.
 #[cfg(test)]
 pub(in crate::gui) mod tests {
+    use crate::gui::WinKind;
     use super::super::{App, Sel};
     use crate::i18n;
 
@@ -69,9 +70,9 @@ pub(in crate::gui) mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
@@ -95,7 +96,7 @@ pub(in crate::gui) mod tests {
             // the Part tools with fields at the geometry: fillet, chamfer, shell, hole, patterns
             for cmd in [4u8, 5, 6, 7, 17, 18] {
                 app.start_feat_cmd(cmd);
-                if app.cmd.params.is_empty() {
+                if app.tools.cmd.params.is_empty() {
                     continue; // the tool did not open on this scene — it will have one of its own
                 }
                 let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
@@ -105,15 +106,15 @@ pub(in crate::gui) mod tests {
                 // TWO PASSES: an `Area` learns its size only after the first layout, and on the first
                 // frame the popup is not yet in place. The second one is what is looked at — the one a
                 // person sees.
-                let _ = ctx.run_ui(input.clone(), |ctx| app.feat_cmd_popup(ctx, screen));
-                let out = ctx.run_ui(input, |ctx| app.feat_cmd_popup(ctx, screen));
+                let _ = ctx.run_ui(input.clone(), |ctx| crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), ctx, screen));
+                let out = ctx.run_ui(input, |ctx| crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), ctx, screen));
                 let mut texts = Vec::new();
                 for cs in &out.shapes {
                     collect_text(&cs.shape, &mut texts);
                 }
                 drawn += texts.len();
                 for t in texts {
-                    if keys.iter().any(|k| *k == t) {
+                    if keys.contains(&t) {
                         leaks.push(format!("{code}: tool {cmd} drew the key \"{t}\""));
                     }
                 }
@@ -136,7 +137,7 @@ pub(in crate::gui) mod tests {
         let edges: Vec<u32> = app.project.regen_edges.get(&body).map(|es| es.iter().take(2).map(|e| e.id).collect()).unwrap_or_default();
         if !edges.is_empty() {
             app.project.add_fillet(body, 1.0, edges);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         }
         // a datum plane and a second sketch — the "plane" and "sketch" branches of the properties
         app.project.add_offset_plane(qymcad_core::feature::BasePlane::XY, 12.0);
@@ -144,7 +145,7 @@ pub(in crate::gui) mod tests {
         app.project.add_circle_entity(si, 0.0, 0.0, 4.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app
     }
 
@@ -180,34 +181,69 @@ pub(in crate::gui) mod tests {
         let surfaces: &[Surface] = &[
             ("tree", |a, c| a.tree_panel(c)),
             ("properties", |a, c| a.properties_panel(c)),
-            ("menu", |a, c| a.menu_bar(c)),
-            ("tool bar", |a, c| a.tool_options_bar(c)),
-            ("command bar", |a, c| a.feat_command_bar(c)),
-            ("section bar", |a, c| a.section_bar(c)),
-            ("component pattern bar", |a, c| a.comp_array_bar(c)),
-            ("settings", |a, c| a.settings_window(c)),
-            ("parameters", |a, c| a.params_window(c)),
-            ("parts library", |a, c| a.parts_library_window(c)),
+            ("menu", |a, c| { let mut asks = Vec::new(); crate::gui::panels_bars::menu_bar(&mut a.bar_ctx(&mut asks), c); let c = c.ctx().clone(); a.do_bar_asks(asks, &c); }),
+            // EACH BAR IS ARMED FIRST, the way the shell arms it. All four drew NOTHING before this: they
+            // stood in the list, were counted as covered, and were not. The condition each one is drawn
+            // under is written in `live()` beside its place - the same condition is met here.
+            ("tool bar", |a, c| {
+                if let Some(s) = a.project.sketches.first() {
+                    a.sketch_ses.editing = Some(s.id); // the tool bar belongs to an open sketch
+                }
+                a.tools.armed = qymcad_ui_state::Armed::Draw(1);
+                let mut asks = Vec::new();
+                crate::gui::panels_bars::tool_options_bar(&mut a.bar_ctx(&mut asks), c);
+                let c = c.ctx().clone();
+                a.do_bar_asks(asks, &c);
+            }),
+            ("command bar", |a, c| {
+                a.start_feat_cmd(4); // a fillet: a command with fields, so the bar has something to show
+                a.feat_command_bar(c);
+            }),
+            ("section bar", |a, c| {
+                a.side.section.plane = Some(([0.0; 3], [0.0, 0.0, 1.0]));
+                crate::gui::panels_bars::section_bar(&mut a.regen, &mut a.side.section, c);
+            }),
+            ("component pattern bar", |a, c| {
+                a.side.carr.mode = 1;
+                crate::gui::panels_bars::comp_array_bar(&mut a.part_ctx(), c);
+            }),
+            ("settings", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
+            ("parameters", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::params_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
+            ("parts library", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::parts_library_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
             ("hotkeys", |a, c| a.hotkeys_window(c)),
-            ("about", |a, c| a.about_dialog(c)),
-            ("tools (CAM)", |a, c| a.tools_window(c)),
+            ("about", |a, c| crate::gui::panels_windows::about_dialog(&mut a.win, &a.scheme, c)),
+            // THE OTHER FIVE WINDOWS. They were absent, so an untranslated key in any of them reached the
+            // screen with nothing to say so - and this is the check whose whole job is to notice that.
+            ("document properties", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::doc_props_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
+            ("save as a template", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::save_template_dialog(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
+            ("report a problem", |a, c| a.report_window(c)),
+            ("command search", |a, c| a.command_search_window(c)),
+            ("start screen", |a, c| a.start_screen(c)),
         ];
 
         let prev = i18n::language();
         let mut leaks: Vec<String> = Vec::new();
         let mut drawn = 0usize;
+        // PER SURFACE, NOT ONLY IN TOTAL. A surface that draws nothing contributes zero and the sum still
+        // passes: the check then covers it in name only. Adding five windows to this list is exactly when
+        // that would have gone unnoticed.
+        let mut per_surface: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
         for code in ["ru", "en"] {
             i18n::set_language(code);
             for (name, draw) in surfaces {
                 let mut app = populated();
                 // windows are drawn only when open, and CAM only with the module switched on
-                app.win.settings = true;
-                app.win.params = true;
-                app.win.parts_library = true;
-                app.win.hotkeys = true;
-                app.win.about = true;
-                app.win.tools = true;
-                app.set.cam_tab_enabled = true;
+                app.win.open(WinKind::Settings);
+                app.win.open(WinKind::Params);
+                app.win.open(WinKind::PartsLibrary);
+                app.win.open(WinKind::Hotkeys);
+                app.win.open(WinKind::About);
+                app.win.open(WinKind::DocProps);
+                app.win.open(WinKind::SaveTemplate);
+                app.win.open(WinKind::Report);
+                app.win.open(WinKind::CmdSearch);
+                app.win.open(WinKind::Start);
+                app.win.start_asked = true; // the start screen only shows itself on a blank document
                 // the right panel must show EVERY kind of selection, not only "nothing is selected"
                 let sels: Vec<(&str, Sel)> = vec![
                     ("nothing", Sel::None),
@@ -220,10 +256,11 @@ pub(in crate::gui) mod tests {
                     ("feature 1", Sel::Feature(1)),
                 ];
                 for (sel_name, sel) in sels {
-                    app.sel = sel;
+                    app.chosen.sel = sel;
                     for t in frame_text(&mut app, *draw) {
                         drawn += 1;
-                        if keys.iter().any(|k| *k == t) {
+                        *per_surface.entry(name).or_default() += 1;
+                        if keys.contains(&t) {
                             let msg = format!("{code}: \"{name}\" ({sel_name}) drew the key \"{t}\"");
                             if !leaks.contains(&msg) {
                                 leaks.push(msg);
@@ -235,6 +272,8 @@ pub(in crate::gui) mod tests {
         }
         i18n::set_language(&prev);
         assert!(drawn > 200, "the frames came out empty ({drawn} captions) — the test checked nothing");
+        let mute: Vec<&str> = surfaces.iter().map(|(n, _)| *n).filter(|n| per_surface.get(n).copied().unwrap_or(0) == 0).collect();
+        assert!(mute.is_empty(), "a surface drew NOTHING, so it was checked in name only: {mute:?}");
         assert!(leaks.is_empty(), "an internal name reached the screen instead of words ({}):\n{}", leaks.len(), leaks.join("\n"));
     }
 }

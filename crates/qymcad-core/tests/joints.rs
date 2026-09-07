@@ -986,7 +986,7 @@ fn a_slider_on_flat_faces_moves_along_the_face_not_away_from_it() {
     // The rail face: a horizontal patch with its normal pointing up (+Z). Sliding on it has to go
     // sideways.
     let key = FaceKey { index: 0, centroid: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0], id: 0 };
-    let ca = p.add_connector(a, AnchorRef::FaceCenter(1, key.clone()));
+    let ca = p.add_connector(a, AnchorRef::FaceCenter(1, key));
     let cb = p.add_connector(b, AnchorRef::FaceCenter(2, key));
     let j = p.add_joint(ca, cb, JointKind::Slider);
 
@@ -2322,4 +2322,86 @@ fn a_fastened_joint_can_be_given_a_twist_about_its_axis() {
     p.solve_joints();
     let o2 = apply12(&p.world_transform(b), [0.0, 0.0, 0.0]);
     assert!((o2[2] - 7.0).abs() < 1e-3, "a gap of 7 mm must apply together with the rotation, but the body is at z = {:.4}", o2[2]);
+}
+
+/// A DRIVER IS HELD INSIDE ITS LIMITS BY THE MODEL, not by whoever sets it.
+///
+/// Four places in the interface used to write `drive[slot]` by hand, and only one of them clamped to the
+/// limit. Nothing wrong came of it - the other three happened to pass values already in range - but the
+/// rule lived in four memories instead of in the code. `set_joint_drive` is where it lives now, and this
+/// is what says so.
+#[test]
+fn a_driver_cannot_be_set_outside_the_limits() {
+    let mut p = Project::default();
+    let c = parts(&mut p, 2);
+    let (a, b) = (c[0], c[1]);
+    p.set_grounded(a, true);
+    let ca = p.add_connector(a, AnchorRef::Origin);
+    let cb = p.add_connector(b, AnchorRef::Origin);
+    let j = p.add_joint(ca, cb, JointKind::Revolute);
+    {
+        let jj = p.joints.iter_mut().find(|x| x.id == j).unwrap();
+        jj.limit_min[0] = Some(-30.0);
+        jj.limit_max[0] = Some(45.0);
+    }
+
+    assert!(p.set_joint_drive(j, 0, Some(90.0)), "the mate is there and the slot exists");
+    let got = p.joints.iter().find(|x| x.id == j).unwrap().drive[0];
+    assert_eq!(got, Some(45.0), "above the upper limit the driver is held at it, not written through");
+
+    p.set_joint_drive(j, 0, Some(-100.0));
+    let got = p.joints.iter().find(|x| x.id == j).unwrap().drive[0];
+    assert_eq!(got, Some(-30.0), "below the lower limit likewise");
+
+    p.set_joint_drive(j, 0, Some(10.0));
+    let got = p.joints.iter().find(|x| x.id == j).unwrap().drive[0];
+    assert_eq!(got, Some(10.0), "a value inside the limits passes through untouched");
+
+    // CLEARING IS NOT CLAMPING. `None` means "the degree of freedom is free again", and a limit has
+    // nothing to say about that.
+    p.set_joint_drive(j, 0, None);
+    let got = p.joints.iter().find(|x| x.id == j).unwrap().drive[0];
+    assert_eq!(got, None, "clearing the driver frees the degree of freedom");
+
+    // A MISS IS TOLD APART FROM A CHANGE, so a caller cannot take one for the other.
+    assert!(!p.set_joint_drive(j, 7, Some(1.0)), "there is no seventh slot");
+    assert!(!p.set_joint_drive(9999, 0, Some(1.0)), "there is no such mate");
+}
+
+/// A CONNECTOR IS PLACED IN ONE MOVE, not three.
+///
+/// The panel used to assign the point, the turn and the offset one after another. Three writes have two
+/// moments in between when the record disagrees with itself, and anything reading the connector then -
+/// a solve, a redraw, a check - sees half a placement.
+#[test]
+fn a_connector_is_placed_in_one_move() {
+    let mut p = Project::default();
+    let c = parts(&mut p, 1);
+    let conn = p.add_connector(c[0], AnchorRef::Origin);
+
+    let point = qymcad_core::asm::connector::AttachPoint::End;
+    assert!(p.set_connector_placement(conn, point, 45.0, [1.0, 2.0, 3.0]), "the connector is there");
+    let got = p.connector(conn).expect("the connector");
+    assert_eq!(got.point, point, "the point is set");
+    assert_eq!(got.rot_deg, 45.0, "the turn is set");
+    assert_eq!(got.offset_xyz, [1.0, 2.0, 3.0], "and the offset with it, in the same call");
+
+    assert!(!p.set_connector_placement(9999, point, 0.0, [0.0; 3]), "a miss is told apart from a change");
+}
+
+/// SHOWING AND HIDING A COMPONENT, AND RENAMING IT, ARE OPERATIONS OF THE DOCUMENT.
+#[test]
+fn a_component_is_shown_hidden_and_renamed_by_name() {
+    let mut p = Project::default();
+    let c = parts(&mut p, 1);
+    assert!(p.set_component_visible(c[0], false), "the component is there");
+    assert!(!p.components.iter().find(|x| x.id == c[0]).unwrap().visible, "it is hidden");
+    assert!(p.set_component_visible(c[0], true));
+    assert!(p.components.iter().find(|x| x.id == c[0]).unwrap().visible, "and shown again");
+
+    assert!(p.rename_component(c[0], "bracket"), "renaming works by id");
+    assert_eq!(p.components.iter().find(|x| x.id == c[0]).unwrap().name, "bracket");
+
+    assert!(!p.set_component_visible(9999, true), "a miss is told apart from a change");
+    assert!(!p.rename_component(9999, "nowhere"), "and so is a rename of nothing");
 }

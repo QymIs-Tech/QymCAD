@@ -5,6 +5,7 @@
 //! about.
 #[cfg(test)]
 mod tests {
+    use crate::gui::WinKind;
     use super::super::help_window::HelpTarget;
     use super::super::App;
     use crate::help;
@@ -22,24 +23,24 @@ mod tests {
         // empty means following the interface, and ON ITS CHANGE too
         app.set.help_lang = String::new();
         app.set.language = "ru".into();
-        app.apply_language();
+        crate::gui::apply_language(&app.set);
         assert_eq!(help::lang(), "ru", "the help did not follow the Russian interface");
         app.set.language = "en".into();
-        app.apply_language();
+        crate::gui::apply_language(&app.set);
         assert_eq!(help::lang(), "en", "the interface was switched and the help stayed in the previous language");
 
         // once one is chosen, the interface no longer rules it
         app.set.help_lang = "ru".into();
-        app.apply_language();
+        crate::gui::apply_language(&app.set);
         assert_eq!(help::lang(), "ru", "a chosen help language must override the interface language");
         app.set.language = "ru".into();
         app.set.help_lang = "en".into();
-        app.apply_language();
+        crate::gui::apply_language(&app.set);
         assert_eq!(help::lang(), "en", "English help was chosen in a Russian interface — it must be English");
 
         // and back to "as in the interface"
         app.set.help_lang = String::new();
-        app.apply_language();
+        crate::gui::apply_language(&app.set);
         assert_eq!(help::lang(), "ru", "\"as in the interface\" was restored and the help language did not come back");
 
         crate::i18n::set_language(&prev);
@@ -92,14 +93,14 @@ mod tests {
         let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let mut app = App::default();
         app.set.help_external = false;
-        assert_eq!(app.help_target("index"), HelpTarget::Window, "by default the help must open in its own window — it works without the internet");
+        assert_eq!(crate::gui::help_window::help_target(&app.set, "index"), HelpTarget::Window, "by default the help must open in its own window — it works without the internet");
 
         app.set.help_external = true;
-        assert_eq!(app.help_target("part/08-hole"), HelpTarget::Site(help::web_url("part/08-hole")), "the browser was chosen and the help still aims at the window");
+        assert_eq!(crate::gui::help_window::help_target(&app.set, "part/08-hole"), HelpTarget::Site(help::web_url("part/08-hole")), "the browser was chosen and the help still aims at the window");
 
         // and `open_help` OBEYS THAT DECISION: the window did not open, and the status line holds the address
         app.open_help("part/08-hole");
-        assert!(!app.win.help, "it is set to open in the browser and the own window opened anyway");
+        assert!(!app.win.help.open, "it is set to open in the browser and the own window opened anyway");
         assert!(app.status.contains("part/08-hole"), "it opened in the browser and the person was not told what went where: \"{}\"", app.status);
     }
 
@@ -120,8 +121,8 @@ mod tests {
     #[test]
     fn both_help_settings_reach_the_settings_window() {
         let mut app = App::default();
-        app.win.settings = true;
-        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.settings_window(c));
+        app.win.open(WinKind::Settings);
+        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); });
         for k in ["settings-help-lang", "settings-help-open"] {
             let label = crate::i18n::tr(k);
             assert!(texts.iter().any(|t| t.contains(&label)), "the \"{label}\" setting is not in the window: {texts:?}");

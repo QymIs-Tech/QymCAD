@@ -10,7 +10,7 @@ fn external_thread_cuts_real_grooves() {
     assert!(v0 > 1550.0 && v0 < 1590.0, "the volume of the cylinder is πr²h = π·25·20 ≈ 1571: {v0:.1}");
 
     let thr = cyl
-        .thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0)
+        .thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 })
         .expect("the thread is cut: helix, pipe and cut gave a valid body");
     let v1 = thr.volume();
     assert!(v1 > 0.0, "the volume of the threaded body is above zero");
@@ -35,7 +35,7 @@ fn internal_thread_on_hole() {
     assert!(v0 > 0.0);
 
     let thr = tube
-        .thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Bore, 0, 0.0, 0.0, 0.0, 0.0)
+        .thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Bore, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 })
         .expect("the internal thread is cut");
     let v1 = thr.volume();
     assert!(v1 < v0 && v1 > 0.5 * v0, "the internal thread removed a part of the wall: {v0:.1} -> {v1:.1}");
@@ -49,7 +49,7 @@ fn two_start_thread_is_valid_solid() {
     // the width of the profile, which follows the pitch, so validity is checked rather than the amount removed.
     let cyl = Shape::cylinder(5.0, 20.0).expect("the cylinder");
     let v0 = cyl.volume();
-    let two = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 2, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).expect("two starts are cut");
+    let two = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 2, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("two starts are cut");
     let v2 = two.volume();
     assert!(v2 > 0.0 && v2 < v0, "a two-start thread is a valid body with material removed: {v0:.1} -> {v2:.1}");
     let bodies = two.tessellate(0.15);
@@ -64,8 +64,8 @@ fn angle_drives_flanks() {
     // down to the root and more is removed; at 90° it narrows to a sharp root and less is removed.
     let cyl = Shape::cylinder(5.0, 20.0).expect("the cylinder");
     let v0 = cyl.volume();
-    let a30 = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 30.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).expect("a 30° thread");
-    let a90 = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 90.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).expect("a 90° thread");
+    let a30 = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 30.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("a 30° thread");
+    let a90 = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 90.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("a 90° thread");
     let (v30, v90) = (a30.volume(), a90.volume());
     assert!(v30 < v0 && v90 < v0, "both removed material");
     assert!(v30 < v90 - 1.0, "the angle governs the flanks: 30° removed markedly more than 90°: 30° -> {v30:.1}, 90° -> {v90:.1}");
@@ -78,8 +78,8 @@ fn form_changes_crest_land() {
     // not change.
     let cyl = Shape::cylinder(5.0, 20.0).expect("the cylinder");
     let v0 = cyl.volume();
-    let tri = v0 - cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).expect("the triangular form").volume();
-    let trap = v0 - cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 1, 0.0, 0.0, 0.0, 0.0).expect("the trapezoidal form").volume();
+    let tri = v0 - cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("the triangular form").volume();
+    let trap = v0 - cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 1, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("the trapezoidal form").volume();
     assert!(tri > trap + 5.0, "the form changes the crest: the triangle removed markedly more than the trapezoid: tri={tri:.1}, trap={trap:.1}");
 }
 
@@ -90,13 +90,13 @@ fn rounded_form_and_clearance_build() {
     // really cuts: a tangent root once made the boolean a no-op, so the thread did nothing.
     let cyl = Shape::cylinder(5.0, 20.0).expect("the cylinder");
     let v0 = cyl.volume();
-    let thr = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 2, 0.1, 0.15, 0.0, 0.0).expect("the rounded form with clearances");
+    let thr = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 2, clearance_crest: 0.1, clearance_root: 0.15, lead_in: 0.0, lead_out: 0.0 }).expect("the rounded form with clearances");
     let v1 = thr.volume();
     assert!(v1 < v0 - 20.0, "the round profile really cuts a groove rather than doing nothing: {v0:.1} -> {v1:.1}");
     assert!(v1 > 0.5 * v0, "but it removed a part, not half the body");
     assert_eq!(thr.tessellate(0.1).len(), 1, "one body");
     // the round profile differs from the sharp triangle, otherwise choosing the type would change nothing
-    let tri = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).expect("the triangular form").volume();
+    let tri = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("the triangular form").volume();
     assert!((v1 - tri).abs() > 15.0, "the round form differs markedly from the triangle: round={v1:.1}, triangle={tri:.1}");
 }
 
@@ -107,9 +107,9 @@ fn runout_leaves_material_at_ends() {
     // right to the ends; a longer run leaves more material still. It used to be a chamfered cut-off, with the
     // opposite meaning.
     let cyl = Shape::cylinder(5.0, 20.0).expect("the cylinder");
-    let plain = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).expect("without a run-out");
-    let run = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 4.0, 4.0).expect("a run-out of 4");
-    let big = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 16.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 7.0, 7.0).expect("a run-out of 7");
+    let plain = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("without a run-out");
+    let run = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 4.0, lead_out: 4.0 }).expect("a run-out of 4");
+    let big = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 16.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 7.0, lead_out: 7.0 }).expect("a run-out of 7");
     let (vp, vc, vb) = (plain.volume(), run.volume(), big.volume());
     assert!(vc > vp + 1.0, "the run-out left the turns at the ends, so there is more material: full {vp:.1} -> run-out {vc:.1}");
     assert!(vb > vc, "a longer run-out leaves more material: run-out 4 = {vc:.1} < run-out 7 = {vb:.1}");
@@ -123,7 +123,7 @@ fn thread_into_shoulder_builds() {
     // the thread cut downward to the step.
     let body = Shape::cylinder(20.0, 10.0).unwrap().boolean(&Shape::cylinder(15.0, 40.0).unwrap(), 1).unwrap();
     let vb = body.volume();
-    let thr = body.thread([0.0, 0.0, 40.0], [0.0, 0.0, -1.0], 15.0, 30.0, 3.0, 60.0, 1.8, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 3.0, 3.0).expect("the thread down to the shoulder");
+    let thr = body.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 40.0], dir: [0.0, 0.0, -1.0] }, radius: 15.0, length: 30.0, pitch: 3.0, angle_deg: 60.0, depth: 1.8, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 3.0, lead_out: 3.0 }).expect("the thread down to the shoulder");
     let v1 = thr.volume();
     eprintln!("the step: body {vb:.1} -> thread {v1:.1}");
     assert!(v1 > 0.0 && v1 < vb, "the thread is cut in a body with a step: {vb:.1} -> {v1:.1}");
@@ -137,7 +137,7 @@ fn ring_amplitude(s: &Shape, zlo: f64, zhi: f64) -> f64 {
     let (mesh, _) = &bodies[0];
     let (mut lo, mut hi) = (f64::INFINITY, 0.0f64);
     for v in &mesh.verts {
-        let (x, y, z) = (v.x as f64, v.y as f64, v.z as f64);
+        let (x, y, z) = (v.x, v.y, v.z);
         if z < zlo || z >= zhi { continue; }
         let r = (x * x + y * y).sqrt();
         lo = lo.min(r); hi = hi.max(r);
@@ -152,7 +152,7 @@ fn runout_sinks_crest_at_tip() {
     // practice. The crest stays at R, the homothety being towards the spine, so the outer diameter does not sink
     // at the end and a nut starts onto a smooth cone.
     let cyl = Shape::cylinder(10.0, 40.0).expect("the cylinder");
-    let thr = cyl.thread([0.0, 0.0, 40.0], [0.0, 0.0, -1.0], 10.0, 20.0, 3.0, 60.0, 1.5, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 3.0, 3.0).expect("a thread with a run-out");
+    let thr = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 40.0], dir: [0.0, 0.0, -1.0] }, radius: 10.0, length: 20.0, pitch: 3.0, angle_deg: 60.0, depth: 1.5, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 3.0, lead_out: 3.0 }).expect("a thread with a run-out");
     let tip = ring_amplitude(&thr, 39.75, 40.0);   // the very entry, at the top rim
     let middle = ring_amplitude(&thr, 28.0, 30.0); // deeper in, a full turn
     assert!(middle > 1.0, "deeper in the turn is full: amp={middle:.2}");
@@ -166,8 +166,8 @@ fn runout_sinks_crest_at_tip() {
 fn long_thread_with_runout_builds() {
     let cyl = Shape::cylinder(5.0, 34.0).expect("the cylinder");
     let len = 30.0; // 30 turns at a pitch of 1
-    let plain = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, len, 1.0, 60.0, 0.6, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).expect("without a run-out");
-    let run = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, len, 1.0, 60.0, 0.6, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 1.5, 1.5).expect("with a run-out");
+    let plain = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: len, pitch: 1.0, angle_deg: 60.0, depth: 0.6, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).expect("without a run-out");
+    let run = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: len, pitch: 1.0, angle_deg: 60.0, depth: 0.6, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 1.5, lead_out: 1.5 }).expect("with a run-out");
     eprintln!("a long thread: full {:.1}, with a run-out {:.1}", plain.volume(), run.volume());
     assert!(run.volume() > plain.volume(), "the run-out left the turns at the ends, the depth melting and material remaining");
     assert!(run.volume() < cyl.volume(), "but the thread is cut, material being removed in the middle");
@@ -181,7 +181,7 @@ fn long_thread_builds_via_segmentation() {
     for (len, pitch) in [(30.0, 1.0), (50.0, 1.0)] {
         let turns = len / pitch;
         let cyl = Shape::cylinder(5.0, len + 4.0).expect("the cylinder");
-        let thr = cyl.thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, len, pitch, 60.0, 0.6, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0);
+        let thr = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: len, pitch: pitch, angle_deg: 60.0, depth: 0.6, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 });
         eprintln!("{turns:.0} turns: {}", if thr.is_some() { "built" } else { "failed" });
         let thr = thr.unwrap_or_else(|| panic!("a thread of {turns:.0} turns has to build, through segmentation"));
         assert!(thr.volume() > 0.0 && thr.volume() < cyl.volume(), "material was removed");

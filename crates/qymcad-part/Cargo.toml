@@ -1,0 +1,23 @@
+[package]
+name = "qymcad-part"
+version = "0.1.0"
+edition = "2021"
+
+# THE PART WORKBENCH. The feature commands - extrude, revolve, sweep, loft, fillet, chamfer, shell, the
+# array, the thread, the hole, the split - their option bars, their popups at the geometry and their
+# previews. It works over `PartCtx` and asks nothing of the application.
+#
+# It does not depend on the Sketch nor on the Assembly: what the three have in common lives in the modules
+# below them (the records, the picking, the drawing).
+[dependencies]
+egui = "0.35"
+egui-phosphor = "0.11"
+qymcad-core = { path = "../qymcad-core" }
+qymcad-ui-state = { path = "../qymcad-ui-state" }
+qymcad-pick = { path = "../qymcad-pick" }
+qymcad-render = { path = "../qymcad-render" }
+qymcad-i18n = { path = "../qymcad-i18n" }
+qymcad-scheme = { path = "../qymcad-scheme" }
+
+[lints]
+workspace = true

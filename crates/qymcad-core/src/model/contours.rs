@@ -35,6 +35,22 @@ impl std::ops::Deref for Contours {
     }
 }
 
+/// THE FOUR LISTS A CONTOUR SET IS MADE OF, borrowed for writing to a file.
+///
+/// It used to be a four-place tuple, and the file writer read it as `parts.0`, `parts.1`, `parts.2` -
+/// numbers that say nothing about which list is which, in the one place where getting them the wrong way
+/// round would write a broken document.
+pub(crate) struct ContourParts<'a> {
+    /// The contours themselves, in order.
+    pub list: &'a [Contour],
+    /// Their stable ids, parallel to `list`.
+    pub ids: &'a [Id],
+    /// Which entities each contour is made of.
+    pub ents: &'a Map<Id, Vec<Id>>,
+    /// Which contour each one sits inside, for the nesting.
+    pub parent: &'a Map<Id, Id>,
+}
+
 impl Contours {
     /// Assemble from the flat lists when reading a file. The lengths are levelled: a contour without an id
     /// means a damaged file, and it is better lost here than spread further through the document.
@@ -43,8 +59,8 @@ impl Contours {
         Self { list: list.into_iter().take(n).collect(), ids: ids.into_iter().take(n).collect(), ents, parent }
     }
 
-    pub(crate) fn parts(&self) -> (&[Contour], &[Id], &Map<Id, Vec<Id>>, &Map<Id, Id>) {
-        (&self.list, &self.ids, &self.ents, &self.parent)
+    pub(crate) fn parts(&self) -> ContourParts<'_> {
+        ContourParts { list: &self.list, ids: &self.ids, ents: &self.ents, parent: &self.parent }
     }
 
     pub fn ids(&self) -> &[Id] {

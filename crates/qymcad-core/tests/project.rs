@@ -1,14 +1,8 @@
 //! Tests of the project model: the operation tree, automatic side selection, serialisation and tabs.
 
 use qymcad_core::geom::{circle_contour, Contour, Point2};
-use qymcad_core::ir::{DrillKind, Move};
-use qymcad_core::model::{from_ron, to_ron, OpKind, OperationDef, Project, SideMode};
-use qymcad_core::ops::{Heights, Passes, Ramp, Tabs};
-use qymcad_core::tool::{Tool, ToolType};
+use qymcad_core::model::{from_ron, to_ron, Project};
 
-fn endmill(n: u32, d: f64) -> Tool {
-    Tool { number: n, name: format!("EM{d}"), kind: ToolType::FlatEnd, diameter: d, corner_radius: 0.0, flutes: 2, v_angle: None }
-}
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Contour {
     Contour::closed(vec![
@@ -34,43 +28,13 @@ fn sketch_groups_and_removes_contours() {
     assert_eq!(p.loose_contour_ids(), vec![loose]);
     assert_eq!(p.sketch_of_contour(p.sketches[si].contour_ids[0]), Some(sk));
 
-    // an operation references a contour of the sketch
-    let cref = p.sketches[si].contour_ids[1];
-    let mut op = OperationDef::new("Drill", 1, OpKind::Drill { cycle: DrillKind::Drill, peck: None, dwell: None });
-    op.selection = vec![cref];
-    p.operations.push(op);
-
-    // remove the sketch: its contours and the reference are gone, the loose contour survives
+    // remove the sketch: its contours are gone, the loose contour survives
     p.remove_sketch(si);
     assert_eq!(p.sketches.len(), 0);
     assert_eq!(p.contours.len(), 1, "only the loose contour is left");
-    assert_eq!(p.contour_index(loose).map(|i| i), Some(0));
-    assert!(p.operations[0].selection.is_empty(), "the reference to the removed contour is cleared");
+    assert_eq!(p.contour_index(loose), Some(0));
 }
 
-/// Setups: operations are ordered by setup and are tagged with the work coordinate system.
-#[test]
-fn setups_order_and_tag_wcs() {
-    use qymcad_core::model::{Setup, Wcs};
-    let mut p = Project::default();
-    p.set_contours(vec![rect(0.0, 0.0, 40.0, 40.0)]);
-    p.tools = vec![endmill(1, 6.0)];
-    p.setups = vec![Setup { name: "A".into(), wcs: Wcs::G54 }, Setup { name: "B".into(), wcs: Wcs::G55 }];
-
-    // op0 belongs to setup B (G55) and op1 to setup A (G54); the output order is A then B
-    let mut o0 = OperationDef::new("P0", 1, OpKind::Engrave);
-    o0.setup = 1;
-    o0.heights.bottom = -1.0;
-    let mut o1 = OperationDef::new("P1", 1, OpKind::Engrave);
-    o1.setup = 0;
-    o1.heights.bottom = -1.0;
-    p.operations = vec![o0, o1];
-
-    let prog = p.build_program("x");
-    assert_eq!(prog.toolpaths.len(), 2, "two toolpaths");
-    assert_eq!(prog.toolpaths[0].meta.wcs, 54, "setup A (G54) comes out first");
-    assert_eq!(prog.toolpaths[1].meta.wcs, 55, "setup B (G55) comes second");
-}
 
 /// A typed sketch: editing a point re-tessellates the contour while the contour id stays the same.
 #[test]
@@ -82,15 +46,10 @@ fn typed_sketch_point_edit_regens() {
     let cid = p.sketches[si].contour_ids[0];
     assert_eq!(p.contours[p.contour_index(cid).unwrap()].points.len(), 3, "three points in the contour");
 
-    let mut op = OperationDef::new("Eng", 1, OpKind::Engrave);
-    op.selection = vec![cid];
-    p.operations.push(op);
-
     p.sketches[si].points[1].x = 20.0; // move the second point
     p.regen_sketch(si);
     let c = &p.contours[p.contour_index(cid).unwrap()];
     assert!((c.points[1].x - 20.0).abs() < 1e-9, "the point is updated in the contour");
-    assert_eq!(p.operations[0].selection, vec![cid], "associativity: the contour id is preserved");
 }
 
 /// Importing DXF or SVG produces an editable sketch built from exact curves: a timeline node in the active
@@ -145,8 +104,8 @@ fn import_sketch_keeps_circle_and_dedups_shared_corners() {
     assert!(closed_areas.iter().any(|a| (a - std::f64::consts::PI * 16.0).abs() < 1.0), "circle of area ~50: {closed_areas:?}");
 }
 
-/// A circle entity: changing the radius through a dimension and the solver regenerates the contour, while the
-/// contour id is preserved, so the operation reference survives.
+/// A circle entity: changing the radius through a dimension and the solver regenerates the contour, while
+/// the contour id is preserved - which is what anything referring to that contour depends on.
 #[test]
 fn entity_circle_regen_keeps_contour_id() {
     use qymcad_core::model::{Constraint, EntityKind};
@@ -155,10 +114,6 @@ fn entity_circle_regen_keeps_contour_id() {
     p.add_circle_entity(si, 0.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real);
     let center = p.sketches[si].entities.iter().find_map(|e| match e.kind { EntityKind::Circle { center, .. } => Some(center), _ => None }).unwrap();
     let cid = p.sketches[si].contour_ids[0];
-    let mut op = OperationDef::new("Bore", 1, OpKind::Bore);
-    op.selection = vec![cid];
-    p.operations.push(op);
-
     let r0 = p.contours[p.contour_index(cid).unwrap()].as_circle().unwrap().1;
     assert!((r0 - 5.0).abs() < 0.2, "the starting radius is ~5, got {r0}");
 
@@ -168,194 +123,25 @@ fn entity_circle_regen_keeps_contour_id() {
 
     let r1 = p.contours[p.contour_index(cid).unwrap()].as_circle().unwrap().1;
     assert!((r1 - 12.0).abs() < 0.3, "the radius is updated to ~12, got {r1}");
-    assert_eq!(p.operations[0].selection, vec![cid], "associativity: the contour id is preserved");
 }
 
-/// A slot cuts along the centreline of an open contour, one Z layer at a time.
-#[test]
-fn slot_cuts_centerline_in_layers() {
-    let mut p = Project::default();
-    p.set_contours(vec![Contour::open(vec![Point2::new(0.0, 0.0), Point2::new(50.0, 0.0)])]);
-    p.tools = vec![endmill(1, 6.0)];
-    let mut op = OperationDef::new("Slot", 1, OpKind::Slot);
-    op.heights = Heights { clearance: 5.0, retract: 2.0, top: 0.0, bottom: -3.0 };
-    op.passes = Passes { stepdown: 1.0, stepover: 3.0, stock_to_leave: 0.0 };
-    p.operations.push(op);
 
-    let tp = &p.build_program("s").toolpaths[0];
-    let levels: std::collections::BTreeSet<i64> = tp.moves.iter().filter_map(|m| match m {
-        Move::Linear { to, .. } => Some((to.z * 10.0).round() as i64),
-        _ => None,
-    }).collect();
-    assert!(levels.len() >= 3, "several Z layers, found {}", levels.len());
-    let on_line = tp.moves.iter().any(|m| matches!(m, Move::Linear { to, .. } if to.y.abs() < 1e-6 && (to.x - 50.0).abs() < 1e-6));
-    assert!(on_line, "cuts along the centreline towards (50,0)");
-}
 
-/// A finish pass adds a clean-up lap on size, so there are more moves than without it.
-#[test]
-fn finish_pass_adds_clean_pass() {
-    let make = |finish: bool| {
-        let mut p = Project::default();
-        p.set_contours(vec![rect(0.0, 0.0, 40.0, 40.0)]);
-        p.tools = vec![endmill(1, 6.0)];
-        let mut op = OperationDef::new("Profile", 1, OpKind::Contour { side: SideMode::Outside, tabs: Tabs::default(), ramp: Ramp::default(), climb: true, finish });
-        op.heights = Heights { clearance: 5.0, retract: 2.0, top: 0.0, bottom: -2.0 };
-        op.passes = Passes { stepdown: 1.0, stepover: 3.0, stock_to_leave: 0.5 };
-        p.operations.push(op);
-        let prog = p.build_program("x");
-        prog.toolpaths[0].moves.iter().filter(|m| matches!(m, Move::Linear { .. })).count()
-    };
-    let no_finish = make(false);
-    let with_finish = make(true);
-    assert!(with_finish > no_finish, "the finish pass adds moves: {with_finish} > {no_finish}");
-}
 
-/// An outer frame with a hole inside it: `Auto` has to cut the frame from the outside and the hole from the
-/// inside. Checked through `build_program` with two operations.
-#[test]
-fn auto_side_by_nesting_and_multi_op() {
-    let mut p = Project::default();
-    p.set_contours(vec![rect(0.0, 0.0, 100.0, 60.0), rect(40.0, 25.0, 60.0, 35.0)]);
-    let hole_id = p.contour_id(1).unwrap();
-    p.tools = vec![endmill(1, 6.0), endmill(2, 5.0)];
 
-    // operation 1: contour both, with the side left on `Auto`
-    let mut contour = OperationDef::new("Profile", 1, OpKind::Contour { side: SideMode::Auto, tabs: Tabs::default(), ramp: Ramp::default() , climb: true, finish: false });
-    contour.heights.bottom = -3.0;
-    p.operations.push(contour);
 
-    // operation 2: drilling at the centre of the hole, with contour #1 selected
-    let mut drill = OperationDef::new("Drill", 2, OpKind::Drill { cycle: DrillKind::Drill, peck: None, dwell: None });
-    drill.selection = vec![hole_id];
-    drill.heights.bottom = -8.0;
-    p.operations.push(drill);
-
-    let prog = p.build_program("part");
-    assert_eq!(prog.toolpaths.len(), 2, "two operations give two toolpaths");
-
-    // the drilling has a cycle over a single point, the hole centre at about (50,30)
-    let drill_tp = &prog.toolpaths[1];
-    let pt = drill_tp.moves.iter().find_map(|m| match m {
-        Move::DrillCycle { points, .. } => points.first().copied(),
-        _ => None,
-    });
-    let pt = pt.expect("drill point");
-    assert!((pt.x - 50.0).abs() < 1.0 && (pt.y - 30.0).abs() < 1.0, "hole centre");
-}
-
-#[test]
-fn bore_spirals_circular_hole() {
-    // a circle of r = 5 bored with a d4 endmill gives a path radius of 5 − 2 = 3
-    let circle = circle_contour(20.0, 20.0, 5.0, 0.05);
-    assert!(circle.as_circle().is_some(), "the circle has to be recognised");
-    assert!(rect(0.0, 0.0, 10.0, 10.0).as_circle().is_none(), "a square is not a circle");
-
-    let mut p = Project::default();
-    p.set_contours(vec![circle]);
-    p.tools = vec![endmill(1, 4.0)];
-    let mut op = OperationDef::new("Bore", 1, OpKind::Bore);
-    op.heights = Heights { clearance: 5.0, retract: 2.0, top: 0.0, bottom: -6.0 };
-    op.passes = Passes { stepdown: 1.0, stepover: 2.0, stock_to_leave: 0.0 };
-    p.operations.push(op);
-
-    let tp = &p.build_program("b").toolpaths[0];
-    let zs: Vec<f64> = tp.moves.iter().filter_map(|m| match m {
-        Move::Linear { to, .. } => Some(to.z),
-        _ => None,
-    }).collect();
-    assert!(!zs.is_empty(), "there has to be a spiral");
-    let zmin = zs.iter().cloned().fold(f64::MAX, f64::min);
-    assert!((zmin + 6.0).abs() < 0.2, "the spiral reaches the bottom at -6, zmin={zmin}");
-    // the path runs at radius 3 around (20,20), so points sit about 3 away from the centre
-    if let Some(Move::Linear { to, .. }) = tp.moves.iter().find(|m| matches!(m, Move::Linear { .. })) {
-        let r = ((to.x - 20.0).powi(2) + (to.y - 20.0).powi(2)).sqrt();
-        assert!((r - 3.0).abs() < 0.5, "path radius ~3, r={r}");
-    }
-}
-
-#[test]
-fn simulate_lowers_stock_where_machined() {
-    // a pocket in a plate: the simulation has to lower the material in the middle
-    let mut p = Project::default();
-    p.set_contours(vec![rect(0.0, 0.0, 40.0, 40.0)]);
-    p.tools = vec![endmill(1, 6.0)];
-    let mut op = OperationDef::new("Pocket", 1, OpKind::Pocket { dogbone: false });
-    op.heights = Heights { clearance: 5.0, retract: 2.0, top: 0.0, bottom: -3.0 };
-    op.passes = Passes { stepdown: 1.5, stepover: 3.0, stock_to_leave: 0.0 };
-    p.operations.push(op);
-
-    let mesh = p.simulate("sim", 1.0).expect("geometry present");
-    // in the middle of the pocket the height drops to about -3 where material was removed, and stays 0 at the top
-    let zmin = mesh.verts.iter().map(|v| v.z).fold(f64::MAX, f64::min);
-    let zmax = mesh.verts.iter().map(|v| v.z).fold(f64::MIN, f64::max);
-    assert!(zmin < -2.0, "material removed down to ~-3, zmin={zmin}");
-    assert!((zmax - 0.0).abs() < 1e-6, "the top of the stock stays at 0, zmax={zmax}");
-}
-
-#[test]
-fn disabled_op_is_skipped() {
-    let mut p = Project::default();
-    p.set_contours(vec![rect(0.0, 0.0, 50.0, 50.0)]);
-    p.tools = vec![endmill(1, 6.0)];
-    let mut op = OperationDef::new("Profile", 1, OpKind::Contour { side: SideMode::Outside, tabs: Tabs::default(), ramp: Ramp::default() , climb: true, finish: false });
-    op.enabled = false;
-    p.operations.push(op);
-    assert_eq!(p.build_program("x").toolpaths.len(), 0);
-}
 
 #[test]
 fn project_roundtrips_through_ron() {
     let mut p = Project::default();
     p.set_contours(vec![circle_contour(10.0, 10.0, 5.0, 0.05)]);
-    p.tools = vec![endmill(1, 3.0)];
-    p.operations.push(OperationDef::new("Engrave", 1, OpKind::Engrave));
 
     let ron = to_ron(&p).expect("serialize");
     let back = from_ron(&ron).expect("deserialize");
     assert_eq!(back.contours.len(), 1);
-    assert_eq!(back.tools.len(), 1);
-    assert_eq!(back.operations.len(), 1);
-    assert!(matches!(back.operations[0].kind, OpKind::Engrave));
 }
 
-#[test]
-fn ramp_descends_gradually_without_plunge() {
-    let mut p = Project::default();
-    p.set_contours(vec![rect(0.0, 0.0, 60.0, 40.0)]);
-    p.tools = vec![endmill(1, 6.0)];
-    let ramp = Ramp { enabled: true, angle_deg: 3.0 };
-    let mut op = OperationDef::new("Profile", 1, OpKind::Contour { side: SideMode::Outside, tabs: Tabs::default(), ramp, climb: true, finish: false });
-    op.heights.bottom = -2.0;
-    op.passes.stepdown = 1.0;
-    p.operations.push(op);
 
-    let tp = &p.build_program("x").toolpaths[0];
-    // ramped entry, with no vertical plunge
-    assert!(!tp.moves.iter().any(|m| matches!(m, Move::Plunge { .. })), "a ramp must not plunge");
-    // there have to be cutting moves at intermediate depths, between 0 and -2
-    let has_mid = tp.moves.iter().any(|m| matches!(m, Move::Linear { to, .. } if to.z < -0.05 && to.z > -1.95));
-    assert!(has_mid, "expected a gradual descent through intermediate Z values");
-}
-
-#[test]
-fn tabs_lift_bottom_pass() {
-    // A through-cut contour with tabs: the bottom pass has to contain points above the floor, at `tab_top`.
-    let mut p = Project::default();
-    p.set_contours(vec![rect(0.0, 0.0, 80.0, 50.0)]);
-    p.tools = vec![endmill(1, 6.0)];
-    let tabs = Tabs { enabled: true, count: 4, width: 6.0, height: 1.5 };
-    let mut op = OperationDef::new("Profile", 1, OpKind::Contour { side: SideMode::Outside, tabs, ramp: Ramp::default() , climb: true, finish: false });
-    op.heights.bottom = -3.0;
-    op.passes.stepdown = 3.0; // a single pass to the bottom
-    p.operations.push(op);
-
-    let prog = p.build_program("part");
-    let tp = &prog.toolpaths[0];
-    // the floor is at -3 and `tab_top` at -1.5, so there have to be linear points with Z ≈ -1.5
-    let has_tab = tp.moves.iter().any(|m| matches!(m, Move::Linear { to, .. } if (to.z + 1.5).abs() < 1e-6));
-    assert!(has_tab, "expected a lift to tab_top (-1.5) over the tabs");
-}
 
 #[test]
 fn p1_root_assembly_and_component_kinds() {

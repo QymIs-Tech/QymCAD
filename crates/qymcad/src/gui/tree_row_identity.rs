@@ -26,10 +26,10 @@ mod tests {
             app.project.add_rect_entity(si, -d, -d, d, d, qymcad_core::feature::Purpose::Real);
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
-            app.sel = Sel::Sketch(si);
+            app.chosen.sel = Sel::Sketch(si);
             app.start_feat_cmd(1);
             app.feat.op = 0;
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = h;
                 p.txt = format!("{h}");
             }

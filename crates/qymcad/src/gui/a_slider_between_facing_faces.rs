@@ -39,8 +39,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(&mut app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         if let Some(o) = app.project.body_owner(mine[0]) {
@@ -52,9 +52,9 @@ mod tests {
 
         let mut hand = Hand::new(&mut app);
         hand.look_at([40.0, 10.0, 5.0], 6.0).mate(JointKind::Slider).anchor(0);
-        app.joint_pick_face_click_for_test(mine[0], ka);
-        app.joint_pick_face_click_for_test(mine[1], kb);
-        app.rebuild_if_dirty();
+        qymcad_assembly::joint_pick_face_click_for_test(&mut app.joint_ctx(), mine[0], ka);
+        qymcad_assembly::joint_pick_face_click_for_test(&mut app.joint_ctx(), mine[1], kb);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let jid = app.project.joints.last().map(|j| j.id).expect("two face picks must create a joint");
         let faults = app.project.joint_faults();

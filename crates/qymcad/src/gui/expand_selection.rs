@@ -160,15 +160,15 @@ impl super::App {
         // THE EDGE UNDER THE CURSOR OUTWEIGHS THE FACE: if a person hovered an edge, they are asking
         // about the edge. One of the two rather than both at once — otherwise the menu would guess at
         // what is meant while a finger is pointing at it.
-        if let Some((e, _b)) = self.gsel.last_edge {
+        if let Some((e, _b)) = self.tools.gsel.last_edge {
             return Some((Picked::Edge(e), [0.0, 0.0, 1.0]));
         }
         // TWO SOURCES, AND THE SECOND IS ESSENTIAL. In the shell and the draft the face lands in
         // `faces`. But in the fillet a click on a face puts its EDGES into the selection, and the face
         // itself is left nowhere — that is exactly where the first edition of the menu stayed silent:
         // it asked `faces`, saw emptiness and did not open.
-        let (f, body) = match (self.gsel.faces.iter().next().copied(), self.gsel.last_face) {
-            (Some(f), _) => (f, self.gsel.faces_body),
+        let (f, body) = match (self.tools.gsel.faces.iter().next().copied(), self.tools.gsel.last_face) {
+            (Some(f), _) => (f, self.tools.gsel.faces_body),
             (None, Some((f, b))) => (f, Some(b)), // without this branch the menu stays silent in the fillet
             _ => return None,
         };
@@ -192,10 +192,10 @@ impl super::App {
     /// The count is part of the answer as well. Push-face and thicken take EXACTLY ONE face: offering
     /// them "all parallel" means offering what the command cannot accept.
     pub(crate) fn expansion_accepts(&self) -> Option<(bool, bool)> {
-        if !matches!(self.workbench, super::Workbench::Part) || !self.cmd.active() {
+        if !matches!(self.workbench, super::Workbench::Part) || !self.tools.armed.commanding() {
             return None;
         }
-        match self.cmd.kind {
+        match self.tools.armed.cmd_kind() {
             4 | 5 => Some((true, true)),           // fillet, chamfer — a set of EDGES
             6 | 23 | 26 => Some((false, true)),    // shell, draft, remove face — a set of FACES
             25 | 28 => Some((false, false)),       // push face, thicken — EXACTLY ONE face
@@ -240,7 +240,7 @@ impl super::App {
         // assembled from one face pointed at.
         if key == "expand-between" {
             if let Query::Id(f) = q {
-                self.gsel.between_first = Some(f);
+                self.tools.gsel.between_first = Some(f);
                 self.status = crate::i18n::tr("expand-between-pick-second");
                 return;
             }
@@ -248,20 +248,20 @@ impl super::App {
         // SHOW THE RESULT AT ONCE. The description is recorded into the document, but what a person
         // sees is the highlight — and if it does not change, they will decide the item did not work. So
         // the query is resolved against the live body right away and the result is highlighted.
-        let body = self.edges.body.or(self.gsel.faces_body).or(self.gsel.last_face.map(|(_, b)| b));
+        let body = self.edges.body.or(self.tools.gsel.faces_body).or(self.tools.gsel.last_face.map(|(_, b)| b));
         if let Some(b) = body {
             let r = qymcad_core::refs::Ref::many(q.clone());
             if q.yields_edges() {
                 if let Ok(ids) = self.project.resolve_edge_refs(b, &r, "ref-what-fillet-edge") {
-                    self.gsel.edges = ids.into_iter().collect();
+                    self.tools.gsel.edges = ids.into_iter().collect();
                 }
             } else if let Ok(ids) = self.project.resolve_face_refs(b, &r, "ref-what-walls") {
-                self.gsel.faces = ids.into_iter().collect();
-                self.gsel.faces_body = Some(b);
+                self.tools.gsel.faces = ids.into_iter().collect();
+                self.tools.gsel.faces_body = Some(b);
             }
         }
-        let n = if q.yields_edges() { self.gsel.edges.len() } else { self.gsel.faces.len() };
-        self.gsel.described = Some(q);
+        let n = if q.yields_edges() { self.tools.gsel.edges.len() } else { self.tools.gsel.faces.len() };
+        self.tools.gsel.described = Some(q);
         self.status = crate::i18n::trn("expand-applied", &[("what", &crate::i18n::tr(key)), ("n", &n.to_string())]);
     }
 }

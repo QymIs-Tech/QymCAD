@@ -21,14 +21,14 @@ mod tests {
         app.project.add_circle_entity(si, 0.0, 0.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app
     }
 
@@ -63,9 +63,9 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         let mut author = plate_with(GeomQuality::Fine);
-        author.set_project_path(path.clone());
-        author.save_project_for_test();
-        author.wait_bg_for_test();
+        crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
+        author.save_project();
+        author.wait_bg();
         let want = tris(&author);
 
         // "another machine": the program settings differ in everything unrelated to the geometry
@@ -83,7 +83,7 @@ mod tests {
                 n.dirty = true;
             }
         }
-        other.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut other.rebuild_ctx());
         other.drain_busy_for_test();
         assert_eq!(tris(&other), want, "the same file gave DIFFERENT geometry: {} against {want}", tris(&other));
         let _ = std::fs::remove_file(&path);

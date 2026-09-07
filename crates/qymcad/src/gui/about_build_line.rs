@@ -10,6 +10,7 @@
 //! frame's own reading of the input and prove nothing about what a person can reach.
 #[cfg(test)]
 mod tests {
+    use crate::gui::WinKind;
     const SCREEN: egui::Vec2 = egui::vec2(1400.0, 900.0);
 
     fn raw() -> egui::RawInput {
@@ -38,12 +39,12 @@ mod tests {
     #[test]
     fn the_about_window_names_the_build() {
         let mut app = crate::gui::screen_keys::tests::populated();
-        app.win.about = true;
+        app.win.open(WinKind::About);
 
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        let _ = ctx.run_ui(raw(), |c| app.about_dialog(c)); // the first frame lays the window out
-        let out = ctx.run_ui(raw(), |c| app.about_dialog(c.ctx()));
+        let _ = ctx.run_ui(raw(), |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c)); // the first frame lays the window out
+        let out = ctx.run_ui(raw(), |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c.ctx()));
 
         let painted = texts(&out.shapes);
         let line = crate::build_info::line();
@@ -57,12 +58,12 @@ mod tests {
     #[test]
     fn the_button_hands_the_details_over() {
         let mut app = crate::gui::screen_keys::tests::populated();
-        app.win.about = true;
+        app.win.open(WinKind::About);
 
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
-        let _ = ctx.run_ui(raw(), |c| app.about_dialog(c.ctx()));
-        let out = ctx.run_ui(raw(), |c| app.about_dialog(c.ctx()));
+        let _ = ctx.run_ui(raw(), |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c.ctx()));
+        let out = ctx.run_ui(raw(), |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c.ctx()));
 
         // The copy button carries the icon glyph as its whole label, so it is found by that glyph.
         let icon = egui_phosphor::regular::COPY;
@@ -79,7 +80,7 @@ mod tests {
             ],
             ..raw()
         };
-        let _ = ctx.run_ui(press, |c| app.about_dialog(c.ctx()));
+        let _ = ctx.run_ui(press, |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c.ctx()));
         let release = egui::RawInput {
             events: vec![egui::Event::PointerButton {
                 pos: spot,
@@ -89,7 +90,7 @@ mod tests {
             }],
             ..raw()
         };
-        let out = ctx.run_ui(release, |c| app.about_dialog(c.ctx()));
+        let out = ctx.run_ui(release, |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c.ctx()));
 
         // THE CLIPBOARD IS A COMMAND NOW, not a field: since egui 0.30 the frame reports what it did as a
         // list, and copying is one entry in it. Reading the old field would have silently found nothing.

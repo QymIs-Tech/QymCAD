@@ -7,6 +7,15 @@
 //! the settings table).
 #[cfg(test)]
 mod tests {
+
+    /// THE SAME DOOR THE APPLICATION USES. The tree stopped opening its own container when the shell took
+    /// the places over, so calling `tree_panel` here drew the contents into nothing and every width came
+    /// back as zero - a check that goes in by a door the program does not have measures nothing.
+    fn draw_left(app: &mut crate::gui::App, ui: &mut egui::Ui) {
+        let shell = crate::gui::shell(&app.set);
+        shell.run_slot(qymcad_shell::Slot::Left, ui, app);
+    }
+
     use super::super::{App, Sel};
     use qymcad_core::feature::SketchPlane;
 
@@ -17,9 +26,9 @@ mod tests {
         app.project.add_rect_entity(si, -20.0, -20.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
@@ -28,13 +37,13 @@ mod tests {
         let edges: Vec<u32> = app.project.regen_edges.get(&body).map(|es| es.iter().take(2).map(|e| e.id).collect()).unwrap_or_default();
         if !edges.is_empty() {
             app.project.add_fillet(body, 2.0, edges);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         }
     }
 
     /// The indices of the timeline rows that fall under the search.
     fn matching(app: &App) -> Vec<usize> {
-        (0..app.project.timeline.len()).filter(|&ti| !app.feature_row_label(ti).is_empty() && app.tree_row_matches(ti)).collect()
+        (0..app.project.timeline.len()).filter(|&ti| !crate::gui::panels_tree::feature_row_label(&app.project, ti).is_empty() && crate::gui::panels_tree::tree_row_matches(&app.project, &app.tree, ti)).collect()
     }
 
     /// AN EMPTY QUERY SHOWS EVERYTHING — the search must not hide anything of its own accord.
@@ -44,7 +53,7 @@ mod tests {
         part(&mut app);
         let all = matching(&app);
         assert!(all.len() >= 2, "setup: at least two features were expected, and out came {}", all.len());
-        app.set_tree_search_for_test("   ");
+        app.tree.search = ("   ").to_string();
         assert_eq!(matching(&app), all, "a query of spaces must show everything rather than hide the tree");
     }
 
@@ -54,12 +63,12 @@ mod tests {
         let mut app = App::default();
         part(&mut app);
         let rows = matching(&app);
-        let sample = rows.iter().copied().find(|&ti| !app.feature_row_label(ti).is_empty()).expect("at least one row");
-        let label = app.feature_row_label(sample);
+        let sample = rows.iter().copied().find(|&ti| !crate::gui::panels_tree::feature_row_label(&app.project, ti).is_empty()).expect("at least one row");
+        let label = crate::gui::panels_tree::feature_row_label(&app.project, sample);
         // a word from the label is taken — that is how people type
         let word = label.split_whitespace().find(|w| w.chars().any(|c| c.is_alphabetic())).expect("a word in the label").to_string();
 
-        app.set_tree_search_for_test(&word);
+        app.tree.search = (&word).to_string();
         let got = matching(&app);
         assert!(got.contains(&sample), "the feature \"{label}\" was not found by the word \"{word}\" from its own label");
     }
@@ -70,10 +79,10 @@ mod tests {
         let mut app = App::default();
         part(&mut app);
         let sample = *matching(&app).first().expect("at least one row");
-        let label = app.feature_row_label(sample);
+        let label = crate::gui::panels_tree::feature_row_label(&app.project, sample);
         let word = label.split_whitespace().find(|w| w.chars().any(|c| c.is_alphabetic())).expect("a word").to_string();
 
-        app.set_tree_search_for_test(&word.to_uppercase());
+        app.tree.search = (&word.to_uppercase()).to_string();
         assert!(matching(&app).contains(&sample), "the search for \"{}\" did not find \"{label}\" — case must not get in the way", word.to_uppercase());
     }
 
@@ -85,7 +94,7 @@ mod tests {
         let ti = *matching(&app).first().expect("at least one row");
         app.project.timeline[ti].name = "Gearbox cover".into();
 
-        app.set_tree_search_for_test("gearbox");
+        app.tree.search = ("gearbox").to_string();
         let got = matching(&app);
         assert!(got.contains(&ti), "a feature named by a person must be found by their word");
         assert_eq!(got.len(), 1, "that word must find exactly it, and {} were found", got.len());
@@ -97,7 +106,7 @@ mod tests {
     fn a_query_that_matches_nothing_shows_nothing() {
         let mut app = App::default();
         part(&mut app);
-        app.set_tree_search_for_test("zzqqxx");
+        app.tree.search = ("zzqqxx").to_string();
         assert!(matching(&app).is_empty(), "for nonsense the tree must be empty rather than show \"something similar\"");
     }
 
@@ -114,9 +123,17 @@ mod tests {
         // the boundary is taken at the NEXT function rather than as a window of N characters: a window
         // drifts into neighbouring code and starts judging it — the first version turned red on somebody
         // else's `match` for exactly that reason.
-        let end = code[row + 10..].find("\n    pub(super) fn ").map(|i| row + 10 + i).unwrap_or(code.len());
+        // the boundary is the function's OWN closing brace at column zero, not the next `fn` written a
+        // particular way: the rows were methods once and are free functions now, and the guard must not
+        // care which
+        let end = code[row + 10..].find("\n}\n").map(|i| row + 10 + i).unwrap_or(code.len());
         let body = &code[row..end];
-        assert!(body.contains("self.feature_row_label(ti)"), "the tree row must take its label from `feature_row_label` — the search goes by the same one");
+        // THE NEEDLE CARRIES NO PATH: inside its own module the function is called by its bare name, from
+        // another one by the full path, and which of the two appears here says nothing about the rule.
+        assert!(
+            crate::gui::render_source::dense(body).contains("feature_row_label("),
+            "the tree row must take its label from `feature_row_label` — the search goes by the same one"
+        );
         assert!(!body.contains("match kind {"), "the label is being assembled in the row by its own code again — the search will diverge from the tree");
     }
 
@@ -145,7 +162,7 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let width = |app: &mut App| -> f32 {
-            let _ = ctx.run_ui(input.clone(), |c| app.tree_panel(c));
+            let _ = ctx.run_ui(input.clone(), |c| draw_left(app, c));
             egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.outer_rect.width()).unwrap_or(0.0)
         };
 
@@ -154,9 +171,9 @@ mod tests {
 
         // the query is typed letter by letter, as a person does, and a frame is built after each letter
         for ch in "extrusion".chars() {
-            let mut q = app.tree_search_for_test();
+            let mut q = app.tree.search.clone();
             q.push(ch);
-            app.set_tree_search_for_test(&q);
+            app.tree.search = (&q).to_string();
             let w = width(&mut app);
             assert!(
                 w <= base + 1.0,
@@ -190,8 +207,8 @@ mod tests {
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run_ui(input.clone(), |c| app.tree_panel(c));
-        let _ = ctx.run_ui(input, |c| app.tree_panel(c));
+        let _ = ctx.run_ui(input.clone(), |c| draw_left(&mut app, c));
+        let _ = ctx.run_ui(input, |c| draw_left(&mut app, c));
 
         let field = ctx.read_response(egui::Id::new("tree_search_field")).expect("the search field must be in the frame");
         let panel = egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.outer_rect.width()).unwrap_or(0.0);
@@ -229,8 +246,8 @@ mod tests {
         let shown = |app: &mut App| -> Vec<String> {
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx);
-            let _ = ctx.run_ui(input.clone(), |c| app.tree_panel(c));
-            let out = ctx.run_ui(input.clone(), |c| app.tree_panel(c));
+            let _ = ctx.run_ui(input.clone(), |c| draw_left(app, c));
+            let out = ctx.run_ui(input.clone(), |c| draw_left(app, c));
             let mut t = Vec::new();
             for cs in &out.shapes {
                 collect(&cs.shape, &mut t);
@@ -242,7 +259,7 @@ mod tests {
         assert!(all.iter().any(|s| s.contains("Arm Body")), "setup: the part \"Arm Body\" must be in the tree: {all:?}");
         assert!(all.iter().any(|s| s.contains("Wheel")), "setup: the part \"Wheel\" must be in the tree");
 
-        app.set_tree_search_for_test("arm");
+        app.tree.search = ("arm").to_string();
         let got = shown(&mut app);
         assert!(got.iter().any(|s| s.contains("Arm Body")), "the search for \"arm\" must KEEP the part \"Arm Body\": {got:?}");
         assert!(!got.iter().any(|s| s.contains("Wheel")), "the search for \"arm\" must REMOVE the part \"Wheel\" — otherwise it does not filter components: {got:?}");
@@ -270,12 +287,12 @@ mod tests {
         let part_id = app.project.add_part("Arm Body");
         app.enter_ctx_for_test(root);
 
-        app.set_tree_search_for_test("arm");
-        app.enter_component_for_test(part_id);
-        assert!(app.tree_search_for_test().is_empty(), "entering a part must reset the query — it was about the assembly");
+        app.tree.search = ("arm").to_string();
+        app.enter_component(part_id);
+        assert!(app.tree.search.clone().is_empty(), "entering a part must reset the query — it was about the assembly");
 
-        app.set_tree_search_for_test("extrusion");
-        app.exit_context_for_test();
-        assert!(app.tree_search_for_test().is_empty(), "leaving a part must reset the query — it was about its features");
+        app.tree.search = ("extrusion").to_string();
+        app.exit_context();
+        assert!(app.tree.search.clone().is_empty(), "leaving a part must reset the query — it was about its features");
     }
 }

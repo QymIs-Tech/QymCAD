@@ -57,61 +57,62 @@ impl App {
 
     /// Hold `rx` and the continuation until [`App::poll_file_ask`] picks the answer up.
     pub(crate) fn arm_file_ask(&mut self, rx: Receiver<Option<PathBuf>>, then: impl FnOnce(&mut App, PathBuf) + 'static) {
-        self.file_ask = Some(FileAsk { rx, then: Box::new(then) });
+        self.disk.file_ask = Some(FileAsk { rx, then: Box::new(then) });
     }
 
     /// Is a chooser open? Asked before putting one up, because the frames now keep running while one is
     /// answered: a menu is still clickable behind the system window, and a second chooser would take the
     /// slot from the first - whose own answer would then arrive with nothing left to do it with.
     pub(crate) fn asking_for_a_file(&self) -> bool {
-        self.file_ask.is_some()
+        self.disk.file_ask.is_some()
     }
 
-    /// THE PROGRAM GOES INERT WHILE THE SYSTEM IS ASKING FOR A FILE.
-    ///
-    /// The chooser no longer holds the frame thread, which is the point - but that also means the window
-    /// behind it goes on drawing and would otherwise go on ACCEPTING. A menu is clickable through it, a
-    /// hotkey fires, and "new project" can be started underneath an open "open project", which lands the
-    /// answer to the chooser in a document that is no longer the one it was opened from.
-    ///
-    /// A system chooser is a modal window and owns the interaction until it is answered, so for as long as
-    /// it is up everything here is greyed and deaf: the widgets of the frame are disabled, the panes drawn
-    /// straight onto the context are covered by a barrier that eats clicks, and whatever was taking typing
-    /// has its focus taken away.
-    pub(crate) fn inert_while_choosing(&self, ui: &mut egui::Ui) {
-        ui.disable();
-        ui.ctx().memory_mut(|m| m.stop_text_input());
-        let screen = ui.ctx().viewport_rect();
-        // ABOVE `Foreground`, where the menus and the barriers of a rebuild live: a barrier level with what
-        // it is meant to cover decides nothing.
-        egui::Area::new(egui::Id::new("file_chooser_barrier"))
-            .order(egui::Order::Tooltip)
-            .fixed_pos(screen.min)
-            .interactable(true)
-            .show(ui.ctx(), |ui| {
-                ui.allocate_response(screen.size(), egui::Sense::click_and_drag());
-            });
-    }
 
     /// Once a frame: run the continuation if the answer has landed. Returns whether a chooser is still open,
     /// which is what keeps the frames coming - egui sleeps between events, and the answer arrives from a
     /// thread, which is not an event it knows about.
     pub(crate) fn poll_file_ask(&mut self) -> bool {
-        let Some(ask) = &self.file_ask else { return false };
+        let Some(ask) = &self.disk.file_ask else { return false };
         match ask.rx.try_recv() {
             Err(TryRecvError::Empty) => return true,
             // the answer, or a worker that died without one (which is a cancellation as far as anyone here
             // can tell): either way the slot is freed, so a chooser is never left blocking the next one
             Ok(answer) => {
-                let ask = self.file_ask.take().expect("the chooser was there a line ago");
+                let ask = self.disk.file_ask.take().expect("the chooser was there a line ago");
                 if let Some(path) = answer {
                     (ask.then)(self, path);
                 }
             }
-            Err(TryRecvError::Disconnected) => self.file_ask = None,
+            Err(TryRecvError::Disconnected) => self.disk.file_ask = None,
         }
         false
     }
+}
+
+/// THE PROGRAM GOES INERT WHILE THE SYSTEM IS ASKING FOR A FILE.
+///
+/// The chooser no longer holds the frame thread, which is the point - but that also means the window
+/// behind it goes on drawing and would otherwise go on ACCEPTING. A menu is clickable through it, a
+/// hotkey fires, and "new project" can be started underneath an open "open project", which lands the
+/// answer to the chooser in a document that is no longer the one it was opened from.
+///
+/// A system chooser is a modal window and owns the interaction until it is answered, so for as long as
+/// it is up everything here is greyed and deaf: the widgets of the frame are disabled, the panes drawn
+/// straight onto the context are covered by a barrier that eats clicks, and whatever was taking typing
+/// has its focus taken away.
+pub(crate) fn inert_while_choosing(ui: &mut egui::Ui) {
+    ui.disable();
+    ui.ctx().memory_mut(|m| m.stop_text_input());
+    let screen = ui.ctx().viewport_rect();
+    // ABOVE `Foreground`, where the menus and the barriers of a rebuild live: a barrier level with what
+    // it is meant to cover decides nothing.
+    egui::Area::new(egui::Id::new("file_chooser_barrier"))
+        .order(egui::Order::Tooltip)
+        .fixed_pos(screen.min)
+        .interactable(true)
+        .show(ui.ctx(), |ui| {
+            ui.allocate_response(screen.size(), egui::Sense::click_and_drag());
+        });
 }
 
 #[cfg(test)]
@@ -191,9 +192,11 @@ mod tests {
     /// responding" defect. Fifteen call sites carried it; this counts them and holds the count at zero.
     #[test]
     fn no_blocking_file_dialog_in_the_interface() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        // EVERY CRATE, for the reason in D20: half the interface now lives outside this one, and a
+        // blocking chooser opened from a workbench stops the same frame thread.
+        let root = qymcad_i18n::ratchet::crates_root();
         let mut guilty: Vec<String> = Vec::new();
-        let mut stack = vec![root.clone()];
+        let mut stack = qymcad_i18n::ratchet::every_crate_src();
         while let Some(dir) = stack.pop() {
             for e in std::fs::read_dir(&dir).expect("the sources are readable").flatten() {
                 let p = e.path();
@@ -231,18 +234,21 @@ mod tests {
 /// usable behind the system window. Somebody can put up an export chooser, click back into the model,
 /// change a dimension, and answer the chooser while the rebuild that edit started is still running. The
 /// export and the rebuild both want the one modal slot, and the loser used to be dropped without a word.
+
+
+
 #[cfg(test)]
 mod exporting_over_a_rebuild {
     use crate::gui::App;
 
     /// A background job in the modal slot, standing in for a rebuild in flight. The sender is handed back
     /// so the test holds it: a dropped one would read as a job that has already finished.
-    fn rebuilding(app: &mut App) -> std::sync::mpsc::Sender<crate::gui::JobResult> {
+    fn rebuilding(app: &mut App) -> std::sync::mpsc::Sender<qymcad_ui_state::JobResult> {
         let (tx, rx) = std::sync::mpsc::channel();
-        app.regen.busy = Some(crate::gui::Busy {
+        app.regen.busy = Some(qymcad_ui_state::Busy {
             label: "rebuild".into(),
             rx,
-            kind: crate::gui::BgKind::Regen,
+            kind: qymcad_ui_state::BgKind::Regen,
             pulse: None,
             quiet: false,
         });
@@ -258,10 +264,10 @@ mod exporting_over_a_rebuild {
 
         let mut app = App::default();
         let _job = rebuilding(&mut app);
-        app.write_step_to(&path, &[], "");
+        crate::gui::io_jobs::write_step_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &[], "");
 
         assert!(
-            matches!(&app.regen.busy, Some(b) if b.kind == crate::gui::BgKind::Regen),
+            matches!(&app.regen.busy, Some(b) if b.kind == qymcad_ui_state::BgKind::Regen),
             "the rebuild lost the modal slot - its result would then never land"
         );
         assert_eq!(app.status, crate::i18n::tr("io-export-busy"), "the refusal has to be said out loud, not swallowed");
@@ -273,8 +279,8 @@ mod exporting_over_a_rebuild {
     fn the_stl_export_waits_its_turn_too() {
         let mut app = App::default();
         let _job = rebuilding(&mut app);
-        app.write_stl_to(std::path::Path::new("/tmp/qym-never-written.stl"), &[], "", 0.1);
-        assert!(matches!(&app.regen.busy, Some(b) if b.kind == crate::gui::BgKind::Regen));
+        crate::gui::io_jobs::write_stl_to(qymcad_ui_state::editing_of!(app), &mut app.live, std::path::Path::new("/tmp/qym-never-written.stl"), &[], "", 0.1);
+        assert!(matches!(&app.regen.busy, Some(b) if b.kind == qymcad_ui_state::BgKind::Regen));
         assert_eq!(app.status, crate::i18n::tr("io-export-busy"));
     }
 }

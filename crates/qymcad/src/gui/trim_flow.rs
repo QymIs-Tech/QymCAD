@@ -25,14 +25,14 @@ mod tests {
     fn plate_sheet_tool() -> (App, u64, u64) {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
         }
         let top = app.project.regen_faces[&body].iter().find(|f| f.normal[2] > 0.9).map(|f| f.id).expect("the top");
         let sheet = app.project.add_face_copy(body, qymcad_core::refs::Ref::one(top, qymcad_core::refs::Fingerprint::default()));
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // the tool: a box covering half the sheet
         let bb = bbox(&app, sheet);
@@ -44,14 +44,14 @@ mod tests {
         let sid = app.project.sketches[si].id;
         let cid = app.project.sketches[si].contour_ids.iter().copied().find(|c| app.project.contour_profile_xy(*c).is_some()).expect("the contour of the tool");
         let tool = app.project.add_extrude_multi(sid, vec![cid], bb[5] + 20.0, qymcad_core::feature::Reach::Forward, 0.0, vec![]);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         (app, sheet, tool)
     }
 
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::gui::panels_source::PANELS.contains("self.start_feat_cmd(34)"), "without a button the tool does not exist for a person");
+        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(34)"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH TO THE TIMELINE: what is cut + where to keep + what cuts -> a node with that
@@ -60,14 +60,14 @@ mod tests {
     fn what_is_picked_reaches_the_timeline() {
         let (mut app, sheet, tool) = plate_sheet_tool();
         app.start_feat_cmd(34);
-        assert_eq!(app.cmd.kind, 34, "the command must open");
+        assert_eq!(app.tools.armed.cmd_kind(), 34, "the command must open");
 
         let bb = bbox(&app, sheet);
         let keep = [bb[0] + 1.0, (bb[1] + bb[4]) * 0.5, bb[5]]; // by the left edge — the part that stays
-        app.trim.keep = Some((sheet, keep));
-        app.trim.tool = Some(tool);
+        app.side.trim.keep = Some((sheet, keep));
+        app.side.trim.tool = Some(tool);
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let node = app
             .project
@@ -82,7 +82,7 @@ mod tests {
         assert_eq!(node.2, tool, "and by THE body that was chosen as the tool");
         assert!((node.3[0] - keep[0]).abs() < 1e-9, "the \"keep\" point must reach the node as it is: {:?} instead of {keep:?}", node.3);
         assert!(!app.project.regen_errors.contains_key(&node.0), "the trim must build: {:?}", app.project.regen_errors.get(&node.0));
-        assert!(app.trim.keep.is_none() && app.trim.tool.is_none(), "after applying, the selection must be cleared — otherwise it leaks into the next command");
+        assert!(app.side.trim.keep.is_none() && app.side.trim.tool.is_none(), "after applying, the selection must be cleared — otherwise it leaks into the next command");
     }
 
     /// WITHOUT ONE OF THE TWO INPUTS — A NAMED REFUSAL rather than silent nothing.
@@ -94,7 +94,7 @@ mod tests {
         app.apply_feat_cmd();
         assert_eq!(app.status, crate::i18n::tr("msg-trim-pick-sheet"), "without a surface the reason must be said out loud");
 
-        app.trim.keep = Some((sheet, [0.0, 0.0, 0.0]));
+        app.side.trim.keep = Some((sheet, [0.0, 0.0, 0.0]));
         app.apply_feat_cmd();
         assert_eq!(app.status, crate::i18n::tr("msg-trim-pick-tool"), "without a tool it is a reason too, not silence");
         assert_eq!(app.project.timeline.len(), before, "the feature must not be created without both inputs");
@@ -104,12 +104,12 @@ mod tests {
     #[test]
     fn the_tool_shows_what_is_picked() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("} else if self.cmd.kind == 34 {").expect("the trim must have a drawing block of its own");
-        let b = src[a..].find("} else if self.cmd.kind == 33 {").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("} else if pn.armed.cmd_kind() == 34 {").expect("the trim must have a drawing block of its own");
+        let b = src[a..].find("} else if pn.armed.cmd_kind() == 33 {").map(|i| a + i).unwrap_or(src.len());
         let blk = &src[a..b];
         assert!(blk.contains("egui::Mesh::default()"), "the picked bodies must be highlighted with a fill");
         assert!(blk.contains("circle_filled"), "the place of the click must be visible: it is what decides which piece stays");
-        assert!(include_str!("pick.rs").contains("if self.cmd.kind == 34 {"), "a click must pick something");
+        assert!(crate::gui::sketch_source::PICK.contains("if self.tools.armed.cmd_kind() == 34 {"), "a click must pick something");
     }
 
     /// The strings of the tool are translated.

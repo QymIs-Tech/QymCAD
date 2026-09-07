@@ -17,12 +17,12 @@ mod tests {
     fn saved_part(dir: &std::path::Path) -> (App, String) {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         assert!(!app.live.shapes.is_empty(), "setup: a built part must have a live body");
         let path = dir.join("brep-keep.qcad").to_string_lossy().into_owned();
-        app.set_project_path(path.clone());
-        app.save_project_for_test();
-        app.wait_bg_for_test();
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
+        app.save_project();
+        app.wait_bg();
         (app, path)
     }
 
@@ -38,7 +38,7 @@ mod tests {
             v
         };
 
-        let (project, breps) = qymcad_io::load_project_with_brep(&path).expect("the file reads");
+        let qymcad_io::LoadedProject { project, breps } = qymcad_io::load_project_with_brep(&path).expect("the file reads");
         assert!(!breps.is_empty(), "the bundle holds NO live bodies — opening will pay for a full rebuild again");
         let shapes: Vec<_> = breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|s| (id, s))).collect();
         let got: Vec<_> = {
@@ -54,7 +54,7 @@ mod tests {
 
         // THE POINT: there is nothing to rebuild. `ensure_brep` marks dirty exactly those nodes whose
         // bodies have no live B-rep — so not one of them must be left.
-        fresh.ensure_brep_for_test();
+        crate::gui::io_jobs::ensure_brep(&mut fresh.rebuild_ctx());
         let dirty: Vec<String> = fresh.project.timeline.iter().filter(|n| n.dirty).map(|n| n.name.clone()).collect();
         assert!(dirty.is_empty(), "opening demands a rebuild of nodes {dirty:?} again — the live body from the file was not picked up");
         let _ = std::fs::remove_dir_all(&dir);
@@ -76,22 +76,22 @@ mod blob_cache {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         super::super::joint_flow::tests::add_part_at(&mut app, 100.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         let bodies: Vec<_> = app.live.shapes.keys().copied().collect();
         assert_eq!(bodies.len(), 2, "setup: two bodies, and it came out {}", bodies.len());
 
         // the first save fills the cache
         let dir = std::env::temp_dir().join(format!("qym-blob-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("the temporary directory");
-        app.set_project_path(dir.join("blobs.qcad").to_string_lossy().into_owned());
-        app.save_project_for_test();
-        app.wait_bg_for_test();
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, dir.join("blobs.qcad").to_string_lossy().into_owned());
+        app.save_project();
+        app.wait_bg();
         assert_eq!(app.live.blobs.len(), 2, "after the write the blobs must lie in the cache");
 
         // rebuild ONE body
         let victim = app.project.timeline.iter().find(|n| n.kind.body() == Some(bodies[0])).map(|n| n.id).expect("the node of the body");
         app.project.mark_node_dirty(victim);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         assert!(!app.live.blobs.contains_key(&bodies[0]), "a rebuilt body must lose its stale blob");
         assert!(app.live.blobs.contains_key(&bodies[1]), "an untouched body is not obliged to recompute its blob on every save");
         let _ = std::fs::remove_dir_all(&dir);

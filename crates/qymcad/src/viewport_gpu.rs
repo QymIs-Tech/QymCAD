@@ -10,7 +10,7 @@
 //! egui encoder; in `paint` the offscreen texture is blitted into the rectangle of the viewport with
 //! alpha-over (a transparent background lets the floor grid show through from below). The offscreen
 //! target is needed because the main pass of egui has NO depth attachment — a z-buffer of our own cannot
-//! be hung on it. The matrices agree with `project3` pixel for pixel (orthographic, world-up upwards).
+//! be hung on it. The matrices agree with `Screen::at` pixel for pixel (orthographic, world-up upwards).
 //!
 //! Colour: the offscreen target is in an sRGB format, the fragment gives out a LINEAR colour
 //! (srgb-to-linear), and the write encodes it back into the same sRGB bytes the CPU path lays down
@@ -21,6 +21,7 @@
 //! perspective a direction of its own at every point), with the normal of the face carried in the
 //! vertices.
 
+use qymcad_ui_state::GpuVert;
 use eframe::egui_wgpu;
 use eframe::wgpu;
 use egui::PaintCallbackInfo;
@@ -91,23 +92,9 @@ pub fn set_msaa(n: u32) {
     MSAA_SAMPLES.store(take, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// A vertex of a body for the GPU. The colour and the normal do NOT depend on the camera (the light is
-/// of the world), so the buffer is re-uploaded only when the scene changes and not when it is rotated.
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuVert {
-    /// The position in world coordinates (with the transform of the owning component already applied).
-    pub pos: [f32; 3],
-    /// The normal of the face (the same for all 3 vertices of a triangle) — for culling back faces in
-    /// the fragment.
-    pub nrm: [f32; 3],
-    /// The shaded colour as rgba8 (sRGB bytes, as in `Color32`): the low byte is r, the high one is a.
-    pub color: u32,
-    pub _pad: u32,
-}
 
 /// The camera uniform (orthographic). `right`/`up`/`fwd` are an orthonormal basis; the projection
-/// repeats `project3`.
+/// repeats `Screen::at`.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CamRaw {
@@ -123,12 +110,21 @@ pub struct CamRaw {
     persp: [f32; 4],
 }
 
+/// THE EYE-SPACE DEPTH BOUNDS the GPU clips against. Set by the caller from the same formula as
+/// `proj_params`, so that the CPU and the GPU agree about what is in front of what.
+#[derive(Clone, Copy)]
+pub struct ZRange {
+    pub near: f32,
+    pub far: f32,
+}
+
 impl CamRaw {
     /// Build from the basis of the camera (`Cam3::basis`), the scale and the rectangle of the viewport
     /// (in points). `persp_inv_d_eye` is 1/d_eye (0 for orthographic), `z_near` and `z_far` are the
     /// eye-space bounds (for perspective); all of it is set by the caller from the same formula as
     /// `proj_params`, so the CPU and the GPU agree.
-    pub fn new(basis: &([f64; 3], [f64; 3], [f64; 3]), scale: f32, target: [f64; 3], rect_w: f32, rect_h: f32, persp_inv_d_eye: f32, z_near: f32, z_far: f32) -> Self {
+    pub fn new(basis: &([f64; 3], [f64; 3], [f64; 3]), scale: f32, target: [f64; 3], size: egui::Vec2, persp_inv_d_eye: f32, z: ZRange) -> Self {
+        let (rect_w, rect_h, z_near, z_far) = (size.x, size.y, z.near, z.far);
         let (r, u, f) = basis;
         let cv = |v: &[f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32, 0.0];
         // The depth range of the orthographic clip: it grows as one zooms out (the world half-extent is
@@ -340,7 +336,7 @@ impl GpuRenderer {
         let mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("qym_mesh_pipeline"),
             layout: Some(&mesh_pl),
-            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_mesh"), compilation_options: Default::default(), buffers: &[vbl.clone()] },
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_mesh"), compilation_options: Default::default(), buffers: std::slice::from_ref(&vbl) },
             primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
@@ -368,7 +364,7 @@ impl GpuRenderer {
         let mesh_pipeline_ghost = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("qym_mesh_pipeline_ghost"),
             layout: Some(&mesh_pl),
-            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_mesh"), compilation_options: Default::default(), buffers: &[vbl.clone()] },
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_mesh"), compilation_options: Default::default(), buffers: std::slice::from_ref(&vbl) },
             primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
@@ -643,7 +639,7 @@ mod tests {
     //! The GPU viewport had not a single test, although THE CAMERA in it is pure arithmetic that can be
     //! checked without a window and without a GPU. And it is the camera that must agree with the CPU path
     //! (`proj_params`), otherwise the picture and the picks drift apart.
-    use super::CamRaw;
+    use super::{CamRaw, ZRange};
 
     /// The camera basis for looking along -Z: right=+X, up=+Y, fwd=-Z.
     fn basis() -> ([f64; 3], [f64; 3], [f64; 3]) {
@@ -652,7 +648,7 @@ mod tests {
 
     #[test]
     fn camera_carries_basis_scale_and_viewport() {
-        let c = CamRaw::new(&basis(), 2.0, [10.0, 20.0, 30.0], 800.0, 600.0, 0.0, 0.1, 1000.0);
+        let c = CamRaw::new(&basis(), 2.0, [10.0, 20.0, 30.0], egui::vec2(800.0, 600.0), 0.0, ZRange { near: 0.1, far: 1000.0 });
         assert_eq!(c.right[..3], [1.0, 0.0, 0.0], "the right unit vector is as it was passed");
         assert_eq!(c.up[..3], [0.0, 1.0, 0.0]);
         assert_eq!(c.fwd[..3], [0.0, 0.0, -1.0]);
@@ -667,8 +663,8 @@ mod tests {
     /// back).
     #[test]
     fn ortho_depth_range_grows_when_zooming_out() {
-        let near = CamRaw::new(&basis(), 10.0, [0.0; 3], 800.0, 600.0, 0.0, 0.1, 1000.0);
-        let far = CamRaw::new(&basis(), 0.1, [0.0; 3], 800.0, 600.0, 0.0, 0.1, 1000.0);
+        let near = CamRaw::new(&basis(), 10.0, [0.0; 3], egui::vec2(800.0, 600.0), 0.0, ZRange { near: 0.1, far: 1000.0 });
+        let far = CamRaw::new(&basis(), 0.1, [0.0; 3], egui::vec2(800.0, 600.0), 0.0, ZRange { near: 0.1, far: 1000.0 });
         assert!(far.params[3] > near.params[3] * 10.0, "having pulled back, the depth of the clip has grown: {} -> {}", near.params[3], far.params[3]);
         assert!(near.params[3] >= 1000.0, "there is a depth margin even at a strong zoom: {}", near.params[3]);
     }
@@ -678,7 +674,7 @@ mod tests {
     #[test]
     fn degenerate_scale_stays_finite() {
         for scale in [0.0, -1.0, f32::MIN_POSITIVE] {
-            let c = CamRaw::new(&basis(), scale, [0.0; 3], 800.0, 600.0, 0.0, 0.1, 1000.0);
+            let c = CamRaw::new(&basis(), scale, [0.0; 3], egui::vec2(800.0, 600.0), 0.0, ZRange { near: 0.1, far: 1000.0 });
             assert!(c.params.iter().all(|v| v.is_finite()), "scale {scale}: the parameters are finite, and what came back is {:?}", c.params);
             assert!(c.params[3] > 0.0, "the depth of the clip is positive at scale {scale}");
         }
@@ -688,7 +684,7 @@ mod tests {
     /// compute by one formula — let them diverge and the picks stop matching the picture).
     #[test]
     fn perspective_params_pass_through() {
-        let c = CamRaw::new(&basis(), 1.0, [0.0; 3], 1024.0, 768.0, 1.0 / 500.0, 5.0, 2000.0);
+        let c = CamRaw::new(&basis(), 1.0, [0.0; 3], egui::vec2(1024.0, 768.0), 1.0 / 500.0, ZRange { near: 5.0, far: 2000.0 });
         assert!((c.persp[0] - 0.002).abs() < 1e-9, "1/d_eye");
         assert_eq!((c.persp[1], c.persp[2]), (5.0, 2000.0), "near and far are as they were passed");
     }

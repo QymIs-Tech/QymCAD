@@ -69,11 +69,11 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         app.workbench = super::super::Workbench::Assembly;
-        app.mode_3d = true;
-        app.joint.edit = Some(jid);
+        app.viewing.mode_3d = true;
+        app.side.joint.edit = Some(jid);
         let mut texts = Vec::new();
         for _ in 0..2 {
-            app.joint.edit = Some(jid);
+            app.side.joint.edit = Some(jid);
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 egui::CentralPanel::default().show(c, |ui| app.joints_panel_for_test(ui));
             });
@@ -128,33 +128,33 @@ mod tests {
         let jid = a_screen_with_everything(&mut app);
         with_a_name_from_an_old_document(&mut app, jid);
         app.workbench = super::super::Workbench::Assembly;
-        app.mode_3d = true;
+        app.viewing.mode_3d = true;
 
         // every kind of screen in a pass of its own, with a FRESH egui environment
         let screens: [(&str, fn(&mut App)); 4] = [
             ("the joint popup", |_app: &mut App| {}),
-            ("the connector bar", |app: &mut App| app.joint.conn_pick = true),
-            ("the relation bar", |app: &mut App| app.joint.relation_pick = Some(Default::default())),
-            ("the joint assembling bar", |app: &mut App| app.joint.pick_faces = true),
+            ("the connector bar", |app: &mut App| app.side.joint.conn_pick = true),
+            ("the relation bar", |app: &mut App| app.side.joint.relation_pick = Some(Default::default())),
+            ("the joint assembling bar", |app: &mut App| app.side.joint.pick_faces = true),
         ];
         let mut bad: Vec<String> = Vec::new();
         let mut seen = 0usize;
         for (name, arm) in screens {
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx);
-            app.joint.conn_pick = false;
-            app.joint.relation_pick = None;
-            app.joint.pick_faces = false;
+            app.side.joint.conn_pick = false;
+            app.side.joint.relation_pick = None;
+            app.side.joint.pick_faces = false;
             arm(&mut app);
             let popup = name == "the joint popup";
             let mut texts = Vec::new();
             for _ in 0..2 {
-                app.joint.edit = Some(jid);
+                app.side.joint.edit = Some(jid);
                 let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                     if popup {
-                        app.joint_popup_for_test(c, viewport());
+                        { app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id)); qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport()); }
                     } else {
-                        app.joint_tool_bar(c);
+                        qymcad_assembly::joint_tool_bar(&mut app.joint_ctx(), c);
                     }
                 });
                 texts.clear();

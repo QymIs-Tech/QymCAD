@@ -13,6 +13,30 @@
 //!    lines.
 #[cfg(test)]
 mod tests {
+
+    /// The tool number out of a call, wherever it now sits in the argument list.
+    ///
+    /// It used to be the first thing after the bracket, so the guard read up to the first `)` and
+    /// parsed that. Once the panels stopped being methods the calls gained their fields in front -
+    /// `set_sk_tool(&mut cmd, .., 3)` - and every tool went unseen at once, which read as "suspiciously
+    /// few tools" rather than as a broken needle. The number is the LAST argument; find the matching
+    /// bracket and take it.
+    fn trailing_number(tail: &str) -> Option<u8> {
+        let (mut depth, mut end) = (0i32, None);
+        for (i, ch) in tail.char_indices() {
+            match ch {
+                '(' | '[' | '<' => depth += 1,
+                ')' if depth == 0 => {
+                    end = Some(i);
+                    break;
+                }
+                ')' | ']' | '>' => depth -= 1,
+                _ => {}
+            }
+        }
+        tail[..end?].rsplit(',').next()?.trim().parse::<u8>().ok()
+    }
+
     use crate::{help, help_map};
 
     /// The numbers of the tools actually wired into the panels of the workbench.
@@ -25,29 +49,29 @@ mod tests {
         let src: &str = &joined;
         let mut part = Vec::new();
         let mut sketch = Vec::new();
-        let mut rest = src;
-        while let Some(i) = rest.find("start_") {
-            let tail = &rest[i..];
-            rest = &tail[6..];
-            for (pat, _) in [("start_feat_cmd(", 0), ("start_prim_cmd(", 0)] {
+        // A BUTTON NAMES ITS REQUEST: the bars put `BarAsk::FeatCmd(7)` in the frame's list where they used
+        // to call `start_feat_cmd(7)`. Both spellings count - the tool is wired either way.
+        for (pat, _) in [("start_feat_cmd(", 0), ("BarAsk::FeatCmd(", 0), ("start_prim_cmd(", 0), ("BarAsk::PrimCmd(", 0)] {
+            let mut rest = src;
+            while let Some(i) = rest.find(pat) {
+                let tail = &rest[i..];
+                rest = &tail[pat.len()..];
                 if let Some(t) = tail.strip_prefix(pat) {
-                    if let Some(end) = t.find(')') {
-                        if let Ok(n) = t[..end].parse::<u8>() {
-                            if !part.contains(&n) {
-                                part.push(n);
-                            }
+                    if let Some(n) = trailing_number(t) {
+                        if !part.contains(&n) {
+                            part.push(n);
                         }
                     }
                 }
             }
         }
-        for (pat, handle) in [("set_sk_tool(", "sk"), ("set_dim_tool(", "dim"), ("set_click_op(", "click"), ("modify_button(", "mod")] {
+        for (pat, handle) in [("set_sk_tool(", "sk"), ("BarAsk::SketchTool(", "sk"), ("set_dim_tool(", "dim"), ("set_click_op(", "click"), ("modify_button(", "mod")] {
             let mut rest = src;
             while let Some(i) = rest.find(pat) {
                 let t = &rest[i + pat.len()..];
                 rest = t;
-                if let Some(end) = t.find(')') {
-                    if let Ok(n) = t[..end].parse::<u8>() {
+                if let Some(n) = trailing_number(t) {
+                    {
                         let key = (handle.to_string(), n);
                         if !sketch.contains(&key) {
                             sketch.push(key);
@@ -108,20 +132,18 @@ mod tests {
     #[test]
     fn f1_answers_about_assembly_modes() {
         let mut app = super::super::App::default();
-        app.start_rigid_joint_pick_for_test();
+        app.side.joint.start_rigid_pick();
         assert_eq!(app.help_for_context(), "assembly/02-joints", "while the faces of a mate are being picked, F1 must lead to the article about mates");
         app.cancel_all_tools();
 
-        app.start_comp_array_mode_for_test(1);
+        app.side.carr.mode = 1;
         assert_eq!(app.help_for_context(), "assembly/04-arrays", "while a component array is being laid out, F1 must lead to the article about arrays");
     }
 
     /// AND EVERY WORKBENCH HAS A SECTION ARTICLE — that is where F1 leads when no command is active.
     #[test]
     fn every_workbench_has_a_section_article() {
-        // "cam" too: the workbench exists, so F1 in it must answer. That the article is a single short
-        // one is a separate conversation (the module is being reworked), but emptiness there must not be.
-        for wb in ["sketch", "part", "assembly", "cam"] {
+        for wb in ["sketch", "part", "assembly"] {
             let a = help_map::workbench_article(wb);
             assert!(help::article(a).is_some(), "the workbench \"{wb}\" has no section article \"{a}\" — F1 with no command will show emptiness");
         }
@@ -133,11 +155,11 @@ mod tests {
         let mut app = super::super::screen_keys::tests::plate();
         // with no command — the section of the workbench
         app.cancel_all_tools();
-        assert_eq!(app.help_for_context(), help_map::workbench_article(app.workbench_code()), "with no active command F1 must lead to the section of the workbench");
+        assert_eq!(app.help_for_context(), help_map::workbench_article(crate::gui::workbench_code(&app.workbench)), "with no active command F1 must lead to the section of the workbench");
 
         // with a command — its article
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-        app.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
+        app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
         app.start_feat_cmd(7); // the hole
         assert_eq!(app.help_for_context(), "part/08-hole", "F1 inside the open Hole command must lead to the article about holes, and it leads to \"{}\"", app.help_for_context());
     }
@@ -177,7 +199,7 @@ mod tests {
             }
         }
         assert!(hints.len() > 60, "suspiciously few toolbar hints were found: {}", hints.len());
-        let launchers = ["start_feat_cmd(", "start_prim_cmd(", "set_sk_tool(", "set_dim_tool(", "set_click_op(", "modify_button("];
+        let launchers = ["start_feat_cmd(", "BarAsk::FeatCmd(", "start_prim_cmd(", "BarAsk::PrimCmd(", "set_sk_tool(", "BarAsk::SketchTool(", "set_dim_tool(", "set_click_op(", "modify_button("];
         let mut bad: Vec<String> = Vec::new();
         for h in &hints {
             // the button of a numbered command: its article comes from PART/SKETCH and is checked above
@@ -218,13 +240,13 @@ mod tests {
     #[test]
     fn f1_reaches_the_article_of_an_armed_toolbar_tool() {
         let cases: &[(&str, fn(&mut crate::gui::App))] = &[
-            ("tb-bool-bodies-hint", |a| a.arm_boolean_for_test()),
-            ("tb-move-hint", |a| a.start_move_tool_for_test(1)),
-            ("tb-copy-hint", |a| a.start_move_tool_for_test(2)),
-            ("tb-rotate-hint", |a| a.start_move_tool_for_test(3)),
-            ("tb-lin-array-hint", |a| a.start_pattern_for_test(1)),
-            ("tb-circ-array-hint", |a| a.start_pattern_for_test(2)),
-            ("tb-measure3d-hint", |a| a.arm_measure3d_for_test()),
+            ("tb-bool-bodies-hint", |a| a.params.boolean.pick = Some((1, 0))),
+            ("tb-move-hint", |a| crate::gui::commands::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 1)),
+            ("tb-copy-hint", |a| crate::gui::commands::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 2)),
+            ("tb-rotate-hint", |a| crate::gui::commands::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 3)),
+            ("tb-lin-array-hint", |a| crate::gui::commands::start_pattern(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 1)),
+            ("tb-circ-array-hint", |a| crate::gui::commands::start_pattern(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 2)),
+            ("tb-measure3d-hint", |a| a.side.m3.on = true),
         ];
         for (hint, arm) in cases {
             let mut app = crate::gui::App::default();

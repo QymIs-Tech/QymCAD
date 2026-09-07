@@ -42,7 +42,7 @@ mod tests {
             };
             put("inside the canvas", egui::Rect::from_center_size(at_in, egui::vec2(60.0, 24.0)), &inside);
             put("on the panel", egui::Rect::from_center_size(at_out, egui::vec2(60.0, 24.0)), &outside);
-            app.draw_regen_overlay_over(ctx, live);
+            crate::gui::draw_regen_overlay_over(&app.draw_ctx(), ctx, live);
         };
         let frame = |events: Vec<egui::Event>| egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
         let click = |at: egui::Pos2| {
@@ -88,8 +88,8 @@ mod tests {
         app.waiting.splash_until = None; // the startup splash is a separate case, it mutes the frame legitimately
         app.regen.busy = Some(super::super::Busy { label: "rebuild".into(), rx, kind: super::super::BgKind::Regen, pulse: None, quiet: false });
         let mut swallowed = true;
-        let _ = ctx.run_ui(Default::default(), |c| swallowed = app.tick_async_for_test(c.ctx()));
-        assert!(app.regen_running_for_test(), "setup: the rebuild must be running");
+        let _ = ctx.run_ui(Default::default(), |c| swallowed = app.tick_async(c.ctx()));
+        assert!(app.regen.regen_running(), "setup: the rebuild must be running");
         assert!(!swallowed, "the frame was aborted during a rebuild — the window would seize up and the scene would vanish");
     }
 }
@@ -112,7 +112,7 @@ mod loud_only_when_earned {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         super::super::joint_flow::tests::add_part_at(&mut app, 100.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         app
     }
 
@@ -157,7 +157,7 @@ mod quiet_is_visible {
     fn a_quiet_rebuild_shows_the_veil_and_blocks_nothing() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         let first = app.project.timeline.iter().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the node of the body");
         let _ = first;
         // A REBUILD THAT IS STILL RUNNING: a real one on a little cube finishes inside the frame.
@@ -167,10 +167,10 @@ mod quiet_is_visible {
         app.waiting.splash_until = None;
         app.regen.busy = Some(super::super::Busy { label: "rebuild".into(), rx, kind: super::super::BgKind::Regen, pulse: None, quiet: true });
         let mut swallowed = true;
-        let _ = ctx.run_ui(Default::default(), |c| swallowed = app.tick_async_for_test(c.ctx()));
+        let _ = ctx.run_ui(Default::default(), |c| swallowed = app.tick_async(c.ctx()));
         assert!(!swallowed, "a quiet rebuild has no right to eat the frame");
-        assert!(app.dim.spinner, "a quiet rebuild must leave a sign on the canvas: otherwise a person takes what is shown for the truth");
-        assert!(app.dim.overlay.is_none(), "a quiet rebuild has no right to raise a window — nobody is holding a person");
+        assert!(app.tools.dim.spinner, "a quiet rebuild must leave a sign on the canvas: otherwise a person takes what is shown for the truth");
+        assert!(app.tools.dim.overlay.is_none(), "a quiet rebuild has no right to raise a window — nobody is holding a person");
     }
 }
 
@@ -196,17 +196,17 @@ mod picture_follows_the_model {
     fn changing_the_model_changes_both_picture_keys() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
-        let (raster, gpu) = (app.view_key_pub(rect, 1.0), app.gpu_scene_key_pub());
+        let (raster, gpu) = (qymcad_ui_state::view_key(&app.painting(), rect, 1.0), qymcad_ui_state::gpu_scene_key(&app.painting()));
 
         // an ordinary edit through the timeline: the body must move
         let node = app.project.timeline.iter().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the node of the body");
         app.project.mark_node_dirty(node);
         super::super::joint_flow::tests::add_part_at(&mut app, 120.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
 
-        assert_ne!(raster, app.view_key_pub(rect, 1.0), "the model changed and the RASTER key is the same — the previous picture will stay on screen");
-        assert_ne!(gpu, app.gpu_scene_key_pub(), "the model changed and the key of the GRAPHICS CARD buffer is the same — the previous picture will stay on screen");
+        assert_ne!(raster, qymcad_ui_state::view_key(&app.painting(), rect, 1.0), "the model changed and the RASTER key is the same — the previous picture will stay on screen");
+        assert_ne!(gpu, qymcad_ui_state::gpu_scene_key(&app.painting()), "the model changed and the key of the GRAPHICS CARD buffer is the same — the previous picture will stay on screen");
     }
 }

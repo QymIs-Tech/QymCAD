@@ -29,7 +29,7 @@ fn build_scene() -> (Project, Vec<u64>) {
     p.add_circle_entity(s2, 12.0, 12.0, 4.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(s2);
     let c2 = p.sketches[s2].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).unwrap();
-    let cut = p.add_combine_multi_op(f, sid2, vec![c2], 5.0, 0, qymcad_core::feature::Extent::default(), 0.0, vec![]);
+    let cut = p.add_combine_multi_op(f, sid2, vec![c2], qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
     (p, vec![cut])
 }
 

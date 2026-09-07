@@ -21,12 +21,12 @@ mod tests {
             super::super::joint_flow::tests::add_part_at(app, x);
         }
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         (0..3).filter_map(|i| app.project.mesh_id(i)).collect()
     }
 
@@ -54,23 +54,23 @@ mod tests {
         let bodies = three_parts(&mut app);
         assert!(app.project.mate_constraints.is_empty(), "setup: there are no groups yet");
 
-        app.start_group_pick_for_test();
-        assert!(app.group_pick_active_for_test(), "the group tool was not taken up");
+        app.start_group_pick();
+        assert!(app.side.joint.group_pick.is_some(), "the group tool was not taken up");
 
         // Click two of the three parts — as the mouse does on the bodies.
-        app.group_pick_click_for_test(bodies[0]);
-        app.group_pick_click_for_test(bodies[1]);
-        assert_eq!(app.group_pick_members_for_test().len(), 2, "two parts were clicked, and the set holds {:?}", app.group_pick_members_for_test());
+        qymcad_assembly::group_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[0]);
+        qymcad_assembly::group_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[1]);
+        assert_eq!(app.side.joint.group_pick.clone().unwrap_or_default().len(), 2, "two parts were clicked, and the set holds {:?}", app.side.joint.group_pick.clone().unwrap_or_default());
 
         // Once more on the same part — the selection comes off: the set is edited, not accumulated.
-        app.group_pick_click_for_test(bodies[1]);
-        assert_eq!(app.group_pick_members_for_test().len(), 1, "a second click on a part must take it off the set");
-        app.group_pick_click_for_test(bodies[1]);
+        qymcad_assembly::group_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[1]);
+        assert_eq!(app.side.joint.group_pick.clone().unwrap_or_default().len(), 1, "a second click on a part must take it off the set");
+        qymcad_assembly::group_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[1]);
 
-        app.group_pick_confirm_for_test();
+        qymcad_assembly::group_pick_confirm(&mut app.joint_ctx());
         assert_eq!(app.project.mate_constraints.len(), 1, "the group was not created");
         assert_eq!(app.project.mate_constraints[0].members.len(), 2, "the wrong parts ended up in the group: {:?}", app.project.mate_constraints[0].members);
-        assert!(!app.group_pick_active_for_test(), "the tool was not released after confirmation");
+        assert!(!app.side.joint.group_pick.is_some(), "the tool was not released after confirmation");
 
         // AND IT IS VISIBLE IN THE PANEL — otherwise it cannot be found or deleted.
         let texts = panel_text(&mut app);
@@ -85,12 +85,12 @@ mod tests {
         let mut app = App::default();
         let bodies = three_parts(&mut app);
 
-        app.start_group_pick_for_test();
-        app.group_pick_click_for_test(bodies[0]);
-        app.group_pick_confirm_for_test();
+        app.start_group_pick();
+        qymcad_assembly::group_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[0]);
+        qymcad_assembly::group_pick_confirm(&mut app.joint_ctx());
 
         assert!(app.project.mate_constraints.is_empty(), "a group of one part was assembled — there is nothing in it to fasten");
-        assert!(app.group_pick_active_for_test(), "the tool was dropped instead of letting the second part be clicked");
+        assert!(app.side.joint.group_pick.is_some(), "the tool was dropped instead of letting the second part be clicked");
         assert_eq!(app.status, crate::i18n::tr("j-group-need-two"), "the person was not told what is missing: {}", app.status);
     }
 

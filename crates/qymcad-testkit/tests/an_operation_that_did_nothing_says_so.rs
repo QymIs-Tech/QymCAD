@@ -70,7 +70,7 @@ fn a_contour_cut_that_removed_nothing_says_so() {
     p.regen_sketch(si);
     p.add_sketch_node(sid, "Window off to the side");
     let c = p.sketches[si].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("the window contour");
-    let cut = p.add_combine_on(base, sid, c, 20.0, 0, qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Backward }, 0.0);
+    let cut = p.add_combine_on(base, sid, c, qymcad_core::model::CombineSpan { height: 20.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Backward }, fill: &[] }, 0);
     qymcad_testkit::regenerate(&mut p);
     let now = area(&p, cut);
     assert!(
@@ -110,7 +110,7 @@ fn a_real_contour_cut_still_works() {
     p.regen_sketch(si);
     p.add_sketch_node(sid, "Window");
     let c = p.sketches[si].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("the window contour");
-    let cut = p.add_combine_on(base, sid, c, 20.0, 0, qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Backward }, 0.0);
+    let cut = p.add_combine_on(base, sid, c, qymcad_core::model::CombineSpan { height: 20.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Backward }, fill: &[] }, 0);
     qymcad_testkit::regenerate(&mut p);
     assert!(p.regen_errors.is_empty(), "a real contour cut failed: {:?}", p.regen_errors);
     let now = area(&p, cut);

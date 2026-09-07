@@ -31,22 +31,22 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(&mut maker, 0.0);
         super::super::joint_flow::tests::add_part_at(&mut maker, 40.0);
         for _ in 0..4 {
-            if maker.current_ctx_id_for_test() == maker.project.root {
+            if qymcad_ui_state::current_ctx_id(&maker.active_path, &maker.project) == maker.project.root {
                 break;
             }
-            maker.exit_context_for_test();
+            maker.exit_context();
         }
-        maker.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut maker.rebuild_ctx());
         let path = std::env::temp_dir().join("qym-edge-anchor-reopen.qcad").to_string_lossy().into_owned();
         qymcad_io::save_project(&maker.project, &path).expect("the document was written");
 
         let project = qymcad_io::load_project(&path).expect("the document opened");
         app.finish_project_load(path, project, Vec::new());
-        app.mode_3d = true;
-        app.ensure_brep_for_test();
+        app.viewing.mode_3d = true;
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         app.drain_bg_for_test();
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         // THAT IS EXACTLY WHAT AN OPENED DOCUMENT LOOKS LIKE: `regen_edges` is a DERIVED field, it is
         // not written into the bundle (see doc_file.rs) and is filled only by the post pass of a
         // rebuild. It is cleared here so that the check stands in exactly the state a person opens a
@@ -59,9 +59,9 @@ mod tests {
     fn an_edge_of(app: &App, comp: Id) -> [f64; 3] {
         let mut best: Option<(f64, [f64; 3])> = None;
         for b in app.project.component_bodies(comp) {
-            let Some(cached) = app.body_edges_cached(b) else { continue };
+            let Some(cached) = crate::gui::pick::body_edges_cached(&app.cache, &app.live, &app.regen, b) else { continue };
             let wt = app.project.body_world_transform(b);
-            for (poly, id) in cached.0.iter().zip(cached.1.iter().copied()) {
+            for (poly, id) in cached.polys.iter().zip(cached.ids.iter().copied()) {
                 if id == 0 || poly.len() < 2 {
                     continue;
                 }
@@ -69,7 +69,7 @@ mod tests {
                 let (u, v) = (p(&poly[0]), p(&poly[poly.len() - 1]));
                 let d = [v[0] - u[0], v[1] - u[1], v[2] - u[2]];
                 let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-                if best.map_or(true, |(bl, _)| len > bl) {
+                if best.is_none_or(|(bl, _)| len > bl) {
                     best = Some((len, [(u[0] + v[0]) / 2.0, (u[1] + v[1]) / 2.0, (u[2] + v[2]) / 2.0]));
                 }
             }
@@ -95,16 +95,16 @@ mod tests {
         );
 
         app.workbench = super::super::Workbench::Assembly;
-        app.joint.new_kind = JointKind::Slider;
+        app.side.joint.new_kind = JointKind::Slider;
         app.arm_joint_pick_for_test();
-        app.set_joint_anchor_mode_for_test(1); // "anchor: edge" — the switch in the assembling bar
-        app.cam.target = [30.0, 10.0, 5.0];
-        app.cam.scale = 9.0;
-        app.cam.init = true;
-        let basis = app.cam.basis();
+        qymcad_assembly::set_joint_anchor_mode_for_test(&mut app.joint_ctx(), 1); // "anchor: edge" — the switch in the assembling bar
+        app.viewing.cam.target = [30.0, 10.0, 5.0];
+        app.viewing.cam.scale = 9.0;
+        app.viewing.cam.init = true;
+        let basis = app.viewing.cam.basis();
         for c in &parts {
-            let at = app.project3(an_edge_of(&app, *c), viewport(), &basis).0;
-            app.refresh_edges();
+            let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(an_edge_of(&app, *c)).0;
+            crate::gui::commands::refresh_edges(&mut app.part_ctx());
             app.viewport_3d_click_at(at, viewport(), &basis);
         }
 
@@ -116,7 +116,7 @@ mod tests {
             app.status
         );
         assert!(
-            app.project.joint_slot_axis(made, 1, app.current_ctx_id_for_test()).is_some(),
+            app.project.joint_slot_axis(made, 1, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project)).is_some(),
             "a sound joint must have an axis of travel, and there is none"
         );
 
@@ -129,10 +129,10 @@ mod tests {
         let project = qymcad_io::load_project(&path).expect("the document opened");
         let mut again = App::default();
         again.finish_project_load(path, project, Vec::new());
-        again.mode_3d = true;
-        again.ensure_brep_for_test();
+        again.viewing.mode_3d = true;
+        crate::gui::io_jobs::ensure_brep(&mut again.rebuild_ctx());
         again.drain_bg_for_test();
-        again.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut again.rebuild_ctx());
         let faults = again.project.joint_faults();
         assert!(
             !faults.iter().any(|(id, _)| *id == made),

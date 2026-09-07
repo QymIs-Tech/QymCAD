@@ -1,8 +1,7 @@
 //! Round-trip tests of the project file, a `.qcad` zip bundle.
 
 use qymcad_core::geom::{circle_contour, Mesh, Point3};
-use qymcad_core::model::{OpKind, OperationDef, Project};
-use qymcad_core::tool::{Tool, ToolType};
+use qymcad_core::model::Project;
 use qymcad_io::{load_project, save_project};
 
 fn sample() -> Project {
@@ -12,8 +11,6 @@ fn sample() -> Project {
         verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 5.0)],
         tris: vec![[0, 1, 2]],
     });
-    p.tools = vec![Tool { number: 1, name: "EM6".into(), kind: ToolType::FlatEnd, diameter: 6.0, corner_radius: 0.0, flutes: 2, v_angle: None }];
-    p.operations.push(OperationDef::new("Engrave", 1, OpKind::Engrave));
     p
 }
 
@@ -28,8 +25,6 @@ fn qcad_bundle_roundtrip() {
     assert_eq!(back.contours.len(), 1);
     assert_eq!(back.bodies.len(), 1, "the mesh was restored from the bundle");
     assert_eq!(back.bodies[0].mesh.tris.len(), 1);
-    assert_eq!(back.tools.len(), 1);
-    assert_eq!(back.operations.len(), 1);
     // the contents of the mesh match
     assert!((back.bodies[0].mesh.verts[2].z - 5.0).abs() < 1e-9);
 }
@@ -60,8 +55,6 @@ fn op_mesh_ref_survives_reload() {
         verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 5.0)],
         tris: vec![[0, 1, 2]],
     });
-    p.tools = vec![Tool { number: 1, name: "B2".into(), kind: ToolType::BallNose, diameter: 2.0, corner_radius: 1.0, flutes: 2, v_angle: None }];
-    p.operations.push(OperationDef::new("Finish", 1, OpKind::Surface3D { mesh: mid }));
 
     let path = std::env::temp_dir().join("qym_ref.qcad");
     let path = path.to_str().unwrap();
@@ -70,10 +63,6 @@ fn op_mesh_ref_survives_reload() {
 
     // the same mesh id after reloading
     assert_eq!(back.bodies.iter().map(|b| b.id).collect::<Vec<_>>(), vec![mid]);
-    match back.operations[0].kind {
-        OpKind::Surface3D { mesh } => assert_eq!(mesh, mid, "the reference of the operation to the mesh survived"),
-        _ => panic!("the wrong operation"),
-    }
 }
 
 #[test]
@@ -254,7 +243,7 @@ fn a_reversed_cut_survives_a_save_and_a_load() {
     let mut p = sample();
     // The node alone is what is being written and read; no geometry is needed to check the shape of the record.
     let ext = Extent { through: true, reach: qymcad_core::feature::Reach::Backward };
-    let node = p.add_combine_on(0, 0, 0, 5.0, 0, ext, 0.0);
+    let node = p.add_combine_on(0, 0, 0, qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: ext, fill: &[] }, 0);
     save_project(&p, path).expect("save ok");
 
     let back = load_project(path).expect("load ok");

@@ -18,7 +18,7 @@ mod tests {
     fn slot() -> (App, usize) {
         let mut app = App::default();
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
-        app.project.add_slot_entity(si, -16.0, 0.0, 16.0, 0.0, 9.0, qymcad_core::feature::Purpose::Real);
+        app.project.add_slot_entity(si, qymcad_core::geom::Point2::new(-16.0, 0.0), qymcad_core::geom::Point2::new(16.0, 0.0), 9.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         (app, si)
     }
@@ -32,7 +32,7 @@ mod tests {
         let (app, si) = slot();
         let raw = app.project.sketch_redundant_constraints(si);
         assert!(!raw.is_empty(), "the rank analysis found no redundancy on the slot — the guard is checking emptiness and the scene must be changed");
-        assert!(app.flagged_redundant(si).is_empty(), "the slot is marked as overconstrained: {:?}", app.flagged_redundant(si));
+        assert!(qymcad_ui_state::flagged_redundant(&app.cache, &app.project, si).is_empty(), "the slot is marked as overconstrained: {:?}", qymcad_ui_state::flagged_redundant(&app.cache, &app.project, si));
     }
 
     /// AND A REAL REDUNDANCY IS MARKED. Without this half the guard is green for the rule "never mark
@@ -49,7 +49,7 @@ mod tests {
         app.project.sketches[si].constraints.push(Constraint::Horizontal { a: pts[0], b: pts[1] });
         app.project.sketches[si].constraints.push(Constraint::Horizontal { a: pts[0], b: pts[1] });
         app.project.regen_sketch(si);
-        assert!(!app.flagged_redundant(si).is_empty(), "two identical horizontals are a real redundancy, and there is no marker");
+        assert!(!qymcad_ui_state::flagged_redundant(&app.cache, &app.project, si).is_empty(), "two identical horizontals are a real redundancy, and there is no marker");
     }
 
     /// AND CONSTRAINTS ENTANGLED WITH TANGENCIES ARE NOT MARKED EITHER.
@@ -75,15 +75,15 @@ mod tests {
             .count();
         // the scene may yield no entangled constraints — then there is nothing to check here, but the
         // rule stands: NOTHING must be marked
-        assert!(app.flagged_redundant(si).is_empty(), "something is marked in a sketch with tangencies (non-tangencies in the raw list: {non_tangent})");
+        assert!(qymcad_ui_state::flagged_redundant(&app.cache, &app.project, si).is_empty(), "something is marked in a sketch with tangencies (non-tangencies in the raw list: {non_tangent})");
     }
 
     /// THE LIST AND THE CANVAS ASK ONE PLACE. A guard over the source: they can only drift apart if
     /// somebody takes the raw `diag.redundant` for colouring again.
     #[test]
     fn the_list_and_the_canvas_ask_the_same_rule() {
-        for (name, src) in [("the canvas", crate::gui::render_source::RENDER), ("the constraint list", include_str!("sketching.rs"))] {
-            let uses_rule = src.contains("flagged_redundant(si)");
+        for (name, src) in [("the canvas", crate::gui::render_source::RENDER), ("the constraint list", crate::gui::sketch_source::SKETCH)] {
+            let uses_rule = src.contains("flagged_redundant(");
             assert!(uses_rule, "{name} does not ask the common marking rule");
         }
         // and the raw list is not used for colouring. COMMENTS ARE SKIPPED: the first edition of the
@@ -124,7 +124,7 @@ mod parts_tests {
         let want = crate::i18n::tr("ent-line");
         let (app, si) = rect();
         let cs = app.project.sketches[si].constraints.clone();
-        let named: Vec<Vec<String>> = cs.iter().map(|c| app.constraint_parts(si, c)).collect();
+        let named: Vec<Vec<String>> = cs.iter().map(|c| crate::gui::sketching::constraint_parts(&app.draw_ctx(), si, c)).collect();
         crate::i18n::set_language(&prev);
         assert!(named.iter().any(|p| !p.is_empty()), "not one constraint named its participants: {named:?}");
         for p in named.iter().filter(|p| !p.is_empty()) {
@@ -141,7 +141,7 @@ mod parts_tests {
         crate::i18n::set_language("en");
         let (app, si) = rect();
         let ids: Vec<qymcad_core::model::Id> = app.project.sketches[si].entities.iter().map(|e| e.id).collect();
-        let names: Vec<String> = ids.iter().map(|id| app.sketch_entity_name(si, *id)).collect();
+        let names: Vec<String> = ids.iter().map(|id| crate::gui::sketching::sketch_entity_name(&app.project, si, *id)).collect();
         crate::i18n::set_language(&prev);
         let mut uniq = names.clone();
         uniq.sort();
@@ -157,7 +157,7 @@ mod parts_tests {
         crate::i18n::set_language("en");
         let want = crate::i18n::tr("ent-line");
         let (mut app, si) = rect();
-        app.enter_sketch_edit_pub(si);
+        app.enter_sketch_edit(si);
         let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.properties_panel(c));
         crate::i18n::set_language(&prev);
         assert!(texts.iter().any(|t| t.contains(&want)), "the constraint list holds no entity names: {texts:?}");

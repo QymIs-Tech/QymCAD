@@ -25,7 +25,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of the topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -51,8 +51,8 @@ mod tests {
         }
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 3, "setup: there should be three bodies of our own, and there are {}", mine.len());
         let comps: Vec<Id> = mine.iter().map(|b| app.project.body_owner(*b).expect("the owner of the body")).collect();
@@ -65,8 +65,8 @@ mod tests {
         let kc = app.project.add_connector(comps[2], AnchorRef::BasePlane(BasePlane::XY));
         app.project.add_joint(kb, kc, JointKind::Slider);
 
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mut hand = Hand::new(app);
         hand.look_at([60.0, 10.0, 5.0], 4.0);
         app.workbench = super::super::Workbench::Assembly;
@@ -83,16 +83,16 @@ mod tests {
         // would become visible.
         app.regen.ui_running = true;
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body_b), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body_b)).0;
         let by = egui::vec2(60.0, 0.0);
-        assert!(app.joint_grab_part_at_for_test(viewport(), at, by, &basis), "setup: the second part must be grabbable");
+        assert!(app.joint_grab_part_at(viewport(), at, by, &basis), "setup: the second part must be grabbable");
 
         let mut worst = 0.0f64;
         for k in 1..=8 {
             let step = by * (k as f32 / 8.0);
-            app.joint_giz_drag_to_for_test(at + step, by / 8.0, viewport(), &basis);
-            app.rebuild_if_dirty(); // the same thing a frame does
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + step, by / 8.0, viewport(), &basis);
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx()); // the same thing a frame does
             let (pb, pc) = (origin_of(&app, comp_b), origin_of(&app, comp_c));
             // C is held by a VERTICAL slider: horizontally there is no freedom, so x and y must match B
             let lag = ((pc[0] - pb[0]).powi(2) + (pc[1] - pb[1]).powi(2)).sqrt();
@@ -102,7 +102,7 @@ mod tests {
                 "frame {k}: the third part lagged behind the second by {lag:.3} mm (B at {pb:?}, C at {pc:?}) — that is the jelly"
             );
         }
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
         let (pb, pc) = (origin_of(&app, comp_b), origin_of(&app, comp_c));
         let lag = ((pc[0] - pb[0]).powi(2) + (pc[1] - pb[1]).powi(2)).sqrt();
         assert!(lag < 1e-3, "the part was released and the third one stayed {lag:.3} mm aside (B {pb:?}, C {pc:?}); the worst during the drag was {worst:.3}");
@@ -127,17 +127,17 @@ mod tests {
         app.project.solve_joints();
         app.regen.ui_running = true; // a live window: the rebuild goes into a thread and draws a window
 
-        app.rebuild_everything_for_test(); // "Edit -> Rebuild everything"
+        app.rebuild_everything(); // "Edit -> Rebuild everything"
         assert!(app.regen.busy.is_some(), "setup: \"Rebuild everything\" must go into the background");
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body_b), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body_b)).0;
         let by = egui::vec2(60.0, 0.0);
-        assert!(app.joint_grab_part_at_for_test(viewport(), at, by, &basis), "setup: the part must be grabbable");
+        assert!(app.joint_grab_part_at(viewport(), at, by, &basis), "setup: the part must be grabbable");
 
         // THE FIRST HALF OF THE DRAG — while the rebuild is still being computed in the thread
         for k in 1..=4 {
-            app.joint_giz_drag_to_for_test(at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
         }
         let led_to = origin_of(&app, comp_b);
 
@@ -155,8 +155,8 @@ mod tests {
         app.regen.wanted = false;
         let mut asks = 0;
         for k in 5..=8 {
-            app.joint_giz_drag_to_for_test(at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
-            app.rebuild_if_dirty(); // the same thing a frame does
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx()); // the same thing a frame does
             if std::mem::take(&mut app.regen.wanted) {
                 asks += 1;
             }
@@ -165,7 +165,7 @@ mod tests {
             assert!(lag < 1e-3, "frame {k}: the third part lagged by {lag:.3} mm — a rubbery joint (B {pb:?}, C {pc:?})");
         }
         assert_eq!(asks, 0, "after \"Rebuild everything\" the drag asked for {asks} more rebuilds — as many flashes of the window");
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
     }
 
     /// A DRAG IS ONE UNDO OPERATION, NOT ONE PER FRAME.
@@ -187,19 +187,19 @@ mod tests {
         let mut app = App::default();
         let (body_b, _, _) = a_chain_by_hand(&mut app);
         app.project.solve_joints();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body_b), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body_b)).0;
         let by = egui::vec2(60.0, 0.0);
-        let before = app.undo_len_for_test();
-        assert!(app.joint_grab_part_at_for_test(viewport(), at, by, &basis), "setup: the part must be grabbable");
+        let before = app.disk.edits.undo.len();
+        assert!(app.joint_grab_part_at(viewport(), at, by, &basis), "setup: the part must be grabbable");
         for k in 1..=8 {
-            app.joint_giz_drag_to_for_test(at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
         }
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
 
-        let steps = app.undo_len_for_test() - before;
+        let steps = app.disk.edits.undo.len() - before;
         assert_eq!(
             steps, 1,
             "one drag put {steps} steps into the undo stack — so a copy of the document was taken on every frame, and on a large assembly that is exactly the reluctant following"
@@ -250,29 +250,29 @@ mod tests {
         app.project.regen_errors.insert(node, qymcad_core::errors::CoreError::SourceBodyNotBuilt);
         assert!(app.project.regen_errors.values().any(|e| e.retryable()), "setup: the error must be a temporary one");
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body_b), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body_b)).0;
         let by = egui::vec2(60.0, 0.0);
-        assert!(app.joint_grab_part_at_for_test(viewport(), at, by, &basis), "setup: the part must be grabbable");
+        assert!(app.joint_grab_part_at(viewport(), at, by, &basis), "setup: the part must be grabbable");
         // THE FRAME BEFORE THE DRAG: the first attempt to raise the live B-rep is lawful and worth a
         // rebuild of its own. Only what THE DRAG ITSELF asks for is counted.
-        app.refresh_edges();
-        app.rebuild_if_dirty();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.regen.wanted = false;
 
         let mut asks = 0;
         for k in 1..=8 {
-            app.joint_giz_drag_to_for_test(at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + by * (k as f32 / 8.0), by / 8.0, viewport(), &basis);
             // A FRAME MAKES BOTH CALLS, AND THE SECOND IS THE IMPORTANT ONE HERE. `refresh_edges` runs
             // on EVERY frame in 3D, and in a document with joints on faces it brings the live B-rep up
             // each time. A check that calls one scheduler does not see the trouble — and did not.
-            app.refresh_edges();
-            app.rebuild_if_dirty();
+            crate::gui::commands::refresh_edges(&mut app.part_ctx());
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             if std::mem::take(&mut app.regen.wanted) {
                 asks += 1;
             }
         }
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
         assert_eq!(
             asks, 0,
             "on a document with the B-rep not raised, the drag asked for {asks} rebuilds — as many flashes of the rebuild window"

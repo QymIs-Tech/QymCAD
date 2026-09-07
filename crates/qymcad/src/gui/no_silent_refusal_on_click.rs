@@ -24,18 +24,18 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 6.0;
-        app.cam.target = [30.0, 10.0, 5.0];
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 6.0;
+        app.viewing.cam.target = [30.0, 10.0, 5.0];
         app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect()
     }
 
     /// A screen point OVER A PART: the centre of its top face.
     fn over_the_part(app: &App, body: Id) -> egui::Pos2 {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -43,8 +43,8 @@ mod tests {
             .and_then(|fs| fs.iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)))
             .expect("the body has faces");
         let w = qymcad_core::feature::apply12(&wt, [f.centroid.x, f.centroid.y, f.centroid.z]);
-        let basis = app.cam.basis();
-        app.project3(w, viewport(), &basis).0
+        let basis = app.viewing.cam.basis();
+        qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(w).0
     }
 
     /// Everything by which a click can be seen not to have vanished.
@@ -54,38 +54,37 @@ mod tests {
             app.project.joints.len(),
             app.project.mate_constraints.len(),
             app.project.components.iter().filter(|c| c.grounded).count(),
-            app.joint.pick_first.is_some(),
-            app.joint.group_pick.as_ref().is_some_and(|v| !v.is_empty()),
-            app.joint.width_pick.as_ref().is_some_and(|v| !v.is_empty()),
-            app.joint.tangent_pick.as_ref().is_some_and(|v| !v.is_empty()),
+            app.side.joint.pick_first.is_some(),
+            app.side.joint.group_pick.as_ref().is_some_and(|v| !v.is_empty()),
+            app.side.joint.width_pick.as_ref().is_some_and(|v| !v.is_empty()),
+            app.side.joint.tangent_pick.as_ref().is_some_and(|v| !v.is_empty()),
         )
     }
 
     #[test]
     fn a_click_on_a_part_never_vanishes_without_a_word() {
-        let tools: [(&str, fn(&mut App)); 6] = [
-            ("mate", |a: &mut App| a.arm_joint_pick_for_test()),
-            ("anchor", |a: &mut App| a.start_conn_pick()),
-            ("group", |a: &mut App| a.start_group_pick()),
-            ("width", |a: &mut App| a.start_width_pick()),
-            ("tangency", |a: &mut App| a.start_tangent_pick()),
-            ("ground", |a: &mut App| a.start_ground_pick()),
-        ];
+        // EVERY TOOL THERE IS, from the shared door table (`assembly_tools::doors`). It used to be a
+        // hand-written subset here - and each of the four checks of this kind had its OWN subset, of seven,
+        // seven, five and six, with no reason written for what was left out.
         let mut silent: Vec<String> = Vec::new();
-        for (name, arm) in tools {
+        // ONLY THE TOOLS THAT ASK FOR GEOMETRY, by `AssemblyTool::wants_geometry`. A click on a part
+        // while the relation tool is armed does nothing on purpose: that tool wants the mates in the list,
+        // and it says so in the status line the moment it is taken.
+        for t in super::super::assembly_tools::AssemblyTool::ALL.into_iter().filter(|t| t.wants_geometry()) {
+            let name = t.help_mode();
             let mut app = App::default();
             let mine = two_parts(&mut app);
             assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
             app.workbench = super::super::Workbench::Assembly;
-            arm(&mut app);
+            crate::gui::assembly_tools::doors::arm(&mut app, t);
             let at = over_the_part(&app, mine[0]);
             let said_before = app.status.clone();
             let was = traces(&app);
 
             // THE CLICK GOES THE SAME WAY A PERSON'S DOES: through the real viewport click handling.
-            let basis = app.cam.basis();
+            let basis = app.viewing.cam.basis();
             app.viewport_3d_click_at(at, viewport(), &basis);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
             let now = traces(&app);
             let did = now != was;

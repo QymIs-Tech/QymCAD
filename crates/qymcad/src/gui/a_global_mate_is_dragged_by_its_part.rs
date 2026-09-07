@@ -24,7 +24,7 @@ mod tests {
     }
 
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -48,11 +48,11 @@ mod tests {
         let root = app.project.root;
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         super::super::joint_flow::tests::add_part_at(app, 60.0);
-        while app.current_ctx_id_for_test() != root {
-            app.exit_context_for_test(); // back to the root by the same path a person takes
+        while qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) != root {
+            app.exit_context(); // back to the root by the same path a person takes
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         let comps: Vec<Id> = mine.iter().map(|b| app.project.body_owner(*b).expect("the owner of the body")).collect();
@@ -71,12 +71,12 @@ mod tests {
 
         // LOOK FROM THE ROOT — where the complaint comes from
         app.project.set_active_component(Some(root));
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 5.0);
         app.workbench = super::super::Workbench::Assembly;
-        assert_eq!(app.current_ctx_id_for_test(), root, "setup: it must be looked at FROM THE ROOT");
+        assert_eq!(qymcad_ui_state::current_ctx_id(&app.active_path, &app.project), root, "setup: it must be looked at FROM THE ROOT");
         let j = app.project.joints.iter().find(|x| x.id == jid).expect("the joint is there").clone();
         assert!(app.project.joint_in_context(&j, root), "setup: a raised joint must be visible in the root");
         (mine[1], comps[1])
@@ -90,18 +90,18 @@ mod tests {
         app.project.solve_joints();
         let was = origin_of(&app, comp);
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body)).0;
         let by = egui::vec2(50.0, 0.0);
         assert!(
-            app.joint_grab_part_at_for_test(viewport(), at, by, &basis),
+            app.joint_grab_part_at(viewport(), at, by, &basis),
             "the joint is raised to the root and the part cannot be grabbed from there: the hand refused silently"
         );
         for k in 1..=4 {
             let step = by * (k as f32 / 4.0);
-            app.joint_giz_drag_to_for_test(at + step, by / 4.0, viewport(), &basis);
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + step, by / 4.0, viewport(), &basis);
         }
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
 
         let now = origin_of(&app, comp);
         let moved = ((now[0] - was[0]).powi(2) + (now[1] - was[1]).powi(2) + (now[2] - was[2]).powi(2)).sqrt();
@@ -121,11 +121,11 @@ mod tests {
         app.project.joints.iter_mut().find(|x| x.id == jid).unwrap().global = false; // the tick was cleared
         app.project.solve_joints();
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body)).0;
         let by = egui::vec2(50.0, 0.0);
         assert!(
-            !app.joint_grab_part_at_for_test(viewport(), at, by, &basis),
+            !app.joint_grab_part_at(viewport(), at, by, &basis),
             "the tick is cleared — the joint is not in effect in the root, and the hand must not take hold of it"
         );
     }

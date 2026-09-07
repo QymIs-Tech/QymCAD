@@ -10,6 +10,7 @@ The settings window is split into sections; above them is a search that finds a 
   field of view, antialiasing.
 - **Sketch** — snapping, grid step, rotation step, auto constraints.
 - **Part**, **Assembly** — default values and what auxiliary geometry to show.
+- **Layout** — where the panels stand: the tree, properties, the tool bars, the status line.
 - **Machining** — appears only when the module is on.
 
 Every section has **“Reset section”**: it restores the factory values in that section only, leaving
@@ -57,3 +58,13 @@ missing is taken from the factory values.
 Almost everything applies at once. The single exception is named in the window itself: **GPU
 antialiasing** takes effect the next time the program starts, because it is baked into the drawing
 pipelines at startup.
+
+## The panel layout
+
+In the **Layout** section every panel picks its place: menu, top, left, right, bottom or the middle.
+Click the one you want and the panel moves on the next frame.
+
+Only what you moved is remembered; everything else is taken as it comes, so a panel added in a later
+version turns up in its own place instead of going missing.
+
+If it comes out wrong, press **Restore the standard layout** and everything goes back.

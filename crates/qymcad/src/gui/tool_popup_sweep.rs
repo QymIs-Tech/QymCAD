@@ -19,13 +19,13 @@ mod tests {
     /// A cube in a part; returns (mesh index, body id).
     fn part_with_cube(app: &mut App) -> (usize, u64) {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
         }
         let mi = app.project.mesh_index(body).expect("the mesh");
-        app.sel = Sel::Mesh(mi);
+        app.chosen.sel = Sel::Mesh(mi);
         (mi, body)
     }
 
@@ -35,10 +35,10 @@ mod tests {
 
     /// The screen box of the body — what the popup has no right to cover.
     fn body_box(app: &App, mi: usize, rect: Rect) -> Rect {
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let mut bb: Option<Rect> = None;
         for v in &app.project.bodies[mi].mesh.verts {
-            let p = app.project3([v.x, v.y, v.z], rect, &basis).0;
+            let p = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at([v.x, v.y, v.z]).0;
             bb = Some(bb.map_or(Rect::from_min_max(p, p), |r| r.union(Rect::from_min_max(p, p))));
         }
         bb.expect("the body is visible on screen")
@@ -50,12 +50,12 @@ mod tests {
         match kind {
             6 | 23 | 25 | 26 | 28 => {
                 if let Some(f) = top {
-                    app.gsel.faces.insert(f.id);
-                    app.gsel.faces_body = Some(body);
+                    app.tools.gsel.faces.insert(f.id);
+                    app.tools.gsel.faces_body = Some(body);
                     if kind == 23 {
                         // a draft also needs a neutral face — any other one
                         if let Some(side) = app.project.bodies[mi].faces.iter().find(|s| s.id != f.id) {
-                            app.draft.neutral = side.id;
+                            app.params.draft.neutral = side.id;
                         }
                     }
                 }
@@ -63,12 +63,12 @@ mod tests {
             7 => {
                 if let Some(f) = top {
                     let fi = app.project.bodies[mi].faces.iter().position(|x| x.id == f.id).expect("the index of the face");
-                    app.sel = Sel::Face(mi, fi);
+                    app.chosen.sel = Sel::Face(mi, fi);
                 }
             }
             27 | 29 => {
                 use qymcad_core::feature::{BasePlane, SketchPlane};
-                app.split.plane = Some(SketchPlane::World(BasePlane::XY));
+                app.params.split.plane = Some(SketchPlane::World(BasePlane::XY));
             }
             _ => {}
         }
@@ -89,17 +89,17 @@ mod tests {
         for kind in AIMED_AT_THE_BODY {
             let mut app = App::default();
             let (mi, body) = part_with_cube(&mut app);
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 9.0;
-            app.cam.target = [10.0, 10.0, 5.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 9.0;
+            app.viewing.cam.target = [10.0, 10.0, 5.0];
             app.start_feat_cmd(kind);
             arm(&mut app, kind, mi, body);
-            if app.cmd.params.is_empty() {
+            if app.tools.cmd.params.is_empty() {
                 continue; // there is no number, so there is nothing to show
             }
-            if app.cmd_anchor_screen(rect).is_none() {
-                missing.push(format!("{kind} ({} fields)", app.cmd.params.len()));
+            if crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).is_none() {
+                missing.push(format!("{kind} ({} fields)", app.tools.cmd.params.len()));
             }
         }
         assert!(missing.is_empty(), "these commands have a numeric field and no anchor — there is nowhere to show it: {}", missing.join(", "));
@@ -113,13 +113,13 @@ mod tests {
         for kind in AIMED_AT_THE_BODY {
             let mut app = App::default();
             let (mi, body) = part_with_cube(&mut app);
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 9.0;
-            app.cam.target = [10.0, 10.0, 5.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 9.0;
+            app.viewing.cam.target = [10.0, 10.0, 5.0];
             app.start_feat_cmd(kind);
             arm(&mut app, kind, mi, body);
-            let Some(anchor) = app.cmd_anchor_screen(rect) else { continue };
+            let Some(anchor) = crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect) else { continue };
             let bb = body_box(&app, mi, rect);
             if bb.contains(anchor) {
                 over.push(format!("{kind} (anchor {:.0},{:.0} inside {:.0},{:.0}..{:.0},{:.0})", anchor.x, anchor.y, bb.min.x, bb.min.y, bb.max.x, bb.max.y));
@@ -148,10 +148,10 @@ mod tests {
         for kind in [6u8, 25, 27, 28] {
             let mut app = App::default();
             let (mi, body) = part_with_cube(&mut app);
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 9.0;
-            app.cam.target = [10.0, 10.0, 5.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 9.0;
+            app.viewing.cam.target = [10.0, 10.0, 5.0];
             app.start_feat_cmd(kind);
             arm(&mut app, kind, mi, body);
             if app.face_arrow_geometry().is_none() {
@@ -177,7 +177,7 @@ mod tests {
         // every place where the drawing of the scene looks at the kind of command
         let mut covered: Vec<u8> = Vec::new();
         for line in render.lines() {
-            let Some(pos) = line.find("self.cmd.kind") else { continue };
+            let Some(pos) = line.find("pn.armed.cmd_kind()") else { continue };
             let tail = &line[pos..];
             for tok in tail.split(|c: char| !c.is_ascii_digit()) {
                 if let Ok(k) = tok.parse::<u8>() {
@@ -212,15 +212,15 @@ mod tests {
         for kind in AIMED_AT_THE_BODY {
             let mut app = App::default();
             let (mi, body) = part_with_cube(&mut app);
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 9.0;
-            app.cam.target = [10.0, 10.0, 5.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 9.0;
+            app.viewing.cam.target = [10.0, 10.0, 5.0];
             // THE DRIVER THAT MUST BE OFFERED.
             app.project.parameters.push(qymcad_core::model::Param { name: "vysota_korpusa".into(), expr: "25".into(), value: 25.0 });
             app.start_feat_cmd(kind);
             arm(&mut app, kind, mi, body);
-            if app.cmd.params.is_empty() || app.cmd_anchor_screen(rect).is_none() {
+            if app.tools.cmd.params.is_empty() || crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).is_none() {
                 continue; // there is no number, or nowhere to show it — the neighbouring checks catch that
             }
 
@@ -241,7 +241,7 @@ mod tests {
                 }
                 let out = ctx.run_ui(input, |c| {
                     egui::CentralPanel::default().show(c, |_ui| {});
-                    app.feat_cmd_popup(c, rect);
+                    crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), c, rect);
                 });
                 texts.clear();
                 for cs in &out.shapes {

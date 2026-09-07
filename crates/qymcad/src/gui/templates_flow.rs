@@ -41,13 +41,13 @@ mod tests {
     fn a_document_made_from_a_template_forgets_where_it_came_from() {
         let path = tpl_path("forget");
         let mut author = marked_document();
-        author.set_project_path(path.clone());
-        author.save_project_for_test();
-        author.wait_bg_for_test();
+        crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
+        author.save_project();
+        author.wait_bg();
 
         let mut app = App::default();
         app.new_from_template(&path);
-        assert!(app.project_path_for_test().is_none(), "the new document remembers the path of the template — Save will overwrite the template itself");
+        assert!(app.disk.project_path.clone().is_none(), "the new document remembers the path of the template — Save will overwrite the template itself");
         assert!(!app.project.timeline.is_empty(), "the contents of the template must travel into the new document");
         let _ = std::fs::remove_file(&path);
     }
@@ -57,9 +57,9 @@ mod tests {
     fn the_document_properties_come_along() {
         let path = tpl_path("props");
         let mut author = marked_document();
-        author.set_project_path(path.clone());
-        author.save_project_for_test();
-        author.wait_bg_for_test();
+        crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
+        author.save_project();
+        author.wait_bg();
 
         let mut app = App::default();
         app.new_from_template(&path);
@@ -73,9 +73,9 @@ mod tests {
     fn the_creation_date_starts_over() {
         let path = tpl_path("date");
         let mut author = marked_document();
-        author.set_project_path(path.clone());
-        author.save_project_for_test(); // the first save is what sets the date
-        author.wait_bg_for_test();
+        crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
+        author.save_project(); // the first save is what sets the date
+        author.wait_bg();
         assert!(!author.project.meta.created.is_empty(), "setup: the template has a creation date");
 
         let mut app = App::default();
@@ -90,13 +90,13 @@ mod tests {
     fn a_fresh_document_from_a_template_is_not_dirty() {
         let path = tpl_path("clean");
         let mut author = marked_document();
-        author.set_project_path(path.clone());
-        author.save_project_for_test();
-        author.wait_bg_for_test();
+        crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
+        author.save_project();
+        author.wait_bg();
 
         let mut app = App::default();
         app.new_from_template(&path);
-        assert!(!app.is_dirty_for_test(), "a document from a template counts as dirty right away — the save question comes up for nothing");
+        assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "a document from a template counts as dirty right away — the save question comes up for nothing");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -105,13 +105,13 @@ mod tests {
     fn a_template_is_not_a_recent_file() {
         let path = tpl_path("recent");
         let mut author = marked_document();
-        author.set_project_path(path.clone());
-        author.save_project_for_test();
-        author.wait_bg_for_test();
+        crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
+        author.save_project();
+        author.wait_bg();
 
         let mut app = App::default();
         app.new_from_template(&path);
-        assert!(!app.recent_for_test().iter().any(|p| p == &path), "the template got into the recent files: {:?}", app.recent_for_test());
+        assert!(!app.set.recent.clone().iter().any(|p| p == &path), "the template got into the recent files: {:?}", app.set.recent.clone());
         let _ = std::fs::remove_file(&path);
     }
 

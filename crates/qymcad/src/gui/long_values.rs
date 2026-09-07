@@ -10,6 +10,15 @@
 //! panic.
 #[cfg(test)]
 mod tests {
+
+    /// THE SAME DOOR THE APPLICATION USES. The tree stopped opening its own container when the shell took
+    /// the places over, so calling `tree_panel` here drew the contents into nothing and every width came
+    /// back as zero - a check that goes in by a door the program does not have measures nothing.
+    fn draw_left(app: &mut crate::gui::App, ui: &mut egui::Ui) {
+        let shell = crate::gui::shell(&app.set);
+        shell.run_slot(qymcad_shell::Slot::Left, ui, app);
+    }
+
     use super::super::App;
 
     /// The width of the tree panel at a given window size and interface scale.
@@ -22,15 +31,15 @@ mod tests {
             ..Default::default()
         };
         // two frames: the first lays out, the second shows the SETTLED width
-        let _ = ctx.run_ui(input.clone(), |c| app.tree_panel(c));
-        let _ = ctx.run_ui(input, |c| app.tree_panel(c));
+        let _ = ctx.run_ui(input.clone(), |c| draw_left(app, c));
+        let _ = ctx.run_ui(input, |c| draw_left(app, c));
         egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.outer_rect.width()).unwrap_or(0.0)
     }
 
     fn part_with_a_body() -> (App, u64) {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.regenerate_now();
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         let comp = app.project.body_owner(body).expect("the owner");
         (app, comp)

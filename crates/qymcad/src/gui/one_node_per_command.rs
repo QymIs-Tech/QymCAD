@@ -27,10 +27,10 @@ mod tests {
         app.project.add_rect_entity(si, -30.0, -30.0, 30.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
@@ -44,7 +44,7 @@ mod tests {
         app.project.add_circle_entity(si, 22.0, 18.0, 3.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        let cids = app.sketch_closed_contours(si);
+        let cids = crate::gui::sketching::sketch_closed_contours(&app.project, si);
         assert_eq!(cids.len(), 2, "the sketch must hold exactly two closed contours");
         (si, cids)
     }
@@ -57,12 +57,12 @@ mod tests {
         let (si, cids) = two_contours(&mut app);
 
         let before = app.project.timeline.len();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(3); // revolve
         // THE REPORTED ORDER: the command opens on "add", and "cut" is chosen in the bar afterwards
         app.feat.op = 2;
-        app.gsel.profiles.extend(cids.iter().copied());
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "angle") {
+        app.tools.gsel.profiles.extend(cids.iter().copied());
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
             p.val = 360.0;
             p.txt = "360".into();
         }
@@ -92,24 +92,24 @@ mod tests {
         let mut app = App::default();
         plate(&mut app);
         let vol_before: f64 = {
-            let eaten = app.consumed_bodies();
+            let eaten = qymcad_ui_state::consumed_bodies(&app.project);
             app.live.shapes.iter().filter(|(b, _)| !eaten.contains(b)).map(|(_, s)| s.volume()).sum()
         };
         assert!(vol_before > 1.0, "the plate did not build: {}", app.status);
 
         let (si, cids) = two_contours(&mut app);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(3);
         app.feat.op = 2; // "cut" in the bar, after the command opens
-        app.gsel.profiles.extend(cids.iter().copied());
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "angle") {
+        app.tools.gsel.profiles.extend(cids.iter().copied());
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
             p.val = 360.0;
             p.txt = "360".into();
         }
         app.apply_feat_cmd();
 
         let vol_after: f64 = {
-            let eaten = app.consumed_bodies();
+            let eaten = qymcad_ui_state::consumed_bodies(&app.project);
             app.live.shapes.iter().filter(|(b, _)| !eaten.contains(b)).map(|(_, s)| s.volume()).sum()
         };
         assert!(vol_after < vol_before - 1.0, "a CUT must remove material: it was {vol_before:.1}, it became {vol_after:.1} — it looks as if the operation worked as an addition");
@@ -125,17 +125,17 @@ mod tests {
         let mut app = App::default();
         plate(&mut app);
         let (si, cids) = two_contours(&mut app);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(3);
         app.feat.op = 2; // "cut" in the bar, after the command opens
-        app.gsel.profiles.extend(cids.iter().copied());
+        app.tools.gsel.profiles.extend(cids.iter().copied());
         app.apply_feat_cmd();
 
         let fid = app.project.timeline.iter().rev().find(|n| matches!(n.kind, FK::Revolve { .. })).map(|n| n.id).expect("the revolve node");
         app.cancel_all_tools();
-        app.gsel.profiles.clear();
-        app.start_feat_cmd_edit(fid);
-        assert_eq!(app.gsel.profiles.len(), 2, "the edit must bring back BOTH contours, and it brought back {:?}", app.gsel.profiles);
+        app.tools.gsel.profiles.clear();
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+        assert_eq!(app.tools.gsel.profiles.len(), 2, "the edit must bring back BOTH contours, and it brought back {:?}", app.tools.gsel.profiles);
         assert_eq!(app.feat.op, 2, "the edit must bring back the CUT rather than an addition");
     }
 
@@ -148,7 +148,7 @@ mod tests {
     /// there, and the node simply folds into the single body of the part.
     #[test]
     fn no_command_leaves_its_boolean_outside_the_node() {
-        let src = include_str!("commands.rs");
+        let src = crate::gui::sketch_source::PART;
         let code = src.split("#[cfg(test)]").next().expect("the working part");
         for bad in ["finish_base_body(body, 0)", "finish_base_body(body, 2)", "finish_base_body(body, fb_op)", "finish_base_body(last, fb_op)"] {
             assert!(

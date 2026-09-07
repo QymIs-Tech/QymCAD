@@ -24,12 +24,12 @@ mod tests {
             super::super::joint_flow::tests::add_part_at(app, x);
         }
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let mine: Vec<Id> = app
             .project
             .components
@@ -70,22 +70,23 @@ mod tests {
         }
         app.project.solve_joints();
 
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let dir = app.project.joint_slot_axis(jid, 1, ctx).expect("the axis of travel");
         let m = app.project.joint_frame(jid, ctx).expect("the frame of the joint");
         let o = [m[3], m[7], m[11]];
         let rect = viewport();
-        let basis = app.cam.basis();
-        let l = 60.0 / app.cam.scale as f64;
-        let s0 = app.project3(o, rect, &basis).0;
-        let s1 = app.project3([o[0] + dir[0] * l, o[1] + dir[1] * l, o[2] + dir[2] * l], rect, &basis).0;
+        let basis = app.viewing.cam.basis();
+        let l = 60.0 / app.viewing.cam.scale as f64;
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis };
+        let s0 = scr.at(o).0;
+        let s1 = scr.at([o[0] + dir[0] * l, o[1] + dir[1] * l, o[2] + dir[2] * l]).0;
         let along = (s1 - s0).normalized();
 
         let before = apply12(&app.project.world_transform(part), [0.0, 0.0, 0.0]);
-        app.joint_giz_begin(jid, 1, false);
+        qymcad_assembly::joint_giz_begin(&mut app.joint_ctx(), jid, 1, false);
         // drag FAR past the limit — a good hundred millimetres
         for _ in 0..8 {
-            app.joint_giz_drag_to(s1, along * 60.0, rect, &basis);
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), s1, along * 60.0, rect, &basis);
         }
         app.project.solve_joints();
         let after = apply12(&app.project.world_transform(part), [0.0, 0.0, 0.0]);
@@ -104,23 +105,24 @@ mod tests {
         let (jid, part) = slider_with_opposed_anchors(&mut app);
         app.project.solve_joints();
 
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let dir = app.project.joint_slot_axis(jid, 1, ctx).expect("the axis of travel");
         let m = app.project.joint_frame(jid, ctx).expect("the frame of the joint");
         let o = [m[3], m[7], m[11]];
 
         // THE SCREEN DIRECTION OF THE ARROW — the one a person actually drags along.
         let rect = viewport();
-        let basis = app.cam.basis();
-        let l = 60.0 / app.cam.scale as f64;
-        let s0 = app.project3(o, rect, &basis).0;
-        let s1 = app.project3([o[0] + dir[0] * l, o[1] + dir[1] * l, o[2] + dir[2] * l], rect, &basis).0;
+        let basis = app.viewing.cam.basis();
+        let l = 60.0 / app.viewing.cam.scale as f64;
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis };
+        let s0 = scr.at(o).0;
+        let s1 = scr.at([o[0] + dir[0] * l, o[1] + dir[1] * l, o[2] + dir[2] * l]).0;
         let along = (s1 - s0).normalized();
         assert!(along.length() > 0.5, "setup: the arrow must be visible on screen, and its projection is degenerate");
 
         let before = apply12(&app.project.world_transform(part), [0.0, 0.0, 0.0]);
-        app.joint_giz_begin(jid, 1, false);
-        app.joint_giz_drag_to(s1, along * 40.0, rect, &basis);
+        qymcad_assembly::joint_giz_begin(&mut app.joint_ctx(), jid, 1, false);
+        qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), s1, along * 40.0, rect, &basis);
         app.project.solve_joints();
         let after = apply12(&app.project.world_transform(part), [0.0, 0.0, 0.0]);
 

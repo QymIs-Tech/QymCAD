@@ -227,7 +227,7 @@ fn run_lm(
     let mut iterations = 0usize;
     let mut x = DVector::zeros(layout.unknowns);
     let mut lambda = 1e-3; // Damping: grows after a rejected step, shrinks after an accepted one.
-    let mut poses = poses_at(problem, &layout, &x);
+    let mut poses = poses_at(problem, layout, &x);
     let mut r = residuals(problem, &poses);
     // The cost is the constraints and nothing else.
     //
@@ -245,7 +245,7 @@ fn run_lm(
     const MAX_ITER: usize = 200;
     for it in 1..=MAX_ITER {
         iterations = it;
-        let j = jacobian(problem, &layout, &poses);
+        let j = jacobian(problem, layout, &poses);
 
         // Levenberg-Marquardt step: (J^T J + lambda * diag(J^T J)) . d = -J^T r, solved through SVD.
         // Only the constraints are solved here; keeping a body where it was left is the job of the
@@ -297,7 +297,7 @@ fn run_lm(
         let step = project_onto_row_space(&j, step);
 
         let x_try = &x + &step;
-        let poses_try = poses_at(problem, &layout, &x_try);
+        let poses_try = poses_at(problem, layout, &x_try);
         let r_try = residuals(problem, &poses_try);
         let cost_try = r_try.norm_squared();
 

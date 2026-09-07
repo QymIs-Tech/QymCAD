@@ -24,14 +24,14 @@ mod tests {
     fn box_with_patch() -> (App, u64, u64) {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let cube = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(cube) {
             app.enter_component(owner);
         }
         let top: Vec<u32> = app.project.regen_faces[&cube].iter().filter(|f| f.normal[2] > 0.9).map(|f| f.id).collect();
         let shell = app.project.add_shell_mode(cube, 2.0, top, qymcad_core::feature::ShellSide::Inward);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // the INNER rim of the opening: the top edges that do NOT lie on the bounding box of the body
         let zmax = app.project.regen_edges[&shell].iter().flat_map(|e| [e.a[2], e.b[2]]).fold(f64::MIN, f64::max);
@@ -50,20 +50,20 @@ mod tests {
             .collect();
         assert_eq!(inner.len(), 4, "setup: the inner rim has four edges, and {} were found", inner.len());
         let patch = app.project.add_patch(shell, qymcad_core::refs::Ref::picks(&inner), false);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(app.project.bodies.iter().any(|b| b.id == patch && b.sheet), "setup: the patch must be a sheet");
 
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 9.0;
-        app.cam.target = [10.0, 10.0, 5.0];
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 9.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
         (app, shell, patch)
     }
 
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::gui::panels_source::PANELS.contains("self.start_feat_cmd(33)"), "without a button the tool does not exist for a person");
+        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(33)"), "without a button the tool does not exist for a person");
     }
 
     /// A CLICK ON A SHEET ADDS IT, A CLICK ON A SOLID SAYS THE REASON.
@@ -71,23 +71,23 @@ mod tests {
     fn clicking_a_sheet_picks_it_and_clicking_a_solid_says_why() {
         let (mut app, boxy, patch) = box_with_patch();
         app.start_feat_cmd(33);
-        assert_eq!(app.cmd.kind, 33, "the command must open");
+        assert_eq!(app.tools.armed.cmd_kind(), 33, "the command must open");
 
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let mi = app.project.mesh_index(patch).expect("the mesh of the patch");
         let c = app.project.bodies[mi].faces.first().map(|f| [f.centroid.x, f.centroid.y, f.centroid.z]).expect("the centre of the patch");
-        app.pick_face_3d(rect(), app.project3(c, rect(), &basis).0);
-        assert_eq!(app.stitch_parts, vec![patch], "a click on a sheet must PICK it; status: {}", app.status);
+        app.pick_face_3d(rect(), qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(c).0);
+        assert_eq!(app.params.stitch_parts, vec![patch], "a click on a sheet must PICK it; status: {}", app.status);
 
         // a second click removes the sheet
-        app.pick_face_3d(rect(), app.project3(c, rect(), &basis).0);
-        assert!(app.stitch_parts.is_empty(), "a second click must remove the sheet rather than add it twice");
+        app.pick_face_3d(rect(), qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(c).0);
+        assert!(app.params.stitch_parts.is_empty(), "a second click must remove the sheet rather than add it twice");
 
         // A CLICK ON A SOLID gives a named refusal rather than silence
         let bi = app.project.mesh_index(boxy).expect("the mesh of the box");
         let side = app.project.bodies[bi].faces.iter().find(|f| f.normal[2].abs() < 0.1).map(|f| [f.centroid.x, f.centroid.y, f.centroid.z]).expect("a side face");
-        app.pick_face_3d(rect(), app.project3(side, rect(), &basis).0);
-        assert!(app.stitch_parts.is_empty(), "there is nothing to stitch a solid with — it must not get into the selection");
+        app.pick_face_3d(rect(), qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(side).0);
+        assert!(app.params.stitch_parts.is_empty(), "there is nothing to stitch a solid with — it must not get into the selection");
         assert_eq!(app.status, crate::i18n::tr("msg-stitch-only-sheets"), "the reason must be said rather than silence");
     }
 
@@ -100,7 +100,7 @@ mod tests {
     fn two_sheets_become_one_surface() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
@@ -109,13 +109,13 @@ mod tests {
         let side = app.project.regen_faces[&body].iter().find(|f| f.normal[1] < -0.9).map(|f| f.id).expect("the side");
         let a = app.project.add_face_copy(body, qymcad_core::refs::Ref::one(top, qymcad_core::refs::Fingerprint::default()));
         let b = app.project.add_face_copy(body, qymcad_core::refs::Ref::one(side, qymcad_core::refs::Fingerprint::default()));
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
-        app.sel = Sel::Mesh(0);
+        app.chosen.sel = Sel::Mesh(0);
         app.start_feat_cmd(33);
-        app.stitch_parts = vec![a, b];
+        app.params.stitch_parts = vec![a, b];
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let node = app
             .project
@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(node.1, vec![a, b], "the sheets that were picked must reach the timeline");
         assert!(!app.project.regen_errors.contains_key(&node.0), "the stitch must build: {:?}", app.project.regen_errors.get(&node.0));
         assert!(app.project.consumed_bodies().contains(&a) && app.project.consumed_bodies().contains(&b), "the pieces must be consumed");
-        assert!(app.stitch_parts.is_empty(), "after applying, the selection must be cleared — otherwise it leaks into the next command");
+        assert!(app.params.stitch_parts.is_empty(), "after applying, the selection must be cleared — otherwise it leaks into the next command");
     }
 
     /// THE TOOL SHOWS WHAT IS PICKED (a neighbouring guard catches this class by a sweep; what is
@@ -137,8 +137,8 @@ mod tests {
     #[test]
     fn the_tool_shows_what_is_picked() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("} else if self.cmd.kind == 33 {").expect("the stitch must have a drawing block of its own");
-        let b = src[a..].find("} else if self.cmd.kind == 26 {").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("} else if pn.armed.cmd_kind() == 33 {").expect("the stitch must have a drawing block of its own");
+        let b = src[a..].find("} else if pn.armed.cmd_kind() == 26 {").map(|i| a + i).unwrap_or(src.len());
         assert!(src[a..b].contains("egui::Mesh::default()"), "the picked sheets must be highlighted with a fill");
     }
 

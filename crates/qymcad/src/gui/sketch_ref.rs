@@ -21,14 +21,14 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // a sketch on the TOP face of the box (normal +Z)
         let body1 = app.project.mesh_id(0).expect("the body is there");
@@ -48,13 +48,13 @@ mod tests {
         };
         let sk = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body1, key));
         app.finish_sketch_edit();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         // THE BODIES ARE TOLD APART BY THE SPAN OF THE OUTLINE rather than by the number of
         // polylines: the top face of the rounded box is also four straight edges, only SMALLER
         // (40 - 2*r), while the arcs belong to the fillet faces by then. The polyline count is the
         // same here and cannot serve as a discriminator.
         let span = |app: &App, sk: usize| -> f64 {
-            let polys = app.sketch_ref_edges_2d(sk);
+            let polys = crate::gui::sketching::sketch_ref_edges_2d(&app.cache, &app.tools.cmd, &app.live, &app.project, &app.regen, sk);
             let (mut lo, mut hi) = (f64::MAX, f64::MIN);
             for p in &polys {
                 for v in p {
@@ -74,15 +74,15 @@ mod tests {
         if let Some(owner) = app.project.body_owner(body1) {
             app.enter_component(owner);
         }
-        app.sel = Sel::Mesh(mi);
+        app.chosen.sel = Sel::Mesh(mi);
         app.start_feat_cmd(4); // fillet
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 4.0;
             p.txt = "4".into();
         }
-        app.gsel.edges = app.body_edges_cached(body1).map(|e| e.1.iter().copied().filter(|&i| i != 0).collect()).unwrap_or_default();
+        app.tools.gsel.edges = crate::gui::pick::body_edges_cached(&app.cache, &app.live, &app.regen, body1).map(|e| e.ids.iter().copied().filter(|&i| i != 0).collect()).unwrap_or_default();
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let live = app.project.mesh_id(app.project.bodies.len() - 1).expect("the new body");
         assert_ne!(live, body1, "setup: the fillet must create a NEW body");

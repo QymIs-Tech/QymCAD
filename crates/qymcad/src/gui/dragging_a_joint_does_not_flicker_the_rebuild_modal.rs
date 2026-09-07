@@ -26,7 +26,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of the topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -43,8 +43,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -57,12 +57,12 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 6.0).mate(JointKind::Slider).anchor(3).click(pa).click(pb);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let jid = app.project.joints.last().map(|j| j.id).expect("two clicks must create the joint");
         (jid, mine[1])
     }
@@ -76,7 +76,7 @@ mod tests {
     fn leave_one_node_dirty(app: &mut App) {
         let node = app.project.timeline.iter().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the node of the body");
         app.project.mark_node_dirty(node);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.project.mark_node_dirty(node); // the rebuild cleared it — mark it again, like a failing node
     }
 
@@ -90,22 +90,22 @@ mod tests {
         // of the drag: the thread is computing, the marks are cleared by its result, and it has not
         // arrived yet.
         app.regen.ui_running = true;
-        app.rebuild_if_dirty(); // the frame BEFORE the drag: let what has accumulated be computed — that is legitimate
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx()); // the frame BEFORE the drag: let what has accumulated be computed — that is legitimate
         app.regen.wanted = false;
-        let basis = app.cam.basis();
-        let at = app.project3(aim(app, body), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(app, body)).0;
         let by = egui::vec2(40.0, 0.0);
-        assert!(app.joint_grab_part_at_for_test(viewport(), at, by, &basis), "setup: it must be possible to grab the part");
+        assert!(app.joint_grab_part_at(viewport(), at, by, &basis), "setup: it must be possible to grab the part");
         let mut asks = 0;
         for k in 1..=8 {
             let step = by * (k as f32 / 8.0);
-            app.joint_giz_drag_to_for_test(at + step, by / 8.0, viewport(), &basis);
-            app.rebuild_if_dirty(); // the same thing a frame does
+            qymcad_assembly::joint_giz_drag_to(&mut app.joint_ctx(), at + step, by / 8.0, viewport(), &basis);
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx()); // the same thing a frame does
             if std::mem::take(&mut app.regen.wanted) {
                 asks += 1;
             }
         }
-        app.joint_giz_end_for_test();
+        qymcad_assembly::joint_giz_end_for_test(&mut app.joint_ctx());
         asks
     }
 
@@ -145,12 +145,12 @@ mod tests {
         app.finish_sketch_edit();
         app.exit_context(); // back into the assembly, by the same path a person takes
         assert!(app.project.external_ref_for(neighbour, moving).is_some(), "setup: a sketch on somebody else's face must create an external reference");
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         // THE HAND IS BACK IN THE ASSEMBLY: leaving the part reset both the workbench and the camera.
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 10.0, 5.0], 6.0);
         app.workbench = super::super::Workbench::Assembly;
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
 
         let asks = rebuilds_asked_during_a_drag(&mut app, moving);
         assert_eq!(asks, 0, "dragging a part does not rebuild the timeline even with an external reference: it was asked for {asks} times");

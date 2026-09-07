@@ -15,7 +15,7 @@ mod tests {
 
     /// THE SINGLE "EVERYTHING ADDS UP" CHECK - run after every action rather than as a separate test.
     fn check_all(app: &mut App, step: &str, problems: &mut Vec<String>) {
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         // 1. THE GEOMETRY: not a single red node.
         // WHAT COUNTS AS RED IS WHAT THE PROGRAM COULD NOT EXPLAIN. A named refusal is a conversation: "the
         // chamfer is larger than the wall", "the fillet has nothing to round". Such a node is legitimate
@@ -205,14 +205,14 @@ mod tests {
                 FKd::Plane { plane } => app.project.planes.iter().find(|p| p.id == plane).map(|p| format!("· {}", crate::i18n::name(&p.name))).unwrap_or_default(),
                 FKd::DatumAxis { axis } => app.project.datum_axes.iter().find(|a| a.id == axis).map(|a| format!("· {}", crate::i18n::name(&a.name))).unwrap_or_default(),
                 FKd::DatumPoint { point } => app.project.datum_points.iter().find(|q| q.id == point).map(|q| format!("· {}", crate::i18n::name(&q.name))).unwrap_or_default(),
-                _ => app.feature_row_label(ti),
+                _ => crate::gui::panels_tree::feature_row_label(&app.project, ti),
             };
             let words = row.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
             if words.trim().is_empty() {
                 problems.push(format!(
                     "[{step}] node {} ({}) has no row in the tree",
                     app.project.timeline[ti].id,
-                    App::feat_default_name(&app.project.timeline[ti].kind)
+                    crate::gui::feat_default_name(&app.project.timeline[ti].kind)
                 ));
             } else if !words.contains(' ') && words.contains('-') && words.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit()) {
                 problems.push(format!("[{step}] node {} shows A KEY \"{words}\"", app.project.timeline[ti].id));
@@ -222,7 +222,7 @@ mod tests {
         //    as many bodies as it has parts, and counting them together would declare every assembly broken.
         let mut per_part: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
         for (mi, b) in app.project.bodies.iter().enumerate() {
-            if !app.body_shown(mi) || b.sheet {
+            if !qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi) || b.sheet {
                 continue;
             }
             if let Some(owner) = app.project.body_owner(b.id) {
@@ -237,7 +237,7 @@ mod tests {
                     .bodies
                     .iter()
                     .enumerate()
-                    .filter(|(mi, b)| app.body_shown(*mi) && !b.sheet && app.project.body_owner(b.id) == Some(owner))
+                    .filter(|(mi, b)| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), *mi) && !b.sheet && app.project.body_owner(b.id) == Some(owner))
                     .map(|(_, b)| {
                         let node = app.project.timeline.iter().find(|n| n.kind.bodies().contains(&b.id));
                         let red = node.is_some_and(|n| app.project.regen_errors.contains_key(&n.id));
@@ -258,7 +258,7 @@ mod tests {
             }
         }
         for (mi, b) in app.project.bodies.iter().enumerate() {
-            if app.body_shown(mi) && b.mesh.tris.is_empty() {
+            if qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi) && b.mesh.tris.is_empty() {
                 problems.push(format!("[{step}] body {} is visible, but there is nothing to draw", b.id));
             }
         }
@@ -272,14 +272,14 @@ mod tests {
     /// Save and reopen - and check everything there as well.
     fn save_and_reopen(app: &mut App, step: &str, problems: &mut Vec<String>) -> App {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
-        app.set_project_path(path.clone());
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
         app.save_project();
         app.drain_bg_for_test();
         match qymcad_io::load_project(&path) {
             Ok(project) => {
                 let mut fresh = App::default();
                 fresh.finish_project_load(path, project, Vec::new());
-                fresh.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut fresh.rebuild_ctx());
                 let mut p2 = Vec::new();
                 check_all(&mut fresh, &format!("{step} -> after opening"), &mut p2);
                 problems.extend(p2);
@@ -335,9 +335,9 @@ mod tests {
         else {
             return false;
         };
-        app.select_body(body);
-        if app.selected_body_for_test() != Some(body) {
-            problems.push(format!("[{part}] the selection drifted: body {body} was asked for, {:?} is selected", app.selected_body_for_test()));
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
+        if qymcad_ui_state::selected_body(&app.project, &app.chosen.sel) != Some(body) {
+            problems.push(format!("[{part}] the selection drifted: body {body} was asked for, {:?} is selected", qymcad_ui_state::selected_body(&app.project, &app.chosen.sel)));
         }
         let c = app
             .project
@@ -427,7 +427,7 @@ mod tests {
                 // THE BOTTOM IS TAKEN AS THE NEUTRAL FACE - as a draft for printing requires - and to click it
                 // the part IS TURNED. That is exactly what a person does when the face is behind the part.
                 let (Some((nt, _)), Some((st, _))) = (face(hand.app, [0.0, 0.0, -1.0]), face(hand.app, [0.0, -1.0, 0.0])) else { return false };
-                hand.app.draft.pick_neutral = true;
+                hand.app.params.draft.pick_neutral = true;
                 hand.look_from_below().click(nt);
                 hand.orbit(-0.7, 0.6).click(st).set("angle", 4.0).enter();
             }
@@ -489,7 +489,7 @@ mod tests {
                     let mut hand = Hand::new(app);
                     hand.look_at(c, scale).tool(26);
                     hand.click([f.centroid.x, f.centroid.y, f.centroid.z]).enter();
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     let bad = app.project.timeline.iter().skip(before_n).any(|n| app.project.regen_errors.contains_key(&n.id));
                     if !bad && app.project.timeline.len() > before_n {
                         done = true;
@@ -500,7 +500,7 @@ mod tests {
                     for id in ids {
                         app.project.delete_feature_op(id);
                     }
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 }
                 if !done {
                     return false;
@@ -595,11 +595,11 @@ mod tests {
                         hand.click([f.centroid.x, f.centroid.y, f.centroid.z]);
                     }
                 }
-                if app.stitch_parts.len() < 2 {
-                    app.stitch_parts = sheets.clone();
+                if app.params.stitch_parts.len() < 2 {
+                    app.params.stitch_parts = sheets.clone();
                 }
                 app.apply_feat_cmd();
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             }
             34 => {
                 // TRIMMING: a sheet is cut by a body, and the piece at THE POINT OF THE CLICK remains. The
@@ -623,7 +623,7 @@ mod tests {
                 let Some(sheet) = sheet else { return false };
                 let Some(f) = app.project.regen_faces.get(&sheet).and_then(|fs| fs.first().cloned()) else { return false };
                 app.start_feat_cmd(34);
-                app.trim.keep = Some((sheet, [f.centroid.x, f.centroid.y, f.centroid.z]));
+                app.side.trim.keep = Some((sheet, [f.centroid.x, f.centroid.y, f.centroid.z]));
                 // THE CUTTING IS DONE BY THE SECOND PIECE rather than by the part itself: after a split a part
                 // legitimately holds two bodies, and one of them is a real tool that crosses the sheet. The
                 // part itself will not do: the face copy lies on it, and there is nothing to cut with.
@@ -671,10 +671,10 @@ mod tests {
                 for cut in cands.into_iter().take(4) {
                     let before_n = app.project.timeline.len();
                     app.start_feat_cmd(34);
-                    app.trim.keep = Some((sheet, [f.centroid.x, f.centroid.y, f.centroid.z]));
-                    app.trim.tool = Some(cut);
+                    app.side.trim.keep = Some((sheet, [f.centroid.x, f.centroid.y, f.centroid.z]));
+                    app.side.trim.tool = Some(cut);
                     app.apply_feat_cmd();
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     let bad = app.project.timeline.iter().skip(before_n).any(|n| app.project.regen_errors.contains_key(&n.id));
                     if !bad && app.project.timeline.len() > before_n {
                         done = true;
@@ -684,7 +684,7 @@ mod tests {
                     for id in ids {
                         app.project.delete_feature_op(id);
                     }
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 }
                 if !done {
                     return false;
@@ -711,9 +711,9 @@ mod tests {
                     return false;
                 }
                 app.start_feat_cmd(32);
-                app.gsel.edges = edges.into_iter().collect();
+                app.tools.gsel.edges = edges.into_iter().collect();
                 app.apply_feat_cmd();
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             }
             30 => {
                 // A FACE COPY: a surface beside the part. It is clicked like an ordinary face, and the "a part
@@ -736,7 +736,7 @@ mod tests {
                     .find(|b| app.project.bodies.iter().any(|x| x.id == *b && x.sheet));
                 let Some(sheet) = sheet else { return false };
                 let Some(f) = app.project.regen_faces.get(&sheet).and_then(|fs| fs.first().cloned()) else { return false };
-                app.select_body(sheet);
+                qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, sheet);
                 let mut hand = Hand::new(app);
                 hand.look_at(c, scale).tool(28).click([f.centroid.x, f.centroid.y, f.centroid.z]).set("thickness", 2.0).enter();
             }
@@ -768,7 +768,7 @@ mod tests {
                 .unwrap_or_default();
             problems.push(format!(
                 "[{part}] tool {kind} created no node: body {body}, {} faces picked, the faces of the body: {}; status: {}",
-                app.gsel.faces.len(),
+                app.tools.gsel.faces.len(),
                 fs.join(" "),
                 app.status
             ));
@@ -788,7 +788,7 @@ mod tests {
         for id in named {
             app.project.delete_feature_op(id);
         }
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         check_all(app, &format!("{part}: tool {kind}"), problems);
         made
     }
@@ -812,18 +812,18 @@ mod tests {
         app.finish_sketch_edit();
         check_all(&mut app, "a rectangle was drawn", &mut problems);
 
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 20.0, 10.0], 8.0).tool(1).set("height", 25.0).enter();
         check_all(&mut app, "the housing was extruded", &mut problems);
 
         // --- FILLETS ON THE VERTICAL EDGES ---
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         let vert: Vec<[f64; 3]> = app.project.regen_edges[&body].iter().filter(|e| (e.a[2] - e.b[2]).abs() > 1.0).map(|e| e.mid).collect();
         for m in vert.iter().take(4) {
             let b = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-            app.select_body(b);
+            qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, b);
             let mut hand = Hand::new(&mut app);
             hand.look_at([30.0, 20.0, 12.0], 8.0).tool(4).click(*m).set("radius", 3.0).enter();
         }
@@ -831,7 +831,7 @@ mod tests {
 
         // --- A SHELL WITH THE TOP REMOVED ---
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         let top = app.project.regen_faces[&body].iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).cloned().expect("the top");
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 20.0, 12.0], 8.0).tool(6).click([top.centroid.x, top.centroid.y, top.centroid.z]).set("thickness", 2.0).enter();
@@ -849,7 +849,7 @@ mod tests {
         check_all(&mut app, "a sketch on a face of the housing", &mut problems);
 
         let v_before_cut = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).and_then(|b| app.project.bodies.iter().find(|x| x.id == b)).map(|b| b.mesh.volume()).unwrap_or(0.0);
-        app.sel = super::super::Sel::Sketch(si2);
+        app.chosen.sel = super::super::Sel::Sketch(si2);
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 20.0, 12.0], 8.0).tool(1).op(2).set("height", 10.0).enter();
         check_all(&mut app, "a cut from the sketch on the face", &mut problems);
@@ -866,7 +866,7 @@ mod tests {
         if let Some(ti) = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })) {
             let nid = app.project.timeline[ti].id;
             app.tree_action(1, ti, nid, None, None);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 35.0;
                 p.txt = "35".into();
             }
@@ -875,7 +875,7 @@ mod tests {
         }
 
         // --- A SECOND PART IN THE SAME DOCUMENT: THE LID ---
-        app.exit_context_for_test();
+        app.exit_context();
         let lid = app.project.add_part("Lid");
         app.enter_component(lid);
         let si3 = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
@@ -883,14 +883,14 @@ mod tests {
         hand.sk_tool(2).click2d(0.0, 0.0).click2d(60.0, 40.0);
         app.project.regen_sketch(si3);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si3);
+        app.chosen.sel = super::super::Sel::Sketch(si3);
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 20.0, 2.0], 8.0).tool(1).op(0).set("height", 3.0).enter();
         check_all(&mut app, "the lid was extruded in the same document", &mut problems);
 
         // --- FILLETING THE LID ALONG ITS CONTOUR - the chain grows on THIS part ---
         let lid_body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body of the lid");
-        app.select_body(lid_body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, lid_body);
         if let Some(e) = app.project.regen_edges.get(&lid_body).and_then(|es| es.iter().find(|e| (e.a[2] - e.b[2]).abs() > 1.0).cloned()) {
             let mut hand = Hand::new(&mut app);
             hand.look_at([30.0, 20.0, 2.0], 8.0).tool(4).click(e.mid).set("radius", 2.0).enter();
@@ -898,7 +898,7 @@ mod tests {
         check_all(&mut app, "the lid was filleted", &mut problems);
 
         // --- THE ASSEMBLY: THE LID IS FASTENED TO THE HOUSING ---
-        app.exit_context_for_test();
+        app.exit_context();
         let comps: Vec<u64> = app.project.components.iter().filter(|c| c.id != app.project.root).map(|c| c.id).collect();
         if comps.len() >= 2 {
             let ca = app.project.add_connector(comps[0], qymcad_core::feature::AnchorRef::Origin);
@@ -933,7 +933,7 @@ mod tests {
             for (i, (_, name)) in kinds.iter().enumerate() {
                 let x = 200.0 + i as f64 * 120.0; // a row of pairs, with nothing overlapping
                 let mut mk = |suffix: &str, dx: f64| -> u64 {
-                    app.exit_context_for_test();
+                    app.exit_context();
                     let part = app.project.add_part(format!("{name} {suffix}"));
                     app.enter_component(part);
                     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
@@ -941,11 +941,11 @@ mod tests {
                     hand.sk_tool(2).click2d(x + dx, 0.0).click2d(x + dx + 30.0, 30.0);
                     app.project.regen_sketch(si);
                     app.finish_sketch_edit();
-                    app.sel = super::super::Sel::Sketch(si);
+                    app.chosen.sel = super::super::Sel::Sketch(si);
                     let mut hand = Hand::new(&mut app);
                     hand.look_at([x + dx + 15.0, 15.0, 10.0], 8.0).tool(1).op(0).set("height", 20.0).enter();
-                    app.rebuild_if_dirty();
-                    app.exit_context_for_test();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+                    app.exit_context();
                     part
                 };
                 let a = mk("A", 0.0);
@@ -1040,14 +1040,14 @@ mod tests {
             if let Some(ti) = victim {
                 let name = crate::i18n::name(&app.project.timeline[ti].name);
                 app.project.set_feature_suppressed(ti, true);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if !app.project.timeline[ti].suppressed {
                     problems.push(format!("node \"{name}\" was not suppressed"));
                 }
                 check_all(&mut app, &format!("a node in the middle was suppressed: {name}"), &mut problems);
 
                 app.project.set_feature_suppressed(ti, false);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if app.project.timeline[ti].suppressed {
                     problems.push(format!("node \"{name}\" did not come back on"));
                 }
@@ -1056,14 +1056,14 @@ mod tests {
 
             // ROLLING BACK AND FORWARD: build only the first half of the timeline, then all of it again.
             app.project.set_rollback(Some(mid));
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             if app.project.rollback != Some(mid) {
                 problems.push("the rollback of the history did not land on the middle".into());
             }
             check_all(&mut app, "the history was rolled back to the middle", &mut problems);
 
             app.project.set_rollback(None);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             if app.project.rollback.is_some() {
                 problems.push("returning from the rollback did not work".into());
             }
@@ -1090,7 +1090,7 @@ mod tests {
                 if m == 0 || app.project.components.len() <= was {
                     problems.push("mirroring A PART produced no new component".into());
                 }
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 check_all(&mut app, "the part was mirrored", &mut problems);
             }
             if let Some(&src) = with_body.get(1).or_else(|| with_body.first()) {
@@ -1098,7 +1098,7 @@ mod tests {
                 if lin == 0 {
                     problems.push("a linear array OF PARTS was not created".into());
                 }
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 check_all(&mut app, "a linear array of parts", &mut problems);
             }
             if let Some(&src) = with_body.get(2).or_else(|| with_body.first()) {
@@ -1106,7 +1106,7 @@ mod tests {
                 if cir == 0 {
                     problems.push("a circular array OF PARTS was not created".into());
                 }
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 check_all(&mut app, "a circular array of parts", &mut problems);
             }
         }
@@ -1117,7 +1117,7 @@ mod tests {
         if let Some(&first) = comps.first() {
             app.enter_component(first);
             if let Some(b) = app.project.timeline.iter().rev().find_map(|n| n.kind.body()) {
-                app.select_body(b);
+                qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, b);
                 // THE EDGES MUST EXIST AFTER OPENING. Without them no edge tool can be used - and that is not
                 // known in advance, so the program simply reads as broken. Such a step must not be skipped
                 // silently: this is exactly the kind of fault that gets found by hand.
@@ -1137,7 +1137,7 @@ mod tests {
         }
 
         // --- A THIRD PART: A BRACKET - a hole, a draft, an array, a mirror ---
-        app.exit_context_for_test();
+        app.exit_context();
         let br = app.project.add_part("Bracket");
         app.enter_component(br);
         let si4 = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
@@ -1145,14 +1145,14 @@ mod tests {
         hand.sk_tool(2).click2d(0.0, 0.0).click2d(50.0, 30.0);
         app.project.regen_sketch(si4);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si4);
+        app.chosen.sel = super::super::Sel::Sketch(si4);
         let mut hand = Hand::new(&mut app);
         hand.look_at([25.0, 15.0, 5.0], 8.0).tool(1).op(0).set("height", 10.0).enter();
         check_all(&mut app, "the bracket was extruded", &mut problems);
 
         // A DRAFT on a side face - a tool the chains have not carried yet
         let b = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body of the bracket");
-        app.select_body(b);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, b);
         let side = app.project.regen_faces[&b].iter().filter(|f| f.normal[1] < -0.9).max_by(|x, y| x.area.total_cmp(&y.area)).cloned();
         let bottom = app.project.regen_faces[&b].iter().filter(|f| f.normal[2] < -0.9).max_by(|x, y| x.area.total_cmp(&y.area)).cloned();
         if let (Some(side), Some(bottom)) = (side, bottom) {
@@ -1163,11 +1163,11 @@ mod tests {
             // waits for a click, and the status line says so.
             let mut hand = Hand::new(&mut app);
             hand.look_at([25.0, 15.0, 5.0], 8.0).tool(23);
-            hand.app.draft.pick_neutral = true; // the "neutral face" button
+            hand.app.params.draft.pick_neutral = true; // the "neutral face" button
             hand.click([bottom.centroid.x, bottom.centroid.y, bottom.centroid.z]);
             hand.click([side.centroid.x, side.centroid.y, side.centroid.z]).set("angle", 5.0);
-            let picked = hand.app.gsel.faces.len();
-            let neutral = hand.app.draft.neutral;
+            let picked = hand.app.tools.gsel.faces.len();
+            let neutral = hand.app.params.draft.neutral;
             hand.enter();
             if !app.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Draft { .. })) {
                 problems.push(format!("[draft] was not created: {picked} faces picked, neutral {neutral}, status: {}", app.status));
@@ -1177,7 +1177,7 @@ mod tests {
 
         // A LINEAR ARRAY of a body - another tool on the same part
         let b = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-        app.select_body(b);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, b);
         let mut hand = Hand::new(&mut app);
         hand.look_at([25.0, 15.0, 5.0], 8.0).tool(17);
         hand.enter();
@@ -1196,7 +1196,7 @@ mod tests {
             ("Order E", [29, 5, 30, 32, 16, 4, 26, 7, 25, 33, 28, 18, 23, 6, 24, 27, 34]), // the body split goes last: after it a part legitimately holds several bodies // the draft comes BEFORE the shell: after it the wall is 2 mm and there is nothing to tilt
         ];
         for (name, order) in orders {
-            app.exit_context_for_test();
+            app.exit_context();
             let part = app.project.add_part(name);
             app.enter_component(part);
             let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
@@ -1204,7 +1204,7 @@ mod tests {
             hand.sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 30.0);
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
-            app.sel = super::super::Sel::Sketch(si);
+            app.chosen.sel = super::super::Sel::Sketch(si);
             let mut hand = Hand::new(&mut app);
             hand.look_at([20.0, 15.0, 10.0], 8.0).tool(1).op(0).set("height", 20.0).enter();
             check_all(&mut app, &format!("{name}: the base"), &mut problems);
@@ -1267,7 +1267,7 @@ mod tests {
         // constraint and a point drag are run, and after each step both the display and the degrees of
         // freedom are checked: a constraint that tied nothing is worse than a missing one.
         {
-            app.exit_context_for_test();
+            app.exit_context();
             let part = app.project.add_part("Sketching");
             app.enter_component(part);
             let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
@@ -1332,7 +1332,7 @@ mod tests {
                 // the selection for a constraint: the first two entities of the sketch, as they would be clicked
                 hand.sk_select();
                 for (k, id) in app_sel_pair(&hand.app.project.sketches[si]) {
-                    hand.app.sel_sk.items.push((k, id));
+                    hand.app.tools.sel_sk.items.push((k, id));
                 }
                 hand.constraint(code);
                 app.project.solve_sketch(si);
@@ -1349,7 +1349,7 @@ mod tests {
             {
                 let count = |a: &App| a.project.sketches[si].entities.len() + a.project.sketches[si].points.len();
                 let before = count(&app);
-                app.fillet_all_corners();
+                crate::gui::fillet_all_corners(&mut app.tools.corner, &mut app.tools.picking, app.chosen.sel, &app.tools.sel_sk, &mut app.status, &app.tool_prefs);
                 app.project.regen_sketch(si);
                 if count(&app) == before && app.status.trim().is_empty() {
                     problems.push("sketch: \"round every corner\" silently did nothing".into());
@@ -1360,7 +1360,7 @@ mod tests {
                     [(5, "chamfer", (30.0, 0.0)), (1, "trim", (40.0, 0.0)), (2, "extend", (30.0, 7.0)), (3, "break", (50.0, 7.0))];
                 for (op, name, (x, y)) in ops {
                     let before = count(&app);
-                    app.set_click_op(op);
+                    qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, op);
                     let mut hand = Hand::new(&mut app);
                     hand.click2d(x, y);
                     app.project.regen_sketch(si);
@@ -1369,16 +1369,16 @@ mod tests {
                     }
                     check_all(&mut app, &format!("sketch: {name}"), &mut problems);
                 }
-                app.set_click_op(0);
+                qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
 
                 // MOVING, COPYING AND ROTATING work on the selection rather than on the point under the cursor.
                 for (mode, name) in [(1u8, "move"), (2, "copy"), (3, "rotate")] {
                     let mut hand = Hand::new(&mut app);
                     hand.sk_tool(0);
                     for (k, id) in app_sel_pair(&hand.app.project.sketches[si]) {
-                        hand.app.sel_sk.items.push((k, id));
+                        hand.app.tools.sel_sk.items.push((k, id));
                     }
-                    hand.app.start_move_tool(mode);
+                    crate::gui::commands::start_move_tool(&mut qymcad_ui_state::tools_of!(hand.app), &mut hand.app.status, mode);
                     hand.drag2d((0.0, 0.0), (4.0, 4.0));
                     app.project.regen_sketch(si);
                     check_all(&mut app, &format!("sketch: {name}"), &mut problems);
@@ -1404,7 +1404,7 @@ mod tests {
                     };
                     let before = dims_now(&app);
                     let dof_before = app.project.sketch_dof(si);
-                    app.set_dim_tool(kind);
+                    qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, kind);
                     let mut hand = Hand::new(&mut app);
                     for (x, y) in picks {
                         hand.click2d(*x, *y);
@@ -1422,7 +1422,7 @@ mod tests {
                     }
                     check_all(&mut app, &format!("sketch: the {name} dimension"), &mut problems);
                 }
-                app.set_dim_tool(0);
+                qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 0);
             }
 
             // A DIMENSION IS A LEVER, NOT A CAPTION. The value is edited and the question is whether THE
@@ -1512,7 +1512,7 @@ mod tests {
             }
 
             app.finish_sketch_edit();
-            app.exit_context_for_test();
+            app.exit_context();
         }
 
         // --- THE MONKEY: RANDOM ACTIONS ON A FINISHED DOCUMENT ---
@@ -1532,21 +1532,21 @@ mod tests {
             let parts: Vec<u64> = app.project.components.iter().filter(|c| c.id != app.project.root).map(|c| c.id).collect();
             for step in 0..12 {
                 let Some(&part) = parts.get(next(parts.len() as u64) as usize) else { break };
-                app.exit_context_for_test();
+                app.exit_context();
                 app.enter_component(part);
                 let kind = tools[next(tools.len() as u64) as usize];
                 let esc = next(4) == 0; // every fourth time the mind is changed
                 let before = app.project.timeline.len();
                 if esc {
                     app.start_feat_cmd(kind);
-                    app.cancel_feat_cmd();
+                    crate::gui::cancel_feat_cmd(&mut app.part_ctx());
                     if app.project.timeline.len() != before {
                         problems.push(format!("monkey step {step}: Esc left a trace in the timeline"));
                     }
                 } else {
                     apply_tool(&mut app, kind, &mut problems, "monkey");
                 }
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 // A LEGITIMATE REFUSAL IS NOT A FAULT. Being told "the chamfer is larger than the wall" leads
                 // to cancelling the action and going on; it stays a red node only for someone who walked away
                 // for tea. So a step with A NAMED reason is rolled back, while a nameless `OpFailed` is left -
@@ -1568,11 +1568,11 @@ mod tests {
                     app.project.delete_feature_op(id);
                 }
                 if !app.project.timeline.is_empty() {
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 }
                 check_all(&mut app, &format!("monkey step {step} (tool {kind}{})", if esc { ", Esc" } else { "" }), &mut problems);
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
 
         // --- A GLOBAL VARIABLE IN A FEATURE DIMENSION: EDIT THE NUMBER AND THE BODY MOVES ---
@@ -1589,22 +1589,22 @@ mod tests {
             if let Some((node, body)) = ext {
                 let area = |a: &App| a.project.regen_faces.get(&body).map(|fs| fs.iter().map(|f| f.area).sum::<f64>()).unwrap_or(0.0);
                 let a0 = area(&app);
-                app.begin_edit("the height follows a variable");
+                qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "the height follows a variable");
                 app.project.parameters.push(qymcad_core::model::Param { name: "height".into(), expr: "18".into(), value: 18.0 });
                 app.project.feat_dims.entry(node).or_default().insert("height".into(), "height".into());
-                app.commit_edit();
+                qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
                 app.project.mark_node_dirty(node);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let a1 = area(&app);
 
-                app.begin_edit("editing the variable");
+                qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "editing the variable");
                 if let Some(p) = app.project.parameters.iter_mut().find(|p| p.name == "height") {
                     p.expr = "34".into();
                     p.value = 34.0;
                 }
-                app.commit_edit();
+                qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
                 app.project.mark_node_dirty(node);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let a2 = area(&app);
 
                 if (a2 - a1).abs() < 1e-6 {
@@ -1632,18 +1632,18 @@ mod tests {
             if let (Some(part), Some(node)) = (part, node) {
                 // THE BOUNDARY OF AN EDIT, as in the program: renaming is a deliberate act and makes one undo
                 // step. Without it the undo snapshot knows nothing of the new names and wipes them.
-                app.begin_edit("renaming");
+                qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "renaming");
                 if let Some(c) = app.project.components.iter_mut().find(|c| c.id == part) {
                     c.name = "Left bracket".into();
                 }
                 if let Some(n) = app.project.timeline.iter_mut().find(|n| n.id == node) {
                     n.name = "Mounting pad".into();
                 }
-                app.commit_edit();
-                app.rebuild_if_dirty();
+                qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
                 let ti = app.project.timeline.iter().position(|n| n.id == node).unwrap_or(0);
-                let row = app.feature_row_label(ti);
+                let row = crate::gui::panels_tree::feature_row_label(&app.project, ti);
                 if !row.contains("Mounting pad") {
                     problems.push(format!("the renamed node is shown in the tree as \"{row}\" rather than by its name"));
                 }
@@ -1666,7 +1666,7 @@ mod tests {
             // fresh cube.
             let parts: Vec<u64> = app.project.components.iter().filter(|c| c.id != app.project.root).map(|c| c.id).collect();
             if let Some(&part) = parts.last() {
-                app.exit_context_for_test();
+                app.exit_context();
                 app.enter_component(part);
                 let nodes0 = app.project.timeline.len();
                 // THE CONTENTS ARE COMPARED, NOT A GENERAL KEY. The key includes derived data that a rebuild
@@ -1681,14 +1681,14 @@ mod tests {
                 // THE STEP GOES INSIDE AN EDIT BOUNDARY. An undo removes the last DELIBERATE ACT; if the recipe
                 // builds outside a boundary, Ctrl+Z removes not what was just built but what came before - and
                 // the check blames the undo for someone else's work.
-                app.begin_edit("fillet");
+                qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "fillet");
                 apply_tool(&mut app, 4, &mut problems, "undo"); // the fillet is what this is checked on
-                app.commit_edit();
-                app.rebuild_if_dirty();
+                qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let nodes1 = app.project.timeline.len();
 
                 app.undo();
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if app.project.timeline.len() != nodes0 {
                     problems.push(format!("after the undo there are {} nodes instead of {nodes0}", app.project.timeline.len()));
                 }
@@ -1703,7 +1703,7 @@ mod tests {
                 check_all(&mut app, "the undo returned the document", &mut problems);
 
                 app.redo();
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if nodes1 > nodes0 && app.project.timeline.len() != nodes1 {
                     problems.push(format!("after the redo there are {} nodes instead of {nodes1}", app.project.timeline.len()));
                 }
@@ -1721,7 +1721,7 @@ mod tests {
                 for id in named {
                     app.project.delete_feature_op(id);
                 }
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 // SECOND PASS: the rebuild after removing nodes can name a refusal again (the step
                 // came back with a redo), and a red node would survive the first cleanup.
                 let named2: Vec<u64> = app
@@ -1734,9 +1734,9 @@ mod tests {
                 for id in named2 {
                     app.project.delete_feature_op(id);
                 }
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 check_all(&mut app, "the redo brought the step back", &mut problems);
-                app.exit_context_for_test();
+                app.exit_context();
             }
         }
 
@@ -1781,7 +1781,7 @@ mod tests {
             // (the fillet has nothing left to round - a neighbouring operation smoothed the edges
             // away). A person who opens the file and sees red removes the step; so does the scenario.
             for _ in 0..3 {
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let named: Vec<u64> = app
                     .project
                     .timeline
@@ -1796,7 +1796,7 @@ mod tests {
                     app.project.delete_feature_op(id);
                 }
             }
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             check_all(&mut app, "the save round after every operation", &mut problems);
         }
 
@@ -1828,14 +1828,14 @@ mod tests {
                 if app.project.feat_dims.get(&id).is_some_and(|m| m.contains_key(key)) {
                     continue;
                 }
-                app.start_feat_cmd_edit(id);
-                let shown = app.cmd.params.iter().find(|p| p.key == key).map(|p| p.val);
+                crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), id);
+                let shown = app.tools.cmd.params.iter().find(|p| p.key == key).map(|p| p.val);
                 match shown {
                     Some(v) if (v - model).abs() < 1e-6 => {}
                     Some(v) => problems.push(format!("property panel of node {id}: {key} = {v} is shown while the model has {model}")),
                     None => problems.push(format!("property panel of node {id}: there is no \"{key}\" field at all while the model has {model}")),
                 }
-                app.cancel_feat_cmd();
+                crate::gui::cancel_feat_cmd(&mut app.part_ctx());
             }
             check_all(&mut app, "the property panel matches the model", &mut problems);
         }
@@ -1870,7 +1870,7 @@ mod tests {
                 app.project.set_component_transform(part, m);
                 x += (hi - lo).max(20.0) + gap;
             }
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
             // CHECK: the part extents do not overlap along X - that is what "not in a heap" means.
             let mut spans: Vec<(String, f64, f64)> = Vec::new();
@@ -1903,7 +1903,7 @@ mod tests {
             for n in &mut app.project.timeline {
                 n.dirty = true;
             }
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             let red_after: std::collections::HashSet<u64> = app.project.regen_errors.keys().copied().collect();
             let hidden: Vec<u64> = red_after.difference(&red_before).copied().collect();
             if !hidden.is_empty() {
@@ -1931,7 +1931,7 @@ mod tests {
             for id in empty {
                 app.project.delete_component(id);
             }
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             let left: Vec<String> = app
                 .project
                 .components
@@ -1990,8 +1990,8 @@ mod tests {
             if let Some((sid, body)) = victim {
                 let vol_before = app.project.mesh_index(body).and_then(|mi| app.project.bodies[mi].mesh.bounds()).map(|b| (b.max.x - b.min.x) * (b.max.y - b.min.y) * (b.max.z - b.min.z));
                 if let Some(si) = app.project.sketch_index(sid) {
-                    app.enter_sketch_edit_pub(si);
-                    if app.edit_si() != Some(si) {
+                    app.enter_sketch_edit(si);
+                    if qymcad_ui_state::edit_si(&app.project, &app.sketch_ses) != Some(si) {
                         problems.push("a double click on the sketch of a finished part did not open it for editing".into());
                     }
                     // drag the point FARTHEST from the origin - moving it must change the extent
@@ -2000,10 +2000,10 @@ mod tests {
                         Hand::new(&mut app).drag2d((x, y), (x + 7.0, y + 7.0));
                     }
                     app.on_escape();
-                    if app.edit_si() == Some(si) {
+                    if qymcad_ui_state::edit_si(&app.project, &app.sketch_ses) == Some(si) {
                         problems.push("Esc did not leave sketch editing".into());
                     }
-                    app.rebuild_if_dirty_for_test();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     let vol_after = app.project.mesh_index(body).and_then(|mi| app.project.bodies[mi].mesh.bounds()).map(|b| (b.max.x - b.min.x) * (b.max.y - b.min.y) * (b.max.z - b.min.z));
                     match (vol_before, vol_after) {
                         (Some(a), Some(b)) if (a - b).abs() < 1e-6 => {
@@ -2027,11 +2027,11 @@ mod tests {
             let doc_before = app.project.state_key();
             app.start_feat_cmd(4); // fillet
             if let Some(body) = app.project.bodies.iter().find(|b| !b.sheet).map(|b| b.id) {
-                app.gsel.edges = app.body_edges_cached(body).map(|e| e.1.iter().copied().filter(|&i| i != 0).collect()).unwrap_or_default();
+                app.tools.gsel.edges = crate::gui::pick::body_edges_cached(&app.cache, &app.live, &app.regen, body).map(|e| e.ids.iter().copied().filter(|&i| i != 0).collect()).unwrap_or_default();
                 app.edges.body = Some(body);
             }
             app.on_escape();
-            if app.cmd.active() {
+            if app.tools.armed.commanding() {
                 problems.push("Esc did not close the command: the bar stayed open".into());
             }
             if app.project.timeline.len() != nodes_before {
@@ -2046,11 +2046,11 @@ mod tests {
             // come from. Demanding more than that means checking the internals instead of what a
             // person sees.
             app.start_feat_cmd(5); // chamfer - the next command
-            if !app.gsel.edges.is_empty() || !app.gsel.faces.is_empty() {
+            if !app.tools.gsel.edges.is_empty() || !app.tools.gsel.faces.is_empty() {
                 problems.push(format!(
                     "the new command opened with a FOREIGN reference set: {} edges, {} faces",
-                    app.gsel.edges.len(),
-                    app.gsel.faces.len()
+                    app.tools.gsel.edges.len(),
+                    app.tools.gsel.faces.len()
                 ));
             }
             app.on_escape();
@@ -2077,8 +2077,8 @@ mod tests {
                 // so: a test door bypassing the deletion prompt is exactly the kind of "own door"
                 // that does the damage.
                 let si = app.project.sketch_index(sid).expect("the sketch is on the list");
-                app.execute_delete(crate::gui::Sel::Sketch(si));
-                app.rebuild_if_dirty_for_test();
+                app.execute_delete(qymcad_ui_state::Sel::Sketch(si));
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
                 if app.project.sketches.iter().any(|s| s.id == sid) {
                     problems.push("the deleted sketch stayed in the document".into());
@@ -2163,10 +2163,10 @@ mod tests {
                     .count();
 
                 let ci = app.project.components.iter().position(|c| c.id == victim).expect("the part is on the list");
-                app.begin_edit("delete a part with joints");
-                app.execute_delete(crate::gui::Sel::Component(ci));
-                app.commit_edit();
-                app.rebuild_if_dirty_for_test();
+                qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "delete a part with joints");
+                app.execute_delete(qymcad_ui_state::Sel::Component(ci));
+                qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
                 if app.project.components.iter().any(|c| c.id == victim) {
                     problems.push("the deleted part stayed in the document".into());
@@ -2218,8 +2218,8 @@ mod tests {
 
             app.set_context_to(root);
             let sub = app.project.add_assembly("Subassembly");
-            app.enter_component_for_test(sub);
-            if app.current_ctx_id() != sub {
+            app.enter_component(sub);
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) != sub {
                 problems.push("entering the subassembly did not change the context".into());
             }
             if app.project.components.iter().find(|c| c.id == sub).and_then(|c| c.parent) != Some(root) {
@@ -2231,7 +2231,7 @@ mod tests {
             // silent refusal, because that is not allowed. The mistake was in the test, but the
             // program's SILENCE is the program's own.
             let inner = app.project.add_part("Part in the subassembly");
-            app.enter_component_for_test(inner);
+            app.enter_component(inner);
             let sk = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
             app.project.add_rect_entity(sk, 0.0, 0.0, 12.0, 12.0, qymcad_core::feature::Purpose::Real);
             app.project.solve_sketch(sk);
@@ -2239,7 +2239,7 @@ mod tests {
             let sid = app.project.sketches[sk].id;
             app.project.add_sketch_node(sid, "subassembly sketch");
             let body = app.project.add_extrude(sid, 8.0);
-            app.rebuild_if_dirty_for_test();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
             // EVERYTHING BUILT STAYED INSIDE: neither the node nor the body surfaced into the root
             let owner = app.project.body_owner(body);
@@ -2265,7 +2265,7 @@ mod tests {
 
             // go back up - the context must return and the subassembly must stay in the tree
             app.set_context_to(root);
-            if app.current_ctx_id() != root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) != root {
                 problems.push("leaving the subassembly did not return the context to the root".into());
             }
             if !app.project.components.iter().any(|c| c.id == sub) {
@@ -2324,14 +2324,14 @@ mod tests {
             });
             if let Some(i) = swap {
                 if app.move_feature(i + 1, i) {
-                    app.rebuild_if_dirty_for_test();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     // THE BODY COUNT IS NOT CHECKED HERE. The first edition demanded that it not
                     // change AFTER the move, and it went red. The program was right: the order of
                     // operations exists precisely because it changes the part - a moved operation may
                     // legitimately fail to build, having named the reason. Unexplained red is caught by
                     // the general check; what matters here is different: the move is REVERSIBLE.
                     app.move_feature(i + 1, i);
-                    app.rebuild_if_dirty_for_test();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     let now: Vec<qymcad_core::model::Id> = app.project.timeline.iter().map(|n| n.id).collect();
                     if now != before {
                         problems.push("moving a node there and back did not restore the timeline order".into());
@@ -2357,7 +2357,7 @@ mod tests {
             let doc_before = app.project.state_key();
             let nodes_before = app.project.timeline.len();
             app.toggle_section();
-            if !app.section.pick {
+            if !app.side.section.pick {
                 problems.push("section: the button was pressed and the plane pick did not start".into());
             }
             // the plane is picked by clicking a face - the way a person does it
@@ -2365,19 +2365,19 @@ mod tests {
             if let (Some(body), Some(mi)) = (body, body.and_then(|b| app.project.mesh_index(b))) {
                 let _ = body;
                 if let Some(bb) = app.project.bodies[mi].mesh.bounds() {
-                    let basis = app.cam.basis();
+                    let basis = app.viewing.cam.basis();
                     let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
                     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
-                    let at = app.project3(top, rect, &basis).0;
+                    let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at(top).0;
                     app.viewport_3d_click_at(at, rect, &basis);
                 }
             }
-            if app.section.plane.is_none() {
+            if app.side.section.plane.is_none() {
                 problems.push(format!("section: the click on a face did not set the plane; status: {}", app.status));
             }
             // TURNED OFF - AND NOT A TRACE LEFT
             app.toggle_section();
-            if app.section.plane.is_some() || app.section.pick {
+            if app.side.section.plane.is_some() || app.side.section.pick {
                 problems.push("section: it was turned off and stayed on".into());
             }
             if app.project.timeline.len() != nodes_before {
@@ -2400,22 +2400,22 @@ mod tests {
                 let nodes_before = app.project.timeline.len();
                 let mi = app.project.mesh_index(body);
                 if let Some(mi) = mi {
-                    app.begin_edit("hide a body");
+                    qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "hide a body");
                     app.project.bodies[mi].visible = false;
-                    app.commit_edit();
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     if app.project.timeline.len() != nodes_before {
                         problems.push("hiding a body changed the contents of the timeline - what is hidden must STAY in the document".into());
                     }
-                    if app.body_shown(mi) {
+                    if qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi) {
                         problems.push("the hidden body is drawn anyway".into());
                     }
                     check_all(&mut app, "the body is hidden", &mut problems);
 
-                    app.begin_edit("show a body");
+                    qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "show a body");
                     app.project.bodies[mi].visible = true;
-                    app.commit_edit();
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     check_all(&mut app, "the body is shown again", &mut problems);
                 }
             }
@@ -2423,15 +2423,15 @@ mod tests {
             // SEARCHING THE TREE: look for the name a person gave (the part was renamed above).
             let ti = app.project.timeline.iter().position(|n| crate::i18n::name(&n.name) == "Mounting pad");
             if let Some(ti) = ti {
-                app.set_tree_search_for_test("Mounting");
-                if !app.tree_row_matches(ti) {
+                app.tree.search = ("Mounting").to_string();
+                if !crate::gui::panels_tree::tree_row_matches(&app.project, &app.tree, ti) {
                     problems.push("the tree search does not find the node by the name a person gave".into());
                 }
-                app.set_tree_search_for_test("no-such-name-in-the-document");
-                if app.tree_row_matches(ti) {
+                app.tree.search = ("no-such-name-in-the-document").to_string();
+                if crate::gui::panels_tree::tree_row_matches(&app.project, &app.tree, ti) {
                     problems.push("the tree search finds the node by a query that does not match it".into());
                 }
-                app.set_tree_search_for_test("");
+                app.tree.search = ("").to_string();
                 check_all(&mut app, "the tree search", &mut problems);
             }
         }
@@ -2484,7 +2484,7 @@ mod tests {
 
             // A point ON THE BODY that can be clicked: the centre of the topmost face.
             let aim = |app: &App, body: Id| -> [f64; 3] {
-                let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+                let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
                 let f = app
                     .project
                     .regen_faces
@@ -2503,8 +2503,8 @@ mod tests {
                 super::super::joint_flow::tests::add_part_at(app, x + 60.0);
                 let root = app.project.root;
                 app.enter_component(root);
-                app.rebuild_if_dirty();
-                app.refresh_edges();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+                crate::gui::commands::refresh_edges(&mut app.part_ctx());
                 let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
                 assert_eq!(mine.len(), 2, "assembly: there should be two bodies of our own, and there are {}", mine.len());
                 for (k, b) in mine.iter().enumerate() {
@@ -2518,12 +2518,12 @@ mod tests {
                         }
                     }
                 }
-                app.rebuild_if_dirty();
-                app.refresh_edges();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+                crate::gui::commands::refresh_edges(&mut app.part_ctx());
                 let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
                 let mut hand = Hand::new(app);
                 hand.look_at([x + 30.0, 10.0, 5.0], 5.0).mate(kind).anchor(3).click(pa).click(pb);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let j = app.project.joints.last().map(|x| x.id).expect("two clicks must create a joint");
                 let moving = app.project.body_owner(mine[1]).expect("the owner of the driven part");
                 (j, moving)
@@ -2553,12 +2553,12 @@ mod tests {
             }
 
             // A GEAR RELATION between two revolutes - by the same tool a person uses.
-            app.start_relation_pick_for_test();
-            app.relation_pick_set_for_test(RelationKind::Gear, 2.0);
-            app.relation_pick_click_for_test(hinge_a);
-            app.relation_pick_click_for_test(hinge_b);
-            app.relation_pick_confirm_for_test();
-            app.rebuild_if_dirty();
+            app.start_relation_pick();
+            if let Some(p) = app.side.joint.relation_pick.as_mut() { p.set(RelationKind::Gear, 2.0); }
+            qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), hinge_a);
+            qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), hinge_b);
+            qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             if app.project.relations.is_empty() {
                 problems.push(format!("[assembly] the relation was not created; status: {}", app.status));
             }
@@ -2599,7 +2599,7 @@ mod tests {
 
         // ── THE FINAL DOCUMENT TO LOOK AT: it stays in target ───────────────────────────
         let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
-        app.set_project_path(out.clone());
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, out.clone());
         app.save_project();
         app.drain_bg_for_test();
         eprintln!("the scenario document: {out}");
@@ -2615,7 +2615,7 @@ mod tests {
             // the step: gathering the list before it means gathering nothing. And once some nodes are
             // removed, others that stood on them can turn red.
             for _ in 0..3 {
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let named: Vec<u64> = app
                     .project
                     .timeline
@@ -2630,7 +2630,7 @@ mod tests {
                     app.project.delete_feature_op(id);
                 }
             }
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         }
 
         // A RED NODE NAMES THE PART AND THE OPERATION: "node 75 failed" says nothing, while "the shell
@@ -2651,7 +2651,7 @@ mod tests {
                         // a node cannot be shown in the tree - there is nowhere to draw it.
                         format!("a dangling reference to part {:?}", node.and_then(|n| n.parent))
                     });
-                let what = node.map(|n| crate::i18n::name(&App::feat_default_name(&n.kind))).unwrap_or_default();
+                let what = node.map(|n| crate::i18n::name(&crate::gui::feat_default_name(&n.kind))).unwrap_or_default();
                 format!("[{part}] {what} (node {id}): {e:?}")
             })
             .collect();

@@ -16,30 +16,30 @@ mod tests {
     #[test]
     fn after_rebuilding_everything_the_geometry_is_asked_for_anew() {
         let mut app = super::super::screen_keys::tests::plate();
-        app.rebuild_if_dirty();
-        app.ensure_brep_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         app.drain_bg_for_test();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // GUARD AGAINST A VACUOUS CHECK: a live body really did appear, otherwise there is nothing to drop and the test proves nothing.
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the part has a body");
-        assert!(app.has_shape_for_test(body), "setup: there is no live B-rep, so there is nothing to drop");
+        assert!(app.live.shapes.contains_key(&body), "setup: there is no live B-rep, so there is nothing to drop");
 
-        app.rebuild_everything_for_test();
+        app.rebuild_everything();
 
         // The live body is gone, and the program must acknowledge that rather than count it ready.
-        assert!(!app.has_shape_for_test(body), "\"rebuild everything\" must drop the live B-rep");
+        assert!(!app.live.shapes.contains_key(&body), "\"rebuild everything\" must drop the live B-rep");
         assert!(
-            !app.brep_ready_for_test(),
+            !app.live.ready,
             "the live B-rep was thrown away while the preparation counts as finished — a person is told there is nothing to wait for exactly where waiting is required"
         );
 
         // And the repeat preparation must GET TO WORK rather than return on the already-attempted guard.
-        app.ensure_brep_for_test();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
         app.drain_bg_for_test();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(
-            app.has_shape_for_test(body),
+            app.live.shapes.contains_key(&body),
             "after \"rebuild everything\" the live geometry did not come back — the command declared the work done without doing it"
         );
     }

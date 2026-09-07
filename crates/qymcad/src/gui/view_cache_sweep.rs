@@ -24,7 +24,7 @@ mod tests {
 
     /// What is actually drawn right now — the list of body ids.
     fn drawn(app: &App) -> Vec<u64> {
-        app.visible_mesh_items().iter().filter_map(|(mi, ..)| app.project.mesh_id(*mi)).collect()
+        { let pn = app.painting(); qymcad_ui_state::visible_mesh_items(&pn).iter().filter_map(|m| pn.project.mesh_id(m.index)).collect() }
     }
 
     /// A part: a plate with a fillet on it. Returns (application, id of the fillet node).
@@ -36,23 +36,23 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         app.start_feat_cmd(4); // fillet
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let edge = app.edges.ids.iter().copied().find(|e| *e != 0).expect("an edge");
-        app.gsel.edges.insert(edge);
+        app.tools.gsel.edges.insert(edge);
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let fillet = app
             .project
@@ -68,21 +68,21 @@ mod tests {
     #[test]
     fn entering_and_leaving_a_feature_edit_invalidates_the_viewport() {
         let (mut app, fillet) = plate_with_fillet();
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 8.0;
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 8.0;
         let r = rect();
 
-        let before = (drawn(&app), app.view_key_pub(r, 1.0), app.gpu_scene_key_pub());
+        let before = (drawn(&app), qymcad_ui_state::view_key(&app.painting(), r, 1.0), qymcad_ui_state::gpu_scene_key(&app.painting()));
 
-        app.start_feat_cmd_edit(fillet);
-        let editing = (drawn(&app), app.view_key_pub(r, 1.0), app.gpu_scene_key_pub());
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fillet);
+        let editing = (drawn(&app), qymcad_ui_state::view_key(&app.painting(), r, 1.0), qymcad_ui_state::gpu_scene_key(&app.painting()));
         assert_ne!(before.0, editing.0, "setup: an edit must change the set of drawn bodies");
         assert_ne!(before.1, editing.1, "the set of drawn bodies changed — the RASTER key must change, otherwise the previous frame stays on screen");
         assert_ne!(before.2, editing.2, "the same for the GPU scene");
 
         app.cancel_all_tools(); // Esc
-        let after = (drawn(&app), app.view_key_pub(r, 1.0), app.gpu_scene_key_pub());
+        let after = (drawn(&app), qymcad_ui_state::view_key(&app.painting(), r, 1.0), qymcad_ui_state::gpu_scene_key(&app.painting()));
         assert_eq!(before.0, after.0, "setup: leaving the edit brings back the previous set of bodies");
         assert_ne!(editing.1, after.1, "the edit was left — the RASTER key must change, otherwise the fillet never gets drawn");
         assert_ne!(editing.2, after.2, "the same for the GPU scene");

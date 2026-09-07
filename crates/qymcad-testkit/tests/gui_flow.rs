@@ -27,7 +27,7 @@ fn gui_flow_new_part_rect_extrude() {
             assert!(e != 0, "`add_extrude_multi` returned a node");
             p.finish_base_body(e, 1)
         }
-        Some(b) => p.add_combine_multi_op(b, sid, closed.clone(), 10.0, 1, qymcad_core::feature::Extent::default(), 0.0, vec![]),
+        Some(b) => p.add_combine_multi_op(b, sid, closed.clone(), qymcad_core::model::CombineSpan { height: 10.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 1),
     };
     let (report, shapes) = qymcad_testkit::regenerate(&mut p);
     for (id,e) in &report.errors { eprintln!("error {id}: {e}"); }

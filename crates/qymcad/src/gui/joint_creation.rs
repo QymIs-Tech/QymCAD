@@ -19,23 +19,23 @@ mod tests {
         let mut app = App::default();
         for (name, at) in [("base", 0.0), ("post", 60.0)] {
             let cid = app.project.add_component(name);
-            app.enter_component_for_test(cid);
+            app.enter_component(cid);
             let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
             app.project.add_rect_entity(si, 0.0, 0.0, 30.0, 20.0, qymcad_core::feature::Purpose::Real);
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
-            app.sel = super::super::Sel::Sketch(si);
+            app.chosen.sel = super::super::Sel::Sketch(si);
             app.start_feat_cmd(1);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 10.0;
                 p.txt = "10".into();
             }
             app.apply_feat_cmd();
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.project.set_component_transform(cid, [1.0, 0.0, 0.0, at, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
             app.exit_context();
         }
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let parts: Vec<_> = app.project.components.iter().filter(|c| c.name == "base" || c.name == "post").map(|c| c.id).collect();
         (app, parts)
     }
@@ -48,11 +48,24 @@ mod tests {
     #[test]
     fn the_properties_panel_does_not_create_joints() {
         let src = crate::gui::panels_source::PANELS;
-        let panel = &src[src.find("fn joints_panel").expect("the mates panel")..];
-        let panel = &panel[..panel.find("\n    pub(super) fn ").unwrap_or(panel.len())];
-        assert!(!panel.contains("add_joint("), "the properties panel creates a mate bypassing the command again");
-        assert!(!panel.contains("add_connector("), "the properties panel creates connectors on its own again");
-        assert!(panel.contains("start_joint_pick()"), "a mate can no longer be started from the properties panel — the way was lost rather than moved");
+        // EVERY FUNCTION OF THAT NAME. The panel left `App` and a one-line wrapper stayed behind under the
+        // same name; `find` hits that first and the body then reads as empty.
+        let mut has_way = false;
+        for (a, _) in src.match_indices("fn joints_panel") {
+            let rest = &src[a..];
+            let end = ["\n    pub(super) fn ", "\n    pub(crate) fn ", "\n    fn ", "\npub(crate) fn ", "\nfn "]
+                .iter()
+                .filter_map(|m| rest.find(m))
+                .min()
+                .unwrap_or(rest.len());
+            let panel = &rest[..end];
+            assert!(!panel.contains("add_joint("), "the properties panel creates a mate bypassing the command again");
+            assert!(!panel.contains("add_connector("), "the properties panel creates connectors on its own again");
+            // THE PANEL ASKS, IT DOES NOT ACT: starting a tool belongs to the application, so the panel puts
+            // a named request and the frame carries it out. What is guarded - that the way exists - is the same.
+            has_way |= panel.contains("PropsAsk::JointPick");
+        }
+        assert!(has_way, "a mate can no longer be started from the properties panel — the way was lost rather than moved");
     }
 
     /// "BY ORIGINS" IS NOT LOST: it became a kind of anchor inside the command.
@@ -64,11 +77,11 @@ mod tests {
         let (mut app, parts) = two_parts();
         assert_eq!(parts.len(), 2, "there should be two parts in the scene");
         app.start_joint_pick();
-        app.set_joint_anchor_mode_for_test(3); // "by origins"
+        qymcad_assembly::set_joint_anchor_mode_for_test(&mut app.joint_ctx(), 3); // "by origins"
         let bodies: Vec<_> = (0..app.project.bodies.len()).filter_map(|mi| app.project.mesh_id(mi)).collect();
         assert!(bodies.len() >= 2, "there should be two bodies");
-        app.joint_pick_origin_click_for_test(bodies[0]);
-        app.joint_pick_origin_click_for_test(bodies[1]);
+        qymcad_assembly::joint_pick_origin_click_for_test(&mut app.joint_ctx(), bodies[0]);
+        qymcad_assembly::joint_pick_origin_click_for_test(&mut app.joint_ctx(), bodies[1]);
         assert_eq!(app.project.joints.len(), 1, "a mate by origins was not created by the command");
         let j = &app.project.joints[0];
         for c in [j.a, j.b] {
@@ -85,11 +98,11 @@ mod tests {
     fn in_origin_mode_a_face_click_anchors_the_part() {
         let (mut app, _) = two_parts();
         app.start_joint_pick();
-        app.set_joint_anchor_mode_for_test(3);
+        qymcad_assembly::set_joint_anchor_mode_for_test(&mut app.joint_ctx(), 3);
         let body = app.project.mesh_id(0).expect("the body");
         let key = qymcad_core::feature::FaceKey { index: 0, centroid: [1.0, 1.0, 10.0], normal: [0.0, 0.0, 1.0], id: 1 };
-        app.joint_pick_face_click_for_test(body, key);
-        let first = app.joint_pick_first_anchor_for_test();
+        qymcad_assembly::joint_pick_face_click_for_test(&mut app.joint_ctx(), body, key);
+        let first = qymcad_assembly::joint_pick_first_anchor_for_test(&mut app.joint_ctx());
         assert_eq!(first, Some(AnchorRef::Origin), "a click on a face in \"by origins\" mode took the face rather than the part");
     }
 
@@ -98,7 +111,7 @@ mod tests {
     fn the_kind_is_chosen_in_the_command_bar() {
         let mut app = App::default();
         app.start_joint_pick();
-        let bar = include_str!("joints.rs");
+        let bar = include_str!("../../../qymcad-assembly/src/lib.rs");
         let head = &bar[bar.find("fn joint_tool_bar").expect("the command bar")..];
         for k in ["Rigid", "Revolute", "Slider", "Cylindrical", "Planar", "Ball", "PinSlot"] {
             assert!(head.contains(k), "the kind \"{k}\" is gone from the command bar");
@@ -109,6 +122,6 @@ mod tests {
         for gone in ["anchor_mode, 0u8", "anchor_mode, 1u8", "anchor_mode, 2u8"] {
             assert!(!head.contains(gone), "the anchor-kind switch \"{gone}\" was supposed to go: the kind is inferred under the cursor");
         }
-        assert!(app.joint_pick_active_for_test(), "the command did not start");
+        assert!(qymcad_assembly::joint_pick_active_for_test(&mut app.joint_ctx()), "the command did not start");
     }
 }

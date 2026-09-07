@@ -11,16 +11,16 @@ mod tests {
     /// A cube in a part plus a camera from which it can be hit by a click.
     fn cube_in_view(app: &mut App) -> (usize, u64) {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
         }
         let mi = app.project.mesh_index(body).expect("the mesh");
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 8.0;
-        app.cam.target = [10.0, 10.0, 5.0];
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 8.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
         (mi, body)
     }
 
@@ -31,14 +31,14 @@ mod tests {
     /// The button exists, and it switches the measuring tool on.
     #[test]
     fn the_tool_has_a_button_and_turns_on() {
-        assert!(crate::gui::panels_source::PANELS.contains("self.toggle_measure_3d();"), "without a button the tool does not exist for a person");
+        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::ToggleMeasure3d"), "without a button the tool does not exist for a person");
         let mut app = App::default();
         cube_in_view(&mut app);
         app.toggle_measure_3d();
-        assert!(app.m3.on, "the measuring tool must switch on");
-        assert!(app.mode_3d, "measuring happens in 3D");
+        assert!(app.side.m3.on, "the measuring tool must switch on");
+        assert!(app.viewing.mode_3d, "measuring happens in 3D");
         app.toggle_measure_3d();
-        assert!(!app.m3.on, "a second press switches it off");
+        assert!(!app.side.m3.on, "a second press switches it off");
     }
 
     /// THE WHOLE PATH: a click on a face, a click on the opposite face, and the height of the cube.
@@ -51,22 +51,22 @@ mod tests {
         app.toggle_measure_3d();
 
         // the top face: the aim is the centre of its area
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
-        let at = app.project3(top, rect(), &basis).0;
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(top).0;
         app.measure_3d_click(rect(), at);
-        assert_eq!(app.m3.picks.len(), 1, "the first click must land; status: {}", app.status);
+        assert_eq!(app.side.m3.picks.len(), 1, "the first click must land; status: {}", app.status);
 
         // the bottom face — aimed at from below, with the camera turned round
-        app.cam.yaw += std::f64::consts::PI;
-        app.cam.pitch = -app.cam.pitch;
-        let basis = app.cam.basis();
+        app.viewing.cam.yaw += std::f64::consts::PI;
+        app.viewing.cam.pitch = -app.viewing.cam.pitch;
+        let basis = app.viewing.cam.basis();
         let bot = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.min.z];
-        let at = app.project3(bot, rect(), &basis).0;
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(bot).0;
         app.measure_3d_click(rect(), at);
-        assert_eq!(app.m3.picks.len(), 2, "the second click must land; status: {}", app.status);
+        assert_eq!(app.side.m3.picks.len(), 2, "the second click must land; status: {}", app.status);
 
-        let r = app.measure_result().expect("there is a result");
+        let r = qymcad_ui_state::measure_result(&app.side.m3).expect("there is a result");
         let d = r.distance.expect("there must be a distance between parallel faces");
         assert!((d - h).abs() < 1e-6, "the thickness of the cube is {h}, and {d} was measured");
         assert!(app.status.contains(&crate::i18n::tr1("m3-distance", "v", "10.000")), "the number must be IN THE STATUS LINE rather than only inside: {}", app.status);
@@ -77,16 +77,16 @@ mod tests {
     fn a_third_click_starts_a_new_measurement() {
         let mut app = App::default();
         app.toggle_measure_3d();
-        app.m3.picks = vec![
+        app.side.m3.picks = vec![
             super::super::measure3d::MeasurePick { item: MeasureItem::Point([0.0; 3]), what: "vertex".into(), at: [0.0; 3] },
             super::super::measure3d::MeasurePick { item: MeasureItem::Point([1.0, 0.0, 0.0]), what: "vertex".into(), at: [1.0, 0.0, 0.0] },
         ];
         let (mi, _b) = cube_in_view(&mut app);
         let bb = app.project.bodies[mi].mesh.bounds().expect("the bounding box");
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
-        app.measure_3d_click(rect(), app.project3(top, rect(), &basis).0);
-        assert_eq!(app.m3.picks.len(), 1, "a third click must start a new measurement rather than become a third element");
+        app.measure_3d_click(rect(), qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(top).0);
+        assert_eq!(app.side.m3.picks.len(), 1, "a third click must start a new measurement rather than become a third element");
     }
 
     /// A miss says so rather than staying silent.
@@ -96,7 +96,7 @@ mod tests {
         cube_in_view(&mut app);
         app.toggle_measure_3d();
         app.measure_3d_click(rect(), egui::pos2(895.0, 695.0)); // a corner of the screen — deliberately a miss
-        assert!(app.m3.picks.is_empty(), "a miss collects nothing");
+        assert!(app.side.m3.picks.is_empty(), "a miss collects nothing");
         assert_eq!(app.status, crate::i18n::tr("m3-miss"), "the reason must be said");
     }
 
@@ -105,7 +105,7 @@ mod tests {
     fn one_element_already_reports_its_own_size() {
         let mut app = App::default();
         app.toggle_measure_3d();
-        app.m3.picks = vec![super::super::measure3d::MeasurePick {
+        app.side.m3.picks = vec![super::super::measure3d::MeasurePick {
             item: MeasureItem::Line { origin: [0.0; 3], dir: [1.0, 0.0, 0.0], len: 42.0 },
             what: "edge".into(),
             at: [0.0; 3],
@@ -119,7 +119,7 @@ mod tests {
     fn converging_faces_report_the_angle_not_a_made_up_distance() {
         let mut app = App::default();
         app.toggle_measure_3d();
-        app.m3.picks = vec![
+        app.side.m3.picks = vec![
             super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 0.0, 1.0] }, what: "face".into(), at: [0.0; 3] },
             super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 1.0, 1.0] }, what: "face".into(), at: [0.0; 3] },
         ];
@@ -140,23 +140,23 @@ mod tests {
     fn escape_clears_the_picks_before_leaving_the_tool() {
         let mut app = App::default();
         app.toggle_measure_3d();
-        app.m3.picks = vec![super::super::measure3d::MeasurePick { item: MeasureItem::Point([0.0; 3]), what: "vertex".into(), at: [0.0; 3] }];
+        app.side.m3.picks = vec![super::super::measure3d::MeasurePick { item: MeasureItem::Point([0.0; 3]), what: "vertex".into(), at: [0.0; 3] }];
         app.on_escape();
-        assert!(app.m3.on, "the first Esc must clear what was clicked rather than throw one out of the tool");
-        assert!(app.m3.picks.is_empty(), "what was clicked is cleared");
+        assert!(app.side.m3.on, "the first Esc must clear what was clicked rather than throw one out of the tool");
+        assert!(app.side.m3.picks.is_empty(), "what was clicked is cleared");
         app.on_escape();
-        assert!(!app.m3.on, "the second Esc leaves the tool");
+        assert!(!app.side.m3.on, "the second Esc leaves the tool");
     }
 
     /// The result is VISIBLE at the geometry rather than only in the status line.
     #[test]
     fn the_result_is_drawn_at_the_geometry() {
         let src = crate::gui::render_source::RENDER;
-        assert!(src.contains("pub(super) fn draw_measure_3d"), "the measuring tool must have a drawing layer of its own");
-        assert!(src.contains("self.draw_measure_3d(painter, rect);"), "the layer must be called from the frame");
-        let a = src.find("pub(super) fn draw_measure_3d").expect("the block");
+        assert!(src.contains("fn draw_measure_3d"), "the measuring tool must have a drawing layer of its own");
+        assert!(src.contains("draw_measure_3d(pn, painter, rect);"), "the layer must be called from the frame");
+        let a = src.find("fn draw_measure_3d").expect("the block");
         let b = src[a..].find("\n    /// THE DRIVEN GEOMETRY").map(|i| a + i).unwrap_or(src.len());
-        assert!(src[a..b].contains("self.measure_text()"), "the plate must take the number FROM THE SAME source as the status line");
+        assert!(src[a..b].contains("measure_text(pn)"), "the plate must take the number FROM THE SAME source as the status line");
     }
 
     /// Measuring DOES NOT DISTURB THE SELECTION: measure a gap and the part stays selected.
@@ -164,14 +164,14 @@ mod tests {
     fn measuring_does_not_disturb_the_selection() {
         let mut app = App::default();
         let (mi, _body) = cube_in_view(&mut app);
-        app.sel = super::super::Sel::Mesh(mi);
+        app.chosen.sel = super::super::Sel::Mesh(mi);
         app.toggle_measure_3d();
-        app.sel = super::super::Sel::Mesh(mi); // the tool is on and the selection was restored by the person
+        app.chosen.sel = super::super::Sel::Mesh(mi); // the tool is on and the selection was restored by the person
         let bb = app.project.bodies[mi].mesh.bounds().expect("the bounding box");
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
-        app.measure_3d_click(rect(), app.project3(top, rect(), &basis).0);
-        assert!(matches!(app.sel, super::super::Sel::Mesh(_)), "a click of the measuring tool must not overwrite the selection");
+        app.measure_3d_click(rect(), qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(top).0);
+        assert!(matches!(app.chosen.sel, super::super::Sel::Mesh(_)), "a click of the measuring tool must not overwrite the selection");
     }
     /// WHAT IS OCCLUDED IS NOT PICKED — a regression found by this very test.
     ///
@@ -185,9 +185,9 @@ mod tests {
         let (mi, _body) = cube_in_view(&mut app);
         let bb = app.project.bodies[mi].mesh.bounds().expect("the bounding box");
         app.toggle_measure_3d();
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
-        let at = app.project3(top, rect(), &basis).0;
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(top).0;
 
         // at this point there IS a nearby edge — but it is on the far side of the part
         let got = app.measure_resolve(rect(), at).expect("there is a hit");

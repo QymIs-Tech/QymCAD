@@ -5,7 +5,7 @@ fn combine_src0_makes_valid_new_body() {
     // a combine with no source is a new body: the contour is extruded as a boss, but with no source it is
     // simply a new body
     p.active_component = Some(277);
-    let body = p.add_combine_multi_op(0, 291, vec![302], 5.0, 1, qymcad_core::feature::Extent::default(), 0.0, vec![]);
+    let body = p.add_combine_multi_op(0, 291, vec![302], qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 1);
     assert_ne!(body, 0);
     let (report, shapes) = qymcad_testkit::regenerate(&mut p);
     let errs: Vec<_> = report.errors.iter().filter(|(id,_)| *id == body).collect();

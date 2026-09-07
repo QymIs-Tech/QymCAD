@@ -86,7 +86,7 @@ fn a_groove_wider_than_the_pitch_is_refused() {
     assert!(min_pitch > 5.0, "at this depth the pitch must be larger than 5, and {min_pitch:.2} is offered");
 
     // THE SAME PROFILE WITH ROOM: a depth that fits is accepted without a word.
-    let ok = ThreadSpec { custom_depth: 2.5, ..reported.clone() };
+    let ok = ThreadSpec { custom_depth: 2.5, ..reported };
     assert!(ok.profile_overflow().is_none(), "a depth of 2.5 fits at a pitch of 5 and must not be refused");
 
     // AND EVERY STANDARD PROFILE FITS at its own coarse pitch - or the check would refuse ordinary work.
@@ -115,11 +115,11 @@ fn a_clearance_that_does_not_fit_is_named() {
 
     // TWO DIFFERENT VALUES THAT BOTH OVERFLOW report the same achievable clearance - that is exactly the
     // measurement that gave two identical bodies.
-    let m20_wide = ThreadSpec { fit: 0.4, ..m20.clone() };
+    let m20_wide = ThreadSpec { fit: 0.4, ..m20 };
     assert_eq!(m20_wide.fit_overflow().map(|(_, g)| g), Some(given), "both overflowing values end at the same ceiling");
 
     // A CLEARANCE THAT FITS IS NOT COMPLAINED ABOUT.
-    let small = ThreadSpec { fit: 0.05, ..m20.clone() };
+    let small = ThreadSpec { fit: 0.05, ..m20 };
     assert!(small.fit_overflow().is_none(), "0.05 mm fits at a pitch of 2.5 and must pass without a word");
 }
 
@@ -142,8 +142,8 @@ fn the_clearance_that_does_not_fit_is_taken_off_the_crest() {
     assert!((e * t - missing).abs() < 1e-9, "the crest comes down by {e:.4}, which is worth {:.4} along the flank against the {missing:.4} that was missing", e * t);
 
     // A CLEARANCE THAT FITS TAKES NOTHING OFF: ordinary work is not touched.
-    let small = ThreadSpec { fit: 0.05, ..m10.clone() };
+    let small = ThreadSpec { fit: 0.05, ..m10 };
     assert_eq!(small.radial_relief(), 0.0, "a clearance that fits inside the groove must not shrink the thread as well");
-    let none = ThreadSpec { fit: 0.0, ..m10.clone() };
+    let none = ThreadSpec { fit: 0.0, ..m10 };
     assert_eq!(none.radial_relief(), 0.0);
 }

@@ -1,0 +1,13 @@
+[package]
+name = "qymcad-help"
+version = "0.1.0"
+edition = "2021"
+
+# THE HELP IS A RESOURCE, like the dictionary: articles in a catalogue, one per language. It draws nothing
+# and knows no panel - it hands out text, and whoever has a window shows it.
+[dependencies]
+include_dir = "0.7"
+qymcad-i18n = { path = "../qymcad-i18n" }
+
+[lints]
+workspace = true

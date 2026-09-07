@@ -94,7 +94,7 @@ fn a_sketch_on_a_face_survives_deleting_the_feature_under_it() {
     p.add_rect_entity(si, 20.0, 15.0, 40.0, 25.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(si);
     let cid = p.sketches[si].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("the pocket contour");
-    let cut = p.add_combine_multi_op(fil, sid, vec![cid], 4.0, 0, qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, 0.0, vec![]);
+    let cut = p.add_combine_multi_op(fil, sid, vec![cid], qymcad_core::model::CombineSpan { height: 4.0, down: 0.0, extent: qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, fill: &[] }, 0);
     let (rep, _) = qymcad_testkit::regenerate(&mut p);
     assert!(rep.errors.is_empty(), "setup — the pocket: {:?}", rep.errors);
     let v_cut = p.bodies.iter().find(|b| b.id == cut).expect("the body with the pocket").mesh.volume();

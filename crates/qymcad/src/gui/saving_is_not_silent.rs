@@ -24,14 +24,14 @@ mod tests {
         app.project.add_rect_entity(si, -20.0, -20.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
-        app.set_project_path(path.clone());
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
         (app, path)
     }
 
@@ -57,7 +57,7 @@ mod tests {
 
         // A person asked to open another document and answered "Save".
         app.request_nav_for_test(Nav::New);
-        assert!(app.deferred_nav_is_set_for_test(), "setup: unsaved edits held the navigation back");
+        assert!(app.deferred.nav.is_some() || app.disk.pending_nav.is_some(), "setup: unsaved edits held the navigation back");
         app.answer_save_for_test();
 
         // TWO FRAMES: egui windows and areas settle into place on the second pass — popup checks
@@ -65,7 +65,7 @@ mod tests {
         let _ = frame(&mut app, &ctx);
         // A REAL WRITE OUTLASTS THE GRACE. The card is deliberately silent on a write shorter than
         // `SAVE_WAIT_GRACE`, so the clock is pushed back rather than slept through.
-        app.age_save_wait_for_test(std::time::Duration::from_secs(1));
+        app.waiting.age(std::time::Duration::from_secs(1));
         // THE CARD IS DRAWN ON THE FRAME AFTER THE GRACE PASSES, and an egui area settles on the pass after
         // that: two frames, as everywhere else here.
         let _ = frame(&mut app, &ctx);
@@ -74,16 +74,16 @@ mod tests {
         assert!(
             texts.iter().any(|t| t.contains(&saying)),
             "while the write runs the window stays silent: expected \"{saying}\", writing: {}, in the frame {texts:?}",
-            app.saving_now_for_test()
+            crate::gui::io_jobs::saving_now(&app.regen)
         );
 
         // THE NAVIGATION IS NOT LOST: it happens once the write reaches the disk and what was put on
         // screen has been readable long enough (the floor holds the navigation too, or the card would blink
         // out under it).
         app.drain_bg_for_test();
-        app.age_save_wait_for_test(std::time::Duration::from_secs(1));
+        app.waiting.age(std::time::Duration::from_secs(1));
         let _ = frame(&mut app, &ctx);
-        assert!(!app.deferred_nav_is_set_for_test(), "the navigation did not happen after the write: the command was lost");
+        assert!(!app.deferred.nav.is_some() || app.disk.pending_nav.is_some(), "the navigation did not happen after the write: the command was lost");
     }
 
     /// EVERY DOOR OUT OF THE DOCUMENT SAYS THE SAME THING.
@@ -118,13 +118,13 @@ mod tests {
             super::super::install_fonts(&ctx);
 
             app.request_nav_for_test(nav);
-            if !app.deferred_nav_is_set_for_test() {
+            if !app.deferred.nav.is_some() || app.disk.pending_nav.is_some() {
                 bad.push(format!("  {what}: the unsaved edits did not hold the navigation back — there was nothing to wait for"));
                 continue;
             }
             app.answer_save_for_test();
             let _ = frame(&mut app, &ctx);
-            app.age_save_wait_for_test(std::time::Duration::from_secs(1));
+            app.waiting.age(std::time::Duration::from_secs(1));
             let _ = frame(&mut app, &ctx);
             let texts = frame(&mut app, &ctx);
             if !texts.iter().any(|t| t.contains(&saying)) {
@@ -132,13 +132,13 @@ mod tests {
             }
 
             app.drain_bg_for_test();
-            app.age_save_wait_for_test(std::time::Duration::from_secs(1));
+            app.waiting.age(std::time::Duration::from_secs(1));
             let _ = frame(&mut app, &ctx);
             let after = frame(&mut app, &ctx);
             if after.iter().any(|t| t.contains(&saying)) {
                 bad.push(format!("  {what}: the waiting card stuck after the write"));
             }
-            if app.deferred_nav_is_set_for_test() {
+            if app.deferred.nav.is_some() || app.disk.pending_nav.is_some() {
                 bad.push(format!("  {what}: the navigation did not happen after the write — the command was lost"));
             }
         }
@@ -155,7 +155,7 @@ mod tests {
         app.request_nav_for_test(Nav::New);
         app.answer_save_for_test();
         app.drain_bg_for_test();
-        app.age_save_wait_for_test(std::time::Duration::from_secs(1));
+        app.waiting.age(std::time::Duration::from_secs(1));
         let _ = frame(&mut app, &ctx); // the frame in which the navigation actually happens
 
         let texts = frame(&mut app, &ctx);
@@ -183,7 +183,7 @@ mod tests {
             let texts = frame(&mut app, &ctx);
             assert!(!texts.iter().any(|t| t.contains(&saying)), "an instant write flashed the waiting card: {texts:?}");
         }
-        assert!(!app.save_wait_shown_for_test(), "the card was counted as shown though nothing was drawn");
+        assert!(!app.waiting.save_shown.is_some(), "the card was counted as shown though nothing was drawn");
     }
 
     /// A CARD THAT WAS SHOWN STAYS LONG ENOUGH TO BE READ.
@@ -200,7 +200,7 @@ mod tests {
         app.request_nav_for_test(Nav::New);
         app.answer_save_for_test();
         let _ = frame(&mut app, &ctx);
-        app.age_save_wait_for_test(std::time::Duration::from_millis(200)); // past the grace, not past the floor
+        app.waiting.age(std::time::Duration::from_millis(200)); // past the grace, not past the floor
         let _ = frame(&mut app, &ctx);
         let texts = frame(&mut app, &ctx);
         assert!(texts.iter().any(|t| t.contains(&saying)), "the card did not come up on a slow write: {texts:?}");
@@ -211,7 +211,7 @@ mod tests {
         assert!(texts.iter().any(|t| t.contains(&saying)), "the card was snatched away the moment the write ended: {texts:?}");
 
         // ONCE THE FLOOR HAS PASSED IT GOES BY ITSELF.
-        app.age_save_wait_for_test(std::time::Duration::from_secs(1));
+        app.waiting.age(std::time::Duration::from_secs(1));
         let _ = frame(&mut app, &ctx);
         let texts = frame(&mut app, &ctx);
         assert!(!texts.iter().any(|t| t.contains(&saying)), "the card stuck after the floor had passed: {texts:?}");
@@ -251,12 +251,12 @@ mod tests {
     #[test]
     fn a_document_with_no_name_still_gets_where_it_was_going() {
         let (mut app, _path) = project_with_a_body("unnamed.qcad");
-        app.forget_project_path_for_test(); // never saved: Save turns into Save As
+        app.disk.project_path = None; // never saved: Save turns into Save As
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
 
         app.request_nav_for_test(Nav::New);
-        assert!(app.deferred_nav_is_set_for_test(), "setup: unsaved edits held the navigation back");
+        assert!(app.deferred.nav.is_some() || app.disk.pending_nav.is_some(), "setup: unsaved edits held the navigation back");
         let (tx, rx) = std::sync::mpsc::channel();
         app.arm_file_ask(rx, |_app, _p| {});
 
@@ -279,12 +279,12 @@ mod tests {
         let _ = frame_with_places(&mut app, &ctx, click);
 
         assert!(
-            app.asking_for_a_file() && !app.saving_now_for_test(),
+            app.asking_for_a_file() && !crate::gui::io_jobs::saving_now(&app.regen),
             "setup: pressing Save on an unnamed document must leave a chooser open and no write running"
         );
         let _ = frame_with_places(&mut app, &ctx, Vec::new());
         assert!(
-            app.deferred_nav_is_set_for_test(),
+            app.deferred.nav.is_some() || app.disk.pending_nav.is_some(),
             "the navigation was thrown away while the person was still choosing a name - they save the file and never get the document they asked for"
         );
 
@@ -293,6 +293,6 @@ mod tests {
         tx.send(None).expect("the chooser is listening");
         assert!(!app.poll_file_ask());
         let _ = frame_with_places(&mut app, &ctx, Vec::new());
-        assert!(!app.deferred_nav_is_set_for_test(), "cancelling the chooser must leave the person where they were");
+        assert!(!app.deferred.nav.is_some() || app.disk.pending_nav.is_some(), "cancelling the chooser must leave the person where they were");
     }
 }

@@ -239,7 +239,7 @@ mod tests {
     /// what gets caught here.
     #[test]
     fn every_section_has_a_place_in_the_reading_order() {
-        let dirs: Vec<String> = help::sections(true).into_iter().map(|(d, _)| d).filter(|d| !d.is_empty()).collect();
+        let dirs: Vec<String> = help::sections().into_iter().map(|(d, _)| d).filter(|d| !d.is_empty()).collect();
         for d in &dirs {
             assert!(help::SECTION_ORDER.contains(&d.as_str()), "the section \"{d}\" is not named in the reading order — it will stand at the very bottom of the contents");
         }
@@ -256,13 +256,13 @@ mod tests {
     #[test]
     fn the_contents_are_built_from_the_files_themselves() {
         let all = help::articles(help::lang());
-        let listed: Vec<String> = help::sections(true).into_iter().flat_map(|(_, v)| v).collect();
+        let listed: Vec<String> = help::sections().into_iter().flat_map(|(_, v)| v).collect();
         assert_eq!(listed.len(), all.len(), "the contents diverged from the files: {listed:?} against {all:?}");
         for a in &all {
             assert!(listed.contains(a), "the article \"{a}\" did not get into the contents");
         }
         // the root articles come as the first section, the rest go by folders
-        let (first, _) = help::sections(true).into_iter().next().expect("the contents are not empty");
+        let (first, _) = help::sections().into_iter().next().expect("the contents are not empty");
         assert!(first.is_empty(), "the root articles must come as the first section, and out came \"{first}\"");
     }
 
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn every_section_has_a_name_in_every_language() {
         let prev = crate::i18n::language();
-        let dirs: Vec<String> = help::sections(true).into_iter().map(|(d, _)| d).filter(|d| !d.is_empty()).collect();
+        let dirs: Vec<String> = help::sections().into_iter().map(|(d, _)| d).filter(|d| !d.is_empty()).collect();
         for code in ["ru", "en"] {
             crate::i18n::set_language(code);
             for d in &dirs {
@@ -302,7 +302,7 @@ mod tests {
     fn the_search_looks_inside_the_articles_too() {
         const WHERE: &str = "general/01-window";
         let title = help::title(WHERE);
-        let by_title = help::search(&title, true);
+        let by_title = help::search(&title);
         assert_eq!(by_title.first().map(|s| s.as_str()), Some(WHERE), "the article with that heading must come first: {by_title:?}");
 
         // a long word out of the body that the heading does not carry — so only a search over the TEXT
@@ -315,11 +315,11 @@ mod tests {
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
             .find(|w| w.chars().count() > 8 && !title.contains(*w))
             .expect("a long word in the body of the article");
-        let by_body = help::search(word, true);
+        let by_body = help::search(word);
         assert!(!by_body.is_empty(), "a search by the word \"{word}\" out of the TEXT found nothing");
 
-        assert!(help::search("   ", true).is_empty(), "an empty query must give an empty answer rather than everything at once");
-        assert!(help::search("no-such-word-anywhere", true).is_empty(), "the search found something that does not exist");
+        assert!(help::search("   ").is_empty(), "an empty query must give an empty answer rather than everything at once");
+        assert!(help::search("no-such-word-anywhere").is_empty(), "the search found something that does not exist");
     }
 
     /// BACK RETURNS WHERE ONE CAME FROM, and does not loop on one article.
@@ -327,18 +327,18 @@ mod tests {
     fn back_returns_where_you_came_from() {
         let mut app = super::super::App::default();
         app.open_help("index");
-        assert!(!app.help_can_go_back_for_test(), "from the very first article there is nowhere to return to");
+        assert!(!app.win.help.can_go_back(), "from the very first article there is nowhere to return to");
 
         app.open_help("general/01-window");
-        assert!(app.help_can_go_back_for_test(), "the jump was not remembered");
-        app.help_back_for_test();
-        assert_eq!(app.help_article_for_test(), "index", "back returned to the wrong place");
-        assert!(!app.help_can_go_back_for_test(), "back added to the history itself — there would be no getting out of it");
+        assert!(app.win.help.can_go_back(), "the jump was not remembered");
+        app.win.help.go_back();
+        assert_eq!(app.win.help.article.clone(), "index", "back returned to the wrong place");
+        assert!(!app.win.help.can_go_back(), "back added to the history itself — there would be no getting out of it");
 
         // a repeat of the same article does not grow the history
         app.open_help("index");
         app.open_help("index");
-        assert!(!app.help_can_go_back_for_test(), "a repeated click on the same article got into the history");
+        assert!(!app.win.help.can_go_back(), "a repeated click on the same article got into the history");
     }
 
     /// THE BUILD WATCHES THE FOLDER. Without that an edit to an article does not reach the binary and the
@@ -359,7 +359,7 @@ mod tests {
         let title = crate::i18n::tr("help-title");
         assert!(texts.iter().any(|t| t.contains(&title)), "the window has no heading \"{title}\"");
         let panels = crate::gui::panels_source::PANELS;
-        assert!(panels.contains("self.open_help(\"index\")"), "the help does not open from the menu");
+        assert!(panels.contains("BarAsk::Help(\"index\""), "the help does not open from the menu");
     }
 
     /// AND A TABLE REACHES THE SCREEN AS CELLS rather than one line of bars.
@@ -439,7 +439,7 @@ mod tests {
         // scroll, and the lower sections do not get into the frame. A particular section used to stand here
         // — and the test turned red when the order of the sections became sensible and it travelled down.
         // Nothing had broken and the test was red.
-        let (dir, items) = help::sections(false).into_iter().find(|(d, _)| !d.is_empty()).expect("at least one section");
+        let (dir, items) = help::sections().into_iter().find(|(d, _)| !d.is_empty()).expect("at least one section");
         let section = crate::i18n::tr(&format!("help-section-{dir}"));
         assert!(texts.iter().any(|t| t.contains(&section)), "the contents hold no section \"{section}\": {texts:?}");
         let first = help::title(items.first().expect("an article in the section"));

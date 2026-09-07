@@ -14,7 +14,7 @@ mod tests {
     fn a_hole_can_be_removed_from_the_toolbar() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
@@ -30,40 +30,40 @@ mod tests {
             .map(|f| (f.id, [f.centroid.x, f.centroid.y, f.centroid.z], f.normal))
             .expect("the top face");
         let key = qymcad_core::feature::FaceKey { index: 0, centroid: top.1, normal: top.2, id: top.0 };
-        let drilled = app.project.add_hole_typed(body, key, 5.0, 20.0, 0, 0.0, 0.0);
-        app.rebuild_if_dirty();
+        let drilled = app.project.add_hole_typed(body, key, qymcad_core::model::HoleTool { kind: 0, diameter: 5.0, depth: 20.0, dia2: 0.0, depth2: 0.0 });
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let dmi = app.project.mesh_index(drilled).expect("the mesh with the hole");
         let v_hole = app.project.bodies[dmi].mesh.volume();
 
         // THE BUTTON
-        app.sel = Sel::Mesh(dmi);
+        app.chosen.sel = Sel::Mesh(dmi);
         app.start_feat_cmd(26);
-        assert_eq!(app.cmd.kind, 26, "the remove-face command must open");
+        assert_eq!(app.tools.armed.cmd_kind(), 26, "the remove-face command must open");
 
         // A CLICK on the cylindrical face of the hole — through a real pick
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 9.0;
-        app.cam.target = [10.0, 10.0, 5.0];
-        let basis = app.cam.basis();
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 9.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
+        let basis = app.viewing.cam.basis();
         let bore = app.project.bodies[dmi]
             .faces
             .iter()
             .find(|f| f.normal[2].abs() < 0.3 && (f.centroid.x - 10.0).abs() < 4.0 && (f.centroid.y - 10.0).abs() < 4.0)
             .map(|f| (f.id, [f.centroid.x, f.centroid.y, f.centroid.z]))
             .expect("the face of the hole");
-        let at = app.project3(bore.1, rect, &basis).0;
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at(bore.1).0;
         app.pick_face_3d(rect, at);
-        if !app.gsel.faces.contains(&bore.0) {
+        if !app.tools.gsel.faces.contains(&bore.0) {
             // the face may be hidden by the body from this angle — then it is picked directly, but
             // the fact is noted: that is a limitation of the check, not of the tool
-            app.gsel.faces.insert(bore.0);
-            app.gsel.faces_body = Some(drilled);
+            app.tools.gsel.faces.insert(bore.0);
+            app.tools.gsel.faces_body = Some(drilled);
         }
 
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         assert!(
             app.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::RemoveFace { .. })),
@@ -103,15 +103,15 @@ mod tests {
     #[test]
     fn the_tool_is_visible_everywhere_it_should_be() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(panels.contains("self.start_feat_cmd(26)"), "the button in the panel");
-        assert!(panels.contains("FeatureKind::RemoveFace { ref faces, .. } =>"), "the row in the feature tree");
+        assert!(panels.contains("BarAsk::FeatCmd(26)"), "the button in the panel");
+        assert!(crate::gui::render_source::has(panels, "FeatureKind::RemoveFace { ref faces, .. } =>"), "the row in the feature tree");
         let gui = include_str!("../gui.rs");
-        assert!(gui.contains("FK::RemoveFace { .. } => ph::"), "the icon");
+        assert!(crate::gui::render_source::has(gui, "FK::RemoveFace { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-remove-face").is_empty() && crate::i18n::tr("feat-name-remove-face") != "feat-name-remove-face", "the default feature name must have a translation");
         let render = crate::gui::render_source::RENDER;
-        assert!(render.contains("} else if self.cmd.kind == 26 {"), "the highlight of the picked faces");
-        let cmds = include_str!("commands.rs");
-        assert!(cmds.contains("FeatureKind::RemoveFace { src, ref faces, .. } => {"), "reopening by double click");
-        assert!(cmds.contains("FeatureKind::RemoveFace { faces, .. } => {"), "applying the edit");
+        assert!(crate::gui::render_source::has(render, "} else if pn.armed.cmd_kind() == 26 {"), "the highlight of the picked faces");
+        let cmds = crate::gui::sketch_source::PART;
+        assert!(crate::gui::render_source::has(cmds, "FeatureKind::RemoveFace { src, ref faces, .. } => {"), "reopening by double click");
+        assert!(crate::gui::render_source::has(cmds, "FeatureKind::RemoveFace { faces, .. } => {"), "applying the edit");
     }
 }

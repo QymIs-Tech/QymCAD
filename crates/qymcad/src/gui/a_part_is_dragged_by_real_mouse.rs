@@ -37,7 +37,7 @@ mod tests {
 
     /// The point on the body the click will land on: the centre of the topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -54,11 +54,11 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
-        while app.current_ctx_id_for_test() != root {
-            app.exit_context_for_test();
+        while qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) != root {
+            app.exit_context();
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own");
         let comps: Vec<Id> = mine.iter().map(|b| app.project.body_owner(*b).expect("the owner")).collect();
@@ -67,13 +67,13 @@ mod tests {
         let cb = app.project.add_connector(comps[1], AnchorRef::BasePlane(BasePlane::YZ));
         app.project.add_joint(ca, cb, JointKind::Slider);
         app.project.solve_joints();
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
 
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 6.0;
-        app.cam.target = [30.0, 10.0, 5.0];
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 6.0;
+        app.viewing.cam.target = [30.0, 10.0, 5.0];
         app.workbench = super::super::Workbench::Assembly;
         (mine[1], comps[1])
     }
@@ -85,25 +85,25 @@ mod tests {
         let (body, comp) = a_slider_pair(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport(c));
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body), viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body)).0;
         let was = origin_of(&app, comp);
 
         // HOVER, PRESS, LEAD OVER SEVERAL FRAMES, RELEASE — exactly like a hand.
-        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport(c));
         for k in 1..=6 {
             let p = at + egui::vec2(14.0 * k as f32, 0.0);
-            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport(c));
         }
-        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport(c));
 
         let now = origin_of(&app, comp);
         let moved = ((now[0] - was[0]).powi(2) + (now[1] - was[1]).powi(2) + (now[2] - was[2]).powi(2)).sqrt();
         assert!(moved > 1.0, "the button was held on the part and led — and it moved by {moved:.3} mm ({was:?} -> {now:?})");
-        assert!(!app.joint_drag_active(), "the button was released — the hand must let go");
+        assert!(!qymcad_assembly::joint_drag_active(&app.side.joint, &app.dragged.part_pull), "the button was released — the hand must let go");
     }
 
     /// THE JOINT HAS A VALUE SET — THE PART IS STILL DRAGGED, AND THE NUMBER FOLLOWS IT.
@@ -124,22 +124,22 @@ mod tests {
         let jid = app.project.joints.last().map(|j| j.id).expect("the joint");
         app.project.joints.iter_mut().find(|j| j.id == jid).expect("the joint").drive[1] = Some(12.0);
         app.project.solve_joints();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert_eq!(app.project.joints.iter().find(|j| j.id == jid).and_then(|j| j.driven(1)), Some(12.0), "setup: the value must be set");
 
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body), viewport(), &basis).0;
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport(c));
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body)).0;
         let was = origin_of(&app, comp);
 
-        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport(c));
         for k in 1..=6 {
-            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(14.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(14.0 * k as f32, 0.0))]), |c| app.viewport(c));
         }
-        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(84.0, 0.0), false)]), |c| app.viewport(c));
 
         let now = origin_of(&app, comp);
         let moved = ((now[0] - was[0]).powi(2) + (now[1] - was[1]).powi(2) + (now[2] - was[2]).powi(2)).sqrt();
@@ -161,15 +161,15 @@ mod tests {
         let (body, _comp) = a_slider_pair(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport(c));
 
-        let basis = app.cam.basis();
-        let at = app.project3(aim(&app, body), viewport(), &basis).0;
-        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(30.0, 0.0))]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(30.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body)).0;
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at)]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![press(at, true)]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(at + egui::vec2(30.0, 0.0))]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![press(at + egui::vec2(30.0, 0.0), false)]), |c| app.viewport(c));
 
-        assert!(!app.joint_drag_active(), "after the release the hand stayed busy: the next drag will go to the part instead of the view");
+        assert!(!qymcad_assembly::joint_drag_active(&app.side.joint, &app.dragged.part_pull), "after the release the hand stayed busy: the next drag will go to the part instead of the view");
     }
 }

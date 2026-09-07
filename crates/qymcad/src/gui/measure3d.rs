@@ -4,44 +4,29 @@
 //! what is here is only "what did the cursor hit". Measuring used to be possible ONLY in a sketch and
 //! only between two points on a plane: the gap between parts, the distance between faces, the angle
 //! of convergence and the diameter of a hole in 3D had nothing to measure them with.
+pub use qymcad_ui_state::MeasurePick;
+pub(crate) use qymcad_ui_state::measure_text;
 use super::{App, Id};
 use egui::{Pos2, Rect};
 use qymcad_core::feature::{apply12, apply12_dir};
-use qymcad_core::measure::{measure_one, measure_pair, MeasureItem, MeasureResult};
-
-/// What the measuring tool has clicked: the element itself plus a human-readable name (shown in the
-/// hint — otherwise it is not clear what exactly the click caught).
-#[derive(Clone, Debug)]
-pub(crate) struct MeasurePick {
-    pub item: MeasureItem,
-    pub what: String,
-    /// The point at which to draw the label and run the leader.
-    pub at: [f64; 3],
-}
-
-/// THE STATE OF THE 3D MEASURING TOOL: up to two elements. A third click starts a new measurement,
-/// the same as in the sketch measuring tool, and that is the one behaviour nobody confuses.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Measure3 {
-    pub on: bool,
-    pub picks: Vec<MeasurePick>,
-}
-
-impl Measure3 {
-    pub fn clear(&mut self) {
-        *self = Self::default();
-    }
-}
+use qymcad_core::measure::{MeasureItem};
 
 impl App {
+    /// THE RESULT TEXT — the only place where the numbers turn into a string (the status line and the
+    /// plate at the geometry say the same thing: two wordings of one measurement drift apart
+    /// silently).
+    pub(super) fn measure_text(&self) -> String {
+        measure_text(&self.painting())
+    }
+
     /// SWITCH the 3D measuring tool ON or OFF.
     pub(super) fn toggle_measure_3d(&mut self) {
-        let on = !self.m3.on;
+        let on = !self.side.m3.on;
         self.cancel_all_tools(); // exclusivity: the measuring tool puts down the previous one
-        self.m3.clear();
-        self.m3.on = on;
+        self.side.m3.clear();
+        self.side.m3.on = on;
         if on {
-            self.mode_3d = true;
+            self.viewing.mode_3d = true;
             self.status = crate::i18n::tr("m3-hint");
         }
     }
@@ -52,49 +37,14 @@ impl App {
             self.status = crate::i18n::tr("m3-miss");
             return;
         };
-        if self.m3.picks.len() >= 2 {
-            self.m3.picks.clear(); // a third click means a new measurement
+        if self.side.m3.picks.len() >= 2 {
+            self.side.m3.picks.clear(); // a third click means a new measurement
         }
-        self.m3.picks.push(p);
+        self.side.m3.picks.push(p);
         self.status = self.measure_text();
     }
 
-    /// THE RESULT TEXT — the only place where the numbers turn into a string (the status line and the
-    /// plate at the geometry say the same thing: two wordings of one measurement drift apart
-    /// silently).
-    pub(super) fn measure_text(&self) -> String {
-        let Some(r) = self.measure_result() else { return crate::i18n::tr("m3-hint-short") };
-        let names: Vec<&str> = self.m3.picks.iter().map(|p| p.what.as_str()).collect();
-        let mut parts: Vec<String> = Vec::new();
-        if let Some((label, v)) = r.value {
-            parts.push(crate::i18n::tr2("m3-value-mm", "label", label, "v", &crate::i18n::num(v, 3)));
-        }
-        if let Some(d) = r.distance {
-            parts.push(crate::i18n::tr1("m3-distance", "v", &crate::i18n::num(d, 3)));
-        }
-        if let Some(a) = r.angle_deg {
-            parts.push(crate::i18n::tr1("m3-angle", "v", &crate::i18n::num(a, 3)));
-        }
-        if let Some(d) = r.delta {
-            parts.push(format!("Δ {:.3} / {:.3} / {:.3}", d[0], d[1], d[2]));
-        }
-        if parts.is_empty() {
-            // HONESTLY: there is no meaningful number for this pair (converging faces, for one — the
-            // distance between them depends on where it is measured). Silence is worse: a person will
-            // decide the tool is broken.
-            return crate::i18n::tr1("m3-not-parallel", "what", &names.join(" - "));
-        }
-        format!("{}: {}", names.join(" - "), parts.join(" · "))
-    }
 
-    /// The result for what was clicked: one element gives its own size, two give a pair.
-    pub(super) fn measure_result(&self) -> Option<MeasureResult> {
-        match self.m3.picks.len() {
-            1 => Some(measure_one(&self.m3.picks[0].item)),
-            2 => Some(measure_pair(&self.m3.picks[0].item, &self.m3.picks[1].item)),
-            _ => None,
-        }
-    }
 
     /// WHAT THE CURSOR HIT: vertex -> edge -> face.
     ///
@@ -106,17 +56,17 @@ impl App {
         // exactly onto the middle of its own top face: without a depth check a click on a visible face
         // returned THE EDGE ON THE FAR SIDE, and instead of the thickness of the part a diagonal came
         // out. A small element beats a face only if it is IN FRONT of it (or on it — the silhouette).
-        let basis = self.cam.basis();
+        let basis = self.viewing.cam.basis();
         let face = self.pick_face_ray(rect, pos);
-        let face_depth = face.map(|(_, _, hit)| self.project3(hit, rect, &basis).1);
+        let face_depth = face.map(|(_, _, hit)| qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect: rect, basis: &basis }.at(hit).1);
         let in_front = |d: f64| face_depth.is_none_or(|fd| d <= fd + 0.5); // 0.5 mm of tolerance for the silhouette
-        if let Some(w) = self.pick_vertex_pos(rect, pos) {
-            if in_front(self.project3(w, rect, &basis).1) {
+        if let Some(w) = crate::gui::pick::pick_vertex_pos(&self.painting(), rect, pos) {
+            if in_front(qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect: rect, basis: &basis }.at(w).1) {
                 return Some(MeasurePick { item: MeasureItem::Point(w), what: crate::i18n::tr("m3-vertex"), at: w });
             }
         }
         if let Some(p) = self.measure_edge_at(rect, pos) {
-            if in_front(self.project3(p.at, rect, &basis).1) {
+            if in_front(qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect: rect, basis: &basis }.at(p.at).1) {
                 return Some(p);
             }
         }
@@ -125,20 +75,20 @@ impl App {
 
     /// The edge under the cursor -> a line or a circle in the WORLD coordinates of the active context.
     fn measure_edge_at(&mut self, rect: Rect, pos: Pos2) -> Option<MeasurePick> {
-        let basis = self.cam.basis();
-        let ctx = self.current_ctx_id();
+        let basis = self.viewing.cam.basis();
+        let ctx = qymcad_ui_state::current_ctx_id(&self.active_path, &self.project);
         let mut best: Option<(f32, Id, u32)> = None;
-        for (_mi, body) in self.shown_bodies() {
-            if !self.body_bbox_hit(body, rect, pos, &basis, 12.0) {
+        for (_mi, body) in crate::gui::pick::shown_bodies(&self.painting()) {
+            if !crate::gui::pick::body_bbox_hit(&self.painting(), body, rect, pos, &basis, 12.0) {
                 continue;
             }
-            let Some(edges) = self.body_edges_cached(body) else { continue };
+            let Some(edges) = crate::gui::pick::body_edges_cached(&self.cache, &self.live, &self.regen, body) else { continue };
             let wt = self.project.body_display_transform(body, ctx);
-            for (poly, id) in edges.0.iter().zip(edges.1.iter().copied()) {
+            for (poly, id) in edges.polys.iter().zip(edges.ids.iter().copied()) {
                 if id == 0 {
                     continue;
                 }
-                let pts: Vec<Pos2> = poly.iter().map(|p| self.project3(apply12(&wt, [p[0] as f64, p[1] as f64, p[2] as f64]), rect, &basis).0).collect();
+                let pts: Vec<Pos2> = poly.iter().map(|p| qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect: rect, basis: &basis }.at(apply12(&wt, [p[0] as f64, p[1] as f64, p[2] as f64])).0).collect();
                 for w in pts.windows(2) {
                     let d = super::screen_dist_seg(pos, w[0], w[1]);
                     if best.is_none_or(|(bd, _, _)| d < bd) {
@@ -182,7 +132,7 @@ impl App {
     /// context.
     fn measure_face_at(&mut self, rect: Rect, pos: Pos2) -> Option<MeasurePick> {
         let (body, fid, hit) = self.pick_face_ray(rect, pos)?;
-        let ctx = self.current_ctx_id();
+        let ctx = qymcad_ui_state::current_ctx_id(&self.active_path, &self.project);
         let wt = self.project.body_display_transform(body, ctx);
         // A CYLINDER is a kind of its own: on the wall of a hole one measures the diameter and the
         // gap to that wall, not to an imaginary plane it does not have.

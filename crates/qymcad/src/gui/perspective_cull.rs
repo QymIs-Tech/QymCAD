@@ -16,6 +16,7 @@
 //! once the angle became a setting.
 #[cfg(test)]
 mod tests {
+    use qymcad_ui_state::Projection;
     use super::super::App;
 
     /// A cylinder is where this shows: its side surface runs all the way round, and the faces near
@@ -27,16 +28,16 @@ mod tests {
         app.project.add_circle_entity(si, 0.0, 0.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 80.0;
             p.txt = "80".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
-        app.cam.init = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
         app
     }
 
@@ -48,9 +49,9 @@ mod tests {
     /// triangles were the holes.
     fn wrongly_culled(app: &App, inv_d: f64) -> usize {
         use super::super::{v_cross, v_dot, v_norm, v_sub};
-        let (_, _, fwd) = app.cam.basis();
+        let (_, _, fwd) = app.viewing.cam.basis();
         let d_eye = 1.0 / inv_d;
-        let eye = [app.cam.target[0] - fwd[0] * d_eye, app.cam.target[1] - fwd[1] * d_eye, app.cam.target[2] - fwd[2] * d_eye];
+        let eye = [app.viewing.cam.target[0] - fwd[0] * d_eye, app.viewing.cam.target[1] - fwd[1] * d_eye, app.viewing.cam.target[2] - fwd[2] * d_eye];
         let mut n = 0;
         for b in &app.project.bodies {
             for tri in &b.mesh.tris {
@@ -78,13 +79,13 @@ mod tests {
     #[test]
     fn the_old_rule_disagrees_with_the_eye_and_worse_the_wider_the_angle() {
         let mut app = cylinder_app();
-        app.set.cam_perspective = true;
+        app.set.projection = Projection::Perspective;
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
 
         let mut lost = Vec::new();
         for fov in [20.0, 35.5, 60.0, 80.0] {
             app.set.persp_fov_deg = fov;
-            let inv_d = app.persp_inv_d_for_test(rect.height() * 0.5);
+            let inv_d = qymcad_ui_state::persp_inv_d_eye(&app.viewing.cam, &app.set, rect.height() * 0.5);
             assert!(inv_d > 0.0, "setup: the perspective is on");
             lost.push((fov, wrongly_culled(&app, inv_d)));
         }
@@ -95,13 +96,13 @@ mod tests {
         // and the new rule does not lose them BY CONSTRUCTION: it is "does the eye see it"
         for (fov, _) in &lost {
             app.set.persp_fov_deg = *fov;
-            let inv_d = app.persp_inv_d_for_test(rect.height() * 0.5);
-            let (_, _, fwd) = app.cam.basis();
+            let inv_d = qymcad_ui_state::persp_inv_d_eye(&app.viewing.cam, &app.set, rect.height() * 0.5);
+            let (_, _, fwd) = app.viewing.cam.basis();
             let d_eye = 1.0 / inv_d;
-            let eye = [app.cam.target[0] - fwd[0] * d_eye, app.cam.target[1] - fwd[1] * d_eye, app.cam.target[2] - fwd[2] * d_eye];
+            let eye = [app.viewing.cam.target[0] - fwd[0] * d_eye, app.viewing.cam.target[1] - fwd[1] * d_eye, app.viewing.cam.target[2] - fwd[2] * d_eye];
             let probe = [30.0, 0.0, 40.0];
             let want = super::super::v_norm(super::super::v_sub(probe, eye));
-            let got = app.view_dir_at_for_test(probe, fwd, inv_d);
+            let got = qymcad_ui_state::view_dir_at(&app.viewing.cam, probe, fwd, inv_d);
             for k in 0..3 {
                 assert!((got[k] - want[k]).abs() < 1e-9, "angle {fov} deg: the ray of sight was computed not from the eye: {got:?} against {want:?}");
             }
@@ -112,19 +113,19 @@ mod tests {
     #[test]
     fn the_orthographic_view_is_untouched() {
         let app = cylinder_app();
-        let (_, _, fwd) = app.cam.basis();
+        let (_, _, fwd) = app.viewing.cam.basis();
         let p = [12.0, -7.0, 33.0];
-        assert_eq!(app.view_dir_at_for_test(p, fwd, 0.0), fwd, "in an orthographic view the direction of sight must stay as it was");
+        assert_eq!(qymcad_ui_state::view_dir_at(&app.viewing.cam, p, fwd, 0.0), fwd, "in an orthographic view the direction of sight must stay as it was");
     }
 
     /// THE RAY REALLY DOES DIVERGE FROM `fwd` — otherwise the check above would mean nothing.
     #[test]
     fn off_centre_the_ray_really_differs_from_the_camera_axis() {
         let app = cylinder_app();
-        let (_, _, fwd) = app.cam.basis();
+        let (_, _, fwd) = app.viewing.cam.basis();
         let inv_d = 1.0 / 150.0; // the eye is close, so the angle is wide
         let far_off = [90.0, 0.0, 0.0]; // a point off to the side of the centre of the frame
-        let v = app.view_dir_at_for_test(far_off, fwd, inv_d);
+        let v = qymcad_ui_state::view_dir_at(&app.viewing.cam, far_off, fwd, inv_d);
         let same = super::super::v_dot(v, fwd);
         assert!(same < 0.98, "the ray to a point near the edge of the frame almost coincided with the camera axis ({same:.3}) — the check proves nothing");
     }
@@ -136,13 +137,13 @@ mod tests {
     fn both_renderers_cull_by_the_eye_ray() {
         let render = crate::gui::render_source::RENDER;
         let gpu = include_str!("../viewport_gpu.rs");
-        assert_eq!(render.matches("view_dir_at(").count(), 2, "the raster must cull by the ray from the eye in both places (bodies and face fill)");
+        assert_eq!(render.matches("qymcad_ui_state::view_dir_at(").count(), 2, "the raster must cull by the ray from the eye in both places (bodies and face fill)");
         // TOGETHER WITH THE CONDITION, not only the line that computes it: the first edition of the
         // guard checked for the presence of `let eye = ...` and passed calmly when the branch was
         // stubbed out with `if (false)`. The guard must see that the computation is SWITCHED ON in
         // perspective, not merely present in the file.
         let want = "if (inv_d > 0.0) {\n        let eye = cam.tgt.xyz - cam.fwd.xyz * (1.0 / inv_d);\n        view = normalize(in.wpos - eye);";
         assert!(gpu.contains(want), "the shader stopped culling by the ray from the eye in perspective — the picture will diverge from the raster again");
-        assert!(gpu.contains("if (dot(in.nrm, view) >= 0.0) { discard; }"), "the shader culls by the general camera direction again");
+        assert!(crate::gui::render_source::has(gpu, "if (dot(in.nrm, view) >= 0.0) { discard; }"), "the shader culls by the general camera direction again");
     }
 }

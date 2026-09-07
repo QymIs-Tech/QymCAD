@@ -41,7 +41,7 @@ fn construction_rect_not_a_contour() {
 fn polygon_tool_makes_closed_loop() {
     let mut p = Project::default();
     let si = p.new_sketch("poly");
-    p.add_polygon_entity(si, 0.0, 0.0, 10.0, 0.0, 6, qymcad_core::feature::Purpose::Real);
+    p.add_polygon_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(10.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
     assert_eq!(p.sketches[si].contour_ids.len(), 1, "a polygon is one contour");
     let c = &p.contours[p.contour_index(p.sketches[si].contour_ids[0]).unwrap()];
     assert!(c.closed && c.points.len() == 6, "a closed hexagon");
@@ -51,7 +51,7 @@ fn polygon_tool_makes_closed_loop() {
 fn slot_tool_makes_closed_loop() {
     let mut p = Project::default();
     let si = p.new_sketch("slot");
-    p.add_slot_entity(si, 0.0, 0.0, 20.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real);
+    p.add_slot_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(20.0, 0.0), 5.0, qymcad_core::feature::Purpose::Real);
     assert_eq!(p.sketches[si].contour_ids.len(), 1, "a slot is one contour");
     let c = &p.contours[p.contour_index(p.sketches[si].contour_ids[0]).unwrap()];
     assert!(c.closed, "the slot is closed");

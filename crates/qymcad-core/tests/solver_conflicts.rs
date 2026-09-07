@@ -136,7 +136,7 @@ fn arc_intrinsics_are_part_of_the_analyzed_system() {
     let sid = p.add_sketch("t", vec![], None);
     p.add_sketch_node(sid, "Sketch");
     let si = p.sketch_index(sid).unwrap();
-    p.add_arc_entity(si, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(10.0, 0.0), qymcad_core::geom::Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     let (c, a) = match p.sketches[si].entities[0].kind {
         qymcad_core::model::EntityKind::Arc { center, a, .. } => (center, a),
         _ => unreachable!("an arc"),

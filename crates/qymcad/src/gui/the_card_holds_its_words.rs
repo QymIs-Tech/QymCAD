@@ -28,10 +28,10 @@ mod tests {
         let raw = || egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::pos2(0.0, 0.0), SCREEN)), ..Default::default() };
         // two passes: an egui area settles into place on the second, and the cancel button is one
         let _ = ctx.run_ui(raw(), |c| {
-            app.draw_dim_overlay_with(c.ctx(), label, progress, egui::Rect::NOTHING);
+            crate::gui::render::draw_dim_overlay_with(&app.scheme, c.ctx(), label, progress, egui::Rect::NOTHING);
         });
         let out = ctx.run_ui(raw(), |c| {
-            app.draw_dim_overlay_with(c.ctx(), label, progress, egui::Rect::NOTHING);
+            crate::gui::render::draw_dim_overlay_with(&app.scheme, c.ctx(), label, progress, egui::Rect::NOTHING);
         });
         let (mut cards, mut texts) = (Vec::new(), Vec::new());
         for cs in &out.shapes {

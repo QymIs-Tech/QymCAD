@@ -63,7 +63,7 @@ mod tests {
         let mut app = App::default();
         app.project.new_document();
         let (asm, [a, b, c]) = asm_with_three(&mut app.project);
-        app.tree_sel.multi = vec![a, b];
+        app.chosen.tree_sel.multi = vec![a, b];
 
         assert!(app.tree_apply_drop(a, c, TreeDrop::Onto), "the grouping did not happen");
         let top = order_in(&app.project, asm);
@@ -85,11 +85,11 @@ mod tests {
         let (_asm, [a, b, c]) = asm_with_three(&mut app.project);
         // B is selected
         let bi = app.project.component_index(b).expect("the index of B");
-        app.sel = Sel::Component(bi);
+        app.chosen.sel = Sel::Component(bi);
 
         assert!(app.tree_apply_drop(c, a, TreeDrop::Before), "the reordering did not happen");
 
-        let now = match app.sel {
+        let now = match app.chosen.sel {
             Sel::Component(ci) => app.project.components.get(ci).map(|x| x.id),
             _ => None,
         };
@@ -103,12 +103,12 @@ mod tests {
         app.project.new_document();
         let (_asm, [a, b, c]) = asm_with_three(&mut app.project);
         let bi = app.project.component_index(b).expect("the index of B");
-        app.sel = Sel::Component(bi);
-        app.tree_sel.multi = vec![a, b];
+        app.chosen.sel = Sel::Component(bi);
+        app.chosen.tree_sel.multi = vec![a, b];
 
         assert!(app.tree_apply_drop(a, c, TreeDrop::Onto), "the grouping did not happen");
 
-        let now = match app.sel {
+        let now = match app.chosen.sel {
             Sel::Component(ci) => app.project.components.get(ci).map(|x| x.id),
             _ => None,
         };
@@ -122,7 +122,7 @@ mod tests {
         let mut app = App::default();
         app.project.new_document();
         let (asm, [a, b, c]) = asm_with_three(&mut app.project);
-        app.tree_sel.multi = vec![a, b];
+        app.chosen.tree_sel.multi = vec![a, b];
 
         assert!(app.tree_apply_drop(a, c, TreeDrop::Before), "the reordering did not happen");
         assert_eq!(order_in(&app.project, asm), ["A", "B", "C"], "the selection did not travel whole: {:?}", order_in(&app.project, asm));
@@ -156,7 +156,7 @@ mod tests {
         // of a multibyte letter, then the window came out shorter than the code and "lost" a double-click
         // handler nobody had touched.
         let a = src.find("tree-components").expect("the component tree is in place");
-        let end = src[a..].find("\n    pub(super) fn ops_tree").map(|i| a + i).unwrap_or(src.len());
+        let end = src[a..].find("\nfn ops_tree").map(|i| a + i).unwrap_or(src.len());
         let body = &src[a..end];
         // THE CALL is searched for, not the word: a comment nearby explains why it was removed, and the
         // check used to trip over the mention.
@@ -185,7 +185,7 @@ mod tests {
         app.project.set_active_component(Some(top));
         let target = app.project.add_assembly("Socket");
         let before = app.project.components.len();
-        app.tree_sel.multi = vec![a, b];
+        app.chosen.tree_sel.multi = vec![a, b];
 
         assert!(app.tree_apply_drop(a, target, TreeDrop::Onto), "the drop onto a subassembly did not work");
         assert_eq!(app.project.components.len(), before, "a spare subassembly was created instead of moving things inside");
@@ -202,7 +202,7 @@ mod tests {
         app.project.new_document();
         let (_asm, [a, b, c]) = asm_with_three(&mut app.project);
         let before = app.project.components.len();
-        app.tree_sel.multi = vec![a, b];
+        app.chosen.tree_sel.multi = vec![a, b];
 
         assert!(app.tree_apply_drop(a, c, TreeDrop::Onto), "the drop onto a part did not work");
         assert_eq!(app.project.components.len(), before + 1, "no new subassembly was created");
@@ -223,7 +223,7 @@ mod tests {
         super::super::install_fonts(&ctx);
         let draw = |app: &mut App, ui: &mut egui::Ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                app.build_tree(ui);
+                app.build_tree_for_test(ui);
             });
         };
         // frame 1 — find out where the rows are
@@ -304,7 +304,7 @@ mod tests {
         super::super::install_fonts(&ctx);
         let draw = |app: &mut App, ui: &mut egui::Ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                app.build_tree(ui);
+                app.build_tree_for_test(ui);
             });
         };
         let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |c| draw(&mut app, c));
@@ -322,7 +322,7 @@ mod tests {
         i2.events.push(ev(at, false));
         let _ = ctx.run_ui(i2, |c| draw(&mut app, c));
 
-        let picked = match app.sel {
+        let picked = match app.chosen.sel {
             Sel::Component(ci) => app.project.components.get(ci).map(|x| x.id),
             _ => None,
         };
@@ -340,13 +340,13 @@ mod tests {
         let (asm, [a, _b, c]) = asm_with_three(&mut app.project);
         app.enter_component(asm);
         let before = order_in(&app.project, asm);
-        let undo_before = app.undo_len_for_test();
+        let undo_before = app.disk.edits.undo.len();
 
         assert!(drag_row_onto(&mut app, c, a, 0.05), "the rows of the tree were not found in the frame");
         assert_eq!(order_in(&app.project, asm), ["C", "A", "B"], "setup: the order changed");
-        assert_eq!(app.undo_len_for_test(), undo_before + 1, "a move must be ONE step of undo");
+        assert_eq!(app.disk.edits.undo.len(), undo_before + 1, "a move must be ONE step of undo");
 
-        app.undo_for_test();
+        app.undo();
         assert_eq!(order_in(&app.project, asm), before, "Ctrl+Z did not put the order back as it was");
     }
 
@@ -364,7 +364,7 @@ mod tests {
         super::super::install_fonts(&ctx);
         let draw = |app: &mut App, ui: &mut egui::Ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                app.build_tree(ui);
+                app.build_tree_for_test(ui);
             });
         };
         let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |x| draw(&mut app, x));
@@ -415,7 +415,7 @@ mod tests {
         super::super::install_fonts(&ctx);
         let draw = |app: &mut App, ui: &mut egui::Ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                app.build_tree(ui);
+                app.build_tree_for_test(ui);
             });
         };
         let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |x| draw(&mut app, x));
@@ -458,11 +458,11 @@ mod tests {
         let (asm, [a, _b, _c]) = asm_with_three(&mut app.project);
         app.enter_component(asm);
         let before = order_in(&app.project, asm);
-        let undo_before = app.undo_len_for_test();
+        let undo_before = app.disk.edits.undo.len();
 
         assert!(drag_row_onto(&mut app, a, a, 0.5), "the rows of the tree were not found in the frame");
         assert_eq!(order_in(&app.project, asm), before, "a drop onto itself changed something");
-        assert_eq!(app.undo_len_for_test(), undo_before, "a drop into nowhere left a step of undo");
+        assert_eq!(app.disk.edits.undo.len(), undo_before, "a drop into nowhere left a step of undo");
     }
 
     /// AT THE EDGE OF THE LIST IT SCROLLS BY ITSELF.
@@ -480,7 +480,7 @@ mod tests {
         let asm = app.project.add_assembly("Node");
         app.project.set_active_component(Some(asm));
         for i in 0..40 {
-            app.project.add_part(&format!("Part {i}"));
+            app.project.add_part(format!("Part {i}"));
         }
         app.enter_component(asm);
 
@@ -492,7 +492,7 @@ mod tests {
         let draw = |app: &mut App, ui: &mut egui::Ui| {
             egui::CentralPanel::default().show(ui, |ui| {
                 egui::ScrollArea::vertical().id_salt("geomscroll").max_height(240.0).show(ui, |ui| {
-                    app.build_tree(ui);
+                    app.build_tree_for_test(ui);
                 });
             });
         };

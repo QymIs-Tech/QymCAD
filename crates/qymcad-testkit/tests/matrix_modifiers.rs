@@ -322,8 +322,8 @@ fn matrix_fillet_short_step_edges() {
         let (inner, outer) = (cc[0].0, cc[1].0);
         // the outer one (the step ring) is a 1 mm pocket; the inner one goes all the way through
         // the sketch is on world XY (z=0 is the bottom of the plate), so the tool grows UP (flip=false)
-        let cut1 = p.add_combine_multi_op(plate, sid2, vec![outer], 1.0, 0, qymcad_core::feature::Extent::default(), 0.0, vec![]);
-        let cut2 = p.add_combine_multi_op(cut1, sid2, vec![inner], 2.0, 0, qymcad_core::feature::Extent { through: true, ..Default::default() }, 0.0, vec![]);
+        let cut1 = p.add_combine_multi_op(plate, sid2, vec![outer], qymcad_core::model::CombineSpan { height: 1.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
+        let cut2 = p.add_combine_multi_op(cut1, sid2, vec![inner], qymcad_core::model::CombineSpan { height: 2.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, ..Default::default() }, fill: &[] }, 0);
         (p, cut2)
     };
     // did the geometry build at all?
@@ -409,7 +409,7 @@ fn matrix_revolve_direction_and_symmetry() {
         p.add_rect_entity(si, 10.0, 0.0, 20.0, 30.0, qymcad_core::feature::Purpose::Real);
         p.regen_sketch(si);
         let cid = p.sketches[si].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).unwrap();
-        let body = p.add_revolve_axis_ex(sid, vec![cid], 1, 180.0, 0, 0, reach);
+        let body = p.add_revolve_axis_ex(sid, vec![cid], qymcad_core::model::RevolveAxis { axis: 1, datum: 0, line: 0 }, qymcad_core::model::RevolveTurn { angle: 180.0, reach: reach });
         let last = p.finish_base_body(body, 1);
         let (report, shapes) = qymcad_testkit::regenerate(&mut p);
         for (id, e) in &report.errors {

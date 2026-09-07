@@ -9,11 +9,10 @@ mod tests {
     /// Exactly one place assembles the line.
     #[test]
     fn the_dof_line_is_built_in_exactly_one_place() {
-        let files = [
-            ("gui.rs", include_str!("../gui.rs")),
-            ("sketching.rs", include_str!("sketching.rs")),
-            ("panels.rs", crate::gui::panels_source::PANELS),
-        ];
+        // THE SOURCES MUST NOT OVERLAP, because this check COUNTS. `PANELS` already carries the sketch
+        // crate (the buttons live there), so listing `SKETCH` beside it counted the one definition twice
+        // and reported a copy that does not exist.
+        let files = [("gui.rs", include_str!("../gui.rs")), ("panels.rs", crate::gui::panels_source::PANELS)];
         // look for the CALL that assembles the line rather than for the phrase itself: the phrase
         // moved into the language catalogue, and holding on to it would mean checking text instead of
         // substance again

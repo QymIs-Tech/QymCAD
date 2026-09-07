@@ -19,7 +19,7 @@ mod tests {
     #[test]
     fn no_pick_radius_is_a_number_in_place() {
         let mut sins: Vec<String> = Vec::new();
-        for (name, src) in [("pick.rs", include_str!("pick.rs")), ("sketching.rs", include_str!("sketching.rs"))] {
+        for (name, src) in [("pick.rs", crate::gui::sketch_source::PICK), ("sketching.rs", crate::gui::sketch_source::SKETCH)] {
             let code = src.split("#[cfg(test)]\nmod ").next().expect("the working part");
             for (i, line) in code.lines().enumerate() {
                 let t = line.trim_start();
@@ -31,7 +31,7 @@ mod tests {
                     continue;
                 }
                 let mut rest = line;
-                while let Some(p) = rest.find(|c| c == '<' || c == '>') {
+                while let Some(p) = rest.find(['<', '>']) {
                     let after = &rest[p..];
                     let num: String = after.trim_start_matches(['<', '>', '=', ' ']).chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
                     if let Ok(v) = num.parse::<f64>() {
@@ -45,7 +45,7 @@ mod tests {
         }
         assert!(
             sins.is_empty(),
-            "a pick radius is again typed as a number in place ({}) — add a role in `grab.rs` and ask `self.grab(...)`:\n{}",
+            "a pick radius is again typed as a number in place ({}) — add a role in `grab.rs` and ask `qymcad_ui_state::grab::grab(&self.set, ...)`:\n{}",
             sins.len(),
             sins.join("\n")
         );
@@ -69,12 +69,12 @@ mod tests {
         assert!(precision_factor(2) > precision_factor(1), "coarse must be wider than normal");
         let mut app = App::default();
         for g in [Grab::Point, Grab::Curve, Grab::Label, Grab::Guide, Grab::Snap] {
-            app.set_pick_precision_for_test(1);
-            let normal = app.grab(g);
-            app.set_pick_precision_for_test(0);
-            assert!(app.grab(g) < normal, "precise did not narrow the radius of role {g:?}");
-            app.set_pick_precision_for_test(2);
-            assert!(app.grab(g) > normal, "coarse did not widen the radius of role {g:?}");
+            app.set.pick_precision = 1;
+            let normal = qymcad_ui_state::grab::grab(&app.set, g);
+            app.set.pick_precision = 0;
+            assert!(qymcad_ui_state::grab::grab(&app.set, g) < normal, "precise did not narrow the radius of role {g:?}");
+            app.set.pick_precision = 2;
+            assert!(qymcad_ui_state::grab::grab(&app.set, g) > normal, "coarse did not widen the radius of role {g:?}");
         }
     }
 
@@ -90,17 +90,17 @@ mod tests {
         // a line gives two sketch POINTS — its end at the origin is what is caught
         app.project.add_line_entity(si, 0.0, 0.0, 20.0, 0.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         assert!(app.project.sketches[si].points.iter().any(|p| p.x.abs() < 1e-9 && p.y.abs() < 1e-9), "setup: there is no point at the origin");
 
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
-        let at = app.to_screen(rect, qymcad_core::geom::Point2::new(0.0, 0.0));
+        let at = (qymcad_ui_state::Sheet { view: app.viewing.view, rect: rect }).at(qymcad_core::geom::Point2::new(0.0, 0.0));
         // 12 px past: precise gives 7, coarse gives 15
         let miss = egui::pos2(at.x + 12.0, at.y);
 
-        app.set_pick_precision_for_test(0);
-        assert!(app.nearest_sketch_point(rect, miss, si).is_none(), "with precise aiming a click 12 px away must not catch the point (radius {})", app.grab(Grab::Point));
-        app.set_pick_precision_for_test(2);
-        assert!(app.nearest_sketch_point(rect, miss, si).is_some(), "with coarse aiming a click 12 px away must catch the point (radius {})", app.grab(Grab::Point));
+        app.set.pick_precision = 0;
+        assert!(crate::gui::pick::nearest_sketch_point(&app.pick_ctx(), rect, miss, si).is_none(), "with precise aiming a click 12 px away must not catch the point (radius {})", qymcad_ui_state::grab::grab(&app.set, Grab::Point));
+        app.set.pick_precision = 2;
+        assert!(crate::gui::pick::nearest_sketch_point(&app.pick_ctx(), rect, miss, si).is_some(), "with coarse aiming a click 12 px away must catch the point (radius {})", qymcad_ui_state::grab::grab(&app.set, Grab::Point));
     }
 }

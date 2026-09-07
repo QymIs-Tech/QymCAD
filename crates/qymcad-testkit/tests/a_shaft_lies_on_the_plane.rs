@@ -76,7 +76,7 @@ fn a_tangent_puts_the_shaft_on_the_plane() {
     // "tangency" is unreachable by any motion, and the solver has nothing to look for there.
     let i = p.component_index(cs).expect("shaft");
     p.components[i].transform = [0.0, 0.0, 1.0, 20.0, 0.0, 1.0, 0.0, 20.0, -1.0, 0.0, 0.0, 40.0];
-    p.add_tangent(cp, AnchorRef::FaceCenter(bp, plane.clone()), cs, AnchorRef::FaceCenter(bs, cyl));
+    p.add_tangent(cp, AnchorRef::FaceCenter(bp, plane), cs, AnchorRef::FaceCenter(bs, cyl));
     p.solve_joints();
 
     // THE SHAFT AXIS SITS EXACTLY ONE RADIUS ABOVE THE PLANE: the shaft lies ON it.
@@ -200,7 +200,7 @@ fn ball(p: &mut Project, r: f64) -> (Id, Id) {
     let s = p.new_sketch("ball");
     let sid = p.sketches[s].id;
     p.add_sketch_node(sid, "ball");
-    p.add_arc_entity(s, 0.0, 0.0, -r, 0.0, r, 0.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(s, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(-r, 0.0), qymcad_core::geom::Point2::new(r, 0.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(s, r, 0.0, -r, 0.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(s);
     let cid = p.sketches[s].contour_ids.iter().copied().find(|k| p.contour_profile_xy(*k).is_some()).expect("semicircle contour");
@@ -276,7 +276,7 @@ fn a_ball_settles_on_the_plate_at_exactly_its_radius() {
 
     // the ball hangs in the air above the plate — that is what has to be lowered
     p.move_component(cb, [20.0, 20.0, 45.0]);
-    p.add_tangent(cp, AnchorRef::FaceCenter(bp, plane.clone()), cb, AnchorRef::FaceCenter(bb, sph));
+    p.add_tangent(cp, AnchorRef::FaceCenter(bp, plane), cb, AnchorRef::FaceCenter(bb, sph));
     p.solve_joints();
 
     let at = apply12(&p.world_transform(cb), [0.0, 0.0, 0.0]);

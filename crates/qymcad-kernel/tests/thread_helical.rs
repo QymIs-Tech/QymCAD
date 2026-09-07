@@ -23,7 +23,7 @@ fn external_metric_thread_removes_sane_volume() {
     let (len, blank) = (20.0, rod(g.stock_d, 25.0));
     let v0 = blank.volume();
     let cut = blank
-        .helical_profile([0.0, 0.0, 2.0], [0.0, 0.0, 1.0], g.stock_d * 0.5, &encode_edges(&g.groove), len, g.lead, spec.starts, if spec.left { qymcad_kernel::Hand::Left } else { qymcad_kernel::Hand::Right }, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 2.0], dir: [0.0, 0.0, 1.0] }, radius: g.stock_d * 0.5, profile: &encode_edges(&g.groove), length: len, lead: g.lead, starts: spec.starts, hand: if spec.left { qymcad_kernel::Hand::Left } else { qymcad_kernel::Hand::Right }, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the thread built");
     let v1 = cut.volume();
     assert!(cut.is_valid(), "the threaded body is valid");
@@ -49,7 +49,7 @@ fn trapezoidal_thread_builds_and_differs_from_metric() {
     let cut_of = |std: ThreadStandard| {
         let g = ThreadSpec { standard: std, nominal_d: 20.0, pitch: 4.0, ..Default::default() }.geometry();
         rod(20.0, 30.0)
-            .helical_profile([0.0, 0.0, 3.0], [0.0, 0.0, 1.0], 10.0, &encode_edges(&g.groove), 24.0, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 3.0], dir: [0.0, 0.0, 1.0] }, radius: 10.0, profile: &encode_edges(&g.groove), length: 24.0, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .map(|s| (mesh_v(&s), s.is_valid()))
     };
     let (vm, okm) = cut_of(ThreadStandard::MetricIso).expect("the metric thread built");
@@ -66,7 +66,7 @@ fn round_rd_thread_with_arcs_builds_valid_solid() {
     let g = ThreadSpec { standard: ThreadStandard::RoundRd, nominal_d: 16.0, pitch: 3.0, ..Default::default() }.geometry();
     assert!(g.groove.iter().any(|e| matches!(e, qymcad_core::geom::ProfEdge::Arc { .. })), "the Rd profile contains arcs");
     let s = rod(16.0, 24.0)
-        .helical_profile([0.0, 0.0, 2.0], [0.0, 0.0, 1.0], 8.0, &encode_edges(&g.groove), 20.0, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 2.0], dir: [0.0, 0.0, 1.0] }, radius: 8.0, profile: &encode_edges(&g.groove), length: 20.0, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the round thread built");
     assert!(s.is_valid(), "the body is valid");
     assert!(s.volume() > 0.0 && s.volume() < rod(16.0, 24.0).volume());
@@ -80,17 +80,17 @@ fn multi_start_and_left_hand_build() {
     // the comparison is fair only at the same lead: two starts lay twice as many grooves
     let blank = rod(20.0, 30.0).volume();
     let one = rod(20.0, 30.0)
-        .helical_profile([0.0, 0.0, 3.0], [0.0, 0.0, 1.0], 10.0, &encode_edges(&g.groove), 24.0, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 3.0], dir: [0.0, 0.0, 1.0] }, radius: 10.0, profile: &encode_edges(&g.groove), length: 24.0, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("a single start at the same lead")
         .volume();
     let two = rod(20.0, 30.0)
-        .helical_profile([0.0, 0.0, 3.0], [0.0, 0.0, 1.0], 10.0, &encode_edges(&g.groove), 24.0, g.lead, 2, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 3.0], dir: [0.0, 0.0, 1.0] }, radius: 10.0, profile: &encode_edges(&g.groove), length: 24.0, lead: g.lead, starts: 2, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("a two-start thread")
         .volume();
     let (r1, r2) = (blank - one, blank - two);
     assert!(r2 > 1.5 * r1, "two starts at the same lead remove twice as much: {r1:.1} -> {r2:.1} mm³");
     let left = rod(20.0, 30.0)
-        .helical_profile([0.0, 0.0, 3.0], [0.0, 0.0, 1.0], 10.0, &encode_edges(&g.groove), 24.0, g.lead, 2, qymcad_kernel::Hand::Left, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 3.0], dir: [0.0, 0.0, 1.0] }, radius: 10.0, profile: &encode_edges(&g.groove), length: 24.0, lead: g.lead, starts: 2, hand: qymcad_kernel::Hand::Left, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the left-hand thread");
     assert!(left.is_valid(), "the left-hand thread is valid");
     assert!((left.volume() - two).abs() / two < 0.05, "a left-hand thread removes as much as a right-hand one");
@@ -105,7 +105,7 @@ fn auger_flight_adds_material_to_shaft() {
     let shaft = rod(a.shaft_d, 70.0);
     let v0 = shaft.volume();
     let auger = shaft
-        .helical_profile([0.0, 0.0, 5.0], [0.0, 0.0, 1.0], a.shaft_d * 0.5, &encode_edges(&a.flight_profile()), len, a.lead(), a.starts, if a.left { qymcad_kernel::Hand::Left } else { qymcad_kernel::Hand::Right }, qymcad_kernel::Helix::Rib, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 5.0], dir: [0.0, 0.0, 1.0] }, radius: a.shaft_d * 0.5, profile: &encode_edges(&a.flight_profile()), length: len, lead: a.lead(), starts: a.starts, hand: if a.left { qymcad_kernel::Hand::Left } else { qymcad_kernel::Hand::Right }, kind: qymcad_kernel::Helix::Rib, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the auger built");
     let v1 = auger.volume();
     assert!(auger.is_valid(), "the auger is a valid body");
@@ -135,7 +135,7 @@ fn lead_in_chamfers_the_first_turns() {
     // fading of depth applies there.
     let mk = |li: f64, lo: f64| {
         rod(12.0, 30.0)
-            .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 6.0, &encode_edges(&g.groove), 24.0, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, li, lo, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 6.0, profile: &encode_edges(&g.groove), length: 24.0, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: li, lead_out: lo, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .map(|s| (blank - mesh_v(&s), s.is_valid()))
     };
     let (cut_plain, ok0) = mk(0.0, 0.0).expect("the bare thread");
@@ -153,10 +153,10 @@ fn degenerate_helical_inputs_return_none() {
     let g = ThreadSpec::default().geometry();
     let prof = encode_edges(&g.groove);
     let s = rod(10.0, 20.0);
-    assert!(s.helical_profile([0.0; 3], [0.0, 0.0, 1.0], 0.0, &prof, 10.0, 1.5, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none(), "a zero radius");
-    assert!(s.helical_profile([0.0; 3], [0.0, 0.0, 1.0], 5.0, &prof, 0.0, 1.5, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none(), "a zero length");
-    assert!(s.helical_profile([0.0; 3], [0.0, 0.0, 1.0], 5.0, &prof, 10.0, 0.0, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none(), "a zero lead");
-    assert!(s.helical_profile([0.0; 3], [0.0, 0.0, 1.0], 5.0, &[], 10.0, 1.5, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none(), "an empty profile");
+    assert!(s.helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0; 3], dir: [0.0, 0.0, 1.0] }, radius: 0.0, profile: &prof, length: 10.0, lead: 1.5, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none(), "a zero radius");
+    assert!(s.helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0; 3], dir: [0.0, 0.0, 1.0] }, radius: 5.0, profile: &prof, length: 0.0, lead: 1.5, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none(), "a zero length");
+    assert!(s.helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0; 3], dir: [0.0, 0.0, 1.0] }, radius: 5.0, profile: &prof, length: 10.0, lead: 0.0, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none(), "a zero lead");
+    assert!(s.helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0; 3], dir: [0.0, 0.0, 1.0] }, radius: 5.0, profile: &[], length: 10.0, lead: 1.5, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none(), "an empty profile");
 }
 
 /// A long fine thread of a hundred turns, the extreme case the sweep used to break on: with a spine of a single
@@ -170,7 +170,7 @@ fn very_long_fine_thread_builds() {
         let v0 = blank.volume();
         let t = std::time::Instant::now();
         let s = blank
-            .helical_profile([0.0, 0.0, 2.0], [0.0, 0.0, 1.0], g.stock_d * 0.5, &encode_edges(&g.groove), len, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 2.0, 2.0, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 2.0], dir: [0.0, 0.0, 1.0] }, radius: g.stock_d * 0.5, profile: &encode_edges(&g.groove), length: len, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 2.0, lead_out: 2.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .unwrap_or_else(|| panic!("M{d}×{p} over {len} mm, {:.0} turns, did not build", len / g.lead));
         eprintln!("M{d}×{p} over {len} mm, {:.0} turns: {:?}", len / g.lead, t.elapsed());
         assert!(s.is_valid(), "M{d}×{p} over {len} mm: the body is valid");
@@ -190,7 +190,7 @@ fn thread_mesh_stays_within_a_sane_budget() {
         let g = ThreadSpec { standard: std, nominal_d: 30.0, pitch: 3.5, ..Default::default() }.geometry();
         let blank = rod(g.stock_d, 40.0);
         let cut = blank
-            .helical_profile([0.0, 0.0, 5.0], [0.0, 0.0, 1.0], g.stock_d * 0.5, &encode_edges(&g.groove), 30.0, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 5.0], dir: [0.0, 0.0, 1.0] }, radius: g.stock_d * 0.5, profile: &encode_edges(&g.groove), length: 30.0, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .unwrap_or_else(|| panic!("{std:?} did not build"));
         assert!(cut.is_valid(), "{std:?}: the body is valid");
         let tris: usize = cut.tessellate_auto(qymcad_core::model::GeomQuality::Normal.deflection_k()).iter().map(|b| b.0.tris.len()).sum();

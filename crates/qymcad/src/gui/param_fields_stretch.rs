@@ -89,7 +89,7 @@ mod tests {
         }
         for i in 0..drivers {
             let sid = app.project.add_line_sketch(
-                &format!("Profile {i}"),
+                format!("Profile {i}"),
                 vec![Point2::new(0.0, 0.0), Point2::new(40.0, 0.0), Point2::new(40.0, 20.0), Point2::new(0.0, 20.0)],
                 true,
             );
@@ -120,7 +120,9 @@ mod tests {
                     // cases were identical. A measurement that does not tell cases apart proves
                     // nothing.
                     ui.allocate_ui(egui::vec2(avail, 800.0), |ui| {
-                        out = app.params_rows_ui(ui);
+                        let mut asks = Vec::new();
+                        out = crate::gui::panels_windows::params_rows_ui(&mut app.win_ctx(&mut asks), ui);
+                        app.do_win_asks(asks, ui.ctx());
                     });
                 });
             });
@@ -194,7 +196,7 @@ mod tests {
     #[test]
     fn the_window_draws_the_same_rows() {
         let src = crate::gui::panels_source::PANELS;
-        let a = src.find("pub(super) fn params_window").expect("the parameters window is there");
+        let a = src.find("fn params_window").expect("the parameters window is there");
         let b = src[a..].find("\n    pub(super) fn ").map(|i| a + i).unwrap_or(src.len());
         let body = &src[a..b];
         assert!(body.contains("params_rows_ui"), "the parameters window draws a different method from the one the test checks");

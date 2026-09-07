@@ -25,7 +25,7 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         app.workbench = super::super::Workbench::Assembly;
-        app.mode_3d = true;
+        app.viewing.mode_3d = true;
         let mut texts = Vec::new();
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
@@ -41,7 +41,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of the topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -59,8 +59,8 @@ mod tests {
         }
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 4, "setup: there should be four bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -74,8 +74,8 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
 
         // TWO REVOLUTE JOINTS — by hand, two clicks each.
         let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
@@ -93,12 +93,12 @@ mod tests {
         let group = app.project.add_group(&members[..2]);
 
         // A RELATION — by the same tool a person uses.
-        app.start_relation_pick_for_test();
-        app.relation_pick_set_for_test(RelationKind::Gear, 2.0);
-        app.relation_pick_click_for_test(first);
-        app.relation_pick_click_for_test(second);
-        app.relation_pick_confirm_for_test();
-        app.rebuild_if_dirty();
+        app.start_relation_pick();
+        if let Some(p) = app.side.joint.relation_pick.as_mut() { p.set(RelationKind::Gear, 2.0); }
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), first);
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), second);
+        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let relation = app.project.relations.last().map(|r| r.id).expect("the relation was created");
         (first, group, relation)
     }
@@ -109,7 +109,7 @@ mod tests {
         let (joint, group, relation) = all_three_kinds(&mut app);
 
         // TRAP GUARD: all three really are in the document, otherwise there is nothing to draw.
-        let line = app.project.mate_timeline(app.current_ctx_id_for_test());
+        let line = app.project.mate_timeline(qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         for (what, id) in [("joint", joint), ("group", group), ("relation", relation)] {
             assert!(line.iter().any(|e| e.id == id), "setup: {what} {id} is not in the timeline — there is nothing to check");
         }
@@ -138,7 +138,7 @@ mod tests {
         // REMOVE THE SECOND JOINT — the relation has nothing left to rest on.
         let second = app.project.relations.iter().find(|r| r.id == relation).map(|r| r.b).expect("the second degree");
         app.project.joints.retain(|j| j.id != second);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let words = panel_words(&mut app);
         let want = crate::i18n::tr("r-fault-mate-lost");

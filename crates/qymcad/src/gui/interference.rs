@@ -17,10 +17,10 @@ mod tests {
         let root = app.project.root;
         app.enter_component(root);
         app.workbench = Workbench::Assembly;
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.set.show_interference = true;
         app.interference.rev = u64::MAX; // the cache is stale, so compute
-        app.refresh_interference();
+        crate::gui::refresh_interference(qymcad_ui_state::body_view_of!(app), qymcad_ui_state::scene_drag_of!(app), &mut app.interference, &app.live, &app.set, app.workbench);
         assert!(
             !app.interference.pairs.is_empty(),
             "the parts overlap and no interference was found: the checkbox does nothing again"
@@ -31,7 +31,7 @@ mod tests {
         let owner = app.project.body_owner(bodies[1]).expect("the owner");
         app.project.set_component_transform(owner, [1.0, 0.0, 0.0, 500.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
         app.interference.rev = u64::MAX;
-        app.refresh_interference();
+        crate::gui::refresh_interference(qymcad_ui_state::body_view_of!(app), qymcad_ui_state::scene_drag_of!(app), &mut app.interference, &app.live, &app.set, app.workbench);
         assert!(app.interference.pairs.is_empty(), "separated parts do not overlap, yet a pair is still listed");
     }
 
@@ -44,10 +44,10 @@ mod tests {
         let root = app.project.root;
         app.enter_component(root);
         app.workbench = Workbench::Assembly;
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.set.show_interference = false;
         app.interference.rev = u64::MAX;
-        app.refresh_interference();
+        crate::gui::refresh_interference(qymcad_ui_state::body_view_of!(app), qymcad_ui_state::scene_drag_of!(app), &mut app.interference, &app.live, &app.set, app.workbench);
         assert!(app.interference.pairs.is_empty(), "with the checkbox off the computation must not run");
     }
 }

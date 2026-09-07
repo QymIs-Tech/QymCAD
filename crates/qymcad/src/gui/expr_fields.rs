@@ -16,8 +16,18 @@ mod tests {
         let src = crate::gui::panels_source::PANELS;
         for fname in ["fn tool_options_bar", "fn feat_command_bar"] {
             let a = src.find(fname).expect("the bar is there");
-            let b = src[a..].find("\n    pub(super) fn ").map(|i| a + i).unwrap_or(src.len());
-            let n = src[a..b].matches("DragValue").count();
+            // The bar's body ends at the NEXT function of any shape. Ending it only at `    pub(super) fn `
+            // was right while every function in the file was a method; once helpers were lifted out to the
+            // top level the body ran on past its own closing brace and counted their fields as its own.
+            let rest = &src[a..];
+            // `\npub fn ` is how a free function looks in a crate; without it the body ran past its own
+            // end into the next one and counted its fields.
+            let b = ["\n    pub(super) fn ", "\n    pub(crate) fn ", "\n    fn ", "\npub(crate) fn ", "\npub fn ", "\nfn "]
+                .iter()
+                .filter_map(|m| rest.find(m))
+                .min()
+                .unwrap_or(rest.len());
+            let n = rest[..b].matches("DragValue").count();
             assert_eq!(
                 n, 0,
                 "{n} DragValue fields are left in `{fname}` — neither a formula nor a global variable can be \
@@ -39,9 +49,9 @@ mod tests {
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
                 app.bar_exprs.insert("t_count", "n*2".into());
-                got_int = app.num_or_expr(ui, "t_count", 1.0, 1.0, 512.0, true, "");
+                got_int = qymcad_ui_state::num_or_expr(&mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme }, ui, "t_count", 1.0, qymcad_ui_state::NumFormat { lo: 1.0, hi: 512.0, integer: true, suffix: "" });
                 app.bar_exprs.insert("t_rad", "w/2 + 0.5".into());
-                got_real = app.num_or_expr(ui, "t_rad", 1.0, 0.01, 10000.0, false, " mm");
+                got_real = qymcad_ui_state::num_or_expr(&mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme }, ui, "t_rad", 1.0, qymcad_ui_state::NumFormat { lo: 0.01, hi: 10000.0, integer: false, suffix: " mm" });
             });
         });
         assert_eq!(got_int, 6.0, "an integer field: \"n*2\" with n=3 must give 6 (evaluate and round)");
@@ -57,7 +67,7 @@ mod tests {
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
                 app.bar_exprs.insert("t_bad", "1/0".into());
-                got = app.num_or_expr(ui, "t_bad", 7.0, 0.0, 100.0, false, "");
+                got = qymcad_ui_state::num_or_expr(&mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme }, ui, "t_bad", 7.0, qymcad_ui_state::NumFormat { lo: 0.0, hi: 100.0, integer: false, suffix: "" });
             });
         });
         assert_eq!(got, 7.0, "a broken expression must leave the previous value instead of substituting rubbish");
@@ -75,12 +85,12 @@ mod tests {
         app.project.parameters.push(qymcad_core::model::Param { name: "korpus".into(), expr: "60".into(), value: 60.0 });
         app.project.parameters.push(qymcad_core::model::Param { name: "stenka".into(), expr: "2.5".into(), value: 2.5 });
 
-        assert_eq!(app.parse_num("40"), Some(40.0), "a plain number must keep working as before");
-        assert_eq!(app.parse_num(" 40,5 "), Some(40.5), "a comma as the decimal separator");
-        assert_eq!(app.parse_num("korpus - 2*stenka"), Some(55.0), "an expression over global variables");
-        assert_eq!(app.parse_num(""), None, "empty: do not change the value");
-        assert_eq!(app.parse_num("1/0"), None, "a broken expression: do not change the value rather than substitute infinity");
-        assert_eq!(app.parse_num("no_such_name"), None, "an unknown name: do not change the value");
+        assert_eq!(crate::gui::sketching::parse_num(&app.project, "40"), Some(40.0), "a plain number must keep working as before");
+        assert_eq!(crate::gui::sketching::parse_num(&app.project, " 40,5 "), Some(40.5), "a comma as the decimal separator");
+        assert_eq!(crate::gui::sketching::parse_num(&app.project, "korpus - 2*stenka"), Some(55.0), "an expression over global variables");
+        assert_eq!(crate::gui::sketching::parse_num(&app.project, ""), None, "empty: do not change the value");
+        assert_eq!(crate::gui::sketching::parse_num(&app.project, "1/0"), None, "a broken expression: do not change the value rather than substitute infinity");
+        assert_eq!(crate::gui::sketching::parse_num(&app.project, "no_such_name"), None, "an unknown name: do not change the value");
     }
 
     /// Exactly one bare-number parse is left in the sketcher — and it is legitimate.
@@ -90,7 +100,7 @@ mod tests {
     /// field must go through `parse_num`. Comments do not count — the code is what is counted.
     #[test]
     fn the_sketcher_parses_values_through_one_door() {
-        let src = include_str!("sketching.rs");
+        let src = crate::gui::sketch_source::SKETCH;
         let n = src
             .lines()
             .filter(|l| !l.trim_start().starts_with("//"))

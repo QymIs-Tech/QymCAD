@@ -20,10 +20,10 @@ mod tests {
 
 
     fn per_frame_ms(app: &App, rect: egui::Rect, pos: egui::Pos2) -> f64 {
-        let _ = app.pick_edge_any(rect, pos); // the first pick fills the cache; every frame runs the ones after it
+        let _ = crate::gui::pick::pick_edge_any(&app.painting(), rect, pos); // the first pick fills the cache; every frame runs the ones after it
         let t = std::time::Instant::now();
         for _ in 0..30 {
-            let _ = app.pick_edge_any(rect, pos);
+            let _ = crate::gui::pick::pick_edge_any(&app.painting(), rect, pos);
         }
         t.elapsed().as_secs_f64() * 1000.0 / 30.0
     }
@@ -37,14 +37,14 @@ mod tests {
         }
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
         let pos = egui::pos2(400.0, 300.0);
 
         // THE MEASUREMENT MUST MEASURE SOMETHING: an empty loop "fits into a frame" and quietly
         // declares the picking sound.
-        assert_eq!(app.shown_bodies().len(), 40, "all 40 parts must be visible in the root assembly");
-        assert!(app.pick_edge_any(rect, pos).is_some(), "there must be an edge under the cursor — otherwise the measurement measures emptiness");
+        assert_eq!(crate::gui::pick::shown_bodies(&app.painting()).len(), 40, "all 40 parts must be visible in the root assembly");
+        assert!(crate::gui::pick::pick_edge_any(&app.painting(), rect, pos).is_some(), "there must be an edge under the cursor — otherwise the measurement measures emptiness");
         let per_frame = per_frame_ms(&app, rect, pos);
         eprintln!("[edge pick] {} parts, {per_frame:.2} ms per frame", app.project.bodies.len());
         assert!(per_frame < 16.0, "picking an edge must fit into a frame (16 ms) and it takes {per_frame:.2} ms — that is the hang");
@@ -56,9 +56,9 @@ mod tests {
             add_part_at(&mut app, 5000.0 + i as f64 * 30.0);
         }
         app.enter_component(app.project.root);
-        app.rebuild_if_dirty();
-        assert_eq!(app.shown_bodies().len(), 120, "after the addition all 120 parts must be visible");
-        assert!(app.pick_edge_any(rect, pos).is_some(), "the edge under the cursor has not gone anywhere");
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        assert_eq!(crate::gui::pick::shown_bodies(&app.painting()).len(), 120, "after the addition all 120 parts must be visible");
+        assert!(crate::gui::pick::pick_edge_any(&app.painting(), rect, pos).is_some(), "the edge under the cursor has not gone anywhere");
         let per_frame2 = per_frame_ms(&app, rect, pos);
         eprintln!("[edge pick] {} parts, {per_frame2:.2} ms per frame", app.project.bodies.len());
         assert!(
@@ -79,16 +79,16 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         for _ in 0..12 {
-            app.sel = Sel::Sketch(si);
+            app.chosen.sel = Sel::Sketch(si);
             app.start_feat_cmd(1);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 10.0;
                 p.txt = "10".into();
             }
             app.apply_feat_cmd();
         }
-        app.rebuild_if_dirty();
-        let shown = app.shown_bodies().len();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        let shown = crate::gui::pick::shown_bodies(&app.painting()).len();
         assert!(app.project.bodies.len() > shown, "the timeline must accumulate consumed bodies — otherwise the check proves nothing");
         assert_eq!(shown, 1, "a part is one body: only the last one must stay visible, not the whole history ({} bodies in the timeline)", app.project.bodies.len());
     }
@@ -102,7 +102,7 @@ mod tests {
     /// edges — `body_edges_cached` — and it caches by the geometry revision.
     #[test]
     fn drawing_code_takes_edges_only_from_the_cache() {
-        for (name, src) in [("render.rs", crate::gui::render_source::RENDER), ("sketching.rs", include_str!("sketching.rs"))] {
+        for (name, src) in [("render.rs", crate::gui::render_source::RENDER), ("sketching.rs", crate::gui::sketch_source::SKETCH)] {
             assert!(
                 !src.contains("edges_with_ids()"),
                 "{name} draws every frame and must take the edges through body_edges_cached rather than pulling the kernel directly"
@@ -116,7 +116,7 @@ mod tests {
     fn sketch_face_edges_are_cheap_per_frame() {
         let mut app = App::default();
         add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         // a sketch ON A FACE of a built body — the very case where the face edges are projected every frame
         let body = app.project.mesh_id(0).expect("the body is built");
         let mi = app.project.mesh_index(body).expect("the mesh index");
@@ -129,11 +129,11 @@ mod tests {
         };
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
         app.finish_sketch_edit();
-        let warm = app.sketch_ref_edges_2d(si); // warm up the cache
+        let warm = crate::gui::sketching::sketch_ref_edges_2d(&app.cache, &app.tools.cmd, &app.live, &app.project, &app.regen, si); // warm up the cache
         assert!(!warm.is_empty(), "the face edges must project — otherwise the measurement measures an empty result");
         let t = std::time::Instant::now();
         for _ in 0..60 {
-            let _ = app.sketch_ref_edges_2d(si);
+            let _ = crate::gui::sketching::sketch_ref_edges_2d(&app.cache, &app.tools.cmd, &app.live, &app.project, &app.regen, si);
         }
         let per_frame = t.elapsed().as_secs_f64() * 1000.0 / 60.0;
         eprintln!("[face edges under a sketch] {per_frame:.3} ms per frame");

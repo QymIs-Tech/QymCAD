@@ -175,7 +175,8 @@ mod tests {
         }
         // the middle one passes near (0.707, 0.707)
         let mid = pts[pts.len() / 2];
-        assert!((mid.x - 0.7071).abs() < 0.05 && (mid.y - 0.7071).abs() < 0.05);
+        let d = std::f64::consts::FRAC_1_SQRT_2; // the corner of a unit square lies at (1/sqrt 2, 1/sqrt 2)
+    assert!((mid.x - d).abs() < 0.05 && (mid.y - d).abs() < 0.05);
     }
 
     #[test]

@@ -17,7 +17,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of the topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -34,8 +34,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -45,12 +45,12 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 6.0).mate(JointKind::Slider).anchor(3).click(pa).click(pb);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let jid = app.project.joints.last().map(|j| j.id).expect("two clicks must create the joint");
         (jid, mine[0], mine[1])
     }
@@ -111,7 +111,7 @@ mod tests {
         let mut app = App::default();
         let (jid, _, _) = a_slider_by_hand(&mut app);
         assert_eq!(
-            app.joint_edit_for_test(),
+            qymcad_assembly::joint_edit_for_test(&mut app.joint_ctx()),
             Some(jid),
             "the joint is assembled and the pult did not open: there is nowhere to flip the axis and swap the roles without hunting for the joint in the list"
         );
@@ -134,14 +134,14 @@ mod tests {
         if let Some(o) = app.project.body_owner(first) {
             app.project.set_grounded(o, true);
         }
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let before = travel_vector(&mut app, jid, second, 14.0);
         assert!(length(before) > 1e-3, "GUARD: before the swap the part must move, and it travelled {:.4} ({before:?})", length(before));
 
         // THE HANDLE OF THE PULT AND NOTHING ELSE: neither the ground nor the anchors are touched.
-        app.joint_hud_swap_roles_for_test(jid);
-        app.rebuild_if_dirty();
+        qymcad_assembly::joint_hud_swap_roles_for_test(&mut app.joint_ctx(), jid);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let after = travel_vector(&mut app, jid, second, 14.0);
         assert!(length(after) > 1e-3, "after the swap the part stopped moving at all: it travelled {:.4} ({after:?})", length(after));
@@ -167,7 +167,7 @@ mod tests {
         }
         let (a_was, b_was) = app.project.joints.iter().find(|x| x.id == jid).map(|j| (j.a, j.b)).expect("the joint");
 
-        app.joint_hud_swap_roles_for_test(jid);
+        qymcad_assembly::joint_hud_swap_roles_for_test(&mut app.joint_ctx(), jid);
 
         let j = app.project.joints.iter().find(|x| x.id == jid).expect("the joint is there");
         assert_eq!((j.a, j.b), (b_was, a_was), "the anchors must swap places");

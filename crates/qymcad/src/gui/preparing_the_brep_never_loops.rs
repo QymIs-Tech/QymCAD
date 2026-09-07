@@ -33,7 +33,7 @@ mod tests {
     fn a_brep_attempt_that_changed_nothing_is_not_repeated() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // THERE IS NO LIVE GEOMETRY AND THERE WILL BE NONE — as with imports after "rebuild
         // everything".
@@ -43,7 +43,7 @@ mod tests {
         app.live.wait = None;
         app.live.tried_rev = None;
 
-        app.ensure_brep(); // the first attempt is legitimate
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx()); // the first attempt is legitimate
         assert!(app.regen.wanted || app.live.wait.is_some(), "setup: the first attempt must happen");
 
         // THE REBUILD ARRIVED AND GAVE NOTHING: no shapes were added, but it touched the document.
@@ -53,7 +53,7 @@ mod tests {
             n.name = format!("{} ", n.name); // that is how topological naming touches it
         }
 
-        app.ensure_brep(); // the second must not start
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx()); // the second must not start
         assert!(
             !app.regen.wanted,
             "the B-rep preparation went round a second time having changed nothing on the first — in a live window that is the endless flashing of the rebuild window"
@@ -82,13 +82,13 @@ mod tests {
     fn a_rebuild_result_does_not_wipe_shapes_restored_while_it_ran() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = *app.live.shapes.keys().next().expect("setup: the body has a live shape");
 
         // THE REBUILD WENT INTO THE THREAD AND TOOK THE CACHE WITH IT (it was empty).
         let saved = app.live.shapes.remove(&body).expect("the shape was taken into the thread");
         let rebuilt = app.project.clone_without_source_data();
-        let stamp = app.regen_doc_stamp();
+        let stamp = crate::gui::io_jobs::regen_doc_stamp(&app.project);
 
         // WHILE IT COMPUTED, the restoration of the imports brought the live shape back.
         app.live.shapes.insert(body, saved);
@@ -118,7 +118,7 @@ mod tests {
     fn while_the_cache_is_away_in_the_worker_the_preparation_says_nothing() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.regen.ui_running = true;
 
         app.spawn_regen(); // the cache went into the thread, the application has zero live shapes
@@ -129,7 +129,7 @@ mod tests {
         app.live.wait = None;
         app.live.tried_rev = None;
 
-        app.ensure_brep();
+        crate::gui::io_jobs::ensure_brep(&mut app.rebuild_ctx());
 
         assert!(
             !app.regen.wanted,
@@ -148,18 +148,18 @@ mod tests {
     fn rebuild_everything_asks_the_imports_back() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.regen.ui_running = true;
         let bg_before = app.regen.bg.len();
 
-        app.rebuild_everything_for_test();
+        app.rebuild_everything();
 
         assert!(
             app.regen.bg.len() > bg_before || app.regen.busy.is_some(),
             "rebuild-everything threw away the live B-rep and did not ask for the imports back: their geometry will not come alive until a restart"
         );
         assert!(
-            app.import_shapes_asked_for_test(),
+            app.regen.import_asked,
             "rebuild-everything did not call the restoration of the imports — the timeline cannot raise them, their geometry is in the embedded STEP"
         );
     }

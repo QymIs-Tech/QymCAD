@@ -6,7 +6,8 @@ use std::collections::HashSet;
 
 use qymcad_core::feature::{apply12, AnchorRef, BasePlane, FaceKey, JointKind, Kernel, SketchPlane, PLACE_IDENTITY};
 use qymcad_core::geom::{Mesh, MeshFace, Point2, Point3};
-use qymcad_core::model::{Id, Project};
+use qymcad_core::model::{ElemSnapshot, Id, Project};
+use qymcad_core::model::ArrayAxis;
 
 /// Mock geometry kernel: a call log plus the set of bodies that have a shape (for combine, fillet, chamfer).
 /// A body is marked by a single vertex, parameterised along x and placed by the `place` transform.
@@ -75,7 +76,8 @@ impl Kernel for MockKernel {
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(path.len() as f64, path_place))
     }
-    fn loft(&self, body: Id, sections: &[f64], offsets: &[usize], places: &[f64], walls: qymcad_core::feature::LoftWalls, _kind: qymcad_core::feature::LoftBody, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn loft(&self, body: Id, sections: qymcad_core::feature::LoftSections, walls: qymcad_core::feature::LoftWalls, _kind: qymcad_core::feature::LoftBody, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        let qymcad_core::feature::LoftSections { data: sections, offsets, places } = sections;
         // The number of sections (`offsets.len() - 1`) and the lengths of the data and placements are logged.
         // The log keeps the old word: what is checked is the value that reached the kernel, not its spelling.
         let ruled = walls == qymcad_core::feature::LoftWalls::Ruled;
@@ -86,7 +88,8 @@ impl Kernel for MockKernel {
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(offsets.len() as f64, places.get(0..12).map(|s| s.try_into().unwrap()).unwrap_or(PLACE_IDENTITY)))
     }
-    fn loft_combine(&self, body: Id, src: Id, _sections: &[f64], offsets: &[usize], _places: &[f64], walls: qymcad_core::feature::LoftWalls, op: u8, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn loft_combine(&self, bo: qymcad_core::model::BodyOp, _sections: &[f64], offsets: &[usize], _places: &[f64], walls: qymcad_core::feature::LoftWalls, _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        let qymcad_core::model::BodyOp { src, op, body } = bo;
         // Lofted boolean: the number of sections and the operation are logged, and the target body `src` is
         // required to exist.
         let src_ok = self.shapes.borrow().contains(&src);
@@ -96,14 +99,16 @@ impl Kernel for MockKernel {
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(op as f64, PLACE_IDENTITY))
     }
-    fn draft(&self, body: Id, src: Id, face_ids: &[u32], angle: f64, pull: [f64; 3], np_origin: [f64; 3], _np_normal: [f64; 3], _sides: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn draft(&self, body: Id, src: Id, face_ids: &[u32], pull: qymcad_core::feature::DraftPull, neutral: qymcad_core::feature::PlaneAt, _sides: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        let qymcad_core::feature::DraftPull { angle, dir: pull } = pull;
+        let qymcad_core::feature::PlaneAt { origin: np_origin, normal: _np_normal } = neutral;
         // The face count, the angle, the pull direction and the neutral origin are logged.
         self.calls.borrow_mut().push(format!("draft n={} angle={angle} pull={pull:?} np_o={np_origin:?}", face_ids.len()));
         self.need_src(src)?;
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(angle, PLACE_IDENTITY))
     }
-    fn boolean(&self, body: Id, _b: &[f64], _bh: f64, _t: &[f64], _th: f64, op: u8, place: [f64; 12]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn boolean(&self, body: Id, _base: qymcad_core::feature::Extruded, _tool: qymcad_core::feature::Extruded, op: u8, place: [f64; 12]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
         self.calls.borrow_mut().push(format!("boolean op={op}"));
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(op as f64, place))
@@ -127,22 +132,24 @@ impl Kernel for MockKernel {
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(angle, place))
     }
-    fn revolve_region_axis(&self, body: Id, _profile: &[f64], origin: [f64; 3], dir: [f64; 3], angle: f64, place: [f64; 12], _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
-        self.calls.borrow_mut().push(format!("revolve_axis o={origin:?} d={dir:?} a={angle}"));
+    fn revolve_region_axis(&self, body: Id, _profile: &[f64], line: qymcad_core::feature::AxisLine, angle: f64, place: [f64; 12], _caps: [u32; 2]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        self.calls.borrow_mut().push(format!("revolve_axis o={:?} d={:?} a={angle}", line.origin, line.dir));
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(angle, place))
     }
-    fn hole(&self, body: Id, src: Id, kind: u8, place: [f64; 12], dia: f64, depth: f64, dia2: f64, depth2: f64, _bore: u32, _extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
-        self.calls.borrow_mut().push(format!("hole k={kind} dia={dia} depth={depth} dia2={dia2} depth2={depth2}"));
+    fn hole(&self, body: Id, src: Id, tool: qymcad_core::model::HoleTool, place: [f64; 12], _bore: u32, _extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        let qymcad_core::model::HoleTool { kind, diameter, depth, dia2, depth2 } = tool;
+        self.calls.borrow_mut().push(format!("hole k={kind} dia={diameter} depth={depth} dia2={dia2} depth2={depth2}"));
         self.need_src(src)?;
         self.shapes.borrow_mut().insert(body);
-        Ok(Self::placed(dia, place))
+        Ok(Self::placed(diameter, place))
     }
-    fn holes(&self, body: Id, src: Id, kind: u8, pls: &[[f64; 12]], dia: f64, depth: f64, dia2: f64, depth2: f64, _bores: &[u32], _extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
-        self.calls.borrow_mut().push(format!("holes k={kind} n={} dia={dia} depth={depth} dia2={dia2} depth2={depth2}", pls.len()));
+    fn holes(&self, body: Id, src: Id, tool: qymcad_core::model::HoleTool, pls: &[[f64; 12]], _bores: &[u32], _extra: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        let qymcad_core::model::HoleTool { kind, diameter, depth, dia2, depth2 } = tool;
+        self.calls.borrow_mut().push(format!("holes k={kind} n={} dia={diameter} depth={depth} dia2={dia2} depth2={depth2}", pls.len()));
         self.need_src(src)?;
         self.shapes.borrow_mut().insert(body);
-        Ok(Self::placed(dia, pls.first().copied().unwrap_or(PLACE_IDENTITY)))
+        Ok(Self::placed(diameter, pls.first().copied().unwrap_or(PLACE_IDENTITY)))
     }
     fn cylinder(&self, body: Id, _r: f64, h: f64, _names: [u32; 3]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
         self.calls.borrow_mut().push("cylinder".into());
@@ -170,7 +177,8 @@ impl Kernel for MockKernel {
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(height, place))
     }
-    fn combine_region_multi(&self, body: Id, src: Id, profiles: &[Vec<f64>], height: f64, op: u8, place: [f64; 12], _caps: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn combine_region_multi(&self, bo: qymcad_core::model::BodyOp, profiles: &[Vec<f64>], height: f64, place: [f64; 12], _caps: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        let qymcad_core::model::BodyOp { src, op, body } = bo;
         self.calls.borrow_mut().push(format!("combine_multi n={} op={op} src={src} h={height}", profiles.len()));
         if self.fail {
             return Err(qymcad_core::errors::CoreError::EmptyResult);
@@ -181,7 +189,7 @@ impl Kernel for MockKernel {
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(height, place))
     }
-    fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], _names: &[u32], _corners: &[u32], _all: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], _names: qymcad_core::feature::BlendNames) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
         self.calls.borrow_mut().push(format!("fillet r={radius} n={}", edges.len()));
         self.need_src(src)?;
         self.shapes.borrow_mut().insert(body);
@@ -198,13 +206,14 @@ impl Kernel for MockKernel {
         self.shapes.borrow_mut().insert(h.body);
         Ok(Self::placed(h.radius, PLACE_IDENTITY))
     }
-    fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], _names: &[u32], _corners: &[u32], _all: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], _names: qymcad_core::feature::BlendNames) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
         self.calls.borrow_mut().push(format!("chamfer d={dist} n={}", edges.len()));
         self.need_src(src)?;
         self.shapes.borrow_mut().insert(body);
         Ok(Self::placed(dist, PLACE_IDENTITY))
     }
-    fn chamfer_ex(&self, body: Id, src: Id, d1: f64, d2: f64, mode: qymcad_core::feature::ChamferMode, flip: bool, ref_face: u32, edges: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+    fn chamfer_ex(&self, body: Id, src: Id, d1: f64, shape: qymcad_core::model::ChamferShape, edges: &[u32]) -> Result<(Mesh, Vec<MeshFace>), qymcad_core::errors::CoreError> {
+        let qymcad_core::model::ChamferShape { mode, d2, flip, ref_face } = shape;
         self.calls.borrow_mut().push(format!("chamfer_ex d1={d1} d2={d2} mode={mode:?} flip={flip} rf={ref_face} n={}", edges.len()));
         self.need_src(src)?;
         self.shapes.borrow_mut().insert(body);
@@ -283,7 +292,7 @@ fn fillet_edge_ref_heals_stale_id_by_snapshot() {
         MeshEdge { id: 8, mid: [10.0, 0.0, 5.0], dir: [0.0, 0.0, 1.0], ..Default::default() },
     ]);
     // The feature selected the edge that used to have id 3; its snapshot is the position (0,0,5) along Z.
-    p.edge_refs.insert(fid, vec![(3, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0])]);
+    p.edge_refs.insert(fid, vec![ElemSnapshot { id: 3, at: [0.0, 0.0, 5.0], dir: [0.0, 0.0, 1.0] }]);
     // Id 3 is gone, so the snapshot repairs it to the current edge 7, the nearest and unambiguous one.
     assert_eq!(p.resolve_edge_ids(fid, src, &[3]), vec![7], "a lost id must be repaired from the snapshot");
     // A valid id passes through unchanged.
@@ -768,7 +777,7 @@ fn cut_overshoots_sketch_plane_to_avoid_coincident_cap() {
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
     // A cut from the same sketch: op 0, one-sided, no flip, so the end face sits on the sketch plane at
     // z = 0.
-    let cut = p.add_combine_on(base, sid, 0, 5.0, 0, qymcad_core::feature::Extent::default(), 0.0);
+    let cut = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
     let k = MockKernel::default();
     p.regenerate(&k);
     let mi = p.mesh_index(cut).expect("the cut body must be built");
@@ -777,7 +786,7 @@ fn cut_overshoots_sketch_plane_to_avoid_coincident_cap() {
     assert!(v.x > 5.0, "the tool height must be increased by the overshoot (it was 5): {}", v.x);
     assert!(v.z < 0.0, "the tool start must be pushed outwards past the sketch plane: {}", v.z);
     // Control: a boss (op 1) has no overshoot and grows exactly from the plane.
-    let joinb = p.add_combine_on(base, sid, 0, 5.0, 1, qymcad_core::feature::Extent::default(), 0.0);
+    let joinb = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 1);
     p.regenerate(&k);
     let vj = p.bodies[p.mesh_index(joinb).unwrap()].mesh.verts[0];
     assert!((vj.z).abs() < 1e-9 && (vj.x - 5.0).abs() < 1e-9, "a boss must have no overshoot (start 0, total 5): x={} z={}", vj.x, vj.z);
@@ -885,12 +894,12 @@ fn chamfer_modes_route_and_are_parametric() {
     let sym = p.add_chamfer(cyl, 1.5, vec![]);
     // Two setbacks over selected edges call `chamfer_ex`; d1 and d2 are parametric and `flip` reaches the
     // kernel.
-    let two = p.add_chamfer_ex(sym, 2.0, 1.0, ChamferMode::TwoDist, true, 0, vec![7]);
+    let two = p.add_chamfer_ex(sym, 2.0, qymcad_core::model::ChamferShape { mode: ChamferMode::TwoDist, d2: 1.0, flip: true, ref_face: 0 }, vec![7]);
     p.set_feat_dim(two, "dist", "k".into()); // d1 = k = 3
     p.set_feat_dim(two, "d2", "k/2".into()); // d2 = 1.5
     // Setback plus angle calls `chamfer_ex` in `DistAngle` mode with a manually chosen reference face, so
     // `ref_face` reaches the kernel.
-    let da = p.add_chamfer_ex(two, 2.5, 30.0, ChamferMode::DistAngle, false, 42, vec![9]);
+    let da = p.add_chamfer_ex(two, 2.5, qymcad_core::model::ChamferShape { mode: ChamferMode::DistAngle, d2: 30.0, flip: false, ref_face: 42 }, vec![9]);
 
     let k = MockKernel::default();
     p.regenerate(&k);
@@ -1016,7 +1025,7 @@ fn extrude_two_sided_and_combine_through_stored() {
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 3.0); // Second side of 3.
     let down = p.timeline.iter().find_map(|n| if let FeatureKind::Extrude { down, .. } = n.kind { Some(down) } else { None }).unwrap();
     assert_eq!(down, 3.0, "the second side must be stored in the feature");
-    let cut = p.add_combine_on(base, sid, 0, 5.0, 0, qymcad_core::feature::Extent { through: true, ..Default::default() }, 0.0); // A through cut.
+    let cut = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, ..Default::default() }, fill: &[] }, 0); // A through cut.
     let through = p.timeline.iter().find_map(|n| if let FeatureKind::Combine { extent, .. } = n.kind { Some(extent.through) } else { None }).unwrap();
     assert!(through, "through all must be stored in the cut feature");
     let _ = cut;
@@ -1177,7 +1186,7 @@ fn linear_array_grid_helper_builds_two_directions() {
     let sid = square(&mut p, "square");
     p.add_sketch_node(sid, "square");
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
-    let la = p.add_linear_array_grid(base, 20.0, 0.0, 0.0, 3, 0.0, 15.0, 0.0, 2); // 3×2 = 6
+    let la = p.add_linear_array_grid(base, qymcad_core::model::ArrayAxis { d: [20.0, 0.0, 0.0], count: 3 }, qymcad_core::model::ArrayAxis { d: [0.0, 15.0, 0.0], count: 2 }); // 3×2 = 6
     let k = MockKernel::default();
     p.regenerate(&k);
     assert!(k.calls.borrow().iter().any(|c| c.starts_with("pattern n=6")), "3×2=6: {:?}", k.calls.borrow());
@@ -1193,7 +1202,7 @@ fn linear_array_grid3_builds_full_3d_grid() {
     let sid = square(&mut p, "square");
     p.add_sketch_node(sid, "square");
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
-    let la = p.add_linear_array_grid3(base, 10.0, 0.0, 0.0, 2, 0.0, 20.0, 0.0, 3, 0.0, 0.0, 30.0, 2); // 2×3×2 = 12
+    let la = p.add_linear_array_grid3(base, [ArrayAxis { d: [10.0, 0.0, 0.0], count: 2 }, ArrayAxis { d: [0.0, 20.0, 0.0], count: 3 }, ArrayAxis { d: [0.0, 0.0, 30.0], count: 2 }]); // 2×3×2 = 12
     let k = MockKernel::default();
     p.regenerate(&k);
     let calls = k.calls.borrow();
@@ -1378,7 +1387,7 @@ fn suppress_feature_cascades_to_dependents() {
     let sid = square(&mut p, "square");
     p.add_sketch_node(sid, "square");
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
-    let cut = p.add_combine_on(base, sid, 0, 4.0, 0, qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, 0.0); // Depends on the base.
+    let cut = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 4.0, down: 0.0, extent: qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, fill: &[] }, 0); // Depends on the base.
     let k = MockKernel::default();
     p.regenerate(&k);
     assert!(p.mesh_index(base).is_some() && p.mesh_index(cut).is_some(), "both bodies must be built");
@@ -1726,11 +1735,11 @@ fn regen_combine_direction_matches_extrude() {
     p.add_sketch_node(sid, "square");
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
     // One-sided plus flip starts the tool against the normal, at -h.
-    let cut_flip = p.add_combine_on(base, sid, 0, 4.0, 0, qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, 0.0);
+    let cut_flip = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 4.0, down: 0.0, extent: qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::Backward, ..Default::default() }, fill: &[] }, 0);
     // Two-sided with down = 2 starts at -down.
-    let cut_two = p.add_combine_on(base, sid, 0, 4.0, 0, qymcad_core::feature::Extent::default(), 2.0);
+    let cut_two = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 4.0, down: 2.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
     // Symmetric starts at -h/2.
-    let cut_sym = p.add_combine_on(base, sid, 0, 4.0, 0, qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::BothWays, ..Default::default() }, 0.0);
+    let cut_sym = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 4.0, down: 0.0, extent: qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::BothWays, ..Default::default() }, fill: &[] }, 0);
     let k = MockKernel::default();
     p.regenerate(&k);
     let z = |b| p.bodies[p.mesh_index(b).unwrap()].mesh.verts[0].z;
@@ -1746,7 +1755,7 @@ fn combine_direction_survives_serde() {
     let mut p = part_project();
     let sid = square(&mut p, "square");
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
-    let cut = p.add_combine_on(base, sid, 0, 4.0, 0, qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::BothWays, ..Default::default() }, 2.5);
+    let cut = p.add_combine_on(base, sid, 0, qymcad_core::model::CombineSpan { height: 4.0, down: 2.5, extent: qymcad_core::feature::Extent { reach: qymcad_core::feature::Reach::BothWays, ..Default::default() }, fill: &[] }, 0);
     let ron = qymcad_core::model::to_ron(&p).unwrap();
     let back = qymcad_core::model::from_ron(&ron).unwrap();
     let (reach, down) = back
@@ -1952,7 +1961,7 @@ fn hole_typed_routes_kind_and_recess_to_kernel() {
     p.add_sketch_node(sid, "square");
     let base = p.add_extrude_on(sid, 0, 10.0, qymcad_core::feature::Reach::Forward, 0.0);
     let key = FaceKey { index: 0, centroid: [5.0, 5.0, 10.0], normal: [0.0, 0.0, 1.0], id: 0 };
-    let h = p.add_hole_typed(base, key, 4.0, 8.0, 1, 9.0, 3.0); // A counterbore.
+    let h = p.add_hole_typed(base, key, qymcad_core::model::HoleTool { kind: 1, diameter: 4.0, depth: 8.0, dia2: 9.0, depth2: 3.0 }); // A counterbore.
     let k = MockKernel::default();
     p.regenerate(&k);
     assert!(k.calls.borrow().iter().any(|c| c == "hole k=1 dia=4 depth=8 dia2=9 depth2=3"), "the type and the recess must reach the kernel: {:?}", k.calls.borrow());
@@ -1982,7 +1991,7 @@ fn holes_from_sketch_points_route_to_kernel() {
     p.sketch_point_at(hsi, 5.0, 8.0, 1e-6);
     p.add_line_entity(hsi, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real); // The endpoints (0,0) and (10,0) are not drill marks.
     assert_eq!(p.sketch_isolated_points(holes_sk).len(), 3, "there must be three isolated points");
-    let h = p.add_hole_from_sketch(base, holes_sk, 4.0, 8.0, 0, 0.0, 0.0, false);
+    let h = p.add_hole_from_sketch(base, holes_sk, qymcad_core::model::HoleTool { kind: 0, diameter: 4.0, depth: 8.0, dia2: 0.0, depth2: 0.0 }, false);
     let k = MockKernel::default();
     p.regenerate(&k);
     assert!(k.calls.borrow().iter().any(|c| c == "holes k=0 n=3 dia=4 depth=8 dia2=0 depth2=0"), "three holes must reach the kernel in one call: {:?}", k.calls.borrow());
@@ -2404,7 +2413,7 @@ fn multi_op_is_single_node_with_all_profiles() {
     let s = square(&mut p, "s");
     let before = p.timeline.len();
     // Three contours in a single operation; src = 0 makes a new body.
-    let body = p.add_combine_multi_op(0, s, vec![101, 102, 103], 5.0, 1, qymcad_core::feature::Extent::default(), 0.0, vec![]);
+    let body = p.add_combine_multi_op(0, s, vec![101, 102, 103], qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 1);
     assert_eq!(p.timeline.len(), before + 1, "N contours must give one node, not a chain");
     let node = p.timeline.iter().find(|n| n.kind.body() == Some(body)).unwrap();
     match &node.kind {
@@ -2431,9 +2440,9 @@ fn delete_one_node_op_clean() {
     p.new_document();
     let s = square(&mut p, "s");
     // The base part: a Combine with src = 0, which makes a new body.
-    let base = p.add_combine_multi_op(0, s, vec![101], 10.0, 1, qymcad_core::feature::Extent::default(), 0.0, vec![]);
+    let base = p.add_combine_multi_op(0, s, vec![101], qymcad_core::model::CombineSpan { height: 10.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 1);
     // A boss of three contours added to the part as a single node.
-    let op = p.add_combine_multi_op(base, s, vec![201, 202, 203], 5.0, 1, qymcad_core::feature::Extent::default(), 0.0, vec![]);
+    let op = p.add_combine_multi_op(base, s, vec![201, 202, 203], qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 1);
     let before = p.timeline.iter().filter(|n| n.kind.body().is_some()).count();
     // Delete the operation.
     let removed = p.delete_feature_op(op);
@@ -2714,7 +2723,7 @@ fn a_moved_sketch_does_not_cost_the_fillet_its_edges() {
     };
     let fid: Id = 100;
     // A part roughly 40 mm across; the edges used to sit here.
-    p.edge_refs.insert(fid, vec![(7, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]), (8, [40.0, 0.0, 0.0], [1.0, 0.0, 0.0])]);
+    p.edge_refs.insert(fid, vec![ElemSnapshot { id: 7, at: [0.0, 0.0, 0.0], dir: [1.0, 0.0, 0.0] }, ElemSnapshot { id: 8, at: [40.0, 0.0, 0.0], dir: [1.0, 0.0, 0.0] }]);
     // After the sketch edit the names changed and the edges themselves moved by one and a half millimetres.
     let now = vec![edge(70, [1.5, 0.0, 0.0]), edge(80, [41.5, 0.0, 0.0])];
     let healed = p.resolve_edge_ids_in(&now, fid, &[7, 8]);
@@ -2728,4 +2737,74 @@ fn a_moved_sketch_does_not_cost_the_fillet_its_edges() {
     let far = vec![edge(90, [200.0, 0.0, 0.0])];
     let wrong = p.resolve_edge_ids_in(&far, fid, &[7]);
     assert!(wrong.is_empty(), "healing grabbed the distant edge {wrong:?}: a fillet landing in the wrong place is worse than a lost one");
+}
+
+/// A SECOND MOVE MULTIPLIES ONTO THE FIRST, AND IN THE RIGHT ORDER.
+///
+/// The interface used to walk the tree, reach inside the node's kind and compose the matrices there. Two
+/// ways to get it wrong were open: replace instead of compose (the first drag is thrown away), and compose
+/// the other way round (the second drag goes along the OLD axes, which on a turned part is visibly wrong
+/// and hard to describe). Here both are nailed down by numbers.
+#[test]
+fn a_second_move_composes_onto_the_first_and_not_the_other_way() {
+    let mut p = Project::default();
+    let sid = square(&mut p, "square");
+    p.add_sketch_node(sid, "square");
+    let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
+
+    // A QUARTER TURN ABOUT Z, then a shift of 10 along X. Turned first, the shift must come out along the
+    // WORLD X - the new move acts on the result of the old one.
+    let mut turn = qymcad_core::feature::PLACE_IDENTITY;
+    turn[0] = 0.0;
+    turn[1] = -1.0;
+    turn[4] = 1.0;
+    turn[5] = 0.0;
+    let mv = p.add_move(base, turn);
+
+    let mut shift = qymcad_core::feature::PLACE_IDENTITY;
+    shift[3] = 10.0;
+    assert!(p.accumulate_move(mv, &shift), "the body carries a Move node, so it accumulates");
+
+    let node = p.timeline.iter().find(|n| n.id == mv).expect("the move node");
+    let qymcad_core::feature::FeatureKind::Move { mat, .. } = node.kind else { panic!("a Move node was expected") };
+    // compose12(shift, turn): the rotation stays, the translation is the shift itself.
+    assert!((mat[3] - 10.0).abs() < 1e-9, "the shift must be along the WORLD X, got {}", mat[3]);
+    assert!((mat[7] - 0.0).abs() < 1e-9, "and nothing along Y, got {} - the order of multiplication is reversed", mat[7]);
+    assert!((mat[1] + 1.0).abs() < 1e-9, "the quarter turn must survive: composing must not replace");
+    assert!(node.dirty, "an accumulated move asks for a rebuild");
+
+    // A BODY WITHOUT A MOVE NODE SAYS SO rather than silently doing nothing: the caller then has a
+    // different job - to make one.
+    assert!(!p.accumulate_move(base, &shift), "the base carries no Move node");
+    assert!(!p.accumulate_move(9999, &shift), "and there is no such body at all");
+}
+
+/// RENAMING A NODE IS ONE NAMED OPERATION, and a miss is told apart from a change.
+#[test]
+fn a_node_is_renamed_or_says_there_is_no_such_node() {
+    let mut p = Project::default();
+    let sid = square(&mut p, "square");
+    let node = p.add_sketch_node(sid, "square");
+    assert!(p.rename_node(node, "base outline"), "the node is there");
+    assert_eq!(p.timeline.iter().find(|n| n.id == node).unwrap().name, "base outline");
+    assert!(!p.rename_node(9999, "nowhere"), "a miss must be told apart from a change");
+}
+
+/// "EVERYTHING IS STALE" MARKS EVERY NODE, and that is all it does - who rebuilds is the planner's.
+#[test]
+fn marking_everything_stale_touches_every_node() {
+    let mut p = Project::default();
+    let sid = square(&mut p, "square");
+    p.add_sketch_node(sid, "square");
+    let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
+    // THE STARTING POINT IS SET BY HAND rather than assumed. A rebuild does NOT leave every node clean -
+    // that was the first guess and the check said otherwise - so the test makes its own "before".
+    for n in p.timeline.iter_mut() {
+        n.dirty = false;
+    }
+    assert!(p.timeline.iter().all(|n| !n.dirty), "the starting point: nothing is stale");
+    assert!(p.timeline.len() >= 2, "there is something to mark: the sketch node and the extrude");
+    p.mark_all_dirty();
+    assert!(p.timeline.iter().all(|n| n.dirty), "every node must be stale again");
+    let _ = base;
 }

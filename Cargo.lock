@@ -782,6 +782,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
+name = "deranged"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
+
+[[package]]
 name = "directories"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -880,12 +886,21 @@ dependencies = [
 
 [[package]]
 name = "ecolor"
+version = "0.33.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71ddb8ac7643d1dba1bb02110e804406dd459a838efcb14011ced10556711a8e"
+dependencies = [
+ "emath 0.33.3",
+]
+
+[[package]]
+name = "ecolor"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6758be723a3f298bbfda4db75748bc2ba0abafe096b6383c7c32da264764fbc3"
 dependencies = [
  "bytemuck",
- "emath",
+ "emath 0.35.0",
  "serde",
 ]
 
@@ -898,10 +913,11 @@ dependencies = [
  "ahash",
  "bytemuck",
  "document-features",
- "egui",
+ "egui 0.35.0",
  "egui-wgpu",
  "egui-winit",
  "egui_glow",
+ "glow",
  "glutin",
  "glutin-winit",
  "home",
@@ -930,6 +946,23 @@ dependencies = [
 
 [[package]]
 name = "egui"
+version = "0.33.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a9b567d356674e9a5121ed3fedfb0a7c31e059fe71f6972b691bcd0bfc284e3"
+dependencies = [
+ "ahash",
+ "bitflags 2.13.0",
+ "emath 0.33.3",
+ "epaint 0.33.3",
+ "log",
+ "nohash-hasher",
+ "profiling",
+ "smallvec",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "egui"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2796c98d50b79631281d516343a6f6e93c0666462ca36e2c93b39f25d7793325"
@@ -937,8 +970,8 @@ dependencies = [
  "accesskit",
  "ahash",
  "bitflags 2.13.0",
- "emath",
- "epaint",
+ "emath 0.35.0",
+ "epaint 0.35.0",
  "itertools",
  "log",
  "nohash-hasher",
@@ -951,11 +984,20 @@ dependencies = [
 
 [[package]]
 name = "egui-phosphor"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3b2838620355debaeb7fa3cc331a1d8ab77e6387d40e65686fa468c229dbf63"
+dependencies = [
+ "egui 0.33.3",
+]
+
+[[package]]
+name = "egui-phosphor"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "249826f9529c1757d71dbbb3a22ec101b21110ab663c45fb771c2b86121379e4"
 dependencies = [
- "egui",
+ "egui 0.35.0",
 ]
 
 [[package]]
@@ -967,8 +1009,8 @@ dependencies = [
  "ahash",
  "bytemuck",
  "document-features",
- "egui",
- "epaint",
+ "egui 0.35.0",
+ "epaint 0.35.0",
  "log",
  "profiling",
  "thiserror 2.0.18",
@@ -987,7 +1029,7 @@ dependencies = [
  "accesskit_winit",
  "arboard",
  "bytemuck",
- "egui",
+ "egui 0.35.0",
  "log",
  "objc2 0.6.4",
  "objc2-foundation 0.3.2",
@@ -1008,7 +1050,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52274b9bfb8d8e252cd0f00c9f6214f360d75a0962baa77a2d62ddb002fe99d4"
 dependencies = [
  "bytemuck",
- "egui",
+ "egui 0.35.0",
  "glow",
  "log",
  "memoffset",
@@ -1021,6 +1063,12 @@ name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
+
+[[package]]
+name = "emath"
+version = "0.33.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "491bdf728bf25ddd9ad60d4cf1c48588fa82c013a2440b91aa7fc43e34a07c32"
 
 [[package]]
 name = "emath"
@@ -1090,14 +1138,30 @@ dependencies = [
 
 [[package]]
 name = "epaint"
+version = "0.33.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "009d0dd3c2163823a0abdb899451ecbc78798dec545ee91b43aff1fa790bab62"
+dependencies = [
+ "ab_glyph",
+ "ahash",
+ "ecolor 0.33.3",
+ "emath 0.33.3",
+ "log",
+ "nohash-hasher",
+ "parking_lot",
+ "profiling",
+]
+
+[[package]]
+name = "epaint"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e60a8888b51da911df23918fd7301359b1d43a406a0ff3b8863af093dd7fc6c"
 dependencies = [
  "ahash",
  "bytemuck",
- "ecolor",
- "emath",
+ "ecolor 0.35.0",
+ "emath 0.35.0",
  "epaint_default_fonts",
  "font-types 0.11.3",
  "harfrust 0.7.0",
@@ -2313,6 +2377,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-conv"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
+
+[[package]]
 name = "num-dual"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2987,6 +3057,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "powerfmt"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
+
+[[package]]
 name = "presser"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3054,31 +3130,46 @@ dependencies = [
  "bytemuck",
  "directories",
  "eframe",
- "egui",
- "egui-phosphor",
+ "egui 0.35.0",
+ "egui-phosphor 0.13.0",
  "fluent-bundle",
  "fluent-syntax",
  "image",
  "include_dir",
  "pollster",
- "qymcad-cam",
+ "qymcad-assembly",
  "qymcad-core",
+ "qymcad-help",
+ "qymcad-i18n",
  "qymcad-io",
  "qymcad-kernel",
- "qymcad-verify",
+ "qymcad-part",
+ "qymcad-pick",
+ "qymcad-render",
+ "qymcad-scheme",
+ "qymcad-shell",
+ "qymcad-sketch",
+ "qymcad-ui-state",
  "rfd",
  "ron",
  "serde",
  "sys-locale",
+ "time",
  "unic-langid",
  "winresource",
 ]
 
 [[package]]
-name = "qymcad-cam"
+name = "qymcad-assembly"
 version = "0.1.0"
 dependencies = [
+ "egui 0.35.0",
+ "egui-phosphor 0.11.0",
  "qymcad-core",
+ "qymcad-i18n",
+ "qymcad-pick",
+ "qymcad-render",
+ "qymcad-ui-state",
 ]
 
 [[package]]
@@ -3093,6 +3184,26 @@ dependencies = [
  "ron",
  "serde",
  "ttf-parser",
+]
+
+[[package]]
+name = "qymcad-help"
+version = "0.1.0"
+dependencies = [
+ "include_dir",
+ "qymcad-i18n",
+]
+
+[[package]]
+name = "qymcad-i18n"
+version = "0.1.0"
+dependencies = [
+ "fluent-bundle",
+ "fluent-syntax",
+ "include_dir",
+ "qymcad-core",
+ "sys-locale",
+ "unic-langid",
 ]
 
 [[package]]
@@ -3116,6 +3227,77 @@ dependencies = [
 ]
 
 [[package]]
+name = "qymcad-part"
+version = "0.1.0"
+dependencies = [
+ "egui 0.35.0",
+ "egui-phosphor 0.11.0",
+ "qymcad-core",
+ "qymcad-i18n",
+ "qymcad-pick",
+ "qymcad-render",
+ "qymcad-scheme",
+ "qymcad-ui-state",
+]
+
+[[package]]
+name = "qymcad-pick"
+version = "0.1.0"
+dependencies = [
+ "egui 0.35.0",
+ "qymcad-core",
+ "qymcad-scheme",
+ "qymcad-ui-state",
+]
+
+[[package]]
+name = "qymcad-render"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui 0.35.0",
+ "egui-phosphor 0.11.0",
+ "qymcad-core",
+ "qymcad-i18n",
+ "qymcad-pick",
+ "qymcad-scheme",
+ "qymcad-ui-state",
+]
+
+[[package]]
+name = "qymcad-scheme"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "egui 0.35.0",
+ "qymcad-core",
+ "qymcad-i18n",
+ "ron",
+ "serde",
+]
+
+[[package]]
+name = "qymcad-shell"
+version = "0.1.0"
+dependencies = [
+ "egui 0.35.0",
+ "serde",
+]
+
+[[package]]
+name = "qymcad-sketch"
+version = "0.1.0"
+dependencies = [
+ "egui 0.35.0",
+ "egui-phosphor 0.11.0",
+ "qymcad-core",
+ "qymcad-i18n",
+ "qymcad-pick",
+ "qymcad-render",
+ "qymcad-ui-state",
+]
+
+[[package]]
 name = "qymcad-testkit"
 version = "0.1.0"
 dependencies = [
@@ -3126,10 +3308,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "qymcad-verify"
+name = "qymcad-ui-state"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
+ "egui 0.35.0",
+ "egui-phosphor 0.11.0",
  "qymcad-core",
+ "qymcad-i18n",
+ "qymcad-kernel",
+ "qymcad-scheme",
+ "qymcad-shell",
+ "serde",
 ]
 
 [[package]]
@@ -3818,6 +4008,25 @@ dependencies = [
  "weezl",
  "zune-jpeg",
 ]
+
+[[package]]
+name = "time"
+version = "0.3.55"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
+dependencies = [
+ "deranged",
+ "num-conv",
+ "powerfmt",
+ "serde_core",
+ "time-core",
+]
+
+[[package]]
+name = "time-core"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 
 [[package]]
 name = "tiny-skia"

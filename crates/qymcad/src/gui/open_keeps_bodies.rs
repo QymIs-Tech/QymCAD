@@ -53,31 +53,31 @@ mod tests {
         app.project.parameters.push(qymcad_core::model::Param { name: "h".into(), expr: "10".into(), value: 10.0 });
         app.project.eval_parameters();
 
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "h".into();
         }
         app.apply_feat_cmd();
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("setup: the plate is built");
 
-        app.sel = Sel::Mesh(app.project.mesh_index(body).expect("setup: the plate has a mesh"));
+        app.chosen.sel = Sel::Mesh(app.project.mesh_index(body).expect("setup: the plate has a mesh"));
         app.start_feat_cmd(4); // fillet
-        app.gsel.edges = app.body_edges_cached(body).map(|e| e.1.iter().copied().filter(|&i| i != 0).collect()).unwrap_or_default();
+        app.tools.gsel.edges = crate::gui::pick::body_edges_cached(&app.cache, &app.live, &app.regen, body).map(|e| e.ids.iter().copied().filter(|&i| i != 0).collect()).unwrap_or_default();
         app.edges.body = Some(body);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 2.0;
             p.txt = "len/20".into(); // THE RADIUS IS PARAMETRIC: this is exactly what was marked dirty every frame
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(!app.project.feat_dims.is_empty(), "setup: the expression of the feature dimension is stored");
         assert!(!app.project.named_dims.is_empty(), "setup: the named dimension is stored");
 
-        app.set_project_path(path.clone());
-        app.save_project_for_test();
-        app.wait_bg_for_test();
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
+        app.save_project();
+        app.wait_bg();
         path
     }
 
@@ -86,7 +86,7 @@ mod tests {
     fn opened_in_a_live_window(path: &str) -> App {
         let mut app = App::default();
         app.regen.ui_running = true;
-        app.spawn_project_load(path.to_string());
+        crate::gui::io_jobs::spawn_project_load(&mut app.regen, path.to_string());
         app.drain_busy_for_test(); // reading a file goes through the MODAL queue rather than the background one
         app
     }
@@ -99,8 +99,8 @@ mod tests {
             app.regen.wanted = false;
             app.spawn_regen();
         }
-        if app.regen.busy.is_none() && app.edits.open.is_none() {
-            app.rebuild_if_dirty_for_test();
+        if app.regen.busy.is_none() && app.disk.edits.open.is_none() {
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         }
         if let Some(Busy { rx, kind: BgKind::Regen, .. }) = app.regen.busy.take() {
             match rx.recv_timeout(std::time::Duration::from_secs(120)).expect("the rebuild thread reported back") {
@@ -116,11 +116,11 @@ mod tests {
     fn opening_a_parametric_project_keeps_its_bodies_on_screen() {
         let path = saved_parametric_project("keeps_bodies.qcad");
         let mut app = opened_in_a_live_window(&path);
-        assert!(app.visible_mesh_items_for_test() > 0, "right after opening the part must be on screen: the geometry came from the file");
+        assert!(app.visible_mesh_count() > 0, "right after opening the part must be on screen: the geometry came from the file");
 
         for i in 0..8 {
             pump_frame(&mut app);
-            assert!(app.visible_mesh_items_for_test() > 0, "after frame {} the part vanished from the screen — the reported \"until you rebuild\"; status: {}", i + 1, app.status_for_test());
+            assert!(app.visible_mesh_count() > 0, "after frame {} the part vanished from the screen — the reported \"until you rebuild\"; status: {}", i + 1, app.status.clone());
         }
         let _ = std::fs::remove_file(&path);
     }
@@ -147,7 +147,7 @@ mod tests {
         for _ in 0..4 {
             pump_frame(&mut app);
         }
-        assert!(app.project.regen_errors.is_empty(), "opening must leave no unbuilt features, and {} were left; status: {}", app.project.regen_errors.len(), app.status_for_test());
+        assert!(app.project.regen_errors.is_empty(), "opening must leave no unbuilt features, and {} were left; status: {}", app.project.regen_errors.len(), app.status.clone());
         let _ = std::fs::remove_file(&path);
     }
 
@@ -160,7 +160,7 @@ mod tests {
     fn opening_marks_nothing_for_rebuild() {
         let path = saved_parametric_project("no_dirt.qcad");
         let mut app = opened_in_a_live_window(&path);
-        app.rebuild_if_dirty_for_test(); // this is where the "which parameters changed" check stands
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx()); // this is where the "which parameters changed" check stands
         let dirty: Vec<&str> = app.project.timeline.iter().filter(|n| n.dirty).map(|n| n.name.as_str()).collect();
         assert!(dirty.is_empty(), "opening marked {} features dirty ({dirty:?}) — the file was opened, not changed", dirty.len());
         let _ = std::fs::remove_file(&path);
@@ -180,14 +180,14 @@ mod tests {
         for _ in 0..4 {
             pump_frame(&mut app); // carry the opening through to silence
         }
-        let before = app.body_height_for_test();
+        let before = qymcad_ui_state::tallest_body(&app.painting());
 
         app.set_param_for_test("h", "16"); // as an edit in the parameters window
         let regens = (0..8).filter(|_| pump_frame(&mut app)).count();
         assert_eq!(regens, 1, "editing a parameter means EXACTLY one rebuild; there were {regens} over eight frames");
-        let after = app.body_height_for_test();
+        let after = qymcad_ui_state::tallest_body(&app.painting());
         assert!((after - before - 6.0).abs() < 0.05, "the part must follow the parameter: it was {before:.2}, it became {after:.2}, +6 was expected");
-        assert!(app.project.regen_errors.is_empty(), "editing a parameter must not break features; status: {}", app.status_for_test());
+        assert!(app.project.regen_errors.is_empty(), "editing a parameter must not break features; status: {}", app.status.clone());
         let _ = std::fs::remove_file(&path);
     }
 }

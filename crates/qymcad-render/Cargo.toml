@@ -1,0 +1,23 @@
+[package]
+name = "qymcad-render"
+version = "0.1.0"
+edition = "2021"
+
+# THE DRAWING LAYER, AND NOTHING ELSE. Given the document, the view and a painter, it draws: bodies,
+# sketches, dimensions, constraints, joints, previews, the gizmos. It changes nothing - every function
+# here takes a shared borrow of the state and hands egui a list of shapes.
+#
+# WHY A CRATE. Every workbench draws, and all three draw THE SAME document through the same contexts. A
+# drawing layer that sat inside one workbench would make the other two depend on it.
+[dependencies]
+egui = "0.35"
+egui-phosphor = "0.11"
+qymcad-core = { path = "../qymcad-core" }
+qymcad-ui-state = { path = "../qymcad-ui-state" }
+qymcad-pick = { path = "../qymcad-pick" }
+qymcad-i18n = { path = "../qymcad-i18n" }
+qymcad-scheme = { path = "../qymcad-scheme" }
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+
+[lints]
+workspace = true

@@ -21,9 +21,9 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        app.viewing.mode_3d = true;
         app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect()
     }
 
@@ -54,22 +54,16 @@ mod tests {
 
     #[test]
     fn escape_leaves_no_assembly_tool_running() {
-        let tools: [(&str, fn(&mut App)); 7] = [
-            ("mate", |a: &mut App| a.arm_joint_pick_for_test()),
-            ("connector", |a: &mut App| a.start_conn_pick()),
-            ("group", |a: &mut App| a.start_group_pick()),
-            ("width", |a: &mut App| a.start_width_pick()),
-            ("tangent", |a: &mut App| a.start_tangent_pick()),
-            ("relation", |a: &mut App| a.start_relation_pick()),
-            ("ground", |a: &mut App| a.start_ground_pick()),
-        ];
+        // EVERY TOOL THERE IS, from the shared door table. It used to be SEVEN written out here by hand,
+        // out of nine: the axis pick and the anchor re-pick were missing, and Esc was unchecked for them.
         let mut stuck: Vec<String> = Vec::new();
-        for (name, arm) in tools {
+        for t in super::super::assembly_tools::AssemblyTool::ALL {
+            let name = t.help_mode();
             let mut app = App::default();
             let mine = two_parts(&mut app);
             assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
             app.workbench = super::super::Workbench::Assembly;
-            arm(&mut app);
+            crate::gui::assembly_tools::doors::arm(&mut app, t);
             // TRAP GUARD: the tool really was taken up, otherwise there is nothing to put down and
             // a green result is empty.
             assert!(!leftovers(&app).is_empty(), "GUARD: the \"{name}\" tool was not taken up — Esc has nothing to put down");

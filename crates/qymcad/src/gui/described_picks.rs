@@ -25,14 +25,14 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body is built");
         (app, body)
     }
@@ -43,10 +43,10 @@ mod tests {
         let (mut app, body) = plate();
         let face = app.project.regen_faces[&body].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
 
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         app.start_feat_cmd(4); // fillet
-        app.gsel.edges = [11, 12, 13, 14].into_iter().collect(); // as if the edges of the face had been collected
-        app.gsel.describe_edges_of_face(face);
+        app.tools.gsel.edges = [11, 12, 13, 14].into_iter().collect(); // as if the edges of the face had been collected
+        app.tools.gsel.describe_edges_of_face(face);
         app.apply_feat_cmd();
 
         let edges = app
@@ -70,10 +70,10 @@ mod tests {
     #[test]
     fn picking_edges_one_by_one_stays_a_list() {
         let (mut app, body) = plate();
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         app.start_feat_cmd(4);
-        app.gsel.edges = [21, 22].into_iter().collect();
-        app.gsel.described = None; // the edges were picked one by one
+        app.tools.gsel.edges = [21, 22].into_iter().collect();
+        app.tools.gsel.described = None; // the edges were picked one by one
         app.apply_feat_cmd();
 
         let edges = app
@@ -97,13 +97,13 @@ mod tests {
     /// is would mean writing into the document an intent nobody has.
     #[test]
     fn touching_one_edge_after_a_face_drops_the_description() {
-        let source = include_str!("pick.rs");
+        let source = crate::gui::sketch_source::PICK;
         assert!(
-            source.contains("self.gsel.described = None;"),
+            source.contains("self.tools.gsel.described = None;"),
             "a single click on an edge must clear the description, otherwise the reference lies"
         );
         // and the other way round: a click on a face must RECORD the description
-        assert!(source.contains("self.gsel.describe_edges_of_face(fid);"), "a click on a face must record a description");
+        assert!(source.contains("self.tools.gsel.describe_edges_of_face(fid);"), "a click on a face must record a description");
     }
 
     /// A VARIABLE FILLET IS NOW SET BY A DESCRIPTION TOO.
@@ -121,18 +121,18 @@ mod tests {
         let (mut app, body) = plate();
         let face = app.project.regen_faces[&body].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
 
-        app.select_body(body);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         app.start_feat_cmd(4);
-        app.gsel.edges = [11, 12].into_iter().collect();
-        app.gsel.describe_edges_of_face(face); // the face is picked, so a description suggests itself
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+        app.tools.gsel.edges = [11, 12].into_iter().collect();
+        app.tools.gsel.describe_edges_of_face(face); // the face is picked, so a description suggests itself
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 3.0;
             p.txt = "3".into();
         }
         // a radius at one of the corners, as a vertex table
-        let corner = app.project.vertex_spots(body).into_iter().map(|(pt, ids)| (pt, ids)).next().expect("the body has a corner");
+        let corner = app.project.vertex_spots(body).into_iter().next().expect("the body has a corner");
         let desc = app.project.names.intern_vertex(qymcad_core::names::VertexName::new(corner.1));
-        app.cmd.params.push(crate::gui::CmdParam::new("f-radius-at-vertex", &format!("at{desc}"), 5.0, 0.0, 1000.0).at(corner.0));
+        app.tools.cmd.params.push(qymcad_ui_state::CmdParam::new("f-radius-at-vertex", &format!("at{desc}"), 5.0, 0.0, 1000.0).at(corner.0));
         app.apply_feat_cmd();
 
         let (edges, table) = app

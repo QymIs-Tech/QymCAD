@@ -90,8 +90,8 @@ pub fn solve_assembly(problem: &Problem) -> (Vec<Isometry3<f64>>, AssemblyReport
         let mut global_of: Vec<usize> = Vec::new();
         for &ci in cons {
             for g in problem.constraints[ci].bodies() {
-                if !local_of.contains_key(&g) {
-                    local_of.insert(g, bodies.len());
+                if let std::collections::hash_map::Entry::Vacant(e) = local_of.entry(g) {
+                    e.insert(bodies.len());
                     global_of.push(g);
                     bodies.push(problem.bodies[g].clone());
                 }

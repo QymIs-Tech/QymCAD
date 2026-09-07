@@ -22,7 +22,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of its topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -40,8 +40,8 @@ mod tests {
         }
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 4, "setup: there should be four bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -55,8 +55,8 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 6.0).mate(JointKind::Revolute).anchor(3).click(pa).click(pb);
@@ -67,12 +67,12 @@ mod tests {
         let second = app.project.joints.last().map(|j| j.id).expect("the second joint");
         let members: Vec<Id> = mine.iter().filter_map(|b| app.project.body_owner(*b)).collect();
         app.project.add_group(&members[..2]);
-        app.start_relation_pick_for_test();
-        app.relation_pick_set_for_test(RelationKind::Gear, 2.0);
-        app.relation_pick_click_for_test(first);
-        app.relation_pick_click_for_test(second);
-        app.relation_pick_confirm_for_test();
-        app.rebuild_if_dirty();
+        app.start_relation_pick();
+        if let Some(p) = app.side.joint.relation_pick.as_mut() { p.set(RelationKind::Gear, 2.0); }
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), first);
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), second);
+        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         first
     }
 
@@ -82,10 +82,10 @@ mod tests {
         let jid = a_document_with_everything(&mut app);
         // THE JOINT POPUP IS OPEN AT THE SAME TIME AS THE PANEL — exactly the arrangement in which
         // two fields took one id.
-        app.joint.edit = Some(jid);
-        app.sel = super::super::Sel::Joint(jid);
+        app.side.joint.edit = Some(jid);
+        app.chosen.sel = super::super::Sel::Joint(jid);
         app.workbench = super::super::Workbench::Assembly;
-        app.mode_3d = true;
+        app.viewing.mode_3d = true;
 
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
@@ -96,7 +96,7 @@ mod tests {
                 // collision is born precisely from simultaneity; each piece alone is flawless.
                 egui::Panel::left("tree").show(c, |ui| app.build_tree_for_test(ui));
                 egui::Panel::right("props").show(c, |ui| app.joints_panel_for_test(ui));
-                app.joint_popup_for_test(c, viewport());
+                { app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id)); qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport()); }
             });
             texts.clear();
             for cs in &out.shapes {

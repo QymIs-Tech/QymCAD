@@ -22,7 +22,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of its topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -40,8 +40,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(&mut app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -54,20 +54,20 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let (pa, pb) = (aim(&app, mine[0]), aim(&app, mine[1]));
 
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 10.0, 5.0], 7.0).mate(JointKind::Slider).anchor(0).click(pa).click(pb);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let jid = app.project.joints.last().map(|j| j.id).expect("the joint was created");
         let lost = app.project.joints.iter().find(|x| x.id == jid).map(|x| x.a).expect("anchor A");
 
         // LOSE THE ANCHOR — exactly what the old deletion defect did to a real file: the joint
         // stayed, the anchor did not.
         app.project.connectors.retain(|c| c.id != lost);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(
             app.project.joint_faults().iter().any(|(id, why)| *id == jid && *why == "j-fault-connector-lost"),
             "GUARD: the joint must become dead, otherwise there is nothing to revive: {:?}",
@@ -75,14 +75,14 @@ mod tests {
         );
 
         // THE PERSON RE-PICKS THE ANCHOR: "Change anchor -> A", then a click on a face of the part.
-        app.joint.edit = Some(jid);
-        app.joint.edit_repick = Some((jid, false));
-        app.set_joint_anchor_mode_for_test(0);
-        let basis = app.cam.basis();
-        let at = app.project3(pa, viewport(), &basis).0;
-        app.refresh_edges();
+        app.side.joint.edit = Some(jid);
+        app.side.joint.edit_repick = Some((jid, false));
+        qymcad_assembly::set_joint_anchor_mode_for_test(&mut app.joint_ctx(), 0);
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(pa).0;
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         app.viewport_3d_click_at(at, viewport(), &basis);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let faults = app.project.joint_faults();
         assert!(

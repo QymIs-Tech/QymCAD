@@ -195,7 +195,7 @@ fn can_add_body_reflects_context() {
     let root = p.root;
     p.set_active_component(Some(root)); // the root assembly
     assert!(!p.can_add_body(), "bodies may not be created inside an assembly");
-    assert!(p.component_is_part(p.current_ctx()) == false);
+    assert!(!p.component_is_part(p.current_ctx()));
 }
 
 #[test]

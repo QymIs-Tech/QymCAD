@@ -18,18 +18,18 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.project.add_rect_entity(si, -20.0, -20.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         // THE PERSON'S OWN VIEW: zoomed into a corner, not the fit the program would choose.
-        app.mode_3d = false;
-        app.view.scale = 12.5;
-        app.view.center = Vec2::new(18.0, -17.0);
-        app.view.initialized = true;
+        app.viewing.mode_3d = false;
+        app.viewing.view.scale = 12.5;
+        app.viewing.view.center = Vec2::new(18.0, -17.0);
+        app.viewing.view.initialized = true;
         app
     }
 
     /// Everything the flat view is made of, plus the mode.
     fn view_of(app: &App) -> (bool, f32, f32, f32, bool) {
-        (app.mode_3d, app.view.scale, app.view.center.x, app.view.center.y, app.view.initialized)
+        (app.viewing.mode_3d, app.viewing.view.scale, app.viewing.view.center.x, app.viewing.view.center.y, app.viewing.view.initialized)
     }
 
     /// EVERY MEASURING TOOL LEAVES THE VIEW ALONE.
@@ -39,7 +39,7 @@ mod tests {
         for k in 1u8..=3 {
             let mut app = sketching_with_a_chosen_view();
             let before = view_of(&app);
-            app.set_dim_tool_for_test(k);
+            qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, k);
             let after = view_of(&app);
             if after != before {
                 bad.push(format!("  dimension tool {k}: {before:?} -> {after:?}"));
@@ -55,7 +55,7 @@ mod tests {
         for code in 0u8..=11 {
             let mut app = sketching_with_a_chosen_view();
             let before = view_of(&app);
-            app.constraint_button(code);
+            crate::gui::sketching::constraint_button(&mut app.sketch_ctx(), code);
             let after = view_of(&app);
             if after != before {
                 bad.push(format!("  constraint {code}: {before:?} -> {after:?}"));
@@ -82,7 +82,7 @@ mod tests {
         for k in 1u8..=11 {
             let mut app = sketching_with_a_chosen_view();
             let before = view_of(&app);
-            app.set_sk_tool_for_test(k);
+            app.set_sk_tool(k);
             let after = view_of(&app);
             if after != before {
                 bad.push(format!("  drawing tool {k}: {before:?} -> {after:?}"));

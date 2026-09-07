@@ -34,7 +34,7 @@ mod tests {
     fn empty() -> (App, usize) {
         let mut app = App::default();
         let part = app.project.add_component("part");
-        app.enter_component_for_test(part);
+        app.enter_component(part);
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         (app, si)
     }
@@ -106,14 +106,14 @@ mod tests {
             }),
             ("05-slot", || {
                 let (mut app, si) = empty();
-                app.project.add_slot_entity(si, -18.0, 0.0, 18.0, 0.0, 7.0, qymcad_core::feature::Purpose::Real);
+                app.project.add_slot_entity(si, qymcad_core::geom::Point2::new(-18.0, 0.0), qymcad_core::geom::Point2::new(18.0, 0.0), 7.0, qymcad_core::feature::Purpose::Real);
                 app.project.regen_sketch(si);
                 let p = point_at(&app, si, 18.0, 0.0);
                 (app, Case { si, drag: Some((p, 30.0, 9.0)), conflicting: false })
             }),
             ("06-polygon", || {
                 let (mut app, si) = empty();
-                app.project.add_polygon_entity(si, 0.0, 0.0, 20.0, 0.0, 6, qymcad_core::feature::Purpose::Real);
+                app.project.add_polygon_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(20.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
                 app.project.regen_sketch(si);
                 let p = point_at(&app, si, 20.0, 0.0);
                 (app, Case { si, drag: Some((p, 28.0, 8.0)), conflicting: false })
@@ -122,7 +122,7 @@ mod tests {
                 // ROTATED: a check that the radius leader goes into the gap at ANY rotation and not only
                 // when the first vertex points right.
                 let (mut app, si) = empty();
-                app.project.add_polygon_entity(si, 0.0, 0.0, 14.0, 14.0, 5, qymcad_core::feature::Purpose::Real);
+                app.project.add_polygon_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(14.0, 14.0), 5, qymcad_core::feature::Purpose::Real);
                 app.project.regen_sketch(si);
                 let p = point_at(&app, si, 14.0, 14.0);
                 (app, Case { si, drag: Some((p, 22.0, 16.0)), conflicting: false })
@@ -132,7 +132,7 @@ mod tests {
                 // THE CENTRE IS AWAY FROM THE ORIGIN. The first edition put the ellipse at zero, and
                 // `point_at(0,0)` found NOT its centre but the fixed origin of the sketch: "the ellipse
                 // does not drag" turned out to be dragging the very thing that must not move.
-                app.project.add_ellipse_entity(si, 14.0, 8.0, 24.0, 12.0, 0.0, qymcad_core::feature::Purpose::Real);
+                app.project.add_ellipse_entity(si, qymcad_core::geom::Point2::new(14.0, 8.0), 24.0, 12.0, 0.0, qymcad_core::feature::Purpose::Real);
                 app.project.regen_sketch(si);
                 let p = point_at(&app, si, 14.0, 8.0);
                 (app, Case { si, drag: Some((p, 26.0, 18.0)), conflicting: false })
@@ -140,7 +140,7 @@ mod tests {
             ("08-arc-and-lines", || {
                 let (mut app, si) = empty();
                 app.project.add_line_entity(si, -30.0, -10.0, 0.0, -10.0, qymcad_core::feature::Purpose::Real);
-                app.project.add_arc_entity(si, 0.0, 0.0, 0.0, -10.0, 10.0, 0.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+                app.project.add_arc_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(0.0, -10.0), qymcad_core::geom::Point2::new(10.0, 0.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
                 app.project.add_line_entity(si, 10.0, 0.0, 30.0, 0.0, qymcad_core::feature::Purpose::Real);
                 app.project.regen_sketch(si);
                 let p = point_at(&app, si, -30.0, -10.0);
@@ -313,7 +313,7 @@ mod tests {
             // of a fillet and a slot falsely — that is sorted out and filtered in `flagged_redundant`.
             // What must be checked is what a person SEES, otherwise the guard would complain about a false
             // alarm closed long ago.
-            let flagged = app.flagged_redundant(case.si);
+            let flagged = qymcad_ui_state::flagged_redundant(&app.cache, &app.project, case.si);
             let conflicts = app.project.sketch_conflicts(case.si);
             let expect_redundant = name.contains("redundant");
             let expect_conflict = name.contains("conflicting");
@@ -348,7 +348,7 @@ mod tests {
             let (mut app, case) = build();
             let rect = flat_view(&mut app, case.si);
             let s = &app.project.sketches[case.si];
-            for (ci, at, _) in app.constraint_glyphs(rect, case.si) {
+            for (ci, at, _) in crate::gui::sketching::constraint_glyphs(&app.pick_ctx(), rect, case.si) {
                 // THE MEASUREMENT GOES TO THE SEGMENT, NOT TO ITS ENDS. The horizontality badge stands
                 // ABOVE THE MIDDLE of a side, and from there it is half a length to either end — the first
                 // edition of this guard declared every properly placed badge a violation.
@@ -357,7 +357,7 @@ mod tests {
                     .sketch_constraint_points(case.si, ci)
                     .iter()
                     .filter_map(|id| s.points.iter().find(|p| p.id == *id))
-                    .map(|p| app.to_screen(rect, qymcad_core::geom::Point2::new(p.x, p.y)))
+                    .map(|p| (qymcad_ui_state::Sheet { view: app.viewing.view, rect: rect }).at(qymcad_core::geom::Point2::new(p.x, p.y)))
                     .collect();
                 if on.is_empty() {
                     continue;
@@ -380,7 +380,7 @@ mod tests {
         for (name, build) in scenes() {
             let (mut app, case) = build();
             let rect = flat_view(&mut app, case.si);
-            let g = app.constraint_glyphs(rect, case.si);
+            let g = crate::gui::sketching::constraint_glyphs(&app.pick_ctx(), rect, case.si);
             for i in 0..g.len() {
                 for j in i + 1..g.len() {
                     if g[i].2 == g[j].2 && g[i].1.distance(g[j].1) < 6.0 {
@@ -395,7 +395,7 @@ mod tests {
         // distance: badges laid out in a snake formally stand apart.
         let (mut app, case) = scenes().into_iter().find(|(n, _)| n == &"06-polygon").expect("the polygon scene").1();
         let rect = flat_view(&mut app, case.si);
-        let equals = app.constraint_glyphs(rect, case.si).iter().filter(|(_, _, g)| *g == super::super::Gly::Equal).count();
+        let equals = crate::gui::sketching::constraint_glyphs(&app.pick_ctx(), rect, case.si).iter().filter(|(_, _, g)| *g == super::super::Gly::Equal).count();
         assert_eq!(equals, 6, "there must be one equality badge per side, and there are {equals}");
 
         assert!(bad.is_empty(), "the badges are drawn badly ({}):\n{}", bad.len(), bad.join("\n"));
@@ -415,7 +415,7 @@ mod tests {
             let rect = flat_view(&mut app, case.si);
             let n = app.project.sketches[case.si].constraints.len();
             for ci in 0..n {
-                let Some(at) = app.dim_label_pos(rect, case.si, ci) else { continue };
+                let Some(at) = crate::gui::sketching::dim_label_pos(&mut app.sketch_ctx(), rect, case.si, ci) else { continue };
                 // A LABEL IS A RECTANGLE OF TEXT, not a point. The first edition measured to THE CENTRE
                 // of the label and missed exactly the case it was written for: "R20.0" stands fourteen
                 // pixels from the vertex and covers it all the same, because the text is drawn from its
@@ -423,7 +423,7 @@ mod tests {
                 let box_ = egui::Rect::from_center_size(at, egui::vec2(44.0, 16.0));
                 let s = &app.project.sketches[case.si];
                 for p in &s.points {
-                    let q = app.to_screen(rect, qymcad_core::geom::Point2::new(p.x, p.y));
+                    let q = (qymcad_ui_state::Sheet { view: app.viewing.view, rect: rect }).at(qymcad_core::geom::Point2::new(p.x, p.y));
                     if box_.contains(q) {
                         bad.push(format!("{name}: the label of dimension no. {ci} covers a point of the sketch"));
                         break;
@@ -448,10 +448,10 @@ mod tests {
     /// A flat view of the sketch at a known scale — shared by the pictures and by the checks of
     /// placement.
     fn flat_view(app: &mut App, _si: usize) -> egui::Rect {
-        app.mode_3d = false;
-        app.view.scale = 5.0;
-        app.view.center = super::super::Vec2::new(0.0, 0.0);
-        app.view.initialized = true;
+        app.viewing.mode_3d = false;
+        app.viewing.view.scale = 5.0;
+        app.viewing.view.center = super::super::Vec2::new(0.0, 0.0);
+        app.viewing.view.initialized = true;
         egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(720.0, 460.0))
     }
 
@@ -488,13 +488,13 @@ mod tests {
     /// A frame of the sketch with its contours, constraints and dimensions — exactly what the canvas
     /// draws.
     fn shot(app: &mut App, si: usize) -> egui::ColorImage {
-        app.mode_3d = false;
-        app.sel = super::super::Sel::Sketch(si);
+        app.viewing.mode_3d = false;
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.sketch_ses.editing = Some(app.project.sketches[si].id);
         app.project.regen_sketch(si);
-        app.view.scale = 5.0;
-        app.view.center = super::super::Vec2::new(0.0, 0.0);
-        app.view.initialized = true;
+        app.viewing.view.scale = 5.0;
+        app.viewing.view.center = super::super::Vec2::new(0.0, 0.0);
+        app.viewing.view.initialized = true;
         let bg = app.scheme.pal.viewport_bg();
         let a = &*app;
         super::super::help_raster::shot_ui([720, 460], bg, |ui| {
@@ -512,7 +512,7 @@ mod tests {
     }
 
     fn save(dir: &std::path::Path, name: &str, img: &egui::ColorImage) {
-        let png = App::color_image_to_png(img).expect("PNG");
+        let png = crate::gui::color_image_to_png(img).expect("PNG");
         std::fs::write(dir.join(format!("{name}.png")), png).expect("the write");
     }
 }

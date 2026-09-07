@@ -20,11 +20,11 @@ mod tests {
     fn extruding() -> App {
         let mut app = super::super::screen_keys::tests::plate();
         let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
-        app.enter_component_for_test(part);
-        app.sel = super::super::Sel::Sketch(0);
-        app.mode_3d = true;
+        app.enter_component(part);
+        app.chosen.sel = super::super::Sel::Sketch(0);
+        app.viewing.mode_3d = true;
         app.start_feat_cmd(1);
-        assert!(app.cmd.active(), "setup: the extrude did not open - there is nothing to check");
+        assert!(app.tools.armed.commanding(), "setup: the extrude did not open - there is nothing to check");
         app
     }
 
@@ -46,7 +46,7 @@ mod tests {
         let out = ctx.run_ui(input, |ui| {
             let ctx = &ui.ctx().clone();
             app.handle_key_commands(ctx);
-            app.feat_cmd_popup(ctx, RECT);
+            crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), ctx, RECT);
         });
         let mut texts = Vec::new();
         for cs in &out.shapes {
@@ -77,7 +77,7 @@ mod tests {
         let _ = frame(&mut app, &ctx, vec![]);
         let key = |pressed| egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed, repeat: false, modifiers: Default::default() };
         let _ = frame(&mut app, &ctx, vec![key(true), key(false)]);
-        assert!(!app.cmd.active(), "setup: Escape did not close the command, so the button cannot be compared with it");
+        assert!(!app.tools.armed.commanding(), "setup: Escape did not close the command, so the button cannot be compared with it");
     }
 
     /// THE BUTTON CLOSES IT THE SAME WAY. Exactly the reported complaint.
@@ -99,6 +99,6 @@ mod tests {
             .unwrap_or_else(|| panic!("the popup has no `{label}` button; painted: {:?}", painted.iter().map(|(t, _)| t).collect::<Vec<_>>()));
 
         let _ = frame(&mut app, &ctx, click(spot));
-        assert!(!app.cmd.active(), "the cancel button was pressed and the command is still running");
+        assert!(!app.tools.armed.commanding(), "the cancel button was pressed and the command is still running");
     }
 }

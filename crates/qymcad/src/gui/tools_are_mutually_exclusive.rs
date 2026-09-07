@@ -4,11 +4,19 @@
 //! higher in the code, while the person is certain they are working with the one picked last. The
 //! error is quiet, and people blame themselves for it.
 //!
-//! EVERY pair is checked against the single list (`gui/assembly_tools.rs`): take the first, take the
-//! second, and exactly one must be left in hand. The sweep is exhaustive, so a new tool lands here by
-//! itself without editing this check.
+//! EVERY pair is checked against the single list (`AssemblyTool::ALL`): take the first, take the second,
+//! and exactly one must be left in hand.
+//!
+//! IT USED TO SAY THAT AND NOT DO IT. The doors were a list of SEVEN written by hand here, while the
+//! enumeration has NINE: the axis pick and the anchor re-pick were missing, and the rule was unchecked for
+//! them - they are taken from a button in the joint's own popup rather than from the toolbar, so nobody
+//! noticed. The comment claimed the sweep was exhaustive, which is the worst kind of wrong: a promise that
+//! stops anyone from looking. The doors now come from `assembly_tools::doors`, shared with the F1 check,
+//! and the sweep really does walk `AssemblyTool::ALL`.
 #[cfg(test)]
 mod tests {
+    use super::super::assembly_tools::doors::arm;
+    use super::super::assembly_tools::AssemblyTool;
     use super::super::App;
     use qymcad_core::model::Id;
 
@@ -18,40 +26,30 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        app.viewing.mode_3d = true;
         app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect()
     }
-
-    /// The tools and their doors, the same ones a person uses.
-    const DOORS: [(&str, fn(&mut App)); 7] = [
-        ("mate", |a: &mut App| a.arm_joint_pick_for_test()),
-        ("anchor", |a: &mut App| a.start_conn_pick()),
-        ("group", |a: &mut App| a.start_group_pick()),
-        ("width", |a: &mut App| a.start_width_pick()),
-        ("tangency", |a: &mut App| a.start_tangent_pick()),
-        ("relation", |a: &mut App| a.start_relation_pick()),
-        ("ground", |a: &mut App| a.start_ground_pick()),
-    ];
 
     #[test]
     fn taking_a_tool_releases_the_previous_one() {
         let mut both: Vec<String> = Vec::new();
-        for (first_name, first) in DOORS {
-            for (second_name, second) in DOORS {
-                if first_name == second_name {
+        for first in AssemblyTool::ALL {
+            for second in AssemblyTool::ALL {
+                if first == second {
                     continue; // the same door is a toggle rather than a change of tool
                 }
+                let (first_name, second_name) = (first.help_mode(), second.help_mode());
                 let mut app = App::default();
                 let mine = two_parts(&mut app);
                 assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
                 app.workbench = super::super::Workbench::Assembly;
 
-                first(&mut app);
+                arm(&mut app, first);
                 // GUARD AGAINST A VACUOUS CHECK: the first tool really was taken, otherwise there is no change to check.
                 assert!(!app.armed_assembly_tools().is_empty(), "GUARD: \"{first_name}\" was not taken, so there is nothing to check the change on");
-                second(&mut app);
+                arm(&mut app, second);
 
                 let armed = app.armed_assembly_tools().len();
                 if armed != 1 {

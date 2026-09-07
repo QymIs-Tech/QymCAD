@@ -88,7 +88,7 @@ fn matrix_arrays() {
         let mut p = Project::default();
         p.new_document();
         let c = p.add_cylinder(5.0, 10.0);
-        let arr = p.add_linear_array_grid(c, 20.0, 0.0, 0.0, 3, 0.0, 25.0, 0.0, 2);
+        let arr = p.add_linear_array_grid(c, qymcad_core::model::ArrayAxis { d: [20.0, 0.0, 0.0], count: 3 }, qymcad_core::model::ArrayAxis { d: [0.0, 25.0, 0.0], count: 2 });
         let v = regen_v(&mut p, arr, &mut fails, "linear array 3x2");
         check(&mut fails, "linear array 3x2", v, 6.0 * PI * 25.0 * 10.0, 0.01);
     }
@@ -126,7 +126,7 @@ fn matrix_holes() {
             None => fails.push(format!("{label}: top face not found")),
             Some(f) => {
                 let key = qymcad_core::feature::FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id };
-                let h = p.add_hole_typed(cube, key, dia, depth, kind, dia2, depth2);
+                let h = p.add_hole_typed(cube, key, qymcad_core::model::HoleTool { kind: kind, diameter: dia, depth: depth, dia2: dia2, depth2: depth2 });
                 let label = format!("hole {label}");
                 let v = regen_v(&mut p, h, &mut fails, &label);
                 check(&mut fails, &label, v, 8000.0 - cut, 0.01);

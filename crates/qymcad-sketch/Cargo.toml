@@ -1,0 +1,22 @@
+[package]
+name = "qymcad-sketch"
+version = "0.1.0"
+edition = "2021"
+
+# THE SKETCH WORKBENCH. Drawing entities, constraints and dimensions, dragging points, trimming, patterns,
+# text and notes, the diagnostics of degrees of freedom. It works over `SketchCtx` and asks nothing of the
+# application.
+#
+# It does not depend on the Part nor on the Assembly: what the three have in common lives in the modules
+# below them (the records, the picking, the drawing).
+[dependencies]
+egui = "0.35"
+egui-phosphor = "0.11"
+qymcad-core = { path = "../qymcad-core" }
+qymcad-ui-state = { path = "../qymcad-ui-state" }
+qymcad-pick = { path = "../qymcad-pick" }
+qymcad-render = { path = "../qymcad-render" }
+qymcad-i18n = { path = "../qymcad-i18n" }
+
+[lints]
+workspace = true

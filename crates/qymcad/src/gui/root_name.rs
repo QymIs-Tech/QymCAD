@@ -32,7 +32,7 @@ mod tests {
         i18n::set_language("en");
         let mut app = project_with_a_frozen_root_name();
         app.project.ensure_document(); // the same thing that opening a file does
-        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.toolbar(c));
+        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| { let mut asks = Vec::new(); crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), c); let c = c.ctx().clone(); a.do_bar_asks(asks, &c); });
         let cyrillic: Vec<&String> = texts.iter().filter(|t| t.chars().any(|c| ('А'..='я').contains(&c))).collect();
         assert!(cyrillic.is_empty(), "an English build has Cyrillic in the breadcrumbs: {cyrillic:?}");
         let want = i18n::tr("name-assembly");
@@ -50,7 +50,7 @@ mod tests {
         let mut seen = Vec::new();
         for code in ["ru", "en"] {
             i18n::set_language(code);
-            let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.toolbar(c));
+            let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| { let mut asks = Vec::new(); crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), c); let c = c.ctx().clone(); a.do_bar_asks(asks, &c); });
             let want = i18n::tr("name-assembly");
             assert!(texts.iter().any(|t| t.contains(&want)), "{code}: the root \"{want}\" is not on the bar: {texts:?}");
             seen.push(want);
@@ -73,6 +73,9 @@ mod tests {
         // backwards by LINES rather than by bytes: a slice in the middle of a multibyte letter fails
         // the test for no reason at all
         let near: String = src[..offer].lines().rev().take(6).collect::<Vec<_>>().join("\n");
-        assert!(near.contains("cid != self.project.root"), "the rename item is offered for the root too — and its name will come back as a key on the very first load");
+        // the needle does not name the HOLDER of the document (`self` before the panel became a free
+        // function over a context, `tc` after): what is guarded is that the item is behind a comparison
+        // with the root, not which record the document is reached through
+        assert!(near.contains(".project.root"), "the rename item is offered for the root too — and its name will come back as a key on the very first load");
     }
 }

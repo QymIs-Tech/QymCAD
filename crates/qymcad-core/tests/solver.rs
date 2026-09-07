@@ -555,7 +555,7 @@ fn arc_endpoints_stay_on_one_circle() {
     use qymcad_core::model::{Constraint, EntityKind};
     let mut p = Project::default();
     let si = p.new_sketch("arc");
-    p.add_arc_entity(si, 0.0, 0.0, 10.0, 0.0, 0.0, 5.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 5.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     let (center, a, b) = p.sketches[si].entities.iter().find_map(|e| match e.kind {
         EntityKind::Arc { center, a, b, .. } => Some((center, a, b)), _ => None }).unwrap();
     p.sketches[si].constraints.push(Constraint::Fixed { p: center });
@@ -578,7 +578,7 @@ fn free_arc_has_five_dof() {
     use qymcad_core::model::EntityKind;
     let mut p = Project::default();
     let si = p.new_sketch("arc");
-    p.add_arc_entity(si, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     assert!(matches!(p.sketches[si].entities[0].kind, EntityKind::Arc { .. }));
     assert_eq!(p.sketch_dof(si), (5, 0), "a free arc has five degrees of freedom");
 }
@@ -590,7 +590,7 @@ fn tangent_line_to_arc_drives_arc_radius() {
     use qymcad_core::model::{Constraint, EntityKind};
     let mut p = Project::default();
     let si = p.new_sketch("ta");
-    p.add_arc_entity(si, 0.0, 0.0, 5.0, 0.0, 0.0, 5.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre (0,0), r = 5
+    p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(5.0, 0.0), Point2::new(0.0, 5.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre (0,0), r = 5
     let center = p.sketches[si].entities.iter().find_map(|e| match e.kind { EntityKind::Arc { center, .. } => Some(center), _ => None }).unwrap();
     p.add_line_entity(si, -10.0, 8.0, 10.0, 8.0, qymcad_core::feature::Purpose::Real);
     let la = p.sketch_point_at(si, -10.0, 8.0, 1e-6);
@@ -651,7 +651,7 @@ fn parametric_polygon_stays_regular() {
     use qymcad_core::model::EntityKind;
     let mut p = Project::default();
     let si = p.new_sketch("hex");
-    let (center, sides) = p.add_polygon_param(si, 0.0, 0.0, 10.0, 0.0, 6, qymcad_core::feature::Purpose::Real);
+    let (center, sides) = p.add_polygon_param(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
     assert_eq!(sides.len(), 6, "six sides");
     // move the centre, which is a free degree of freedom, and solve: the polygon has to stay regular
     if let Some(q) = p.sketches[si].points.iter_mut().find(|q| q.id == center) {
@@ -693,7 +693,7 @@ fn parametric_ellipse_axes_perpendicular_and_sized() {
     let mut p = Project::default();
     let si = p.new_sketch("ell");
     // an ellipse rotated by 30°, with semi-axes of 10 and 4
-    let center = p.add_ellipse_entity(si, 0.0, 0.0, 10.0, 4.0, 30f64.to_radians(), qymcad_core::feature::Purpose::Real);
+    let center = p.add_ellipse_entity(si, Point2::new(0.0, 0.0), 10.0, 4.0, 30f64.to_radians(), qymcad_core::feature::Purpose::Real);
     // a free ellipse has five degrees of freedom: centre (2), major, minor and rotation
     assert_eq!(p.sketch_dof(si), (5, 0), "a free ellipse has five degrees of freedom");
     let (ma, mi) = p.sketches[si].entities.iter().find_map(|e| match e.kind {
@@ -774,7 +774,7 @@ fn arc_length_dimension_drives_arc() {
     use qymcad_core::model::{Constraint, EntityKind};
     let mut p = Project::default();
     let si = p.new_sketch("al");
-    p.add_arc_entity(si, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre (0,0), a (10,0), b (0,10), ccw
+    p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre (0,0), a (10,0), b (0,10), ccw
     let (c, a, b) = p.sketches[si].entities.iter().find_map(|e| match e.kind {
         EntityKind::Arc { center, a, b, .. } => Some((center, a, b)), _ => None }).unwrap();
     p.sketches[si].constraints.push(Constraint::Fixed { p: c });
@@ -863,7 +863,7 @@ fn tangent_arc_to_line_holds_under_radius_change() {
     let lb = p.sketch_point_at(si, 10.0, 0.0, 1e-6);
     // an arc tangent at the line endpoint (10,0): with t = (1,0) and the far end at (10,4) the centre is
     // (10,2) and R = 2
-    p.add_arc_entity(si, 10.0, 2.0, 10.0, 0.0, 10.0, 4.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+    p.add_arc_entity(si, Point2::new(10.0, 2.0), Point2::new(10.0, 0.0), Point2::new(10.0, 4.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     let cen = p.sketch_point_at(si, 10.0, 2.0, 1e-6);
     p.sketches[si].constraints.push(Constraint::Tangent { a: la, b: lb, c: cen, r: 2.0 });
     p.sketches[si].constraints.push(Constraint::Fixed { p: la });

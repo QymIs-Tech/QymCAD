@@ -138,11 +138,11 @@ fn hole_stepped_counterbore_countersink_cut() {
     // the frame sits at the centre of the top face with Z pointing outward, and the tool goes down into the
     // body
     let pl = [1.0, 0.0, 0.0, 5.0, 0.0, 1.0, 0.0, 5.0, 0.0, 0.0, 1.0, 20.0];
-    let cb = box20(20.0).hole_stepped(1, pl, 4.0, 15.0, 8.0, 5.0, &[]).expect("the counterbore");
+    let cb = box20(20.0).hole_stepped(qymcad_core::model::HoleTool { kind: 1, diameter: 4.0, depth: 15.0, dia2: 8.0, depth2: 5.0 }, pl, &[]).expect("the counterbore");
     assert!(cb.tessellate(0.4)[0].1.len() > base, "the counterbore added faces");
-    let cs = box20(20.0).hole_stepped(2, pl, 4.0, 15.0, 8.0, 3.0, &[]).expect("the countersink");
+    let cs = box20(20.0).hole_stepped(qymcad_core::model::HoleTool { kind: 2, diameter: 4.0, depth: 15.0, dia2: 8.0, depth2: 3.0 }, pl, &[]).expect("the countersink");
     assert!(cs.tessellate(0.4)[0].1.len() > base, "the countersink added faces");
-    assert!(box20(20.0).hole_stepped(0, pl, 4.0, 15.0, 0.0, 0.0, &[]).is_some(), "a plain hole cuts");
+    assert!(box20(20.0).hole_stepped(qymcad_core::model::HoleTool { kind: 0, diameter: 4.0, depth: 15.0, dia2: 0.0, depth2: 0.0 }, pl, &[]).is_some(), "a plain hole cuts");
 }
 
 #[test]

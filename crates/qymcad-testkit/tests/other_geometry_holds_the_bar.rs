@@ -15,6 +15,7 @@
 use qymcad_core::feature::{BasePlane, FaceKey, SketchPlane};
 use qymcad_core::geom::Point2;
 use qymcad_core::model::{Id, Project, WorkPlane};
+use qymcad_core::model::ArrayAxis;
 
 /// Stock: a rectangular sketch turned into a prism. Each case shapes its own part from there.
 fn box_body(p: &mut Project, w: f64, h: f64, up: f64) -> Id {
@@ -387,7 +388,7 @@ fn holes_from_sketch_points_hold_the_bar() {
     // circle on the face, and the face count grows exactly as it would from a real hole: measured,
     // the area does not change at all.
     let area_before: f64 = p.regen_faces.get(&base).map(|f| f.iter().map(|x| x.area).sum()).unwrap_or(0.0);
-    let h = p.add_hole_from_sketch(base, holes_sk, 4.0, 6.0, 0, 0.0, 0.0, true);
+    let h = p.add_hole_from_sketch(base, holes_sk, qymcad_core::model::HoleTool { kind: 0, diameter: 4.0, depth: 6.0, dia2: 0.0, depth2: 0.0 }, true);
     qymcad_testkit::regenerate(&mut p);
     let area_after: f64 = p.regen_faces.get(&h).map(|f| f.iter().map(|x| x.area).sum()).unwrap_or(0.0);
     assert!(
@@ -492,7 +493,7 @@ fn a_grid_pattern_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 8.0, 6.0, 5.0);
-    let grid = p.add_linear_array_grid3(body, 14.0, 0.0, 0.0, 3, 0.0, 11.0, 0.0, 2, 0.0, 0.0, 0.0, 1);
+    let grid = p.add_linear_array_grid3(body, [ArrayAxis { d: [14.0, 0.0, 0.0], count: 3 }, ArrayAxis { d: [0.0, 11.0, 0.0], count: 2 }, ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let n = p.regen_faces.get(&grid).map(|f| f.len()).unwrap_or(0);
     assert!(n >= 30, "the 3x2 grid did not build: faces {n} (a single box has 6)");
@@ -530,7 +531,7 @@ fn a_through_cut_holds_the_bar() {
     // hundredth) while op=1 gives 16 faces with the tool sticking out. A "the names changed" check
     // let that pass: they change from a glued-on tool too.
     let top_was = p.regen_faces[&base].iter().filter(|f| f.normal[2] > 0.9).map(|f| f.area).fold(0.0, f64::max);
-    let cut = p.add_combine_on(base, sid, c, 20.0, 0, qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Backward }, 0.0);
+    let cut = p.add_combine_on(base, sid, c, qymcad_core::model::CombineSpan { height: 20.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Backward }, fill: &[] }, 0);
     qymcad_testkit::regenerate(&mut p);
     let after: std::collections::HashSet<u32> = p.regen_faces.get(&cut).map(|f| f.iter().map(|x| x.id).collect()).unwrap_or_default();
     assert!(after.difference(&before).count() > 0, "the through cut changed nothing — the case is empty");
@@ -801,7 +802,7 @@ fn a_body_cut_through_a_pattern_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 12.0, 10.0, 8.0);
-    let arr = p.add_linear_array_grid3(body, 16.0, 0.0, 0.0, 3, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(body, [ArrayAxis { d: [16.0, 0.0, 0.0], count: 3 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let bar = p.add_cylinder(3.0, 60.0); // a rod along Z, through the row
     qymcad_testkit::regenerate(&mut p);
@@ -823,10 +824,10 @@ fn a_pattern_of_a_pattern_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 8.0, 6.0, 5.0);
-    let first = p.add_linear_array_grid3(body, 12.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let first = p.add_linear_array_grid3(body, [ArrayAxis { d: [12.0, 0.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let before = p.regen_faces.get(&first).map(|f| f.len()).unwrap_or(0);
-    let second = p.add_linear_array_grid3(first, 0.0, 10.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let second = p.add_linear_array_grid3(first, [ArrayAxis { d: [0.0, 10.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let after = p.regen_faces.get(&second).map(|f| f.len()).unwrap_or(0);
     assert!(after > before, "the second pattern did not multiply: was {before} now {after}, errors {:?}", p.regen_errors);
@@ -840,7 +841,7 @@ fn a_fillet_after_a_pattern_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 14.0, 10.0, 8.0);
-    let arr = p.add_linear_array_grid3(body, 20.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(body, [ArrayAxis { d: [20.0, 0.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     // A VERTICAL EDGE IS PICKED: every copy has one and it survives moving a sketch point.
     let edge = p
@@ -886,7 +887,7 @@ fn holes_on_a_revolve_hold_the_bar() {
     assert_eq!(p.sketch_isolated_points(hsk).len(), 2, "two drill marks");
     let before: std::collections::HashSet<u32> = p.regen_faces[&disc].iter().map(|f| f.id).collect();
     let area_before = area_of(&p, disc);
-    let h = p.add_hole_from_sketch(disc, hsk, 3.0, 12.0, 0, 0.0, 0.0, false);
+    let h = p.add_hole_from_sketch(disc, hsk, qymcad_core::model::HoleTool { kind: 0, diameter: 3.0, depth: 12.0, dia2: 0.0, depth2: 0.0 }, false);
     qymcad_testkit::regenerate(&mut p);
     let after: std::collections::HashSet<u32> = p.regen_faces.get(&h).map(|f| f.iter().map(|x| x.id).collect()).unwrap_or_default();
     assert!(after.difference(&before).count() > 0, "the holes in the solid of revolution were not drilled: errors {:?}", p.regen_errors);
@@ -965,7 +966,7 @@ fn a_chamfer_after_a_pattern_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 14.0, 10.0, 8.0);
-    let arr = p.add_linear_array_grid3(body, 20.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(body, [ArrayAxis { d: [20.0, 0.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let edge = p
         .regen_edges
@@ -1052,7 +1053,7 @@ fn a_shell_on_each_of_three_split_pieces_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 40.0, 20.0, 12.0);
-    let arr = p.add_linear_array_grid3(body, 50.0, 0.0, 0.0, 3, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(body, [ArrayAxis { d: [50.0, 0.0, 0.0], count: 3 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let open: Vec<u32> = p.regen_faces[&arr].iter().filter(|f| f.normal[2] > 0.9).map(|f| f.id).collect();
     assert!(open.len() >= 3, "three copies must have three top faces, found {}", open.len());
@@ -1126,9 +1127,9 @@ fn an_array_of_an_array_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 10.0, 8.0, 6.0);
-    let first = p.add_linear_array_grid3(body, 22.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let first = p.add_linear_array_grid3(body, [ArrayAxis { d: [22.0, 0.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
-    let second = p.add_linear_array_grid3(first, 0.0, 20.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let second = p.add_linear_array_grid3(first, [ArrayAxis { d: [0.0, 20.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let faces = p.regen_faces.get(&second).map(|f| f.len()).unwrap_or(0);
     if faces == 0 {
@@ -1146,7 +1147,7 @@ fn a_mirror_of_an_array_holds_the_bar() {
     let mut p = Project::default();
     p.new_document();
     let body = box_body(&mut p, 9.0, 7.0, 5.0);
-    let arr = p.add_linear_array_grid3(body, 15.0, 0.0, 0.0, 3, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(body, [ArrayAxis { d: [15.0, 0.0, 0.0], count: 3 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     // The XZ plane: the array runs along x, so reflecting along y keeps the copies from overlapping.
     let m = p.add_mirror(arr, 1, true, 0);
@@ -1202,7 +1203,7 @@ fn holes_through_a_shell_hold_the_bar() {
     // pi*2.5^2). The node stayed green throughout. Hence `flip=true` here, and what is demanded
     // below is removed material rather than a face count.
     let area_before: f64 = p.regen_faces.get(&sh).map(|f| f.iter().map(|x| x.area).sum()).unwrap_or(0.0);
-    let h = p.add_hole_from_sketch(sh, hsk, 3.0, 20.0, 0, 0.0, 0.0, true);
+    let h = p.add_hole_from_sketch(sh, hsk, qymcad_core::model::HoleTool { kind: 0, diameter: 3.0, depth: 20.0, dia2: 0.0, depth2: 0.0 }, true);
     qymcad_testkit::regenerate(&mut p);
     let faces = p.regen_faces.get(&h).map(|f| f.len()).unwrap_or(0);
     if faces == 0 {
@@ -1365,7 +1366,7 @@ fn an_array_after_a_thread_holds_the_bar() {
         return;
     }
     let area_before = area_of(&p, t);
-    let arr = p.add_linear_array_grid3(t, 20.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(t, [ArrayAxis { d: [20.0, 0.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let after = p.regen_faces.get(&arr).map(|f| f.len()).unwrap_or(0);
     if after == 0 {
@@ -1429,7 +1430,7 @@ fn a_thread_on_an_array_copy_holds_the_bar() {
     p.new_document();
     let shaft = p.add_cylinder(6.0, 24.0);
     qymcad_testkit::regenerate(&mut p);
-    let arr = p.add_linear_array_grid3(shaft, 30.0, 0.0, 0.0, 2, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(shaft, [ArrayAxis { d: [30.0, 0.0, 0.0], count: 2 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let area_before = area_of(&p, arr);
     // The rim of the SECOND copy: a round edge of radius 6 whose centre moved along x by the pattern step.
@@ -1564,7 +1565,7 @@ fn an_array_of_a_split_piece_holds_the_bar() {
     }
     let piece = pieces[0];
     let area_before = area_of(&p, piece);
-    let arr = p.add_linear_array_grid3(piece, 0.0, 26.0, 0.0, 3, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0, 1);
+    let arr = p.add_linear_array_grid3(piece, [ArrayAxis { d: [0.0, 26.0, 0.0], count: 3 }, ArrayAxis::none(), ArrayAxis::none()]);
     qymcad_testkit::regenerate(&mut p);
     let after = p.regen_faces.get(&arr).map(|f| f.len()).unwrap_or(0);
     if after == 0 {
@@ -1653,7 +1654,7 @@ fn holes_through_a_loft_hold_the_bar() {
     p.sketch_point_at(hsi, 6.0, 0.0, 1e-6);
     p.sketch_point_at(hsi, -6.0, 0.0, 1e-6);
     assert_eq!(p.sketch_isolated_points(hsk).len(), 2, "two drill marks");
-    let h = p.add_hole_from_sketch(body, hsk, 4.0, 20.0, 0, 0.0, 0.0, true);
+    let h = p.add_hole_from_sketch(body, hsk, qymcad_core::model::HoleTool { kind: 0, diameter: 4.0, depth: 20.0, dia2: 0.0, depth2: 0.0 }, true);
     qymcad_testkit::regenerate(&mut p);
     if p.regen_faces.get(&h).map(|f| f.is_empty()).unwrap_or(true) {
         eprintln!("skip: drilling the loft did not build — {:?}", p.regen_errors);

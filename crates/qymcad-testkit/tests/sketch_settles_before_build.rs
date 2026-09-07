@@ -63,7 +63,7 @@ fn body_is_built_from_the_solved_sketch_not_the_stale_points() {
     assert!(stale.iter().all(|x| (*x + 20.0).abs() > 1e-4), "the points really are knocked off: {stale:?}");
 
     let cut_prof = p.sketches[ci].contour_ids.clone();
-    p.add_combine_multi_op(base_body, cut, cut_prof, 25.0, 0, qymcad_core::feature::Extent::default(), 0.0, Vec::new());
+    p.add_combine_multi_op(base_body, cut, cut_prof, qymcad_core::model::CombineSpan { height: 25.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
     for n in p.timeline.iter_mut() {
         n.dirty = true;
     }

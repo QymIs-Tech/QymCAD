@@ -87,7 +87,7 @@ fn cut_vs_profile(edges: &[ProfEdge], r0: f64, len: f64, lead: f64) -> (f64, f64
     let rod = Shape::cylinder(r0, len + 10.0).expect("the shaft"); // the thread runs from the lower end, so the
                                                                    // overrun of the turn goes into the air
     let cut = rod
-        .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r0, &encode_edges(edges), len, lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: r0, profile: &encode_edges(edges), length: len, lead: lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the thread built");
     let (area, cy) = part_area_centroid(&poly(edges), true);
     let want = area * (len / lead) * 2.0 * std::f64::consts::PI * (r0 + cy);
@@ -174,7 +174,7 @@ fn internal_thread_cuts_exactly_its_profile() {
     let (r0, len) = (g.stock_d * 0.5, 30.0);
     let tube = Shape::cylinder(r0 + 15.0, len + 10.0).unwrap().boolean(&Shape::cylinder(r0, len + 20.0).unwrap(), 0).expect("the bushing");
     let cut = tube
-        .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r0, &encode_edges(&g.groove), len, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: r0, profile: &encode_edges(&g.groove), length: len, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the internal thread built");
     // in a hole the material lies outside, so the cutting part of the profile is the one running away from
     // the axis, y ≥ 0
@@ -195,7 +195,7 @@ fn auger_flight_adds_exactly_its_profile() {
     let shaft = Shape::cylinder(r0, len + 10.0).unwrap();
     let prof = a.flight_profile();
     let auger = shaft
-        .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r0, &encode_edges(&prof), len, a.lead(), a.starts, if a.left { qymcad_kernel::Hand::Left } else { qymcad_kernel::Hand::Right }, qymcad_kernel::Helix::Rib, 0.0, 0.0, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: r0, profile: &encode_edges(&prof), length: len, lead: a.lead(), starts: a.starts, hand: if a.left { qymcad_kernel::Hand::Left } else { qymcad_kernel::Hand::Right }, kind: qymcad_kernel::Helix::Rib, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the auger built");
     let (area, cy) = part_area_centroid(&poly(&prof), false); // the flight grows outward from the shaft
     // The length given is the length of the flight itself, which starts exactly at one end face and finishes at
@@ -221,7 +221,7 @@ fn thread_is_the_same_along_either_axis_direction() {
     let base = mesh_volume(&rod);
     let cut = |o: [f64; 3], d: [f64; 3], li: f64| -> (f64, bool) {
         let s = rod
-            .helical_profile(o, d, 15.0, &encode_edges(&g.groove), 100.0, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, li, li, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: o, dir: d }, radius: 15.0, profile: &encode_edges(&g.groove), length: 100.0, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: li, lead_out: li, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .expect("the thread built");
         (base - mesh_volume(&s), s.is_valid())
     };
@@ -247,7 +247,7 @@ fn lead_in_chamfers_the_entry_and_run_out_cuts_a_relief() {
     let base = mesh_volume(&rod);
     let mk = |li: f64, lo: f64| {
         let s = rod
-            .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], g.stock_d * 0.5, &encode_edges(&g.groove), 40.0, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, li, lo, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: g.stock_d * 0.5, profile: &encode_edges(&g.groove), length: 40.0, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: li, lead_out: lo, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .expect("it built");
         (base - mesh_volume(&s), s.is_valid())
     };
@@ -280,7 +280,7 @@ fn first_turn_is_like_the_others() {
         let base = mesh_volume(&rod);
         let cut_turns = |n: f64| -> f64 {
             let s = rod
-                .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r0, &encode_edges(&g.groove), g.lead * n, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+                .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: r0, profile: &encode_edges(&g.groove), length: g.lead * n, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
                 .expect("the thread built");
             base - mesh_volume(&s)
         };
@@ -307,7 +307,7 @@ fn blind_end_gets_a_relief_groove() {
     let (r0, len, lo) = (g.stock_d * 0.5, 20.0, 7.0);
     let rod = Shape::cylinder(r0, 40.0).expect("the shaft");
     let s = rod
-        .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r0, &encode_edges(&g.groove), len, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, lo, &[], &[], 0.0)
+        .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: r0, profile: &encode_edges(&g.groove), length: len, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: lo, gnames: &[], rnames: &[], crest_relief: 0.0 })
         .expect("the thread built");
     // the smallest radius of material over slices: in the run-out zone the root has to rise towards the
     // surface
@@ -356,7 +356,7 @@ fn bolt_and_nut_actually_screw_together() {
             Shape::cylinder(r0, len + 10.0).expect("the shaft")
         };
         blank
-            .helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r0, &encode_edges(&g.groove), len, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: r0, profile: &encode_edges(&g.groove), length: len, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .expect("the thread built")
     };
     let bolt = mk(false, 0.4);
@@ -400,7 +400,7 @@ fn through_nut_is_countersunk_on_both_ends() {
         verts.iter().filter(|v| (v.z - z).abs() < 0.06).fold(f64::MAX, |m, v| m.min(v.x.hypot(v.y))) * 2.0
     };
     let mk = |li: f64, lo: f64| {
-        tube.helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r0, &encode_edges(&g.groove), h, g.lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, li, lo, &[], &[], 0.0)
+        tube.helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: r0, profile: &encode_edges(&g.groove), length: h, lead: g.lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: li, lead_out: lo, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .expect("the thread built")
     };
     let plain = mk(0.0, 0.0);
@@ -429,7 +429,7 @@ fn auger_flight_is_flush_with_the_face_and_fades_out() {
     let shaft = Shape::cylinder(r0, h).expect("the shaft");
     let mk = |li: f64, lo: f64| {
         shaft
-            .helical_profile([0.0, 0.0, h], [0.0, 0.0, -1.0], r0, &encode_edges(&a.flight_profile()), len, a.lead(), 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Rib, li, lo, &[], &[], 0.0)
+            .helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, h], dir: [0.0, 0.0, -1.0] }, radius: r0, profile: &encode_edges(&a.flight_profile()), length: len, lead: a.lead(), starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Rib, lead_in: li, lead_out: lo, gnames: &[], rnames: &[], crest_relief: 0.0 })
             .expect("the auger built")
     };
     for (name, li, lo) in [("no fade", 0.0, 0.0), ("a fade of 10 and 10", 10.0, 10.0)] {

@@ -177,131 +177,34 @@ pub(crate) fn dir_to_angles(d: [f64; 3]) -> (f64, f64) {
 }
 
 impl App {
-    /// THE SIZE OF THE CUBE in pixels — from the settings. On a 4K screen the former 36 px were
-    /// unreadable in principle, while "make it bigger for everybody" would get in the way on a small
-    /// screen: this is a choice for the person using it.
-    pub(super) fn viewcube_size(&self) -> f32 {
-        // The sizes were reduced by 30% after a check on a 2K screen: the middle one was too big and the
-        // large one took up a noticeable part of the viewport. The cube is a pointer, not a piece of
-        // composition.
-        match self.set.viewcube_size {
-            0 => 32.0,
-            2 => 67.0,
-            _ => 48.0,
-        }
+    /// THE ONE PLACE THE BORROWS ARE SPLIT for the view cube.
+    ///
+    /// Four pieces handed out separately instead of the application entire: the camera's basis, one size
+    /// out of the settings, the palette, the label cache.
+    pub(super) fn cube_ctx(&self) -> CubeCtx<'_> {
+        CubeCtx { basis: self.viewing.cam.basis(), size_step: self.set.viewcube_size, pal: &self.scheme.pal, labels: &self.cache.label_tex }
     }
 
-    /// The centre of the cube on screen: the top right corner of the viewport with a margin.
-    fn viewcube_center(&self, rect: Rect) -> Pos2 {
-        let s = self.viewcube_size();
-        Pos2::new(rect.right() - s - 18.0, rect.top() + s + 18.0)
+    /// Draw the cube, the axis triad and the home button.
+    pub(crate) fn draw_viewcube(&self, painter: &egui::Painter, rect: Rect) {
+        draw(&self.cube_ctx(), painter, rect);
     }
 
-    /// A facade for the tests over the projection of a point of the cube.
-    #[cfg(test)]
-    pub(crate) fn viewcube_project_pub(&self, p: [f64; 3], rect: Rect) -> Pos2 {
-        self.viewcube_project(p, rect).0
-    }
-
-    /// Project a point of the cube onto the screen, plus the depth (for sorting and for cutting away the
-    /// back zones).
-    fn viewcube_project(&self, p: [f64; 3], rect: Rect) -> (Pos2, f64) {
-        let (right, up, fwd) = self.cam.basis();
-        let c = self.viewcube_center(rect);
-        let s = self.viewcube_size();
-        let d = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-        (Pos2::new(c.x + d(p, right) as f32 * s, c.y - d(p, up) as f32 * s), d(p, fwd))
-    }
-
-    /// Facades for the tests: the screen width of a zone and of the quadrilateral of its caption — they
-    /// are what proves that the caption is deformed TOGETHER with the face rather than living a life of
-    /// its own.
-    #[cfg(test)]
-    pub(crate) fn zone_screen_width_pub(&self, rect: Rect, i: usize) -> f32 {
-        let pts: Vec<Pos2> = zones()[i].poly.iter().map(|p| self.viewcube_project(*p, rect).0).collect();
-        let (mn, mx) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
-        mx - mn
-    }
-
-    #[cfg(test)]
-    pub(crate) fn label_quad_width_pub(&self, rect: Rect, i: usize) -> f32 {
-        let z = &zones()[i];
-        let (r, up) = label_frame(z.dir);
-        let half = T * 0.80;
-        let corner = |sr: f64, su: f64| {
-            let mut p = [0.0; 3];
-            for k in 0..3 {
-                p[k] = z.dir[k] * H + r[k] * sr * half + up[k] * su * half;
-            }
-            self.viewcube_project(p, rect).0
-        };
-        let pts = [corner(1.0, 1.0), corner(-1.0, 1.0), corner(-1.0, -1.0), corner(1.0, -1.0)];
-        let (mn, mx) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
-        mx - mn
-    }
-
-    /// The screen directions of "right" and "up" for the caption on a face — a test uses them to prove
-    /// that the text has not stood up vertically or turned upside down.
-    #[cfg(test)]
-    pub(crate) fn label_screen_dirs_pub(&self, rect: Rect, i: usize) -> (egui::Vec2, egui::Vec2) {
-        let z = &zones()[i];
-        let (r, up) = label_frame(z.dir);
-        let o = self.viewcube_project([z.dir[0] * H, z.dir[1] * H, z.dir[2] * H], rect).0;
-        let at = |d: [f64; 3]| {
-            let p = [z.dir[0] * H + d[0] * 0.5, z.dir[1] * H + d[1] * 0.5, z.dir[2] * H + d[2] * 0.5];
-            self.viewcube_project(p, rect).0 - o
-        };
-        (at(r), at(up))
-    }
-
-    /// THE ZONE UNDER THE CURSOR. Only the FRONT zones: the back side of the cube is not clickable —
-    /// otherwise a click on the top would land in the invisible bottom behind it.
-    pub(super) fn viewcube_zone_at(&self, rect: Rect, pos: Pos2) -> Option<usize> {
-        let (_, _, fwd) = self.cam.basis();
-        let zs = zones();
-        let mut best: Option<(f64, usize)> = None;
-        for (i, z) in zs.iter().enumerate() {
-            // the zone looks AWAY from the camera, so it is on the far side
-            if z.dir[0] * fwd[0] + z.dir[1] * fwd[1] + z.dir[2] * fwd[2] > -0.05 {
-                continue;
-            }
-            let pts: Vec<Pos2> = z.poly.iter().map(|p| self.viewcube_project(*p, rect).0).collect();
-            if !point_in_poly(pos, &pts) {
-                continue;
-            }
-            let depth: f64 = z.poly.iter().map(|p| self.viewcube_project(*p, rect).1).sum::<f64>() / z.poly.len() as f64;
-            if best.is_none_or(|(bd, _)| depth < bd) {
-                best = Some((depth, i));
-            }
-        }
-        best.map(|(_, i)| i)
-    }
-
-    /// A click on the cube: turn the view towards the zone. `false` means a miss (the click travels on).
-    pub(super) fn viewcube_click(&mut self, rect: Rect, pos: Pos2) -> bool {
-        // THE HOME BUTTON sits next to the cube, as in grown-up CAD: it returns the isometric view in
-        // one press
-        if self.viewcube_home_rect(rect).contains(pos) {
-            self.animate_view_to(-0.7, 0.6);
-            self.status = crate::i18n::tr("view-home-done");
-            return true;
-        }
-        let Some(i) = self.viewcube_zone_at(rect, pos) else { return false };
-        let z = &zones()[i];
-        let (yaw, pitch) = dir_to_angles(z.dir);
-        self.animate_view_to(yaw, pitch);
-        if let Some(key) = z.label {
+    /// A CLICK ON THE CUBE, AND THE TURN IT ASKED FOR, APPLIED.
+    ///
+    /// The cube says which way was pointed at; turning the view and speaking in the status line stay here,
+    /// because the camera and the status line are the application's.
+    pub(crate) fn viewcube_click(&mut self, rect: Rect, pos: Pos2) -> bool {
+        let Some(turn) = click(&self.cube_ctx(), rect, pos) else { return false };
+        crate::gui::animate_view_to(self.viewing.cam, &mut self.viewing.mode_3d, &mut self.viewing.view_anim, turn.yaw, turn.pitch);
+        if let Some(key) = turn.say {
             self.status = crate::i18n::tr(key);
         }
         true
     }
 
-    /// The rectangle of the home button — under the cube.
-    pub(super) fn viewcube_home_rect(&self, rect: Rect) -> Rect {
-        let c = self.viewcube_center(rect);
-        let s = self.viewcube_size();
-        Rect::from_center_size(Pos2::new(c.x, c.y + s + 14.0), egui::vec2(26.0, 18.0))
-    }
+
+
 }
 
 /// A point inside a convex polygon (wound either way).
@@ -415,169 +318,319 @@ fn label_frame(d: [f64; 3]) -> ([f64; 3], [f64; 3]) {
     }
 }
 
-impl App {
-    /// A facade for the tests over the drawing: a test must run THE SAME code a real frame does.
-    #[cfg(test)]
-    pub(crate) fn draw_viewcube_pub(&self, painter: &egui::Painter, rect: Rect) {
-        self.draw_viewcube(painter, rect);
+
+
+/// WHAT DRAWING THE VIEW CUBE NEEDS, and nothing besides.
+///
+/// MEASURED rather than guessed: the cube reads the camera's basis, one size out of the settings, the
+/// palette, and a cache of rendered labels. It writes nothing - a click does not turn the view here, it
+/// ASKS (see [`Turn`]).
+pub(crate) struct CubeCtx<'a> {
+/// Right, up and forward of the camera - the whole of what the cube needs to know about it.
+pub basis: ([f64; 3], [f64; 3], [f64; 3]),
+/// The size setting as stored: 0 small, 1 middle, 2 large.
+pub size_step: u8,
+pub pal: &'a crate::palette::Palette,
+/// Rendered face labels, kept between frames. Interior mutability, so a shared borrow is enough.
+pub labels: &'a std::cell::RefCell<std::collections::HashMap<String, egui::TextureHandle>>,
+}
+
+/// WHAT A CLICK ON THE CUBE ASKS FOR.
+///
+/// The panel does not turn the view itself, and that is the point of the shape: turning is the
+/// application's business - it owns the camera and the animation - while the cube's business is to say
+/// which way was pointed at. A panel that returns a request can be read, tested and moved; one that
+/// reaches for the camera cannot.
+pub(crate) struct Turn {
+pub yaw: f64,
+pub pitch: f64,
+/// What to say in the status line, as a catalogue key.
+pub say: Option<&'static str>,
+}
+
+/// THE SIZE OF THE CUBE in pixels — from the settings. On a 4K screen the former 36 px were
+/// unreadable in principle, while "make it bigger for everybody" would get in the way on a small
+/// screen: this is a choice for the person using it.
+pub(crate) fn size(cube: &CubeCtx) -> f32 {
+    // The sizes were reduced by 30% after a check on a 2K screen: the middle one was too big and the
+    // large one took up a noticeable part of the viewport. The cube is a pointer, not a piece of
+    // composition.
+    match cube.size_step {
+        0 => 32.0,
+        2 => 67.0,
+        _ => 48.0,
     }
+}
 
-    /// DRAWING THE CUBE: the zones from the far ones to the near, the captions on the faces, the
-    /// highlight under the cursor, the triad of axes and the home button.
-    pub(super) fn draw_viewcube(&self, painter: &egui::Painter, rect: Rect) {
-        let hover = painter.ctx().pointer_hover_pos().and_then(|p| self.viewcube_zone_at(rect, p));
-        let (_, _, fwd) = self.cam.basis();
-        let zs = zones();
-        // sorting by depth: without it the front zones are painted over by the back ones and the cube
-        // looks inside out
-        let mut order: Vec<(usize, f64)> = zs
-            .iter()
-            .enumerate()
-            .map(|(i, z)| {
-                let d: f64 = z.poly.iter().map(|p| self.viewcube_project(*p, rect).1).sum::<f64>() / z.poly.len() as f64;
-                (i, d)
-            })
-            .collect();
-        order.sort_by(|a, b| b.1.total_cmp(&a.1));
+/// The centre of the cube on screen: the top right corner of the viewport with a margin.
+pub(crate) fn centre(cube: &CubeCtx, rect: Rect) -> Pos2 {
+    let s = size(cube);
+    Pos2::new(rect.right() - s - 18.0, rect.top() + s + 18.0)
+}
 
-        for (i, _) in order {
-            let z = &zs[i];
-            let toward = -(z.dir[0] * fwd[0] + z.dir[1] * fwd[1] + z.dir[2] * fwd[2]);
-            if toward <= 0.02 {
-                continue; // the back side is not drawn — nor is it clickable
-            }
-            let pts: Vec<Pos2> = z.poly.iter().map(|p| self.viewcube_project(*p, rect).0).collect();
-            let base = match z.kind {
-                ZoneKind::Face => 96.0,
-                ZoneKind::Edge => 78.0,
-                ZoneKind::Corner => 66.0,
+/// Project a point of the cube onto the screen, plus the depth (for sorting and for cutting away the
+/// back zones).
+pub(crate) fn project(cube: &CubeCtx, p: [f64; 3], rect: Rect) -> (Pos2, f64) {
+    let (right, up, fwd) = cube.basis;
+    let c = centre(cube, rect);
+    let s = size(cube);
+    let d = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    (Pos2::new(c.x + d(p, right) as f32 * s, c.y - d(p, up) as f32 * s), d(p, fwd))
+}
+
+/// THE ZONE UNDER THE CURSOR. Only the FRONT zones: the back side of the cube is not clickable —
+/// otherwise a click on the top would land in the invisible bottom behind it.
+pub(crate) fn zone_at(cube: &CubeCtx, rect: Rect, pos: Pos2) -> Option<usize> {
+    let (_, _, fwd) = cube.basis;
+    let zs = zones();
+    let mut best: Option<(f64, usize)> = None;
+    for (i, z) in zs.iter().enumerate() {
+        // the zone looks AWAY from the camera, so it is on the far side
+        if z.dir[0] * fwd[0] + z.dir[1] * fwd[1] + z.dir[2] * fwd[2] > -0.05 {
+            continue;
+        }
+        let pts: Vec<Pos2> = z.poly.iter().map(|p| project(cube, *p, rect).0).collect();
+        if !point_in_poly(pos, &pts) {
+            continue;
+        }
+        let depth: f64 = z.poly.iter().map(|p| project(cube, *p, rect).1).sum::<f64>() / z.poly.len() as f64;
+        if best.is_none_or(|(bd, _)| depth < bd) {
+            best = Some((depth, i));
+        }
+    }
+    best.map(|(_, i)| i)
+}
+
+/// The rectangle of the home button — under the cube.
+pub(crate) fn home_rect(cube: &CubeCtx, rect: Rect) -> Rect {
+    let c = centre(cube, rect);
+    let s = size(cube);
+    Rect::from_center_size(Pos2::new(c.x, c.y + s + 14.0), egui::vec2(26.0, 18.0))
+}
+
+/// DRAWING THE CUBE: the zones from the far ones to the near, the captions on the faces, the
+/// highlight under the cursor, the triad of axes and the home button.
+pub(crate) fn draw(cube: &CubeCtx, painter: &egui::Painter, rect: Rect) {
+    let hover = painter.ctx().pointer_hover_pos().and_then(|p| zone_at(cube, rect, p));
+    let (_, _, fwd) = cube.basis;
+    let zs = zones();
+    // sorting by depth: without it the front zones are painted over by the back ones and the cube
+    // looks inside out
+    let mut order: Vec<(usize, f64)> = zs
+        .iter()
+        .enumerate()
+        .map(|(i, z)| {
+            let d: f64 = z.poly.iter().map(|p| project(cube, *p, rect).1).sum::<f64>() / z.poly.len() as f64;
+            (i, d)
+        })
+        .collect();
+    order.sort_by(|a, b| b.1.total_cmp(&a.1));
+
+    for (i, _) in order {
+        let z = &zs[i];
+        let toward = -(z.dir[0] * fwd[0] + z.dir[1] * fwd[1] + z.dir[2] * fwd[2]);
+        if toward <= 0.02 {
+            continue; // the back side is not drawn — nor is it clickable
+        }
+        let pts: Vec<Pos2> = z.poly.iter().map(|p| project(cube, *p, rect).0).collect();
+        let base = match z.kind {
+            ZoneKind::Face => 96.0,
+            ZoneKind::Edge => 78.0,
+            ZoneKind::Corner => 66.0,
+        };
+        // how far the face is turned towards the viewer, as a fraction: 0 is the furthest corner, 1
+        // is the face head on. The depth of the shadow comes from the scheme: on a light background a
+        // dark cube looks like a dirty patch.
+        let t = ((base - 66.0) + toward * 70.0) / 169.0;
+        let fill = if hover == Some(i) {
+            cube.pal.highlight()
+        } else {
+            crate::palette::tint(cube.pal.viewcube_face(), crate::palette::lit(cube.pal.shade_floor_viewcube, t as f32))
+        };
+        painter.add(egui::Shape::convex_polygon(pts.clone(), fill, Stroke::new(1.0, cube.pal.viewcube_edge())));
+
+        // THE CAPTION LIES ON THE FACE AS A DRAWING: the texture is stretched over a quadrilateral
+        // IN THE PLANE of the face, so it turns and is distorted exactly with it. The text has no
+        // separate life any more — it is part of the face.
+        //
+        // A SMALL CUBE HAS NO CAPTIONS: 32 px per face give letters of 6 px — mush, not text. And the
+        // small size is chosen precisely so that the cube does not get in the way.
+        if let (Some(key), true) = (z.label, cube.size_step > 0) {
+            let text = crate::i18n::tr(key);
+            let px = (size(cube) * 0.9).clamp(24.0, 96.0) as usize;
+            let tex = {
+                let mut cache = cube.labels.borrow_mut();
+                label_texture(painter.ctx(), &mut cache, &text, px)
             };
-            // how far the face is turned towards the viewer, as a fraction: 0 is the furthest corner, 1
-            // is the face head on. The depth of the shadow comes from the scheme: on a light background a
-            // dark cube looks like a dirty patch.
-            let t = ((base - 66.0) + toward * 70.0) / 169.0;
-            let fill = if hover == Some(i) {
-                self.scheme.pal.highlight()
-            } else {
-                crate::palette::tint(self.scheme.pal.viewcube_face(), crate::palette::lit(self.scheme.pal.shade_floor_viewcube, t as f32))
-            };
-            painter.add(egui::Shape::convex_polygon(pts.clone(), fill, Stroke::new(1.0, self.scheme.pal.viewcube_edge())));
-
-            // THE CAPTION LIES ON THE FACE AS A DRAWING: the texture is stretched over a quadrilateral
-            // IN THE PLANE of the face, so it turns and is distorted exactly with it. The text has no
-            // separate life any more — it is part of the face.
-            //
-            // A SMALL CUBE HAS NO CAPTIONS: 32 px per face give letters of 6 px — mush, not text. And the
-            // small size is chosen precisely so that the cube does not get in the way.
-            if let (Some(key), true) = (z.label, self.set.viewcube_size > 0) {
-                let text = crate::i18n::tr(key);
-                let px = (self.viewcube_size() * 0.9).clamp(24.0, 96.0) as usize;
-                let tex = {
-                    let mut cache = self.cache.label_tex.borrow_mut();
-                    label_texture(painter.ctx(), &mut cache, &text, px)
-                };
-                let [tw, th] = tex.size();
-                // THE QUADRILATERAL FOR THE CAPTION — in the axes of the face, with the proportions of
-                // the texture: otherwise a wide caption and a narrow one would stretch differently and
-                // look like different fonts.
-                let (r, up) = label_frame(z.dir);
-                let half_w = T * 0.80;
-                let half_h = half_w * (th as f64 / tw as f64);
-                let corner = |sr: f64, su: f64| {
-                    let mut p = [0.0; 3];
-                    for k in 0..3 {
-                        p[k] = z.dir[k] * H + r[k] * sr * half_w + up[k] * su * half_h;
-                    }
-                    self.viewcube_project(p, rect).0
-                };
-                // the winding: top left -> top right -> bottom right -> bottom left. Nothing needs
-                // mirroring — the axes are already chosen for THIS face rather than derived from the order
-                // of the coordinates.
-                let quad = [corner(-1.0, 1.0), corner(1.0, 1.0), corner(1.0, -1.0), corner(-1.0, -1.0)];
-                let uv = [egui::pos2(0.0, 0.0), egui::pos2(1.0, 0.0), egui::pos2(1.0, 1.0), egui::pos2(0.0, 1.0)];
-                let ink = self.scheme.pal.plate_text();
-                // THE VERTICES ARE PUSHED DIRECTLY: `colored_vertex` is for a mesh WITHOUT a texture,
-                // it checks that with an assertion and brings the program down on the very first frame. A
-                // textured vertex needs all three fields at once: the position, the uv and the colour.
-                let mut mesh = egui::Mesh::with_texture(tex.id());
-                for k in 0..4 {
-                    mesh.vertices.push(egui::epaint::Vertex { pos: quad[k], uv: uv[k], color: ink });
+            let [tw, th] = tex.size();
+            // THE QUADRILATERAL FOR THE CAPTION — in the axes of the face, with the proportions of
+            // the texture: otherwise a wide caption and a narrow one would stretch differently and
+            // look like different fonts.
+            let (r, up) = label_frame(z.dir);
+            let half_w = T * 0.80;
+            let half_h = half_w * (th as f64 / tw as f64);
+            let corner = |sr: f64, su: f64| {
+                let mut p = [0.0; 3];
+                for k in 0..3 {
+                    p[k] = z.dir[k] * H + r[k] * sr * half_w + up[k] * su * half_h;
                 }
-                mesh.add_triangle(0, 1, 2);
-                mesh.add_triangle(0, 2, 3);
-                painter.add(egui::Shape::mesh(mesh));
+                project(cube, p, rect).0
+            };
+            // the winding: top left -> top right -> bottom right -> bottom left. Nothing needs
+            // mirroring — the axes are already chosen for THIS face rather than derived from the order
+            // of the coordinates.
+            let quad = [corner(-1.0, 1.0), corner(1.0, 1.0), corner(1.0, -1.0), corner(-1.0, -1.0)];
+            let uv = [egui::pos2(0.0, 0.0), egui::pos2(1.0, 0.0), egui::pos2(1.0, 1.0), egui::pos2(0.0, 1.0)];
+            let ink = cube.pal.plate_text();
+            // THE VERTICES ARE PUSHED DIRECTLY: `colored_vertex` is for a mesh WITHOUT a texture,
+            // it checks that with an assertion and brings the program down on the very first frame. A
+            // textured vertex needs all three fields at once: the position, the uv and the colour.
+            let mut mesh = egui::Mesh::with_texture(tex.id());
+            for k in 0..4 {
+                mesh.vertices.push(egui::epaint::Vertex { pos: quad[k], uv: uv[k], color: ink });
             }
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            painter.add(egui::Shape::mesh(mesh));
         }
-        self.draw_axis_triad(painter, rect);
-        self.draw_viewcube_home(painter, rect);
     }
+    axis_triad(cube, painter, rect);
+    home_button(cube, painter, rect);
+}
 
-    /// THE TRIAD OF AXES — arrows with heads and bold captions, as in grown-up CAD.
-    ///
-    /// The cube answers "where are we looking from", the triad answers "which axis is where". Those are
-    /// different questions, and one widget does not answer both: a caption saying "front" tells nothing
-    /// about which way X grows.
-    ///
-    /// The origin of the triad sits at the bottom left corner of the cube, as is customary: that way it
-    /// reads as a continuation of the cube rather than a separate icon hanging beside it.
-    fn draw_axis_triad(&self, painter: &egui::Painter, rect: Rect) {
-        let (right, up, fwd) = self.cam.basis();
-        let s = self.viewcube_size();
-        let c = self.viewcube_center(rect);
-        let origin = Pos2::new(c.x - s * 1.15, c.y + s * 0.95);
-        let len = s * 0.95;
-        let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-        let names = ["X", "Y", "Z"];
-        // the far axes are drawn first — the near ones land on top
-        let mut idx: Vec<usize> = (0..3).collect();
-        idx.sort_by(|a, b| {
-            let d = |i: usize| axes[i][0] * fwd[0] + axes[i][1] * fwd[1] + axes[i][2] * fwd[2];
-            d(*b).total_cmp(&d(*a))
-        });
-        for i in idx {
-            let a = axes[i];
-            let d = |b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-            let (dx, dy) = (d(right) as f32, -(d(up) as f32));
-            let l = (dx * dx + dy * dy).sqrt();
-            // AN AXIS ALMOST ALONG THE VIEW degenerates into a point: drawing an "arrow" one pixel long
-            // is pointless — only the caption at the origin is shown, so that the axis does not disappear
-            // altogether.
-            let away = d(fwd) > 0.0;
-            let col = if away { self.scheme.pal.axis(i).gamma_multiply(0.5) } else { self.scheme.pal.axis(i) };
-            if l < 0.12 {
-                painter.circle_filled(origin, 3.0, col);
-                continue;
-            }
-            let tip = Pos2::new(origin.x + dx * len, origin.y + dy * len);
-            let w = if away { 1.8 } else { 3.0 };
-            painter.line_segment([origin, tip], Stroke::new(w, col));
-            // THE HEAD is a triangle at the tip: without it an axis cannot be told from a line of the
-            // grid
-            let (ux, uy) = (dx / l, dy / l);
-            let (px, py) = (-uy, ux);
-            let hl = (s * 0.22).max(6.0);
-            let hw = hl * 0.42;
-            let base = Pos2::new(tip.x - ux * hl, tip.y - uy * hl);
-            painter.add(egui::Shape::convex_polygon(
-                vec![tip, Pos2::new(base.x + px * hw, base.y + py * hw), Pos2::new(base.x - px * hw, base.y - py * hw)],
-                col,
-                Stroke::NONE,
-            ));
-            // THE CAPTION GOES BEYOND THE HEAD and is bold — a thin letter beside a bright arrow gets
-            // lost
-            let lp = Pos2::new(tip.x + ux * (hl * 0.75), tip.y + uy * (hl * 0.75));
-            painter.text(lp, egui::Align2::CENTER_CENTER, names[i], super::bold((s * 0.30).clamp(11.0, 17.0)), col);
+/// THE TRIAD OF AXES — arrows with heads and bold captions, as in grown-up CAD.
+///
+/// The cube answers "where are we looking from", the triad answers "which axis is where". Those are
+/// different questions, and one widget does not answer both: a caption saying "front" tells nothing
+/// about which way X grows.
+///
+/// The origin of the triad sits at the bottom left corner of the cube, as is customary: that way it
+/// reads as a continuation of the cube rather than a separate icon hanging beside it.
+pub(crate) fn axis_triad(cube: &CubeCtx, painter: &egui::Painter, rect: Rect) {
+    let (right, up, fwd) = cube.basis;
+    let s = size(cube);
+    let c = centre(cube, rect);
+    let origin = Pos2::new(c.x - s * 1.15, c.y + s * 0.95);
+    let len = s * 0.95;
+    let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    let names = ["X", "Y", "Z"];
+    // the far axes are drawn first — the near ones land on top
+    let mut idx: Vec<usize> = (0..3).collect();
+    idx.sort_by(|a, b| {
+        let d = |i: usize| axes[i][0] * fwd[0] + axes[i][1] * fwd[1] + axes[i][2] * fwd[2];
+        d(*b).total_cmp(&d(*a))
+    });
+    for i in idx {
+        let a = axes[i];
+        let d = |b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let (dx, dy) = (d(right) as f32, -(d(up) as f32));
+        let l = (dx * dx + dy * dy).sqrt();
+        // AN AXIS ALMOST ALONG THE VIEW degenerates into a point: drawing an "arrow" one pixel long
+        // is pointless — only the caption at the origin is shown, so that the axis does not disappear
+        // altogether.
+        let away = d(fwd) > 0.0;
+        let col = if away { cube.pal.axis(i).gamma_multiply(0.5) } else { cube.pal.axis(i) };
+        if l < 0.12 {
+            painter.circle_filled(origin, 3.0, col);
+            continue;
         }
-        painter.circle_filled(origin, 3.2, self.scheme.pal.text_faint());
+        let tip = Pos2::new(origin.x + dx * len, origin.y + dy * len);
+        let w = if away { 1.8 } else { 3.0 };
+        painter.line_segment([origin, tip], Stroke::new(w, col));
+        // THE HEAD is a triangle at the tip: without it an axis cannot be told from a line of the
+        // grid
+        let (ux, uy) = (dx / l, dy / l);
+        let (px, py) = (-uy, ux);
+        let hl = (s * 0.22).max(6.0);
+        let hw = hl * 0.42;
+        let base = Pos2::new(tip.x - ux * hl, tip.y - uy * hl);
+        painter.add(egui::Shape::convex_polygon(
+            vec![tip, Pos2::new(base.x + px * hw, base.y + py * hw), Pos2::new(base.x - px * hw, base.y - py * hw)],
+            col,
+            Stroke::NONE,
+        ));
+        // THE CAPTION GOES BEYOND THE HEAD and is bold — a thin letter beside a bright arrow gets
+        // lost
+        let lp = Pos2::new(tip.x + ux * (hl * 0.75), tip.y + uy * (hl * 0.75));
+        painter.text(lp, egui::Align2::CENTER_CENTER, names[i], super::bold((s * 0.30).clamp(11.0, 17.0)), col);
     }
+    painter.circle_filled(origin, 3.2, cube.pal.text_faint());
+}
 
-    /// The home button: return the isometric view.
-    fn draw_viewcube_home(&self, painter: &egui::Painter, rect: Rect) {
-        let r = self.viewcube_home_rect(rect);
-        let hot = painter.ctx().pointer_hover_pos().is_some_and(|p| r.contains(p));
-        let bg = if hot { self.scheme.pal.highlight() } else { crate::palette::a(self.scheme.pal.viewcube_edge(), 220) };
-        let fg = if hot { self.scheme.pal.plate_text() } else { self.scheme.pal.text_strong() };
-        painter.rect_filled(r, 4.0, bg);
-        painter.text(r.center(), egui::Align2::CENTER_CENTER, egui_phosphor::regular::HOUSE, egui::FontId::proportional(12.0), fg);
+/// The home button: return the isometric view.
+pub(crate) fn home_button(cube: &CubeCtx, painter: &egui::Painter, rect: Rect) {
+    let r = home_rect(cube, rect);
+    let hot = painter.ctx().pointer_hover_pos().is_some_and(|p| r.contains(p));
+    let bg = if hot { cube.pal.highlight() } else { crate::palette::a(cube.pal.viewcube_edge(), 220) };
+    let fg = if hot { cube.pal.plate_text() } else { cube.pal.text_strong() };
+    painter.rect_filled(r, 4.0, bg);
+    painter.text(r.center(), egui::Align2::CENTER_CENTER, egui_phosphor::regular::HOUSE, egui::FontId::proportional(12.0), fg);
+}
+
+/// A click on the cube: turn the view towards the zone. `false` means a miss (the click travels on).
+pub(crate) fn click(cube: &CubeCtx, rect: Rect, pos: Pos2) -> Option<Turn> {
+    // THE HOME BUTTON sits next to the cube, as in grown-up CAD: it returns the isometric view in
+    // one press
+    if home_rect(cube, rect).contains(pos) {
+        return Some(Turn { yaw: -0.7, pitch: 0.6, say: Some("view-home-done") });
     }
+    let i = zone_at(cube, rect, pos)?;
+    let z = &zones()[i];
+    let (yaw, pitch) = dir_to_angles(z.dir);
+    Some(Turn { yaw, pitch, say: z.label })
+}
+
+/// The screen width of the quadrilateral a caption is drawn into.
+///
+/// Together with `zone_screen_width` it is what proves that the caption is deformed WITH the face
+/// rather than living a life of its own.
+#[cfg(test)]
+pub(crate) fn label_quad_width(cube: &CubeCtx, rect: Rect, i: usize) -> f32 {
+    let z = &zones()[i];
+    let (r, up) = label_frame(z.dir);
+    let half = T * 0.80;
+    let corner = |sr: f64, su: f64| {
+        let mut p = [0.0; 3];
+        for k in 0..3 {
+            p[k] = z.dir[k] * H + r[k] * sr * half + up[k] * su * half;
+        }
+        crate::gui::viewcube::project(cube, p, rect).0
+    };
+    let pts = [corner(1.0, 1.0), corner(-1.0, 1.0), corner(-1.0, -1.0), corner(1.0, -1.0)];
+    let (mn, mx) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
+    mx - mn
+}
+
+/// The screen directions of "right" and "up" for the caption on a face — a test uses them to prove
+/// that the text has not stood up vertically or turned upside down.
+
+/// The screen width of one face of the cube.
+#[cfg(test)]
+pub(crate) fn zone_screen_width(cube: &CubeCtx, rect: Rect, i: usize) -> f32 {
+    let pts: Vec<Pos2> = zones()[i].poly.iter().map(|p| project(cube, *p, rect).0).collect();
+    let (mn, mx) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
+    mx - mn
+}
+
+/// The screen directions of "right" and "up" for the caption on a face - they show whether the text has
+/// stood up vertically or turned upside down.
+#[cfg(test)]
+pub(crate) fn label_screen_dirs(cube: &CubeCtx, rect: Rect, i: usize) -> (egui::Vec2, egui::Vec2) {
+    let z = &zones()[i];
+    let (r, up) = label_frame(z.dir);
+    let o = project(cube, [z.dir[0] * H, z.dir[1] * H, z.dir[2] * H], rect).0;
+    let at = |d: [f64; 3]| {
+        let p = [z.dir[0] * H + d[0] * 0.5, z.dir[1] * H + d[1] * 0.5, z.dir[2] * H + d[2] * 0.5];
+        project(cube, p, rect).0 - o
+    };
+    (at(r), at(up))
+}
+
+/// The screen centre of one face of the cube: where a click has to land to turn to it.
+#[cfg(test)]
+pub(crate) fn zone_center(cube: &CubeCtx, rect: Rect, i: usize) -> Pos2 {
+    let z = &zones()[i];
+    let pts: Vec<Pos2> = z.poly.iter().map(|p| project(cube, *p, rect).0).collect();
+    let n = pts.len() as f32;
+    Pos2::new(pts.iter().map(|p| p.x).sum::<f32>() / n, pts.iter().map(|p| p.y).sum::<f32>() / n)
 }

@@ -15,6 +15,7 @@
 //! back.
 #[cfg(test)]
 mod tests {
+    use crate::gui::WinKind;
     use super::super::App;
     use qymcad_core::errors::ExprError;
 
@@ -41,7 +42,7 @@ mod tests {
                 ExprError::UnexpectedEnd,
                 ExprError::UnknownName("w".into()),
             ] {
-                let msg = crate::i18n::expr_error_text(&e);
+                let msg = crate::gui::error_words::expr_error_text(&e);
                 assert!(!msg.trim().is_empty(), "{code}: {e:?} — an empty message");
                 assert!(!msg.contains("err-"), "{code}: {e:?} showed a catalogue key: \"{msg}\"");
                 assert!(msg.chars().count() > 5, "{code}: {e:?} — the message \"{msg}\" explains nothing");
@@ -58,9 +59,9 @@ mod tests {
     fn the_message_is_in_the_interface_language() {
         let prev = crate::i18n::language();
         crate::i18n::set_language("ru");
-        let ru = crate::i18n::expr_error_text(&ExprError::UnknownFn("foo".into()));
+        let ru = crate::gui::error_words::expr_error_text(&ExprError::UnknownFn("foo".into()));
         crate::i18n::set_language("en");
-        let en = crate::i18n::expr_error_text(&ExprError::UnknownFn("foo".into()));
+        let en = crate::gui::error_words::expr_error_text(&ExprError::UnknownFn("foo".into()));
         crate::i18n::set_language(&prev);
         assert_ne!(ru, en, "the two messages came out the same, so nobody did the translating");
         assert!(ru.contains("foo") && en.contains("foo"), "the name FROM THE INPUT must stay in the message: \"{ru}\" / \"{en}\"");
@@ -73,9 +74,9 @@ mod tests {
         crate::i18n::set_language("ru");
         let mut app = App::default();
         app.project.parameters = vec![qymcad_core::model::Param { name: "w".into(), expr: "60 +".into(), value: 0.0 }];
-        app.win.params = true;
-        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.params_window(c));
-        let want = crate::i18n::expr_error_text(&app.project.eval_expr("60 +").expect_err("the expression is broken"));
+        app.win.open(WinKind::Params);
+        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::params_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); });
+        let want = crate::gui::error_words::expr_error_text(&app.project.eval_expr("60 +").expect_err("the expression is broken"));
         crate::i18n::set_language(&prev);
         assert!(texts.iter().any(|t| t.contains(&want)), "the parameters window carries no reason \"{want}\": {texts:?}");
         assert!(!texts.iter().any(|t| t.trim() == "(!)"), "the wordless red bracket is back");
@@ -96,10 +97,10 @@ mod tests {
         let mut app = super::super::screen_keys::tests::plate();
         let node = app.project.timeline.iter().rev().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the feature node");
         app.project.set_feat_dim(node, "height", "60 +".into());
-        let want = crate::i18n::expr_error_text(&app.project.eval_expr("60 +").expect_err("the expression is broken"));
+        let want = crate::gui::error_words::expr_error_text(&app.project.eval_expr("60 +").expect_err("the expression is broken"));
         let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| {
             egui::CentralPanel::default().show(c, |ui| {
-                a.dim_expr_field_for_test(ui, node, "height");
+                qymcad_ui_state::dim_expr_field_in(&mut a.rebuild_ctx(), ui, node, "height", "");
             });
         });
         crate::i18n::set_language(&prev);
@@ -114,12 +115,12 @@ mod tests {
     fn the_command_popup_names_the_field_and_the_reason() {
         let mut app = super::super::screen_keys::tests::plate();
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-        app.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
+        app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
         app.start_feat_cmd(7); // a hole: diameter + depth
         let label = {
-            let p = app.cmd.params.first_mut().expect("a field of the command");
+            let p = app.tools.cmd.params.first_mut().expect("a field of the command");
             p.txt = "10 /".into();
-            p.label()
+            crate::i18n::tr(p.label_key())
         };
         let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.viewport(c));
         let shown = texts.iter().any(|t| t.contains(&label) && t.contains(':'));
@@ -139,7 +140,7 @@ mod tests {
         for src in ["60 +", "2 *", "3 -"] {
             let e = app.project.eval_expr(src).expect_err("the expression breaks off");
             assert_eq!(e, ExprError::UnexpectedEnd, "\"{src}\" gave {e:?} instead of an unexpected end");
-            let msg = crate::i18n::expr_error_text(&e);
+            let msg = crate::gui::error_words::expr_error_text(&e);
             assert!(!msg.contains("None") && !msg.contains("Some"), "the innards of Rust are in the message: \"{msg}\"");
         }
     }
@@ -163,7 +164,7 @@ mod tests {
     fn the_offending_token_is_shown_as_typed() {
         let app = App::default();
         let e = app.project.eval_expr("60 )").expect_err("a stray bracket");
-        let msg = crate::i18n::expr_error_text(&e);
+        let msg = crate::gui::error_words::expr_error_text(&e);
         assert!(msg.contains(')'), "the message does not show the character itself: \"{msg}\"");
         assert!(!msg.contains("RParen"), "the message shows the name of the variant: \"{msg}\"");
     }
@@ -177,9 +178,9 @@ mod tests {
     #[test]
     fn the_useless_catch_all_is_gone_from_the_expression_fields() {
         for (name, src) in [
-            ("the command and gizmo popup", include_str!("commands.rs")),
+            ("the command and gizmo popup", crate::gui::sketch_source::PART),
             ("the parameters window", crate::gui::panels_source::PANELS),
-            ("the sketch dimension popup", include_str!("sketching.rs")),
+            ("the sketch dimension popup", crate::gui::sketch_source::SKETCH),
         ] {
             assert!(!src.contains("cmd-expr-not-evaluated"), "{name}: the catch-all phrase is back instead of the reason");
             assert!(src.contains("expr_error_text"), "{name}: the expression error is shown past the common door");

@@ -40,7 +40,7 @@ fn a_shell_with_nothing_to_open_says_which_dead_end_it_was() {
 #[test]
 fn a_helix_along_no_direction_carries_the_kernels_own_words() {
     clear_kernel_refusal();
-    let out = rod().helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 5.0, &PROFILE, 10.0, 1.0, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0);
+    let out = rod().helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 0.0] }, radius: 5.0, profile: &PROFILE, length: 10.0, lead: 1.0, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 });
     assert!(out.is_none(), "there is no helix along a direction of no length");
     let why = last_kernel_refusal().expect("the kernel named the place it refused at");
     assert!(why.starts_with("helical profile:"), "the refusal names the operation: {why}");
@@ -84,7 +84,7 @@ fn a_fillet_of_an_edge_the_body_lacks_says_so_and_counts_them() {
 fn each_impossible_helix_says_which_of_its_conditions_failed() {
     let ask = |lead: f64, prof: &[f64]| {
         clear_kernel_refusal();
-        let out = rod().helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, prof, 10.0, lead, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0);
+        let out = rod().helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, profile: prof, length: 10.0, lead: lead, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 });
         assert!(out.is_none(), "the helix cannot be built");
         last_kernel_refusal().expect("the kernel named the place it refused at")
     };
@@ -144,13 +144,13 @@ fn refusals_a_person_meets() -> Vec<(&'static str, bool, Option<String>)> {
     say("a shell of a face the body lacks", rod().shell(-1.0, &[4242], &[]).is_none());
 
     clear_kernel_refusal();
-    say("a helix of no lead at all", rod().helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, &PROFILE, 10.0, 0.0, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none());
+    say("a helix of no lead at all", rod().helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, profile: &PROFILE, length: 10.0, lead: 0.0, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none());
 
     clear_kernel_refusal();
-    say("a helix along no direction at all", rod().helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 5.0, &PROFILE, 10.0, 1.0, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none());
+    say("a helix along no direction at all", rod().helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 0.0] }, radius: 5.0, profile: &PROFILE, length: 10.0, lead: 1.0, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none());
 
     clear_kernel_refusal();
-    say("a helix of no profile at all", rod().helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, &[], 10.0, 1.0, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none());
+    say("a helix of no profile at all", rod().helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, profile: &[], length: 10.0, lead: 1.0, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none());
 
     clear_kernel_refusal();
     say("a sweep with no path", Shape::sweep_profile(&PROFILE, &ident, &[], &ident).is_none());
@@ -183,13 +183,13 @@ fn refusals_a_person_meets() -> Vec<(&'static str, bool, Option<String>)> {
     say("a patch bounded by one edge that the body lacks", rod().patch(&[4242], false, 0).is_none());
 
     clear_kernel_refusal();
-    say("a thread of no pitch", rod().thread([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, 10.0, 0.0, 60.0, 0.5, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0, 0.0, 0.0, 0.0).is_none());
+    say("a thread of no pitch", rod().thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, length: 10.0, pitch: 0.0, angle_deg: 60.0, depth: 0.5, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 }).is_none());
 
     // NOT a refusal, and worth keeping in the survey for exactly that: the profile above is a chain of points
     // rather than the loop encoding the helix wants, and the kernel says so by name instead of failing later
     // on a body that is quietly wrong.
     clear_kernel_refusal();
-    say("a helix given points that are not a loop", rod().helical_profile([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 5.0, &PROFILE, 10.0, 1.0, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Helix::Groove, 0.0, 0.0, &[], &[], 0.0).is_none());
+    say("a helix given points that are not a loop", rod().helical_profile(qymcad_kernel::HelicalCut { axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }, radius: 5.0, profile: &PROFILE, length: 10.0, lead: 1.0, starts: 1, hand: qymcad_kernel::Hand::Right, kind: qymcad_kernel::Helix::Groove, lead_in: 0.0, lead_out: 0.0, gnames: &[], rnames: &[], crest_relief: 0.0 }).is_none());
 
     // THE KERNEL DOES NOT REFUSE THIS ONE, and that is the point of the line: two bodies that do not touch
     // give an EMPTY result rather than nothing at all, and emptiness is judged a layer above, where it becomes
@@ -235,7 +235,7 @@ fn every_refusal_a_person_meets_carries_words() {
         match why {
             None => silent.push(format!("\"{name}\": refused without a single word")),
             // "shell/faces" alone names the place and says nothing about it; the words come after the colon.
-            Some(w) if w.split_once(": ").map_or(true, |(_, rest)| rest.trim().len() < 8) => {
+            Some(w) if w.split_once(": ").is_none_or(|(_, rest)| rest.trim().len() < 8) => {
                 silent.push(format!("\"{name}\": the answer names a place but says nothing: {w:?}"))
             }
             Some(_) => {}

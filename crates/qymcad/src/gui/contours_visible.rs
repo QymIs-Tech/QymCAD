@@ -18,14 +18,14 @@ mod tests {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         super::super::joint_flow::tests::add_part_at(&mut app, 100.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert_eq!(app.project.sketches.len(), 2, "setup: two parts means two sketches");
 
         // THE ROOT OF THE ASSEMBLY: sketches of nested parts must count as its own
         let root = app.project.root;
         app.enter_component(root);
         assert_eq!(
-            app.foreign_contour_ids().len(),
+            qymcad_pick::foreign_contour_ids(&app.painting()).len(),
             0,
             "at the root of an assembly the sketches of nested parts are ITS OWN; otherwise the Contours checkbox shows nothing"
         );
@@ -35,7 +35,7 @@ mod tests {
         let owner = app.project.body_owner(body).expect("the owner");
         app.enter_component(owner);
         assert_eq!(
-            app.foreign_contour_ids().len(),
+            qymcad_pick::foreign_contour_ids(&app.painting()).len(),
             1,
             "inside a part a NEIGHBOURING sketch must stay foreign: the isolation between parts holds"
         );

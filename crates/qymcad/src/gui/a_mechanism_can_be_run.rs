@@ -17,7 +17,7 @@ mod tests {
 
     /// A point ON THE BODY that can be clicked: the centre of its topmost face.
     fn aim(app: &App, body: Id) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let f = app
             .project
             .regen_faces
@@ -34,8 +34,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -48,12 +48,12 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let (pa, pb) = (aim(app, mine[0]), aim(app, mine[1]));
         let mut hand = Hand::new(app);
         hand.look_at([30.0, 10.0, 5.0], 6.0).mate(JointKind::Slider).anchor(3).click(pa).click(pb);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let jid = app.project.joints.last().map(|j| j.id).expect("two clicks must create a joint");
         let j = app.project.joints.iter().find(|x| x.id == jid).expect("the joint");
         assert!(
@@ -76,7 +76,7 @@ mod tests {
 
         // THE TRAVEL MUST BE PROPORTIONATE TO THE PART rather than a hard-wired number: compare it with the part's extent.
         let owner = app.project.body_owner(moving).expect("the owner of the driven part");
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let dir = app.project.joint_slot_axis(jid, 1, ctx).expect("the travel axis");
         let mut span: f64 = 0.0;
         for b in app.project.component_bodies(owner) {

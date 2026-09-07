@@ -33,8 +33,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         if let Some(o) = app.project.body_owner(mine[0]) {
@@ -46,7 +46,7 @@ mod tests {
     /// Where to aim on the body for the chosen anchor mode: 0 face is the centre of the top one,
     /// 1 edge and 2 vertex are a point on the longest edge, 3 origin is any point of the body.
     fn aim(app: &App, body: Id, mode: u8) -> [f64; 3] {
-        let wt = app.project.body_display_transform(body, app.current_ctx_id_for_test());
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
         let p = |q: [f64; 3]| qymcad_core::feature::apply12(&wt, q);
         if mode == 0 || mode == 3 {
             let f = app.project.regen_faces.get(&body).and_then(|fs| {
@@ -54,9 +54,9 @@ mod tests {
             });
             return p(f.expect("the body has faces"));
         }
-        let cached = app.body_edges_cached(body).expect("the body has edges in the live B-rep");
+        let cached = crate::gui::pick::body_edges_cached(&app.cache, &app.live, &app.regen, body).expect("the body has edges in the live B-rep");
         let mut best: Option<(f64, [f64; 3])> = None;
-        for (poly, id) in cached.0.iter().zip(cached.1.iter().copied()) {
+        for (poly, id) in cached.polys.iter().zip(cached.ids.iter().copied()) {
             if id == 0 || poly.len() < 2 {
                 continue;
             }
@@ -66,7 +66,7 @@ mod tests {
             let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
             // A VERTEX is the END of an edge, not its middle: that is where mode 2 aims.
             let at = if mode == 2 { u } else { q(&poly[poly.len() / 2]) };
-            if best.map_or(true, |(bl, _)| len > bl) {
+            if best.is_none_or(|(bl, _)| len > bl) {
                 best = Some((len, at));
             }
         }
@@ -87,7 +87,7 @@ mod tests {
 
             let mut hand = Hand::new(&mut app);
             hand.look_at([30.0, 10.0, 5.0], 7.0).mate(kind).anchor(mode).click(pa).click(pb);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
             let name = crate::i18n::tr(kind.label());
             let Some(j) = app.project.joints.last().map(|j| j.id) else {

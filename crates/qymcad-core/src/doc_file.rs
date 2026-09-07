@@ -21,10 +21,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::geom::Contour;
-use crate::tool::Tool;
-use crate::ir::Units;
 use crate::model::{
-    Body, DatumAxis, DatumPoint, Id, Machine, NamedDim, OperationDef, Param, Project, Setup, Sketch, SourceFile, Stock, WorkPlane,
+    Body, DatumAxis, DatumPoint, Id, NamedDim, Param, Project, Sketch, SourceFile, Units, WorkPlane,
 };
 
 /// THE MAPS OF THE FILE ARE ORDERED, and that is about the file rather than about speed.
@@ -75,13 +73,6 @@ pub(crate) struct DocumentFile {
     pub imported_bodies: std::collections::HashSet<Id>,
     #[serde(default)]
     pub part_colors: Map<Id, [u8; 3]>,
-    pub tools: Vec<Tool>,
-    pub operations: Vec<OperationDef>,
-    #[serde(default)]
-    pub setups: Vec<Setup>,
-    pub stock: Stock,
-    #[serde(default)]
-    pub machine: Machine,
     #[serde(default)]
     pub planes: Vec<WorkPlane>,
     #[serde(default)]
@@ -122,11 +113,11 @@ pub(crate) struct DocumentFile {
     #[serde(default)]
     pub feat_dims: Map<Id, Map<String, String>>,
     #[serde(default)]
-    pub edge_refs: Map<Id, Vec<(u32, [f64; 3], [f64; 3])>>,
+    pub edge_refs: Map<Id, Vec<crate::model::ElemSnapshot>>,
     /// Face snapshots: the same as `edge_refs` but for face references. They travel in the file for the same
     /// reason — they witness a reference in case the id of a face changes, as a number becomes a name.
     #[serde(default)]
-    pub face_refs: Map<Id, Vec<(u32, [f64; 3], [f64; 3])>>,
+    pub face_refs: Map<Id, Vec<crate::model::ElemSnapshot>>,
     #[serde(default)]
     pub rollback: Option<usize>,
 }
@@ -140,30 +131,25 @@ impl DocumentFile {
         let mut meta = p.meta.clone();
         meta.saved_by = crate::model::producer();
         Self {
-            units: p.units.clone(),
+            units: p.units,
             meta,
             geom_quality: p.geom_quality,
             comp_patterns: p.comp_patterns.clone(),
-            next_id: p.next_id.clone(),
+            next_id: p.next_id,
             names: p.names.clone(),
-            contours: parts.0.to_vec(),
-            contour_ids: parts.1.to_vec(),
-            contour_ents: parts.2.iter().map(|(k, v)| (*k, v.clone())).collect(),
-            contour_parent: parts.3.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            contours: parts.list.to_vec(),
+            contour_ids: parts.ids.to_vec(),
+            contour_ents: parts.ents.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            contour_parent: parts.parent.iter().map(|(k, v)| (*k, *v)).collect(),
             bodies: p.bodies.clone(),
             imported_bodies: p.imported_bodies.clone(),
-            part_colors: p.part_colors.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            tools: p.tools.clone(),
-            operations: p.operations.clone(),
-            setups: p.setups.clone(),
-            stock: p.stock.clone(),
-            machine: p.machine.clone(),
+            part_colors: p.part_colors.iter().map(|(k, v)| (*k, *v)).collect(),
             planes: p.planes.clone(),
             sketches: p.sketches.clone(),
             timeline: p.timeline.clone(),
             components: p.components.clone(),
-            root: p.root.clone(),
-            active_component: p.active_component.clone(),
+            root: p.root,
+            active_component: p.active_component,
             datum_points: p.datum_points.clone(),
             datum_axes: p.datum_axes.clone(),
             connectors: p.connectors.clone(),
@@ -176,9 +162,9 @@ impl DocumentFile {
             sources: p.sources.clone(),
             parameters: p.parameters.clone(),
             feat_dims: p.feat_dims.iter().map(|(k, v)| (*k, v.iter().map(|(a, b)| (a.clone(), b.clone())).collect())).collect(),
-            edge_refs: p.edge_refs.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            face_refs: p.face_refs.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            rollback: p.rollback.clone(),
+            edge_refs: p.edge_refs.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            face_refs: p.face_refs.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            rollback: p.rollback,
         }
     }
 
@@ -195,11 +181,6 @@ impl DocumentFile {
             bodies: self.bodies,
             imported_bodies: self.imported_bodies,
             part_colors: self.part_colors.into_iter().collect(),
-            tools: self.tools,
-            operations: self.operations,
-            setups: self.setups,
-            stock: self.stock,
-            machine: self.machine,
             planes: self.planes,
             sketches: self.sketches,
             timeline: self.timeline,

@@ -160,7 +160,18 @@ pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[(m
 /// Load a `.qcad` bundle. Returns the project and the cache of part faces, parallel to `project.meshes`; an
 /// empty vector for a mesh means the bundle held no faces for it.
 pub fn load_project(path: &str) -> Result<Project, String> {
-    load_project_with_brep(path).map(|(p, _)| p)
+    load_project_with_brep(path).map(|l| l.project)
+}
+
+/// WHAT CAME OUT OF A BUNDLE: the document, and the live bodies where the file carries them.
+///
+/// It used to be `(Project, Vec<(Id, Vec<u8>)>)`, and at the call site the second half read as a nameless
+/// pile of bytes. The bodies are optional by design - see the note on `load_project_with_brep`.
+pub struct LoadedProject {
+    /// The document itself.
+    pub project: Project,
+    /// The live B-rep of each body the file happened to carry, by body id. Empty is a legitimate answer.
+    pub breps: Vec<(model::Id, Vec<u8>)>,
 }
 
 /// The same, but also returning the live bodies where the bundle holds them, as a map from body id to a B-rep
@@ -168,7 +179,7 @@ pub fn load_project(path: &str) -> Result<Project, String> {
 ///
 /// An empty list is a legitimate answer: the file was written without live bodies, or none were built. Then
 /// everything works as before and the first operation simply pays for a rebuild.
-pub fn load_project_with_brep(path: &str) -> Result<(Project, Vec<(model::Id, Vec<u8>)>), String> {
+pub fn load_project_with_brep(path: &str) -> Result<LoadedProject, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("io-file-read#{path}: {e}"))?;
     if !bytes.starts_with(b"PK") {
         return Err("io-not-a-qcad".into());
@@ -203,7 +214,7 @@ pub fn load_project_with_brep(path: &str) -> Result<(Project, Vec<(model::Id, Ve
             breps.push((*id, blob));
         }
     }
-    Ok((project, breps))
+    Ok(LoadedProject { project, breps })
 }
 
 fn read_bytes<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<Vec<u8>, String> {

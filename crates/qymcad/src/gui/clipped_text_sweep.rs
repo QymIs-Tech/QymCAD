@@ -19,6 +19,7 @@
 //! the shapes alone: a guard here would go red on the tool library and be silenced within the week.
 #[cfg(test)]
 mod tests {
+    use crate::gui::WinKind;
     use crate::gui::{App, Sel};
 
     /// Text shapes of one frame, each with the rectangle it is clipped to.
@@ -51,30 +52,27 @@ mod tests {
         let surfaces: &[Surface] = &[
             ("tree", |a, c| a.tree_panel(c)),
             ("properties", |a, c| a.properties_panel(c)),
-            ("menu", |a, c| a.menu_bar(c)),
-            ("tool bar", |a, c| a.tool_options_bar(c)),
+            ("menu", |a, c| { let mut asks = Vec::new(); crate::gui::panels_bars::menu_bar(&mut a.bar_ctx(&mut asks), c); let c = c.ctx().clone(); a.do_bar_asks(asks, &c); }),
+            ("tool bar", |a, c| { let mut asks = Vec::new(); crate::gui::panels_bars::tool_options_bar(&mut a.bar_ctx(&mut asks), c); let c = c.ctx().clone(); a.do_bar_asks(asks, &c); }),
             ("command bar", |a, c| a.feat_command_bar(c)),
-            ("settings", |a, c| a.settings_window(c)),
-            ("parameters", |a, c| a.params_window(c)),
-            ("parts library", |a, c| a.parts_library_window(c)),
+            ("settings", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
+            ("parameters", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::params_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
+            ("parts library", |a, c| { let mut asks = Vec::new(); crate::gui::panels_windows::parts_library_window(&mut a.win_ctx(&mut asks), c); a.do_win_asks(asks, c); }),
             ("hotkeys", |a, c| a.hotkeys_window(c)),
-            ("about", |a, c| a.about_dialog(c)),
-            ("tools (CAM)", |a, c| a.tools_window(c)),
+            ("about", |a, c| crate::gui::panels_windows::about_dialog(&mut a.win, &a.scheme, c)),
         ];
         let mut worst: Vec<(f32, String)> = Vec::new();
         for (name, draw) in surfaces {
             let mut app = crate::gui::screen_keys::tests::populated();
-            app.win.settings = true;
-            app.win.params = true;
-            app.win.parts_library = true;
-            app.win.hotkeys = true;
-            app.win.about = true;
-            app.win.tools = true;
-            app.set.cam_tab_enabled = true;
+            app.win.open(WinKind::Settings);
+            app.win.open(WinKind::Params);
+            app.win.open(WinKind::PartsLibrary);
+            app.win.open(WinKind::Hotkeys);
+            app.win.open(WinKind::About);
             app.project.parameters.push(qymcad_core::model::Param { name: "bad".into(), expr: "w/".into(), value: 0.0 });
             app.project.eval_parameters();
             for sel in [Sel::None, Sel::Mesh(0), Sel::Face(0, 0), Sel::Sketch(0), Sel::Component(0), Sel::Feature(0)] {
-                app.sel = sel;
+                app.chosen.sel = sel;
                 for (text, rect, clip) in painted(&mut app, *draw) {
                     let over = rect.max.x - clip.max.x;
                     // A point or two is the rounding of the layout, not a cut word.

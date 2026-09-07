@@ -174,14 +174,14 @@ pub(super) fn ellipse_contour(pc: Point2, pma: Point2, pmi: Point2) -> Contour {
         .map(|k| {
             let t = std::f64::consts::TAU * k as f64 / n as f64;
             let (ct, st) = (t.cos(), t.sin());
-            Point2::new(pc.x + major * ct * ux + minor * st * vx, pc.y + major * ct * uy + minor * st * vy)
+            crate::geom::Point2::new(pc.x + major * ct * ux + minor * st * vx, pc.y + major * ct * uy + minor * st * vy)
         })
         .collect();
     Contour { points: pts, closed: true, edges: Vec::new(), edge_src: Vec::new() }
 }
 
 pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<Contour> {
-    let pt = |id: Id| points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    let pt = |id: Id| points.iter().find(|p| p.id == id).map(|p| crate::geom::Point2::new(p.x, p.y));
     let mut out: Vec<Contour> = Vec::new();
     // circles are closed contours of their own
     for e in entities {
@@ -364,7 +364,7 @@ pub(super) fn arr_intersect(x: ArrCurve, y: ArrCurve) -> Vec<(f64, f64)> {
     let on_seg = |a: (f64, f64), b: (f64, f64), t: f64| (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
     let arc_ok = |c: (f64, f64), a0: f64, a1: f64, ccw: bool, p: (f64, f64)| angle_in_arc((p.1 - c.1).atan2(p.0 - c.0), a0, a1, ccw);
     match (x, y) {
-        (Line { a, b }, Line { a: c, b: d }) => match seg_seg_t(a.0, a.1, b.0, b.1, c.0, c.1, d.0, d.1) {
+        (Line { a, b }, Line { a: c, b: d }) => match seg_seg_t([a.0, a.1], [b.0, b.1], [c.0, c.1], [d.0, d.1]) {
             Some(t) => vec![on_seg(a, b, t)],
             None => {
                 // Collinear overlap, as with two rectangles sharing a side: there is no point intersection,
@@ -463,7 +463,7 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
             EntityKind::Ellipse { c, ma, mi } => {
                 // an ellipse is a closed region of its own; its intersections are not part of the arrangement yet
                 if let (Some(pc), Some(pma), Some(pmi)) = (pt(c), pt(ma), pt(mi)) {
-                    out_ellipse.push((ellipse_contour(Point2::new(pc.0, pc.1), Point2::new(pma.0, pma.1), Point2::new(pmi.0, pmi.1)), vec![e.id]));
+                    out_ellipse.push((ellipse_contour(crate::geom::Point2::new(pc.0, pc.1), crate::geom::Point2::new(pma.0, pma.1), crate::geom::Point2::new(pmi.0, pmi.1)), vec![e.id]));
                 }
             }
         }
@@ -660,7 +660,7 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
                     continue; // the reversal is taken only when there is nowhere else to go
                 }
                 let d = (s_eff(oe) - st).rem_euclid(TAU);
-                if best.map_or(true, |(bd, _)| d < bd) {
+                if best.is_none_or(|(bd, _)| d < bd) {
                     best = Some((d, oe));
                 }
             }
@@ -688,7 +688,7 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
         for (k, &ei) in face.iter().enumerate() {
             let e = &edges[ei];
             let (a, b) = (nodes[e.from], nodes[e.to]);
-            let (pa, pb) = (Point2::new(a.0, a.1), Point2::new(b.0, b.1));
+            let (pa, pb) = (crate::geom::Point2::new(a.0, a.1), crate::geom::Point2::new(b.0, b.1));
             if e.line {
                 if k == 0 {
                     cpts.push(pa);
@@ -705,7 +705,7 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
                     }
                 }
                 cpts.extend(arc.iter().skip(1).cloned());
-                cedges.push(crate::geom::ProfEdge::Arc { a: pa, b: pb, center: Point2::new(e.cx, e.cy), ccw: e.ccw });
+                cedges.push(crate::geom::ProfEdge::Arc { a: pa, b: pb, center: crate::geom::Point2::new(e.cx, e.cy), ccw: e.ccw });
                 csrc.push(curve_eid[e.ci]);
             }
         }
@@ -734,7 +734,7 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
 /// the shape of the curve.
 pub(super) fn spline_tangent_at(pts: &[Point2], tangents: &[Option<[f64; 2]>], i: usize, closed: bool) -> Point2 {
     if let Some(Some([x, y])) = tangents.get(i) {
-        return Point2::new(*x, *y);
+        return crate::geom::Point2::new(*x, *y);
     }
     let n = pts.len() as i64;
     let get = |k: i64| -> Point2 {
@@ -745,19 +745,36 @@ pub(super) fn spline_tangent_at(pts: &[Point2], tangents: &[Option<[f64; 2]>], i
         }
     };
     let (a, b) = (get(i as i64 - 1), get(i as i64 + 1));
-    Point2::new((b.x - a.x) * 0.5, (b.y - a.y) * 0.5)
+    crate::geom::Point2::new((b.x - a.x) * 0.5, (b.y - a.y) * 0.5)
 }
 
 /// A point on a cubic Hermite segment: nodes p0 and p1 with tangents m0 and m1, at t ∈ [0,1].
 pub(super) fn hermite_pt(p0: Point2, m0: Point2, p1: Point2, m1: Point2, t: f64) -> Point2 {
     let (t2, t3) = (t * t, t * t * t);
     let (h00, h10, h01, h11) = (2.0 * t3 - 3.0 * t2 + 1.0, t3 - 2.0 * t2 + t, -2.0 * t3 + 3.0 * t2, t3 - t2);
-    Point2::new(h00 * p0.x + h10 * m0.x + h01 * p1.x + h11 * m1.x, h00 * p0.y + h10 * m0.y + h01 * p1.y + h11 * m1.y)
+    crate::geom::Point2::new(h00 * p0.x + h10 * m0.x + h01 * p1.x + h11 * m1.x, h00 * p0.y + h10 * m0.y + h01 * p1.y + h11 * m1.y)
+}
+
+/// THE HERMITE SEGMENT ITSELF: the two ends and the tangent at each. Fixed while the segment is refined.
+#[derive(Clone, Copy)]
+pub(super) struct HermiteSeg {
+    pub p0: Point2,
+    pub m0: Point2,
+    pub p1: Point2,
+    pub m1: Point2,
+}
+
+/// WHEN TO STOP SPLITTING: how far the curve may stray from its chord, and how many splits are left.
+#[derive(Clone, Copy)]
+pub(super) struct SagLimit {
+    pub tol: f64,
+    pub depth: u8,
 }
 
 /// Adaptive tessellation of a Hermite segment, driven by chord sag as with Catmull-Rom.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn hermite_seg_adaptive(p0: Point2, m0: Point2, p1: Point2, m1: Point2, t0: f64, t1: f64, a: Point2, b: Point2, tol: f64, depth: u8, out: &mut Vec<Point2>) {
+pub(super) fn hermite_seg_adaptive(seg: HermiteSeg, t0: f64, t1: f64, a: Point2, b: Point2, sag: SagLimit, out: &mut Vec<Point2>) {
+    let HermiteSeg { p0, m0, p1, m1 } = seg;
+    let SagLimit { tol, depth } = sag;
     let tm = 0.5 * (t0 + t1);
     let m = hermite_pt(p0, m0, p1, m1, tm);
     let (dx, dy) = (b.x - a.x, b.y - a.y);
@@ -766,8 +783,8 @@ pub(super) fn hermite_seg_adaptive(p0: Point2, m0: Point2, p1: Point2, m1: Point
     if depth == 0 || dev <= tol {
         out.push(b);
     } else {
-        hermite_seg_adaptive(p0, m0, p1, m1, t0, tm, a, m, tol, depth - 1, out);
-        hermite_seg_adaptive(p0, m0, p1, m1, tm, t1, m, b, tol, depth - 1, out);
+        hermite_seg_adaptive(seg, t0, tm, a, m, SagLimit { tol, depth: depth - 1 }, out);
+        hermite_seg_adaptive(seg, tm, t1, m, b, SagLimit { tol, depth: depth - 1 }, out);
     }
 }
 
@@ -784,7 +801,7 @@ pub(super) fn tessellate_spline_hermite(pts: &[Point2], tangents: &[Option<[f64;
     for s in 0..seg {
         let (p0, p1) = (pts[s], pts[(s + 1) % n]);
         let (m0, m1) = (spline_tangent_at(pts, tangents, s, closed), spline_tangent_at(pts, tangents, (s + 1) % n, closed));
-        hermite_seg_adaptive(p0, m0, p1, m1, 0.0, 1.0, p0, p1, tol, 10, &mut out);
+        hermite_seg_adaptive(HermiteSeg { p0, m0, p1, m1 }, 0.0, 1.0, p0, p1, SagLimit { tol, depth: 10 }, &mut out);
     }
     if closed {
         out.pop();
@@ -794,18 +811,3 @@ pub(super) fn tessellate_spline_hermite(pts: &[Point2], tangents: &[Option<[f64;
     }
 }
 
-pub(super) fn bbox_of(contours: &[Contour]) -> Option<Bbox> {
-    let mut acc: Option<Bbox> = None;
-    for c in contours {
-        if let Some(b) = c.bbox() {
-            acc = Some(match acc {
-                None => b,
-                Some(a) => Bbox {
-                    min: Point2::new(a.min.x.min(b.min.x), a.min.y.min(b.min.y)),
-                    max: Point2::new(a.max.x.max(b.max.x), a.max.y.max(b.max.y)),
-                },
-            });
-        }
-    }
-    acc
-}

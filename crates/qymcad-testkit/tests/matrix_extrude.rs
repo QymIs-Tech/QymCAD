@@ -158,7 +158,7 @@ fn matrix_ops_on_plate() {
                 1 => (50.0, Reach::BothWays, plate_v + area * 30.0), // both ways +-25: 5 above + 25 below, outside
                 _ => (50.0, Reach::BothWays, area * 20.0),           // intersection: scene column ∩ plate = area*20
             };
-            let node = p.add_combine_multi_op(plate, sid, closed.clone(), h, op, qymcad_core::feature::Extent { reach, ..Default::default() }, 0.0, vec![]);
+            let node = p.add_combine_multi_op(plate, sid, closed.clone(), qymcad_core::model::CombineSpan { height: h, down: 0.0, extent: qymcad_core::feature::Extent { reach, ..Default::default() }, fill: &[] }, op);
             let (report, shapes) = qymcad_testkit::regenerate(&mut p);
             let label = format!("{opname} {which}");
             for (id, er) in &report.errors {

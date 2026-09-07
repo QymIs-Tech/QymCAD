@@ -33,19 +33,19 @@ impl App {
         let typing_now = ctx.egui_wants_keyboard_input();
         let open_search = ctx.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::K)) || (!typing_now && !i.modifiers.any() && i.key_pressed(egui::Key::Space)));
         if open_search {
-            self.toggle_command_search();
+            crate::gui::command_search::toggle_command_search(&mut self.win);
         }
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F1)) {
             let a = self.help_for_context();
             self.open_help(a);
         }
         // Enter confirms an array if one is active and the focus is not in a text field
-        if self.pat.op != 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+        if self.tools.armed.pat_op() != 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             self.confirm_pattern();
         }
         // Enter confirms A COMPONENT ARRAY (in an assembly)
-        if self.carr.mode != 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            self.apply_comp_array();
+        if self.side.carr.mode != 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            crate::gui::commands::apply_comp_array(&mut self.part_ctx());
         }
         // Returning to the choice of contours of an active sketch command goes by the "U" key through
         // `part_hotkey` (not "C": C is the circle in a sketch and the chamfer in a Part, and it clashed
@@ -53,23 +53,23 @@ impl App {
         // Enter inside a Part command. For a sketch command in 2D (choosing a profile, multi-select
         // included): the first Enter CONFIRMS the choice and takes one into 3D to set the dimension (the
         // gizmo or the field), the second applies it.
-        if self.cmd.active() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            let sketch_cmd = matches!(self.cmd.kind, 1 | 3);
-            if self.picking.contour().is_some() {
+        if self.tools.armed.commanding() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            let sketch_cmd = matches!(self.tools.armed.cmd_kind(), 1 | 3);
+            if self.tools.picking.contour().is_some() {
                 // in the half-sketcher of choosing the contour of a slot a CLICK on the contour is
                 // awaited — Enter does NOT apply the feature
-            } else if sketch_cmd && !self.mode_3d && !self.gsel.profiles.is_empty() {
-                self.mode_3d = true; // the choice is ready -> into 3D to enter the height or angle
+            } else if sketch_cmd && !self.viewing.mode_3d && !self.tools.gsel.profiles.is_empty() {
+                self.viewing.mode_3d = true; // the choice is ready -> into 3D to enter the height or angle
                 self.status = crate::i18n::tr("in-drag-or-type");
             } else {
-                self.apply_feat_cmd();
+                crate::gui::commands::apply_feat_cmd(&mut self.part_ctx());
             }
         }
         // Ctrl+Enter finishes the current context (leaving a sketch, a part or a subassembly one level
         // up) without the mouse. Only when no command or array is active — otherwise Enter applies
         // those.
-        if self.cmd.kind == 0
-            && self.pat.op == 0
+        if self.tools.armed.cmd_kind() == 0
+            && self.tools.armed.pat_op() == 0
             && !ctx.egui_wants_keyboard_input()
             && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter))
         {
@@ -112,39 +112,39 @@ impl App {
             // for datums and sketches.
             if self.sketch_ses.editing.is_none() {
                 if matches!(
-                    self.sel,
+                    self.chosen.sel,
                     Sel::Feature(_) | Sel::Mesh(_) | Sel::Sketch(_) | Sel::Plane(_) | Sel::DatumPoint(_) | Sel::DatumAxis(_) | Sel::Joint(_) | Sel::Component(_)
                 ) {
-                    self.deferred.delete = Some(self.sel);
+                    self.deferred.delete = Some(self.chosen.sel);
                 }
-            } else if let Sel::Sketch(si) = self.sel {
+            } else if let Sel::Sketch(si) = self.chosen.sel {
                 // priority: a text object
-                if let Some(ti) = self.annot.text.take() {
+                if let Some(ti) = self.tools.annot.text.take() {
                     if ti < self.project.sketches[si].texts.len() {
                         self.project.delete_sketch_text(si, ti);
-                        self.invalidate();
+                        qymcad_ui_state::invalidate(&mut self.regen);
                         self.status = crate::i18n::tr("in-text-deleted");
                     }
-                } else if let Some(ni) = self.annot.note.take() {
+                } else if let Some(ni) = self.tools.annot.note.take() {
                     if ni < self.project.sketches[si].notes.len() {
                         self.project.sketches[si].notes.remove(ni);
                         self.status = crate::i18n::tr("in-note-deleted");
                     }
-                } else if let Some(ci) = self.gsel.constraint.take() {
+                } else if let Some(ci) = self.tools.gsel.constraint.take() {
                     if ci < self.project.sketches[si].constraints.len() {
                         self.project.delete_sketch_constraint(si, ci); // also cleans up an orphaned midpoint
-                        self.invalidate();
+                        qymcad_ui_state::invalidate(&mut self.regen);
                         self.status = crate::i18n::tr("in-constraint-deleted");
                     }
                 } else {
-                    let eids: Vec<Id> = self.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+                    let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
                     // system points (the origin and the axes) and DRIVEN ones (projections of a body)
                     // are not deleted one by one
                     let sys: std::collections::HashSet<Id> = {
                         let s = &self.project.sketches[si];
                         s.immovable_points()
                     };
-                    let pids: Vec<Id> = self.sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
+                    let pids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
                     if !eids.is_empty() || !pids.is_empty() {
                         if !eids.is_empty() {
                             self.project.delete_entities(si, &eids);
@@ -154,8 +154,8 @@ impl App {
                             self.project.delete_points(si, &pids);
                         }
                         self.project.solve_sketch(si);
-                        self.sel_sk.clear(); // the selection and whatever was waiting for it
-                        self.invalidate();
+                        self.tools.sel_sk.clear(); // the selection and whatever was waiting for it
+                        qymcad_ui_state::invalidate(&mut self.regen);
                         self.status = crate::i18n::tr("in-deleted");
                     }
                 }
@@ -163,21 +163,21 @@ impl App {
         }
         // Ctrl+A selects all the geometry of the active sketch (entities and points)
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::A)) {
-            if let Sel::Sketch(si) = self.sel {
-                if self.edit_si() == Some(si) {
-                    self.select_all_sketch(si);
+            if let Sel::Sketch(si) = self.chosen.sel {
+                if qymcad_ui_state::edit_si(&self.project, &self.sketch_ses) == Some(si) {
+                    qymcad_ui_state::select_all_sketch(&mut self.tools.annot, &mut self.tools.gsel, &self.project, &mut self.tools.sel_sk, &mut self.status, si);
                 }
             }
         }
         // X switches the selected entities into or out of construction geometry
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| !i.modifiers.any() && i.key_pressed(egui::Key::X)) {
-            if let Sel::Sketch(si) = self.sel {
-                if self.edit_si() == Some(si) {
-                    let eids: Vec<Id> = self.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+            if let Sel::Sketch(si) = self.chosen.sel {
+                if qymcad_ui_state::edit_si(&self.project, &self.sketch_ses) == Some(si) {
+                    let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
                     if !eids.is_empty() {
                         let now = self.project.toggle_construction(si, &eids);
                         self.project.solve_sketch(si);
-                        self.invalidate();
+                        qymcad_ui_state::invalidate(&mut self.regen);
                         self.status = if now { crate::i18n::tr("in-made-construction") } else { crate::i18n::tr("in-made-normal") };
                     }
                 }
@@ -216,7 +216,7 @@ impl App {
         // After copying a node of the tree a marker is put into THE CLIPBOARD OF THE SYSTEM: egui emits
         // Event::Paste (that is, Ctrl+V) only when that clipboard is non-empty. Without this only the
         // Paste menu item worked while the Ctrl+V key stayed silent.
-        if std::mem::take(&mut self.clip.os_ping) {
+        if std::mem::take(&mut self.side.clip.os_ping) {
             ctx.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText("qymcad-tree-clip".to_string())));
         }
         // Undo and redo: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (not taken away from text fields)
@@ -239,64 +239,64 @@ impl App {
     /// The order matters — reports arrive exactly when some rung is missing and ESC "falls through" to
     /// closing the sketch (the measure tool and the selected elements were two such rungs).
     pub(super) fn on_escape(&mut self) {
-        if self.inline.dim().is_some() || self.inline.circle().is_some() {
+        if self.tools.inline.dim().is_some() || self.tools.inline.circle().is_some() {
             // the popup for editing a dimension is open (a double click on a dimension or a circle) —
             // ESC cancels ONLY the popup rather than closing the whole sketch. Otherwise the chain
             // reached `finish_sketch_edit`.
-            self.inline.clear();
-            self.dim.buf.clear();
-            self.dim.focus = false;
-        } else if self.arr.axis_pick {
-            self.arr.axis_pick = false; // the axis-pick sub-mode is left first, the command is NOT cancelled
+            self.tools.inline.clear();
+            self.tools.dim.buf.clear();
+            self.tools.dim.focus = false;
+        } else if self.params.arr.axis_pick {
+            self.params.arr.axis_pick = false; // the axis-pick sub-mode is left first, the command is NOT cancelled
             self.status = crate::i18n::tr("in-axis-pick-cancelled");
-        } else if self.rev.pick_axis || self.rev.pick_line {
+        } else if self.params.rev.pick_axis || self.params.rev.pick_line {
             // the sub-mode of picking the axis of revolution is left, the command is NOT cancelled
-            if self.rev.pick_line {
-                self.return_view(); // cancelling an action does not touch the camera
+            if self.params.rev.pick_line {
+                return_view(&mut self.part_ctx()); // cancelling an action does not touch the camera
             }
-            self.rev.pick_axis = false;
-            self.rev.pick_line = false;
+            self.params.rev.pick_axis = false;
+            self.params.rev.pick_line = false;
             self.status = crate::i18n::tr("in-axis-pick-cancelled");
-        } else if self.carr.mode != 0 {
-            self.carr = CompArrayCmd::default(); // a component array is cancelled without a trace
-            self.cmd.params.clear();
+        } else if self.side.carr.mode != 0 {
+            self.side.carr = CompArrayCmd::default(); // a component array is cancelled without a trace
+            self.tools.cmd.params.clear();
             self.status = crate::i18n::tr("in-comp-array-cancelled");
-        } else if self.m3.on {
+        } else if self.side.m3.on {
             // THE MEASURING TOOL: Esc first drops WHAT WAS CLICKED, and only when that is empty does it
             // leave the tool. That way a miss does not throw one out of measuring (things usually need
             // measuring several times in a row).
-            if self.m3.picks.is_empty() {
-                self.m3.on = false;
+            if self.side.m3.picks.is_empty() {
+                self.side.m3.on = false;
                 self.status = crate::i18n::tr("in-measure-off");
             } else {
-                self.m3.picks.clear();
+                self.side.m3.picks.clear();
                 self.status = crate::i18n::tr("in-measure-hint");
             }
-        } else if self.boolean.pick.is_some() {
-            self.boolean.pick = None;
+        } else if self.params.boolean.pick.is_some() {
+            self.params.boolean.pick = None;
             self.status = crate::i18n::tr("in-bool-cancelled");
-        } else if self.boolean.edit.is_some() {
-            self.boolean.edit = None;
+        } else if self.params.boolean.edit.is_some() {
+            self.params.boolean.edit = None;
             self.status = crate::i18n::tr("in-bool-done");
-        } else if self.picking.contour().is_some() {
+        } else if self.tools.picking.contour().is_some() {
             // ONLY the choice of the contour of a slot is cancelled (returning to 3D); the sweep or
             // loft command is NOT closed
-            self.picking.clear();
-            self.return_view(); // cancelling an action does not touch the camera
+            self.tools.picking.clear();
+            return_view(&mut self.part_ctx()); // cancelling an action does not touch the camera
             self.status = crate::i18n::tr("in-contour-cancelled");
-        } else if self.cmd.active() {
-            self.cancel_feat_cmd();
-        } else if self.joint.edit_repick.is_some() {
-            self.joint.edit_repick = None; // the pick of a new anchor is cancelled first, the editing is NOT left
+        } else if self.tools.armed.commanding() {
+            cancel_feat_cmd(&mut self.part_ctx());
+        } else if self.side.joint.edit_repick.is_some() {
+            self.side.joint.edit_repick = None; // the pick of a new anchor is cancelled first, the editing is NOT left
             self.status = crate::i18n::tr("in-anchor-swap-cancelled");
-        } else if self.joint.edit.is_some() {
-            self.exit_joint_edit();
-        } else if self.joint.ground_pick {
-            self.joint.ground_pick = false;
+        } else if self.side.joint.edit.is_some() {
+            qymcad_ui_state::exit_joint_edit(&mut self.side.joint, &mut self.status);
+        } else if self.side.joint.ground_pick {
+            self.side.joint.ground_pick = false;
             self.status = crate::i18n::tr("in-ground-off");
-        } else if self.joint.pick_faces {
-            self.joint.pick_faces = false;
-            self.joint.pick_first = None;
+        } else if self.side.joint.pick_faces {
+            self.side.joint.pick_faces = false;
+            self.side.joint.pick_first = None;
             self.status = crate::i18n::tr("in-joint-faces-cancelled");
         }
         // THE REST OF THE ASSEMBLY TOOLS GO BY Esc AS WELL.
@@ -307,91 +307,89 @@ impl App {
         // `escape_drops_every_assembly_tool`, and it is the same disease that already produced a class of
         // troubles with the highlight: the modes are enumerated by name and a new one is forgotten.
         else if !self.armed_assembly_tools().is_empty() {
-            self.drop_assembly_tools();
+            crate::gui::assembly_tools::drop_assembly_tools(&mut self.side.joint);
             self.status = crate::i18n::tr("in-assembly-tool-cancelled");
-        } else if self.pending_import.curves.is_some() {
-            self.pending_import.curves = None;
+        } else if self.tools.pending_import.curves.is_some() {
+            self.tools.pending_import.curves = None;
             self.status = crate::i18n::tr("in-import-cancelled");
-        } else if self.picking.replace_sketch().is_some() {
-            self.picking.clear(); // cancelling the re-placing of a sketch
+        } else if self.tools.picking.replace_sketch().is_some() {
+            self.tools.picking.clear(); // cancelling the re-placing of a sketch
             self.status = crate::i18n::tr("in-sketch-move-cancelled");
-        } else if self.picking.is_sketch_plane() {
-            self.picking.clear();
+        } else if self.tools.picking.is_sketch_plane() {
+            self.tools.picking.clear();
             self.status = crate::i18n::tr("in-sketch-plane-cancelled");
-        } else if self.picking.plane_face().is_some() {
-            self.picking.set_plane_face(None);
+        } else if self.tools.picking.plane_face().is_some() {
+            self.tools.picking.set_plane_face(None);
             self.status = crate::i18n::tr("in-plane-face-cancelled");
-        } else if self.op_pick.is_some() {
-            self.op_pick = None;
-        } else if self.sel_sk.constraint.is_some() || self.sel_sk.modify.is_some() {
-            self.sel_sk.constraint = None;
-            self.sel_sk.modify = None;
+        } else if self.tools.sel_sk.constraint.is_some() || self.tools.sel_sk.modify.is_some() {
+            self.tools.sel_sk.constraint = None;
+            self.tools.sel_sk.modify = None;
             // AND THE EDIT MODE ITSELF. Only THE EXPECTED PICK was extinguished while `tool.modify`
             // stayed: the cancellation worked, yet the tool bar went on saying "Mirror" and the button in
             // the panel stayed pressed. Switched off yet looking switched on is the worst kind of
             // cancellation: one is sure the tool is active and cannot understand why a click does
             // nothing.
-            self.tool.modify = 0;
-        } else if self.tool.click_op != 0 {
-            self.tool.click_op = 0;
-        } else if self.pat.op != 0 {
-            self.pat.op = 0;
-            self.pat.edit = None;
-            self.pat.center = None;
+            self.tools.armed = qymcad_ui_state::Armed::None;
+        } else if self.tools.armed.click_op() != 0 {
+            self.tools.armed = qymcad_ui_state::Armed::None;
+        } else if self.tools.armed.pat_op() != 0 {
+            self.tools.armed = qymcad_ui_state::Armed::None;
+            self.tools.pat.edit = None;
+            self.tools.pat.center = None;
             self.status = crate::i18n::tr("in-array-cancelled");
-        } else if self.tool.move_op != 0 {
-            self.tool.move_op = 0;
-            self.tool.move_base = None;
+        } else if self.tools.armed.move_op() != 0 {
+            self.tools.armed = qymcad_ui_state::Armed::None;
+            self.tools.tool.move_base = None;
             self.status = crate::i18n::tr("in-move-cancelled");
-        } else if self.clip.geom_place {
-            self.clip.geom_place = false;
+        } else if self.side.clip.geom_place {
+            self.side.clip.geom_place = false;
             self.status = crate::i18n::tr("in-insert-cancelled");
-        } else if self.clip.geom_pending.is_some() {
-            self.clip.geom_pending = None;
+        } else if self.side.clip.geom_pending.is_some() {
+            self.side.clip.geom_pending = None;
             self.status = crate::i18n::tr("in-copy-cancelled");
-        } else if self.place.dim.is_some() {
+        } else if self.tools.place.dim.is_some() {
             // a provisional length of a line (the second element is awaited) — cancel it; otherwise
             // leave the dimension where it is
-            if self.dim.first.is_some() {
-                if let (Sel::Sketch(si), Some(ci)) = (self.sel, self.place.dim) {
+            if self.tools.dim.first.is_some() {
+                if let (Sel::Sketch(si), Some(ci)) = (self.chosen.sel, self.tools.place.dim) {
                     if ci < self.project.sketches[si].constraints.len() {
                         self.project.sketches[si].constraints.remove(ci);
                         self.project.solve_sketch(si);
-                        self.invalidate();
+                        qymcad_ui_state::invalidate(&mut self.regen);
                     }
                 }
             }
-            self.place.dim = None;
-            self.dim.first = None;
-        } else if self.dim.first.is_some() {
-            self.dim.first = None; // cancel the first reference (the point)
-        } else if self.dim.kind != 0 {
-            self.dim.kind = 0;
-            self.dim.pick.clear();
-        } else if !self.tool.pts.is_empty() {
-            self.tool.pts.clear(); // break off the construction under way
-        } else if self.tool.kind != 0 {
-            self.tool.kind = 0; // leave the tool for the selection mode
-        } else if self.measure.on {
+            self.tools.place.dim = None;
+            self.tools.dim.first = None;
+        } else if self.tools.dim.first.is_some() {
+            self.tools.dim.first = None; // cancel the first reference (the point)
+        } else if self.tools.armed.dim_kind() != 0 {
+            self.tools.armed = qymcad_ui_state::Armed::None;
+            self.tools.dim.pick.clear();
+        } else if !self.tools.tool.pts.is_empty() {
+            self.tools.tool.pts.clear(); // break off the construction under way
+        } else if self.tools.armed.draw_kind() != 0 {
+            self.tools.armed = qymcad_ui_state::Armed::None; // leave the tool for the selection mode
+        } else if self.tools.armed.measuring() {
             // Measuring a distance is a tool like any other, and ESC must return to Select (the arrow)
             // rather than close the sketch. It simply was not in the ladder, and ESC fell through to
             // `finish_sketch_edit`.
-            self.measure.on = false;
-            self.measure.pts.clear();
+            self.tools.armed = qymcad_ui_state::Armed::None;
+            self.tools.measure.pts.clear();
             self.status = crate::i18n::tr("in-measure-cancelled");
-        } else if self.pending_import.draw_pts.is_some() {
-            self.pending_import.draw_pts = None;
-        } else if self.sketch_ses.editing.is_some() && (!self.sel_sk.items.is_empty() || self.annot.text.is_some() || self.annot.note.is_some()) {
+        } else if self.tools.pending_import.draw_pts.is_some() {
+            self.tools.pending_import.draw_pts = None;
+        } else if self.sketch_ses.editing.is_some() && (!self.tools.sel_sk.items.is_empty() || self.tools.annot.text.is_some() || self.tools.annot.note.is_some()) {
             // With elements SELECTED, ESC first clears the selection — as in any grown-up CAD. The
             // selection used to take no part in the ladder, and the very first ESC closed the sketch.
-            self.sel_sk.clear(); // the selection and whatever was waiting for it
-            self.annot.text = None;
-            self.annot.note = None;
+            self.tools.sel_sk.clear(); // the selection and whatever was waiting for it
+            self.tools.annot.text = None;
+            self.tools.annot.note = None;
             self.status = crate::i18n::tr("in-selection-cleared");
         } else if self.sketch_ses.editing.is_some() {
             self.finish_sketch_edit();
         } else {
-            self.sel = Sel::None;
+            self.chosen.sel = Sel::None;
         }
     }
 
@@ -423,7 +421,7 @@ impl App {
             KEYS.into_iter().find(|&k| i.key_pressed(k))
         });
         let Some(key) = key else { return };
-        if self.edit_si().is_some() {
+        if qymcad_ui_state::edit_si(&self.project, &self.sketch_ses).is_some() {
             self.sketch_hotkey(key);
         } else {
             match self.workbench {
@@ -438,7 +436,7 @@ impl App {
     /// the project (`<name>.autosave.qcad`; an unnamed one goes into the temporary directory). An
     /// ordinary Save removes the autosave. `force` is for the tests and for quitting. A crash or a power
     /// cut no longer eats the work.
-    pub(super) fn maybe_autosave(&mut self, force: bool) {
+    pub(crate) fn maybe_autosave(&mut self, force: bool) {
         // THE PERIOD IS A SETTING rather than a constant: on a heavy assembly the write is noticeable,
         // and the price of the pause against the price of lost work is different for everybody. Zero means
         // no autosave; `force` (quitting, a test) works even then: that is no longer "once every N
@@ -447,20 +445,20 @@ impl App {
             if self.set.autosave_secs == 0 {
                 return;
             }
-            if self.edits.last_autosave.elapsed() < std::time::Duration::from_secs(self.set.autosave_secs) {
+            if self.disk.edits.last_autosave.elapsed() < std::time::Duration::from_secs(self.set.autosave_secs) {
                 return;
             }
         }
-        self.edits.last_autosave = std::time::Instant::now();
-        let key = self.edit_key();
-        if key == self.edits.saved_key || key == self.edits.autosave_key {
+        self.disk.edits.last_autosave = std::time::Instant::now();
+        let key = qymcad_ui_state::edit_key(&self.draw_ctx());
+        if key == self.disk.edits.saved_key || key == self.disk.edits.autosave_key {
             return; // clean, or this state has been autosaved already
         }
         if self.regen.bg.iter().any(|b| b.kind == BgKind::Save) {
             return; // a write is already under way — no jostling, we try again next period
         }
-        let path = self.autosave_path();
-        self.io.autosave_key = Some(key); // applied ONLY if the write really went through
-        self.spawn_save(path, true);
+        let path = qymcad_ui_state::autosave_path(&self.disk.project_path);
+        self.disk.io.autosave_key = Some(key); // applied ONLY if the write really went through
+        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
     }
 }

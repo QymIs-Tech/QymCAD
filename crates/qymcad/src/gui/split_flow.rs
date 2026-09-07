@@ -12,13 +12,13 @@ mod tests {
     /// A cube inside a part, with that part entered; returns (the index of the mesh, the id of the body).
     fn part_with_cube(app: &mut App) -> (usize, u64) {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
         }
         let mi = app.project.mesh_index(body).expect("the mesh");
-        app.sel = Sel::Mesh(mi);
+        app.chosen.sel = Sel::Mesh(mi);
         (mi, body)
     }
 
@@ -32,15 +32,15 @@ mod tests {
 
         // THE BUTTON
         app.start_feat_cmd(27);
-        assert_eq!(app.cmd.kind, 27, "the split-a-body command must open");
-        assert!(app.cmd.params.iter().any(|p| p.key == "offset"), "the command must have an offset field");
+        assert_eq!(app.tools.armed.cmd_kind(), 27, "the split-a-body command must open");
+        assert!(app.tools.cmd.params.iter().any(|p| p.key == "offset"), "the command must have an offset field");
 
         // A CLICK ON THE PLANE IN THE VIEWPORT — through a real pick rather than by assigning state:
         // earlier tools "worked" exactly until somebody tried them with a mouse.
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 8.0;
-        app.cam.target = [10.0, 10.0, 5.0];
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 8.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         // the face of the cube looking upwards — the cut goes along it (its datum imprint becomes the
         // cutting plane)
@@ -51,23 +51,23 @@ mod tests {
             .max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap())
             .map(|f| [f.centroid.x, f.centroid.y, f.centroid.z])
             .expect("the top face is there");
-        let basis = app.cam.basis();
-        let at = app.project3(top, rect, &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at(top).0;
         let sp = app.pick_sketch_plane_at(rect, at).expect("a click on a face must give a plane");
-        app.split.plane = Some(sp);
+        app.params.split.plane = Some(sp);
 
         // THE OFFSET DOWN BY HALF THE HEIGHT (the normal of the face looks upwards, so the offset is
         // negative)
         let h = app.project.bodies[mi].mesh.bounds().map(|b| b.max.z - b.min.z).expect("the height");
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "offset") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             p.val = -h * 0.5;
             p.txt = format!("{:.4}", -h * 0.5);
         }
-        assert_eq!(app.split_piece_count(body), Some(2), "the tool must SEE that the plane cuts the body in two");
+        assert_eq!(crate::gui::commands::split_piece_count(&mut app.part_ctx(), body), Some(2), "the tool must SEE that the plane cuts the body in two");
 
         // ENTER
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let node = app
             .project
@@ -95,7 +95,7 @@ mod tests {
         let (mi, _body) = part_with_cube(&mut app);
         let before = app.project.timeline.len();
         app.start_feat_cmd(27);
-        app.mode_3d = true;
+        app.viewing.mode_3d = true;
         let top = app.project.bodies[mi].faces.iter().find(|f| f.normal[2] > 0.9).map(|f| f.id).expect("the top");
         let key = app.project.bodies[mi]
             .faces
@@ -103,9 +103,9 @@ mod tests {
             .find(|f| f.id == top)
             .map(|f| qymcad_core::feature::FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id })
             .expect("the key of the face");
-        app.split.plane = Some(qymcad_core::feature::SketchPlane::Face(app.project.mesh_id(mi).unwrap(), key));
+        app.params.split.plane = Some(qymcad_core::feature::SketchPlane::Face(app.project.mesh_id(mi).unwrap(), key));
         // the offset goes UP — the plane moves away from the body
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "offset") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             p.val = 50.0;
             p.txt = "50".into();
         }
@@ -118,32 +118,38 @@ mod tests {
     #[test]
     fn the_tool_shows_where_the_cut_goes() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("pub(super) fn draw_split_preview").expect("the split must have a preview of its own");
+        let a = src.find("fn draw_split_preview").expect("the split must have a preview of its own");
         let b = src[a..].find("\n    /// THE PREVIEW OF THE MIRROR").map(|i| a + i).unwrap_or(src.len());
         let blk = &src[a..b];
         assert!(blk.contains("convex_polygon"), "the cutting plane must be visible as a square");
         assert!(blk.contains("line_segment"), "the line of the cut across the body must be visible");
-        assert!(src.contains("self.draw_split_preview(painter, rect);"), "the preview must be called from the drawing of the frame");
+        assert!(crate::gui::render_source::has(src, "draw_split_preview(pn, painter, rect);"), "the preview must be called from the drawing of the frame");
     }
 
     /// The button is in the Part panel, and a click on the viewport inside this command chooses the
     /// plane.
     #[test]
     fn the_tool_has_a_button_and_a_pick() {
-        assert!(crate::gui::panels_source::PANELS.contains("self.start_feat_cmd(27)"), "without a button the operation does not exist for a person");
-        assert!(crate::gui::render_source::RENDER.contains("} else if self.cmd.kind == 27 || self.cmd.kind == 29 {"), "a click in the viewport must choose the cutting plane");
+        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(27)"), "without a button the operation does not exist for a person");
+        // WHITESPACE-BLIND. The condition is spread over several lines now, and a needle written as one
+        // line can never match it however right the code is.
+        use crate::gui::render_source::dense;
+        assert!(
+            dense(crate::gui::render_source::RENDER).contains(&dense("pn.armed.cmd_kind() == 27 || pn.armed.cmd_kind() == 29")),
+            "a click in the viewport must choose the cutting plane"
+        );
     }
 
     /// The feature is visible in the tree and reopens for editing — otherwise it is a one-shot.
     #[test]
     fn the_feature_is_visible_in_the_tree_and_editable() {
-        assert!(crate::gui::panels_source::PANELS.contains("FeatureKind::SplitBody { ref bodies, offset, .. } =>"), "the row in the tree");
+        assert!(crate::gui::render_source::has(crate::gui::panels_source::PANELS, "FeatureKind::SplitBody { ref bodies, offset, .. } =>"), "the row in the tree");
         let gui = include_str!("../gui.rs");
-        assert!(gui.contains("FK::SplitBody { .. } => ph::"), "the icon");
+        assert!(crate::gui::render_source::has(gui, "FK::SplitBody { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-split-body").is_empty() && crate::i18n::tr("feat-name-split-body") != "feat-name-split-body", "the default name of the feature must have a translation");
-        let cmds = include_str!("commands.rs");
-        assert!(cmds.contains("FeatureKind::SplitBody { plane, datum, offset, .. } => {"), "reopening for editing");
-        assert!(cmds.contains("FeatureKind::SplitBody { plane, datum, offset, bodies, .. } => {"), "applying the edit");
+        let cmds = crate::gui::sketch_source::PART;
+        assert!(crate::gui::render_source::has(cmds, "FeatureKind::SplitBody { plane, datum, offset, .. } => {"), "reopening for editing");
+        assert!(crate::gui::render_source::has(cmds, "FeatureKind::SplitBody { plane, datum, offset, bodies, .. } => {"), "applying the edit");
     }
 
     /// Editing the split moves the plane and does NOT recreate the bodies.
@@ -160,14 +166,14 @@ mod tests {
             .map(|f| qymcad_core::feature::FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id })
             .expect("the top face");
         app.start_feat_cmd(27);
-        app.mode_3d = true;
-        app.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, top));
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "offset") {
+        app.viewing.mode_3d = true;
+        app.params.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, top));
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             p.val = -h * 0.5;
             p.txt = format!("{:.4}", -h * 0.5);
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let fid = app
             .project
             .timeline
@@ -179,15 +185,15 @@ mod tests {
         let thin_before = parts.iter().filter_map(|b| app.project.mesh_index(*b)).map(|i| app.project.bodies[i].mesh.volume()).fold(f64::MAX, f64::min);
 
         // A DOUBLE CLICK IN THE TREE -> editing
-        app.start_feat_cmd_edit(fid);
-        assert_eq!(app.cmd.kind, 27, "editing must open THE SAME command");
-        assert!(app.split.plane.is_some(), "the cutting plane must be restored while editing");
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "offset") {
+        crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
+        assert_eq!(app.tools.armed.cmd_kind(), 27, "editing must open THE SAME command");
+        assert!(app.params.split.plane.is_some(), "the cutting plane must be restored while editing");
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             p.val = -h * 0.25;
             p.txt = format!("{:.4}", -h * 0.25);
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let parts_after: Vec<u64> = app.project.timeline.iter().find(|n| n.id == fid).map(|n| n.kind.bodies()).expect("the pieces after the edit");
         assert_eq!(parts, parts_after, "editing must move the cut rather than START new bodies");
@@ -215,15 +221,15 @@ mod tests {
         let bodies_before = app.project.bodies.len();
 
         app.start_feat_cmd(29);
-        assert_eq!(app.cmd.kind, 29, "the split-faces command must open");
-        app.mode_3d = true;
-        app.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, face));
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "offset") {
+        assert_eq!(app.tools.armed.cmd_kind(), 29, "the split-faces command must open");
+        app.viewing.mode_3d = true;
+        app.params.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, face));
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             p.val = -h * 0.5;
             p.txt = format!("{:.4}", -h * 0.5);
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let node = app
             .project
@@ -243,11 +249,11 @@ mod tests {
     #[test]
     fn splitting_faces_has_its_own_button_and_row() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(panels.contains("self.start_feat_cmd(29)"), "without a button the tool does not exist for a person");
-        assert!(panels.contains("FeatureKind::SplitFace { offset, .. } =>"), "the row in the tree");
+        assert!(panels.contains("BarAsk::FeatCmd(29)"), "without a button the tool does not exist for a person");
+        assert!(crate::gui::render_source::has(panels, "FeatureKind::SplitFace { offset, .. } =>"), "the row in the tree");
         let _gui = include_str!("../gui.rs");
         assert!(!crate::i18n::tr("feat-name-split-face").is_empty() && crate::i18n::tr("feat-name-split-face") != "feat-name-split-face", "the default name of the feature must have a translation");
-        assert!(include_str!("commands.rs").contains("FeatureKind::SplitFace { plane, datum, offset, .. } => {"), "reopening for editing");
+        assert!(crate::gui::render_source::has(crate::gui::sketch_source::PART, "FeatureKind::SplitFace { plane, datum, offset, .. } => {"), "reopening for editing");
     }
 
 

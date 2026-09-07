@@ -15,20 +15,20 @@ mod tests {
     /// A cube inside a part; returns (the index of the mesh, the id of the body).
     fn part_with_cube(app: &mut App) -> (usize, u64) {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(body) {
             app.enter_component(owner);
         }
         let mi = app.project.mesh_index(body).expect("the mesh");
-        app.sel = Sel::Mesh(mi);
+        app.chosen.sel = Sel::Mesh(mi);
         (mi, body)
     }
 
     /// The button is there.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::gui::panels_source::PANELS.contains("self.start_feat_cmd(28)"), "without a button the tool does not exist for a person");
+        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(28)"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH: the button -> a click on a face -> the thickness -> Enter -> the part has grown
@@ -37,18 +37,18 @@ mod tests {
     fn a_face_can_be_thickened_from_the_toolbar() {
         let mut app = App::default();
         let (mi, body) = part_with_cube(&mut app);
-        let bodies_before = (0..app.project.bodies.len()).filter(|i| app.body_shown(*i)).count();
+        let bodies_before = (0..app.project.bodies.len()).filter(|i| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), *i)).count();
         let before_v = app.project.mesh_index(body).map(|i| app.project.bodies[i].mesh.volume()).unwrap_or(0.0);
 
         app.start_feat_cmd(28);
-        assert_eq!(app.cmd.kind, 28, "the command must open");
-        assert!(app.cmd.params.iter().any(|p| p.key == "thickness"), "the command must have a thickness field");
+        assert_eq!(app.tools.armed.cmd_kind(), 28, "the command must open");
+        assert!(app.tools.cmd.params.iter().any(|p| p.key == "thickness"), "the command must have a thickness field");
 
         // A CLICK ON A FACE THROUGH A REAL PICK
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 8.0;
-        app.cam.target = [10.0, 10.0, 5.0];
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 8.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         let top = app.project.bodies[mi]
             .faces
@@ -57,16 +57,16 @@ mod tests {
             .max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap())
             .expect("the top face");
         let (fid, c) = (top.id, [top.centroid.x, top.centroid.y, top.centroid.z]);
-        let basis = app.cam.basis();
-        app.pick_face_3d(rect, app.project3(c, rect, &basis).0);
-        assert!(app.gsel.faces.contains(&fid), "the click must SELECT the face: what is selected is {:?}", app.gsel.faces);
+        let basis = app.viewing.cam.basis();
+        app.pick_face_3d(rect, qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at(c).0);
+        assert!(app.tools.gsel.faces.contains(&fid), "the click must SELECT the face: what is selected is {:?}", app.tools.gsel.faces);
 
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "thickness") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
             p.val = 3.0;
             p.txt = "3".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let node = app
             .project
@@ -81,7 +81,7 @@ mod tests {
         // A PART IS ONE BODY: the source is consumed, there is one piece on screen and not two of
         // different colours
         assert!(app.project.consumed_bodies().contains(&body), "thicken must consume the source, otherwise the part becomes two bodies");
-        let shown = (0..app.project.bodies.len()).filter(|i| app.body_shown(*i)).count();
+        let shown = (0..app.project.bodies.len()).filter(|i| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), *i)).count();
         assert_eq!(shown, bodies_before, "the number of visible bodies must stay the same ({bodies_before}), and it became {shown}");
     }
 
@@ -100,7 +100,7 @@ mod tests {
         let (mi, body) = part_with_cube(&mut app);
         let top = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
         let sheet = app.project.add_face_copy(body, qymcad_core::refs::Ref::one(top, qymcad_core::refs::Fingerprint::default()));
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(app.project.bodies.iter().any(|b| b.id == sheet && b.sheet), "setup: a copy of a face must be a sheet");
         let sface = app.project.regen_faces[&sheet].first().map(|f| f.id).expect("a face of the sheet");
         let area = app.project.regen_faces[&sheet].iter().map(|f| f.area).sum::<f64>();
@@ -108,16 +108,16 @@ mod tests {
         // THE PART IS SELECTED IN THE TREE WHILE THE SHEET IS CLICKED. The selection is set directly:
         // the sheet lies ON a face of the part, and a real pick there is ambiguous — what is checked here
         // is not the pick but whose face the command takes the clicked one to be.
-        app.sel = Sel::Mesh(mi);
+        app.chosen.sel = Sel::Mesh(mi);
         app.start_feat_cmd(28);
-        app.gsel.faces.insert(sface);
-        app.gsel.faces_body = Some(sheet);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "thickness") {
+        app.tools.gsel.faces.insert(sface);
+        app.tools.gsel.faces_body = Some(sheet);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
             p.val = 3.0;
             p.txt = "3".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let node = app
             .project
@@ -147,9 +147,9 @@ mod tests {
         let before = app.project.timeline.len();
         app.start_feat_cmd(28);
         let fid = app.project.bodies[mi].faces.iter().find(|f| f.normal[2] > 0.9).map(|f| f.id).expect("a face");
-        app.gsel.faces.insert(fid);
-        app.gsel.faces_body = app.project.mesh_id(mi);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "thickness") {
+        app.tools.gsel.faces.insert(fid);
+        app.tools.gsel.faces_body = app.project.mesh_id(mi);
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
             p.val = 0.0;
             p.txt = "0".into();
         }
@@ -162,8 +162,8 @@ mod tests {
     #[test]
     fn the_tool_shows_the_face_and_where_the_plate_goes() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("} else if self.cmd.kind == 28 {").expect("the tool must have a drawing block of its own");
-        let b = src[a..].find("} else if self.cmd.kind == 26 {").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("} else if pn.armed.cmd_kind() == 28 {").expect("the tool must have a drawing block of its own");
+        let b = src[a..].find("} else if pn.armed.cmd_kind() == 26 {").map(|i| a + i).unwrap_or(src.len());
         let blk = &src[a..b];
         assert!(blk.contains("egui::Mesh::default()"), "the selected face must be highlighted with a fill");
         assert!(blk.contains("line_segment"), "the offset outline of the plate must be visible");
@@ -172,13 +172,13 @@ mod tests {
     /// The feature is visible in the tree and reopens for editing.
     #[test]
     fn the_feature_is_in_the_tree_and_editable() {
-        assert!(crate::gui::panels_source::PANELS.contains("FeatureKind::Thicken { thickness, .. } =>"), "the row in the tree");
+        assert!(crate::gui::render_source::has(crate::gui::panels_source::PANELS, "FeatureKind::Thicken { thickness, .. } =>"), "the row in the tree");
         let gui = include_str!("../gui.rs");
-        assert!(gui.contains("FK::Thicken { .. } => ph::"), "the icon");
+        assert!(crate::gui::render_source::has(gui, "FK::Thicken { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-thicken").is_empty() && crate::i18n::tr("feat-name-thicken") != "feat-name-thicken", "the default name of the feature must have a translation");
-        let cmds = include_str!("commands.rs");
-        assert!(cmds.contains("FeatureKind::Thicken { face, thickness, .. } => {"), "reopening for editing");
-        assert!(cmds.contains("FeatureKind::Thicken { face, thickness, .. } => {"), "applying the edit");
+        let cmds = crate::gui::sketch_source::PART;
+        assert!(crate::gui::render_source::has(cmds, "FeatureKind::Thicken { face, thickness, .. } => {"), "reopening for editing");
+        assert!(crate::gui::render_source::has(cmds, "FeatureKind::Thicken { face, thickness, .. } => {"), "applying the edit");
     }
 
     /// THE THICKNESS FIELD MUST APPEAR AT THE GEOMETRY.
@@ -193,21 +193,21 @@ mod tests {
         let mut app = App::default();
         let (mi, _body) = part_with_cube(&mut app);
         app.start_feat_cmd(28);
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 8.0;
-        app.cam.target = [10.0, 10.0, 5.0];
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 8.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         let top = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap()).expect("the top face");
         let (fid, c) = (top.id, [top.centroid.x, top.centroid.y, top.centroid.z]);
-        let basis = app.cam.basis();
-        app.pick_face_3d(rect, app.project3(c, rect, &basis).0);
-        assert!(app.gsel.faces.contains(&fid), "the face must get selected by a click");
+        let basis = app.viewing.cam.basis();
+        app.pick_face_3d(rect, qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at(c).0);
+        assert!(app.tools.gsel.faces.contains(&fid), "the face must get selected by a click");
 
-        let anchor = app.cmd_anchor_screen(rect).expect("the command must have an anchor for the popup — otherwise there is nowhere to show the thickness field");
+        let anchor = crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).expect("the command must have an anchor for the popup — otherwise there is nowhere to show the thickness field");
         assert!(rect.contains(anchor), "the anchor must be inside the viewport, and it is {anchor:?}");
         // and it is at THE FACE ITSELF rather than in some random corner
-        let face = app.project3(c, rect, &basis).0;
+        let face = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at(c).0;
         assert!(anchor.distance(face) < 200.0, "the anchor must stand at the selected face: it is {:.0} px away", anchor.distance(face));
     }
 
@@ -222,28 +222,28 @@ mod tests {
         let (mi, body) = part_with_cube(&mut app);
         app.start_feat_cmd(28);
         let top = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap()).map(|f| f.id).expect("the top face");
-        app.gsel.faces.insert(top);
-        app.gsel.faces_body = Some(body);
+        app.tools.gsel.faces.insert(top);
+        app.tools.gsel.faces_body = Some(body);
 
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 9.0;
-        app.cam.target = [10.0, 10.0, 5.0];
-        let basis = app.cam.basis();
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 9.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
+        let basis = app.viewing.cam.basis();
 
         let (_, tip, _) = app.face_arrow_geometry().expect("the selected face must have a handle");
-        let at = app.project3(tip, rect, &basis).0;
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at(tip).0;
         assert!(app.face_arrow_hit(rect, at, &basis), "a cursor at the tip of the arrow must grab it");
         assert!(!app.face_arrow_hit(rect, at + egui::vec2(200.0, 200.0), &basis), "far from the arrow there must be no grab");
 
-        let before = app.cmd_val("thickness");
-        app.face_arrow_drag = Some(before);
+        let before = qymcad_ui_state::cmd_val(&app.tools.cmd, "thickness");
+        app.dragged.face_arrow_drag = Some(before);
         app.face_arrow_drag_to(egui::vec2(0.0, -40.0), rect, &basis);
-        let after = app.cmd_val("thickness");
+        let after = qymcad_ui_state::cmd_val(&app.tools.cmd, "thickness");
         assert!((after - before).abs() > 0.1, "dragging the handle must change THE THICKNESS: it was {before:.2}, it became {after:.2}");
         assert!(
-            app.cmd.params.iter().find(|p| p.key == "thickness").map(|p| p.txt.clone()).unwrap_or_default().starts_with(&format!("{after:.2}")),
+            app.tools.cmd.params.iter().find(|p| p.key == "thickness").map(|p| p.txt.clone()).unwrap_or_default().starts_with(&format!("{after:.2}")),
             "the field and the handle are one value and not two independent ones"
         );
     }
@@ -260,26 +260,26 @@ mod tests {
             let mut app = App::default();
             let (mi, body) = part_with_cube(&mut app);
             app.start_feat_cmd(kind);
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 9.0;
-            app.cam.target = [10.0, 10.0, 5.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 9.0;
+            app.viewing.cam.target = [10.0, 10.0, 5.0];
             let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
             let face = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap()).cloned().expect("the top face");
-            app.gsel.faces.insert(face.id);
-            app.gsel.faces_body = Some(body);
+            app.tools.gsel.faces.insert(face.id);
+            app.tools.gsel.faces_body = Some(body);
 
-            let basis = app.cam.basis();
+            let basis = app.viewing.cam.basis();
             let mesh = &app.project.bodies[mi].mesh;
             let mut bbox: Option<egui::Rect> = None;
             for &ti in &face.triangles {
                 for v in mesh.triangle(ti as usize) {
-                    let p = app.project3([v.x, v.y, v.z], rect, &basis).0;
+                    let p = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect, basis: &basis }.at([v.x, v.y, v.z]).0;
                     bbox = Some(bbox.map_or(egui::Rect::from_min_max(p, p), |r| r.union(egui::Rect::from_min_max(p, p))));
                 }
             }
             let bbox = bbox.expect("the face is visible on screen");
-            let anchor = app.cmd_anchor_screen(rect).expect("the anchor of the popup must exist");
+            let anchor = crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).expect("the anchor of the popup must exist");
             assert!(!bbox.contains(anchor), "command {kind}: the popup lay on the selected face — the very thing aimed at next (the face {bbox:?}, the anchor {anchor:?})");
             assert!(rect.contains(anchor), "command {kind}: the anchor must be inside the viewport, and it is {anchor:?}");
             assert!(anchor.distance(bbox.center()) < 400.0, "command {kind}: the anchor must stay AT THE GEOMETRY, and it is {:.0} px from the face", anchor.distance(bbox.center()));

@@ -15,9 +15,9 @@ mod tests {
 
     fn ready() -> App {
         let mut app = App::default();
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 8.0;
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 8.0;
         app
     }
 
@@ -42,9 +42,9 @@ mod tests {
         for z in zones().iter().filter(|z| z.kind == ZoneKind::Corner) {
             let (yaw, pitch) = dir_to_angles(z.dir);
             let mut app = ready();
-            app.cam.yaw = yaw;
-            app.cam.pitch = pitch;
-            let (right, up, fwd) = app.cam.basis();
+            app.viewing.cam.yaw = yaw;
+            app.viewing.cam.pitch = pitch;
+            let (right, up, fwd) = app.viewing.cam.basis();
             // the basis is orthonormal — the camera is not degenerate
             for (n, v) in [("right", right), ("up", up), ("fwd", fwd)] {
                 let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
@@ -68,9 +68,9 @@ mod tests {
         for z in zones().iter().filter(|z| z.kind == ZoneKind::Face && z.dir[2].abs() > 0.9) {
             let (yaw, pitch) = dir_to_angles(z.dir);
             let mut app = ready();
-            app.cam.yaw = yaw;
-            app.cam.pitch = pitch;
-            let (right, up, fwd) = app.cam.basis();
+            app.viewing.cam.yaw = yaw;
+            app.viewing.cam.pitch = pitch;
+            let (right, up, fwd) = app.viewing.cam.basis();
             let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
             assert!(dot(right, up).abs() < 1e-9 && dot(right, fwd).abs() < 1e-9 && dot(up, fwd).abs() < 1e-9, "the basis at a pole must be orthogonal");
             assert!((dot(right, right) - 1.0).abs() < 1e-9, "and normalised");
@@ -84,30 +84,30 @@ mod tests {
     fn clicking_a_zone_turns_the_view_to_it() {
         let mut app = ready();
         // the view starts isometric so that there are plenty of front zones
-        app.cam.yaw = -0.7;
-        app.cam.pitch = 0.6;
-        let idx = app.viewcube_zone_at_pub(rect(), app.viewcube_zone_center_pub(rect(), 0)).expect("the centre of zone 0 must land inside it");
+        app.viewing.cam.yaw = -0.7;
+        app.viewing.cam.pitch = 0.6;
+        let idx = crate::gui::viewcube::zone_at(&app.cube_ctx(), rect(), crate::gui::viewcube::zone_center(&app.cube_ctx(), rect(), 0)).expect("the centre of zone 0 must land inside it");
         let want = zones()[idx].dir;
 
-        let at = app.viewcube_zone_center_pub(rect(), idx);
-        assert!(app.viewcube_click_pub(rect(), at), "a click on the cube must be accepted");
+        let at = crate::gui::viewcube::zone_center(&app.cube_ctx(), rect(), idx);
+        assert!(app.viewcube_click(rect(), at), "a click on the cube must be accepted");
         // the turn is animated — the animation is driven to its end
-        app.finish_view_anim_pub();
+        app.viewing.finish_view_anim();
         let (yw, pt) = dir_to_angles(want);
-        assert!((app.cam.yaw - yw).abs() < 1e-6, "the yaw must arrive at the zone: {} against {yw}", app.cam.yaw);
-        assert!((app.cam.pitch - pt).abs() < 1e-6, "the pitch must arrive at the zone: {} against {pt}", app.cam.pitch);
+        assert!((app.viewing.cam.yaw - yw).abs() < 1e-6, "the yaw must arrive at the zone: {} against {yw}", app.viewing.cam.yaw);
+        assert!((app.viewing.cam.pitch - pt).abs() < 1e-6, "the pitch must arrive at the zone: {} against {pt}", app.viewing.cam.pitch);
     }
 
     /// THE FAR SIDE IS NOT CLICKABLE: a click on a visible zone must not go to the one behind it.
     #[test]
     fn the_far_side_of_the_cube_is_not_clickable() {
         let mut app = ready();
-        app.cam.yaw = -0.7;
-        app.cam.pitch = 0.6;
-        let (_, _, fwd) = app.cam.basis();
+        app.viewing.cam.yaw = -0.7;
+        app.viewing.cam.pitch = 0.6;
+        let (_, _, fwd) = app.viewing.cam.basis();
         for i in 0..zones().len() {
-            let at = app.viewcube_zone_center_pub(rect(), i);
-            if let Some(hit) = app.viewcube_zone_at_pub(rect(), at) {
+            let at = crate::gui::viewcube::zone_center(&app.cube_ctx(), rect(), i);
+            if let Some(hit) = crate::gui::viewcube::zone_at(&app.cube_ctx(), rect(), at) {
                 let d = zones()[hit].dir;
                 let toward = -(d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2]);
                 assert!(toward > 0.0, "the pick returned a zone from the FAR side of the cube (toward={toward})");
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn a_click_away_from_the_cube_is_not_swallowed() {
         let mut app = ready();
-        assert!(!app.viewcube_click_pub(rect(), egui::pos2(20.0, 650.0)), "a click in another corner of the screen does not belong to the cube");
+        assert!(!app.viewcube_click(rect(), egui::pos2(20.0, 650.0)), "a click in another corner of the screen does not belong to the cube");
     }
 
     /// THE CAPTIONS OF THE FACES COME FROM THE LOCALISATION: a build in one language with a cube in
@@ -151,12 +151,12 @@ mod tests {
     fn the_cube_size_is_a_setting_with_three_readable_steps() {
         let mut app = ready();
         app.set.viewcube_size = 1;
-        let medium = app.viewcube_size_pub();
+        let medium = crate::gui::viewcube::size(&app.cube_ctx());
         assert!(medium > 36.0, "the middle cube must be more readable than the former 36 px, and it is {medium}");
         app.set.viewcube_size = 0;
-        let small = app.viewcube_size_pub();
+        let small = crate::gui::viewcube::size(&app.cube_ctx());
         app.set.viewcube_size = 2;
-        let large = app.viewcube_size_pub();
+        let large = crate::gui::viewcube::size(&app.cube_ctx());
         assert!(small < medium && medium < large, "the three sizes must differ: {small} / {medium} / {large}");
         assert!(large < medium * 1.6, "the spread of the sizes is sensible rather than twofold: {medium} -> {large}");
     }
@@ -165,12 +165,12 @@ mod tests {
     #[test]
     fn the_turn_is_animated_not_instant() {
         let mut app = ready();
-        app.cam.yaw = 0.0;
-        app.cam.pitch = 0.0;
-        app.animate_view_to(1.5, 0.5);
-        assert!((app.cam.yaw - 0.0).abs() < 1e-9, "right after the request the view is NOT there yet — it is travelling");
-        app.finish_view_anim_pub();
-        assert!((app.cam.yaw - 1.5).abs() < 1e-6, "on completion it must arrive exactly");
+        app.viewing.cam.yaw = 0.0;
+        app.viewing.cam.pitch = 0.0;
+        crate::gui::animate_view_to(app.viewing.cam, &mut app.viewing.mode_3d, &mut app.viewing.view_anim, 1.5, 0.5);
+        assert!((app.viewing.cam.yaw - 0.0).abs() < 1e-9, "right after the request the view is NOT there yet — it is travelling");
+        app.viewing.finish_view_anim();
+        assert!((app.viewing.cam.yaw - 1.5).abs() < 1e-6, "on completion it must arrive exactly");
     }
 
     /// THE SHORTEST WAY ROUND IN YAW: from -170 to +170 degrees that is 20 degrees, not 340 all the way
@@ -178,10 +178,10 @@ mod tests {
     #[test]
     fn the_turn_takes_the_short_way_round() {
         let mut app = ready();
-        app.cam.yaw = -170f64.to_radians();
-        app.cam.pitch = 0.0;
-        app.animate_view_to(170f64.to_radians(), 0.0);
-        let (from, to) = app.view_anim_endpoints_pub().expect("the animation is running");
+        app.viewing.cam.yaw = -170f64.to_radians();
+        app.viewing.cam.pitch = 0.0;
+        crate::gui::animate_view_to(app.viewing.cam, &mut app.viewing.mode_3d, &mut app.viewing.view_anim, 170f64.to_radians(), 0.0);
+        let (from, to) = app.viewing.view_anim.map(|t| (t.from, t.to)).expect("the animation is running");
         assert!((to.0 - from.0).abs() < std::f64::consts::PI, "the turn must take the short way round, and it takes {:.0} degrees", (to.0 - from.0).to_degrees().abs());
     }
     /// A CORNER IS A HEXAGON and not a triangle: otherwise HOLES are left at the corners.
@@ -261,14 +261,18 @@ mod tests {
     /// as the face is, because it is a drawing on it.
     #[test]
     fn the_label_lies_on_the_face_like_a_decal() {
-        let src = include_str!("viewcube.rs");
-        let a = src.find("if let (Some(key), true) = (z.label").expect("the caption is drawn");
-        let b = src[a..].find("self.draw_axis_triad").map(|i| a + i).unwrap_or(src.len());
+        use crate::gui::render_source::dense;
+        // THE BLOCK IS FOUND BY ITS OWN SHAPE, not by the name of whatever follows it: the drawing was
+        // moved off `App` and the old end anchor `self.draw_axis_triad` vanished with it, which left the
+        // block running to the end of the file and the guard reading a different piece of code entirely.
+        let src = dense(include_str!("viewcube.rs"));
+        let a = src.find(&dense("if let (Some(key), true) = (z.label")).expect("the caption is drawn");
+        let b = src[a..].find(&dense("pub(crate) fn axis_triad")).map(|i| a + i).expect("the block ends at the axis triad");
         let blk = &src[a..b];
-        assert!(!blk.contains("toward > 0.55"), "there must be no threshold at which the caption disappears");
-        assert!(!blk.contains("painter.text("), "the caption is NOT drawn as screen text — it is a texture on the face");
-        assert!(blk.contains("Mesh::with_texture"), "the caption must be a texture stretched over the face");
-        assert!(blk.contains("label_frame(z.dir)"), "the quadrilateral of the caption must lie IN THE PLANE of the face");
+        assert!(!blk.contains(&dense("toward > 0.55")), "there must be no threshold at which the caption disappears");
+        assert!(!blk.contains(&dense("painter.text(")), "the caption is NOT drawn as screen text — it is a texture on the face");
+        assert!(blk.contains(&dense("Mesh::with_texture")), "the caption must be a texture stretched over the face");
+        assert!(blk.contains(&dense("label_frame(z.dir)")), "the quadrilateral of the caption must lie IN THE PLANE of the face");
     }
 
     /// THE QUADRILATERAL OF THE CAPTION IS DEFORMED TOGETHER WITH THE FACE — that is what "lies on it"
@@ -281,16 +285,16 @@ mod tests {
     fn the_label_quad_squashes_together_with_its_face() {
         let mut app = ready();
         // the +X face, looked at head on
-        app.cam.yaw = 0.0;
-        app.cam.pitch = 0.0;
+        app.viewing.cam.yaw = 0.0;
+        app.viewing.cam.pitch = 0.0;
         let face = zones().iter().position(|z| z.kind == ZoneKind::Face && z.dir[0] > 0.9).expect("the +X face");
-        let wide = app.label_quad_width_pub(rect(), face);
-        let face_wide = app.zone_screen_width_pub(rect(), face);
+        let wide = crate::gui::viewcube::label_quad_width(&app.cube_ctx(), rect(), face);
+        let face_wide = crate::gui::viewcube::zone_screen_width(&app.cube_ctx(), rect(), face);
 
         // and now at a grazing angle
-        app.cam.yaw = 1.2;
-        let narrow = app.label_quad_width_pub(rect(), face);
-        let face_narrow = app.zone_screen_width_pub(rect(), face);
+        app.viewing.cam.yaw = 1.2;
+        let narrow = crate::gui::viewcube::label_quad_width(&app.cube_ctx(), rect(), face);
+        let face_narrow = crate::gui::viewcube::zone_screen_width(&app.cube_ctx(), rect(), face);
 
         assert!(narrow < wide * 0.8, "the caption must be squeezed together with the face: {wide:.1} -> {narrow:.1}");
         let k_label = narrow / wide;
@@ -307,9 +311,10 @@ mod tests {
     /// its shape and by the triad of axes.
     #[test]
     fn the_small_cube_has_no_labels() {
-        let src = include_str!("viewcube.rs");
+        use crate::gui::render_source::dense;
+        let src = dense(include_str!("viewcube.rs"));
         assert!(
-            src.contains("self.set.viewcube_size > 0"),
+            src.contains(&dense("cube.size_step > 0")),
             "the captions must be shown only at the middle and large sizes"
         );
     }
@@ -331,12 +336,12 @@ mod tests {
     fn the_cube_stays_a_pointer_not_a_centrepiece() {
         let mut app = ready();
         app.set.viewcube_size = 2;
-        let large = app.viewcube_size_pub();
+        let large = crate::gui::viewcube::size(&app.cube_ctx());
         // 700 px is the height of the viewport in the tests; the cube (two half-sizes) must take up
         // noticeably less than a fifth of it
         assert!(large * 2.0 < 700.0 * 0.22, "a large cube must stay a pointer, and it is {} px", large * 2.0);
         app.set.viewcube_size = 1;
-        assert!(app.viewcube_size_pub() < large * 0.8, "the middle one is noticeably smaller than the large one");
+        assert!(crate::gui::viewcube::size(&app.cube_ctx()) < large * 0.8, "the middle one is noticeably smaller than the large one");
     }
 
     /// THE OLD PLATE OF VIEW BUTTONS IS GONE — the cube does its work, and does it more fully.
@@ -368,15 +373,15 @@ mod tests {
         for size in [0u8, 1, 2] {
             let mut app = ready();
             app.set.viewcube_size = size;
-            app.cam.yaw = -0.7;
-            app.cam.pitch = 0.6;
+            app.viewing.cam.yaw = -0.7;
+            app.viewing.cam.pitch = 0.6;
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx); // the same set of fonts as in a real window
             let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
                     let painter = ui.painter().clone();
                     // the same call a real frame makes
-                    app.draw_viewcube_pub(&painter, rect());
+                    app.draw_viewcube(&painter, rect());
                 });
             });
         }
@@ -389,14 +394,14 @@ mod tests {
         let angles = [(0.0, 0.0), (0.0, std::f64::consts::FRAC_PI_2), (0.0, -std::f64::consts::FRAC_PI_2), (2.4, 0.9), (-1.9, -0.7), (3.1, 0.0)];
         for (yaw, pitch) in angles {
             let mut app = ready();
-            app.cam.yaw = yaw;
-            app.cam.pitch = pitch;
+            app.viewing.cam.yaw = yaw;
+            app.viewing.cam.pitch = pitch;
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx); // the same set of fonts as in a real window
             let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
                     let painter = ui.painter().clone();
-                    app.draw_viewcube_pub(&painter, rect());
+                    app.draw_viewcube(&painter, rect());
                 });
             });
         }
@@ -421,9 +426,9 @@ mod tests {
             let mut app = ready();
             // this face is looked at HEAD ON — just as after a click on it
             let (yaw, pitch) = dir_to_angles(z.dir);
-            app.cam.yaw = yaw;
-            app.cam.pitch = pitch;
-            let (right, up) = app.label_screen_dirs_pub(rect(), i);
+            app.viewing.cam.yaw = yaw;
+            app.viewing.cam.pitch = pitch;
+            let (right, up) = crate::gui::viewcube::label_screen_dirs(&app.cube_ctx(), rect(), i);
             let name = z.label.unwrap_or("?");
 
             // HORIZONTAL: "right" of the text runs along the screen X rather than up and down

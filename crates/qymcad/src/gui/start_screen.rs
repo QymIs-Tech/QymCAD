@@ -14,136 +14,144 @@
 //! the very first screen. In its place is the parts library, which the distribution DOES have.
 use super::{App, Nav};
 use egui_phosphor::regular as ph;
+use crate::gui::WinKind;
 
 /// Where the start screen last drew itself. Published by the window, read by the guard beside it:
 /// a check must measure what the code says it drew, not rebuild somebody else's identifier.
 pub(super) const START_RECT: &str = "qym-start-screen-rect";
 
 impl App {
-    /// Is the start screen visible right now.
-    ///
-    /// The condition is more than a flag: a document that already holds something NEVER shows the
-    /// screen, even if the flag stayed raised. That way "over somebody's work" becomes an
-    /// inexpressible state rather than a promise to be careful.
-    pub(crate) fn start_screen_visible(&self) -> bool {
-        // ASKED FOR MEANS SHOWN. The rule below is about a screen that raises ITSELF.
-        self.win.start_asked || (self.win.start && self.project.timeline.is_empty() && self.project_path.is_none())
-    }
-
-    /// The start screen: the recent files on the left, the actions on the right.
+    /// The start screen: the door that builds the narrow context.
     pub(crate) fn start_screen(&mut self, ctx: &egui::Context) {
-        if !self.start_screen_visible() {
-            return;
-        }
-        let mut close = false;
-        // THE SIZE IS FIXED RATHER THAN "BY CONTENT". A window with `default_width` grows to the
-        // demands of its innards anyway: a separator and a button in a vertical column ask for ALL the
-        // available width, and what is available inside a horizontal row is the width of the screen.
-        // The reported result was a screen swollen to the whole window and hanging over its edges.
-        //
-        // The columns are given their width from above as well (`set_width` rather than
-        // `set_min_width`): a minimum grows, an exact size does not.
-        const COL_L: f32 = 300.0;
-        const COL_R: f32 = 240.0;
-        let shown = egui::Window::new(format!("{} {}", ph::HOUSE, crate::i18n::tr("start-title")))
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .fixed_size([COL_L + COL_R + 40.0, 320.0])
-            .show(ctx, |ui| {
-                ui.horizontal_top(|ui| {
-                    // ON THE LEFT, THE RECENT FILES. The first thing people come here for: carrying
-                    // on with yesterday.
-                    ui.vertical(|ui| {
-                        ui.set_width(COL_L);
-                        ui.label(egui::RichText::new(crate::i18n::tr("start-recent")).strong());
-                        ui.separator();
-                        let recent = self.set.recent.clone();
-                        if recent.is_empty() {
-                            ui.label(egui::RichText::new(crate::i18n::tr("start-recent-empty")).weak().small());
-                        }
-                        for path in &recent {
-                            let name = std::path::Path::new(path).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.clone());
-                            // THE NAME IS TRIMMED: a path to a project can be longer than any
-                            // reasonable window, and a button grows to fit its text. The full path
-                            // stays in the tooltip.
-                            let short: String = if name.chars().count() > 34 { format!("{}…", name.chars().take(33).collect::<String>()) } else { name.clone() };
-                            if ui.button(format!("{}  {short}", ph::FILE)).on_hover_text(path).clicked() {
-                                self.request_nav(Nav::OpenPath(path.clone()), ctx);
-                                close = true;
-                            }
-                        }
-                    });
+        let mut asks = Vec::new();
+        start_screen(&mut self.win_ctx(&mut asks), ctx);
+        self.do_win_asks(asks, ctx);
+    }
+}
+
+/// IS THE START SCREEN VISIBLE RIGHT NOW.
+///
+/// The condition is more than a flag: a document that already holds something NEVER shows the screen, even
+/// if the flag stayed raised. That way "over somebody's work" becomes an inexpressible state rather than a
+/// promise to be careful.
+pub(crate) fn start_screen_visible(win: &qymcad_ui_state::Windows, project: &qymcad_core::model::Project, project_path: &Option<String>) -> bool {
+    // ASKED FOR MEANS SHOWN. The rule below is about a screen that raises ITSELF.
+    win.start_asked || (win.is(WinKind::Start) && project.timeline.is_empty() && project_path.is_none())
+}
+
+/// THE START SCREEN: the recent files on the left, where to begin on the right.
+pub(crate) fn start_screen(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
+    if !start_screen_visible(wc.win, wc.project, wc.project_path) {
+        return;
+    }
+    let mut close = false;
+    // THE SIZE IS FIXED RATHER THAN "BY CONTENT". A window with `default_width` grows to the
+    // demands of its innards anyway: a separator and a button in a vertical column ask for ALL the
+    // available width, and what is available inside a horizontal row is the width of the screen.
+    // The reported result was a screen swollen to the whole window and hanging over its edges.
+    //
+    // The columns are given their width from above as well (`set_width` rather than
+    // `set_min_width`): a minimum grows, an exact size does not.
+    const COL_L: f32 = 300.0;
+    const COL_R: f32 = 240.0;
+    let shown = egui::Window::new(format!("{} {}", ph::HOUSE, crate::i18n::tr("start-title")))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .fixed_size([COL_L + COL_R + 40.0, 320.0])
+        .show(ctx, |ui| {
+            ui.horizontal_top(|ui| {
+                // ON THE LEFT, THE RECENT FILES. The first thing people come here for: carrying
+                // on with yesterday.
+                ui.vertical(|ui| {
+                    ui.set_width(COL_L);
+                    ui.label(egui::RichText::new(crate::i18n::tr("start-recent")).strong());
                     ui.separator();
-                    // ON THE RIGHT, WHERE TO BEGIN.
-                    ui.vertical(|ui| {
-                        ui.set_width(COL_R);
-                        ui.label(egui::RichText::new(crate::i18n::tr("start-begin")).strong());
-                        ui.separator();
-                        if ui.button(format!("{}  {}", ph::CUBE, crate::i18n::tr("start-new-part"))).clicked() {
-                            self.request_nav(Nav::New, ctx);
+                    let recent = wc.set.recent.clone();
+                    if recent.is_empty() {
+                        ui.label(egui::RichText::new(crate::i18n::tr("start-recent-empty")).weak().small());
+                    }
+                    for path in &recent {
+                        let name = std::path::Path::new(path).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.clone());
+                        // THE NAME IS TRIMMED: a path to a project can be longer than any
+                        // reasonable window, and a button grows to fit its text. The full path
+                        // stays in the tooltip.
+                        let short: String = if name.chars().count() > 34 { format!("{}…", name.chars().take(33).collect::<String>()) } else { name.clone() };
+                        if ui.button(format!("{}  {short}", ph::FILE)).on_hover_text(path).clicked() {
+                            wc.ask.push(qymcad_ui_state::WinAsk::NavGuarded(Nav::OpenPath(path.clone())));
                             close = true;
                         }
-                        if ui.button(format!("{}  {}", ph::PACKAGE, crate::i18n::tr("start-new-assembly"))).clicked() {
-                            self.request_nav(Nav::NewAssembly, ctx);
-                            close = true;
-                        }
-                        if ui.button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("start-open"))).clicked() {
-                            self.request_nav(Nav::OpenDialog, ctx);
-                            close = true;
-                        }
-                        if ui.button(format!("{}  {}", ph::PACKAGE, crate::i18n::tr("start-library"))).clicked() {
-                            self.toggle_parts_library();
-                            close = true;
-                        }
-                        ui.separator();
-                        // LEARNING STARTS HERE. The start screen used to be about files: create,
-                        // open, recent. Somebody opening the CAD for the first time needs to go not
-                        // into files but into the first lesson — and it now exists
-                        // (`start/01-first-part`).
-                        //
-                        // The lesson stands above the help DELIBERATELY: the help answers "how does
-                        // this work", and the lesson answers "what do I do first", and it is the
-                        // latter that is needed first.
-                        if ui.button(format!("{}  {}", ph::GRADUATION_CAP, crate::i18n::tr("start-first-lesson"))).on_hover_text(&crate::i18n::tr("start-first-lesson-hint")).clicked() {
-                            self.open_help("start/01-first-part");
-                            close = true;
-                        }
-                        if ui.button(format!("{}  {}", ph::BOOK_OPEN, crate::i18n::tr("start-help"))).clicked() {
-                            self.open_help("index");
-                            close = true;
-                        }
-                        if ui.button(format!("{}  {}", ph::KEYBOARD, crate::i18n::tr("start-hotkeys"))).clicked() {
-                            self.win.hotkeys = true;
-                            close = true;
-                        }
-                        ui.hyperlink_to(format!("{}  {}", ph::BOOK_OPEN, crate::i18n::tr("start-help-site")), "https://cad.qymis.tech");
-                    });
+                    }
                 });
                 ui.separator();
-                ui.horizontal(|ui| {
-                    if ui.button(crate::i18n::tr("start-close")).clicked() {
+                // ON THE RIGHT, WHERE TO BEGIN.
+                ui.vertical(|ui| {
+                    ui.set_width(COL_R);
+                    ui.label(egui::RichText::new(crate::i18n::tr("start-begin")).strong());
+                    ui.separator();
+                    if ui.button(format!("{}  {}", ph::CUBE, crate::i18n::tr("start-new-part"))).clicked() {
+                        wc.ask.push(qymcad_ui_state::WinAsk::NavGuarded(Nav::New));
                         close = true;
                     }
-                    ui.label(egui::RichText::new(crate::i18n::tr("start-hint")).weak().small());
+                    if ui.button(format!("{}  {}", ph::PACKAGE, crate::i18n::tr("start-new-assembly"))).clicked() {
+                        wc.ask.push(qymcad_ui_state::WinAsk::NavGuarded(Nav::NewAssembly));
+                        close = true;
+                    }
+                    if ui.button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("start-open"))).clicked() {
+                        wc.ask.push(qymcad_ui_state::WinAsk::NavGuarded(Nav::OpenDialog));
+                        close = true;
+                    }
+                    if ui.button(format!("{}  {}", ph::PACKAGE, crate::i18n::tr("start-library"))).clicked() {
+                        crate::gui::toggle_parts_library(wc.parts, wc.win);
+                        close = true;
+                    }
+                    ui.separator();
+                    // LEARNING STARTS HERE. The start screen used to be about files: create,
+                    // open, recent. Somebody opening the CAD for the first time needs to go not
+                    // into files but into the first lesson — and it now exists
+                    // (`start/01-first-part`).
+                    //
+                    // The lesson stands above the help DELIBERATELY: the help answers "how does
+                    // this work", and the lesson answers "what do I do first", and it is the
+                    // latter that is needed first.
+                    if ui.button(format!("{}  {}", ph::GRADUATION_CAP, crate::i18n::tr("start-first-lesson"))).on_hover_text(crate::i18n::tr("start-first-lesson-hint")).clicked() {
+                        crate::gui::help_window::open(wc.set, &mut wc.win.help, &wc.scheme.pal, wc.status, "start/01-first-part");
+                        close = true;
+                    }
+                    if ui.button(format!("{}  {}", ph::BOOK_OPEN, crate::i18n::tr("start-help"))).clicked() {
+                        crate::gui::help_window::open(wc.set, &mut wc.win.help, &wc.scheme.pal, wc.status, "index");
+                        close = true;
+                    }
+                    if ui.button(format!("{}  {}", ph::KEYBOARD, crate::i18n::tr("start-hotkeys"))).clicked() {
+                        wc.win.open(WinKind::Hotkeys);
+                        close = true;
+                    }
+                    ui.hyperlink_to(format!("{}  {}", ph::BOOK_OPEN, crate::i18n::tr("start-help-site")), "https://cad.qymis.tech");
                 });
             });
-        // WHAT WAS DRAWN, PUBLISHED BY THE CODE THAT DREW IT.
-        //
-        // The guard beside this file used to rebuild egui's own window identifier by hand and read the
-        // area state under it. That identifier is egui's business: in 0.35 a window derives it from
-        // `Atoms::text()`, which returns an `Option`, and hashing an `Option` is not hashing a string -
-        // so the guard found nothing and reported the start screen missing while it was on the screen.
-        //
-        // A check must not reconstruct somebody else's internals. The size is published here instead,
-        // under an identifier of ours, and read as it was written.
-        if let Some(r) = &shown {
-            ctx.data_mut(|d| d.insert_temp(egui::Id::new(START_RECT), r.response.rect));
-        }
-        if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.win.start = false;
-            self.win.start_asked = false;
-        }
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button(crate::i18n::tr("start-close")).clicked() {
+                    close = true;
+                }
+                ui.label(egui::RichText::new(crate::i18n::tr("start-hint")).weak().small());
+            });
+        });
+    // WHAT WAS DRAWN, PUBLISHED BY THE CODE THAT DREW IT.
+    //
+    // The guard beside this file used to rebuild egui's own window identifier by hand and read the
+    // area state under it. That identifier is egui's business: in 0.35 a window derives it from
+    // `Atoms::text()`, which returns an `Option`, and hashing an `Option` is not hashing a string -
+    // so the guard found nothing and reported the start screen missing while it was on the screen.
+    //
+    // A check must not reconstruct somebody else's internals. The size is published here instead,
+    // under an identifier of ours, and read as it was written.
+    if let Some(r) = &shown {
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new(START_RECT), r.response.rect));
+    }
+    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        wc.win.close(WinKind::Start);
+        wc.win.start_asked = false;
     }
 }
 
@@ -167,8 +175,8 @@ mod tests {
     fn the_first_lesson_opens_the_lesson_itself() {
         let mut app = App::default();
         app.open_help("start/01-first-part");
-        assert!(app.help_open_for_test(), "the help did not open");
-        assert_eq!(app.help_article_for_test(), "start/01-first-part", "the wrong article opened");
+        assert!(app.win.help.open, "the help did not open");
+        assert_eq!(app.win.help.article.clone(), "start/01-first-part", "the wrong article opened");
         assert!(crate::help::article("start/01-first-part").is_some(), "there is no article for the first lesson — the button would lead into emptiness");
     }
 
@@ -178,7 +186,7 @@ mod tests {
         let prev = crate::i18n::language();
         crate::i18n::set_language("ru");
         let mut app = App::default();
-        app.set_show_start_for_test(true);
+        app.win.show_start(true);
         let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.start_screen(c));
         let (lesson, help) = (crate::i18n::tr("start-first-lesson"), crate::i18n::tr("start-help"));
         crate::i18n::set_language(&prev);

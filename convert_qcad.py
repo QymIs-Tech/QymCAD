@@ -21,6 +21,7 @@ CONVERSIONS, newest first. Add to this list when a record changes shape - each e
 the keys it used to carry and the key it carries now. Every step is written so that a document at ANY
 earlier stage lands on the current shape in one pass.
 
+    (any)    edge_refs/face_refs as bare triples   -> (id: _, at: (_, _, _), dir: (_, _, _))
     (any)    faces/edges as a bare list of ids     -> a Ref: (query: Ids([...]), expect: Some, hint: (...))
     NamedDim sketch + a + b                       -> target: Sketch(sketch: _, refs: [_, _])
     Extrude  symmetric + flip                    -> reach: Forward | Backward | BothWays
@@ -221,6 +222,48 @@ def lists_to_refs(text):
     return "".join(out), n
 
 
+# A snapshot as it was written before it had a name: an id and two coordinate triples.
+SNAPSHOT = re.compile(r"\((\d+), \(([^()]*)\), \(([^()]*)\)\)")
+
+def snapshots_to_records(text):
+    """A place snapshot used to be a bare triple; now it is a record with three named fields.
+
+    `edge_refs` and `face_refs` hold the witness taken when a reference was made: the element's id, where it
+    stood, and which way it pointed. As `(15, (2.0, 2.0, 11.0), (0.0, 0.0, -1.0))` there was no telling the
+    second array from the third without going to find the doc comment on the field - for an edge they are the
+    midpoint and the direction, for a face the centre and the normal.
+
+    ONLY INSIDE THOSE TWO MAPS. A triple of `(number, triple, triple)` is a shape that occurs elsewhere in a
+    document, and a rule that does not know where it is does more harm than the shape it fixes - the same
+    lesson as `lists_to_refs` above.
+    """
+    n, out, pos = 0, [], 0
+    while True:
+        hits = [text.find("%s: {" % f, pos) for f in ("edge_refs", "face_refs")]
+        hits = [i for i in hits if i >= 0]
+        if not hits:
+            out.append(text[pos:])
+            break
+        at = min(hits)
+        open_at = text.index("{", at)
+        depth, i = 0, open_at
+        while i < len(text):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body, k = text[open_at : i + 1], 0
+        body, k = SNAPSHOT.subn(r"(id: \1, at: (\2), dir: (\3))", body)
+        n += k
+        out.append(text[pos:open_at])
+        out.append(body)
+        pos = i + 1
+    return "".join(out), n
+
+
 CONVERSIONS = [("Shell", convert_shell), ("Extrude", convert_extrude), ("Revolve", convert_revolve), ("Combine", convert_combine)]
 
 
@@ -232,6 +275,9 @@ def convert_document(text):
     text, n = named_dims_to_targets(text)
     if n:
         counts["NamedDim"] = n
+    text, n = snapshots_to_records(text)
+    if n:
+        counts["ElemSnapshot"] = n
     for kind, rewrite in CONVERSIONS:
         pieces, pos = [], 0
         while True:
@@ -410,12 +456,36 @@ def self_test():
         if "converted and renamed" not in said or not (tmp / "d.qcad").exists():
             bad.append("a document that needed both: %r" % said)
 
+        # 5. THE SNAPSHOTS, and the half that matters is what the rule must NOT touch. A triple of
+        # `(number, triple, triple)` occurs elsewhere in a document; a rule that rewrote every one of them
+        # would quietly corrupt the rest of the file, and nothing would say so until a part built wrong.
+        snaps = (
+            "(\n    timeline: [],\n"
+            "    edge_refs: {\n        72: [\n"
+            "            (15, (2.0, 2.0, 11.0), (0.0, 0.0, -1.0)),\n"
+            "            (8, (0.0, 128.0, 10.0), (0.0, 0.0, 1.0)),\n"
+            "        ],\n    },\n"
+            "    face_refs: {\n        9: [\n            (3, (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),\n        ],\n    },\n"
+            "    elsewhere: [\n        (7, (1.0, 2.0, 3.0), (4.0, 5.0, 6.0)),\n    ],\n)\n"
+        )
+        e = tmp / "e.qcad"
+        bundle(e, snaps)
+        said = run(str(e))
+        if "ElemSnapshot" not in said:
+            bad.append("the snapshots were not converted: %r" % said)
+        with zipfile.ZipFile(e) as z:
+            after = z.read("document.ron").decode()
+        if after.count("(id: ") != 3:
+            bad.append("expected three snapshots to be named, got %d" % after.count("(id: "))
+        if "(7, (1.0, 2.0, 3.0), (4.0, 5.0, 6.0))" not in after:
+            bad.append("the rule reached outside the two maps and rewrote a triple that is not a snapshot")
+
     if bad:
         print("SELF-TEST FAILED:")
         for line in bad:
             print("  " + line)
         return 1
-    print("self-test: all four outcomes report what actually happened")
+    print("self-test: all five cases report what actually happened")
     return 0
 
 

@@ -9,6 +9,7 @@
 //! To redraw: `cargo test -p qymcad -- --ignored --nocapture help_images`.
 #[cfg(test)]
 mod tests {
+    use crate::gui::WinKind;
     use super::super::App;
     use egui::{Color32, ColorImage, Rect};
 
@@ -48,8 +49,8 @@ mod tests {
     /// TAKE A SHOT WITH THE CAMERA ALREADY SET - for the animations.
     fn shot_as_is(app: &mut App, w: usize, h: usize) -> ColorImage {
         let rect = frame_rect(w, h);
-        let basis = app.cam.basis();
-        let big = app.rasterize_3d(rect, &basis, 1.0, 1.0).expect("the rasteriser returned nothing - there are no visible bodies in the scene");
+        let basis = app.viewing.cam.basis();
+        let big = crate::gui::render::rasterize_3d(&app.painting(), rect, &basis, 1.0, 1.0).expect("the rasteriser returned nothing - there are no visible bodies in the scene");
         downscale(&big, SS)
     }
 
@@ -91,14 +92,14 @@ mod tests {
     /// either a third of the frame or none at all.
     fn fit_camera(app: &mut App, rect: Rect) {
         use super::super::{v_dot, v_sub};
-        let (right, up, _) = app.cam.basis();
+        let (right, up, _) = app.viewing.cam.basis();
         // EXACTLY WHAT WILL BE DRAWN. `project.bodies` also holds CONSUMED bodies - the original plate
         // under a fillet, the original under an array. Fitting by those would stretch the frame around what
         // is invisible, and the part would come out half the size it should be.
-        let items: Vec<([f64; 3], [f64; 12])> = app
-            .visible_mesh_items()
+        let pn = app.painting();
+        let items: Vec<([f64; 3], [f64; 12])> = qymcad_ui_state::visible_mesh_items(&pn)
             .iter()
-            .flat_map(|(_, _, _, _, mesh, wt)| mesh.verts.iter().map(|v| ([v.x, v.y, v.z], *wt)).collect::<Vec<_>>())
+            .flat_map(|m| m.mesh.verts.iter().map(|v| ([v.x, v.y, v.z], m.world)).collect::<Vec<_>>())
             .collect();
         assert!(!items.is_empty(), "there is not a single visible vertex in the scene - nothing to shoot");
         let world: Vec<[f64; 3]> = items.iter().map(|(p, wt)| if qymcad_core::feature::is_identity12(wt) { *p } else { qymcad_core::feature::apply12(wt, *p) }).collect();
@@ -116,9 +117,9 @@ mod tests {
             sx = sx.max(v_dot(rel, right).abs());
             sy = sy.max(v_dot(rel, up).abs());
         }
-        app.cam.target = mid;
-        app.cam.scale = ((rect.width() as f64 / 2.0 / sx.max(1e-6)).min(rect.height() as f64 / 2.0 / sy.max(1e-6)) * 0.86) as f32;
-        app.cam.init = true;
+        app.viewing.cam.target = mid;
+        app.viewing.cam.scale = ((rect.width() as f64 / 2.0 / sx.max(1e-6)).min(rect.height() as f64 / 2.0 / sy.max(1e-6)) * 0.86) as f32;
+        app.viewing.cam.init = true;
     }
 
     /// Write the PNG. The directory is created here - otherwise the very first redraw on a clean checkout
@@ -126,7 +127,7 @@ mod tests {
     fn save(name: &str, img: &ColorImage) {
         let dir = img_dir();
         std::fs::create_dir_all(&dir).expect("the picture directory");
-        let png = App::color_image_to_png(img).expect("encoding the PNG");
+        let png = crate::gui::color_image_to_png(img).expect("encoding the PNG");
         std::fs::write(dir.join(name), png).expect("writing the picture");
     }
 
@@ -141,7 +142,7 @@ mod tests {
     fn in_one_part() -> App {
         let mut app = App::default();
         let part = app.project.add_component("part");
-        app.enter_component_for_test(part);
+        app.enter_component(part);
         app
     }
 
@@ -152,15 +153,15 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = h;
             p.txt = format!("{h}");
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
         app
     }
 
@@ -205,14 +206,14 @@ mod tests {
         let (mut target, mut scale) = ([0.0; 3], f32::MAX);
         for a in apps.iter_mut() {
             fit_camera(a, rect);
-            if a.cam.scale < scale {
-                scale = a.cam.scale;
-                target = a.cam.target;
+            if a.viewing.cam.scale < scale {
+                scale = a.viewing.cam.scale;
+                target = a.viewing.cam.target;
             }
         }
         for (i, a) in apps.iter_mut().enumerate() {
-            a.cam.scale = scale;
-            a.cam.target = target;
+            a.viewing.cam.scale = scale;
+            a.viewing.cam.target = target;
             let img = shot_as_is(a, 640, 400);
             save(&format!("{dir}/{i:02}.png"), &img);
         }
@@ -232,8 +233,8 @@ mod tests {
         // and the picture gained a copy of the box at twice the size (those "lines of foreign geometry").
         let body = {
             let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(w as f32, h as f32));
-            let basis = app.cam.basis();
-            app.rasterize_3d(rect, &basis, 1.0, 1.0).expect("the rasteriser returned nothing")
+            let basis = app.viewing.cam.basis();
+            crate::gui::render::rasterize_3d(&app.painting(), rect, &basis, 1.0, 1.0).expect("the rasteriser returned nothing")
         };
         // THE BACKGROUND IS THE VIEWPORT COLOUR FROM THE SCHEME. Pure white is not allowed: a guard uses it
         // to catch frames with a lost texture, and filling with white would blind it. A colour of one's own
@@ -248,8 +249,8 @@ mod tests {
                 let painter = ui.painter().clone();
                 let r = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(w as f32, h as f32));
                 painter.image(tex.id(), r, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
-                a.draw_body_edges(&painter, r);
-                a.draw_feat_cmd_preview(&painter, r);
+                crate::gui::render::draw_body_edges(&a.painting(), &painter, r);
+                crate::gui::render::draw_feat_cmd_preview(&a.painting(), &painter, r);
             });
         })
     }
@@ -263,14 +264,14 @@ mod tests {
         let (mut target, mut scale) = ([0.0; 3], f32::MAX);
         for a in apps.iter_mut() {
             fit_camera(a, rect);
-            if a.cam.scale < scale {
-                scale = a.cam.scale;
-                target = a.cam.target;
+            if a.viewing.cam.scale < scale {
+                scale = a.viewing.cam.scale;
+                target = a.viewing.cam.target;
             }
         }
         for (i, a) in apps.iter_mut().enumerate() {
-            a.cam.scale = scale;
-            a.cam.target = target;
+            a.viewing.cam.scale = scale;
+            a.viewing.cam.target = target;
             let img = shot_cmd(a, 640, 400);
             save(&format!("{dir}/{i:02}.png"), &img);
         }
@@ -295,7 +296,7 @@ mod tests {
             // if under a dimming (reported from the shots of the settings and the keys). A scheme sets not
             // only the palette of the canvas but the look of `egui` itself - and a shot needs it exactly as
             // much as the program does.
-            app.apply_theme(ui.ctx());
+            crate::gui::apply_theme(&mut app.scheme, &app.set, ui.ctx());
             draw(app, ui);
         })
     }
@@ -305,11 +306,11 @@ mod tests {
     /// Fitting the frame to the bounds does not do here: after a trim the geometry gets smaller and the
     /// frame closes in - to the eye it looks as if the line did not shorten but came nearer.
     fn shot_sketch_fixed(app: &mut App, si: usize, scale: f32) -> ColorImage {
-        app.mode_3d = false;
+        app.viewing.mode_3d = false;
         app.project.regen_sketch(si);
-        app.view.scale = scale;
-        app.view.center = super::super::Vec2::new(0.0, 0.0);
-        app.view.initialized = true;
+        app.viewing.view.scale = scale;
+        app.viewing.view.center = super::super::Vec2::new(0.0, 0.0);
+        app.viewing.view.initialized = true;
         let bg = app.scheme.pal.viewport_bg();
         let a = &*app;
         super::super::help_raster::shot_ui([640, 400], bg, |ui| {
@@ -340,9 +341,9 @@ mod tests {
     /// The background is OPAQUE, unlike the pictures of bodies: the canvas of the sketcher is part of the
     /// picture, and without it the page would carry bare lines in a colour meant for a dark canvas.
     fn shot_sketch(app: &mut App, si: usize, w: usize, h: usize) -> ColorImage {
-        app.mode_3d = false;
+        app.viewing.mode_3d = false;
         app.project.regen_sketch(si);
-        app.fit(Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(w as f32, h as f32)));
+        qymcad_ui_state::fit(&app.project, &mut app.viewing.view, Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(w as f32, h as f32)));
         let bg = app.scheme.pal.viewport_bg();
         let a = &*app;
         super::super::help_raster::shot_ui([w, h], bg, |ui| {
@@ -402,7 +403,7 @@ mod tests {
                     let body = body_of(&app);
                     let edges = all_edges(&app, body);
                     app.project.add_fillet(body, r, edges);
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     app
                 })
                 .collect(),
@@ -413,7 +414,7 @@ mod tests {
         let body = body_of(&app);
         let edges = all_edges(&app, body);
         app.project.add_chamfer(body, 3.0, edges);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         still(&mut app, "part-chamfer");
 
         // HOLE - a through hole in the top face.
@@ -421,7 +422,7 @@ mod tests {
         let body = body_of(&app);
         let face = top_face(&app, body);
         app.project.add_hole(body, face, 10.0, 20.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         still(&mut app, "part-hole");
 
         // SHELL - seen from the open side: otherwise the picture shows the same plate and the point of the
@@ -431,15 +432,15 @@ mod tests {
         let face = top_face(&app, body);
         let fid = app.project.regen_faces.get(&body).and_then(|fs| fs.iter().find(|f| f.id == face.id)).map(|f| f.id).expect("the face of the shell");
         app.project.add_shell(body, 2.0, vec![fid], false);
-        app.rebuild_if_dirty();
-        app.cam.pitch = 1.05; // looking from above - the walls and the floor are visible
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.cam.pitch = 1.05; // looking from above - the walls and the floor are visible
         still(&mut app, "part-shell");
 
         // LINEAR ARRAY - copies along two directions.
         let mut app = plate(8.0);
         let body = body_of(&app);
-        app.project.add_linear_array_grid(body, 55.0, 0.0, 0.0, 3, 0.0, 45.0, 0.0, 2);
-        app.rebuild_if_dirty();
+        app.project.add_linear_array_grid(body, qymcad_core::model::ArrayAxis { d: [55.0, 0.0, 0.0], count: 3 }, qymcad_core::model::ArrayAxis { d: [0.0, 45.0, 0.0], count: 2 });
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         still(&mut app, "part-array-linear");
 
         // CIRCULAR ARRAY - about the Z axis, so the plate is moved off centre.
@@ -448,18 +449,18 @@ mod tests {
         app.project.add_rect_entity(si, 26.0, -5.0, 14.0, 10.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 6.0;
             p.txt = "6".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
         let body = body_of(&app);
         app.project.add_circular_array(body, 8, 360.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         still(&mut app, "part-array-circular");
 
         // REVOLVE - a profile set ASIDE from the axis gives a ring rather than a disc: that is exactly what
@@ -470,15 +471,15 @@ mod tests {
         app.project.add_rect_entity(si, -9.0, 7.0, 18.0, 13.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(3); // revolve, through the same command a person uses
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "angle") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
             p.val = 270.0;
             p.txt = "270".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
         still(&mut app, "part-revolve");
 
         // PRIMITIVES - a box and a cylinder side by side: one article covers six of them, and the picture
@@ -486,8 +487,8 @@ mod tests {
         let mut app = App::default();
         app.project.add_box(30.0, 30.0, 20.0);
         app.project.add_cylinder(12.0, 26.0);
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
         still(&mut app, "part-primitives");
 
         // DRAFT - three frames: 0, 8 and 16 deg. In a single picture a draft does not read at all, the eye
@@ -502,7 +503,7 @@ mod tests {
                     let (neutral, sides) = draft_faces(&app, body);
                     if ang > 0.0 {
                         app.project.add_draft(body, sides, neutral, ang, false);
-                        app.rebuild_if_dirty();
+                        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     }
                     app
                 })
@@ -516,10 +517,10 @@ mod tests {
         let body = body_of(&app);
         let face = top_face(&app, body);
         app.project.add_hole(body, face, 9.0, 20.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = body_of(&app);
         app.project.add_mirror(body, 2, true, 0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         still(&mut app, "part-mirror");
 
 
@@ -537,7 +538,7 @@ mod tests {
                         let body = body_of(&app);
                         let face = top_face(&app, body);
                         app.project.add_push_face(body, face, d);
-                        app.rebuild_if_dirty();
+                        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     }
                     app
                 })
@@ -562,11 +563,11 @@ mod tests {
         app.finish_sketch_edit();
         let (id0, id1) = (app.project.sketches[s0].id, app.project.sketches[s1].id);
         app.project.add_loft(vec![id0, id1], vec![0, 0], false, 0, 0, false);
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
         // SLIGHTLY BELOW ISOMETRIC: the whole point of the command is that there is a square BELOW and a
         // circle ABOVE, and both sections must read in one frame.
-        app.cam.pitch = 0.5;
+        app.viewing.cam.pitch = 0.5;
         still(&mut app, "part-loft");
 
         // SWEEP - a section is led along a path. Of all the commands this is the hardest to picture from
@@ -584,8 +585,8 @@ mod tests {
         app.finish_sketch_edit();
         let path_id = app.project.sketches[path_i].id;
         app.project.add_sweep(pid, Vec::new(), path_id, 0);
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
         still(&mut app, "part-sweep");
 
         // SKETCHES. What is shot here is not a body but the plane itself: the colour of definedness, the
@@ -667,7 +668,7 @@ mod tests {
         sketch_still(&mut app, si, "sketch-circle");
 
         let (mut app, si) = empty_sketch();
-        app.project.add_arc_entity(si, 0.0, -8.0, -22.0, -8.0, 22.0, -8.0, qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
+        app.project.add_arc_entity(si, qymcad_core::geom::Point2::new(0.0, -8.0), qymcad_core::geom::Point2::new(-22.0, -8.0), qymcad_core::geom::Point2::new(22.0, -8.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
         sketch_still(&mut app, si, "sketch-arc");
 
         let (mut app, si) = empty_sketch();
@@ -735,31 +736,31 @@ mod tests {
             let mut app = App::default();
             app.start_prim_cmd(11);
             for (k, v) in [("r", 15.0), ("h", 60.0)] {
-                if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == k) {
+                if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
                     p.val = v;
                     p.txt = format!("{v}");
                 }
             }
             app.apply_feat_cmd();
-            let consumed = app.consumed_bodies();
+            let consumed = qymcad_ui_state::consumed_bodies(&app.project);
             let body = *app.live.shapes.keys().find(|b| !consumed.contains(b)).expect("the body of the shaft");
             let eid = app.project.regen_edges.get(&body).and_then(|es| es.iter().find(|e| (e.radius - 15.0).abs() < 0.05).map(|e| e.id)).expect("the round rim of the shaft");
-            app.select_body(body);
-            app.start_thread_cmd();
-            app.set_thread_params();
-            app.thread.src = Some(body);
-            app.thread.edge = eid;
-            app.thread.radius = 15.0;
-            app.thread.axis = ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+            qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
+            crate::gui::commands::start_thread_cmd(&mut app.part_ctx());
+            qymcad_ui_state::set_thread_params(&mut app.tools.cmd, app.params.thread);
+            app.params.thread.src = Some(body);
+            app.params.thread.edge = eid;
+            app.params.thread.radius = 15.0;
+            app.params.thread.axis = ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
             for (k, v) in [("nominal", 30.0), ("pitch", 3.5), ("length", 40.0), ("fit", 0.0), ("lead_in", 0.0), ("lead_out", 0.0)] {
-                if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == k) {
+                if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
                     p.val = v;
                     p.txt = format!("{v}");
                 }
             }
             app.apply_feat_cmd();
-            app.rebuild_if_dirty();
-            app.mode_3d = true;
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+            app.viewing.mode_3d = true;
             still(&mut app, "part-thread");
         }
 
@@ -775,7 +776,7 @@ mod tests {
                 let body = body_of(&app);
                 let top: Vec<u32> = app.project.regen_faces[&body].iter().filter(|f| f.normal[2] > 0.9).map(|f| f.id).collect();
                 app.project.add_shell_mode(body, 2.0, top, qymcad_core::feature::ShellSide::Inward);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 app
             };
             let rim = |app: &App| -> Vec<u32> {
@@ -799,17 +800,17 @@ mod tests {
             frames.push(open_box());
             // 2. the boundary edges selected - what is on screen just before Enter
             let mut a2 = open_box();
-            a2.mode_3d = true;
+            a2.viewing.mode_3d = true;
             // THE BODY IS SELECTED EXPLICITLY: the edges are prepared only for the body being worked on, and
             // outside a live window there is nowhere to get it from - without this the "what is selected"
             // frame would show the same box.
             if let Some(mi) = a2.project.timeline.iter().rev().find_map(|n| n.kind.body()).and_then(|b| a2.project.mesh_index(b)) {
-                a2.sel = super::super::Sel::Mesh(mi);
+                a2.chosen.sel = super::super::Sel::Mesh(mi);
             }
             a2.start_feat_cmd(32);
-            a2.refresh_edges();
+            crate::gui::commands::refresh_edges(&mut a2.part_ctx());
             for id in rim(&a2) {
-                a2.gsel.edges.insert(id);
+                a2.tools.gsel.edges.insert(id);
             }
             frames.push(a2);
             // 3. Enter - the surface is stretched over
@@ -817,7 +818,7 @@ mod tests {
             let b3 = a3.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the shell");
             let picks = rim(&a3);
             a3.project.add_patch(b3, qymcad_core::refs::Ref::picks(&picks), false);
-            a3.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut a3.rebuild_ctx());
             frames.push(a3);
             anim_cmd("part-patch", frames);
         }
@@ -833,7 +834,7 @@ mod tests {
                 let body = body_of(&app);
                 let top: Vec<u32> = app.project.regen_faces[&body].iter().filter(|f| f.normal[2] > 0.9).map(|f| f.id).collect();
                 let shell = app.project.add_shell_mode(body, 2.0, top, qymcad_core::feature::ShellSide::Inward);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if steps == 0 {
                     return app;
                 }
@@ -853,18 +854,18 @@ mod tests {
                     .map(|e| e.id)
                     .collect();
                 let patch = app.project.add_patch(shell, qymcad_core::refs::Ref::picks(&rim), false);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if steps == 1 {
                     return app;
                 }
                 let face = app.project.regen_faces[&patch].first().map(|f| f.id).expect("the face of the patch");
                 let lid = app.project.add_thicken(patch, face, 2.0);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if steps == 2 {
                     return app;
                 }
                 app.project.add_body_boolean(shell, lid, 1); // 1 = union
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 app
             };
             anim_cmd("part-surface-flow", (0..4).map(build).collect());
@@ -876,7 +877,7 @@ mod tests {
             let body = body_of(&app);
             let face = top_face(&app, body);
             app.project.add_thicken(body, face.id, 10.0);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             still(&mut app, "part-thicken");
         }
 
@@ -896,10 +897,10 @@ mod tests {
             // the cut goes through THE MIDDLE: the plate spans 0 to 30 in Y, and a cut at zero would run
             // along its edge
             let pieces = app.project.add_split_body(body, 1, 0, 15.0, 2);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             if let Some(&half) = pieces.first() {
                 app.project.add_move(half, [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 40.0, 0.0, 0.0, 1.0, 0.0]);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             }
             still(&mut app, "part-split-body");
         }
@@ -920,10 +921,10 @@ mod tests {
             let body = body_of(&app);
             let face = top_face(&app, body);
             app.project.add_hole(body, face, 14.0, 20.0);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             let rect = frame_rect(640, 400);
             fit_camera(&mut app, rect);
-            let (scale, target) = (app.cam.scale, app.cam.target);
+            let (scale, target) = (app.viewing.cam.scale, app.viewing.cam.target);
             save("part-remove-face/00.png", &shot_as_is(&mut app, 640, 400));
 
             let body = body_of(&app);
@@ -940,9 +941,9 @@ mod tests {
                 .unwrap_or_default();
             assert!(!cyl.is_empty(), "the face of the hole was not found - the scene would show a plate WITH a hole");
             app.project.add_remove_face(body, cyl);
-            app.rebuild_if_dirty();
-            app.cam.scale = scale;
-            app.cam.target = target;
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+            app.viewing.cam.scale = scale;
+            app.viewing.cam.target = target;
             save("part-remove-face/01.png", &shot_as_is(&mut app, 640, 400));
         }
 
@@ -960,21 +961,21 @@ mod tests {
             let body = body_of(&app);
             let edges = all_edges(&app, body);
             app.project.add_fillet(body, 3.0, edges.into_iter().take(4).collect());
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.set.gpu_viewport = false;
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 7.0;
-            app.cam.target = [20.0, 15.0, 6.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 7.0;
+            app.viewing.cam.target = [20.0, 15.0, 6.0];
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
                 super::super::help_raster::shot_ui([1100, 690], bg, |ui| {
             let ctx = &ui.ctx().clone();
-                    a.apply_theme(ctx);
-                    a.menu_bar(ui);
-                    a.toolbar(ui);
-                    a.wb_toolbar(ui);
+                    crate::gui::apply_theme(&mut a.scheme, &a.set, ctx);
+                    { let mut asks = Vec::new(); crate::gui::panels_bars::menu_bar(&mut a.bar_ctx(&mut asks), ui); let c = ui.ctx().clone(); a.do_bar_asks(asks, &c); };
+                    { let mut asks = Vec::new(); crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), ui); let c = ui.ctx().clone(); a.do_bar_asks(asks, &c); };
+                    { let mut asks = Vec::new(); crate::gui::panels_bars::wb_toolbar(&mut a.bar_ctx(&mut asks), ui); let c = ui.ctx().clone(); a.do_bar_asks(asks, &c); };
                     a.tree_panel(ui);
                     a.properties_panel(ui);
                     a.viewport(ui);
@@ -992,19 +993,19 @@ mod tests {
         /// A part component holding a plate of a given size, placed where it belongs.
         fn part_with_plate(app: &mut App, name: &str, w: f64, d: f64, h: f64, at: [f64; 3]) {
             let cid = app.project.add_component(name);
-            app.enter_component_for_test(cid);
+            app.enter_component(cid);
             let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
             app.project.add_rect_entity(si, 0.0, 0.0, w, d, qymcad_core::feature::Purpose::Real);
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
-            app.sel = super::super::Sel::Sketch(si);
+            app.chosen.sel = super::super::Sel::Sketch(si);
             app.start_feat_cmd(1);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = h;
                 p.txt = format!("{h}");
             }
             app.apply_feat_cmd();
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.project.set_component_transform(cid, [1.0, 0.0, 0.0, at[0], 0.0, 1.0, 0.0, at[1], 0.0, 0.0, 1.0, at[2]]);
             app.exit_context();
         }
@@ -1013,8 +1014,8 @@ mod tests {
             let mut app = App::default();
             part_with_plate(&mut app, "base", 70.0, 50.0, 10.0, [0.0, 0.0, 0.0]);
             part_with_plate(&mut app, "post", 18.0, 18.0, 40.0, [26.0, 16.0, 10.0]);
-            app.rebuild_if_dirty();
-            app.mode_3d = true;
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+            app.viewing.mode_3d = true;
             still(&mut app, "assembly-components");
         }
 
@@ -1026,8 +1027,8 @@ mod tests {
             part_with_plate(&mut app, "post", 14.0, 14.0, 30.0, [10.0, 13.0, 8.0]);
             let pid = app.project.components.get(post).map(|c| c.id).expect("the post component");
             app.project.add_comp_pattern(pid, qymcad_core::model::CompPatternKind::Linear { dir: [1.0, 0.0, 0.0], step: 22.0, count: 4 });
-            app.rebuild_if_dirty();
-            app.mode_3d = true;
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+            app.viewing.mode_3d = true;
             still(&mut app, "assembly-array");
         }
 
@@ -1044,15 +1045,15 @@ mod tests {
         // sketch section a picture must show a sketch. The excuse fell away along with the arrival of the
         // plane shot - a line, a circle and an arc read perfectly well on it.
         let (mut app, si) = empty_sketch();
-        app.project.add_polygon_entity(si, 0.0, 0.0, 22.0, 0.0, 6, qymcad_core::feature::Purpose::Real);
+        app.project.add_polygon_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(22.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
         sketch_still(&mut app, si, "sketch-polygon");
 
         let (mut app, si) = empty_sketch();
-        app.project.add_slot_entity(si, -16.0, 0.0, 16.0, 0.0, 9.0, qymcad_core::feature::Purpose::Real);
+        app.project.add_slot_entity(si, qymcad_core::geom::Point2::new(-16.0, 0.0), qymcad_core::geom::Point2::new(16.0, 0.0), 9.0, qymcad_core::feature::Purpose::Real);
         sketch_still(&mut app, si, "sketch-slot");
 
         let (mut app, si) = empty_sketch();
-        app.project.add_ellipse_entity(si, 0.0, 0.0, 26.0, 14.0, 0.0, qymcad_core::feature::Purpose::Real);
+        app.project.add_ellipse_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), 26.0, 14.0, 0.0, qymcad_core::feature::Purpose::Real);
         sketch_still(&mut app, si, "sketch-ellipse");
 
         // EXTEND - two frames: a line that stops short of its neighbour, and the same line reaching it.
@@ -1085,16 +1086,16 @@ mod tests {
             let body = body_of(&app);
             let edges = all_edges(&app, body);
             app.project.add_fillet(body, 3.0, edges.into_iter().take(4).collect());
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             let body = body_of(&app);
             let face = top_face(&app, body);
             app.project.add_hole(body, face, 10.0, 20.0);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             // INSIDE THE PART: from outside, the tree shows the makeup of the assembly (the origin, the
             // components, the first part), while the build timeline lives INSIDE a part. The article is
             // about the timeline, so the shot must come from where the timeline is visible.
             let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
-            app.enter_component_for_test(part);
+            app.enter_component(part);
             let img = shot_panel(&mut app, 300, 420, |a, ui| a.tree_panel(ui));
             save("tree.png", &img);
         }
@@ -1108,16 +1109,16 @@ mod tests {
                 qymcad_core::model::Param { name: "wall".into(), expr: "3".into(), value: 3.0 },
                 qymcad_core::model::Param { name: "d".into(), expr: "w/6 + wall".into(), value: 13.0 },
             ];
-            app.win.params = true;
-            let img = shot_panel(&mut app, 560, 320, |a, ui| a.params_window(ui.ctx()));
+            app.win.open(WinKind::Params);
+            let img = shot_panel(&mut app, 560, 320, |a, ui| { let mut asks = Vec::new(); crate::gui::panels_windows::params_window(&mut a.win_ctx(&mut asks), ui.ctx()); a.do_win_asks(asks, ui.ctx()); });
             save("params.png", &img);
         }
 
         // THE SETTINGS - with the sections on the left and the search above them.
         {
             let mut app = App::default();
-            app.win.settings = true;
-            let img = shot_panel(&mut app, 900, 560, |a, ui| a.settings_window(ui.ctx()));
+            app.win.open(WinKind::Settings);
+            let img = shot_panel(&mut app, 900, 560, |a, ui| { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), ui.ctx()); a.do_win_asks(asks, ui.ctx()); });
             save("settings.png", &img);
         }
 
@@ -1134,15 +1135,15 @@ mod tests {
             app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
-            app.sel = super::super::Sel::Sketch(si);
+            app.chosen.sel = super::super::Sel::Sketch(si);
             app.start_feat_cmd(1);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 14.0;
                 p.txt = "14".into();
             }
             app.apply_feat_cmd();
-            app.rebuild_if_dirty();
-            app.mode_3d = true;
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+            app.viewing.mode_3d = true;
             // THE CAMERA IS NOT FITTED: `fit_camera` computes against the rectangle of THE FRAME, while here
             // the frame is the whole window, of which the viewport gets only the strip between the panels.
             // The first version did fit it, and the part came out flush against the edges, cropped. The
@@ -1152,10 +1153,10 @@ mod tests {
                 let a = &mut app;
                 super::super::help_raster::shot_ui([1200, 700], bg, |ui| {
             let ctx = &ui.ctx().clone();
-                    a.apply_theme(ctx);
-                    a.menu_bar(ui);
-                    a.toolbar(ui);
-                    a.wb_toolbar(ui);
+                    crate::gui::apply_theme(&mut a.scheme, &a.set, ctx);
+                    { let mut asks = Vec::new(); crate::gui::panels_bars::menu_bar(&mut a.bar_ctx(&mut asks), ui); let c = ui.ctx().clone(); a.do_bar_asks(asks, &c); };
+                    { let mut asks = Vec::new(); crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), ui); let c = ui.ctx().clone(); a.do_bar_asks(asks, &c); };
+                    { let mut asks = Vec::new(); crate::gui::panels_bars::wb_toolbar(&mut a.bar_ctx(&mut asks), ui); let c = ui.ctx().clone(); a.do_bar_asks(asks, &c); };
                     a.tree_panel(ui);
                     a.properties_panel(ui);
                     a.viewport(ui);
@@ -1167,7 +1168,7 @@ mod tests {
         // THE HOTKEYS - the whole reference, the same one assembled from a single source.
         {
             let mut app = App::default();
-            app.win.hotkeys = true;
+            app.win.open(WinKind::Hotkeys);
             let img = shot_panel(&mut app, 720, 640, |a, ui| a.hotkeys_window(ui.ctx()));
             save("hotkeys.png", &img);
         }
@@ -1175,8 +1176,8 @@ mod tests {
         // THE DOCUMENT PROPERTIES - what travels along with the file.
         {
             let mut app = plate(10.0);
-            app.win.doc_props = true;
-            let img = shot_panel(&mut app, 640, 460, |a, ui| a.doc_props_window(ui.ctx()));
+            app.win.open(WinKind::DocProps);
+            let img = shot_panel(&mut app, 640, 460, |a, ui| { let mut asks = Vec::new(); crate::gui::panels_windows::doc_props_window(&mut a.win_ctx(&mut asks), ui.ctx()); a.do_win_asks(asks, ui.ctx()); });
             save("doc-props.png", &img);
         }
 
@@ -1189,16 +1190,16 @@ mod tests {
         {
             let mut app = plate(12.0);
             app.set.gpu_viewport = false;
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 5.0;
-            app.cam.target = [20.0, 15.0, 6.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 5.0;
+            app.viewing.cam.target = [20.0, 15.0, 6.0];
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
                 super::super::help_raster::shot_ui([640, 420], bg, |ui| {
             let ctx = &ui.ctx().clone();
-                    a.apply_theme(ctx);
+                    crate::gui::apply_theme(&mut a.scheme, &a.set, ctx);
                     a.viewport(ui);
                 })
             };
@@ -1211,7 +1212,7 @@ mod tests {
             let mut app = App::default();
             part_with_plate(&mut app, "base", 70.0, 50.0, 10.0, [0.0, 0.0, 0.0]);
             part_with_plate(&mut app, "post", 16.0, 16.0, 36.0, [27.0, 17.0, 10.0]);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             let comps: Vec<qymcad_core::model::Id> = app.project.components.iter().filter(|c| c.parent.is_some() && c.parent != Some(app.project.root)).map(|c| c.id).collect();
             let parts: Vec<qymcad_core::model::Id> = app.project.components.iter().filter(|c| c.name == "base" || c.name == "post").map(|c| c.id).collect();
             let _ = comps;
@@ -1223,18 +1224,18 @@ mod tests {
                 app.project.solve_joints();
             }
             app.set.show_joints = true;
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.set.gpu_viewport = false;
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 5.5;
-            app.cam.target = [35.0, 25.0, 14.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 5.5;
+            app.viewing.cam.target = [35.0, 25.0, 14.0];
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
                 super::super::help_raster::shot_ui([640, 420], bg, |ui| {
             let ctx = &ui.ctx().clone();
-                    a.apply_theme(ctx);
+                    crate::gui::apply_theme(&mut a.scheme, &a.set, ctx);
                     a.viewport(ui);
                 })
             };
@@ -1297,7 +1298,7 @@ mod tests {
                 // secondary axis of the joint would be derived from a degenerate direction.
                 part_with_plate(&mut app, "base", 26.0, 20.0, 8.0, [-13.0, -10.0, -8.0]);
                 part_with_plate(&mut app, "arm", 62.0, 10.0, 6.0, [0.0, -5.0, 0.0]);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let parts: Vec<qymcad_core::model::Id> = app.project.components.iter().filter(|c| c.name == "base" || c.name == "arm").map(|c| c.id).collect();
                 assert!(parts.len() >= 2, "the drive scene did not assemble: {} parts", parts.len());
                 app.project.set_grounded(parts[0], true);
@@ -1325,18 +1326,18 @@ mod tests {
                 tips.push(ahi);
 
                 app.set.show_joints = true;
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 app.set.gpu_viewport = false;
-                app.mode_3d = true;
-                app.cam.init = true;
-                app.cam.scale = 5.2;
-                app.cam.target = [0.0, 0.0, 0.0];
+                app.viewing.mode_3d = true;
+                app.viewing.cam.init = true;
+                app.viewing.cam.scale = 5.2;
+                app.viewing.cam.target = [0.0, 0.0, 0.0];
                 let bg = app.scheme.pal.viewport_bg();
                 let img = {
                     let a = &mut app;
                     super::super::help_raster::shot_ui([640, 420], bg, |ui| {
             let ctx = &ui.ctx().clone();
-                        a.apply_theme(ctx);
+                        crate::gui::apply_theme(&mut a.scheme, &a.set, ctx);
                         a.viewport(ui);
                     })
                 };
@@ -1358,9 +1359,9 @@ mod tests {
             let mut app = App::default();
             part_with_plate(&mut app, "base", 60.0, 40.0, 12.0, [0.0, 0.0, 0.0]);
             part_with_plate(&mut app, "post", 16.0, 16.0, 34.0, [22.0, 12.0, 6.0]);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.set.show_interference = true;
-            app.refresh_interference();
+            crate::gui::refresh_interference(qymcad_ui_state::body_view_of!(app), qymcad_ui_state::scene_drag_of!(app), &mut app.interference, &app.live, &app.set, app.workbench);
             let img = shot_panel(&mut app, 320, 300, |a, ui| a.tree_panel(ui));
             save("interference.png", &img);
         }
@@ -1413,9 +1414,9 @@ mod tests {
         // tool makes: `bake_text_glyphs` takes the outlines from the interface font.
         {
             let (mut app, si) = empty_sketch();
-            let glyphs = app.bake_text_glyphs(-34.0, -8.0, 22.0, "QYM CAD");
+            let glyphs = qymcad_ui_state::bake_text_glyphs(&mut app.font_cache, -34.0, -8.0, 22.0, "QYM CAD");
             assert!(!glyphs.is_empty(), "the glyphs did not bake - the shot would be empty");
-            app.project.add_sketch_text(si, -34.0, -8.0, 22.0, 0.0, "QYM CAD".to_string(), qymcad_core::feature::Purpose::Real, glyphs);
+            app.project.add_sketch_text(si, qymcad_core::model::TextSpec { at: qymcad_core::geom::Point2::new(-34.0, -8.0), height: 22.0, angle: 0.0, text: "QYM CAD".to_string(), glyphs }, qymcad_core::feature::Purpose::Real);
             app.project.regen_sketch(si);
             sketch_still(&mut app, si, "sketch-text");
         }
@@ -1480,7 +1481,7 @@ mod tests {
                 app.project.finish_base_body(a, 1);
                 let b = app.project.add_cylinder(9.0, 40.0);
                 app.project.finish_base_body(b, 1);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 app
             };
             let before = two_bodies();
@@ -1488,7 +1489,7 @@ mod tests {
             let bodies: Vec<qymcad_core::model::Id> = after.project.bodies.iter().map(|x| x.id).collect();
             let (a, b) = (bodies[bodies.len() - 2], bodies[bodies.len() - 1]);
             after.project.add_body_boolean(a, b, 0); // 0 = subtract
-            after.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut after.rebuild_ctx());
             // THE TOOL BODY DOES NOT DISAPPEAR FROM THE LIST but is marked CONSUMED - and it is the selection
             // of visible bodies that keeps it out of the frame. The first version of this guard counted
             // bodies and went red on a perfectly good scene.
@@ -1518,18 +1519,18 @@ mod tests {
                     return app;
                 }
                 let surf = app.project.add_face_copy(body, qymcad_core::refs::Ref::picks(&top));
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if steps == 1 {
                     // move the copy upwards - otherwise it merges with the face it was taken from
                     let up = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 16.0];
                     app.project.add_move(surf, up);
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     return app;
                 }
                 let faces: Vec<u32> = app.project.regen_faces.get(&surf).map(|fs| fs.iter().map(|f| f.id).collect()).unwrap_or_default();
                 let _ = faces;
                 app.project.add_surface_replace(body, qymcad_core::refs::Ref::picks(&top), surf);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 app
             };
             anim("part-face-copy", (0..3).map(build).collect());
@@ -1551,21 +1552,21 @@ mod tests {
                 let side: Vec<u32> = faces.iter().filter(|f| f.normal[2].abs() < 0.1 && f.normal[0] > 0.9).map(|f| f.id).collect();
                 let a = app.project.add_face_copy(body, qymcad_core::refs::Ref::picks(&top));
                 let b = app.project.add_face_copy(body, qymcad_core::refs::Ref::picks(&side));
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if step == 0 {
                     let aside = [1.0, 0.0, 0.0, 18.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 10.0];
                     app.project.add_move(b, aside);
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     return app;
                 }
                 let sewn = app.project.add_stitch(vec![a, b], 1e-3);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 if step == 1 {
                     return app;
                 }
                 if let Some(f) = app.project.regen_faces.get(&sewn).and_then(|fs| fs.first()).map(|f| f.id) {
                     app.project.add_thicken(sewn, f, 2.0);
-                    app.rebuild_if_dirty();
+                    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 }
                 app
             };
@@ -1620,7 +1621,7 @@ mod tests {
                 part_with_plate(&mut app, "arm-a", 34.0, 8.0, 5.0, [-36.0, -4.0, 0.0]);
                 part_with_plate(&mut app, "post-b", 20.0, 18.0, 8.0, [10.0, -9.0, -8.0]);
                 part_with_plate(&mut app, "arm-b", 34.0, 8.0, 5.0, [20.0, -4.0, 0.0]);
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let by = |app: &App, n: &str| app.project.components.iter().find(|c| c.name == n).map(|c| c.id).expect("a part of the scene");
                 let (pa, aa, pb, ab) = (by(&app, "post-a"), by(&app, "arm-a"), by(&app, "post-b"), by(&app, "arm-b"));
                 app.project.set_grounded(pa, true);
@@ -1653,18 +1654,18 @@ mod tests {
                 }
 
                 app.set.show_joints = true;
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 app.set.gpu_viewport = false;
-                app.mode_3d = true;
-                app.cam.init = true;
-                app.cam.scale = 3.4;
-                app.cam.target = [0.0, 6.0, 0.0];
+                app.viewing.mode_3d = true;
+                app.viewing.cam.init = true;
+                app.viewing.cam.scale = 3.4;
+                app.viewing.cam.target = [0.0, 6.0, 0.0];
                 let bg = app.scheme.pal.viewport_bg();
                 let img = {
                     let a = &mut app;
                     super::super::help_raster::shot_ui([640, 420], bg, |ui| {
             let ctx = &ui.ctx().clone();
-                        a.apply_theme(ctx);
+                        crate::gui::apply_theme(&mut a.scheme, &a.set, ctx);
                         a.viewport(ui);
                     })
                 };
@@ -1694,8 +1695,8 @@ mod tests {
         // nothing to show here but the window - the window IS the tool.
         {
             let mut app = App::default();
-            app.win.parts_library = true;
-            let img = shot_panel(&mut app, 760, 520, |a, ui| a.parts_library_window(ui.ctx()));
+            app.win.open(WinKind::PartsLibrary);
+            let img = shot_panel(&mut app, 760, 520, |a, ui| { let mut asks = Vec::new(); crate::gui::panels_windows::parts_library_window(&mut a.win_ctx(&mut asks), ui.ctx()); a.do_win_asks(asks, ui.ctx()); });
             save("library.png", &img);
         }
 
@@ -1708,20 +1709,20 @@ mod tests {
         {
             let mut app = plate(12.0);
             let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
-            app.enter_component_for_test(part);
+            app.enter_component(part);
             app.project.add_offset_plane(qymcad_core::feature::BasePlane::XY, 22.0);
-            app.rebuild_if_dirty();
+            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             app.set.gpu_viewport = false;
-            app.mode_3d = true;
-            app.cam.init = true;
-            app.cam.scale = 4.2;
-            app.cam.target = [20.0, 15.0, 12.0];
+            app.viewing.mode_3d = true;
+            app.viewing.cam.init = true;
+            app.viewing.cam.scale = 4.2;
+            app.viewing.cam.target = [20.0, 15.0, 12.0];
             let bg = app.scheme.pal.viewport_bg();
             let img = {
                 let a = &mut app;
                 super::super::help_raster::shot_ui([640, 440], bg, |ui| {
             let ctx = &ui.ctx().clone();
-                    a.apply_theme(ctx);
+                    crate::gui::apply_theme(&mut a.scheme, &a.set, ctx);
                     a.viewport(ui);
                 })
             };

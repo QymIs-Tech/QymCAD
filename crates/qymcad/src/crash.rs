@@ -124,17 +124,20 @@ pub fn note_failed_start(reason: &str) -> Option<PathBuf> {
 fn next_report_path() -> Option<PathBuf> {
     let dir = dir()?;
     std::fs::create_dir_all(&dir).ok()?;
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let secs = crate::gui::unix_secs();
+    // A NAME THAT CANNOT COLLIDE, rather than one checked for existence first.
+    //
+    // "Does this file exist, no, write it" is a race: two threads panicking in the same second both see
+    // nothing and both write the same name, and one report is silently replaced by the other. Measured on
+    // a live run: two checks failed at the same moment and the report left behind carried the wrong panic.
+    // The process id separates runs, the counter separates panics within one, and neither asks the disk.
+    //
     // UNDERSCORE, NOT A DASH, and the reason is a guard rather than taste: `crash-` reads as a catalogue
     // key (the window's strings live under that very prefix), and the check that no service name reaches
     // the screen would flag this file name for ever.
-    let mut path = dir.join(format!("crash_{secs}.txt"));
-    let mut n = 1;
-    while path.exists() {
-        n += 1;
-        path = dir.join(format!("crash_{secs}_{n}.txt"));
-    }
-    Some(path)
+    static NTH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Some(dir.join(format!("crash_{secs}_{}_{nth:04}.txt", std::process::id())))
 }
 
 /// The body of a report: the same for a panic and for a start that never happened, so the one window that
@@ -165,7 +168,32 @@ fn write_note(path: &Path, kind: &str, message: &str, place: &str) -> Option<Pat
     out.push_str(&format!("\nBacktrace:\n{}\n", without_home(&std::backtrace::Backtrace::force_capture().to_string())));
 
     std::fs::write(path, out).ok()?;
+    // THE PANIC HOOK RUNS ON THE THREAD THAT PANICKED, so remembering the file here is remembering it for
+    // that thread and no other. That is what lets a check find ITS OWN report: the directory is shared by
+    // the whole binary, and a check that reads the directory reads whatever the neighbours left in it.
+    #[cfg(test)]
+    remember_report_here(path);
     Some(path.to_path_buf())
+}
+
+#[cfg(test)]
+thread_local! {
+    /// THE REPORT THIS THREAD'S LAST PANIC LEFT.
+    ///
+    /// Only the checks ask. In the program a crash ends the run, and what matters at the next start is the
+    /// directory - which `unseen_reports` reads.
+    static LAST_REPORT_HERE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn remember_report_here(path: &Path) {
+    LAST_REPORT_HERE.with(|c| *c.borrow_mut() = Some(path.to_path_buf()));
+}
+
+/// WHICH FILE THIS THREAD'S OWN PANIC WROTE. `None` if it has not panicked through the hook.
+#[cfg(test)]
+pub(crate) fn last_report_here() -> Option<PathBuf> {
+    LAST_REPORT_HERE.with(|c| c.borrow().clone())
 }
 
 /// A REPORT LEFT BY AN EARLIER RUN, the newest first. Files already shown carry `.seen`.
@@ -221,6 +249,26 @@ mod tests {
     /// Before this there was no panic hook at all, so the answer to "what was it doing" was whatever the
     /// person remembered. The test panics for real, through the installed hook, because a hook that is
     /// never exercised is a hook that quietly stops working.
+    /// TWO PANICS IN THE SAME SECOND GET TWO FILES.
+    ///
+    /// The name used to be picked by asking the disk "does this exist" and then writing it - a race with a
+    /// window between the two calls. Nothing had to go wrong for it to bite: the check below asks for two
+    /// names in a row without writing either, which is exactly what two threads do, and the old code handed
+    /// back the same name twice.
+    #[test]
+    fn two_reports_in_one_second_do_not_share_a_name() {
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-names-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+
+        let a = super::next_report_path().expect("a name for the first report");
+        let b = super::next_report_path().expect("a name for the second report");
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_ne!(a, b, "two panics in the same second would write over each other");
+    }
+
     #[test]
     fn a_crash_leaves_a_report() {
         let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
@@ -241,17 +289,14 @@ mod tests {
         let _ = std::panic::take_hook(); // back to the default hook for the rest of this binary
         assert!(outcome.is_err(), "the panic did not happen at all");
 
-        // OURS BY ITS MESSAGE, not by being the only one. The hook is installed for the whole process, so
-        // any other test that panics while this one runs writes a report into the same directory - and it
-        // showed: the run went red here only when two ratchets failed elsewhere, which is a fault in this
-        // test rather than in the hook.
-        let reports = super::unseen_reports();
-        let mine = reports
-            .iter()
-            .map(|p| (p.clone(), std::fs::read_to_string(p).unwrap_or_default()))
-            .find(|(_, t)| t.contains("a wall fell over"))
-            .map(|(p, t)| (p, t));
-        let (report, text) = mine.unwrap_or_else(|| panic!("no report carries our panic; found {reports:?}"));
+        // OURS BECAUSE THE HOOK SAID SO, not because we went looking. The hook is installed for the whole
+        // process, so any other test that panics while this one runs writes a report into the same
+        // directory: this check went red only when two ratchets failed elsewhere, which was a fault here
+        // rather than in the hook. Searching the directory by the message was the first cure and it was not
+        // enough - the directory can be swapped out from under the search. The hook runs on the panicking
+        // thread, so the thread remembers its own file and nothing else can put one there.
+        let report = super::last_report_here().expect("the hook wrote no report for this thread");
+        let text = std::fs::read_to_string(&report).expect("the report is unreadable");
 
         assert!(text.contains("a wall fell over"), "the report does not carry the message:\n{text}");
         assert!(text.contains("QymCAD "), "the report does not name the build:\n{text}");

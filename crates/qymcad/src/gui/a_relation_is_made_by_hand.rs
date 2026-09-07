@@ -28,12 +28,12 @@ pub(in crate::gui) mod tests {
             super::super::joint_flow::tests::add_part_at(app, x);
         }
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let parts: Vec<Id> = app
             .project
             .components
@@ -78,20 +78,20 @@ pub(in crate::gui) mod tests {
         let ([ja, jb], [_, wheel_b]) = two_hinges(&mut app);
         assert!(app.project.relations.is_empty(), "setup: there are no relations yet");
 
-        app.start_relation_pick_for_test();
-        assert!(app.relation_pick_active_for_test(), "the relation tool was not taken up");
-        app.relation_pick_set_for_test(RelationKind::Gear, 2.0);
+        app.start_relation_pick();
+        assert!(app.side.joint.relation_pick.is_some(), "the relation tool was not taken up");
+        if let Some(p) = app.side.joint.relation_pick.as_mut() { p.set(RelationKind::Gear, 2.0); }
 
-        app.relation_pick_click_for_test(ja);
-        assert_eq!(app.relation_pick_count_for_test(), 1, "after the first click the selection should hold one degree");
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), ja);
+        assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 1, "after the first click the selection should hold one degree");
         // A SECOND CLICK ON THE SAME JOINT WILL NOT DO: a gear needs TWO different mates.
-        app.relation_pick_click_for_test(ja);
-        assert_eq!(app.relation_pick_count_for_test(), 1, "the same joint was taken twice — the selection should have refused");
-        app.relation_pick_click_for_test(jb);
-        assert_eq!(app.relation_pick_count_for_test(), 2, "after the second click the selection should hold two degrees");
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), ja);
+        assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 1, "the same joint was taken twice — the selection should have refused");
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), jb);
+        assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 2, "after the second click the selection should hold two degrees");
 
-        app.relation_pick_confirm_for_test();
-        assert!(!app.relation_pick_active_for_test(), "the tool was not released after confirmation");
+        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+        assert!(!app.side.joint.relation_pick.is_some(), "the tool was not released after confirmation");
         assert_eq!(app.project.relations.len(), 1, "the relation was not created");
         let r = app.project.relations[0].clone();
         assert_eq!(r.kind, RelationKind::Gear, "the kind of relation must be the one that was chosen");
@@ -157,12 +157,12 @@ pub(in crate::gui) mod tests {
     fn changing_the_relation_kind_drops_what_was_already_picked() {
         let mut app = App::default();
         let ([ja, _], _) = two_hinges(&mut app);
-        app.start_relation_pick_for_test();
-        app.relation_pick_set_for_test(RelationKind::Gear, 2.0);
-        app.relation_pick_click_for_test(ja);
-        assert_eq!(app.relation_pick_count_for_test(), 1, "setup: one degree is taken");
-        app.relation_pick_set_for_test(RelationKind::Linear, 2.0);
-        assert_eq!(app.relation_pick_count_for_test(), 0, "changing the kind must drop the selection");
+        app.start_relation_pick();
+        if let Some(p) = app.side.joint.relation_pick.as_mut() { p.set(RelationKind::Gear, 2.0); }
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), ja);
+        assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 1, "setup: one degree is taken");
+        if let Some(p) = app.side.joint.relation_pick.as_mut() { p.set(RelationKind::Linear, 2.0); }
+        assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 0, "changing the kind must drop the selection");
     }
 
     /// A JOINT WITHOUT THE NEEDED DEGREE IS REFUSED IN WORDS.
@@ -173,10 +173,10 @@ pub(in crate::gui) mod tests {
     fn a_mate_without_the_needed_degree_is_refused_with_words() {
         let mut app = App::default();
         let ([ja, _], _) = two_hinges(&mut app);
-        app.start_relation_pick_for_test();
-        app.relation_pick_set_for_test(RelationKind::Linear, 2.0);
-        app.relation_pick_click_for_test(ja);
-        assert_eq!(app.relation_pick_count_for_test(), 0, "a hinge has no travel — there was nothing to take");
+        app.start_relation_pick();
+        if let Some(p) = app.side.joint.relation_pick.as_mut() { p.set(RelationKind::Linear, 2.0); }
+        qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), ja);
+        assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 0, "a hinge has no travel — there was nothing to take");
         let want = crate::i18n::tr("j-relation-need-travel");
         assert_eq!(app.status, want, "the refusal must be named in words, and the status line holds: {}", app.status);
     }

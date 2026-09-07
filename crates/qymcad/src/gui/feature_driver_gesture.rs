@@ -46,7 +46,11 @@ mod tests {
             let input = egui::RawInput { screen_rect: Some(self.screen), events: std::mem::take(&mut self.events), ..Default::default() };
             let out = self.ctx.run_ui(input, |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
-                    app.feature_props(ui, ti);
+                    // the panel is a free function over the properties context - the check goes in by the
+                    // same door the frame does, so no facade on `App` is needed for it
+                    let mut asks = Vec::new();
+                    crate::gui::panels_props::feature_props(&mut app.props_ctx(&mut asks), ui, ti);
+                    app.do_props_asks(asks);
                 });
             });
             self.drawn.clear();
@@ -123,12 +127,12 @@ mod tests {
 
         let mut p = Props::new();
         p.into_driver_field(&mut app, ti, node, "height");
-        let key_before = app.doc_key_for_test();
-        let undo_before = app.undo_len_for_test();
+        let key_before = qymcad_ui_state::doc_key(&app.project);
+        let undo_before = app.disk.edits.undo.len();
 
         for c in "vysota".chars() {
             p.type_text(&c.to_string()).frame(&mut app, ti);
-            assert_eq!(app.doc_key_for_test(), key_before, "the document changed on the letter \"{c}\" — the edit goes into the model under the fingers");
+            assert_eq!(qymcad_ui_state::doc_key(&app.project), key_before, "the document changed on the letter \"{c}\" — the edit goes into the model under the fingers");
         }
         assert!(app.project.named_dims.is_empty(), "the name was written before it was committed: {:?}", app.project.named_dims);
 
@@ -136,7 +140,7 @@ mod tests {
         p.settle(&mut app, ti);
 
         assert_eq!(app.project.name_of_target(&DimTarget::Feature { node, key: "height".into() }), "vysota", "the height of the extrude did not get a name on Enter");
-        assert_eq!(app.undo_len_for_test(), undo_before + 1, "the name must be ONE undo step");
+        assert_eq!(app.disk.edits.undo.len(), undo_before + 1, "the name must be ONE undo step");
         assert_eq!(app.project.param_map().get("vysota"), Some(&25.0), "a named feature parameter is not visible in the formulas");
     }
 
@@ -190,11 +194,11 @@ mod tests {
         }
         p.frame(&mut app, ti);
 
-        let key_before = app.doc_key_for_test();
-        let undo_before = app.undo_len_for_test();
+        let key_before = qymcad_ui_state::doc_key(&app.project);
+        let undo_before = app.disk.edits.undo.len();
         for c in "w/2".chars() {
             p.type_text(&c.to_string()).frame(&mut app, ti);
-            assert_eq!(app.doc_key_for_test(), key_before, "the document changed on the character \"{c}\" — the expression goes into the model under the fingers");
+            assert_eq!(qymcad_ui_state::doc_key(&app.project), key_before, "the document changed on the character \"{c}\" — the expression goes into the model under the fingers");
         }
         assert!(app.project.feat_dim(node, "height").is_none_or(|e| e.is_empty()), "the expression was written before it was committed: {:?}", app.project.feat_dim(node, "height"));
 
@@ -206,6 +210,6 @@ mod tests {
         p.settle(&mut app, ti);
 
         assert_eq!(app.project.feat_dim(node, "height"), Some("w/2"), "the expression was not committed on Enter");
-        assert_eq!(app.undo_len_for_test(), undo_before + 1, "editing an expression must be ONE undo step");
+        assert_eq!(app.disk.edits.undo.len(), undo_before + 1, "editing an expression must be ONE undo step");
     }
 }

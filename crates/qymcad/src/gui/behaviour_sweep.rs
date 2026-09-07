@@ -22,16 +22,16 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
-        app.enter_component_for_test(part);
+        app.enter_component(part);
         app
     }
 
@@ -58,10 +58,10 @@ mod tests {
                 app.project.add_rect_entity(si, 80.0, 0.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
                 app.project.regen_sketch(si);
                 app.finish_sketch_edit();
-                app.sel = Sel::Sketch(si);
+                app.chosen.sel = Sel::Sketch(si);
                 app.start_feat_cmd(1);
                 app.apply_feat_cmd();
-                app.rebuild_if_dirty();
+                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 app
             }
             _ => part_app(),
@@ -71,13 +71,13 @@ mod tests {
     /// WHAT "THE COMMAND STARTED" MEANS — by the same state a person sees it by.
     fn started(app: &App, launch: Launch) -> bool {
         match launch {
-            Launch::Feat(_) | Launch::Prim(_) => app.cmd.active(),
-            Launch::SkTool(n) => app.tool.kind == n,
-            Launch::Dim(n) => app.dim.kind == n,
-            Launch::ClickOp(n) => app.tool.click_op == n,
+            Launch::Feat(_) | Launch::Prim(_) => app.tools.armed.commanding(),
+            Launch::SkTool(n) => app.tools.armed.draw_kind() == n,
+            Launch::Dim(n) => app.tools.armed.dim_kind() == n,
+            Launch::ClickOp(n) => app.tools.armed.click_op() == n,
             Launch::Modify(_) => true, // editing the selection fires at once and starts no mode
-            Launch::Action("joint") => app.joint.pick_faces,
-            Launch::Action("ground") => app.joint.ground_pick,
+            Launch::Action("joint") => app.side.joint.pick_faces,
+            Launch::Action("ground") => app.side.joint.ground_pick,
             Launch::Action(_) => true,
         }
     }
@@ -85,28 +85,28 @@ mod tests {
     /// WHAT STAYED SWITCHED ON. An empty list means the program came back to selection mode.
     fn tail(app: &App) -> Vec<&'static str> {
         let mut t = Vec::new();
-        if app.cmd.active() {
+        if app.tools.armed.commanding() {
             t.push("a feature command");
         }
-        if app.tool.kind != 0 {
+        if app.tools.armed.draw_kind() != 0 {
             t.push("a drawing tool");
         }
-        if app.tool.click_op != 0 {
+        if app.tools.armed.click_op() != 0 {
             t.push("a click operation");
         }
-        if app.tool.modify != 0 {
+        if app.tools.armed.modify() != 0 {
             t.push("editing the selection");
         }
-        if app.dim.kind != 0 {
+        if app.tools.armed.dim_kind() != 0 {
             t.push("a dimension");
         }
-        if app.joint.pick_faces || app.joint.ground_pick {
+        if app.side.joint.pick_faces || app.side.joint.ground_pick {
             t.push("assembling a mate");
         }
-        if app.measure.on {
+        if app.tools.armed.measuring() {
             t.push("measuring");
         }
-        if app.pat.op != 0 {
+        if app.tools.armed.pat_op() != 0 {
             t.push("a pattern");
         }
         t
@@ -172,10 +172,10 @@ mod tests {
                 continue;
             }
             let mut app = stage(c.workbench);
-            let before = app.edit_key();
+            let before = qymcad_ui_state::edit_key(&app.draw_ctx());
             app.run_command(c.code);
             app.on_escape();
-            if app.edit_key() != before {
+            if qymcad_ui_state::edit_key(&app.draw_ctx()) != before {
                 dirty.push(c.code.to_string());
             }
         }
@@ -200,9 +200,9 @@ mod tests {
     fn enter_from_a_focused_field_applies_the_command() {
         let mut app = stage("part");
         let si = app.project.sketches.len() - 1;
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(1);
-        assert!(app.cmd.active(), "the scene did not open the command — there is nothing to check");
+        assert!(app.tools.armed.commanding(), "the scene did not open the command — there is nothing to check");
         let feats_before = app.project.timeline.len();
 
         let ctx = egui::Context::default();
@@ -227,11 +227,11 @@ mod tests {
 
         step(&mut app, false, true);
         assert!(ctx.egui_wants_keyboard_input(), "the field did not take the focus — this is not the scene the complaint was about");
-        assert!(app.cmd.active(), "the command closed by itself, without a single key");
+        assert!(app.tools.armed.commanding(), "the command closed by itself, without a single key");
 
         step(&mut app, true, false);
         assert!(!ctx.egui_wants_keyboard_input(), "Enter must release the field");
-        assert!(!app.cmd.active(), "Enter from a field did not apply the command — one will have to aim at the tick with the mouse");
+        assert!(!app.tools.armed.commanding(), "Enter from a field did not apply the command — one will have to aim at the tick with the mouse");
         assert!(app.project.timeline.len() > feats_before, "the command \"applied\" and no feature appeared in the timeline");
     }
 }

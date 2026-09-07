@@ -219,8 +219,8 @@ fn a_hinge_on_holes_of_different_depth_does_not_drag_the_part() {
     eprintln!("[hinge] middle of the body bore z={:.2}, of the lid bore z={:.2}", ka.centroid[2], kb.centroid[2]);
     assert!((ka.centroid[2] - kb.centroid[2]).abs() > 1.0, "the test is pointless: the middles coincide");
 
-    let a = p.add_connector(ca_comp, qymcad_core::feature::AnchorRef::FaceCenter(ba, ka.clone()));
-    let b = p.add_connector(cb_comp, qymcad_core::feature::AnchorRef::FaceCenter(bb, kb.clone()));
+    let a = p.add_connector(ca_comp, qymcad_core::feature::AnchorRef::FaceCenter(ba, ka));
+    let b = p.add_connector(cb_comp, qymcad_core::feature::AnchorRef::FaceCenter(bb, kb));
     // A REVOLUTE mate makes the anchor origins coincide by definition. If the anchors sit at the
     // middles of bores of different depth, the part honestly travels by the difference: the fault is
     // not in the joint but in the ATTACHMENT POINT. Choosing that point is the job of the anchor

@@ -19,18 +19,18 @@ mod tests {
     fn open_box() -> (App, u64) {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let cube = app.project.mesh_id(0).expect("the body");
         if let Some(owner) = app.project.body_owner(cube) {
             app.enter_component(owner);
         }
         let top: Vec<u32> = app.project.regen_faces[&cube].iter().filter(|f| f.normal[2] > 0.9).map(|f| f.id).collect();
         let shell = app.project.add_shell_mode(cube, 2.0, top, qymcad_core::feature::ShellSide::Inward);
-        app.rebuild_if_dirty();
-        app.mode_3d = true;
-        app.cam.init = true;
-        app.cam.scale = 9.0;
-        app.cam.target = [10.0, 10.0, 5.0];
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        app.viewing.mode_3d = true;
+        app.viewing.cam.init = true;
+        app.viewing.cam.scale = 9.0;
+        app.viewing.cam.target = [10.0, 10.0, 5.0];
         (app, shell)
     }
 
@@ -57,7 +57,7 @@ mod tests {
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::gui::panels_source::PANELS.contains("self.start_feat_cmd(32)"), "without a button the tool does not exist for a person");
+        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(32)"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH: the button, clicks on edges with the real pick, Enter, the surface in the timeline.
@@ -65,20 +65,20 @@ mod tests {
     fn edges_can_be_picked_and_the_patch_reaches_the_timeline() {
         let (mut app, body) = open_box();
         app.start_feat_cmd(32);
-        assert_eq!(app.cmd.kind, 32, "the command must open");
-        app.refresh_edges();
+        assert_eq!(app.tools.armed.cmd_kind(), 32, "the command must open");
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
 
         let want = rim(&app, body);
         assert_eq!(want.len(), 4, "setup: the opening has four outer edges, and {} were found", want.len());
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         for id in &want {
             let mid = app.project.regen_edges[&body].iter().find(|e| e.id == *id).map(|e| e.mid).expect("the midpoint of the edge");
-            app.pick_edge_3d(rect(), app.project3(mid, rect(), &basis).0);
+            app.pick_edge_3d(rect(), qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(mid).0);
         }
-        assert_eq!(app.gsel.edges.len(), 4, "the clicks must SELECT four edges, and the selection is {:?}", app.gsel.edges);
+        assert_eq!(app.tools.gsel.edges.len(), 4, "the clicks must SELECT four edges, and the selection is {:?}", app.tools.gsel.edges);
 
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let node = app
             .project
             .timeline
@@ -97,13 +97,13 @@ mod tests {
     fn the_smooth_switch_reaches_the_node() {
         let (mut app, body) = open_box();
         app.start_feat_cmd(32);
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         for id in rim(&app, body) {
-            app.gsel.edges.insert(id);
+            app.tools.gsel.edges.insert(id);
         }
         app.opts.patch_tangent = true;
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let (id, tangent) = app
             .project

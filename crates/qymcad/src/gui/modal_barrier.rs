@@ -38,7 +38,7 @@ mod tests {
                 }
             });
             if let Some(label) = overlay {
-                app.draw_dim_overlay_for_test(ui.ctx(), label);
+                qymcad_render::draw_dim_overlay(&app.scheme, ui.ctx(), label);
             }
         };
         let frame = |events: Vec<egui::Event>| egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
@@ -84,7 +84,7 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         for _ in 0..3 {
-            let _ = ctx.run_ui(input.clone(), |c| app.draw_splash_for_test(c, "Opening the project..."));
+            let _ = ctx.run_ui(input.clone(), |c| crate::gui::render::draw_splash(&app.logo_tex, &app.scheme, c, "Opening the project..."));
         }
 
         let area = egui::AreaState::load(&ctx, egui::Id::new("splash")).expect("the splash must be on the screen");
@@ -118,10 +118,10 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
 
-        app.set_splash_for_test(std::time::Duration::from_millis(0));
+        app.waiting.splash_until = Some(std::time::Instant::now() + (std::time::Duration::from_millis(0)));
         let mut eaten = true;
         for _ in 0..5 {
-            let _ = ctx.run_ui(input.clone(), |c| eaten = app.tick_async_for_test(c.ctx()));
+            let _ = ctx.run_ui(input.clone(), |c| eaten = app.tick_async(c.ctx()));
             if !eaten {
                 break;
             }
@@ -141,9 +141,9 @@ mod tests {
         super::super::install_fonts(&ctx);
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
-        let mut out = ctx.run_ui(input.clone(), |c| app.draw_splash_for_test(c, "Starting"));
+        let mut out = ctx.run_ui(input.clone(), |c| crate::gui::render::draw_splash(&app.logo_tex, &app.scheme, c, "Starting"));
         for _ in 0..2 {
-            out = ctx.run_ui(input.clone(), |c| app.draw_splash_for_test(c, "Starting"));
+            out = ctx.run_ui(input.clone(), |c| crate::gui::render::draw_splash(&app.logo_tex, &app.scheme, c, "Starting"));
         }
 
         // the order in the list of shapes is the order of drawing: later means on top
@@ -202,12 +202,12 @@ mod tests {
         src.project.add_rect_entity(si, -10.0, -10.0, 10.0, 10.0, qymcad_core::feature::Purpose::Real);
         src.project.regen_sketch(si);
         src.finish_sketch_edit();
-        src.set_project_path(path.clone());
+        crate::gui::set_project_path(&mut src.disk.project_path, &mut src.set, path.clone());
         src.save_for_test(path.clone());
 
         // ...and a launch of the program WITH IT, the way `launch` does it
         let mut app = App::default();
-        app.set_startup_for_test(&path);
+        app.disk.io.startup = Some((&path).to_string());
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
@@ -216,7 +216,7 @@ mod tests {
         let mut released = false;
         for _ in 0..400 {
             let mut eaten = true;
-            let _ = ctx.run_ui(input.clone(), |c| eaten = app.tick_async_for_test(c.ctx()));
+            let _ = ctx.run_ui(input.clone(), |c| eaten = app.tick_async(c.ctx()));
             if !eaten {
                 released = true;
                 break;

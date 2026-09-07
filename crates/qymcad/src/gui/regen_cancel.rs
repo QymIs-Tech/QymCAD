@@ -68,18 +68,18 @@ mod tests {
             n.dirty = true;
         }
         // the way the arrival of a cancelled result does it
-        app.finish_regen_checked(app.regen_doc_stamp(), app.project.clone(), Vec::new(), Vec::new(), Vec::new(), true);
-        assert!(app.regen_paused_for_test(), "after a cancellation the rebuild must count as stopped");
+        app.finish_regen_checked(crate::gui::io_jobs::regen_doc_stamp(&app.project), app.project.clone(), Vec::new(), Vec::new(), Vec::new(), true);
+        assert!(app.regen.paused, "after a cancellation the rebuild must count as stopped");
         assert!(app.project.timeline.iter().any(|n| n.dirty), "setup: dirty nodes remain after a cancellation — the model really is not rebuilt");
 
         app.regen.wanted = false;
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(!app.regen.wanted, "the very next frame started that same rebuild again — the cancel button cancels nothing");
 
         // ...but an explicit request from a person ("rebuild everything") clears the mark
-        app.mark_dirty_for_rebuild_for_test();
+        qymcad_ui_state::mark_dirty_for_rebuild(&mut app.rebuild_ctx());
         assert!(app.regen.wanted || app.regen.busy.is_some(), "an explicit request must start the rebuild again");
-        assert!(!app.regen_paused_for_test(), "after an explicit request the \"stopped\" mark must be cleared");
+        assert!(!app.regen.paused, "after an explicit request the \"stopped\" mark must be cleared");
     }
 
     /// THE BUTTON AND THE COUNT REACH THE SCREEN. The overlay is drawn by a painter over the input
@@ -93,10 +93,10 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let _ = ctx.run_ui(input.clone(), |c| {
-            app.draw_regen_overlay_for_test(c, 7, 40);
+            crate::gui::render::draw_dim_overlay_with(&app.scheme, c, &crate::i18n::tr("io-rebuilding"), Some((7, 40)), egui::Rect::NOTHING);
         });
         let out = ctx.run_ui(input, |c| {
-            app.draw_regen_overlay_for_test(c, 7, 40);
+            crate::gui::render::draw_dim_overlay_with(&app.scheme, c, &crate::i18n::tr("io-rebuilding"), Some((7, 40)), egui::Rect::NOTHING);
         });
         let mut texts = Vec::new();
         collect_text_from(&out, &mut texts);
@@ -129,9 +129,9 @@ mod tests {
         }
         app.spawn_regen();
         assert!(app.regen.busy.is_some(), "setup: the rebuild is running");
-        app.cancel_regen_for_test();
+        crate::gui::cancel_regen(&app.regen, &mut app.status);
         app.drain_busy_for_test();
-        assert!(app.regen_paused_for_test(), "the request to stop did not arrive: the rebuild does not count as stopped; status: {}", app.status_for_test());
+        assert!(app.regen.paused, "the request to stop did not arrive: the rebuild does not count as stopped; status: {}", app.status.clone());
     }
     /// A FAILING NODE DOES NOT MAKE THE PROGRAM COMPUTE WITHOUT STOPPING.
     ///
@@ -154,25 +154,25 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
 
         // a patch over a rim the body does not have — the node fails for certain
         let bad = app.project.add_patch(body, qymcad_core::refs::Ref::picks(&[0xDEAD_BEEF, 0xDEAD_BEEE]), false);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(app.project.regen_errors.contains_key(&bad), "setup: the node must turn red");
 
         // THE NEXT FRAME: nothing changed, so there is nothing to compute
         app.regen.ui_running = true; // as in a live window: a heavy rebuild is taken into a thread
         app.regen.wanted = false;
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(
             !app.regen.wanted,
             "nothing changed and the scheduler asks for a rebuild again — that is the window flashing on every frame"
@@ -180,7 +180,7 @@ mod tests {
 
         // AND ON A REAL EDIT it does ask, otherwise the cure is worse than the illness
         app.project.mark_sketch_dirty(app.project.sketches[0].id);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(app.regen.wanted, "after an edit of the document a rebuild must be asked for");
     }
 }

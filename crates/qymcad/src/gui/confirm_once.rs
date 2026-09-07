@@ -19,7 +19,7 @@ mod tests {
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body of the plate");
         let edges: Vec<u32> = app.project.regen_edges.get(&body).map(|es| es.iter().take(3).map(|e| e.id).collect()).unwrap_or_default();
         app.project.add_fillet(body, 1.0, edges);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app
     }
 
@@ -33,21 +33,30 @@ mod tests {
         let files: [(&str, &str); 3] = [
             ("panels.rs", crate::gui::panels_source::PANELS),
             ("gui.rs", include_str!("../gui.rs")),
-            ("sketching.rs", include_str!("sketching.rs")),
+            ("sketching.rs", crate::gui::sketch_source::SKETCH),
         ];
         // the destroyers of the document: from the interface they may only be called through `execute_delete`
         let killers = ["delete_feature(", "delete_contour(", "delete_sketch_full(", "delete_body_mesh(", "delete_plane(", "delete_datum_axis(", "delete_datum_point(", "delete_component("];
         let mut leaks: Vec<String> = Vec::new();
         for (fname, src) in &files {
+            let mut in_fn = String::new(); // the function the line is inside, for the delegation case below
             for (ln, line) in src.lines().enumerate() {
                 let code = line.split("//").next().unwrap_or("");
-                if !killers.iter().any(|k| code.contains(k)) {
+                if let Some(rest) = code.split_once("fn ") {
+                    in_fn = rest.1.split(['(', '<']).next().unwrap_or("").to_string();
+                }
+                let Some(hit) = killers.iter().find(|k| code.contains(**k)) else { continue };
+                // A METHOD THAT ONLY HANDS ON TO THE FREE FUNCTION OF ITS OWN NAME IS NOT A WAY ROUND.
+                // Lifting a deletion out of `App` leaves `fn delete_contour(&mut self, ..) { delete_contour(..) }`
+                // behind, and the body reads exactly like a fresh call from a panel. It is the same door,
+                // one step further in; the callers of the wrapper are still checked, each on its own line.
+                if hit.trim_end_matches('(') == in_fn {
                     continue;
                 }
                 // declarations are not entries; and there are places where the question is beside the
                 // point: those are marked right in the code with a REASON, otherwise an exception
                 // would turn into a quiet way round the guard
-                if code.contains("fn ") || line.contains("ask_delete-exempt:") {
+                if crate::gui::render_source::has(code, "fn ") || line.contains("ask_delete-exempt:") {
                     continue;
                 }
                 leaks.push(format!("{fname}:{}: {}", ln + 1, code.trim()));
@@ -66,9 +75,9 @@ mod tests {
     fn asking_changes_nothing_until_the_answer() {
         let mut app = plate_with_a_fillet();
         let before = app.project.timeline.len();
-        app.ask_delete(Sel::Feature(0));
+        qymcad_ui_state::ask_delete(&mut app.deferred, Sel::Feature(0));
         assert_eq!(app.project.timeline.len(), before, "the question has not been asked yet and the timeline is already shorter — the deletion went through without an answer");
-        assert!(app.deferred_delete_for_test(), "the question was not queued — the button did nothing");
+        assert!(app.deferred.delete.is_some(), "the question was not queued — the button did nothing");
     }
 
     /// THE QUESTION NAMES WHAT GOES WITH IT. For an extrude that carries a fillet the cascade is
@@ -77,11 +86,11 @@ mod tests {
     fn the_question_names_what_goes_with_it() {
         let app = plate_with_a_fillet();
         let extrude = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })).expect("the extrude in the timeline");
-        let names = app.delete_cascade_names_for_test(Sel::Feature(extrude));
+        let names = crate::gui::delete_cascade_names(&app.project, Sel::Feature(extrude));
         assert!(!names.is_empty(), "for an extrude that carries a fillet the cascade must not be empty");
         // and the topmost node has nothing to lose
         let last = app.project.timeline.len() - 1;
-        assert!(app.delete_cascade_names_for_test(Sel::Feature(last)).is_empty(), "the last node of the timeline cannot have dependents");
+        assert!(crate::gui::delete_cascade_names(&app.project, Sel::Feature(last)).is_empty(), "the last node of the timeline cannot have dependents");
     }
 
     /// AN ANSWER OF "YES" CARRIES IT THROUGH — by the same executor Del in the tree uses.
@@ -89,9 +98,9 @@ mod tests {
     fn answering_yes_deletes_through_the_single_executor() {
         let mut app = plate_with_a_fillet();
         let before = app.project.timeline.len();
-        app.ask_delete(Sel::Feature(before - 1)); // the last one is the fillet
+        qymcad_ui_state::ask_delete(&mut app.deferred, Sel::Feature(before - 1)); // the last one is the fillet
         app.execute_deferred_delete_for_test();
         assert!(app.project.timeline.len() < before, "the answer of yes deleted nothing: it was {before}, it became {}", app.project.timeline.len());
-        assert!(!app.deferred_delete_for_test(), "the question must go away after the answer");
+        assert!(!app.deferred.delete.is_some(), "the question must go away after the answer");
     }
 }

@@ -28,8 +28,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 20.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         (mine[0], mine[1])
@@ -37,21 +37,22 @@ mod tests {
 
     /// The snap point of THE BODY nearest to a pixel: face centres, edge midpoints and edge ends.
     fn nearest_snap(app: &App, body: Id, at: egui::Pos2) -> f32 {
-        let ctx = app.current_ctx_id_for_test();
-        let basis = app.cam.basis();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
+        let basis = app.viewing.cam.basis();
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis };
         let wt = app.project.body_display_transform(body, ctx);
         let mut best = f32::MAX;
         if let Some(faces) = app.project.regen_faces.get(&body) {
             for f in faces {
                 let w = apply12(&wt, [f.centroid.x, f.centroid.y, f.centroid.z]);
-                best = best.min(app.project3(w, viewport(), &basis).0.distance(at));
+                best = best.min(scr.at(w).0.distance(at));
             }
         }
         if let Some(edges) = app.project.regen_edges.get(&body) {
             for e in edges {
                 for p in [e.mid, e.a, e.b] {
                     let w = apply12(&wt, p);
-                    best = best.min(app.project3(w, viewport(), &basis).0.distance(at));
+                    best = best.min(scr.at(w).0.distance(at));
                 }
             }
         }
@@ -69,14 +70,14 @@ mod tests {
     /// The aim is neither the centre of a face nor an edge: there our own snap would be the nearest by
     /// itself and there would be nothing to steal.
     fn aim_where_the_neighbour_is_closer(app: &mut App, mine: Id, neighbour: Id) -> egui::Pos2 {
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let wt = app.project.body_display_transform(mine, ctx);
         let faces = app.project.regen_faces.get(&mine).cloned().expect("the faces of our own part");
         let top = faces.iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face");
         // between the centre of the face and its edge — away from all of our own snaps
         let spot = apply12(&wt, [top.centroid.x + 4.0, top.centroid.y + 4.0, top.centroid.z]);
 
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let away = basis.2;
         let nwt = app.project.body_display_transform(neighbour, ctx);
         let nfaces = app.project.regen_faces.get(&neighbour).cloned().expect("the faces of the neighbour");
@@ -87,16 +88,16 @@ mod tests {
         let i = app.project.component_index(owner).expect("the part in the document");
         let t = app.project.components[i].transform;
         app.project.components[i].transform = [t[0], t[1], t[2], t[3] + shift[0], t[4], t[5], t[6], t[7] + shift[1], t[8], t[9], t[10], t[11] + shift[2]];
-        app.rebuild_if_dirty();
-        app.refresh_edges();
-        app.project3(spot, viewport(), &basis).0
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(spot).0
     }
 
     #[test]
     fn a_neighbour_does_not_steal_the_anchor() {
         let mut app = App::default();
         let (mine, neighbour) = two_parts_side_by_side(&mut app);
-        app.mode_3d = true;
+        app.viewing.mode_3d = true;
         let at = aim_where_the_neighbour_is_closer(&mut app, mine, neighbour);
 
         // TRAP GUARD: the neighbour's snap point really is CLOSER — otherwise the check catches
@@ -130,7 +131,7 @@ mod tests {
         // An axis is a direction, and it must belong to whatever is being pointed at.
         let mut app = App::default();
         let (mine, neighbour) = two_parts_side_by_side(&mut app);
-        app.mode_3d = true;
+        app.viewing.mode_3d = true;
         let at = aim_where_the_neighbour_is_closer(&mut app, mine, neighbour);
 
         let under = app.pick_part_face_at(viewport(), at).map(|(b, _)| b);

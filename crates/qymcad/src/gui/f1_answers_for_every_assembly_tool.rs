@@ -12,39 +12,8 @@
 mod tests {
     use super::super::assembly_tools::AssemblyTool;
     use super::super::App;
-    use qymcad_core::model::Id;
 
-    /// A JOINT WITH SOMETHING TO EDIT: the axis pick and the anchor re-pick exist only alongside one.
-    fn a_joint(app: &mut App) -> (Id, Id) {
-        let ([ja, _jb], _wheels) = super::super::a_relation_is_made_by_hand::tests::two_hinges(app);
-        let ca = app.project.joints.iter().find(|j| j.id == ja).map(|j| j.a).expect("the joint has an anchor");
-        (ja, ca)
-    }
-
-    /// Take a tool through its own door.
-    ///
-    /// The axis pick and the re-pick have no door at all: they are switched on by a button IN THE
-    /// POPUP of an existing joint, and outside that popup they cannot be taken. So the same fields
-    /// the popup sets are used here.
-    fn arm(app: &mut App, t: AssemblyTool) {
-        match t {
-            AssemblyTool::Mate => app.arm_joint_pick_for_test(),
-            AssemblyTool::Anchor => app.start_conn_pick(),
-            AssemblyTool::Group => app.start_group_pick(),
-            AssemblyTool::Width => app.start_width_pick(),
-            AssemblyTool::Tangent => app.start_tangent_pick(),
-            AssemblyTool::Relation => app.start_relation_pick(),
-            AssemblyTool::Ground => app.start_ground_pick(),
-            AssemblyTool::Axis => {
-                let (_, ca) = a_joint(app);
-                app.joint.axis_pick = Some(ca);
-            }
-            AssemblyTool::Repick => {
-                let (jid, _) = a_joint(app);
-                app.joint.edit_repick = Some((jid, false));
-            }
-        }
-    }
+    use super::super::assembly_tools::doors::arm;
 
     /// The help articles present on disk (both languages must have the same one).
     fn article_exists(path: &str) -> bool {

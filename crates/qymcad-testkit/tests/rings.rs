@@ -68,7 +68,7 @@ fn extrude_disk_then_cut_middle_ring() {
     eprintln!("base (3 regions at once): V={v1:.0}, expected {:.0}", pi*900.0*10.0);
     assert!((v1 - pi*900.0*10.0).abs()/(pi*900.0*10.0) < 0.02, "a full R30 cylinder from 3 regions");
     // CUT with the middle ring all the way through, leaving a groove: the R10 disc and the 30/20 ring remain
-    let cut = p.add_combine_multi_op(body, sid, vec![mid], 12.0, 0, qymcad_core::feature::Extent { through: true, ..Default::default() }, 0.0, vec![]);
+    let cut = p.add_combine_multi_op(body, sid, vec![mid], qymcad_core::model::CombineSpan { height: 12.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, ..Default::default() }, fill: &[] }, 0);
     let (r2, s2) = qymcad_testkit::regenerate(&mut p);
     for (id,er) in &r2.errors { eprintln!("ERROR in the cut {id}: {er}"); }
     let v2 = s2.get(&cut).map(|s| s.volume()).unwrap_or(0.0);

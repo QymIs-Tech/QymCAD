@@ -24,94 +24,13 @@
 //! Hence "a bolt into a hole" as well: click on an edge and you hit either the centre of the hole (if
 //! close to it) or the circular edge itself, which the kernel resolves to the centre with the axis of
 //! the circle anyway.
-use super::grab::Grab;
+pub(crate) use qymcad_pick::{infer_axis_anchor, infer_mate_anchor};
 use super::App;
 use egui::{Pos2, Rect};
 use qymcad_core::feature::AnchorRef;
 use qymcad_core::model::Id;
 
 impl App {
-    /// THE ANCHOR UNDER THE CURSOR: the body and what was caught on it.
-    ///
-    /// `None` means there is no part under the cursor; only the caller has the right to call that a
-    /// miss, and the caller is also the one who says so in words.
-    pub(super) fn infer_mate_anchor(&self, rect: Rect, pos: Pos2) -> Option<(Id, AnchorRef)> {
-        let face = self.pick_part_face_at(rect, pos);
-        let edge = self.pick_edge_any(rect, pos);
-        // THE ANCHOR IS TAKEN ONLY FROM THE BODY UNDER THE CURSOR.
-        //
-        // Snap points used to be collected FROM EVERY body whose bounding box was near the cursor, and
-        // the nearest one on screen won — anybody's. On a single part that goes unnoticed, but in a
-        // machine there is always a neighbour next to it: the reported behaviour was that pointing at
-        // the start of a face, with both faces horizontal, gave a gizmo handle along the Z axis. A
-        // measurement on that document: the cursor stood over body 7 while the program offered
-        // `EdgeMid(6, 39)` — an edge of the NEIGHBOURING part, and the axis of travel came out as that
-        // part's rather than the one being pointed at. The joint glyph away from the click came from
-        // the same place.
-        let under = face.as_ref().map(|(b, _)| *b).or_else(|| edge.map(|(b, _)| b))?;
-        let mut best: Option<(f32, Id, AnchorRef)> = None;
-        let mut offer = |d: f32, body: Id, a: AnchorRef| {
-            if best.as_ref().map_or(true, |(bd, _, _)| d < *bd) {
-                best = Some((d, body, a));
-            }
-        };
-        let basis = self.cam.basis();
-        let ctx = self.current_ctx_id();
-        // THE CENTRE OF THE FACE UNDER THE CURSOR is as much a snap point as a vertex and takes part
-        // on equal terms.
-        if let Some((body, key)) = face.clone() {
-            let wt = self.project.body_display_transform(body, ctx);
-            let w = qymcad_core::feature::apply12(&wt, key.centroid);
-            offer(self.project3(w, rect, &basis).0.distance(pos), body, AnchorRef::FaceCenter(body, key));
-        }
-        for (_mi, body) in self.shown_bodies() {
-            if body != under {
-                continue; // another part gives up no anchor, however close its edge turns out to be
-            }
-            if !self.body_bbox_hit(body, rect, pos, &basis, 12.0) {
-                continue;
-            }
-            let Some(edges) = self.body_edges_cached(body) else { continue };
-            let wt = self.project.body_display_transform(body, ctx);
-            let to_world = |p: &[f32; 3]| -> [f64; 3] {
-                let v = [p[0] as f64, p[1] as f64, p[2] as f64];
-                if qymcad_core::feature::is_identity12(&wt) { v } else { qymcad_core::feature::apply12(&wt, v) }
-            };
-            let model = self.project.regen_edges.get(&body);
-            for (poly, id) in edges.0.iter().zip(edges.1.iter().copied()) {
-                if id == 0 || poly.len() < 2 {
-                    continue;
-                }
-                // THE MIDPOINT OF AN EDGE comes from the model if it is raised: on a circular edge
-                // that is the centre of the hole, and the polyline will not restore it. With no model
-                // the middle of the polyline is taken, which is the same thing for a straight edge.
-                let mid = match model.and_then(|es| es.iter().find(|e| e.id == id)) {
-                    Some(e) => {
-                        let (p, _) = e.axis_ref();
-                        if qymcad_core::feature::is_identity12(&wt) { p } else { qymcad_core::feature::apply12(&wt, p) }
-                    }
-                    None => to_world(&poly[poly.len() / 2]),
-                };
-                offer(self.project3(mid, rect, &basis).0.distance(pos), body, AnchorRef::EdgeMid(body, id));
-                for (at_end, v) in [(false, &poly[0]), (true, &poly[poly.len() - 1])] {
-                    offer(self.project3(to_world(v), rect, &basis).0.distance(pos), body, AnchorRef::Vertex(body, id, at_end));
-                }
-            }
-        }
-        if let Some((d, body, a)) = best {
-            if d <= self.grab(Grab::Point) {
-                return Some((body, a));
-            }
-        }
-        // NO POINT WAS HIT — so something extended is being pointed at: an edge, and failing that a
-        // face. The edge must be our own as well: another part's edge near the cursor gives no anchor.
-        if let Some((body, e)) = edge.filter(|(b, _)| *b == under) {
-            return Some((body, AnchorRef::EdgeMid(body, e)));
-        }
-        let (body, key) = face?;
-        Some((body, AnchorRef::FaceCenter(body, key)))
-    }
-
     /// THE DIRECTION UNDER THE CURSOR — for "point at the axis", the second pick.
     ///
     /// The rule is the same as for the anchor: what is pointed at is what is UNDER THE CURSOR. There
@@ -122,30 +41,33 @@ impl App {
     ///
     /// An edge is preferred to a face: when showing an axis, a person aims at something extended.
     pub(super) fn infer_axis_anchor(&self, rect: Rect, pos: Pos2) -> Option<(Id, AnchorRef)> {
-        let face = self.pick_part_face_at(rect, pos);
-        let edge = self.pick_edge_any(rect, pos);
-        let under = face.as_ref().map(|(b, _)| *b).or_else(|| edge.map(|(b, _)| b))?;
-        if let Some((body, e)) = edge.filter(|(b, _)| *b == under) {
-            return Some((body, AnchorRef::EdgeMid(body, e)));
-        }
-        let (body, key) = face?;
-        Some((body, AnchorRef::FaceCenter(body, key)))
+        infer_axis_anchor(&self.painting(), rect, pos)
     }
+
+    /// THE ANCHOR UNDER THE CURSOR: the body and what was caught on it.
+    ///
+    /// `None` means there is no part under the cursor; only the caller has the right to call that a
+    /// miss, and the caller is also the one who says so in words.
+    pub(super) fn infer_mate_anchor(&self, rect: Rect, pos: Pos2) -> Option<(Id, AnchorRef)> {
+        infer_mate_anchor(&self.painting(), rect, pos)
+    }
+
+
 
     /// A click on the frame while choosing a mate anchor: infer the anchor and take it.
     pub(super) fn joint_pick_inferred_click(&mut self, rect: Rect, pos: Pos2) {
         // "BY ORIGINS" is not a way of pointing but a deliberate choice of A DIFFERENT anchor: the
         // origin of the part. It does not examine the geometry under the cursor at all; the body here
         // is only a finger showing which part is meant.
-        if self.joint.anchor_mode == 3 {
-            match self.pick_body_at(rect, pos).and_then(|mi| self.project.mesh_id(mi)) {
-                Some(body) => self.joint_pick_origin_click(body),
+        if self.side.joint.anchor_mode == 3 {
+            match crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi)) {
+                Some(body) => qymcad_assembly::joint_pick_origin_click(&mut self.joint_ctx(), body),
                 None => self.status = crate::i18n::tr("j-body-miss"),
             }
             return;
         }
         match self.infer_mate_anchor(rect, pos) {
-            Some((body, anchor)) => self.joint_pick_anchor_at(body, anchor),
+            Some((body, anchor)) => qymcad_assembly::joint_pick_anchor_at(&mut self.joint_ctx(), body, anchor),
             None => self.status = crate::i18n::tr("vp-miss-face-cancel"),
         }
     }
@@ -153,7 +75,7 @@ impl App {
     /// A click on the frame while RE-CHOOSING the anchor of a finished joint — the same inference.
     pub(super) fn joint_repick_inferred_click(&mut self, rect: Rect, pos: Pos2) {
         match self.infer_mate_anchor(rect, pos) {
-            Some((body, anchor)) => self.joint_edit_repick_apply(body, anchor),
+            Some((body, anchor)) => qymcad_assembly::joint_edit_repick_apply(&mut self.joint_ctx(), body, anchor),
             None => self.status = crate::i18n::tr("vp-miss-face-cancel"),
         }
     }
@@ -176,8 +98,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         app.project.bodies.iter().map(|b| b.id).find(|b| !before.contains(b)).expect("the part appeared")
     }
 
@@ -190,7 +112,7 @@ mod tests {
     fn one_part_gives_three_different_anchors_by_where_you_point() {
         let mut app = App::default();
         let body = a_part(&mut app);
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let wt = app.project.body_display_transform(body, ctx);
         let faces = app.project.regen_faces.get(&body).cloned().expect("the faces");
         let top = faces.iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face");
@@ -201,8 +123,8 @@ mod tests {
         // THE VERTEX is the end of that same edge; the midpoint of the edge cannot stand in for it.
         let vertex = qymcad_core::feature::apply12(&wt, e.a);
 
-        let basis = app.cam.basis();
-        let at = |app: &App, w: [f64; 3]| app.project3(w, viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = |app: &App, w: [f64; 3]| qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(w).0;
         let kinds: Vec<(&str, AnchorRef)> = [("the centre of the face", centre), ("the middle of the edge", mid), ("the vertex", vertex)]
             .iter()
             .map(|(what, w)| {
@@ -229,8 +151,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(&mut app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         for (k, b) in mine.iter().enumerate() {
@@ -243,9 +165,9 @@ mod tests {
                 }
             }
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
-        let ctx = app.current_ctx_id_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let mut aim = Vec::new();
         for b in &mine {
             let wt = app.project.body_display_transform(*b, ctx);
@@ -258,7 +180,7 @@ mod tests {
         // THE MODE IS NOT TOUCHED AT ALL: no `anchor`, no switch — only the kind of joint and two
         // clicks.
         hand.look_at([30.0, 10.0, 5.0], 7.0).mate(JointKind::Slider).click(aim[0]).click(aim[1]);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let j = app.project.joints.last().cloned().expect("two clicks on edges must create a joint");
         for (side, cid) in [("A", j.a), ("B", j.b)] {

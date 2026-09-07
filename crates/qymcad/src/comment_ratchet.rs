@@ -191,16 +191,16 @@ pub(crate) mod tests {
         let report = format!("worst files:\n{}", worst.join("\n"));
 
         assert!(
-            prod <= PRODUCT_CEILING,
+            prod == PRODUCT_CEILING,
             "comments name third-party products: {prod} lines, ceiling {PRODUCT_CEILING}.\n\
              Naming a competitor buys nothing and risks a claim — state the engineering rule instead.\n{report}"
         );
         assert!(
-            voice <= VOICE_CEILING,
+            voice == VOICE_CEILING,
             "comments talk to a person instead of describing the code: {voice} lines, ceiling {VOICE_CEILING}.\n{report}"
         );
         assert!(
-            cyr <= CYRILLIC_CEILING,
+            cyr == CYRILLIC_CEILING,
             "comments still in Russian: {cyr} lines, ceiling {CYRILLIC_CEILING}.\n{report}"
         );
         assert!(lit <= LITERAL_CEILING, "assertion and panic texts still in Russian: {lit} literals, ceiling {LITERAL_CEILING}");

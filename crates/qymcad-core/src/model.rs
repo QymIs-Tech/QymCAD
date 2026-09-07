@@ -4,13 +4,17 @@
 //! number instead of copying them. `build_program` collects every enabled operation, in order, into a
 //! single `Program` for the post-processor.
 
-use crate::geom::{nesting_depth, Bbox, Contour, Point2};
-use crate::ir::{DrillKind, Program, Units};
-use crate::ops::cut::{contour_paths, emit_profile};
-use crate::ops::params::{intro, new_toolpath, Feeds, Heights, Passes, Ramp, Side, Tabs};
-use crate::ops::{AdaptiveOp, BoreOp, DrillOp, EngraveOp, FaceOp, FlatOp, Operation, PocketOp, ProjectOp, Rough3DOp, SurfaceOp, WaterlineOp};
-use crate::tool::Tool;
+use crate::geom::{Bbox, Contour, Point2};
 use serde::{Deserialize, Serialize};
+
+/// THE UNITS THE DOCUMENT IS WRITTEN IN. A property of the drawing, not of any one operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Units {
+    #[default]
+    Mm,
+    Inch,
+}
+
 
 /// Stable identifier of an entity (contour, mesh and so on). Operations reference entities by `Id`
 /// rather than by array index, so a reference survives insertion, removal and reordering.
@@ -130,6 +134,22 @@ impl DocMeta {
     }
 }
 
+/// WHERE AN ELEMENT STOOD WHEN A REFERENCE WAS MADE TO IT - the witness that repairs the reference when
+/// the numbering shifts under it.
+///
+/// It used to be the triple `(u32, [f64; 3], [f64; 3])`, and there was no way to tell the second array from
+/// the third without going to find the doc comment on the field: for an edge they are the midpoint and the
+/// direction, for a face the centre and the normal. Three named fields say it at the point of use.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ElemSnapshot {
+    /// The element's id as it was stored in the reference.
+    pub id: u32,
+    /// WHERE: an edge's midpoint, a face's centre - in the local space of the source body.
+    pub at: [f64; 3],
+    /// WHICH WAY: an edge's direction, a face's normal - in the same space.
+    pub dir: [f64; 3],
+}
+
 /// Root of the project (the document).
 ///
 /// Bodies are one record per body (`bodies: Vec<Body>`): geometry, faces, name and visibility together.
@@ -190,14 +210,6 @@ pub struct Project {
     /// default palette (`default_part_color`).
     #[serde(default)]
     pub part_colors: std::collections::HashMap<Id, [u8; 3]>,
-    pub tools: Vec<Tool>,
-    pub operations: Vec<OperationDef>,
-    /// Setups (operations grouped by coordinate system). Empty means a single implicit G54.
-    #[serde(default)]
-    pub setups: Vec<Setup>,
-    pub stock: Stock,
-    #[serde(default)]
-    pub machine: Machine,
     /// Construction tree: user-defined work planes.
     #[serde(default)]
     pub planes: Vec<WorkPlane>,
@@ -290,7 +302,7 @@ pub struct Project {
     /// and direction. Deliberately conservative: only an unambiguous match repairs, otherwise the
     /// reference stays broken.
     #[serde(default)]
-    pub edge_refs: std::collections::HashMap<Id, Vec<(u32, [f64; 3], [f64; 3])>>,
+    pub edge_refs: std::collections::HashMap<Id, Vec<ElemSnapshot>>,
     /// Face snapshots (centre and normal in the local space of the source body): the same idea as
     /// `edge_refs`, but for references to faces.
     ///
@@ -299,7 +311,7 @@ pub struct Project {
     /// number is not an address, and names appear exactly when naming is improved, so a reference needs a
     /// witness that does not depend on numbering.
     #[serde(default)]
-    pub face_refs: std::collections::HashMap<Id, Vec<(u32, [f64; 3], [f64; 3])>>,
+    pub face_refs: std::collections::HashMap<Id, Vec<ElemSnapshot>>,
     /// How many times the geometric fallback had to repair a reference.
     ///
     /// The fallback looks an element up by a snapshot of its place, that is, by similarity. It is needed
@@ -337,19 +349,16 @@ pub struct Project {
 
 /// Definition of a datum point. `at` is derived whenever the definition is not `Manual`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub enum PointDef {
     /// Coordinates given by hand (`at` = x/y/z, parametric through `feat_dim`).
+    #[default]
     Manual,
     /// At a vertex of a body (an endpoint of a persistent edge). Associative: the point travels with the
     /// vertex when the source is rebuilt. `end = false` is the start of the edge, `true` is the end.
     AtVertex { body: Id, edge: u32, end: bool },
 }
 
-impl Default for PointDef {
-    fn default() -> Self {
-        PointDef::Manual
-    }
-}
 
 /// A datum point: a named point in 3D. Planes, sketches and joints reference one by id.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1057,7 +1066,8 @@ impl GeomClip {
 
 /// Intersection of segments `a-b` and `c-d`. Returns the parameter t in (0,1) along `a-b` when the
 /// intersection lies strictly inside `a-b` and within `c-d`.
-fn seg_seg_t(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, dx: f64, dy: f64) -> Option<f64> {
+fn seg_seg_t(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> Option<f64> {
+    let ([ax, ay], [bx, by], [cx, cy], [dx, dy]) = (a, b, c, d);
     let (rx, ry) = (bx - ax, by - ay);
     let (sx, sy) = (dx - cx, dy - cy);
     let rxs = rx * sy - ry * sx;
@@ -1067,7 +1077,7 @@ fn seg_seg_t(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, dx: f64, dy: 
     let (qpx, qpy) = (cx - ax, cy - ay);
     let t = (qpx * sy - qpy * sx) / rxs;
     let u = (qpx * ry - qpy * rx) / rxs;
-    if t > 1e-9 && t < 1.0 - 1e-9 && u >= -1e-9 && u <= 1.0 + 1e-9 {
+    if t > 1e-9 && t < 1.0 - 1e-9 && (-1e-9..=1.0 + 1e-9).contains(&u) {
         Some(t)
     } else {
         None
@@ -1075,7 +1085,8 @@ fn seg_seg_t(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, dx: f64, dy: 
 }
 
 /// Intersection of the infinite lines through `a-b` and `c-d`. `None` when they are parallel.
-fn line_intersect_inf(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, dx: f64, dy: f64) -> Option<(f64, f64)> {
+fn line_intersect_inf(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> Option<(f64, f64)> {
+    let ([ax, ay], [bx, by], [cx, cy], [dx, dy]) = (a, b, c, d);
     let (r1, r2) = (bx - ax, by - ay);
     let (s1, s2) = (dx - cx, dy - cy);
     let den = r1 * s2 - r2 * s1;
@@ -1144,7 +1155,8 @@ fn seg_circle_t(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, r: f64) ->
 }
 
 /// Parameter t along the infinite line `a-b` where it crosses the segment `c-d`.
-fn line_seg_t(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, dx: f64, dy: f64) -> Option<f64> {
+fn line_seg_t(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> Option<f64> {
+    let ([ax, ay], [bx, by], [cx, cy], [dx, dy]) = (a, b, c, d);
     let (rx, ry) = (bx - ax, by - ay);
     let (sx, sy) = (dx - cx, dy - cy);
     let den = rx * sy - ry * sx;
@@ -1179,8 +1191,8 @@ fn ellipse_axes(cx: f64, cy: f64, max: f64, may: f64, mix: f64, miy: f64) -> (f6
 /// unit vector (ux, uy) and semi-axes `major` and `minor` (the minor axis is perpendicular to the major
 /// one). In local normalised coordinates the ellipse is a unit circle, which makes this a quadratic. Zero
 /// to two roots; filtering by t is left to the caller.
-#[allow(clippy::too_many_arguments)]
-fn line_ellipse_roots(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, ux: f64, uy: f64, major: f64, minor: f64) -> Vec<f64> {
+fn line_ellipse_roots(a: [f64; 2], b: [f64; 2], c: [f64; 2], u: [f64; 2], major: f64, minor: f64) -> Vec<f64> {
+    let ([ax, ay], [bx, by], [cx, cy], [ux, uy]) = (a, b, c, u);
     let (vx, vy) = (-uy, ux); // unit vector of the minor axis
     let (dx, dy) = (bx - ax, by - ay);
     let (acx, acy) = (ax - cx, ay - cy);
@@ -1201,9 +1213,8 @@ fn line_ellipse_roots(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, ux: 
 
 /// Parameters t along the segment `a-b`, within [0,1] plus an endpoint tolerance, where it crosses an
 /// ellipse.
-#[allow(clippy::too_many_arguments)]
-fn seg_ellipse_t(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, ux: f64, uy: f64, major: f64, minor: f64) -> Vec<f64> {
-    line_ellipse_roots(ax, ay, bx, by, cx, cy, ux, uy, major, minor)
+fn seg_ellipse_t(a: [f64; 2], b: [f64; 2], c: [f64; 2], u: [f64; 2], major: f64, minor: f64) -> Vec<f64> {
+    line_ellipse_roots(a, b, c, u, major, minor)
         .into_iter()
         .filter(|&t| t > -1e-9 && t < 1.0 + 1e-9)
         .collect()
@@ -1215,8 +1226,8 @@ fn seg_ellipse_t(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64, ux: f64, 
 /// There is no closed form (the equation is a quartic), so the roots of f(t) = |E(t) - c|^2 - r^2 are
 /// found numerically over the ellipse parameter, refining each sign-change interval by bisection. Up to
 /// four points.
-#[allow(clippy::too_many_arguments)]
-fn circle_ellipse_pts(cx: f64, cy: f64, r: f64, cex: f64, cey: f64, ux: f64, uy: f64, major: f64, minor: f64) -> Vec<(f64, f64)> {
+fn circle_ellipse_pts(c: [f64; 2], r: f64, ce: [f64; 2], u: [f64; 2], major: f64, minor: f64) -> Vec<(f64, f64)> {
+    let ([cx, cy], [cex, cey], [ux, uy]) = (c, ce, u);
     use std::f64::consts::TAU;
     let (vx, vy) = (-uy, ux);
     let e = |th: f64| {
@@ -1471,8 +1482,10 @@ pub struct SourceFile {
 /// Definition of a datum plane. The `origin` and `normal` of the plane are derived: regenerate resolves
 /// them from this definition. `Manual` means they were given by hand.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub enum PlaneDef {
     /// Given by hand as coordinates (`origin`, `normal` and `rot` are edited directly).
+    #[default]
     Manual,
     /// Offset from a base plane (XY, XZ, YZ) by `dist` along its normal (parametric through the `dist`
     /// feature dimension).
@@ -1484,11 +1497,6 @@ pub enum PlaneDef {
     OffsetPlane { plane: Id, dist: f64 },
 }
 
-impl Default for PlaneDef {
-    fn default() -> Self {
-        PlaneDef::Manual
-    }
-}
 
 /// A work plane (a construction element): an origin, a normal and a rotation about that normal.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1538,18 +1546,16 @@ type EdgeRenames = std::collections::HashMap<Id, std::collections::HashMap<u32, 
 
 mod assembly;
 pub mod contours;
-mod cam;
 mod regen;
+pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleTool, RevolveAxis, RevolveTurn};
 mod tess;
 mod timeline;
 mod sketch;
+pub use sketch::TextSpec;
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
 
-// CAM types live in their own module but stay re-exported from here: the CAD core does not need them,
-// and the hundred places that already name them should not have to change their import path.
-pub use cam::{Machine, OpKind, OperationDef, PostConfig, PostKind, Setup, SideMode, Stock, Wcs};
 
 impl Project {
 
@@ -2030,7 +2036,7 @@ impl Project {
                 }
                 if let Ok(v) = eval(&p.expr, &vars) {
                     let key = p.name.to_lowercase();
-                    if vars.get(&key).map_or(true, |o| (o - v).abs() > 1e-12) {
+                    if vars.get(&key).is_none_or(|o| (o - v).abs() > 1e-12) {
                         changed = true;
                     }
                     vars.insert(key, v);
@@ -2143,9 +2149,10 @@ impl Project {
     ///
     /// The polygon stays regular under the solver, scales with the circle dimension and rotates by
     /// dragging.
-    pub fn add_polygon_entity(&mut self, si: usize, cx: f64, cy: f64, vx: f64, vy: f64, n: u32, purpose: crate::feature::Purpose) -> Vec<Id> {
+    pub fn add_polygon_entity(&mut self, si: usize, c: crate::geom::Point2, v: crate::geom::Point2, n: u32, purpose: crate::feature::Purpose) -> Vec<Id> {
+        let ((cx, cy), (vx, vy)) = ((c.x, c.y), (v.x, v.y));
         let construction = purpose == crate::feature::Purpose::Construction;
-        self.add_polygon_param(si, cx, cy, vx, vy, n, crate::feature::Purpose::of(construction)).1
+        self.add_polygon_param(si, Point2::new(cx, cy), Point2::new(vx, vy), n, crate::feature::Purpose::of(construction)).1
     }
 
 
@@ -2169,9 +2176,6 @@ impl Project {
         for cid in &sk.contour_ids {
             if let Some(idx) = self.contour_index(*cid) {
                 self.contours.remove_at(idx); // The id, the provenance and the nesting go with it.
-            }
-            for op in &mut self.operations {
-                op.selection.retain(|x| x != cid);
             }
         }
         if let Some(src) = sk.source {
@@ -2263,7 +2267,7 @@ impl Project {
         use crate::feature::SketchPlane;
         let m = |x: u32| nmap.get(&x).copied().unwrap_or(x);
         let mkey = |k: &crate::feature::FaceKey| {
-            let mut k = k.clone();
+            let mut k = *k;
             k.id = m(k.id);
             k
         };
@@ -2350,6 +2354,21 @@ impl Project {
 
     pub fn mesh_index(&self, id: Id) -> Option<usize> {
         self.bodies.iter().position(|b| b.id == id)
+    }
+
+    /// THE FACES OF A BODY, by its id.
+    ///
+    /// Two places wrote `bodies.last_mut().faces = fs` after adding a body - a shape import and a rebuild -
+    /// and "the last one" is only true while nothing else has been pushed in between. By id it is true
+    /// always.
+    pub fn set_body_faces(&mut self, body: Id, faces: Vec<crate::geom::MeshFace>) -> bool {
+        match self.bodies.iter_mut().find(|b| b.id == body) {
+            Some(b) => {
+                b.faces = faces;
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn mesh_id(&self, index: usize) -> Option<Id> {
@@ -2893,12 +2912,11 @@ impl Project {
                         n.dirty = true;
                     }
                 }
-                FeatureKind::CircularArray { axis, .. } => {
-                    if *axis == id {
+                FeatureKind::CircularArray { axis, .. }
+                    if *axis == id => {
                         *axis = 0;
                         n.dirty = true;
                     }
-                }
                 _ => {}
             }
         }
@@ -3315,7 +3333,7 @@ impl Project {
 
     /// Operation using the first closed contour of a sketch against body `src`.
     pub fn add_combine(&mut self, src: Id, sketch: Id, height: f64, op: u8) -> Id {
-        self.add_combine_on(src, sketch, 0, height, op, crate::feature::Extent::default(), 0.0)
+        self.add_combine_on(src, sketch, 0, crate::model::CombineSpan { height: height, down: 0.0, extent: crate::feature::Extent::default(), fill: &[] }, op)
     }
 
 
@@ -3326,9 +3344,9 @@ impl Project {
     /// `capture_edge_refs` does for edges.
     pub(crate) fn capture_face_refs(&mut self, fid: Id, src: Id, faces: &[u32]) {
         let Some(fs) = self.regen_faces.get(&src) else { return };
-        let refs: Vec<(u32, [f64; 3], [f64; 3])> = faces
+        let refs: Vec<ElemSnapshot> = faces
             .iter()
-            .filter_map(|&id| fs.iter().find(|f| f.id == id).map(|f| (id, [f.centroid.x, f.centroid.y, f.centroid.z], f.normal)))
+            .filter_map(|&id| fs.iter().find(|f| f.id == id).map(|f| ElemSnapshot { id, at: [f.centroid.x, f.centroid.y, f.centroid.z], dir: f.normal }))
             .collect();
         if !refs.is_empty() {
             self.face_refs.insert(fid, refs);
@@ -3346,7 +3364,7 @@ impl Project {
         if fs.is_empty() {
             return None;
         }
-        let snap = self.face_refs.get(&fid).and_then(|v| v.iter().find(|(id, _, _)| *id == stored)).map(|(_, c, n)| (*c, *n));
+        let snap = self.face_refs.get(&fid).and_then(|v| v.iter().find(|s| s.id == stored)).map(|s| (s.at, s.dir));
         let live = |id: u32| fs.iter().find(|f| f.id == id);
         if let Some(f) = live(stored) {
             let ok = crate::names::NameTable::is_named(stored)
@@ -3414,7 +3432,7 @@ impl Project {
     /// (every edge, or no geometry) captures nothing.
     fn capture_edge_refs(&mut self, fid: Id, src: Id, edges: &[u32]) {
         let Some(es) = self.regen_edges.get(&src) else { return };
-        let refs: Vec<(u32, [f64; 3], [f64; 3])> = edges.iter().filter_map(|&eid| es.iter().find(|e| e.id == eid).map(|e| (eid, e.mid, e.dir))).collect();
+        let refs: Vec<ElemSnapshot> = edges.iter().filter_map(|&eid| es.iter().find(|e| e.id == eid).map(|e| ElemSnapshot { id: eid, at: e.mid, dir: e.dir })).collect();
         if !refs.is_empty() {
             self.edge_refs.insert(fid, refs);
         }
@@ -3488,8 +3506,9 @@ impl Project {
             // name translation and snapshot repair. With no snapshot the number is trusted as before, there
             // being no other witness.
             let numeric_ok = crate::names::NameTable::is_named(eid)
-                || match (es.iter().find(|e| e.id == eid), snaps.and_then(|s| s.iter().find(|(id, _, _)| *id == eid))) {
-                    (Some(cur), Some((_, mid, _))) => {
+                || match (es.iter().find(|e| e.id == eid), snaps.and_then(|v| v.iter().find(|s| s.id == eid))) {
+                    (Some(cur), Some(snap)) => {
+                        let mid = snap.at;
                         let d = ((cur.mid[0] - mid[0]).powi(2) + (cur.mid[1] - mid[1]).powi(2) + (cur.mid[2] - mid[2]).powi(2)).sqrt();
                         d <= tol
                     }
@@ -3538,7 +3557,7 @@ impl Project {
                     continue;
                 }
             }
-            if let Some(&(_, mid, dir)) = snaps.and_then(|s| s.iter().find(|(id, _, _)| *id == eid)) {
+            if let Some(&ElemSnapshot { at: mid, dir, .. }) = snaps.and_then(|v| v.iter().find(|s| s.id == eid)) {
                 let seg_dist = |e: &crate::geom::MeshEdge| -> f64 {
                     let (a, b) = (e.a, e.b);
                     let v = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
@@ -3582,7 +3601,7 @@ impl Project {
     /// Add a chamfer on edges of body `src` (an empty `edges` means every edge). Returns the id of the result.
     pub fn add_chamfer(&mut self, src: Id, dist: f64, edges: Vec<u32>) -> Id {
         use crate::feature::ChamferMode;
-        self.add_chamfer_ex(src, dist, 0.0, ChamferMode::Symmetric, false, 0, edges)
+        self.add_chamfer_ex(src, dist, ChamferShape { mode: ChamferMode::Symmetric, d2: 0.0, flip: false, ref_face: 0 }, edges)
     }
 
 
@@ -3600,13 +3619,15 @@ impl Project {
 
     /// Add a linear pattern of body `src`: `count` copies spaced by (dx, dy, dz). Returns the result id.
     pub fn add_linear_array(&mut self, src: Id, dx: f64, dy: f64, dz: f64, count: u32) -> Id {
-        self.add_linear_array_grid(src, dx, dy, dz, count, 0.0, 0.0, 0.0, 1)
+        self.add_linear_array_grid(src, ArrayAxis { d: [dx, dy, dz], count }, ArrayAxis::none())
     }
 
     /// Grid pattern: direction one (`d1` by `count`) and direction two (`d2` by `count2`).
     #[allow(clippy::too_many_arguments)]
-    pub fn add_linear_array_grid(&mut self, src: Id, dx: f64, dy: f64, dz: f64, count: u32, dx2: f64, dy2: f64, dz2: f64, count2: u32) -> Id {
-        self.add_linear_array_grid3(src, dx, dy, dz, count, dx2, dy2, dz2, count2, 0.0, 0.0, 0.0, 1)
+    pub fn add_linear_array_grid(&mut self, src: Id, a: ArrayAxis, b: ArrayAxis) -> Id {
+        let ([dx, dy, dz], count) = (a.d, a.count);
+        let ([dx2, dy2, dz2], count2) = (b.d, b.count);
+        self.add_linear_array_grid3(src, [ArrayAxis { d: [dx, dy, dz], count: count }, ArrayAxis { d: [dx2, dy2, dz2], count: count2 }, ArrayAxis::none()])
     }
 
 
@@ -3770,7 +3791,7 @@ impl Project {
     /// resolved from that face on every rebuild, so the hole travels with the face. The stored
     /// `face.centroid` and `face.normal` are kept as a fallback fingerprint.
     pub fn add_hole(&mut self, src: Id, face: crate::feature::FaceKey, diameter: f64, depth: f64) -> Id {
-        self.add_hole_typed(src, face, diameter, depth, 0, 0.0, 0.0)
+        self.add_hole_typed(src, face, HoleTool { kind: 0, diameter: diameter, depth: depth, dia2: 0.0, depth2: 0.0 })
     }
 
 
@@ -3991,9 +4012,9 @@ impl Project {
                 // writes it, and including it would declare every solve an edit, outside any operation
                 // boundary.
                 for slot in 0..3 {
-                    j.drive[slot].map(|v| bits(v, &mut h));
-                    j.limit_min[slot].map(|v| bits(v, &mut h));
-                    j.limit_max[slot].map(|v| bits(v, &mut h));
+                    if let Some(v) = j.drive[slot] { bits(v, &mut h) }
+                    if let Some(v) = j.limit_min[slot] { bits(v, &mut h) }
+                    if let Some(v) = j.limit_max[slot] { bits(v, &mut h) }
                     (j.drive[slot].is_some(), j.limit_min[slot].is_some(), j.limit_max[slot].is_some()).hash(&mut h);
                 }
                 j.global.hash(&mut h);
@@ -4013,7 +4034,7 @@ impl Project {
             (&p.name, &p.expr).hash(&mut h);
         }
         for d in &self.named_dims {
-            (&d.name).hash(&mut h);
+            d.name.hash(&mut h);
             match &d.target {
                 DimTarget::Sketch { sketch, refs } => (0u8, sketch, refs).hash(&mut h),
                 DimTarget::Feature { node, key } => (1u8, node, key).hash(&mut h),
@@ -4494,48 +4515,6 @@ impl Project {
 
 
 
-    /// Material removal simulation: the stock as a height map minus the passes of the program. Returns the
-    /// resulting mesh for drawing. `cell` is the resolution in millimetres.
-    pub fn simulate(&self, name: &str, cell: f64) -> Option<crate::geom::Mesh> {
-        use crate::heightmap::Heightmap;
-        // Stock extents: from the stock definition, or from the geometry.
-        let b = self.bounds()?;
-        let (w, h) = (b.max.x - b.min.x, b.max.y - b.min.y);
-        let top = self.bodies.iter().map(|b| &b.mesh).filter_map(|m| m.bounds()).map(|bb| bb.max.z).fold(0.0_f64, f64::max);
-        let mut hm = Heightmap::flat(b.min, w, h, cell.max(0.3), top.max(0.0));
-
-        let prog = self.build_program(name);
-        for tp in &prog.toolpaths {
-            let (radius, ball) = tp
-                .meta
-                .tool
-                .as_ref()
-                .and_then(|t| self.tool(t.number))
-                .map(|t| (t.radius(), matches!(t.kind, crate::tool::ToolType::BallNose)))
-                .unwrap_or((1.0, false));
-            let mut pos = crate::geom::Point3::new(0.0, 0.0, top);
-            for m in &tp.moves {
-                match m {
-                    crate::ir::Move::Linear { to, .. } | crate::ir::Move::Plunge { to, .. } => {
-                        hm.carve_segment(pos, *to, radius, ball);
-                        pos = *to;
-                    }
-                    crate::ir::Move::Arc { to, .. } | crate::ir::Move::Helix { to, .. } => {
-                        hm.carve_segment(pos, *to, radius, ball);
-                        pos = *to;
-                    }
-                    crate::ir::Move::Rapid { to } => pos = *to,
-                    crate::ir::Move::DrillCycle { points, .. } => {
-                        for p in points {
-                            hm.carve(p.x, p.y, p.z, radius, ball);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        Some(hm.to_mesh())
-    }
 
 
 
@@ -4721,8 +4700,6 @@ pub fn to_ron(project: &Project) -> Result<String, String> {
 }
 
 /// Load a project from a RON string.
-
-
 pub fn from_ron(s: &str) -> Result<Project, String> {
     // The recursion limit is lifted, or a large selection makes the file unreadable.
     //
@@ -4787,7 +4764,7 @@ mod ellipse_intersect_tests {
     fn horizontal_line_through_center_hits_major_vertices() {
         let (ux, uy, ma, mi) = axes();
         // The line y = 0, x = t*10 - 5, where t in 0..1 covers x in [-5,5].
-        let mut ts = seg_ellipse_t(-5.0, 0.0, 5.0, 0.0, 0.0, 0.0, ux, uy, ma, mi);
+        let mut ts = seg_ellipse_t([-5.0, 0.0], [5.0, 0.0], [0.0, 0.0], [ux, uy], ma, mi);
         ts.sort_by(|a, b| a.total_cmp(b));
         assert_eq!(ts.len(), 2, "two intersection points");
         let xs: Vec<f64> = ts.iter().map(|t| -5.0 + t * 10.0).collect();
@@ -4797,7 +4774,7 @@ mod ellipse_intersect_tests {
     #[test]
     fn vertical_line_through_center_hits_minor_vertices() {
         let (ux, uy, ma, mi) = axes();
-        let roots = line_ellipse_roots(0.0, -5.0, 0.0, 5.0, 0.0, 0.0, ux, uy, ma, mi);
+        let roots = line_ellipse_roots([0.0, -5.0], [0.0, 5.0], [0.0, 0.0], [ux, uy], ma, mi);
         let mut ys: Vec<f64> = roots.iter().map(|t| -5.0 + t * 10.0).collect();
         ys.sort_by(|a, b| a.total_cmp(b));
         assert_eq!(ys.len(), 2);
@@ -4808,7 +4785,7 @@ mod ellipse_intersect_tests {
     fn tangent_and_miss() {
         let (ux, uy, ma, mi) = axes();
         // The tangent y = 2 gives a double root (the discriminant is near zero); y = 3 misses entirely.
-        let far = seg_ellipse_t(-5.0, 3.0, 5.0, 3.0, 0.0, 0.0, ux, uy, ma, mi);
+        let far = seg_ellipse_t([-5.0, 3.0], [5.0, 3.0], [0.0, 0.0], [ux, uy], ma, mi);
         assert!(far.is_empty(), "y = 3 must not intersect the ellipse");
     }
 
@@ -4817,7 +4794,7 @@ mod ellipse_intersect_tests {
         // Major axis along (1,1) with its endpoint at (3,3), so major = sqrt(18); the minor axis is perpendicular, length 1.
         let (ux, uy, ma, mi) = ellipse_axes(0.0, 0.0, 3.0, 3.0, -0.5_f64.sqrt(), 0.5_f64.sqrt());
         // The major axis itself, the line from (-4,-4) to (4,4), meets the curve at the vertices at plus and minus (3,3).
-        let mut roots = line_ellipse_roots(-4.0, -4.0, 4.0, 4.0, 0.0, 0.0, ux, uy, ma, mi);
+        let mut roots = line_ellipse_roots([-4.0, -4.0], [4.0, 4.0], [0.0, 0.0], [ux, uy], ma, mi);
         roots.sort_by(|a, b| a.total_cmp(b));
         assert_eq!(roots.len(), 2, "two vertices: {roots:?}");
         assert!((roots[0] - 0.125).abs() < 1e-6 && (roots[1] - 0.875).abs() < 1e-6, "vertices at plus and minus (3,3): {roots:?}");
@@ -4827,7 +4804,7 @@ mod ellipse_intersect_tests {
     fn circle_ellipse_four_points() {
         let (ux, uy, ma, mi) = axes(); // a=4,b=2
         // A circle of radius 3 at the centre: |E(t)| = 3 when 16*cos^2 + 4*sin^2 = 9, that is 12*cos^2 = 5, giving four symmetric points.
-        let pts = circle_ellipse_pts(0.0, 0.0, 3.0, 0.0, 0.0, ux, uy, ma, mi);
+        let pts = circle_ellipse_pts([0.0, 0.0], 3.0, [0.0, 0.0], [ux, uy], ma, mi);
         assert_eq!(pts.len(), 4, "a circle of r = 3 must meet the ellipse four times: {pts:?}");
         for (x, y) in &pts {
             assert!(((x * x + y * y).sqrt() - 3.0).abs() < 1e-4, "the point must lie on the circle r = 3");
@@ -4839,7 +4816,7 @@ mod ellipse_intersect_tests {
     fn circle_ellipse_no_intersection() {
         let (ux, uy, ma, mi) = axes();
         // A circle of r = 1 lies entirely inside (the minor semi-axis is 2), so there are no intersections.
-        assert!(circle_ellipse_pts(0.0, 0.0, 1.0, 0.0, 0.0, ux, uy, ma, mi).is_empty());
+        assert!(circle_ellipse_pts([0.0, 0.0], 1.0, [0.0, 0.0], [ux, uy], ma, mi).is_empty());
     }
 }
 

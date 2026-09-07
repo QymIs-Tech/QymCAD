@@ -7,6 +7,7 @@
 //! measured.
 #[cfg(test)]
 mod tests {
+    use crate::gui::WinKind;
     use super::super::App;
     use qymcad_core::model::Param;
 
@@ -41,9 +42,11 @@ mod tests {
             // after an edit: the recomputation of the parameters and the rebuild of the bodies. The check
             // for the reported case (300 in the table while the part stayed as it was) would have been
             // green with the program broken.
-            app.win.params = true;
+            app.win.open(WinKind::Params);
             let out = self.ctx.run_ui(input, |ui| {
-                app.params_window(ui.ctx());
+                let mut asks = Vec::new();
+                crate::gui::panels_windows::params_window(&mut app.win_ctx(&mut asks), ui.ctx());
+                app.do_win_asks(asks, ui.ctx());
             });
             // The name fields stand in the first column; egui remembers their rectangles under our own
             // ids.
@@ -166,16 +169,16 @@ mod tests {
     #[test]
     fn typing_a_name_does_not_touch_the_document() {
         let mut app = app_with_params();
-        let key_before = app.doc_key_for_test();
-        let undo_before = app.undo_len_for_test();
+        let key_before = qymcad_ui_state::doc_key(&app.project);
+        let undo_before = app.disk.edits.undo.len();
 
         let mut t = Table::new();
         t.into_name(&mut app, 0);
         for c in "shirina".chars() {
             t.type_text(&c.to_string()).frame(&mut app);
-            assert_eq!(app.doc_key_for_test(), key_before, "the document changed on the letter \"{c}\" — the edit goes into the model under the fingers");
+            assert_eq!(qymcad_ui_state::doc_key(&app.project), key_before, "the document changed on the letter \"{c}\" — the edit goes into the model under the fingers");
         }
-        assert_eq!(app.undo_len_for_test(), undo_before, "typing bred steps of undo");
+        assert_eq!(app.disk.edits.undo.len(), undo_before, "typing bred steps of undo");
         assert_eq!(app.project.parameters[0].name, "w", "the name in the model changed before the commit");
         assert_eq!(app.project.parameters[1].expr, "w*2+5", "the formula broke before the name was even finished");
     }
@@ -184,7 +187,7 @@ mod tests {
     #[test]
     fn enter_renames_and_carries_the_formulas() {
         let mut app = app_with_params();
-        let undo_before = app.undo_len_for_test();
+        let undo_before = app.disk.edits.undo.len();
 
         let mut t = Table::new();
         t.into_name(&mut app, 0);
@@ -194,7 +197,7 @@ mod tests {
 
         assert_eq!(app.project.parameters[0].name, "shirina", "the name was not renamed by Enter");
         assert_eq!(app.project.parameters[1].expr, "shirina*2+5", "the formula stayed on a name that has vanished");
-        assert_eq!(app.undo_len_for_test(), undo_before + 1, "a rename must be ONE step of undo");
+        assert_eq!(app.disk.edits.undo.len(), undo_before + 1, "a rename must be ONE step of undo");
         assert_eq!(app.project.eval_expr("shirina*2+5").unwrap(), 105.0, "the value changed because of the rename");
     }
 
@@ -247,7 +250,7 @@ mod tests {
         t.settle(&mut app);
         assert!(t.shows("shirina") && t.shows("w"), "setup: both rows must be in the table");
 
-        app.par_search_for_test("shir");
+        app.par_search = ("shir").to_string();
         t.settle(&mut app);
         assert!(t.shows("shirina"), "the search lost a row that matches: {:?}", t.drawn);
         assert!(!t.drawn.iter().any(|x| x == "h"), "the search left a row that does not match: {:?}", t.drawn);
@@ -284,7 +287,7 @@ mod tests {
 
         let mut t = Table::new();
         let at = t.stable_driver_value_pos(&mut app, 0).expect("the value field of the driver is in the frame");
-        let undo_before = app.undo_len_for_test();
+        let undo_before = app.disk.edits.undo.len();
         t.hover(at).frame(&mut app);
         t.click(at).frame(&mut app);
         t.select_all().frame(&mut app);
@@ -294,7 +297,7 @@ mod tests {
         t.key(egui::Key::Enter).frame(&mut app);
         t.settle(&mut app);
         assert_eq!(app.project.param_map().get("len"), Some(&55.0), "the value of a driver is not editable from the table");
-        assert_eq!(app.undo_len_for_test(), undo_before + 1, "editing a value must be ONE step of undo");
+        assert_eq!(app.disk.edits.undo.len(), undo_before + 1, "editing a value must be ONE step of undo");
         // AND THE GEOMETRY FOLLOWED THE DIMENSION: the sketch was recomputed rather than a number merely
         // rewritten.
         let w = app.project.sketches[si].points[1].x - app.project.sketches[si].points[0].x;
@@ -333,18 +336,18 @@ mod tests {
         });
         assert!(app.project.add_named_dim("len".into(), sid, pts));
         // We leave the part so that the jump is visible: it must also ENTER it.
-        app.exit_context_for_test();
-        app.sel = super::super::Sel::None;
+        app.exit_context();
+        app.chosen.sel = super::super::Sel::None;
 
         let mut t = Table::new();
         t.settle(&mut app);
         let at = t.path_pos(&app, 0).expect("the path of the driver is in the frame");
-        let undo_before = app.undo_len_for_test();
+        let undo_before = app.disk.edits.undo.len();
         t.hover(at).frame(&mut app);
         t.click(at).frame(&mut app);
 
-        assert!(app.sel == super::super::Sel::Sketch(si), "the click on the path did not lead to the sketch");
-        assert_eq!(app.undo_len_for_test(), undo_before, "a jump is not an edit of the document, there must be no step of undo");
+        assert!(app.chosen.sel == super::super::Sel::Sketch(si), "the click on the path did not lead to the sketch");
+        assert_eq!(app.disk.edits.undo.len(), undo_before, "a jump is not an edit of the document, there must be no step of undo");
     }
 
     /// EDITING A DRIVER IN THE TABLE REBUILDS THE BODY, NOT ONLY THE SKETCH.
@@ -381,9 +384,9 @@ mod tests {
         app.project.regen_sketch(si);
         let prof = app.project.contour_id(0).unwrap_or(0);
         app.project.add_extrude_on(sid, prof, 10.0, qymcad_core::feature::Reach::Forward, 0.0);
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.drain_bg_for_test();
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let width = |app: &App| {
             app.project
@@ -407,9 +410,9 @@ mod tests {
         t.type_text("300").frame(&mut app);
         t.key(egui::Key::Enter).frame(&mut app);
         t.settle(&mut app);
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.drain_bg_for_test();
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let after = width(&app);
         assert!(

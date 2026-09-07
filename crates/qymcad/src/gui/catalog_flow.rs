@@ -11,6 +11,29 @@
 mod tests {
     use crate::command_catalog::{Launch, COMMANDS};
 
+    /// The tool number out of a call, wherever it now sits in the argument list.
+    ///
+    /// It used to be the first thing after the bracket, so the guard read up to the first `)` and
+    /// parsed that. Once the panels stopped being methods the calls gained their fields in front -
+    /// `set_sk_tool(&mut cmd, .., 3)` - and every tool went unseen at once, which read as "suspiciously
+    /// few tools" rather than as a broken needle. The number is the LAST argument; find the matching
+    /// bracket and take it.
+    fn trailing_number(tail: &str) -> Option<u8> {
+        let (mut depth, mut end) = (0i32, None);
+        for (i, ch) in tail.char_indices() {
+            match ch {
+                '(' | '[' | '<' => depth += 1,
+                ')' if depth == 0 => {
+                    end = Some(i);
+                    break;
+                }
+                ')' | ']' | '>' => depth -= 1,
+                _ => {}
+            }
+        }
+        tail[..end?].rsplit(',').next()?.trim().parse::<u8>().ok()
+    }
+
     /// The tool numbers that really exist in the interface.
     ///
     /// TWO FILES: the workbench panel lives in `panels.rs`, the common creation panel (datums, sketch)
@@ -20,13 +43,17 @@ mod tests {
         let src: &str = &joined;
         let mut feats: Vec<(&'static str, u8)> = Vec::new();
         let mut sk: Vec<(String, u8)> = Vec::new();
-        for (pat, tag) in [("start_feat_cmd(", "feat"), ("start_prim_cmd(", "prim")] {
+        // A BUTTON NAMES ITS REQUEST. The bars used to call the command straight from the panel; they now
+        // put a named request in the frame's list, so the wiring reads `BarAsk::FeatCmd(7)` where it read
+        // `start_feat_cmd(7)`. Both spellings are looked for: the request is what a bar writes, the call is
+        // what the frame writes, and a tool is wired if EITHER is there.
+        for (pat, tag) in [("start_feat_cmd(", "feat"), ("BarAsk::FeatCmd(", "feat"), ("start_prim_cmd(", "prim"), ("BarAsk::PrimCmd(", "prim")] {
             let mut rest = src;
             while let Some(i) = rest.find(pat) {
                 let tail = &rest[i + pat.len()..];
                 rest = tail;
-                if let Some(end) = tail.find(')') {
-                    if let Ok(n) = tail[..end].parse::<u8>() {
+                if let Some(n) = trailing_number(tail) {
+                    {
                         let key = (tag, n);
                         if !feats.contains(&key) {
                             feats.push(key);
@@ -35,13 +62,13 @@ mod tests {
                 }
             }
         }
-        for (pat, handle) in [("set_sk_tool(", "sk"), ("set_dim_tool(", "dim"), ("set_click_op(", "click"), ("modify_button(", "mod")] {
+        for (pat, handle) in [("set_sk_tool(", "sk"), ("BarAsk::SketchTool(", "sk"), ("set_dim_tool(", "dim"), ("set_click_op(", "click"), ("modify_button(", "mod")] {
             let mut rest = src;
             while let Some(i) = rest.find(pat) {
                 let tail = &rest[i + pat.len()..];
                 rest = tail;
-                if let Some(end) = tail.find(')') {
-                    if let Ok(n) = tail[..end].parse::<u8>() {
+                if let Some(n) = trailing_number(tail) {
+                    {
                         let key = (handle.to_string(), n);
                         if !sk.contains(&key) {
                             sk.push(key);
@@ -144,11 +171,11 @@ mod tests {
     #[test]
     fn running_a_command_by_code_starts_it() {
         let mut app = super::super::screen_keys::tests::plate();
-        app.sel = super::super::Sel::Sketch(0);
+        app.chosen.sel = super::super::Sel::Sketch(0);
         app.run_command("part.extrude");
-        assert_eq!(app.cmd.kind, 1, "\"part.extrude\" did not open the extrude");
+        assert_eq!(app.tools.armed.cmd_kind(), 1, "\"part.extrude\" did not open the extrude");
         app.cancel_all_tools();
         app.run_command("part.hole");
-        assert_eq!(app.cmd.kind, 7, "\"part.hole\" did not open the hole");
+        assert_eq!(app.tools.armed.cmd_kind(), 7, "\"part.hole\" did not open the hole");
     }
 }

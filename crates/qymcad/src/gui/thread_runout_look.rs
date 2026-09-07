@@ -32,7 +32,7 @@ mod tests {
     /// the picture showed something nobody would ever model. A person clicks the rim they can see, which is
     /// the top one.
     fn rim(app: &mut App, body: qymcad_core::model::Id, r: f64) -> u32 {
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let e = app.project.regen_edges.get(&body).cloned().unwrap_or_default();
         e.iter()
             .filter(|e| e.radius > 1e-9 && (e.radius - r).abs() < 0.05)
@@ -50,14 +50,14 @@ mod tests {
         let e = rim(&mut app, blank, d * 0.5);
         let t = app.project.add_thread(blank, e, m(d, pitch, false, 0.2), len, lead, lead);
         app.project.finish_base_body(t, 1);
-        app.mode_3d = true;
-        app.rebuild_if_dirty_for_test();
+        app.viewing.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app
     }
 
     /// Fit the camera to everything in the document — the same arithmetic the viewport's "fit" does.
     fn fit(app: &mut App) {
-        let basis = app.cam.basis();
+        let basis = app.viewing.cam.basis();
         let (right, up) = (basis.0, basis.1);
         let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
         let mut pts: Vec<[f64; 3]> = Vec::new();
@@ -65,7 +65,7 @@ mod tests {
             let Some(id) = app.project.mesh_id(i) else { continue };
             let wt = app.project.body_world_transform(id);
             for v in &b.mesh.verts {
-                let q = apply12(&wt, [v.x as f64, v.y as f64, v.z as f64]);
+                let q = apply12(&wt, [v.x, v.y, v.z]);
                 for k in 0..3 {
                     lo[k] = lo[k].min(q[k]);
                     hi[k] = hi[k].max(q[k]);
@@ -81,17 +81,17 @@ mod tests {
             sx = sx.max((rel[0] * right[0] + rel[1] * right[1] + rel[2] * right[2]).abs());
             sy = sy.max((rel[0] * up[0] + rel[1] * up[1] + rel[2] * up[2]).abs());
         }
-        app.cam.target = mid;
+        app.viewing.cam.target = mid;
         let r = rect();
-        app.cam.scale = ((r.width() as f64 / 2.0 / sx.max(1e-6)).min(r.height() as f64 / 2.0 / sy.max(1e-6)) * 0.9) as f32;
-        app.cam.init = true;
+        app.viewing.cam.scale = ((r.width() as f64 / 2.0 / sx.max(1e-6)).min(r.height() as f64 / 2.0 / sy.max(1e-6)) * 0.9) as f32;
+        app.viewing.cam.init = true;
     }
 
     /// Draw the frame and put it on disk under `name`.
     fn shot(app: &mut App, name: &str) {
-        let basis = app.cam.basis();
-        let img = app.rasterize_3d(rect(), &basis, 1.0, 1.0).expect("the frame was not drawn");
-        let png = App::color_image_to_png(&img).expect("PNG");
+        let basis = app.viewing.cam.basis();
+        let img = crate::gui::render::rasterize_3d(&app.painting(), rect(), &basis, 1.0, 1.0).expect("the frame was not drawn");
+        let png = crate::gui::color_image_to_png(&img).expect("PNG");
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/thread-look");
         std::fs::create_dir_all(&dir).expect("the directory for the pictures");
         std::fs::write(dir.join(name), png).expect("writing the picture");
@@ -138,15 +138,15 @@ mod tests {
         let e = rim(&mut app, blank, 20.0);
         let t = app.project.add_thread(blank, e, spec, 20.0, 2.0, 2.0);
         app.project.finish_base_body(t, 1);
-        app.mode_3d = true;
-        app.rebuild_if_dirty_for_test();
+        app.viewing.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
-        app.cam.yaw = 0.0;
-        app.cam.pitch = 0.0;
+        app.viewing.cam.yaw = 0.0;
+        app.viewing.cam.pitch = 0.0;
         fit(&mut app);
         shot(&mut app, "5-the-reported-thread.png");
-        app.cam.target = [0.0, 0.0, 17.0];
-        app.cam.scale *= 2.5;
+        app.viewing.cam.target = [0.0, 0.0, 17.0];
+        app.viewing.cam.scale *= 2.5;
         shot(&mut app, "6-the-reported-thread-entry.png");
     }
 
@@ -188,16 +188,16 @@ mod tests {
         // The thread sits on the boss and STOPS above the flange: its lower end runs into the part.
         let t = app.project.add_thread(blank, e, spec, 20.0, 2.0, 2.0);
         app.project.finish_base_body(t, 1);
-        app.mode_3d = true;
-        app.rebuild_if_dirty_for_test();
+        app.viewing.mode_3d = true;
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
-        app.cam.yaw = 0.0;
-        app.cam.pitch = 0.0;
+        app.viewing.cam.yaw = 0.0;
+        app.viewing.cam.pitch = 0.0;
         fit(&mut app);
         shot(&mut app, "7-boss-on-a-flange.png");
         // THE EXIT AT THE BOTTOM, close up: that is where the wall was reported.
-        app.cam.target = [0.0, 0.0, 7.0];
-        app.cam.scale *= 2.2;
+        app.viewing.cam.target = [0.0, 0.0, 7.0];
+        app.viewing.cam.scale *= 2.2;
         shot(&mut app, "8-boss-the-lower-exit.png");
     }
 
@@ -212,24 +212,24 @@ mod tests {
         let mut app = threaded_shaft(d, pitch, len, lead);
 
         // FROM THE SIDE: the axis lies across the frame, so both ends and their run-outs are in view.
-        app.cam.yaw = 0.0;
-        app.cam.pitch = 0.0;
+        app.viewing.cam.yaw = 0.0;
+        app.viewing.cam.pitch = 0.0;
         fit(&mut app);
         shot(&mut app, "1-shaft-from-the-side.png");
 
         // CUT ALONG THE AXIS. The plane passes through the axis, so the section shows the profile of every
         // turn - which is the only place a thickened turn can be seen at all.
-        app.section.plane = Some(([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
-        app.section.offset = 0.0;
+        app.side.section.plane = Some(([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+        app.side.section.offset = 0.0;
         shot(&mut app, "2-shaft-cut-along-the-axis.png");
 
         // THE ENTRY CLOSE UP: the first turns, where a nut has to catch.
-        app.cam.target = [0.0, 0.0, len - 2.0 * pitch];
-        app.cam.scale *= 3.0;
+        app.viewing.cam.target = [0.0, 0.0, len - 2.0 * pitch];
+        app.viewing.cam.scale *= 3.0;
         shot(&mut app, "3-the-entry-close-up.png");
 
         // AND THE FAR END, where the thread runs out into the shaft.
-        app.cam.target = [0.0, 0.0, 2.0 * pitch];
+        app.viewing.cam.target = [0.0, 0.0, 2.0 * pitch];
         shot(&mut app, "4-the-far-end-close-up.png");
     }
 }

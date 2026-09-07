@@ -41,7 +41,38 @@ pub enum ThreadStandard {
     Custom,
 }
 
+/// THE CROSS-SECTION OF ONE TURN OF THE GROOVE: how deep it is cut, how wide it opens, how flat the
+/// crest is left, the two rounding radii, and the clearance that lets a pair screw together.
+#[derive(Clone, Copy)]
+pub struct GrooveShape {
+    pub depth: f64,
+    pub angle_deg: f64,
+    pub crest_flat: f64,
+    pub crest_r: f64,
+    pub root_r: f64,
+    pub fit: f64,
+}
+
 impl ThreadStandard {
+    /// EVERY STANDARD. Walked by the checks; a guard holds it against the declaration.
+    pub const ALL: [ThreadStandard; 6] = [
+        ThreadStandard::MetricIso,
+        ThreadStandard::TrapezoidalTr,
+        ThreadStandard::Acme,
+        ThreadStandard::RoundRd,
+        ThreadStandard::Buttress,
+        ThreadStandard::Custom,
+    ];
+
+    /// Whether the profile is fixed by a standard, so that its geometry can be checked against one.
+    ///
+    /// `Custom` takes its angle and depth from the person, so there is nothing to check it against: the
+    /// numbers are whatever was typed. Said as a predicate rather than by leaving it out of a list -
+    /// a shorter list says nothing about WHY, and goes stale when a standard is added.
+    pub fn has_fixed_profile(self) -> bool {
+        !matches!(self, ThreadStandard::Custom)
+    }
+
     /// The included angle of the profile, in degrees.
     pub fn angle_deg(self) -> f64 {
         match self {
@@ -268,7 +299,7 @@ impl ThreadSpec {
         // pair would not screw together at all — observed on a Ø20 pair with fits of 0.2 and 0.4 and zero
         // radial clearance. The groove deepens by the same amount, so the pair gains clearance on both sides of
         // the thread.
-        let groove = self.groove_profile(p, depth + fit, angle, crest_flat, crest_r, root_r, fit);
+        let groove = self.groove_profile(p, GrooveShape { depth: depth + fit, angle_deg: angle, crest_flat, crest_r, root_r, fit });
         ThreadGeom {
             major_d,
             pitch_d,
@@ -374,7 +405,7 @@ impl ThreadSpec {
     /// only the side flips. The fit is deliberately carried over unchanged — it thins an external thread and
     /// thickens an internal one by the same amount, so one value gives the pair its clearance.
     pub fn mating(&self) -> Self {
-        Self { internal: !self.internal, ..self.clone() }
+        Self { internal: !self.internal, ..*self }
     }
 
     /// WHAT THE BLANK MUST BE for this thread and for its counterpart, in millimetres.
@@ -402,7 +433,8 @@ impl ThreadSpec {
     /// turn. The overshoot now runs strictly vertically, which does not affect the cut, being entirely outside
     /// the material, and rules the overlap out.
     #[allow(clippy::too_many_arguments)]
-    fn groove_profile(&self, p: f64, depth: f64, angle_deg: f64, crest_flat: f64, crest_r: f64, root_r: f64, fit: f64) -> Vec<ProfEdge> {
+    fn groove_profile(&self, p: f64, shape: GrooveShape) -> Vec<ProfEdge> {
+        let GrooveShape { depth, angle_deg, crest_flat, crest_r, root_r, fit } = shape;
         let beta = (angle_deg.to_radians() * 0.5).clamp(1e-3, 1.3); // half-angle of the profile from the radial
         let t = beta.tan();
         let k = 1.0 / beta.cos(); // = √(1+t²), the length of the normal to the flank

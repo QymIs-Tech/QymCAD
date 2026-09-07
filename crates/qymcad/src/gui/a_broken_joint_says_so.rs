@@ -24,12 +24,12 @@ pub(in crate::gui) mod tests {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let a = app.project.mesh_id(0).and_then(|b| app.project.body_owner(b)).expect("part A");
         let b = app.project.mesh_id(1).and_then(|b| app.project.body_owner(b)).expect("part B");
         app.project.set_grounded(a, true);
@@ -122,7 +122,7 @@ pub(in crate::gui) mod tests {
         app.project.set_active_component(Some(app.project.root));
         let (cd, ce) = (app.project.add_connector(p1, AnchorRef::Origin), app.project.add_connector(p2, AnchorRef::Origin));
         let far = app.project.add_joint(cd, ce, JointKind::Slider);
-        let ctx = app.current_ctx_id_for_test();
+        let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         assert!(
             !app.project.joints.iter().filter(|j| app.project.joint_in_context(j, ctx)).any(|j| j.id == far),
             "setup: the joint of the subassembly must not be visible in the list of the root — otherwise the trouble does not reproduce"
@@ -232,12 +232,12 @@ pub(in crate::gui) mod tests {
         super::super::joint_flow::tests::add_part_at(&mut app, 60.0);
         super::super::joint_flow::tests::add_part_at(&mut app, 120.0);
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
-        app.rebuild_if_dirty_for_test();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let (ba, bb) = (app.project.mesh_id(0).expect("body A"), app.project.mesh_id(1).expect("body B"));
         let bc = app.project.mesh_id(2).expect("body C");
         let (a, b) = (app.project.body_owner(ba).expect("part A"), app.project.body_owner(bb).expect("part B"));
@@ -258,13 +258,13 @@ pub(in crate::gui) mod tests {
         assert!(!app.project.joint_faults().is_empty(), "setup: the joint must turn red");
 
         // THE ANCHOR IS CHANGED: "change the anchor" for side A, then a click on a live face.
-        app.joint.edit = Some(jid);
-        app.joint.edit_repick = Some((jid, false));
-        app.joint.anchor_mode = 0;
+        app.side.joint.edit = Some(jid);
+        app.side.joint.edit_repick = Some((jid, false));
+        app.side.joint.anchor_mode = 0;
         let kc = key(&app, bc);
-        app.joint_edit_repick_apply_for_test(bc, AnchorRef::FaceCenter(bc, kc));
+        qymcad_assembly::joint_edit_repick_apply(&mut app.joint_ctx(), bc, AnchorRef::FaceCenter(bc, kc));
 
         assert!(app.project.joint_faults().is_empty(), "the joint did not come back to life after the anchor was re-chosen: {:?}", app.project.joint_faults());
-        assert!(app.joint.edit_repick.is_none(), "the change-the-anchor mode did not close — a person will not realise they have mended it");
+        assert!(app.side.joint.edit_repick.is_none(), "the change-the-anchor mode did not close — a person will not realise they have mended it");
     }
 }

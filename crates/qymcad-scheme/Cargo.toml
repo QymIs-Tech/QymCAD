@@ -1,0 +1,21 @@
+[package]
+name = "qymcad-scheme"
+version = "0.1.0"
+edition = "2021"
+
+# COLOUR SCHEMES ARE A RESOURCE: a person brings a file and picks it, without rebuilding the program. Every
+# workbench paints in the same colours, so the schemes belong to none of them.
+[dependencies]
+egui = "0.35"
+serde = { version = "1", features = ["derive"] }
+qymcad-i18n = { path = "../qymcad-i18n" }
+directories = "6" # the person's own schemes live in the config directory
+ron.workspace = true # a scheme is a .ron file the person can edit by hand
+
+[lints]
+workspace = true
+
+# THE CHECKS ONLY. Body colours come from the document, and "every scheme keeps a body readable" cannot be
+# checked without them - but the schemes themselves know nothing of bodies, and the library must not either.
+[dev-dependencies]
+qymcad-core = { path = "../qymcad-core" }

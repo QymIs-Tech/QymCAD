@@ -17,21 +17,21 @@ fn plate() -> (App, qymcad_core::model::Id) {
     app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
     app.project.regen_sketch(si);
     app.finish_sketch_edit();
-    app.sel = super::super::Sel::Sketch(si);
+    app.chosen.sel = super::super::Sel::Sketch(si);
     app.start_feat_cmd(1);
-    if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+    if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 12.0;
         p.txt = "12".into();
     }
     app.apply_feat_cmd();
-    app.rebuild_if_dirty();
+    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
     let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
     (app, body)
 }
 
 /// Open a command that WILL ACCEPT a description — otherwise the menu (rightly) stays silent.
 fn in_command(app: &mut App, kind: u8, body: qymcad_core::model::Id) {
-    app.select_body(body);
+    qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
     app.start_feat_cmd(kind);
 }
 
@@ -39,8 +39,8 @@ fn in_command(app: &mut App, kind: u8, body: qymcad_core::model::Id) {
 fn pick_top_face(app: &mut App, body: qymcad_core::model::Id) -> u32 {
     let f = app.project.regen_faces[&body].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face");
     let id = f.id;
-    app.gsel.faces.insert(id);
-    app.gsel.faces_body = Some(body);
+    app.tools.gsel.faces.insert(id);
+    app.tools.gsel.faces_body = Some(body);
     id
 }
 
@@ -80,8 +80,8 @@ fn the_menu_is_empty_until_something_is_picked() {
 fn outside_a_command_there_is_no_menu() {
     let (mut app, body) = plate();
     pick_top_face(&mut app, body);
-    app.gsel.last_face = Some((body as u32, body)); // and what was pointed at is there too
-    assert!(app.cmd.kind == 0 || !app.cmd.active(), "setup: there is no command");
+    app.tools.gsel.last_face = Some((body as u32, body)); // and what was pointed at is there too
+    assert!(app.tools.armed.cmd_kind() == 0 || !app.tools.armed.commanding(), "setup: there is no command");
     assert!(app.expansion_menu_items().is_empty(), "outside a command a description has nowhere to go — there is nothing to open the menu on");
 }
 
@@ -167,7 +167,7 @@ fn choosing_an_item_makes_the_feature_store_a_description() {
     let items = app.expansion_menu_items();
     let (key, q) = items.into_iter().find(|(k, _)| *k == "expand-face-edges").expect("the item about the edges of a face");
     app.apply_expansion(key, q);
-    app.gsel.edges = [11, 12].into_iter().collect(); // the highlight of the set stays
+    app.tools.gsel.edges = [11, 12].into_iter().collect(); // the highlight of the set stays
     app.apply_feat_cmd();
 
     let edges = app
@@ -225,7 +225,9 @@ fn the_command_bar_says_words_when_the_pick_is_described() {
     let panels = crate::gui::panels_source::PANELS;
     let at = panels.find("cmd-edges-n").expect("the caption of the edge set is in place");
     let around = &panels[at.saturating_sub(600)..at + 200];
-    assert!(around.contains("self.gsel.described"), "the bar must tell a description from a list");
+    // the HOLDER of the selection is not named: the bar was a method (`self`) and is now a free function
+    // over the workbench context (`pc`), and the rule is the same either way
+    assert!(around.contains(".gsel.described"), "the bar must tell a description from a list");
     assert!(around.contains("expand-described"), "and write it in words rather than as a number");
 }
 
@@ -242,10 +244,10 @@ fn the_menu_opens_in_the_fillet_command_where_only_edges_are_selected() {
     let face = app.project.regen_faces[&body].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
 
     // as after a click on a face in the fillet: EDGES are collected, the set of faces is empty
-    app.gsel.edges = [11, 12, 13, 14].into_iter().collect();
-    app.gsel.described = None;
-    app.gsel.last_face = Some((face, body));
-    assert!(app.gsel.faces.is_empty(), "the scene is that very one: there are no faces in the set");
+    app.tools.gsel.edges = [11, 12, 13, 14].into_iter().collect();
+    app.tools.gsel.described = None;
+    app.tools.gsel.last_face = Some((face, body));
+    assert!(app.tools.gsel.faces.is_empty(), "the scene is that very one: there are no faces in the set");
 
     let items = app.expansion_menu_items();
     assert!(!items.is_empty(), "the menu must open on the last face that was clicked");
@@ -262,11 +264,11 @@ fn the_chosen_item_stays_in_the_menu_so_it_can_be_marked() {
     let (mut app, body) = plate();
     in_command(&mut app, 4, body);
     let face = pick_top_face(&mut app, body);
-    app.gsel.describe_edges_of_face(face);
+    app.tools.gsel.describe_edges_of_face(face);
 
     let items = app.expansion_menu_items();
     let chosen = items.iter().find(|(k, _)| *k == "expand-face-edges").expect("the chosen item must stay in the list");
-    assert_eq!(app.gsel.described.as_ref(), Some(&chosen.1), "and match what is recorded — the mark is drawn from it");
+    assert_eq!(app.tools.gsel.described.as_ref(), Some(&chosen.1), "and match what is recorded — the mark is drawn from it");
 }
 
 /// AND THE MENU REALLY DOES MARK IT.
@@ -284,31 +286,31 @@ fn the_menu_marks_the_chosen_item() {
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
-        app.sel = super::super::Sel::Sketch(si);
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(1);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 20.0;
             p.txt = "20".into();
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let base = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
 
         // THE SHELL through the command
         let top = app.project.regen_faces[&base].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top").id;
-        app.select_body(base);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, base);
         app.start_feat_cmd(6);
-        app.gsel.faces.insert(top);
-        app.gsel.faces_body = Some(base);
+        app.tools.gsel.faces.insert(top);
+        app.tools.gsel.faces_body = Some(base);
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let shell = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the shell");
         eprintln!("the shell is built: {}", app.project.regen_faces.contains_key(&shell));
 
         // THE FILLET on a face of the shell — through the command, refreshing the edges as the program does
-        app.select_body(shell);
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, shell);
         app.start_feat_cmd(4);
-        app.refresh_edges();
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let f = app.project.regen_faces[&shell].iter().max_by(|a, b| a.area.total_cmp(&b.area)).expect("the face").id;
         let eids: Vec<u32> = app
             .project
@@ -317,10 +319,10 @@ fn the_menu_marks_the_chosen_item() {
             .map(|es| es.iter().filter(|e| app.project.names.edge(e.id).is_some_and(|n| n.faces.contains(&f))).map(|e| e.id).collect())
             .unwrap_or_default();
         eprintln!("edges of the face: {}", eids.len());
-        app.gsel.edges = eids.into_iter().collect();
-        app.gsel.describe_edges_of_face(f);
+        app.tools.gsel.edges = eids.into_iter().collect();
+        app.tools.gsel.describe_edges_of_face(f);
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         eprintln!("the fillet is applied, nodes {}", app.project.timeline.len());
     }
 
@@ -332,21 +334,22 @@ fn the_menu_marks_the_chosen_item() {
 #[test]
 fn the_tree_says_how_the_set_was_defined() {
     use qymcad_core::refs::Ref;
-    let app = App::default();
+    // NO APPLICATION IS BUILT HERE ANY MORE: `ref_summary` reads a reference and nothing else, so it
+    // stopped being a method and the check stopped dragging the whole program in to call it.
     let prev = crate::i18n::language();
     crate::i18n::set_language("ru");
 
     let by_list = Ref::picks(&[11, 12, 13]);
-    let s = app.ref_summary(&by_list);
+    let s = crate::gui::panels_tree::ref_summary(&by_list);
     assert!(s.contains('3'), "a manual set is described by a number: {s}");
 
     let by_face = Ref::many(Query::Adjacent(Box::new(Query::Id(7))));
-    let s = app.ref_summary(&by_face);
+    let s = crate::gui::panels_tree::ref_summary(&by_face);
     assert_eq!(s, crate::i18n::tr("expand-face-edges"), "a description must name ITSELF rather than a number");
     assert!(!s.chars().any(|c| c.is_ascii_digit()), "and not show numbers that will change tomorrow: {s}");
 
     let by_feature = Ref::many(Query::OfFeature { feature: 5, role: None });
-    assert_eq!(app.ref_summary(&by_feature), crate::i18n::tr("expand-feature-faces"));
+    assert_eq!(crate::gui::panels_tree::ref_summary(&by_feature), crate::i18n::tr("expand-feature-faces"));
     crate::i18n::set_language(&prev);
 }
 
@@ -355,9 +358,9 @@ fn the_tree_says_how_the_set_was_defined() {
 /// A plate with the fillet command open and live edges; returns (the application, the body).
 fn plate_in_fillet() -> (App, qymcad_core::model::Id) {
     let (mut app, body) = plate();
-    app.select_body(body);
+    qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
     app.start_feat_cmd(4);
-    app.refresh_edges();
+    crate::gui::commands::refresh_edges(&mut app.part_ctx());
     (app, body)
 }
 
@@ -369,7 +372,7 @@ fn plate_in_fillet() -> (App, qymcad_core::model::Id) {
 fn hovering_an_edge_offers_the_tangent_chain() {
     let (mut app, body) = plate_in_fillet();
     let edge = app.project.regen_edges[&body].first().expect("an edge").id;
-    app.gsel.last_edge = Some((edge, body));
+    app.tools.gsel.last_edge = Some((edge, body));
 
     let items = app.expansion_menu_items();
     let keys: Vec<&str> = items.iter().map(|(k, _)| *k).collect();
@@ -391,7 +394,7 @@ fn hovering_an_edge_offers_the_tangent_chain() {
 fn the_chain_is_written_as_a_description() {
     let (mut app, body) = plate_in_fillet();
     let edge = app.project.regen_edges[&body].first().expect("an edge").id;
-    app.gsel.last_edge = Some((edge, body));
+    app.tools.gsel.last_edge = Some((edge, body));
     let (key, q) = app.expansion_menu_items().into_iter().find(|(k, _)| *k == "expand-tangent-chain").expect("the item");
     app.apply_expansion(key, q);
     app.apply_feat_cmd();
@@ -414,12 +417,12 @@ fn the_chain_is_written_as_a_description() {
 fn the_seam_asks_for_the_second_face() {
     let (mut app, body) = plate_in_fillet();
     let top = pick_top_face(&mut app, body);
-    app.gsel.last_face = Some((top, body));
+    app.tools.gsel.last_face = Some((top, body));
 
     let (key, q) = app.expansion_menu_items().into_iter().find(|(k, _)| *k == "expand-between").expect("the junction item");
     app.apply_expansion(key, q);
-    assert_eq!(app.gsel.between_first, Some(top), "the first side of the junction must be remembered");
-    assert!(app.gsel.described.is_none(), "a reference cannot be built from ONE face — a junction has two sides");
+    assert_eq!(app.tools.gsel.between_first, Some(top), "the first side of the junction must be remembered");
+    assert!(app.tools.gsel.described.is_none(), "a reference cannot be built from ONE face — a junction has two sides");
     assert_eq!(app.status, crate::i18n::tr("expand-between-pick-second"), "a person must be told what is expected of them");
 
     // the second pick — now the reference does get assembled
@@ -428,9 +431,9 @@ fn the_seam_asks_for_the_second_face() {
         Box::new(qymcad_core::refs::Query::Id(top)),
         Box::new(qymcad_core::refs::Query::Id(side)),
     );
-    app.gsel.between_first = None;
+    app.tools.gsel.between_first = None;
     app.apply_expansion("expand-between-done", q2);
-    match app.gsel.described {
+    match app.tools.gsel.described {
         Some(qymcad_core::refs::Query::Between(ref a, ref b)) => {
             assert!(matches!(**a, qymcad_core::refs::Query::Id(f) if f == top), "the first side is the one pointed at first");
             assert!(matches!(**b, qymcad_core::refs::Query::Id(f) if f == side), "the second is the one pointed at second");
@@ -447,14 +450,14 @@ fn the_seam_asks_for_the_second_face() {
 fn a_half_finished_seam_does_not_leak_into_the_next_command() {
     let (mut app, body) = plate_in_fillet();
     let top = pick_top_face(&mut app, body);
-    app.gsel.last_face = Some((top, body));
+    app.tools.gsel.last_face = Some((top, body));
     let (key, q) = app.expansion_menu_items().into_iter().find(|(k, _)| *k == "expand-between").expect("the item");
     app.apply_expansion(key, q);
-    assert!(app.gsel.between_first.is_some(), "setup: the wait is switched on");
+    assert!(app.tools.gsel.between_first.is_some(), "setup: the wait is switched on");
 
     app.cancel_all_tools();
-    assert!(app.gsel.between_first.is_none(), "the wait for a second face must end together with the command");
-    assert!(app.gsel.last_edge.is_none() && app.gsel.last_face.is_none(), "and so must the memory of what was pointed at");
+    assert!(app.tools.gsel.between_first.is_none(), "the wait for a second face must end together with the command");
+    assert!(app.tools.gsel.last_edge.is_none() && app.tools.gsel.last_face.is_none(), "and so must the memory of what was pointed at");
 }
 
 
@@ -484,28 +487,28 @@ fn a_description_picks_up_an_edge_that_appeared_after_a_sketch_edit() {
     app.project.add_line_entity(si, 0.0, 40.0, 0.0, 0.0, qymcad_core::feature::Purpose::Real);
     app.project.regen_sketch(si);
     app.finish_sketch_edit();
-    app.sel = super::super::Sel::Sketch(si);
+    app.chosen.sel = super::super::Sel::Sketch(si);
     app.start_feat_cmd(1);
-    if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+    if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();
     }
     app.apply_feat_cmd();
-    app.rebuild_if_dirty();
+    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
     let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
 
     // A FILLET BY DESCRIPTION: the top face was clicked -> "all the edges of this face"
     in_command(&mut app, 4, body);
     let top = app.project.regen_faces[&body].iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
-    app.gsel.last_face = Some((top, body));
+    app.tools.gsel.last_face = Some((top, body));
     let (key, q) = app.expansion_menu_items().into_iter().find(|(k, _)| *k == "expand-face-edges").expect("the item \"all the edges of this face\"");
     app.apply_expansion(key, q);
-    if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+    if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
         p.val = 1.0;
         p.txt = "1".into();
     }
     app.apply_feat_cmd();
-    app.rebuild_if_dirty();
+    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
     let fillet = app
         .project
@@ -528,7 +531,7 @@ fn a_description_picks_up_an_edge_that_appeared_after_a_sketch_edit() {
     app.project.solve_sketch(si);
     app.project.regen_sketch(si);
     app.project.mark_sketch_dirty(app.project.sketches[si].id);
-    app.rebuild_if_dirty();
+    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
     let fillet = app
         .project
@@ -562,7 +565,7 @@ fn the_right_button_still_orbits_the_camera() {
     let render = crate::gui::render_source::RENDER;
     assert!(render.contains("resp.context_menu(|ui|"), "the menu must hang on the CLICK (context_menu) rather than on the press");
     assert!(render.contains("} else if resp.dragged() {"), "the orbit must live on the DRAG");
-    assert!(render.contains("self.cam.yaw -= d.x as f64 * 0.01;"), "and really turn the camera");
+    assert!(render.contains("self.viewing.cam.yaw -= d.x as f64 * 0.01;"), "and really turn the camera");
     // and the menu must not dare open in response to a drag
     assert!(!render.contains("resp.dragged() && self.expansion_accepts()"), "a menu on the drag would take the camera rotation away");
 }

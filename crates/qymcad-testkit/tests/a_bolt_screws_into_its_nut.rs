@@ -411,7 +411,7 @@ fn metal_above_the_shoulder(lead: f64) -> f64 {
         .max_by(|x, y| x.mid[2].total_cmp(&y.mid[2]))
         .map(|x| x.id)
         .expect("the top rim of the boss");
-    let t = p.add_thread(blank, rim, spec.clone(), len, lead, lead);
+    let t = p.add_thread(blank, rim, spec, len, lead, lead);
     let last = p.finish_base_body(t, 1);
     let (report, mut shapes) = qymcad_testkit::regenerate(&mut p);
     assert!(report.errors.is_empty(), "the part did not build: {:?}", report.errors);

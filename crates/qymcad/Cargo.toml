@@ -16,11 +16,19 @@ path = "src/main.rs"
 qymcad-core.workspace = true
 qymcad-kernel.workspace = true
 qymcad-io.workspace = true
-qymcad-cam.workspace = true
-qymcad-verify.workspace = true
 # glow stays (the default) as a compiled-in fallback; wgpu is the main path for the GPU viewport, chosen at runtime
 eframe = { version = "0.35", features = ["persistence", "wgpu"] }
 egui = "0.35"
+qymcad-shell = { path = "../qymcad-shell" }
+qymcad-i18n = { path = "../qymcad-i18n" }
+qymcad-scheme = { path = "../qymcad-scheme" }
+qymcad-help = { path = "../qymcad-help" }
+qymcad-ui-state = { path = "../qymcad-ui-state" }
+qymcad-pick = { path = "../qymcad-pick" }
+qymcad-render = { path = "../qymcad-render" }
+qymcad-assembly = { path = "../qymcad-assembly" }
+qymcad-sketch = { path = "../qymcad-sketch" }
+qymcad-part = { path = "../qymcad-part" }
 bytemuck = { version = "1", features = ["derive"] }
 rfd = "0.17"
 # holding the file chooser's answer on a worker thread - the future is built on the frame thread, and
@@ -30,6 +38,7 @@ pollster = "0.4"
 egui-phosphor = "0.13"
 ron.workspace = true
 serde = { workspace = true } # the view settings kept between sessions (ViewPrefs)
+time.workspace = true # the calendar for the document stamp and the autosave clock
 directories = "6"
 include_dir = "0.7" # the parts library (library/parts) is compiled into the binary
 image = { version = "0.25", default-features = false, features = ["png"] } # decoding the logo for the splash screen

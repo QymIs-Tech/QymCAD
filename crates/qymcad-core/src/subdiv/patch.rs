@@ -71,6 +71,9 @@ impl BezierPatch {
     }
 
     /// The point of the patch at parameters `u` and `v` in [0, 1].
+    // THE INDEX IS THE MEANING: `i` and `j` number the control points of the Bezier patch and pick the
+    // Bernstein weights `bu[i] * bv[j]`; `k` is the coordinate axis. This is the formula written out.
+    #[allow(clippy::needless_range_loop)]
     pub fn eval(&self, u: f64, v: f64) -> [f64; 3] {
         let bern = |t: f64| {
             let s = 1.0 - t;

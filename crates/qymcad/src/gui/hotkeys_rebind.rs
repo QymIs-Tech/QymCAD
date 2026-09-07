@@ -16,9 +16,9 @@ mod tests {
     #[test]
     fn out_of_the_box_the_default_layout_is_in_force() {
         let app = App::default();
-        assert_eq!(app.hotkey_action("part", egui::Key::E), Some("part.extrude"), "the factory E in a Part must extrude");
-        assert_eq!(app.hotkey_action("sketch", egui::Key::L), Some("sketch.line"), "the factory L in a Sketch must draw a line");
-        assert_eq!(app.hotkey_action("part", egui::Key::Z), None, "a free key is not obliged to mean anything");
+        assert_eq!(qymcad_ui_state::hotkey_action(&app.set, "part", egui::Key::E), Some("part.extrude"), "the factory E in a Part must extrude");
+        assert_eq!(qymcad_ui_state::hotkey_action(&app.set, "sketch", egui::Key::L), Some("sketch.line"), "the factory L in a Sketch must draw a line");
+        assert_eq!(qymcad_ui_state::hotkey_action(&app.set, "part", egui::Key::Z), None, "a free key is not obliged to mean anything");
     }
 
     /// THE POINT: after a rebind THE NEW key works and the old one stops.
@@ -26,8 +26,8 @@ mod tests {
     fn a_reassigned_key_takes_over_and_the_old_one_stops() {
         let mut app = App::default();
         app.set.hotkeys.insert("part.extrude".into(), "W".into());
-        assert_eq!(app.hotkey_action("part", egui::Key::W), Some("part.extrude"), "the new key does not work — the rebinding is useless");
-        assert_eq!(app.hotkey_action("part", egui::Key::E), None, "the old key still extrudes — now there are two of them");
+        assert_eq!(qymcad_ui_state::hotkey_action(&app.set, "part", egui::Key::W), Some("part.extrude"), "the new key does not work — the rebinding is useless");
+        assert_eq!(qymcad_ui_state::hotkey_action(&app.set, "part", egui::Key::E), None, "the old key still extrudes — now there are two of them");
     }
 
     /// A REBINDING LIVES IN THE SETTINGS, and so survives a restart.
@@ -39,7 +39,7 @@ mod tests {
         let back: super::super::Settings = ron::from_str(&ron).expect("and read back");
         let mut restarted = App::default();
         restarted.set = back;
-        assert_eq!(restarted.hotkey_action("sketch", egui::Key::Z), Some("sketch.circle"), "after a restart the key went back to the factory one — the edit is lost");
+        assert_eq!(qymcad_ui_state::hotkey_action(&restarted.set, "sketch", egui::Key::Z), Some("sketch.circle"), "after a restart the key went back to the factory one — the edit is lost");
     }
 
     /// ONLY THE DIFFERENCES ARE STORED. A full layout in the record would mean that a new tool of the
@@ -56,10 +56,10 @@ mod tests {
     #[test]
     fn a_taken_key_is_reported_before_it_is_assigned() {
         let app = App::default();
-        assert_eq!(app.hotkey_taken_by("part", "F", "part.extrude"), Some("part.fillet"), "the key F being taken in a Part went unnoticed");
-        assert_eq!(app.hotkey_taken_by("part", "Z", "part.extrude"), None, "a free key was called taken");
+        assert_eq!(qymcad_ui_state::hotkey_taken_by(&app.set, "part", "F", "part.extrude"), Some("part.fillet"), "the key F being taken in a Part went unnoticed");
+        assert_eq!(qymcad_ui_state::hotkey_taken_by(&app.set, "part", "Z", "part.extrude"), None, "a free key was called taken");
         // one letter in DIFFERENT workbenches is not a conflict: F in a Sketch and F in a Part live apart
-        assert_eq!(app.hotkey_taken_by("sketch", "B", "sketch.line"), None, "a key of another workbench was counted as taken");
+        assert_eq!(qymcad_ui_state::hotkey_taken_by(&app.set, "sketch", "B", "sketch.line"), None, "a key of another workbench was counted as taken");
     }
 
     /// THE SYSTEM KEYS ARE NOT REBOUND — and that shows in the data, not in the good will of a window.

@@ -25,7 +25,7 @@ fn tetra() -> Mesh {
 fn stl_roundtrip_preserves_tris_and_bounds() {
     let m = tetra();
     let path = tmp("qym_export_test.stl");
-    export_stl(&[m.clone()], &path).expect("export ok");
+    export_stl(std::slice::from_ref(&m), &path).expect("export ok");
 
     let back = import_stl(&path).expect("import ok");
     assert_eq!(back.tris.len(), m.tris.len(), "the triangle count is preserved");

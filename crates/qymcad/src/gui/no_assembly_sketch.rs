@@ -15,7 +15,7 @@ mod tests {
     fn a_sketch_can_be_started_in_a_part_but_not_in_an_assembly() {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         // THE ASSEMBLY: the sketch key turns nothing on
         let root = app.project.root;
@@ -24,13 +24,13 @@ mod tests {
         app.cancel_all_tools();
         app.assembly_hotkey(egui::Key::K);
         assert!(
-            !app.picking.is_sketch_plane(),
+            !app.tools.picking.is_sketch_plane(),
             "there is nothing to start a sketch with in an assembly: it could not be referenced anyway"
         );
         // a datum, however, can be started: it works there (mirror, section)
         app.cancel_all_tools();
         app.assembly_hotkey(egui::Key::D);
-        assert_ne!(app.cmd.kind, 0, "a datum must stay in an assembly: the mirror and the section consume it");
+        assert_ne!(app.tools.armed.cmd_kind(), 0, "a datum must stay in an assembly: the mirror and the section consume it");
 
         // THE PART: a sketch does start
         let body = app.project.mesh_id(0).expect("the body");
@@ -39,7 +39,7 @@ mod tests {
         app.workbench = Workbench::Part;
         app.cancel_all_tools();
         app.part_hotkey(egui::Key::K);
-        assert!(app.picking.is_sketch_plane(), "in a part a sketch must start");
+        assert!(app.tools.picking.is_sketch_plane(), "in a part a sketch must start");
     }
 
     /// The sketch button exists only in the Part toolbar.

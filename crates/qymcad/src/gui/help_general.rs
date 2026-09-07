@@ -116,59 +116,7 @@ mod tests {
         }
     }
 
-    /// THE MACHINING SECTION HIDES TOGETHER WITH THE MODULE — in the table of contents and in the
-    /// search.
-    ///
-    /// While the box is unticked, none of the innards of CAM are to be visible, and the help is no
-    /// exception: a section in the contents would tell of a module the program does not have. The search
-    /// is checked apart from the contents: it walks the files by a path of its own, and mending one
-    /// while forgetting the other is exactly the case that later gets caught by hand.
-    #[test]
-    fn the_machining_section_hides_with_the_module() {
-        let listed = |cam: bool| -> Vec<String> { help::sections(cam).into_iter().flat_map(|(_, v)| v).collect() };
-        let off = listed(false);
-        assert!(!off.iter().any(|a| a.starts_with("cam/")), "the machining module is off and its section is in the contents of the help: {off:?}");
-        let on = listed(true);
-        assert!(on.iter().any(|a| a.starts_with("cam/")), "the module is on and the machining section is not in the contents — the guard is checking emptiness");
-        // AND THE SEARCH. The word is one that occurs in the article in BOTH languages: `search`
-        // looks in the current interface language, which is shared across the tests and is moved about
-        // by the neighbours.
-        let word = "CAM";
-        assert!(help::search(word, true).iter().any(|a| a.starts_with("cam/")), "with the module on, the search does not find the machining article by the word \"{word}\"");
-        assert!(!help::search(word, false).iter().any(|a| a.starts_with("cam/")), "the module is off and the search still returns the machining article");
-    }
 
-    /// AND AN OPEN MACHINING ARTICLE DOES NOT OUTLIVE THE SWITCHING OFF OF THE MODULE.
-    ///
-    /// Hiding the section in the contents is not enough: the window remembers where it stood. Read
-    /// about machining, untick the box — the section is gone from the contents while the text stays on
-    /// the screen.
-    #[test]
-    fn an_open_machining_article_goes_away_with_the_module() {
-        let _lang = crate::help::lang_guard(); // the help language is shared across the process — see `lang_guard`
-        // THE LANGUAGE IS PINNED FOR THE DURATION OF THE CHECK. It is shared across the process and the
-        // neighbouring tests move it about: the window drew the article in one language while `title`
-        // was taken in another, and the test turned red from the ORDER of the run rather than from a
-        // breakage. That is all the nastier to catch because on its own it is green.
-        let (prev_ui, prev_help) = (crate::i18n::language(), help::picked_lang());
-        crate::i18n::set_language("ru");
-        help::set_lang("ru");
-        let mut app = super::super::App::default();
-        app.set_cam_tab_for_test(true);
-        app.open_help("cam/index");
-        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.help_window(c));
-        let cam_title = help::title("cam/index");
-        assert!(texts.iter().any(|t| t.contains(&cam_title)), "with the module on, the machining article does not open: {texts:?}");
-
-        app.set_cam_tab_for_test(false);
-        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.help_window(c));
-        let body = help::article("cam/index").expect("the machining article");
-        let line = body.lines().find(|l| l.len() > 40 && !l.starts_with('#')).expect("a paragraph of the article");
-        let word = line.split_whitespace().find(|w| w.chars().count() > 8).expect("a long word from the article").trim_matches(|c: char| !c.is_alphanumeric());
-        crate::i18n::set_language(&prev_ui);
-        help::set_lang(&prev_help);
-        assert!(!texts.iter().any(|t| t.contains(word)), "the module was switched off and the machining article stayed on the screen (the word \"{word}\")");
-    }
 
     /// THE "GENERAL" SECTION COVERS EVERYTHING CROSS-CUTTING that was promised. The list is short and
     /// deliberately nailed down: this is not "some number of articles" but by name the topics without

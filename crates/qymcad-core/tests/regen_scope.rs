@@ -24,7 +24,7 @@ fn dependents_sees_the_chain_and_stops_there() {
     let (s1, _) = line_sketch(&mut p, "Sketch 1");
     let base = p.add_extrude_multi(s1, Vec::new(), 10.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());
     let (s2, si2) = line_sketch(&mut p, "Sketch 2");
-    let cut = p.add_combine_multi_op(base, s2, p.sketches[si2].contour_ids.clone(), 5.0, 0, qymcad_core::feature::Extent::default(), 0.0, Vec::new());
+    let cut = p.add_combine_multi_op(base, s2, p.sketches[si2].contour_ids.clone(), qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
     // an independent part: its own chain, with no shared inputs
     let (s3, _) = line_sketch(&mut p, "Sketch 3");
     let other = p.add_extrude_multi(s3, Vec::new(), 3.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());

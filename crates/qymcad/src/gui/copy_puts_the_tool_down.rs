@@ -19,7 +19,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.project.add_rect_entity(si, -20.0, -20.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         (app, si)
     }
 
@@ -27,7 +27,7 @@ mod tests {
     fn select_all(app: &mut App, si: usize) {
         let ids: Vec<qymcad_core::model::Id> = app.project.sketches[si].entities.iter().map(|e| e.id).collect();
         assert!(!ids.is_empty(), "setup: the sketch has no entities to copy");
-        app.sel_sk.items = ids.into_iter().map(|id| (1u8, id)).collect();
+        app.tools.sel_sk.items = ids.into_iter().map(|id| (1u8, id)).collect();
     }
 
     /// COPYING DROPS THE TOOL AND WHAT WAS HALF-BUILT WITH IT.
@@ -38,13 +38,13 @@ mod tests {
 
         // A tool in hand and one vertex already put down: the line is half-built.
         Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
-        assert_ne!(app.tool.kind, 0, "setup: the tool is not in hand — there is nothing to check");
-        assert!(!app.tool.pts.is_empty(), "setup: the tool holds nothing half-built — the check would prove nothing");
+        assert_ne!(app.tools.armed.draw_kind(), 0, "setup: the tool is not in hand — there is nothing to check");
+        assert!(!app.tools.tool.pts.is_empty(), "setup: the tool holds nothing half-built — the check would prove nothing");
 
-        app.clipboard_copy_for_test(false);
+        app.clipboard_copy(false);
 
-        assert_eq!(app.tool.kind, 0, "the copy left the tool in hand: the next click has two claimants");
-        assert!(app.tool.pts.is_empty(), "a half-built shape was left on the canvas with nothing to finish it");
+        assert_eq!(app.tools.armed.draw_kind(), 0, "the copy left the tool in hand: the next click has two claimants");
+        assert!(app.tools.tool.pts.is_empty(), "a half-built shape was left on the canvas with nothing to finish it");
     }
 
     /// THE COPY ITSELF STILL HAPPENS — the tool is put down, not the command.
@@ -54,8 +54,8 @@ mod tests {
         select_all(&mut app, si);
         Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
 
-        app.clipboard_copy_for_test(false);
-        assert!(app.clip_geom_pending_for_test(), "the copy was lost together with the tool");
+        app.clipboard_copy(false);
+        assert!(app.side.clip.geom_pending.is_some(), "the copy was lost together with the tool");
     }
 
     /// WITHOUT A TOOL IN HAND NOTHING CHANGES — the old path is untouched.
@@ -65,9 +65,9 @@ mod tests {
         select_all(&mut app, si);
         Hand::new(&mut app).sk_select();
 
-        app.clipboard_copy_for_test(false);
-        assert!(app.clip_geom_pending_for_test(), "the copy did not arm with no tool in hand either");
-        assert_eq!(app.tool.kind, 0, "there was no tool, and one appeared");
+        app.clipboard_copy(false);
+        assert!(app.side.clip.geom_pending.is_some(), "the copy did not arm with no tool in hand either");
+        assert_eq!(app.tools.armed.draw_kind(), 0, "there was no tool, and one appeared");
     }
 
     /// NOTHING SELECTED: the tool stays in hand, because there was no copy to make.
@@ -78,11 +78,11 @@ mod tests {
     fn a_refused_copy_keeps_the_tool() {
         let (mut app, _si) = sketch_with_a_rectangle();
         Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
-        let before = app.tool.kind;
+        let before = app.tools.armed.draw_kind();
 
-        app.clipboard_copy_for_test(false);
-        assert_eq!(app.tool.kind, before, "a copy with nothing selected took the tool away — a mis-press must not cost the drawing");
-        assert!(!app.clip_geom_pending_for_test(), "with nothing selected there is nothing to copy");
+        app.clipboard_copy(false);
+        assert_eq!(app.tools.armed.draw_kind(), before, "a copy with nothing selected took the tool away — a mis-press must not cost the drawing");
+        assert!(!app.side.clip.geom_pending.is_some(), "with nothing selected there is nothing to copy");
     }
 
     /// The sketch entity ids stay put — nothing is being deleted here.
@@ -93,7 +93,7 @@ mod tests {
         let before = app.project.sketches[si].entities.len();
         Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
 
-        app.clipboard_copy_for_test(false);
+        app.clipboard_copy(false);
         assert_eq!(app.project.sketches[si].entities.len(), before, "putting the tool down deleted geometry");
         let _ = Point2::new(0.0, 0.0);
     }

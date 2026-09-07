@@ -69,13 +69,13 @@ mod tests {
         let mut app = App::default();
         let ctx = egui::Context::default();
         app.set.scheme = "dark".into();
-        app.apply_theme(&ctx);
-        let dark_bg = app.palette_pub().viewport_bg();
+        crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+        let dark_bg = app.scheme.pal.viewport_bg();
         assert!(ctx.style_of(ctx.theme()).visuals.dark_mode, "the dark scheme sets the dark look of egui");
 
         app.set.scheme = "light".into();
-        app.apply_theme(&ctx);
-        let light_bg = app.palette_pub().viewport_bg();
+        crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+        let light_bg = app.scheme.pal.viewport_bg();
         assert!(!ctx.style_of(ctx.theme()).visuals.dark_mode, "the light scheme sets the light look of egui");
         assert!(luma(light_bg) > luma(dark_bg) + 100.0, "the canvas must lighten: {} -> {}", luma(dark_bg), luma(light_bg));
     }
@@ -87,19 +87,28 @@ mod tests {
         let mut app = App::default();
         let ctx = egui::Context::default();
         app.set.scheme = "neon-from-the-future".into();
-        app.apply_theme(&ctx);
-        assert_eq!(app.palette_pub().id, "dark", "an unknown scheme is brought to the dark one rather than to emptiness");
+        crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+        assert_eq!(app.scheme.pal.id, "dark", "an unknown scheme is brought to the dark one rather than to emptiness");
     }
 
     /// THE CANVAS AND THE TOOL BAR TAKE THEIR COLOUR FROM THE SCHEME — a guard against a return to
     /// those two places.
     #[test]
     fn the_canvas_and_toolbar_ask_the_scheme() {
-        let gui = include_str!("../gui.rs");
-        assert!(gui.contains("self.scheme.pal.viewport_bg()"), "the background of the canvas must come from the scheme");
-        assert!(!gui.contains("rect_filled(rect, 0.0, Color32::from_gray(26))"), "there must be no literal background left");
-        assert!(gui.contains("fn tool_bar_frame(&self)"), "the tool bar must SEE the scheme (a method taking &self)");
-        assert!(gui.contains("self.scheme.pal.toolbar_bg()"), "and take its colour from it");
+        use crate::gui::render_source::dense;
+        let gui = dense(include_str!("../gui.rs"));
+        assert!(gui.contains(&dense("pal.viewport_bg()")), "the background of the canvas must come from the scheme");
+        assert!(!gui.contains(&dense("rect_filled(rect, 0.0, Color32::from_gray(26))")), "there must be no literal background left");
+        // IT TAKES THE SCHEME OUTRIGHT NOW, which is what "sees it" was always about. It used to be a
+        // method on the application and the guard asked for `&self`; as a free function it names the
+        // scheme in its own signature, and that says the same thing louder.
+        // THE FRAME MOVED TO THE RECORDS CRATE with the scheme it reads; the rule did not move.
+        let state = include_str!("../../../qymcad-ui-state/src/lib.rs");
+        assert!(dense(state).contains(&dense("fn tool_bar_frame(scheme: &SchemeUi)")), "the tool bar must SEE the scheme - it takes it by argument");
+        // THE NEEDLE IS THE PALETTE CALL, not the path to it. Inside the free function the scheme arrives
+        // by argument and is spelled `scheme.pal`; in a method it was `self.scheme.pal`. What the guard is
+        // about - the colour comes from the palette rather than from a literal - is the same either way.
+        assert!(dense(state).contains(&dense("pal.toolbar_bg()")), "and take its colour from it");
     }
 
     /// CHANGING THE SCHEME INVALIDATES THE PICTURE CACHES.
@@ -115,13 +124,13 @@ mod tests {
         let ctx = egui::Context::default();
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
         app.set.scheme = "dark".into();
-        app.apply_theme(&ctx);
-        let (raster_dark, gpu_dark) = (app.view_key_pub(rect, 1.0), app.gpu_scene_key_pub());
+        crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+        let (raster_dark, gpu_dark) = (qymcad_ui_state::view_key(&app.painting(), rect, 1.0), qymcad_ui_state::gpu_scene_key(&app.painting()));
 
         app.set.scheme = "light".into();
-        app.apply_theme(&ctx);
-        assert_ne!(raster_dark, app.view_key_pub(rect, 1.0), "the key of the raster must change together with the scheme");
-        assert_ne!(gpu_dark, app.gpu_scene_key_pub(), "the key of the vertex buffer must change together with the scheme");
+        crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+        assert_ne!(raster_dark, qymcad_ui_state::view_key(&app.painting(), rect, 1.0), "the key of the raster must change together with the scheme");
+        assert_ne!(gpu_dark, qymcad_ui_state::gpu_scene_key(&app.painting()), "the key of the vertex buffer must change together with the scheme");
     }
 
     /// THE SHADING OF BODIES GOES THROUGH THE SCHEME — both of its knobs, not one.
@@ -131,10 +140,13 @@ mod tests {
     /// against a repeat — both parameters must be read where a part is painted.
     #[test]
     fn body_shading_reads_both_knobs_from_the_scheme() {
-        let gui = include_str!("../gui.rs");
-        assert!(gui.contains("pal.shade_floor_body"), "the floor of the shading must come from the scheme");
-        assert!(gui.contains("pal.body_lighten") && gui.contains("pal.body_saturate"), "both the lightness and the saturation must come from the scheme: without saturation a part turns white rather than light");
-        assert!(gui.contains("fn shade_tri(pal: &crate::palette::Palette"), "the shading must SEE the scheme (as an argument, since the function takes no &self)");
+        // THE SHADING MOVED TO THE PICKING CRATE with the questions it answers; the rule did not move -
+        // both knobs still have to be read where a part is painted. The needle names the PALETTE by type
+        // and not by the path it is reached through: the path changed twice already.
+        let src = include_str!("../../../qymcad-pick/src/lib.rs");
+        assert!(src.contains("pal.shade_floor_body"), "the floor of the shading must come from the scheme");
+        assert!(src.contains("pal.body_lighten") && src.contains("pal.body_saturate"), "both the lightness and the saturation must come from the scheme: without saturation a part turns white rather than light");
+        assert!(crate::gui::render_source::has(src, "fn shade_tri(pal: &") && src.contains("Palette"), "the shading must SEE the scheme (as an argument, since the function takes no &self)");
     }
 
     /// A SCHEME OF ONE'S OWN IS CHOSEN AND APPLIED ON EQUAL TERMS WITH THE BUILT-IN ONES.
@@ -152,9 +164,9 @@ mod tests {
         app.scheme.all.push(mine);
 
         app.set.scheme = "my-test".into();
-        app.apply_theme(&ctx);
-        assert_eq!(app.palette_pub().name, "My test scheme", "a scheme of one's own is selectable");
-        assert_eq!(app.palette_pub().viewport_bg, [11, 22, 33], "and paints the canvas in its own colour");
+        crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+        assert_eq!(app.scheme.pal.name, "My test scheme", "a scheme of one's own is selectable");
+        assert_eq!(app.scheme.pal.viewport_bg, [11, 22, 33], "and paints the canvas in its own colour");
     }
 
     /// EDITING A COLOUR IS SEEN AT ONCE AND DOES NOT MAKE THE PROJECT DIRTY.
@@ -167,14 +179,14 @@ mod tests {
         let mut app = App::default();
         let ctx = egui::Context::default();
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
-        app.apply_theme(&ctx);
-        let was_dirty = app.is_dirty();
-        let key_before = app.view_key_pub(rect, 1.0);
+        crate::gui::apply_theme(&mut app.scheme, &app.set, &ctx);
+        let was_dirty = qymcad_ui_state::is_dirty(&mut app.rebuild_ctx());
+        let key_before = qymcad_ui_state::view_key(&app.painting(), rect, 1.0);
 
-        assert!(app.pal_mut_pub().set("sketch_line", [7, 8, 9]), "a colour is edited by name");
-        assert_eq!(app.palette_pub().sketch_line, [7, 8, 9]);
-        assert_ne!(key_before, app.view_key_pub(rect, 1.0), "the picture must be recomputed");
-        assert_eq!(app.is_dirty(), was_dirty, "picking a colour is not an edit of the document");
+        assert!(app.scheme.pal.set("sketch_line", [7, 8, 9]), "a colour is edited by name");
+        assert_eq!(app.scheme.pal.sketch_line, [7, 8, 9]);
+        assert_ne!(key_before, qymcad_ui_state::view_key(&app.painting(), rect, 1.0), "the picture must be recomputed");
+        assert_eq!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), was_dirty, "picking a colour is not an edit of the document");
     }
 
     /// THE LIST OF SCHEMES SHOWS WORDS, NOT ICONS ALONE.
@@ -258,10 +270,14 @@ mod tests {
     /// has nothing to say there.
     #[test]
     fn no_colour_is_written_as_a_number_in_the_ui() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        // EVERY CRATE. This walked the `src` of the crate it lives in, which was the whole interface until
+        // the workbenches moved out; after that it went on reporting a clean interface while looking at a
+        // shrinking part of one - the blindness recorded as D20. Widened: nothing numeric was hiding behind
+        // it, which is the answer the check exists to give rather than a reason not to ask.
+        let root = qymcad_i18n::ratchet::crates_root();
         let mut found: Vec<String> = Vec::new();
         let mut files = 0usize;
-        let mut stack = vec![root.clone()];
+        let mut stack = qymcad_i18n::ratchet::every_crate_src();
         while let Some(dir) = stack.pop() {
             for e in std::fs::read_dir(&dir).expect("the source directory reads") {
                 let path = e.expect("an entry of the directory").path();
@@ -272,8 +288,11 @@ mod tests {
                 if path.extension().is_none_or(|x| x != "rs") {
                     continue;
                 }
-                // the scheme itself is the one place where a colour is supposed to be a number
-                if path.starts_with(root.join("palette")) || path.ends_with("palette.rs") || path.ends_with("scheme_flow.rs") {
+                // THE SCHEME ITSELF is the one place where a colour is supposed to be a number - the whole
+                // crate of it, not only the files that were called `palette` while it lived in the
+                // application. Its own tables carry `from_gray(26)` in trailing comments saying where each
+                // colour came from, and those would otherwise be reported as the very thing they document.
+                if path.starts_with(root.join("qymcad-scheme")) || path.starts_with(root.join("qymcad/src/palette")) || path.ends_with("palette.rs") || path.ends_with("scheme_flow.rs") {
                     continue;
                 }
                 files += 1;

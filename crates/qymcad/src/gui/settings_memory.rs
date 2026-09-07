@@ -11,6 +11,7 @@
 //! to fail to create a field.
 #[cfg(test)]
 mod tests {
+    use qymcad_ui_state::{Projection, Shading};
     use super::super::{App, Settings};
 
     /// Settings that differ from the factory ones IN EVERY FIELD — so that "it was saved" cannot be
@@ -18,6 +19,7 @@ mod tests {
     fn all_changed() -> Settings {
         let d = Settings::default();
         Settings {
+            layout: Vec::new(),
             language: "en".into(),
             scheme: "custom-light".into(),
             viewcube_size: 2,
@@ -29,11 +31,9 @@ mod tests {
             undo_cap: 7,
             ghost_alpha: 200,
             persp_fov_deg: 60.0,
-            show_rapids: !d.show_rapids,
-            cam_tab_enabled: !d.cam_tab_enabled,
             gpu_viewport: !d.gpu_viewport,
-            cam_perspective: !d.cam_perspective,
-            smooth_shading: !d.smooth_shading,
+            projection: Projection::Perspective, // the default is Ortho
+            shading: Shading::Flat, // the default is Smooth
             show_contours: !d.show_contours,
             show_joints: !d.show_joints,
             show_interference: !d.show_interference,
@@ -53,11 +53,9 @@ mod tests {
         assert_eq!(a.language, b.language, "the language of the interface");
         assert_eq!(a.scheme, b.scheme, "the colour scheme");
         assert_eq!(a.viewcube_size, b.viewcube_size, "the size of the navigation cube");
-        assert_eq!(a.show_rapids, b.show_rapids, "the rapid moves");
-        assert_eq!(a.cam_tab_enabled, b.cam_tab_enabled, "the CAM tab");
         assert_eq!(a.gpu_viewport, b.gpu_viewport, "the engine of the viewport");
-        assert_eq!(a.cam_perspective, b.cam_perspective, "the projection");
-        assert_eq!(a.smooth_shading, b.smooth_shading, "the shading");
+        assert_eq!(a.projection, b.projection, "the projection");
+        assert_eq!(a.shading, b.shading, "the shading");
         assert_eq!(a.show_contours, b.show_contours, "sketch outlines in an assembly");
         assert_eq!(a.show_joints, b.show_joints, "the glyphs of the mates");
         assert_eq!(a.show_interference, b.show_interference, "the interference check");
@@ -120,10 +118,10 @@ mod tests {
         // and it must BE APPLIED rather than merely lie there: egui does not remember its palette between
         // runs
         let ctx = egui::Context::default();
-        fresh.apply_theme(&ctx);
+        crate::gui::apply_theme(&mut fresh.scheme, &fresh.set, &ctx);
         assert!(!ctx.style_of(ctx.theme()).visuals.dark_mode, "a loaded light scheme must be applied to egui");
         fresh.set.scheme = "dark".into();
-        fresh.apply_theme(&ctx);
+        crate::gui::apply_theme(&mut fresh.scheme, &fresh.set, &ctx);
         assert!(ctx.style_of(ctx.theme()).visuals.dark_mode, "and back again as well");
     }
 
@@ -144,7 +142,7 @@ mod tests {
         // EXACTLY WHAT IS CALLED AT STARTUP: the shared handle that adopts the settings. The test used to
         // call `apply_theme` — the theme then applied the scale along the way, and that hidden tie made
         // the check blind: the scale "was applied" even where nobody applied it.
-        fresh.adopt_settings(ron::from_str(&saved).expect("loaded"), &ctx);
+        crate::gui::adopt_settings(&mut fresh.regen, &mut fresh.scheme, &mut fresh.set, &mut fresh.status, ron::from_str(&saved).expect("loaded"), &ctx);
         assert_eq!(fresh.set.ui_scale, 1.6, "the scale must survive a restart");
         // `egui` takes a new scale AT THE START OF THE NEXT PASS, so a frame is built: that way the test
         // checks the real drawing rather than a field in memory.
@@ -162,10 +160,10 @@ mod tests {
         let mut app = App::default();
         for bad in [0.0, -3.0, 99.0] {
             app.set.ui_scale = bad;
-            app.apply_ui_scale(&ctx);
+            crate::gui::apply_ui_scale(&app.set, &ctx);
             let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
             let z = ctx.zoom_factor();
-            assert!(z >= 0.5 && z <= 3.0, "the scale {bad} got into egui as {z} — the interface would become unrecoverable");
+            assert!((0.5..=3.0).contains(&z), "the scale {bad} got into egui as {z} — the interface would become unrecoverable");
         }
     }
 
@@ -175,10 +173,9 @@ mod tests {
     /// settings would be lost at once when the program is updated.
     #[test]
     fn an_older_record_without_a_new_field_still_loads() {
-        let old = r#"(scheme:"custom-light",show_rapids:true,snap:(on:false,grid:3.0))"#;
+        let old = r#"(scheme:"custom-light",snap:(on:false,grid:3.0))"#;
         let got: Settings = ron::from_str(old).expect("an old record must read");
         assert_eq!(got.scheme, "custom-light", "what was read is kept");
-        assert!(got.show_rapids, "what was read is kept");
         assert_eq!(got.snap.grid, 3.0, "a nested record as well");
         let d = Settings::default();
         assert_eq!(got.snap.rot_deg, d.snap.rot_deg, "a missing field takes the default rather than zero");
@@ -206,7 +203,9 @@ mod tests {
         let panels = crate::gui::panels_source::PANELS;
         assert!(!panels.contains("ctx.set_visuals("), "the theme must go through the settings rather than past them");
         assert!(!panels.contains("ctx.set_zoom_factor("), "the scale of the interface must go through `apply_ui_scale` rather than past the settings");
-        assert!(panels.contains("self.set.scheme = id.clone();"), "the scheme switch edits the settings record");
-        assert!(panels.contains("self.set.snap.grid"), "the grid step is edited in the settings record");
+        // the HOLDER of the settings is not named: the windows reach them through a context of their own
+        // now, and the rule guarded here is about WHAT is edited, not through what
+        assert!(panels.contains(".set.scheme = id.clone();"), "the scheme switch edits the settings record");
+        assert!(panels.contains(".set.snap.grid"), "the grid step is edited in the settings record");
     }
 }

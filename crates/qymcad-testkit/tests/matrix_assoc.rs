@@ -151,7 +151,7 @@ fn matrix_suppress_rollback_delete() {
         p.add_rect_entity(s2, 5.0, 5.0, 15.0, 15.0, qymcad_core::feature::Purpose::Real);
         p.regen_sketch(s2);
         let cid2 = p.sketches[s2].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).unwrap();
-        let cut = p.add_combine_multi_op(cube, sid2, vec![cid2], 5.0, 0, qymcad_core::feature::Extent::default(), 0.0, vec![]);
+        let cut = p.add_combine_multi_op(cube, sid2, vec![cid2], qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent::default(), fill: &[] }, 0);
         let v0 = regen_v(&mut p, cut, &mut fails, "cut (before)");
         check(&mut fails, "cut (before)", v0, 8000.0 - 500.0, 0.01);
         // suppress the cut

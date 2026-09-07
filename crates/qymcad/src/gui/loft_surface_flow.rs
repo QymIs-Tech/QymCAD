@@ -59,15 +59,15 @@ mod tests {
         app.start_feat_cmd(9);
         // THE COMMAND MAY HAVE PICKED UP THE ACTIVE SKETCH as the first section — collect our own two
         // from scratch, otherwise a set of three would be checked that nobody chose.
-        app.loft.sids.clear();
-        app.loft.cids.clear();
+        app.params.loft.sids.clear();
+        app.params.loft.cids.clear();
         for (sid, cid) in picks {
-            app.loft.sids.push(sid);
-            app.loft.cids.push(cid);
+            app.params.loft.sids.push(sid);
+            app.params.loft.cids.push(cid);
         }
-        app.loft.result = 4; // "Surface" in the top bar
+        app.params.loft.result = 4; // "Surface" in the top bar
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let (id, surface, body) = loft_node(&app);
         assert!(surface, "\"Surface\" must be recorded in the node — otherwise a solid comes out after the rebuild");
@@ -82,14 +82,14 @@ mod tests {
         app.start_feat_cmd(9);
         // THE COMMAND MAY HAVE PICKED UP THE ACTIVE SKETCH as the first section — collect our own two
         // from scratch, otherwise a set of three would be checked that nobody chose.
-        app.loft.sids.clear();
-        app.loft.cids.clear();
+        app.params.loft.sids.clear();
+        app.params.loft.cids.clear();
         for (sid, cid) in picks {
-            app.loft.sids.push(sid);
-            app.loft.cids.push(cid);
+            app.params.loft.sids.push(sid);
+            app.params.loft.cids.push(cid);
         }
         app.apply_feat_cmd();
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let (id, surface, body) = loft_node(&app);
         assert!(!surface, "by default a loft builds a SOLID");

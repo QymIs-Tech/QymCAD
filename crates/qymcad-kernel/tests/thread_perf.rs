@@ -7,12 +7,12 @@ use std::time::Instant;
 fn runout_fast_and_crest_stays_at_radius() {
     let cyl = Shape::cylinder(15.0, 40.0).unwrap();
     let t = Instant::now();
-    let thr = cyl.thread([0.0,0.0,40.0],[0.0,0.0,-1.0], 15.0, 10.0, 1.5, 60.0, 0.9, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0,0.0, 1.5,1.5).unwrap();
+    let thr = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0,0.0,40.0], dir: [0.0,0.0,-1.0] }, radius: 15.0, length: 10.0, pitch: 1.5, angle_deg: 60.0, depth: 0.9, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 1.5, lead_out: 1.5 }).unwrap();
     let dt = t.elapsed().as_secs_f64();
     let b = thr.tessellate(0.05);
     let mut tip_max = 0.0f64;
-    for v in &b[0].0.verts { if (v.z as f64) < 39.7 { continue; }
-        tip_max = tip_max.max(((v.x as f64).powi(2) + (v.y as f64).powi(2)).sqrt()); }
+    for v in &b[0].0.verts { if v.z < 39.7 { continue; }
+        tip_max = tip_max.max((v.x.powi(2) + v.y.powi(2)).sqrt()); }
     eprintln!("build {dt:.2}s, crest at the end max_r={tip_max:.2}");
     assert!(dt < 1.5, "the run-out by a homothety law is fast, with no booleans: {dt:.2}s");
     assert!(tip_max > 14.5, "the crest stays at R: {tip_max:.2}");
@@ -26,7 +26,7 @@ fn angle_high_builds_fast_and_varies() {
     let mut rem = vec![];
     for ang in [30.0f64, 60.0, 90.0, 120.0] {
         let t = Instant::now();
-        let r = cyl.thread([0.0,0.0,20.0],[0.0,0.0,-1.0], 15.0, 12.0, 2.0, ang, 1.0, 1, qymcad_kernel::Hand::Right, qymcad_kernel::Site::Shaft, 0, 0.0,0.0, 0.0,0.0)
+        let r = cyl.thread(qymcad_kernel::ThreadCut { axis: qymcad_core::feature::AxisLine { origin: [0.0,0.0,20.0], dir: [0.0,0.0,-1.0] }, radius: 15.0, length: 12.0, pitch: 2.0, angle_deg: ang, depth: 1.0, starts: 1, hand: qymcad_kernel::Hand::Right, site: qymcad_kernel::Site::Shaft, form: 0, clearance_crest: 0.0, clearance_root: 0.0, lead_in: 0.0, lead_out: 0.0 })
             .unwrap_or_else(|| panic!("the angle {ang} did not build"));
         assert!(t.elapsed().as_secs_f64() < 2.0, "the angle {ang}° builds quickly");
         rem.push(v0 - r.volume());

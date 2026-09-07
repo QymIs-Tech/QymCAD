@@ -54,8 +54,8 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 60.0);
         let root = app.project.root;
         app.enter_component(root);
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let mine: Vec<Id> = app.project.bodies.iter().map(|b| b.id).filter(|b| !before.contains(b)).collect();
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own, and there are {}", mine.len());
         if let Some(o) = app.project.body_owner(mine[0]) {
@@ -64,9 +64,9 @@ mod tests {
         let (ka, kb) = (face_towards(app, mine[0], [1.0, 0.0, 0.0]), face_towards(app, mine[1], [-1.0, 0.0, 0.0]));
         let mut hand = Hand::new(app);
         hand.look_at([40.0, 10.0, 5.0], 6.0).mate(JointKind::Slider).anchor(0);
-        app.joint_pick_face_click_for_test(mine[0], ka);
-        app.joint_pick_face_click_for_test(mine[1], kb);
-        app.rebuild_if_dirty();
+        qymcad_assembly::joint_pick_face_click_for_test(&mut app.joint_ctx(), mine[0], ka);
+        qymcad_assembly::joint_pick_face_click_for_test(&mut app.joint_ctx(), mine[1], kb);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let jid = app.project.joints.last().map(|j| j.id).expect("pointing at two faces must create the joint");
         (jid, mine[0], mine[1])
     }
@@ -83,9 +83,9 @@ mod tests {
         // THE REPORTED PATH: the pult -> "change the anchor" -> B -> a click on another face of the
         // same part.
         let other = face_towards(&app, b_body, [1.0, 0.0, 0.0]);
-        app.joint.edit_repick = Some((jid, true));
-        app.joint_edit_repick_apply_for_test(b_body, qymcad_core::feature::AnchorRef::FaceCenter(b_body, other));
-        app.rebuild_if_dirty();
+        app.side.joint.edit_repick = Some((jid, true));
+        qymcad_assembly::joint_edit_repick_apply(&mut app.joint_ctx(), b_body, qymcad_core::feature::AnchorRef::FaceCenter(b_body, other));
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.project.solve_joints();
 
         let now = app.project.world_transform(owner);
@@ -106,9 +106,9 @@ mod tests {
         let was = app.project.world_transform(owner);
 
         let other = face_towards(&app, a_body, [-1.0, 0.0, 0.0]);
-        app.joint.edit_repick = Some((jid, false));
-        app.joint_edit_repick_apply_for_test(a_body, qymcad_core::feature::AnchorRef::FaceCenter(a_body, other));
-        app.rebuild_if_dirty();
+        app.side.joint.edit_repick = Some((jid, false));
+        qymcad_assembly::joint_edit_repick_apply(&mut app.joint_ctx(), a_body, qymcad_core::feature::AnchorRef::FaceCenter(a_body, other));
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.project.solve_joints();
 
         let now = app.project.world_transform(owner);
@@ -131,8 +131,8 @@ mod tests {
         let owner = app.project.body_owner(b_body).expect("the owner of the driven part");
         let was = app.project.world_transform(owner);
 
-        app.joint_hud_flip_axis_for_test(jid);
-        app.rebuild_if_dirty();
+        qymcad_assembly::joint_hud_flip_axis_for_test(&mut app.joint_ctx(), jid);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.project.solve_joints();
 
         let now = app.project.world_transform(owner);
@@ -140,8 +140,8 @@ mod tests {
         assert!((turn - 180.0).abs() < 1.0, "the flip-the-axis handle was pressed and the part turned by {turn:.3} deg instead of 180");
 
         // AND A SECOND PRESS BRINGS IT BACK: the handle must be reversible, otherwise it is a trap.
-        app.joint_hud_flip_axis_for_test(jid);
-        app.rebuild_if_dirty();
+        qymcad_assembly::joint_hud_flip_axis_for_test(&mut app.joint_ctx(), jid);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.project.solve_joints();
         let back = app.project.world_transform(owner);
         let turn = turn_deg(&was, &back);

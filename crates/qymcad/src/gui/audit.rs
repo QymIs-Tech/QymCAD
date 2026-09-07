@@ -10,7 +10,7 @@ mod live_session {
     use super::super::{App, Picking, Sel};
 
     fn vol(app: &App) -> f64 {
-        let consumed = app.consumed_bodies();
+        let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum()
     }
 
@@ -27,7 +27,7 @@ mod live_session {
     fn run(app: &mut App, cmd: u8, params: &[(&str, f64)]) {
         app.start_feat_cmd(cmd);
         for (k, v) in params {
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == *k) {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == *k) {
                 p.val = *v;
                 p.txt = format!("{v}");
             }
@@ -47,7 +47,7 @@ mod live_session {
         // 1. A PLATE 40x30x10
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
         let v1 = vol(&app);
         check(&mut fails, "1. a plate 40x30x10", (v1 - 12000.0).abs() < 1.0, format!("V={v1:.1}, expected 12000; the status line: {}", app.status));
@@ -61,9 +61,9 @@ mod live_session {
             None => fails.push("2. the fillet: no vertical edge of the plate was found in the edge cache".into()),
             Some(eid) => {
                 app.start_feat_cmd(4);
-                app.gsel.edges.insert(eid);
+                app.tools.gsel.edges.insert(eid);
                 app.edges.body = Some(body);
-                if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+                if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
                     p.val = 3.0;
                     p.txt = "3".into();
                 }
@@ -85,11 +85,11 @@ mod live_session {
                 app.project.add_circle_entity(si2, 20.0, 15.0, 5.0, qymcad_core::feature::Purpose::Real);
                 app.project.regen_sketch(si2);
                 app.finish_sketch_edit();
-                app.sel = Sel::Sketch(si2);
+                app.chosen.sel = Sel::Sketch(si2);
                 app.start_feat_cmd(1);
                 app.feat.op = 2; // A CUT (0 = add, 1 = boss, 2 = cut, 3 = intersect)
                 app.feat.flip = true; // DOWNWARDS, into the material
-                if let Some(pp) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+                if let Some(pp) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                     pp.val = 20.0;
                     pp.txt = "20".into();
                 }
@@ -120,14 +120,14 @@ mod live_session {
         // 5. SAVING AND OPENING: the volume must match
         let path = std::env::temp_dir().join("qym_audit.qcad");
         let p = path.to_string_lossy().to_string();
-        app.spawn_save(p.clone(), false);
+        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, p.clone(), false);
         app.wait_bg();
         let mut app2 = App::default();
         match qymcad_io::load_project(&p) {
             Err(e) => fails.push(format!("5. opening what was saved: {e}")),
             Ok(proj) => {
                 app2.finish_project_load(p.clone(), proj, Vec::new());
-                app2.ensure_brep();
+                crate::gui::io_jobs::ensure_brep(&mut app2.rebuild_ctx());
                 let v5 = vol(&app2);
                 check(&mut fails, "5. the volume after opening", (v5 - after).abs() < 1.0, format!("{after:.1} -> {v5:.1}"));
                 check(&mut fails, "5b. the timeline is free of errors after opening", app2.project.regen_errors.is_empty(), format!("{:?}", app2.project.regen_errors.values().next()));
@@ -152,7 +152,7 @@ mod live_session {
     fn undo_is_bound_to_an_operation_not_to_a_frame() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
         let after_extrude = vol(&app);
         assert!(after_extrude > 0.0, "the body is built");
@@ -179,7 +179,7 @@ mod live_session {
     fn switching_the_operation_after_the_command_started_keeps_the_direction() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
         let plate = vol(&app);
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).unwrap_or(0);
@@ -189,11 +189,11 @@ mod live_session {
         app.project.add_circle_entity(si2, 20.0, 15.0, 5.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si2);
         app.finish_sketch_edit();
-        app.sel = Sel::Sketch(si2);
+        app.chosen.sel = Sel::Sketch(si2);
         // THE ORDER A PERSON USES: open "extrude" and switch to "cut" in the bar afterwards
         app.start_feat_cmd(1);
         app.feat.op = 2;
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "height") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 20.0;
             p.txt = "20".into();
         }
@@ -207,35 +207,35 @@ mod live_session {
     fn every_operation_leaves_exactly_one_named_undo_step() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
 
-        let before = app.edits.undo.len();
+        let before = app.disk.edits.undo.len();
         run(&mut app, 1, &[("height", 10.0)]);
-        assert_eq!(app.edits.undo.len(), before + 1, "an extrusion is exactly one step");
-        assert_eq!(app.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("f-extrusion")), "the step is named after the operation");
+        assert_eq!(app.disk.edits.undo.len(), before + 1, "an extrusion is exactly one step");
+        assert_eq!(app.disk.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("f-extrusion")), "the step is named after the operation");
 
         // a fillet on an edge is one step too, with a name of its own
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).unwrap_or(0);
         if let Some(eid) = app.project.regen_edges.get(&body).and_then(|es| es.iter().find(|e| (e.a[2] - e.b[2]).abs() > 5.0).map(|e| e.id)) {
-            let n = app.edits.undo.len();
+            let n = app.disk.edits.undo.len();
             app.start_feat_cmd(4);
-            app.gsel.edges.insert(eid);
+            app.tools.gsel.edges.insert(eid);
             app.edges.body = Some(body);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
                 p.val = 2.0;
                 p.txt = "2".into();
             }
             app.apply_feat_cmd();
-            assert_eq!(app.edits.undo.len(), n + 1, "a fillet is exactly one step");
-            assert_eq!(app.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("f-fillet")));
+            assert_eq!(app.disk.edits.undo.len(), n + 1, "a fillet is exactly one step");
+            assert_eq!(app.disk.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("f-fillet")));
         }
 
         // deleting an operation is a transaction with a name of its own as well
-        let n = app.edits.undo.len();
+        let n = app.disk.edits.undo.len();
         let last_feature = app.project.timeline.len().saturating_sub(1);
-        app.delete_feature(last_feature);
-        assert_eq!(app.edits.undo.len(), n + 1, "deleting an operation is one step");
-        assert_eq!(app.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("status-delete-feature")));
+        crate::gui::commands::delete_feature(&mut app.part_ctx(), last_feature);
+        assert_eq!(app.disk.edits.undo.len(), n + 1, "deleting an operation is one step");
+        assert_eq!(app.disk.edits.undo.last().map(|s| s.name.clone()), Some(crate::i18n::tr("status-delete-feature")));
     }
 
     /// A FAILED OPERATION LEAVES NO TRACE: neither in the document nor in the undo stack.
@@ -243,9 +243,9 @@ mod live_session {
     fn a_failed_operation_leaves_no_trace() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
-        let steps = app.edits.undo.len();
+        let steps = app.disk.edits.undo.len();
         let nodes = app.project.timeline.len();
         let v = vol(&app);
 
@@ -253,9 +253,9 @@ mod live_session {
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).unwrap_or(0);
         if let Some(eid) = app.project.regen_edges.get(&body).and_then(|es| es.iter().find(|e| (e.a[2] - e.b[2]).abs() > 5.0).map(|e| e.id)) {
             app.start_feat_cmd(4);
-            app.gsel.edges.insert(eid);
+            app.tools.gsel.edges.insert(eid);
             app.edges.body = Some(body);
-            if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
                 p.val = 999.0;
                 p.txt = "999".into();
             }
@@ -271,7 +271,7 @@ mod live_session {
             // question about behaviour, not about a test, and it is left to be decided rather than papered
             // over here.
             if app.cmd_failed {
-                assert_eq!(app.edits.undo.len(), steps, "a rejected operation leaves no step: {}", app.status);
+                assert_eq!(app.disk.edits.undo.len(), steps, "a rejected operation leaves no step: {}", app.status);
                 assert_eq!(app.project.timeline.len(), nodes, "and leaves no node in the timeline");
                 assert!((vol(&app) - v).abs() < 1e-6, "and does not touch the geometry");
             }
@@ -284,19 +284,19 @@ mod live_session {
     fn opening_a_document_clears_the_undo_stack() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
-        assert!(!app.edits.undo.is_empty(), "the step from the extrusion is there");
+        assert!(!app.disk.edits.undo.is_empty(), "the step from the extrusion is there");
 
         let path = std::env::temp_dir().join("qym_audit_open.qcad");
         let p = path.to_string_lossy().to_string();
-        app.spawn_save(p.clone(), false);
+        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, p.clone(), false);
         app.wait_bg();
         let proj = qymcad_io::load_project(&p).expect("the opening");
         app.finish_project_load(p, proj, Vec::new());
 
-        assert!(app.edits.undo.is_empty(), "after opening, the undo stack is empty: {} steps", app.edits.undo.len());
-        assert!(app.edits.redo.is_empty(), "and the redo stack is empty");
+        assert!(app.disk.edits.undo.is_empty(), "after opening, the undo stack is empty: {} steps", app.disk.edits.undo.len());
+        assert!(app.disk.edits.redo.is_empty(), "and the redo stack is empty");
     }
 
     /// ONE REBUILD PER ACTION. Inside, a command asks for a rebuild several times (the sketch, the
@@ -306,16 +306,16 @@ mod live_session {
     fn one_user_action_rebuilds_the_model_once() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
 
         // the fillet: how many times the model was rebuilt during ONE command
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).unwrap_or(0);
         let Some(eid) = app.project.regen_edges.get(&body).and_then(|es| es.iter().find(|e| (e.a[2] - e.b[2]).abs() > 5.0).map(|e| e.id)) else { return };
         app.start_feat_cmd(4);
-        app.gsel.edges.insert(eid);
+        app.tools.gsel.edges.insert(eid);
         app.edges.body = Some(body);
-        if let Some(p) = app.cmd.params.iter_mut().find(|p| p.key == "radius") {
+        if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 2.0;
             p.txt = "2".into();
         }
@@ -335,47 +335,47 @@ mod live_session {
     fn entering_a_tool_leaves_no_tail_of_the_previous_one() {
         // every mode at once — a state that in life is built up one at a time
         fn dirty(app: &mut App) {
-            app.tool.kind = 1;
-            app.tool.modify = 2;
-            app.tool.pts.push(qymcad_core::geom::Point2 { x: 1.0, y: 2.0 });
-            app.tool.circ_tan = Some(super::super::EdgeRef::Circle { center: 1, r: 5.0 });
-            app.tool.click_op = 3;
-            app.tool.move_op = 4;
-            app.tool.move_base = Some(qymcad_core::geom::Point2 { x: 0.0, y: 0.0 });
-            app.dim.kind = 2;
-            app.dim.first = Some(super::super::DimRef::Point(1));
-            app.place.dim = Some(0);
-            app.pending_import.draw_pts = Some(Vec::new());
-            app.corner.at = Some((0, 0, false));
-            app.corner.only = Some(std::collections::HashSet::new());
-            app.measure.on = true;
-            app.measure.pts.push(qymcad_core::geom::Point2::new(1.0, 2.0));
-            app.pat.op = 1;
-            app.sel_sk.constraint = Some(0);
-            app.sel_sk.modify = Some(0);
-            app.picking = Picking::FilletAll;
-            app.drag = super::super::Dragging::Dim(0);
-            app.inline = super::super::InlineEdit::Note(0);
+            app.tools.armed = qymcad_ui_state::Armed::Draw(1);
+            app.tools.armed = qymcad_ui_state::Armed::Modify(2);
+            app.tools.tool.pts.push(qymcad_core::geom::Point2 { x: 1.0, y: 2.0 });
+            app.tools.tool.circ_tan = Some(super::super::EdgeRef::Circle { center: 1, r: 5.0 });
+            app.tools.armed = qymcad_ui_state::Armed::ClickOp(3);
+            app.tools.armed = qymcad_ui_state::Armed::Move(4);
+            app.tools.tool.move_base = Some(qymcad_core::geom::Point2 { x: 0.0, y: 0.0 });
+            app.tools.armed = qymcad_ui_state::Armed::Dimension(2);
+            app.tools.dim.first = Some(super::super::DimRef::Point(1));
+            app.tools.place.dim = Some(0);
+            app.tools.pending_import.draw_pts = Some(Vec::new());
+            app.tools.corner.at = Some((0, 0, false));
+            app.tools.corner.only = Some(std::collections::HashSet::new());
+            app.tools.armed = qymcad_ui_state::Armed::Measure;
+            app.tools.measure.pts.push(qymcad_core::geom::Point2::new(1.0, 2.0));
+            app.tools.armed = qymcad_ui_state::Armed::Pattern(1);
+            app.tools.sel_sk.constraint = Some(0);
+            app.tools.sel_sk.modify = Some(0);
+            app.tools.picking = Picking::FilletAll;
+            app.tools.drag = super::super::Dragging::Dim(0);
+            app.tools.inline = super::super::InlineEdit::Note(0);
         }
 
         // what must be extinguished after entering any tool
         fn tail(app: &App) -> Vec<&'static str> {
             let mut t = Vec::new();
-            if app.tool.modify != 0 { t.push("the modify mode") }
-            if !app.tool.pts.is_empty() { t.push("the points clicked") }
-            if app.tool.circ_tan.is_some() { t.push("the tangency of a circle") }
-            if app.tool.click_op != 0 { t.push("the click operation") }
-            if app.tool.move_op != 0 || app.tool.move_base.is_some() { t.push("the move") }
-            if app.dim.first.is_some() { t.push("the first reference of a dimension") }
-            if app.place.dim.is_some() { t.push("the dimension being placed") }
-            if app.pending_import.draw_pts.is_some() { t.push("the unfinished import") }
-            if app.corner.at.is_some() || app.corner.only.is_some() { t.push("the corner popup") }
-            if app.measure.on || !app.measure.pts.is_empty() { t.push("the measurement") }
-            if app.pat.op != 0 { t.push("the array") }
-            if app.sel_sk.constraint.is_some() || app.sel_sk.modify.is_some() { t.push("the highlight of a constraint") }
-            if !matches!(app.picking, Picking::None) { t.push("the pick of a shape") }
-            if !matches!(app.drag, super::super::Dragging::None) { t.push("the drag") }
-            if !matches!(app.inline, super::super::InlineEdit::None) { t.push("the edit in place") }
+            if app.tools.armed.modify() != 0 { t.push("the modify mode") }
+            if !app.tools.tool.pts.is_empty() { t.push("the points clicked") }
+            if app.tools.tool.circ_tan.is_some() { t.push("the tangency of a circle") }
+            if app.tools.armed.click_op() != 0 { t.push("the click operation") }
+            if app.tools.armed.move_op() != 0 || app.tools.tool.move_base.is_some() { t.push("the move") }
+            if app.tools.dim.first.is_some() { t.push("the first reference of a dimension") }
+            if app.tools.place.dim.is_some() { t.push("the dimension being placed") }
+            if app.tools.pending_import.draw_pts.is_some() { t.push("the unfinished import") }
+            if app.tools.corner.at.is_some() || app.tools.corner.only.is_some() { t.push("the corner popup") }
+            if app.tools.armed.measuring() || !app.tools.measure.pts.is_empty() { t.push("the measurement") }
+            if app.tools.armed.pat_op() != 0 { t.push("the array") }
+            if app.tools.sel_sk.constraint.is_some() || app.tools.sel_sk.modify.is_some() { t.push("the highlight of a constraint") }
+            if !matches!(app.tools.picking, Picking::None) { t.push("the pick of a shape") }
+            if !matches!(app.tools.drag, super::super::Dragging::None) { t.push("the drag") }
+            if !matches!(app.tools.inline, super::super::InlineEdit::None) { t.push("the edit in place") }
             t
         }
 
@@ -383,15 +383,15 @@ mod live_session {
         // every entry point into a mode — each must give a clean transition
         let entries: Vec<(&str, fn(&mut App))> = vec![
             ("a drawing tool", |a: &mut App| a.set_sk_tool(2)),
-            ("a dimension tool", |a: &mut App| a.set_dim_tool(1)),
-            ("the selection mode", |a: &mut App| a.sketch_select_mode()),
+            ("a dimension tool", |a: &mut App| qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.viewing.mode_3d, &a.project, a.chosen.sel, a.sketch_ses, &mut a.status, 1)),
+            ("the selection mode", |a: &mut App| crate::gui::sketching::sketch_select_mode(&mut a.sketch_ctx())),
             ("leaving the sketch", |a: &mut App| a.finish_sketch_edit()),
             ("cancelling everything", |a: &mut App| a.cancel_all_tools()),
         ];
         for (what, enter) in entries {
             let mut app = App::default();
             let si = rect(&mut app, 0.0, 0.0, 20.0, 20.0);
-            app.sel = Sel::Sketch(si);
+            app.chosen.sel = Sel::Sketch(si);
             dirty(&mut app);
             enter(&mut app);
             let t = tail(&app);
@@ -414,40 +414,40 @@ mod live_session {
     fn a_feature_command_starts_without_the_previous_targeting() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
 
         // the targeting of the previous command
         app.start_feat_cmd(8); // the sweep
-        app.sweep.prof_sid = 7;
-        app.sweep.path_sid = 9;
-        app.sweep.pick_path = true;
-        app.loft.pick = true;
-        app.draft.pick_neutral = true;
-        app.mirror.plane = Some(qymcad_core::feature::SketchPlane::default());
-        app.datum.plane_pick = Some(qymcad_core::feature::SketchPlane::default());
-        app.picking = Picking::FilletAll;
+        app.params.sweep.prof_sid = 7;
+        app.params.sweep.path_sid = 9;
+        app.params.sweep.pick_path = true;
+        app.params.loft.pick = true;
+        app.params.draft.pick_neutral = true;
+        app.params.mirror.plane = Some(qymcad_core::feature::SketchPlane::default());
+        app.side.datum.plane_pick = Some(qymcad_core::feature::SketchPlane::default());
+        app.tools.picking = Picking::FilletAll;
 
         app.start_feat_cmd(9); // the loft — another command, the targeting must go out
         let mut tail = Vec::new();
-        if app.sweep.prof_sid != 0 || app.sweep.path_sid != 0 || app.sweep.pick_path { tail.push("the sweep") }
-        if app.loft.pick { tail.push("the loft") }
-        if app.draft.pick_neutral { tail.push("the draft") }
-        if app.mirror.plane.is_some() { tail.push("the mirror") }
-        if app.datum.plane_pick.is_some() { tail.push("the datum") }
-        if !matches!(app.picking, Picking::None) { tail.push("the pick of a shape") }
+        if app.params.sweep.prof_sid != 0 || app.params.sweep.path_sid != 0 || app.params.sweep.pick_path { tail.push("the sweep") }
+        if app.params.loft.pick { tail.push("the loft") }
+        if app.params.draft.pick_neutral { tail.push("the draft") }
+        if app.params.mirror.plane.is_some() { tail.push("the mirror") }
+        if app.side.datum.plane_pick.is_some() { tail.push("the datum") }
+        if !matches!(app.tools.picking, Picking::None) { tail.push("the pick of a shape") }
         assert!(tail.is_empty(), "the new command inherited the targeting: {}", tail.join(", "));
 
         // References are collected INSIDE a command (the contract of the tools), so a command must open
         // with an empty selection — otherwise the fillet would silently grab the edges of the previous
         // operation.
-        app.cancel_feat_cmd();
+        crate::gui::cancel_feat_cmd(&mut app.part_ctx());
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).unwrap_or(0);
         let Some(eid) = app.project.regen_edges.get(&body).and_then(|es| es.first().map(|e| e.id)) else { return };
-        app.gsel.edges.insert(eid);
+        app.tools.gsel.edges.insert(eid);
         app.edges.body = Some(body);
         app.start_feat_cmd(4);
-        assert!(app.gsel.edges.is_empty(), "a command must open with an empty set of references: the set is collected by clicks inside the command");
+        assert!(app.tools.gsel.edges.is_empty(), "a command must open with an empty set of references: the set is collected by clicks inside the command");
     }
 
     /// A BACKGROUND JOB NEVER SWALLOWS EDITS MADE WHILE IT RAN.
@@ -461,21 +461,21 @@ mod live_session {
     fn a_background_job_never_swallows_edits_made_while_it_ran() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
         let before = vol(&app);
 
         let path = std::env::temp_dir().join("qym_bg_edit.qcad").to_string_lossy().to_string();
-        app.spawn_save(path.clone(), false);
+        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path.clone(), false);
         // WHILE THE WRITE IS UNDER WAY the document is edited
         let si2 = rect(&mut app, 50.0, 0.0, 60.0, 10.0); // ASIDE from the plate, otherwise the union adds nothing
-        app.sel = Sel::Sketch(si2);
+        app.chosen.sel = Sel::Sketch(si2);
         run(&mut app, 1, &[("height", 5.0)]);
         let after = vol(&app);
         app.wait_bg();
 
         assert!(after > before, "an edit made during a background write was lost: {before:.1} -> {after:.1}");
-        assert!(app.is_dirty(), "a SNAPSHOT was written and the edit came after it — the project must stay unsaved");
+        assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "a SNAPSHOT was written and the edit came after it — the project must stay unsaved");
     }
 
     /// THE APPLICATION STARTS. The guard over transaction boundaries does not fire on an empty document.
@@ -488,16 +488,16 @@ mod live_session {
     #[test]
     fn a_fresh_app_does_not_trip_the_transaction_guard() {
         let mut app = App::default();
-        assert!(!app.doc_changed_outside_edit(), "an empty document looks changed past an operation");
+        assert!(!crate::gui::doc_changed_outside_edit(&app.disk.edits, &app.project), "an empty document looks changed past an operation");
 
         // a rebuild is a DERIVED action, it does not edit the document
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
         run(&mut app, 1, &[("height", 10.0)]);
-        assert!(!app.doc_changed_outside_edit(), "after an operation the guard counts the document as changed past it");
+        assert!(!crate::gui::doc_changed_outside_edit(&app.disk.edits, &app.project), "after an operation the guard counts the document as changed past it");
 
-        app.regenerate_all();
-        assert!(!app.doc_changed_outside_edit(), "A REBUILD does not edit the document — the guard must not notice it");
+        qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
+        assert!(!crate::gui::doc_changed_outside_edit(&app.disk.edits, &app.project), "A REBUILD does not edit the document — the guard must not notice it");
     }
 
     /// ENTERING A SUBASSEMBLY DOES NOT BRING THE APPLICATION DOWN.
@@ -516,11 +516,11 @@ mod live_session {
 
         app.enter_component(sub);
         app.sync_workbench();
-        assert!(!app.doc_changed_outside_edit(), "entering a subassembly looks like an edit past an operation");
+        assert!(!crate::gui::doc_changed_outside_edit(&app.disk.edits, &app.project), "entering a subassembly looks like an edit past an operation");
 
         app.enter_component(part);
         app.sync_workbench();
-        assert!(!app.doc_changed_outside_edit(), "entering a part inside a subassembly looks like an edit past an operation");
+        assert!(!crate::gui::doc_changed_outside_edit(&app.disk.edits, &app.project), "entering a part inside a subassembly looks like an edit past an operation");
     }
 
     /// Ctrl+C AND Ctrl+V OUTSIDE A SKETCH DO NOT KILL THE APPLICATION.
@@ -535,7 +535,7 @@ mod live_session {
         let mut app = App::default();
         let part = app.project.add_part("Part");
         let ci = app.project.components.iter().position(|c| c.id == part).expect("the component is in place");
-        app.sel = Sel::Component(ci);
+        app.chosen.sel = Sel::Component(ci);
         app.clipboard_copy(false); // recursion means a stack overflow and the test never returns
         app.clipboard_paste();
         assert!(!app.status.is_empty(), "the clipboard of the tree must at least report in the status line");
@@ -553,20 +553,21 @@ mod live_session {
     fn nothing_rebuilds_the_model_in_the_middle_of_an_operation() {
         let mut app = App::default();
         let si = rect(&mut app, 0.0, 0.0, 40.0, 30.0);
-        app.sel = Sel::Sketch(si);
+        app.chosen.sel = Sel::Sketch(si);
 
         let rev0 = app.regen.geom_rev;
         {
-            let mut e = app.edit("A check of the boundary");
-            let a = e.app();
+            qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "A check of the boundary");
+            let a = &mut app;
             // inside an operation — every path that in real work calls a rebuild directly
-            a.regenerate_all();
+            qymcad_ui_state::regenerate_all(&mut a.rebuild_ctx());
             a.project.mark_sketch_dirty(a.project.sketches[si].id);
-            a.regenerate_all();
+            qymcad_ui_state::regenerate_all(&mut a.rebuild_ctx());
             assert_eq!(a.regen.geom_rev, rev0, "the model was rebuilt INSIDE an operation — the boundary does not hold");
+            qymcad_ui_state::commit_edit(&mut a.rebuild_ctx());
         }
         // the operation is closed — and now there is exactly one rebuild
-        app.rebuild_if_dirty();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         assert!(app.regen.geom_rev > rev0, "after an operation is closed a rebuild must happen");
     }
 
@@ -583,10 +584,10 @@ mod live_session {
         let mut app = App::default();
         // something is already being dragged — every link of the chain must see it with ONE question
         for grabbed in [Dragging::Text(0), Dragging::Note(0), Dragging::Dim(0), Dragging::Point(0, 0)] {
-            app.drag = grabbed.clone();
-            assert!(app.drag.active(), "the grab is not visible to the predicate of the record");
+            app.tools.drag = grabbed.clone();
+            assert!(app.tools.drag.active(), "the grab is not visible to the predicate of the record");
         }
-        app.drag = Dragging::None;
-        assert!(!app.drag.active(), "an empty grab must not count as active");
+        app.tools.drag = Dragging::None;
+        assert!(!app.tools.drag.active(), "an empty grab must not count as active");
     }
 }

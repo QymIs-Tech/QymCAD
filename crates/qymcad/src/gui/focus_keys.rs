@@ -63,13 +63,13 @@ mod tests {
         // INTO THE PART: outside it the workbench is the Assembly, and `U` there means "subassembly"
         // rather than "re-pick the contour". The scene must be the one a person presses this key in.
         let part = app.project.components.iter().rev().find(|c| c.parent.is_some()).map(|c| c.id).expect("the part");
-        app.enter_component_for_test(part);
+        app.enter_component(part);
         // AN EXTRUDE NEEDS A SKETCH rather than a body: with a body selected the command simply does
         // not open (`kind` stays 0), and the test would be checking emptiness.
-        app.sel = super::super::Sel::Sketch(0);
-        app.mode_3d = true; // "re-pick the contour" exists exactly in the 3D step of the command
+        app.chosen.sel = super::super::Sel::Sketch(0);
+        app.viewing.mode_3d = true; // "re-pick the contour" exists exactly in the 3D step of the command
         app.start_feat_cmd(1);
-        assert!(app.cmd.active() && app.cmd.sketch.is_some(), "the scene did not open the extrude — there is nothing to check");
+        assert!(app.tools.armed.commanding() && app.tools.cmd.sketch.is_some(), "the scene did not open the extrude — there is nothing to check");
         app
     }
 
@@ -77,9 +77,9 @@ mod tests {
     #[test]
     fn a_bare_letter_works_when_nothing_is_focused() {
         let mut app = extruding();
-        assert!(!app.contour_repick_active_for_test(), "the half-sketcher must not be open in advance");
+        assert!(!(matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d), "the half-sketcher must not be open in advance");
         press(&mut app, Key::U, Modifiers::NONE, false);
-        assert!(app.contour_repick_active_for_test(), "a bare U with the focus free did not open the contour re-pick");
+        assert!((matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d), "a bare U with the focus free did not open the contour re-pick");
     }
 
     /// INSIDE A FIELD A BARE LETTER DOES NOT RUN A COMMAND — it is typed.
@@ -90,7 +90,7 @@ mod tests {
     fn inside_a_field_a_bare_letter_is_typed_not_executed() {
         let mut app = extruding();
         press(&mut app, Key::U, Modifiers::NONE, true);
-        assert!(!app.contour_repick_active_for_test(), "a letter from a field ran a command — `len` can no longer be written into a formula");
+        assert!(!(matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d), "a letter from a field ran a command — `len` can no longer be written into a formula");
     }
 
     /// ALT PLUS A LETTER WORKS FROM A FIELD TOO. Exactly the reported case.
@@ -98,7 +98,7 @@ mod tests {
     fn alt_letter_works_even_while_typing() {
         let mut app = extruding();
         press(&mut app, Key::U, Modifiers::ALT, true);
-        assert!(app.contour_repick_active_for_test(), "Alt+U from a field did not open the contour re-pick — the hand still reaches for the mouse");
+        assert!((matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d), "Alt+U from a field did not open the contour re-pick — the hand still reaches for the mouse");
     }
 
     /// ESC FROM A FIELD DOES NOT CANCEL THE COMMAND, AND A SECOND ONE DOES.
@@ -109,9 +109,9 @@ mod tests {
     fn escape_leaves_the_field_first_and_cancels_second() {
         let mut app = extruding();
         press(&mut app, Key::Escape, Modifiers::NONE, true);
-        assert!(app.cmd.active(), "the first Esc from a field cancelled the whole command");
+        assert!(app.tools.armed.commanding(), "the first Esc from a field cancelled the whole command");
         press(&mut app, Key::Escape, Modifiers::NONE, false);
-        assert!(!app.cmd.active(), "the second Esc, already without focus, did not cancel the command");
+        assert!(!app.tools.armed.commanding(), "the second Esc, already without focus, did not cancel the command");
     }
 
     /// THE HINT CHANGES ALONG WITH THE RULE.
@@ -126,7 +126,7 @@ mod tests {
         super::super::install_fonts(&ctx);
         // with no focus it is a bare letter
         let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
-        let free = app.hotkey_hint(&ctx, "part.contour-reselect");
+        let free = qymcad_ui_state::hotkey_hint(&app.draw_ctx(), &ctx, "part.contour-reselect");
         assert_eq!(free, "U", "with no focus the hint should be a bare letter rather than \"{free}\"");
         // with focus it is Alt plus a letter
         let ctx2 = egui::Context::default();
@@ -139,7 +139,7 @@ mod tests {
                 });
             });
         }
-        let typing = app.hotkey_hint(&ctx2, "part.contour-reselect");
+        let typing = qymcad_ui_state::hotkey_hint(&app.draw_ctx(), &ctx2, "part.contour-reselect");
         assert_eq!(typing, "Alt+U", "with focus in a field the hint should call for Alt rather than \"{typing}\"");
     }
 
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn the_rule_lives_in_one_place() {
         let src = include_str!("input.rs");
-        assert!(src.contains("if typing { i.modifiers.alt"), "the \"with focus, use Alt\" rule is gone from the common place");
-        assert!(!src.contains("if ctx.egui_wants_keyboard_input() {\n            return;\n        }\n        use egui::Key;"), "the unconditional muting of every key on focus has come back");
+        assert!(crate::gui::render_source::has(src, "if typing { i.modifiers.alt"), "the \"with focus, use Alt\" rule is gone from the common place");
+        assert!(!crate::gui::render_source::has(src, "if ctx.egui_wants_keyboard_input() {\n            return;\n        }\n        use egui::Key;"), "the unconditional muting of every key on focus has come back");
     }
 }

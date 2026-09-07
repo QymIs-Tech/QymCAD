@@ -47,9 +47,13 @@ fn feature_follows_its_loop_when_loops_swap_places() {
     p.regen_sketch(si);
     p.mark_sketch_dirty(sid);
     let (report, shapes) = qymcad_testkit::regenerate(&mut p);
-    for (id, e) in &report.errors {
-        panic!("the rebuild after the edit failed: {id}: {e}");
-    }
+    // ALL OF THEM AT ONCE, not the first. A matrix check reports every failure of the pass in one go -
+    // panicking on the first hides the rest and turns one run into as many runs as there are faults.
+    assert!(
+        report.errors.is_empty(),
+        "the rebuild after the edit failed: {}",
+        report.errors.iter().map(|(id, e)| format!("{id}: {e}")).collect::<Vec<_>>().join("; ")
+    );
     // the column has to stand over the new position of A, x in [40, 60], which a probe checks
     let s = shapes.get(&body).expect("there is a body");
     let outer = qymcad_core::geom::Contour::closed(vec![

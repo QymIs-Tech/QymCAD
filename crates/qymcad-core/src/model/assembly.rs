@@ -129,6 +129,49 @@ impl Project {
     }
     /// Placement of a component inside its parent (3x4). This does not rebuild any body, only its position in
     /// the assembly.
+    /// SHOW OR HIDE A COMPONENT.
+    ///
+    /// One assignment, but it belongs here rather than in a panel: what "visible" means for a component is
+    /// the document's rule, and the caches that depend on it are dropped by whoever owns them.
+    /// Returns `false` when there is no such component, so a miss is told apart from a change.
+    pub fn set_component_visible(&mut self, id: Id, visible: bool) -> bool {
+        match self.components.iter_mut().find(|c| c.id == id) {
+            Some(c) => {
+                c.visible = visible;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// RENAME A COMPONENT.
+    pub fn rename_component(&mut self, id: Id, name: impl Into<String>) -> bool {
+        match self.components.iter_mut().find(|c| c.id == id) {
+            Some(c) => {
+                c.name = name.into();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// WHERE A MATE CONNECTOR SITS ON ITS BODY: the point, the turn and the offset, SET TOGETHER.
+    ///
+    /// They were assigned one by one from the panel, which is how a half-placed connector becomes possible:
+    /// three separate writes have two moments in between when the record disagrees with itself. One call,
+    /// one moment.
+    pub fn set_connector_placement(&mut self, id: Id, point: crate::asm::connector::AttachPoint, rot_deg: f64, offset_xyz: [f64; 3]) -> bool {
+        match self.connectors.iter_mut().find(|c| c.id == id) {
+            Some(c) => {
+                c.point = point;
+                c.rot_deg = rot_deg;
+                c.offset_xyz = offset_xyz;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn set_component_transform(&mut self, id: Id, mat: [f64; 12]) {
         if let Some(c) = self.components.iter_mut().find(|c| c.id == id) {
             c.transform = mat;
@@ -545,6 +588,26 @@ impl Project {
         true
     }
 
+    /// SET THE DRIVER ON ONE DEGREE OF FREEDOM, held inside its limits.
+    ///
+    /// Four places in the interface used to do this by hand - dragging the gizmo, restoring a value after a
+    /// sweep, stepping the sweep itself, and reading the numbers off the command bar - and they did not
+    /// agree: the gizmo clamped to the limit, the other three did not. No wrong picture came of it (the
+    /// sweep interpolates between two values that are already in range), but "a driver never leaves its
+    /// limits" was held by four separate memories instead of by the code. Here it is held once.
+    ///
+    /// `None` clears the driver: the degree of freedom goes back to being free, and the solver decides it.
+    /// Returns `false` when there is no such mate or no such slot, so a caller cannot mistake a miss for a
+    /// change.
+    pub fn set_joint_drive(&mut self, joint: Id, slot: usize, value: Option<f64>) -> bool {
+        if slot >= 3 {
+            return false;
+        }
+        let Some(j) = self.joints.iter_mut().find(|x| x.id == joint) else { return false };
+        j.drive[slot] = value.map(|v| j.clamp_slot(slot, v));
+        true
+    }
+
     /// Swap the roles of the two bodies in a mate.
     ///
     /// The two sides of a mate are not equal: the first anchor is the one the second is brought to, and the
@@ -897,18 +960,15 @@ impl Project {
                 break;
             }
         }
-        match last {
-            Some(r) => {
-                self.mates_conflict = !r.converged;
-                // Violated mates are reported by id rather than by a single "there is a conflict" flag.
-                for (jid, v) in &r.violated {
-                    report.errors.push((*jid as Id, format!("joint-miss#{v:.3}")));
-                    if !self.mates_violated.contains(&(*jid as Id)) {
-                        self.mates_violated.push(*jid as Id);
-                    }
+        if let Some(r) = last {
+            self.mates_conflict = !r.converged;
+            // Violated mates are reported by id rather than by a single "there is a conflict" flag.
+            for (jid, v) in &r.violated {
+                report.errors.push((*jid as Id, format!("joint-miss#{v:.3}")));
+                if !self.mates_violated.contains(&(*jid as Id)) {
+                    self.mates_violated.push(*jid as Id);
                 }
             }
-            None => {}
         }
         report
     }
@@ -1541,6 +1601,8 @@ impl Project {
     /// When `owner` is a subassembly (at the level of the joint context) while the geometry resolves in a leaf
     /// body, the frame is built in leaf space and then carried into the space of `owner` through
     /// `relative_transform`.
+    // THE INDEX IS THE MEANING: `k` is the coordinate axis, and the line reads as the vector sum it is.
+    #[allow(clippy::needless_range_loop)]
     pub fn connector_frame(&self, conn: &crate::feature::MateConnector) -> Option<crate::feature::PlaneFrame> {
         use crate::feature::{AnchorRef, PlaneFrame};
         // An anchor on a deleted body does not resolve.
@@ -1884,6 +1946,8 @@ impl Project {
     ///
     /// The equation is linear: `2c.v - k = |v|^2`, where `k = |c|^2 - r^2`. Fitting `|v - c| = r` directly is
     /// non-linear, while this form has the same four unknowns and is solved in one pass.
+    // THE INDEX IS THE MEANING: Gauss-Jordan over a 4x5 matrix - rows and columns are what it is about.
+    #[allow(clippy::needless_range_loop)]
     pub fn face_sphere(&self, body: Id, key: &crate::feature::FaceKey) -> Option<([f64; 3], f64)> {
         let faces = self.regen_faces.get(&body)?;
         let f = faces.iter().find(|f| f.id == key.id)?;
@@ -1895,7 +1959,7 @@ impl Project {
             for &vi in t {
                 if seen.insert(vi) {
                     if let Some(v) = mesh.verts.get(vi as usize) {
-                        pts.push([v.x as f64, v.y as f64, v.z as f64]);
+                        pts.push([v.x, v.y, v.z]);
                     }
                 }
             }
@@ -1946,7 +2010,7 @@ impl Project {
         if worst > 0.02 * r {
             return None; // The fit is loose: not a sphere.
         }
-        let span = pts.iter().map(|p| ((p[0] - f.centroid.x as f64).powi(2) + (p[1] - f.centroid.y as f64).powi(2) + (p[2] - f.centroid.z as f64).powi(2)).sqrt()).fold(0.0f64, f64::max);
+        let span = pts.iter().map(|p| ((p[0] - f.centroid.x).powi(2) + (p[1] - f.centroid.y).powi(2) + (p[2] - f.centroid.z).powi(2)).sqrt()).fold(0.0f64, f64::max);
         if span < 0.1 * r {
             return None; // The face is far smaller than the fitted radius: a plane, not a piece of a sphere.
         }
@@ -1959,14 +2023,14 @@ impl Project {
         for &ti in &f.triangles {
             let Some(t) = mesh.tris.get(ti as usize) else { continue };
             let (Some(p0), Some(p1), Some(p2)) = (mesh.verts.get(t[0] as usize), mesh.verts.get(t[1] as usize), mesh.verts.get(t[2] as usize)) else { continue };
-            let u = [(p1.x - p0.x) as f64, (p1.y - p0.y) as f64, (p1.z - p0.z) as f64];
-            let w = [(p2.x - p0.x) as f64, (p2.y - p0.y) as f64, (p2.z - p0.z) as f64];
+            let u = [(p1.x - p0.x), (p1.y - p0.y), (p1.z - p0.z)];
+            let w = [(p2.x - p0.x), (p2.y - p0.y), (p2.z - p0.z)];
             let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
             let nl = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             if nl < 1e-12 {
                 continue;
             }
-            let mid = [((p0.x + p1.x + p2.x) as f64) / 3.0 - c[0], ((p0.y + p1.y + p2.y) as f64) / 3.0 - c[1], ((p0.z + p1.z + p2.z) as f64) / 3.0 - c[2]];
+            let mid = [(p0.x + p1.x + p2.x) / 3.0 - c[0], (p0.y + p1.y + p2.y) / 3.0 - c[1], (p0.z + p1.z + p2.z) / 3.0 - c[2]];
             let ml = (mid[0] * mid[0] + mid[1] * mid[1] + mid[2] * mid[2]).sqrt();
             if ml < 1e-12 {
                 return None;

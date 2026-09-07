@@ -32,23 +32,23 @@ mod tests {
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         super::super::joint_flow::tests::add_part_at(app, 40.0);
         for _ in 0..4 {
-            if app.current_ctx_id_for_test() == app.project.root {
+            if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) == app.project.root {
                 break;
             }
-            app.exit_context_for_test();
+            app.exit_context();
         }
         let comp = *app.project.components.iter().filter(|c| c.parent == Some(app.project.root)).map(|c| c.id).collect::<Vec<_>>().last().expect("the part");
         // CARRY IT PAST THE ORIGIN ALONG THE CAMERA RAY: then the ray from the eye to the part
         // passes through the square of the datum plane — exactly the arrangement of the reported
         // machine.
-        app.mode_3d = true;
-        let v = app.cam.basis().2;
+        app.viewing.mode_3d = true;
+        let v = app.viewing.cam.basis().2;
         let d = 800.0;
         if let Some(i) = app.project.component_index(comp) {
             app.project.components[i].transform = [1.0, 0.0, 0.0, v[0] * d - 10.0, 0.0, 1.0, 0.0, v[1] * d - 10.0, 0.0, 0.0, 1.0, v[2] * d - 5.0];
         }
-        app.rebuild_if_dirty();
-        app.refresh_edges();
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        crate::gui::commands::refresh_edges(&mut app.part_ctx());
 
         // THE TOP FACE OF THIS PART — that is what we aim at, as a person aims at a rail.
         let body = app.project.component_bodies(comp).first().copied().expect("the body of the part");
@@ -66,11 +66,11 @@ mod tests {
 
     /// Aim the camera at the whole scene — as the program does when opening a file.
     fn look_at_everything(app: &mut App) {
-        app.mode_3d = true;
-        let v = app.cam.basis().2;
-        app.cam.target = [v[0] * 400.0, v[1] * 400.0, v[2] * 400.0];
-        app.cam.scale = 0.35;
-        app.cam.init = true;
+        app.viewing.mode_3d = true;
+        let v = app.viewing.cam.basis().2;
+        app.viewing.cam.target = [v[0] * 400.0, v[1] * 400.0, v[2] * 400.0];
+        app.viewing.cam.scale = 0.35;
+        app.viewing.cam.init = true;
     }
 
     #[test]
@@ -78,11 +78,11 @@ mod tests {
         let mut app = App::default();
         let (body, top) = a_part_far_from_the_origin(&mut app);
         look_at_everything(&mut app);
-        let basis = app.cam.basis();
-        let at = app.project3(top, viewport(), &basis).0;
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(top).0;
 
         // TRAP GUARD: there is a body under this cursor, and the picker returns the datum plane.
-        let hit_body = app.pick_body_at(viewport(), at).and_then(|mi| app.project.mesh_id(mi));
+        let hit_body = crate::gui::pick::pick_body_at(&app.painting(), viewport(), at).and_then(|mi| app.project.mesh_id(mi));
         assert_eq!(hit_body, Some(body), "setup: there must be a part under the cursor, and there is {hit_body:?}");
         assert!(
             matches!(app.pick_sketch_plane_at(viewport(), at), Some(SketchPlane::World(_))),
@@ -91,11 +91,11 @@ mod tests {
 
         // AND NOW BY HAND: take the joint and click the part.
         app.workbench = super::super::Workbench::Assembly;
-        app.joint.new_kind = JointKind::Slider;
+        app.side.joint.new_kind = JointKind::Slider;
         app.arm_joint_pick_for_test();
         app.viewport_3d_click_at(at, viewport(), &basis);
 
-        let picked = app.joint_pick_first_anchor_for_test();
+        let picked = qymcad_assembly::joint_pick_first_anchor_for_test(&mut app.joint_ctx());
         assert!(
             matches!(picked, Some(qymcad_core::feature::AnchorRef::FaceCenter(b, _)) if b == body),
             "a part was clicked — ITS face must be taken, and what was taken is {picked:?}; status: {}",

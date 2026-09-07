@@ -17,20 +17,29 @@ impl Point2 {
         Self { x, y }
     }
 
-    pub fn sub(self, o: Point2) -> Point2 {
-        Point2::new(self.x - o.x, self.y - o.y)
-    }
-
-    pub fn add(self, o: Point2) -> Point2 {
-        Point2::new(self.x + o.x, self.y + o.y)
-    }
-
     pub fn len(self) -> f64 {
         self.x.hypot(self.y)
     }
 
     pub fn dist(self, o: Point2) -> f64 {
-        self.sub(o).len()
+        (self - o).len()
+    }
+}
+
+// THE OPERATORS THEMSELVES, not methods named after them. `a.sub(b)` looked like a call to
+// `std::ops::Sub::sub` and was not one: a reader had to check which of the two was being called, and the
+// two could have drifted apart without a word.
+impl std::ops::Sub for Point2 {
+    type Output = Point2;
+    fn sub(self, o: Point2) -> Point2 {
+        Point2::new(self.x - o.x, self.y - o.y)
+    }
+}
+
+impl std::ops::Add for Point2 {
+    type Output = Point2;
+    fn add(self, o: Point2) -> Point2 {
+        Point2::new(self.x + o.x, self.y + o.y)
     }
 }
 
@@ -757,26 +766,22 @@ pub fn stitch_segments(segs: Vec<(Point2, Point2)>, tol: f64) -> Vec<Contour> {
                     break;
                 }
             }
-            match matched {
-                Some((i, at_head, rev)) => {
-                    let mut s = chains.remove(i);
-                    if rev {
-                        s.reverse();
-                    }
-                    if at_head {
-                        s.pop();
-                        s.extend(chain);
-                        chain = s;
-                    } else {
-                        chain.extend(s.into_iter().skip(1));
-                    }
-                }
-                None => break,
+            let Some((i, at_head, rev)) = matched else { break };
+            let mut s = chains.remove(i);
+            if rev {
+                s.reverse();
+            }
+            if at_head {
+                s.pop();
+                s.extend(chain);
+                chain = s;
+            } else {
+                chain.extend(s.into_iter().skip(1));
             }
         }
         let mut pts: Vec<Point2> = Vec::with_capacity(chain.len());
         for p in chain {
-            if pts.last().map_or(true, |l: &Point2| l.dist(p) > tol) {
+            if pts.last().is_none_or(|l: &Point2| l.dist(p) > tol) {
                 pts.push(p);
             }
         }
@@ -818,14 +823,14 @@ pub fn dogbone_overcuts(contour: &Contour, length: f64) -> Vec<(Point2, Point2)>
         let prev = p[(i + n - 1) % n];
         let v = p[i];
         let next = p[(i + 1) % n];
-        let t1 = norm(v.sub(prev));
-        let t2 = norm(next.sub(v));
+        let t1 = norm(v - prev);
+        let t2 = norm(next - v);
         // Sharp corners only, meaning a turn of more than about 60 degrees.
         if t1.x * t2.x + t1.y * t2.y > 0.5 {
             continue;
         }
-        let mut bis = norm(t2.sub(t1));
-        let outward = v.sub(centroid);
+        let mut bis = norm(t2 - t1);
+        let outward = v - centroid;
         if bis.x * outward.x + bis.y * outward.y < 0.0 {
             bis = Point2::new(-bis.x, -bis.y);
         }
@@ -1261,7 +1266,7 @@ pub fn mesh_section_cap(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Vec<
         .collect();
     let mut tris: Vec<[Point3; 3]> = Vec::new();
     for (i, c) in loops.iter().enumerate() {
-        if depth[i] % 2 != 0 {
+        if !depth[i].is_multiple_of(2) {
             continue; // A hole; the material around it comes from its parent loop.
         }
         // The direct children of this loop are its holes.

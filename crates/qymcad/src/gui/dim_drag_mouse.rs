@@ -28,7 +28,7 @@ mod tests {
     fn sketch_with_a_dimension() -> (App, egui::Context, usize) {
         let mut app = App::default();
         let part = app.project.add_component("Part");
-        app.enter_component_for_test(part);
+        app.enter_component(part);
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         let sid = app.project.sketches[si].id;
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 25.0, qymcad_core::feature::Purpose::Real);
@@ -47,16 +47,16 @@ mod tests {
 
         // THE SKETCH CANVAS IS TWO-DIMENSIONAL, and the way into the edit is the one a person takes:
         // the sketch is selected and the session is open
-        app.mode_3d = false;
-        app.sel = super::super::Sel::Sketch(si);
+        app.viewing.mode_3d = false;
+        app.chosen.sel = super::super::Sel::Sketch(si);
         app.sketch_ses.editing = Some(sid);
-        app.view.scale = 5.0;
-        app.view.center = super::super::Vec2::new(20.0, 12.0);
-        app.view.initialized = true;
+        app.viewing.view.scale = 5.0;
+        app.viewing.view.center = super::super::Vec2::new(20.0, 12.0);
+        app.viewing.view.initialized = true;
 
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
-        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport(c));
         (app, ctx, si)
     }
 
@@ -78,23 +78,23 @@ mod tests {
     fn the_dimension_label_follows_the_mouse() {
         let (mut app, ctx, si) = sketch_with_a_dimension();
         let before = label_offset(&app, si);
-        let rect = app.view_rect_for_test();
+        let rect = app.viewing.view_rect;
         assert!(rect.is_positive(), "setup: the canvas did not lay out");
 
         // the caption stands by the middle of the bottom side — exactly where it is drawn
-        let mid = app.to_screen_for_test(rect, qymcad_core::geom::Point2::new(20.0, 0.0));
-        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(mid)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![press(mid, true)]), |c| app.viewport_for_test(c));
+        let mid = (qymcad_ui_state::Sheet { view: app.viewing.view, rect: rect }).at(qymcad_core::geom::Point2::new(20.0, 0.0));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(mid)]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![press(mid, true)]), |c| app.viewport(c));
 
         // DRAG OVER SEVERAL FRAMES: the grab is decided not by the press but when the motion is
         // recognised as a drag
         let mut grabbed = false;
         for k in 1..=4 {
             let p = mid + egui::vec2(0.0, 12.0 * k as f32);
-            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport_for_test(c));
-            grabbed |= matches!(app.drag, super::super::Dragging::Dim(_));
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(p)]), |c| app.viewport(c));
+            grabbed |= matches!(app.tools.drag, super::super::Dragging::Dim(_));
         }
-        let _ = ctx.run_ui(frame(vec![press(mid + egui::vec2(0.0, 48.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(mid + egui::vec2(0.0, 48.0), false)]), |c| app.viewport(c));
 
         assert!(grabbed, "the dimension caption was not taken by the mouse: there is nothing to drag the leader aside with, and the dimensions keep crawling over each other");
         let after = label_offset(&app, si);
@@ -103,7 +103,7 @@ mod tests {
             "the caption was taken but the offset did not change: it was {before}, it became {after} — the label did not follow the cursor"
         );
         assert!(after.is_finite(), "the offset stopped being a number: {after}");
-        assert!(matches!(app.drag, super::super::Dragging::None), "after the release the grab must be let go");
+        assert!(matches!(app.tools.drag, super::super::Dragging::None), "after the release the grab must be let go");
     }
 
     /// A DRAG IN EMPTY SPACE IS A RUBBER BAND, NOT A DIMENSION.
@@ -117,25 +117,25 @@ mod tests {
     fn dragging_empty_space_starts_a_rubber_band_and_leaves_the_dimension_alone() {
         let (mut app, ctx, si) = sketch_with_a_dimension();
         let before = label_offset(&app, si);
-        let center_before = app.view.center;
-        let rect = app.view_rect_for_test();
+        let center_before = app.viewing.view.center;
+        let rect = app.viewing.view_rect;
 
         let far = egui::pos2(rect.min.x + 10.0, rect.min.y + 10.0);
-        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(far)]), |c| app.viewport_for_test(c));
-        let _ = ctx.run_ui(frame(vec![press(far, true)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(far)]), |c| app.viewport(c));
+        let _ = ctx.run_ui(frame(vec![press(far, true)]), |c| app.viewport(c));
         let mut box_started = false;
         for k in 1..=4 {
-            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(far + egui::vec2(15.0 * k as f32, 0.0))]), |c| app.viewport_for_test(c));
-            box_started |= app.tree_sel.box_start.is_some();
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(far + egui::vec2(15.0 * k as f32, 0.0))]), |c| app.viewport(c));
+            box_started |= app.chosen.tree_sel.box_start.is_some();
         }
-        let _ = ctx.run_ui(frame(vec![press(far + egui::vec2(60.0, 0.0), false)]), |c| app.viewport_for_test(c));
+        let _ = ctx.run_ui(frame(vec![press(far + egui::vec2(60.0, 0.0), false)]), |c| app.viewport(c));
 
         assert!(box_started, "a drag in empty space did not start a rubber band — the left button in a sketch must select with a band");
         assert!((label_offset(&app, si) - before).abs() < 1e-9, "a drag in empty space moved the dimension caption");
         assert!(
-            (app.view.center.x - center_before.x).abs() < 1e-9 && (app.view.center.y - center_before.y).abs() < 1e-9,
+            (app.viewing.view.center.x - center_before.x).abs() < 1e-9 && (app.viewing.view.center.y - center_before.y).abs() < 1e-9,
             "the rubber band moved the view along with it: the centre was {center_before:?}, it became {:?}",
-            app.view.center
+            app.viewing.view.center
         );
     }
 }

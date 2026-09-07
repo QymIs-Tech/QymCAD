@@ -9,10 +9,12 @@
 // narrowly on this module.
 #![allow(dead_code)]
 
+pub use qymcad_ui_state::PartSource;
+pub use qymcad_ui_state::{LibraryTree, CatNode, PartEntry};
 use std::path::{Path, PathBuf};
 
 use include_dir::{include_dir, Dir, DirEntry};
-use qymcad_core::part::{CategoryMeta, PartManifest};
+use qymcad_core::part::CategoryMeta;
 
 /// The built-in catalogue: baked into the binary at build time (`build.rs` watches `../../library`).
 /// It works on every target (a portable .exe, an AppImage, macOS) — no external files are needed
@@ -102,82 +104,23 @@ fn category_paths_in(root: &Path) -> Vec<String> {
     out
 }
 
-/// Where a part comes from: built in (read-only) or a file of the user's own on disk.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PartSource {
-    /// A path inside the built-in catalogue (relative to the root `library/parts`).
-    Embedded(String),
-    /// The absolute path of a `.qpart` on disk.
-    User(PathBuf),
-}
 
-/// A leaf part in the tree of the catalogue. The manifest is loaded lazily (only `part.ron`, without
-/// `document.ron`).
-#[derive(Clone, Debug)]
-pub struct PartEntry {
-    /// The name from the manifest (or the file name as a stand-in, if the manifest does not read).
-    pub name: String,
-    /// The file name without the `.qpart` extension (the key for creating, reading and deleting).
-    pub file_stem: String,
-    pub source: PartSource,
-    pub manifest: Option<PartManifest>,
-}
+/// Build the tree: the built-in catalogue from the baked-in bytes plus a scan of the user's data
+/// directory.
+pub fn load_library_tree() -> LibraryTree {
+    let mut embedded = build_embedded(&EMBEDDED_PARTS, &crate::i18n::tr("pl-builtin"));
+    embedded.sort_recursive();
 
-/// A category node is a folder. It holds subcategories and parts.
-#[derive(Clone, Debug, Default)]
-pub struct CatNode {
-    /// The name shown (`category.ron.title` or the name of the folder; for the roots, the built-in and
-    /// the user's own captions).
-    pub title: String,
-    /// The order among siblings (from `category.ron`); equal ones go alphabetically by `title`.
-    pub order: i32,
-    /// The `ph::*` icon of the node (from `category.ron`), without the prefix.
-    pub icon: Option<String>,
-    pub subcats: Vec<CatNode>,
-    pub parts: Vec<PartEntry>,
-}
+    // Portable mode (a `library/` folder beside the executable) — the root is marked so that where
+    // the parts are written is visible.
+    let user_title = if user_tier_is_portable() { crate::i18n::tr("pl-mine-portable") } else { crate::i18n::tr("pl-mine") };
+    let mut user = match user_parts_dir() {
+        Some(dir) => build_user(&dir, &user_title),
+        None => CatNode { title: user_title, ..Default::default() },
+    };
+    user.sort_recursive();
 
-impl CatNode {
-    /// The total number of parts in the subtree (for badges and empty states).
-    pub fn total_parts(&self) -> usize {
-        self.parts.len() + self.subcats.iter().map(CatNode::total_parts).sum::<usize>()
-    }
-
-    fn sort_recursive(&mut self) {
-        self.subcats.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.title.cmp(&b.title)));
-        self.parts.sort_by(|a, b| a.name.cmp(&b.name));
-        for c in &mut self.subcats {
-            c.sort_recursive();
-        }
-    }
-}
-
-/// The merged tree of the catalogue: two roots (the built-in one and the user's own). Clashes of names
-/// between the tiers are NOT merged — each stays under its own root.
-#[derive(Clone, Debug, Default)]
-pub struct LibraryTree {
-    pub embedded: CatNode,
-    pub user: CatNode,
-}
-
-impl LibraryTree {
-    /// Build the tree: the built-in catalogue from the baked-in bytes plus a scan of the user's data
-    /// directory.
-    pub fn load() -> Self {
-        let mut embedded = build_embedded(&EMBEDDED_PARTS, &crate::i18n::tr("pl-builtin"));
-        embedded.sort_recursive();
-
-        // Portable mode (a `library/` folder beside the executable) — the root is marked so that where
-        // the parts are written is visible.
-        let user_title = if user_tier_is_portable() { crate::i18n::tr("pl-mine-portable") } else { crate::i18n::tr("pl-mine") };
-        let mut user = match user_parts_dir() {
-            Some(dir) => build_user(&dir, &user_title),
-            None => CatNode { title: user_title, ..Default::default() },
-        };
-        user.sort_recursive();
-
-        LibraryTree { embedded, user }
-    }
+    LibraryTree { embedded, user }
 }
 
 /// Parse `category.ron` (as bytes) into metadata; on an error, the default.
@@ -277,6 +220,7 @@ fn build_user(dir: &Path, title_override: &str) -> CatNode {
 
 #[cfg(test)]
 mod tests {
+    use qymcad_core::part::PartManifest;
     use super::*;
     use qymcad_core::geom::{Contour, Point2};
     use qymcad_core::model::Project;
@@ -445,7 +389,7 @@ mod i18n_tests {
             }
         }
         let mut out = Vec::new();
-        walk(&LibraryTree::load().embedded, &mut out);
+        walk(&crate::parts_library::load_library_tree().embedded, &mut out);
         out
     }
 

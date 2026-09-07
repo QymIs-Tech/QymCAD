@@ -79,7 +79,7 @@ mod tests {
         };
 
         // The fixture holds a document with work in it that has never been saved, so the mark belongs there.
-        app.set_project_path("/tmp/Bracket.qcad".into());
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, "/tmp/Bracket.qcad".into());
         let first = ctx.run_ui(raw(), |c| app.keep_the_title_current(c.ctx()));
         assert_eq!(titles(&first), vec!["QymCAD — Bracket *".to_string()], "the window was not told the new title");
 
@@ -87,7 +87,7 @@ mod tests {
         assert!(titles(&again).is_empty(), "the title was sent a second time although nothing changed");
 
         // AND THE MARK GOES AWAY WHEN THE WORK IS SAVED. A mark that only ever appears is not a signal.
-        app.edits.saved_key = app.edit_key();
+        app.disk.edits.saved_key = qymcad_ui_state::edit_key(&app.draw_ctx());
         let saved = ctx.run_ui(raw(), |c| app.keep_the_title_current(c.ctx()));
         assert_eq!(titles(&saved), vec!["QymCAD — Bracket".to_string()], "the title still claims unsaved work");
     }
