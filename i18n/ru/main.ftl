@@ -1547,6 +1547,7 @@ act-clear-rollback = Снять откат
 act-move-up = Выше
 act-move-down = Ниже
 act-delete-feature = Удалить фичу (с телом)
+act-delete-part = Удалить (со всем содержимым)
 act-edit-array = Правка массива
 act-paste-here = Вставить сюда (Ctrl+V)
 act-export-step = Экспорт в STEP…

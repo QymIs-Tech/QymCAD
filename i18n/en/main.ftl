@@ -1547,6 +1547,7 @@ act-clear-rollback = Clear the rollback
 act-move-up = Up
 act-move-down = Down
 act-delete-feature = Delete the feature (with its body)
+act-delete-part = Delete (with everything in it)
 act-edit-array = Edit the pattern
 act-paste-here = Paste here (Ctrl+V)
 act-export-step = Export to STEP…

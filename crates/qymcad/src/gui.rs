@@ -11560,6 +11560,8 @@ mod copy_puts_the_tool_down;
 mod thread_runout_look;
 mod the_view_belongs_to_the_person;
 mod escape_with_an_open_list;
+mod the_cancel_button_cancels;
+mod the_part_menu_can_delete;
 mod expr_field_behaviour;
 mod params_table_gesture;
 mod dim_popup_gesture;

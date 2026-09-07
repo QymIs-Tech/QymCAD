@@ -1227,6 +1227,19 @@ impl App {
                                 act = Some(7);
                                 ui.close();
                             }
+                            // THE WAY OUT, BY THE SAME QUESTION AS EVERYWHERE ELSE. Reported behaviour: the menu
+                            // offers Cut and Copy and no Delete, so the one destructive action of the three had
+                            // to be reached another way - select the row, find the Del key. The item goes
+                            // through `ask_delete`, not through the kernel: a second route to one action must
+                            // decide nothing of its own. The root is left out, as with renaming: it cannot be
+                            // deleted, and an item that does nothing is worse than none.
+                            if cid != self.project.root {
+                                ui.separator();
+                                if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("act-delete-part"))).clicked() {
+                                    act = Some(8);
+                                    ui.close();
+                                }
+                            }
                         });
                         match act {
                             Some(1) => {
@@ -1245,6 +1258,10 @@ impl App {
                             Some(5) => self.stl_export = Some(ExportTarget::Component(cid)),
                             Some(6) => self.start_rename_node(RenameNode::Component(cid), name.clone()),
                             Some(7) => self.open_save_part_dialog(cid),
+                            Some(8) => {
+                                self.sel = Sel::Component(ci);
+                                self.ask_delete(Sel::Component(ci));
+                            }
                             _ => {}
                         }
                     });

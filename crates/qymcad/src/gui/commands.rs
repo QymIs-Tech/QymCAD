@@ -3109,6 +3109,9 @@ impl App {
         let hide_d2 = self.cmd.kind == 5 && self.chamfer.mode == qymcad_core::feature::ChamferMode::Symmetric;
         let mut params = std::mem::take(&mut self.cmd.params);
         let mut apply = false;
+        // The cancel is taken here and acted on AFTER the popup is drawn: `cancel_feat_cmd` closes the
+        // command whole, and the closure below is still holding its parameters.
+        let mut cancel = false;
         // THE FIELDS AT THE GEOMETRY, EACH AT ITS OWN PLACE. The radius at a vertex is shown AT THAT VERTEX:
         // six identical fields in a common column cannot be told apart, and which of them is which corner is
         // the only thing that matters here.
@@ -3187,8 +3190,13 @@ impl App {
                     if ui.add_enabled(ready && all_ok, egui::Button::new(egui::RichText::new(format!("{} {}", ph::CHECK, crate::i18n::tr("cmd-apply-enter"))).strong())).clicked() {
                         apply = true;
                     }
-                    if ui.button("Esc").clicked() {
-                        // the cancel is handled below, after the params are returned
+                    // THE BUTTON DOES WHAT THE KEY DOES. Reported behaviour: pressing it changes nothing -
+                    // the popup stays, the command stays. The click was read into an empty body, under a
+                    // comment claiming the cancel happened below; below there was only the apply. A button
+                    // that answers a click with nothing is worse than no button: it says the way out is
+                    // here, and it is not.
+                    if ui.button(crate::i18n::tr("cmd-cancel-esc")).clicked() {
+                        cancel = true;
                     }
                 });
                 // AN ERROR MATTERS MORE THAN A HINT. The reason used to be shown only once the command was
@@ -3203,7 +3211,9 @@ impl App {
             });
         });
         self.cmd.params = params;
-        if apply {
+        if cancel {
+            self.cancel_feat_cmd();
+        } else if apply {
             self.apply_feat_cmd();
         }
     }
