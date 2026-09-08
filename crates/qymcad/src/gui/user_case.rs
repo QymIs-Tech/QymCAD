@@ -1999,9 +1999,16 @@ mod tests {
                     if let Some((x, y)) = far {
                         Hand::new(&mut app).drag2d((x, y), (x + 7.0, y + 7.0));
                     }
+                    // LEAVING IS CTRL+ENTER, and Esc must NOT do it: Esc gives a tool back, finishing a
+                    // context is the same act as leaving a part. The scenario used to press Esc here, which
+                    // is exactly the behaviour that was reported and removed.
                     app.on_escape();
+                    if qymcad_ui_state::edit_si(&app.project, &app.sketch_ses) != Some(si) {
+                        problems.push("Esc left sketch editing: it must only put a tool or a selection down".into());
+                    }
+                    app.exit_context();
                     if qymcad_ui_state::edit_si(&app.project, &app.sketch_ses) == Some(si) {
-                        problems.push("Esc did not leave sketch editing".into());
+                        problems.push("Ctrl+Enter did not leave sketch editing".into());
                     }
                     qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     let vol_after = app.project.mesh_index(body).and_then(|mi| app.project.bodies[mi].mesh.bounds()).map(|b| (b.max.x - b.min.x) * (b.max.y - b.min.y) * (b.max.z - b.min.z));

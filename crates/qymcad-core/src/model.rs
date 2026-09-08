@@ -2942,6 +2942,24 @@ impl Project {
         part
     }
 
+    /// AN EMPTY DOCUMENT: the root assembly and nothing else.
+    ///
+    /// Reported behaviour: "in an empty project remove the empty part - a person opens the CAD and sees an
+    /// empty part; the first time round that spoils everything." A part nobody asked for is not a starting
+    /// point, it is a thing to delete before starting.
+    ///
+    /// SEPARATE FROM `new_document` rather than a flag on it. `new_document` is what "New part" gives, and
+    /// there the part is exactly what was asked for; the two are different answers to different questions,
+    /// and a boolean argument would make every call site say which question it is asking.
+    ///
+    /// The root is still made: a document without one has nowhere to put anything, and the tree would show
+    /// an empty pane rather than a document.
+    pub fn new_empty_document(&mut self) -> Id {
+        let root = self.ensure_root();
+        self.set_active_component(None); // the context is the root itself, not a part inside it
+        root
+    }
+
 
 
 

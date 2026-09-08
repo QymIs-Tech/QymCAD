@@ -359,7 +359,12 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             }
             // a selection in the tree (a contour or a sketch) is bright green; one in an operation is yellow
             let in_sketch = sketch_sel.as_ref().is_some_and(|ids| cid.is_some_and(|id| ids.contains(&id)));
-            let (w, col) = if obj_sel == Some(ci) || in_sketch {
+            // THE SKETCH UNDER THE CURSOR while a tool waits for one - lit the way a face or an edge is lit
+            // under the tools that ask for those, so that pointing at it looks like pointing at anything else.
+            let hovered = pn.hover.sketch_3d.and_then(|hi| pn.project.sketches.get(hi)).is_some_and(|sk| cid.is_some_and(|id| sk.contour_ids.contains(&id)));
+            let (w, col) = if hovered {
+                (2.5, pn.scheme.pal.highlight())
+            } else if obj_sel == Some(ci) || in_sketch {
                 (2.5, pn.scheme.pal.ok())
             } else if cid.is_some_and(|id| selected.contains(&id)) {
                 (2.0, pn.scheme.pal.active())

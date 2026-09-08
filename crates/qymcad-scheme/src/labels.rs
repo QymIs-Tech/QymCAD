@@ -54,6 +54,11 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
         ("states", vec![
             "ok", "ok_soft", "underdefined", "warning", "error", "error_mild",
         ]),
+        // THE TWO ANSWERS OF A COMMAND, a group of their own: they are not states of the model and not
+        // the interface's own furniture, they are the colours of the two buttons every command ends with.
+        ("actions", vec![
+            "confirm", "refuse",
+        ]),
         ("viewcube", vec![
             "viewcube_face", "viewcube_edge",
         ]),

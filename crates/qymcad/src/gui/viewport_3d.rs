@@ -10,6 +10,16 @@ use super::*;
 // THE 3D VIEWPORT moved here from `gui.rs`, with phases of its own: what was grabbed -> drive what was
 // grabbed -> a click by mode -> drawing. The same skeleton as the sketch viewport in `sketching.rs`: one shape
 // reads the same way everywhere and does not have to be reconstructed on the spot.
+/// HOW FAR THE POINTER MOVED FOR A NAVIGATION GESTURE.
+///
+/// THE RAW POINTER DELTA IS FOR THE BUTTONLESS GESTURE ALONE. A touchpad layout moves the view with no
+/// button held, so egui reports no drag and there is nothing else to ask. Reaching for it whenever
+/// `drag_delta` came back zero was wrong and showed itself at once: dragging an open window by its title
+/// bar moved the pointer, and the camera turned along with the window.
+fn nav_delta(ctx: &egui::Context, resp: &egui::Response, g: &qymcad_ui_state::Gesture) -> egui::Vec2 {
+    if g.buttons.is_empty() && !g.any_button { ctx.input(|i| i.pointer.delta()) } else { resp.drag_delta() }
+}
+
 impl App {
     /// THE 3D VIEWPORT: camera orbiting, grabbing the gizmo handles, picking, drawing the bodies.
     #[allow(clippy::too_many_arguments)]
@@ -24,6 +34,8 @@ impl App {
                 if let Some(p) = resp.hover_pos().filter(|p| rect.contains(*p)) {
                     self.chosen.hover.joint = qymcad_assembly::joint_glyph_at(&mut self.joint_ctx(), rect, p);
                 }
+                // the sketch under the cursor lights up while a tool waits for one - see `sketch_hover_3d`
+                self.chosen.hover.sketch_3d = crate::gui::pick::sketch_hover_3d(&self.painting(), rect, resp.hover_pos(), self.tools.picking.sketch_for());
                 let basis3 = self.viewing.cam.basis();
                 // hover highlighting of a DOF gizmo handle (while nothing is being dragged) - it shows what to grab
                 if !qymcad_assembly::joint_drag_active(&self.side.joint, &self.dragged.part_pull) {
@@ -38,7 +50,8 @@ impl App {
                 // WHILE DRAGGING IN 3D: the section, the gizmo, the camera orbit or pan
                 self.viewport_3d_drag_update(ctx, resp, rect, &basis3);
                 if scroll != 0.0 && resp.hovered() {
-                    self.viewing.cam.scale = (self.viewing.cam.scale * (scroll * 0.002).exp()).clamp(0.05, 400.0);
+                    let part = crate::gui::commands::cmd_anchor_screen(&mut self.part_ctx(), rect); // where the open command's fields stand
+                    qymcad_ui_state::wheel_zoom_3d(&mut self.viewing.cam, &self.set, rect, resp.hover_pos(), part, scroll);
                 }
                 // "EXPAND THE SELECTION" - THE RIGHT BUTTON ON WHAT IS PICKED.
                 //
@@ -343,19 +356,18 @@ impl App {
                     if resp.drag_stopped() {
                         self.commit_body_gizmo(self.dragged.body_giz.snap);
                     }
-                } else if resp.dragged() {
-                    let d = resp.drag_delta();
-                    if ctx.input(|i| i.modifiers.shift) {
-                        let (right, up, _) = self.viewing.cam.basis();
-                        let k = 1.0 / self.viewing.cam.scale as f64;
-                        for a in 0..3 {
-                            self.viewing.cam.target[a] -= d.x as f64 * right[a] * k;
-                            self.viewing.cam.target[a] += d.y as f64 * up[a] * k;
-                        }
-                    } else {
-                        self.viewing.cam.yaw -= d.x as f64 * 0.01;
-                        self.viewing.cam.pitch = (self.viewing.cam.pitch + d.y as f64 * 0.01).clamp(-1.5, 1.5);
+                } else if self.set.mouse_nav.pan().active(ctx, resp) {
+                    let d = nav_delta(ctx, resp, &self.set.mouse_nav.pan());
+                    let (right, up, _) = self.viewing.cam.basis();
+                    let k = 1.0 / self.viewing.cam.scale as f64;
+                    for a in 0..3 {
+                        self.viewing.cam.target[a] -= d.x as f64 * right[a] * k;
+                        self.viewing.cam.target[a] += d.y as f64 * up[a] * k;
                     }
+                } else if self.set.mouse_nav.rotate().active(ctx, resp) {
+                    let d = nav_delta(ctx, resp, &self.set.mouse_nav.rotate());
+                    self.viewing.cam.yaw -= d.x as f64 * 0.01;
+                    self.viewing.cam.pitch = (self.viewing.cam.pitch + d.y as f64 * 0.01).clamp(-1.5, 1.5);
                 }
     }
 
@@ -390,19 +402,15 @@ impl App {
                         if self.dragged.body_giz.num.is_some() {
                             // no-op: the popup commits itself
                         }
-                        // a body-to-body boolean: waiting for a click on body B to create BodyBoolean(A, B, op)
-                        else if let Some((a, op)) = self.params.boolean.pick {
-                            match crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi)) {
-                                Some(b) if b != a => {
-                                    let res = self.project.add_body_boolean(a, b, op);
-                                    self.params.boolean.pick = None;
-                                    qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the scheduler does the computing
-                                    qymcad_ui_state::select_body(&mut self.project, &mut self.chosen.sel, &mut self.viewing.view, res);
-                                    self.status = crate::i18n::tr("vp-bool-created");
-                                }
-                                Some(_) => self.status = crate::i18n::tr("vp-this-is-a"),
-                                None => self.status = crate::i18n::tr("vp-miss-body-b"),
-                            }
+                        // a body-to-body boolean: the click names body B - see `take_boolean_pick`
+                        else if self.params.boolean.pick.is_some() {
+                            let hit = crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi));
+                            qymcad_part::take_boolean_pick(&mut self.part_ctx(), hit);
+                        }
+                        // A WAITING TOOL: the click names the sketch. High in the chain - see `name_the_sketch`.
+                        else if self.tools.picking.sketch_for().is_some() {
+                            let hit = crate::gui::pick::sketch_at_3d(&self.painting(), rect, pos);
+                            qymcad_part::name_the_sketch(&mut self.part_ctx(), hit);
                         }
                         // a click on the ViewCube snaps the view
                         // the ViewCube has 26 zones (faces, edges, corners) + a home button; the turn is smooth

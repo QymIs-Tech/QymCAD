@@ -26,6 +26,11 @@ mod tests {
             hotkeys: [("part.extrude".to_string(), "W".to_string())].into_iter().collect(),
             help_lang: "en".into(),
             help_external: !d.help_external,
+            open_last: !d.open_last,
+            show_start_screen: !d.show_start_screen,
+            mouse_nav: qymcad_ui_state::MouseNav::Blender,
+            zoom_at: qymcad_ui_state::ZoomAt::ViewCentre, // the factory value is Cursor
+            zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual, // the factory value is PartCentre
             msaa: 8,
             autosave_secs: 600,
             undo_cap: 7,
@@ -65,6 +70,11 @@ mod tests {
         assert_eq!(a.auto_constrain, b.auto_constrain, "the automatic constraints");
         assert_eq!(a.defaults.extrude_h, b.defaults.extrude_h, "the height of an extrusion");
         assert_eq!(a.defaults.offset_2d, b.defaults.offset_2d, "the 2D offset");
+        assert_eq!(a.open_last, b.open_last, "reopening the previous project");
+        assert_eq!(a.show_start_screen, b.show_start_screen, "letting the start screen come up");
+        assert_eq!(a.mouse_nav, b.mouse_nav, "which button moves the view");
+        assert_eq!(a.zoom_at, b.zoom_at, "where the view zooms from");
+        assert_eq!(a.zoom_editing, b.zoom_editing, "where the view zooms from while a command is open");
     }
 
     /// THE MAIN THING: EVERY setting survives the save-and-load round trip.

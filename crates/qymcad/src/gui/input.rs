@@ -105,6 +105,10 @@ impl App {
                 self.on_escape();
             }
         }
+        // F2 renames whatever is selected - the key every tree a person has used renames by
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F2)) {
+            qymcad_ui_state::rename_selected(&self.project, &mut self.side.rename, self.chosen.sel);
+        }
         // Delete removes the selected entities of a sketch (while editing one)
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
             // OUTSIDE the editing of a sketch: any structural node of the tree (a feature, a body, a
@@ -118,47 +122,7 @@ impl App {
                     self.deferred.delete = Some(self.chosen.sel);
                 }
             } else if let Sel::Sketch(si) = self.chosen.sel {
-                // priority: a text object
-                if let Some(ti) = self.tools.annot.text.take() {
-                    if ti < self.project.sketches[si].texts.len() {
-                        self.project.delete_sketch_text(si, ti);
-                        qymcad_ui_state::invalidate(&mut self.regen);
-                        self.status = crate::i18n::tr("in-text-deleted");
-                    }
-                } else if let Some(ni) = self.tools.annot.note.take() {
-                    if ni < self.project.sketches[si].notes.len() {
-                        self.project.sketches[si].notes.remove(ni);
-                        self.status = crate::i18n::tr("in-note-deleted");
-                    }
-                } else if let Some(ci) = self.tools.gsel.constraint.take() {
-                    if ci < self.project.sketches[si].constraints.len() {
-                        self.project.delete_sketch_constraint(si, ci); // also cleans up an orphaned midpoint
-                        qymcad_ui_state::invalidate(&mut self.regen);
-                        self.status = crate::i18n::tr("in-constraint-deleted");
-                    }
-                } else {
-                    let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
-                    // system points (the origin and the axes) and DRIVEN ones (projections of a body)
-                    // are not deleted one by one
-                    let sys: std::collections::HashSet<Id> = {
-                        let s = &self.project.sketches[si];
-                        s.immovable_points()
-                    };
-                    let pids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
-                    if !eids.is_empty() || !pids.is_empty() {
-                        if !eids.is_empty() {
-                            self.project.delete_entities(si, &eids);
-                        }
-                        if !pids.is_empty() {
-                            // delete the points together with the lines and arcs incident to them
-                            self.project.delete_points(si, &pids);
-                        }
-                        self.project.solve_sketch(si);
-                        self.tools.sel_sk.clear(); // the selection and whatever was waiting for it
-                        qymcad_ui_state::invalidate(&mut self.regen);
-                        self.status = crate::i18n::tr("in-deleted");
-                    }
-                }
+                qymcad_sketch::delete_selected_in_sketch(&mut self.sketch_ctx(), si);
             }
         }
         // Ctrl+A selects all the geometry of the active sketch (entities and points)
@@ -312,12 +276,9 @@ impl App {
         } else if self.tools.pending_import.curves.is_some() {
             self.tools.pending_import.curves = None;
             self.status = crate::i18n::tr("in-import-cancelled");
-        } else if self.tools.picking.replace_sketch().is_some() {
-            self.tools.picking.clear(); // cancelling the re-placing of a sketch
-            self.status = crate::i18n::tr("in-sketch-move-cancelled");
-        } else if self.tools.picking.is_sketch_plane() {
-            self.tools.picking.clear();
-            self.status = crate::i18n::tr("in-sketch-plane-cancelled");
+        } else if let Some(k) = self.tools.picking.cancel_key() {
+            self.tools.picking.clear(); // the modes Escape simply puts down; the words come from the mode itself
+            self.status = crate::i18n::tr(k);
         } else if self.tools.picking.plane_face().is_some() {
             self.tools.picking.set_plane_face(None);
             self.status = crate::i18n::tr("in-plane-face-cancelled");
@@ -363,20 +324,13 @@ impl App {
             self.tools.dim.first = None;
         } else if self.tools.dim.first.is_some() {
             self.tools.dim.first = None; // cancel the first reference (the point)
-        } else if self.tools.armed.dim_kind() != 0 {
-            self.tools.armed = qymcad_ui_state::Armed::None;
-            self.tools.dim.pick.clear();
         } else if !self.tools.tool.pts.is_empty() {
             self.tools.tool.pts.clear(); // break off the construction under way
-        } else if self.tools.armed.draw_kind() != 0 {
-            self.tools.armed = qymcad_ui_state::Armed::None; // leave the tool for the selection mode
-        } else if self.tools.armed.measuring() {
-            // Measuring a distance is a tool like any other, and ESC must return to Select (the arrow)
-            // rather than close the sketch. It simply was not in the ladder, and ESC fell through to
-            // `finish_sketch_edit`.
-            self.tools.armed = qymcad_ui_state::Armed::None;
-            self.tools.measure.pts.clear();
-            self.status = crate::i18n::tr("in-measure-cancelled");
+        } else if let Some(msg) = qymcad_ui_state::release_armed_sketch_tool(&mut qymcad_ui_state::tools_of!(self)) {
+            // ONE RUNG FOR EVERY SKETCH TOOL IN HAND, and the tool itself says what to clear. There used to
+            // be a rung per family here and none for the editing tools, so mirror, offset, fillet, chamfer
+            // and the arrays could not be put down at all - reported on the mirror, true of all of them.
+            self.status = crate::i18n::tr(msg);
         } else if self.tools.pending_import.draw_pts.is_some() {
             self.tools.pending_import.draw_pts = None;
         } else if self.sketch_ses.editing.is_some() && (!self.tools.sel_sk.items.is_empty() || self.tools.annot.text.is_some() || self.tools.annot.note.is_some()) {
@@ -386,9 +340,9 @@ impl App {
             self.tools.annot.text = None;
             self.tools.annot.note = None;
             self.status = crate::i18n::tr("in-selection-cleared");
-        } else if self.sketch_ses.editing.is_some() {
-            self.finish_sketch_edit();
         } else {
+            // THE LADDER ENDS HERE: Esc gives things back, it does not finish a context. Leaving the
+            // sketch was the rung below; it is Ctrl+Enter now - see `the_sketch_is_left_by_ctrl_enter.rs`.
             self.chosen.sel = Sel::None;
         }
     }

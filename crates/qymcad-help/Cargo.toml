@@ -9,5 +9,11 @@ edition = "2021"
 include_dir = "0.7"
 qymcad-i18n = { path = "../qymcad-i18n" }
 
+# ONLY THE CHECKS KNOW ABOUT THE INTERFACE STATE, and only to hold the articles to it: the text describes
+# the mouse layouts, and a text describing a layout the program does not offer is worse than none. The crate
+# itself stays what it is - articles and nothing else.
+[dev-dependencies]
+qymcad-ui-state = { path = "../qymcad-ui-state" }
+
 [lints]
 workspace = true

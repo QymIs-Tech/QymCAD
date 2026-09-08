@@ -268,7 +268,7 @@ impl App {
                 crate::gui::commands::resync_after_topology_change(&mut self.part_ctx());
                 qymcad_ui_state::commit_edit(&mut self.rebuild_ctx());
             }
-            Some(8) => crate::gui::commands::start_rename(&self.project, &mut self.side.rename, nid),
+            Some(8) => qymcad_ui_state::start_rename(&self.project, &mut self.side.rename, nid),
             _ => {}
         }
     }
@@ -506,7 +506,7 @@ pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::U
                         }
                     });
                     if ren {
-                        crate::gui::commands::start_rename_node(&mut *tc.rename, RenameNode::Plane(plane), nm.clone());
+                        qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::Plane(plane), nm.clone());
                     }
                 });
             }
@@ -534,7 +534,7 @@ pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::U
                         }
                     });
                     if ren {
-                        crate::gui::commands::start_rename_node(&mut *tc.rename, RenameNode::DatumPoint(point), nm.clone());
+                        qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::DatumPoint(point), nm.clone());
                     }
                 });
             }
@@ -562,7 +562,7 @@ pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::U
                         }
                     });
                     if ren {
-                        crate::gui::commands::start_rename_node(&mut *tc.rename, RenameNode::DatumAxis(axis), nm.clone());
+                        qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::DatumAxis(axis), nm.clone());
                     }
                 });
             }
@@ -715,12 +715,7 @@ pub(crate) fn tree_sketch_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::
         });
     });
     match act {
-        Some(1) => {
-            tc.rename.sketch = Some(sid);
-            tc.rename.target = None; // do not clash with renaming a feature
-            tc.rename.buf = name;
-            tc.rename.focus = true;
-        }
+        Some(1) => qymcad_ui_state::start_rename_sketch(&mut *tc.rename, sid, name),
         Some(2) => qymcad_ui_state::ask_delete(&mut *tc.deferred, Sel::Sketch(si)),
         Some(3) => {
             *tc.sel = Sel::Sketch(si);
@@ -872,7 +867,7 @@ pub(crate) fn tree_body_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui
             }
         });
         if ren {
-            crate::gui::commands::start_rename_node(&mut *tc.rename, RenameNode::Body(mi), name.clone());
+            qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::Body(mi), name.clone());
         }
     });
 }
@@ -1296,7 +1291,7 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
                         }
                         Some(4) => tc.ask.push(qymcad_ui_state::TreeAsk::ExportStep(cid)),
                         Some(5) => *tc.stl_export = Some(ExportTarget::Component(cid)),
-                        Some(6) => crate::gui::commands::start_rename_node(&mut *tc.rename, RenameNode::Component(cid), name.clone()),
+                        Some(6) => qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::Component(cid), name.clone()),
                         Some(7) => tc.ask.push(qymcad_ui_state::TreeAsk::SavePart(cid)),
                         Some(8) => {
                             *tc.sel = Sel::Component(ci);

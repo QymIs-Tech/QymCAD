@@ -435,7 +435,11 @@ mod live_session {
         if app.params.draft.pick_neutral { tail.push("the draft") }
         if app.params.mirror.plane.is_some() { tail.push("the mirror") }
         if app.side.datum.plane_pick.is_some() { tail.push("the datum") }
-        if !matches!(app.tools.picking, Picking::None) { tail.push("the pick of a shape") }
+        // A COMMAND'S OWN WAIT IS NOT INHERITED TARGETING. The loft was started with no sketch selected, so
+        // it asks for one - `SketchFor(9)`, its own kind. What this guard is about is the PREVIOUS
+        // command's aim surviving, and `FilletAll` set above is gone either way; anything else in hand
+        // that does not belong to this command still counts.
+        if !matches!(app.tools.picking, Picking::None) && app.tools.picking.sketch_for() != Some(9) { tail.push("the pick of a shape") }
         assert!(tail.is_empty(), "the new command inherited the targeting: {}", tail.join(", "));
 
         // References are collected INSIDE a command (the contract of the tools), so a command must open

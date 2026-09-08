@@ -3,6 +3,11 @@
 
 use super::*;
 
+/// THE STEP THE INTERFACE SCALE SNAPS TO. Five hundredths: a scale of 1.37 is of no use to anybody, and
+/// with a drag speed of 0.01 per point every fifth point of the drag lands on a round number, which is what
+/// makes the drag aimable at all.
+const UI_SCALE_STEP: f32 = 0.05;
+
 impl App {
 
 
@@ -954,6 +959,15 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 });
                 ui.label(egui::RichText::new(crate::i18n::tr("settings-help-open-hint")).weak().small());
             }
+            // WHAT THE PROGRAM OPENS WITH: two independent answers, drawn as two ticks rather than as one
+            // list of three states. The person asked for exactly this pair, and the pair says plainly that
+            // "which document" and "am I greeted" are separate questions.
+            if show("settings-open-last") {
+                ui.checkbox(&mut wc.set.open_last, crate::i18n::tr("settings-open-last")).on_hover_text(crate::i18n::tr("settings-open-last-hint"));
+            }
+            if show("settings-show-start") {
+                ui.checkbox(&mut wc.set.show_start_screen, crate::i18n::tr("settings-show-start")).on_hover_text(crate::i18n::tr("settings-show-start-hint"));
+            }
             if show("settings-autosave") {
                 ui.horizontal(|ui| {
                     ui.label(crate::i18n::tr("settings-autosave"));
@@ -997,13 +1011,40 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
         }
         Sec::Appearance => {
             // THE INTERFACE SCALE is applied LIVE - choosing a size blind, with the window closed, is
-            // impossible. The step is coarse (10%): the intermediate values cannot be told apart by eye, and a
-            // fine step turns the choice into fiddling.
+            // impossible.
+            //
+            // NO DRAGGING HERE, and that is the point of the control rather than an omission.
+            //
+            // Reported behaviour, in two rounds. First: "egui lets you hold the left button and drag to
+            // raise and lower the value; with us that breaks straight away - the value jumps to a whole
+            // number instead of, say, 0.05." That much was arithmetic: `speed` is how far the value moves
+            // per POINT dragged and stood at 0.05 over a range of 0.5 to 3.0 - the whole range in fifty
+            // points. Measured with a real pointer: a twenty-point twitch took the scale from 1.00 to
+            // 1.70. Slowing it to 0.01 fixed the arithmetic and NOT the control.
+            //
+            // Then: "it still glitches - you move the mouse, the scale changes, the window under the
+            // mouse moves away, and the scale runs off further. Can this drag be turned off altogether?"
+            // That is a loop, not a speed: this setting is applied LIVE, so every value the drag produces
+            // resizes the very field being dragged. The pointer stays put while the widget travels out
+            // from under it, and the drag keeps feeding on its own output. No speed makes that aimable.
+            //
+            // So the value is stepped by two buttons, 0.05 at a time. A click is one discrete step - the
+            // window may relayout after it, and nothing has run away.
             if show("settings-ui-scale") {
                 ui.horizontal(|ui| {
                     ui.label(crate::i18n::tr("settings-ui-scale"));
                     let before = wc.set.ui_scale;
-                    ui.add(egui::DragValue::new(&mut wc.set.ui_scale).speed(0.05).range(0.5..=3.0).fixed_decimals(2));
+                    // THE MINUS AND PLUS STAND BEFORE THE NUMBER, so that changing it does not move them:
+                    // the number is two characters wide at 1.00 and three at 1.05 -> 10.00, and a button
+                    // that shifts under the finger cannot be clicked twice in a row.
+                    if ui.small_button("-").clicked() {
+                        wc.set.ui_scale -= UI_SCALE_STEP;
+                    }
+                    if ui.small_button("+").clicked() {
+                        wc.set.ui_scale += UI_SCALE_STEP;
+                    }
+                    wc.set.ui_scale = ((wc.set.ui_scale / UI_SCALE_STEP).round() * UI_SCALE_STEP).clamp(0.5, 3.0);
+                    ui.label(format!("{:.2}", wc.set.ui_scale));
                     if (wc.set.ui_scale - before).abs() > 1e-6 {
                         crate::gui::apply_ui_scale(&*wc.set, ctx);
                     }
@@ -1083,6 +1124,45 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             // POINTING PRECISION: it scales the grab radii of every role at once (see `grab.rs`). On a 4K or a
             // touch screen the pixel radii are small; with a mouse, large ones make it hard to aim in tight
             // geometry - that is a person's choice, not ours.
+            // WHICH BUTTON MOVES THE VIEW. Walked over `MouseNav::ALL` rather than listed here: a set added
+            // to the type appears in the window by itself, and a list written out beside a full one falls
+            // behind on the first addition (D19).
+            if show("settings-mouse-nav") {
+                // A DROPPING LIST, not a row of buttons: eleven layouts laid out side by side run off the
+                // edge of the window and stop being readable at about the fourth.
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-mouse-nav"));
+                    egui::ComboBox::from_id_salt("mouse-nav")
+                        .selected_text(crate::i18n::tr(&wc.set.mouse_nav.key()))
+                        .show_ui(ui, |ui| {
+                            for nav in qymcad_ui_state::MouseNav::ALL {
+                                ui.selectable_value(&mut wc.set.mouse_nav, nav, crate::i18n::tr(&nav.key()))
+                                    .on_hover_text(crate::i18n::tr(&nav.hint_key()));
+                            }
+                        });
+                });
+                // WHAT THE CHOSEN ONE DOES, under the list rather than in a tooltip: a person picking a
+                // layout is choosing between habits, and a habit cannot be compared with one hidden behind
+                // a hover.
+                ui.label(egui::RichText::new(crate::i18n::tr(&wc.set.mouse_nav.hint_key())).weak().small());
+            }
+            // WHERE THE VIEW ZOOMS FROM. Walked over `ZoomAt::ALL` rather than listed here, so a variant
+            // added to the type appears in the window by itself (D19).
+            if show("settings-zoom-at") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-zoom-at"));
+                    for z in qymcad_ui_state::ZoomAt::ALL {
+                        ui.selectable_value(&mut wc.set.zoom_at, z, crate::i18n::tr(z.key()));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-zoom-editing"));
+                    for z in qymcad_ui_state::ZoomWhileEditing::ALL {
+                        ui.selectable_value(&mut wc.set.zoom_editing, z, crate::i18n::tr(z.key()));
+                    }
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-zoom-editing-hint")).weak());
+            }
             if show("settings-pick-precision") {
                 ui.label(crate::i18n::tr("settings-pick-precision"));
                 ui.horizontal(|ui| {

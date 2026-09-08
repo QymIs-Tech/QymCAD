@@ -249,6 +249,11 @@ mod tests {
         assert_eq!(got, want, "the contents run in an order other than the one given");
         // the lessons come FIRST: they are where somebody opening a CAD for the first time begins
         assert_eq!(dirs.first().map(|s| s.as_str()), Some("start"), "the lessons are not first in the contents");
+        // AND THE GROUNDWORK SECOND. What the window is made of, how to move the view, what the tree and
+        // the timeline are - that is how to work with the CAD at all, and it belongs beside the lessons
+        // rather than after the reference on every tool. Standing last it read as an appendix, which is
+        // exactly what somebody looking for the basics does not open.
+        assert_eq!(dirs.get(1).map(|s| s.as_str()), Some("general"), "the groundwork must follow the lessons, not close the contents");
     }
 
     /// THE CONTENTS ARE BUILT FROM THE FILES, so "the article exists and is not in the contents" is

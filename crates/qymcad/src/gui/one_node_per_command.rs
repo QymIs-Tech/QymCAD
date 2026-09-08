@@ -59,6 +59,10 @@ mod tests {
         let before = app.project.timeline.len();
         app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(3); // revolve
+        // OUT OF THE CONTOUR PICKER FIRST. Creating a feature over MORE THAN ONE contour now opens on
+        // the choice of contours, so the first Enter answers "these ones" and only the next one applies.
+        // That is the path a person walks, and a check that skipped it would be checking a path nobody has.
+        app.apply_feat_cmd();
         // THE REPORTED ORDER: the command opens on "add", and "cut" is chosen in the bar afterwards
         app.feat.op = 2;
         app.tools.gsel.profiles.extend(cids.iter().copied());
@@ -100,6 +104,10 @@ mod tests {
         let (si, cids) = two_contours(&mut app);
         app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(3);
+        // OUT OF THE CONTOUR PICKER FIRST. Creating a feature over MORE THAN ONE contour now opens on
+        // the choice of contours, so the first Enter answers "these ones" and only the next one applies.
+        // That is the path a person walks, and a check that skipped it would be checking a path nobody has.
+        app.apply_feat_cmd();
         app.feat.op = 2; // "cut" in the bar, after the command opens
         app.tools.gsel.profiles.extend(cids.iter().copied());
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
@@ -127,6 +135,10 @@ mod tests {
         let (si, cids) = two_contours(&mut app);
         app.chosen.sel = Sel::Sketch(si);
         app.start_feat_cmd(3);
+        // OUT OF THE CONTOUR PICKER FIRST. Creating a feature over MORE THAN ONE contour now opens on
+        // the choice of contours, so the first Enter answers "these ones" and only the next one applies.
+        // That is the path a person walks, and a check that skipped it would be checking a path nobody has.
+        app.apply_feat_cmd();
         app.feat.op = 2; // "cut" in the bar, after the command opens
         app.tools.gsel.profiles.extend(cids.iter().copied());
         app.apply_feat_cmd();

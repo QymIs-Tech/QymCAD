@@ -564,7 +564,17 @@ fn a_description_picks_up_an_edge_that_appeared_after_a_sketch_edit() {
 fn the_right_button_still_orbits_the_camera() {
     let render = crate::gui::render_source::RENDER;
     assert!(render.contains("resp.context_menu(|ui|"), "the menu must hang on the CLICK (context_menu) rather than on the press");
-    assert!(render.contains("} else if resp.dragged() {"), "the orbit must live on the DRAG");
+    // THE ORBIT STILL LIVES ON THE DRAG, and now it asks the mouse LAYOUT which drag. What this guard is
+    // about is unchanged - the menu on a click, the orbit on a drag - and the layouts answer with drags.
+    assert!(render.contains("} else if self.set.mouse_nav.rotate().active(ctx, resp) {"), "the orbit must live on the DRAG");
+    // AND OUR OWN LAYOUT MUST TAKE ANY BUTTON. This is the half that was nearly lost: naming the left
+    // button would have been a faithful-looking transcription and would have taken the camera away from the
+    // right button, which has turned it here since the beginning. Caught by this guard, which is what it is
+    // for.
+    assert!(
+        qymcad_ui_state::MouseNav::QymCad.rotate().any_button,
+        "our layout must orbit on ANY drag, or the right button loses the camera it has always turned"
+    );
     assert!(render.contains("self.viewing.cam.yaw -= d.x as f64 * 0.01;"), "and really turn the camera");
     // and the menu must not dare open in response to a drag
     assert!(!render.contains("resp.dragged() && self.expansion_accepts()"), "a menu on the drag would take the camera rotation away");

@@ -917,6 +917,201 @@ pub enum Shading {
     Flat,
 }
 
+/// A NAVIGATION GESTURE: which buttons are held and which modifiers, to move the view.
+///
+/// Written as data rather than as a branch per style. With eleven layouts a condition written out at each
+/// one is eleven places to get wrong, and the differences between them are exactly this: which buttons,
+/// which modifiers.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Gesture {
+    /// Every one of these must be held. EMPTY means no button at all - a touchpad layout moves the view on
+    /// a modifier plus a movement.
+    pub buttons: &'static [egui::PointerButton],
+    /// WHICHEVER BUTTON IS DRAGGING will do. Only ours works this way, and it is why the right button has
+    /// always turned the camera here: a drag is a drag. Naming the left button instead would have taken
+    /// that away silently.
+    pub any_button: bool,
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+}
+
+impl Gesture {
+    const fn of(buttons: &'static [egui::PointerButton]) -> Self {
+        Gesture { buttons, any_button: false, shift: false, ctrl: false, alt: false }
+    }
+    /// Whichever button is dragging.
+    const fn any() -> Self {
+        Gesture { buttons: &[], any_button: true, shift: false, ctrl: false, alt: false }
+    }
+    /// Does a plain left drag, with no modifier, make this gesture?
+    pub fn takes_a_bare_left_drag(&self) -> bool {
+        !self.shift && !self.ctrl && !self.alt && (self.any_button || self.buttons == [egui::PointerButton::Primary])
+    }
+    const fn shift(mut self) -> Self {
+        self.shift = true;
+        self
+    }
+    const fn ctrl(mut self) -> Self {
+        self.ctrl = true;
+        self
+    }
+    const fn alt(mut self) -> Self {
+        self.alt = true;
+        self
+    }
+    /// Nothing at all: the layout does not offer this movement.
+    pub const NONE: Gesture = Gesture { buttons: &[], any_button: false, shift: false, ctrl: false, alt: false };
+
+    /// Is this gesture being made right now over `resp`?
+    ///
+    /// THE MODIFIERS ARE MATCHED EXACTLY, not merely "held". Otherwise a layout whose pan is Shift and
+    /// whose rotate is bare would pan and rotate at once the moment Shift went down, and the two layouts
+    /// that differ only by a modifier would be the same layout.
+    pub fn active(&self, ctx: &egui::Context, resp: &egui::Response) -> bool {
+        if *self == Gesture::NONE {
+            return false;
+        }
+        let m = ctx.input(|i| i.modifiers);
+        if m.shift != self.shift || (m.ctrl || m.command) != self.ctrl || m.alt != self.alt {
+            return false;
+        }
+        if self.any_button {
+            return resp.dragged();
+        }
+        if self.buttons.is_empty() {
+            // no button: the pointer must simply be over the canvas and moving
+            return resp.hovered() && ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+        }
+        // AT LEAST ONE OF THEM MUST BE A DRAG ON THIS CANVAS. `button_down` alone says only that a button is
+        // held SOMEWHERE - dragging a window by its title bar holds one too, and the camera turned along
+        // with the window. The drag anchors the gesture to the viewport; the rest of the buttons are then
+        // merely required to be down, because egui reports the drag for one of them only.
+        self.buttons.iter().any(|b| resp.dragged_by(*b)) && self.buttons.iter().all(|b| resp.dragged_by(*b) || ctx.input(|i| i.pointer.button_down(*b)))
+    }
+}
+
+const LEFT: egui::PointerButton = egui::PointerButton::Primary;
+const RIGHT: egui::PointerButton = egui::PointerButton::Secondary;
+const MIDDLE: egui::PointerButton = egui::PointerButton::Middle;
+
+/// HOW THE MOUSE MOVES THE VIEW - a layout picked from a list, as other CADs offer.
+///
+/// Reported behaviour: "add a way to choose how the mouse behaves; other CADs have a dropdown of mouse
+/// layouts for the popular ones. Make the same list, with our current layout in it as QymCAD, and let it
+/// be the default."
+///
+/// The ten borrowed layouts are transcribed from the documentation of the CAD they are named after rather
+/// than invented here: somebody choosing "Blender" wants Blender's bindings, and a layout that only
+/// resembles them is worse than none - it is the habit they came with, failing in a way they cannot name.
+///
+/// IN A SKETCH the layouts agree wherever they can: a flat sheet has nothing to rotate, so what is left is
+/// pan and zoom.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum MouseNav {
+    /// OURS, and the factory choice: a drag turns the model, Shift and a drag moves it.
+    QymCad,
+    Cad,
+    Blender,
+    Gesture,
+    MayaGesture,
+    OpenCascade,
+    OpenInventor,
+    OpenScad,
+    Revit,
+    TinkerCad,
+    Touchpad,
+}
+
+impl MouseNav {
+    /// EVERY LAYOUT. The one list the settings window, the checks and the catalogue walk over.
+    pub const ALL: [MouseNav; 11] = [
+        MouseNav::QymCad,
+        MouseNav::Cad,
+        MouseNav::Blender,
+        MouseNav::Gesture,
+        MouseNav::MayaGesture,
+        MouseNav::OpenCascade,
+        MouseNav::OpenInventor,
+        MouseNav::OpenScad,
+        MouseNav::Revit,
+        MouseNav::TinkerCad,
+        MouseNav::Touchpad,
+    ];
+
+    /// The stable name used in the settings file and in the catalogue key.
+    pub fn code(self) -> &'static str {
+        match self {
+            MouseNav::QymCad => "qymcad",
+            MouseNav::Cad => "cad",
+            MouseNav::Blender => "blender",
+            MouseNav::Gesture => "gesture",
+            MouseNav::MayaGesture => "maya",
+            MouseNav::OpenCascade => "opencascade",
+            MouseNav::OpenInventor => "openinventor",
+            MouseNav::OpenScad => "openscad",
+            MouseNav::Revit => "revit",
+            MouseNav::TinkerCad => "tinkercad",
+            MouseNav::Touchpad => "touchpad",
+        }
+    }
+
+    /// TURNING THE MODEL.
+    pub fn rotate(self) -> Gesture {
+        match self {
+            MouseNav::QymCad => Gesture::any(),
+            MouseNav::Cad => Gesture::of(&[MIDDLE, LEFT]),
+            MouseNav::Blender => Gesture::of(&[MIDDLE]),
+            MouseNav::Gesture | MouseNav::OpenScad | MouseNav::OpenInventor => Gesture::of(&[LEFT]),
+            MouseNav::MayaGesture => Gesture::of(&[LEFT]).alt(),
+            MouseNav::OpenCascade => Gesture::of(&[MIDDLE, RIGHT]),
+            MouseNav::Revit => Gesture::of(&[MIDDLE]).shift(),
+            MouseNav::TinkerCad => Gesture::of(&[RIGHT]),
+            MouseNav::Touchpad => Gesture::of(&[]).alt(),
+        }
+    }
+
+    /// MOVING THE VIEW SIDEWAYS.
+    pub fn pan(self) -> Gesture {
+        match self {
+            MouseNav::QymCad => Gesture::any().shift(),
+            MouseNav::Cad | MouseNav::OpenCascade | MouseNav::OpenInventor | MouseNav::Revit | MouseNav::TinkerCad => Gesture::of(&[MIDDLE]),
+            MouseNav::Blender => Gesture::of(&[MIDDLE]).shift(),
+            MouseNav::Gesture | MouseNav::OpenScad => Gesture::of(&[RIGHT]),
+            MouseNav::MayaGesture => Gesture::of(&[MIDDLE]).alt(),
+            MouseNav::Touchpad => Gesture::of(&[]).shift(),
+        }
+    }
+
+    /// ZOOMING. Every layout but one puts it on the wheel; the touchpad has no wheel to put it on.
+    pub fn zoom_gesture(self) -> Gesture {
+        match self {
+            MouseNav::Touchpad => Gesture::of(&[]).ctrl().shift(),
+            _ => Gesture::NONE,
+        }
+    }
+
+    /// Whether the wheel zooms under this layout.
+    pub fn wheel_zooms(self) -> bool {
+        self != MouseNav::Touchpad
+    }
+
+    /// SELECTING NEEDS SHIFT under one layout, because there the bare left button turns the model.
+    pub fn select_needs_shift(self) -> bool {
+        self == MouseNav::OpenInventor
+    }
+
+    /// The catalogue key holding this layout's name.
+    pub fn key(self) -> String {
+        format!("settings-mouse-{}", self.code())
+    }
+
+    /// The catalogue key of the line describing what the layout does.
+    pub fn hint_key(self) -> String {
+        format!("settings-mouse-{}-hint", self.code())
+    }
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -1010,6 +1205,73 @@ pub struct Settings {
     /// aim in tight geometry - this is a person's choice, not ours.
     #[serde(default = "default_pick_precision")]
     pub pick_precision: u8,
+
+    // --- WHAT THE PROGRAM OPENS WITH. Two independent answers, not one setting with three states. ---
+    /// REOPEN THE PROJECT OF THE PREVIOUS SESSION.
+    ///
+    /// Off by default, and that is a change: the program used to reopen it always, with nothing to say
+    /// otherwise. Reopening is right for somebody who works on one thing for weeks and wrong for somebody
+    /// who opens the CAD to try something - and neither can be guessed from here.
+    #[serde(default)]
+    pub open_last: bool,
+    /// LET THE START SCREEN COME UP BY ITSELF on an empty document.
+    ///
+    /// Separate from `open_last` because the two answer different questions: one is about which document,
+    /// the other about whether to be greeted. With it off an empty document simply opens, and the screen
+    /// stays reachable from the menu.
+    #[serde(default = "default_true")]
+    pub show_start_screen: bool,
+    /// WHICH BUTTON MOVES THE VIEW. See `MouseNav`.
+    #[serde(default = "default_mouse_nav")]
+    pub mouse_nav: MouseNav,
+    /// Where the view zooms from: the cursor, or the middle of the viewport.
+    #[serde(default = "default_zoom_at")]
+    pub zoom_at: ZoomAt,
+    /// The exception to that while a command is open.
+    #[serde(default = "default_zoom_editing")]
+    pub zoom_editing: ZoomWhileEditing,
+}
+
+/// The factory layout: ours.
+fn default_zoom_at() -> ZoomAt {
+    ZoomAt::Cursor // what every CAD a person comes from does
+}
+
+fn default_zoom_editing() -> ZoomWhileEditing {
+    ZoomWhileEditing::PartCentre
+}
+
+fn default_mouse_nav() -> MouseNav {
+    MouseNav::QymCad
+}
+
+/// A `serde(default)` for a flag whose factory value is "on".
+fn default_true() -> bool {
+    true
+}
+
+/// WHAT THE PROGRAM OPENS WITH, decided in one place out of the settings.
+///
+/// A named answer rather than two ifs inside the launch: the launch cannot be run by a check, so a decision
+/// living there is a decision nobody measures. Four combinations of two flags give three outcomes, and each
+/// one is somebody's first minute.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Opening {
+    /// Load this file - the project of the previous session.
+    LastProject(String),
+    /// An empty document. `start_screen` says whether the start screen comes up by itself.
+    Empty { start_screen: bool },
+}
+
+/// The decision itself. `last` is the path remembered from the previous session, if there is one.
+///
+/// A remembered path that no longer names a file is NOT a reason to show an empty window in silence: the
+/// answer falls back to an empty document, and the start screen comes up if it is allowed to.
+pub fn opening(set: &Settings, last: Option<&str>) -> Opening {
+    match last.filter(|p| set.open_last && std::path::Path::new(p).is_file()) {
+        Some(p) => Opening::LastProject(p.to_string()),
+        None => Opening::Empty { start_screen: set.show_start_screen },
+    }
 }
 
 impl Default for Settings {
@@ -1040,6 +1302,11 @@ impl Default for Settings {
             recent: Vec::new(),
             recent_limit: default_recent_limit(),
             pick_precision: default_pick_precision(),
+            open_last: false,
+            show_start_screen: true,
+            mouse_nav: default_mouse_nav(),
+            zoom_at: default_zoom_at(),
+            zoom_editing: default_zoom_editing(),
         }
     }
 }
@@ -1102,6 +1369,12 @@ pub struct SketchSelection {
     pub constraint: Option<u8>,
     /// awaiting a set for an editing tool
     pub modify: Option<u8>,
+    /// WHAT THE MIRROR IS ABOUT TO REFLECT, while the axis is being pointed at.
+    ///
+    /// Non-empty means the tool is on its SECOND step: it has been told what, and waits to be told about
+    /// what. It used to have no second step at all - the axis was whichever line happened to be in the
+    /// selection (and got mirrored too, being in the same set), or silently Y.
+    pub mirror_of: Vec<Id>,
 }
 
 impl SketchSelection {
@@ -1484,6 +1757,13 @@ pub enum Picking {
     FilletAll,
     /// a contour into a slot of the command (profile / path / section)
     Contour(ContourSlot),
+    /// A TOOL WAITING FOR THE SKETCH IT NEEDS, carrying the kind of command that was pressed.
+    ///
+    /// Reported behaviour: a tool that needs geometry from a sketch used to write a line into the status
+    /// bar and not start. Nobody reads the status bar at the moment of pressing, so what a person saw was
+    /// a button that did nothing. The kind travels with the wait because the answer must open the command
+    /// that was ASKED FOR - a wait that opens the wrong one is worse than not opening any.
+    SketchFor(u8),
 }
 
 impl Picking {
@@ -1509,6 +1789,28 @@ impl Picking {
     }
     pub fn contour(&self) -> Option<ContourSlot> {
         match *self { Picking::Contour(s) => Some(s), _ => None }
+    }
+    /// Which command is waiting for a sketch, if any.
+    pub fn sketch_for(&self) -> Option<u8> {
+        match *self { Picking::SketchFor(k) => Some(k), _ => None }
+    }
+
+    /// THE WORDS FOR "THIS PICK IS CANCELLED", for the modes that Escape simply puts down.
+    ///
+    /// The Escape ladder used to carry a rung per mode, three of them in a row, each three lines long and
+    /// each saying the same two things: clear the pick, name it. That is a hand-written list of the variants
+    /// of this very enum living somewhere else - it falls behind the moment a mode is added, silently,
+    /// because a mode nobody put in the ladder is simply a pick Escape does not release.
+    ///
+    /// `None` for the modes that need MORE than clearing: a contour pick returns the borrowed view, and
+    /// "fillet all" belongs to the command that armed it.
+    pub fn cancel_key(&self) -> Option<&'static str> {
+        match *self {
+            Picking::ReplaceSketch(_) => Some("in-sketch-move-cancelled"),
+            Picking::SketchPlane(_) => Some("in-sketch-plane-cancelled"),
+            Picking::SketchFor(_) => Some("in-sketch-wait-cancelled"),
+            Picking::None | Picking::FilletAll | Picking::Contour(_) => None,
+        }
     }
 }
 
@@ -2326,6 +2628,11 @@ pub struct Hover {
     pub constraint: Option<usize>,
     /// an assembly joint
     pub joint: Option<Id>,
+    /// THE SKETCH UNDER THE CURSOR IN THE 3D VIEW, by its index, while a tool waits for one to be named.
+    ///
+    /// Separate from `sketch`, which holds the geometry hovered INSIDE the flat sketcher: one is an entity
+    /// of the sketch being edited, the other is a whole sketch being pointed at from outside it.
+    pub sketch_3d: Option<usize>,
 }
 
 /// The area of a polygon (the absolute value of the shoelace formula) — used to pick the inner contour.
@@ -4288,10 +4595,307 @@ pub fn set_thread_params(cmd: &mut FeatCommand, thread: ThreadParams) {
     // hand. Without these fields choosing "custom" changed nothing: the angle silently stayed at 60 deg
     // and the depth at 0.6 of the pitch.
     if !thread.auger && thread_standard(thread.form) == qymcad_core::thread::ThreadStandard::Custom {
-        let p = cmd_val(cmd, "pitch");
         cmd.params.push(CmdParam::new("th-profile-angle", "angle", 60.0, 5.0, 170.0));
-        cmd.params.push(CmdParam::new("th-depth", "depth", if p > 0.0 { p * 0.6 } else { 0.0 }, 0.0, 1000.0));
+        // THE DEPTH OPENS ON THE ONE THAT WILL BE CUT. Zero in this field does not mean a groove of no
+        // depth: the core reads it as "nothing was typed" and cuts 0.6 of the pitch. And the pitch itself
+        // is zero by default, meaning "the standard coarse pitch for this size" - so seeding the field from
+        // the pitch typed in gave 0.00 over a groove 1.50 deep on a Ø20, a number describing nothing.
+        cmd.params.push(CmdParam::new("th-depth", "depth", custom_depth_to_start_from(cmd, thread), 0.0, 1000.0));
     }
+}
+
+/// Start renaming a component, a datum or a body in place: the current name goes into the field, with
+/// auto-focus. The other two targets are cleared - one field serves all three, and two of them set at once
+/// would rename twice.
+pub fn start_rename_node(rename: &mut RenameInput, node: RenameNode, cur: String) {
+    *rename = RenameInput { node: Some(node), buf: cur, focus: true, ..Default::default() };
+}
+
+/// Start renaming timeline node `id` in place.
+pub fn start_rename(project: &qymcad_core::model::Project, rename: &mut RenameInput, id: Id) {
+    let cur = project.timeline.iter().find(|n| n.id == id).map(|n| qymcad_i18n::name(&n.name)).unwrap_or_default();
+    *rename = RenameInput { target: Some(id), buf: cur, focus: true, ..Default::default() };
+}
+
+/// Start renaming sketch `sid` in place.
+pub fn start_rename_sketch(rename: &mut RenameInput, sid: Id, cur: String) {
+    *rename = RenameInput { sketch: Some(sid), buf: cur, focus: true, ..Default::default() };
+}
+
+/// START RENAMING WHATEVER IS SELECTED. Says whether there was anything to rename.
+///
+/// Reported behaviour: "renaming parts/subassemblies/sketches/features not only by right-click -> Rename
+/// but also by pressing F2."
+///
+/// ONE DOOR, because the tree renames five kinds of node through three different fields - a feature by
+/// `target`, a sketch by `sketch`, a component, a body and a datum by `node` - and each menu item started
+/// its own. A key that had to repeat that fan-out would be a sixth copy, drifting from the other five at
+/// the first kind of node added.
+pub fn rename_selected(project: &qymcad_core::model::Project, rename: &mut RenameInput, sel: Sel) -> bool {
+    // ALREADY RENAMING THIS VERY NODE: leave what has been typed alone. F2 pressed a second time, or the
+    // menu item used while the field is open, must not throw a half-typed name away and start over.
+    if renaming_now(project, rename, sel) {
+        return true;
+    }
+    match sel {
+        Sel::Feature(fi) => match project.timeline.get(fi) {
+            Some(n) => {
+                start_rename(project, rename, n.id);
+                true
+            }
+            None => false,
+        },
+        Sel::Sketch(si) => match project.sketches.get(si) {
+            Some(s) => {
+                start_rename_sketch(rename, s.id, qymcad_i18n::name(&s.name));
+                true
+            }
+            None => false,
+        },
+        Sel::Component(ci) => match project.components.get(ci) {
+            Some(c) => {
+                start_rename_node(rename, RenameNode::Component(c.id), qymcad_i18n::name(&c.name));
+                true
+            }
+            None => false,
+        },
+        Sel::Mesh(mi) => match project.bodies.get(mi) {
+            Some(_) => {
+                start_rename_node(rename, RenameNode::Body(mi), qymcad_i18n::name(&project.mesh_name(mi)));
+                true
+            }
+            None => false,
+        },
+        Sel::Plane(pi) => match project.planes.get(pi) {
+            Some(p) => {
+                start_rename_node(rename, RenameNode::Plane(p.id), qymcad_i18n::name(&p.name));
+                true
+            }
+            None => false,
+        },
+        Sel::DatumPoint(i) => match project.datum_points.get(i) {
+            Some(d) => {
+                start_rename_node(rename, RenameNode::DatumPoint(d.id), qymcad_i18n::name(&d.name));
+                true
+            }
+            None => false,
+        },
+        Sel::DatumAxis(i) => match project.datum_axes.get(i) {
+            Some(d) => {
+                start_rename_node(rename, RenameNode::DatumAxis(d.id), qymcad_i18n::name(&d.name));
+                true
+            }
+            None => false,
+        },
+        // A face, a contour, a mate or nothing at all: none of these carries a name of its own.
+        Sel::None | Sel::Face(..) | Sel::Contour(_) | Sel::Joint(_) => false,
+    }
+}
+
+/// WHERE A SEGMENT CROSSES ONE OF THE SKETCH AXES: 0 is the line x = 0, 1 is the line y = 0.
+///
+/// The axes are infinite, so this is not `seg_seg_intersect` against some long enough stand-in segment -
+/// "long enough" is a number pulled out of the air, and at a far enough zoom it stops being long enough.
+pub fn seg_axis_intersect(a: Point2, b: Point2, axis: u8) -> Option<Point2> {
+    let (pa, pb) = if axis == 0 { (a.x, b.x) } else { (a.y, b.y) };
+    let d = pb - pa;
+    if d.abs() < 1e-12 {
+        return None; // parallel to the axis: either no crossing or the whole segment lies on it
+    }
+    let t = -pa / d;
+    (0.0..=1.0).contains(&t).then(|| Point2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t))
+}
+
+/// Where a circle crosses one of the sketch axes - none, or both points.
+pub fn circle_axis_intersect(c: Point2, r: f64, axis: u8) -> Vec<Point2> {
+    let off = if axis == 0 { c.x } else { c.y };
+    if off.abs() > r {
+        return Vec::new();
+    }
+    let h = (r * r - off * off).max(0.0).sqrt();
+    if axis == 0 {
+        vec![Point2::new(0.0, c.y - h), Point2::new(0.0, c.y + h)]
+    } else {
+        vec![Point2::new(c.x - h, 0.0), Point2::new(c.x + h, 0.0)]
+    }
+}
+
+/// Is the rename field already open on exactly this selection?
+fn renaming_now(project: &qymcad_core::model::Project, rename: &RenameInput, sel: Sel) -> bool {
+    match sel {
+        Sel::Feature(fi) => project.timeline.get(fi).is_some_and(|n| rename.target == Some(n.id)),
+        Sel::Sketch(si) => project.sketches.get(si).is_some_and(|s| rename.sketch == Some(s.id)),
+        Sel::Component(ci) => project.components.get(ci).is_some_and(|c| rename.node == Some(RenameNode::Component(c.id))),
+        Sel::Mesh(mi) => rename.node == Some(RenameNode::Body(mi)),
+        Sel::Plane(pi) => project.planes.get(pi).is_some_and(|p| rename.node == Some(RenameNode::Plane(p.id))),
+        Sel::DatumPoint(i) => project.datum_points.get(i).is_some_and(|d| rename.node == Some(RenameNode::DatumPoint(d.id))),
+        Sel::DatumAxis(i) => project.datum_axes.get(i).is_some_and(|d| rename.node == Some(RenameNode::DatumAxis(d.id))),
+        Sel::None | Sel::Face(..) | Sel::Contour(_) | Sel::Joint(_) => false,
+    }
+}
+
+/// WHERE THE VIEW ZOOMS FROM.
+///
+/// Reported behaviour: "zooming pans from the origin rather than from the cursor's coordinates - both in
+/// sketches and in the 3D viewport. Two variants are needed, in the settings."
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum ZoomAt {
+    /// The point under the cursor stays put - the point one is looking at is the point one aims at.
+    Cursor,
+    /// The middle of the viewport stays put, whatever the cursor is over.
+    ViewCentre,
+}
+
+impl ZoomAt {
+    pub const ALL: [ZoomAt; 2] = [ZoomAt::Cursor, ZoomAt::ViewCentre];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            ZoomAt::Cursor => "settings-zoom-at-cursor",
+            ZoomAt::ViewCentre => "settings-zoom-at-centre",
+        }
+    }
+}
+
+/// WHERE THE VIEW ZOOMS FROM WHILE A COMMAND IS OPEN.
+///
+/// Reported behaviour: "and with a tool's popup open, panning should go from the centre of the part (put
+/// that in the settings too)."
+///
+/// A command's fields stand AT THE GEOMETRY, and zooming to the cursor drags that geometry - and the
+/// fields with it - out from under the hand that is typing into them. Holding the part still keeps the
+/// popup where it was put.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum ZoomWhileEditing {
+    /// The middle of the part being edited stays put.
+    PartCentre,
+    /// No exception: the ordinary rule applies while a command is open too.
+    AsUsual,
+}
+
+impl ZoomWhileEditing {
+    pub const ALL: [ZoomWhileEditing; 2] = [ZoomWhileEditing::PartCentre, ZoomWhileEditing::AsUsual];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            ZoomWhileEditing::PartCentre => "settings-zoom-editing-part",
+            ZoomWhileEditing::AsUsual => "settings-zoom-editing-usual",
+        }
+    }
+}
+
+/// ZOOM THE FLAT VIEW, KEEPING `anchor` WHERE IT IS ON SCREEN.
+///
+/// The scale alone was changed, which keeps the MIDDLE of the viewport still: whatever a person is looking
+/// at slides away from the cursor as the view grows, and to reach a corner one zooms and then pans it back.
+/// Keeping the anchor still is one arithmetic step: the world point under it must read the same after the
+/// change as before, and `to_world` says what that costs.
+pub fn zoom_view_2d(view: &mut View2d, rect: Rect, anchor: Pos2, factor: f32, lo: f32, hi: f32) {
+    let before = view.scale;
+    view.scale = (view.scale * factor).clamp(lo, hi);
+    if (view.scale - before).abs() < f32::EPSILON {
+        return; // at the limit: nothing moved, so nothing has to be compensated
+    }
+    let c = rect.center();
+    let k = 1.0 / before - 1.0 / view.scale;
+    view.center.x += (anchor.x - c.x) * k;
+    view.center.y -= (anchor.y - c.y) * k;
+}
+
+/// ZOOM THE 3D VIEW, KEEPING `anchor` WHERE IT IS ON SCREEN.
+///
+/// The world point held still is the one lying in the plane through the camera's target, which is the plane
+/// a CAD orbit turns about; under perspective a point off that plane drifts by the difference in
+/// foreshortening, and that is invisible next to the zoom itself.
+pub fn zoom_cam_3d(cam: &mut Cam3, rect: Rect, anchor: Pos2, factor: f32, lo: f32, hi: f32) {
+    let before = cam.scale;
+    cam.scale = (cam.scale * factor).clamp(lo, hi);
+    if (cam.scale - before).abs() < f32::EPSILON {
+        return;
+    }
+    let c = rect.center();
+    let (bx, by, _) = cam.basis();
+    let k = (1.0 / before - 1.0 / cam.scale) as f64;
+    let (du, dv) = (((anchor.x - c.x) as f64) * k, (-(anchor.y - c.y) as f64) * k);
+    for a in 0..3 {
+        cam.target[a] += bx[a] * du + by[a] * dv;
+    }
+}
+
+/// WHERE THE VIEW MUST HOLD STILL WHILE IT IS ZOOMED: the cursor, the middle of the part being edited, or
+/// the middle of the viewport.
+///
+/// One place decides it for both viewports - the flat one and the 3D one - because it is one rule and a
+/// second copy of it would drift on the first change.
+pub fn zoom_anchor(set: &Settings, rect: Rect, cursor: Option<Pos2>, part_centre: Option<Pos2>) -> Pos2 {
+    if let (ZoomWhileEditing::PartCentre, Some(p)) = (set.zoom_editing, part_centre) {
+        return p; // a command is open and its fields stand at the geometry: hold the geometry still
+    }
+    match set.zoom_at {
+        ZoomAt::Cursor => cursor.unwrap_or_else(|| rect.center()),
+        ZoomAt::ViewCentre => rect.center(),
+    }
+}
+
+/// THE WHEEL OVER THE 3D VIEWPORT: zoom towards whatever the rule says to hold still.
+///
+/// `part` is where the open command's fields stand, when one is open - the workbench knows that and this
+/// module does not, so it is handed in.
+pub fn wheel_zoom_3d(cam: &mut Cam3, set: &Settings, rect: Rect, cursor: Option<Pos2>, part: Option<Pos2>, scroll: f32) {
+    zoom_cam_3d(cam, rect, zoom_anchor(set, rect, cursor, part), (scroll * 0.002).exp(), 0.05, 400.0);
+}
+
+/// The same over the flat sheet of a sketch.
+pub fn wheel_zoom_2d(view: &mut View2d, set: &Settings, rect: Rect, cursor: Option<Pos2>, scroll: f32) {
+    zoom_view_2d(view, rect, zoom_anchor(set, rect, cursor, None), (scroll * 0.002).exp(), 0.02, 800.0);
+}
+
+/// PANNING THE SHEET WITH THE MIDDLE BUTTON. In a sketch the left button is busy - it draws and it grabs.
+pub fn pan_sheet_2d(view: &mut View2d, ctx: &egui::Context) {
+    if !ctx.input(|i| i.pointer.middle_down()) {
+        return;
+    }
+    let d = ctx.input(|i| i.pointer.delta());
+    view.center.x -= d.x / view.scale;
+    view.center.y += d.y / view.scale;
+}
+
+/// WHAT A SKETCH'S OWN AXIS IS CALLED IN THE WORLD.
+///
+/// Reported behaviour: "in Part -> Revolve there are two axes, X and Y, but there is no Z axis to revolve
+/// the sketch about."
+///
+/// A flat profile can only be turned about an axis lying IN its plane, and a plane has two of them - the
+/// sketch's own X and Y. Its local Z is the normal, and a flat profile turned about its own normal sweeps
+/// nothing. So there is no third axis to add. What was wrong is the NAME: the two buttons wore the world's
+/// letters over the sketch's local axes, and on the front plane (`BasePlane::XZ`, whose y is [0,0,1]) the
+/// button labelled Y revolved about the world Z. The axis a person was looking for was there, under someone
+/// else's letter.
+///
+/// Named by the world direction the axis points along whenever it points along one; a sketch on an
+/// arbitrary face points along nothing in particular and keeps its own letter.
+pub fn sketch_axis_name(project: &qymcad_core::model::Project, si: Option<usize>, axis: u8) -> &'static str {
+    let own = if axis == 0 { "X" } else { "Y" };
+    let Some(f) = si.and_then(|si| project.sketch_frame(si)) else { return own };
+    let d = if axis == 0 { f.x } else { f.y };
+    let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if n < 1e-9 {
+        return own;
+    }
+    // Along a world axis to within a millionth: anything else is a direction of its own and gets no letter.
+    ["X", "Y", "Z"].into_iter().enumerate().find(|(i, _)| d[*i].abs() / n > 1.0 - 1e-6).map(|(_, w)| w).unwrap_or(own)
+}
+
+/// The depth a profile of one's own starts at: the one the core would cut with nothing typed.
+fn custom_depth_to_start_from(cmd: &FeatCommand, thread: ThreadParams) -> f64 {
+    qymcad_core::thread::ThreadSpec {
+        standard: qymcad_core::thread::ThreadStandard::Custom,
+        nominal_d: if cmd_val(cmd, "nominal") > 0.0 { cmd_val(cmd, "nominal") } else { thread.radius * 2.0 },
+        pitch: cmd_val(cmd, "pitch"),
+        ..Default::default()
+    }
+    .geometry()
+    .depth
 }
 
 /// The candidate planes for a sketch: the world XY, XZ and YZ plus the datum planes, with their frames.
@@ -5210,6 +5814,8 @@ pub const HOTKEYS: &[HotkeyRow] = &[
     HotkeyRow { area: "general", action: "general.esc", key: "Esc", what: "hotkey-general-esc" },
     HotkeyRow { area: "general", action: "general.enter", key: "Enter", what: "hotkey-general-enter" },
     HotkeyRow { area: "general", action: "general.delete", key: "Delete", what: "hotkey-general-delete" },
+    HotkeyRow { area: "general", action: "general.rename", key: "F2", what: "hotkey-general-f2" },
+    HotkeyRow { area: "general", action: "general.exit-context", key: "Ctrl+Enter", what: "hotkey-general-ctrl-enter" },
     HotkeyRow { area: "general", action: "general.undo-redo", key: "Ctrl+Z / Ctrl+Y", what: "hotkey-general-ctrl-z-ctrl-y" },
     HotkeyRow { area: "general", action: "general.save", key: "Ctrl+S", what: "hotkey-general-ctrl-s" },
     // --- Part ---
@@ -9103,18 +9709,11 @@ pub fn try_modify(ed: Editing, sel_sk: &mut SketchSelection, sk_pat: SketchPatte
             sel_sk.clear(); // the selection and whatever was waiting for it
             true
         }
-        1 => {
-            let lines = sel_line_pts(ed.project, sel_sk, si);
-            if let Some((a, b)) = lines.first().copied() {
-                if let (Some(pa), Some(pb)) = (sketch_pt(ed.project, si, a), sketch_pt(ed.project, si, b)) {
-                    ed.project.mirror_entities(si, &eids, pa.x, pa.y, pb.x, pb.y);
-                }
-            } else {
-                ed.project.mirror_entities(si, &eids, 0.0, 0.0, 0.0, 1.0);
-                *ed.status = qymcad_i18n::tr("msg-mirror-y");
-            }
-            true
-        }
+        // THE MIRROR IS NOT APPLIED FROM A CLICK. It has two steps of its own (`modify_button` takes the
+        // selection, `mirror_about_axis` or `mirror_about_line` finishes it), and applying here would mean
+        // mirroring on the FIRST entity clicked - which is how several things could never be mirrored
+        // together, and how a misclick became an edit.
+        1 => return false,
         2 => {
             ed.project.array_linear(si, &eids, sk_pat.dx, sk_pat.dy, sk_pat.count);
             true
@@ -9189,6 +9788,25 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
         3 => 6,
         _ => 0,
     });
+    // THE MIRROR HAS TWO STEPS OF ITS OWN: what, then about what. Pressing the button with geometry
+    // selected answers the first and asks the second; pressing it with a selection made while the tool was
+    // already in hand does the same, which is why the button is the way forward rather than a stray click.
+    if op == 1 {
+        let eids: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+        if !eids.is_empty() {
+            // THE SELECTION STAYS ON SCREEN. It used to be moved into the tool and cleared, so the person
+            // saw nothing selected, could not tell what was about to be reflected, and read the next click
+            // as "it mirrored everything". Reported behaviour: "the geometry simply loses its selection -
+            // it has to stay highlighted so one can see it is still chosen."
+            sel_sk.mirror_of = eids;
+            *ed.status = qymcad_i18n::tr("sk-mirror-pick-axis");
+        } else {
+            sel_sk.clear();
+            sel_sk.modify = Some(op);
+            *ed.status = qymcad_i18n::tr("sk-mirror-pick-what");
+        }
+        return;
+    }
     if try_modify(ed.reborrow(), sel_sk, sk_pat, tool_prefs, op) {
         sel_sk.modify = None;
     } else {
@@ -9196,6 +9814,77 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
         sel_sk.modify = Some(op);
         *ed.status = qymcad_i18n::tr("g-pick-for-op");
     }
+}
+
+/// MIRROR WHAT THE TOOL HOLDS ABOUT ONE OF THE SKETCH AXES (0 = X, 1 = Y).
+///
+/// The axes are drawn in every sketch and were, until now, the only drawn thing a person could not point
+/// at: mirroring about Y happened silently when no line was selected, and X could not be asked for at all.
+pub fn mirror_about_axis(ed: Editing, sel_sk: &mut SketchSelection, which: usize) {
+    let (bx, by) = if which == 0 { (1.0, 0.0) } else { (0.0, 1.0) };
+    mirror_about(ed, sel_sk, 0.0, 0.0, bx, by);
+}
+
+/// MIRROR WHAT THE TOOL HOLDS ABOUT A LINE OF THE SKETCH, given by its two points.
+///
+/// Construction geometry serves as well as ordinary geometry: what matters is that two points define a
+/// line, and a construction line is exactly what people draw to mirror about.
+pub fn mirror_about_line(ed: Editing, sel_sk: &mut SketchSelection, a: Id, b: Id) {
+    let Sel::Sketch(si) = *ed.sel else { return };
+    let (Some(pa), Some(pb)) = (sketch_pt(ed.project, si, a), sketch_pt(ed.project, si, b)) else { return };
+    mirror_about(ed, sel_sk, pa.x, pa.y, pb.x, pb.y);
+}
+
+/// The two doors above meet here: reflect what is held about the line through (ax, ay) and (bx, by).
+fn mirror_about(ed: Editing, sel_sk: &mut SketchSelection, ax: f64, ay: f64, bx: f64, by: f64) {
+    let Sel::Sketch(si) = *ed.sel else { return };
+    // THE AXIS IS NOT MIRRORED WITH THE REST. It used to be: the line serving as the axis sat in the same
+    // selection as everything else, so the tool reflected it onto itself along with the geometry.
+    let eids: Vec<Id> = std::mem::take(&mut sel_sk.mirror_of);
+    if eids.is_empty() {
+        return;
+    }
+    ed.project.mirror_entities(si, &eids, ax, ay, bx, by);
+    sel_sk.clear(); // the tool is done and lets go: nothing is left in hand to catch the next click
+    *ed.status = qymcad_i18n::tr("sk-mirror-done");
+}
+
+/// PUT DOWN THE SKETCH TOOL THAT IS IN HAND, and say what to tell the person.
+///
+/// Reported behaviour: "Esc does not reset the Mirror tool to the default Select - the selection is lost
+/// and the tool stays active with its bar at the top." Switched off yet looking switched on is the worst
+/// kind of cancellation.
+///
+/// THE LADDER CARRIED A RUNG PER FAMILY and had none for the editing tools, so mirror, offset, fillet,
+/// chamfer and the arrays were all unreleasable - the mirror was simply the one somebody pressed. A rung
+/// per variant written out in the ladder is a list of THIS enum living somewhere else, and it falls behind
+/// silently: a family nobody added is a tool Escape does not put down (D19).
+///
+/// `None` means nothing was in hand, and the ladder should carry on to its next rung.
+pub fn release_armed_sketch_tool(t: &mut Tools) -> Option<&'static str> {
+    let Tools { armed, dim, measure, sel_sk, tool, .. } = t.reborrow();
+    let msg = match *armed {
+        Armed::Dimension(_) => {
+            dim.pick.clear();
+            None
+        }
+        Armed::Draw(_) => None,
+        Armed::Measure => {
+            measure.clear();
+            Some("in-measure-cancelled")
+        }
+        Armed::Modify(_) => {
+            // the editing family: what it was waiting for goes with it, or the next click feeds a tool
+            // that is no longer in hand
+            sel_sk.modify = None;
+            sel_sk.mirror_of.clear();
+            Some("in-modify-cancelled")
+        }
+        _ => return None,
+    };
+    tool.pts.clear();
+    *armed = Armed::None;
+    Some(msg.unwrap_or("in-tool-released"))
 }
 
 /// Turn a click-driven editing operation on or off (1 = trim, 2 = extend, 3 = break).

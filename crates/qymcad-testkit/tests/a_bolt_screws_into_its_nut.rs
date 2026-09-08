@@ -45,11 +45,17 @@ fn rim(p: &mut Project, body: u64, r: f64) -> u32 {
 
 /// THE BOLT: a shaft at the major diameter with an external thread over its whole length.
 fn bolt(d: f64, pitch: f64, len: f64, lead: f64, fit: f64) -> qymcad_kernel::Shape {
+    bolt_of(m(d, pitch, false, fit), len, lead)
+}
+
+/// The same shaft, for a thread specified any way at all - a standard one or a profile of one's own.
+fn bolt_of(spec: ThreadSpec, len: f64, lead: f64) -> qymcad_kernel::Shape {
+    let d = spec.nominal_d;
     let mut p = Project::default();
     p.new_document();
     let blank = p.add_cylinder(d * 0.5, len);
     let e = rim(&mut p, blank, d * 0.5);
-    let t = p.add_thread(blank, e, m(d, pitch, false, fit), len, lead, lead);
+    let t = p.add_thread(blank, e, spec, len, lead, lead);
     let last = p.finish_base_body(t, 1);
     let (report, mut shapes) = qymcad_testkit::regenerate(&mut p);
     assert!(report.errors.is_empty(), "the bolt did not build: {:?}", report.errors);
@@ -61,14 +67,20 @@ fn bolt(d: f64, pitch: f64, len: f64, lead: f64, fit: f64) -> qymcad_kernel::Sha
 /// The bore is the tap drill: bored to the major diameter there would be nothing left to cut into, and the
 /// pair would go together by virtue of holding no thread at all.
 fn nut(d: f64, pitch: f64, len: f64, lead: f64, fit: f64) -> qymcad_kernel::Shape {
-    let minor = m(d, pitch, true, fit).geometry().minor_d;
+    nut_of(m(d, pitch, true, fit), len, lead)
+}
+
+/// The same sleeve, for a thread specified any way at all.
+fn nut_of(spec: ThreadSpec, len: f64, lead: f64) -> qymcad_kernel::Shape {
+    let d = spec.nominal_d;
+    let minor = spec.geometry().minor_d;
     let mut p = Project::default();
     p.new_document();
     let outer = p.add_cylinder(d, len);
     let hole = p.add_cylinder(minor * 0.5, len + 10.0);
     let blank = p.add_body_boolean(outer, hole, 0);
     let e = rim(&mut p, blank, minor * 0.5);
-    let t = p.add_thread(blank, e, m(d, pitch, true, fit), len, lead, lead);
+    let t = p.add_thread(blank, e, spec, len, lead, lead);
     let last = p.finish_base_body(t, 1);
     let (report, mut shapes) = qymcad_testkit::regenerate(&mut p);
     assert!(report.errors.is_empty(), "the nut did not build: {:?}", report.errors);
@@ -119,6 +131,41 @@ fn a_bolt_and_its_nut_do_not_bind() {
     let one_turn = std::f64::consts::PI * ((d * 0.5).powi(2) - (d * 0.5 - g.depth).powi(2)) * pitch;
     eprintln!("M{d}x{pitch}, run-out {lead}: the pair shares {bind:.1} mm^3 at {at:.0} deg (one turn is about {one_turn:.1} mm^3)");
     assert!(bind < one_turn, "the bolt does not screw into its nut: they share {bind:.1} mm^3, about {:.1} turns of metal", bind / one_turn);
+}
+
+/// A PAIR CUT TO A PROFILE OF ONE'S OWN ALSO GOES TOGETHER.
+///
+/// Reported behaviour: "a custom thread is broken when trying to make a bolt and a nut for YouTube - that
+/// is, when you set the profile and the angle yourself."
+///
+/// Every check of a pair up to here used a metric thread. `Custom` is the one standard whose angle and
+/// depth come from a person, and it is the one the report is about; and `mating()` carries those two
+/// numbers over to the counterpart, so if they were dropped anywhere the nut would be cut to a different
+/// profile than the bolt and the two would bind whatever the clearance.
+///
+/// A matrix over the angle, because the pair is decided by the relation between the angle and the depth,
+/// and one pair of numbers would say nothing about the rest.
+#[test]
+fn a_pair_with_a_profile_of_its_own_does_not_bind() {
+    let (d, pitch, len, lead, fit) = (10.0, 1.5, 20.0, 1.5, 0.2);
+    let mut bad = Vec::new();
+    for angle in [30.0, 60.0, 90.0] {
+        let mut spec = ThreadSpec { standard: ThreadStandard::Custom, nominal_d: d, pitch, custom_angle: angle, custom_depth: 0.6 * pitch, fit, ..Default::default() };
+        if spec.profile_overflow().is_some() {
+            continue; // the program refuses this one out loud before building; that belongs to the message
+        }
+        let b = bolt_of(spec, len, lead);
+        spec.internal = true;
+        let n = nut_of(spec, len, lead);
+        let (bind, at) = worst_bind(&b, &n, pitch, len);
+        let g = spec.geometry();
+        let one_turn = std::f64::consts::PI * ((d * 0.5).powi(2) - (d * 0.5 - g.depth).powi(2)) * pitch;
+        eprintln!("custom {angle} deg: the pair shares {bind:.1} mm^3 at {at:.0} deg (one turn is about {one_turn:.1} mm^3)");
+        if bind >= one_turn {
+            bad.push(format!("{angle} deg: {bind:.1} mm^3, about {:.1} turns of metal, worst at {at:.0} deg", bind / one_turn));
+        }
+    }
+    assert!(bad.is_empty(), "a bolt and a nut cut to a profile of one's own do not screw together:\n{}", bad.join("\n"));
 }
 
 /// WITHOUT A RUN-OUT the same pair goes together — that is what pins the blame on the run-out.

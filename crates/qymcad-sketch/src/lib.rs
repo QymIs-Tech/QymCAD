@@ -315,6 +315,57 @@ pub fn parse_num(project: &qymcad_core::model::Project, text: &str) -> Option<f6
     qymcad_core::expr::eval(&t, &project.param_map()).ok().filter(|v| v.is_finite())
 }
 
+/// SET THE VALUE OF DIMENSION `ci`, REFUSING ONE THAT CANNOT EXIST. Says whether it was taken.
+///
+/// Reported behaviour: "negative dimensions in sketches ... while you are erasing, 100 becomes 1 - and at
+/// that moment the geometry gets thrown into the negative, and since negative dimensions do not exist the
+/// whole part goes crooked and you cannot get it back."
+///
+/// A LENGTH OF ZERO OR LESS IS NOT A DIMENSION. Measured on a rectangle 100 x 40 with a distance dimension
+/// on its lower edge: setting that dimension to -100 collapses the edge to nothing - both ends land on
+/// (50, 0) - and leaves a residual of 100, an inconsistent system. `DistancePL` already took the magnitude
+/// and kept its own sign, so the rule was known; it was applied to one kind of dimension out of six.
+///
+/// AN ANGLE IS THE EXCEPTION and stays free: a negative angle means the other way round, and there is no
+/// such thing as the other way round for a length.
+///
+/// WHY REFUSING RATHER THAN ROLLING BACK. The editor does roll a conflicting value back afterwards, and
+/// that saved the sketch here. But a rollback is a cure applied after the damage: it waits for the residual
+/// to rise above a threshold, and a value that quietly solves to a mirrored answer never trips it.
+pub fn set_dim_value(project: &mut Project, si: usize, ci: usize, v: f64) -> bool {
+    use qymcad_core::model::Constraint as C;
+    let Some(c) = project.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci)) else { return false };
+    if !v.is_finite() {
+        return false;
+    }
+    match c {
+        // an angle may be negative: it says which way round
+        C::Angle { deg, expr, .. } | C::AngleLines { deg, expr, .. } => {
+            *deg = v;
+            expr.clear();
+            true
+        }
+        _ if v <= 0.0 => false,
+        // `DistancePL` keeps its own sign - it says which side of the line - and takes the magnitude typed
+        C::DistancePL { d, expr, .. } => {
+            *d = if *d < 0.0 { -v } else { v };
+            expr.clear();
+            true
+        }
+        C::Distance { d, expr, .. } | C::Diameter { d, expr, .. } | C::EdgeDistance { d, expr, .. } => {
+            *d = v;
+            expr.clear();
+            true
+        }
+        C::ArcLength { len, expr, .. } => {
+            *len = v;
+            expr.clear();
+            true
+        }
+        _ => false,
+    }
+}
+
 /// What is under the cursor in a sketch: (kind, Id). 0 is a point, 1 an entity (a line, an arc, a
 /// circle), 2 a primitive (a contour). Ordinary geometry takes priority over construction geometry.
 pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<(u8, Id)> {
@@ -1608,6 +1659,24 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             hit = Some((3u8, 1));
         }
     }
+    // THE MIRROR'S SECOND STEP: the click NAMES THE AXIS instead of adding to a selection.
+    //
+    // It stands before the ordinary selection on purpose. In this state the person has already said what to
+    // reflect; letting the click fall through to the selection would quietly replace the answer to the first
+    // question with an answer to the second.
+    if !sk.sel_sk.mirror_of.is_empty() {
+        match hit {
+            Some((3, w)) => qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, w as usize),
+            Some((1, eid)) => match sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).map(|e| e.kind) {
+                // CONSTRUCTION GEOMETRY SERVES AS WELL: what matters is that two points make a line, and a
+                // construction line is exactly what people draw to mirror about.
+                Some(qymcad_core::model::EntityKind::Line { a, b }) => qymcad_ui_state::mirror_about_line(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, a, b),
+                _ => *sk.status = qymcad_i18n::tr("sk-mirror-pick-axis"),
+            },
+            _ => *sk.status = qymcad_i18n::tr("sk-mirror-pick-axis"),
+        }
+        return;
+    }
     match hit {
         Some(refr) => {
             if !additive {
@@ -1690,26 +1759,42 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
                 sk.dim.focus = false;
             }
             sk.dim.buf = buf.clone();
-            if buf_changed {
-                // the radius or diameter of an arc: the value is evaluated when an expression is typed. It
-                // is stored as a number (an arc has no parametric dimension constraint), just like any
-                // value set by dragging - but "w/2" can be typed now.
-                if let Some(v) = parse_num(&*sk.project, &buf) {
-                    rr = (if is_arc { v } else { v * 0.5 }).max(0.01); // Ø -> r
-                    chg = true;
+            // APPLIED ON COMMIT, NOT ON EVERY LETTER, exactly as a linear dimension is.
+            //
+            // Reported behaviour: "you place a dimension, try to type it in, and while you are erasing, 100
+            // becomes 1 - and at that moment the geometry gets thrown about". The linear field had already
+            // learnt this; the field one over, the radius and diameter of a circle, still rebuilt the
+            // circle on every keystroke, so erasing "100" really did build it at 10 and at 1 on the way.
+            //
+            // The value is evaluated when an expression is typed, and stored as a number - an arc has no
+            // parametric dimension constraint - just as any value set by dragging is.
+            let _ = buf_changed; // the model is not touched while the text is being typed - see below
+            if close {
+                match parse_num(&*sk.project, &buf) {
+                    // A radius of zero or less is not a radius. It used to be clamped to 0.01 silently,
+                    // which answers a typing slip with a circle nobody can see.
+                    Some(v) if (if is_arc { v } else { v * 0.5 }) > 0.0 => {
+                        rr = if is_arc { v } else { v * 0.5 }; // Ø -> r
+                        chg = true;
+                    }
+                    Some(_) => {
+                        *sk.status = qymcad_i18n::tr("sk-dim-must-be-positive");
+                        close = false; // the field stays open on the text that was refused
+                    }
+                    None => {}
                 }
             }
             if chg {
                 if is_arc {
                     // a fillet arc has its radius edited through the dimension constraint (parametrically);
                     // failing that, the fillet is recomputed geometrically; failing that, it is a plain arc
-                    if !sk.project.set_fillet_radius_dim(si, eid, rr.max(0.01)) && !sk.project.set_fillet_radius(si, eid, rr.max(0.01)) {
-                        sk.project.set_arc_radius(si, eid, rr.max(0.01));
+                    if !sk.project.set_fillet_radius_dim(si, eid, rr) && !sk.project.set_fillet_radius(si, eid, rr) {
+                        sk.project.set_arc_radius(si, eid, rr);
                     }
                 } else {
                     if let Some(e) = sk.project.sketches.get_mut(si).and_then(|s| s.entities.iter_mut().find(|e| e.id == eid)) {
                         if let EntityKind::Circle { r, .. } = &mut e.kind {
-                            *r = rr.max(0.01);
+                            *r = rr;
                         }
                     }
                     sk.project.regen_sketch(si);
@@ -1901,52 +1986,44 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
             }
             changed = true;
         }
-        // THE VALUE IS APPLIED ON COMMIT, NOT ON EVERY LETTER.
-        //
-        // Every keystroke used to edit the constraint, solve the sketch again and mark the document for a
-        // rebuild: typing "125" meant three rebuilds, and on the intermediate "1" and "12" the sketch
-        // honestly rebuilt itself to a different size. The answer is visible anyway - the line "= 42.500"
-        // lives under the field, and it costs the document nothing.
-        if apply_value {
-            let t = buf.trim();
-            let num = t.parse::<f64>().ok();
-            match c {
-                // `DistancePL`: d is signed (it says which side); the magnitude is typed and the sign is kept
-                Constraint::DistancePL { d, expr, .. } => {
-                    if let Some(v) = num {
-                        *d = if *d < 0.0 { -v.abs() } else { v.abs() };
-                        expr.clear();
-                    } else {
-                        *expr = buf.clone();
+    }
+    // THE VALUE IS APPLIED ON COMMIT, NOT ON EVERY LETTER.
+    //
+    // Every keystroke used to edit the constraint, solve the sketch again and mark the document for a
+    // rebuild: typing "125" meant three rebuilds, and on the intermediate "1" and "12" the sketch honestly
+    // rebuilt itself to a different size. The answer is visible anyway - the line "= 42.500" lives under
+    // the field, and it costs the document nothing.
+    //
+    // AND A LENGTH THAT CANNOT EXIST IS REFUSED rather than handed over - see `set_dim_value`. A typed
+    // EXPRESSION is judged by what it evaluates to now: it may change later with its parameter, and that is
+    // the parameter's business, but a formula that reads -5 today is refused today.
+    if apply_value {
+        let t = buf.trim();
+        // THE ONE BARE PARSE OF THE SKETCHER, and it is asked once: is this a number or a formula? The
+        // answer decides both what value goes in and whether the formula is kept beside it.
+        let as_number = t.parse::<f64>().ok();
+        match as_number.or_else(|| parse_num(&*sk.project, t)) {
+            Some(v) => {
+                if set_dim_value(&mut *sk.project, si, ci, v) {
+                    if as_number.is_none() {
+                        // a formula keeps its text beside the value it evaluates to now
+                        if let Some(e) = sk.project.sketches[si].constraints.get_mut(ci).and_then(Constraint::expr_mut) {
+                            *e = buf.clone();
+                        }
                     }
+                    changed = true;
+                } else {
+                    *sk.status = qymcad_i18n::tr("sk-dim-must-be-positive");
                 }
-                Constraint::Distance { d, expr, .. } | Constraint::Diameter { d, expr, .. } | Constraint::EdgeDistance { d, expr, .. } => {
-                    if let Some(v) = num {
-                        *d = v;
-                        expr.clear();
-                    } else {
-                        *expr = buf.clone();
-                    }
-                }
-                Constraint::ArcLength { len, expr, .. } => {
-                    if let Some(v) = num {
-                        *len = v;
-                        expr.clear();
-                    } else {
-                        *expr = buf.clone();
-                    }
-                }
-                Constraint::Angle { deg, expr, .. } | Constraint::AngleLines { deg, expr, .. } => {
-                    if let Some(v) = num {
-                        *deg = v;
-                        expr.clear();
-                    } else {
-                        *expr = buf.clone();
-                    }
-                }
-                _ => {}
             }
-            changed = true;
+            // not a number and not a formula that evaluates yet - the text is kept, and it will be read
+            // again when the parameter it names appears
+            None => {
+                if let Some(e) = sk.project.sketches[si].constraints.get_mut(ci).and_then(Constraint::expr_mut) {
+                    *e = buf.clone();
+                    changed = true;
+                }
+            }
         }
     }
     if let Some(nb) = new_buf {
@@ -3268,6 +3345,33 @@ pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2)
                 }
             }
         }
+        // 2b) THE AXES X = 0 AND Y = 0 CROSS THINGS TOO.
+        //
+        // Reported behaviour: "a circle of construction geometry has a snap, but at the same time the
+        // cursor is not pulled to the X and Y axes, which makes it awkward to put the centre of a new
+        // circle on the construction circle". The axes were looked at only in the SECOND half of the
+        // snapping, after this block has already returned an answer - so the moment the cursor came near a
+        // circle, the circle answered "a point on my edge" and the axes never got a turn. And they were
+        // nowhere among the things that get intersected either, so the one point being aimed at - where
+        // the construction circle crosses the axis - was offered by neither half.
+        for axis in [0u8, 1] {
+            for (a, b) in lines.iter().chain(ref_segs.iter()) {
+                if let Some(p) = qymcad_ui_state::seg_axis_intersect(*a, *b, axis) {
+                    let d = sd(p, &*sk.view);
+                    if d <= qymcad_ui_state::grab::grab(sk.set, Grab::Snap) && cand.is_none_or(|(bd, _, bty)| (5u8, d) < (bty, bd)) {
+                        cand = Some((d, p, 5));
+                    }
+                }
+            }
+            for (c, r) in &circs {
+                for p in qymcad_ui_state::circle_axis_intersect(*c, *r, axis) {
+                    let d = sd(p, &*sk.view);
+                    if d <= qymcad_ui_state::grab::grab(sk.set, Grab::Snap) && cand.is_none_or(|(bd, _, bty)| (5u8, d) < (bty, bd)) {
+                        cand = Some((d, p, 5));
+                    }
+                }
+            }
+        }
         // 3) a point on an edge (the cursor projected onto a sketch segment, THE OUTLINE OF A PART or a
         // circle) plus A TIE TO THE GRID ALONG the face (face against grid, type 5, which outranks a plain
         // point on an edge): across the face it sticks to the face, along it to the nearest grid line, so
@@ -3418,4 +3522,56 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
             qymcad_i18n::tr("sk-drag-dim-hint")
         };
     }
+}
+
+/// DELETE WHAT IS SELECTED INSIDE A SKETCH: a text, a note, a constraint, or the geometry.
+///
+/// One thing at a time and in that order, because a text and a note are picked separately from the
+/// geometry and a person pressing Delete means the one they just clicked.
+///
+/// This lived in the frame's key handler, inside the application object, although every line of it is
+/// about a sketch and nothing about a window: deleting an entity, a point, a constraint, a note. It is the
+/// sketcher's, and it is here.
+pub fn delete_selected_in_sketch(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
+    if let Some(ti) = sk.annot.text.take() {
+        if ti < sk.project.sketches[si].texts.len() {
+            sk.project.delete_sketch_text(si, ti);
+            qymcad_ui_state::invalidate(&mut *sk.regen);
+            *sk.status = qymcad_i18n::tr("in-text-deleted");
+        }
+        return;
+    }
+    if let Some(ni) = sk.annot.note.take() {
+        if ni < sk.project.sketches[si].notes.len() {
+            sk.project.sketches[si].notes.remove(ni);
+            *sk.status = qymcad_i18n::tr("in-note-deleted");
+        }
+        return;
+    }
+    if let Some(ci) = sk.gsel.constraint.take() {
+        if ci < sk.project.sketches[si].constraints.len() {
+            sk.project.delete_sketch_constraint(si, ci); // also cleans up an orphaned midpoint
+            qymcad_ui_state::invalidate(&mut *sk.regen);
+            *sk.status = qymcad_i18n::tr("in-constraint-deleted");
+        }
+        return;
+    }
+    let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    // system points (the origin and the axes) and DRIVEN ones (projections of a body) are not deleted one
+    // by one
+    let sys: std::collections::HashSet<Id> = sk.project.sketches[si].immovable_points();
+    let pids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
+    if eids.is_empty() && pids.is_empty() {
+        return;
+    }
+    if !eids.is_empty() {
+        sk.project.delete_entities(si, &eids);
+    }
+    if !pids.is_empty() {
+        sk.project.delete_points(si, &pids); // the points go together with the lines and arcs incident to them
+    }
+    sk.project.solve_sketch(si);
+    sk.sel_sk.clear(); // the selection and whatever was waiting for it
+    qymcad_ui_state::invalidate(&mut *sk.regen);
+    *sk.status = qymcad_i18n::tr("in-deleted");
 }

@@ -445,6 +445,72 @@ pub fn edge_at(active_path: &[Id], cam: Cam3, edges: &EdgeCache, project: &Proje
     edges.ids.get(i).copied().filter(|id| *id != 0)
 }
 
+/// THE SKETCH TO LIGHT UNDER THE CURSOR, or nothing.
+///
+/// Answers only while a tool is WAITING for a sketch: outside that, an outline lighting under the cursor
+/// would say a click does something it does not.
+pub fn sketch_hover_3d(pn: &Painting, rect: Rect, at: Option<Pos2>, waiting: Option<u8>) -> Option<usize> {
+    let at = at.filter(|p| rect.contains(*p))?;
+    waiting?;
+    sketch_at_3d(pn, rect, at)
+}
+
+/// THE SKETCH UNDER THE CURSOR IN THE 3D VIEW, by its index.
+///
+/// Reported behaviour: "the sketch can be picked in the tree or by clicking it in the 3D viewport, and it
+/// highlights the way faces, edges and surfaces do in the other tools." It could not: the outlines are
+/// DRAWN in 3D and were highlighted once selected, but nothing turned a click there into a selection - the
+/// tree was the only way in.
+///
+/// PROJECTED THE WAY IT IS DRAWN. The outlines of a sketch on a plane of its own are lifted onto that
+/// plane before projecting (`sketch_frame`), so a hit test that skipped the lift would answer about a
+/// sketch lying somewhere the person cannot see it.
+pub fn sketch_at_3d(pn: &Painting, rect: Rect, screen: Pos2) -> Option<usize> {
+    let basis = pn.cam.basis();
+    let scr = |w: [f64; 3]| qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis }.at(w).0;
+    let foreign = foreign_contour_ids(pn);
+    let reach = qymcad_ui_state::grab::grab(pn.set, Grab::Curve);
+    let mut best: Option<(usize, f32)> = None;
+    for si in 0..pn.project.sketches.len() {
+        // ASKED OF THE SKETCH ITSELF, not through its contours: the walk is per sketch here, and the set of
+        // hidden ones is kept by sketch. Going the other way would need the drawing crate, which picking
+        // must not depend on.
+        if pn.sketch_hidden.contains(&pn.project.sketches[si].id) {
+            continue; // hidden by its own checkbox - what is not drawn cannot be pointed at
+        }
+        let frame = pn.project.sketch_frame(si).filter(|f| !f.is_identity());
+        let lift = |q: Point2| -> [f64; 3] {
+            match frame {
+                Some(f) => {
+                    let w = f.lift(q);
+                    [w.x, w.y, w.z]
+                }
+                None => [q.x, q.y, 0.0],
+            }
+        };
+        for &cid in &pn.project.sketches[si].contour_ids {
+            if foreign.contains(&cid) {
+                continue; // a sketch of another component - outside the active context
+            }
+            let Some(ci) = pn.project.contour_index(cid) else { continue };
+            let c = &pn.project.contours[ci];
+            if c.points.len() < 2 {
+                continue;
+            }
+            let n = c.points.len();
+            let last = if c.closed { n } else { n - 1 };
+            for k in 0..last {
+                let (a, b) = (scr(lift(c.points[k])), scr(lift(c.points[(k + 1) % n])));
+                let d = qymcad_ui_state::screen_dist_seg(screen, a, b);
+                if d <= reach && best.is_none_or(|(_, bd)| d < bd) {
+                    best = Some((si, d));
+                }
+            }
+        }
+    }
+    best.map(|(si, _)| si)
+}
+
 pub fn pick_sketch_plane_at(pn: &Painting, rect: Rect, screen: Pos2) -> Option<qymcad_core::feature::SketchPlane> {
     use qymcad_core::feature::SketchPlane;
     let basis = pn.cam.basis();

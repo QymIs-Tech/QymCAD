@@ -903,7 +903,7 @@ mod command_flow_tests {
     /// bottom leaves the sketch. The measure tool and the selection were not on the ladder at all, so the very
     /// first Esc fell through to `finish_sketch_edit`.
     #[test]
-    fn escape_cancels_tool_then_selection_then_sketch() {
+    fn escape_cancels_tool_then_selection_and_stops() {
         let mut app = App::default();
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         app.project.add_rect_entity(si, 0.0, 0.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
@@ -924,9 +924,15 @@ mod command_flow_tests {
         assert!(app.tools.sel_sk.items.is_empty(), "the selection is cleared: {}", app.status);
         assert!(app.sketch_ses.editing.is_some(), "and the sketch is still open");
 
-        // 3) nothing is active: only now does Esc finish the sketch
+        // 3) nothing is active: the ladder has run out, and Esc STOPS THERE.
+        //
+        // It used to close the sketch on this rung, and that was the whole complaint: Esc gives things
+        // back - the drawing under way, the tool, the selection - while finishing a context gives nothing
+        // back and is the same act as leaving a part. A person tapping Esc to get rid of a tool lost the
+        // sketch on the tap after the last one. Leaving is Ctrl+Enter, checked in
+        // `the_sketch_is_left_by_ctrl_enter.rs`.
         app.on_escape();
-        assert!(app.sketch_ses.editing.is_none(), "at the bottom of the ladder Esc closes the sketch");
+        assert!(app.sketch_ses.editing.is_some(), "at the bottom of the ladder Esc must do nothing, not close the sketch");
     }
 
     /// The same ladder for the drawing and dimension tools - they already worked, but a regression is caught by

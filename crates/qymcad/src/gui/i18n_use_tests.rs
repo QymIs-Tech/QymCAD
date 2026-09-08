@@ -698,10 +698,10 @@ fn every_code_the_libraries_emit_has_words_in_every_language() {
 /// codes (`tb-`, `wb-`, `tool-`, `sk-`, `jt-` and twenty more) were emitted by libraries that nothing
 /// watched. Whole families of interface words could have been missing in a language with every check
 /// green.
-const WATCHED_PREFIXES: [&str; 41] = [
+const WATCHED_PREFIXES: [&str; 42] = [
     "name-", "rebind-", "joint-", "thread-", "material-", "conn-", "f-", "m3-", "cad-", "io-", "post-", "verify-", "error-",
     "act-", "anchor-", "bool-", "cmd-", "con-", "dof-", "ent-", "expand-", "g-", "giz-", "hint-", "in-", "j-", "jt-", "msg-",
-    "node-", "opt-", "par-", "pp-", "scheme-", "sec-", "sk-", "sketch-", "status-", "tb-", "tool-", "unit-", "wb-",
+    "node-", "opt-", "par-", "pp-", "scheme-", "sec-", "sk-", "sketch-", "status-", "tb-", "tool-", "unit-", "vp-", "wb-",
 ];
 
 /// THE LIST OF PREFIXES MUST SAY WHAT IT CANNOT SEE.

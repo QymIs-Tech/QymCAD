@@ -166,6 +166,42 @@ fn every_standard_cuts_exactly_its_profile() {
     }
 }
 
+/// A PROFILE OF ONE'S OWN, at the angles and depths a person actually types.
+///
+/// Reported behaviour: "a custom thread is broken when trying to make a bolt and a nut - that is, when you
+/// set the profile and the angle yourself."
+///
+/// The matrix above walks five standards and stops there. `Custom` is the sixth, and the only one whose
+/// angle and depth come from a person rather than from a table - so it is the only one that can be asked
+/// for a shape no standard would produce, and the only one nothing was checking.
+///
+/// Walked as a matrix over the angle and the depth, because one pair of numbers proves nothing here: a
+/// profile is refused or spoilt by the RELATION between the two - a wide angle at a deep groove needs more
+/// room across the pitch than there is.
+#[test]
+fn a_profile_of_ones_own_cuts_exactly_what_was_asked_for() {
+    let (d, pitch) = (30.0, 5.0);
+    let mut bad = Vec::new();
+    for angle in [30.0, 45.0, 60.0, 90.0] {
+        for depth in [1.0, 2.0, 3.0] {
+            let spec = ThreadSpec { standard: ThreadStandard::Custom, nominal_d: d, pitch, custom_angle: angle, custom_depth: depth, ..Default::default() };
+            // A groove that will not fit the pitch is not a defect of the build - the program says so before
+            // building. Those cases belong to the message, not to this measurement.
+            if spec.profile_overflow().is_some() {
+                continue;
+            }
+            let g = spec.geometry();
+            let (got, want, valid) = cut_vs_profile(&g.groove, g.stock_d * 0.5, 20.0, g.lead);
+            let err = (got - want) / want * 100.0;
+            eprintln!("custom {angle} deg, {depth} deep: removed {got:8.2} against a predicted {want:8.2} -> {err:+5.2}%");
+            if !valid || err.abs() >= 2.0 {
+                bad.push(format!("{angle} deg x {depth} deep: removed {got:.2} instead of {want:.2} ({err:+.2}%), valid={valid}"));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "a profile of one's own does not come out as it was asked for:\n{}", bad.join("\n"));
+}
+
 /// An internal thread: the groove goes into the wall, and what it removes has to match the profile just the
 /// same.
 #[test]

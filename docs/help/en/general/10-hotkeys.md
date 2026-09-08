@@ -6,10 +6,19 @@ The full list is “Help -> Keyboard shortcuts”. Keys are reassigned there too
 
 ## General
 
-`Esc` cancels a command, `Enter` applies, `Delete` removes the selection, `Ctrl+Z` and `Ctrl+Y` undo
-and redo, `Ctrl+S` saves.
+`Esc` cancels a command, `Enter` applies, `Ctrl+Enter` finishes the sketch, part or subassembly,
+`Delete` removes the selection, `F2` renames the selection in the tree, `Ctrl+Z` and `Ctrl+Y` undo and
+redo, `Ctrl+S` saves.
 
-These five **cannot be reassigned**: they are the same in every program, and they work as expected here.
+These seven **cannot be reassigned**: they are the same in every program, and they work as expected here.
+
+`Ctrl+Enter` goes one level up: out of a sketch into the part, out of a part into the assembly, out of a
+subassembly into the assembly holding it. The same as the “Done” button at the top, without taking your
+hands off the keyboard. While a command or an array is open it leaves them alone — there `Enter` applies,
+and you leave afterwards.
+
+`F2` opens the name right in the tree row — a part, a subassembly, a sketch, a feature, a body or a
+datum. `Enter` confirms the name, `Esc` cancels. With nothing selected, `F2` does nothing.
 
 ## Per workbench
 

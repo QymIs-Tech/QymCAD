@@ -148,9 +148,22 @@ pub fn launch() -> eframe::Result<()> {
                 // the previous session's project is reopened LAZILY: the splash with the logo is shown first (the
                 // opening frames), and only then does the loading start, so a heavy STEP reparse does not hold an
                 // empty window.
-                if let Some(Some(path)) = eframe::get_value::<Option<String>>(storage, "last_project") {
-                    if std::path::Path::new(&path).is_file() {
+                // WHAT TO OPEN WITH is decided by `qymcad_ui_state::opening`, out of the settings, rather
+                // than here. The decision used to be "always reopen the last project" with nothing to say
+                // otherwise, and it lived in this closure - which no check can run, so it was a decision
+                // nobody measured.
+                let last = eframe::get_value::<Option<String>>(storage, "last_project").flatten();
+                match qymcad_ui_state::opening(&app.set, last.as_deref()) {
+                    qymcad_ui_state::Opening::LastProject(path) => {
                         app.disk.io.startup = Some(path); // loaded asynchronously on the first frame (the splash with the spinner)
+                    }
+                    qymcad_ui_state::Opening::Empty { start_screen } => {
+                        // AN EMPTY DOCUMENT IS EMPTY: the root and nothing else. `App::default` hands out a
+                        // document with a part in it, which is right for a check that needs somewhere to
+                        // draw and wrong for the first minute of a person - reported as "a person opens the
+                        // CAD and sees an empty part".
+                        app.project.new_empty_document();
+                        app.win.show_start(start_screen);
                     }
                 }
             }
@@ -570,6 +583,24 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
     );
     fonts.families.insert(egui::FontFamily::Name(BOLD_FONT.into()), vec![BOLD_FONT.to_string()]);
     ctx.set_fonts(fonts);
+    // THE HINT SIZE, set here because this is the one place that already decides how text is drawn - and
+    // because a size set in two places drifts.
+    //
+    // Reported behaviour: "the hint fonts are small at scale 1 and at 1.2 alike ... make them a bit larger
+    // everywhere, and make them scale with the setting too." Measured: a hint was 10 points against 15 for
+    // ordinary text, two thirds of it. The interface scale is a zoom factor, so it multiplies BOTH by the
+    // same amount - the hint does grow on screen, but its share of the text around it never changes, and
+    // that is what makes it unreadable at every scale.
+    //
+    // IN POINTS, not pixels. The scale turns points into pixels, so a size given here follows it; a size in
+    // pixels would be readable at one scale and wrong at every other.
+    // BOTH THEMES: egui keeps a style per theme, and setting one leaves the hints tiny for whoever
+    // switches to the other.
+    ctx.all_styles_mut(|st| {
+        if let Some(f) = st.text_styles.get_mut(&egui::TextStyle::Small) {
+            f.size = 11.0; // against a body of 12.5: 0.88 instead of 0.72
+        }
+    });
 }
 
 /// The name of the BOLD font family. One place: family names spelled out separately drift apart and
@@ -2133,6 +2164,9 @@ impl App {
         { let mut asks = Vec::new(); crate::gui::panels_windows::params_window(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); }
         { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); }
         shell.run_slot(qymcad_shell::Slot::Centre, ui, self); // last, and now for a stated reason
+        // A tool waiting for a sketch takes whichever one was just selected - tree or viewport, no
+        // difference. After the panels on purpose: the click that chose it has landed by now.
+        qymcad_part::take_sketch_if_waiting(&mut self.part_ctx());
         // commit an undo step if the edit has finished
         maybe_commit(&mut self.disk.edits, &mut self.tools.place, &self.project, &self.set, ctx);
     }
@@ -3498,6 +3532,11 @@ pub(crate) fn gizmo_ring_hit_at(dc: &qymcad_ui_state::DrawCtx, o: [f64; 3], l: f
 pub(crate) fn fit3d(cam: &mut Cam3, project: &Project, rect: Rect) {
     let mut mn = [f64::INFINITY; 3];
     let mut mx = [f64::NEG_INFINITY; 3];
+    // A POINT THAT IS NOT A NUMBER DOES NOT MOVE THE BOUNDS, and that is why the bounds are widened by
+    // COMPARISON rather than by `min`/`max`: every comparison against a NaN is false, so one bad vertex - an
+    // import gone wrong, a degenerate face - is simply not measured. Held by a check of its own, because
+    // written the obvious way it would poison both bounds, the finite test below would refuse the whole
+    // fit, `cam.init` would stay false, and the viewport would open on nothing every frame for ever.
     let mut acc = |p: [f64; 3]| {
         for a in 0..3 {
             if p[a] < mn[a] {
@@ -3508,14 +3547,37 @@ pub(crate) fn fit3d(cam: &mut Cam3, project: &Project, rect: Rect) {
             }
         }
     };
-    for m in project.bodies.iter().map(|b| &b.mesh) {
-        for v in &m.verts {
-            acc([v.x, v.y, v.z]);
+    // THE BODIES IN WORLD SPACE, and only the ones that are actually drawn.
+    //
+    // Reported behaviour: "sometimes on starting the program, if there is a finished project already, the
+    // camera flies terribly far away, or an empty 3D viewport opens."
+    //
+    // A body's mesh lives in the coordinates of the component that owns it; where that component stands
+    // comes from `body_world_transform`, and this measurement never asked for it. In an assembly whose
+    // parts are placed apart the camera was aimed at the local zero of the meshes while the parts were
+    // drawn elsewhere: measured on two parts 200 mm apart, none of the far part's bounding box was on
+    // screen at all. Consumed and hidden bodies are left out for the same reason - they are not on screen,
+    // and framing the view around them aims it at nothing.
+    let consumed = project.consumed_bodies();
+    for b in project.bodies.iter().filter(|b| b.visible && !consumed.contains(&b.id)) {
+        let wt = project.body_world_transform(b.id);
+        for v in &b.mesh.verts {
+            acc(qymcad_core::feature::apply12(&wt, [v.x, v.y, v.z]));
         }
     }
-    for c in project.contours.iter() {
-        for p in &c.points {
-            acc([p.x, p.y, 0.0]);
+    // THE SKETCHES, LIFTED ONTO THEIR OWN PLANES. `project.contours` holds flat 2D coordinates of a sketch
+    // on its own plane, and they were fed in as world X and Y with z = 0 - so a sketch on the front plane,
+    // or one belonging to a part standing away from the origin, dragged the measurement to a place where
+    // nothing is drawn.
+    for (si, s) in project.sketches.iter().enumerate() {
+        let Some(fr) = project.sketch_frame(si) else { continue };
+        let wt = project.sketch_owner(s.id).map(|c| project.world_transform(c)).unwrap_or(qymcad_core::feature::PLACE_IDENTITY);
+        for cid in &s.contour_ids {
+            let Some(ci) = project.contour_index(*cid) else { continue };
+            for p in &project.contours[ci].points {
+                let w = fr.lift(*p);
+                acc(qymcad_core::feature::apply12(&wt, [w.x, w.y, w.z]));
+            }
         }
     }
     if !mn[0].is_finite() {
@@ -4108,6 +4170,18 @@ mod thread_runout_look;
 mod the_view_belongs_to_the_person;
 mod escape_with_an_open_list;
 mod the_cancel_button_cancels;
+mod the_sketch_is_left_by_ctrl_enter;
+mod the_two_answers_are_told_apart;
+mod what_the_program_opens_with;
+mod contours_are_chosen_before_the_size;
+mod a_tool_that_needs_a_sketch_asks_for_one;
+mod the_sketch_mirror_asks_about_what;
+mod which_button_moves_the_view;
+mod hints_are_readable;
+mod renaming_starts_with_f2;
+mod the_scale_is_stepped_not_dragged;
+mod the_camera_finds_the_model_on_opening;
+mod the_wheel_zooms_where_you_point;
 mod the_part_menu_can_delete;
 mod expr_field_behaviour;
 mod params_table_gesture;

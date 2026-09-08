@@ -298,6 +298,18 @@ pub struct Palette {
     /// a milder trouble: a bad expression, an over-defining constraint - red, but not shouting
     pub error_mild: [u8; 3],
 
+    // --- THE TWO ANSWERS A COMMAND EXPECTS ---
+    //
+    // Their own colours rather than `ok` and `error_mild`, which are next door and would have done at a
+    // glance. `ok` means "the sketch is fully defined" and `error_mild` means "something is wrong"; a
+    // button that applies is neither. Borrowing them would tie two unrelated decisions together, so a
+    // scheme could never make the apply button a different green without recolouring the degrees of
+    // freedom with it.
+    /// the button that applies the command (Enter)
+    pub confirm: [u8; 3],
+    /// the button that cancels it (Esc) - a way out, not a mistake, so red but not alarming
+    pub refuse: [u8; 3],
+
     // --- THE DEPTH OF SHADING: how dark the scheme lets the most shaded face become ---
     //
     // This is NOT a colour, but it is a decision of the scheme, and keeping it as a number in the painter
@@ -574,6 +586,8 @@ readers!(
     warning,
     error,
     error_mild,
+    confirm,
+    refuse,
     cam_plunge,
     cam_rapid,
     cam_table,
@@ -766,6 +780,8 @@ pub fn dark() -> Palette {
         warning: [210, 160, 40], // a redundant constraint
         error: [255, 80, 70],    // a conflict (240,90,80 and 255,90,80 merged in here)
         error_mild: [230, 120, 120], // (240,130,120 and 230,130,110 merged in here)
+        confirm: [110, 200, 130], // quieter than `ok`: a button is a large patch, and the sketch mark is a thin line
+        refuse: [215, 125, 120],  // a way out rather than a mistake, so short of the alarm red of `error`
 
         cam_plunge: [225, 95, 95],
         cam_rapid: [115, 115, 115], // from_gray(110) and from_gray(120) merged

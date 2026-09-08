@@ -92,14 +92,9 @@ impl App {
                 // WHILE DRAGGING: every link carries ITS OWN object until the release
                 sketch_drag_update(&mut self.sketch_ctx(), ctx, resp, rect);
                 power_trim_drag(&mut self.sketch_ctx(), resp, rect); // trimming by dragging (the trim tool)
-                // panning with the middle button (in a sketch the left button on empty space is a selection box)
-                if ctx.input(|i| i.pointer.middle_down()) {
-                    let d = ctx.input(|i| i.pointer.delta());
-                    self.viewing.view.center.x -= d.x / self.viewing.view.scale;
-                    self.viewing.view.center.y += d.y / self.viewing.view.scale;
-                }
+                qymcad_ui_state::pan_sheet_2d(&mut self.viewing.view, ctx);
                 if scroll != 0.0 && resp.hovered() {
-                    self.viewing.view.scale = (self.viewing.view.scale * (scroll * 0.002).exp()).clamp(0.02, 800.0);
+                    qymcad_ui_state::wheel_zoom_2d(&mut self.viewing.view, &self.set, rect, resp.hover_pos(), scroll);
                 }
                 // A CLICK IN A SKETCH: a drawing tool, placing a dimension, or picking geometry
                 sketch_click(&mut self.sketch_ctx(), ctx, resp, rect);

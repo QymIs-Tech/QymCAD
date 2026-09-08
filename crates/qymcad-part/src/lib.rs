@@ -88,16 +88,6 @@ pub fn live_picks(project: &qymcad_core::model::Project, body: Id, r: &qymcad_co
     picked.into_iter().filter(|d| live.contains(d)).collect()
 }
 
-/// Start renaming a component, a datum or a body in place. The current name goes into the field, with
-/// auto-focus.
-pub fn start_rename_node(rename: &mut qymcad_ui_state::RenameInput, node: qymcad_ui_state::RenameNode, cur: String) {
-    rename.node = Some(node);
-    rename.target = None; // must not clash with renaming a feature or a sketch
-    rename.sketch = None;
-    rename.buf = cur;
-    rename.focus = true;
-}
-
 /// The raw text of a command field (an expression or a number), by key.
 pub fn cmd_txt(cmd: &qymcad_ui_state::FeatCommand, key: &str) -> String {
     cmd.params.iter().find(|p| p.key == key).map(|p| p.txt.clone()).unwrap_or_default()
@@ -182,11 +172,45 @@ pub fn sync_custom_params(cmd: &mut qymcad_ui_state::FeatCommand, thread: qymcad
     let custom = !thread.auger && qymcad_ui_state::thread_standard(thread.form) == qymcad_core::thread::ThreadStandard::Custom;
     let has = cmd.params.iter().any(|p| p.key == "angle");
     if custom && !has {
-        let p = qymcad_ui_state::cmd_val(cmd, "pitch");
         cmd.params.push(qymcad_ui_state::CmdParam::new("f-profile-angle", "angle", 60.0, 5.0, 170.0));
-        cmd.params.push(qymcad_ui_state::CmdParam::new("f-thread-depth", "depth", if p > 0.0 { p * 0.6 } else { 0.0 }, 0.0, 1000.0));
+        // The depth opens on the one that will be cut, not on zero: zero here means "nothing was typed" and
+        // the core cuts 0.6 of the pitch, so a field at 0.00 stood over a groove 1.50 deep.
+        let depth = thread_spec(cmd, thread).geometry().depth;
+        cmd.params.push(qymcad_ui_state::CmdParam::new("f-thread-depth", "depth", depth, 0.0, 1000.0));
     } else if !custom && has {
         cmd.params.retain(|p| p.key != "angle" && p.key != "depth");
+    }
+}
+
+/// THE THREAD THE COMMAND DESCRIBES, in one place.
+///
+/// Three places built this record: applying the command, editing an existing feature, and the bar's own
+/// line about the geometry and about what the mating part needs. The third built a record of its own and
+/// filled the rest of the fields from `Default`. For the five standards taken from a table that costs
+/// nothing - the fields left out are not part of their profile. `Custom` is the one standard whose depth
+/// and angle come from the person, so exactly there the two numbers that mattered were dropped.
+///
+/// Reported behaviour: "a custom thread is broken when trying to make a bolt and a nut - that is, when you
+/// set the profile and the angle yourself." Measured at Ø20 x 5 with a depth of 2.5 typed in: the nut needs
+/// a hole of 15.00 mm and the bar named 14.00, having used `Default`'s 0.6 of the pitch. A nut bored to
+/// what the bar says is a millimetre undersize and does not go on.
+pub fn thread_spec(cmd: &qymcad_ui_state::FeatCommand, thread: qymcad_ui_state::ThreadParams) -> qymcad_core::thread::ThreadSpec {
+    let v = |k: &str| qymcad_ui_state::cmd_val(cmd, k);
+    qymcad_core::thread::ThreadSpec {
+        standard: qymcad_ui_state::thread_standard(thread.form),
+        // Before a cylinder is picked there is no size field yet and the bar still has to say something:
+        // the size of whatever the command is standing on.
+        nominal_d: if v("nominal") > 0.0 { v("nominal") } else { thread.radius * 2.0 },
+        pitch: v("pitch"),
+        starts: thread.starts.max(1),
+        left: thread.left,
+        internal: thread.internal,
+        fit: v("fit"),
+        crest_r: (v("crest_r") > 1e-9).then(|| v("crest_r")),
+        root_r: (v("root_r") > 1e-9).then(|| v("root_r")),
+        custom_depth: v("depth"),
+        // A profile of one's own with no angle typed is the 60-degree V a table would give.
+        custom_angle: if v("angle") > 1.0 { v("angle") } else { 60.0 },
     }
 }
 
@@ -345,15 +369,6 @@ pub fn sync_dir_cmd_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_s
 pub fn cmd_exprs_valid(cmd: &qymcad_ui_state::FeatCommand, project: &Project) -> bool {
     let vars = project.param_map();
     cmd.params.iter().all(|p| qymcad_core::expr::eval(&p.txt, &vars).is_ok())
-}
-
-/// Start renaming timeline node `id` in place: remember the target, copy the name, ask for auto-focus.
-pub fn start_rename(project: &Project, rename: &mut qymcad_ui_state::RenameInput, id: Id) {
-    let cur = project.timeline.iter().find(|n| n.id == id).map(|n| qymcad_i18n::name(&n.name)).unwrap_or_default();
-    rename.target = Some(id);
-    rename.sketch = None; // must not clash with renaming a sketch
-    rename.buf = cur;
-    rename.focus = true;
 }
 
 /// The "what to pick" hint for the active command, while nothing has been picked yet.
@@ -522,20 +537,7 @@ pub fn apply_thread_cmd(cmd: &qymcad_ui_state::FeatCommand, project: &mut Projec
         };
         project.add_auger(src, thread.edge, spec, qymcad_ui_state::cmd_val(cmd, "length"), qymcad_ui_state::cmd_val(cmd, "lead_in"), qymcad_ui_state::cmd_val(cmd, "lead_out"))
     } else {
-        let spec = qymcad_core::thread::ThreadSpec {
-            standard: qymcad_ui_state::thread_standard(thread.form),
-            nominal_d: qymcad_ui_state::cmd_val(cmd, "nominal"),
-            pitch: qymcad_ui_state::cmd_val(cmd, "pitch"),
-            starts: thread.starts.max(1),
-            left: thread.left,
-            internal: thread.internal,
-            fit: qymcad_ui_state::cmd_val(cmd, "fit"),
-            crest_r: (qymcad_ui_state::cmd_val(cmd, "crest_r") > 1e-9).then(|| qymcad_ui_state::cmd_val(cmd, "crest_r")),
-            root_r: (qymcad_ui_state::cmd_val(cmd, "root_r") > 1e-9).then(|| qymcad_ui_state::cmd_val(cmd, "root_r")),
-            custom_depth: qymcad_ui_state::cmd_val(cmd, "depth"),
-            custom_angle: if qymcad_ui_state::cmd_val(cmd, "angle") > 1.0 { qymcad_ui_state::cmd_val(cmd, "angle") } else { 60.0 },
-        };
-        project.add_thread(src, thread.edge, spec, qymcad_ui_state::cmd_val(cmd, "length"), qymcad_ui_state::cmd_val(cmd, "lead_in"), qymcad_ui_state::cmd_val(cmd, "lead_out"))
+        project.add_thread(src, thread.edge, thread_spec(cmd, thread), qymcad_ui_state::cmd_val(cmd, "length"), qymcad_ui_state::cmd_val(cmd, "lead_in"), qymcad_ui_state::cmd_val(cmd, "lead_out"))
     };
     store_cmd_exprs(cmd, project, body);
     Some(body)
@@ -1475,6 +1477,9 @@ pub fn start_loft_cmd(pc: &mut qymcad_ui_state::PartCtx) {
         _ => pc.cmd.sketch,
     };
     let Some(si) = si.filter(|&si| si < pc.project.sketches.len()) else {
+        // WAITS LIKE THE REST. It used to write the line and return, and a line in the status bar is not an
+        // answer to a click.
+        *pc.picking = qymcad_ui_state::Picking::SketchFor(9);
         *pc.status = qymcad_i18n::tr("msg-loft-pick-first");
         return;
     };
@@ -1507,6 +1512,7 @@ pub fn start_sweep_cmd(pc: &mut qymcad_ui_state::PartCtx) {
         _ => pc.cmd.sketch,
     };
     let Some(si) = si.filter(|&si| si < pc.project.sketches.len()) else {
+        *pc.picking = qymcad_ui_state::Picking::SketchFor(8); // waits like the rest
         *pc.status = qymcad_i18n::tr("msg-sweep-pick-profile");
         return;
     };
@@ -1743,12 +1749,72 @@ pub fn start_array_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
 }
 
 /// A command driven by a sketch (extrude or revolve): pick a profile, set the size on the canvas, Enter.
+/// THE CLICK THAT NAMES BODY B for a body-to-body boolean.
+///
+/// `hit` is the body the click landed on, worked out by the caller: finding it needs the whole scene and
+/// acting on it needs the document, and the two borrows cannot be held at once.
+///
+/// Moved out of the frame because it is a decision about the DOCUMENT - which two bodies are combined -
+/// and the frame's business is only where the click landed.
+pub fn take_boolean_pick(pc: &mut qymcad_ui_state::PartCtx, hit: Option<Id>) {
+    let Some((a, op)) = pc.boolean.pick else { return };
+    match hit {
+        Some(b) if b != a => {
+            let res = pc.project.add_body_boolean(a, b, op);
+            pc.boolean.pick = None;
+            qymcad_ui_state::mark_dirty_for_rebuild(&mut pc.rebuild()); // the document is marked; the scheduler does the computing
+            let (project, sel, view) = (&mut *pc.project, &mut *pc.sel, &mut *pc.view);
+            qymcad_ui_state::select_body(project, sel, view, res);
+            *pc.status = qymcad_i18n::tr("vp-bool-created");
+        }
+        Some(_) => *pc.status = qymcad_i18n::tr("vp-this-is-a"),
+        None => *pc.status = qymcad_i18n::tr("vp-miss-body-b"),
+    }
+}
+
+/// THE CLICK THAT NAMES THE SKETCH a waiting tool asked for.
+///
+/// `hit` is what the click landed on, worked out by the caller: the answer needs the whole scene and the
+/// act needs the document, and the two borrows cannot be held at once.
+///
+/// A MISS SAYS SO rather than putting the tool down. Pointing at nothing is an aim that missed, not a
+/// change of mind; putting the tool down on it would make every stray click cancel the command.
+pub fn name_the_sketch(pc: &mut qymcad_ui_state::PartCtx, hit: Option<usize>) {
+    match hit {
+        Some(si) => *pc.sel = qymcad_ui_state::Sel::Sketch(si), // the frame's own step continues the command
+        None => *pc.status = qymcad_i18n::tr("msg-pick-sketch-first"),
+    }
+}
+
+/// A COMMAND WAITING FOR A SKETCH TAKES THE FIRST ONE THAT GETS SELECTED.
+///
+/// ONE PLACE, called once a frame after the panels have drawn. A sketch can be picked in the tree or in
+/// the viewport, and putting "if something is waiting, continue it" into both would be two copies of one
+/// decision - they drift apart at the first edit of one of them. Here the wait does not care where the
+/// selection came from.
+pub fn take_sketch_if_waiting(pc: &mut qymcad_ui_state::PartCtx) {
+    let Some(kind) = pc.picking.sketch_for() else { return };
+    let qymcad_ui_state::Sel::Sketch(_) = *pc.sel else { return };
+    pc.picking.clear(); // cleared BEFORE the command starts: it opens its own picking, and a stale wait would outlive it
+    // BY KIND, because the four tools that need a sketch open through three different doors. Sending them
+    // all to `start_sketch_cmd` would open an extrude where a loft was asked for.
+    match kind {
+        8 => start_sweep_cmd(pc),
+        9 => start_loft_cmd(pc),
+        k => start_sketch_cmd(pc, k),
+    }
+}
+
 pub fn start_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
     let si = match *pc.sel {
         qymcad_ui_state::Sel::Sketch(si) => Some(si),
         _ => pc.cmd.sketch,
     };
     let Some(si) = si.filter(|&si| si < pc.project.sketches.len()) else {
+        // THE TOOL IS TAKEN IN HAND AND WAITS instead of not starting. It used to write the line below and
+        // return, and a line in the status bar is not an answer to a click: what a person sees is that they
+        // pressed and nothing happened. The wait is answered by `take_sketch_if_waiting`.
+        *pc.picking = qymcad_ui_state::Picking::SketchFor(cmd);
         *pc.status = qymcad_i18n::tr("msg-pick-sketch-first");
         return;
     };
@@ -1792,6 +1858,18 @@ pub fn start_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
     *pc.mode_3d = true;
     let what = if cmd == 3 { qymcad_i18n::tr("f-revolve") } else { qymcad_i18n::tr("f-extrude") };
     *pc.status = qymcad_i18n::tr1("cmd-pick-contours-hint", "what", &what);
+    // WITH SOMETHING TO CHOOSE, THE COMMAND ASKS BEFORE IT SHOWS A SIZE.
+    //
+    // Reported behaviour: to change which contours are used a person had to find the "Pick contours"
+    // button, or U/Alt+U, having already been shown a body built out of ALL of them. Now the creation of a
+    // feature starts where the choice is - the flat view, where a click lands on a contour.
+    //
+    // ONLY WITH TWO OR MORE, and only when CREATING. A picker over a single candidate is a step that can
+    // end one way, which is worse than no step at all; and an edit has already been told which contours the
+    // feature is made of, so it opens on the size, with re-picking left on the button.
+    if closed.len() > 1 {
+        enter_contour_reselect(pc);
+    }
 }
 
 /// CREATE A PRIMITIVE from the fields of the running command.
@@ -1912,13 +1990,10 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     // THE THREAD: the values of the parameters and options BEFORE the timeline is borrowed (the angle and
     // the depth have already been taken)
     let (t_pitch, t_length) = (qymcad_ui_state::cmd_val(pc.cmd, "pitch"), qymcad_ui_state::cmd_val(pc.cmd, "length"));
-    let (t_internal, t_starts, t_left) = (pc.thread.internal, pc.thread.starts.max(1), pc.thread.left);
-    let t_form = pc.thread.form;
-    let (t_nominal, t_fit) = (qymcad_ui_state::cmd_val(pc.cmd, "nominal"), qymcad_ui_state::cmd_val(pc.cmd, "fit")); // the size and the fit
+    let (t_starts, t_left) = (pc.thread.starts.max(1), pc.thread.left);
+    let t_spec = thread_spec(pc.cmd, *pc.thread); // the whole record, so an edit and an apply cannot differ
     let (t_outer, t_thickness, t_edge_r) = (qymcad_ui_state::cmd_val(pc.cmd, "outer"), qymcad_ui_state::cmd_val(pc.cmd, "thickness"), qymcad_ui_state::cmd_val(pc.cmd, "edge_r")); // the auger
     let (t_lead_in, t_lead_out) = (qymcad_ui_state::cmd_val(pc.cmd, "lead_in"), qymcad_ui_state::cmd_val(pc.cmd, "lead_out"));
-    let (t_crest_r, t_root_r) = (qymcad_ui_state::cmd_val(pc.cmd, "crest_r"), qymcad_ui_state::cmd_val(pc.cmd, "root_r")); // the fillets of the profile
-    let t_angle = qymcad_ui_state::cmd_val(pc.cmd, "angle"); // the angle of a custom profile
     let (sw_prof, sw_path, sw_pcid, sw_hcid) = (pc.sweep.prof_sid, pc.sweep.path_sid, pc.sweep.prof_cid, pc.sweep.path_cid); // captured before the mutable borrow
     let (lf_sids, lf_cids, lf_ruled) = (pc.loft.sids.clone(), pc.loft.cids.clone(), pc.loft.ruled); // the loft, captured before the mutable borrow
     // the kind of loft result maps to (src, op). For a boolean the target is the active body of the
@@ -2097,17 +2172,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
             }
             FeatureKind::Thread { spec, length, lead_in, lead_out, .. } => {
                 // editing a thread means the standard and the size (the core computes the geometry)
-                spec.standard = qymcad_ui_state::thread_standard(t_form);
-                spec.nominal_d = t_nominal;
-                spec.pitch = t_pitch;
-                spec.starts = t_starts;
-                spec.left = t_left;
-                spec.internal = t_internal;
-                spec.fit = t_fit;
-                spec.crest_r = (t_crest_r > 1e-9).then_some(t_crest_r);
-                spec.root_r = (t_root_r > 1e-9).then_some(t_root_r);
-                spec.custom_depth = dep;
-                spec.custom_angle = if t_angle > 1.0 { t_angle } else { 60.0 };
+                *spec = t_spec;
                 *length = t_length;
                 *lead_in = t_lead_in;
                 *lead_out = t_lead_out;
@@ -2919,6 +2984,91 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
 /// The on-screen input field or fields for the dimensions of the active command, at the geometry (just
 /// like sketch dimensions): a number OR an expression such as `w/2+3`. Enter applies, Esc cancels. One
 /// mechanism for every part tool.
+/// THE TWO BUTTONS A COMMAND ENDS WITH, in the colours the scheme gives them.
+///
+/// Reported behaviour: "highlight the Enter (apply) and Esc (cancel) buttons in the tool popups with
+/// different colours, green and red say, so that it is clear". They used to differ by a tick glyph and a
+/// bold face - a difference one READS rather than sees, and at the moment of pressing nobody is reading.
+///
+/// THE COLOUR GOES ON THE TEXT AND THE OUTLINE, not on the fill. A filled patch would need a text colour
+/// contrasting against the patch itself, which is a second decision nobody guards; text on the panel
+/// background is exactly the pair the scheme's legibility check already measures.
+///
+/// ONE PAIR FOR THREE PLACES. The point of the pair is that the two DIFFER, and a decision written out at
+/// each of the three sites drifts at the first edit of one of them.
+/// WHAT A COMMAND BAR SAYS, as opposed to what it offers to press.
+///
+/// Reported behaviour: "messages like these must be written on a new line. The text with the
+/// information - a new line; if there is text with errors, that goes on a new line too, so on the third
+/// one. And this is scale 1 - very small and unreadable even on my 2K monitor."
+///
+/// MEASURED ON THE THREAD BAR, opened with its own defaults - M10, coarse pitch, 0.20 mm of fit. It says
+/// three sentences at once, 340 characters of prose, and every one of them stood IN the row of controls:
+/// the row wraps by itself, so a sentence broke wherever the row happened to end and carried on under a
+/// button. A person reading it has to find where it went.
+///
+/// The sentences are gathered here while the controls are drawn, and laid out under them: what the tool
+/// tells on one line, what will not build on the next. Off that row they are also written at the ordinary
+/// size - the small size was the price of squeezing prose in beside the buttons, and there is no such
+/// price to pay on a line of one's own.
+#[derive(Default)]
+struct BarSays {
+    /// what the tool is doing, or waiting for
+    told: Vec<(String, Option<String>)>,
+    /// what will not build the way it is set
+    wrong: Vec<(String, Option<String>)>,
+}
+
+impl BarSays {
+    /// What the tool is doing, or what it is waiting for.
+    fn tell(&mut self, text: impl Into<String>) {
+        self.told.push((text.into(), None));
+    }
+
+    /// The same, with the longer explanation the hover shows.
+    fn tell_hover(&mut self, text: impl Into<String>, hover: impl Into<String>) {
+        self.told.push((text.into(), Some(hover.into())));
+    }
+
+    /// What will not build as it is set, and what to change.
+    fn wrong(&mut self, text: impl Into<String>) {
+        self.wrong.push((text.into(), None));
+    }
+
+    /// Lay the sentences under the controls, one line for each kind.
+    ///
+    /// A line that has nothing to say takes no room at all: an empty row reserved for a hint that rarely
+    /// comes would push the viewport down by its height on every command.
+    fn show(self, ui: &mut egui::Ui, pal: &qymcad_scheme::Palette) {
+        for (line, colour) in [(self.told, pal.hint()), (self.wrong, pal.error_mild())] {
+            if line.is_empty() {
+                continue;
+            }
+            ui.horizontal_wrapped(|ui| {
+                for (i, (text, hover)) in line.into_iter().enumerate() {
+                    if i > 0 {
+                        ui.separator();
+                    }
+                    let r = ui.label(egui::RichText::new(text).color(colour));
+                    if let Some(h) = hover {
+                        r.on_hover_text(h);
+                    }
+                }
+            });
+        }
+    }
+}
+
+fn confirm_button(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, enabled: bool, label: String) -> bool {
+    let text = egui::RichText::new(label).color(pal.confirm()).strong();
+    ui.add_enabled(enabled, egui::Button::new(text).stroke(egui::Stroke::new(1.0, pal.confirm()))).clicked()
+}
+
+fn refuse_button(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, label: String) -> bool {
+    let text = egui::RichText::new(label).color(pal.refuse());
+    ui.add(egui::Button::new(text).stroke(egui::Stroke::new(1.0, pal.refuse()))).clicked()
+}
+
 pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, rect: Rect) {
     if pc.armed.cmd_kind() == 0 || pc.cmd.params.is_empty() || !*pc.mode_3d {
         return;
@@ -3008,7 +3158,7 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
                 apply = true;
             }
             ui.horizontal(|ui| {
-                if ui.add_enabled(ready && all_ok, egui::Button::new(egui::RichText::new(format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter"))).strong())).clicked() {
+                if confirm_button(&pc.scheme.pal, ui, ready && all_ok, format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter"))) {
                     apply = true;
                 }
                 // THE BUTTON DOES WHAT THE KEY DOES. Reported behaviour: pressing it changes nothing -
@@ -3016,7 +3166,7 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
                 // comment claiming the cancel happened below; below there was only the apply. A button
                 // that answers a click with nothing is worse than no button: it says the way out is
                 // here, and it is not.
-                if ui.button(qymcad_i18n::tr("cmd-cancel-esc")).clicked() {
+                if refuse_button(&pc.scheme.pal, ui, format!("{} {}", ph::X, qymcad_i18n::tr("cmd-cancel-esc"))) {
                     cancel = true;
                 }
             });
@@ -3350,8 +3500,8 @@ pub fn comp_array_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
             ui.selectable_value(&mut pc.carr.dir, 2u8, "Z");
         }
         ui.separator();
-        apply = ui.button(format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter"))).clicked();
-        cancel = ui.button(format!("{} {}", ph::X, qymcad_i18n::tr("cmd-cancel-btn"))).clicked();
+        apply = confirm_button(&pc.scheme.pal, ui, true, format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter")));
+        cancel = refuse_button(&pc.scheme.pal, ui, format!("{} {}", ph::X, qymcad_i18n::tr("cmd-cancel-btn")));
     });
     if apply {
         apply_comp_array(pc);
@@ -3360,6 +3510,16 @@ pub fn comp_array_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
         pc.cmd.params.clear();
         *pc.status = qymcad_i18n::tr("msg-comp-array-cancelled");
     }
+}
+
+/// IS THIS TOOL IN HAND - open, OR waiting for the sketch it needs?
+///
+/// Reported behaviour: "press the tool and it stays highlighted, with the status asking for a sketch." It
+/// did not: the wait lives in `Picking`, and the button lit from `armed` alone, so a tool that WAS waiting
+/// looked untouched. A tool that acts and does not look taken is the same trouble as one that looks taken
+/// and does not act.
+fn tool_is_taken(bc: &qymcad_ui_state::BarCtx, kind: u8) -> bool {
+    bc.armed.cmd_kind() == kind || bc.picking.sketch_for() == Some(kind)
 }
 
 pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
@@ -3395,6 +3555,8 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
             _ => &qymcad_i18n::tr("cmd-command"),
         };
         let (mut apply, mut cancel, mut reselect) = (false, false, false);
+        // The sentences the bar says are gathered here and laid out under the controls, not between them.
+        let mut says = BarSays::default();
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(format!("{} {title}", ph::CUBE)).strong());
             ui.separator();
@@ -3419,7 +3581,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     }
                     if pc.cmd.extent.two_sided() {
                         // the second side's distance is an expression field at the geometry (a popup), not here
-                        ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-second-side-note")).weak().small());
+                        says.tell(qymcad_i18n::tr("cmd-second-side-note"));
                     }
                     ui.separator();
                     if ui.selectable_label(pc.feat.flip, format!("{} {}", ph::ARROWS_DOWN_UP, qymcad_i18n::tr("cmd-flip-btn"))).on_hover_text(qymcad_i18n::tr("cmd-reverse-hint")).clicked() {
@@ -3454,15 +3616,21 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     match axis_src {
                         Some(name) => {
                             ui.colored_label(pc.scheme.pal.connector(), format!("{} {name}", ph::CROSSHAIR));
-                            if ui.small_button(format!("{} X/Y", ph::X)).on_hover_text(qymcad_i18n::tr("cmd-reset-axis-sketch")).clicked() {
+                            let pair = format!("{}/{}", qymcad_ui_state::sketch_axis_name(&*pc.project, pc.cmd.sketch, 0), qymcad_ui_state::sketch_axis_name(&*pc.project, pc.cmd.sketch, 1));
+                            if ui.small_button(format!("{} {pair}", ph::X)).on_hover_text(qymcad_i18n::tr("cmd-reset-axis-sketch")).clicked() {
                                 pc.rev.axis_datum = 0;
                                 pc.rev.axis_line = 0;
                                 pc.rev.pick_axis = false;
                             }
                         }
                         None => {
-                            ui.selectable_value(&mut pc.rev.axis, 0u8, "X");
-                            ui.selectable_value(&mut pc.rev.axis, 1u8, "Y");
+                            // The two axes of the sketch's own plane, named by where they point in the
+                            // world: on the front plane the second one IS the world Z, and calling it Y
+                            // hid the axis a person came looking for.
+                            for a in [0u8, 1] {
+                                let name = qymcad_ui_state::sketch_axis_name(&*pc.project, pc.cmd.sketch, a);
+                                ui.selectable_value(&mut pc.rev.axis, a, name).on_hover_text(qymcad_i18n::tr1("cmd-revolve-about-axis", "axis", name));
+                            }
                         }
                     }
                     // A sketch CENTRELINE is a reliable choice made BY A BUTTON (with no click in 3D).
@@ -3590,7 +3758,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         }
                     }
                     ui.separator();
-                    ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-sweep-auto-hint")).weak().small());
+                    says.tell(qymcad_i18n::tr("cmd-sweep-auto-hint"));
                 }
                 9 => {
                     // Loft: an ordered list of sections + adding by a click + ruled/smooth.
@@ -3653,8 +3821,11 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     ui.selectable_value(&mut pc.loft.result, 4u8, qymcad_i18n::tr("cmd-surface"));
                     if pc.loft.result != 0 && pc.loft.result != 4 {
                         let has = qymcad_ui_state::current_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: &*pc.set, scheme: pc.scheme, project: &*pc.project, active_path: pc.active_path }).is_some();
-                        let (txt, col) = if has { (&qymcad_i18n::tr("cmd-bool-with-active"), pc.scheme.pal.hint()) } else { (&qymcad_i18n::tr("cmd-no-active-body"), pc.scheme.pal.warning()) };
-                        ui.label(egui::RichText::new(txt).color(col).small());
+                        if has {
+                            says.tell(qymcad_i18n::tr("cmd-bool-with-active"));
+                        } else {
+                            says.wrong(qymcad_i18n::tr("cmd-no-active-body"));
+                        }
                     }
                     ui.separator();
                     ui.label(egui::RichText::new(qymcad_i18n::tr1("cmd-sections-n", "n", &pc.loft.sids.len().to_string())).weak().small());
@@ -3698,7 +3869,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                             pc.chamfer.ref_face = 0;
                             pc.chamfer.pick_ref = false;
                         }
-                        ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-asym-note")).weak().small());
+                        says.tell(qymcad_i18n::tr("cmd-asym-note"));
                     }
                     ui.separator();
                     // A COUNT LIES WHEN THE SELECTION IS DESCRIBED. "Edges: 4" is a snapshot of today,
@@ -3760,7 +3931,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         pc.draft.flip = !pc.draft.flip;
                     }
                     ui.separator();
-                    ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-angle-field-hint")).weak().small());
+                    says.tell(qymcad_i18n::tr("cmd-angle-field-hint"));
                 }
                 24 => {
                     // Thread: inner/outer + the number of starts + the hand; the pitch, length, angle and depth live at the geometry
@@ -3789,7 +3960,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     }
                     ui.separator();
                     if pc.thread.auger {
-                        ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-auger-fields-hint")).weak().small());
+                        says.tell(qymcad_i18n::tr("cmd-auger-fields-hint"));
                     } else {
                         // THE STANDARD (the thread's type): the geometry is computed by the model core
                         ui.label(qymcad_i18n::tr("cmd-standard"));
@@ -3810,33 +3981,19 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         }
                         ui.separator();
                         // a hint about the actual geometry of the chosen size
-                        let spec = qymcad_core::thread::ThreadSpec {
-                            standard: qymcad_ui_state::thread_standard(pc.thread.form),
-                            nominal_d: if qymcad_ui_state::cmd_val(&*pc.cmd, "nominal") > 0.0 { qymcad_ui_state::cmd_val(&*pc.cmd, "nominal") } else { pc.thread.radius * 2.0 },
-                            pitch: qymcad_ui_state::cmd_val(&*pc.cmd, "pitch"),
-                            internal: pc.thread.internal,
-                            fit: qymcad_ui_state::cmd_val(&*pc.cmd, "fit"),
-                            ..Default::default()
-                        };
+                        let spec = thread_spec(&*pc.cmd, *pc.thread);
                         let g = spec.geometry();
-                        ui.label(
-                            egui::RichText::new(qymcad_i18n::trn("cmd-thread-geom", &[("pitch", &qymcad_i18n::num(g.pitch, 2)), ("d2", &qymcad_i18n::num(g.pitch_d, 2)), ("d3", &qymcad_i18n::num(g.minor_d, 2)), ("depth", &qymcad_i18n::num(g.depth, 2))]))
-                                .color(pc.scheme.pal.hint())
-                                .small(),
-                        )
-                        .on_hover_text(qymcad_i18n::tr("cmd-thread-std-hint"));
+                        says.tell_hover(
+                            qymcad_i18n::trn("cmd-thread-geom", &[("pitch", &qymcad_i18n::num(g.pitch, 2)), ("d2", &qymcad_i18n::num(g.pitch_d, 2)), ("d3", &qymcad_i18n::num(g.minor_d, 2)), ("depth", &qymcad_i18n::num(g.depth, 2))]),
+                            qymcad_i18n::tr("cmd-thread-std-hint"),
+                        );
                         // WHAT THE MATING PART NEEDS, said out loud. Asked for plainly: a person must
                         // see what diameter of shaft or hole this thread wants and with what parameters
                         // to make its counterpart - otherwise the numbers get looked up in a table, and
                         // a table does not know about the fit that was typed in here.
                         let (own, mate) = spec.blank_diameters();
                         let key = if pc.thread.internal { "cmd-thread-mate-internal" } else { "cmd-thread-mate-external" };
-                        ui.label(
-                            egui::RichText::new(qymcad_i18n::tr2(key, "own", &qymcad_i18n::num(own, 2), "mate", &qymcad_i18n::num(mate, 2)))
-                                .color(pc.scheme.pal.hint())
-                                .small(),
-                        )
-                        .on_hover_text(qymcad_i18n::tr("cmd-thread-mate-hint"));
+                        says.tell_hover(qymcad_i18n::tr2(key, "own", &qymcad_i18n::num(own, 2), "mate", &qymcad_i18n::num(mate, 2)), qymcad_i18n::tr("cmd-thread-mate-hint"));
                         // A PROFILE THAT DOES NOT FIT THE PITCH is said out loud, with the numbers to
                         // change. It used to be taken in silence and built as rubbish: the passes
                         // overlap, eat the turn between them and leave flat plates that mate with
@@ -3845,38 +4002,30 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         // pitch without a word, and two different numbers typed in then give one and
                         // the same body - the pair binds and nothing explains why.
                         if let Some((asked, given)) = spec.fit_overflow() {
-                            ui.label(
-                                egui::RichText::new(qymcad_i18n::trn(
-                                    "cmd-thread-fit-capped",
-                                    &[
-                                        ("asked", &qymcad_i18n::num(asked, 2)),
-                                        ("given", &qymcad_i18n::num(given, 3)),
-                                        // WHAT IS LEFT OVER, said as a DIAMETER correction. The
-                                        // missing clearance is measured along the flank, and a radial
-                                        // move is not worth the same: a flank stands at the half-angle,
-                                        // so `radial_relief` converts one into the other. Twice it,
-                                        // because a diameter has two sides.
-                                        ("rest", &qymcad_i18n::num(spec.radial_relief() * 2.0, 2)),
-                                    ],
-                                ))
-                                .color(pc.scheme.pal.error_mild())
-                                .small(),
-                            );
+                            says.wrong(qymcad_i18n::trn(
+                                "cmd-thread-fit-capped",
+                                &[
+                                    ("asked", &qymcad_i18n::num(asked, 2)),
+                                    ("given", &qymcad_i18n::num(given, 3)),
+                                    // WHAT IS LEFT OVER, said as a DIAMETER correction. The missing
+                                    // clearance is measured along the flank, and a radial move is not
+                                    // worth the same: a flank stands at the half-angle, so
+                                    // `radial_relief` converts one into the other. Twice it, because a
+                                    // diameter has two sides.
+                                    ("rest", &qymcad_i18n::num(spec.radial_relief() * 2.0, 2)),
+                                ],
+                            ));
                         }
                         if let Some((width, max_depth, min_pitch)) = spec.profile_overflow() {
-                            ui.label(
-                                egui::RichText::new(qymcad_i18n::trn(
-                                    "cmd-thread-too-wide",
-                                    &[
-                                        ("width", &qymcad_i18n::num(width, 2)),
-                                        ("pitch", &qymcad_i18n::num(spec.geometry().pitch, 2)),
-                                        ("depth", &qymcad_i18n::num(max_depth, 2)),
-                                        ("minpitch", &qymcad_i18n::num(min_pitch, 2)),
-                                    ],
-                                ))
-                                .color(pc.scheme.pal.error_mild())
-                                .small(),
-                            );
+                            says.wrong(qymcad_i18n::trn(
+                                "cmd-thread-too-wide",
+                                &[
+                                    ("width", &qymcad_i18n::num(width, 2)),
+                                    ("pitch", &qymcad_i18n::num(spec.geometry().pitch, 2)),
+                                    ("depth", &qymcad_i18n::num(max_depth, 2)),
+                                    ("minpitch", &qymcad_i18n::num(min_pitch, 2)),
+                                ],
+                            ));
                         }
                     }
                     ui.separator();
@@ -3885,7 +4034,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     } else {
                         qymcad_i18n::tr1("cmd-actual-diameter", "d", &qymcad_i18n::num(pc.thread.radius * 2.0, 1))
                     };
-                    ui.label(egui::RichText::new(tgt).weak().small());
+                    says.tell(tgt);
                 }
                 7 => {
                     // Hole: the placement mode (a face or a sketch) + the type; the diameter and depth live at the geometry
@@ -3915,7 +4064,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         ui.separator();
                         ui.checkbox(&mut pc.hole.flip, qymcad_i18n::tr("cmd-flip"));
                     } else {
-                        ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-hole-face-hint")).weak());
+                        says.tell(qymcad_i18n::tr("cmd-hole-face-hint"));
                     }
                 }
                 15 => {
@@ -3923,10 +4072,10 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     ui.label(qymcad_i18n::tr("cmd-sides"));
                     pc.prim.n = qymcad_ui_state::num_or_expr(&mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *pc.bar_exprs, project: &*pc.project, scheme: &*pc.scheme }, ui, "prim_n", pc.prim.n as f64, qymcad_ui_state::NumFormat { lo: 3.0, hi: 64.0, integer: true, suffix: "" }) as u32;
                     ui.separator();
-                    ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-dia-height-hint")).weak());
+                    says.tell(qymcad_i18n::tr("cmd-dia-height-hint"));
                 }
                 10..=14 => {
-                    ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-sizes-hint")).weak());
+                    says.tell(qymcad_i18n::tr("cmd-sizes-hint"));
                 }
                 16 => {
                     // Mirror: keep the original + CLICK-PICK the plane in the viewport + a readout of what was picked
@@ -3970,7 +4119,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         pc.arr.three = false; // the third direction only sits on top of the second (a full 3D grid)
                     }
                     ui.separator();
-                    ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-pitch-field-hint")).weak());
+                    says.tell(qymcad_i18n::tr("cmd-pitch-field-hint"));
                 }
                 18 => {
                     // A circular pattern: the count + the axis by CLICK-PICK (a datum axis or a straight edge)
@@ -3996,7 +4145,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     ui.separator();
                     ui.checkbox(&mut pc.arr.full, qymcad_i18n::tr("cmd-full-circle"));
                     if !pc.arr.full {
-                        ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-angle-field-lower")).weak());
+                        says.tell(qymcad_i18n::tr("cmd-angle-field-lower"));
                     }
                 }
                 20 => {
@@ -4010,7 +4159,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     };
                     ui.label(egui::RichText::new(qymcad_i18n::tr1("cmd-from-is", "what", &picked)).color(pc.scheme.pal.hint()));
                     ui.separator();
-                    ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-offset-field-hint")).weak());
+                    says.tell(qymcad_i18n::tr("cmd-offset-field-hint"));
                 }
                 21 => {
                     // A datum POINT: X/Y/Z coordinates, or associatively at a vertex (by a click)
@@ -4026,7 +4175,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         let r = if pc.datum.pt_vert.is_some() { format!("{} {}", qymcad_i18n::tr("cmd-vertex-picked"), ph::CHECK) } else { qymcad_i18n::tr("cmd-pick-vertex") };
                         ui.label(egui::RichText::new(r).color(pc.scheme.pal.hint()));
                     } else {
-                        ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-xyz-hint")).weak());
+                        says.tell(qymcad_i18n::tr("cmd-xyz-hint"));
                     }
                 }
                 22 => {
@@ -4045,20 +4194,20 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                             ui.label(egui::RichText::new(qymcad_i18n::tr1("cmd-points-n", "n", &pc.datum.axis_pts.len().to_string())).color(pc.scheme.pal.hint()));
                         }
                         _ => {
-                            ui.label(egui::RichText::new(qymcad_i18n::tr("cmd-origin-dir-hint")).weak());
+                            says.tell(qymcad_i18n::tr("cmd-origin-dir-hint"));
                         }
                     }
                 }
                 _ => {
-                    ui.label(egui::RichText::new(cmd_hint(&*pc.armed, &*pc.gsel, &*pc.trim)).weak());
+                    says.tell(cmd_hint(&*pc.armed, &*pc.gsel, &*pc.trim));
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // the button is disabled while a dimension's expression is invalid (nothing stale is applied)
-                if ui.add_enabled(cmd_ready(pc) && cmd_exprs_valid(&*pc.cmd, &*pc.project), egui::Button::new(egui::RichText::new(format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter"))).strong())).clicked() {
+                if confirm_button(&pc.scheme.pal, ui, cmd_ready(pc) && cmd_exprs_valid(&*pc.cmd, &*pc.project), format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter"))) {
                     apply = true;
                 }
-                if ui.button(qymcad_i18n::tr("cmd-cancel-esc")).clicked() {
+                if refuse_button(&pc.scheme.pal, ui, format!("{} {}", ph::X, qymcad_i18n::tr("cmd-cancel-esc"))) {
                     cancel = true;
                 }
                 // the "pick contours" button belongs to the 3D step (setting the size) only - inside the
@@ -4075,6 +4224,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                 }
             });
         });
+        says.show(ui, &pc.scheme.pal);
         if apply {
             apply_feat_cmd(pc);
         }
@@ -4381,17 +4531,17 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 create_panel_common(bc, ui);
                 // --- From a sketch ---
                 cat(ui, &qymcad_i18n::tr("tb-group-sketch3d"));
-                if qymcad_ui_state::icon_tool(ui, ph::CUBE, &qymcad_i18n::tr("tb-extrude-hint"), bc.armed.cmd_kind() == 1) {
+                if qymcad_ui_state::icon_tool(ui, ph::CUBE, &qymcad_i18n::tr("tb-extrude-hint"), tool_is_taken(&bc, 1)) {
                     bc.feat.op = 0;
                     bc.ask.push(qymcad_ui_state::BarAsk::FeatCmd(1));
                 }
-                if qymcad_ui_state::icon_tool(ui, ph::ARROWS_CLOCKWISE, &qymcad_i18n::tr("tb-revolve-hint"), bc.armed.cmd_kind() == 3) {
+                if qymcad_ui_state::icon_tool(ui, ph::ARROWS_CLOCKWISE, &qymcad_i18n::tr("tb-revolve-hint"), tool_is_taken(&bc, 3)) {
                     bc.ask.push(qymcad_ui_state::BarAsk::FeatCmd(3));
                 }
-                if qymcad_ui_state::icon_tool(ui, ph::PATH, &qymcad_i18n::tr("tb-sweep-hint"), bc.armed.cmd_kind() == 8) {
+                if qymcad_ui_state::icon_tool(ui, ph::PATH, &qymcad_i18n::tr("tb-sweep-hint"), tool_is_taken(&bc, 8)) {
                     bc.ask.push(qymcad_ui_state::BarAsk::FeatCmd(8));
                 }
-                if qymcad_ui_state::icon_tool(ui, ph::STACK, &qymcad_i18n::tr("tb-loft-hint"), bc.armed.cmd_kind() == 9) {
+                if qymcad_ui_state::icon_tool(ui, ph::STACK, &qymcad_i18n::tr("tb-loft-hint"), tool_is_taken(&bc, 9)) {
                     bc.ask.push(qymcad_ui_state::BarAsk::FeatCmd(9));
                 }
                 // --- The 3D primitives (a command: sizes at the geometry + a preview + Enter/Esc) ---

@@ -55,9 +55,9 @@ impl SettingsSection {
     pub fn row_keys(self) -> &'static [&'static str] {
         use SettingsSection::*;
         match self {
-            General => &["settings-language", "settings-help-lang", "settings-help-open", "settings-autosave", "settings-undo-cap", "settings-recent-limit", "settings-profile"],
+            General => &["settings-language", "settings-help-lang", "settings-help-open", "settings-open-last", "settings-show-start", "settings-autosave", "settings-undo-cap", "settings-recent-limit", "settings-profile"],
             Appearance => &["settings-scheme", "settings-ui-scale"],
-            Viewport => &["settings-engine", "settings-projection", "settings-shading", "settings-viewcube", "settings-pick-precision", "settings-ghost-alpha", "settings-fov", "settings-msaa"],
+            Viewport => &["settings-engine", "settings-projection", "settings-shading", "settings-viewcube", "settings-mouse-nav", "settings-zoom-at", "settings-pick-precision", "settings-ghost-alpha", "settings-fov", "settings-msaa"],
             Sketch => &["settings-snap-on", "settings-grid-step", "settings-rot-step", "settings-auto-constrain"],
             Part => &["settings-default-extrude", "settings-default-offset"],
             Assembly => &["settings-show-contours", "settings-show-joints", "settings-show-interference"],
@@ -89,6 +89,8 @@ impl SettingsSection {
                 s.language = d.language;
                 s.help_lang = d.help_lang;
                 s.help_external = d.help_external;
+                s.open_last = d.open_last;
+                s.show_start_screen = d.show_start_screen;
                 s.autosave_secs = d.autosave_secs;
                 s.undo_cap = d.undo_cap;
                 s.recent_limit = d.recent_limit;
@@ -106,6 +108,9 @@ impl SettingsSection {
                 s.shading = d.shading;
                 s.viewcube_size = d.viewcube_size;
                 s.pick_precision = d.pick_precision;
+                s.mouse_nav = d.mouse_nav;
+                s.zoom_at = d.zoom_at;
+                s.zoom_editing = d.zoom_editing;
                 s.ghost_alpha = d.ghost_alpha;
                 s.persp_fov_deg = d.persp_fov_deg;
                 s.msaa = d.msaa;

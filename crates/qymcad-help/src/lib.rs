@@ -182,8 +182,13 @@ pub fn sections() -> Vec<(String, Vec<String>)> {
     //
     // `BTreeMap` handed them out in the alphabetical order of the folder names, which came out exactly
     // opposite to the order they are read in. The lessons stood below the reference on assemblies though
-    // they are needed first, and that is what was noticed. The order of learning: lessons -> sketch ->
-    // part -> assembly -> machining -> general.
+    // they are needed first, and that is what was noticed. The order of learning: lessons -> the
+    // groundwork -> sketch -> part -> assembly.
+    //
+    // THE GROUNDWORK COMES SECOND, not last. What the window is made of, how to move the view, what the
+    // tree and the timeline are - that is how to work with the CAD at all, and it belongs beside the
+    // lessons. Standing after the reference on every tool it read as an appendix, which is exactly what
+    // somebody looking for the basics does not open.
     //
     // An unknown folder does not vanish but goes to the end — and a guard complains about it: a section
     // with no place in the order would appear at the very bottom silently.
@@ -205,7 +210,7 @@ pub fn sections() -> Vec<(String, Vec<String>)> {
 
 /// THE SECTIONS IN READING ORDER. The name of the folder and not the caption: a caption is translated,
 /// an order is not.
-pub const SECTION_ORDER: &[&str] = &["start", "sketch", "part", "assembly", "general"];
+pub const SECTION_ORDER: &[&str] = &["start", "general", "sketch", "part", "assembly"];
 
 /// THE SEARCH OVER THE HELP: the paths of the articles the query was met in — in the title or in the
 /// text.

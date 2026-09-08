@@ -3192,6 +3192,7 @@ version = "0.1.0"
 dependencies = [
  "include_dir",
  "qymcad-i18n",
+ "qymcad-ui-state",
 ]
 
 [[package]]

@@ -46,7 +46,7 @@ mod tests {
     /// It also cannot be gamed the other way. Splitting a method in two adds a line and no more; the only
     /// way this number falls is code leaving `impl App`. That is the thing that has to reach zero before the
     /// interface can live in a crate of its own, since a method belongs to the crate declaring the type.
-    const APP_LINES_CEILING: usize = 6619;
+    const APP_LINES_CEILING: usize = 6569;
 
     /// Methods that exist ONLY so a check can reach inside - `*_for_test` and `*_pub`.
     ///
