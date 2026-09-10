@@ -95,8 +95,8 @@ modules:
       # updated by packaging/flatpak/update-manifest.sh.
       - type: git
         url: https://github.com/QymIs-Tech/QymCAD.git
-        tag: v0.1.0-dev.20260828
-        commit: fff10bc7076bf8aad7fe65a9781c92114f59cadc
+        tag: v0.1.0-dev.20260910
+        commit: 14db0597bf7579b993f789284f443b00b3309fb5
       # Generated, never written by hand - see packaging/flatpak/README.md. It lists every crate of the
       # lock file as its own source, because the build cannot reach crates.io.
       - cargo-sources.json

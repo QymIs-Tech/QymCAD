@@ -44,17 +44,10 @@ if [ -z "$GEN" ]; then
 fi
 python3 "$GEN" "$ROOT/Cargo.lock" -o "$HERE/cargo-sources.json"
 
-# --- the pictures of the store listing ---
-#
-# Their addresses carry `@REF@` in the tree: they must name a ref of the PUBLIC repository, and this one
-# is private, so nothing that could be written here by hand would resolve there. The tag being submitted
-# is that ref. A branch is not allowed - Flathub asks for a tag or a commit, because what a branch points
-# at can change after a reviewer has looked at it.
-sed -i "s|/QymCAD/@REF@/docs/|/QymCAD/${TAG}/docs/|g" "$HERE/tech.qymis.cad.metainfo.xml"
-if grep -q "@REF@" "$HERE/tech.qymis.cad.metainfo.xml"; then
-    echo "!!! the metainfo still holds @REF@: the store would be given addresses that lead nowhere" >&2
-    exit 1
-fi
+# THE PICTURES ARE NOT TOUCHED HERE. Their addresses are pinned in the metainfo to the commit that
+# added them, once: they do not change from release to release, and naming the tag closed a circle -
+# an address would name the tag, and the tag has to stand on a commit whose file already carries that
+# address. See the comment in tech.qymis.cad.metainfo.xml.
 
 echo ">>> the manifest now points at ${TAG} (${commit})"
 grep -E '^        (tag|commit):' "$HERE/tech.qymis.cad.yml"

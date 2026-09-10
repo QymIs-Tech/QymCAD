@@ -51,11 +51,16 @@
     and not a branch": what a branch points at can change after the submission has been looked at, and
     the pictures a reviewer saw would no longer be the pictures people get.
 
-    `@REF@` IS A PLACEHOLDER, and deliberately not a real value. It has to be a ref of the PUBLIC tree -
-    the address points at raw.githubusercontent of the public repository - and this one is private, so a
-    commit taken here would resolve to nothing there. It is filled by
-    `packaging/flatpak/update-manifest.sh <tag>` at submission, from the tag that was published, and that
-    script refuses to finish with the placeholder still in place.
+    PINNED TO THE COMMIT THAT ADDED THE PICTURES, and not to the release tag - once, and not touched
+    again at every release.
+
+    Naming the tag looked right and closed a circle: an address would name the tag, and the tag has to
+    stand on a commit whose file already carries that address. Measured on the tagged commit of this
+    release - the file there still held the unfilled placeholder, and the package built from it would
+    have gone to the store with addresses leading nowhere.
+
+    The pictures do not change from release to release, so the commit that introduced them is the
+    honest ref. It is a commit rather than a branch, which is what Flathub asks for.
 
     THE SHOTS THEMSELVES: the window at 2000x1400 (the HiDPI size Flathub names), with the title bar drawn
     by a nested labwc session and the rounding and shadow put on by packaging/flatpak/frame-screenshots.sh,
@@ -63,23 +68,23 @@
   -->
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/01-assembly.png</image>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/01-assembly.png</image>
       <caption>A CNC machine assembled from its components, with joints and their degrees of freedom</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/02-parametric.png</image>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/02-parametric.png</image>
       <caption>Named parameters and formulas driving the dimensions of a part</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/03-part.png</image>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/03-part.png</image>
       <caption>An imported STEP assembly of over a thousand bodies, ready for further operations</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/04-sketch.png</image>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/04-sketch.png</image>
       <caption>A fully defined sketch: dimensions, constraints and the degrees of freedom left</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/05-light.png</image>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/05-light.png</image>
       <caption>An assembly of a small robot, in the light colour scheme</caption>
     </screenshot>
   </screenshots>

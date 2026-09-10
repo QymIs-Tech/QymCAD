@@ -191,12 +191,12 @@ mod tests {
                 !url.contains("/main/") && !url.contains("/master/"),
                 "the picture is linked from a BRANCH, and a branch moves: {url}"
             );
-            // `@REF@` is the unfilled state and is correct HERE: the ref has to belong to the public
-            // tree, and this one is private. `update-manifest.sh <tag>` fills it and refuses to finish
-            // if it did not.
+            // A COMMIT, not a tag. Naming the tag closed a circle: the address would name the tag, and
+            // the tag has to stand on a commit whose file already carries that address. The pictures do
+            // not change from release to release, so the commit that added them is the ref.
             assert!(
-                url.contains("/@REF@/") || url.split('/').any(|part| part.len() == 40 && part.chars().all(|c| c.is_ascii_hexdigit()) || part.starts_with('v')),
-                "the picture is linked from something that is neither the placeholder, a tag nor a commit: {url}"
+                url.split('/').any(|part| part.len() == 40 && part.chars().all(|c| c.is_ascii_hexdigit())),
+                "the picture is linked from something that is not a commit: {url}"
             );
             // the file itself, taken from the tail of the address
             let rel = url.split("/docs/").nth(1).unwrap_or_else(|| panic!("the address does not point into docs/: {url}"));
