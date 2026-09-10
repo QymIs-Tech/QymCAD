@@ -9,6 +9,20 @@
 //! the id is that backwards. Written in six places, and this is what keeps them one.
 #[cfg(test)]
 mod tests {
+    /// IS THIS THE TREE THE WORK HAPPENS IN, or a published copy of it.
+    ///
+    /// `tools/` never leaves: it holds the publishing script, the snapshot of released dependency
+    /// versions and the log of what was published. Several checks read from there, and in a published
+    /// tree they would panic on a missing file - which is the FIRST thing somebody who downloaded the
+    /// sources and ran `cargo test` would see. Measured on a fresh clone of the public repository: five
+    /// checks failed that way, four of them on `tools/`.
+    ///
+    /// These are ratchets over our own work, not statements about the program. In a copy of the tree
+    /// they have nothing to measure, and saying nothing is the honest answer.
+    fn in_the_working_tree() -> bool {
+        root().join("tools").is_dir()
+    }
+
     use std::path::PathBuf;
 
     const ID: &str = "tech.qymis.cad";
@@ -162,6 +176,9 @@ mod tests {
     /// gives the store a blank space where a screenshot should be, and nothing here would have said so.
     #[test]
     fn the_store_pictures_are_pinned_to_a_commit_and_really_exist() {
+        if !in_the_working_tree() {
+            return; // a published copy of the tree: nothing here to measure
+        }
         let xml = read("packaging/flatpak/tech.qymis.cad.metainfo.xml");
         let images: Vec<&str> = xml
             .lines()

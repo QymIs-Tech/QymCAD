@@ -29,6 +29,20 @@
 //! already has all three, and a machine without one never reaches the Wayland path at all.
 #[cfg(test)]
 mod tests {
+    /// IS THIS THE TREE THE WORK HAPPENS IN, or a published copy of it.
+    ///
+    /// `tools/` never leaves: it holds the publishing script, the snapshot of released dependency
+    /// versions and the log of what was published. Several checks read from there, and in a published
+    /// tree they would panic on a missing file - which is the FIRST thing somebody who downloaded the
+    /// sources and ran `cargo test` would see. Measured on a fresh clone of the public repository: five
+    /// checks failed that way, four of them on `tools/`.
+    ///
+    /// These are ratchets over our own work, not statements about the program. In a copy of the tree
+    /// they have nothing to measure, and saying nothing is the honest answer.
+    fn in_the_working_tree() -> bool {
+        root().join("tools").is_dir()
+    }
+
     use std::path::PathBuf;
 
     fn root() -> PathBuf {
@@ -165,6 +179,9 @@ mod tests {
     /// is on the list too - one check walks it to learn which crates open libraries by name.
     #[test]
     fn the_public_tree_carries_what_these_checks_read() {
+        if !in_the_working_tree() {
+            return; // a published copy of the tree: nothing here to measure
+        }
         let publish = std::fs::read_to_string(root().join("tools/publish.py")).expect("the publishing script reads");
         // CUT BY THE ASSIGNMENT, NOT BY THE NAME. The first edition split on "ALLOW_ONLY_SUFFIXES" and cut
         // the list short: that name appears one line earlier IN A COMMENT, so the slice ended before

@@ -20,6 +20,20 @@
 //! ceiling to be lowered — otherwise slack accumulates silently and a whole file hides under it.
 #[cfg(test)]
 pub(crate) mod tests {
+    /// IS THIS THE TREE THE WORK HAPPENS IN, or a published copy of it.
+    ///
+    /// `tools/` never leaves: it holds the publishing script, the snapshot of released dependency
+    /// versions and the log of what was published. Several checks read from there, and in a published
+    /// tree they would panic on a missing file - which is the FIRST thing somebody who downloaded the
+    /// sources and ran `cargo test` would see. Measured on a fresh clone of the public repository: five
+    /// checks failed that way, four of them on `tools/`.
+    ///
+    /// These are ratchets over our own work, not statements about the program. In a copy of the tree
+    /// they have nothing to measure, and saying nothing is the honest answer.
+    fn in_the_working_tree() -> bool {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools").is_dir()
+    }
+
     /// Third-party CAD products named in comments.
     ///
     /// The target is zero: naming a competitor buys nothing and risks a claim. It is not zero yet
@@ -186,6 +200,9 @@ pub(crate) mod tests {
     /// All four counters only ever go down.
     #[test]
     fn comments_only_ever_get_cleaner() {
+        if !in_the_working_tree() {
+            return; // a published copy of the tree: nothing here to measure
+        }
         let (prod, voice, cyr, lit, per) = count();
         let worst: Vec<String> = per.iter().take(10).map(|(f, p, v, c)| format!("  {c:5} cyrillic, {v:4} voice, {p:3} product  {f}")).collect();
         let report = format!("worst files:\n{}", worst.join("\n"));

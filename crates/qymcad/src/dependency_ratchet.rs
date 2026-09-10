@@ -16,6 +16,20 @@
 //! refreshed by hand: `python3 tools/check_deps.py --refresh`.
 #[cfg(test)]
 mod tests {
+    /// IS THIS THE TREE THE WORK HAPPENS IN, or a published copy of it.
+    ///
+    /// `tools/` never leaves: it holds the publishing script, the snapshot of released dependency
+    /// versions and the log of what was published. Several checks read from there, and in a published
+    /// tree they would panic on a missing file - which is the FIRST thing somebody who downloaded the
+    /// sources and ran `cargo test` would see. Measured on a fresh clone of the public repository: five
+    /// checks failed that way, four of them on `tools/`.
+    ///
+    /// These are ratchets over our own work, not statements about the program. In a copy of the tree
+    /// they have nothing to measure, and saying nothing is the honest answer.
+    fn in_the_working_tree() -> bool {
+        root().join("tools").is_dir()
+    }
+
     /// TOTAL RELEASES BEHIND, over every direct dependency.
     ///
     /// It is a MARK, like the ceiling on Russian literals - not a permission to be this far behind.
@@ -160,6 +174,9 @@ mod tests {
     /// behind on the renderer and on a font-name parser are different conversations.
     #[test]
     fn nothing_slips_in_unwatched() {
+        if !in_the_working_tree() {
+            return; // a published copy of the tree: nothing here to measure
+        }
         let deps = collect();
         assert!(deps.len() > 15, "suspiciously few direct dependencies found: {}", deps.len());
 
@@ -181,6 +198,9 @@ mod tests {
     /// what is at stake.
     #[test]
     fn the_distance_from_the_world_is_known() {
+        if !in_the_working_tree() {
+            return; // a published copy of the tree: nothing here to measure
+        }
         let mut deps = collect();
         deps.sort_by(|a, b| gap(&b.declared, &b.latest).cmp(&gap(&a.declared, &a.latest)));
         let total: usize = deps.iter().map(|d| gap(&d.declared, &d.latest)).sum();
