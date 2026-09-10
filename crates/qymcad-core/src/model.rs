@@ -569,6 +569,22 @@ pub struct Sketch {
     /// constraints (parallel, point-on-axis, symmetry). Zero means they have not been created.
     #[serde(default)]
     pub axis_pts: [Id; 2],
+    /// THE ANCHOR OF THE FRAME OF REFERENCE at (0,0) - the second end of both axis lines.
+    ///
+    /// SEPARATE FROM `origin`, and that separation is the whole point. `origin` is a point a person may
+    /// snap geometry to, and `merge_close_points` glues anything landing on it INTO it - so the centre of
+    /// a circle drawn at zero becomes the origin itself. Moving that circle then moved the origin, and
+    /// with it both axes, since an axis is the infinite line through the origin and its guide.
+    ///
+    /// Reported behaviour, in that order: first "a dimension to the X or Y axis comes out crooked" (the
+    /// axes had become diagonals - measured on a file where the origin stood at (-23.45, 18.70)), and
+    /// then, after the origin was pinned at zero, "I cannot move a circle away from the origin" - because
+    /// the pinned point WAS the circle's centre.
+    ///
+    /// The anchor is nobody's geometry: it is never picked, never glued, never moved. Zero means it has
+    /// not been materialised yet.
+    #[serde(default)]
+    pub frame: Id,
     /// Offset of the sketch origin within its plane (u,v in frame axes), produced by snapping to an edge
     /// or a vertex when the plane was chosen. `None` means the default origin (the projection of the source
     /// origin). Invariant to body placement: u*X + v*Y travels with the frame (see `sketch_frame`).
@@ -583,7 +599,62 @@ impl Sketch {
     /// One source of truth on purpose: spelled out by hand in six places the set drifts apart, some copies
     /// forgetting the origin and others the axes.
     pub fn system_ids(&self) -> Vec<Id> {
-        std::iter::once(self.origin).chain(self.axis_pts).filter(|id| *id != 0).collect()
+        std::iter::once(self.origin).chain(std::iter::once(self.frame)).chain(self.axis_pts).filter(|id| *id != 0).collect()
+    }
+
+    /// PUT THE FRAME OF REFERENCE BACK WHERE IT BELONGS: the origin at (0,0), the axis guides at (1,0)
+    /// and (0,1). Returns whether anything had to be moved.
+    ///
+    /// Reported behaviour: "I cannot put a dimension from the centre of a circle to the X or Y axis - a
+    /// crooked one is placed instead." Measured on the reporter's file: the origin stood at
+    /// (-23.454944474040893, 18.70469405576201).
+    ///
+    /// AN AXIS IS THE INFINITE LINE THROUGH THE ORIGIN AND ITS GUIDE. Move the origin and the "X axis"
+    /// becomes a diagonal; a distance to it is then measured honestly, to the wrong line, and the number
+    /// on the drawing belongs to nothing. The same for the guides.
+    ///
+    /// Why this is repaired rather than only prevented: `Constraint::Fixed` pins a point to where it IS,
+    /// not to zero, so a frame that moved once is locked in the wrong place for good - and documents in
+    /// that state already exist. Called on every rebuild of the sketch, so a file opens repaired.
+    pub fn pin_frame(&mut self) -> bool {
+        // `origin` is NOT in this list: geometry may be glued to it, and pinning it nailed down the
+        // centre of a circle drawn at zero. The frame stands on `frame`, which is nobody's geometry.
+        // A DOCUMENT WHOSE AXES WERE HUNG ON THE ORIGIN IS REPAIRED HERE.
+        //
+        // Before the anchor existed, an axis was the line through the ORIGIN and its guide, and every
+        // dimension to an axis holds those two ids. Such files exist and open crooked. Any constraint
+        // naming the origin together with an axis guide is re-pointed at the anchor: the line it means
+        // is the axis, and the axis now stands on the anchor.
+        if self.origin != 0 && self.frame != 0 {
+            let guides = self.axis_pts;
+            let (origin, frame) = (self.origin, self.frame);
+            for c in &mut self.constraints {
+                let pts = c.points();
+                if pts.contains(&origin) && guides.iter().any(|g| *g != 0 && pts.contains(g)) {
+                    remap_constraint_point(c, origin, frame);
+                }
+            }
+        }
+        let want: [(Id, f64, f64); 4] = [
+            (self.frame, 0.0, 0.0),
+            (self.origin, 0.0, 0.0),
+            (self.axis_pts[0], 1.0, 0.0),
+            (self.axis_pts[1], 0.0, 1.0),
+        ];
+        let mut moved = false;
+        for (id, x, y) in want {
+            if id == 0 {
+                continue;
+            }
+            if let Some(p) = self.points.iter_mut().find(|p| p.id == id) {
+                if p.x != x || p.y != y {
+                    p.x = x;
+                    p.y = y;
+                    moved = true;
+                }
+            }
+        }
+        moved
     }
 
     /// Driven points (projections of a body). They cannot be dragged or deleted one by one, being derived
@@ -1378,6 +1449,47 @@ pub fn constraint_point_ids(c: &Constraint) -> Vec<Id> {
 ///
 /// Needed by fillets and chamfers, where the corner point disappears and constraints that referenced it
 /// move to the tangency point. Non-point fields (radii, expressions) are left alone.
+/// The points an entity stands on.
+pub fn entity_points(e: &SketchEntity) -> Vec<Id> {
+    match e.kind {
+        EntityKind::Line { a, b } => vec![a, b],
+        EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
+        EntityKind::Circle { center, .. } => vec![center],
+        EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
+    }
+}
+
+/// Re-point one entity from one point to another.
+pub fn remap_entity_point(e: &mut SketchEntity, from: Id, to: Id) {
+    let fix = |id: &mut Id| {
+        if *id == from {
+            *id = to;
+        }
+    };
+    match &mut e.kind {
+        EntityKind::Line { a, b } => {
+            fix(a);
+            fix(b);
+        }
+        EntityKind::Arc { center, a, b, .. } => {
+            fix(center);
+            fix(a);
+            fix(b);
+        }
+        EntityKind::Circle { center, .. } => fix(center),
+        EntityKind::Ellipse { c, ma, mi } => {
+            fix(c);
+            fix(ma);
+            fix(mi);
+        }
+    }
+}
+
+/// The same as `remap_constraint_point`, reachable from the sketch module.
+pub fn remap_constraint_point_pub(c: &mut Constraint, from: Id, to: Id) {
+    remap_constraint_point(c, from, to);
+}
+
 fn remap_constraint_point(c: &mut Constraint, from: Id, to: Id) {
     let fix = |id: &mut Id| {
         if *id == from {

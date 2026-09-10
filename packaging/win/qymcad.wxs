@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The MSI installer for QymCAD.
+
+  WHY AN INSTALLER AT ALL, when a portable zip already exists. The zip is unpacked wherever a person likes
+  and updated by unpacking it again over the old one; nothing knows it is there. An installed program is
+  listed in "Apps & features", is removed from the same place, has a Start menu entry, and - the reason
+  this exists - can be installed and upgraded by winget, which is how a lot of people get software on
+  Windows without ever visiting a web page.
+
+  BUILT FROM THE SAME FOLDER AS THE ZIP: packaging/win/bundle.ps1 assembles dist\qymcad, and this packs
+  exactly that. Two different collections of files for the same version would differ by exactly the thing
+  nobody thinks to check.
+
+  WiX 5 syntax. `Files` replaces the old `heat` harvesting: the whole folder goes in by one line, so a DLL
+  added to the build does not have to be remembered here as well.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="QymCAD"
+      Manufacturer="QymIsTech"
+      Version="$(var.Version)"
+      ProductCode="$(var.ProductCode)"
+      UpgradeCode="DF949703-CA05-535F-80FD-8404D9704F33"
+      Language="1033"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <!--
+      THE UPGRADE CODE NEVER CHANGES, for the life of the program: it is what tells Windows that this MSI
+      and the one installed last month are the same application. The product code changes with every
+      version and is computed from it (see build-msi.ps1), so an upgrade replaces rather than installs a
+      second copy beside the first.
+    -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of QymCAD is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- The licence shown by the installer, and the notices, travel inside the package as files. -->
+    <Icon Id="qymcad.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="qymcad.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/QymIs-Tech/QymCAD" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="QymCAD">
+        <!-- everything bundle.ps1 collected: the binary, the OCCT libraries, the runtime, the notices -->
+        <Files Include="$(var.PayloadDir)\**" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="QymCADShortcut"
+                  Name="QymCAD"
+                  Description="Parametric associative B-rep CAD/CAM"
+                  Target="[INSTALLFOLDER]qymcad.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="qymcad.ico" />
+        <!--
+          A per-machine install writes the shortcut under HKLM, but a shortcut component needs a registry
+          value of its own to be counted as installed. Without it the component has no key path and the
+          installer refuses to build.
+        -->
+        <RegistryValue Root="HKLM" Key="Software\QymIsTech\QymCAD" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!--
+      AND ONE ON THE DESKTOP. Reported behaviour: "it is not clear why no shortcut lands on the desktop,
+      its absence is illogical."
+
+      The Start menu alone is right for a service and wrong for a program somebody opens every day: the
+      desktop is where a person looks first, and an installer that leaves nothing there reads as one that
+      did not finish. It is a component like the one above, so it goes away on uninstall by itself.
+    -->
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="*">
+        <Shortcut Id="QymCADDesktopShortcut"
+                  Name="QymCAD"
+                  Description="Parametric associative B-rep CAD/CAM"
+                  Target="[INSTALLFOLDER]qymcad.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="qymcad.ico" />
+        <RegistryValue Root="HKLM" Key="Software\QymIsTech\QymCAD" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+  </Package>
+</Wix>

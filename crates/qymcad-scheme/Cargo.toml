@@ -9,7 +9,7 @@ edition = "2021"
 egui = "0.35"
 serde = { version = "1", features = ["derive"] }
 qymcad-i18n = { path = "../qymcad-i18n" }
-directories = "6" # the person's own schemes live in the config directory
+qymcad-paths = { path = "../qymcad-paths" }
 ron.workspace = true # a scheme is a .ron file the person can edit by hand
 
 [lints]

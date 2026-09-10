@@ -37,16 +37,20 @@ fn delete_keeps_system_points() {
     p.ensure_axis(si, 1);
     let origin = p.sketches[si].origin;
     let axes = p.sketches[si].axis_pts;
-    assert!(origin != 0 && axes[0] != 0 && axes[1] != 0, "the system points are materialised");
+    // THE ANCHOR OF THE FRAME is a system point too: the axes stand on it rather than on the origin, so
+    // that geometry snapped to zero cannot take the reference frame with it. See `Sketch::frame`.
+    let frame = p.sketches[si].frame;
+    assert!(origin != 0 && axes[0] != 0 && axes[1] != 0 && frame != 0, "the system points are materialised");
     let eid = p.sketches[si].entities[0].id;
     p.delete_entities(si, &[eid]);
     let has = |id: u64| p.sketches[si].points.iter().any(|q| q.id == id);
     assert!(has(origin), "the origin survived the deletion");
     assert!(has(axes[0]), "the X axis survived");
     assert!(has(axes[1]), "the Y axis survived");
+    assert!(has(frame), "the anchor of the frame survived");
     // and the single source of truth returns exactly those
     let sys = p.sketches[si].system_ids();
-    assert_eq!(sys.len(), 3, "system_ids holds the origin and two axes: {sys:?}");
+    assert_eq!(sys.len(), 4, "system_ids holds the origin, the anchor and two axis guides: {sys:?}");
 }
 
 #[test]

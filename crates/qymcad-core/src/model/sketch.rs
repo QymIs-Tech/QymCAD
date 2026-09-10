@@ -48,7 +48,8 @@ impl Project {
             return i;
         }
         let id = self.alloc_id();
-        self.sketches.push(Sketch { id, name: "name-sketch".into(), contour_ids: Vec::new(), source: None, points: Vec::new(), entities: Vec::new(), closed: false, constraints: Vec::new(), splines: Vec::new(), notes: Vec::new(), texts: Vec::new(), patterns: Vec::new(), projections: Vec::new(), plane: crate::feature::SketchPlane::default(), origin: 0, axis_pts: [0, 0], origin_uv: None });
+        self.sketches.push(Sketch { id, name: "name-sketch".into(), contour_ids: Vec::new(), source: None, points: Vec::new(), entities: Vec::new(), closed: false, constraints: Vec::new(), splines: Vec::new(), notes: Vec::new(), texts: Vec::new(), patterns: Vec::new(), projections: Vec::new(), plane: crate::feature::SketchPlane::default(), origin: 0, axis_pts: [0, 0],
+            frame: 0, origin_uv: None });
         self.sketches.len() - 1
     }
     /// Add an ellipse as a real entity: a centre plus the endpoints of the major and minor semi-axes.
@@ -228,6 +229,7 @@ impl Project {
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
             axis_pts: [0, 0],
+            frame: 0,
             origin_uv: None,
         });
         self.regen_sketch(si);
@@ -252,6 +254,7 @@ impl Project {
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
             axis_pts: [0, 0],
+            frame: 0,
             origin_uv: None,
         });
         self.sketches.len() - 1
@@ -2501,6 +2504,16 @@ impl Project {
     /// Rebuild the contours of a sketch from its entities, as a multi-loop tessellation. The contour ids are
     /// preserved where possible (see the matching below).
     pub fn regen_sketch(&mut self, si: usize) {
+        // THE FRAME OF REFERENCE FIRST, before anything is derived from it. The origin and the axis
+        // guides are not geometry: a contour, a dimension to an axis and every profile taken from this
+        // sketch stand on them. See `pin_frame` for what moving them costs.
+        if self.sketches.get(si).is_some_and(|s| s.origin != 0 || s.axis_pts.iter().any(|g| *g != 0)) {
+            self.ensure_frame(si); // a document from before the anchor gets one, so the repair below has a target
+        }
+        self.detach_geometry_from_origin(si);
+        if let Some(s) = self.sketches.get_mut(si) {
+            s.pin_frame();
+        }
         let Some(s) = self.sketches.get(si) else { return };
         // Every contour of a sketch comes from entities now; the ids are reused by position.
         let entity_cids: Vec<Id> = s.contour_ids.clone();
@@ -2674,8 +2687,74 @@ impl Project {
     }
     /// The two points defining the infinite line of a coordinate axis (`which` is 0 for X, 1 for Y): the origin
     /// (0,0) and a fixed guide point at (1,0) or (0,1). Created lazily, for constraints against the axes.
+    /// GEOMETRY GLUED INTO THE ORIGIN IS GIVEN A POINT OF ITS OWN, and the origin goes back to zero.
+    ///
+    /// Reported behaviour: "where has the centre of the circle gone?" - and, put more sharply, "the
+    /// circle is not at the origin, but its CENTRE is the origin". Both describe one state: the origin
+    /// point had been dragged to (-27, 36) and was the circle's centre, while the origin's MARK is drawn
+    /// where the axes cross. Two different places on screen claiming to be the same thing.
+    ///
+    /// How it got there: `merge_close_points` glues whatever lands at zero INTO the origin, keeping the
+    /// origin's id, so the origin becomes somebody's geometry and travels with it.
+    ///
+    /// The repair keeps the drawing exactly where it is - the entity gets a fresh point at the position
+    /// the origin had wandered to - and sends the origin home. Returns whether anything was separated.
+    pub fn detach_geometry_from_origin(&mut self, si: usize) -> bool {
+        let Some(s) = self.sketches.get(si) else { return false };
+        let origin = s.origin;
+        if origin == 0 {
+            return false;
+        }
+        let Some((ox, oy)) = s.points.iter().find(|p| p.id == origin).map(|p| (p.x, p.y)) else { return false };
+        let used = s.entities.iter().any(|e| entity_points(e).contains(&origin));
+        if !used || (ox == 0.0 && oy == 0.0) {
+            return false; // nobody's geometry, or already home - nothing to separate
+        }
+        let fresh = self.alloc_id();
+        let s = &mut self.sketches[si];
+        s.points.push(SketchPoint { id: fresh, x: ox, y: oy });
+        let (guides, frame) = (s.axis_pts, s.frame);
+        for e in &mut s.entities {
+            remap_entity_point(e, origin, fresh);
+        }
+        for c in &mut s.constraints {
+            // `Fixed` on the origin stays on the origin; so does anything naming the frame or an axis
+            // guide - those speak about the reference frame, not about the drawing.
+            if matches!(c, Constraint::Fixed { p } if *p == origin) {
+                continue;
+            }
+            let pts = c.points();
+            if pts.iter().any(|p| guides.contains(p) || *p == frame) {
+                continue;
+            }
+            remap_constraint_point_pub(c, origin, fresh);
+        }
+        true
+    }
+
+    /// The anchor of the frame of reference: a point at (0,0) that is nobody's geometry - see
+    /// `Sketch::frame`. Created lazily, like the origin.
+    pub fn ensure_frame(&mut self, si: usize) -> Id {
+        if let Some(s) = self.sketches.get(si) {
+            if s.frame != 0 && s.points.iter().any(|p| p.id == s.frame) {
+                return s.frame;
+            }
+        } else {
+            return 0;
+        }
+        let id = self.alloc_id();
+        let s = &mut self.sketches[si];
+        s.points.push(SketchPoint { id, x: 0.0, y: 0.0 });
+        s.constraints.push(Constraint::Fixed { p: id });
+        s.frame = id;
+        id
+    }
+
     pub fn ensure_axis(&mut self, si: usize, which: usize) -> (Id, Id) {
-        let o = self.ensure_origin(si);
+        // THE ANCHOR, NOT THE ORIGIN. An axis is the infinite line through these two points, and the
+        // origin is a point geometry gets glued to - so an axis hung on it tilts the moment that geometry
+        // moves. See `Sketch::frame`.
+        let o = self.ensure_frame(si);
         let w = which.min(1);
         let existing = self.sketches.get(si).map(|s| s.axis_pts[w]).unwrap_or(0);
         if existing != 0 && self.sketches.get(si).is_some_and(|s| s.points.iter().any(|p| p.id == existing)) {
@@ -2755,7 +2834,26 @@ impl Project {
     }
     /// Find a sketch point near (x, y) within `eps`, or create one. Returns its id.
     pub fn sketch_point_at(&mut self, si: usize, x: f64, y: f64, eps: f64) -> Id {
-        if let Some(p) = self.sketches[si].points.iter().find(|p| ((p.x - x).powi(2) + (p.y - y).powi(2)).sqrt() <= eps) {
+        // THE FRAME OF REFERENCE IS NEVER ADOPTED AS SOMEBODY'S GEOMETRY.
+        //
+        // Reported behaviour: "I cannot move the circle away from the origin", and before that "a
+        // dimension to the X or Y axis comes out crooked". Both came from here. A click at zero found
+        // the origin already standing there and handed it over as the new circle's centre - so the circle
+        // WAS the origin. Drag it and the reference frame travels with it, tilting both axes; pin the
+        // frame and the circle can no longer be moved. The drawing and the frame it is measured from
+        // cannot be the same point.
+        //
+        // Geometry landing on the origin gets a point of its own, in the same place. A coincidence with
+        // the origin is a CONSTRAINT, made by clicking it with the constraint tool - not by silently
+        // sharing the id.
+        let sys = self.sketches[si].system_ids();
+        if let Some(p) = self
+            .sketches[si]
+            .points
+            .iter()
+            .filter(|p| !sys.contains(&p.id))
+            .find(|p| ((p.x - x).powi(2) + (p.y - y).powi(2)).sqrt() <= eps)
+        {
             return p.id;
         }
         let id = self.alloc_id();
@@ -2964,7 +3062,8 @@ impl Project {
     pub fn add_sketch(&mut self, name: impl Into<String>, contours: Vec<Contour>, source: Option<Id>) -> Id {
         let contour_ids: Vec<Id> = contours.into_iter().map(|c| self.add_contour(c)).collect();
         let id = self.alloc_id();
-        self.sketches.push(Sketch { id, name: name.into(), contour_ids, source, points: Vec::new(), entities: Vec::new(), closed: false, constraints: Vec::new(), splines: Vec::new(), notes: Vec::new(), texts: Vec::new(), patterns: Vec::new(), projections: Vec::new(), plane: crate::feature::SketchPlane::default(), origin: 0, axis_pts: [0, 0], origin_uv: None });
+        self.sketches.push(Sketch { id, name: name.into(), contour_ids, source, points: Vec::new(), entities: Vec::new(), closed: false, constraints: Vec::new(), splines: Vec::new(), notes: Vec::new(), texts: Vec::new(), patterns: Vec::new(), projections: Vec::new(), plane: crate::feature::SketchPlane::default(), origin: 0, axis_pts: [0, 0],
+            frame: 0, origin_uv: None });
         id
     }
     /// Import a DXF or SVG as an editable sketch: the exact curves (`ProfEdge`) become typed sketcher entities,

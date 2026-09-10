@@ -43,7 +43,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleName</key><string>QymCAD</string>
     <key>CFBundleDisplayName</key><string>QymCAD</string>
-    <key>CFBundleIdentifier</key><string>tech.qymis.qymcad</string>
+    <key>CFBundleIdentifier</key><string>tech.qymis.cad</string>
     <key>CFBundleExecutable</key><string>qymcad</string>
     <key>CFBundleIconFile</key><string>qymcad</string>
     <key>CFBundlePackageType</key><string>APPL</string>

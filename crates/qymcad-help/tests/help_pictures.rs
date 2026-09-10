@@ -90,9 +90,17 @@ fn every_drawn_picture_is_used_by_some_article() {
 /// overview sections); it is EXPLICIT so that a new article without a picture cannot slip through
 /// silently.
 #[test]
-#[ignore = "4 articles are still without a picture. Import-export and external references have no scenes written. Face splitting and surface trimming ARE NOT DRAWN: the first does not change the shape (nothing to show in a raster), and the second pulls the donor and the pre-move tool into frame — the reasons are set out in help_images.rs"]
+#[ignore = "4 articles are still without a picture, and they are the four named here. Import-export and external references have no scenes written. Face splitting and surface trimming ARE NOT DRAWN: the first does not change the shape (nothing to show in a raster), and the second pulls the donor and the pre-move tool into frame - the reasons are set out in help_images.rs. IGNORED MEANS UNGUARDED: a new article without a picture does not turn this red in an ordinary run, and two of them arrived that way before anybody looked"]
 fn every_tool_article_shows_a_picture() {
-    const NO_PICTURE_NEEDED: &[&str] = &["index.md"];
+    // A TOOL is what this asks about: a person cannot tell from words what shape will come out. An
+    // article about a WINDOW is a different kind of text - it describes a conversation, not a shape, and
+    // a capture of a dialogue shows nothing the words do not already say. Kept explicit rather than
+    // guessed from the path, so that adding one is a decision somebody takes on purpose.
+    const NO_PICTURE_NEEDED: &[&str] = &[
+        "index.md",
+        "13-report.md",  // the "report a problem" window
+        "14-updates.md", // the check for a newer version
+    ];
     let mut silent = Vec::new();
     let base = help_dir().join("ru");
     let mut stack = vec![base.clone()];

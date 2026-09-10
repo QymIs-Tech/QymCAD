@@ -1,0 +1,20 @@
+[package]
+name = "qymcad-update"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# THE ONLY NETWORK CLIENT IN THE PROGRAM, and it is deliberately a small one.
+#
+# Chosen over `reqwest` by weight rather than by taste: 5 required dependencies against 21, and no
+# asynchronous runtime. `reqwest` pulls `tokio` even in its blocking mode, which would put a whole
+# runtime into a window program that has not one asynchronous line; the background work here goes on
+# ordinary threads, the way the file jobs already do.
+#
+# Default features are `rustls` and `gzip`, and `rustls` already brings `webpki-roots` - the roots
+# compiled INTO the binary. That is the point: the AppImage and the package must behave the same on a
+# machine whose system store is empty or stale. `platform-verifier` is a separate feature and stays off.
+ureq = "3.4.1"
+serde = { workspace = true }
+serde_json = "1.0.151"

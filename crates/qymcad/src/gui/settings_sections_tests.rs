@@ -76,6 +76,8 @@ mod tests {
             show_start_screen: false,
             mouse_nav: qymcad_ui_state::MouseNav::Blender,
             zoom_at: qymcad_ui_state::ZoomAt::ViewCentre,
+            update_check: qymcad_ui_state::UpdateCheck::Weekly,
+            update_last_checked: 1_788_900_000,
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual,
             msaa: 8,
             autosave_secs: 600,

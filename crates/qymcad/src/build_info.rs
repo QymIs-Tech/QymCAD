@@ -24,6 +24,22 @@ pub fn commit_date() -> Option<&'static str> {
     option_env!("QYMCAD_COMMIT_DATE")
 }
 
+/// THE RELEASE THIS BINARY WAS BUILT AS, e.g. `v0.2.0-dev.20260920`. `None` for every build that is not
+/// a release: a checkout, somebody's own compilation, a run from `cargo run`.
+///
+/// The version from the manifest cannot answer this. It is `0.1.0` for every build of the week, tagged
+/// or not, so two binaries a month apart call themselves the same thing - and comparing that against a
+/// published release says nothing at all. The tag is the only name a release has.
+pub fn release() -> Option<&'static str> {
+    option_env!("QYMCAD_RELEASE")
+}
+
+/// What the build calls itself in one word: the release tag when there is one, the manifest number
+/// otherwise. This is the head of every line below.
+pub fn head() -> &'static str {
+    release().unwrap_or_else(version)
+}
+
 /// Was the tree carrying uncommitted edits when this was built.
 ///
 /// THIS MATTERS AS MUCH AS THE HASH. A binary built over uncommitted edits corresponds to no commit at
@@ -33,19 +49,30 @@ pub fn is_modified() -> bool {
     option_env!("QYMCAD_GIT_DIRTY").is_some()
 }
 
-/// The one line a person copies into a report: `0.1.0 (a8f629971, 2026-08-25)`.
+/// The one line a person copies into a report: `v0.2.0-dev.20260920 (a8f629971, 2026-08-25)`, or
+/// `0.1.0 (a8f629971, 2026-08-25)` when the build is not a release.
 ///
 /// The mark about uncommitted edits comes from the catalogue: it is read by a person, so it speaks
 /// their language like everything else in the window.
 pub fn line() -> String {
-    let mut s = version().to_string();
-    match (commit(), commit_date()) {
+    let modified = is_modified().then(|| crate::i18n::tr("about-build-modified"));
+    compose(head(), commit(), commit_date(), modified.as_deref())
+}
+
+/// The line itself, assembled from what it is given rather than from what this build happens to be.
+///
+/// Split out to be asked questions: everything above reads `option_env!`, which is fixed at compile
+/// time, so a build made here can only ever exercise one of the cases. The one that matters most - a
+/// release naming its tag instead of the manifest number - never happens on this machine.
+fn compose(head: &str, commit: Option<&str>, date: Option<&str>, modified: Option<&str>) -> String {
+    let mut s = head.to_string();
+    match (commit, date) {
         (Some(h), Some(d)) => s.push_str(&format!(" ({h}, {d})")),
         (Some(h), None) => s.push_str(&format!(" ({h})")),
         (None, _) => {}
     }
-    if is_modified() {
-        s.push_str(&format!(", {}", crate::i18n::tr("about-build-modified")));
+    if let Some(word) = modified {
+        s.push_str(&format!(", {word}"));
     }
     s
 }
@@ -60,7 +87,7 @@ pub fn line() -> String {
 /// It grows: the environment (the drawing path, the graphics adapter, the language, the last refusal
 /// from the kernel) joins it as those become available.
 pub fn report_block() -> String {
-    let mut s = format!("QymCAD {}", version());
+    let mut s = format!("QymCAD {}", head());
     match (commit(), commit_date()) {
         (Some(h), Some(d)) => s.push_str(&format!(" ({h}, {d})")),
         (Some(h), None) => s.push_str(&format!(" ({h})")),
@@ -84,7 +111,7 @@ mod tests {
         assert!(!v.is_empty(), "the version from the manifest is empty");
 
         let line = super::line();
-        assert!(line.starts_with(v), "the line does not start with the version: {line:?}");
+        assert!(line.starts_with(super::head()), "the line does not start with what the build calls itself: {line:?}");
 
         // The workspace is a git repository, so a build made in it MUST carry a commit. Were this
         // assertion absent, a build.rs that quietly stopped stamping would go unnoticed: the line would
@@ -95,6 +122,57 @@ mod tests {
             assert!(h.len() >= 7, "built inside a repository and the commit is not in the line: {line:?}");
             assert!(h.chars().all(|c| c.is_ascii_hexdigit()), "the commit is not a hash: {h:?}");
         }
+    }
+
+    /// A RELEASE NAMES ITS TAG; AN ORDINARY BUILD NAMES THE MANIFEST.
+    ///
+    /// This is the whole point of stamping the tag, and it cannot be asked of this build: `option_env!`
+    /// is fixed at compile time, and nothing compiled here is a release. So the line is assembled from
+    /// given values instead.
+    ///
+    /// Why it matters: `0.1.0` is the manifest number of EVERY build between two releases, so a program
+    /// that reports it says nothing about which release a person is running - and has nothing to compare
+    /// against what the site says is current.
+    #[test]
+    fn a_release_says_which_release_it_is() {
+        let released = super::compose("v0.2.0-dev.20260920", Some("a8f62997"), Some("2026-09-20"), None);
+        assert_eq!(released, "v0.2.0-dev.20260920 (a8f62997, 2026-09-20)");
+
+        let ordinary = super::compose("0.1.0", Some("a8f62997"), Some("2026-09-20"), None);
+        assert_eq!(ordinary, "0.1.0 (a8f62997, 2026-09-20)");
+        assert_ne!(released, ordinary, "a release and an ordinary build of the same commit look the same");
+
+        // The mark about uncommitted edits still arrives, and still last. The word comes from the
+        // catalogue at run time; here it is given as plain text, because what is asked is the shape of
+        // the line and not the translation.
+        let edited = super::compose("0.1.0", Some("a8f62997"), None, Some("edited"));
+        assert_eq!(edited, "0.1.0 (a8f62997), edited");
+
+        // built without git: the head alone, and no empty brackets
+        assert_eq!(super::compose("0.1.0", None, None, None), "0.1.0");
+    }
+
+    /// AND THE TAG REACHES THE BINARY THROUGH `build.rs`, WITH A REBUILD WHEN IT CHANGES.
+    ///
+    /// Two lines that are easy to write and easy to write only half of. Without
+    /// `rerun-if-env-changed` cargo keeps the compiled crate when only the variable changed, so a
+    /// tagged build made in a warm target directory carries the PREVIOUS tag - worse than carrying
+    /// none, because it looks right.
+    #[test]
+    fn the_tag_is_stamped_and_a_changed_tag_rebuilds() {
+        let src = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("build.rs")).expect("build.rs reads");
+        assert!(
+            src.contains("rustc-env=QYMCAD_RELEASE"),
+            "build.rs no longer stamps the release tag, so no build can say which release it is"
+        );
+        assert!(
+            src.contains("QYMCAD_VERSION"),
+            "build.rs stamps the tag from something other than QYMCAD_VERSION, which is the name the release run sets"
+        );
+        assert!(
+            src.contains("rerun-if-env-changed=QYMCAD_VERSION"),
+            "the tag is stamped without asking cargo to rebuild when it changes: a tagged build in a warm target directory would carry the previous tag"
+        );
     }
 
     /// THE PACKAGING IMAGE MUST NOT BE OLDER THAN THE FLOOR IT CLAIMS TO BUILD.

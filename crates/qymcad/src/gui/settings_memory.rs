@@ -30,6 +30,8 @@ mod tests {
             show_start_screen: !d.show_start_screen,
             mouse_nav: qymcad_ui_state::MouseNav::Blender,
             zoom_at: qymcad_ui_state::ZoomAt::ViewCentre, // the factory value is Cursor
+            update_check: qymcad_ui_state::UpdateCheck::Weekly, // the factory value is Daily
+            update_last_checked: 1_788_900_000, // the factory value is 0 - never asked
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual, // the factory value is PartCentre
             msaa: 8,
             autosave_secs: 600,

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 /// The template directory. `None` — the OS has no config directory (happens in sandboxes).
 pub fn dir() -> Option<PathBuf> {
-    directories::ProjectDirs::from("tech", "qymis", "qym-cad").map(|d| d.config_dir().join("templates"))
+    qymcad_paths::config("templates")
 }
 
 /// The file name for a template: letters/digits/hyphen only, everything else becomes an underscore.

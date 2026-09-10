@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The AppStream description of QymCAD, which is what a software centre shows: the name, the summary, the
+  screenshots and the history of releases. Flathub requires it and refuses a submission whose metainfo does
+  not validate.
+
+  THE ID IS THE DOMAIN BACKWARDS, and it is permanent: it names this file, the desktop entry, the icon, the
+  directory of a person's settings and the page in the store. `cad.qymis.tech` is the project's own site, so
+  the id is `tech.qymis.cad`.
+-->
+<component type="desktop-application">
+  <id>tech.qymis.cad</id>
+
+  <name>QymCAD</name>
+  <summary>Parametric associative B-rep CAD/CAM</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+
+  <developer id="tech.qymis">
+    <name>QymIsTech</name>
+  </developer>
+
+  <description>
+    <p>
+      A desktop CAD with a parametric sketcher, a feature timeline, assemblies with joints, and CAM.
+    </p>
+    <p>
+      Sketches, features and assemblies stay associative: a dimension changed in the middle of the
+      timeline rebuilds everything standing on it. A sketch can be drawn on the face of another part and
+      keeps following it.
+    </p>
+    <p>Modelling:</p>
+    <ul>
+      <li>Sketcher with constraints, dimensions driven by expressions, and named parameters</li>
+      <li>Extrude, revolve, sweep, loft, fillet, chamfer, shell, draft, holes, threads and patterns</li>
+      <li>Assemblies with joints, and editing a part in the context of the assembly around it</li>
+      <li>STEP and STL import and export; DXF and SVG as editable sketches</li>
+      <li>Toolpaths and G-code for milling</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">tech.qymis.cad.desktop</launchable>
+
+  <url type="homepage">https://cad.qymis.tech/</url>
+  <url type="bugtracker">https://github.com/QymIs-Tech/QymCAD/issues</url>
+  <url type="vcs-browser">https://github.com/QymIs-Tech/QymCAD</url>
+
+  <!--
+    THE ADDRESS IS PINNED TO A COMMIT, not to a branch. Flathub asks for "a link from a tag or a commit
+    and not a branch": what a branch points at can change after the submission has been looked at, and
+    the pictures a reviewer saw would no longer be the pictures people get.
+
+    `@REF@` IS A PLACEHOLDER, and deliberately not a real value. It has to be a ref of the PUBLIC tree -
+    the address points at raw.githubusercontent of the public repository - and this one is private, so a
+    commit taken here would resolve to nothing there. It is filled by
+    `packaging/flatpak/update-manifest.sh <tag>` at submission, from the tag that was published, and that
+    script refuses to finish with the placeholder still in place.
+
+    THE SHOTS THEMSELVES: the window at 2000x1400 (the HiDPI size Flathub names), with the title bar drawn
+    by a nested labwc session and the rounding and shadow put on by packaging/flatpak/frame-screenshots.sh,
+    so that all five look like one set.
+  -->
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/01-assembly.png</image>
+      <caption>A CNC machine assembled from its components, with joints and their degrees of freedom</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/02-parametric.png</image>
+      <caption>Named parameters and formulas driving the dimensions of a part</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/03-part.png</image>
+      <caption>An imported STEP assembly of over a thousand bodies, ready for further operations</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/04-sketch.png</image>
+      <caption>A fully defined sketch: dimensions, constraints and the degrees of freedom left</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/@REF@/docs/screenshots/05-light.png</image>
+      <caption>An assembly of a small robot, in the light colour scheme</caption>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-09-08">
+      <description>
+        <p>The first published release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

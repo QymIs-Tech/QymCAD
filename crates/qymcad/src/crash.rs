@@ -76,7 +76,7 @@ fn dir() -> Option<PathBuf> {
             return Some(d);
         }
     }
-    directories::ProjectDirs::from("tech", "qymis", "qym-cad").map(|d| d.data_dir().join("crashes"))
+    qymcad_paths::data("crashes")
 }
 
 /// A PATH WITHOUT THE NAME OF WHOEVER RAN THE PROGRAM. The file is meant to be attached to a public

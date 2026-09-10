@@ -16,7 +16,6 @@ mod tests {
     /// require remembering which code was the original one.
     #[test]
     fn the_help_language_follows_the_interface_until_it_is_chosen() {
-        let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let prev = crate::i18n::language();
         let mut app = App::default();
 
@@ -53,7 +52,6 @@ mod tests {
     /// caption above it in another.
     #[test]
     fn choosing_a_language_changes_the_whole_help() {
-        let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let prev = crate::i18n::language();
         crate::i18n::set_language("ru");
         help::set_lang("ru");
@@ -72,7 +70,6 @@ mod tests {
     /// a person wants to show a colleague THAT particular paragraph.
     #[test]
     fn the_web_address_points_at_the_same_article() {
-        let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let prev = crate::i18n::language();
         help::set_lang("en");
         let u = help::web_url("part/08-hole");
@@ -90,7 +87,6 @@ mod tests {
     /// run. The same means `reveal_command` uses for the file manager.
     #[test]
     fn the_open_in_browser_setting_is_honoured_everywhere() {
-        let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let mut app = App::default();
         app.set.help_external = false;
         assert_eq!(crate::gui::help_window::help_target(&app.set, "index"), HelpTarget::Window, "by default the help must open in its own window — it works without the internet");
@@ -107,7 +103,6 @@ mod tests {
     /// THE "OPEN ON THE SITE" BUTTON IS IN THE WINDOW AND KNOWS THE ADDRESS OF THE CURRENT ARTICLE.
     #[test]
     fn the_open_on_site_button_is_in_the_window() {
-        let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let mut app = App::default();
         app.open_help("assembly/02-joints");
         let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.help_window(c));

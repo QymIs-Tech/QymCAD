@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=QymCAD
+GenericName=Parametric CAD/CAM
+Comment=Parametric associative B-rep CAD/CAM
+Exec=qymcad %f
+Icon=tech.qymis.cad
+Terminal=false
+Categories=Graphics;3DGraphics;Engineering;
+Keywords=CAD;CAM;CNC;B-rep;parametric;
+MimeType=application/x-qymcad;

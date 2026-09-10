@@ -126,8 +126,12 @@ jobs:
           path: C:\occt
           key: occt-7.8.1-msvc-x64-v1
 
+      # THE TAG IS STAMPED INTO THE BINARY HERE, at the step that compiles it - not at the one that packs
+      # it. `build.rs` reads `QYMCAD_VERSION`, so a build step without it produces a program that cannot
+      # say which release it is, however the file is named afterwards.
       - name: Build (release)
         env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           OCCT_INCLUDE_DIR: C:\occt\include\opencascade
           OCCT_LIB_DIR: C:\occt\lib
         run: cargo build --release --locked --bin qymcad
@@ -141,6 +145,31 @@ jobs:
           OCCT_ROOT: C:\occt
         run: pwsh -File packaging/win/bundle.ps1
 
+      # THE INSTALLER, FROM THE SAME FOLDER THE ZIP WAS MADE OF. Two collections of files for one version
+      # would differ by exactly the thing nobody thinks to check, so the MSI packs `dist\qymcad` - what
+      # bundle.ps1 has just assembled - rather than gathering its own.
+      #
+      # WHY BOTH. The zip is unpacked wherever a person likes and nothing knows it is there; the MSI is
+      # listed in "Apps & features", upgrades in place, and is what winget installs.
+      # THE VERSION IS PINNED, and this one is not a matter of taste.
+      #
+      # `dotnet tool install --global wix` takes the newest, and on 09.09.2026 that became v7, which stops
+      # with "WIX7015: You must accept the Open Source Maintenance Fee (OSMF) EULA". The fee was introduced
+      # in v6 and is asked of everyone who earns money from the toolset; accepting the EULA means declaring
+      # it paid. Version 5 predates all of that and builds the same `.wxs` (schema v4).
+      #
+      # The floating version is the actual fault here: a build that worked yesterday broke because somebody
+      # else released something. Every other tool in this repository is pinned - the Rust toolchain, OCCT -
+      # and this one was not.
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Build the MSI installer
+        shell: pwsh
+        env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: pwsh -File packaging/win/build-msi.ps1
+
       # NOT AN ARCHIVE INSIDE AN ARCHIVE. By default this action zips whatever it is given, so a package
       # that is already a `.zip` arrived as `qymcad-win64.zip` holding `qymcad-0.1.0-...-win64.zip`
       # holding the program - two unpackings for one download. `archive: false` uploads the single file
@@ -149,10 +178,22 @@ jobs:
       # Zipping it OURSELVES is still right: this action does not keep file permissions ("all files will
       # have 644"), and a program that arrives without its executable bit does not start. The `.app` and
       # the AppImage carry that bit inside our own archive.
-      - name: Upload artifact (for workflow_dispatch)
+      #
+      # TWO STEPS BECAUSE THERE ARE TWO FILES, and `archive: false` takes exactly one. Reported behaviour:
+      # "When 'archive' is set to false, only a single file can be uploaded. Found 2 files to upload." -
+      # the installer was added to the same step as the portable zip and the job died at the upload, after
+      # everything had been built. The two cannot share a step, and merging them under `archive: true`
+      # would put a zip inside a zip again.
+      - name: Upload the portable zip (for workflow_dispatch)
         uses: actions/upload-artifact@v7
         with:
           path: dist/*.zip
+          archive: false
+
+      - name: Upload the installer (for workflow_dispatch)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*.msi
           archive: false
 
   linux:
@@ -245,8 +286,10 @@ jobs:
           path: /Users/runner/occt
           key: occt-7.8.1-macos-arm64-v1
 
+      # The tag is stamped at the compiling step - see the same step in the Windows job.
       - name: Build (release)
         env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           OCCT_INCLUDE_DIR: /Users/runner/occt/include/opencascade
           OCCT_LIB_DIR: /Users/runner/occt/lib
         run: cargo build --release --locked --bin qymcad
@@ -298,9 +341,13 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
-      # THREE FILES, AND ALL THREE ACTUALLY FILES. The packages are uploaded unzipped, and the release
+      # FOUR FILES, AND ALL FOUR ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
       # the Release page would go up with a download missing. Fifteen seconds against that.
+      #
+      # Four, not three, since Windows produces two: the portable zip and the MSI installer. The number
+      # is written out rather than counted from the jobs on purpose - a package that silently stopped
+      # being built is exactly what this step exists to catch.
       - name: What was built
         run: |
           ls -lh dist
@@ -308,7 +355,7 @@ jobs:
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
           n=$(ls dist | wc -l)
-          [ "$n" -eq 3 ] || { echo "!!! three packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq 4 ] || { echo "!!! four packages were expected, $n arrived"; exit 1; }
 
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #

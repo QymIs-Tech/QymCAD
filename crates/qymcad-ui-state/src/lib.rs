@@ -271,12 +271,14 @@ pub enum WinKind {
     Settings,
     /// The parts library catalogue.
     PartsLibrary,
+    /// What the check for a newer version came to (Help -> Check for updates).
+    Updates,
 }
 
 impl WinKind {
     /// EVERY KIND, so that a walk over the windows cannot silently miss one added later. A guard checks that the
     /// count here matches the number of variants declared above.
-    pub const ALL: [WinKind; 10] = [
+    pub const ALL: [WinKind; 11] = [
         WinKind::SaveTemplate,
         WinKind::Start,
         WinKind::DocProps,
@@ -287,6 +289,7 @@ impl WinKind {
         WinKind::Params,
         WinKind::Settings,
         WinKind::PartsLibrary,
+        WinKind::Updates,
     ];
 }
 
@@ -1230,11 +1233,24 @@ pub struct Settings {
     /// The exception to that while a command is open.
     #[serde(default = "default_zoom_editing")]
     pub zoom_editing: ZoomWhileEditing,
+    /// How often to ask whether a newer version exists (see `UpdateCheck`).
+    #[serde(default = "default_update_check")]
+    pub update_check: UpdateCheck,
+    /// When it was last asked, in seconds since the epoch. `0` means never.
+    ///
+    /// Kept beside the setting rather than worked out from anything: without it "once a day" would mean
+    /// "at every start", since nothing else in the program remembers that a start happened.
+    #[serde(default)]
+    pub update_last_checked: u64,
 }
 
 /// The factory layout: ours.
 fn default_zoom_at() -> ZoomAt {
     ZoomAt::Cursor // what every CAD a person comes from does
+}
+
+fn default_update_check() -> UpdateCheck {
+    UpdateCheck::Daily
 }
 
 fn default_zoom_editing() -> ZoomWhileEditing {
@@ -1306,6 +1322,8 @@ impl Default for Settings {
             show_start_screen: true,
             mouse_nav: default_mouse_nav(),
             zoom_at: default_zoom_at(),
+            update_check: default_update_check(),
+            update_last_checked: 0,
             zoom_editing: default_zoom_editing(),
         }
     }
@@ -3336,6 +3354,25 @@ pub struct BarCtx<'a> {
     pub ask: &'a mut Vec<BarAsk>,
 }
 
+/// WHAT THE STATUS LINE READS, in one record rather than nine borrows.
+///
+/// Nine arguments is what it had grown to, and the guard on wide signatures said so. A list that long is
+/// read by nobody: at the call site it is nine expressions in a row, and getting two of them the wrong
+/// way round is a compile error only while their types differ.
+pub struct StatusCtx<'a> {
+    pub cache: &'a Caches,
+    pub cursor: Option<qymcad_core::geom::Point2>,
+    pub project: &'a qymcad_core::model::Project,
+    pub scheme: &'a SchemeUi,
+    /// Needed because the check for a newer version is STARTED here: nothing else in the program knows
+    /// that a start happened, and the setting says how often to ask.
+    pub set: &'a mut Settings,
+    pub sketch_ses: &'a SketchSession,
+    pub status: &'a str,
+    /// The badge leads to the window, so the line must be able to open it.
+    pub win: &'a mut Windows,
+}
+
 /// The named things a bar can ask for.
 #[derive(Clone)]
 pub enum BarAsk {
@@ -4696,6 +4733,27 @@ pub fn rename_selected(project: &qymcad_core::model::Project, rename: &mut Renam
 ///
 /// The axes are infinite, so this is not `seg_seg_intersect` against some long enough stand-in segment -
 /// "long enough" is a number pulled out of the air, and at a far enough zoom it stops being long enough.
+/// THE MIDDLE OF WHAT IS SELECTED, in sketch coordinates - to tell "it moved" from "it was held".
+///
+/// The centre of the bounding box rather than an average of points: an average shifts with how many
+/// points a shape happens to be built from, and a circle carries one while a rectangle carries four.
+pub fn entities_centroid(project: &Project, si: usize, eids: &[Id]) -> Option<Point2> {
+    let s = project.sketches.get(si)?;
+    let pt = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
+    let mut seen = false;
+    for e in s.entities.iter().filter(|e| eids.contains(&e.id)) {
+        for id in qymcad_core::model::entity_points(e) {
+            if let Some(p) = pt(id) {
+                lo = (lo.0.min(p.x), lo.1.min(p.y));
+                hi = (hi.0.max(p.x), hi.1.max(p.y));
+                seen = true;
+            }
+        }
+    }
+    seen.then(|| Point2::new((lo.0 + hi.0) / 2.0, (lo.1 + hi.1) / 2.0))
+}
+
 pub fn seg_axis_intersect(a: Point2, b: Point2, axis: u8) -> Option<Point2> {
     let (pa, pb) = if axis == 0 { (a.x, b.x) } else { (a.y, b.y) };
     let d = pb - pa;
@@ -4755,6 +4813,68 @@ impl ZoomAt {
             ZoomAt::ViewCentre => "settings-zoom-at-centre",
         }
     }
+}
+
+/// HOW OFTEN THE PROGRAM ASKS WHETHER A NEWER VERSION EXISTS.
+///
+/// A program that never says so leaves people on the version they installed. Measured in September 2026:
+/// 470 downloads against 10-20 people in the chat - so almost everybody running it is reachable by
+/// nothing, and every fix made since their download is invisible to them.
+///
+/// The other side is a program that goes to the network without being asked, and that is why this is a
+/// setting with `Never` in it rather than a fact of life.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum UpdateCheck {
+    /// At every start.
+    AtStart,
+    /// At a start, but no oftener than once a day. The default: a release may appear any day, and one
+    /// request a day is nothing to anybody.
+    Daily,
+    /// At a start, no oftener than once a week.
+    Weekly,
+    /// At a start, no oftener than once a month.
+    Monthly,
+    /// Never on its own. The menu item still works: a person who presses it is asking.
+    Never,
+}
+
+impl UpdateCheck {
+    pub const ALL: [UpdateCheck; 5] = [UpdateCheck::AtStart, UpdateCheck::Daily, UpdateCheck::Weekly, UpdateCheck::Monthly, UpdateCheck::Never];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            UpdateCheck::AtStart => "settings-updates-at-start",
+            UpdateCheck::Daily => "settings-updates-daily",
+            UpdateCheck::Weekly => "settings-updates-weekly",
+            UpdateCheck::Monthly => "settings-updates-monthly",
+            UpdateCheck::Never => "settings-updates-never",
+        }
+    }
+
+    /// How long to wait between checks, in seconds. `None` means never on its own.
+    fn every(self) -> Option<u64> {
+        match self {
+            UpdateCheck::AtStart => Some(0),
+            UpdateCheck::Daily => Some(24 * 60 * 60),
+            UpdateCheck::Weekly => Some(7 * 24 * 60 * 60),
+            UpdateCheck::Monthly => Some(30 * 24 * 60 * 60),
+            UpdateCheck::Never => None,
+        }
+    }
+}
+
+/// IS IT TIME TO ASK, given when it was last asked. Both times are seconds since the epoch.
+///
+/// A CLOCK THAT WENT BACKWARDS ASKS AGAIN. The last time is written by the program itself, and a machine
+/// whose clock was wrong, or that came back from suspend across a change of timezone, can hold a "last
+/// checked" in the future. Waiting for it to come round would mean a copy that never checks again and
+/// never says why, which is the worst of the outcomes here - so an impossible answer asks now.
+pub fn update_check_due(how_often: UpdateCheck, last_checked: u64, now: u64) -> bool {
+    let Some(every) = how_often.every() else { return false };
+    if last_checked == 0 || last_checked > now {
+        return true; // never asked, or a clock that cannot be believed
+    }
+    now - last_checked >= every
 }
 
 /// WHERE THE VIEW ZOOMS FROM WHILE A COMMAND IS OPEN.

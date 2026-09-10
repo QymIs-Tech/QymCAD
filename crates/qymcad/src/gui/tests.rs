@@ -2350,7 +2350,13 @@ mod sketch_conflict_ui_tests {
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         app.project.add_line_entity(si, 0.0, 0.0, 30.0, 0.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
-        let (a, b) = (app.project.sketches[si].points[0].id, app.project.sketches[si].points[1].id);
+        // THE ENDS OF THE LINE, asked of the line itself. Taken by position in `points` these used to be
+        // the same thing by luck; a sketch also holds the frame of reference, and its points are in that
+        // list too - see `Sketch::frame`.
+        let (a, b) = match app.project.sketches[si].entities[0].kind {
+            qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+            ref other => panic!("setup: the first entity is not a line: {other:?}"),
+        };
         let s = &mut app.project.sketches[si];
         s.constraints.push(Constraint::Fixed { p: a });
         s.constraints.push(Constraint::Horizontal { a, b });
@@ -2367,7 +2373,13 @@ mod sketch_conflict_ui_tests {
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         app.project.add_line_entity(si, 0.0, 0.0, 30.0, 0.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
-        let (a, b) = (app.project.sketches[si].points[0].id, app.project.sketches[si].points[1].id);
+        // THE ENDS OF THE LINE, asked of the line itself. Taken by position in `points` these used to be
+        // the same thing by luck; a sketch also holds the frame of reference, and its points are in that
+        // list too - see `Sketch::frame`.
+        let (a, b) = match app.project.sketches[si].entities[0].kind {
+            qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+            ref other => panic!("setup: the first entity is not a line: {other:?}"),
+        };
         let s = &mut app.project.sketches[si];
         s.constraints.push(Constraint::Fixed { p: a });
         s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0 });
@@ -2438,7 +2450,10 @@ mod sketch_conflict_ui_tests {
         let (mut app, si) = app_with_conflict();
         assert!(!qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "there is an argument");
         assert!(!qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "a second call (from the cache) answers the same");
-        app.project.delete_sketch_constraint(si, 3);
+        // THE ARGUING DIMENSION ITSELF, not whatever sits at index 3. The sketch also carries the points
+        // and constraints of the frame of reference, so a position in the list is not an identity.
+        let ci = *qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.iter().max().expect("there is an argument to end");
+        app.project.delete_sketch_constraint(si, ci);
         app.project.solve_sketch(si);
         assert!(qymcad_ui_state::sketch_diag(&app.cache, &app.project, si).conflicts.is_empty(), "after the edit the cache was recomputed rather than handing back the old answer");
     }

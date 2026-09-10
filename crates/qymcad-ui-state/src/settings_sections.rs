@@ -55,7 +55,7 @@ impl SettingsSection {
     pub fn row_keys(self) -> &'static [&'static str] {
         use SettingsSection::*;
         match self {
-            General => &["settings-language", "settings-help-lang", "settings-help-open", "settings-open-last", "settings-show-start", "settings-autosave", "settings-undo-cap", "settings-recent-limit", "settings-profile"],
+            General => &["settings-language", "settings-help-lang", "settings-help-open", "settings-open-last", "settings-show-start", "settings-autosave", "settings-undo-cap", "settings-updates", "settings-recent-limit", "settings-profile"],
             Appearance => &["settings-scheme", "settings-ui-scale"],
             Viewport => &["settings-engine", "settings-projection", "settings-shading", "settings-viewcube", "settings-mouse-nav", "settings-zoom-at", "settings-pick-precision", "settings-ghost-alpha", "settings-fov", "settings-msaa"],
             Sketch => &["settings-snap-on", "settings-grid-step", "settings-rot-step", "settings-auto-constrain"],
@@ -94,6 +94,10 @@ impl SettingsSection {
                 s.autosave_secs = d.autosave_secs;
                 s.undo_cap = d.undo_cap;
                 s.recent_limit = d.recent_limit;
+                s.update_check = d.update_check;
+                // The time of the last check goes back with it: left behind, "once a week" would
+                // silently mean "not for another week" right after the setting was put back.
+                s.update_last_checked = d.update_last_checked;
                 // THE RECENT LIST ITSELF IS NOT TOUCHED BY A RESET: it is not a setting but a
                 // history of work. "Reset the section" means "restore the factory values", not
                 // "forget what I did"; the File menu has a separate item for the latter.

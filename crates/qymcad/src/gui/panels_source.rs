@@ -281,6 +281,7 @@ mod tests {
             "JointCtx::workbench", // read: which workbench is current
             "PartCtx::workbench",  // read
             "PropsCtx::workbench", // read
+            "StatusCtx::cursor",   // read: where the pointer is, printed as two numbers and changed by nobody
             "TreeCtx::workbench",  // read
             "WinCtx::file_ask_open", // read: a window does not open a second file dialogue over the first
             "WinCtx::workbench",     // read: the command search puts its own commands first

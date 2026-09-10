@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+#
+# THE PRODUCT CODE IS WHAT LETS WINGET RECOGNISE WHAT IT INSTALLED. Without it "winget upgrade" cannot tell
+# that the QymCAD in "Apps & features" is the one it put there, and the package looks permanently
+# up-to-date or permanently missing. It is computed from the version by packaging/win/build-msi.ps1 and
+# written into this file by packaging/winget/update-manifests.sh.
+PackageIdentifier: QymIsTech.QymCAD
+PackageVersion: "@VERSION@"
+Platform:
+  - Windows.Desktop
+MinimumOSVersion: 10.0.19041.0
+InstallerType: wix
+Scope: machine
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ProductCode: "@PRODUCTCODE@"
+ReleaseDate: "@RELEASEDATE@"
+Installers:
+  - Architecture: x64
+    InstallerUrl: "https://github.com/QymIs-Tech/QymCAD/releases/download/v@TAG@/qymcad-@TAG@-x64.msi"
+    InstallerSha256: "@SHA256@"
+ManifestType: installer
+ManifestVersion: 1.12.0

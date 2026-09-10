@@ -42,6 +42,7 @@ bottom says what is happening, how many degrees of freedom the sketch has and wh
 - [The history timeline and rollback](general/03-timeline) — why a model is a recipe, not a picture.
 - [Keyboard shortcuts](general/10-hotkeys) — the full reference and how to reassign them.
 - [Report a problem](general/13-report) — something does not work: how to tell it so it gets fixed.
+- [Updates](general/14-updates) — how to learn about a new version, and what goes over the network.
 
 **F1** at any moment opens the article about what you are doing right now, not the contents page.
 

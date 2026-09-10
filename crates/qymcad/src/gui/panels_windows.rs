@@ -46,12 +46,20 @@ pub(crate) fn repaint_after_scheme_edit(cache: &super::Caches) {
 
 
 
-/// "THE LAST RUN ENDED IN AN ERROR" - shown once, when a report from an earlier run is found.
+/// "THE LAST RUN ENDED IN AN ERROR" - shown once, when reports from earlier runs are found.
 ///
 /// Without this the reports pile up in a directory nobody has heard of. The window says where the
 /// file is and hands the path over, because the next thing asked of the person is to attach it.
-pub(crate) fn crash_notice(crash_report: &mut Option<std::path::PathBuf>, ctx: &egui::Context) {
-    let Some(path) = crash_report.clone() else { return };
+///
+/// IT TAKES ALL OF THEM AT ONCE, not the newest one. Reported behaviour: "however many times you close
+/// the window at startup, it comes up again every time". The start used to pick up a single report, so
+/// three of them meant three starts and three windows - and a window that returns every start is a
+/// window people learn to dismiss without reading, which is the whole point of showing it once.
+///
+/// The path shown is the newest report's: that is the run the person remembers. Closing answers for
+/// every one of them.
+pub(crate) fn crash_notice(crash_report: &mut Vec<std::path::PathBuf>, ctx: &egui::Context) {
+    let Some(path) = crash_report.first().cloned() else { return };
     let mut open = true;
     let mut dismiss = false;
     egui::Window::new(format!("{} {}", ph::WARNING, crate::i18n::tr("crash-title")))
@@ -77,12 +85,95 @@ pub(crate) fn crash_notice(crash_report: &mut Option<std::path::PathBuf>, ctx: &
         });
     if dismiss || !open {
         // Renamed rather than deleted: the person may still want to attach it to a report.
-        crate::crash::mark_seen(&path);
-        *crash_report = None;
+        for p in crash_report.iter() {
+            crate::crash::mark_seen(p);
+        }
+        crash_report.clear();
     }
 }
 
 /// The About window (Help -> About).
+/// WHAT THE CHECK FOR A NEWER VERSION CAME TO (Help -> Check for updates).
+///
+/// ONE BUTTON, AND IT OPENS A BROWSER. The program downloads nothing: behind self-replacement come
+/// resuming a broken transfer, checksums, write permissions, the macOS quarantine flag and an argument
+/// with an antivirus on Windows. A browser does all of that better and every person already has one -
+/// and whoever installed from a package manager updates with that manager, which they know.
+pub(crate) fn updates_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) {
+    if !win.is(WinKind::Updates) {
+        return;
+    }
+    use qymcad_update::Outcome;
+    let outcome = crate::gui::update_ui::outcome();
+    let mut open = true;
+    egui::Window::new(format!("{} {}", ph::ARROW_CIRCLE_UP, crate::i18n::tr("help-check-updates")))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(460.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(crate::i18n::tr("update-yours"));
+                ui.label(egui::RichText::new(crate::gui::update_ui::ours()).monospace());
+            });
+            ui.add_space(6.0);
+            match outcome {
+                Outcome::Idle | Outcome::Asking => {
+                    ui.label(crate::i18n::tr("update-asking"));
+                }
+                Outcome::UpToDate => {
+                    ui.label(crate::i18n::tr("update-none"));
+                }
+                Outcome::Unreachable => {
+                    // Said plainly rather than dressed up as good news: somebody on a version six months
+                    // old must not be told they are current because a request did not go through.
+                    ui.colored_label(scheme.pal.warning(), format!("{} {}", ph::WARNING, crate::i18n::tr("update-unreachable")));
+                }
+                Outcome::Found(latest) => {
+                    ui.horizontal(|ui| {
+                        ui.label(crate::i18n::tr("update-newest"));
+                        ui.label(egui::RichText::new(&latest.latest).monospace().strong());
+                        if let Some(d) = &latest.published {
+                            ui.label(egui::RichText::new(d).weak());
+                        }
+                    });
+                    // A VERSION DECLARED UNFIT IS SAID FIRST AND LOUDEST. It is the one message here
+                    // that is worth interrupting somebody for.
+                    if qymcad_update::is_unfit(&crate::gui::update_ui::ours(), latest.broken_below.as_deref()) {
+                        ui.add_space(6.0);
+                        ui.colored_label(scheme.pal.warning(), format!("{} {}", ph::WARNING, crate::i18n::tr("update-unfit")));
+                    }
+                    if let Some(notice) = &latest.notice {
+                        ui.add_space(6.0);
+                        ui.colored_label(scheme.pal.hint_action(), notice);
+                    }
+                    if let Some(notes) = &latest.notes {
+                        ui.add_space(8.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        // The notes are written by a person and can be any length; the window must not
+                        // grow past the screen because a release had a lot to say.
+                        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                            ui.label(egui::RichText::new(notes).small());
+                        });
+                    }
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    if ui.button(format!("{} {}", ph::ARROW_SQUARE_OUT, crate::i18n::tr("update-open-page"))).clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(&latest.url));
+                    }
+                }
+            }
+            ui.add_space(4.0);
+        });
+    if !open {
+        win.close(WinKind::Updates);
+    }
+}
+
 pub(crate) fn about_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) {
     if !win.is(WinKind::About) {
         return;
@@ -981,6 +1072,21 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                     ui.add(egui::DragValue::new(&mut wc.set.undo_cap).range(1..=500));
                 });
                 ui.label(egui::RichText::new(crate::i18n::tr("settings-undo-cap-hint")).weak().small());
+            }
+            // HOW OFTEN TO ASK ABOUT A NEWER VERSION. Walked over `UpdateCheck::ALL` rather than listed
+            // here, so a variant added to the type appears in the window by itself (D19).
+            //
+            // ABSENT INSIDE FLATPAK, not merely dead: there is no network in that sandbox, the store
+            // updates the package and says so itself, and a setting that cannot do anything is worse
+            // than one that is not offered.
+            if crate::gui::update_ui::available() && show("settings-updates") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-updates"));
+                    for u in qymcad_ui_state::UpdateCheck::ALL {
+                        ui.selectable_value(&mut wc.set.update_check, u, crate::i18n::tr(u.key()));
+                    }
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-updates-hint")).weak());
             }
             if show("settings-profile") {
                 ui.add_space(4.0);

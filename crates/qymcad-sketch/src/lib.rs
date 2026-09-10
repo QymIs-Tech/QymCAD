@@ -369,6 +369,8 @@ pub fn set_dim_value(project: &mut Project, si: usize, ci: usize, v: f64) -> boo
 /// What is under the cursor in a sketch: (kind, Id). 0 is a point, 1 an entity (a line, an arc, a
 /// circle), 2 a primitive (a contour). Ordinary geometry takes priority over construction geometry.
 pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<(u8, Id)> {
+    // a system id of 0 means "not materialised yet" and must not match a real point
+    let p_eq = |sys: Id, id: Id| sys != 0 && sys == id;
     let sh = qymcad_ui_state::Sheet { view: *pick.view, rect: rect };
     use qymcad_core::model::EntityKind;
     let s = pick.project.sketches.get(si)?;
@@ -376,19 +378,32 @@ pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: us
     // the ends of THE AXES are not picked as ordinary points (they mark infinite lines); the origin
     // deliberately STAYS pickable (it is needed for a coincidence with the origin) - hence `axis_pts`
     // rather than `system_ids`
-    let is_axis_ref = |id: Id| s.axis_pts.contains(&id);
-    // 1) the nearest point
+    let is_axis_ref = |id: Id| s.axis_pts.contains(&id) || p_eq(s.frame, id);
+    // 1) the nearest point.
+    //
+    // THE ORIGIN YIELDS TO ORDINARY GEOMETRY STANDING ON IT. Reported behaviour: "I cannot move the
+    // circle away from the origin". A circle drawn at zero keeps a centre of its own - the stitching
+    // leaves curve centres alone - but that centre and the origin are one point apart by nothing, and
+    // the origin was picked first. The origin carries `Fixed`, so the drag moved nothing at all.
+    //
+    // It stays pickable, because a coincidence with the origin is made by clicking it; it simply loses
+    // every tie to a real point.
     let mut best_pt: Option<(f32, Id)> = None;
+    let mut best_sys: Option<(f32, Id)> = None;
     for p in &s.points {
         if is_axis_ref(p.id) {
             continue;
         }
         let d = sh.at(Point2::new(p.x, p.y)).distance(pos);
-        if d <= qymcad_ui_state::grab::grab(pick.set, Grab::Point) && best_pt.is_none_or(|(bd, _)| d < bd) {
-            best_pt = Some((d, p.id));
+        if d > qymcad_ui_state::grab::grab(pick.set, Grab::Point) {
+            continue;
+        }
+        let slot = if p_eq(s.origin, p.id) { &mut best_sys } else { &mut best_pt };
+        if slot.is_none_or(|(bd, _)| d < bd) {
+            *slot = Some((d, p.id));
         }
     }
-    if let Some((_, id)) = best_pt {
+    if let Some((_, id)) = best_pt.or(best_sys) {
         return Some((0u8, id));
     }
     // 2) the nearest entity (an ordinary one takes priority over construction geometry)
@@ -1412,6 +1427,39 @@ pub fn project_clicked_edge(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rect
 }
 
 /// A click with the dimension tool. Returns true when the click was handled.
+/// A CIRCLE DRAWN GETS ITS DIAMETER AS A REAL DIMENSION, there and then.
+///
+/// Reported behaviour: "the sketch is not defined although the point is locked and a dimension is shown
+/// on the screen - it was placed automatically while drawing. I edit that dimension on purpose, and only
+/// then does it become a diameter, appear in the panel, and the sketch becomes defined. That is not
+/// obvious: a dimension put on a circle while drawing must be a diameter straight away, not a fiction
+/// that has to be edited once more to define the sketch."
+///
+/// What was on screen was the FIELD waiting for a value, not a constraint. The number looked like a
+/// dimension and counted for nothing: the sketch stayed short by one, and the reason was invisible.
+///
+/// The dimension is made here and the field is pointed at it, so typing edits the real thing. It is not
+/// made for construction geometry, which carries no dimensions.
+fn dimension_the_new_circle(sk: &mut qymcad_ui_state::SketchCtx, si: usize, eid: Id, construction: bool) {
+    if construction {
+        return;
+    }
+    let centre = sk.project.sketches[si].entities.iter().find(|e| e.id == eid).and_then(|e| match e.kind {
+        qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
+        _ => None,
+    });
+    if let Some(c) = centre {
+        if let Some(ci) = sk.project.ensure_diameter(si, c, true) {
+            sk.project.solve_sketch(si);
+            *sk.inline = qymcad_ui_state::InlineEdit::Dim(ci);
+            sk.dim.focus = true;
+            return;
+        }
+    }
+    *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid); // an arc or a shape with no centre of its own
+    sk.dim.focus = true;
+}
+
 pub fn dim_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2) -> bool {
     // THE BOUNDARY OF AN OPERATION: placing a dimension is a deliberate act and makes one undo step.
     qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("sk-dim"));
@@ -2204,10 +2252,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                     qymcad_ui_state::add_tangent_to_edge(&mut *sk.project, si, eref, cen, w.x, w.y, r);
                     sk.project.solve_sketch(si);
                     qymcad_ui_state::invalidate(&mut *sk.regen);
-                    if !con {
-                        *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid);
-                        sk.dim.focus = true;
-                    }
+                    dimension_the_new_circle(sk, si, eid, con);
                 } else {
                     *sk.status = qymcad_i18n::tr("sk-centre-on-edge");
                 }
@@ -2228,10 +2273,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 let eid = sk.project.add_circle_entity(si, cx, cy, r, qymcad_core::feature::Purpose::of(con));
                 sk.tool.pts.clear();
                 qymcad_ui_state::invalidate(&mut *sk.regen);
-                if !con {
-                    *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid); // straight into typing the radius or diameter
-                    sk.dim.focus = true;
-                }
+                dimension_the_new_circle(sk, si, eid, con);
             }
         }
         4 if sk.tool_prefs.arc_mode == 2 => {
@@ -2347,10 +2389,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 if let Some((cx, cy, r)) = qymcad_ui_state::circumcircle(sk.tool.pts[0], sk.tool.pts[1], sk.tool.pts[2]) {
                     let eid = sk.project.add_circle_entity(si, cx, cy, r, qymcad_core::feature::Purpose::of(con));
                     qymcad_ui_state::invalidate(&mut *sk.regen);
-                    if !con {
-                        *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid); // straight into typing the diameter, as with an ordinary circle
-                        sk.dim.focus = true;
-                    }
+                    dimension_the_new_circle(sk, si, eid, con);
                 } else {
                     *sk.status = qymcad_i18n::tr("sk-points-collinear-circle");
                 }
@@ -3161,11 +3200,38 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                             let (dx, dy) = (w.x - base.x, w.y - base.y);
                             if sk.armed.move_op() == 2 {
                                 let ids = sk.project.copy_entities(si, &eids, dx, dy);
+                                sk.project.solve_sketch(si);
                                 sk.sel_sk.items = ids.into_iter().map(|id| (1u8, id)).collect(); // select the copies
                                 *sk.status = qymcad_i18n::tr("sk-copied");
                             } else {
+                                // WHERE IT WAS ASKED TO GO, and where the constraints let it go.
+                                //
+                                // Reported behaviour: "I took the move tool, moved the circle far away, and
+                                // the coincidence with the origin stayed - and stayed GREEN. Reopen the
+                                // project and the circle is back at the centre; draw anything and it jumps
+                                // back too."
+                                //
+                                // The move shifted the points and never asked the solver, so the screen
+                                // showed a shape standing where nothing allows it to stand. The lie held
+                                // until the next edit, and the jump back then looked like a defect of its
+                                // own. The solver runs HERE, and if the drawing did not go, that is said
+                                // out loud rather than discovered later.
+                                let before = qymcad_ui_state::entities_centroid(&*sk.project, si, &eids);
                                 sk.project.move_entities(si, &eids, dx, dy);
-                                *sk.status = qymcad_i18n::tr("sk-moved");
+                                sk.project.solve_sketch(si);
+                                let after = qymcad_ui_state::entities_centroid(&*sk.project, si, &eids);
+                                let asked = (dx * dx + dy * dy).sqrt();
+                                let went = match (before, after) {
+                                    (Some(b), Some(a)) => ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt(),
+                                    _ => asked,
+                                };
+                                // a tenth of what was asked, and at least a hundredth of a millimetre: below
+                                // that the drawing did not move at all
+                                *sk.status = if asked > 1e-9 && went < (asked * 0.1).max(1e-2) {
+                                    format!("{} {}", ph::WARNING, qymcad_i18n::tr("sk-move-held"))
+                                } else {
+                                    qymcad_i18n::tr("sk-moved")
+                                };
                             }
                             *sk.armed = qymcad_ui_state::Armed::None;
                             qymcad_ui_state::invalidate(&mut *sk.regen);

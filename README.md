@@ -12,7 +12,7 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 
 **English** · [Русский](README.ru.md)
 
-<img src="docs/help/img/window.png" width="820" alt="The QymCAD main window">
+<img src="docs/screenshots/01-assembly.png" width="900" alt="A CNC machine assembled in QymCAD: components, joints and their degrees of freedom">
 
 </div>
 

@@ -6,5 +6,5 @@ Comment=Parametric associative B-rep CAD/CAM
 Exec=qymcad
 Icon=qymcad
 Terminal=false
-Categories=Graphics;Engineering;Science;
+Categories=Graphics;3DGraphics;Engineering;
 Keywords=CAD;CAM;CNC;B-rep;parametric;

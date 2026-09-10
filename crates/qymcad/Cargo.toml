@@ -39,7 +39,9 @@ egui-phosphor = "0.13"
 ron.workspace = true
 serde = { workspace = true } # the view settings kept between sessions (ViewPrefs)
 time.workspace = true # the calendar for the document stamp and the autosave clock
-directories = "6"
+qymcad-paths = { path = "../qymcad-paths" }
+qymcad-update = { path = "../qymcad-update" } # asking the site whether a newer version exists
+directories = "6" # UserDirs: the person's home, for shortening paths in reports
 include_dir = "0.7" # the parts library (library/parts) is compiled into the binary
 image = { version = "0.25", default-features = false, features = ["png"] } # decoding the logo for the splash screen
 fluent-bundle = "0.16.0"

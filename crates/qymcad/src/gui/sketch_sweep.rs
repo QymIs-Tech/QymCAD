@@ -42,8 +42,13 @@ mod tests {
     /// A sketch point by its coordinates — that is how a mouse finds it too.
     fn point_at(app: &App, si: usize, x: f64, y: f64) -> Id {
         let s = &app.project.sketches[si];
+        // THE DRAWING'S OWN POINTS, not the frame of reference. The origin and the axis points live in
+        // the same list and one of them sits exactly at (0,0), so a corner asked for there used to come
+        // back as the origin - and a dimension "between two corners" was then measured to the frame.
+        let sys = s.system_ids();
         s.points
             .iter()
+            .filter(|p| !sys.contains(&p.id))
             .min_by(|a, b| {
                 let d = |p: &qymcad_core::model::SketchPoint| (p.x - x).powi(2) + (p.y - y).powi(2);
                 d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal)

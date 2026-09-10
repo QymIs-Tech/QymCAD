@@ -132,9 +132,10 @@ pub fn launch() -> eframe::Result<()> {
             install_fonts(&cc.egui_ctx);
 
             let mut app = App::default();
-            // A CRASH FILE NOBODY IS TOLD ABOUT IS THE SAME AS NO CRASH FILE. The newest report from an
-            // earlier run is picked up here and shown once.
-            app.disk.crash_report = crate::crash::unseen_reports().into_iter().next();
+            // A CRASH FILE NOBODY IS TOLD ABOUT IS THE SAME AS NO CRASH FILE. EVERY unseen report from
+            // earlier runs is picked up here, and one window answers for all of them: taking only the
+            // newest meant the next start found the next one and showed the window again.
+            app.disk.crash_report = crate::crash::unseen_reports();
             // restore the previous session's settings (the view preferences)
             if let Some(storage) = cc.storage {
                 // THE SETTINGS COME AS ONE RECORD: loaded and assigned. There is no separate "apply" step, and
@@ -409,7 +410,7 @@ pub(crate) struct OnDisk {
     /// A mesh export waiting for its deflection.
     pub(crate) stl_export: Option<ExportTarget>,
     /// A crash report left by an earlier run, to be shown once.
-    pub(crate) crash_report: Option<std::path::PathBuf>,
+    pub(crate) crash_report: Vec<std::path::PathBuf>,
     /// What the person is writing into "report a problem".
     pub(crate) report: crate::gui::report_problem::ReportDraft,
     /// The title as it stands in the window bar - kept so it is not set on every frame.
@@ -429,7 +430,7 @@ impl Default for OnDisk {
             edits: Edits::default(),
             file_ask: None,
             stl_export: None,
-            crash_report: None,
+            crash_report: Vec::new(),
             report: crate::gui::report_problem::ReportDraft::default(),
             title_shown: APP_NAME.to_string(),
             pending_nav: None,
@@ -2047,7 +2048,7 @@ impl qymcad_shell::Fills for App {
             "bool_tool_bar" => crate::gui::commands::bool_tool_bar(&mut self.part_ctx(), ui),
             "joint_tool_bar" => qymcad_assembly::joint_tool_bar(&mut self.joint_ctx(), ui),
             "joint_edit_bar" => qymcad_assembly::joint_edit_bar(&mut self.joint_ctx(), ui),
-            "status" => crate::gui::panels_bars::status_bar(&self.cache, self.cursor, &self.project, &self.scheme, &self.sketch_ses, &self.status, ui),
+            "status" => crate::gui::panels_bars::status_bar(&mut qymcad_ui_state::StatusCtx { cache: &self.cache, cursor: self.cursor, project: &self.project, scheme: &self.scheme, set: &mut self.set, sketch_ses: &self.sketch_ses, status: &self.status, win: &mut self.win }, ui),
             "wbtools" => crate::gui::panels_bars::wb_toolbar(&mut self.bar_ctx(&mut bar_asks), ui),
             "tree" => self.tree_panel(ui),
             "props" => self.properties_panel(ui),
@@ -2146,6 +2147,7 @@ impl App {
         crate::gui::panels_windows::crash_notice(&mut self.disk.crash_report, ctx); // "the last run ended in an error" - only after a crash
         self.report_window(ctx); // Help -> Report a problem
         crate::gui::panels_windows::about_dialog(&mut self.win, &self.scheme, ctx); // the About window
+        crate::gui::panels_windows::updates_dialog(&mut self.win, &self.scheme, ctx); // Help -> Check for updates
         { let mut asks = Vec::new(); crate::gui::panels_windows::doc_props_window(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); } // the document properties
         self.start_screen(ctx); // where to begin — only on a blank slate
         { let mut asks = Vec::new(); crate::gui::panels_windows::nav_dialog(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); } // the modal "save the changes?" over the menu
@@ -2160,7 +2162,7 @@ impl App {
         shell.run_slot(qymcad_shell::Slot::Left, ui, self);
         shell.run_slot(qymcad_shell::Slot::Right, ui, self);
         { let mut asks = Vec::new(); crate::gui::panels_windows::parts_library_window(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); }
-        self.save_part_window(ctx);
+        { let mut asks = Vec::new(); crate::gui::io_jobs::save_part_window(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); } // "save as a part of the library"
         { let mut asks = Vec::new(); crate::gui::panels_windows::params_window(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); }
         { let mut asks = Vec::new(); crate::gui::panels_windows::settings_window(&mut self.win_ctx(&mut asks), ctx); self.do_win_asks(asks, ctx); }
         shell.run_slot(qymcad_shell::Slot::Centre, ui, self); // last, and now for a stated reason
@@ -4369,6 +4371,11 @@ mod io_jobs;
 
 /// Asking for a file without stopping the frames lives in `gui/file_ask.rs`.
 mod file_ask;
+
+/// Whether a newer version exists lives in `gui/update_ui.rs` - state and all, off the application.
+mod update_ui;
+mod update_notice;
+mod dim_to_axis;
 mod deaf_while_the_system_asks;
 mod a_machine_with_no_graphics;
 mod the_card_holds_its_words;

@@ -18,18 +18,23 @@ use include_dir::{include_dir, Dir};
 /// `build.rs`).
 static HELP: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../docs/help");
 
-/// THE CHOSEN LANGUAGE OF THE HELP. Empty means whatever the interface uses.
-///
-/// As global state of its own rather than a parameter on every call: the language of the interface
-/// already lives exactly that way (`i18n::set_language`), and the article, the title, the contents and
-/// the search must all speak ONE language. A second way of setting it would diverge from the first.
-static PICKED: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
-
+// THE CHOSEN LANGUAGE OF THE HELP. Empty means whatever the interface uses.
+//
+// As state of its own rather than a parameter on every call: the article, the title, the contents and
+// the search must all speak ONE language, and a second way of setting it would diverge from the first.
+//
+// PER THREAD, exactly as the interface language is (`i18n::set_language` is a `thread_local!` too). It
+// used to be one `RwLock` for the whole process, and the note here said it matched the interface - which
+// it did not. The program itself never noticed, drawing on one thread; the checks did. A test that
+// switches the help language switched it for every other test running beside it, so an article was
+// looked up in one language and searched for in another. Measured on eight runs of the help checks:
+// two of them failed, and the two that failed were not the ones doing the switching.
+thread_local! {
+    static PICKED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
 
 pub fn set_lang(code: &str) {
-    if let Ok(mut w) = PICKED.write() {
-        code.clone_into(&mut w);
-    }
+    PICKED.with_borrow_mut(|w| code.clone_into(w));
 }
 
 /// The language of the help: the chosen one; failing that the language of the interface, if there are
@@ -38,7 +43,7 @@ pub fn set_lang(code: &str) {
 /// Falling back to English rather than showing emptiness: an incomplete translation of the help is the
 /// norm for an outside contribution, and it has no right to leave anybody without text.
 pub fn lang() -> &'static str {
-    let picked = PICKED.read().map(|p| p.clone()).unwrap_or_default();
+    let picked = PICKED.with_borrow(|p| p.clone());
     if !picked.is_empty() {
         if let Some(d) = HELP.get_dir(&picked).and_then(|d| d.path().to_str()) {
             return d;
@@ -521,15 +526,4 @@ pub fn spans(s: &str) -> Vec<Span> {
     }
     push(&mut cur, &mut out, bold, italic, code);
     out
-}
-
-/// THE LANGUAGE OF THE HELP IS SHARED ACROSS THE PROCESS, AND IN A TEST RUN THAT IS A RACE.
-///
-/// Tests change it back and forth while their neighbours read the address of the help — and, landing in
-/// somebody else's window, compare `/ru/...` with `/en/...`. The gate flickered about once every five
-/// full runs: no defect and a red build, and a guard like that is worth nothing. So both those who CHANGE
-/// the language and those who READ it take this lock.
-pub fn lang_guard() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }

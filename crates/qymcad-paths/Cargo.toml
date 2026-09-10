@@ -1,0 +1,16 @@
+[package]
+name = "qymcad-paths"
+version = "0.1.0"
+edition = "2021"
+
+# WHERE THE PROGRAM KEEPS ITS OWN FILES. One module because there is one answer: the settings, the colour
+# schemes, the templates, the library of parts, the crash reports and the problem reports all live under one
+# directory, and which directory that is must be said in ONE place.
+#
+# It was said in six, and by the time anybody looked they had already parted company with the two other
+# names the same program answers to - the macOS bundle and the Flatpak id.
+[dependencies]
+directories = "6"
+
+[lints]
+workspace = true

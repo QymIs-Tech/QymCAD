@@ -230,6 +230,14 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 bc.win.open(WinKind::Hotkeys);
                 ui.close();
             }
+            // CHECK FOR UPDATES. Pressed by hand it asks ALWAYS - even with the automatic check switched
+            // off, because pressing it IS the asking. Absent where it cannot work: inside Flatpak there
+            // is no network, and a build with no release tag has nothing to compare against.
+            if crate::gui::update_ui::available() && ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, qymcad_i18n::tr("help-check-updates"))).clicked() {
+                crate::gui::update_ui::ask(bc.set);
+                bc.win.open(WinKind::Updates);
+                ui.close();
+            }
             if ui.button(format!("{} {}", ph::BUG, qymcad_i18n::tr("help-report"))).clicked() {
                 bc.win.open(WinKind::Report);
                 ui.close();
@@ -249,22 +257,60 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     });
 }
 
+/// WHAT THE CHECK FOR A NEWER VERSION HAS TO SAY, in the status line.
+///
+/// Silent while nothing has been asked and while nothing was found: a line that says "no updates" for
+/// ever is a line people stop reading, and the one time it matters they would not read it either.
+///
+/// A FAILED CHECK IS SILENT TOO, unless a person asked for it themselves. Somebody who pressed the menu
+/// item is owed the answer, even the disappointing one; somebody who did not press anything has no
+/// business being told that a request they never made did not go through.
+fn update_note(scheme: &qymcad_ui_state::SchemeUi, win: &mut qymcad_ui_state::Windows, ui: &mut egui::Ui) {
+    use qymcad_update::Outcome;
+    let asked_by_hand = win.is(qymcad_ui_state::WinKind::Updates);
+    match crate::gui::update_ui::outcome() {
+        Outcome::Idle => {}
+        Outcome::Asking => {
+            ui.separator();
+            ui.label(egui::RichText::new(crate::i18n::tr("update-asking")).weak());
+        }
+        Outcome::UpToDate if asked_by_hand => {
+            ui.separator();
+            ui.label(egui::RichText::new(crate::i18n::tr("update-none")).weak());
+        }
+        Outcome::Unreachable if asked_by_hand => {
+            ui.separator();
+            ui.label(egui::RichText::new(crate::i18n::tr("update-unreachable")).weak());
+        }
+        Outcome::UpToDate | Outcome::Unreachable => {}
+        Outcome::Found(latest) => {
+            ui.separator();
+            // The badge leads where the menu item leads: seeing the news and being unable to act on it
+            // from the same place is what makes people hunt through menus.
+            let text = format!("{} {} {}", ph::ARROW_CIRCLE_UP, crate::i18n::tr("update-found"), latest.latest);
+            if ui.button(egui::RichText::new(text).color(scheme.pal.hint_action())).clicked() {
+                win.open(qymcad_ui_state::WinKind::Updates);
+            }
+        }
+    }
+}
+
 /// THE STATUS LINE: what was just said, how defined the sketch is, the units and the cursor.
 ///
 /// Takes what it reads and nothing else - six borrows rather than the whole application. THE SKETCH'S
 /// DEFINEDNESS is the sketcher's main state, and in CAD it belongs in the status line: one looks at the
 /// drawing rather than hunting for it in a panel off to the side.
-pub(crate) fn status_bar(
-    cache: &qymcad_ui_state::Caches,
-    cursor: Option<qymcad_core::geom::Point2>,
-    project: &qymcad_core::model::Project,
-    scheme: &qymcad_ui_state::SchemeUi,
-    sketch_ses: &qymcad_ui_state::SketchSession,
-    status: &str,
-    ui: &mut egui::Ui,
-) {
+pub(crate) fn status_bar(sc: &mut qymcad_ui_state::StatusCtx, ui: &mut egui::Ui) {
+    let qymcad_ui_state::StatusCtx { cache, cursor, project, scheme, set, sketch_ses, status, win } = sc;
+    let (cursor, status) = (*cursor, *status);
+    // THE CHECK FOR A NEWER VERSION IS STARTED HERE, and shown here, so that the two cannot drift apart.
+    //
+    // A frame is where it belongs: nothing else in the program knows that a start happened, and this
+    // costs one comparison of two numbers when there is nothing to do. It never waits for the network.
+    crate::gui::update_ui::ask_if_due(set);
     ui.horizontal(|ui| {
         ui.label(status);
+        update_note(scheme, win, ui);
         if let Some(sid) = sketch_ses.editing {
             if let Some(si) = project.sketches.iter().position(|s| s.id == sid) {
                 let (line, col) = crate::gui::sketching::sketch_dof_line(cache, project, scheme, si);

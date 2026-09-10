@@ -30,6 +30,24 @@ mod god_object_ratchet;
 // The macOS bundling script, run here with the mac-only tools stubbed out. Unix only: it is a shell script.
 #[cfg(all(test, unix))]
 mod packaging_macos;
+// The Linux packaging script, read rather than run: what it must carry is decided by the dependency tree.
+#[cfg(test)]
+mod packaging_linux;
+// The AUR package description: three versions that must agree, and a checksum that must be real.
+#[cfg(test)]
+mod packaging_aur;
+// The winget manifest and the MSI it describes: one product code computed in two languages.
+#[cfg(test)]
+mod packaging_winget;
+// The Flatpak manifest: one application id in six places, and a build that reaches no network.
+#[cfg(test)]
+mod packaging_flatpak;
+// The release run itself: every package built is handed over, and the publishing job waits for them all.
+#[cfg(test)]
+mod packaging_release;
+// One reverse-DNS name for the program, in the four places that cannot share a constant.
+#[cfg(test)]
+mod app_identity;
 mod build_info;
 mod crash;
 mod diagnostics;

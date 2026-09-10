@@ -33,7 +33,7 @@ mod tests {
     ///
     /// The target is the few that are genuinely the application's own: start, the frame, the split into a
     /// context. A panel's drawing is not the application's business and should not be reachable from it.
-    const APP_METHODS_CEILING: usize = 183;
+    const APP_METHODS_CEILING: usize = 182;
 
     /// Lines living inside `impl App` blocks - the whole of them, comments and blank lines included.
     ///
@@ -46,7 +46,7 @@ mod tests {
     /// It also cannot be gamed the other way. Splitting a method in two adds a line and no more; the only
     /// way this number falls is code leaving `impl App`. That is the thing that has to reach zero before the
     /// interface can live in a crate of its own, since a method belongs to the crate declaring the type.
-    const APP_LINES_CEILING: usize = 6569;
+    const APP_LINES_CEILING: usize = 6563;
 
     /// Methods that exist ONLY so a check can reach inside - `*_for_test` and `*_pub`.
     ///

@@ -41,3 +41,8 @@ examples/*.tap
 # Crash reports and gathered problem reports, if anyone ever points the program at the tree.
 crashes/
 reports/
+
+# The list of crate sources for Flatpak: generated from Cargo.lock by packaging/flatpak/update-manifest.sh
+# before a submission. Not kept here - it goes stale at every change of the lock file, and a stale list of
+# sources is worse than none: the build stops halfway with a message about being offline.
+packaging/flatpak/cargo-sources.json

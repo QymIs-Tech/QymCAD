@@ -36,7 +36,7 @@ pub fn user_parts_dir() -> Option<PathBuf> {
     if let Some(p) = portable_parts_dir() {
         return Some(p);
     }
-    directories::ProjectDirs::from("tech", "qymis", "qym-cad").map(|d| d.data_dir().join("library").join("parts"))
+    qymcad_paths::data("library/parts")
 }
 
 /// Whether portable mode is active (a `library/` folder beside the executable). For marking the root of

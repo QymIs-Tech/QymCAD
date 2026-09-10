@@ -70,4 +70,22 @@ fn stamp_the_build() {
     if let Some(_dirty) = git(&["status", "--porcelain", "--untracked-files=no"]) {
         println!("cargo:rustc-env=QYMCAD_GIT_DIRTY=1");
     }
+
+    // THE RELEASE TAG, when this build is a release at all.
+    //
+    // The commit tells apart two builds of the same week, and that is what a bug report needs; it does
+    // NOT say which release a person is running, because a release is a tag and a tag is not in the
+    // tree. `QYMCAD_VERSION` carries it, set by the release run at the step that COMPILES the program.
+    //
+    // Empty means an ordinary build - a checkout, somebody's own compilation - and an ordinary build is
+    // not a release. It stamps nothing and the program then knows it has no release to compare against.
+    //
+    // `rerun-if-env-changed` is not decoration. Without it cargo keeps the compiled crate when only the
+    // variable changed, and a tagged build made in a warm target directory would carry the PREVIOUS
+    // tag - which is worse than carrying none, because it looks right.
+    println!("cargo:rerun-if-env-changed=QYMCAD_VERSION");
+    match std::env::var("QYMCAD_VERSION") {
+        Ok(tag) if !tag.trim().is_empty() => println!("cargo:rustc-env=QYMCAD_RELEASE={}", tag.trim()),
+        _ => {}
+    }
 }

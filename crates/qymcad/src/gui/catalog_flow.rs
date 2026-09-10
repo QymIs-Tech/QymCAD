@@ -130,7 +130,6 @@ mod tests {
     /// without a name is an empty line in the list, that is, a command that cannot be found.
     #[test]
     fn every_command_has_a_human_name_in_both_languages() {
-        let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let prev = crate::i18n::language();
         for code in ["ru", "en"] {
             crate::i18n::set_language(code);
@@ -152,7 +151,6 @@ mod tests {
     /// rows all reading "Primitives" — there is no choosing between them.
     #[test]
     fn names_are_unique_within_a_workbench() {
-        let _lang = crate::help::lang_guard(); // the help language is shared per process — see `lang_guard`
         let prev = crate::i18n::language();
         crate::i18n::set_language("ru");
         crate::help::set_lang("ru");

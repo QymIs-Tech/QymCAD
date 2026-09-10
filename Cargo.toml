@@ -7,6 +7,7 @@ members = [
     "crates/qymcad",
     "crates/qymcad-shell",
     "crates/qymcad-i18n",
+    "crates/qymcad-paths",
     "crates/qymcad-scheme",
     "crates/qymcad-help",
     "crates/qymcad-ui-state",
@@ -16,6 +17,7 @@ members = [
     "crates/qymcad-sketch",
     "crates/qymcad-part",
     "crates/qymcad-testkit",
+    "crates/qymcad-update",
 ]
 
 # THE BAN ON "WRITTEN AND NEVER WIRED UP" - THE MOST IMPORTANT THING IN THIS FILE.

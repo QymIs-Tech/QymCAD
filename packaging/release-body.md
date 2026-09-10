@@ -5,24 +5,26 @@
 
 **Added**
 
-* **Builds for macOS** — Apple Silicon. The app carries no Apple signature, so the first launch needs one
-  command; `README.txt` inside the archive walks through it, in both languages.
-* The window carries its own name and its own icon.
+* **A check for new versions.** The program says when a newer one is out, and opens the release page.
+  How often to ask is in **Settings -> General**; "never" is one of the choices.
+* **A Windows installer (MSI)** beside the portable zip: the program appears in "Apps and features",
+  updates in place, and leaves a shortcut on the desktop and in the Start menu.
 
 **Fixed**
 
-* A machine with no graphics driver showed a window for a moment and closed without a word. A failed start
-  is now reported, and an adapter backed by the processor is used rather than refused.
-* The file chooser held the window: nothing was drawn while it stood open, and the desktop called the
-  program "not responding".
-* The interface behind an open system dialog could still be clicked, so an answer could land in a document
-  other than the one it was asked from.
-* Two saves of an untouched document produced different files — poison for a format kept in version control.
-* The rebuild card cut off its own text.
+* The AppImage opened no window on a Wayland desktop.
+* Settings and crash reports were kept in the wrong folder.
+* "The last run ended in an error" came back at every start until every report had been closed one by one.
+* A dimension could not be measured to the X or Y axis — a crooked one was placed instead.
+* A circle drawn at the origin could not be moved away from it.
+* A circle drawn by hand showed a diameter that was not a dimension: the sketch stayed under-defined
+  until that number was edited by hand.
+* The move tool let a shape held by its constraints appear to move, and it jumped back at the next edit.
+* The command bar ran its messages together on one line.
 
 **Changed**
 
-* eframe and egui 0.29 -> 0.35, wgpu 22 -> 30, ron 0.8 -> 0.12, zip 2 -> 8, and the rest with them.
+* The About window names the release, not the number in the manifest.
 
 ## Known limits
 

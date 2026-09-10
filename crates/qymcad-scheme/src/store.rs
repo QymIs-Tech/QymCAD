@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// The directory with the custom schemes. `None` — the OS has no config directory (that happens in
 /// sandboxes).
 pub fn dir() -> Option<PathBuf> {
-    directories::ProjectDirs::from("tech", "qymis", "qym-cad").map(|d| d.config_dir().join("schemes"))
+    qymcad_paths::config("schemes")
 }
 
 /// The file name for a scheme: letters/digits/hyphen only, everything else becomes an underscore,

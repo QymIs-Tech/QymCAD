@@ -12,7 +12,7 @@
 
 [English](README.md) · **Русский**
 
-<img src="docs/help/img/window.png" width="820" alt="Главное окно QymCAD">
+<img src="docs/screenshots/01-assembly.png" width="900" alt="Станок, собранный в QymCAD: компоненты, сопряжения и их степени свободы">
 
 </div>
 

@@ -320,13 +320,6 @@ impl App {
     }
 
 
-    /// The "Save as part" dialog window (metadata, category, preview). The write itself is `commit_save_part`.
-    /// "Save as a part of the library": the door that builds the narrow context.
-    pub(super) fn save_part_window(&mut self, ctx: &egui::Context) {
-        let mut asks = Vec::new();
-        save_part_window(&mut self.win_ctx(&mut asks), ctx);
-        self.do_win_asks(asks, ctx);
-    }
 
 
 

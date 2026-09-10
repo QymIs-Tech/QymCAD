@@ -121,7 +121,7 @@ impl super::App {
     /// Returns where they went. A failure to copy one attachment does not lose the rest: a report with
     /// three files out of four beats no report at all.
     pub(crate) fn collect_report(&mut self, ctx: &egui::Context) -> Option<PathBuf> {
-        let root = directories::ProjectDirs::from("tech", "qymis", "qym-cad").map(|d| d.data_dir().join("reports"))?;
+        let root = qymcad_paths::data("reports")?;
         let secs = crate::gui::unix_secs();
         let dir = root.join(format!("report_{secs}"));
         std::fs::create_dir_all(&dir).ok()?;
@@ -179,7 +179,7 @@ impl super::App {
 
 /// The newest crash file, whether or not it has been shown.
 fn newest_crash_file() -> Option<PathBuf> {
-    let dir = directories::ProjectDirs::from("tech", "qymis", "qym-cad").map(|d| d.data_dir().join("crashes"))?;
+    let dir = qymcad_paths::data("crashes")?;
     let mut all: Vec<PathBuf> = std::fs::read_dir(dir)
         .ok()?
         .flatten()
