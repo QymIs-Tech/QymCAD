@@ -61,6 +61,10 @@ mod tests {
         assert!(panels.contains("crate::viewport_gpu::supported_msaa()"), "the window offers a list of its own instead of the list of the device again — that is exactly how the program was crashed at startup");
         let gpu = include_str!("../viewport_gpu.rs");
         assert!(gpu.contains("probe_supported(&render_state.device"), "the device is no longer asked before the pipelines are built");
+        // THE PATH FOR "OFF" MUST EXIST IN THE RENDERER. A resolve that is always `Some` is the crash
+        // that closed the window when msaa was set to 1 — the plan function is the one place that decides.
+        assert!(gpu.contains("color_attachment_plan"), "antialiasing off has no separate path — MSAA=1 will resolve 1→1 and crash at startup again");
+        assert!(gpu.contains("antialiasing_off_does_not_resolve"), "the guard that caught MSAA-off crashing at startup is gone");
     }
 
     /// THE AUTOSAVE OBEYS THE PERIOD THAT WAS SET, and zero switches it off.

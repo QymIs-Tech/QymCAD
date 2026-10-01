@@ -1127,6 +1127,22 @@ impl Gesture {
     /// whose rotate is bare would pan and rotate at once the moment Shift went down, and the two layouts
     /// that differ only by a modifier would be the same layout.
     pub fn active(&self, ctx: &egui::Context, resp: &egui::Response) -> bool {
+        if !self.armed(ctx, resp) {
+            return false;
+        }
+        if self.buttons.is_empty() && !self.any_button {
+            // no button: the pointer must also be moving (armed only asks that it is over the canvas)
+            return ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+        }
+        true
+    }
+
+    /// IS THE GESTURE ARMED - modifiers and buttons match, ready to move the view - even if the pointer is still?
+    ///
+    /// A buttonless layout (touchpad) arms on hover alone: the orbit session must stay latched across a pause in the
+    /// movement, or every fresh delta would re-pick the pivot. Button gestures still require a drag on THIS canvas,
+    /// as `active` does, so a title-bar drag cannot arm the orbit.
+    pub fn armed(&self, ctx: &egui::Context, resp: &egui::Response) -> bool {
         if *self == Gesture::NONE {
             return false;
         }
@@ -1138,8 +1154,7 @@ impl Gesture {
             return resp.dragged();
         }
         if self.buttons.is_empty() {
-            // no button: the pointer must simply be over the canvas and moving
-            return resp.hovered() && ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+            return resp.hovered();
         }
         // AT LEAST ONE OF THEM MUST BE A DRAG ON THIS CANVAS. `button_down` alone says only that a button is
         // held SOMEWHERE - dragging a window by its title bar holds one too, and the camera turned along
@@ -6078,6 +6093,19 @@ pub fn nav_delta(ctx: &egui::Context, resp: &egui::Response, g: &Gesture) -> egu
     }
 }
 
+/// MOVEMENT FOR AN ORBIT while the OS cursor may be locked in place: prefer raw mouse motion (unrelated to the
+/// pointer's screen position), else fall back to the ordinary delta. Position-based drag is zero under
+/// `CursorGrab::Locked`, which is why the view stopped turning once the cursor was fixed.
+fn orbit_delta(ctx: &egui::Context, resp: &egui::Response, g: &Gesture) -> egui::Vec2 {
+    if g.buttons.is_empty() && !g.any_button {
+        ctx.input(|i| i.pointer.motion().unwrap_or_else(|| i.pointer.delta()))
+    } else if resp.dragged() {
+        resp.drag_motion()
+    } else {
+        egui::Vec2::ZERO
+    }
+}
+
 /// THE GESTURE OF THE LAYOUT MOVING THE VIEW SIDEWAYS THIS FRAME, if one is made: one of its own, or the left button
 /// held still and then led under Gesture (its program pans so after a long press) - and none while the middle button's
 /// zoom is latched under CAD.
@@ -6092,15 +6120,121 @@ pub fn pan_now(nav: MouseNav, ctx: &egui::Context, resp: &egui::Response) -> Opt
 }
 
 /// TURN THE VIEW by the layout's gestures this frame: a tilt about the line of sight first, where the layout has one,
-/// then a turn about the centre.
+/// then a turn. When `about` is set, the turn is about that world point: yaw/pitch change as ever, then the centre is
+/// slid so the pivot stays where it was on screen before this step (orbit about the point — no look-at / no centering).
 pub fn turn_view(cam: &mut Cam3, nav: MouseNav, ctx: &egui::Context, resp: &egui::Response) {
+    turn_view_about(cam, nav, ctx, resp, None, None);
+}
+
+/// As `turn_view`. `about` is the world pivot of this orbit; with `screen` the pivot is held still on the canvas after
+/// each yaw/pitch step. The camera centre is never set to the pivot (that would yank the picture onto the cursor).
+pub fn turn_view_about(
+    cam: &mut Cam3,
+    nav: MouseNav,
+    ctx: &egui::Context,
+    resp: &egui::Response,
+    about: Option<[f64; 3]>,
+    screen: Option<(&Settings, Rect)>,
+) {
     if let Some(tilt) = nav.tilts().iter().find(|g| g.active(ctx, resp)) {
         cam.roll += nav_delta(ctx, resp, tilt).x as f64 * 0.01;
-    } else if let Some(turn) = nav.rotates().iter().find(|g| g.active(ctx, resp)) {
-        let d = nav_delta(ctx, resp, turn);
-        cam.yaw -= d.x as f64 * 0.01;
-        cam.pitch = (cam.pitch + d.y as f64 * 0.01).clamp(-1.5, 1.5);
+        return;
     }
+    // armed, not merely active: with a locked cursor the position delta is zero, so `active` would miss the turn
+    let Some(turn) = nav.rotates().iter().find(|g| g.armed(ctx, resp)) else { return };
+    let d = orbit_delta(ctx, resp, turn);
+    if d == egui::Vec2::ZERO {
+        return;
+    }
+    let (dyaw, dpitch) = (d.x as f64 * 0.01, d.y as f64 * 0.01);
+    if let (Some(pivot), Some((set, rect))) = (about, screen) {
+        let basis0 = cam.basis();
+        let (s0, _) = Screen { cam, set, rect, basis: &basis0 }.at(pivot);
+        cam.yaw -= dyaw;
+        cam.pitch = (cam.pitch + dpitch).clamp(-1.5, 1.5);
+        let basis1 = cam.basis();
+        let (s1, depth) = Screen { cam, set, rect, basis: &basis1 }.at(pivot);
+        let inv = persp_inv_d_eye(cam, set, rect.height() * 0.5);
+        let f = (1.0 / (1.0 + depth * inv).max(0.05)) as f64;
+        let k = 1.0 / (f * cam.scale as f64);
+        // put the pivot back where it stood before this step — not under a new screen point, not at the view centre
+        let (dx, dy) = ((s1.x - s0.x) as f64, (s1.y - s0.y) as f64);
+        let (right, up, _) = basis1;
+        for a in 0..3 {
+            cam.target[a] += dx * right[a] * k;
+            cam.target[a] -= dy * up[a] * k;
+        }
+    } else {
+        cam.yaw -= dyaw;
+        cam.pitch = (cam.pitch + dpitch).clamp(-1.5, 1.5);
+    }
+}
+
+fn orbit_session_id() -> egui::Id {
+    egui::Id::new("nav_orbit_session")
+}
+
+fn orbit_cursor_locked_id() -> egui::Id {
+    egui::Id::new("nav_orbit_cursor_locked")
+}
+
+/// Lock or free the OS cursor for an orbit. Locked keeps it visually at the point where the turn began.
+fn set_orbit_cursor_locked(ctx: &egui::Context, locked: bool) {
+    let id = orbit_cursor_locked_id();
+    let was: bool = ctx.data(|d| d.get_temp(id).unwrap_or(false));
+    if was == locked {
+        return;
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(if locked {
+        egui::viewport::CursorGrab::Locked
+    } else {
+        egui::viewport::CursorGrab::None
+    }));
+    if locked {
+        // some backends hide the cursor when grabbing; keep it on the pivot as Shapr does
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+    }
+    ctx.data_mut(|d| d.insert_temp(id, locked));
+}
+
+/// THE WORLD PIVOT OF THIS ORBIT SESSION. On the rising edge the point under the pointer is remembered; the camera
+/// centre is NOT moved (that would yank / centre the picture on the cursor). The OS cursor is locked so it stays
+/// visually at the start. Later frames reuse the same point. None when the rotate gesture is not armed. A buttonless
+/// layout begins only once the pointer moves, so merely holding the modifier does not lock the cursor. Tilt does not
+/// latch a pivot.
+pub fn latch_orbit_pivot(nav: MouseNav, ctx: &egui::Context, resp: &egui::Response, pivot: [f64; 3]) -> Option<[f64; 3]> {
+    let armed = nav.rotates().iter().any(|g| g.armed(ctx, resp));
+    let id = orbit_session_id();
+    if !armed {
+        ctx.data_mut(|d| d.insert_temp::<Option<[f64; 3]>>(id, None));
+        set_orbit_cursor_locked(ctx, false);
+        return None;
+    }
+    let was: Option<[f64; 3]> = ctx.data(|d| d.get_temp(id)).flatten();
+    if let Some(p) = was {
+        set_orbit_cursor_locked(ctx, true);
+        return Some(p);
+    }
+    // rising edge: a buttonless rotate waits for motion so Alt-hover alone does not freeze the cursor
+    let begin = nav.rotates().iter().any(|g| {
+        if g.buttons.is_empty() && !g.any_button {
+            orbit_delta(ctx, resp, g) != egui::Vec2::ZERO
+        } else {
+            true
+        }
+    });
+    if !begin {
+        return None;
+    }
+    ctx.data_mut(|d| d.insert_temp(id, Some(pivot)));
+    set_orbit_cursor_locked(ctx, true);
+    Some(pivot)
+}
+
+/// End the orbit session so the next turn picks a fresh pivot - used when a pan takes over the drag.
+pub fn end_orbit_session(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.insert_temp::<Option<[f64; 3]>>(orbit_session_id(), None));
+    set_orbit_cursor_locked(ctx, false);
 }
 
 /// Where the long press of the Gesture layout is kept in the frame's memory: when and where the left button went down,

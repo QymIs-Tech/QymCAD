@@ -95,6 +95,20 @@ pub fn set_msaa(n: u32) {
     MSAA_SAMPLES.store(take, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// HOW THE OFFSCREEN COLOUR ATTACHMENT IS WIRED for the current sample count.
+///
+/// Returns whether a separate multisample target is resolved into the colour texture, and how that
+/// colour attachment stores its own samples. MSAA off (`samples == 1`) draws STRAIGHT into the colour
+/// target: a resolve from 1 sample into 1 sample is a wgpu validation error, and that was exactly what
+/// crashed the program at startup when a person chose "Off" in the settings.
+pub(crate) fn color_attachment_plan(samples: u32) -> (bool, wgpu::StoreOp) {
+    if samples > 1 {
+        (true, wgpu::StoreOp::Discard)
+    } else {
+        (false, wgpu::StoreOp::Store)
+    }
+}
+
 
 /// The camera uniform (orthographic). `right`/`up`/`fwd` are an orthonormal basis; the projection
 /// repeats `Screen::at`.
@@ -364,10 +378,12 @@ pub struct GpuRenderer {
     look_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     // the resources for the current size of the viewport (recreated on a resize)
-    msaa_view: Option<wgpu::TextureView>, // the multisample render target, resolved into color_view
+    /// The multisample render target, resolved into `color_view`. `None` when antialiasing is off
+    /// (`samples == 1`): the pass then draws straight into `color_view`.
+    msaa_view: Option<wgpu::TextureView>,
     color_tex: Option<wgpu::Texture>, // the same texture, kept so a check can copy the drawn picture out
-    color_view: Option<wgpu::TextureView>, // the single-sample resolve target, sampled by the blit
-    depth_view: Option<wgpu::TextureView>, // the multisample depth
+    color_view: Option<wgpu::TextureView>, // the single-sample colour the blit samples (resolve target, or the draw target when MSAA is off)
+    depth_view: Option<wgpu::TextureView>, // depth matching the draw target's sample count
     blit_bind: Option<wgpu::BindGroup>,
     size: [u32; 2],
     // THE BUFFERS OF THE SCENE, in pieces (re-uploaded only when scene_key changes): a vertex buffer and an
@@ -614,19 +630,11 @@ impl GpuRenderer {
         if size == self.size && self.color_view.is_some() {
             return;
         }
+        let samples = msaa_samples();
+        let (resolve, _) = color_attachment_plan(samples);
         let extent = wgpu::Extent3d { width: size[0].max(1), height: size[1].max(1), depth_or_array_layers: 1 };
-        // the multisample render target — never sampled, only resolved
-        let msaa = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("qym_offscreen_msaa"),
-            size: extent,
-            mip_level_count: 1,
-            sample_count: msaa_samples(),
-            dimension: wgpu::TextureDimension::D2,
-            format: OFFSCREEN_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        // the single-sample resolve target — the blit carries it
+        // THE COLOUR THE BLIT SAMPLES — always single-sample. With MSAA it is the resolve target; without,
+        // the pass draws into it directly.
         let color = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("qym_offscreen_color"),
             size: extent,
@@ -645,15 +653,31 @@ impl GpuRenderer {
             label: Some("qym_offscreen_depth"),
             size: extent,
             mip_level_count: 1,
-            sample_count: msaa_samples(),
+            sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let msaa_view = msaa.create_view(&wgpu::TextureViewDescriptor::default());
         let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
         let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+        // A MULTISAMPLE TARGET ONLY WHEN THERE IS SOMETHING TO RESOLVE. Creating one with sample_count 1
+        // and still naming it as a resolve source is what wgpu refused — and closed the window on start.
+        let msaa_view = if resolve {
+            let msaa = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("qym_offscreen_msaa"),
+                size: extent,
+                mip_level_count: 1,
+                sample_count: samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: OFFSCREEN_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            Some(msaa.create_view(&wgpu::TextureViewDescriptor::default()))
+        } else {
+            None
+        };
         let blit_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qym_blit_bind"),
             layout: &self.blit_layout,
@@ -662,7 +686,7 @@ impl GpuRenderer {
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
             ],
         });
-        self.msaa_view = Some(msaa_view);
+        self.msaa_view = msaa_view;
         self.color_tex = Some(color);
         self.color_view = Some(color_view);
         self.depth_view = Some(depth_view);
@@ -796,19 +820,24 @@ impl egui_wgpu::CallbackTrait for MeshPaint {
             }
         }
 
-        // the offscreen pass: clear to transparent, draw the bodies with a depth buffer into the MSAA
-        // target, resolve into the colour target
-        let (Some(mv), Some(cv), Some(dv)) = (gpu.msaa_view.as_ref(), gpu.color_view.as_ref(), gpu.depth_view.as_ref()) else { return Vec::new() };
+        // the offscreen pass: clear to transparent, draw the bodies with a depth buffer; with MSAA into
+        // the multisample target and resolve into colour, without it straight into colour
+        let (Some(cv), Some(dv)) = (gpu.color_view.as_ref(), gpu.depth_view.as_ref()) else { return Vec::new() };
+        let (_, store) = color_attachment_plan(msaa_samples());
+        let (draw_view, resolve_target) = match gpu.msaa_view.as_ref() {
+            Some(mv) => (mv, Some(cv)),
+            None => (cv, None),
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("qym_offscreen_pass"),
             multiview_mask: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: mv,
-                resolve_target: Some(cv),
+                view: draw_view,
+                resolve_target,
                 depth_slice: None,
-                // the MSAA texture is needed only for the resolve, so it is not stored (Discard); the
-                // resolve happens all the same
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Discard },
+                // with MSAA the multisample texture is needed only for the resolve, so it is not stored;
+                // without MSAA the colour target IS what the blit samples, so it must be kept
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: dv,
@@ -899,7 +928,24 @@ mod tests {
     //! The GPU viewport had not a single test, although THE CAMERA in it is pure arithmetic that can be
     //! checked without a window and without a GPU. And it is the camera that must agree with the CPU path
     //! (`proj_params`), otherwise the picture and the picks drift apart.
+    use eframe::wgpu;
     use super::{CamRaw, ZRange};
+
+    /// ANTIALIASING OFF MUST NOT ASK FOR A RESOLVE. Choosing "Off" (1 sample) used to keep the
+    /// resolve path: both the source and the destination had 1 sample, wgpu refused that at the first
+    /// frame, and the window closed on start with nothing a person could fix without editing the
+    /// config by hand.
+    #[test]
+    fn antialiasing_off_does_not_resolve() {
+        let (resolve, store) = super::color_attachment_plan(1);
+        assert!(!resolve, "MSAA off still asks for a resolve from 1 sample into 1 sample");
+        assert_eq!(store, wgpu::StoreOp::Store, "without a resolve the colour target itself must be kept for the blit");
+        for n in [2u32, 4, 8, 16] {
+            let (resolve, store) = super::color_attachment_plan(n);
+            assert!(resolve, "{n}x MSAA must resolve into the colour target");
+            assert_eq!(store, wgpu::StoreOp::Discard, "{n}x: the multisample buffer is only for the resolve");
+        }
+    }
 
     /// The camera basis for looking along -Z: right=+X, up=+Y, fwd=-Z.
     fn basis() -> ([f64; 3], [f64; 3], [f64; 3]) {

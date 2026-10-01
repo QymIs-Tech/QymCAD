@@ -110,21 +110,22 @@ mod tests {
                 continue;
             }
             let (mut app, ctx) = a_part_in_view(nav);
-            let (yaw, target) = (app.viewing.cam.yaw, app.viewing.cam.target);
+            let (yaw, _target) = (app.viewing.cam.yaw, app.viewing.cam.target);
             let from = on_the_body(&app);
+            let by = egui::vec2(72.0, 0.0);
             let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(from)]), |c| app.viewport(c));
             for b in chord {
                 let _ = ctx.run_ui(frame(vec![press(from, *b, true)]), |c| app.viewport(c));
             }
             for k in 1..=6 {
-                let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(egui::pos2(from.x + k as f32 * 12.0, from.y))]), |c| app.viewport(c));
+                let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(from + by * (k as f32 / 6.0))]), |c| app.viewport(c));
             }
             for b in chord.iter().rev() {
-                let _ = ctx.run_ui(frame(vec![press(egui::pos2(from.x + 72.0, from.y), *b, false)]), |c| app.viewport(c));
+                let _ = ctx.run_ui(frame(vec![press(from + by, *b, false)]), |c| app.viewport(c));
             }
             let turned = (app.viewing.cam.yaw - yaw).abs();
-            if turned < 1e-6 || app.viewing.cam.target != target {
-                wrong.push(format!("{nav:?}: turned {turned:.4}, target {:?} -> {:?}", target, app.viewing.cam.target));
+            if turned < 1e-6 {
+                wrong.push(format!("{nav:?}: turned {turned:.4}"));
             }
         }
         assert!(wrong.is_empty(), "the chord of rotation did not turn the model (or moved it too): {wrong:?}");
@@ -238,7 +239,9 @@ mod tests {
     fn the_viewport_asks_the_layout() {
         let src = std::fs::read_to_string(qymcad_i18n::ratchet::crates_root().join("qymcad/src/gui/viewport_3d.rs")).expect("the 3D viewport reads");
         assert!(
-            src.contains("qymcad_ui_state::pan_now(self.set.mouse_nav, ctx, resp)") && src.contains("qymcad_ui_state::turn_view(&mut self.viewing.cam, self.set.mouse_nav, ctx, resp)"),
+            src.contains("qymcad_ui_state::pan_now(self.set.mouse_nav, ctx, resp)")
+                && src.contains("qymcad_ui_state::turn_view_about")
+                && src.contains("qymcad_ui_state::latch_orbit_pivot"),
             "the 3D viewport decides for itself which button moves the view, so the setting is a dead control"
         );
     }
@@ -278,12 +281,13 @@ mod tests {
                 for g in gestures {
                     let (mut app, ctx) = a_part_in_view(nav);
                     let from = on_the_body(&app);
-                    let (yaw, target, scale) = (app.viewing.cam.yaw, app.viewing.cam.target, app.viewing.cam.scale);
                     let by = if what == "zoom" { egui::vec2(0.0, -72.0) } else { egui::vec2(72.0, 0.0) };
+                    let (yaw, target, scale) = (app.viewing.cam.yaw, app.viewing.cam.target, app.viewing.cam.scale);
                     make(&mut app, &ctx, from, g, by);
                     let (turned, moved, scaled) = (app.viewing.cam.yaw != yaw, app.viewing.cam.target != target, app.viewing.cam.scale != scale);
+                    // a turn about the pointer may slide the centre to keep the pivot still on screen; that is not a pan
                     let right = match what {
-                        "turn" => turned && !moved && !scaled,
+                        "turn" => turned && !scaled,
                         "move" => moved && !turned && !scaled,
                         _ => scaled && !turned,
                     };
@@ -538,7 +542,8 @@ mod tests {
             }
             let _ = ctx.run_ui(frame(vec![press(from + egui::vec2(72.0, 0.0), egui::PointerButton::Primary, false)]), |c| app.viewport(c));
             let (turned, moved) = (app.viewing.cam.yaw != yaw, app.viewing.cam.target != target);
-            let right = if hold { moved && !turned } else { turned && !moved };
+            // a turn about the pointer may slide the centre to keep the pivot still; a hold pans without turning
+            let right = if hold { moved && !turned } else { turned };
             if !right {
                 wrong.push(format!("held {hold}: turned {turned}, moved {moved}"));
             }
@@ -575,5 +580,109 @@ mod tests {
             }
         }
         assert!(up_3d != 0.0 && wrong.is_empty(), "the pen's layout does not zoom right and up in, left and down out (up changed the 3D scale by {up_3d}):\n{}", wrong.join("\n"));
+    }
+
+    /// AN ORBIT TURNS ABOUT THE POINT UNDER THE POINTER AT THE START without centering the view on it: the world
+    /// pivot keeps its screen place across the drag (Shapr-style). Arming alone does not yank the camera centre.
+    #[test]
+    fn an_orbit_rebinds_its_centre_once_without_centering_the_view() {
+        let mut wrong = Vec::new();
+        for nav in MouseNav::ALL {
+            let g = nav.rotate();
+            let modifiers = egui::Modifiers { shift: g.shift, ctrl: g.ctrl, command: g.ctrl, alt: g.alt, ..Default::default() };
+            let buttons: Vec<egui::PointerButton> = if g.any_button { vec![egui::PointerButton::Middle] } else { g.buttons.to_vec() };
+            let run = |app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>| {
+                let _ = ctx.run_ui(egui::RawInput { modifiers, ..frame(events) }, |c| app.viewport(c));
+            };
+            let screen_of = |app: &App, w: [f64; 3]| {
+                let basis = app.viewing.cam.basis();
+                qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at(w).0
+            };
+
+            let (mut app, ctx) = a_part_in_view(nav);
+            let from = on_the_body(&app);
+            let (yaw0, scale0, target0) = (app.viewing.cam.yaw, app.viewing.cam.scale, app.viewing.cam.target);
+            let centre = app.viewing.view_rect.center();
+
+            run(&mut app, &ctx, vec![egui::Event::PointerMoved(from)]);
+            for b in &buttons {
+                run(&mut app, &ctx, vec![egui::Event::PointerButton { pos: from, button: *b, pressed: true, modifiers }]);
+            }
+            if (0..3).any(|i| (app.viewing.cam.target[i] - target0[i]).abs() >= 1e-9) {
+                wrong.push(format!("{nav:?}: arming the orbit yanked the centre from {target0:?} to {:?}", app.viewing.cam.target));
+            }
+            // first drag frame latches the pivot; later motion must keep it on screen (not pull it to the view centre)
+            let hold = from + egui::vec2(10.0, 0.0);
+            let hit = crate::gui::look_at_point::orbit_pivot(&app.painting(), app.viewing.view_rect, hold);
+            let mut pinned = None;
+            for k in 1..=3 {
+                let pos = from + egui::vec2(10.0 * k as f32, 0.0);
+                run(&mut app, &ctx, vec![egui::Event::PointerMoved(pos)]);
+                let under = screen_of(&app, hit);
+                let pin = *pinned.get_or_insert(under);
+                if under.distance(pin) > 2.5 {
+                    wrong.push(format!("{nav:?}: pivot slid on screen by {} at step {k}", under.distance(pin)));
+                }
+                if under.distance(centre) + 8.0 < pin.distance(centre) {
+                    wrong.push(format!("{nav:?}: pivot was pulled toward the view centre at step {k}"));
+                }
+            }
+            if (app.viewing.cam.yaw - yaw0).abs() < 1e-9 {
+                wrong.push(format!("{nav:?}: the view did not turn"));
+            }
+            if app.viewing.cam.scale != scale0 {
+                wrong.push(format!("{nav:?}: the scale changed"));
+            }
+            if app.viewing.view_anim.is_some() {
+                wrong.push(format!("{nav:?}: look-at animation was started on orbit"));
+            }
+
+            // still armed, pointer reports a path over empty space: the latched pivot stays put on screen
+            let empty = app.viewing.view_rect.min + egui::vec2(40.0, 40.0);
+            let pin = pinned.unwrap_or(hold);
+            for k in 1..=4 {
+                let t = k as f32 / 4.0;
+                let pos = egui::pos2(from.x + (empty.x - from.x) * t, from.y + (empty.y - from.y) * t);
+                run(&mut app, &ctx, vec![egui::Event::PointerMoved(pos)]);
+                let under = screen_of(&app, hit);
+                if under.distance(pin) > 3.0 {
+                    wrong.push(format!("{nav:?}: pivot drifted mid-session by {}", under.distance(pin)));
+                }
+            }
+            for b in buttons.iter().rev() {
+                run(&mut app, &ctx, vec![egui::Event::PointerButton { pos: empty, button: *b, pressed: false, modifiers }]);
+            }
+            let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(empty)]), |c| app.viewport(c));
+
+            // fresh session over empty: no yank on arm, then pivot stays on screen across the drag
+            let fresh_hold = if buttons.is_empty() { empty + egui::vec2(12.0, 0.0) } else { empty + egui::vec2(8.0, 0.0) };
+            let plane = crate::gui::look_at_point::orbit_pivot(&app.painting(), app.viewing.view_rect, fresh_hold);
+            let target_before = app.viewing.cam.target;
+            run(&mut app, &ctx, vec![egui::Event::PointerMoved(empty)]);
+            for b in &buttons {
+                run(&mut app, &ctx, vec![egui::Event::PointerButton { pos: empty, button: *b, pressed: true, modifiers }]);
+            }
+            if (0..3).any(|i| (app.viewing.cam.target[i] - target_before[i]).abs() >= 1e-9) {
+                wrong.push(format!("{nav:?}: arming over empty yanked the centre"));
+            }
+            run(&mut app, &ctx, vec![egui::Event::PointerMoved(fresh_hold)]);
+            let pin = screen_of(&app, plane);
+            let drifted = fresh_hold + egui::vec2(15.0, 10.0);
+            run(&mut app, &ctx, vec![egui::Event::PointerMoved(drifted)]);
+            let under = screen_of(&app, plane);
+            if under.distance(pin) > 2.5 {
+                wrong.push(format!("{nav:?}: empty-space pivot slid by {}", under.distance(pin)));
+            }
+            if under.distance(centre) + 8.0 < pin.distance(centre) {
+                wrong.push(format!("{nav:?}: empty-space pivot was pulled toward the view centre"));
+            }
+            if app.viewing.view_anim.is_some() {
+                wrong.push(format!("{nav:?}: look-at animation was started on empty-space orbit"));
+            }
+            for b in buttons.iter().rev() {
+                run(&mut app, &ctx, vec![egui::Event::PointerButton { pos: drifted, button: *b, pressed: false, modifiers }]);
+            }
+        }
+        assert!(wrong.is_empty(), "orbit pivot is wrong ({}):\n{}", wrong.len(), wrong.join("\n"));
     }
 }

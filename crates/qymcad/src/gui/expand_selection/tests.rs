@@ -566,7 +566,7 @@ fn the_right_button_still_orbits_the_camera() {
     assert!(render.contains("resp.context_menu(|ui|"), "the menu must hang on the CLICK (context_menu) rather than on the press");
     // THE ORBIT STILL LIVES ON THE DRAG, and now it asks the mouse LAYOUT which drag. What this guard is
     // about is unchanged - the menu on a click, the orbit on a drag - and the layouts answer with drags.
-    assert!(render.contains("qymcad_ui_state::turn_view(&mut self.viewing.cam, self.set.mouse_nav, ctx, resp)"), "the orbit must live on the DRAG");
+    assert!(render.contains("qymcad_ui_state::turn_view_about"), "the orbit must live on the DRAG");
     // AND OUR OWN LAYOUT MUST TAKE ANY BUTTON. This is the half that was nearly lost: naming the left
     // button would have been a faithful-looking transcription and would have taken the camera away from the
     // right button, which has turned it here since the beginning. Caught by this guard, which is what it is

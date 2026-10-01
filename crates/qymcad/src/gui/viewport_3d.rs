@@ -332,6 +332,8 @@ impl App {
                         self.commit_body_gizmo(self.dragged.body_giz.snap);
                     }
                 } else if let Some(pan) = qymcad_ui_state::pan_now(self.set.mouse_nav, ctx, resp) {
+                    // a pan ends any orbit session so the next turn picks a fresh pivot
+                    qymcad_ui_state::end_orbit_session(ctx);
                     let d = qymcad_ui_state::nav_delta(ctx, resp, pan);
                     let (right, up, _) = self.viewing.cam.basis();
                     let k = 1.0 / self.viewing.cam.scale as f64;
@@ -340,7 +342,12 @@ impl App {
                         self.viewing.cam.target[a] += d.y as f64 * up[a] * k;
                     }
                 } else {
-                    qymcad_ui_state::turn_view(&mut self.viewing.cam, self.set.mouse_nav, ctx, resp); // the layout's turns and tilts
+                    // THE ORBIT PIVOT IS THE POINT UNDER THE POINTER at the start of the gesture: the view turns about
+                    // it without centering on it; the OS cursor is locked there so the pivot stays under the start.
+                    let at = resp.interact_pointer_pos().or_else(|| ctx.input(|i| i.pointer.hover_pos())).unwrap_or_else(|| rect.center());
+                    let under = crate::gui::look_at_point::orbit_pivot(&self.painting(), rect, at);
+                    let about = qymcad_ui_state::latch_orbit_pivot(self.set.mouse_nav, ctx, resp, under);
+                    qymcad_ui_state::turn_view_about(&mut self.viewing.cam, self.set.mouse_nav, ctx, resp, about, Some((&self.set, rect)));
                 }
     }
 
