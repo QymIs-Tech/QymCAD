@@ -7551,16 +7551,34 @@ pub fn point_in_tri(p: Pos2, a: Pos2, b: Pos2, c: Pos2) -> bool {
 /// small triangle of the inner one, so the wrong face won and a sketch landed on the inner wall seemingly
 /// at random.
 pub fn tri_depth_at(p: Pos2, a: Pos2, da: f64, b: Pos2, db: f64, c: Pos2, dc: f64) -> f64 {
+    let (wa, wb, wc) = tri_bary(p, a, b, c);
+    da * wa + db * wb + dc * wc
+}
+
+/// The WORLD POINT under screen `p` on triangle `(wa, wb, wc)`, by the same screen-space barycentric weights
+/// as `tri_depth_at`. The triangle centroid is NOT the hit: a click near a corner would then orbit or measure
+/// from the middle of a large facet.
+pub fn tri_world_at(p: Pos2, a: Pos2, wa: [f64; 3], b: Pos2, wb: [f64; 3], c: Pos2, wc: [f64; 3]) -> [f64; 3] {
+    let (ba, bb, bc) = tri_bary(p, a, b, c);
+    [
+        wa[0] * ba + wb[0] * bb + wc[0] * bc,
+        wa[1] * ba + wb[1] * bb + wc[1] * bc,
+        wa[2] * ba + wb[2] * bb + wc[2] * bc,
+    ]
+}
+
+/// Screen-space barycentric weights of `p` in triangle `a,b,c`. Degenerate (edge-on) → equal thirds.
+fn tri_bary(p: Pos2, a: Pos2, b: Pos2, c: Pos2) -> (f64, f64, f64) {
     let (v0x, v0y) = ((b.x - a.x) as f64, (b.y - a.y) as f64);
     let (v1x, v1y) = ((c.x - a.x) as f64, (c.y - a.y) as f64);
     let (v2x, v2y) = ((p.x - a.x) as f64, (p.y - a.y) as f64);
     let den = v0x * v1y - v1x * v0y;
     if den.abs() < 1e-12 {
-        return (da + db + dc) / 3.0; // degenerate (edge-on to the camera): fall back to the average
+        return (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0);
     }
     let u = (v2x * v1y - v1x * v2y) / den;
     let v = (v0x * v2y - v2x * v0y) / den;
-    da * (1.0 - u - v) + db * u + dc * v
+    (1.0 - u - v, u, v)
 }
 
 pub fn dist_point_seg(p: Point2, a: Point2, b: Point2) -> f64 {

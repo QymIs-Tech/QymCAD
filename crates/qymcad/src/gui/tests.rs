@@ -2215,6 +2215,27 @@ mod pick_depth_tests {
         let d = tri_depth_at(Pos2::new(3.0, 3.0), Pos2::new(0.0, 0.0), 7.0, Pos2::new(10.0, 0.0), 7.0, Pos2::new(0.0, 10.0), 7.0);
         assert!((d - 7.0).abs() < 1e-9);
     }
+
+    /// The world hit is under the click, not at the triangle's centroid (orbit / measure pivot).
+    #[test]
+    fn world_hit_is_under_the_click_not_the_centroid() {
+        use super::tri_world_at;
+        let a = Pos2::new(0.0, 0.0);
+        let b = Pos2::new(100.0, 0.0);
+        let c = Pos2::new(0.0, 100.0);
+        let wa = [0.0, 0.0, 0.0];
+        let wb = [100.0, 0.0, 0.0];
+        let wc = [0.0, 100.0, 0.0];
+        let click = Pos2::new(10.0, 2.0); // near corner A
+        let hit = tri_world_at(click, a, wa, b, wb, c, wc);
+        let centroid = [100.0 / 3.0, 100.0 / 3.0, 0.0];
+        let near_a = (hit[0] * hit[0] + hit[1] * hit[1]).sqrt();
+        let to_centroid = ((hit[0] - centroid[0]).powi(2) + (hit[1] - centroid[1]).powi(2)).sqrt();
+        assert!(near_a < 20.0, "hit should sit near A, got {hit:?}");
+        assert!(to_centroid > 20.0, "hit must not be the centroid: {hit:?}");
+        // projects back onto the click in this orthographic XY setup
+        assert!((hit[0] - 10.0).abs() < 1e-6 && (hit[1] - 2.0).abs() < 1e-6, "hit {hit:?} must match the click");
+    }
 }
 
 #[cfg(test)]
