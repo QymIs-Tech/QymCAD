@@ -372,6 +372,13 @@ impl App {
                 let want_face = matches!(self.tools.armed.cmd_kind(), 6 | 7 | 23 | 25 | 26 | 28 | 30 | 31 | 36) || !self.tools.armed.commanding();
                 let fi = if want_face { self.project.bodies.get(mi).and_then(|b| b.faces.iter().position(|f| f.triangles.contains(&(ti as u32)))) } else { None };
                 let grip = qymcad_pick::edge_or_corner_under(&self.painting(), rect, screen); qymcad_part::take_under_click(&mut self.part_ctx(), mi, fi, grip);
+                // THE DEBUG LIST PUTS ITS FINGER ON WHAT THE CLICK TOOK, so that the arrow keys can walk on from
+                // there. Reported need: click a face, and there was no way to step to the next one - the keys had to
+                // start from a row in the list, which meant the list rather than the drawing decided where a walk
+                // begins. Only the piece kinds: a body is not in the list.
+                if !self.tools.armed.commanding() && matches!(self.chosen.sel, Sel::Face(..) | Sel::Edge(..) | Sel::Vertex(..)) {
+                    self.tree.debug = Some(self.chosen.sel);
+                }
                 // The shell and the draft: multi-selection of faces strictly within ONE body — the ids of
                 // faces are local to a body (OCCT numbers them from zero in each). A click on a face of
                 // ANOTHER body starts the selection afresh on it, otherwise the ids of neighbouring bodies

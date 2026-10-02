@@ -1527,6 +1527,370 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
     if ui.input(|i| i.pointer.any_released()) {
         tc.tree.drag = None;
     }
+    debug_geometry_list(tc, ui);
+}
+
+/// THE DEBUG LIST: every face, every edge and every corner of every body, named - and a click lights it in the
+/// viewport, the way the piece under the cursor is lit.
+///
+/// Reported need: an element of the model is NAMED in three places (the properties panel, the tools, the messages
+/// about a failure) and nowhere is it SHOWN. Both halves of the question were answerable apart and not together:
+/// the name came out of the document, the place on the screen came from the cursor, and nothing joined them. So a
+/// person who read "face 12" in a message could not see which of a hundred faces that was - and the picking bugs
+/// this list was wanted for are exactly bugs of that shape, where the name and the picture disagree.
+///
+/// It reads the DOCUMENT, not the picking, and that is the whole point of it: it is the one list in the program
+/// that says what is really there, so a row and a cursor that disagree are visible at once instead of being
+/// argued about. Nothing is selected - see `TreeUi::debug` - because the person reading this list is not choosing
+/// anything for a command.
+///
+/// THE NAMES ARE THE SAME NAMES THE PICKER USES, so a row and a cursor can be compared word for word: a face is
+/// named by its INDEX (which is what `Sel::Face` carries and what picking resolves), an edge and a corner by their
+/// persistent id from the B-rep. A face row therefore prints the id as well, and where an id is on more than one
+/// edge of the body it says so - that repetition is not a curiosity of this list, it is a fault that makes a click
+/// light a different edge than the one it named.
+///
+/// THREE BRANCHES, EACH FOLDED BY ITSELF. One list of everything was tried first and it answers one question well
+/// - "what is element 37?" - and the next one badly: a person comparing a face to the edges around it has to read
+/// past every face of the body to reach them. The kinds are separate subjects, so they are separate branches, and a
+/// branch that is shut says nothing about the others.
+///
+/// THE BRANCHES ARE PAGES, NOT SCROLLING AREAS, and that was measured rather than chosen.
+///
+/// Reported: pressing a row and the field swelling over the whole window, the tree pushed out of sight. The tree
+/// panel sits in a scrolled area, and an area without a height of its own grows to whatever is put into it.
+///
+/// A scroll area of its own was tried first and is worse in a way nobody sees until it is used: the wheel belongs
+/// to the innermost area under the cursor, and here that is the tree's - so a list with its own scrollbar is not
+/// scrolled by the wheel at all, and the rows below the fold cannot be reached. So each branch grows by a page at a
+/// time instead: every row stays reachable, every row stays pressable, and the field is the same size whatever the
+/// model holds. The filter is the way into a body with a thousand faces, which is what a person who read a number
+/// in a message actually wants.
+fn debug_geometry_list(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
+    let resp = egui::CollapsingHeader::new(format!("{} {}", ph::CUBE, crate::i18n::tr("tree-debug-title")))
+        .id_salt("debug-geometry")
+        .default_open(false)
+        .show(ui, |ui| {
+            // THE FIELD'S WIDTH, THE WAY THE TREE'S SEARCH TAKES IT: right to left, the buttons first and the
+            // field what is left of the row. Straight `desired_width(f32::INFINITY)` in a plain horizontal row asks
+            // for all there is, and inside a panel there is "all the window" - the panel then grows to it, the tree
+            // beside it is squeezed, and a field meant to be read swallows the program.
+            ui.horizontal(|ui| {
+                ui.label(ph::MAGNIFYING_GLASS);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if tc.tree.debug.is_some() && ui.small_button(ph::X).on_hover_text(crate::i18n::tr("tree-debug-clear")).clicked() {
+                        tc.tree.debug = None;
+                    }
+                    if !tc.tree.debug_filter.is_empty() && ui.small_button(ph::X).on_hover_text(crate::i18n::tr("tree-search-clear")).clicked() {
+                        tc.tree.debug_filter.clear();
+                    }
+                    ui.add(
+                        egui::TextEdit::singleline(&mut tc.tree.debug_filter)
+                            .id(egui::Id::new("debug_filter_field"))
+                            .hint_text(crate::i18n::tr("tree-debug-filter"))
+                            .desired_width(f32::INFINITY),
+                    );
+                });
+            });
+            // The rows are gathered for the TESTS, which move the mouse onto a row by its name: the list grows and
+            // the filter narrows it, and a test that counted rows would aim at a different row every frame. The
+            // pieces are gathered in the same walk, because that is the order the arrow keys walk.
+            // THE LIST IS AN AREA OF ITS OWN, AND IT IS BOUNDED. Every row is drawn - a list that hides half its
+            // rows behind a button is a list that answers "what is element 37?" only after a press, and the press
+            // is the thing being avoided - so the bound cannot be the number of rows. It is the HEIGHT, and that is
+            // what keeps the panel from growing past the window and squeezing the drawing out of sight: the tree
+            // panel sits in a scrolled area, and an area without a height of its own grows to whatever is put in it.
+            //
+            // The wheel over the list scrolls the list, not the tree: egui gives a scroll to the innermost area
+            // under the cursor and takes the delta away from the one outside it. That is why a scroll area here is
+            // right and paging was not - paging had no way to reach the rows below the fold.
+            let list = egui::ScrollArea::vertical().id_salt("debug-geometry-scroll").max_height(320.0).show(ui, |ui| {
+            let mut rows: Vec<(String, egui::Rect)> = Vec::new();
+            let mut pieces: Vec<(Sel, String)> = Vec::new();
+            let bodies = debug_bodies(tc);
+            let want = tc.tree.debug_filter.trim().to_lowercase();
+            for kind in 0..DEBUG_KINDS {
+                debug_branch(ui, tc, &mut rows, &mut pieces, kind, &bodies, &want);
+            }
+            tc.tree.debug_row_rects = rows;
+            tc.tree.debug_pieces = pieces;
+            });
+            // THE LIST'S OWN RECTANGLE, under the name `list`. Every row above has a rectangle whether it is drawn
+            // or not - a row below the fold is laid out and clipped - so without the edge of the list there is no
+            // telling the two apart, by a person or by a check.
+            tc.tree.debug_row_rects.push(("list".to_string(), list.inner_rect));
+            debug_finger_by_key(ui, tc);
+        });
+    // THE HEADER IS A ROW LIKE THE OTHERS, under the name `header`. The list is shut when the program starts, and
+    // without its header among the rectangles there is nothing for a check to press to open it - it would have to
+    // guess where a closed list sits on the screen.
+    tc.tree.debug_row_rects.insert(0, ("header".to_string(), resp.header_response.rect));
+}
+
+/// THE THREE KINDS OF ELEMENT, in the order a person reads them and in the order the arrow keys walk: a face, an
+/// edge, a corner.
+const DEBUG_KINDS: usize = 3;
+
+/// WHAT ONE BODY OFFERS THE LIST, gathered once for the three branches rather than three times over.
+struct DebugBody {
+    /// The body's own id - the one an edge and a corner are named by.
+    id: qymcad_core::model::Id,
+    /// Its index in the document, which is how a face is named.
+    mi: usize,
+    name: String,
+    /// How many faces it has, for the branch heading.
+    faces: usize,
+    /// Its edges, by the persistent ids picking and drawing speak of.
+    edges: Vec<DebugEdge>,
+    /// How many edges carry each id. A repetition here is a fault, not a curiosity: the name goes to the first of
+    /// them, which is not the one under the cursor.
+    shared: std::collections::HashMap<u32, usize>,
+    /// Its corners, one per place rather than one per edge that ends there: several edges meet at a corner, and a
+    /// row for each would put the same dot on screen under three names.
+    corners: Vec<([f64; 3], u32, bool)>,
+}
+
+/// ONE EDGE AS THE LIST NAMES IT: the id picking resolves, and the three points the drawing uses - the two ends,
+/// which are the corners, and the middle, which is what an anchor on an edge is placed by.
+struct DebugEdge {
+    id: u32,
+    mid: [f64; 3],
+    a: [f64; 3],
+    b: [f64; 3],
+}
+
+/// EVERY BODY OF THE DOCUMENT, in the document's order - not the tree's: this list is about what is in the model,
+/// and a body the tree does not show is exactly the one worth looking at.
+///
+/// THE EDGES ARE ASKED OF THE PICKER'S CACHE, not of `project.regen_edges`, and that is the whole of a bug that made
+/// this list useless on a file somebody else had written.
+///
+/// `regen_edges` is a DERIVED field: it is not saved, and it is filled by the post pass of a rebuild. Opening a
+/// document does not rebuild, so a file opened today arrives with faces on every body and edges on almost none -
+/// measured on a reported machine, 138 bodies, faces on all 138, edges on two. A list that read it therefore showed
+/// the faces and nothing else, and said so with a straight face: the edges branch stood empty on a model with
+/// hundreds of edges in it.
+///
+/// The cache is the other source, and the one the CLICK uses: it reads the live B-rep, which opening a document does
+/// prepare. Reading it here means the list says what picking says - which is the only thing that makes a comparison
+/// between a row and a cursor worth making.
+fn debug_bodies(tc: &qymcad_ui_state::TreeCtx) -> Vec<DebugBody> {
+    let mut out = Vec::new();
+    for mi in 0..tc.project.bodies.len() {
+        let Some(id) = tc.project.mesh_id(mi) else { continue };
+        let edges: Vec<DebugEdge> = qymcad_pick::body_edges_cached(tc.cache, tc.live, tc.regen, id)
+            .map(|polys| {
+                polys
+                    .ids
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(k, id)| {
+                        let poly = polys.polys.get(k)?;
+                        Some(DebugEdge {
+                            id: *id,
+                            mid: debug_poly_mid(poly),
+                            a: debug_point(poly.first()?),
+                            b: debug_point(poly.last()?),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut shared: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        for e in &edges {
+            *shared.entry(e.id).or_default() += 1;
+        }
+        let mut corners: Vec<([f64; 3], u32, bool)> = Vec::new();
+        for e in &edges {
+            for (far, p) in [(false, e.a), (true, e.b)] {
+                let key = [p[0].round(), p[1].round(), p[2].round()];
+                if corners.iter().any(|(q, _, _)| *q == key) {
+                    continue;
+                }
+                corners.push((key, e.id, far));
+            }
+        }
+        out.push(DebugBody { id, mi, name: crate::i18n::name(&tc.project.mesh_name(mi)), faces: tc.project.bodies[mi].faces.len(), edges, shared, corners });
+    }
+    out
+}
+
+/// A POINT OF A POLYLINE, in the numbers the list prints.
+fn debug_point(p: &[f32; 3]) -> [f64; 3] {
+    [p[0] as f64, p[1] as f64, p[2] as f64]
+}
+
+/// THE MIDDLE OF A POLYLINE BY ITS LENGTH, which is what an edge is called by everywhere else: the middle of the
+/// list of points of a circle is nowhere near the middle of the arc, and an anchor placed there would sit off the
+/// edge it names.
+fn debug_poly_mid(poly: &[[f32; 3]]) -> [f64; 3] {
+    let Some(first) = poly.first() else { return [0.0; 3] };
+    let d = |a: [f32; 3], b: [f32; 3]| (((a[0] - b[0]) as f64).powi(2) + ((a[1] - b[1]) as f64).powi(2) + ((a[2] - b[2]) as f64).powi(2)).sqrt();
+    let total: f64 = poly.windows(2).map(|w| d(w[0], w[1])).sum();
+    let half = total / 2.0;
+    let mut run = 0.0;
+    for w in poly.windows(2) {
+        let seg = d(w[0], w[1]);
+        if run + seg >= half {
+            let t = if seg > 0.0 { (half - run) / seg } else { 0.0 };
+            return [w[0][0] as f64 + (w[1][0] - w[0][0]) as f64 * t, w[0][1] as f64 + (w[1][1] - w[0][1]) as f64 * t, w[0][2] as f64 + (w[1][2] - w[0][2]) as f64 * t];
+        }
+        run += seg;
+    }
+    debug_point(poly.last().unwrap_or(first))
+}
+
+/// ONE BRANCH OF THE LIST - the faces, the edges or the corners - folded by itself, a page at a time.
+fn debug_branch(ui: &mut egui::Ui, tc: &mut qymcad_ui_state::TreeCtx, rows: &mut Vec<(String, egui::Rect)>, pieces: &mut Vec<(Sel, String)>, kind: usize, bodies: &[DebugBody], want: &str) {
+    let (key, title) = match kind {
+        0 => ("f", crate::i18n::tr("tree-debug-face")),
+        1 => ("e", crate::i18n::tr("tree-debug-edge")),
+        _ => ("p", crate::i18n::tr("tree-debug-point")),
+    };
+    let total: usize = match kind {
+        0 => bodies.iter().map(|b| b.faces).sum(),
+        1 => bodies.iter().map(|b| b.edges.len()).sum(),
+        _ => bodies.iter().map(|b| b.corners.len()).sum(),
+    };
+    let wanted = |text: &str| want.is_empty() || text.to_lowercase().contains(want);
+    let resp = egui::CollapsingHeader::new(format!("{} {title} {total}", ph::CUBE))
+        .id_salt(("debug-branch", key))
+        // THE FACES ARE OPEN, THE OTHER TWO ARE NOT. A face is the element a person is most often looking for, and
+        // the point of the corners - how many ends meet at a place - is lost unless they are asked for.
+        .default_open(kind == 0)
+        .show(ui, |ui| {
+            for b in bodies {
+                let mut shown = false;
+                // THE BODY'S NAME, ONCE, above the rows that belong to it.
+                let label = |ui: &mut egui::Ui, shown: &mut bool| {
+                    if !*shown {
+                        ui.label(egui::RichText::new(b.name.clone()).strong());
+                        *shown = true;
+                    }
+                };
+                match kind {
+                    0 => {
+                        for (fi, f) in tc.project.bodies[b.mi].faces.iter().enumerate() {
+                            let text = format!("{} {fi}  ·  {} {}  ·  {} {}", title, crate::i18n::tr("tree-debug-id"), f.id, f.triangles.len(), crate::i18n::tr("tree-debug-tri"));
+                            if !wanted(&text) {
+                                continue;
+                            }
+                            label(ui, &mut shown);
+                            debug_row(ui, rows, pieces, &format!("f{}_{fi}", b.mi), text, Sel::Face(b.mi, fi), &mut tc.tree.debug);
+                        }
+                    }
+                    1 => {
+                        for (ei, e) in b.edges.iter().enumerate() {
+                            let n = b.shared.get(&e.id).copied().unwrap_or(1);
+                            let text = format!(
+                                "{} {}  ·  {} {:.2} {:.2} {:.2}{}",
+                                title,
+                                e.id,
+                                crate::i18n::tr("tree-debug-mid"),
+                                e.mid[0],
+                                e.mid[1],
+                                e.mid[2],
+                                if n > 1 { format!("  ·  {}", crate::i18n::tr1("tree-debug-shared", "n", &n.to_string())) } else { String::new() }
+                            );
+                            if !wanted(&text) {
+                                continue;
+                            }
+                            label(ui, &mut shown);
+                            debug_row(ui, rows, pieces, &format!("e{}_{ei}", b.mi), text, Sel::Edge(b.id, e.id), &mut tc.tree.debug);
+                        }
+                    }
+                    _ => {
+                        for (pi, (p, eid, far)) in b.corners.iter().enumerate() {
+                            let text = format!("{} {:.2} {:.2} {:.2}  ·  {} {eid}", title, p[0], p[1], p[2], crate::i18n::tr("tree-debug-edge"));
+                            if !wanted(&text) {
+                                continue;
+                            }
+                            label(ui, &mut shown);
+                            debug_row(ui, rows, pieces, &format!("p{}_{pi}", b.mi), text, Sel::Vertex(b.id, *eid, *far), &mut tc.tree.debug);
+                        }
+                    }
+                }
+            }
+        });
+    // THE BRANCH'S OWN HEADER IS A ROW TOO, under the name `branch<kind>`. A branch that is shut shows no rows to
+    // press, and a check that cannot open it would only ever see the faces - which is the one branch that starts
+    // open, and so the one that hides this gap.
+    rows.push((format!("branch{key}"), resp.header_response.rect));
+}
+
+/// THE FINGER MOVES ALONG THE ROWS WITH THE ARROW KEYS, which is the second half of what a list of a thousand
+/// elements is for: reading them one at a time is slow, and comparing two neighbours is the question.
+///
+/// IT WALKS WHAT IS ON SCREEN, not the whole model: a shut branch contributes no rows and is stepped over, so the
+/// keys move the finger exactly as far as the eye can follow. At either end the finger stays where it is rather
+/// than wrapping - a finger that jumps from the last face to the first edge of another body answers a question
+/// nobody asked.
+///
+/// THE KEYS ARE ONLY OURS WHILE THE LIST IS OPEN. Nothing else in the program reads them, but a finger that outlived
+/// the list would go on moving it with the list shut.
+fn debug_finger_by_key(ui: &egui::Ui, tc: &mut qymcad_ui_state::TreeCtx) {
+    if tc.tree.debug_pieces.is_empty() {
+        return;
+    }
+    if ui.input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp)) {
+        let down = ui.input(|i| i.key_pressed(egui::Key::ArrowDown));
+        let here = tc.tree.debug;
+        let at = here.and_then(|p| tc.tree.debug_pieces.iter().position(|(q, _)| *q == p));
+        let last = tc.tree.debug_pieces.len() - 1;
+        let next = match (at, down) {
+            (Some(k), true) => (k + 1).min(last),
+            (Some(k), false) => k.saturating_sub(1),
+            // A FINGER THAT IS NOT IN THE LIST - the list was filtered since it was put down - enters it at the end
+            // it is walking from, which is what the first press of a key is asking for.
+            (None, true) => 0,
+            (None, false) => last,
+        };
+        if next != at.unwrap_or(usize::MAX) {
+            tc.tree.debug = Some(tc.tree.debug_pieces[next].0);
+        }
+    }
+}
+
+/// ONE ROW OF THE DEBUG LIST: pressed, it puts its finger on the element - and only that. The selection is left
+/// alone: the list is read while a command is in hand, and a row that selected would hand that command an element
+/// nobody chose for it. The row's rectangle is remembered under the name the element is known by, for the tests,
+/// and its text beside it - the text is what Ctrl+C gives away, and it cannot be read back out of a rectangle.
+///
+/// THE RIGHT BUTTON OFFERS THE IDENTIFIER, because reading a number off the screen and typing it into a report is
+/// where an id gets mistyped, and a mistyped id in a report is worth nothing.
+fn debug_row(ui: &mut egui::Ui, rows: &mut Vec<(String, egui::Rect)>, pieces: &mut Vec<(Sel, String)>, key: &str, text: String, piece: Sel, lit: &mut Option<Sel>) {
+    let shown = text.clone();
+    let resp = ui
+        .selectable_label(*lit == Some(piece), text)
+        .on_hover_text(crate::i18n::tr("tree-debug-hint"));
+    rows.push((key.to_string(), resp.rect));
+    pieces.push((piece, shown.clone()));
+    if resp.clicked() {
+        // PRESSING THE LIT ROW AGAIN LETS GO OF IT. The piece under the cursor has no such gesture, but here the
+        // finger can be lifted without reaching for the cursor, and a person reading the list wants the light out
+        // of the way before asking the next question.
+        *lit = if *lit == Some(piece) { None } else { Some(piece) };
+    }
+    resp.context_menu(|ui| {
+        if ui
+            .button(format!("{} {}", ph::COPY, crate::i18n::tr("tree-debug-copy-id")))
+            .on_hover_text(crate::i18n::tr("tree-debug-copy-hint"))
+            .clicked()
+        {
+            ui.ctx().copy_text(shown.clone());
+            ui.close();
+        }
+    });
+}
+
+/// THE NAME OF THE ELEMENT THE FINGER IS ON, which is what Ctrl+C hands to the clipboard.
+///
+/// A NAME AND NOT A NUMBER: the text of the row carries the kind and the id and the body's own row, which is what a
+/// person needs to say "this one" - and it is the text that is on the screen, so what is copied cannot disagree with
+/// what was read. `None` when the list is shut or nothing is named: the Ctrl+C of the program copies a part then.
+pub(crate) fn debug_identifier(tree: &qymcad_ui_state::TreeUi) -> Option<String> {
+    let piece = tree.debug?;
+    tree.debug_pieces.iter().find(|(p, _)| *p == piece).map(|(_, text)| text.clone())
 }
 
 /// Ctrl+C OUTSIDE A SKETCH: what is chosen goes into the clipboard - several components, a sketch node, a component, or a

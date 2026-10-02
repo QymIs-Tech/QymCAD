@@ -162,7 +162,17 @@ impl App {
             if do_cut {
                 self.clipboard_copy(true);
             } else if do_copy {
-                self.clipboard_copy(false);
+                // A NAMED ELEMENT COPIES ITS NAME FIRST. With the debug list's finger on a row, Ctrl+C is that
+                // element - the number a person has just read off the screen and is about to write into a report.
+                // The identifier is what the list shows, so what lands in the clipboard cannot disagree with what
+                // was on the screen; with nothing named, Ctrl+C copies a part as it always did.
+                match crate::gui::panels_tree::debug_identifier(&self.tree) {
+                    Some(name) => {
+                        ctx.copy_text(name.clone());
+                        self.status = crate::i18n::tr1("tree-debug-copied", "id", &name);
+                    }
+                    None => self.clipboard_copy(false),
+                }
             } else if do_paste {
                 self.clipboard_paste();
             }

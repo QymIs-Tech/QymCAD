@@ -847,6 +847,7 @@ impl App {
     /// what it touches and nothing else.
     pub(crate) fn tree_ctx<'a>(&'a mut self, ask: &'a mut Vec<TreeAsk>) -> TreeCtx<'a> {
         TreeCtx {
+            cache: &self.cache,
             project: &mut self.project,
             view: &mut self.viewing.view,
             sel: &mut self.chosen.sel,
@@ -995,6 +996,7 @@ impl App {
             comp_giz: self.dragged.comp_giz,
             cursor: self.cursor,
             datum: &self.side.datum,
+            debug: self.tree.debug,
             draft: self.params.draft,
             chamfer: self.params.chamfer,
             edges: &self.edges,
@@ -4445,6 +4447,7 @@ mod import_door;
 mod an_iges_import_survives_reopening;
 mod a_step_assembly_lands_as_its_tree;
 mod a_component_stepped_into_is_not_lit;
+mod a_debug_list_lights_what_it_names;
 mod a_broken_part_is_no_ghost_elsewhere;
 mod a_part_is_cloned_from_the_tree;
 mod an_imported_assembly_is_worked_by_hand;

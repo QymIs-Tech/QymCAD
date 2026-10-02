@@ -407,6 +407,9 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 
     // the edges of the selected body (for picking under a chamfer or a fillet)
     draw_body_edges(pn, painter, rect);
+    // BEFORE the piece under the cursor, so that what a click would take stays readable on top of what the list
+    // has its finger on: both are drawn in the hover colour, and the one the pointer is nearer wins.
+    draw_debug_pick(pn, painter, rect);
     draw_taken_piece(pn, painter, rect);
     // the live wireframe preview of the active command (extrude, cut, ...) + the length arrow.
     // There is no permanent gizmo at the selected feature - editing goes through a double click in the tree.
@@ -829,6 +832,23 @@ fn draw_taken_piece(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     draw_piece(pn, painter, rect, pn.sel, pn.scheme.pal.selected(), 150);
 }
 
+/// WHAT THE DEBUG LIST HAS ITS FINGER ON, lit the way the piece under the cursor is lit.
+///
+/// Reported need: a face, an edge or a corner is NAMED somewhere in the interface - by the properties panel, by a
+/// tool, by the list of the tree - and there is no way to see WHERE on the screen that name is. The two halves of
+/// the question were answerable apart and not together: the name came from the document, the position from the
+/// cursor, and nothing connected them. So the list hands over the name and this lights it.
+///
+/// The same colour as the hover, on purpose: the question the list is asked is "is that the piece I am pointing at",
+/// and a second colour would answer a different one. Drawn even while a command is in hand - unlike the piece under
+/// the cursor, which a command takes over - because a person reads the list in the middle of a command, not only
+/// between them.
+pub(crate) fn draw_debug_pick(pn: &Painting, painter: &egui::Painter, rect: Rect) {
+    if let Some(piece) = pn.debug {
+        draw_piece(pn, painter, rect, piece, pn.scheme.pal.highlight(), 130);
+    }
+}
+
 /// What a click at `pos` would take with nothing in hand: a corner, an edge, or a face.
 fn piece_under(pn: &Painting, rect: Rect, pos: egui::Pos2) -> Option<Sel> {
     qymcad_pick::edge_or_corner_under(pn, rect, pos).or_else(|| {
@@ -872,7 +892,8 @@ fn draw_piece(pn: &Painting, painter: &egui::Painter, rect: Rect, piece: Sel, co
         }
         Sel::Edge(body, id) | Sel::Vertex(body, id, _) => {
             let Some(edges) = qymcad_pick::body_edges_cached(pn.cache, pn.live, pn.regen, body) else { return };
-            let Some(poly) = edges.ids.iter().position(|i| *i == id).map(|k| &edges.polys[k]) else { return };
+            // `poly_of`, not a search: an id that names several edges must not light the first of them
+            let Some(poly) = edges.poly_of(id) else { return };
             let w = world(body);
             let at = |p: &[f32; 3]| scr.at(w([p[0] as f64, p[1] as f64, p[2] as f64])).0;
             match piece {

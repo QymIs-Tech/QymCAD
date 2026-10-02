@@ -3356,6 +3356,22 @@ pub struct TreeUi {
     pub search: String,
     /// The tree row grabbed for a move. `None` means nothing is being dragged.
     pub drag: Option<Id>,
+    /// WHAT THE DEBUG LIST HAS ITS FINGER ON: the piece a row named, lit in the viewport like the piece under the
+    /// cursor. A separate thing from `sel`, and deliberately so - the list is a way of LOOKING at where an element
+    /// of the model is on the screen, and a person using it is not choosing that element for a command: making the
+    /// row press the selection would throw away the selection the command is holding every time it is read.
+    pub debug: Option<Sel>,
+    /// The debug list's filter. Its own field, not the tree's `search`: the two answer different questions, and one
+    /// query cannot ask both at once.
+    pub debug_filter: String,
+    /// THE ROWS OF THE DEBUG LIST AS THEY WERE DRAWN, in the order a person reads them: the piece of model each one
+    /// names, and the text it is shown under. The rectangles alone would do for the pointer - the rows are in the
+    /// same order - but the keys move a PIECE, and Ctrl+C copies the NAME, and neither can be read back out of a
+    /// rectangle.
+    pub debug_pieces: Vec<(Sel, String)>,
+    /// WHERE THE DEBUG LIST'S ROWS LANDED, each under the name of the element it stands for ("f12", "e21", "p7") -
+    /// the tests move the mouse onto a row by that name rather than by counting rows, which a filter would move.
+    pub debug_row_rects: Vec<(String, egui::Rect)>,
 }
 
 /// WHAT THE PERSON IS BEING MADE TO WAIT FOR, and since when - so that a wait shorter than an eye blink
@@ -4056,6 +4072,9 @@ impl SketchCtx<'_> {
 /// to be twelve methods on `App`, so it belonged to the crate declaring `App` no matter how it was
 /// written; over this record it belongs to the file it lives in.
 pub struct TreeCtx<'a> {
+    /// The picker's own cache of edges. The tree panel needs it because it NAMES edges and corners - the same
+    /// names picking and drawing use, and they come from the live B-rep through this cache, not from the document.
+    pub cache: &'a Caches,
     pub project: &'a mut qymcad_core::model::Project,
     pub view: &'a mut View2d,
     pub sel: &'a mut Sel,
@@ -4906,6 +4925,10 @@ pub struct Painting<'a> {
     pub comp_giz: CompGizmo,
     pub cursor: Option<Point2>,
     pub datum: &'a DatumCommand,
+    /// The piece the debug list has its finger on, lit like the piece under the cursor. Drawn whatever else is in
+    /// hand, because the list is read while a command waits: a highlight that vanished under a command would answer
+    /// the question at the wrong moment.
+    pub debug: Option<Sel>,
     pub draft: DraftParams,
     /// the chamfer in hand: its mode and its reference face, which the preview lays the legs by
     pub chamfer: ChamferParams,
@@ -6392,6 +6415,94 @@ pub struct EdgePolys {
     /// Whether each is smooth - a seam with the same face on both sides, or the tangent edge of a fillet - parallel
     /// to `polys`. Its ends are no corners a person sees.
     pub smooth: Vec<bool>,
+}
+
+impl EdgePolys {
+    /// THE SAME EDGES WITH EVERY ID APPEARING ONCE - the list picking and drawing can both speak of.
+    ///
+    /// The id is what an edge is called everywhere else: the selection is `Sel::Edge(body, id)`, the drawn
+    /// piece is found by looking the id up, and the properties panel reads the document's edge of that id.
+    /// So a body whose ids REPEAT cannot be served by this list at all - a lookup finds the first of the
+    /// several, and that is a DIFFERENT edge on the screen: the cursor names one, another one lights up,
+    /// and pointing at the lit one names it again (it is the same id, so the same name comes back).
+    ///
+    /// Where the repeats come from: a saved document carries its ids beside the B-rep, and opening one
+    /// binds them to the edges BY INDEX - so ids that collided when the file was written stay collided,
+    /// for good. Two edges of one part, both named, is a small thing to ask for and not a rare answer.
+    ///
+    /// Keeping the first and dropping the rest leaves an edge that cannot be picked rather than one that is
+    /// picked wrongly: the miss is visible and honest, and the edge that is named is the edge that is drawn.
+    pub fn unique_by_id(&self) -> EdgePolys {
+        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut polys = Vec::with_capacity(self.polys.len());
+        let mut ids = Vec::with_capacity(self.ids.len());
+        let mut smooth = Vec::with_capacity(self.smooth.len());
+        for (k, poly) in self.polys.iter().enumerate() {
+            let id = self.ids.get(k).copied().unwrap_or(0);
+            if !seen.insert(id) {
+                continue;
+            }
+            polys.push(poly.clone());
+            ids.push(id);
+            smooth.push(self.smooth.get(k).copied().unwrap_or(false));
+        }
+        EdgePolys { polys, ids, smooth }
+    }
+
+    /// The polyline of the edge with this id, and only if the id names exactly one edge.
+    pub fn poly_of(&self, id: u32) -> Option<&Vec<[f32; 3]>> {
+        let k = self.ids.iter().position(|i| *i == id)?;
+        if self.ids.iter().filter(|i| **i == id).count() != 1 {
+            return None; // an ambiguous id: the first of several is not the edge that was asked for
+        }
+        self.polys.get(k)
+    }
+}
+
+#[cfg(test)]
+mod edge_polys_tests {
+    use super::EdgePolys;
+
+    fn list(ids: &[u32]) -> EdgePolys {
+        EdgePolys {
+            polys: ids.iter().enumerate().map(|(i, _)| vec![[i as f32, 0.0, 0.0], [i as f32, 10.0, 0.0]]).collect(),
+            ids: ids.to_vec(),
+            smooth: ids.iter().map(|i| *i % 2 == 0).collect(),
+        }
+    }
+
+    /// AN ID ON SEVERAL EDGES IS ONE EDGE HERE: the repeats go, and the first of them stays.
+    ///
+    /// The alternative is worse than a miss. The drawn piece is found by looking the id up, so with three
+    /// edges carrying one id the cursor names the third and the first lights up - a different edge of the
+    /// same body, often on the other side of the picture.
+    #[test]
+    fn a_repeated_id_is_left_once_and_the_others_go() {
+        let out = list(&[7, 9, 7, 7, 9]).unique_by_id();
+        assert_eq!(out.ids, vec![7, 9], "the ids that remain are not the distinct ones");
+        assert_eq!(out.polys.len(), 2, "and there is a polyline for each");
+        assert_eq!(out.smooth.len(), 2, "the smoothness came along with its own edge, not by position");
+        // the survivor is the FIRST of the repeats - the one a lookup would have found anyway
+        assert_eq!(out.polys[0][0][0], 0.0, "the polyline that stays is not the first of the repeats");
+    }
+
+    /// A LIST WITH NO REPEATS COMES THROUGH UNTOUCHED.
+    #[test]
+    fn distinct_ids_come_through_as_they_are() {
+        let out = list(&[3, 1, 2]).unique_by_id();
+        assert_eq!(out.ids, vec![3, 1, 2], "the order of the edges changed");
+        assert_eq!(out.polys.len(), 3);
+    }
+
+    /// THE POLYLINE OF AN EDGE - and nothing at all when the id names more than one.
+    #[test]
+    fn the_polyline_is_found_by_its_id_and_only_when_it_is_unambiguous() {
+        let out = list(&[4, 4]).unique_by_id();
+        assert_eq!(out.poly_of(4).map(|p| p[0][0]), Some(0.0), "the first of the two was not found");
+        let ambiguous = EdgePolys { polys: vec![vec![[0.0; 3]], vec![[1.0; 3]]], ids: vec![5, 5], smooth: vec![false; 2] };
+        assert!(ambiguous.poly_of(5).is_none(), "an id on two edges must not answer with the first of them");
+        assert!(ambiguous.poly_of(6).is_none(), "and an id that is not there is not there");
+    }
 }
 
 /// A VALUE KEPT UNTIL THE THING IT WAS COMPUTED FROM CHANGES.

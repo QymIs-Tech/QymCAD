@@ -2445,6 +2445,23 @@ doc-props-saved-by = Saved by build: { $build }
 file-doc-props = Document properties…
 tree-search = Search the tree
 tree-search-clear = Clear the search
+
+# Э3: список элементов — имя и место на экране по одному
+tree-debug-title = Elements of the model
+tree-debug-filter = a number, an id or a word
+tree-debug-hint = Click a row and the element is lit in the viewport
+tree-debug-clear = Stop lighting it
+tree-debug-face = Face
+tree-debug-edge = Edge
+tree-debug-point = Point
+tree-debug-id = id
+tree-debug-tri = tri
+tree-debug-mid = mid
+tree-debug-shared = this id is on { $n } edges
+tree-debug-copy-id = Copy the identifier
+tree-debug-copy-hint = Put the name of this element into the clipboard
+tree-debug-copied = Copied: { $id }
+
 io-starting = Starting…
 
 # Э2: копия грани — мост из параметрики в дизайн-слой

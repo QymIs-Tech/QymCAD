@@ -376,9 +376,12 @@ pub fn body_edges_cached(cache: &Caches, live: &LiveGeom, regen: &Rebuilding, bo
         }
     }
     let shape = live.shapes.get(&body)?;
-    // The kernel hands back a bare pair; it is named here, once, at the only place it is built.
+    // The kernel hands back a bare pair; it is named here, once, at the only place it is built. The ids go
+    // through `unique_by_id` because everything downstream NAMES an edge by that id - the selection, the
+    // drawn piece, the document - and a body that carries one id on several edges cannot be named at all:
+    // the lookup lands on the first of them, which is a different edge on the screen.
     let (polys, ids, _, smooth) = shape.edges_full_smooth();
-    let v = std::rc::Rc::new(qymcad_ui_state::EdgePolys { polys, ids, smooth });
+    let v = std::rc::Rc::new(qymcad_ui_state::EdgePolys { polys, ids, smooth }.unique_by_id());
     let mut c = cache.pick_edges.borrow_mut();
     if c.rev != view_rev(regen) {
         c.rev = view_rev(regen);
