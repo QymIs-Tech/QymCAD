@@ -834,7 +834,14 @@ fn piece_under(pn: &Painting, rect: Rect, pos: egui::Pos2) -> Option<Sel> {
     qymcad_pick::edge_or_corner_under(pn, rect, pos).or_else(|| {
         let (_, body, key) = qymcad_pick::face_under_cursor(pn, rect, pos)?;
         let mi = pn.project.mesh_index(body)?;
-        let fi = pn.project.bodies.get(mi)?.faces.iter().position(|f| f.id == key.id)?;
+        // THE INDEX THE HIT CAME WITH, not a search by the persistent id: a body that came from mesh
+        // detection has no B-rep, so EVERY face of it carries id 0 - and the search then returned the
+        // first face of the body whatever the cursor was over. The hover lit that one while the click,
+        // which resolves by the triangle underneath, took the face a person was actually pointing at.
+        // The persistent id is for FINDING A STORED REFERENCE across a rebuild (`resolve_face_sel`, which
+        // is careful about id 0); it is not an identity for a face already resolved this very instant.
+        let fi = key.index as usize;
+        pn.project.bodies.get(mi)?.faces.get(fi)?; // the bounds, not the id: the index came from here
         Some(Sel::Face(mi, fi))
     })
 }
