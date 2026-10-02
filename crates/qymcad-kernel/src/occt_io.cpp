@@ -743,11 +743,32 @@ extern "C" QymEdges* qym_shape_edges(const QymShape* s) {
     if (!s) return nullptr;
     QymEdges* e = new QymEdges();
     TopTools_IndexedMapOfShape edges;
-    TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
     // edge -> its faces, for detecting SMOOTHNESS (both faces' normals at the middle of the edge point the
     // same way)
     TopTools_IndexedDataMapOfShapeListOfShape e2f;
-    TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, e2f);
+    // THE SOLIDS ARE WALKED ONE BY ONE, and that is the whole of this function being different from the obvious
+    // one-liner. Asking the whole shape for its edges with `TopExp::MapShapes(shape, TopAbs_EDGE, ...)` stops at
+    // the FIRST solid: the explorer reaches the solids of a compound and refuses to go inside them, because a
+    // solid may appear in more than one shell and would then be walked twice. So a body made of several pieces -
+    // and every extrude of several disjoint contours produces exactly that - answered with the edges of one of
+    // them and none at all of the rest.
+    //
+    // Reported: a cross of five rectangles with three of them extruded into one another. Twelve edges were
+    // listed - exactly one rectangle - and the other pieces had none: not in the list of elements, not under the
+    // cursor, not in the details. The same twelve went to picking, drawing and anchoring, because all of them
+    // read this one place. Measured on the body itself: two solids of twelve edges each, and this answer of
+    // twelve.
+    //
+    // A SHELL OR A SHEET has no solid, so the shells are taken next, and a shape with neither is walked as it
+    // stands - an edge of a wire is a real edge of a sketch face.
+    TopTools_IndexedMapOfShape parts;
+    TopExp::MapShapes(s->shape, TopAbs_SOLID, parts);
+    if (parts.Extent() == 0) TopExp::MapShapes(s->shape, TopAbs_SHELL, parts);
+    if (parts.Extent() == 0) parts.Add(s->shape);
+    for (int part = 1; part <= parts.Extent(); ++part) {
+        TopExp::MapShapes(parts(part), TopAbs_EDGE, edges);
+        TopExp::MapShapesAndAncestors(parts(part), TopAbs_EDGE, TopAbs_FACE, e2f);
+    }
     for (int i = 1; i <= edges.Extent(); ++i) {
         std::vector<float> pts;
         Standard_Real f = 0, l = 0;

@@ -1322,6 +1322,7 @@ impl App {
         self.project = Project::default();
         self.project.new_document();
         self.live.shapes.clear();
+        self.live.shapes_rev = self.live.shapes_rev.wrapping_add(1); // a new document has none of the old solids
         self.chosen.sel = Sel::None;
         self.disk.project_path = None;
         self.disk.dxf_path = None;
@@ -4172,6 +4173,8 @@ pub(crate) fn refresh_interference(bv: qymcad_ui_state::BodyView, drag: qymcad_u
 /// dictionary moved out: what they watch is the panels, not the catalogue.
 #[cfg(test)]
 mod i18n_use_tests;
+mod every_prism_of_a_fuse_is_named;
+mod edges_of_a_shape_that_arrives_late;
 /// The thumbnails of the built-in library, drawn again by hand: `gui/library_thumbs.rs`.
 mod library_thumbs;
 /// The preview of a fillet on the private sample of a frame: `gui/blend_preview_on_sample.rs`.

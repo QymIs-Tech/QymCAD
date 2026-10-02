@@ -365,10 +365,28 @@ pub fn body_bbox_hit(pn: &Painting, body: qymcad_core::model::Id, rect: Rect, po
 /// and for every body. On a real assembly (1182 components) that literally hung the application while
 /// an edge or vertex anchor was being chosen. The cache lives until the next rebuild of the
 /// geometry.
+///
+/// THE REVISION IS THE GEOMETRY'S AND THE SOLID'S TOGETHER, and the second half was added because the first
+/// one alone kept a half-built answer alive. The live B-rep is prepared IN THE BACKGROUND and put into
+/// `live.shapes` when it is ready - no edit, no rebuild, so `geom_rev` stands still - and anything that asked
+/// while the job was running was answered by whatever the kernel had then.
+///
+/// Reported: a document of five rectangles, three of them extruded into one another, opened from disk. Twelve
+/// edges were listed - exactly the one rectangle the first pass had built - while the finished solid had
+/// eighteen, and the cursor could find no edge of the other rectangles at all. The same answer served picking,
+/// drawing and the debug list, because all three read this one place.
+fn shape_rev(regen: &Rebuilding, live: &LiveGeom) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (view_rev(regen), live.shapes_rev).hash(&mut h);
+    h.finish()
+}
+
 pub fn body_edges_cached(cache: &Caches, live: &LiveGeom, regen: &Rebuilding, body: qymcad_core::model::Id) -> Option<std::rc::Rc<qymcad_ui_state::EdgePolys>> {
+    let rev = shape_rev(regen, live);
     {
         let c = cache.pick_edges.borrow();
-        if c.rev == view_rev(regen) {
+        if c.rev == rev {
             if let Some(v) = c.value.get(&body) {
                 return Some(v.clone()); // an `Rc`: a shared reference, not a copy of tens of thousands
                                         // of points
@@ -380,8 +398,8 @@ pub fn body_edges_cached(cache: &Caches, live: &LiveGeom, regen: &Rebuilding, bo
     let (polys, ids, _, smooth) = shape.edges_full_smooth();
     let v = std::rc::Rc::new(qymcad_ui_state::EdgePolys { polys, ids, smooth });
     let mut c = cache.pick_edges.borrow_mut();
-    if c.rev != view_rev(regen) {
-        c.rev = view_rev(regen);
+    if c.rev != rev {
+        c.rev = rev;
         c.value.clear();
     }
     c.value.insert(body, v.clone());

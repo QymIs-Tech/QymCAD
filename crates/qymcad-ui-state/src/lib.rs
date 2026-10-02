@@ -602,6 +602,19 @@ pub struct LiveGeom {
     /// THE BYTES OF THE SOURCES AN UNDO TOOK OUT, for the same redo: a snapshot carries a source without its bytes,
     /// and a drawing brought back without them had no geometry to bring in again.
     pub shelved_sources: std::collections::HashMap<Id, Vec<u8>>,
+    /// HOW MANY TIMES THE MAP OF LIVE SHAPES HAS BEEN WRITTEN TO.
+    ///
+    /// WHY A REVISION AND NOT THE GEOMETRY'S OWN. The live B-rep is built IN THE BACKGROUND and lands in
+    /// `shapes` later, without an edit and without a rebuild - so `geom_rev` does not move when it arrives.
+    /// Everything cached by the SHAPE of a body (its edges for picking, the drawn piece) is therefore keyed on
+    /// this as well, and a body whose edges were asked for during the build kept answering with the half-built
+    /// answer FOREVER.
+    ///
+    /// Reported, and measured: a document of five rectangles, three of them extruded into one another, opened
+    /// from disk. The panel listed TWELVE edges - exactly the one rectangle the first pass had built - and the
+    /// other rectangles had none at all, neither in the list nor under the cursor. The finished shape had
+    /// eighteen; the answer never changed, because nothing a revision watches had moved.
+    pub shapes_rev: u64,
 }
 
 /// THE COLOUR SCHEME AND THE SETTINGS WINDOW: the palette in force, the ones to choose from, and what is
@@ -9575,6 +9588,7 @@ pub fn keep_live_shapes(live: &mut LiveGeom, project: &Project) {
         })
         .collect();
     live.shapes.retain(|body, _| imports.contains(body) || project.mesh_index(*body).is_some());
+    live.shapes_rev = live.shapes_rev.wrapping_add(1); // the map was written to
 }
 
 pub fn regenerate_now(rc: &mut RebuildCtx) {
@@ -9600,6 +9614,7 @@ pub fn regenerate_now(rc: &mut RebuildCtx) {
     let report = rc.project.regenerate(&kernel);
     let snaps = rc.project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed).saturating_sub(snaps_before);
     rc.live.shapes = kernel.shapes.into_inner();
+    rc.live.shapes_rev = rc.live.shapes_rev.wrapping_add(1); // the rebuild put new solids in
     settle_params_seen(rc.params_seen, rc.project); // the rebuild HAPPENED - only now are the values "seen"
     // the cache of live B-rep must match what the project actually holds. A regen REMOVES the mesh of a
     // body that stopped building (a rollback, a suppression, a cascade of an error) - while its former
@@ -10014,6 +10029,7 @@ fn shelve_imports(live: &mut LiveGeom, was: &Project, now: &Project) {
     let (before, after) = (import_bodies(was), import_bodies(now));
     for b in before.difference(&after) {
         if let Some(s) = live.shapes.remove(b) {
+            live.shapes_rev = live.shapes_rev.wrapping_add(1);
             live.shelved.insert(*b, s);
         }
     }
@@ -10021,6 +10037,7 @@ fn shelve_imports(live: &mut LiveGeom, was: &Project, now: &Project) {
         if !live.shapes.contains_key(b) {
             if let Some(s) = live.shelved.remove(b) {
                 live.shapes.insert(*b, s);
+                live.shapes_rev = live.shapes_rev.wrapping_add(1);
             }
         }
     }
@@ -10242,6 +10259,7 @@ pub fn with_kernel<R>(rc: &mut RebuildCtx, f: impl FnOnce(&mut qymcad_core::mode
     let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut rc.live.shapes)), quality_k: rc.project.geom_quality.deflection_k(), ..Default::default() };
     let out = f(rc.project, &kernel);
     rc.live.shapes = kernel.shapes.into_inner();
+    rc.live.shapes_rev = rc.live.shapes_rev.wrapping_add(1); // the kernel wrote into the map
     out
 }
 
@@ -10275,6 +10293,7 @@ pub fn brep_input_key(live: &LiveGeom, project: &Project) -> u64 {
 pub fn prune_dangling_features(live: &mut LiveGeom, project: &mut Project) {
     for db in project.prune_dangling() {
         live.shapes.remove(&db);
+        live.shapes_rev = live.shapes_rev.wrapping_add(1);
     }
 }
 

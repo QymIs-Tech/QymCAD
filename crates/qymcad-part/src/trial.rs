@@ -211,6 +211,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         for (id, bytes) in bodies {
             if let Some(copy) = qymcad_kernel::Shape::from_brep_bytes(&bytes) {
                 live.shapes.insert(id, copy);
+                live.shapes_rev = live.shapes_rev.wrapping_add(1);
             }
         }
     }

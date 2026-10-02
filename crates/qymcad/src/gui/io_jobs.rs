@@ -659,6 +659,10 @@ pub(crate) fn adopt_shapes(live: &mut super::LiveGeom, shapes: Vec<(Id, qymcad_k
     for (body, shape) in shapes {
         live.shapes.insert(body, shape);
     }
+    // THE SOLID OF A BODY HAS ARRIVED FROM THE BACKGROUND. Nothing a revision watched has moved - there was no
+    // edit and no rebuild - and a cache keyed on the geometry's own revision would go on answering with the
+    // half-built answer it was given while the job ran. This is the moment those caches have to be let go.
+    live.shapes_rev = live.shapes_rev.wrapping_add(1);
 }
 
 /// Writing the STL, once a name has been given. Like STEP, the solids leave the cache only here: while
@@ -740,6 +744,7 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
     for &b in bodies.iter() {
         let m = ed.project.body_world_transform(b);
         if let Some(s) = live.shapes.remove(&b) {
+            live.shapes_rev = live.shapes_rev.wrapping_add(1); // the shape is being moved out and put back
             moved.push((b, s, m));
         } else if let Some(i) = ed.project.mesh_index(b) {
             // a piece of a mesh coloured triangle by triangle keeps its colours on the way out
@@ -904,6 +909,7 @@ pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: 
     for &id in bodies.iter() {
         let m = project.body_world_transform(id);
         if let Some(s) = live.shapes.remove(&id) {
+            live.shapes_rev = live.shapes_rev.wrapping_add(1); // the shape is being moved out and put back
             moved.push((id, s, m));
         }
     }

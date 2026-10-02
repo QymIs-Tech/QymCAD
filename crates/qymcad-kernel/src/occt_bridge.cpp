@@ -2710,6 +2710,24 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
         TopoDS_Compound comp;
         bb.MakeCompound(comp);
         QymShape* q = new QymShape{TopoDS_Shape(), {}, {}, {}, {}};
+        // HOW MANY EDGE NAMES THE PROFILES BEFORE THIS ONE HAVE SPENT. Every prism is numbered 1..n over its
+        // OWN edges (see the note on edges in `seeded_sweep`), so without this every profile of the fuse began
+        // again at one and they all ended up sharing one set of numbers.
+        //
+        // That sharing is not a blemish in the list, it is the loss of the body's own vocabulary: an edge is
+        // named by `Sel::Edge(body, id)`, drawn by looking that id up, picked by the same, and anchored by it
+        // again. Two edges of one body under one id cannot be told apart, so the first is taken for the second
+        // - and, with the repeats removed from the list, the other half of the body has no edges at all: not in
+        // the list of elements, not under the cursor, not in the details.
+        //
+        // Reported: a cross of five rectangles with three of them extruded together. The body is three solids
+        // of twelve edges each; every one of them was numbered 1..12, so the twelve of the first prism were all
+        // the names the body had, and the other two prisms owned none. Counting confirms it: four rectangles
+        // gave one body of forty-eight edges carrying TWELVE distinct ids.
+        //
+        // The number is a base, not a renumbering of the scheme: a fuse of ONE profile starts at zero and is
+        // numbered exactly as before, so a part extruded from a single sketch keeps every id it had.
+        int ebase = 0;
         for (size_t i = 0; i < profiles.size(); ++i) {
             unsigned c0 = 0, c1 = 0;
             caps_for(region_key(profiles[i], &esrc), caps, ncaps, c0, c1);
@@ -2722,8 +2740,13 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
             bb.Add(comp, one->shape);
             for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(one->fids); it.More(); it.Next())
                 if (!q->fids.IsBound(it.Key())) q->fids.Bind(it.Key(), it.Value());
-            for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(one->eids); it.More(); it.Next())
-                if (!q->eids.IsBound(it.Key())) q->eids.Bind(it.Key(), it.Value());
+            int emax = 0;
+            for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(one->eids); it.More(); it.Next()) {
+                if (q->eids.IsBound(it.Key())) continue;
+                q->eids.Bind(it.Key(), ebase + it.Value());
+                if (it.Value() > emax) emax = it.Value();
+            }
+            ebase += emax; // the next profile numbers its own edges after these
             delete one;
         }
         q->shape = comp;

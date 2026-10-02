@@ -145,6 +145,7 @@ pub(crate) fn land_exact(wc: &mut WinCtx, path: String, format: qymcad_kernel::E
                 read.push((bid, copy)); // the shape as read, which every factor is taken from
             }
             wc.live.shapes.insert(bid, s);
+            wc.live.shapes_rev = wc.live.shapes_rev.wrapping_add(1);
         }
         ids.push(bid);
     }
@@ -236,6 +237,7 @@ fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
     for (id, shape) in &ask.solids {
         if let Some(s) = shape.transformed(&scale_matrix(f)) {
             wc.live.shapes.insert(*id, s);
+            wc.live.shapes_rev = wc.live.shapes_rev.wrapping_add(1);
         }
         wc.project.set_import_scale(*id, f);
     }
@@ -379,6 +381,7 @@ pub(crate) fn import_scale_window(wc: &mut WinCtx, ctx: &egui::Context) {
             for (id, shape) in &ask.solids {
                 if let Some(s) = shape.transformed(&scale_matrix(was)) {
                     wc.live.shapes.insert(*id, s);
+                    wc.live.shapes_rev = wc.live.shapes_rev.wrapping_add(1);
                 }
             }
         }

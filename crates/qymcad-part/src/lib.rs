@@ -4109,6 +4109,7 @@ pub fn delete_feature(pc: &mut qymcad_ui_state::PartCtx, ti: usize, dependents: 
         let gone = if dependents { pc.project.delete_feature_with_dependents(nid) } else { pc.project.delete_feature_op(nid) };
         for db in gone {
             pc.live.shapes.remove(&db);
+            pc.live.shapes_rev = pc.live.shapes_rev.wrapping_add(1);
         }
     } else {
         pc.project.timeline.remove(ti); // a node with no body (a sketch or a datum in the timeline)
