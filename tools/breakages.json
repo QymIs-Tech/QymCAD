@@ -1,0 +1,182 @@
+[
+ {
+  "name": "the wheel does not scale the view",
+  "kind": "mouse: wheel",
+  "bench": "view",
+  "file": "crates/qymcad-ui-state/src/lib.rs",
+  "find": "zoom_cam_3d(cam, rect, zoom_anchor(set, rect, cursor, part), (scroll * 0.002).exp(), lo, hi);",
+  "into": "zoom_cam_3d(cam, rect, zoom_anchor(set, rect, cursor, part), 1.0, lo, hi);",
+  "probe": "view_and_mouse::the_view_moves_under_qymcad"
+ },
+ {
+  "name": "a drag does not turn the view",
+  "kind": "mouse: drag",
+  "bench": "view",
+  "file": "crates/qymcad-ui-state/src/lib.rs",
+  "find": "    } else if let Some(turn) = nav.rotates().iter().find(|g| g.active(ctx, resp)) {",
+  "into": "    } else if let Some(turn) = nav.rotates().iter().find(|g| false && g.active(ctx, resp)) {",
+  "probe": "view_and_mouse::the_view_moves_under_gesture"
+ },
+ {
+  "name": "the arm of the gizmo does not carry the part",
+  "kind": "mouse: drag",
+  "bench": "assembly",
+  "file": "crates/qymcad/src/gui.rs",
+  "find": "            drag.3 += inc;\n        }\n        crate::gui::commands::apply_comp_giz(&mut self.part_ctx());",
+  "into": "            drag.3 += inc;\n        }\n        let _ = &self.dragged;",
+  "probe": "gizmo_in_space::a_part_is_carried_along_the_arm_of_its_gizmo"
+ },
+ {
+  "name": "a double click on a step of the timeline opens nothing",
+  "kind": "mouse: double click",
+  "bench": "tree",
+  "file": "crates/qymcad/src/gui/panels_tree.rs",
+  "find": "        if resp.double_clicked() {\n            act = Some(1);",
+  "into": "        if false && resp.double_clicked() {\n            act = Some(1);",
+  "probe": "timeline::a_step_is_opened_again_by_a_double_click"
+ },
+ {
+  "name": "a click on a body of a part takes nothing",
+  "kind": "mouse: click",
+  "bench": "part",
+  "file": "crates/qymcad-part/src/lib.rs",
+  "find": "    *pc.sel = if again { qymcad_ui_state::Sel::None } else { now };",
+  "into": "    *pc.sel = if again { qymcad_ui_state::Sel::None } else { let _ = now; qymcad_ui_state::Sel::None };",
+  "probe": "picking_in_space::a_click_in_a_part_takes_the_face_and_a_double_click_the_body"
+ },
+ {
+  "name": "the button of a new part does nothing",
+  "kind": "button",
+  "bench": "assembly",
+  "file": "crates/qymcad-part/src/lib.rs",
+  "find": "if qymcad_ui_state::icon_tool(ui, ph::CUBE, &qymcad_i18n::tr(\"tb-new-part-hint\"), false) {",
+  "into": "if qymcad_ui_state::icon_tool(ui, ph::CUBE, &qymcad_i18n::tr(\"tb-new-part-hint\"), false) && false {",
+  "probe": "assembly_components::a_new_part_is_made_and_entered"
+ },
+ {
+  "name": "a number typed into a field of the bar is not taken",
+  "kind": "field",
+  "bench": "sketch",
+  "file": "crates/qymcad-ui-state/src/lib.rs",
+  "find": "    match checked {\n        Ok(v) => v,\n",
+  "into": "    match checked {\n        Ok(v) => { let _ = v; cur }\n",
+  "probe": "contract::polygon::b05_valid_values"
+ },
+ {
+  "name": "a command is never applied",
+  "kind": "Enter",
+  "bench": "part",
+  "file": "crates/qymcad-part/src/lib.rs",
+  "find": "pub fn apply_feat_cmd(pc: &mut qymcad_ui_state::PartCtx) {",
+  "into": "pub fn apply_feat_cmd(pc: &mut qymcad_ui_state::PartCtx) {\n    if true {\n        return;\n    }",
+  "probe": "contract::extrude::b08_apply"
+ },
+ {
+  "name": "Esc cancels nothing",
+  "kind": "Esc",
+  "bench": "sketch",
+  "file": "crates/qymcad/src/gui/input.rs",
+  "find": "    pub(super) fn on_escape(&mut self) {",
+  "into": "    pub(super) fn on_escape(&mut self) {\n        if true {\n            return;\n        }",
+  "probe": "contract::rect::b09_cancel"
+ },
+ {
+  "name": "Ctrl+Z takes nothing back",
+  "kind": "undo",
+  "bench": "general",
+  "file": "crates/qymcad/src/gui/input.rs",
+  "find": "        if do_undo {",
+  "into": "        if false && do_undo {",
+  "probe": "undo_redo::ctrl_z_takes_back_a_step_and_ctrl_y_puts_it_again"
+ },
+ {
+  "name": "the sketches are not saved",
+  "kind": "save",
+  "bench": "general",
+  "file": "crates/qymcad-io/src/project_file.rs",
+  "find": "    doc.ensure_ids(); // in case of geometry without ids, built directly",
+  "into": "    doc.ensure_ids(); doc.sketches.clear();",
+  "probe": "contract::line::b12_save_open"
+ },
+ {
+  "name": "a sketch edited does not rebuild what stands on it",
+  "kind": "rebuild",
+  "bench": "part",
+  "file": "crates/qymcad-core/src/model/timeline.rs",
+  "find": "        for nd in &mut self.timeline {\n            if matches!(nd.kind, FeatureKind::Sketch { sketch } if sketch == sid) {\n                nd.dirty = true;",
+  "into": "        for nd in &mut self.timeline {\n            if matches!(nd.kind, FeatureKind::Sketch { sketch } if sketch == sid) {\n                nd.dirty = false;",
+  "probe": "contract::extrude::b14_upstream"
+ },
+ {
+  "name": "an STL is not read",
+  "kind": "import",
+  "bench": "general",
+  "file": "crates/qymcad/src/gui/import_door.rs",
+  "find": "            open_mesh(regen, path.to_string(), MeshFormat::Stl);",
+  "into": "            let _ = &regen;",
+  "probe": "import_export::the_units_of_a_mesh_are_held_to"
+ },
+ {
+  "name": "an STL is written empty",
+  "kind": "export",
+  "bench": "general",
+  "file": "crates/qymcad/src/gui/io_jobs.rs",
+  "find": "        qymcad_ui_state::MeshFormat::Stl => qymcad_io::export_stl(meshes, path),",
+  "into": "        qymcad_ui_state::MeshFormat::Stl => qymcad_io::export_stl(&meshes[..0], path),",
+  "probe": "import_export::a_block_goes_through_stl"
+ },
+ {
+  "name": "F2 renames nothing",
+  "kind": "tree: F2",
+  "bench": "tree",
+  "file": "crates/qymcad/src/gui/input.rs",
+  "find": "            qymcad_ui_state::rename_selected(&self.project, &mut self.side.rename, self.chosen.sel);",
+  "into": "            let _ = &self.side.rename;",
+  "probe": "tree_panel::a_row_is_taken_by_a_click_and_renamed_by_f2"
+ },
+ {
+  "name": "the search of the tree finds everything",
+  "kind": "tree: search",
+  "bench": "tree",
+  "file": "crates/qymcad/src/gui/panels_tree.rs",
+  "find": "    let q = tree.search.trim().to_lowercase();",
+  "into": "    let q = String::new();",
+  "probe": "tree_panel::the_search_narrows_the_tree"
+ },
+ {
+  "name": "Delete deletes nothing",
+  "kind": "tree: delete",
+  "bench": "tree",
+  "file": "crates/qymcad/src/gui/input.rs",
+  "find": "                    self.deferred.delete = Some(self.chosen.sel);",
+  "into": "                    let _ = self.chosen.sel;",
+  "probe": "tree_panel::the_delete_key_removes_the_row_that_is_taken"
+ },
+ {
+  "name": "the settings are not kept between runs",
+  "kind": "settings",
+  "bench": "general",
+  "file": "crates/qymcad/src/gui.rs",
+  "find": "        eframe::set_value(storage, \"settings\", &self.set);",
+  "into": "        let _ = &self.set;",
+  "probe": "settings::every_switch_of_the_settings_is_remembered"
+ },
+ {
+  "name": "F1 opens no help",
+  "kind": "help",
+  "bench": "general",
+  "file": "crates/qymcad/src/gui/input.rs",
+  "find": "            self.open_help(a);",
+  "into": "            let _ = a;",
+  "probe": "help_and_start::f1_opens_the_help"
+ },
+ {
+  "name": "the search of commands does not open",
+  "kind": "command search",
+  "bench": "general",
+  "file": "crates/qymcad/src/gui/input.rs",
+  "find": "        let open_search = ctx.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::K)) || (!typing_now && !i.modifiers.any() && i.key_pressed(egui::Key::Space)));",
+  "into": "        let open_search = false && ctx.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::K)) || (!typing_now && !i.modifiers.any() && i.key_pressed(egui::Key::Space)));",
+  "probe": "help_and_start::the_search_of_commands_finds_a_tool_and_starts_it"
+ }
+]

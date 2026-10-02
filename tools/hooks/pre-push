@@ -1,0 +1,15 @@
+#!/bin/sh
+# NOTHING PERSONAL GOES OUT: the tracked files and the messages of the commits being pushed are searched by
+# tools/frisk.py before the push. Switched on by `git config core.hooksPath tools/hooks`; `git push --no-verify`
+# goes round it.
+root=$(git rev-parse --show-toplevel) || exit 1
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" = 0000000000000000000000000000000000000000 ] && continue
+    if [ "$remote_sha" = 0000000000000000000000000000000000000000 ]; then
+        span="$local_sha"
+    else
+        span="$remote_sha..$local_sha"
+    fi
+    python3 "$root/tools/frisk.py" --commits "$span" || exit 1
+done
+exit 0

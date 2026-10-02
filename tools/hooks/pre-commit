@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""A COMMIT GOES THROUGH THE GATE: only a tree the full level ran on and passed is committed.
+
+`tools/gate.py full` leaves `target/gate-full.json` with the tree it ran on; this compares that tree with the one
+being committed. Switched on by `git config core.hooksPath tools/hooks`; `git commit --no-verify` goes round it.
+"""
+import json
+import os
+import subprocess
+import sys
+
+root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+mark = os.path.join(root, "target", "gate-full.json")
+tree = subprocess.run(["git", "write-tree"], cwd=root, capture_output=True, text=True).stdout.strip()
+if not os.path.exists(mark):
+    sys.exit("the commit is refused: no full level was run - `tools/gate.py full` first")
+m = json.load(open(mark, encoding="utf-8"))
+if m.get("tree") != tree:
+    sys.exit("the commit is refused: the full level ran on another tree than the one being committed - `tools/gate.py full` on this one")
+if not m.get("passed"):
+    sys.exit("the commit is refused: the full level found new reds:\n" + "\n".join("  " + r for r in m.get("new", [])))

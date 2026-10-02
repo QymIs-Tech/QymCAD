@@ -214,19 +214,13 @@ mod tests {
         let captions = xml.matches("<caption>").count();
         assert_eq!(captions, images.len(), "{} pictures and {} captions", images.len(), captions);
 
-        // AND THEY TRAVEL WITH THE SOURCES. The addresses name raw.githubusercontent of the PUBLIC tree,
-        // which `tools/publish.py` assembles from a whitelist. A picture that stays behind leaves a blank
-        // space in the store, and nothing else here would say so - the file is in this tree, and the
-        // check above is happy.
-        let publish = read("tools/publish.py");
-        let dirs = publish.split("ALLOW_DIRS = [").nth(1).unwrap_or_default().split(']').next().unwrap_or_default();
+        // AND THEY ARE IN GIT. The addresses name raw.githubusercontent of this repository: a picture that
+        // is on this disk but not committed - ignored, or never added - leaves a blank space in the store,
+        // and the check above, which looks at the disk, is happy.
         for url in &images {
-            let rel = url.split("/docs/").nth(1).unwrap_or_default();
-            let dir = format!("docs/{}", rel.rsplit_once('/').map(|(d, _)| d).unwrap_or(""));
-            assert!(
-                dirs.contains(&format!("\"{dir}\"")),
-                "the store is promised {url}, and {dir} is not in the whitelist of tools/publish.py - the file never reaches the public tree"
-            );
+            let rel = format!("docs/{}", url.split("/docs/").nth(1).unwrap_or_default());
+            let known = std::process::Command::new("git").args(["ls-files", "--error-unmatch", &rel]).current_dir(root()).output().expect("git runs");
+            assert!(known.status.success(), "the store is promised {url}, and {rel} is not committed - the address leads nowhere");
         }
     }
 }

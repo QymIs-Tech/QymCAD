@@ -185,7 +185,7 @@ mod tests {
     fn qpart_disk_round_trip_then_graft() {
         let (src, part) = source_with_part();
         let sub = src.subproject_of(part).expect("the extract");
-        let manifest = PartManifest { schema_version: 1, name: "Extrusion 20x20".into(), description: "test".into(), tags: vec!["extrusion".into()], author: "basson".into() };
+        let manifest = PartManifest { schema_version: 1, name: "Extrusion 20x20".into(), description: "test".into(), tags: vec!["extrusion".into()], author: "someone".into() };
 
         let path = std::env::temp_dir().join("qym_test_profile_2020.qpart");
         let path_s = path.to_string_lossy().to_string();

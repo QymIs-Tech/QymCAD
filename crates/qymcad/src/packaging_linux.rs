@@ -174,25 +174,21 @@ mod tests {
     /// sources and runs `cargo test` gets a wall of "must be readable" for files that never left this
     /// machine, and concludes the project does not build.
     ///
-    /// The public tree is assembled by `tools/publish.py` from a whitelist. So the question is not "are the
-    /// files there" but "does the whitelist still carry them", and that is what is asked here. `Cargo.lock`
-    /// is on the list too - one check walks it to learn which crates open libraries by name.
+    /// What travels is what is committed. So the question is not "are the files on this disk" but "are they in
+    /// git": nothing under `packaging/` is ignored, and `Cargo.lock` is committed - one check walks it to learn
+    /// which crates open libraries by name.
     #[test]
     fn the_public_tree_carries_what_these_checks_read() {
         if !in_the_working_tree() {
             return; // a published copy of the tree: nothing here to measure
         }
-        let publish = std::fs::read_to_string(root().join("tools/publish.py")).expect("the publishing script reads");
-        // CUT BY THE ASSIGNMENT, NOT BY THE NAME. The first edition split on "ALLOW_ONLY_SUFFIXES" and cut
-        // the list short: that name appears one line earlier IN A COMMENT, so the slice ended before
-        // "packaging" was reached and the check failed over a whitelist that was perfectly correct.
-        let allow = publish.split("ALLOW_DIRS = [").nth(1).unwrap_or_default();
-        let allow = &allow[..allow.find("\nALLOW_ONLY_SUFFIXES =").unwrap_or(allow.len())];
-        let mut absent = Vec::new();
-        for what in ["\"packaging\"", "\"crates\"", "\"Cargo.lock\""] {
-            if !allow.contains(what) {
-                absent.push(what);
-            }
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git").args(args).current_dir(root()).output().expect("git runs");
+            (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+        };
+        let mut absent: Vec<String> = git(&["ls-files", "--others", "--ignored", "--exclude-standard", "packaging"]).1.lines().map(str::to_string).collect();
+        if !git(&["ls-files", "--error-unmatch", "Cargo.lock"]).0 {
+            absent.push("Cargo.lock".into());
         }
         assert!(
             absent.is_empty(),

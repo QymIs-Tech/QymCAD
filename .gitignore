@@ -14,7 +14,7 @@
 .DS_Store
 Thumbs.db
 
-# Python bytecode (the publishing script lives in tools/)
+# Python bytecode (the gate scripts live in tools/)
 __pycache__/
 *.pyc
 
@@ -50,3 +50,9 @@ packaging/flatpak/cargo-sources.json
 # autosaves the program writes beside an open project (a probe opening a sample writes them too)
 *.autosave.qcad
 *.autosave.qcad.bak
+
+# Personal notes for the coding assistant, kept on the owner's machine
+CLAUDE.local.md
+
+# Samples that cannot be distributed: a link to them in a working copy, checks pass them over when absent
+/samples

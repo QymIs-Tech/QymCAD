@@ -290,6 +290,10 @@ pub(crate) mod tests {
         let igs = dir.join("cube.igs");
         let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
         qymcad_kernel::write_iges(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], &igs.to_string_lossy(), qymcad_kernel::LengthUnit::Millimetre).expect("the IGES is written");
+        // the STEP is written here too, like every other format of this check: a file brought from elsewhere is not in
+        // every tree the check runs in
+        let step = dir.join("cube.step");
+        qymcad_kernel::write_step(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], &step.to_string_lossy()).expect("the STEP is written");
         let obj = dir.join("two-cubes.obj");
         let cube = |at: f64| qymcad_core::geom::Mesh { verts: [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]].iter().map(|p| qymcad_core::geom::Point3::new(p[0] + at, p[1], p[2])).collect(), tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] };
         qymcad_io::export_obj(&[cube(0.0), cube(30.0)], &obj.to_string_lossy()).expect("the OBJ is written");
@@ -301,7 +305,7 @@ pub(crate) mod tests {
         qymcad_io::export_3mf(&[cube(0.0), cube(30.0)], &three.to_string_lossy()).expect("the 3MF is written");
         let amf = dir.join("two-cubes.amf");
         qymcad_io::export_amf(&[cube(0.0), cube(30.0)], &amf.to_string_lossy()).expect("the AMF is written");
-        for (path, says) in [(example("Table_CNC_WORK.stp"), "STEP"), (igs.to_string_lossy().into_owned(), "IGES"), (stl.to_string_lossy().into_owned(), "STL"), (obj.to_string_lossy().into_owned(), "OBJ"), (ply.to_string_lossy().into_owned(), "PLY"), (glb.to_string_lossy().into_owned(), "glTF"), (three.to_string_lossy().into_owned(), "3MF"), (amf.to_string_lossy().into_owned(), "AMF")] {
+        for (path, says) in [(step.to_string_lossy().into_owned(), "STEP"), (igs.to_string_lossy().into_owned(), "IGES"), (stl.to_string_lossy().into_owned(), "STL"), (obj.to_string_lossy().into_owned(), "OBJ"), (ply.to_string_lossy().into_owned(), "PLY"), (glb.to_string_lossy().into_owned(), "glTF"), (three.to_string_lossy().into_owned(), "3MF"), (amf.to_string_lossy().into_owned(), "AMF")] {
             let (mut app, ctx) = running();
             let before = app.project.bodies.len();
             answer(&mut app, &ctx, Want::Anything, &path);

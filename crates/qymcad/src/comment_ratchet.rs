@@ -57,7 +57,7 @@ pub(crate) mod tests {
     /// zero: the Russian words a lint looks for in the help text, driver names in another alphabet that
     /// prove a formula accepts them, the character ranges `('а'..='я')` the guards themselves are built
     /// from, search keys in other people's documents, language names and file names on disk.
-    const LITERAL_CEILING: usize = 93;
+    const LITERAL_CEILING: usize = 86;
 
     /// Files that carry comments: every source of the repository, tests included.
     ///

@@ -1,0 +1,7 @@
+# nothing heavy or needless goes into the build context: the build itself works from the /src mount, and the
+# image context stays light
+target
+dist
+.git
+**/*.AppImage
+**/*.tap
