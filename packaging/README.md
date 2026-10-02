@@ -70,10 +70,14 @@ pwsh -File packaging/win/bundle.ps1
 `.deb` and Flatpak on Linux, an NSIS or MSI installer on Windows - the same artifacts wrapped into one CI run
 on a tag.
 
-## macOS (Apple Silicon)
+## macOS (Apple Silicon and Intel)
 
-Apple Silicon only: GitHub has no live Intel runner any more, and Apple has not sold an Intel machine
-since 2023.
+Two packages, `qymcad-*-macos-arm64.zip` and `qymcad-*-macos-x86_64.zip`, each built natively on a runner
+of its own kind (`macos-15` and `macos-15-intel`). The Intel runner is the last one GitHub offers and is
+supported until August 2027; after that the Intel build has to become a cross-build on Apple Silicon.
+
+The script names the archive after the processor it runs on (`uname -m`); `MACOS_ARCH=arm64|x86_64`
+overrides that.
 
 The kernel is built from source exactly as on the other two systems, then:
 

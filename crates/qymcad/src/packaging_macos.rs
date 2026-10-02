@@ -101,9 +101,16 @@ fn sandbox(case: &str, deps: Deps) -> PathBuf {
     dir
 }
 
-/// Run the real script over the sandbox. HOME is moved inside it as well: the script asks git to trust the
-/// directory it is in, and that must not reach the settings of whoever runs the tests.
+/// Run the real script over the sandbox, packing for Apple Silicon. HOME is moved inside it as well: the
+/// script asks git to trust the directory it is in, and that must not reach the settings of whoever runs
+/// the tests.
 fn bundle(dir: &Path) -> Output {
+    bundle_for(dir, "arm64")
+}
+
+/// The same, for a named processor. It is always named: left to `uname -m` the archive would be called
+/// after whatever machine runs the tests.
+fn bundle_for(dir: &Path, arch: &str) -> Output {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/bundle.sh");
     let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap_or_default());
     Command::new("bash")
@@ -112,6 +119,7 @@ fn bundle(dir: &Path) -> Output {
         .env("PATH", path)
         .env("HOME", dir)
         .env("OCCT_ROOT", dir.join("occt"))
+        .env("MACOS_ARCH", arch)
         .env_remove("QYMCAD_VERSION")
         .output()
         .expect("bash runs the packaging script")
@@ -198,4 +206,30 @@ fn a_path_left_naming_the_build_machine_fails_the_bundle() {
     assert!(!out.status.success(), "a library still named the build machine and the script was happy:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("still points at the build machine"), "the refusal did not say what was wrong:\n{}", said(&out));
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that cannot start");
+}
+
+/// TWO PACKAGES GO UP SIDE BY SIDE, and the file name is all a person has to choose between them. The
+/// Intel build must be named for Intel and say so in both notes; a note still promising Apple Silicon
+/// inside an Intel archive sends its reader to the wrong download.
+#[test]
+fn an_intel_build_is_named_and_described_as_one() {
+    let dir = sandbox("intel", Deps::Rpath);
+    let out = bundle_for(&dir, "x86_64");
+    assert!(out.status.success(), "the script refused an Intel build:\n{}", said(&out));
+    assert!(dir.join("dist/qymcad-0.1.0-macos-x86_64.zip").exists(), "the Intel archive is not named for its processor:\n{}", said(&out));
+    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an Intel build was packed under the Apple Silicon name");
+
+    for note in ["README.txt", "ПРОЧТИ.txt"] {
+        let text = fs::read_to_string(dir.join("dist").join(note)).expect("the note is written");
+        assert!(text.contains("Intel") && !text.contains("Apple Silicon"), "{note} does not describe an Intel build:\n{text}");
+    }
+}
+
+/// A processor the script does not know is refused, not packed under a name nobody will look for.
+#[test]
+fn an_unknown_processor_is_refused() {
+    let dir = sandbox("unknown_arch", Deps::Rpath);
+    let out = bundle_for(&dir, "ppc");
+    assert!(!out.status.success(), "the script packed a build for a processor it does not know:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("unknown macOS architecture"), "the refusal did not say what was wrong:\n{}", said(&out));
 }
