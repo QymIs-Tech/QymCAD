@@ -20,18 +20,44 @@ mod tests {
         std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("the release workflow must be readable: {e}"))
     }
 
-    /// The `with:` block of every `actions/upload-artifact` step, as written.
+    /// How many times each job runs: the rows of its `matrix: include:`, or once without one.
+    ///
+    /// A JOB WITH A MATRIX UPLOADS ONCE PER ROW. The macOS job is written once and built for two
+    /// processors, so its one upload step hands over two packages - counting steps as written would
+    /// come out one short.
+    fn runs_of_job(job: &[&str]) -> usize {
+        let Some(at) = job.iter().position(|l| l.trim() == "include:") else { return 1 };
+        let indent = job[at].len() - job[at].trim_start().len();
+        job[at + 1..]
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .take_while(|l| l.len() - l.trim_start().len() > indent)
+            .filter(|l| l.trim_start().starts_with("- "))
+            .count()
+            .max(1)
+    }
+
+    /// The `with:` block of every `actions/upload-artifact` step, as written, once for every run of its
+    /// job.
     fn upload_steps() -> Vec<String> {
         let wf = workflow();
+        let all: Vec<&str> = wf.lines().collect();
+        // a job starts at a two-space key under `jobs:`
+        let is_job = |l: &str| l.starts_with("  ") && !l.starts_with("   ") && l.trim_end().ends_with(':') && !l.trim_start().starts_with('#');
         let mut out = Vec::new();
-        let mut lines = wf.lines().peekable();
-        while let Some(l) = lines.next() {
+        let mut runs = 1;
+        let mut lines = all.iter().copied().enumerate().peekable();
+        while let Some((i, l)) = lines.next() {
+            if is_job(l) {
+                let end = all[i + 1..].iter().position(|n| is_job(n)).map_or(all.len(), |p| i + 1 + p);
+                runs = runs_of_job(&all[i..end]);
+            }
             if !l.contains("uses: actions/upload-artifact") {
                 continue;
             }
             // everything up to the next step, which starts with a `- ` at the same or a smaller indent
             let mut block = String::new();
-            while let Some(n) = lines.peek() {
+            while let Some((_, n)) = lines.peek() {
                 if n.trim_start().starts_with("- ") || (!n.trim().is_empty() && !n.starts_with("      ")) {
                     break;
                 }
@@ -39,7 +65,7 @@ mod tests {
                 block.push('\n');
                 lines.next();
             }
-            out.push(block);
+            out.extend(std::iter::repeat_n(block, runs));
         }
         out
     }

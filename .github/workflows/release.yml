@@ -1,13 +1,14 @@
-# Building the release packages in CI: the Windows portable zip, the Linux AppImage and the macOS .app.
+# Building the release packages in CI: the Windows portable zip and MSI, the Linux AppImage and the macOS
+# .app for Apple Silicon and for Intel.
 #
 # ONE TRIGGER: the button (Actions -> Run workflow). Nothing builds by itself - not on a push, not on a
 # tag. Commits may arrive daily; a package is made when it is asked for, and asking is a person pressing
 # a button.
 #
-# Run it against a BRANCH -> three artifacts, downloadable by whoever is signed in, kept 90 days. That is a
+# Run it against a BRANCH -> the artifacts, downloadable by whoever is signed in, kept 90 days. That is a
 # build for oneself.
 #
-# Run it against a TAG (the ref selector accepts one) -> the same three files, plus a Release page anyone can
+# Run it against a TAG (the ref selector accepts one) -> the same files, plus a Release page anyone can
 # download from without an account, kept for ever, named by the tag. That is a build for other people.
 # Nothing is marked a pre-release - the reason is written out at the `publish` job.
 #
@@ -239,15 +240,32 @@ jobs:
           archive: false
 
 
-  # macOS: APPLE SILICON ONLY, and that is a decision rather than an omission. GitHub has no live Intel
-  # runner any more - the last one, macos-13, stopped being updated in September 2025 - and Apple has not
-  # sold an Intel machine since 2023. Building for it would mean cross-compiling for a shrinking minority.
+  # macOS: TWO BUILDS, ONE PER PROCESSOR - Apple Silicon (arm64) and Intel (x86_64). Each is built
+  # natively on a runner of its own kind rather than cross-compiled, so OCCT and the bridge go through
+  # the very same commands on both.
+  #
+  # THE INTEL RUNNER HAS A DATE. `macos-15-intel` is the last x86_64 image GitHub offers, supported until
+  # August 2027; the one before it, macos-13, was retired in December 2025. When it goes, this row goes
+  # with it - or turns into a cross-build on the arm64 runner (`CMAKE_OSX_ARCHITECTURES=x86_64` for the
+  # kernel, `--target x86_64-apple-darwin` for cargo).
   #
   # The kernel is built from source here as well: one OCCT 7.9.3 with one set of modules for all three
-  # systems beats three different ones.
+  # systems beats three different ones. The cache is per architecture - a kernel built for one processor
+  # is of no use to the other.
   macos:
     needs: agree
-    runs-on: macos-15
+    strategy:
+      # One processor failing must not cancel the other: the other one still finishes, saves its kernel
+      # to the cache and leaves its package on the run. The Release is not made short by this - `publish`
+      # waits for both and does not run when either fails.
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
 
@@ -256,7 +274,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: /Users/runner/occt
-          key: occt-7.9.3-macos-arm64-v1
+          key: occt-7.9.3-macos-${{ matrix.arch }}-v1
 
       - name: Build OCCT 7.9.3 (only when the cache missed)
         if: steps.occt.outputs.cache-hit != 'true'
@@ -284,7 +302,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: /Users/runner/occt
-          key: occt-7.9.3-macos-arm64-v1
+          key: occt-7.9.3-macos-${{ matrix.arch }}-v1
 
       # The tag is stamped at the compiling step - see the same step in the Windows job.
       - name: Build (release)
@@ -298,6 +316,7 @@ jobs:
         env:
           QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           OCCT_ROOT: /Users/runner/occt
+          MACOS_ARCH: ${{ matrix.arch }}
         run: bash packaging/macos/bundle.sh
 
       # A single file, uploaded as it is - see the reason at the Windows job.
@@ -341,11 +360,12 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
-      # FOUR FILES, AND ALL FOUR ACTUALLY FILES. The packages are uploaded unzipped, and the release
+      # FIVE FILES, AND ALL FIVE ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
       # the Release page would go up with a download missing. Fifteen seconds against that.
       #
-      # Four, not three, since Windows produces two: the portable zip and the MSI installer. The number
+      # Five, not three: Windows produces two (the portable zip and the MSI installer), and macOS two (one
+      # per processor, from the one upload step the matrix runs twice). The number
       # is written out rather than counted from the jobs on purpose - a package that silently stopped
       # being built is exactly what this step exists to catch.
       - name: What was built
@@ -355,7 +375,7 @@ jobs:
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
           n=$(ls dist | wc -l)
-          [ "$n" -eq 4 ] || { echo "!!! four packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq 5 ] || { echo "!!! five packages were expected, $n arrived"; exit 1; }
 
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #
@@ -373,7 +393,7 @@ jobs:
         with:
           files: dist/*
           # WHAT TO DOWNLOAD AND HOW TO START IT, ON THE PAGE ITSELF. Generated notes alone are a line
-          # saying "Full Changelog" - which tells whoever arrives from a link neither which of the three
-          # files is theirs nor, on a mac, why the system calls the download damaged.
+          # saying "Full Changelog" - which tells whoever arrives from a link neither which of the files
+          # is theirs nor, on a mac, why the system calls the download damaged.
           body_path: packaging/release-body.md
           generate_release_notes: true
