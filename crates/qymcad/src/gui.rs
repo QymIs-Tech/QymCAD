@@ -4433,6 +4433,7 @@ mod key_leak;
 /// The program driven from outside lives in `gui/session.rs`.
 pub(crate) mod session;
 mod export_menu;
+mod bar_menu;
 mod import_scale;
 mod format_samples_look;
 mod import_door;

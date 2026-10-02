@@ -421,6 +421,44 @@ fn in_english_a_core_error_has_no_cyrillic() {
     qymcad_i18n::set_language("ru");
 }
 
+/// The literal keys a source file asks the catalogue for.
+///
+/// Literal keys only: the ones assembled by format! are checked by their own areas. `trn` WAS NOT on the
+/// list, and `face-normal` went through that gap: the properties of a face showed the service name instead
+/// of words. The neighbouring keys of the family were all in place — the one lost was exactly the one
+/// called through another function.
+fn keys_asked_in(text: &str) -> Vec<String> {
+    // a `#[cfg(test)] mod` beside the code is scaffolding as much as a `_tests.rs` file is
+    let text = qymcad_i18n::ratchet::working_part(text);
+    let mut keys: Vec<String> = Vec::new();
+    for m in text
+        .match_indices("i18n::tr(\"")
+        .chain(text.match_indices("i18n::tr1(\""))
+        .chain(text.match_indices("i18n::tr2(\""))
+        .chain(text.match_indices("i18n::trn(\""))
+    {
+        let rest = &text[m.0 + m.1.len()..];
+        if let Some(end) = rest.find('"') {
+            let k = rest[..end].to_string();
+            if !k.is_empty() && !keys.contains(&k) {
+                keys.push(k);
+            }
+        }
+    }
+    keys
+}
+
+/// A TEST MODULE INSIDE A WORKING FILE ASKS FOR NOTHING.
+///
+/// `bar_menu.rs` keeps its checks beside the code, and one of them looks for
+/// `bar_menu_button(qymcad_i18n::tr("{key}")` in the panels: the guard took the `format!` placeholder
+/// `{key}` for a key the interface asks for, and reported it missing in every language.
+#[test]
+fn keys_in_an_inline_test_module_are_not_counted() {
+    let src = "fn f() { qymcad_i18n::tr(\"menu-file\"); }\n#[cfg(test)]\nmod tests {\n    fn g() { let _ = format!(r#\"qymcad_i18n::tr(\"{key}\")\"#); }\n}\n";
+    assert_eq!(keys_asked_in(src), vec!["menu-file".to_string()], "only the working part of a file asks the catalogue for keys");
+}
+
 /// EVERY KEY THE CODE ASKS FOR EXISTS IN EVERY LANGUAGE.
 ///
 /// The translation goes area by area and is far from finished, so checking that the catalogue holds
@@ -451,22 +489,9 @@ fn every_key_the_code_asks_for_exists_in_every_language() {
                 continue;
             }
             let text = std::fs::read_to_string(&p).expect("the file reads");
-            // literal keys only: the ones assembled by format! are checked by their own areas.
-            // `trn` WAS NOT on the list, and `face-normal` went through that gap: the properties of a
-            // face showed the service name instead of words. The neighbouring keys of the family were
-            // all in place — the one lost was exactly the one called through another function.
-            for m in text
-                .match_indices("i18n::tr(\"")
-                .chain(text.match_indices("i18n::tr1(\""))
-                .chain(text.match_indices("i18n::tr2(\""))
-                .chain(text.match_indices("i18n::trn(\""))
-            {
-                let rest = &text[m.0 + m.1.len()..];
-                if let Some(end) = rest.find('"') {
-                    let k = rest[..end].to_string();
-                    if !k.is_empty() && !asked.contains(&k) {
-                        asked.push(k);
-                    }
+            for k in keys_asked_in(&text) {
+                if !asked.contains(&k) {
+                    asked.push(k);
                 }
             }
         }

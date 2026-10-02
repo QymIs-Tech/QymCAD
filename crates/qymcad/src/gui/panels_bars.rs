@@ -22,6 +22,7 @@ impl App {
 }
 
 pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
+    use crate::gui::bar_menu::BarMenu as _;
     // The panel lives inside a `Ui` now; the context is still wanted for windows,
     // input and viewport commands, and it comes from the same place.
     let ctx = &ui.ctx().clone();
@@ -30,7 +31,7 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
     egui::MenuBar::new().ui(ui, |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        ui.menu_button(qymcad_i18n::tr("menu-file"), |ui| {
+        ui.bar_menu_button(qymcad_i18n::tr("menu-file"), |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             // A NEW PROJECT IS AN EMPTY ASSEMBLY: a part is made by "New part" of the start screen or of the assembly,
             // by the person's own intent (decided 29.09) - a project that came with a part to delete made them clean up
@@ -116,7 +117,7 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 bc.ask.push(qymcad_ui_state::BarAsk::Nav(qymcad_ui_state::Nav::Exit));
             }
         });
-        ui.menu_button(qymcad_i18n::tr("menu-edit"), |ui| {
+        ui.bar_menu_button(qymcad_i18n::tr("menu-edit"), |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             // THE OPERATION'S NAME IN THE MENU: what exactly will be undone is visible - a step knows its
             // own name, because it was created by a command rather than by the frame.
@@ -167,7 +168,7 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 ui.close();
             }
         });
-        ui.menu_button(qymcad_i18n::tr("menu-view"), |ui| {
+        ui.bar_menu_button(qymcad_i18n::tr("menu-view"), |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             ui.checkbox(&mut *bc.mode_3d, format!("{}  {}", ph::CUBE, qymcad_i18n::tr("menu-orbit3d")));
             if ui.button(format!("{}  {}", ph::CORNERS_OUT, qymcad_i18n::tr("menu-fit-view"))).clicked() {
@@ -195,7 +196,7 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 }
             }
         });
-        ui.menu_button(qymcad_i18n::tr("menu-windows"), |ui| {
+        ui.bar_menu_button(qymcad_i18n::tr("menu-windows"), |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             if ui.button(format!("{}  {}", ph::GEAR, qymcad_i18n::tr("win-settings"))).clicked() {
                 bc.win.toggle(WinKind::Settings);
@@ -210,7 +211,7 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 ui.close();
             }
         });
-        ui.menu_button(qymcad_i18n::tr("menu-help"), |ui| {
+        ui.bar_menu_button(qymcad_i18n::tr("menu-help"), |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             if ui.button(format!("{} {}", ph::BOOK_OPEN, qymcad_i18n::tr("help-title"))).clicked() {
                 bc.ask.push(qymcad_ui_state::BarAsk::Help("index".to_string()));
