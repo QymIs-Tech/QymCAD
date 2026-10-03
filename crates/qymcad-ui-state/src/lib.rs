@@ -9352,14 +9352,25 @@ pub fn measure_text(pn: &Painting) -> String {
         // the label is a code of the catalogue (`m3-length`) or a sign (`Ø`): translated where it is a code
         parts.push(qymcad_i18n::tr2("m3-value-mm", "label", &qymcad_i18n::name(label), "v", &qymcad_i18n::num(v, 3)));
     }
+    if let Some(c2c) = r.center_to_center {
+        parts.push(qymcad_i18n::tr1("m3-center-dist", "v", &qymcad_i18n::num(c2c, 3)));
+    }
     if let Some(d) = r.distance {
         parts.push(qymcad_i18n::tr1("m3-distance", "v", &qymcad_i18n::num(d, 3)));
     }
+    if let Some(a) = r.area {
+        parts.push(qymcad_i18n::tr1("m3-area", "v", &qymcad_i18n::num(a, 3)));
+    }
+    if let Some(p) = r.perimeter {
+        parts.push(qymcad_i18n::tr1("m3-perimeter", "v", &qymcad_i18n::num(p, 3)));
+    }
     if let Some(a) = r.angle_deg {
-        parts.push(qymcad_i18n::tr1("m3-angle", "v", &qymcad_i18n::num(a, 3)));
+        if a > 1e-4 || r.distance.is_none() {
+            parts.push(qymcad_i18n::tr1("m3-angle", "v", &qymcad_i18n::num(a, 3)));
+        }
     }
     if let Some(d) = r.delta {
-        parts.push(format!("Δ {:.3} / {:.3} / {:.3}", d[0], d[1], d[2]));
+        parts.push(format!("Δ {:.3} / {:.3} / {:.3}", d[0].abs(), d[1].abs(), d[2].abs()));
     }
     if parts.is_empty() {
         // HONESTLY: there is no meaningful number for this pair (converging faces, for one — the
@@ -9368,6 +9379,43 @@ pub fn measure_text(pn: &Painting) -> String {
         return qymcad_i18n::tr1("m3-not-parallel", "what", &names.join(" - "));
     }
     format!("{}: {}", names.join(" - "), parts.join(" · "))
+}
+
+/// Detailed HUD lines for the 3D viewport card.
+pub fn measure_hud_lines(pn: &Painting) -> Vec<String> {
+    let Some(r) = measure_result(pn.m3) else {
+        return vec![qymcad_i18n::tr("m3-hint-short")];
+    };
+    let names: Vec<&str> = pn.m3.picks.iter().map(|p| p.what.as_str()).collect();
+    let mut lines = Vec::new();
+    lines.push(names.join(" - "));
+    if let Some((label, v)) = r.value {
+        lines.push(qymcad_i18n::tr2("m3-value-mm", "label", &qymcad_i18n::name(label), "v", &qymcad_i18n::num(v, 3)));
+    }
+    if let Some(c2c) = r.center_to_center {
+        lines.push(qymcad_i18n::tr1("m3-center-dist", "v", &qymcad_i18n::num(c2c, 3)));
+    }
+    if let Some(d) = r.distance {
+        lines.push(qymcad_i18n::tr1("m3-distance", "v", &qymcad_i18n::num(d, 3)));
+    }
+    if let Some(a) = r.area {
+        lines.push(qymcad_i18n::tr1("m3-area", "v", &qymcad_i18n::num(a, 3)));
+    }
+    if let Some(p) = r.perimeter {
+        lines.push(qymcad_i18n::tr1("m3-perimeter", "v", &qymcad_i18n::num(p, 3)));
+    }
+    if let Some(a) = r.angle_deg {
+        if a > 1e-4 || r.distance.is_none() {
+            lines.push(qymcad_i18n::tr1("m3-angle", "v", &qymcad_i18n::num(a, 3)));
+        }
+    }
+    if let Some(d) = r.delta {
+        lines.push(format!("ΔX: {:.3}   ΔY: {:.3}   ΔZ: {:.3}", d[0].abs(), d[1].abs(), d[2].abs()));
+    }
+    if lines.len() == 1 {
+        lines.push(qymcad_i18n::tr1("m3-not-parallel", "what", &names.join(" - ")));
+    }
+    lines
 }
 
 /// IS THE WORKBENCH WAITING FOR GEOMETRY — the question the highlight and the click pass ask.

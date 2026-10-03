@@ -32,6 +32,10 @@ mod tests {
     #[test]
     fn the_tool_has_a_button_and_turns_on() {
         assert!(crate::gui::panels_source::PANELS.contains("BarAsk::ToggleMeasure3d"), "without a button the tool does not exist for a person");
+        let src = crate::gui::panels_source::PANELS;
+        let p = src.find("Workbench::Assembly =>").expect("the assembly workbench block");
+        let end = src[p..].find("\n            }\n        }").map(|i| p + i).unwrap_or(src.len());
+        assert!(src[p..end].contains("BarAsk::ToggleMeasure3d"), "the assembly workbench must have the 3D measuring button");
         let mut app = App::default();
         cube_in_view(&mut app);
         app.toggle_measure_3d();
@@ -120,8 +124,8 @@ mod tests {
         let mut app = App::default();
         app.toggle_measure_3d();
         app.side.m3.picks = vec![
-            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 0.0, 1.0] }, what: "face".into(), at: [0.0; 3] },
-            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 1.0, 1.0] }, what: "face".into(), at: [0.0; 3] },
+            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 0.0, 1.0], area: None, perimeter: None }, what: "face".into(), at: [0.0; 3] },
+            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 1.0, 1.0], area: None, perimeter: None }, what: "face".into(), at: [0.0; 3] },
         ];
         let t = app.measure_text();
         assert!(t.contains(&crate::i18n::tr1("m3-angle", "v", "45.000")), "the angle must be shown: {t}");
@@ -199,4 +203,26 @@ mod tests {
         );
     }
 
+    /// A CLICK ON A PLANAR FACE shows its area and perimeter in the status line.
+    #[test]
+    fn clicking_planar_face_reports_area_and_perimeter() {
+        let mut app = App::default();
+        let (mi, _body) = cube_in_view(&mut app);
+        let bb = app.project.bodies[mi].mesh.bounds().expect("the bounding box");
+        app.toggle_measure_3d();
+        let basis = app.viewing.cam.basis();
+        let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(top).0;
+        app.measure_3d_click(rect(), at);
+        assert_eq!(app.side.m3.picks.len(), 1, "a single click on the face lands");
+        let t = app.measure_text();
+        assert!(t.contains(&crate::i18n::tr("m3-face")), "the prompt identifies the face");
+        if let MeasureItem::Plane { area, perimeter, .. } = &app.side.m3.picks[0].item {
+            assert!(area.is_some(), "planar face must have area");
+            assert!(perimeter.is_some(), "planar face must have perimeter");
+        } else {
+            panic!("expected MeasureItem::Plane, got {:?}", app.side.m3.picks[0].item);
+        }
+    }
 }
+
