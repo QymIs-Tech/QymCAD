@@ -4096,6 +4096,10 @@ pub(crate) fn adopt_settings(regen: &mut Rebuilding, scheme: &mut SchemeUi, set:
     apply_theme(scheme, set, ctx);
     apply_language(set);
     apply_ui_scale(set, ctx);
+    // WHETHER THE CLICKS ARE WRITTEN DOWN is a setting like any other, and it is applied here rather than
+    // where it is drawn: this is the one place where a settings record becomes the running program, so a
+    // trace switched off by the tick and a trace switched off by the record end in the same place.
+    qymcad_trace::set_recording(set.save_clicks);
     invalidate(regen); // the colours and the scale are part of the picture caches' keys
 }
 
@@ -4449,6 +4453,7 @@ mod a_step_assembly_lands_as_its_tree;
 mod a_component_stepped_into_is_not_lit;
 mod a_click_leaves_a_trail;
 mod a_debug_list_lights_what_it_names;
+mod the_developers_two_switches_hide_what_they_name;
 mod a_broken_part_is_no_ghost_elsewhere;
 mod a_part_is_cloned_from_the_tree;
 mod an_imported_assembly_is_worked_by_hand;

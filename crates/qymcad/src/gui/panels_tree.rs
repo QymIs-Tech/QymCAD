@@ -1527,7 +1527,13 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
     if ui.input(|i| i.pointer.any_released()) {
         tc.tree.drag = None;
     }
-    debug_geometry_list(tc, ui);
+    // THE LIST ITSELF, and nothing at all while the switch is off: not the list, not a closed heading, not a
+    // line of words. The switch itself is not here either - it is one of the developer's two, in the window's
+    // own section for them - so a build tree that names a body and then offers its thirty-six edges is not a
+    // tree any more, and an empty heading waiting to be opened is worse than neither.
+    if tc.set.show_model_elements {
+        debug_geometry_list(tc, ui);
+    }
 }
 
 /// THE DEBUG LIST: every face, every edge and every corner of every body, named - and a click lights it in the
@@ -1554,6 +1560,18 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
 /// - "what is element 37?" - and the next one badly: a person comparing a face to the edges around it has to read
 /// past every face of the body to reach them. The kinds are separate subjects, so they are separate branches, and a
 /// branch that is shut says nothing about the others.
+///
+/// EACH BODY IS A BRANCH OF THE KIND, and that is the second level of the same argument.
+///
+/// The three kinds are not three subjects and then no more: a model is made of BODIES, and a run of faces that
+/// goes from one body to the next without saying so is a list in which "face 4" and "face 5" are two things on
+/// opposite sides of the drawing. A person comparing a face with the edges around it wants the ones of ITS OWN
+/// BODY, and on a flat list of faces that means reading past every face of every other body to get there.
+///
+/// So a branch holds one heading per body - the body's own name and how many elements it has of this kind - and
+/// the elements of that body under it. The count is on the heading because it is the question asked before the
+/// rows are read: whether a body has the hundred faces a report is talking about is answered by the heading.
+/// A body the filter has emptied is left out whole, since a heading over no rows promises rows that are not there.
 ///
 /// THE BRANCHES ARE PAGES, NOT SCROLLING AREAS, and that was measured rather than chosen.
 ///
@@ -1740,7 +1758,9 @@ fn debug_poly_mid(poly: &[[f32; 3]]) -> [f64; 3] {
     debug_point(poly.last().unwrap_or(first))
 }
 
-/// ONE BRANCH OF THE LIST - the faces, the edges or the corners - folded by itself, a page at a time.
+/// ONE BRANCH OF THE LIST - the faces, the edges or the corners - folded by itself, and inside it ONE HEADING PER
+/// BODY, folded in turn: a kind says which bodies have elements of that kind, a body says which elements are its
+/// own, and only under that is there an element at all.
 fn debug_branch(ui: &mut egui::Ui, tc: &mut qymcad_ui_state::TreeCtx, rows: &mut Vec<(String, egui::Rect)>, pieces: &mut Vec<(Sel, String)>, kind: usize, bodies: &[DebugBody], want: &str) {
     let (key, title) = match kind {
         0 => ("f", crate::i18n::tr("tree-debug-face")),
@@ -1760,14 +1780,10 @@ fn debug_branch(ui: &mut egui::Ui, tc: &mut qymcad_ui_state::TreeCtx, rows: &mut
         .default_open(kind == 0)
         .show(ui, |ui| {
             for b in bodies {
-                let mut shown = false;
-                // THE BODY'S NAME, ONCE, above the rows that belong to it.
-                let label = |ui: &mut egui::Ui, shown: &mut bool| {
-                    if !*shown {
-                        ui.label(egui::RichText::new(b.name.clone()).strong());
-                        *shown = true;
-                    }
-                };
+                // THE ROWS OF THIS BODY ARE GATHERED BEFORE THEY ARE DRAWN, and the reason is the fold below: the
+                // heading says how many elements are under it, and a body the filter has emptied is not to be
+                // headed at all - a heading over no rows promises rows that are not there.
+                let mut lines: Vec<(String, String, Sel)> = Vec::new();
                 match kind {
                     0 => {
                         for (fi, f) in tc.project.bodies[b.mi].faces.iter().enumerate() {
@@ -1775,8 +1791,7 @@ fn debug_branch(ui: &mut egui::Ui, tc: &mut qymcad_ui_state::TreeCtx, rows: &mut
                             if !wanted(&text) {
                                 continue;
                             }
-                            label(ui, &mut shown);
-                            debug_row(ui, rows, pieces, &format!("f{}_{fi}", b.mi), text, Sel::Face(b.mi, fi), &mut tc.tree.debug);
+                            lines.push((format!("f{}_{fi}", b.mi), text, Sel::Face(b.mi, fi)));
                         }
                     }
                     1 => {
@@ -1795,8 +1810,7 @@ fn debug_branch(ui: &mut egui::Ui, tc: &mut qymcad_ui_state::TreeCtx, rows: &mut
                             if !wanted(&text) {
                                 continue;
                             }
-                            label(ui, &mut shown);
-                            debug_row(ui, rows, pieces, &format!("e{}_{ei}", b.mi), text, Sel::Edge(b.id, e.id), &mut tc.tree.debug);
+                            lines.push((format!("e{}_{ei}", b.mi), text, Sel::Edge(b.id, e.id)));
                         }
                     }
                     _ => {
@@ -1805,11 +1819,27 @@ fn debug_branch(ui: &mut egui::Ui, tc: &mut qymcad_ui_state::TreeCtx, rows: &mut
                             if !wanted(&text) {
                                 continue;
                             }
-                            label(ui, &mut shown);
-                            debug_row(ui, rows, pieces, &format!("p{}_{pi}", b.mi), text, Sel::Vertex(b.id, *eid, *far), &mut tc.tree.debug);
+                            lines.push((format!("p{}_{pi}", b.mi), text, Sel::Vertex(b.id, *eid, *far)));
                         }
                     }
                 }
+                if lines.is_empty() {
+                    continue;
+                }
+                let count = lines.len();
+                let br = egui::CollapsingHeader::new(format!("{} ({count})", b.name))
+                    .id_salt(("debug-body", key, b.mi))
+                    // THE BODIES ARE OPEN INSIDE AN OPEN BRANCH, so that opening a branch shows what it holds
+                    // rather than a column of headings that each have to be opened as well.
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        for (rk, text, piece) in lines {
+                            debug_row(ui, rows, pieces, &rk, text, piece, &mut tc.tree.debug);
+                        }
+                    });
+                // THE BODY'S OWN HEADER IS A ROW TOO, under the name `body<kind><number>`, for the same reason
+                // the branch's header is one: a shut body has no rows to press, and a check could not fold it.
+                rows.push((format!("body{key}{}", b.mi), br.header_response.rect));
             }
         });
     // THE BRANCH'S OWN HEADER IS A ROW TOO, under the name `branch<kind>`. A branch that is shut shows no rows to

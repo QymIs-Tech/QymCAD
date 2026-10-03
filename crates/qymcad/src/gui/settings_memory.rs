@@ -32,6 +32,8 @@ mod tests {
             zoom_at: qymcad_ui_state::ZoomAt::ViewCentre, // the factory value is Cursor
             update_check: qymcad_ui_state::UpdateCheck::Weekly, // the factory value is Daily
             update_last_checked: 1_788_900_000, // the factory value is 0 - never asked
+            save_clicks: !d.save_clicks, // both off by the factory
+            show_model_elements: !d.show_model_elements,
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual, // the factory value is PartCentre
             orbit_about: qymcad_ui_state::OrbitAbout::Pointer, // the factory value is ViewCentre
             msaa: 8,

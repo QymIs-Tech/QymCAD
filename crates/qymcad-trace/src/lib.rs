@@ -41,8 +41,30 @@ use std::path::PathBuf;
 /// otherwise fill a disk.
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
-/// The name of the file inside the program's own folder.
+/// The name of the file inside the settings folder.
 const FILE_NAME: &str = "clicks.log";
+
+thread_local! {
+    /// WHETHER ANYTHING IS WRITTEN ON THIS THREAD, set by the program from the person's choice.
+    ///
+    /// It is per thread, like the open file and the depth beside it: a click is handled and traced on one
+    /// thread, and a flag shared by all of them would be one check in a suite of many switching the writing
+    /// off under another's feet. It starts ON, because the checks below write and must not have to switch
+    /// anything on to be measured; the program sets it from the setting on the thread that draws.
+    static RECORDS: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Record every click on this thread, or keep silent. This is what the setting in the developer's part of
+/// the window reaches the trace through.
+///
+/// Turning it off closes the open file as well as refusing to open another: a tick put back on then
+/// appends to the same file rather than to a second one beside it.
+pub fn set_recording(on: bool) {
+    RECORDS.with(|r| r.set(on));
+    if !on {
+        OUT.with(|o| *o.borrow_mut() = None);
+    }
+}
 
 thread_local! {
     /// The open file, PER THREAD. The depth is per thread as well, and the two belong together: one
@@ -64,12 +86,17 @@ pub fn write_into(dir: Option<&std::path::Path>) {
     FORCED.with(|f| *f.borrow_mut() = dir.map(std::path::Path::to_path_buf));
 }
 
-/// The folder the trace goes to: the one a check named, or the program's own folder.
+/// The folder the trace goes to: the one a check named, or the folder of the person's own settings.
+///
+/// The settings folder and not the program's own: a packaged program unpacks itself into a temporary
+/// mount that vanishes when the window closes, so a file written beside it would be gone by the time
+/// anybody went looking. The settings folder is where the program already keeps what it is told, and it
+/// is the one folder on the machine that is certainly there afterwards.
 fn dir() -> Option<PathBuf> {
     if let Some(d) = FORCED.with(|f| f.borrow().clone()) {
         return Some(d);
     }
-    qymcad_paths::beside_program("logs")
+    qymcad_paths::data_root()
 }
 
 thread_local! {
@@ -102,6 +129,9 @@ pub fn note(line: &str) {
 }
 
 fn write(text: &str) {
+    if !RECORDS.with(|r| r.get()) {
+        return;
+    }
     let Some(mut f) = file() else { return };
     let depth = DEPTH.with(|d| d.get());
     // A BOUND ON THE INDENT, so that a runaway recursion writes lines rather than megabytes of spaces.

@@ -4,7 +4,7 @@ use qymcad::{Key, Modifiers, Session};
 use qymcad_acceptance::{build, probe};
 
 /// THE SECTIONS OF THE SETTINGS, in the order the window lists them on the left.
-const SECTIONS: [&str; 7] = ["settings-sec-general", "settings-sec-appearance", "settings-sec-viewport", "settings-sec-sketch", "settings-sec-part", "settings-sec-assembly", "settings-sec-layout"];
+const SECTIONS: [&str; 8] = ["settings-sec-general", "settings-sec-appearance", "settings-sec-viewport", "settings-sec-sketch", "settings-sec-part", "settings-sec-assembly", "settings-sec-layout", "settings-sec-developer"];
 
 /// Open the settings at the section `key` names.
 fn open_at(s: &mut Session, key: &str) {

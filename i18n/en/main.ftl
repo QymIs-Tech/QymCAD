@@ -2599,6 +2599,15 @@ cmd-thread-fit-capped = A clearance of { $asked } mm does not fit this pitch: { 
 settings-sec-layout = Layout
 settings-layout-place = Panel places
 settings-layout-reset = Restore the standard layout
+settings-save-clicks = Record left-button clicks
+
+# For whoever works on the program: the trail of the mouse and the list of the model's elements. A section of
+# its own rather than a part of the layout, because a section can be opened, searched for and restored, and a
+# group of words inside another section cannot.
+settings-sec-developer = For a developer
+settings-clicks-path = Trail file: { $path }
+settings-clicks-path-none = This machine has no settings folder, so there is nowhere to write the trail.
+settings-show-model-elements = Show the elements of the model
 slot-menu = Menu
 slot-top = Top
 slot-left = Left

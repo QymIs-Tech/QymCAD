@@ -59,6 +59,10 @@ mod tests {
     ///
     /// The tenth of a second is what moves the header's opening along; see the note at the head of this file.
     fn tree_frame(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) {
+        // THE LIST IS SWITCHED ON, and it is these checks that say so rather than the program: the list is
+        // off for a person who has not asked for it, so a check that walked the tree without this line
+        // would be reading an empty panel and calling it a panel with nothing on it.
+        app.set.show_model_elements = true;
         let mut input = egui::RawInput {
             screen_rect: Some(viewport()),
             predicted_dt: 0.1,
@@ -406,6 +410,60 @@ mod tests {
         assert!(!app.tree.debug_row_rects.iter().any(|(k, _)| k.starts_with('e')), "the edges branch stayed open after its header was pressed again");
     }
 
+    /// EVERY BODY IS A BRANCH OF ITS OWN INSIDE THE KIND, with its own elements under its own heading.
+    ///
+    /// Reported: the three kinds are three lists, and each list ran from one body straight into the next - so
+    /// "face 4" and "face 5" were two things on opposite sides of the drawing, and a person comparing a face
+    /// with the edges around it had to read past every face of every other body to get there.
+    ///
+    /// TWO BODIES ARE STANDING IN THE MODEL, because with one body every grouping looks like one group: a check
+    /// that cannot tell the bodies apart cannot tell whether the rows are gathered under headings or merely
+    /// printed one after another.
+    #[test]
+    fn every_body_has_a_heading_of_its_own_and_holds_its_own_elements() {
+        let mut app = App::default();
+        app.project.new_document();
+        block(&mut app);
+        block(&mut app);
+        let ctx = egui::Context::default();
+        super::super::install_fonts(&ctx);
+        open_list(&mut app, &ctx);
+        let bodies = app.project.bodies.len();
+        assert!(bodies >= 2, "setup: the model holds {bodies} bodies, so no two lists could be told apart");
+
+        // THE HEADING NAMES THE BODY AND SAYS HOW MANY FACES IT HAS - the question asked before the rows are
+        // read at all, and the answer a person wants when a report speaks of a body with a hundred faces.
+        for mi in 0..bodies {
+            let want = format!("{} ({})", crate::i18n::name(&app.project.mesh_name(mi)), app.project.bodies[mi].faces.len());
+            assert!(text_rect(&ctx, &mut app, &want).is_some(), "nothing on the screen reads '{want}': the list has no heading for body {mi}");
+        }
+        let head_top = |mi: usize| {
+            rect_of(&app, &format!("bodyf{mi}"))
+                .unwrap_or_else(|| panic!("the list drew no heading for body {mi}, so its faces belong to nobody"))
+                .top()
+        };
+
+        // THE ROWS OF A BODY LIE UNDER THAT BODY'S OWN HEADING, and not under another's: the two are told apart
+        // by where they are on the screen, which is the whole of the complaint.
+        for mi in 0..bodies {
+            let below = head_top(mi);
+            let until = if mi + 1 < bodies { head_top(mi + 1) } else { f32::MAX };
+            let tops: Vec<f32> = app.tree.debug_row_rects.iter().filter_map(|(k, r)| k.starts_with(&format!("f{mi}_")).then_some(r.top())).collect();
+            assert!(!tops.is_empty(), "body {mi} has faces in the document and the list names none of them");
+            assert!(tops.iter().all(|y| *y >= below && *y < until), "the faces of body {mi} are not all under its own heading");
+        }
+
+        // AND FOLDING ONE BODY'S HEADING HIDES THAT BODY'S ROWS AND LEAVES THE OTHER BODY'S ALONE - which is
+        // what makes it a branch and not a label.
+        let shut = bodies - 1;
+        let at = rect_of(&app, &format!("bodyf{shut}")).expect("the heading is in the frame").center();
+        tree_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(at), ev(at, true), ev(at, false)]);
+        tree_frame(&mut app, &ctx, vec![]);
+        tree_frame(&mut app, &ctx, vec![]);
+        assert!(!app.tree.debug_row_rects.iter().any(|(k, _)| k.starts_with(&format!("f{shut}_"))), "the faces of body {shut} stayed after its own heading was pressed");
+        assert!(app.tree.debug_row_rects.iter().any(|(k, _)| k.starts_with("f0_")), "folding the last body took the first body's faces with it");
+    }
+
     /// THE FINGER WALKS THE ROWS WITH THE ARROW KEYS.
     ///
     /// Reported need: click an element and there was no way to step to the next one - so a hundred faces had to be
@@ -666,6 +724,7 @@ mod tests {
     /// ONE TREE FRAME WITH THESE EVENTS IN IT, and everything the frame left behind: the shapes it drew and
     /// the commands it gave.
     fn tree_frame_out(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+        app.set.show_model_elements = true; // the list is on, as in `tree_frame`
         let mut input = egui::RawInput { screen_rect: Some(viewport()), predicted_dt: 0.1, focused: true, ..Default::default() };
         input.events.extend(events);
         ctx.run_ui(input, |c| {

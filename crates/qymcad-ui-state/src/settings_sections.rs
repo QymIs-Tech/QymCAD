@@ -27,13 +27,22 @@ pub enum SettingsSection {
     /// WHERE THE PANELS STAND. A section of its own because it belongs to no workbench: the shell owns
     /// the places, and every workbench registers into the same ones.
     Layout,
+    /// WHAT IS FOR WHOEVER WORKS ON THE PROGRAM rather than for whoever uses it: the trail of the mouse and
+    /// the list of the model's elements.
+    ///
+    /// IT IS A SECTION AND NOT A PART OF THE LAYOUT, and the reason is the window's own order. The sections on
+    /// the left are what a person works through, and a group of words inside another section is not one of
+    /// them - it cannot be opened, searched for as a section, or reset on its own. It also used to sit under
+    /// the layout, which is about where panels stand: nothing about a panel's place says anything about how
+    /// the program is watched.
+    Developer,
 }
 
 impl SettingsSection {
     /// All the sections in display order.
     pub fn all() -> &'static [Self] {
         use SettingsSection::*;
-        &[General, Appearance, Viewport, Sketch, Part, Assembly, Layout]
+        &[General, Appearance, Viewport, Sketch, Part, Assembly, Layout, Developer]
     }
 
     /// The catalogue key holding the section name.
@@ -47,6 +56,7 @@ impl SettingsSection {
             Part => "settings-sec-part",
             Assembly => "settings-sec-assembly",
             Layout => "settings-sec-layout",
+            Developer => "settings-sec-developer",
         }
     }
 
@@ -62,6 +72,7 @@ impl SettingsSection {
             Part => &["settings-default-extrude", "settings-default-offset"],
             Assembly => &["settings-show-contours", "settings-show-joints", "settings-show-interference"],
             Layout => &["settings-layout-place", "settings-layout-reset"],
+            Developer => &["settings-save-clicks", "settings-clicks-path", "settings-show-model-elements"],
         }
     }
 
@@ -134,6 +145,13 @@ impl SettingsSection {
                 s.show_interference = d.show_interference;
             }
             Layout => s.layout = d.layout,
+            // BOTH OF THE DEVELOPER'S ARE RESET HERE AND NOWHERE ELSE. They were reset with the layout, which
+            // is about where panels stand: a "restore the usual" that quietly stopped writing the trail and
+            // took the list of the model's elements off the screen would be restoring something else.
+            Developer => {
+                s.save_clicks = d.save_clicks;
+                s.show_model_elements = d.show_model_elements;
+            }
         }
     }
 }

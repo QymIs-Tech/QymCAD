@@ -78,6 +78,10 @@ mod tests {
             zoom_at: qymcad_ui_state::ZoomAt::ViewCentre,
             update_check: qymcad_ui_state::UpdateCheck::Weekly,
             update_last_checked: 1_788_900_000,
+            // THE DEVELOPER'S TWO, both away from the factory value, which is the whole of what makes the
+            // reset below say whether this section really resets them.
+            save_clicks: true,
+            show_model_elements: true,
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual,
             orbit_about: qymcad_ui_state::OrbitAbout::Pointer,
             msaa: 8,
@@ -134,6 +138,7 @@ mod tests {
                     Sec::Part => assert_eq!(s.defaults.extrude_h, c.defaults.extrude_h, "{sec:?}: the reset touched the part"),
                     Sec::Assembly => assert_eq!(s.show_joints, c.show_joints, "{sec:?}: the reset touched the assembly"),
                     Sec::Layout => assert_eq!(s.layout, c.layout, "{sec:?}: the reset touched the panel layout"),
+                    Sec::Developer => assert!(s.save_clicks && s.show_model_elements, "{sec:?}: the reset put out one of the developer's two, and they belong to a section of their own"),
                 }
             }
         }
@@ -156,6 +161,8 @@ mod tests {
         assert_eq!((pt.defaults.extrude_h, pt.defaults.offset_2d), (d.defaults.extrude_h, d.defaults.offset_2d));
         let asm = after(Sec::Assembly);
         assert_eq!((asm.show_contours, asm.show_joints, asm.show_interference), (d.show_contours, d.show_joints, d.show_interference));
+        let dev = after(Sec::Developer);
+        assert_eq!((dev.save_clicks, dev.show_model_elements), (d.save_clicks, d.show_model_elements), "the developer's two are not reset by the section that draws them");
     }
 
     /// THE SECTIONS COVER EVERY SETTING WHOLE: resetting them all in turn gives exactly the factory

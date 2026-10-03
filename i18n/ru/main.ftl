@@ -2599,6 +2599,15 @@ cmd-thread-fit-capped = Зазор { $asked } мм в этот шаг не по�
 settings-sec-layout = Раскладка
 settings-layout-place = Места панелей
 settings-layout-reset = Вернуть обычную раскладку
+settings-save-clicks = Сохранять щелчки левой кнопкой мыши
+
+# Для того, кто работает над программой: след мыши и список элементов модели. Отдельным разделом, а не
+# частью раскладки: раздел можно открыть, найти поиском и вернуть к обычному виду, а группа слов внутри
+# другого раздела — нет.
+settings-sec-developer = Для разработчика
+settings-clicks-path = Файл следов: { $path }
+settings-clicks-path-none = Папки настроек на этой машине нет — следы записать некуда.
+settings-show-model-elements = Отображать элементы модели
 slot-menu = Меню
 slot-top = Сверху
 slot-left = Слева

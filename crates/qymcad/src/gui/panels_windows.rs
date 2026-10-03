@@ -1488,6 +1488,28 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 wc.set.layout = sh.saved();
             }
         }
+        Sec::Developer => {
+            // THE TRAIL OF THE MOUSE, and WHERE IT IS KEPT. The words under the tick name the file as it
+            // stands on this machine: a tick that writes a file nobody can find is a tick that cannot be
+            // read, and the person who turns it on is about to go and read it.
+            if show("settings-save-clicks") {
+                ui.checkbox(&mut wc.set.save_clicks, crate::i18n::tr("settings-save-clicks"));
+            }
+            if show("settings-clicks-path") {
+                let text = match qymcad_trace::path() {
+                    Some(p) => crate::i18n::tr1("settings-clicks-path", "path", &p.display().to_string()),
+                    None => crate::i18n::tr("settings-clicks-path-none"),
+                };
+                ui.label(egui::RichText::new(text).small().weak());
+            }
+            // TAKEN AS IT STANDS, every frame this section is drawn, rather than on the tick alone: a tick put
+            // back and then put back again by "restore the usual values" has to stop the writing too, and the
+            // setting is the only thing that knows.
+            qymcad_trace::set_recording(wc.set.save_clicks);
+            if show("settings-show-model-elements") {
+                ui.checkbox(&mut wc.set.show_model_elements, crate::i18n::tr("settings-show-model-elements"));
+            }
+        }
     }
 }
 

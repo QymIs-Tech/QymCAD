@@ -1505,6 +1505,22 @@ pub struct Settings {
     /// THE UNIT LAST CHOSEN FOR A FORMAT WITHOUT UNITS, by the format's name: the next file of it comes in the same.
     #[serde(default)]
     pub import_units: std::collections::BTreeMap<String, String>,
+    /// WRITE EVERY LEFT-BUTTON CLICK DOWN TO A FILE, one line per function the click went through.
+    ///
+    /// Off by default, and that is the whole point of it being a setting: the trail is written on every
+    /// click of every session, forever, and a person who never asked for it has no use for the file. It
+    /// answers one question - where a program that closed itself without a word was when it closed - and
+    /// only the person hunting that answer wants the answer collected.
+    #[serde(default)]
+    pub save_clicks: bool,
+    /// SHOW THE LIST OF THE MODEL'S ELEMENTS in the tree: every face, edge and corner, named.
+    ///
+    /// Off by default, and while it is off the list is not drawn at all - not collapsed, not empty, not
+    /// a heading waiting to be opened. A build tree that lists a body by name is readable; one that also
+    /// lists its thirty-six edges is not, and the reading is what the tree is for. The tick is in the
+    /// developer's part of the settings rather than here, because it belongs with the other one.
+    #[serde(default)]
+    pub show_model_elements: bool,
 }
 
 fn default_orbit_about() -> OrbitAbout {
@@ -1600,6 +1616,10 @@ impl Default for Settings {
             orbit_about: default_orbit_about(),
             import_ask_always: false,
             import_units: Default::default(),
+            // THE TWO OF THE DEVELOPER'S, both off: a person who has not asked to be watched and shown
+            // the inside of the model is not helped by either file or list.
+            save_clicks: false,
+            show_model_elements: false,
         }
     }
 }
