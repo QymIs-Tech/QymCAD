@@ -45,6 +45,7 @@ modules:
       - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
       - -DCMAKE_BUILD_TYPE=Release
       - -DBUILD_LIBRARY_TYPE=Shared
+      - -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF
       - -DBUILD_MODULE_Draw=OFF
       - -DBUILD_MODULE_Visualization=OFF
       - -DBUILD_DOC_Overview=OFF

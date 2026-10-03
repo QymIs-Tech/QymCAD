@@ -227,12 +227,22 @@ mod tests {
         let was_glyphs = app.project.sketches[si].texts[0].glyphs.clone();
         let (x0, y0, x1, y1) = app.project.sketch_text_bbox(si, 0).expect("the label is there");
         let middle = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-        let took = Hand::canvas(&mut app).sk_change_label_font(middle, "Adwaita Sans");
+        // A FACE THIS MACHINE HAS. The list is the system's fonts, and no one family is on every system: the
+        // check named one of a desktop, and on a CI runner of Ubuntu 24.04 the list gave nothing back for it.
+        let installed = qymcad_ui_state::installed_fonts();
+        let Some(other) = ["DejaVu Sans", "Adwaita Sans", "Noto Sans", "Liberation Serif", "Cantarell"]
+            .into_iter()
+            .find(|f| *f != was_font && installed.iter().any(|i| i.family == *f))
+        else {
+            eprintln!("PASSED OVER: none of the common font families is installed on this machine");
+            return;
+        };
+        let took = Hand::canvas(&mut app).sk_change_label_font(middle, other);
 
-        assert!(took, "the list gave nothing back: the editor's font button leads nowhere");
+        assert!(took, "the list gave nothing back for {other}: the editor's font button leads nowhere");
         let now = &app.project.sketches[si].texts[0];
         assert_ne!(now.font.family, was_font, "the label kept the font it was written in: {:?}", now.font);
-        assert_eq!(now.font.family, "Adwaita Sans", "some other face was taken: {:?}", now.font);
+        assert_eq!(now.font.family, other, "some other face was taken: {:?}", now.font);
         assert_ne!(now.glyphs, was_glyphs, "the outlines are the same as before: the label was not re-baked in the new face");
     }
 

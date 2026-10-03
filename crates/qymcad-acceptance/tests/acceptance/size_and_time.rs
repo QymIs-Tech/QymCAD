@@ -16,6 +16,15 @@ const REBUILD: Duration = Duration::from_secs(30);
 /// How long bringing in a mesh of two hundred thousand triangles may take.
 const MESH: Duration = Duration::from_secs(30);
 
+/// A BUDGET ON THIS MACHINE: the budget times `QYMCAD_TIME_SCALE` (1 when unset). The budgets are set for the
+/// developer's machine; a CI runner of four cores rebuilt the robot sample in 39.4 s against the 26.4 s of the whole
+/// probe here, so CI runs these probes alone and at twice the budget - a run twice as slow as it should be still goes
+/// red there, and the budgets here stay as they are.
+fn scaled(budget: Duration) -> Duration {
+    let k = std::env::var("QYMCAD_TIME_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).filter(|k| *k >= 1.0).unwrap_or(1.0);
+    budget.mul_f64(k)
+}
+
 /// Open `path`, time it, rebuild everything, time that: the problems, in words.
 fn open_and_rebuild(path: &str) -> Vec<String> {
     let mut s = Session::start();
@@ -30,11 +39,12 @@ fn open_and_rebuild(path: &str) -> Vec<String> {
     let _ = s.document();
     let rebuilt = t.elapsed();
     let mut problems = Vec::new();
-    if opened > OPEN {
-        problems.push(format!("opening took {opened:?}, over {OPEN:?} ({} nodes, {} faces)", doc.features.len(), doc.bodies.iter().map(|b| b.faces).sum::<usize>()));
+    let (open, rebuild) = (scaled(OPEN), scaled(REBUILD));
+    if opened > open {
+        problems.push(format!("opening took {opened:?}, over {open:?} ({} nodes, {} faces)", doc.features.len(), doc.bodies.iter().map(|b| b.faces).sum::<usize>()));
     }
-    if rebuilt > REBUILD {
-        problems.push(format!("rebuilding everything took {rebuilt:?}, over {REBUILD:?}"));
+    if rebuilt > rebuild {
+        problems.push(format!("rebuilding everything took {rebuilt:?}, over {rebuild:?}"));
     }
     problems
 }
@@ -123,8 +133,8 @@ probe! {
         let volume: f64 = doc.bodies.iter().filter(|b| !b.consumed).map(|b| b.volume).sum();
         let sphere = 4.0 / 3.0 * std::f64::consts::PI * 125000.0;
         assert!((volume - sphere).abs() < sphere * 1e-3, "the mesh of the sphere holds {volume}, not {sphere}");
-        assert!(took <= MESH, "bringing in 200000 triangles took {took:?}, over {MESH:?}");
-        assert!(frame <= qymcad_acceptance::oracles::STEP_FRAME_BUDGET, "a frame after the mesh came in took {frame:?}");
+        assert!(took <= scaled(MESH), "bringing in 200000 triangles took {took:?}, over {:?}", scaled(MESH));
+        assert!(frame <= scaled(qymcad_acceptance::oracles::STEP_FRAME_BUDGET), "a frame after the mesh came in took {frame:?}");
     }
 }
 
@@ -156,7 +166,7 @@ probe! {
         let took = t.elapsed();
         let frame = s.worst_frame();
         assert!(doc.bodies.iter().any(|b| !b.consumed), "the grip brought in nothing; the program says {:?}", s.status());
-        assert!(took <= MESH, "bringing in the grip took {took:?}, over {MESH:?}");
-        assert!(frame <= qymcad_acceptance::oracles::STEP_FRAME_BUDGET, "a frame after the grip came in took {frame:?}");
+        assert!(took <= scaled(MESH), "bringing in the grip took {took:?}, over {:?}", scaled(MESH));
+        assert!(frame <= scaled(qymcad_acceptance::oracles::STEP_FRAME_BUDGET), "a frame after the grip came in took {frame:?}");
     }
 }

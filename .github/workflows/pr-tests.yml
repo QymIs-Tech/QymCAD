@@ -1,0 +1,27 @@
+# A pull request that changes the code of a crate brings its own checks - see `tools/pr_tests.py` for what counts.
+#
+# A WORKFLOW OF ITS OWN, because it is re-run when a label is put on or taken off: `no-test-needed` lets through a
+# change that needs no check. In `checks.yml` the same trigger would rebuild everything for a label.
+name: tests come with code
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  tests-come-with-code:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The judgement tells the cases apart
+        run: python3 tools/pr_tests.py --self-test
+      - name: The change brings its checks
+        env:
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python3 tools/pr_tests.py "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"

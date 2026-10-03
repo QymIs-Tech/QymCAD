@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: C:\occt
-          key: occt-7.9.3-msvc-x64-v1
+          key: occt-7.9.3-msvc-x64-v2
 
       - name: Build OCCT 7.9.3 (only when the cache missed)
         if: steps.occt.outputs.cache-hit != 'true'
@@ -108,6 +108,7 @@ jobs:
             "-DBUILD_LIBRARY_TYPE=Shared" `
             "-DINSTALL_DIR=C:/occt" `
             "-DINSTALL_DIR_LAYOUT=Unix" `
+            "-DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF" `
             "-DBUILD_MODULE_Draw=OFF" `
             "-DBUILD_MODULE_Visualization=OFF" `
             "-DBUILD_DOC_Overview=OFF" `
@@ -124,7 +125,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: C:\occt
-          key: occt-7.9.3-msvc-x64-v1
+          key: occt-7.9.3-msvc-x64-v2
 
       # THE TAG IS STAMPED INTO THE BINARY HERE, at the step that compiles it - not at the one that packs
       # it. `build.rs` reads `QYMCAD_VERSION`, so a build step without it produces a program that cannot
@@ -256,7 +257,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: /Users/runner/occt
-          key: occt-7.9.3-macos-arm64-v1
+          key: occt-7.9.3-macos-arm64-v2
 
       - name: Build OCCT 7.9.3 (only when the cache missed)
         if: steps.occt.outputs.cache-hit != 'true'
@@ -271,6 +272,7 @@ jobs:
             -DBUILD_LIBRARY_TYPE=Shared \
             -DINSTALL_DIR=/Users/runner/occt \
             -DINSTALL_DIR_LAYOUT=Unix \
+            -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF \
             -DBUILD_MODULE_Draw=OFF \
             -DBUILD_MODULE_Visualization=OFF \
             -DBUILD_DOC_Overview=OFF \
@@ -284,7 +286,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: /Users/runner/occt
-          key: occt-7.9.3-macos-arm64-v1
+          key: occt-7.9.3-macos-arm64-v2
 
       # The tag is stamped at the compiling step - see the same step in the Windows job.
       - name: Build (release)

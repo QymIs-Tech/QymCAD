@@ -26,6 +26,7 @@ RUN wget -q "https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/${OCCT_T
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_LIBRARY_TYPE=Shared \
         -DINSTALL_DIR=/opt/occt \
+        -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF \
         -DBUILD_MODULE_Draw=OFF \
         -DBUILD_MODULE_Visualization=OFF \
         -DBUILD_DOC_Overview=OFF \

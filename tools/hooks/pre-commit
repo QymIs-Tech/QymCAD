@@ -18,4 +18,4 @@ m = json.load(open(mark, encoding="utf-8"))
 if m.get("tree") != tree:
     sys.exit("the commit is refused: the full level ran on another tree than the one being committed - `tools/gate.py full` on this one")
 if not m.get("passed"):
-    sys.exit("the commit is refused: the full level found new reds:\n" + "\n".join("  " + r for r in m.get("new", [])))
+    sys.exit("the commit is refused: the full level found reds:\n" + "\n".join("  " + r for r in m.get("red", [])))

@@ -1,0 +1,135 @@
+# The checks of every pull request and of every push to `main`.
+#
+# THE SAME LEVEL A DEVELOPER RUNS, NOT A COPY OF IT. The steps are `tools/gate.py fast` - the build with no
+# warning, the rules of the code, the words of the interface, the help, the acceptance probes without heavy
+# geometry - and one step of the full level, every crate's own checks. A step added to the gate is run here
+# by itself; a list of commands written out in this file would drift away from it.
+#
+# THE ACCEPTANCE PROBES ARE SPLIT OVER FOUR MACHINES (`gate.py --shard K/4`). On one machine of the developer
+# the fast level took 1627 s, 1493 of them the acceptance probes; a runner has four cores, and the whole run on
+# one would wait well over an hour on every push to a pull request.
+#
+# Linux only. The kernel is the same OCCT 7.9.3 the release builds, compiled from source once and taken from
+# the cache afterwards; the other two systems are built by `release.yml`, by the button.
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request makes the run in progress worthless: it is cancelled rather than left
+# to finish. Pushes to `main` are each run to the end - every commit there is checked.
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  # THE DEBUG INFORMATION IS OFF HERE. Locally the target directory of this workspace takes tens of gigabytes,
+  # most of it debug information of some 130 test programs; a runner has a fraction of that disk, and nobody
+  # attaches a debugger to a run in CI.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  OCCT_INCLUDE_DIR: /home/runner/occt/include/opencascade
+  OCCT_LIB_DIR: /home/runner/occt/lib
+  LD_LIBRARY_PATH: /home/runner/occt/lib
+
+jobs:
+  # NOTHING PERSONAL GOES IN, and the kernel is in the cache before the five jobs below start: five jobs missing it
+  # together would build it five times. The general shapes only - a home path, a mail address, a reference to a
+  # closed document; a personal list of words is not available to a run of somebody else's pull request.
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      # The whole history, for the search of the commit messages.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The search for anything personal catches what it is for
+        run: python3 tools/frisk.py --self-test
+      - name: Nothing personal in the files and in the messages of the commits
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            range="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          echo "commits: $range"
+          python3 tools/frisk.py --commits "$range"
+      - name: Restore the kernel build
+        id: occt
+        uses: actions/cache/restore@v6
+        with:
+          path: /home/runner/occt
+          key: occt-7.9.3-ubuntu-24.04-v2
+          lookup-only: true
+      - name: Build the kernel when the cache missed
+        if: steps.occt.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup
+        with:
+          cargo: "false"
+
+  # The fast level but its acceptance probes, then every crate's own checks.
+  rules-and-crates:
+    needs: kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          save-cargo: "true"
+      - name: The fast level, the acceptance probes left to the shares
+        run: python3 tools/gate.py fast --except "the acceptance"
+      - name: Every crate's own checks
+        if: success() || failure()
+        run: python3 tools/gate.py full --step "every crate"
+      # The gate prints the names of the red checks; what each of them said is in its log, kept for a fortnight.
+      - name: The words of the gate
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-logs-rules-and-crates
+          path: target/gate-*.log
+          retention-days: 14
+      - name: Disk left
+        if: always()
+        run: df -h / && du -sh target || true
+
+  acceptance:
+    needs: kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      # one red share does not stop the others: every red probe is reported in one run
+      fail-fast: false
+      matrix:
+        share: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: The acceptance probes without heavy geometry, share ${{ matrix.share }} of 4
+        run: python3 tools/gate.py fast --step "the acceptance" --skip-probe size_and_time --shard ${{ matrix.share }}/4
+      # THE PROBES OF TIME, ALONE AND AT TWICE THE BUDGET. Among five other probes on four cores the robot sample
+      # rebuilt in 39.4 s against 30; alone, with the budget doubled, a program twice as slow as it should be still
+      # goes red. In the first share, which finished first.
+      - name: The probes of time, one at a time
+        if: matrix.share == 1 && (success() || failure())
+        env:
+          QYMCAD_TIME_SCALE: 2
+        run: python3 tools/gate.py time
+      - name: The words of the gate
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-logs-acceptance-${{ matrix.share }}
+          path: target/gate-*.log
+          retention-days: 14
+      - name: Disk left
+        if: always()
+        run: df -h / && du -sh target || true

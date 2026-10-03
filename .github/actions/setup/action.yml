@@ -1,0 +1,71 @@
+# What every job of the checks needs before cargo: the headers the window crates look for, the kernel, and the
+# compiled dependencies. One place, so the jobs cannot drift apart.
+name: setup
+description: System packages, OCCT 7.9.3 from the cache (built when it missed), the cargo cache
+inputs:
+  cargo:
+    description: whether to restore the cargo cache (a job that only builds the kernel does not need it)
+    default: "true"
+  save-cargo:
+    description: whether this job saves the cargo cache (one job does, from main only)
+    default: "false"
+runs:
+  using: composite
+  steps:
+    # The drawing in the checks is the software rasteriser, so no graphics driver is needed - only the headers. One
+    # system font family is installed besides, so the check of changing a label's font has a face to change to.
+    - name: System packages
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q --no-install-recommends \
+          libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libwayland-dev pkg-config \
+          fonts-dejavu-core
+
+    - name: Restore the kernel build
+      id: occt
+      uses: actions/cache/restore@v6
+      with:
+        path: /home/runner/occt
+        key: occt-7.9.3-ubuntu-24.04-v2
+
+    # The same configuration as the macOS job of the release; see the comments there.
+    - name: Build OCCT 7.9.3 (only when the cache missed)
+      if: steps.occt.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -sSL -o occt.tar.gz https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V7_9_3.tar.gz
+        tar xf occt.tar.gz
+        src=$(ls -d OCCT-* | head -1)
+        echo ">>> sources at $src"
+        cmake -S "$src" -B occt-build \
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_LIBRARY_TYPE=Shared \
+          -DINSTALL_DIR=/home/runner/occt \
+          -DINSTALL_DIR_LAYOUT=Unix \
+          -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF \
+          -DBUILD_MODULE_Draw=OFF \
+          -DBUILD_MODULE_Visualization=OFF \
+          -DBUILD_DOC_Overview=OFF \
+          -DUSE_FREETYPE=OFF -DUSE_TK=OFF -DUSE_FREEIMAGE=OFF \
+          -DUSE_RAPIDJSON=OFF -DUSE_DRACO=OFF -DUSE_OPENGL=OFF -DUSE_GLES2=OFF
+        cmake --build occt-build --target install -j"$(nproc)"
+        rm -rf occt-build OCCT-* occt.tar.gz
+
+    # Saved before our own code is built: a red check must not throw the kernel away.
+    - name: Save the kernel build
+      if: steps.occt.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: /home/runner/occt
+        key: occt-7.9.3-ubuntu-24.04-v2
+
+    # ONE CARGO CACHE FOR ALL THE JOBS, SAVED BY ONE OF THEM FROM `main`. The jobs compile the same workspace, and
+    # the cache of a repository is limited with the oldest entries evicted first: a cache a job, or a cache a pull
+    # request, would push out the kernels the release builds need. A pull request reads what `main` saved.
+    - uses: Swatinem/rust-cache@v2
+      if: inputs.cargo == 'true'
+      with:
+        shared-key: checks
+        save-if: ${{ inputs.save-cargo == 'true' && github.ref == 'refs/heads/main' }}

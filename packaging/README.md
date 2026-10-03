@@ -42,6 +42,7 @@ curl.exe -sSL -o occt.tar.gz https://github.com/Open-Cascade-SAS/OCCT/archive/re
 tar xf occt.tar.gz
 cmake -S OCCT-V7_8_1 -B occt-build -A x64 `
   -DBUILD_LIBRARY_TYPE=Shared -DINSTALL_DIR=C:/occt -DINSTALL_DIR_LAYOUT=Unix `
+  -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF `
   -DBUILD_MODULE_Draw=OFF -DBUILD_MODULE_Visualization=OFF -DBUILD_DOC_Overview=OFF `
   -DUSE_FREETYPE=OFF -DUSE_TK=OFF -DUSE_FREEIMAGE=OFF `
   -DUSE_RAPIDJSON=OFF -DUSE_DRACO=OFF -DUSE_OPENGL=OFF -DUSE_GLES2=OFF
