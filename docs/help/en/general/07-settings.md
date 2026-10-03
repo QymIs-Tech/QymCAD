@@ -15,6 +15,7 @@ The settings window is split into sections; above them is a search that finds a 
 - **Part** — the default extrusion height and offset.
 - **Assembly** — showing sketch outlines, joint glyphs and the interference check.
 - **Layout** — where the panels stand: the tree, properties, the tool bars, the status line.
+- **For a developer** — the list of the model's elements in the tree, and the record of mouse clicks in a file.
 
 Every section has **“Reset section”**: it restores the factory values in that section only, leaving
 the rest alone.
@@ -70,3 +71,24 @@ Only what you moved is remembered; everything else is taken as it comes, so a pa
 version turns up in its own place instead of going missing.
 
 If it comes out wrong, press **Restore the standard layout** and everything goes back.
+
+## For a developer
+
+The **For a developer** section is for whoever works on the program rather than only using it.
+
+**Show the elements of the model** adds to the tree a list of what the model really holds: faces, edges
+and corners. The list is arranged by kind, and inside a kind by body — the heading of a body says how
+many elements it has, and its own elements are under that heading. An element carries the same name as
+the one the cursor took, so a row and the cursor can be put side by side. Click a row and the element is
+lit in the viewport; the arrow keys step from row to row; the field above the list leaves only what you
+are looking for. The right button on a row, or Ctrl+C, puts the name of the element into the clipboard,
+so a number read off the screen reaches a report without a mistype. The list selects nothing: it is for
+reading, and the command you are holding stays as it was.
+
+**Record left-button clicks** writes the path of every click into `clicks.log` in the settings folder; the
+path of the file is shown right under the switch. The last line of the file is the place where the
+program stopped. If the file is not written, check that the settings folder can be written to and start
+the program again: the file is opened on the first click.
+
+Both switches are off in the factory settings. **Reset this section** in it returns both to the factory
+values and touches nothing in the other sections.
