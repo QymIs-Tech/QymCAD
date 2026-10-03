@@ -115,7 +115,7 @@ jobs:
       - uses: ./.github/actions/setup
       - name: The acceptance probes without heavy geometry, share ${{ matrix.share }} of 4
         run: python3 tools/gate.py fast --step "the acceptance" --skip-probe size_and_time --shard ${{ matrix.share }}/4
-      # THE PROBES OF TIME, ALONE AND AT TWICE THE BUDGET. Among five other probes on four cores the robot sample
+      # THE PROBES OF TIME, ALONE AND AT TWICE THE BUDGET. Among five other probes on four cores a sample project of 3 MB
       # rebuilt in 39.4 s against 30; alone, with the budget doubled, a program twice as slow as it should be still
       # goes red. In the first share, which finished first.
       - name: The probes of time, one at a time

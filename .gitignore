@@ -49,7 +49,8 @@ packaging/flatpak/cargo-sources.json
 
 # autosaves the program writes beside an open project (a probe opening a sample writes them too)
 *.autosave.qcad
-*.autosave.qcad.bak
+# the copy the program keeps of a document before saving over it, and the one `convert_qcad.py` keeps
+*.bak
 
 # Personal notes for the coding assistant, kept on the owner's machine
 CLAUDE.local.md

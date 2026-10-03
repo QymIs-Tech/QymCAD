@@ -3507,18 +3507,45 @@ impl Project {
     /// loft).
     pub fn feature_profile_encoded_named(&mut self, feature: Id, sketch: Id, profile: Id, fill: &[Id], role: crate::names::Role) -> Option<Vec<f64>> {
         let (outer_cid, hole_ids) = self.profile_faces(sketch, &[profile], fill).into_iter().next()?;
-        let mut srcs: Vec<Id> = Vec::new();
-        for cid in std::iter::once(&outer_cid).chain(hole_ids.iter()) {
-            if let Some(i) = self.contour_index(*cid) {
-                srcs.extend(self.contours[i].edge_src.iter().copied().filter(|s| *s != 0));
-            }
-        }
-        srcs.sort_unstable();
-        srcs.dedup();
-        let map: std::collections::HashMap<Id, u32> = srcs.into_iter().map(|src| (src, self.intern_name(feature, role, src))).collect();
+        let loops: Vec<Id> = std::iter::once(outer_cid).chain(hole_ids.iter().copied()).collect();
+        let map = self.piece_names(feature, role, &loops);
         let outer = self.contours.get(self.contour_index(outer_cid)?)?;
         let holes: Vec<&crate::geom::Contour> = hole_ids.iter().filter_map(|h| self.contour_index(*h).map(|i| &self.contours[i])).collect();
-        Some(crate::geom::encode_profile_named(outer, &holes, &|src| map.get(&src).copied().unwrap_or(0)))
+        Some(crate::geom::encode_profile_named(outer, &holes, &|src, e| map.get(&(src, crate::geom::piece_of(e).0)).copied().unwrap_or(0)))
+    }
+
+    /// THE NAME OF EVERY PIECE OF EVERY SKETCH ENTITY in the contours `loops`: `role` of `feature` from the entity,
+    /// numbered by piece.
+    ///
+    /// A name per entity is not enough. An entity cut by its neighbours gives several pieces, and regions that meet
+    /// only at points keep them all as faces of one body: measured on a rectangle with a slanted bar over its corner,
+    /// the band where the two overlap left out, 18 faces under 12 names and 36 edges under 15, so the cursor on one
+    /// edge lit another. The pieces of one entity are numbered along it (`geom::piece_of`) into `GeoName::split`; an
+    /// entity of one piece, the usual case, keeps split 0 and with it the name it always had.
+    fn piece_names(&mut self, feature: Id, role: crate::names::Role, loops: &[Id]) -> std::collections::HashMap<(Id, [i64; 2]), u32> {
+        let mut pieces: std::collections::BTreeMap<Id, Vec<([i64; 2], f64)>> = std::collections::BTreeMap::new();
+        for cid in loops {
+            let Some(i) = self.contour_index(*cid) else { continue };
+            for (src, e) in self.contours[i].sourced_edges() {
+                if src == 0 {
+                    continue;
+                }
+                let (key, along) = crate::geom::piece_of(&e);
+                let of = pieces.entry(src).or_default();
+                if !of.iter().any(|(k, _)| *k == key) {
+                    of.push((key, along));
+                }
+            }
+        }
+        let mut out = std::collections::HashMap::new();
+        for (src, mut of) in pieces {
+            of.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+            for (split, (key, _)) in of.into_iter().enumerate() {
+                let name = self.names.intern_face(crate::names::GeoName { feature, role, src, split: split as u16 });
+                out.insert((src, key), name);
+            }
+        }
+        out
     }
     /// Resolve a selection into faces: `(outer contour, its holes)`, correct at any depth of nesting.
     ///
@@ -3579,19 +3606,11 @@ impl Project {
             return None;
         }
         // The wall names are prepared in advance, in one pass: interning mutates the name table and needs a
-        // mutable borrow, while the encoder only needs the finished substitution table.
-        let mut srcs: Vec<Id> = Vec::new();
-        for (outer_cid, hole_ids) in &faces {
-            for cid in std::iter::once(outer_cid).chain(hole_ids.iter()) {
-                if let Some(i) = self.contour_index(*cid) {
-                    srcs.extend(self.contours[i].edge_src.iter().copied().filter(|s| *s != 0));
-                }
-            }
-        }
-        srcs.sort_unstable();
-        srcs.dedup();
-        let wall: std::collections::HashMap<Id, u32> = srcs.into_iter().map(|src| (src, self.intern_name(feature, role, src))).collect();
-        let name_of = |src: Id| -> u32 { wall.get(&src).copied().unwrap_or(0) };
+        // mutable borrow, while the encoder only needs the finished substitution table. The pieces are counted over
+        // every region at once: the pieces of one entity in two regions are two faces of the one body.
+        let loops: Vec<Id> = faces.iter().flat_map(|(outer, holes)| std::iter::once(*outer).chain(holes.iter().copied())).collect();
+        let wall = self.piece_names(feature, role, &loops);
+        let name_of = |src: Id, e: &crate::geom::ProfEdge| -> u32 { wall.get(&(src, crate::geom::piece_of(e).0)).copied().unwrap_or(0) };
         faces
             .into_iter()
             .map(|(outer_cid, hole_ids)| {
@@ -3685,7 +3704,7 @@ impl Project {
                 return None;
             }
             if i == 0 {
-                data.extend(c.loop_block_named(&|src| names.get(&src).copied().unwrap_or(0)));
+                data.extend(c.loop_block_named(&|src, _| names.get(&src).copied().unwrap_or(0)));
             } else {
                 data.extend(c.loop_block());
             }

@@ -125,29 +125,44 @@ impl Contour {
     /// create (see `names::NameTable`). The id of the entity itself used to go into the encoding and the kernel
     /// appended an offset to it, which meant two places knew the naming scheme, the kernel and its Rust binding. The
     /// name is now derived entirely in Rust and the kernel only carries it.
-    pub fn loop_block_named(&self, name_of: &dyn Fn(crate::model::Id) -> u32) -> Vec<f64> {
+    ///
+    /// The edge itself goes to `name_of` beside its entity: one entity cut by its neighbours gives several pieces, in
+    /// one contour or in several, and each piece is a face of its own.
+    pub fn loop_block_named(&self, name_of: &dyn Fn(crate::model::Id, &ProfEdge) -> u32) -> Vec<f64> {
         let mut v = Vec::new();
-        let name = |i: usize| -> u32 { name_of(self.edge_src.get(i).copied().unwrap_or(0)) };
+        let src = |i: usize| self.edge_src.get(i).copied().unwrap_or(0);
         if !self.edges.is_empty() {
             v.push(self.edges.len() as f64);
             for (i, e) in self.edges.iter().enumerate() {
-                v.extend_from_slice(&encode_edge(*e, name(i)));
+                v.extend_from_slice(&encode_edge(*e, name_of(src(i), e)));
             }
         } else {
             let n = self.points.len();
             v.push(n as f64);
             for i in 0..n {
-                let (a, b) = (self.points[i], self.points[(i + 1) % n]);
-                v.extend_from_slice(&encode_edge(ProfEdge::Line { a, b }, name(i)));
+                let e = ProfEdge::Line { a: self.points[i], b: self.points[(i + 1) % n] };
+                v.extend_from_slice(&encode_edge(e, name_of(src(i), &e)));
             }
         }
         v
     }
 
+    /// The edges of the contour with the sketch entity each came from: the exact edges, or the polyline taken as
+    /// segments when there are none - the same edges `loop_block_named` encodes.
+    pub fn sourced_edges(&self) -> Vec<(crate::model::Id, ProfEdge)> {
+        let src = |i: usize| self.edge_src.get(i).copied().unwrap_or(0);
+        if !self.edges.is_empty() {
+            self.edges.iter().enumerate().map(|(i, e)| (src(i), *e)).collect()
+        } else {
+            let n = self.points.len();
+            (0..n).map(|i| (src(i), ProfEdge::Line { a: self.points[i], b: self.points[(i + 1) % n] })).collect()
+        }
+    }
+
     /// A contour block without names (0 means the provenance is unknown): profiles that do not come from a sketch,
     /// such as a thread computed from a standard, and tests of the format.
     pub fn loop_block(&self) -> Vec<f64> {
-        self.loop_block_named(&|_| 0)
+        self.loop_block_named(&|_, _| 0)
     }
 
     /// Bring the contour to canonical form. The exact edges are the single source of truth about it.
@@ -1007,7 +1022,7 @@ pub fn encode_loops(loops: &[&[ProfEdge]]) -> Vec<f64> {
 /// The profile encoding for the kernel: an outer contour plus holes flattened into `[L, loop blocks...]` (see
 /// `qym_shape_extrude_profile`). Exact edges yield exact faces. `name_of` maps a sketch entity to the name
 /// descriptor of the side face it will produce.
-pub fn encode_profile_named(outer: &Contour, holes: &[&Contour], name_of: &dyn Fn(crate::model::Id) -> u32) -> Vec<f64> {
+pub fn encode_profile_named(outer: &Contour, holes: &[&Contour], name_of: &dyn Fn(crate::model::Id, &ProfEdge) -> u32) -> Vec<f64> {
     let mut v = vec![(1 + holes.len()) as f64];
     v.extend(outer.loop_block_named(name_of));
     for h in holes {
@@ -1016,9 +1031,39 @@ pub fn encode_profile_named(outer: &Contour, holes: &[&Contour], name_of: &dyn F
     v
 }
 
+/// WHICH PIECE OF ITS ENTITY AN EDGE IS, and where along the entity it lies.
+///
+/// The piece is told by its midpoint, to a micrometre: the same segment met from the two regions on either side of it
+/// is one piece. The place along the entity orders the pieces of one entity - a line along its own direction taken
+/// one way round, an arc by the angle of its midpoint about the centre - so the numbering does not follow the order
+/// in which contours happen to be walked.
+pub fn piece_of(e: &ProfEdge) -> ([i64; 2], f64) {
+    let key = |x: f64, y: f64| [(x * 1e6).round() as i64, (y * 1e6).round() as i64];
+    match *e {
+        ProfEdge::Line { a, b } => {
+            let (mx, my) = ((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+            let (mut dx, mut dy) = (b.x - a.x, b.y - a.y);
+            let len = (dx * dx + dy * dy).sqrt().max(1e-12);
+            if dx < 0.0 || (dx == 0.0 && dy < 0.0) {
+                (dx, dy) = (-dx, -dy);
+            }
+            (key(mx, my), (mx * dx + my * dy) / len)
+        }
+        ProfEdge::Arc { a, b, center, ccw } => {
+            let tau = std::f64::consts::TAU;
+            let (aa, ab) = ((a.y - center.y).atan2(a.x - center.x), (b.y - center.y).atan2(b.x - center.x));
+            let sweep = if ccw { (ab - aa).rem_euclid(tau) } else { -(aa - ab).rem_euclid(tau) };
+            let mid = aa + sweep * 0.5;
+            let r = ((a.x - center.x).powi(2) + (a.y - center.y).powi(2)).sqrt();
+            (key(center.x + r * mid.cos(), center.y + r * mid.sin()), mid.rem_euclid(tau))
+        }
+        ProfEdge::Circle { center, r } => (key(center.x + r, center.y), 0.0),
+    }
+}
+
 /// The same without names, for profiles that do not come from a sketch.
 pub fn encode_profile(outer: &Contour, holes: &[&Contour]) -> Vec<f64> {
-    encode_profile_named(outer, holes, &|_| 0)
+    encode_profile_named(outer, holes, &|_, _| 0)
 }
 
 /// Is a cylindrical face a hole or a shaft? This decides which thread to build: on a hole the material lies outside

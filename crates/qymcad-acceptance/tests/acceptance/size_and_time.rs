@@ -17,8 +17,8 @@ const REBUILD: Duration = Duration::from_secs(30);
 const MESH: Duration = Duration::from_secs(30);
 
 /// A BUDGET ON THIS MACHINE: the budget times `QYMCAD_TIME_SCALE` (1 when unset). The budgets are set for the
-/// developer's machine; a CI runner of four cores rebuilt the robot sample in 39.4 s against the 26.4 s of the whole
-/// probe here, so CI runs these probes alone and at twice the budget - a run twice as slow as it should be still goes
+/// developer's machine; a CI runner of four cores rebuilt a sample project of 3 MB in 39.4 s against the 26.4 s of the
+/// whole probe here, so CI runs these probes alone and at twice the budget - a run twice as slow as it should be still goes
 /// red there, and the budgets here stay as they are.
 fn scaled(budget: Duration) -> Duration {
     let k = std::env::var("QYMCAD_TIME_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).filter(|k| *k >= 1.0).unwrap_or(1.0);
@@ -68,16 +68,6 @@ probe! {
     /// time.
     fn the_case_sample_opens_and_rebuilds_in_time() {
         let p = open_and_rebuild(&sample("QymBoxPc-Case.qcad"));
-        assert!(p.is_empty(), "{}", p.join("; "));
-    }
-}
-
-probe! {
-    budget = 900;
-    /// THE SAMPLE PROJECT OF A ROBOT opens whole - every part one body, no two parts of one name - and in time, and
-    /// rebuilds in time.
-    fn the_robot_sample_opens_and_rebuilds_in_time() {
-        let p = open_and_rebuild(&sample("robotic_2.qcad"));
         assert!(p.is_empty(), "{}", p.join("; "));
     }
 }

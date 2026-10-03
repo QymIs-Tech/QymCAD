@@ -2639,6 +2639,23 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
                 BRepAlgoAPI_Fuse fuse;
                 if (!qym_boolean_many(fuse, args, tools)) return nullptr;
                 merged = fuse.Shape();
+                // THE BINDING IS CARRIED THROUGH THE FUSE TOO, as it is through the unify below. The fuse
+                // rebuilds every edge it touches - here the edges meeting at a point where two regions touch -
+                // and an edge rebuilt without its binding gave its wall the fallback name of a lone prism
+                // (10 + its ordinal) and its region's caps 1 and 2. Regions meeting only at points are islands
+                // of one body, so each island past the first wore the same fallback names: measured, 18 faces
+                // under 12 names and 36 edges under 15.
+                TopTools_DataMapOfShapeInteger moved;
+                for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(esrc); it.More(); it.Next()) {
+                    const TopTools_ListOfShape& mod = fuse.Modified(it.Key());
+                    if (mod.IsEmpty()) {
+                        if (!fuse.IsDeleted(it.Key()) && !moved.IsBound(it.Key())) moved.Bind(it.Key(), it.Value());
+                    } else {
+                        for (TopTools_ListIteratorOfListOfShape m(mod); m.More(); m.Next())
+                            if (!moved.IsBound(m.Value())) moved.Bind(m.Value(), it.Value());
+                    }
+                }
+                esrc = moved;
             }
         }
         // Merge the coplanar faces and collinear edges of the plane, so the contact disappears from the topology (the monolith).
@@ -2710,6 +2727,7 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
         TopoDS_Compound comp;
         bb.MakeCompound(comp);
         QymShape* q = new QymShape{TopoDS_Shape(), {}, {}, {}, {}};
+        std::unordered_set<int> used_f, used_e;
         for (size_t i = 0; i < profiles.size(); ++i) {
             unsigned c0 = 0, c1 = 0;
             caps_for(region_key(profiles[i], &esrc), caps, ncaps, c0, c1);
@@ -2720,10 +2738,16 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
                 continue;
             }
             bb.Add(comp, one->shape);
+            // A NUMBER CROSSES OVER ONLY WHILE NO OTHER ISLAND HOLDS IT. A prism numbers what its recipe cannot name
+            // from 1 - caps 1 and 2, walls 10 + k, every edge in traversal order - and each prism does it alike, so
+            // two islands brought one number to two faces and edges, and a rename by number then gave them one
+            // name. The first holder keeps its number - references written against it still find it, measured on
+            // a rounding of eight edges that lost one when every number was handed out afresh - and a repeat is
+            // left unbound, to be numbered below across the whole compound.
             for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(one->fids); it.More(); it.Next())
-                if (!q->fids.IsBound(it.Key())) q->fids.Bind(it.Key(), it.Value());
+                if (!q->fids.IsBound(it.Key()) && used_f.insert(it.Value()).second) q->fids.Bind(it.Key(), it.Value());
             for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(one->eids); it.More(); it.Next())
-                if (!q->eids.IsBound(it.Key())) q->eids.Bind(it.Key(), it.Value());
+                if (!q->eids.IsBound(it.Key()) && used_e.insert(it.Value()).second) q->eids.Bind(it.Key(), it.Value());
             delete one;
         }
         q->shape = comp;

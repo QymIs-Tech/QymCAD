@@ -28,9 +28,9 @@ mod tests {
     }
 
     /// A font of the system that writes the string NOTICEABLY differently - what an editing session after a
-    /// reopen would fall back to.
+    /// reopen would fall back to. Looked for where the program itself looks, so every system has its own folders.
     fn another_font(unlike: f64) -> Option<(String, f64)> {
-        let mut stack: Vec<std::path::PathBuf> = ["/usr/share/fonts", "/usr/local/share/fonts"].iter().map(std::path::PathBuf::from).collect();
+        let mut stack = qymcad_ui_state::font_directories();
         let mut seen = 0;
         while let Some(dir) = stack.pop() {
             let Ok(rd) = std::fs::read_dir(&dir) else { continue };
@@ -56,6 +56,19 @@ mod tests {
             }
         }
         None
+    }
+
+    /// A family of this machine that a click on the list can take, other than `unlike`: the first row shown for
+    /// its name is that family, and the face can write its own name - a row that cannot answers to no click.
+    /// Taken from what is installed rather than named, because no one font lies on every system.
+    fn a_family_to_click(unlike: &str) -> Option<String> {
+        let installed = qymcad_ui_state::installed_fonts();
+        installed.iter().filter(|f| f.family != unlike).find_map(|f| {
+            let first = qymcad_ui_state::fonts_matching(&installed, &f.family).into_iter().next()?;
+            let bytes = std::fs::read(&first.path).ok()?;
+            let writes = qymcad_core::text::can_write(&bytes, first.index, &qymcad_ui_state::font_row_text(&first));
+            (first.family == f.family && writes).then(|| f.family.clone())
+        })
     }
 
     /// The width of the label on the sketch, over its height.
@@ -131,14 +144,12 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
 
-        let installed = qymcad_ui_state::installed_fonts();
-        if installed.is_empty() {
-            panic!("setup: this machine has no fonts installed, there is nothing to choose from");
-        }
-        let family = installed[0].family.clone();
+        let Some(family) = a_family_to_click("") else {
+            panic!("setup: this machine has no font a click on the list could take");
+        };
 
         let took = Hand::new(&mut app).pick_font_from_list(&family);
-        assert!(took, "a click on the first row of the list chose nothing; the list showed {} faces", qymcad_ui_state::fonts_matching(&installed, &family).len());
+        assert!(took, "a click on the first row of the list chose nothing; the list showed {} faces", qymcad_ui_state::fonts_matching(&qymcad_ui_state::installed_fonts(), &family).len());
         assert_eq!(app.tool_prefs.font.family, family, "the face taken is not the one the row showed");
         assert!(!app.font_cache.picker.open, "the window stayed open after a face was chosen");
     }
@@ -227,22 +238,15 @@ mod tests {
         let was_glyphs = app.project.sketches[si].texts[0].glyphs.clone();
         let (x0, y0, x1, y1) = app.project.sketch_text_bbox(si, 0).expect("the label is there");
         let middle = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-        // A FACE THIS MACHINE HAS. The list is the system's fonts, and no one family is on every system: the
-        // check named one of a desktop, and on a CI runner of Ubuntu 24.04 the list gave nothing back for it.
-        let installed = qymcad_ui_state::installed_fonts();
-        let Some(other) = ["DejaVu Sans", "Adwaita Sans", "Noto Sans", "Liberation Serif", "Cantarell"]
-            .into_iter()
-            .find(|f| *f != was_font && installed.iter().any(|i| i.family == *f))
-        else {
-            eprintln!("PASSED OVER: none of the common font families is installed on this machine");
-            return;
+        let Some(wanted_font) = a_family_to_click(&was_font) else {
+            panic!("setup: this machine has no second font a click on the list could take");
         };
-        let took = Hand::canvas(&mut app).sk_change_label_font(middle, other);
+        let took = Hand::canvas(&mut app).sk_change_label_font(middle, &wanted_font);
 
-        assert!(took, "the list gave nothing back for {other}: the editor's font button leads nowhere");
+        assert!(took, "the list gave nothing back: the editor's font button leads nowhere");
         let now = &app.project.sketches[si].texts[0];
         assert_ne!(now.font.family, was_font, "the label kept the font it was written in: {:?}", now.font);
-        assert_eq!(now.font.family, other, "some other face was taken: {:?}", now.font);
+        assert_eq!(now.font.family, wanted_font, "some other face was taken: {:?}", now.font);
         assert_ne!(now.glyphs, was_glyphs, "the outlines are the same as before: the label was not re-baked in the new face");
     }
 

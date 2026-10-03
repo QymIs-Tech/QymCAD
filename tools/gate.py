@@ -53,7 +53,7 @@ ORACLES = ("the oracles and the runner", ["cargo", "test", "-p", "qymcad-accepta
 ACCEPTANCE = ["cargo", "test", "-p", "qymcad-acceptance", "--test", "acceptance", "--no-fail-fast", "--", "--test-threads=6"]
 
 # THE PROBES OF TIME: they measure the machine as much as the program. Run apart and one at a time by the `time` level,
-# which CI uses with QYMCAD_TIME_SCALE=2 - on a runner of four cores, among five other probes, the robot sample rebuilt in
+# which CI uses with QYMCAD_TIME_SCALE=2 - on a runner of four cores, among five other probes, a sample project of 3 MB rebuilt in
 # 39.4 s against a budget of 30.
 TIME = "size_and_time"
 
