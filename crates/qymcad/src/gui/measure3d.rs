@@ -131,14 +131,75 @@ impl App {
         // A CYLINDER is a kind of its own: on the wall of a hole one measures the diameter and the
         // gap to that wall, not to an imaginary plane it does not have.
         if let Some((o, ax, r)) = self.live.shapes.get(&body).and_then(|s| s.face_cylinder(fid)) {
-            let origin = apply12(&wt, o);
-            let axis = apply12_dir(&wt, ax);
-            return Some(MeasurePick { item: MeasureItem::Cylinder { origin, axis, r }, what: crate::i18n::tr1("m3-cylinder", "d", &crate::i18n::num(2.0 * r, 2)), at: hit });
+            let (origin, axis) = (apply12(&wt, o), apply12_dir(&wt, ax));
+            let (area, length) = cylinder_face_data(&self.live, body, fid, r, &wt);
+            return Some(MeasurePick { item: MeasureItem::Cylinder { origin, axis, r, area, length }, what: crate::i18n::tr1("m3-cylinder", "d", &crate::i18n::num(2.0 * r, 2)), at: hit });
         }
         let key = qymcad_core::feature::FaceKey { index: 0, centroid: [0.0; 3], normal: [0.0, 0.0, 1.0], id: fid };
         let (c, n) = self.project.resolve_face(body, &key);
-        let origin = apply12(&wt, c);
-        let normal = apply12_dir(&wt, n);
-        Some(MeasurePick { item: MeasureItem::Plane { origin, normal }, what: crate::i18n::tr("m3-face"), at: hit })
+        let (origin, normal) = (apply12(&wt, c), apply12_dir(&wt, n));
+        let (area, perimeter) = planar_face_data(&self.project, body, fid, &wt);
+        Some(MeasurePick { item: MeasureItem::Plane { origin, normal, area, perimeter }, what: crate::i18n::tr("m3-face"), at: hit })
     }
+}
+
+/// Query area and boundary perimeter of a planar face from project mesh data.
+fn planar_face_data(project: &qymcad_core::model::Project, body: Id, fid: u32, wt: &[f64; 12]) -> (Option<f64>, Option<f64>) {
+    let scale = (wt[0] * wt[0] + wt[1] * wt[1] + wt[2] * wt[2]).sqrt().max(1e-12);
+    let Some(faces) = project.regen_faces.get(&body) else { return (None, None); };
+    let Some(f) = faces.iter().find(|f| f.id == fid) else { return (None, None); };
+    let area = f.area * scale * scale;
+    let mut perim = None;
+    if let Some(mi) = project.mesh_index(body) {
+        let mesh = &project.bodies[mi].mesh;
+        let mut edge_counts = std::collections::HashMap::<(u32, u32), usize>::new();
+        for &ti in &f.triangles {
+            if let Some(t) = mesh.tris.get(ti as usize) {
+                for &(a, b) in &[(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                    let key = if a < b { (a, b) } else { (b, a) };
+                    *edge_counts.entry(key).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut loop_len = 0.0;
+        for ((a, b), count) in edge_counts {
+            if count == 1 {
+                if let (Some(va), Some(vb)) = (mesh.verts.get(a as usize), mesh.verts.get(b as usize)) {
+                    let (dx, dy, dz) = (va.x - vb.x, va.y - vb.y, va.z - vb.z);
+                    loop_len += (dx * dx + dy * dy + dz * dz).sqrt();
+                }
+            }
+        }
+        if loop_len > 1e-6 {
+            perim = Some(loop_len * scale);
+        }
+    }
+    (Some(area), perim)
+}
+
+/// Query surface area and height of a cylindrical face from shape edges.
+fn cylinder_face_data(live: &qymcad_ui_state::LiveGeom, body: Id, fid: u32, r: f64, wt: &[f64; 12]) -> (Option<f64>, Option<f64>) {
+    let scale = (wt[0] * wt[0] + wt[1] * wt[1] + wt[2] * wt[2]).sqrt().max(1e-12);
+    let Some(shape) = live.shapes.get(&body) else { return (None, None); };
+    let eids = shape.face_edge_ids(fid);
+    let (_polys, ids, circles) = shape.edges_full();
+    let mut circ_centers = Vec::new();
+    for &eid in &eids {
+        if let Some(idx) = ids.iter().position(|&x| x == eid) {
+            if let Some((c, ax, _)) = circles[idx] {
+                circ_centers.push((c, ax));
+            }
+        }
+    }
+    if circ_centers.len() >= 2 {
+        let (c1, ax1) = circ_centers[0];
+        let (c2, _) = circ_centers[1];
+        let diff = [c2[0] - c1[0], c2[1] - c1[1], c2[2] - c1[2]];
+        let len_ax = (diff[0] * ax1[0] + diff[1] * ax1[1] + diff[2] * ax1[2]).abs() * scale;
+        if len_ax > 1e-6 {
+            let area = 2.0 * std::f64::consts::PI * (r * scale) * len_ax;
+            return (Some(area), Some(len_ax));
+        }
+    }
+    (None, None)
 }

@@ -2151,21 +2151,42 @@ pub fn draw_measure_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     }
     let basis = pn.cam.basis();
     let col = pn.scheme.pal.measure();
-    let pts: Vec<Pos2> = pn.m3.picks.iter().map(|p| qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect: rect, basis: &basis }.at(p.at).0).collect();
+    let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };
+    let pts: Vec<Pos2> = pn.m3.picks.iter().map(|p| scr.at(p.at).0).collect();
     for sp in &pts {
         painter.circle_stroke(*sp, 6.0, Stroke::new(2.0, col));
         painter.circle_filled(*sp, 2.5, col);
     }
-    if pts.len() == 2 {
+    let res = qymcad_ui_state::measure_result(pn.m3);
+    if let Some((p1, p2)) = res.as_ref().and_then(|r| r.closest_points) {
+        let sp1 = scr.at(p1).0;
+        let sp2 = scr.at(p2).0;
+        painter.add(egui::Shape::dashed_line(&[sp1, sp2], Stroke::new(1.8, col), 7.0, 5.0));
+        if let Some(d) = res.as_ref().and_then(|r| r.delta) {
+            if d[0].abs() > 1e-4 && d[1].abs() > 1e-4 && d[2].abs() > 1e-4 {
+                let p_x = [p1[0] + d[0], p1[1], p1[2]];
+                let p_xy = [p1[0] + d[0], p1[1] + d[1], p1[2]];
+                let sp_x = scr.at(p_x).0;
+                let sp_xy = scr.at(p_xy).0;
+                let dim_stroke = Stroke::new(1.0, qymcad_scheme::a(col, 130));
+                painter.add(egui::Shape::dashed_line(&[sp1, sp_x], dim_stroke, 4.0, 3.0));
+                painter.add(egui::Shape::dashed_line(&[sp_x, sp_xy], dim_stroke, 4.0, 3.0));
+                painter.add(egui::Shape::dashed_line(&[sp_xy, sp2], dim_stroke, 4.0, 3.0));
+            }
+        }
+    } else if pts.len() == 2 {
         painter.add(egui::Shape::dashed_line(&pts, Stroke::new(1.6, col), 7.0, 5.0));
     }
-    let text = qymcad_ui_state::measure_text(pn);
-    let at = pts.last().copied().unwrap_or(rect.center()) + egui::vec2(12.0, -18.0);
-    let font = egui::FontId::proportional(13.0);
-    let galley = painter.layout_no_wrap(text, font, pn.scheme.pal.plate_text());
-    let pad = egui::vec2(6.0, 4.0);
+    let _single = qymcad_ui_state::measure_text(pn);
+    let hud_lines = qymcad_ui_state::measure_hud_lines(pn);
+    let card_text = hud_lines.join("\n");
+    let at = pts.last().copied().unwrap_or(rect.center()) + egui::vec2(14.0, -22.0);
+    let font = egui::FontId::proportional(12.5);
+    let galley = painter.layout_no_wrap(card_text, font, pn.scheme.pal.plate_text());
+    let pad = egui::vec2(8.0, 6.0);
     let bg = egui::Rect::from_min_size(at, galley.size() + pad * 2.0);
-    painter.rect_filled(bg, 4.0, qymcad_scheme::a(pn.scheme.pal.measure(), 235));
+    painter.rect_filled(bg, 5.0, qymcad_scheme::a(pn.scheme.pal.measure(), 240));
+    painter.rect_stroke(bg, 5.0, Stroke::new(1.0, pn.scheme.pal.plate_text()), egui::StrokeKind::Middle);
     painter.galley(at + pad, galley, pn.scheme.pal.plate_text());
 }
 

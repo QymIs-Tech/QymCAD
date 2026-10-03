@@ -5980,6 +5980,14 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 if qymcad_ui_state::icon_tool(ui, ph::SQUARE_HALF, &qymcad_i18n::tr("tb-section-hint"), bc.section.pick || bc.section.plane.is_some()) {
                     bc.ask.push(qymcad_ui_state::BarAsk::ToggleSection);
                 }
+                if qymcad_ui_state::icon_tool(
+                    ui,
+                    ph::RULER,
+                    &qymcad_i18n::tr("tb-measure3d-hint"),
+                    bc.m3.on,
+                ) {
+                    bc.ask.push(qymcad_ui_state::BarAsk::ToggleMeasure3d);
+                }
                 // --- The mates: buttons per mate kind, as in the sketcher. Clicking a kind starts the
                 // face pick with that kind (face A, then face B). The list and the editing of existing ones
                 // live in the properties panel on the right, as the sketch dimensions do.
