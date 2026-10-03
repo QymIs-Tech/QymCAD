@@ -45,6 +45,7 @@ ron.workspace = true
 serde = { workspace = true } # the view settings kept between sessions (ViewPrefs)
 time.workspace = true # the calendar for the document stamp and the autosave clock
 qymcad-paths = { path = "../qymcad-paths" }
+qymcad-trace = { path = "../qymcad-trace" }
 qymcad-update = { path = "../qymcad-update" } # asking the site whether a newer version exists
 directories = "6" # UserDirs: the person's home, for shortening paths in reports
 include_dir = "0.7" # the parts library (library/parts) is compiled into the binary

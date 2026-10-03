@@ -1,0 +1,16 @@
+[package]
+name = "qymcad-trace"
+version = "0.1.0"
+edition = "2021"
+
+# THE TRACE OF THE MOUSE - one line per function entered, written to a file beside the program.
+#
+# A crate of its own, and not a module of the application, for one reason: the functions worth tracing are
+# not all in the application. The step that asks the kernel for the edges of a face lives in the crate that
+# owns the part operations, and a trace that stopped at the edge of the crate would stop exactly where the
+# question is.
+[dependencies]
+qymcad-paths = { path = "../qymcad-paths", version = "0.1.0" }
+
+[lints]
+workspace = true

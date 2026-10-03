@@ -232,6 +232,7 @@ impl App {
     /// THE SINGLE entry point of a part command. 1 extrude, 3 revolve (from a sketch); 4 fillet, 5 chamfer
     /// (on edges); 6 shell, 7 hole (on a face).
     pub(super) fn start_feat_cmd(&mut self, cmd: u8) {
+        let _entered = qymcad_trace::enter(&format!("start_feat_cmd({cmd})"));
         self.cancel_all_tools(); // a new part or datum command CANCELS the previous tool or pick - never two at once
         // A CLEAN SLATE BEFORE THE CHECKS: the state of the previous command must not seep into the new one.
         // The command itself opens BELOW, and only if the checks passed (no contour means no command starts).

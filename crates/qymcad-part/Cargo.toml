@@ -20,6 +20,7 @@ qymcad-pick = { path = "../qymcad-pick" }
 qymcad-render = { path = "../qymcad-render" }
 qymcad-i18n = { path = "../qymcad-i18n" }
 qymcad-scheme = { path = "../qymcad-scheme" }
+qymcad-trace = { path = "../qymcad-trace" }
 
 [lints]
 workspace = true

@@ -358,6 +358,7 @@ impl App {
             return;
         }
         let Some(pos) = resp.interact_pointer_pos() else { return };
+        qymcad_trace::trace_line!("click at {:.1} {:.1}  command={}", pos.x, pos.y, self.tools.armed.cmd_kind());
         self.viewport_3d_click_at(pos, rect, basis3); qymcad_part::whole_body_on_double_click(&mut self.part_ctx(), resp.double_clicked()); // the second click of two takes the body
     }
 
@@ -368,6 +369,10 @@ impl App {
     /// (what outranks what, which tool is open, what was hit). A test must touch the program in exactly the
     /// same way a person does, or it is not the program it checks.
     pub(super) fn viewport_3d_click_at(&mut self, pos: egui::Pos2, rect: Rect, basis3: &([f64; 3], [f64; 3], [f64; 3])) {
+        // THE WHOLE CLICK IS ONE TRACED CALL. Every rung of the chain below is inside it, so the file shows
+        // which rung answered rather than a list of everything that was asked - and the last line before a
+        // fault is the deepest rung that never came back.
+        let _entered = qymcad_trace::enter("viewport_3d_click_at");
         {
             {
                         // the numeric entry at the gizmo is open, so a click OUTSIDE the popup closes it (the

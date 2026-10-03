@@ -62,6 +62,10 @@ impl App {
                 self.viewing.mode_3d = true; // the choice is ready -> into 3D to enter the height or angle
                 self.status = crate::i18n::tr("in-drag-or-type");
             } else if qymcad_ui_state::bar_fields_valid(ctx) {
+                // WHAT IS ABOUT TO BE ASKED OF THE KERNEL, written before it is asked. The picked edges are
+                // the whole of what a chamfer or a fillet is given, and a trace that stopped at "Enter" would
+                // not say WHICH edges went to it.
+                qymcad_trace::trace_line!("Enter applies command {} with {} edges and {} faces", self.tools.armed.cmd_kind(), self.tools.gsel.edges.len(), self.tools.gsel.faces.len());
                 crate::gui::commands::apply_feat_cmd(&mut self.part_ctx());
             }
         }

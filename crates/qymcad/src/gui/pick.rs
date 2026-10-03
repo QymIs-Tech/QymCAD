@@ -77,12 +77,20 @@ impl App {
     }
 
     pub(super) fn pick_edge_3d(&mut self, rect: Rect, screen: Pos2) -> bool {
+        let _entered = qymcad_trace::enter("pick_edge_3d");
         // A VERTEX OUTRANKS AN EDGE WHEN IT IS UNDER THE CURSOR: a corner is aimed at in order to set a
         // radius there, and hitting an edge instead would clear the selection rather than fine-tune it.
         if self.pick_fillet_vertex(rect, screen) {
             return true;
         }
-        let Some(id) = edge_at(&self.active_path, self.viewing.cam, &self.edges, &self.project, &self.set, rect, screen) else { return false };
+        let Some(id) = edge_at(&self.active_path, self.viewing.cam, &self.edges, &self.project, &self.set, rect, screen) else {
+            qymcad_trace::trace_line!("  no edge under the cursor");
+            return false;
+        };
+        // THE ID AND THE BODY IT WAS READ FROM. The edge ids of one body are the ids of every other body
+        // too - each is numbered from one - so an id on its own says nothing about whose edge it is, and a
+        // trace that printed only the id would point at the wrong body on the next line.
+        qymcad_trace::trace_line!("  edge {} of body {:?}", id, self.edges.body);
         if !self.tools.gsel.edges.insert(id) {
             self.tools.gsel.edges.remove(&id);
         }
@@ -98,8 +106,19 @@ impl App {
     /// face (a click on a face of a cube gives its 4 edges). It toggles: if every edge of the face is
     /// already selected they are cleared, otherwise they are added. `true` means a face was hit.
     pub(super) fn pick_face_edges_fillet(&mut self, rect: Rect, pos: Pos2) -> bool {
-        let Some(body) = self.edges.body else { return false };
-        let Some(fid) = pick_face_persist_id(&self.painting(), rect, pos).filter(|&f| f != 0) else { return false };
+        let _entered = qymcad_trace::enter("pick_face_edges_fillet");
+        let Some(body) = self.edges.body else {
+            qymcad_trace::trace_line!("  no body is gathering edges");
+            return false;
+        };
+        let Some(fid) = pick_face_persist_id(&self.painting(), rect, pos).filter(|&f| f != 0) else {
+            qymcad_trace::trace_line!("  no face under the cursor");
+            return false;
+        };
+        // WHICH FACE, AND WHOSE EDGES ARE ASKED FOR IT. A face is named by a number that every body counts
+        // from, so the two are written together: the face that was clicked and the body whose edges will be
+        // asked about it are not necessarily the same, and that is the whole question this line answers.
+        qymcad_trace::trace_line!("  face {fid} clicked, edges asked of body {body:?}");
         // THE SECOND SIDE OF A JUNCTION. The junction item of the menu put the command into waiting for a
         // second pick — and here it is. The reference is assembled only now: a junction has two sides and
         // is not described by one.
@@ -118,14 +137,22 @@ impl App {
             return true;
         }
         let eids = match self.live.shapes.get(&body) {
-            Some(shape) => shape.face_edge_ids(fid),
-            None => return false,
+            Some(shape) => {
+                let e = shape.face_edge_ids(fid);
+                qymcad_trace::trace_line!("  the kernel gave {} edges for that face", e.len());
+                e
+            }
+            None => {
+                qymcad_trace::trace_line!("  body {body:?} has no live shape");
+                return false;
+            }
         };
         // only the edges that really exist in the body are taken (ids from `edge_ids`), so a face of
         // another body will not be caught
         let live: std::collections::HashSet<u32> = self.edges.ids.iter().copied().collect();
         let eids: Vec<u32> = eids.into_iter().filter(|id| live.contains(id)).collect();
         if eids.is_empty() {
+            qymcad_trace::trace_line!("  none of them belong to the body being gathered");
             return false;
         }
         let all_sel = eids.iter().all(|id| self.tools.gsel.edges.contains(id));
@@ -284,6 +311,7 @@ impl App {
 
 
     pub(super) fn pick_face_3d(&mut self, rect: Rect, screen: Pos2) {
+        let _entered = qymcad_trace::enter("pick_face_3d");
         let basis = self.viewing.cam.basis();
         let scr = qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect: rect, basis: &basis };
         let ctx = qymcad_ui_state::current_ctx_id(&self.active_path, &self.project);

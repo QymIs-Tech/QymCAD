@@ -3174,6 +3174,7 @@ dependencies = [
  "qymcad-scheme",
  "qymcad-shell",
  "qymcad-sketch",
+ "qymcad-trace",
  "qymcad-ui-state",
  "qymcad-update",
  "rfd",
@@ -3284,6 +3285,7 @@ dependencies = [
  "qymcad-pick",
  "qymcad-render",
  "qymcad-scheme",
+ "qymcad-trace",
  "qymcad-ui-state",
 ]
 
@@ -3359,6 +3361,13 @@ dependencies = [
  "qymcad-io",
  "qymcad-kernel",
  "ron",
+]
+
+[[package]]
+name = "qymcad-trace"
+version = "0.1.0"
+dependencies = [
+ "qymcad-paths",
 ]
 
 [[package]]

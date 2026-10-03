@@ -4447,6 +4447,7 @@ mod import_door;
 mod an_iges_import_survives_reopening;
 mod a_step_assembly_lands_as_its_tree;
 mod a_component_stepped_into_is_not_lit;
+mod a_click_leaves_a_trail;
 mod a_debug_list_lights_what_it_names;
 mod a_broken_part_is_no_ghost_elsewhere;
 mod a_part_is_cloned_from_the_tree;

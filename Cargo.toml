@@ -8,6 +8,7 @@ members = [
     "crates/qymcad-shell",
     "crates/qymcad-i18n",
     "crates/qymcad-paths",
+    "crates/qymcad-trace",
     "crates/qymcad-scheme",
     "crates/qymcad-help",
     "crates/qymcad-ui-state",

@@ -76,11 +76,20 @@ pub mod build {
     /// A 40 x 30 RECTANGLE ON XY with a corner at the origin: a sketch on the plane, the rectangle tool by its
     /// hint, two corners clicked on the canvas; the sketch is left open.
     pub fn rectangle_on_xy(s: &mut Session) {
+        rectangle_at(s, [(0.0, 0.0), (40.0, 30.0)]);
+    }
+
+    /// A RECTANGLE ON THE XY PLANE BETWEEN THE TWO CORNERS GIVEN, the sketch left open.
+    ///
+    /// A check that wants SEVERAL bodies out of one part needs its sketches apart: the same rectangle drawn
+    /// again lands on the first one, so the second extrusion grows out of the first and the part holds one
+    /// body where three were asked for.
+    pub fn rectangle_at(s: &mut Session, corners: [(f64, f64); 2]) {
         let xy = s.word("plane-xy-table");
         s.press_word(&xy);
         let rect = s.word("tb-rect-hint");
         s.press_hint(&rect);
-        s.click_on_sketch(0.0, 0.0).click_on_sketch(40.0, 30.0);
+        s.click_on_sketch(corners[0].0, corners[0].1).click_on_sketch(corners[1].0, corners[1].1);
     }
 
     /// AN EMPTY SKETCH ON THE XY PLANE OF THE FIRST PART, with the auto constraints turned off - so that a check of

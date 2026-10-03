@@ -842,6 +842,7 @@ pub fn bool_tool_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
 
 /// A fillet (4) or a chamfer (5) on the picked edges of the picked body (an empty pick means every edge).
 pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Option<Id> {
+    let _entered = qymcad_trace::enter(if cmd == 4 { "apply_fillet" } else { "apply_chamfer" });
     // the target of a fillet or a chamfer is the body whose PERSISTENT edge ids actually sit in the edge
     // selection (`pc.edges.body`, kept in step by `refresh_edges`) rather than `qymcad_ui_state::selected_body()`:
     // otherwise, if `pc.sel` moved to another body between picking the edges and pressing Enter, the
@@ -867,6 +868,10 @@ pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Option<Id> 
         return None;
     }
     let edges: Vec<u32> = pc.gsel.edges.iter().copied().collect();
+    // THE BODY, THE EDGES AND WHETHER THEY WERE DESCRIBED RATHER THAN PICKED - the three things the kernel
+    // is about to be handed. Written before the call, because this is the last line before the fault: a
+    // report that says the chamfer was applied and not what it was applied to answers nothing.
+    qymcad_trace::trace_line!("  body {body:?}, {} edges {:?}, described: {}", edges.len(), edges, pc.gsel.described.is_some());
     // IT IS RECORDED THE WAY IT WAS PICKED. If there is a description ("every edge of this face", "every
     // edge parallel to this one"), the description goes in: it survives an edit that adds elements.
     // Otherwise the list of picked ids goes in.
@@ -4005,6 +4010,9 @@ pub fn body_num_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
 }
 
 pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
+    // THE BODY THE EDGES BELONG TO is written below, at the moment it changes. This runs every frame, so only
+    // the change is written: a trace of every frame would bury the click under thousands of lines that all
+    // say the same thing, and the answer to "which body is gathering edges" changes a handful of times.
     // the B-rep cache is brought up ONLY when the edges are really needed - under the fillet and chamfer
     // commands or while edges are actively being picked. This method is called EVERY FRAME in 3D, and an
     // unconditional `ensure_brep` turned lazy B-rep building into eager: "Preparing B-rep" started right
@@ -4044,6 +4052,10 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
         pc.edges.body = cur;
         pc.edges.rev = pc.regen.geom_rev;
         if body_changed {
+            // THE EDGES ALREADY PICKED ARE DROPPED HERE, and the trace says so: a person who picked four
+            // edges, then clicked a body that took the cache elsewhere, would otherwise watch the selection
+            // disappear with nothing in the file to account for it.
+            qymcad_trace::trace_line!("  the body gathering edges changed to {cur:?}, and {} picked edges were dropped", pc.gsel.edges.len());
             pc.gsel.edges.clear(); // a different body - the edge selection is not carried over
         }
         let (polys, ids) = cur
@@ -4066,7 +4078,10 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
             })
             .unwrap_or_default();
         pc.edges.polys = polys;
-        pc.edges.ids = ids; // the persistent edge ids, parallel to the polylines
+        pc.edges.ids = ids.clone(); // the persistent edge ids, parallel to the polylines
+        if body_changed {
+            qymcad_trace::trace_line!("  that body has {} edges", ids.len());
+        }
         // drop the picked ids the body no longer has (it was rebuilt), so that no phantoms are lit
         if !pc.gsel.edges.is_empty() {
             let live: std::collections::HashSet<u32> = pc.edges.ids.iter().copied().collect();
