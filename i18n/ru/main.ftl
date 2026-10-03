@@ -2458,9 +2458,9 @@ tree-debug-id = id
 tree-debug-tri = треуг.
 tree-debug-mid = середина
 tree-debug-shared = этот id стоит на { $n } рёбрах
-tree-debug-copy-id = Скопіювати ідентифікатор
-tree-debug-copy-hint = Покласти назву цього елемента в буфер обміну
-tree-debug-copied = Скопійовано: { $id }
+tree-debug-copy-id = Копировать идентификатор
+tree-debug-copy-hint = Положить название этого элемента в буфер обмена
+tree-debug-copied = Скопировано: { $id }
 
 io-starting = Запуск…
 

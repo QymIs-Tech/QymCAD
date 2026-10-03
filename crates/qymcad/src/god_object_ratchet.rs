@@ -47,12 +47,12 @@ mod tests {
     /// way this number falls is code leaving `impl App`. That is the thing that has to reach zero before the
     /// interface can live in a crate of its own, since a method belongs to the crate declaring the type.
     ///
-    /// RAISED BY 38, AND NOT FOR ANY OF THE REASONS THIS GUARD IS FOR. The lines are the trace of the
+    /// RAISED BY 37, AND NOT FOR ANY OF THE REASONS THIS GUARD IS FOR. The lines are the trace of the
     /// mouse: one call at the head of a function and a line or two of what it was given. None of it is
     /// drawing and none of it is logic, and it moves no decision into the god object - it only writes down
     /// which decision was taken, in a function that already existed. The mark moved here rather than the
     /// calls being left out, because the trace is what the next fault is read against.
-    const APP_LINES_CEILING: usize = 6114;
+    const APP_LINES_CEILING: usize = 6113;
 
     /// Methods that exist ONLY so a check can reach inside - `*_for_test` and `*_pub`.
     ///
