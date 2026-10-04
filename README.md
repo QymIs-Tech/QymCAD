@@ -102,6 +102,29 @@ The script brings a document forward from any earlier version in one pass and is
 
 ## Building from source
 
+For development on macOS, the OpenCASCADE kernel (OCCT 7.8 or newer) has to be installed first. With
+Homebrew nothing else is needed — the build finds it by itself:
+
+```bash
+brew install opencascade
+cargo run
+```
+
+If OCCT was installed any other way (MacPorts, conda, built from source), the build cannot guess where it
+is, and `cargo build` / `cargo run` stop with `'Geom_Line.hxx' file not found`. Tell it the location
+through two environment variables, set in the same terminal before running cargo:
+
+- `OCCT_INCLUDE_DIR` — the folder with the OCCT headers, the one that holds `Standard.hxx`;
+- `OCCT_LIB_DIR` — the folder with the OCCT libraries, the one that holds `libTKernel.dylib`.
+
+```bash
+export OCCT_INCLUDE_DIR=/path/to/occt/include/opencascade
+export OCCT_LIB_DIR=/path/to/occt/lib
+cargo run
+```
+
+Packages:
+
 Linux — `just pkg-linux`, Docker required. Windows — MSVC with the kernel built from source. macOS — the
 kernel from source as well, then `packaging/macos/bundle.sh`. The details are in
 [`packaging/README.md`](packaging/README.md).

@@ -10,15 +10,24 @@ use std::env;
 include!("src/cxx_runtime.rs");
 
 fn main() {
-    let inc = env::var("OCCT_INCLUDE_DIR").unwrap_or_else(|_| "/usr/include/opencascade".into());
-    let libdir = env::var("OCCT_LIB_DIR").unwrap_or_else(|_| "/usr/lib".into());
-
     // WHICH TOOLCHAIN IS ON THE OTHER SIDE. The C++ ABI does not mix: the bridge must be compiled by the
     // same compiler that built OCCT. On Windows that is MSVC - the mainstream target for Rust there, and
     // the one every desktop CAD is built with.
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+
     let msvc = target_env == "msvc";
+
+    //For macOS and Linux
+    let (default_inc, default_lib) = match (target_os.as_str(), target_arch.as_str()) {
+        ("macos", "aarch64") => ("/opt/homebrew/include/opencascade", "/opt/homebrew/lib"),
+        ("macos", _) => ("/usr/local/include/opencascade", "/usr/local/lib"),
+        _ => ("/usr/include/opencascade", "/usr/lib"),
+    };
+
+    let inc = env::var("OCCT_INCLUDE_DIR").unwrap_or_else(|_| default_inc.into());
+    let libdir = env::var("OCCT_LIB_DIR").unwrap_or_else(|_| default_lib.into());
 
     let mut build = cc::Build::new();
     build
