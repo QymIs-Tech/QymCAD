@@ -101,6 +101,29 @@ python3 convert_qcad.py part.qcad    # переводит на месте, ря�
 
 ## Сборка из исходников
 
+Для разработки на macOS сначала нужно установить ядро OpenCASCADE (OCCT 7.8 или новее). С Homebrew
+больше ничего не нужно — сборка находит его сама:
+
+```bash
+brew install opencascade
+cargo run
+```
+
+Если OCCT установлен иначе (MacPorts, conda, собран из исходников), сборка не может угадать, где он лежит,
+и `cargo build` / `cargo run` останавливаются с ошибкой `'Geom_Line.hxx' file not found`. Расположение
+задаётся двумя переменными окружения — в том же терминале, перед запуском cargo:
+
+- `OCCT_INCLUDE_DIR` — папка с заголовками OCCT, та, где лежит `Standard.hxx`;
+- `OCCT_LIB_DIR` — папка с библиотеками OCCT, та, где лежит `libTKernel.dylib`.
+
+```bash
+export OCCT_INCLUDE_DIR=/path/to/occt/include/opencascade
+export OCCT_LIB_DIR=/path/to/occt/lib
+cargo run
+```
+
+Пакеты:
+
 Linux — `just pkg-linux`, требуется Docker. Windows — MSVC, ядро собирается из исходников. macOS — ядро
 тоже из исходников, дальше `packaging/macos/bundle.sh`. Подробности:
 [`packaging/README.md`](packaging/README.md).
