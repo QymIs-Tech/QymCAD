@@ -6,6 +6,7 @@
 
 /// The name of the C++ runtime to link, chosen by target - shared with `build.rs`.
 pub mod cxx_runtime;
+pub mod occt_location;
 pub mod kernel;
 pub mod recognise;
 pub use recognise::{recognise, Recognised};
