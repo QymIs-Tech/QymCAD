@@ -8,6 +8,7 @@ use std::env;
 // The C++ runtime is named differently on every toolchain, and the choice is checked by unit tests in the
 // crate itself - so it lives in one file that both sides read rather than being written out twice.
 include!("src/cxx_runtime.rs");
+include!("src/occt_location.rs");
 
 fn main() {
     // WHICH TOOLCHAIN IS ON THE OTHER SIDE. The C++ ABI does not mix: the bridge must be compiled by the
@@ -19,12 +20,7 @@ fn main() {
 
     let msvc = target_env == "msvc";
 
-    //For macOS and Linux
-    let (default_inc, default_lib) = match (target_os.as_str(), target_arch.as_str()) {
-        ("macos", "aarch64") => ("/opt/homebrew/include/opencascade", "/opt/homebrew/lib"),
-        ("macos", _) => ("/usr/local/include/opencascade", "/usr/local/lib"),
-        _ => ("/usr/include/opencascade", "/usr/lib"),
-    };
+    let (default_inc, default_lib) = occt_default_location(&target_os, &target_arch);
 
     let inc = env::var("OCCT_INCLUDE_DIR").unwrap_or_else(|_| default_inc.into());
     let libdir = env::var("OCCT_LIB_DIR").unwrap_or_else(|_| default_lib.into());
@@ -65,9 +61,9 @@ fn main() {
     if let Some(lib) = cxx_runtime(&target_os, &target_env) {
         println!("cargo:rustc-link-lib=dylib={lib}");
     }
-    // `src/cxx_runtime.rs` is on this list because it is `include!`d rather than imported: cargo does not
-    // see through the macro, and without the line an edit there would not rebuild the script.
-    for f in ["src/occt_bridge.cpp", "src/occt_helical.cpp", "src/occt_faces.cpp", "src/occt_io.cpp", "src/occt_common.hpp", "src/cxx_runtime.rs"] {
+    // `src/cxx_runtime.rs` and `src/occt_location.rs` are on this list because they are `include!`d rather than imported: cargo does not
+    // see through the macro, and without the lines an edit there would not rebuild the script.
+    for f in ["src/occt_bridge.cpp", "src/occt_helical.cpp", "src/occt_faces.cpp", "src/occt_io.cpp", "src/occt_common.hpp", "src/cxx_runtime.rs", "src/occt_location.rs"] {
         println!("cargo:rerun-if-changed={f}");
     }
     println!("cargo:rerun-if-env-changed=OCCT_INCLUDE_DIR");
