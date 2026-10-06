@@ -63,6 +63,20 @@ cargo build --release --bin qymcad
 pwsh -File packaging/win/bundle.ps1
 ```
 
+### Windows 7 / 8.x legacy portable ZIP
+
+Compatible with Windows 7 SP1, 8, 8.1, 10 and 11 (x64).
+Uses the `x86_64-win7-windows-msvc` target with standard library compiled from source via `-Zbuild-std`, bypassing Windows 10+ APIs (`ProcessPrng`, `WaitOnAddress`), and provides a `combase.dll` export forwarder to `ole32.dll`.
+
+Building:
+
+```powershell
+rustup component add rust-src
+$env:RUSTC_BOOTSTRAP = "1"
+cargo build --release --bin qymcad --target x86_64-win7-windows-msvc -Zbuild-std=std,panic_abort
+pwsh -File packaging/win/bundle-win7.ps1
+```
+
 - Windows: the Rust toolchain (1.88 or newer is needed), and whether the list of DLLs from
   `ldd` is complete.
 
