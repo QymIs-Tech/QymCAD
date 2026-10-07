@@ -138,8 +138,8 @@ def main():
         if src and os.path.isdir(src):
             for fname in os.listdir(src):
                 if fname.lower().endswith(".dll") and fname.lower() != "combase.dll":
-                    # Skip WinRT-only helper
-                    if fname.lower() == "vccorlib140.dll":
+                    # Skip WinRT-dependent libraries not used by QymCAD
+                    if fname.lower() in ["vccorlib140.dll", "vccorlib140d.dll", "qt5bluetooth.dll", "qt5bluetoothd.dll"]:
                         continue
                     dest = os.path.join(out_dir, fname)
                     if not os.path.exists(dest):
@@ -152,6 +152,8 @@ def main():
         for root, dirs, files in os.walk(thirdparty_dir):
             for f in files:
                 if f.lower().endswith(".dll"):
+                    if f.lower() in ["vccorlib140.dll", "vccorlib140d.dll", "qt5bluetooth.dll", "qt5bluetoothd.dll"]:
+                        continue
                     dest = os.path.join(out_dir, f)
                     if not os.path.exists(dest):
                         shutil.copy2(os.path.join(root, f), dest)
