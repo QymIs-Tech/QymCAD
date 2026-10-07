@@ -296,6 +296,36 @@ jobs:
           OCCT_LIB_DIR: /Users/runner/occt/lib
         run: cargo build --release --locked --bin qymcad
 
+      # THE SIGNING CERTIFICATE, from two secrets: `MACOS_CERT_P12` is the base64 of the .p12 and
+      # `MACOS_CERT_PASSWORD` its password, both made by `packaging/macos/make-signing-cert.sh`. A missing
+      # secret stops the job: a package signed ad hoc on one run and by the certificate on the next would
+      # change its identity between releases, and the permissions granted to it with that.
+      #
+      # `rcodesign` signs from the .p12 itself - no keychain, no trust setting on the runner; the reason is
+      # at the signing step of bundle.sh. A pinned release, checked against its published sha256, like every
+      # other tool here.
+      - name: Signing tool and certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERT_P12" ] || [ -z "$MACOS_CERT_PASSWORD" ]; then
+            echo "!!! the secrets MACOS_CERT_P12 and MACOS_CERT_PASSWORD are not set"
+            echo "!!! make them with packaging/macos/make-signing-cert.sh"
+            exit 1
+          fi
+          RC=apple-codesign-0.29.0-macos-universal
+          URL=https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.29.0
+          curl -sSLf -o "$RUNNER_TEMP/$RC.tar.gz" "$URL/$RC.tar.gz"
+          curl -sSLf -o "$RUNNER_TEMP/$RC.tar.gz.sha256" "$URL/$RC.tar.gz.sha256"
+          ( cd "$RUNNER_TEMP" && echo "$(cut -d' ' -f1 "$RC.tar.gz.sha256")  $RC.tar.gz" | shasum -a 256 -c - )
+          tar xzf "$RUNNER_TEMP/$RC.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$RC" >> "$GITHUB_PATH"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          printf '%s' "$MACOS_CERT_PASSWORD" > "$RUNNER_TEMP/signing.pw"
+          echo "MACOS_SIGN_P12=$RUNNER_TEMP/signing.p12" >> "$GITHUB_ENV"
+          echo "MACOS_SIGN_P12_PASSWORD_FILE=$RUNNER_TEMP/signing.pw" >> "$GITHUB_ENV"
+
       - name: Bundle the .app
         env:
           QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}

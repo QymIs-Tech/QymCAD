@@ -6,10 +6,12 @@
 //! `grep` matched no library naming the build machine, `grep` returns 1 when it matches nothing, and
 //! `set -o pipefail` turned that into the end of the script.
 //!
-//! `install_name_tool` and `otool` exist only on macOS. They are replaced by two stubs on PATH - one
-//! records what it was asked to do and remembers which files it rewrote, the other prints a dependency
-//! list in the real format and answers according to those marks. Everything the mistakes were actually in
-//! - the copying, the loops, the sentinel, the archive - is ordinary shell and runs anywhere.
+//! `install_name_tool`, `otool` and `codesign` exist only on macOS, `rcodesign` only where it is installed.
+//! They are replaced by stubs on PATH - one records what it was asked to do and remembers which files it
+//! rewrote, another prints a dependency list in the real format and answers according to those marks, the
+//! signing two record their calls and seal the bundle, and `codesign --verify` answers by that seal.
+//! Everything the mistakes were actually in - the copying, the loops, the sentinel, the order of signing,
+//! the archive - is ordinary shell and runs anywhere.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -28,10 +30,28 @@ enum Deps {
     Stubborn,
 }
 
+/// What signing the bundle does to it, as `codesign --verify` sees it afterwards.
+#[derive(Clone, Copy, PartialEq)]
+enum Seal {
+    /// Signing the `.app` seals it, and the check passes - what the real tools do.
+    Holds,
+    /// The `.app` is signed and still does not verify - the state the CI package was shipped in.
+    Breaks,
+}
+
+/// Who signs the bundle.
+#[derive(Clone, Copy, PartialEq)]
+enum Signer {
+    /// No certificate given: `codesign`, ad hoc.
+    AdHoc,
+    /// A .p12 and its password file given: `rcodesign`.
+    Certificate,
+}
+
 /// A tree that looks enough like the repository for the script: the binary, the icon, the licence, the
 /// notices, a manifest with a version, and an OCCT installation of two modules under three names each -
 /// `libTKernel.dylib` -> `libTKernel.7.8.dylib` -> `libTKernel.7.8.1.dylib`, exactly as OCCT installs.
-fn sandbox(case: &str, deps: Deps) -> PathBuf {
+fn sandbox(case: &str, deps: Deps, seal: Seal) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("qym_macos_bundle_{case}"));
     let _ = fs::remove_dir_all(&dir);
     let write = |rel: &str, text: &str| {
@@ -91,23 +111,71 @@ fn sandbox(case: &str, deps: Deps) -> PathBuf {
             before = before
         ),
     ));
+
+    // THE SIGNING TOOLS share one log and one seal. Signing the `.app` itself is what seals it, as with the
+    // real tools; `codesign --verify` passes only on a sealed bundle and otherwise says what the CI package
+    // said. Signing a library leaves the seal alone - only the order is checked, from the log.
+    let (signs, sealed) = (dir.join("signs.txt"), dir.join("sealed"));
+    let seals = if seal == Seal::Holds { format!(": > {}", sealed.display()) } else { ":".to_string() };
+    executable(&write(
+        "bin/codesign",
+        &format!(
+            "#!/usr/bin/env bash
+printf 'codesign %s\\n' \"$*\" >> {signs}
+\
+             case \" $* \" in *' --verify '*)
+  [ -e {sealed} ] && exit 0
+  \
+             echo 'QymCAD.app: code has no resources but signature indicates they must be present' >&2
+  exit 1 ;;
+esac
+\
+             case \"${{@: -1}}\" in *.app) {seals} ;; esac
+exit 0
+",
+            signs = signs.display(),
+            sealed = sealed.display(),
+            seals = seals
+        ),
+    ));
+    executable(&write(
+        "bin/rcodesign",
+        &format!(
+            "#!/usr/bin/env bash
+printf 'rcodesign %s\\n' \"$*\" >> {signs}
+case \"${{@: -1}}\" in *.app) {seals} ;; esac
+exit 0
+",
+            signs = signs.display(),
+            seals = seals
+        ),
+    ));
     dir
 }
 
 /// Run the real script over the sandbox. HOME is moved inside it as well: the script asks git to trust the
 /// directory it is in, and that must not reach the settings of whoever runs the tests.
-fn bundle(dir: &Path) -> Output {
+fn bundle(dir: &Path, signer: Signer) -> Output {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/bundle.sh");
     let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap_or_default());
-    Command::new("bash")
-        .arg(&script)
+    let mut run = Command::new("bash");
+    run.arg(&script)
         .current_dir(dir)
         .env("PATH", path)
         .env("HOME", dir)
         .env("OCCT_ROOT", dir.join("occt"))
         .env_remove("QYMCAD_VERSION")
-        .output()
-        .expect("bash runs the packaging script")
+        .env_remove("MACOS_SIGN_P12")
+        .env_remove("MACOS_SIGN_P12_PASSWORD_FILE");
+    if signer == Signer::Certificate {
+        run.env("MACOS_SIGN_P12", dir.join("signing.p12")).env("MACOS_SIGN_P12_PASSWORD_FILE", dir.join("signing.pw"));
+    }
+    run.output().expect("bash runs the packaging script")
+}
+
+/// What the signing tools were asked to do, one call per line, in order.
+fn signs(dir: &Path) -> Vec<String> {
+    fs::read_to_string(dir.join("signs.txt")).unwrap_or_default().lines().map(str::to_string).collect()
 }
 
 fn said(out: &Output) -> String {
@@ -132,8 +200,8 @@ fn listing(dir: &Path, form: &str) -> String {
 /// returning 1, and under `set -o pipefail` that ended the script in silence, six minutes in.
 #[test]
 fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
-    let dir = sandbox("rpath", Deps::Rpath);
-    let out = bundle(&dir);
+    let dir = sandbox("rpath", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused although every path was already @rpath:\n{}", said(&out));
 
     let held = archive(&dir);
@@ -160,8 +228,8 @@ fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
 /// 33 and 35 for the other two systems. Only the name written into the dependencies is ever loaded.
 #[test]
 fn every_library_travels_once_and_its_other_names_are_links() {
-    let dir = sandbox("weight", Deps::Rpath);
-    let out = bundle(&dir);
+    let dir = sandbox("weight", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains(">>> libraries: 2, links to them: 4"), "the two modules were not counted apart from their links:\n{}", said(&out));
 
@@ -179,8 +247,8 @@ fn every_library_travels_once_and_its_other_names_are_links() {
 /// The case the script was written for: paths name the build machine and are rewritten to `@rpath`.
 #[test]
 fn paths_naming_the_build_machine_are_rewritten() {
-    let dir = sandbox("rewritten", Deps::BuildMachine);
-    let out = bundle(&dir);
+    let dir = sandbox("rewritten", Deps::BuildMachine, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused although every path was rewritten:\n{}", said(&out));
 
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
@@ -193,9 +261,61 @@ fn paths_naming_the_build_machine_are_rewritten() {
 /// and nowhere else, and says so only on somebody else's computer - so that must fail the build, loudly.
 #[test]
 fn a_path_left_naming_the_build_machine_fails_the_bundle() {
-    let dir = sandbox("stubborn", Deps::Stubborn);
-    let out = bundle(&dir);
+    let dir = sandbox("stubborn", Deps::Stubborn, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(!out.status.success(), "a library still named the build machine and the script was happy:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("still points at the build machine"), "the refusal did not say what was wrong:\n{}", said(&out));
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that cannot start");
+}
+
+/// THE BUNDLE IS SEALED, INSIDE OUT. The CI package carried only the linker's signature on the program and
+/// none on the bundle, and macOS called the download damaged. Each library is signed before the bundle,
+/// because sealing the bundle records the signatures of the code inside it; links are not signed twice
+/// through their other names; the bundle is verified before it is archived.
+#[test]
+fn the_bundle_is_signed_after_its_libraries_and_verified() {
+    let dir = sandbox("signed", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let calls = signs(&dir);
+    let signing = |c: &&String| c.starts_with("codesign ") && c.contains("--sign -");
+    let libraries: Vec<&str> = calls.iter().filter(signing).flat_map(|c| c.split_whitespace()).filter(|w| w.ends_with(".dylib")).collect();
+    assert_eq!(libraries.len(), 2, "each module must be signed once, through its file and not its links:\n{calls:#?}");
+    assert!(libraries.iter().all(|l| l.ends_with(".7.8.1.dylib")), "a link was signed instead of the file:\n{calls:#?}");
+
+    let at = |test: &dyn Fn(&String) -> bool| calls.iter().position(test);
+    let lib = at(&|c| signing(&c) && c.contains(".dylib"));
+    let app = at(&|c| signing(&c) && c.ends_with("QymCAD.app"));
+    let verify = at(&|c| c.starts_with("codesign --verify") && c.ends_with("QymCAD.app"));
+    assert!(matches!((lib, app, verify), (Some(l), Some(a), Some(v)) if l < a && a < v), "the libraries, then the bundle, then the check - in that order:\n{calls:#?}");
+    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
+}
+
+/// A CERTIFICATE SIGNS THROUGH `rcodesign`. `codesign` refuses a self-signed certificate the system does not
+/// trust, so with a .p12 given the whole bundle goes to `rcodesign`, with the file and its password file.
+#[test]
+fn a_certificate_signs_the_bundle_through_rcodesign() {
+    let dir = sandbox("certificate", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::Certificate);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let calls = signs(&dir);
+    let p12 = dir.join("signing.p12");
+    let pw = dir.join("signing.pw");
+    let wanted = format!("--p12-file {} --p12-password-file {}", p12.display(), pw.display());
+    assert!(calls.iter().any(|c| c.starts_with("rcodesign sign ") && c.contains(&wanted) && c.ends_with("QymCAD.app")), "the bundle was not signed with the certificate:\n{calls:#?}");
+    assert!(!calls.iter().any(|c| c.contains("--sign")), "codesign signed besides the certificate:\n{calls:#?}");
+    assert!(calls.iter().any(|c| c.starts_with("codesign --verify")), "the signed bundle was not verified:\n{calls:#?}");
+}
+
+/// A BUNDLE THAT DOES NOT VERIFY IS NOT SHIPPED. That is the "damaged" message, found by whoever downloads
+/// the package; the build must stop on it instead.
+#[test]
+fn a_bundle_that_does_not_verify_is_not_archived() {
+    let dir = sandbox("broken", Deps::Rpath, Seal::Breaks);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(!out.status.success(), "a bundle that does not verify was let through:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("code has no resources"), "the refusal did not say what was wrong:\n{}", said(&out));
+    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that does not verify");
 }

@@ -127,8 +127,49 @@ if [ -n "$left" ]; then
     exit 1
 fi
 
-# UNSIGNED, AND SAID SO IN BOTH LANGUAGES. Without an Apple signature the system marks the download as
-# quarantined and refuses to open it: "the app is damaged, move it to the Bin" - which it is not.
+# --- the signature, made LAST: any change to a signed file breaks it ---
+#
+# THE BUNDLE IS SEALED AS A WHOLE. The linker signs the executable by itself, and that signature says the
+# file belongs to a bundle whose resources it vouches for - yet the bundle around it was never signed.
+# `codesign --verify` on such an .app answers "code has no resources but signature indicates they must be
+# present", measured on the CI package, and macOS reads a broken signature as a damaged download.
+#
+# THE CERTIFICATE. `MACOS_SIGN_P12` is the .p12 made by `make-signing-cert.sh`, `MACOS_SIGN_P12_PASSWORD_FILE`
+# the file holding its password; without them the signature is ad hoc, which still seals the bundle.
+#
+# `rcodesign`, NOT `codesign`, FOR THE CERTIFICATE. `codesign` takes an identity only from a keychain and only
+# when the system trusts it: a self-signed one is listed as CSSMERR_TP_NOT_TRUSTED and refused with "no
+# identity found", measured. Trusting it would mean declaring a home-made certificate trusted on the
+# signing machine. `rcodesign` reads the .p12 itself and needs neither. It signs the nested libraries
+# before the bundle, as sealing requires, and writes the requirement `identifier "tech.qymis.cad" and
+# certificate root = H"..."` - the same for every version signed with that certificate, which is what
+# lets the system tell a new release from a stranger.
+#
+# No hardened runtime: under it the loader takes a library only from the same Apple team, and a self-signed
+# certificate has no team, so not one OCCT module would load. No timestamp: Apple's timestamp service is
+# for Apple-issued certificates.
+#
+# WRITABLE FIRST. OCCT as Homebrew installs it is read-only (0444), `cp` keeps that, and `rcodesign` stops
+# on the first library with "Permission denied".
+chmod -R u+w "$APP"
+if [ -n "${MACOS_SIGN_P12:-}" ]; then
+    echo ">>> signing with the certificate in $MACOS_SIGN_P12"
+    rcodesign sign --timestamp-url none \
+        --p12-file "$MACOS_SIGN_P12" --p12-password-file "${MACOS_SIGN_P12_PASSWORD_FILE:?the .p12 needs its password file}" \
+        "$APP"
+else
+    echo ">>> no certificate given (MACOS_SIGN_P12): signing ad hoc"
+    find "$APP/Contents/Frameworks" -type f -name '*.dylib' -print0 |
+        xargs -0 codesign --force --timestamp=none --sign -
+    codesign --force --timestamp=none --sign - "$APP"
+fi
+
+# A signature that does not verify is the "damaged" message again, found by whoever downloads it.
+codesign --verify --deep --strict --verbose "$APP"
+
+# SIGNED, BUT NOT BY APPLE, AND SAID SO IN BOTH LANGUAGES. A certificate Apple did not issue proves the
+# bundle is whole, not who made it, so the system still marks the download as quarantined and refuses to
+# open it the first time.
 #
 # THE RIGHT-CLICK IS NOT THE WAY ANY MORE. These notes used to say "Control-click and choose Open", the
 # advice that worked for years. Reported behaviour: on a current macOS it does nothing - the same refusal
@@ -142,9 +183,10 @@ fi
 cat > dist/README.txt <<'TXT'
 QymCAD - build for macOS (Apple Silicon).
 
-FIRST RUN. The build carries no Apple developer signature, and macOS marks everything downloaded
-from the internet as "quarantined": it will say the app is damaged and offer to move it to the Bin.
-It is not damaged. The mark has to be cleared, once.
+FIRST RUN. The build is signed, but not with a certificate Apple issued, and macOS marks everything
+downloaded from the internet as "quarantined": it will refuse to open the app, saying Apple cannot
+check it or that it is damaged, and offer to move it to the Bin. It is not damaged. The mark has to
+be cleared, once.
 
   1. Unpack the archive.
 
@@ -168,9 +210,10 @@ TXT
 cat > dist/ПРОЧТИ.txt <<'TXT'
 QymCAD - сборка для macOS (Apple Silicon).
 
-ПЕРВЫЙ ЗАПУСК. У сборки нет подписи разработчика Apple, а macOS помечает всё скачанное из интернета
-«карантином»: она скажет, что программа повреждена, и предложит переместить её в Корзину. Она не
-повреждена. Метку нужно снять, один раз.
+ПЕРВЫЙ ЗАПУСК. Сборка подписана, но не сертификатом, выданным Apple, а macOS помечает всё скачанное
+из интернета «карантином»: она откажется открыть программу, сказав, что Apple не может её проверить
+или что она повреждена, и предложит переместить её в Корзину. Она не повреждена. Метку нужно снять,
+один раз.
 
   1. Распакуйте архив.
 

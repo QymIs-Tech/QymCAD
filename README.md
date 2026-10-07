@@ -42,8 +42,9 @@ A development build. The program works and is fit for real parts, but it is upda
   what is behind it is groundwork: part of the code came from an earlier version and is not
   maintained. The module returns for the stable alpha.
 - **The macOS build carries no Apple signature.** macOS marks a downloaded application as quarantined
-  and refuses to open it, saying it is damaged - it is not. The mark is cleared once, with one command,
-  written out step by step in the notes inside the archive. Apple Silicon only; there is no Intel build.
+  and refuses to open it, saying Apple cannot check it or that it is damaged - it is not. The mark is
+  cleared once, with one command, written out step by step in the notes inside the archive. Apple
+  Silicon only; there is no Intel build.
 
 ## Features
 
