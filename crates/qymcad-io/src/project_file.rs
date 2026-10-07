@@ -1,9 +1,11 @@
 //! The project file `.qcad`: a zip bundle.
 //!
 //! The layout: `meta.ron` with the schema version, `document.ron` with the project and the mesh geometry moved
-//! out, `meshes/<id>.ron` with the geometry of a mesh under its stable id, deflated, and `sources/*` with the
-//! originals of imports. The old flat format is not read: the project is in development and compatibility is
-//! not needed.
+//! out, `meshes/<id>.ron` with the geometry of a mesh under its stable id, deflated, `faces/<id>.ron` with the
+//! cache of B-rep faces, `brep/<id>.brep` with the live bodies, `sources/*` with the originals of imports, and
+//! `thumb.png` at the archive root with an optional 256x256 preview raster stored uncompressed (Stored). See
+//! `docs/thumbnails.md` for shell integration details.
+//! The old flat format is not read: the project is in development and compatibility is not needed.
 
 use std::io::{Read, Write};
 
@@ -186,14 +188,17 @@ pub fn load_project(path: &str) -> Result<Project, String> {
 }
 
 /// Read the preview thumbnail alone from a `.qcad` bundle on disk, without unpacking document or geometry.
-/// Returns `None` if the archive holds no preview or could not be read.
+///
+/// Looks up `thumb.png` directly at the archive root. Because the thumbnail is stored using `Stored`
+/// compression, it is read directly without decompressing either the image stream or other entries.
+/// Returns `None` if the archive holds no preview (e.g. no 3D geometry exists, or autosave) or could not be read.
 pub fn load_project_thumb(path: &str) -> Option<Vec<u8>> {
     let file = std::fs::File::open(path).ok()?;
     let mut zip = zip::ZipArchive::new(file).ok()?;
     read_bytes(&mut zip, "thumb.png").ok()
 }
 
-/// The same from bytes in memory.
+/// The same from bytes in memory. Avoids redundant allocations by reading through a cursor over the slice.
 pub fn load_project_thumb_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     if !bytes.starts_with(b"PK") {
         return None;
