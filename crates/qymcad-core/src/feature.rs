@@ -894,6 +894,45 @@ pub enum ChamferMode {
     DistAngle,
 }
 
+/// THE MOST INSTANCES ONE PATTERN MAY HOLD, the source counted, fixed when the program is built: a linear or circular
+/// pattern of a body, or a pattern of components. A pattern past it is refused with a message.
+///
+/// Why a limit at all. The input box takes up to 512 per direction, but a formula or a file is not held by the box, and
+/// nothing limited the product: it was multiplied in 32 bits, so a 65,536 x 65,536 component grid wrapped to a total of
+/// 0 and the next rebuild divided by it, and a feature pattern reserved room for every copy before anything checked it
+/// (a circular count of 4,000,000,000 asked for 384,000,000,000 bytes and the program died).
+///
+/// Why this number. The rebuild of a pattern grows about with the square of its size. Measured on a grid of separate
+/// 5 mm boxes (`cargo test` build, 4 cores): 1,000 instances rebuilt in 7.2 s with 224 MB at the peak, 2,000 in 46 s
+/// (396 MB), 5,000 in 5.3 min (902 MB), 10,000 in 11.3 min (1.8 GB) - and a rebuild holds the interface. Real patterns
+/// hold tens to a few hundred copies; at 1,000 a count typed or computed past real use costs seconds, not minutes.
+pub const MAX_PATTERN_INSTANCES: u32 = 1_000;
+
+/// THE MOST STARTS (separate helices) A THREAD OR AN AUGER MAY HAVE, fixed when the program is built.
+///
+/// Why this number. A multi-start thread or an auger has a handful of starts; 64 leaves room for any special case while
+/// closing the hole an unlimited count opened: every start is a groove whose faces are named up front,
+/// `edges x starts` names reserved before any check, so a thread or an auger with a billion starts was still running
+/// after five minutes (measured) before anything was built. The turns of a thread already have their own limit (`ThreadTooManyTurns`, 400).
+pub const MAX_HELIX_STARTS: u32 = 64;
+
+/// How many instances a pattern of these per-direction counts asks for, each count taken as at least one: multiplied
+/// in 64 bits and saturating, so no layout can wrap round to a small total.
+pub fn pattern_asked(counts: &[u32]) -> u64 {
+    counts.iter().fold(1u64, |total, &c| total.saturating_mul(c.max(1) as u64))
+}
+
+/// How many instances a pattern of these per-direction counts holds: `None` when that is past `MAX_PATTERN_INSTANCES`.
+pub fn pattern_instances(counts: &[u32]) -> Option<u32> {
+    let total = pattern_asked(counts);
+    (total <= MAX_PATTERN_INSTANCES as u64).then_some(total as u32)
+}
+
+/// The refusal of a pattern of these counts, past `MAX_PATTERN_INSTANCES`.
+pub fn pattern_too_large(counts: &[u32]) -> crate::errors::CoreError {
+    crate::errors::CoreError::PatternTooLarge { asked: pattern_asked(counts), limit: MAX_PATTERN_INSTANCES }
+}
+
 /// Kind of a timeline node. The parameters of part features live here.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FeatureKind {

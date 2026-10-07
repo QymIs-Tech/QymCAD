@@ -89,3 +89,11 @@ pub fn open_like_the_app(project: &mut Project) -> qymcad_core::feature::RegenRe
     let shapes = restore_import_shapes(project);
     regenerate_with_shapes(project, shapes).0
 }
+
+/// The round edge of radius about `r` of `body`: where a person clicks to place a thread or an auger. The project is
+/// rebuilt first, so the edges are current. Panics when there is none.
+pub fn round_edge(project: &mut Project, body: Id, r: f64) -> u32 {
+    let _ = regenerate(project);
+    let edges = project.regen_edges.get(&body).cloned().unwrap_or_default();
+    edges.iter().find(|e| e.radius > 1e-9 && (e.radius - r).abs() < 0.05).map(|e| e.id).unwrap_or_else(|| panic!("body {body} has no round edge of radius {r}"))
+}

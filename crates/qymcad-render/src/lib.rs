@@ -1252,7 +1252,9 @@ pub fn draw_array_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         } else {
             (0.0, 0.0, 0.0, 1)
         };
-        for i in 0..pn.arr.count.max(1) {
+        // past the limit the pattern will be refused, and drawing its copies one by one would hold every frame
+        let (c1, c2, c3) = if qymcad_core::feature::pattern_instances(&[pn.arr.count, c2, c3]).is_some() { (pn.arr.count.max(1), c2, c3) } else { (1, 1, 1) };
+        for i in 0..c1 {
             for j in 0..c2 {
                 for l in 0..c3 {
                     if i == 0 && j == 0 && l == 0 {

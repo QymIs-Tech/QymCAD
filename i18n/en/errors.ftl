@@ -3,6 +3,8 @@ error-thicken-added-nothing = The plate went into the body and added nothing —
 error-draft-angle-zero = A draft of 0 degrees tilts nothing — give an angle other than zero
 error-torus-through-itself = The tube is as thick as the ring or thicker — such a torus passes through itself; make the tube radius smaller than the ring radius
 error-array-of-one = A pattern of one copy is the body alone — give two copies or more
+error-pattern-too-large = A pattern of { $asked } instances is past the limit of { $limit } — lower the counts
+error-too-many-starts = { $starts } starts is too many — at most { $limit }
 ### { $name } placeholders carry data from the core — keep them, they are not decoration.
 
 ## Operation failed in the geometry kernel.
