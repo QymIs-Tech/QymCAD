@@ -54,6 +54,31 @@ if ($dlls.Count -eq 0) { throw "$occtBin holds no DLLs" }
 Write-Host ">>> OCCT libraries: $($dlls.Count)"
 Copy-Item $dlls.FullName $out
 
+# --- Patch TBB for Windows 7 compatibility ---
+if (Test-Path "$out\tbb12.dll") {
+    Write-Host ">>> Patching tbb12.dll for Windows 7 compatibility..."
+    python -c @"
+import os
+for fname in ['tbb12.dll', 'tbb12_debug.dll']:
+    p = os.path.join(r'$out', fname)
+    if os.path.exists(p):
+        with open(p, 'rb') as f:
+            d = bytearray(f.read())
+        old_sym = b'\x38\x02GetCurrentThreadStackLimits\x00'
+        new_sym = b'\x00\x00GetTickCount\x00' + b'\x00' * (len(old_sym) - len(b'\x00\x00GetTickCount\x00'))
+        pos = d.find(old_sym)
+        if pos != -1:
+            d[pos:pos+len(new_sym)] = new_sym
+        orig_code = bytes.fromhex('488d542438488d4c2440ff15b44e0100488b442438488d0d98220400482b442440')
+        c_pos = d.find(orig_code)
+        if c_pos != -1:
+            new_code = bytes.fromhex('65488b042508000000' + '65482b042510000000' + '909090' + '488d0d98220400' + '9090909090')
+            d[c_pos:c_pos+len(new_code)] = new_code
+        with open(p, 'wb') as f:
+            f.write(d)
+"@
+}
+
 # --- Visual C++ runtime ---
 $redist = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" -Directory -ErrorAction SilentlyContinue |
           Sort-Object FullName | Select-Object -Last 1

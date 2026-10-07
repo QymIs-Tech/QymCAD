@@ -68,6 +68,34 @@ def build_combase_forwarder(out_dir):
     else:
         raise RuntimeError("Neither (clang + lld-link) nor (cl + link) found to build combase.dll")
 
+def patch_tbb_for_win7(out_dir):
+    """Patch tbb12.dll if present to remove dependency on Windows 8+ GetCurrentThreadStackLimits API."""
+    for fname in ["tbb12.dll", "tbb12_debug.dll"]:
+        tbb_path = os.path.join(out_dir, fname)
+        if not os.path.exists(tbb_path):
+            continue
+        with open(tbb_path, "rb") as f:
+            data = bytearray(f.read())
+
+        # Replace GetCurrentThreadStackLimits in import directory with GetTickCount
+        old_sym = b"\x38\x02GetCurrentThreadStackLimits\x00"
+        new_sym = b"\x00\x00GetTickCount\x00" + b"\x00" * (len(old_sym) - len(b"\x00\x00GetTickCount\x00"))
+        pos = data.find(old_sym)
+        if pos != -1:
+            data[pos:pos+len(new_sym)] = new_sym
+            print(f">>> Patched {fname}: replaced GetCurrentThreadStackLimits import with GetTickCount")
+
+        # Replace call with direct TEB StackBase - StackLimit read
+        orig_code = bytes.fromhex("488d542438488d4c2440ff15b44e0100488b442438488d0d98220400482b442440")
+        c_pos = data.find(orig_code)
+        if c_pos != -1:
+            new_code = bytes.fromhex("65488b042508000000" + "65482b042510000000" + "909090" + "488d0d98220400" + "9090909090")
+            data[c_pos:c_pos+len(new_code)] = new_code
+            print(f">>> Patched {fname}: replaced stack limits call with TEB read")
+
+        with open(tbb_path, "wb") as f:
+            f.write(data)
+
 def main():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     os.chdir(repo_root)
@@ -133,6 +161,9 @@ def main():
     if occt_count == 0:
         raise RuntimeError("No OCCT libraries found! Check OCCT_ROOT or target/occt-win64.")
     print(f">>> OCCT libraries: {occt_count}")
+
+    # Patch TBB for Windows 7 compatibility
+    patch_tbb_for_win7(out_dir)
 
     # VC Redist installer
     vcredist_candidates = [
