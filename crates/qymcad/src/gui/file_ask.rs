@@ -28,22 +28,56 @@ pub(crate) struct FileAsk {
 /// What a chooser's answer is for: run once, on the frame thread, with the chosen path.
 type Answered = dyn FnOnce(&mut App, PathBuf);
 
+/// A CHOOSER TO PUT UP: the system's dialog and the folder it opens in. The folder is held apart from the
+/// dialog because `rfd` does not give it back once set, and a session standing in for the system has to see
+/// where the chooser would have opened.
+pub(crate) struct Question {
+    dialog: rfd::AsyncFileDialog,
+    folder: Option<PathBuf>,
+}
+
+impl Question {
+    /// The dialog opened in `folder`; `None` leaves the folder to the system.
+    pub(crate) fn in_folder(dialog: rfd::AsyncFileDialog, folder: Option<PathBuf>) -> Self {
+        Question { dialog, folder }
+    }
+}
+
+impl From<rfd::AsyncFileDialog> for Question {
+    fn from(dialog: rfd::AsyncFileDialog) -> Self {
+        Question { dialog, folder: None }
+    }
+}
+
+/// Put `question` up as a chooser of `kind` and hand back where its answer will arrive.
+fn put_up(question: Question, kind: Chooser) -> Receiver<Option<PathBuf>> {
+    let Question { dialog, folder } = question;
+    let dialog = match &folder {
+        Some(f) => dialog.set_directory(f),
+        None => dialog,
+    };
+    crate::system::choose_file(kind, folder, move || match kind {
+        Chooser::Open => Box::pin(dialog.pick_file()),
+        Chooser::Save => Box::pin(dialog.save_file()),
+    })
+}
+
 impl App {
     /// Ask for an existing file. `then` runs on a later frame with the chosen path; cancelling drops it
     /// unused. If a chooser is already open this does nothing - see [`App::asking_for_a_file`].
-    pub(crate) fn ask_open_file(&mut self, dialog: rfd::AsyncFileDialog, then: impl FnOnce(&mut App, PathBuf) + 'static) {
+    pub(crate) fn ask_open_file(&mut self, dialog: impl Into<Question>, then: impl FnOnce(&mut App, PathBuf) + 'static) {
         if self.asking_for_a_file() {
             return;
         }
-        self.arm_file_ask(crate::system::choose_file(Chooser::Open, move || Box::pin(dialog.pick_file())), then);
+        self.arm_file_ask(put_up(dialog.into(), Chooser::Open), then);
     }
 
     /// Ask where to write. The same contract as [`App::ask_open_file`].
-    pub(crate) fn ask_save_file(&mut self, dialog: rfd::AsyncFileDialog, then: impl FnOnce(&mut App, PathBuf) + 'static) {
+    pub(crate) fn ask_save_file(&mut self, dialog: impl Into<Question>, then: impl FnOnce(&mut App, PathBuf) + 'static) {
         if self.asking_for_a_file() {
             return;
         }
-        self.arm_file_ask(crate::system::choose_file(Chooser::Save, move || Box::pin(dialog.save_file())), then);
+        self.arm_file_ask(put_up(dialog.into(), Chooser::Save), then);
     }
 
     /// Hold `rx` and the continuation until [`App::poll_file_ask`] picks the answer up.

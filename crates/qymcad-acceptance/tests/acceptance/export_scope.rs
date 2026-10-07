@@ -205,3 +205,79 @@ probe! {
         assert!(off[1].0 / off[1].1 < 0.001, "the finest quality is {} away from a shaft of {}, over a thousandth of it", off[1].0, off[1].1);
     }
 }
+
+/// A FOLDER OF THIS CHECK'S OWN under the temporary one, made fresh.
+fn a_folder(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join("qym-export-folder").join(name);
+    std::fs::create_dir_all(&dir).expect("the folder for the check");
+    dir
+}
+
+/// PUT UP THE CHOOSER OF A PROJECT EXPORT through the File menu and answer the folder it opens in, leaving it up.
+fn the_export_chooser_opens_in(s: &mut Session, item: &str) -> Option<std::path::PathBuf> {
+    let (file, export) = (s.word("menu-file"), s.word("file-export"));
+    s.menu(&[&file, &export, item]);
+    let quality = s.word("stl-standard");
+    if s.shows(&quality) {
+        s.press_word(&quality);
+    }
+    s.chooser_folder()
+}
+
+probe! {
+    /// AN EXPORT OPENS IN THE FOLDER OF THE PROJECT, and once a person has written an export somewhere else, in
+    /// that folder - for every format and for a sketch's drawing alike.
+    ///
+    /// Reported behaviour: on Linux the export chooser opened in the home folder every time.
+    fn an_export_opens_where_the_project_lives_then_where_the_last_export_went() {
+        let (home, elsewhere) = (a_folder("project"), a_folder("elsewhere"));
+        let mut s = Session::start();
+        build::block(&mut s);
+        build::save_as(&mut s, &home.join("plate.qcad").display().to_string());
+
+        let opened = the_export_chooser_opens_in(&mut s, "STEP\u{2026}");
+        assert_eq!(opened.as_deref(), Some(home.as_path()), "the first export of a saved project opened outside its folder");
+        written_to(&mut s, &elsewhere.join("plate.step").display().to_string(), "the project");
+
+        let opened = the_export_chooser_opens_in(&mut s, "STL\u{2026}");
+        assert_eq!(opened.as_deref(), Some(elsewhere.as_path()), "the next export forgot the folder the last one was written to");
+        written_to(&mut s, &elsewhere.join("plate.stl").display().to_string(), "the project");
+
+        let sketch = s.document().sketches.last().map(|sk| sk.name.clone()).expect("the sketch of the block");
+        let at = row(&mut s, &sketch).center();
+        s.click_with(at, PointerButton::Secondary, Modifiers::default());
+        let item = s.word("act-export-dxf");
+        s.press_word_near(&item, at);
+        assert_eq!(s.chooser_folder().as_deref(), Some(elsewhere.as_path()), "the drawing of a sketch opened outside the folder of the last export");
+    }
+}
+
+probe! {
+    /// ANOTHER PROJECT OPENED, ITS OWN FOLDER: the folder a person wrote the last export of one project to is not
+    /// offered for the next project.
+    fn another_project_opens_its_exports_in_its_own_folder() {
+        let (first, second, elsewhere) = (a_folder("first"), a_folder("second"), a_folder("elsewhere-of-first"));
+        let other = second.join("other.qcad").display().to_string();
+        let mut s = Session::start();
+        build::block(&mut s);
+        build::save_as(&mut s, &other);
+        let mut s = Session::start();
+        build::block(&mut s);
+        build::save_as(&mut s, &first.join("first.qcad").display().to_string());
+        the_export_chooser_opens_in(&mut s, "STEP\u{2026}");
+        written_to(&mut s, &elsewhere.join("first.step").display().to_string(), "the first project");
+
+        build::open_project(&mut s, &other);
+        let opened = the_export_chooser_opens_in(&mut s, "STEP\u{2026}");
+        assert_eq!(opened.as_deref(), Some(second.as_path()), "the export of the project opened second went to the folder of the first one's export");
+    }
+}
+
+probe! {
+    /// A PROJECT NEVER SAVED HAS NO FOLDER: the chooser is left to open where the system opens it.
+    fn a_project_never_saved_leaves_the_folder_to_the_system() {
+        let mut s = Session::start();
+        build::block(&mut s);
+        assert_eq!(the_export_chooser_opens_in(&mut s, "STEP\u{2026}"), None);
+    }
+}

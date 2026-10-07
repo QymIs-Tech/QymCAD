@@ -3120,6 +3120,19 @@ mod tests {
                 },
                 Err(e) => problems.push(format!("the STL export refused: {e}")),
             }
+
+            // The chooser of the export opens in the project's folder, and after an export written elsewhere,
+            // in that folder. The document is given the path of the save round, as Save As gives it.
+            let saved = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
+            crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, saved);
+            let home = app.disk.project_path.as_deref().and_then(|p| std::path::Path::new(p).parent()).map(std::path::Path::to_path_buf);
+            if home.is_none() || crate::gui::export_folder::export_folder(&app.disk) != home {
+                problems.push(format!("the export chooser opens in {:?}, not in the project's folder {home:?}", crate::gui::export_folder::export_folder(&app.disk)));
+            }
+            crate::gui::export_folder::remember_export(&mut app.disk, std::path::Path::new(&path));
+            if crate::gui::export_folder::export_folder(&app.disk) != Some(std::env::temp_dir()) {
+                problems.push(format!("after an export into {:?} the next chooser opens in {:?}", std::env::temp_dir(), crate::gui::export_folder::export_folder(&app.disk)));
+            }
             check_all(&mut app, "the project export", &mut problems);
         }
 

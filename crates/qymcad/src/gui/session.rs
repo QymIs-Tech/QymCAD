@@ -637,7 +637,14 @@ impl Session {
     /// WHICH CHOOSER THE PROGRAM HAS PUT UP and waits on, if any.
     pub fn chooser(&mut self) -> Option<Chooser> {
         self.settle();
-        crate::system::with_stand_in(|s| s.asked.as_ref().map(|(kind, _)| *kind)).flatten()
+        crate::system::with_stand_in(|s| s.asked.as_ref().map(|a| a.kind)).flatten()
+    }
+
+    /// THE FOLDER THE CHOOSER THAT IS UP OPENS IN; `None` when no chooser is up or it leaves the folder to the
+    /// system.
+    pub fn chooser_folder(&mut self) -> Option<std::path::PathBuf> {
+        self.settle();
+        crate::system::with_stand_in(|s| s.asked.as_ref().and_then(|a| a.folder.clone())).flatten()
     }
 
     /// ANSWER THE CHOOSER with `path`, as a person picks a file in it.
@@ -1872,8 +1879,8 @@ impl Session {
     fn answer(&mut self, path: Option<std::path::PathBuf>) -> &mut Self {
         self.settle();
         let asked = crate::system::with_stand_in(|s| s.asked.take()).flatten();
-        let (_, tx) = asked.expect("the program has put up no chooser to answer");
-        tx.send(path).expect("the program stopped waiting for the chooser");
+        let asked = asked.expect("the program has put up no chooser to answer");
+        asked.tx.send(path).expect("the program stopped waiting for the chooser");
         self.settle();
         self.stepped("an answer to the chooser");
         self

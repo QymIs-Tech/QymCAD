@@ -434,6 +434,8 @@ pub(crate) struct OnDisk {
     pub(crate) project_path: Option<String>,
     /// The last DXF a drawing was imported from - the next import opens there.
     pub(crate) dxf_path: Option<String>,
+    /// The folder the last export was written to - the next export opens there.
+    pub(crate) export_folder: Option<export_folder::ExportFolder>,
     /// Reading and writing: the background jobs and what they came back with.
     pub(crate) io: DocIo,
     /// What has changed since the last save, and when the last autosave was.
@@ -459,6 +461,7 @@ impl Default for OnDisk {
         OnDisk {
             project_path: None,
             dxf_path: None,
+            export_folder: None,
             io: DocIo::default(),
             edits: Edits::default(),
             file_ask: None,
@@ -4190,6 +4193,8 @@ mod io_jobs;
 
 /// Asking for a file without stopping the frames lives in `gui/file_ask.rs`.
 mod file_ask;
+/// Where an export chooser opens lives in `gui/export_folder.rs`.
+mod export_folder;
 /// Whole frames without a screen, for the hand of the checks and for a session, live in `gui/window.rs`.
 mod window;
 mod key_leak;

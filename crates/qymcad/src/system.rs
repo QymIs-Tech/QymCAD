@@ -21,10 +21,19 @@ pub enum Chooser {
 /// The system as a session stands in for it.
 #[derive(Default)]
 pub(crate) struct StandIn {
-    /// A chooser put up and not answered yet, with where its answer goes.
-    pub(crate) asked: Option<(Chooser, Sender<Option<PathBuf>>)>,
+    /// A chooser put up and not answered yet.
+    pub(crate) asked: Option<Asked>,
     /// What the program asked the system to start - command and arguments - in order.
     pub(crate) started: Vec<(String, Vec<String>)>,
+}
+
+/// A chooser as the stand-in holds it until the session answers.
+pub(crate) struct Asked {
+    pub(crate) kind: Chooser,
+    /// The folder the chooser opens in; `None` leaves it to the system, which on Linux is the home folder.
+    pub(crate) folder: Option<PathBuf>,
+    /// Where the answer goes.
+    pub(crate) tx: Sender<Option<PathBuf>>,
 }
 
 /// A session of the checks has run in this process: a real chooser here is a fault of the checks, never a question for
@@ -70,9 +79,9 @@ pub(crate) type PathFuture = std::pin::Pin<Box<dyn std::future::Future<Output = 
 /// The future is BUILT here, on the frame thread, and only HELD by the worker. That split is not a preference:
 /// on macOS the panel is put up inside the constructor and the main thread is what it is put up from, while
 /// the waiting itself may happen anywhere. A stand-in system never builds it.
-pub(crate) fn choose_file(kind: Chooser, chooser: impl FnOnce() -> PathFuture) -> Receiver<Option<PathBuf>> {
+pub(crate) fn choose_file(kind: Chooser, folder: Option<PathBuf>, chooser: impl FnOnce() -> PathFuture) -> Receiver<Option<PathBuf>> {
     let (tx, rx) = std::sync::mpsc::channel();
-    let tx = match with_stand_in(|s| s.asked = Some((kind, tx.clone()))) {
+    let tx = match with_stand_in(|s| s.asked = Some(Asked { kind, folder, tx: tx.clone() })) {
         Some(()) => return rx,
         None => tx,
     };

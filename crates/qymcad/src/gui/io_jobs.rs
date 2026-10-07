@@ -5,6 +5,8 @@ pub(crate) use qymcad_ui_state::ensure_brep;
 #[allow(unused_imports)] // used by the checks through this module, which is the address they know
 pub(crate) use qymcad_ui_state::regenerate_now;
 use super::*;
+use crate::gui::export_folder::{export_folder, remember_export};
+use crate::gui::file_ask::Question;
 
 /// The rebuild writes `line` on the status line and remembers it as its own.
 fn rebuild_says(regen: &mut qymcad_ui_state::Rebuilding, status: &mut String, line: String) {
@@ -255,9 +257,12 @@ impl App {
             self.status = nothing_exact_to_write(format, &plan);
             return;
         }
-        let dialog = exact_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target));
+        let dialog = exact_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target), export_folder(&self.disk));
         let job = ExportJob { format, tree: export_tree_of(&self.project, format, target, &plan.brep), bodies: plan.brep.clone(), note: plan.note(true) };
-        self.ask_save_file(dialog, move |app, path| write_exact_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &job));
+        self.ask_save_file(dialog, move |app, path| {
+            remember_export(&mut app.disk, &path);
+            write_exact_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &job)
+        });
     }
 
     /// Exporting a target as a mesh (STL, OBJ) at a given detail (deflection in mm). A live `Shape` is
@@ -273,8 +278,9 @@ impl App {
             self.status = crate::i18n::tr1("io-mesh-no-bodies", "format", crate::gui::mesh_entry(format).name());
             return;
         }
-        let dialog = mesh_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target));
+        let dialog = mesh_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target), export_folder(&self.disk));
         self.ask_save_file(dialog, move |app, path| {
+            remember_export(&mut app.disk, &path);
             let job = mesh_job(&app.project, format, target, bodies, note, deflection);
             write_mesh_to(qymcad_ui_state::editing_of!(app), &mut app.live, &path, &job)
         });
@@ -287,15 +293,10 @@ impl App {
             self.status = crate::i18n::tr("io-export-empty-sketch");
             return;
         }
-        let name = self.project.sketches.get(si).map(|s| crate::i18n::name(&s.name)).unwrap_or_else(|| crate::i18n::tr("io-sketch-lower"));
-        let (ext, filter) = if dxf { ("dxf", "DXF") } else { ("svg", "SVG") };
-        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(format!("{name}.{ext}")).add_filter(filter, &[ext]), move |app, path| {
-            let p = path.to_string_lossy();
-            let res = if dxf { qymcad_io::export_dxf(&edges, &p) } else { qymcad_io::export_svg(&edges, &p) };
-            match res {
-                Ok(()) => app.status = format!("{filter} -> {}", path.display()),
-                Err(e) => app.status = crate::i18n::name(&e),
-            }
+        let drawing = Drawing::of(dxf);
+        self.ask_save_file(drawing_dialog(&self.project, si, drawing, export_folder(&self.disk)), move |app, path| {
+            remember_export(&mut app.disk, &path);
+            app.status = write_drawing(&edges, &path, drawing);
         });
     }
 
@@ -664,10 +665,11 @@ fn write_meshes(format: qymcad_ui_state::MeshFormat, meshes: &[qymcad_core::geom
     }
 }
 
-/// The chooser for writing a mesh: the suggested name with the format's extension, and the format's filter.
-fn mesh_dialog(format: qymcad_ui_state::MeshFormat, base: &str) -> rfd::AsyncFileDialog {
+/// The chooser for writing a mesh: the suggested name with the format's extension, and the format's filter,
+/// opened in `folder`.
+fn mesh_dialog(format: qymcad_ui_state::MeshFormat, base: &str, folder: Option<std::path::PathBuf>) -> Question {
     let entry = crate::gui::mesh_entry(format);
-    rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions())
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions()), folder)
 }
 
 /// What the status says once meshes have come in: the format, how many bodies, how many triangles.
@@ -814,10 +816,63 @@ fn nothing_exact_to_write(format: qymcad_kernel::ExactFormat, plan: &ExportPlan)
 }
 
 /// The chooser for writing an exact file: the suggested name with the format's first extension, and the
-/// format's own filter.
-fn exact_dialog(format: qymcad_kernel::ExactFormat, base: &str) -> rfd::AsyncFileDialog {
+/// format's own filter, opened in `folder`.
+fn exact_dialog(format: qymcad_kernel::ExactFormat, base: &str, folder: Option<std::path::PathBuf>) -> Question {
     let entry = crate::gui::exact_entry(format);
-    rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions())
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions()), folder)
+}
+
+/// The kind of flat drawing a sketch is written out as.
+#[derive(Clone, Copy)]
+enum Drawing {
+    Dxf,
+    Svg,
+}
+
+impl Drawing {
+    /// `flat=true` of the tree's request -> DXF, else SVG.
+    fn of(dxf: bool) -> Self {
+        if dxf {
+            Drawing::Dxf
+        } else {
+            Drawing::Svg
+        }
+    }
+
+    fn ext(self) -> &'static str {
+        match self {
+            Drawing::Dxf => "dxf",
+            Drawing::Svg => "svg",
+        }
+    }
+
+    /// The name of the format, for the chooser's filter and the status.
+    fn name(self) -> &'static str {
+        match self {
+            Drawing::Dxf => "DXF",
+            Drawing::Svg => "SVG",
+        }
+    }
+}
+
+/// The chooser for writing the sketch `si` out as `drawing`, named after the sketch and opened in `folder`.
+fn drawing_dialog(project: &Project, si: usize, drawing: Drawing, folder: Option<std::path::PathBuf>) -> Question {
+    let name = project.sketches.get(si).map(|s| crate::i18n::name(&s.name)).unwrap_or_else(|| crate::i18n::tr("io-sketch-lower"));
+    let ext = drawing.ext();
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(format!("{name}.{ext}")).add_filter(drawing.name(), &[ext]), folder)
+}
+
+/// Write `edges` to `path` as `drawing` and answer what the status says about it.
+fn write_drawing(edges: &[qymcad_core::geom::ProfEdge], path: &std::path::Path, drawing: Drawing) -> String {
+    let p = path.to_string_lossy();
+    let res = match drawing {
+        Drawing::Dxf => qymcad_io::export_dxf(edges, &p),
+        Drawing::Svg => qymcad_io::export_svg(edges, &p),
+    };
+    match res {
+        Ok(()) => format!("{} -> {}", drawing.name(), path.display()),
+        Err(e) => crate::i18n::name(&e),
+    }
 }
 
 /// WHAT IS TO BE WRITTEN into an exact file: the format, the bodies, and the note on what was left out.
