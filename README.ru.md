@@ -10,6 +10,14 @@
 
 [cad.qymis.tech](https://cad.qymis.tech)
 
+[![CI](https://github.com/QymIs-Tech/QymCAD/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/QymIs-Tech/QymCAD/actions/workflows/checks.yml)
+[![Release](https://img.shields.io/github/v/release/QymIs-Tech/QymCAD?logo=github)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+<br>
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+
 [English](README.md) | **Русский** | [Українська](README.uk.md) | [Қазақша](README.kk.md)
 
 <img src="docs/screenshots/01-assembly.png" width="900" alt="Станок, собранный в QymCAD: компоненты, сопряжения и их степени свободы">
@@ -67,7 +75,7 @@ QymCAD — настольный САПР для механических дет�
 
 ## Установка
 
-Сборки — в разделе [Releases](../../releases). Дополнительные библиотеки не требуются: OpenCASCADE и
+Сборки — в разделе [Releases](https://github.com/QymIs-Tech/QymCAD/releases). Дополнительные библиотеки не требуются: OpenCASCADE и
 зависимости входят в пакет.
 
 **Windows 10/11 x64** — `qymcad-win64.zip`. Распаковать и запустить `qymcad.exe`.
