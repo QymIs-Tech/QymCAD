@@ -1083,6 +1083,32 @@ mod command_flow_tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// A PROJECT SAVED THROUGH THE INTERFACE EMBEDS A PREVIEW THUMBNAIL IN THE BUNDLE.
+    ///
+    /// The preview raster is placed directly inside the `.qcad` bundle as `thumb.png` so that file managers
+    /// and shell previewers can display thumbnails without parsing the project geometry.
+    #[test]
+    fn save_project_embeds_preview_thumbnail() {
+        let dir = std::env::temp_dir().join(format!("qym_test_thumb_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("model.qcad").to_string_lossy().into_owned();
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = App::default();
+        let _cube = build_cube(&mut app);
+        app.disk.project_path = Some(path.clone());
+
+        app.save_project();
+        app.wait_bg();
+
+        let thumb = qymcad_io::load_project_thumb(&path).expect("project bundle embeds thumb.png");
+        assert!(thumb.starts_with(b"\x89PNG\r\n\x1a\n"), "embedded thumbnail is a valid PNG image");
+        assert!(thumb.len() > 100, "thumbnail contains raster data");
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Save used to mark the project CLEAN before the background write had finished. If the write failed (no
     /// permission, a full disk, a broken path), `is_dirty()` was already false, the "save?" dialogue would not
     /// appear on closing and the edits would go silently. The snapshot's key must be applied ONLY on success.
