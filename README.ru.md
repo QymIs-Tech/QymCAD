@@ -115,7 +115,7 @@ Linux — `just pkg-linux`, требуется Docker. Windows — MSVC, ядр�
 
 ## Участие в разработке
 
-См. [CONTRIBUTING.ru.md](CONTRIBUTING.ru.md).
+Мы рады любому вкладу — коду, улучшению документации, переводам и отчётам об ошибках. Ознакомьтесь с [руководством по участию](CONTRIBUTING.ru.md) и выберите задачу с меткой [good first issue](https://github.com/QymIs-Tech/QymCAD/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22), чтобы начать.
 
 ## Контрибьюторы
 

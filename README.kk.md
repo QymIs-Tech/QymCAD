@@ -117,7 +117,7 @@ Linux — `just pkg-linux`, Docker керек. Windows — MSVC, ядро бас
 
 ## Әзірлеуге қатысу
 
-[CONTRIBUTING.md](CONTRIBUTING.md) қараңыз.
+Біз кез келген үлесті қуана қабылдаймыз — код, құжаттама, жаңа аудармалар және қателер туралы есептер. Бастау үшін [үлес қосу нұсқаулығын](CONTRIBUTING.md) қарап шығып, [good first issue](https://github.com/QymIs-Tech/QymCAD/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) белгісі бар тапсырманы таңдаңыз.
 
 ## Үлес қосушылар
 

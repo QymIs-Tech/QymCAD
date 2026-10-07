@@ -116,7 +116,7 @@ kernel from source as well, then `packaging/macos/bundle.sh`. The details are in
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+We welcome contributions of all kinds — code, documentation, translations, and bug reports. Check the [Contributing Guide](CONTRIBUTING.md) and pick a [good first issue](https://github.com/QymIs-Tech/QymCAD/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) to get started.
 
 ## Contributors
 
