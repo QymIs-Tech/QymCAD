@@ -197,9 +197,9 @@ fn overlay_watermark(pixels: &mut [egui::Color32], width: usize, height: usize) 
                 let dr = dst.r() as f32;
                 let dg = dst.g() as f32;
                 let db = dst.b() as f32;
-                let out_r = ((sr * sa + dr * da * (1.0 - sa)) / out_a).round() as u8;
-                let out_g = ((sg * sa + dg * da * (1.0 - sa)) / out_a).round() as u8;
-                let out_b = ((sb * sa + db * da * (1.0 - sa)) / out_a).round() as u8;
+                let out_r = ((sr * sa + dr * da * (1.0 - sa)) / out_a).round().min(255.0) as u8;
+                let out_g = ((sg * sa + dg * da * (1.0 - sa)) / out_a).round().min(255.0) as u8;
+                let out_b = ((sb * sa + db * da * (1.0 - sa)) / out_a).round().min(255.0) as u8;
                 let out_a_u8 = (out_a * 255.0).round().min(255.0) as u8;
                 pixels[idx] = egui::Color32::from_rgba_unmultiplied(out_r, out_g, out_b, out_a_u8);
             }
