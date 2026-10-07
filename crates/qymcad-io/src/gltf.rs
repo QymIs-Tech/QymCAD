@@ -252,8 +252,31 @@ fn accessor(doc: &Value, buffers: &[Vec<u8>], at: usize) -> Result<Vec<f64>, Str
     };
     let view = &doc["bufferViews"][a["bufferView"].as_u64().ok_or_else(bad)? as usize];
     let buf = buffers.get(view["buffer"].as_u64().ok_or_else(bad)? as usize).ok_or_else(bad)?;
-    let start = view["byteOffset"].as_u64().unwrap_or(0) as usize + a["byteOffset"].as_u64().unwrap_or(0) as usize;
-    let stride = view["byteStride"].as_u64().map(|s| s as usize).unwrap_or(size * width);
+    let element = size * width;
+    // glTF 2.0 writes no stride, or one of 4 to 252; a stride of 0 is glTF 1.0's way of saying the items lie side by side,
+    // and older writers and converters still emit it, so it is read so. Taken literally, 0 made every item the same few
+    // bytes, so any count passed the reads below. A stride narrower than one item would make the items overlap.
+    let stride = match view["byteStride"].as_u64() {
+        None | Some(0) => element,
+        Some(s) if s as usize >= element => s as usize,
+        Some(_) => return Err(bad()),
+    };
+    // NOTHING IS RESERVED BEFORE THE DATA IS KNOWN TO BE THERE. The count comes from the file; reserving it first let a
+    // 640-byte file with a count of 4,000,000,000 ask for 96,000,000,000 bytes, and the failed request aborted the
+    // program (measured). So the last item must end inside the buffer view - and inside the buffer - computed without
+    // overflow, before a single item is read.
+    let view_start = view["byteOffset"].as_u64().unwrap_or(0) as usize;
+    let view_end = match view["byteLength"].as_u64() {
+        Some(len) => view_start.checked_add(len as usize).ok_or_else(bad)?,
+        None => buf.len(),
+    };
+    let start = view_start.checked_add(a["byteOffset"].as_u64().unwrap_or(0) as usize).ok_or_else(bad)?;
+    if count > 0 {
+        let end = (count - 1).checked_mul(stride).and_then(|o| o.checked_add(start)).and_then(|o| o.checked_add(element)).ok_or_else(bad)?;
+        if end > view_end || end > buf.len() {
+            return Err(bad());
+        }
+    }
     let mut out = Vec::with_capacity(count * width);
     for i in 0..count {
         for k in 0..width {
