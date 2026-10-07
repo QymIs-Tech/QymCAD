@@ -281,3 +281,19 @@ probe! {
         assert_eq!(the_export_chooser_opens_in(&mut s, "STEP\u{2026}"), None);
     }
 }
+
+probe! {
+    /// SAVE AS OPENS IN THE FOLDER OF THE PROJECT, not in the folder of its last export.
+    fn save_as_opens_where_the_project_lives() {
+        let (home, elsewhere) = (a_folder("saved-as"), a_folder("elsewhere-of-saved-as"));
+        let mut s = Session::start();
+        build::block(&mut s);
+        build::save_as(&mut s, &home.join("plate.qcad").display().to_string());
+        the_export_chooser_opens_in(&mut s, "STEP\u{2026}");
+        written_to(&mut s, &elsewhere.join("plate.step").display().to_string(), "the project");
+
+        let (file, save_as) = (s.word("menu-file"), s.word("file-save-as"));
+        s.menu(&[&file, &save_as]);
+        assert_eq!(s.chooser_folder().as_deref(), Some(home.as_path()), "Save As of a saved project opened outside its folder");
+    }
+}

@@ -5,7 +5,7 @@ pub(crate) use qymcad_ui_state::ensure_brep;
 #[allow(unused_imports)] // used by the checks through this module, which is the address they know
 pub(crate) use qymcad_ui_state::regenerate_now;
 use super::*;
-use crate::gui::export_folder::{export_folder, remember_export};
+use crate::gui::export_folder::{export_folder, project_folder, remember_export};
 use crate::gui::file_ask::Question;
 
 /// The rebuild writes `line` on the status line and remembers it as its own.
@@ -192,9 +192,7 @@ impl App {
 
     /// Save As (Ctrl+Shift+S): always ask for the path and the name.
     pub(super) fn save_project_as(&mut self) {
-        let start = self.disk.project_path.clone().unwrap_or_else(|| "project.qcad".into());
-        let name = std::path::Path::new(&start).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(name).add_filter("QymCAD project", &["qcad", "ron"]), |app, path| {
+        self.ask_save_file(save_as_dialog(self.disk.project_path.as_deref()), |app, path| {
             let path = path.to_string_lossy().into_owned();
             crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
             app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx())); // confirmed once the write actually succeeds
@@ -663,6 +661,14 @@ fn write_meshes(format: qymcad_ui_state::MeshFormat, meshes: &[qymcad_core::geom
         qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::export_3mf(meshes, path),
         qymcad_ui_state::MeshFormat::Amf => qymcad_io::export_amf(meshes, path),
     }
+}
+
+/// The chooser of Save As: the document's file name, opened in the folder it is saved in. A document never
+/// saved is offered `project.qcad` and the folder the system chooses.
+fn save_as_dialog(project_path: Option<&str>) -> Question {
+    let start = std::path::Path::new(project_path.unwrap_or("project.qcad"));
+    let name = start.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(name).add_filter("QymCAD project", &["qcad", "ron"]), project_folder(project_path))
 }
 
 /// The chooser for writing a mesh: the suggested name with the format's extension, and the format's filter,

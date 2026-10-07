@@ -22,7 +22,7 @@ pub(crate) fn remember_export(disk: &mut OnDisk, written: &Path) {
     }
 }
 
-fn project_folder(project_path: Option<&str>) -> Option<PathBuf> {
+pub(crate) fn project_folder(project_path: Option<&str>) -> Option<PathBuf> {
     Path::new(project_path?).parent().filter(|f| !f.as_os_str().is_empty()).map(Path::to_path_buf)
 }
 
