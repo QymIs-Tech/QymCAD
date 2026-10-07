@@ -1783,7 +1783,14 @@ impl App {
 
 #[cfg(test)]
 fn save_for_test_action(app: &mut App, path: String) {
-    crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, SaveTask { path, autosave: false, pal: None, ghost_alpha: 0 });
+    crate::gui::io_jobs::spawn_save(
+        &mut app.disk.io,
+        &mut app.live,
+        &mut app.project,
+        &mut app.regen,
+        &mut app.status,
+        SaveTask { path, autosave: false, pal: Some(app.scheme.pal.clone()), ghost_alpha: app.set.ghost_alpha },
+    );
     app.wait_bg();
 }
 

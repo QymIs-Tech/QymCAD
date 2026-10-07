@@ -34,8 +34,8 @@ pub fn save_project_with_brep(project: &Project, path: &str, breps: &[(model::Id
 
 /// Save a project as a `.qcad` zip bundle with live B-rep bodies and an optional thumbnail preview.
 ///
-/// `thumb_png` carries an optional PNG raster preview of the project. If `None` is passed and `path` already
-/// exists as a valid bundle with a `thumb.png`, the existing thumbnail is preserved verbatim.
+/// `thumb_png` carries an optional PNG raster preview of the project. If `None` is passed, no preview
+/// thumbnail is embedded in the bundle.
 pub fn save_project_bundle(project: &Project, path: &str, breps: &[(model::Id, Vec<u8>)], thumb_png: Option<&[u8]>) -> Result<(), String> {
     let mut doc = project.clone();
     doc.ensure_ids(); // in case of geometry without ids, built directly
@@ -115,20 +115,15 @@ pub fn save_project_bundle(project: &Project, path: &str, breps: &[(model::Id, V
         }
     }
 
-    // The preview thumbnail at the archive root: written when provided, or copied across raw from the
-    // previous bundle if present. PNG is already compressed, so it is stored directly without recompression.
+    // The preview thumbnail at the archive root: written when provided. PNG is already compressed, so it is
+    // stored directly without recompression. When absent (or if geometry was deleted), no thumbnail is embedded.
     if let Some(png) = thumb_png {
         let thumb_opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         zip.start_file("thumb.png", thumb_opts).map_err(|e| e.to_string())?;
         zip.write_all(png).map_err(|e| e.to_string())?;
-    } else if let Some(ar) = prev.as_mut() {
-        if let Some(i) = ar.index_for_name("thumb.png") {
-            if let Ok(f) = ar.by_index_raw(i) {
-                let _ = zip.raw_copy_file(f);
-            }
-        }
     }
 
+    drop(prev);
     zip.finish().map_err(|e| e.to_string())?;
 
     // The previous version stays alongside. An atomic swap saves from a truncated write but not from writing

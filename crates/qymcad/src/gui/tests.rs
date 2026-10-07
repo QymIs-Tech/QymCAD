@@ -1119,6 +1119,21 @@ mod command_flow_tests {
         assert!(auto_thumb.is_none(), "autosave bundle does not generate a thumbnail");
         let _ = std::fs::remove_file(&auto_path);
 
+        // Resaving with bodies cleared removes the preview thumbnail so OS shows default file icon
+        app.project.bodies.clear();
+        app.save_project();
+        app.wait_bg();
+        assert!(qymcad_io::load_project_thumb(&path).is_none(), "resaving without geometry removes preview thumbnail");
+
+        // Saving a project with no geometry produces no preview thumbnail
+        let empty_path = dir.join("empty.qcad").to_string_lossy().into_owned();
+        let mut empty_app = App::default();
+        empty_app.disk.project_path = Some(empty_path.clone());
+        empty_app.save_project();
+        empty_app.wait_bg();
+        assert!(qymcad_io::load_project_thumb(&empty_path).is_none(), "empty project bundle embeds no thumbnail");
+        let _ = std::fs::remove_file(&empty_path);
+
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&dir);
     }
