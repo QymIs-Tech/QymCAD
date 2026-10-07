@@ -109,6 +109,22 @@ Linux — `just pkg-linux`, требуется Docker. Windows — MSVC, ядр�
 
 См. [CONTRIBUTING.ru.md](CONTRIBUTING.ru.md).
 
+## Контрибьюторы
+
+<a href="https://github.com/QymIs-Tech/QymCAD/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=QymIs-Tech/QymCAD" alt="Contributors" />
+</a>
+
+## История звёзд
+
+<a href="https://star-history.com/#QymIs-Tech/QymCAD&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+ </picture>
+</a>
+
 ## Лицензия
 
 Код распространяется под [AGPL-3.0-or-later](LICENSE): форк и любая производная сборка остаются под

@@ -110,6 +110,22 @@ Linux — `just pkg-linux`, потрібен Docker. Windows — MSVC, ядро 
 
 Див. [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Контриб'ютори
+
+<a href="https://github.com/QymIs-Tech/QymCAD/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=QymIs-Tech/QymCAD" alt="Contributors" />
+</a>
+
+## Історія зірок
+
+<a href="https://star-history.com/#QymIs-Tech/QymCAD&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+ </picture>
+</a>
+
 ## Ліцензія
 
 Код розповсюджується під ліцензією [AGPL-3.0-or-later](LICENSE): форк та будь-яка похідна збірка залишаються
