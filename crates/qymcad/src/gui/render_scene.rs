@@ -24,34 +24,34 @@ struct ThumbnailOptions {
 /// the default camera), WITHOUT mutating the camera or visibility state. It renders only the subtree's bodies
 /// in their own frame. `None` means there are no bodies (nothing was built). Used for UI dialog previews.
 pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_core::model::Id) -> Option<egui::ColorImage> {
-    render_component_thumbnail_with(dc, cid, ThumbnailOptions { bg: dc.scheme.pal.thumbnail_bg(), framing: Framing::Extent3D(0.42) })
+    render_project_mesh_raster(dc.project, &dc.scheme.pal, dc.set.ghost_alpha, cid, ThumbnailOptions { bg: dc.scheme.pal.thumbnail_bg(), framing: Framing::Extent3D(0.42) })
 }
 
 /// A preview raster specially crafted for embedded file bundles (`thumb.png` in `.qcad`): renders with a
-/// completely transparent background, fits the model to 95% of the frame, and overlays the application logo
-/// watermark in the bottom-right corner.
-pub(crate) fn render_project_file_preview(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_core::model::Id) -> Option<egui::ColorImage> {
-    let mut img = render_component_thumbnail_with(dc, cid, ThumbnailOptions { bg: egui::Color32::TRANSPARENT, framing: Framing::FitScreen2D(0.95) })?;
+/// completely transparent background, fits the model to 95% of the frame, overlays the application logo
+/// watermark in the bottom-right corner, and encodes to PNG. Runs independently of the UI context.
+pub(crate) fn render_project_file_preview_png(project: &qymcad_core::model::Project, pal: &qymcad_scheme::Palette, ghost_alpha: u8) -> Option<Vec<u8>> {
+    let mut img = render_project_mesh_raster(project, pal, ghost_alpha, project.root, ThumbnailOptions { bg: egui::Color32::TRANSPARENT, framing: Framing::FitScreen2D(0.95) })?;
     overlay_watermark(&mut img.pixels, img.size[0], img.size[1]);
-    Some(img)
+    color_image_to_png(&img)
 }
 
-fn render_component_thumbnail_with(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_core::model::Id, opts: ThumbnailOptions) -> Option<egui::ColorImage> {
+fn render_project_mesh_raster(project: &qymcad_core::model::Project, pal: &qymcad_scheme::Palette, ghost_alpha: u8, cid: qymcad_core::model::Id, opts: ThumbnailOptions) -> Option<egui::ColorImage> {
     use qymcad_core::feature::{apply12, is_identity12};
     const TS: usize = 256;
-    let mut subtree: std::collections::HashSet<qymcad_core::model::Id> = dc.project.descendants(cid).into_iter().collect();
+    let mut subtree: std::collections::HashSet<qymcad_core::model::Id> = project.descendants(cid).into_iter().collect();
     subtree.insert(cid);
     // the subtree's bodies + their transform RELATIVE TO cid (the part at its own origin)
     let mut items: Vec<(usize, [f64; 12])> = Vec::new();
-    for mi in 0..dc.project.bodies.len() {
-        let Some(b) = dc.project.mesh_id(mi) else { continue };
-        if dc.project.body_owner(b).map(|o| subtree.contains(&o)) != Some(true) {
+    for mi in 0..project.bodies.len() {
+        let Some(b) = project.mesh_id(mi) else { continue };
+        if project.body_owner(b).map(|o| subtree.contains(&o)) != Some(true) {
             continue;
         }
-        if dc.project.bodies[mi].mesh.verts.is_empty() {
+        if project.bodies[mi].mesh.verts.is_empty() {
             continue;
         }
-        items.push((mi, dc.project.body_display_transform(b, cid)));
+        items.push((mi, project.body_display_transform(b, cid)));
     }
     if items.is_empty() {
         return None;
@@ -62,7 +62,7 @@ fn render_component_thumbnail_with(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_co
             let (mut mn, mut mx) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
             for &(mi, wt) in &items {
                 let ident = is_identity12(&wt);
-                for v in &dc.project.bodies[mi].mesh.verts {
+                for v in &project.bodies[mi].mesh.verts {
                     let p = if ident { [v.x, v.y, v.z] } else { apply12(&wt, [v.x, v.y, v.z]) };
                     for a in 0..3 {
                         mn[a] = mn[a].min(p[a]);
@@ -83,7 +83,7 @@ fn render_component_thumbnail_with(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_co
             let (mut mn_v, mut mx_v) = (f64::INFINITY, f64::NEG_INFINITY);
             for &(mi, wt) in &items {
                 let ident = is_identity12(&wt);
-                for v in &dc.project.bodies[mi].mesh.verts {
+                for v in &project.bodies[mi].mesh.verts {
                     let p = if ident { [v.x, v.y, v.z] } else { apply12(&wt, [v.x, v.y, v.z]) };
                     let u = v_dot(p, right);
                     let v = v_dot(p, up);
@@ -117,8 +117,8 @@ fn render_component_thumbnail_with(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_co
     let mut color = vec![opts.bg; TS * TS];
     let mut zbuf = vec![f64::INFINITY; TS * TS];
     for &(mi, wt) in &items {
-        let mesh = &dc.project.bodies[mi].mesh;
-        let base = dc.project.mesh_color(mi);
+        let mesh = &project.bodies[mi].mesh;
+        let base = project.mesh_color(mi);
         let ident = is_identity12(&wt);
         let pw = |vi: u32| {
             let p = mesh.verts[vi as usize];
@@ -137,7 +137,7 @@ fn render_component_thumbnail_with(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_co
             if v_dot(n, fwd) >= 0.0 {
                 continue; // the bodies are oriented outwards
             }
-            let col = qymcad_pick::shade_tri(&dc.scheme.pal, dc.set.ghost_alpha, false, false, base, n, light);
+            let col = qymcad_pick::shade_tri(pal, ghost_alpha, false, false, base, n, light);
             let (ax, ay, az) = proj(a);
             let (bx, by, bz) = proj(b);
             let (cx, cy, cz) = proj(cc);

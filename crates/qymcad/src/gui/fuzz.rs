@@ -141,7 +141,7 @@ mod random_session {
                             &mut app.project,
                             &mut app.regen,
                             &mut app.status,
-                            crate::gui::io_jobs::SaveTask { path: path.clone(), autosave: false, thumb: None },
+                            crate::gui::io_jobs::SaveTask { path: path.clone(), autosave: false, pal: None, ghost_alpha: 0 },
                         );
                         app.wait_bg();
                         if let Ok(proj) = qymcad_io::load_project(&path) {

@@ -134,7 +134,7 @@ mod live_session {
             &mut app.project,
             &mut app.regen,
             &mut app.status,
-            crate::gui::io_jobs::SaveTask { path: p.clone(), autosave: false, thumb: None },
+            crate::gui::io_jobs::SaveTask { path: p.clone(), autosave: false, pal: None, ghost_alpha: 0 },
         );
         app.wait_bg();
         let mut app2 = App::default();
@@ -311,7 +311,7 @@ mod live_session {
             &mut app.project,
             &mut app.regen,
             &mut app.status,
-            crate::gui::io_jobs::SaveTask { path: p.clone(), autosave: false, thumb: None },
+            crate::gui::io_jobs::SaveTask { path: p.clone(), autosave: false, pal: None, ghost_alpha: 0 },
         );
         app.wait_bg();
         let proj = qymcad_io::load_project(&p).expect("the opening");
@@ -551,7 +551,7 @@ mod live_session {
             &mut app.project,
             &mut app.regen,
             &mut app.status,
-            crate::gui::io_jobs::SaveTask { path: path.clone(), autosave: false, thumb: None },
+            crate::gui::io_jobs::SaveTask { path: path.clone(), autosave: false, pal: None, ghost_alpha: 0 },
         );
         // WHILE THE WRITE IS UNDER WAY the document is edited
         let si2 = rect(&mut app, 30.0, 0.0, 60.0, 10.0); // ACROSS the edge of the plate: inside it the union adds nothing, apart from it the part would be two pieces

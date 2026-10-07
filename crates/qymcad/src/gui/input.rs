@@ -360,6 +360,12 @@ fn tick_autosave_action(app: &mut App, force: bool) {
     }
     let path = qymcad_ui_state::autosave_path(&app.disk.project_path);
     app.disk.io.autosave_key = Some(key); // applied ONLY if the write really went through
-    let thumb = crate::gui::render_scene::render_project_file_preview(&app.draw_ctx(), app.project.root).as_ref().and_then(color_image_to_png);
-    crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, crate::gui::io_jobs::SaveTask { path, autosave: true, thumb });
+    crate::gui::io_jobs::spawn_save(
+        &mut app.disk.io,
+        &mut app.live,
+        &mut app.project,
+        &mut app.regen,
+        &mut app.status,
+        crate::gui::io_jobs::SaveTask { path, autosave: true, pal: None, ghost_alpha: 0 },
+    );
 }

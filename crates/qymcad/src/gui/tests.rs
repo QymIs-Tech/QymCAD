@@ -1113,6 +1113,12 @@ mod command_flow_tests {
         let watermark = decoded.get_pixel(216, 216);
         assert_eq!(watermark[3], 255, "watermark is stamped in bottom-right corner (alpha = 255)");
 
+        let auto_path = dir.join("model.autosave.qcad").to_string_lossy().into_owned();
+        app.autosave_for_test(auto_path.clone());
+        let auto_thumb = qymcad_io::load_project_thumb(&auto_path);
+        assert!(auto_thumb.is_none(), "autosave bundle does not generate a thumbnail");
+        let _ = std::fs::remove_file(&auto_path);
+
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&dir);
     }
