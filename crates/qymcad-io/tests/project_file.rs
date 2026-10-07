@@ -264,10 +264,6 @@ fn thumbnail_saved_in_bundle_and_extracted() {
     let thumb_bytes = qymcad_io::load_project_thumb_bytes(&bytes);
     assert_eq!(thumb_bytes.as_deref(), Some(&fake_png[..]), "thumbnail from memory bytes match");
 
-    // Also verify LoadedProject contains the thumbnail
-    let loaded = qymcad_io::load_project_with_brep(path).expect("loaded project with brep");
-    assert_eq!(loaded.thumb_png.as_deref(), Some(&fake_png[..]), "loaded project has thumb_png");
-
     // Resaving without supplying a new thumbnail preserves the existing thumb.png
     qymcad_io::save_project_bundle(&orig, path, &[], None).expect("resaved without new thumb");
     let preserved = qymcad_io::load_project_thumb(path);

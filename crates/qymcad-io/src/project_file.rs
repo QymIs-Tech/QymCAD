@@ -116,9 +116,10 @@ pub fn save_project_bundle(project: &Project, path: &str, breps: &[(model::Id, V
     }
 
     // The preview thumbnail at the archive root: written when provided, or copied across raw from the
-    // previous bundle if present.
+    // previous bundle if present. PNG is already compressed, so it is stored directly without recompression.
     if let Some(png) = thumb_png {
-        zip.start_file("thumb.png", opts).map_err(|e| e.to_string())?;
+        let thumb_opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("thumb.png", thumb_opts).map_err(|e| e.to_string())?;
         zip.write_all(png).map_err(|e| e.to_string())?;
     } else if let Some(ar) = prev.as_mut() {
         if let Some(i) = ar.index_for_name("thumb.png") {
@@ -192,7 +193,9 @@ pub fn load_project(path: &str) -> Result<Project, String> {
 /// Read the preview thumbnail alone from a `.qcad` bundle on disk, without unpacking document or geometry.
 /// Returns `None` if the archive holds no preview or could not be read.
 pub fn load_project_thumb(path: &str) -> Option<Vec<u8>> {
-    load_project_thumb_bytes(&std::fs::read(path).ok()?)
+    let file = std::fs::File::open(path).ok()?;
+    let mut zip = zip::ZipArchive::new(file).ok()?;
+    read_bytes(&mut zip, "thumb.png").ok()
 }
 
 /// The same from bytes in memory.
@@ -200,11 +203,11 @@ pub fn load_project_thumb_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     if !bytes.starts_with(b"PK") {
         return None;
     }
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).ok()?;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
     read_bytes(&mut zip, "thumb.png").ok()
 }
 
-/// WHAT CAME OUT OF A BUNDLE: the document, the live bodies where the file carries them, and the preview thumbnail.
+/// WHAT CAME OUT OF A BUNDLE: the document, and the live bodies where the file carries them.
 ///
 /// It used to be `(Project, Vec<(Id, Vec<u8>)>)`, and at the call site the second half read as a nameless
 /// pile of bytes. The bodies are optional by design - see the note on `load_project_with_brep`.
@@ -213,8 +216,6 @@ pub struct LoadedProject {
     pub project: Project,
     /// The live B-rep of each body the file happened to carry, by body id. Empty is a legitimate answer.
     pub breps: Vec<(model::Id, Vec<u8>)>,
-    /// The preview thumbnail where present.
-    pub thumb_png: Option<Vec<u8>>,
 }
 
 /// The same, but also returning the live bodies where the bundle holds them, as a map from body id to a B-rep
@@ -260,8 +261,7 @@ pub fn load_project_with_brep(path: &str) -> Result<LoadedProject, String> {
             breps.push((*id, blob));
         }
     }
-    let thumb_png = read_bytes(&mut zip, "thumb.png").ok();
-    Ok(LoadedProject { project, breps, thumb_png })
+    Ok(LoadedProject { project, breps })
 }
 
 fn read_bytes<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<Vec<u8>, String> {
