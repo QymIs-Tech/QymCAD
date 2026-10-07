@@ -1019,20 +1019,21 @@ impl Project {
                             parcels.push(Parcel { node: nid, body: out, job });
                         }
                     }
-                    // A body wanted by two parcels keeps both of them here: the shape cannot be in two threads
-                    // at once, and copying it would cost what the work costs.
-                    let mut wanted: std::collections::HashMap<Id, usize> = std::collections::HashMap::new();
-                    for parcel in &parcels {
-                        for b in parcel.job.inputs() {
-                            *wanted.entry(*b).or_insert(0) += 1;
-                        }
-                    }
+                    // TWO PARCELS THAT CANNOT GO TO SEPARATE THREADS stay here, computed in order on the shared
+                    // kernel; the rest travel. Two of them clash when they want the same body (the shape cannot be
+                    // in two threads at once) OR when the bodies they want SHARE a sub-shape - a face or an edge the
+                    // split (or a boolean) left in both. Meshing or healing that shared sub-shape on two threads at
+                    // once rewrites it twice over and the process dies, so such parcels are kept together. Bodies
+                    // that share nothing still travel, so the parallelism is kept where it is safe.
+                    let entangled: Vec<bool> = (0..parcels.len())
+                        .map(|i| parcels.iter().enumerate().any(|(k, other)| k != i && parcels[i].job.inputs().iter().any(|a| other.job.inputs().iter().any(|b| a == b || kernel.shares(*a, *b)))))
+                        .collect();
                     let (mut alone, mut here): (Vec<_>, Vec<_>) = (Vec::new(), Vec::new());
-                    for parcel in parcels {
-                        if parcel.job.inputs().iter().all(|b| wanted.get(b).copied().unwrap_or(0) <= 1) {
-                            alone.push(parcel);
-                        } else {
+                    for (i, parcel) in parcels.into_iter().enumerate() {
+                        if entangled[i] {
                             here.push(parcel);
+                        } else {
+                            alone.push(parcel);
                         }
                     }
                     // the parcels that travel: each with the bodies it needs, taken out of the shared kernel

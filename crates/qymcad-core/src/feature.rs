@@ -2234,6 +2234,13 @@ pub trait Kernel {
         None
     }
 
+    /// Whether two live bodies share a sub-shape (a face or an edge). The batch rebuild asks this to keep bodies
+    /// that share geometry on one worker thread: meshing or healing a shared sub-shape on two threads at once is not
+    /// safe. The default is `false` - a kernel whose bodies never share geometry, or a test stub, needs no grouping.
+    fn shares(&self, _a: Id, _b: Id) -> bool {
+        false
+    }
+
     /// The bodies come home: the shapes the worker was given, plus whatever it built.
     fn absorb(&self, _worker: Box<dyn KernelWorker>) {}
 

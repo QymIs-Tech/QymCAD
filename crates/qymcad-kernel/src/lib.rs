@@ -205,6 +205,7 @@ extern "C" {
     fn qym_shape_solid_at(s: *const QymShape, index: i32) -> *mut QymShape;
     fn qym_shape_face_kinds(s: *const QymShape, out: *mut i32) -> i32;
     fn qym_shape_shell_count(s: *const QymShape) -> i32;
+    fn qym_shapes_share(a: *const QymShape, b: *const QymShape) -> i32;
     fn qym_shape_heal(s: *const QymShape) -> *mut QymShape;
     fn qym_shape_kind(s: *const QymShape) -> i32;
     fn qym_shape_copy_faces(s: *const QymShape, idx: *const u32, names: *const u32, n: usize) -> *mut QymShape;
@@ -628,10 +629,12 @@ pub fn refusal_for_report() -> Option<String> {
     KEPT.lock().ok().and_then(|k| k.clone())
 }
 
-// A shape owns its kernel handle as a sole raw pointer. Moving that ownership to another thread is safe: a
-// STEP import or export runs on a worker thread so the interface can show progress, and the object is never
-// shared between threads at once, only moved. There is no concurrency over one shape, so `Send` is enough and
-// `Sync` is not claimed.
+// A shape owns its kernel handle as a sole raw pointer, so moving that ownership to another thread moves the
+// pointer. It is sound only while no shape left behind, or sent to another thread, shares a face or an edge with
+// it: two shapes that share a sub-shape (the pieces of a split share the cut face) would otherwise be meshed or
+// healed on two threads at once, which rewrites that sub-shape and crashes. The batch rebuild holds to that
+// condition by keeping bodies that share geometry on one thread (`Kernel::shares`, model/regen.rs). `Sync` is not
+// claimed: there is never concurrent access to one shape.
 unsafe impl Send for Shape {}
 
 /// WHICH WAY A HELIX WINDS: the ordinary right hand, or the left one.
@@ -1033,6 +1036,12 @@ impl Shape {
     /// body is assembled from copies, by a pattern or a mirror, and the kernel cannot offset such a thing.
     pub fn shell_count(&self) -> u32 {
         unsafe { qym_shape_shell_count(self.ptr) as u32 }
+    }
+    /// Whether this shape and `other` share a face or an edge - the same kernel sub-shape, not merely an equal one.
+    /// Two bodies that share one must not be meshed or healed on two threads at once, so the rebuild keeps them on
+    /// one thread (see `qymcad_core`'s `Kernel::shares` and the batch dispatch in `model/regen.rs`).
+    pub fn shares_geometry(&self, other: &Shape) -> bool {
+        unsafe { qym_shapes_share(self.ptr, other.ptr) != 0 }
     }
     /// How many bodies the shape has, zero for a sheet. More than one means the operation broke the part into
     /// pieces.

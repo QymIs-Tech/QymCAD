@@ -2529,3 +2529,24 @@ extern "C" int qym_step_write(const QymShape** shapes, const double* mats, size_
     }
 }
 
+
+// WHETHER TWO SHAPES SHARE A FACE OR AN EDGE - the same kernel sub-shape (TShape), not merely an equal one. Two
+// bodies that share one cannot be meshed or healed on two threads at once: both would rewrite that sub-shape's
+// triangulation. The rebuild asks this to keep such bodies on one thread (see model/regen.rs). Faces and edges are
+// enough - those are what meshing and healing touch - and checking them is cheaper than every sub-shape.
+extern "C" int qym_shapes_share(const QymShape* a, const QymShape* b) {
+    if (!a || !b) return 0;
+    try {
+        TopTools_IndexedMapOfShape m;
+        TopExp::MapShapes(a->shape, TopAbs_FACE, m);
+        TopExp::MapShapes(a->shape, TopAbs_EDGE, m);
+        for (TopAbs_ShapeEnum ty : {TopAbs_FACE, TopAbs_EDGE}) {
+            for (TopExp_Explorer ex(b->shape, ty); ex.More(); ex.Next()) {
+                if (m.Contains(ex.Current())) return 1;
+            }
+        }
+    } catch (...) {
+        return 0;
+    }
+    return 0;
+}

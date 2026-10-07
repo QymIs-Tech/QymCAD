@@ -323,6 +323,17 @@ impl qymcad_core::feature::Kernel for OcctKernel {
         crate::workers()
     }
 
+    fn shares(&self, a: Id, b: Id) -> bool {
+        if a == b {
+            return true;
+        }
+        let shapes = self.shapes.borrow();
+        match (shapes.get(&a), shapes.get(&b)) {
+            (Some(x), Some(y)) => x.shares_geometry(y),
+            _ => false,
+        }
+    }
+
     fn split_off(&self, bodies: &[Id]) -> Option<Box<dyn qymcad_core::feature::KernelWorker>> {
         let mut mine = self.shapes.borrow_mut();
         let mut taken: std::collections::HashMap<Id, crate::Shape> = std::collections::HashMap::new();
