@@ -84,10 +84,6 @@ dependencies are inside the package.
 
 - **Portable ZIP**: download `qymcad-win64.zip`, unpack anywhere and run `qymcad.exe`.
 - **MSI Installer**: download and run `qymcad-*-x64.msi` for a standard system installation.
-- **winget**:
-  ```powershell
-  winget install QymIsTech.QymCAD
-  ```
 
 </details>
 
@@ -104,10 +100,6 @@ Requires glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch Linux)
 - **Arch Linux (AUR)**:
   ```bash
   yay -S qymcad-bin
-  ```
-- **Flatpak**:
-  ```bash
-  flatpak install flathub tech.qymis.cad
   ```
 
 </details>

@@ -83,10 +83,6 @@ FreeCAD жұмыс істейтін сол ядро. Сондықтан торл
 
 - **Портативті нұсқа**: `qymcad-win64.zip` жүктеп алып, кез келген жерге ашып, `qymcad.exe` іске қосыңыз.
 - **MSI орнатқышы**: жүйеге орнату үшін `qymcad-*-x64.msi` жүктеп алып, іске қосыңыз.
-- **winget**:
-  ```powershell
-  winget install QymIsTech.QymCAD
-  ```
 
 </details>
 
@@ -103,10 +99,6 @@ glibc 2.35 не жаңарағы керек (Ubuntu 22.04+, Debian 12+, Fedora 3
 - **Arch Linux (AUR)**:
   ```bash
   yay -S qymcad-bin
-  ```
-- **Flatpak**:
-  ```bash
-  flatpak install flathub tech.qymis.cad
   ```
 
 </details>

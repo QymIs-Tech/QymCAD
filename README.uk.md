@@ -83,10 +83,6 @@ QymCAD — настільний САПР для механічних детал�
 
 - **Портативна версія**: завантажте `qymcad-win64.zip`, розархівуйте в будь-яку папку та запустіть `qymcad.exe`.
 - **MSI-інсталятор**: завантажте та запустіть `qymcad-*-x64.msi` для встановлення в систему.
-- **winget**:
-  ```powershell
-  winget install QymIsTech.QymCAD
-  ```
 
 </details>
 
@@ -103,10 +99,6 @@ QymCAD — настільний САПР для механічних детал�
 - **Arch Linux (AUR)**:
   ```bash
   yay -S qymcad-bin
-  ```
-- **Flatpak**:
-  ```bash
-  flatpak install flathub tech.qymis.cad
   ```
 
 </details>
