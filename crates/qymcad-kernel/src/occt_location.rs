@@ -1,30 +1,38 @@
 // For macOS and Linux
-pub fn occt_default_location(target_os: &str, target_arch: &str) -> (&'static str, &'static str) {
+#[derive(Debug, PartialEq, Eq)]
+pub struct OcctLocation {
+    /// The folder that holds `Standard.hxx`.
+    pub include: &'static str,
+    /// The folder that holds `libTKernel`.
+    pub lib: &'static str,
+}
+
+pub fn occt_default_location(target_os: &str, target_arch: &str) -> OcctLocation {
     match (target_os, target_arch) {
-        ("macos", "aarch64") => ("/opt/homebrew/include/opencascade", "/opt/homebrew/lib"),
-        ("macos", _) => ("/usr/local/include/opencascade", "/usr/local/lib"),
-        _ => ("/usr/include/opencascade", "/usr/lib"),
+        ("macos", "aarch64") => OcctLocation { include: "/opt/homebrew/opt/opencascade/include/opencascade", lib: "/opt/homebrew/opt/opencascade/lib" },
+        ("macos", _) => OcctLocation { include: "/usr/local/opt/opencascade/include/opencascade", lib: "/usr/local/opt/opencascade/lib" },
+        _ => OcctLocation { include: "/usr/include/opencascade", lib: "/usr/lib" },
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::occt_default_location;
+    use super::{occt_default_location, OcctLocation};
 
     #[test]
     fn apple_silicon_finds_the_kernel_homebrew_installed() {
-        assert_eq!(occt_default_location("macos", "aarch64"), ("/opt/homebrew/include/opencascade", "/opt/homebrew/lib"));
+        assert_eq!(occt_default_location("macos", "aarch64"), OcctLocation { include: "/opt/homebrew/opt/opencascade/include/opencascade", lib: "/opt/homebrew/opt/opencascade/lib" });
     }
 
     #[test]
     fn an_intel_mac_finds_the_kernel_homebrew_installed() {
-        assert_eq!(occt_default_location("macos", "x86_64"), ("/usr/local/include/opencascade", "/usr/local/lib"));
+        assert_eq!(occt_default_location("macos", "x86_64"), OcctLocation { include: "/usr/local/opt/opencascade/include/opencascade", lib: "/usr/local/opt/opencascade/lib" });
     }
 
     #[test]
     fn linux_keeps_the_distribution_paths_on_every_processor() {
         for arch in ["x86_64", "aarch64"] {
-            assert_eq!(occt_default_location("linux", arch), ("/usr/include/opencascade", "/usr/lib"));
+            assert_eq!(occt_default_location("linux", arch), OcctLocation { include: "/usr/include/opencascade", lib: "/usr/lib" });
         }
     }
 }

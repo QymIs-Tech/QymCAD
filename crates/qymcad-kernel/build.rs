@@ -20,10 +20,10 @@ fn main() {
 
     let msvc = target_env == "msvc";
 
-    let (default_inc, default_lib) = occt_default_location(&target_os, &target_arch);
+    let default = occt_default_location(&target_os, &target_arch);
 
-    let inc = env::var("OCCT_INCLUDE_DIR").unwrap_or_else(|_| default_inc.into());
-    let libdir = env::var("OCCT_LIB_DIR").unwrap_or_else(|_| default_lib.into());
+    let inc = env::var("OCCT_INCLUDE_DIR").unwrap_or_else(|_| default.include.into());
+    let libdir = env::var("OCCT_LIB_DIR").unwrap_or_else(|_| default.lib.into());
 
     let mut build = cc::Build::new();
     build
