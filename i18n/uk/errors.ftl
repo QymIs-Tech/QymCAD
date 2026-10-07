@@ -273,6 +273,7 @@ io-3mf-write-failed = 3MF: запис не вдався ({ $v })
 io-3mf-not-finite-line = 3MF: значення в рядку { $v } не є скінченним числом ({ $w })
 io-amf-read-failed = AMF: файл не читається ({ $v })
 io-amf-not-amf = Це не AMF: у файлі немає розмітки AMF
+io-xml-too-deep = Файл вкладено глибше ніж на { $v } рівнів, і він не читається
 io-amf-unknown-unit = AMF: невідома одиниця «{ $v }»
 io-amf-bad-vertex = AMF: вершину записано неправильно
 io-amf-bad-triangle = AMF: трикутник записано неправильно

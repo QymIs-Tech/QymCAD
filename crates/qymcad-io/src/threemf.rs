@@ -88,7 +88,9 @@ pub fn import_3mf(path: &str) -> Result<Vec<NamedMesh>, String> {
     // the model part, as the package's relationships name it
     let target = read("_rels/.rels")
         .and_then(|rels| {
-            let doc = crate::xml::parse(&rels)?;
+            // a relationships part that cannot be read - malformed or nested too deep - is passed over, and the model is
+            // looked for where it usually lies; the model part itself is refused with its reason
+            let doc = crate::xml::parse(&rels).ok()?;
             doc.descendants().into_iter().find(|n| n.name == "Relationship" && n.attr("Type") == Some(MODEL_REL)).and_then(|n| n.attr("Target")).map(str::to_string)
         })
         .unwrap_or_else(|| "3D/3dmodel.model".to_string());
@@ -101,7 +103,7 @@ pub fn import_3mf(path: &str) -> Result<Vec<NamedMesh>, String> {
 /// its kin write it): a part by the id of the object holding its mesh. The owner's print head came with its 107 part
 /// names there, and none in the model.
 fn part_names(config: &str) -> std::collections::HashMap<String, String> {
-    let Some(doc) = crate::xml::parse(config) else { return Default::default() };
+    let Ok(doc) = crate::xml::parse(config) else { return Default::default() };
     doc.descendants()
         .into_iter()
         .filter(|n| n.name == "part")
@@ -110,7 +112,7 @@ fn part_names(config: &str) -> std::collections::HashMap<String, String> {
 }
 
 fn parse_model(xml: &str, names: &std::collections::HashMap<String, String>) -> Result<Vec<NamedMesh>, String> {
-    let model = crate::xml::parse(xml).ok_or_else(|| "io-3mf-bad-model".to_string())?;
+    let model = crate::xml::parse(xml).map_err(|e| e.key("io-3mf-bad-model"))?;
     let to_mm = unit_mm(model.attr("unit").unwrap_or("millimeter")).ok_or_else(|| format!("io-3mf-unknown-unit#{}", model.attr("unit").unwrap_or("")))?;
     // every object: a mesh, or a list of placed components
     let everything = model.descendants();

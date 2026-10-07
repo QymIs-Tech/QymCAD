@@ -273,6 +273,7 @@ io-3mf-write-failed = 3MF: writing failed ({ $v })
 io-3mf-not-finite-line = 3MF: the value on line { $v } is not a finite number ({ $w })
 io-amf-read-failed = AMF: the file cannot be read ({ $v })
 io-amf-not-amf = This is not AMF: the file holds no AMF markup
+io-xml-too-deep = The file is nested deeper than { $v } levels and is not read
 io-amf-unknown-unit = AMF: an unknown unit "{ $v }"
 io-amf-bad-vertex = AMF: a vertex is written wrongly
 io-amf-bad-triangle = AMF: a triangle is written wrongly

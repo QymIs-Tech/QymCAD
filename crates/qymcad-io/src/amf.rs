@@ -75,7 +75,7 @@ impl Place {
 }
 
 fn parse(xml: &str) -> Result<Vec<NamedMesh>, String> {
-    let root = crate::xml::parse(xml).ok_or_else(|| "io-amf-not-amf".to_string())?;
+    let root = crate::xml::parse(xml).map_err(|e| e.key("io-amf-not-amf"))?;
     if root.name != "amf" {
         return Err("io-amf-not-amf".into());
     }
