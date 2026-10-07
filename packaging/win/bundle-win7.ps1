@@ -36,10 +36,10 @@ if (Test-Path $fwdSrc) {
     if (Get-Command clang -ErrorAction SilentlyContinue) {
         $obj = "$out\combase.obj"
         & clang --target=x86_64-pc-windows-msvc -c $fwdSrc -o $obj
-        & lld-link /dll /machine:x64 /entry:DllMainCRTStartup /export:CoCreateFreeThreadedMarshaler=ole32.CoCreateFreeThreadedMarshaler $obj /out:$fwdDll
+        & lld-link /dll /machine:x64 /entry:DllMainCRTStartup $obj /out:$fwdDll
         Remove-Item $obj -ErrorAction SilentlyContinue
     } elseif (Get-Command cl.exe -ErrorAction SilentlyContinue) {
-        & cl.exe /nologo /LD /O2 /Fe:$fwdDll $fwdSrc /link /MACHINE:X64 /NOENTRY /EXPORT:CoCreateFreeThreadedMarshaler=ole32.CoCreateFreeThreadedMarshaler
+        & cl.exe /nologo /LD /O2 /Fe:$fwdDll $fwdSrc /link /MACHINE:X64 /NOENTRY
         Remove-Item "$out\combase.obj", "$out\combase.lib", "$out\combase.exp" -ErrorAction SilentlyContinue
     } else {
         Write-Warning "neither clang nor cl.exe was found - combase.dll forwarder was not built"

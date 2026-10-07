@@ -53,16 +53,14 @@ def build_combase_forwarder(out_dir):
         ])
         subprocess.check_call([
             "lld-link", "/dll", "/machine:x64", "/entry:DllMainCRTStartup",
-            "/export:CoCreateFreeThreadedMarshaler=ole32.CoCreateFreeThreadedMarshaler",
             obj_file, f"/out:{combase_dll}"
         ])
         if os.path.exists(obj_file):
             os.remove(obj_file)
     elif shutil.which("cl") and shutil.which("link"):
         subprocess.check_call([
-            "cl.exe", "/LD", "/O2", f"/Fe:{combase_dll}", c_src,
-            "/link", "/MACHINE:X64", "/NOENTRY",
-            "/EXPORT:CoCreateFreeThreadedMarshaler=ole32.CoCreateFreeThreadedMarshaler"
+            "cl.exe", "/nologo", "/LD", "/O2", f"/Fe:{combase_dll}", c_src,
+            "/link", "/MACHINE:X64", "/NOENTRY"
         ])
         for cleanup in [obj_file, os.path.join(out_dir, "combase.lib"), os.path.join(out_dir, "combase.exp")]:
             if os.path.exists(cleanup):
@@ -130,6 +128,11 @@ def main():
                     if not os.path.exists(dest):
                         shutil.copy2(os.path.join(root, f), dest)
                         copied_dlls.add(f)
+
+    occt_count = sum(1 for f in os.listdir(out_dir) if f.startswith("TK") and f.lower().endswith(".dll"))
+    if occt_count == 0:
+        raise RuntimeError("No OCCT libraries found! Check OCCT_ROOT or target/occt-win64.")
+    print(f">>> OCCT libraries: {occt_count}")
 
     # VC Redist installer
     vcredist_candidates = [
