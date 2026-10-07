@@ -43,7 +43,8 @@ pollster = "0.4"
 egui-phosphor = "0.13"
 ron.workspace = true
 serde = { workspace = true } # the view settings kept between sessions (ViewPrefs)
-time.workspace = true # the calendar for the document stamp and the autosave clock
+time.workspace = true # the calendar for the document stamp
+chrono = { version = "0.4", default-features = false, features = ["clock"] } # the local zone for the autosave clock
 qymcad-paths = { path = "../qymcad-paths" }
 qymcad-update = { path = "../qymcad-update" } # asking the site whether a newer version exists
 directories = "6" # UserDirs: the person's home, for shortening paths in reports

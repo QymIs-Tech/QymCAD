@@ -2593,10 +2593,23 @@ fn section_drag_delta_offset(off0: f64, p0: Pos2, s0: Pos2, s1: Pos2, cur: Pos2)
     Some(off0 + dt)
 }
 
-/// "hh:mm" for the autosave line. UTC on purpose: it says "just now", it is not a wall clock.
+/// "hh:mm" for the autosave line, on the wall clock of the person at the screen.
+///
+/// Reported behaviour: at 14:28 in UTC+3 the line read "Auto-saved (11:27)" - the hour of UTC. The zone comes
+/// from chrono's `Local`, which reads the zone database itself; the local offset of `time` gives no answer on
+/// Linux once a second thread runs, and the window always runs several.
 fn clock_hh_mm() -> String {
-    let t = time::OffsetDateTime::from_unix_timestamp(unix_secs() as i64).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-    format!("{:02}:{:02}", t.hour(), t.minute())
+    hh_mm_in(unix_secs(), &chrono::Local)
+}
+
+/// "hh:mm" of an instant in a given zone - the part a test can pin, since the current time and the zone of
+/// the machine running the test are not known in advance.
+pub(crate) fn hh_mm_in<Z: chrono::TimeZone>(secs: u64, zone: &Z) -> String
+where
+    Z::Offset: std::fmt::Display,
+{
+    let at = chrono::DateTime::from_timestamp(secs as i64, 0).unwrap_or_default();
+    at.with_timezone(zone).format("%H:%M").to_string()
 }
 
 pub(super) fn tree_drop_intent(rect: egui::Rect, pointer_y: f32) -> TreeDrop {

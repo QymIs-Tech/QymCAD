@@ -1833,6 +1833,36 @@ mod command_flow_tests {
         assert!(std::path::Path::new(&path).exists(), "the project was written: {}", app.status);
     }
 
+    /// THE AUTOSAVE LINE TELLS THE WALL CLOCK. Reported behaviour: at 14:28 in UTC+3 the line read
+    /// "Auto-saved (11:27)". The minute is read on both sides of the write, so a write across a minute passes.
+    #[test]
+    fn the_autosave_line_tells_the_local_time() {
+        let dir = std::env::temp_dir().join("qym_autosave_clock_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("proj.qcad").to_string_lossy().into_owned();
+        let mut app = App::default();
+        app.disk.project_path = Some(path);
+        let _cube = build_cube(&mut app);
+        let before = chrono::Local::now().format("(%H:%M)").to_string();
+        app.maybe_autosave(true);
+        app.wait_bg();
+        let after = chrono::Local::now().format("(%H:%M)").to_string();
+        assert!(app.status.contains(&before) || app.status.contains(&after), "the autosave line does not tell the local time {before} .. {after}: {:?}", app.status);
+    }
+
+    /// "hh:mm" follows the zone it is asked in: ahead of UTC, behind it, and across midnight both ways.
+    #[test]
+    fn the_clock_is_read_in_the_zone_asked() {
+        let hour = |h: i32| chrono::FixedOffset::east_opt(h * 3600).expect("an offset within a day");
+        let at_11_27 = 1_791_286_020; // 2026-10-06T11:27:00Z
+        let at_23_30 = 1_791_329_400; // 2026-10-06T23:30:00Z
+        assert_eq!(super::hh_mm_in(at_11_27, &chrono::Utc), "11:27");
+        assert_eq!(super::hh_mm_in(at_11_27, &hour(3)), "14:27");
+        assert_eq!(super::hh_mm_in(at_11_27, &hour(-5)), "06:27");
+        assert_eq!(super::hh_mm_in(at_23_30, &hour(3)), "02:30");
+        assert_eq!(super::hh_mm_in(at_11_27, &hour(-12)), "23:27");
+    }
+
     /// A revolve from the button (feat_op is reset at the start) - the full flow.
     #[test]
     fn revolve_flow() {
