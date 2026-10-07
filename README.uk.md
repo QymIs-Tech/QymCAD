@@ -76,22 +76,55 @@ QymCAD — настільний САПР для механічних детал�
 
 ## Встановлення
 
-Збірки розміщені у розділі [Releases](https://github.com/QymIs-Tech/QymCAD/releases). Додаткові бібліотеки не потрібні: OpenCASCADE та
-залежності вже запаковані всередині.
+Збірки розміщені у розділі [Releases](https://github.com/QymIs-Tech/QymCAD/releases). Додаткові бібліотеки не потрібні: OpenCASCADE та залежності вже запаковані всередині.
 
-**Windows 10/11 x64** — `qymcad-win64.zip`. Розархівувати в будь-яке місце та запустити `qymcad.exe`.
+<details>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-**Linux** — `qymcad-*.AppImage`, один файл. Потребує glibc 2.35 або новішої: Ubuntu 22.04+,
-Debian 12+, Fedora 36+, Arch.
+- **Портативна версія**: завантажте `qymcad-win64.zip`, розархівуйте в будь-яку папку та запустіть `qymcad.exe`.
+- **MSI-інсталятор**: завантажте та запустіть `qymcad-*-x64.msi` для встановлення в систему.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
+
+</details>
+
+<details>
+<summary><b>Linux (x86_64)</b></summary>
+
+Потребує glibc 2.35 або новішої (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch Linux).
+
+- **AppImage** (один файл):
+  ```bash
+  chmod +x qymcad-*.AppImage
+  ./qymcad-*.AppImage
+  ```
+- **Arch Linux (AUR)**:
+  ```bash
+  yay -S qymcad-bin
+  ```
+- **Flatpak**:
+  ```bash
+  flatpak install flathub tech.qymis.cad
+  ```
+
+</details>
+
+<details>
+<summary><b>macOS 12+ (Apple Silicon)</b></summary>
+
+Завантажте `qymcad-*-macos-arm64.zip` та розархівуйте його. Збірка не має підпису Apple, тому перед першим запуском слід один раз зняти позначку карантину в Терміналі:
 
 ```bash
-chmod +x qymcad-*.AppImage
-./qymcad-*.AppImage
+xattr -cr QymCAD.app
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Розархівуйте та прочитайте `README.txt` поруч
-із програмою: збірка не має підпису Apple, тому перед першим запуском слід один раз зняти позначку
-карантину. Це робиться однією командою, покроково описаною в інструкції.
+Після цього відкрийте `QymCAD.app` звичайним подвійним клацанням.
+
+*Примітка: тільки для Apple Silicon (M1/M2/M3/M4); збірки під Intel немає.*
+
+</details>
 
 ## Довідка
 

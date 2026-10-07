@@ -75,22 +75,55 @@ QymCAD — настольный САПР для механических дет�
 
 ## Установка
 
-Сборки — в разделе [Releases](https://github.com/QymIs-Tech/QymCAD/releases). Дополнительные библиотеки не требуются: OpenCASCADE и
-зависимости входят в пакет.
+Сборки — в разделе [Releases](https://github.com/QymIs-Tech/QymCAD/releases). Дополнительные библиотеки не требуются: OpenCASCADE и зависимости входят в пакет.
 
-**Windows 10/11 x64** — `qymcad-win64.zip`. Распаковать и запустить `qymcad.exe`.
+<details>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-**Linux** — `qymcad-*.AppImage`, один файл. Требуется glibc 2.35 или новее: Ubuntu 22.04+,
-Debian 12+, Fedora 36+, Arch.
+- **Портативная версия**: скачайте `qymcad-win64.zip`, распакуйте в любую папку и запустите `qymcad.exe`.
+- **MSI-инсталлятор**: скачайте и запустите `qymcad-*-x64.msi` для стандартной установки в систему.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
+
+</details>
+
+<details>
+<summary><b>Linux (x86_64)</b></summary>
+
+Требуется glibc 2.35 или новее (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch Linux).
+
+- **AppImage** (один файл):
+  ```bash
+  chmod +x qymcad-*.AppImage
+  ./qymcad-*.AppImage
+  ```
+- **Arch Linux (AUR)**:
+  ```bash
+  yay -S qymcad-bin
+  ```
+- **Flatpak**:
+  ```bash
+  flatpak install flathub tech.qymis.cad
+  ```
+
+</details>
+
+<details>
+<summary><b>macOS 12+ (Apple Silicon)</b></summary>
+
+Скачайте `qymcad-*-macos-arm64.zip` и распакуйте его. Сборка не имеет подписи Apple, поэтому перед первым запуском нужно один раз снять метку карантина в Терминале:
 
 ```bash
-chmod +x qymcad-*.AppImage
-./qymcad-*.AppImage
+xattr -cr QymCAD.app
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Распакуйте и прочитайте `ПРОЧТИ.txt` рядом с
-программой: у сборки нет подписи Apple, поэтому перед первым запуском нужно один раз снять метку
-карантина. Это одна команда, расписанная по шагам.
+Затем откройте `QymCAD.app` обычным двойным щелчком.
+
+*Примечание: только для Apple Silicon (M1/M2/M3/M4); сборки под Intel нет.*
+
+</details>
 
 ## Справка
 

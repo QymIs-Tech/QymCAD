@@ -79,19 +79,53 @@ out.
 The builds are in [Releases](https://github.com/QymIs-Tech/QymCAD/releases). No extra libraries are needed: OpenCASCADE and the
 dependencies are inside the package.
 
-**Windows 10/11 x64** — `qymcad-win64.zip`. Unpack anywhere and run `qymcad.exe`.
+<details>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-**Linux** — `qymcad-*.AppImage`, a single file. Requires glibc 2.35 or newer: Ubuntu 22.04+,
-Debian 12+, Fedora 36+, Arch.
+- **Portable ZIP**: download `qymcad-win64.zip`, unpack anywhere and run `qymcad.exe`.
+- **MSI Installer**: download and run `qymcad-*-x64.msi` for a standard system installation.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
+
+</details>
+
+<details>
+<summary><b>Linux (x86_64)</b></summary>
+
+Requires glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch Linux).
+
+- **AppImage** (standalone):
+  ```bash
+  chmod +x qymcad-*.AppImage
+  ./qymcad-*.AppImage
+  ```
+- **Arch Linux (AUR)**:
+  ```bash
+  yay -S qymcad-bin
+  ```
+- **Flatpak**:
+  ```bash
+  flatpak install flathub tech.qymis.cad
+  ```
+
+</details>
+
+<details>
+<summary><b>macOS 12+ (Apple Silicon)</b></summary>
+
+Download `qymcad-*-macos-arm64.zip` and unpack it. The build carries no Apple signature, so clear the quarantine attribute once before the first launch:
 
 ```bash
-chmod +x qymcad-*.AppImage
-./qymcad-*.AppImage
+xattr -cr QymCAD.app
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Unpack it and read `README.txt` lying beside
-the application: the build carries no Apple signature, so the quarantine mark has to be cleared once,
-before the first launch. It takes one command and is written out step by step.
+Then open `QymCAD.app` with a normal double-click.
+
+*Note: Apple Silicon only (M1/M2/M3/M4); there is no Intel build.*
+
+</details>
 
 ## Help
 

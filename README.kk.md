@@ -76,22 +76,55 @@ FreeCAD жұмыс істейтін сол ядро. Сондықтан торл
 
 ## Орнату
 
-Жинақтар [Releases](https://github.com/QymIs-Tech/QymCAD/releases) бөлімінде. Қосымша кітапханалар қажет емес: OpenCASCADE және
-тәуелділіктер пакеттің ішінде.
+Жинақтар [Releases](https://github.com/QymIs-Tech/QymCAD/releases) бөлімінде. Қосымша кітапханалар қажет емес: OpenCASCADE және тәуелділіктер пакеттің ішінде.
 
-**Windows 10/11 x64** — `qymcad-win64.zip`. Кез келген жерге ашып, `qymcad.exe` іске қосыңыз.
+<details>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-**Linux** — `qymcad-*.AppImage`, бір файл. glibc 2.35 не жаңарағы керек: Ubuntu 22.04+, Debian 12+,
-Fedora 36+, Arch.
+- **Портативті нұсқа**: `qymcad-win64.zip` жүктеп алып, кез келген жерге ашып, `qymcad.exe` іске қосыңыз.
+- **MSI орнатқышы**: жүйеге орнату үшін `qymcad-*-x64.msi` жүктеп алып, іске қосыңыз.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
+
+</details>
+
+<details>
+<summary><b>Linux (x86_64)</b></summary>
+
+glibc 2.35 не жаңарағы керек (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch Linux).
+
+- **AppImage** (бір файл):
+  ```bash
+  chmod +x qymcad-*.AppImage
+  ./qymcad-*.AppImage
+  ```
+- **Arch Linux (AUR)**:
+  ```bash
+  yay -S qymcad-bin
+  ```
+- **Flatpak**:
+  ```bash
+  flatpak install flathub tech.qymis.cad
+  ```
+
+</details>
+
+<details>
+<summary><b>macOS 12+ (Apple Silicon)</b></summary>
+
+`qymcad-*-macos-arm64.zip` файлын жүктеп алып, ашыңыз. Жинақта Apple қолтаңбасы жоқ, сондықтан бірінші іске қосу алдында Терминалда карантин белгісін бір рет алып тастау керек:
 
 ```bash
-chmod +x qymcad-*.AppImage
-./qymcad-*.AppImage
+xattr -cr QymCAD.app
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Ашып, бағдарламаның жанындағы
-`README.txt` файлын оқыңыз: жинақта Apple қолтаңбасы жоқ, сондықтан алғашқы іске қосудың алдында
-карантин белгісін бір рет алу керек. Бұл бір командамен орындалады және қадам бойынша жазылған.
+Содан соң `QymCAD.app` кәдімгідей екі рет басу арқылы ашыңыз.
+
+*Ескертпе: тек Apple Silicon үшін (M1/M2/M3/M4); Intel жинағы жоқ.*
+
+</details>
 
 ## Анықтама
 
