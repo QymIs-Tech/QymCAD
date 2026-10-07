@@ -906,7 +906,7 @@ pub(crate) fn save_project_action(app: &mut App) {
     match app.disk.project_path.clone() {
         Some(path) => {
             app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx()));
-            let thumb = crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), app.project.root).as_ref().and_then(color_image_to_png);
+            let thumb = crate::gui::render_scene::render_project_file_preview(&app.draw_ctx(), app.project.root).as_ref().and_then(color_image_to_png);
             spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, SaveTask { path, autosave: false, thumb });
         }
         None => app.save_project_as(),
@@ -920,7 +920,7 @@ pub(crate) fn save_project_as_action(app: &mut App) {
         let path = path.to_string_lossy().into_owned();
         crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
         app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx()));
-        let thumb = crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), app.project.root).as_ref().and_then(color_image_to_png);
+        let thumb = crate::gui::render_scene::render_project_file_preview(&app.draw_ctx(), app.project.root).as_ref().and_then(color_image_to_png);
         spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, SaveTask { path, autosave: false, thumb });
     });
 }

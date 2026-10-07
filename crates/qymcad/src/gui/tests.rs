@@ -1105,6 +1105,14 @@ mod command_flow_tests {
         assert!(thumb.starts_with(b"\x89PNG\r\n\x1a\n"), "embedded thumbnail is a valid PNG image");
         assert!(thumb.len() > 100, "thumbnail contains raster data");
 
+        let decoded = image::load_from_memory(&thumb).expect("decodes as image").to_rgba8();
+        let corner = decoded.get_pixel(0, 0);
+        assert_eq!(corner[3], 0, "background is transparent (alpha = 0)");
+        let center = decoded.get_pixel(128, 128);
+        assert_eq!(center[3], 255, "model pixel is opaque (alpha = 255)");
+        let watermark = decoded.get_pixel(216, 216);
+        assert_eq!(watermark[3], 255, "watermark is stamped in bottom-right corner (alpha = 255)");
+
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&dir);
     }
