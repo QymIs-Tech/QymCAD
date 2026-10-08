@@ -34,10 +34,12 @@ pub fn import_dxf(path: &str) -> Result<ImportedSketch, String> {
         }
     };
     let mut out = ImportedSketch::default();
-    let mut skipped: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut counts = Left::default();
     let entities: Vec<&Entity> = drawing.entities().collect();
-    read(&drawing, &entities, &Place::IDENTITY, 0, &mut out.curves, &mut skipped);
-    out.skipped = skipped.into_iter().collect();
+    read(&drawing, &entities, &Place::IDENTITY, 0, &mut out.curves, &mut counts);
+    out.skipped = counts.skipped.into_iter().collect();
+    out.invalid = counts.invalid.into_iter().collect();
+    out.redrawn = counts.redrawn.into_iter().collect();
     Ok(out)
 }
 
@@ -109,8 +111,20 @@ impl Place {
     }
 }
 
-/// Read `entities` placed by `place` into `curves`, counting the kinds not read into `skipped`.
-fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, curves: &mut Vec<ProfEdge>, skipped: &mut std::collections::BTreeMap<String, usize>) {
+/// How many entities of each kind.
+type Counts = std::collections::BTreeMap<String, usize>;
+
+/// What did not come in as the file has it, by kind: not read, left out for invalid numbers, drawn another way. Each
+/// entity is counted once, under what happened to it.
+#[derive(Default)]
+struct Left {
+    skipped: Counts,
+    invalid: Counts,
+    redrawn: Counts,
+}
+
+/// Read `entities` placed by `place` into `curves`, counting into `left` what did not come in as the file has it.
+fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, curves: &mut Vec<ProfEdge>, left: &mut Left) {
     for entity in entities {
         match &entity.specific {
             EntityType::Line(line) => {
@@ -152,10 +166,21 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                 let to = if to <= from { to + std::f64::consts::TAU } else { to };
                 run(|t| place.at(e.center.x + mx * t.cos() + nx * t.sin(), e.center.y + my * t.cos() + ny * t.sin()), from, to, curves);
             }
-            EntityType::Spline(sp) => spline(sp, place, curves),
+            EntityType::Spline(sp) => {
+                let got = spline(sp, place, curves);
+                let under = match (got.drawn, got.invalid) {
+                    (true, false) => None,
+                    (true, true) => Some(&mut left.redrawn),
+                    (false, true) => Some(&mut left.invalid),
+                    (false, false) => Some(&mut left.skipped),
+                };
+                if let Some(counts) = under {
+                    *counts.entry("SPLINE".into()).or_default() += 1;
+                }
+            }
             EntityType::Insert(ins) if depth < DEEPEST => {
                 let Some(block) = drawing.blocks().find(|b| b.name == ins.name) else {
-                    *skipped.entry("INSERT".into()).or_default() += 1;
+                    *left.skipped.entry("INSERT".into()).or_default() += 1;
                     continue;
                 };
                 let inner: Vec<&Entity> = block.entities.iter().collect();
@@ -173,14 +198,14 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                             ty: -block.base_point.y * ins.y_scale_factor + oy,
                         };
                         let turned = Place { a: cos, b: -sin, c: sin, d: cos, tx: ins.location.x, ty: ins.location.y };
-                        read(drawing, &inner, &place.then(&turned.then(&local)), depth + 1, curves, skipped);
+                        read(drawing, &inner, &place.then(&turned.then(&local)), depth + 1, curves, left);
                     }
                 }
             }
             other => {
                 let name = format!("{other:?}");
                 let kind = name.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("?").to_uppercase();
-                *skipped.entry(kind).or_default() += 1;
+                *left.skipped.entry(kind).or_default() += 1;
             }
         }
     }
@@ -221,12 +246,34 @@ fn off_chord(p: Point2, q: Point2, m: Point2) -> f64 {
 
 /// A SPLINE: the rational B-spline of its control points, knots and weights by de Boor's rule; one given only by the
 /// points it runs through goes through them as a Catmull-Rom curve, the way a sketch's own spline does.
-fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>) {
+///
+/// THE NUMBERS COME FROM THE FILE. The range of the curve is its knots `p` and `n`, and `t.clamp(lo, hi)` panics when
+/// the low end is above the high one or either is not a number - from the UI thread, ending the program; a knot, a
+/// weight or a point that is not finite let NaN corners into the sketch. So the control data is used only when the
+/// knots are finite and do not go back, the range is not empty and its length a number (-1e308 to 1e308 is not), the
+/// weights are finite and positive and the points finite; otherwise the spline runs through its fit points, which lie
+/// on the curve, when it has them, and is left out when it has not. Either way the person is told its numbers were
+/// invalid: a curve drawn through its fit points instead of its control data is not quite the curve the file meant.
+/// Whether it was drawn, and whether it was invalid, comes back for the counts of what did not come in.
+fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>) -> SplineRead {
     let ctrl: Vec<(f64, f64)> = sp.control_points.iter().map(|p| (p.x, p.y)).collect();
     let p = sp.degree_of_curve.max(1) as usize;
     let knots = &sp.knot_values;
-    if ctrl.len() > p && knots.len() == ctrl.len() + p + 1 {
-        let w: Vec<f64> = if sp.weight_values.len() == ctrl.len() { sp.weight_values.clone() } else { vec![1.0; ctrl.len()] };
+    let w: Vec<f64> = if sp.weight_values.len() == ctrl.len() { sp.weight_values.clone() } else { vec![1.0; ctrl.len()] };
+    let made = ctrl.len() > p
+        && knots.len() == ctrl.len() + p + 1
+        && knots.iter().all(|k| k.is_finite())
+        && knots.windows(2).all(|k| k[0] <= k[1])
+        && knots[p] < knots[ctrl.len()]
+        && (knots[ctrl.len()] - knots[p]).is_finite()
+        && w.iter().all(|&v| v.is_finite() && v > 0.0)
+        && ctrl.iter().all(|&(x, y)| x.is_finite() && y.is_finite());
+    let fit_finite = sp.fit_points.iter().all(|q| q.x.is_finite() && q.y.is_finite());
+    // invalid: control data that is there but makes no curve, or fit points that are there but are not numbers - when
+    // they are what the spline would be drawn by. A spline given by fit points alone is not invalid.
+    let invalid = !made && (!ctrl.is_empty() || !knots.is_empty() || !fit_finite);
+    let drawn = made || (sp.fit_points.len() >= 2 && fit_finite);
+    if made {
         let (lo, hi) = (knots[p], knots[ctrl.len()]);
         let at = |t: f64| {
             let t = t.clamp(lo, hi);
@@ -254,7 +301,7 @@ fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>)
             place.at(x / wt, y / wt)
         };
         run(at, lo, hi, curves);
-    } else if sp.fit_points.len() >= 2 {
+    } else if drawn {
         let pts: Vec<(f64, f64)> = sp.fit_points.iter().map(|q| (q.x, q.y)).collect();
         let n = pts.len();
         for k in 0..n - 1 {
@@ -269,6 +316,13 @@ fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>)
             run(at, 0.0, 1.0, curves);
         }
     }
+    SplineRead { drawn, invalid }
+}
+
+/// What became of a spline: whether it was drawn, and whether numbers it carries make no curve.
+struct SplineRead {
+    drawn: bool,
+    invalid: bool,
 }
 
 /// A polyline under a place: exact where the place keeps arcs arcs, its arcs as runs of segments otherwise.

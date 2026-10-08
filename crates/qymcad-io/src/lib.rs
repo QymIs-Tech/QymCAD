@@ -100,4 +100,9 @@ pub struct ImportedSketch {
     pub curves: Vec<ProfEdge>,
     /// The kinds of entity the file holds that were not read, each with how many - named to a person, not dropped.
     pub skipped: Vec<(String, usize)>,
+    /// The kinds of entity left out because their numbers in the file are invalid, each with how many.
+    pub invalid: Vec<(String, usize)>,
+    /// The kinds of entity whose numbers are invalid but which were drawn another way the file allows - a spline
+    /// through its fit points - each with how many: not quite what the file meant, so said to the person.
+    pub redrawn: Vec<(String, usize)>,
 }

@@ -38,6 +38,8 @@ file-import-hint = Opens { $formats }. A solid, a mesh or a drawing - told by th
 pk-import-all = All supported
 import-unknown = "{ $file }" cannot be opened: the program does not read this format. These can be: { $formats }
 import-not-read = Not read: { $list }
+import-redrawn = Drawn through fit points, control data invalid: { $list }
+import-invalid = Not read, invalid data: { $list }
 import-not-a-part = { $format } is a flat drawing and cannot become a part. Open it with File -> Import…: it becomes a sketch
 file-quit = Quit
 
