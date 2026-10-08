@@ -313,6 +313,7 @@ io-stl-not-finite-line = STL: значение в строке { $v } не яв�
 io-stl-not-finite-triangle = STL: координата треугольника { $v } (байт { $w }) не является конечным числом ({ $x })
 
 io-svg-empty-sketch = SVG: пустой эскиз
+io-svg-too-deep = SVG: рисунок вложен глубже { $v } уровней и не читается
 io-svg-write-failed = SVG: запись не удалась: { $v }
 io-dxf-empty-sketch = DXF: пустой эскиз
 io-dxf-write-failed = DXF: запись не удалась: { $v }

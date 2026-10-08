@@ -14,7 +14,7 @@ use qymcad_kernel::ExactFormat;
 
 use qymcad_ui_state::MeshFormat;
 
-use super::{open_exact, open_mesh, App, Rebuilding};
+use super::{open_exact, open_mesh, open_svg, App, Rebuilding};
 
 /// Whether a file that becomes `lands` may come in at a place that wants `want`.
 fn takes(want: Want, lands: Lands) -> bool {
@@ -104,7 +104,10 @@ pub(crate) fn land_import(regen: &mut Rebuilding, path: &str, want: Want) -> Lan
             Landing::Started
         }
         Format::Dxf => drawing(qymcad_io::import_dxf(path).map_err(|e| crate::i18n::tr1("g-dxf-error", "error", &e.to_string()))),
-        Format::Svg => drawing(qymcad_io::import_svg(path).map_err(|e| crate::i18n::tr1("pk-svg-error", "error", &e.to_string()))),
+        Format::Svg => {
+            open_svg(regen, path.to_string());
+            Landing::Started
+        }
     }
 }
 
@@ -292,6 +295,31 @@ pub(crate) mod tests {
             let said = crate::i18n::name(&format!("cad-file-not-found#{path}"));
             assert!(app.status.contains(&said), "{ext}: a missing file is reported as {:?}, not as {said:?}", app.status);
         }
+    }
+
+    /// AN SVG IS READ IN THE BACKGROUND, as a solid or a mesh is, and comes in as a sketch waiting for its plane. One
+    /// nested deeper than the reader takes is refused with a message, and the program goes on.
+    #[test]
+    fn an_svg_is_read_in_the_background() {
+        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
+        std::fs::create_dir_all(&dir).expect("a folder for the check");
+        let plate = dir.join("plate.svg");
+        std::fs::write(&plate, r#"<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="30mm" viewBox="0 0 40 30"><rect x="5" y="5" width="30" height="20"/></svg>"#).expect("written");
+        let (mut app, ctx) = running();
+        answer(&mut app, &ctx, Want::Anything, &plate.to_string_lossy());
+        assert!(app.regen.busy.is_some(), "the SVG was read on the UI thread: nothing runs in the background");
+        settle(&mut app, &ctx);
+        let waiting = app.tools.pending_import.curves.as_ref().map(|(c, _, _)| c.len()).unwrap_or(0);
+        assert!(waiting > 0, "the drawing did not come in; the status says: {}", app.status);
+
+        let deep = dir.join("deep.svg");
+        let groups = 5_000;
+        std::fs::write(&deep, format!("<svg xmlns=\"http://www.w3.org/2000/svg\">{}<path d=\"M 1 1 L 9 1\"/>{}</svg>", "<g>".repeat(groups), "</g>".repeat(groups))).expect("written");
+        let (mut app, ctx) = running();
+        answer(&mut app, &ctx, Want::Anything, &deep.to_string_lossy());
+        settle(&mut app, &ctx);
+        let said = crate::i18n::name(&format!("io-svg-too-deep#{}", qymcad_io::SVG_MAX_DEPTH));
+        assert!(app.status.contains(&said), "a drawing {groups} levels deep is reported as {:?}, not as {said:?}", app.status);
     }
 
     /// SOLIDS AND A MESH ARE READ IN THE BACKGROUND, each by its own reader.

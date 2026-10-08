@@ -32,7 +32,7 @@ pub use project_file::{content_weight, load_project, load_project_with_brep, Loa
 pub use stl_export::export_stl;
 pub use stl_import::{import_stl, import_stl_named};
 pub use svg_export::export_svg;
-pub use svg_import::import_svg;
+pub use svg_import::{import_svg, SVG_MAX_DEPTH};
 pub use threemf::{export_3mf, export_3mf_tree, import_3mf};
 pub use units::FileUnit;
 
