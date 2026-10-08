@@ -57,6 +57,9 @@ fn every_example_sketch_stays_put_when_solved_again() {
         }
         let Ok(mut project) = qymcad_io::load_project(&p.to_string_lossy()) else { continue };
         project.settle_loaded();
+        // solving again is no edit: the document must not count as changed either, now that the key holds every
+        // field a sketch saves (a circle's radius the solver writes back among them)
+        let key = project.state_key();
         for si in 0..project.sketches.len() {
             let before: Vec<(f64, f64)> = project.sketches[si].points.iter().map(|q| (q.x, q.y)).collect();
             project.solve_sketch(si);
@@ -64,6 +67,9 @@ fn every_example_sketch_stays_put_when_solved_again() {
             if most > 1e-9 {
                 moved.push(format!("{} / {}: {most:.6} mm", p.file_name().unwrap_or_default().to_string_lossy(), project.sketches[si].name));
             }
+        }
+        if project.state_key() != key {
+            moved.push(format!("{}: the document counts as changed", p.file_name().unwrap_or_default().to_string_lossy()));
         }
     }
     assert!(moved.is_empty(), "sketches that move when solved again:\n{}", moved.join("\n"));

@@ -2113,6 +2113,7 @@ pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, Exte
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
+mod hash_ser;
 
 impl Project {
     /// Hand out a new stable id.
@@ -4447,8 +4448,8 @@ impl Project {
     /// joints or external references would not make the project dirty, and closing the window would not ask
     /// about unsaved work.
     ///
-    /// This is manual hashing without a single allocation: structure (components, timeline, datums, joints,
-    /// parameters) plus a cheap fingerprint of the sketches (points, counts, dimension values). Derived
+    /// This is hashing with no text made: what has no placement in it is fed whole through its serialization
+    /// (`hash_ser`), the placement and a few fields the program writes are hashed by hand (see `key_of`). Derived
     /// data is excluded (`regen_faces`, `regen_edges`, `regen_errors`, mesh geometry), and so are the source
     /// bytes — they never change, so id, name and size suffice.
     pub fn state_key(&self) -> u64 {
@@ -4475,10 +4476,68 @@ impl Project {
     }
 
     /// Shared computation of both keys; they must not diverge, so there is exactly one implementation.
-    /// `placement` selects whether the placement is included (where components stand and what the mates were
-    /// told to hold).
+    /// `placement` selects whether what changes the document and builds nothing is included: where components stand,
+    /// what the mates were told to hold, where a label sits, and the document's properties, colours and notes. (The
+    /// mesh quality builds: the bodies are meshed to it.)
+    ///
+    /// Reported behaviour (issue #101): the title, author and comment and a part's colour were left out, so changing
+    /// only them left the document looking saved, and closing it lost the change. Found with them: a circle's radius,
+    /// a sketch's notes, a connector's place, the contents of a mate and more. What has no placement in it is now fed
+    /// to the hasher whole, through its own serialization (`hash_ser`), so a field added to it later is in the key
+    /// without anyone remembering.
     fn key_of(&self, placement: bool) -> u64 {
         use std::hash::{Hash, Hasher};
+        use hash_ser::feed;
+        // EVERY FIELD OF THE DOCUMENT IS DECIDED HERE, in the key or out of it, and a field added to `Project` does
+        // not compile until it is: the key and the file must not drift apart again.
+        let Project {
+            units: _,
+            meta: _,
+            geom_quality: _,
+            next_id: _,
+            imported_bodies: _,
+            part_colors: _,
+            face_colors: _,
+            tri_colors: _,
+            planes: _,
+            sketches: _,
+            timeline: _,
+            components: _,
+            root: _,
+            active_component: _,
+            datum_points: _,
+            datum_axes: _,
+            connectors: _,
+            joints: _,
+            mate_constraints: _,
+            relations: _,
+            external_refs: _,
+            named_dims: _,
+            sources: _,
+            parameters: _,
+            feat_dims: _,
+            bodies: _,
+            rollback: _,
+            // OUT: written by the program, not by an edit - the rebuild interns the names, recomputes the contours,
+            // records the bodies a deletion killed, snapshots referenced faces and edges; the solver lists the
+            // violated mates. Counting them would make opening a document and touching nothing ask to save.
+            names: _,
+            contours: _,
+            dead_bodies: _,
+            edge_refs: _,
+            face_refs: _,
+            mates_violated: _,
+            // OUT: what the last rebuild made and found - its faces and edges, its errors and warnings (the last two
+            // are saved, as node_errors and node_warnings, and come from the rebuild all the same) - and the drag and
+            // solve state of the session, which is not saved at all
+            regen_faces: _,
+            regen_edges: _,
+            regen_errors: _,
+            regen_warnings: _,
+            mates_conflict: _,
+            drag_pull: _,
+            snap_rebinds: _,
+        } = self;
         let mut h = std::collections::hash_map::DefaultHasher::new();
         let bits = |v: f64, h: &mut std::collections::hash_map::DefaultHasher| v.to_bits().hash(h);
         self.next_id.hash(&mut h);
@@ -4486,8 +4545,23 @@ impl Project {
         self.active_component.hash(&mut h);
         self.rollback.hash(&mut h);
         (self.units as u8).hash(&mut h);
+        // the mesh quality: the bodies are meshed to it, so a change of it is rebuilt
+        feed(&self.geom_quality, &mut h);
+        // the document's title, author and comment and the colours of parts, faces and triangles change what is saved
+        // and nothing that is built
+        if placement {
+            // when the document was started and which build wrote it the program stamps, on the first save after the
+            // saved key is taken and on the copy written to the file; the rest is the author's
+            let DocMeta { title, author, version, comment, created: _, saved_by: _ } = &self.meta;
+            (title, author, version, comment).hash(&mut h);
+            feed(&self.part_colors, &mut h);
+            feed(&self.face_colors, &mut h);
+            feed(&self.tri_colors, &mut h);
+        }
         // Components: name, kind, parent, visibility, grounding and placement.
         for c in &self.components {
+            // every field decided, as for the document above
+            let crate::feature::Component { id: _, name: _, kind: _, parent: _, visible: _, grounded: _, transform: _ } = c;
             (c.id, &c.name, c.kind as u8, c.parent, c.visible, c.grounded).hash(&mut h);
             if placement {
                 for v in c.transform {
@@ -4504,11 +4578,14 @@ impl Project {
         //
         // The parameters are taken by serialising the recipe, which is complete by construction. A hand-
         // written field list across forty feature kinds would be cheaper per tick and more dangerous in
-        // substance — a forgotten field means a lost edit, which is worse than one extra question. The cost
-        // is measured: 1.25 ms over a thousand nodes, that is, hundredths of a millisecond on a real part.
+        // substance — a forgotten field means a lost edit, which is worse than one extra question. The recipe
+        // is fed to the hasher as it serializes, with no text made: on 1,000 parts the whole key took 0.96-1.21 ms
+        // with the recipes written out as RON text and 0.69-0.72 ms fed (release build, fastest of ten).
         for n in &self.timeline {
-            (n.id, &n.name, n.parent, n.suppressed, n.kind.body()).hash(&mut h);
-            ron::ser::to_string(&n.kind).unwrap_or_default().hash(&mut h);
+            // `dirty` is the scheduler's mark, not the author's
+            let crate::feature::FeatureNode { id, name, kind, parent, suppressed, dirty: _ } = n;
+            (id, name, parent, suppressed, kind.body()).hash(&mut h);
+            feed(kind, &mut h);
         }
         let mut dims: Vec<(&Id, &std::collections::HashMap<String, String>)> = self.feat_dims.iter().collect();
         dims.sort_by_key(|(k, _)| **k);
@@ -4521,68 +4598,142 @@ impl Project {
         // Sketches: points, counts and dimension values, so an edited number is visible before the solve
         // runs.
         for s in &self.sketches {
-            (s.id, &s.name, s.entities.len(), s.constraints.len(), s.splines.len()).hash(&mut h);
-            std::mem::discriminant(&s.plane).hash(&mut h);
-            if let crate::feature::SketchPlane::Datum(p) = s.plane {
-                p.hash(&mut h);
+            let Sketch {
+                id,
+                name,
+                contour_ids: _, // OUT: recomputed with the contours
+                source,
+                points,
+                entities,
+                closed,
+                constraints,
+                splines,
+                notes,
+                texts,
+                patterns,
+                rects,
+                projections,
+                plane,
+                origin,
+                axis_pts,
+                frame,
+                origin_uv,
+            } = s;
+            (id, name, source, closed, origin, axis_pts, frame).hash(&mut h);
+            // the plane whole, save the persistent id of the face a sketch stands on: the rebuild writes that one
+            // when it rebinds the sketch to a face renamed by a change upstream (`rebind_lost_face_refs`); the face
+            // as it was picked - its index, centroid and normal - is the author's
+            std::mem::discriminant(plane).hash(&mut h);
+            match plane {
+                crate::feature::SketchPlane::Face(body, key) => {
+                    (body, key.index).hash(&mut h);
+                    for v in key.centroid.iter().chain(key.normal.iter()) {
+                        bits(*v, &mut h);
+                    }
+                }
+                other => feed(other, &mut h),
             }
-            if let crate::feature::SketchPlane::Face(b, _) = s.plane {
-                b.hash(&mut h);
-            }
-            for p in &s.points {
+            feed(origin_uv, &mut h);
+            for p in points {
                 p.id.hash(&mut h);
                 bits(p.x, &mut h);
                 bits(p.y, &mut h);
             }
-            // a line turned into construction leaves the profile; unseen here, the turn was no step and undo lost it
-            for e in &s.entities {
-                (e.id, e.construction).hash(&mut h);
-            }
-            for c in &s.constraints {
+            // the lines, arcs and circles whole - a circle's radius, a line turned into construction - and what is
+            // drawn over them
+            feed(entities, &mut h);
+            feed(splines, &mut h);
+            feed(patterns, &mut h);
+            feed(rects, &mut h);
+            // how many constraints there are, and the numbers of the dimensions, so an edited number is visible before
+            // the solve runs
+            constraints.len().hash(&mut h);
+            for c in constraints {
                 if let Some(d) = c.dim_value() {
                     bits(d, &mut h);
                 }
-                // A LABEL MOVED IS AN EDIT OF THE DOCUMENT - it goes into the file - but not of what is built: counted
-                // with the placement, so dragging a label asks to save and rebuilds nothing
-                if placement {
-                    for v in c.label_place().unwrap_or([0.0; 3]) {
-                        bits(v, &mut h);
-                    }
-                }
             }
-            // labels: a placed or retyped label is a change of the document like any line
-            for t in &s.texts {
-                (t.id, &t.text, t.construction).hash(&mut h);
-                for v in [t.x, t.y, t.height, t.angle] {
-                    bits(v, &mut h);
+            // A LABEL MOVED IS AN EDIT OF THE DOCUMENT - it goes into the file - but not of what is built: the
+            // constraints whole, labels included, are counted with the placement, so dragging a label asks to save
+            // and rebuilds nothing. A note is the same: written beside the drawing, building nothing.
+            if placement {
+                feed(constraints, &mut h);
+                feed(notes, &mut h);
+            }
+            // labels: a placed or retyped label is a change of the document like any line. Its glyphs are made from
+            // the text and the font, and are not counted.
+            for t in texts {
+                let SketchText { id, x, y, height, angle, text, construction, font, glyphs: _ } = t;
+                (id, text, construction).hash(&mut h);
+                for v in [x, y, height, angle] {
+                    bits(*v, &mut h);
                 }
+                feed(font, &mut h);
+            }
+            // a projection: what it projects; the points and lines it made, and whether its source was lost, the
+            // rebuild writes
+            for pr in projections {
+                let SketchProjection { id, body, src, points: _, entities: _, lost: _ } = pr;
+                (id, body).hash(&mut h);
+                feed(src, &mut h);
             }
         }
         // Datums and planes.
         for p in &self.planes {
-            (p.id, &p.name).hash(&mut h);
-            for v in p.origin.iter().chain(p.normal.iter()) {
+            let WorkPlane { id, name, origin, normal, rot_deg, def } = p;
+            (id, name).hash(&mut h);
+            for v in origin.iter().chain(normal.iter()) {
                 bits(*v, &mut h);
             }
-            bits(p.rot_deg, &mut h);
+            bits(*rot_deg, &mut h);
+            // how the plane is defined - on a face, through points, at an offset - not only where it stands now
+            feed(def, &mut h);
         }
         for d in &self.datum_points {
-            (d.id, &d.name).hash(&mut h);
-            for v in d.at {
-                bits(v, &mut h);
-            }
-        }
-        for a in &self.datum_axes {
-            (a.id, &a.name).hash(&mut h);
-            for v in a.origin().iter().chain(a.dir().iter()) {
+            let DatumPoint { id, name, at, def } = d;
+            (id, name).hash(&mut h);
+            for v in at {
                 bits(*v, &mut h);
             }
+            feed(def, &mut h);
         }
-        // Assembly: connectors, joints, external references.
+        // an axis by its definition only: where it stands is a cache the rebuild fills (`set_resolved`), empty in a
+        // document just opened, so counting it made an untouched document with an axis on an edge ask to save. A
+        // hand-placed axis holds its coordinates in the definition.
+        for a in &self.datum_axes {
+            let DatumAxis { id, name, def, origin_cache: _, dir_cache: _ } = a;
+            (id, name).hash(&mut h);
+            feed(def, &mut h);
+        }
+        // Assembly: connectors, joints, external references. Where a connector sits on its part and which way it
+        // faces, and what a mate constraint holds, move components and build nothing: counted with the placement.
         for c in &self.connectors {
             (c.id, c.owner).hash(&mut h);
         }
+        if placement {
+            feed(&self.connectors, &mut h);
+            feed(&self.mate_constraints, &mut h);
+        }
         for j in &self.joints {
+            // every field decided; the mating side is left out, see below
+            let crate::feature::Joint {
+                id: _,
+                name: _,
+                a: _,
+                b: _,
+                kind: _,
+                angle: _,
+                offset: _,
+                offset2: _,
+                drive: _,
+                limit_min: _,
+                limit_max: _,
+                global: _,
+                as_built: _,
+                flip: _,
+                roll_flip: _,
+                flip_decided: _,
+            } = j;
             (j.id, &j.name, j.a, j.b, j.kind as u8).hash(&mut h);
             // The offset and angle of a mate are placement too: they move a component and touch no body.
             // They belong in the "is there unsaved work" key and not in the "does it need rebuilding" one.
@@ -4622,6 +4773,7 @@ impl Project {
         }
         // relations between mates move components and touch no body: their numbers are placement, like a mate's angle
         for r in &self.relations {
+            let crate::feature::MateRelation { id: _, name: _, kind: _, a: _, slot_a: _, b: _, slot_b: _, value: _, phase: _, reversed: _ } = r;
             (r.id, &r.name, r.kind as u8, r.a, r.slot_a, r.b, r.slot_b).hash(&mut h);
             if placement {
                 bits(r.value, &mut h);
@@ -4630,13 +4782,17 @@ impl Project {
             }
         }
         for r in &self.external_refs {
+            let crate::feature::ExternalRef { id: _, from_component: _, to_geometry: _ } = r;
             (r.id, r.from_component, r.source_body()).hash(&mut h);
         }
-        // Parameters and named dimensions (text, and cheap to hash).
+        // Parameters and named dimensions (text, and cheap to hash). A parameter's value is computed from its
+        // expression.
         for p in &self.parameters {
-            (&p.name, &p.expr).hash(&mut h);
+            let Param { name, expr, value: _ } = p;
+            (name, expr).hash(&mut h);
         }
         for d in &self.named_dims {
+            let NamedDim { name: _, target: _ } = d;
             d.name.hash(&mut h);
             match &d.target {
                 DimTarget::Sketch { sketch, refs } => (0u8, sketch, refs).hash(&mut h),
@@ -4646,7 +4802,8 @@ impl Project {
         // Bodies and meshes: membership and names only. The geometry is derived from the timeline and was
         // already accounted for by the nodes.
         for b in &self.bodies {
-            (b.id, &b.name, b.visible).hash(&mut h);
+            let Body { id, name, visible, mesh: _, faces: _, sheet: _ } = b;
+            (id, name, visible).hash(&mut h);
         }
         let mut imported: Vec<Id> = self.imported_bodies.iter().copied().collect();
         imported.sort_unstable();
@@ -4654,7 +4811,8 @@ impl Project {
         // Import sources: id, name and size, but not the bytes — tens of megabytes of data that never
         // change.
         for s in &self.sources {
-            (s.id, &s.name, &s.ext, s.data.len()).hash(&mut h);
+            let SourceFile { id, name, ext, data } = s;
+            (id, name, ext, data.len()).hash(&mut h);
         }
         h.finish()
     }

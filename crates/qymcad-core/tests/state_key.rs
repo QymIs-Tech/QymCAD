@@ -236,3 +236,174 @@ fn a_mate_value_a_limit_and_as_built_are_part_of_the_document() {
     p.set_joint_as_built(jid);
     assert_ne!(p.state_key(), with_limit, "hold-as-built was declared, so the document has to count as changed");
 }
+
+/// Reported behaviour (issue #101): these edits change what is saved and left the key as it was, so the document
+/// still looked saved, closing it asked nothing and the edit was lost; autosave skipped it and it made no undo step.
+/// Failures accumulate, as above.
+#[test]
+fn edits_the_key_used_to_miss_change_it() {
+    use qymcad_core::feature::{AnchorRef, FaceKey, Purpose, SketchPlane};
+    use qymcad_core::model::{Constraint, Note, PlaneDef, Spline};
+    let mut bad: Vec<String> = Vec::new();
+    let mut check = |label: &str, p: &mut Project, f: &dyn Fn(&mut Project)| {
+        let before = p.state_key();
+        f(p);
+        if p.state_key() == before {
+            bad.push(format!("{label}: the key did not change, so the edit is invisible and the project stays clean"));
+        }
+    };
+    let mut p = scene();
+    let (a, b) = (p.add_part("A"), p.add_part("B"));
+    let body = p.timeline.iter().find_map(|n| n.kind.body()).expect("the body of the feature");
+    check("the title was edited", &mut p, &|p| p.meta.title = "Bracket".into());
+    check("the author was edited", &mut p, &|p| p.meta.author = "Somebody".into());
+    check("the comment was edited", &mut p, &|p| p.meta.comment = "for the left side".into());
+    check("a part was coloured", &mut p, &|p| {
+        p.part_colors.insert(a, [200, 30, 30]);
+    });
+    check("a face was coloured", &mut p, &|p| {
+        p.face_colors.insert(body, vec![(1, [30, 200, 30])]);
+    });
+    check("triangles were coloured", &mut p, &|p| {
+        p.tri_colors.insert(body, (vec![[30, 30, 200]], vec![0]));
+    });
+    check("the mesh quality was changed", &mut p, &|p| p.geom_quality = qymcad_core::model::GeomQuality::Draft);
+    check("a circle was drawn", &mut p, &|p| {
+        p.add_circle_entity(0, 50.0, 50.0, 5.0, Purpose::Real);
+    });
+    check("the radius of a circle was changed", &mut p, &|p| {
+        for e in &mut p.sketches[0].entities {
+            if let qymcad_core::model::EntityKind::Circle { r, .. } = &mut e.kind {
+                *r = 8.0;
+            }
+        }
+    });
+    check("a note was written in a sketch", &mut p, &|p| p.sketches[0].notes.push(Note { x: 1.0, y: 2.0, text: "check".into() }));
+    check("a note was retyped", &mut p, &|p| p.sketches[0].notes[0].text = "checked".into());
+    check("a spline was drawn", &mut p, &|p| {
+        let pts: Vec<_> = p.sketches[0].points.iter().take(3).map(|q| q.id).collect();
+        p.sketches[0].splines.push(Spline { points: pts, tangents: vec![None; 3], closed: false, construction: false });
+    });
+    check("a tangent of a spline was set", &mut p, &|p| p.sketches[0].splines[0].tangents[1] = Some([1.0, 0.0]));
+    check("two points were made level", &mut p, &|p| {
+        let (pa, pb) = (p.sketches[0].points[0].id, p.sketches[0].points[1].id);
+        p.sketches[0].constraints.push(Constraint::Horizontal { a: pa, b: pb });
+    });
+    check("a level constraint was turned upright", &mut p, &|p| {
+        if let Some(Constraint::Horizontal { a, b }) = p.sketches[0].constraints.last().cloned() {
+            *p.sketches[0].constraints.last_mut().unwrap() = Constraint::Vertical { a, b };
+        }
+    });
+    check("a sketch was put on a face", &mut p, &|p| {
+        p.sketches[0].plane = SketchPlane::Face(body, FaceKey { index: 1, centroid: [0.0, 0.0, 5.0], normal: [0.0, 0.0, 1.0], id: 0 });
+    });
+    check("the sketch was moved to another face of the same body", &mut p, &|p| {
+        p.sketches[0].plane = SketchPlane::Face(body, FaceKey { index: 2, centroid: [5.0, 0.0, 2.5], normal: [1.0, 0.0, 0.0], id: 0 });
+    });
+    check("a datum plane was added", &mut p, &|p| {
+        p.add_plane(WorkPlane { name: "Datum".into(), origin: [0.0, 0.0, 7.0], normal: [0.0, 0.0, 1.0], ..Default::default() });
+    });
+    check("the offset of a datum plane was retyped", &mut p, &|p| {
+        p.planes.last_mut().unwrap().def = PlaneDef::OffsetBase { base: Default::default(), dist: 12.0 };
+    });
+    let ca = p.add_connector(a, AnchorRef::Origin);
+    p.add_connector(b, AnchorRef::Origin);
+    check("a connector was shifted on its part", &mut p, &|p| p.connectors.iter_mut().find(|c| c.id == ca).unwrap().offset_xyz = [0.0, 0.0, 3.0]);
+    check("a connector was flipped", &mut p, &|p| p.connectors.iter_mut().find(|c| c.id == ca).unwrap().flip = true);
+    check("a connector was renamed", &mut p, &|p| p.connectors.iter_mut().find(|c| c.id == ca).unwrap().name = "Bore".into());
+    check("two parts were grouped", &mut p, &|p| {
+        p.add_group(&[a, b]);
+    });
+    check("the group was deleted", &mut p, &|p| {
+        let g = p.mate_constraints.last().map(|g| g.id).expect("the group");
+        p.delete_group(g);
+    });
+    assert!(bad.is_empty(), "the state key is blind to edits:\n{}", bad.join("\n"));
+}
+
+/// What changes the document and builds nothing - its properties, colours, notes, a connector shifted - asks to save
+/// and rebuilds nothing: it is in the state key and not in the rebuild key. (The mesh quality is rebuilt: the bodies
+/// are meshed to it.)
+#[test]
+fn what_builds_nothing_is_saved_and_not_rebuilt() {
+    use qymcad_core::feature::AnchorRef;
+    use qymcad_core::model::Note;
+    let mut p = scene();
+    let a = p.add_part("A");
+    let ca = p.add_connector(a, AnchorRef::Origin);
+    let check = |label: &str, p: &mut Project, edit: &dyn Fn(&mut Project)| {
+        let (saved, built) = (p.state_key(), p.rebuild_key());
+        edit(p);
+        assert_ne!(p.state_key(), saved, "{label}: the document has to count as changed");
+        assert_eq!(p.rebuild_key(), built, "{label}: nothing that is built changed, so nothing may be rebuilt");
+    };
+    check("the title was edited", &mut p, &|p| p.meta.title = "Bracket".into());
+    check("a part was coloured", &mut p, &|p| {
+        p.part_colors.insert(a, [200, 30, 30]);
+    });
+    check("a note was written in a sketch", &mut p, &|p| p.sketches[0].notes.push(Note { x: 1.0, y: 2.0, text: "check".into() }));
+    check("a connector was shifted on its part", &mut p, &|p| p.connectors.iter_mut().find(|c| c.id == ca).unwrap().offset_xyz = [0.0, 0.0, 3.0]);
+}
+
+/// What the program writes itself - the rebuild, the solver - is not an edit: none of it may make the document look
+/// changed, or opening one and touching nothing would ask to save.
+#[test]
+fn what_the_program_writes_does_not_change_the_key() {
+    use qymcad_core::feature::{AnchorRef, FaceKey, SketchPlane};
+    let mut p = scene();
+    let body = p.timeline.iter().find_map(|n| n.kind.body()).expect("the body of the feature");
+    p.sketches[0].plane = SketchPlane::Face(body, FaceKey { index: 1, centroid: [0.0, 0.0, 5.0], normal: [0.0, 0.0, 1.0], id: 7 });
+    let (a, b) = (p.add_part("A"), p.add_part("B"));
+    let (ca, cb) = (p.add_connector(a, AnchorRef::Origin), p.add_connector(b, AnchorRef::Origin));
+    p.add_joint(ca, cb, JointKind::Rigid);
+    let (pa, pb) = (p.sketches[0].points[0].id, p.sketches[0].points[1].id);
+    let axis = p.add_axis_two_points(pa, pb);
+    p.sketches[0].texts.push(qymcad_core::model::SketchText { id: 900, x: 0.0, y: 0.0, height: 5.0, angle: 0.0, text: "A".into(), construction: false, glyphs: Vec::new(), font: Default::default() });
+    let (saved, built) = (p.state_key(), p.rebuild_key());
+    // what opening a document runs on it, and what solving and rebuilding a sketch does
+    p.settle_loaded();
+    p.solve_sketch(0);
+    p.regen_sketch(0);
+    // the first save stamps when the document was started, after the saved key is taken (`spawn_save`); the file's
+    // copy is stamped with the build that wrote it
+    p.meta.created = "2026-10-08T09:00:00Z".into();
+    p.meta.saved_by = "QymCAD 0.1".into();
+    // the rebuild resolves an axis on points, marks nodes for rebuilding, lays out a label's glyphs; the solver
+    // decides which way a mate faces
+    p.datum_axes.iter_mut().find(|x| x.id == axis).expect("the axis").set_resolved_for_test([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    p.timeline[0].dirty = !p.timeline[0].dirty;
+    p.sketches[0].texts[0].glyphs.push(vec![qymcad_core::geom::Point2::new(0.0, 0.0)]);
+    let j = p.joints.last_mut().expect("the joint");
+    (j.flip, j.roll_flip, j.flip_decided) = (!j.flip, !j.roll_flip, !j.flip_decided);
+    p.dead_bodies.push(body);
+    p.edge_refs.insert(body, Vec::new());
+    p.face_refs.insert(body, Vec::new());
+    p.mates_violated.push(body);
+    // the sketch rebound to its face under the face's new persistent id, as `rebind_lost_face_refs` does
+    if let SketchPlane::Face(_, key) = &mut p.sketches[0].plane {
+        key.id = 8;
+    }
+    assert_eq!(p.state_key(), saved, "what the rebuild and the solver write is not an edit");
+    assert_eq!(p.rebuild_key(), built, "what the rebuild and the solver write is not an edit");
+}
+
+/// Two equal documents have one key, whatever order their maps iterate in. A map rebuilt entry by entry - read back
+/// from a file, say - gets a hash seed of its own and with it an order of its own; counting that order would call an
+/// untouched document changed.
+#[test]
+fn equal_documents_have_one_key_whatever_their_maps_order() {
+    let mut p = scene();
+    for i in 0..64u8 {
+        p.part_colors.insert(1000 + i as u64, [i, 255 - i, 7]);
+        p.face_colors.insert(2000 + i as u64, vec![(i as u32, [i, i, i])]);
+    }
+    let mut q = p.clone();
+    let mut part: Vec<_> = p.part_colors.iter().map(|(k, v)| (*k, *v)).collect();
+    part.reverse();
+    q.part_colors = part.into_iter().collect();
+    let mut face: Vec<_> = p.face_colors.iter().map(|(k, v)| (*k, v.clone())).collect();
+    face.reverse();
+    q.face_colors = face.into_iter().collect();
+    assert_ne!(p.part_colors.keys().collect::<Vec<_>>(), q.part_colors.keys().collect::<Vec<_>>(), "the copy was meant to iterate in another order; with 64 entries and a fresh seed it does");
+    assert_eq!(p.state_key(), q.state_key(), "the same document read in another order is the same document");
+}
