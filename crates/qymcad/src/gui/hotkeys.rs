@@ -306,9 +306,13 @@ fn key_cell(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, r: &HotkeyRow, 
     let changed = wc.set.hotkeys.contains_key(r.action);
     // A KEY THIS SYSTEM KEEPS, brought by a profile from another one: it does not run here (see `hotkey_action`),
     // and saying nothing would leave a key in the table that silently does nothing
-    let refused = qymcad_ui_state::Chord::parse(&qymcad_ui_state::hotkey_key(wc.set, r.action)).and_then(|c| qymcad_ui_state::hotkey_refusal(r.action, &c));
-    let text = if waiting {
+    let refused = qymcad_ui_state::KeySeq::parse(&qymcad_ui_state::hotkey_key(wc.set, r.action)).and_then(|k| qymcad_ui_state::hotkey_refusal(r.action, &k));
+    let recorded = wc.hotkeys.recorded.label();
+    let text = if waiting && recorded.is_empty() {
         egui::RichText::new(crate::i18n::tr("hotkeys-press")).italics()
+    } else if waiting {
+        // THE CHORDS RECORDED SO FAR, as they are pressed: the key being built is seen while it is built
+        egui::RichText::new(crate::i18n::tr1("hotkeys-seq-waiting", "keys", &recorded)).monospace().strong()
     } else if cur.is_empty() {
         egui::RichText::new(crate::i18n::tr("hotkeys-unbound")).italics().weak()
     } else if refused.is_some() {
@@ -319,7 +323,13 @@ fn key_cell(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, r: &HotkeyRow, 
     } else {
         egui::RichText::new(&cur).monospace().strong()
     };
-    let mut resp = ui.add(egui::Button::new(text).selected(waiting).min_size(egui::vec2(width, 0.0)));
+    // A KEY BEING RECORDED KEEPS TO ITS COLUMN, cut short rather than widening the table under the person's eyes
+    let mut resp = ui
+        .scope(|ui| {
+            ui.set_max_width(width);
+            ui.add(egui::Button::new(text).selected(waiting).min_size(egui::vec2(width, 0.0)).truncate())
+        })
+        .inner;
     if let Some(why) = refused {
         resp = resp.on_hover_text(crate::i18n::tr(why));
     }
@@ -327,6 +337,7 @@ fn key_cell(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, r: &HotkeyRow, 
         wc.hotkeys.action = if waiting { None } else { Some(r.action.to_string()) };
         wc.hotkeys.note.clear();
         wc.hotkeys.clash = None;
+        wc.hotkeys.recorded = Default::default();
         // A FOCUSED BUTTON TAKES SPACE AND ENTER for a click: the press meant for the binding would
         // switch the waiting straight back off.
         resp.surrender_focus();
@@ -371,6 +382,7 @@ fn settle(hk: &mut qymcad_ui_state::HotkeyCapture) {
     hk.action = None;
     hk.clash = None;
     hk.note.clear();
+    hk.recorded = Default::default();
 }
 
 /// THE CLEAR ICON INSIDE THE FILTER FIELD, at its right end, while there is something to clear. Placed over the field
@@ -405,52 +417,62 @@ fn row_icon(ui: &mut egui::Ui, shown: bool, icon: &str) -> egui::Response {
     ui.add_visible(shown, egui::Button::new(icon).frame_when_inactive(false).min_size(egui::vec2(side, side)))
 }
 
-/// THE PRESS THAT ASSIGNS A KEY, while the window waits for one.
+/// THE PRESS THAT ASSIGNS A KEY, while the window waits for one - or for the next chord of it.
 fn capture_hotkey(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
     let Some(action) = wc.hotkeys.action.clone() else { return };
     let Some(area) = HOTKEYS.iter().find(|r| r.action == action).map(|r| r.area) else {
         wc.hotkeys.action = None;
         return;
     };
-    let (pressed, clipboard) = ctx.input(|i| {
+    let (pressed, clipboard, now) = ctx.input(|i| {
         let key = i.events.iter().find_map(|e| match e {
             // a modifier on its own is the start of a chord, not a press: the key that completes it may come in the same frame
-            egui::Event::Key { key, pressed: true, repeat: false, modifiers, .. } if !modifier_alone(*key) => Some((*key, *modifiers)),
+            egui::Event::Key { key, pressed: true, repeat: false, modifiers, .. } if !qymcad_ui_state::modifier_key(*key) => Some((*key, qymcad_ui_state::HeldKeys::of_event(i, *modifiers))),
             _ => None,
         });
         // egui turns Ctrl+C/X/V into clipboard events and the key itself never arrives
-        (key, i.events.iter().any(|e| matches!(e, egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_))))
+        (key, i.events.iter().any(|e| matches!(e, egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_))), i.time)
     });
     if clipboard {
         wc.hotkeys.note = crate::i18n::tr("hotkeys-reserved");
         return;
     }
-    let Some((key, mods)) = pressed else { return };
-    match capture_outcome(wc.set, area, &action, key, mods) {
-        Capture::Pending => return,
+    let recorded = wc.hotkeys.recorded.pressed.clone();
+    let outcome = match pressed {
+        Some((key, held)) => capture_outcome(wc.set, area, &action, &recorded, key, held),
+        // A PAUSE ENDS THE SEQUENCE: no Enter is needed for a key of one chord, as before sequences
+        None if !recorded.is_empty() && now - wc.hotkeys.recorded.at >= qymcad_ui_state::RECORD_WAIT => finish_recording(wc.set, area, &action, &recorded),
+        None => Capture::Pending,
+    };
+    match outcome {
+        Capture::Pending => {
+            if !recorded.is_empty() {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64((wc.hotkeys.recorded.at + qymcad_ui_state::RECORD_WAIT - now).max(0.0)));
+            }
+            return;
+        }
         Capture::Cancel => wc.hotkeys.action = None,
         Capture::Refused(why) => {
             wc.hotkeys.note = crate::i18n::tr(why);
+            return;
+        }
+        Capture::Record(chords) => {
+            wc.hotkeys.recorded = qymcad_ui_state::KeyWait { pressed: chords, at: now, area };
+            wc.hotkeys.note.clear();
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(qymcad_ui_state::RECORD_WAIT));
             return;
         }
         Capture::Clash(clash) => {
             wc.hotkeys.clash = Some(clash);
             wc.hotkeys.action = None;
         }
-        Capture::Bind(chord) => {
-            qymcad_ui_state::set_hotkey(wc.set, &action, &chord);
+        Capture::Bind(keys) => {
+            qymcad_ui_state::set_hotkey(wc.set, &action, &keys);
             wc.hotkeys.action = None;
         }
     }
+    wc.hotkeys.recorded = Default::default();
     wc.hotkeys.note.clear();
-}
-
-/// WHETHER THE PRESS IS A MODIFIER KEY ITSELF. egui reports Shift, Ctrl, Alt and Cmd as keys of their own when they
-/// go down. Reported behaviour: holding Cmd before the letter showed "This key belongs to the system" - the Cmd
-/// press was judged as a whole chord and refused.
-fn modifier_alone(key: egui::Key) -> bool {
-    use egui::Key as K;
-    matches!(key, K::ShiftLeft | K::ShiftRight | K::ControlLeft | K::ControlRight | K::AltLeft | K::AltRight | K::SuperLeft | K::SuperRight)
 }
 
 /// What a press in the waiting window comes to.
@@ -458,36 +480,59 @@ fn modifier_alone(key: egui::Key) -> bool {
 pub(super) enum Capture {
     /// Esc: leave the waiting, change nothing.
     Cancel,
-    /// A modifier on its own: the chord is not finished, the window goes on waiting.
+    /// A modifier on its own, or no press at all: the window goes on waiting.
     Pending,
     /// Not assignable; the catalogue key says why.
     Refused(&'static str),
+    /// The chords of the key so far: the window waits for the next one, or for Enter.
+    Record(Vec<qymcad_ui_state::Chord>),
     /// Taken in the same area - the person decides.
     Clash(qymcad_ui_state::HotkeyClash),
     /// Recorded as is (empty: left without a key).
     Bind(String),
 }
 
-/// THE DECISION, apart from the window, so the tests can ask it without a frame.
-pub(super) fn capture_outcome(set: &qymcad_ui_state::Settings, area: &str, action: &str, key: egui::Key, mods: egui::Modifiers) -> Capture {
-    if modifier_alone(key) {
+/// THE DECISION, apart from the window, so the tests can ask it without a frame. `recorded` holds the chords
+/// pressed for this key so far.
+pub(super) fn capture_outcome(
+    set: &qymcad_ui_state::Settings,
+    area: &'static str,
+    action: &str,
+    recorded: &[qymcad_ui_state::Chord],
+    key: egui::Key,
+    held: impl Into<qymcad_ui_state::HeldKeys>,
+) -> Capture {
+    let held = held.into();
+    if qymcad_ui_state::modifier_key(key) {
         return Capture::Pending;
     }
-    let bare = !mods.any();
-    if key == egui::Key::Escape && bare {
-        return Capture::Cancel; // leaving the mode rather than assigning Esc
+    let bare = !held.mods.any();
+    match key {
+        egui::Key::Escape if bare => return Capture::Cancel, // leaving the mode rather than assigning Esc
+        // the gesture of every field: erase - the last chord, or with none yet, the key itself
+        egui::Key::Backspace | egui::Key::Delete if bare && !recorded.is_empty() => return Capture::Record(recorded[..recorded.len() - 1].to_vec()),
+        egui::Key::Backspace | egui::Key::Delete if bare => return Capture::Bind(String::new()),
+        egui::Key::Enter if bare && !recorded.is_empty() => return finish_recording(set, area, action, recorded),
+        _ => {}
     }
-    if matches!(key, egui::Key::Backspace | egui::Key::Delete) && bare {
-        return Capture::Bind(String::new()); // the gesture of every field: erase
-    }
-    if mods.alt {
+    if held.alt.left() {
         return Capture::Refused("hotkeys-no-alt");
     }
-    let chord = qymcad_ui_state::Chord::of_press(mods, key);
-    if let Some(why) = qymcad_ui_state::hotkey_refusal(action, &chord) {
+    let mut chords = recorded.to_vec();
+    chords.push(qymcad_ui_state::Chord::of_held(qymcad_ui_state::platform_keys::Os::current(), held, key));
+    // judged as it grows: a refused chord is said at once, under the row, and the chords before it are kept
+    if let Some(why) = qymcad_ui_state::hotkey_refusal(action, &qymcad_ui_state::KeySeq { chords: chords.clone() }) {
         return Capture::Refused(why);
     }
-    let name = chord.name();
+    if chords.len() == qymcad_ui_state::SEQ_MAX {
+        return finish_recording(set, area, action, &chords);
+    }
+    Capture::Record(chords)
+}
+
+/// THE KEY RECORDED IS COMPLETE: it is bound, or asked about when another action of the area holds it.
+pub(super) fn finish_recording(set: &qymcad_ui_state::Settings, area: &str, action: &str, chords: &[qymcad_ui_state::Chord]) -> Capture {
+    let name = qymcad_ui_state::KeySeq { chords: chords.to_vec() }.name();
     match qymcad_ui_state::hotkey_taken_by(set, area, &name, action) {
         Some(holder) => Capture::Clash(qymcad_ui_state::HotkeyClash { action: action.to_string(), chord: name, holder }),
         None => Capture::Bind(name),
@@ -537,14 +582,13 @@ mod tests {
     /// the rest. A guard that read only the window would call every tool of the reference a phantom.
     /// WHERE THE ACTIONS OF AN AREA LIVE, and whether that place is the one that HEARS THE KEY.
     ///
-    /// Two places for the sketch: the window hears the key, and the workbench crate holds the table of "this
-    /// action means that drawing tool". The table hears no key and asks nothing about bindings - so the guard
-    /// that watches for a handler matching a raw key must not demand `hotkey_action` of it, while the guards
-    /// that compare the reference with the code must read both.
+    /// Two places for the sketch: the window is handed the action, and the workbench crate holds the table of
+    /// "this action means that drawing tool". The guards that compare the reference with the code must read both.
+    /// The bool says whether the place is a handler the key handler calls with the action it matched.
     const HANDLERS: [(&str, &str, bool); 4] = [
-        ("part", "pub(super) fn part_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {", true),
-        ("assembly", "pub(super) fn assembly_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {", true),
-        ("sketch", "pub(super) fn sketch_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>)", true),
+        ("part", "pub(super) fn part_hotkey(&mut self, action: &str) {", true),
+        ("assembly", "pub(super) fn assembly_hotkey(&mut self, action: &str) {", true),
+        ("sketch", "pub(super) fn sketch_hotkey(&mut self, action: &str)", true),
         ("sketch", "pub fn tool_for_action(action: &str) -> Option<u8>", false),
     ];
 
@@ -597,12 +641,16 @@ mod tests {
     ///
     /// Let one of them go back to `match key { Key::E => ... }` and rebinding will start working in one
     /// workbench and silently not in another. That is the worst kind of breakage: the program does not
-    /// crash, it quietly disobeys.
+    /// crash, it quietly disobeys. Which keys lead to an action is decided once, by `hotkey_presses`, and every
+    /// handler is called from there with the action.
     #[test]
     fn no_handler_matches_a_raw_key() {
-        for (area, sig, src, hears_the_key) in handler_sources() {
+        let input = include_str!("input.rs");
+        let keys = body_of(input, "pub(super) fn handle_tool_hotkeys(");
+        assert!(keys.contains("qymcad_ui_state::hotkey_presses("), "the key handler no longer matches the keys through `hotkey_presses`");
+        for (area, sig, src, called) in handler_sources() {
             let body = body_of(src, sig);
-            assert!(!hears_the_key || body.contains("hotkey_action("), "the handler \"{area}\" has stopped asking `hotkey_action`");
+            assert!(!called || keys.contains(&format!("self.{area}_hotkey(action)")), "the handler \"{area}\" is not called with the action the keys matched");
             // COMMENTS EXCLUDED: `Key::E` stands in them lawfully, as an explanation of why it is no
             // longer done that way. A guard that trips over an explanation teaches people to erase
             // explanations.

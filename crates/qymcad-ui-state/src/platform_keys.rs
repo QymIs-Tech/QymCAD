@@ -80,7 +80,7 @@ impl Kept {
         if k.key != pressed.key {
             return false;
         }
-        let mods = |c: &Chord| [c.control, c.ctrl, c.shift];
+        let mods = |c: &Chord| [c.control, c.ctrl, c.shift, c.altgr];
         let (want, got) = (mods(&k), mods(pressed));
         match self.held {
             Held::Exact => want == got,
@@ -173,10 +173,12 @@ pub fn platform_keys(os: Os) -> &'static PlatformKeys {
 impl PlatformKeys {
     /// Why this system will not let a chord reach a tool - a catalogue key - or `None`.
     pub fn refusal(&self, chord: &Chord) -> Option<&'static str> {
-        if chord.control && !self.has_control {
-            return Some("hotkeys-mac-only");
-        }
-        self.kept.iter().flat_map(|g| g.iter()).find(|k| k.covers(chord)).map(|k| k.why)
+        self.missing_modifier(chord).or_else(|| self.kept.iter().flat_map(|g| g.iter()).find(|k| k.covers(chord)).map(|k| k.why))
+    }
+
+    /// Why no keyboard of this system can press the chord at all - a modifier it has no key for - or `None`.
+    pub fn missing_modifier(&self, chord: &Chord) -> Option<&'static str> {
+        (chord.control && !self.has_control).then_some("hotkeys-mac-only")
     }
 
     /// Every row, for the checks.

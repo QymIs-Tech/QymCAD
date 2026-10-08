@@ -13,8 +13,7 @@ impl App {
     /// The sketch key layout: drawing (S/L/R/C/A/P/G/E/O/N/T), editing (F corner fillet, M mirror, K trim,
     /// X construction), dimensions (D). The remaining tools (angles, arrays, constraints) go through buttons -
     /// there are not enough letters.
-    pub(super) fn sketch_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {
-        let Some(action) = qymcad_ui_state::hotkey_action(&self.set, "sketch", key) else { return };
+    pub(super) fn sketch_hotkey(&mut self, action: &str) {
         if let Some(t) = qymcad_sketch::tool_for_action(action) {
             return self.set_sk_tool(t);
         }

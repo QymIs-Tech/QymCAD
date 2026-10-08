@@ -140,6 +140,7 @@ probe! {
         let waiting = s.word("hotkeys-press");
         assert!(s.shows(&waiting), "the key of {what:?} was clicked and the table does not wait for a new one; on screen: {:?}", s.words());
         s.key(Key::J); // a key no tool of this workbench holds
+        s.key(Key::Enter); // the key is one press: Enter saves it rather than waiting for a second
         let title = s.word("hotkeys-title");
         s.close_window(&title);
         s.key(Key::J);
@@ -194,6 +195,7 @@ probe! {
         let mut s = Session::start();
         let _ = waiting_for_a_key(&mut s);
         s.key(Key::H); // the shell's key in this workbench
+        s.key(Key::Enter); // the key is one press: Enter ends it and asks about the clash
         let said = what_the_table_says(&mut s);
         let line = s.word("hotkeys-taken").replace("{ $key }", "H").replace("{$key}", "H");
         let head = line.split(['{', ':']).next().unwrap_or(&line).trim().to_string();
