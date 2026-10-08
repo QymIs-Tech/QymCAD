@@ -739,9 +739,9 @@ struct QymEdges {
                                            // the edge, the connector's secondary axis (zero = no neighbouring
                                            // face)
 };
-extern "C" QymEdges* qym_shape_edges(const QymShape* s) {
-    if (!s) return nullptr;
-    QymEdges* e = new QymEdges();
+// The edges of `s` as `qym_shape_edges` hands them out; an exception goes up to it.
+static std::unique_ptr<QymEdges> edges_of(const QymShape* s) {
+    auto e = std::make_unique<QymEdges>();
     TopTools_IndexedMapOfShape edges;
     TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
     // edge -> its faces, for detecting SMOOTHNESS (both faces' normals at the middle of the edge point the
@@ -751,15 +751,24 @@ extern "C" QymEdges* qym_shape_edges(const QymShape* s) {
     for (int i = 1; i <= edges.Extent(); ++i) {
         std::vector<float> pts;
         Standard_Real f = 0, l = 0;
-        Handle(Geom_Curve) c = BRep_Tool::Curve(TopoDS::Edge(edges(i)), f, l);
-        if (!c.IsNull()) {
-            const int n = 24;
-            for (int k = 0; k <= n; ++k) {
-                gp_Pnt p = c->Value(f + (l - f) * k / n);
-                pts.push_back(static_cast<float>(p.X()));
-                pts.push_back(static_cast<float>(p.Y()));
-                pts.push_back(static_cast<float>(p.Z()));
+        Handle(Geom_Curve) c;
+        // ONE EDGE THAT CANNOT BE SAMPLED LOSES ONLY ITS OWN LINE: an offset curve over a basis that starts degenerate
+        // throws when a point of it is asked for, and the rest of the body is still drawn. Its curve is forgotten, so
+        // the steps below take it for an edge with none.
+        try {
+            c = BRep_Tool::Curve(TopoDS::Edge(edges(i)), f, l);
+            if (!c.IsNull()) {
+                const int n = 24;
+                for (int k = 0; k <= n; ++k) {
+                    gp_Pnt p = c->Value(f + (l - f) * k / n);
+                    pts.push_back(static_cast<float>(p.X()));
+                    pts.push_back(static_cast<float>(p.Y()));
+                    pts.push_back(static_cast<float>(p.Z()));
+                }
             }
+        } catch (...) {
+            pts.clear();
+            c.Nullify();
         }
         // is the edge round? the centre, axis and radius come from the analytic curve (a circle or an arc)
         double circ[7] = {0, 0, 0, 0, 0, 0, 0};
@@ -855,6 +864,15 @@ extern "C" QymEdges* qym_shape_edges(const QymShape* s) {
         e->ids.push_back(s->eids.IsBound(edges(i)) ? static_cast<uint32_t>(s->eids.Find(edges(i))) : 0u);
     }
     return e;
+}
+// NOTHING ESCAPES THROUGH `extern "C"`: an exception that does aborts the whole program, and a stored body from a file
+// someone sent can hold a curve OCCT throws on. A failure gives no list, which the caller already reads as "no edges".
+extern "C" QymEdges* qym_shape_edges(const QymShape* s) {
+    if (!s) return nullptr;
+    try {
+        return edges_of(s).release();
+    } QYM_WHY_CATCH("edges")
+    return nullptr;
 }
 extern "C" size_t qym_edges_count(const QymEdges* e) { return e ? e->polys.size() : 0; }
 extern "C" uint32_t qym_edge_id(const QymEdges* e, size_t i) { return (e && i < e->ids.size()) ? e->ids[i] : 0u; }
