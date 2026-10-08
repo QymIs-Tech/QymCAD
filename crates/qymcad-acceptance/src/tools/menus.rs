@@ -56,9 +56,10 @@ macro_rules! shows {
 }
 
 shows!(SETTINGS, "menu.settings", &["menu-windows", "menu-settings"], "win-settings", "general/07-settings");
+// The table of keys is a section of the settings window, so the keys are reached by the same item.
+shows!(KEYBOARD, "settings.keyboard", &["menu-windows", "menu-settings"], "win-settings", "general/10-hotkeys");
 shows!(PARTS_LIBRARY, "menu.parts-library", &["menu-windows", "menu-parts-library"], "pl-title", "general/12-library");
 shows!(START_SCREEN, "menu.start-screen", &["menu-windows", "win-start"], "start-title", "general/01-window");
-shows!(HOTKEYS, "menu.hotkeys", &["menu-help", "help-hotkeys"], "hotkeys-title", "general/10-hotkeys");
 shows!(REPORT, "menu.report", &["menu-help", "help-report"], "report-title", "general/13-report");
 
 /// What the items of history leave out: they act on the document as it stands, and take nothing.

@@ -126,7 +126,8 @@ pub(crate) fn start_screen(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context
                         close = true;
                     }
                     if ui.button(format!("{}  {}", ph::KEYBOARD, crate::i18n::tr("start-hotkeys"))).clicked() {
-                        wc.win.open(WinKind::Hotkeys);
+                        wc.win.open(WinKind::Settings);
+                        wc.scheme.section = qymcad_ui_state::settings_sections::SettingsSection::Keyboard;
                         close = true;
                     }
                     ui.hyperlink_to(format!("{}  {}", ph::BOOK_OPEN, crate::i18n::tr("start-help-site")), "https://cad.qymis.tech");

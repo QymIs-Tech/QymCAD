@@ -43,7 +43,6 @@ file-quit = Выход
 
 ## Меню «Справка»
 
-help-hotkeys = Горячие клавиши…
 help-about = О программе…
 
 ## Настройки — язык
@@ -286,7 +285,7 @@ scheme-color-cam_op5 = траектория операции 5
 scheme-color-cam_op6 = траектория операции 6
 
 # --- ГОРЯЧИЕ КЛАВИШИ ---
-hotkeys-title = Горячие клавиши
+settings-hotkeys = Горячие клавиши
 help-title = Справка
 help-search = Поиск по справке
 help-back = Назад

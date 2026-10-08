@@ -214,10 +214,6 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 ui.close();
             }
             ui.separator();
-            if ui.button(format!("{} {}", ph::KEYBOARD, qymcad_i18n::tr("help-hotkeys"))).clicked() {
-                bc.win.open(WinKind::Hotkeys);
-                ui.close();
-            }
             // CHECK FOR UPDATES. Pressed by hand it asks ALWAYS - even with the automatic check switched
             // off, because pressing it IS the asking. Absent where it cannot work: inside Flatpak there
             // is no network, and a build with no release tag has nothing to compare against.

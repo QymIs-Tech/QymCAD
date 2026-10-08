@@ -43,7 +43,6 @@ file-quit = Шығу
 
 ## Help menu
 
-help-hotkeys = Пернелер тіркесімі…
 help-about = Бағдарлама туралы…
 
 ## Settings — language
@@ -286,7 +285,7 @@ scheme-color-cam_op5 = 5-операция траекториясы
 scheme-color-cam_op6 = 6-операция траекториясы
 
 # --- KEYBOARD SHORTCUTS ---
-hotkeys-title = Пернелер тіркесімі
+settings-hotkeys = Пернелер тіркесімі
 help-title = Анықтама
 help-search = Анықтамадан іздеу
 help-back = Артқа

@@ -431,7 +431,7 @@ mod tests {
         let prev = qymcad_i18n::language();
         qymcad_i18n::set_language("en");
         let mut app = App::default();
-        app.win.open(crate::gui::WinKind::Hotkeys);
+        super::super::hotkeys::open_keyboard_settings(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
@@ -439,7 +439,7 @@ mod tests {
         let mut frame = |app: &mut App, events: Vec<egui::Event>| {
             time += 1.0 / 60.0;
             let input = egui::RawInput { screen_rect: Some(screen), time: Some(time), events, ..Default::default() };
-            let out = ctx.run_ui(input, |ui| app.hotkeys_window(ui.ctx()));
+            let out = ctx.run_ui(input, |ui| super::super::hotkeys::draw_settings(app, ui.ctx()));
             let mut shapes = Vec::new();
             out.shapes.into_iter().for_each(|c| flat(c.shape, &mut shapes));
             shapes
@@ -543,7 +543,7 @@ mod tests {
             let lang = qymcad_i18n::language();
             qymcad_i18n::set_language(code);
             let mut app = App::default();
-            app.win.open(crate::gui::WinKind::Hotkeys);
+            super::super::hotkeys::open_keyboard_settings(&mut app);
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx);
             let mut w = Frames { app, ctx, time: 0.0, lang };
@@ -558,7 +558,7 @@ mod tests {
             let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
             let input = egui::RawInput { screen_rect: Some(screen), time: Some(self.time), events, ..Default::default() };
             let app = &mut self.app;
-            let out = self.ctx.run_ui(input, |ui| app.hotkeys_window(ui.ctx()));
+            let out = self.ctx.run_ui(input, |ui| super::super::hotkeys::draw_settings(app, ui.ctx()));
             let mut shapes = Vec::new();
             out.shapes.into_iter().for_each(|c| flat_shape(c.shape, &mut shapes));
             shapes
@@ -960,5 +960,66 @@ mod tests {
             }
         }
         assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+}
+
+/// THE TABLE OF KEYS LIVES IN SETTINGS -> KEYBOARD, reached and left through whole frames of the program.
+#[cfg(test)]
+mod in_the_settings {
+    use egui::Key;
+    use crate::gui::hand::Hand;
+    use crate::gui::App;
+    use crate::i18n::tr;
+
+    fn extrude_row() -> String {
+        crate::gui::hotkeys::hotkey_what(qymcad_ui_state::HOTKEYS.iter().find(|r| r.action == "part.extrude").expect("the extrude row"))
+    }
+
+    /// The start screen's "Keyboard shortcuts" opens the settings at the keyboard section, the table in it; the Help
+    /// menu no longer has an item of its own for it.
+    #[test]
+    fn the_start_screen_opens_the_keys_in_the_settings() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut plain = App::default();
+        let mut hand = Hand::new(&mut plain);
+        hand.press_word(&tr("start-close"), egui::Pos2::ZERO); // the start screen greets a blank document, and it has a button of its own
+        let keys = tr("settings-hotkeys");
+        let before = hand.words().iter().any(|w| w.contains(&keys));
+        let help = hand.press_word(&tr("menu-help"), egui::Pos2::ZERO);
+        let in_help: Vec<String> = hand.words().into_iter().filter(|w| w.contains(&keys)).collect();
+        let mut app = App::default();
+        app.win.open(crate::gui::WinKind::Start);
+        app.win.start_asked = true;
+        let mut hand = Hand::new(&mut app);
+        let pressed = hand.press_word(&tr("start-hotkeys"), egui::Pos2::ZERO);
+        let (table, row) = (hand.shows(&tr("settings-sec-keyboard")) && hand.shows(&keys), hand.shows(&extrude_row()));
+        qymcad_i18n::set_language(&prev);
+        assert!(!before && help && in_help.is_empty(), "the Help menu still offers the keys: {in_help:?} (opened: {help}, shown before: {before})");
+        assert!(pressed, "the start screen has no keyboard shortcuts button");
+        assert!(table && row, "the start screen's button did not show the table in the settings (caption: {table}, extrude row: {row})");
+    }
+
+    /// ESC ANSWERS A CLASH "KEEP AS IT WAS" and leaves the settings open: the key stays, the question goes.
+    #[test]
+    fn esc_answers_a_clash_and_keeps_the_settings() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened =
+            hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO) && hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO);
+        let row = hand.written_at(&extrude_row());
+        let waits = row.is_some_and(|r| hand.press_word("E", r.center()));
+        hand.key(Key::F).key(Key::Enter); // F is the fillet's
+        let asked = hand.shows(&tr("hotkeys-swap"));
+        hand.key(Key::Escape);
+        let (still_asked, open) = (hand.shows(&tr("hotkeys-swap")), hand.shows(&tr("settings-hotkeys")));
+        let key = qymcad_ui_state::hotkey_key(&hand.app.set, "part.extrude");
+        qymcad_i18n::set_language(&prev);
+        assert!(opened && waits, "the extrude key was not reached in Settings -> Keyboard (opened: {opened}, row: {row:?})");
+        assert!(asked, "F is the fillet's and the table asked nothing");
+        assert!(!still_asked && key == "E", "Esc did not answer the clash with the old key (question left: {still_asked}, key now {key:?})");
+        assert!(open, "Esc answered the clash and closed the settings too");
     }
 }

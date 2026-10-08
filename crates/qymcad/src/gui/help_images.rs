@@ -1202,8 +1202,13 @@ mod tests {
         // THE HOTKEYS - the whole reference, the same one assembled from a single source.
         {
             let mut app = App::default();
-            app.win.open(WinKind::Hotkeys);
-            let img = shot_panel(&mut app, 720, 640, |a, ui| a.hotkeys_window(ui.ctx()));
+            // THE TABLE ALONE, as it stands in Settings -> Keyboard: the rest of the settings window carries the path of
+            // the settings file, and a picture made on a Mac would carry the name in that path.
+            let img = shot_panel(&mut app, 600, 640, |a, ui| {
+                let mut asks = Vec::new();
+                let ctx = ui.ctx().clone();
+                crate::gui::hotkeys::hotkeys_table(&mut a.win_ctx(&mut asks), ui, &ctx);
+            });
             save("hotkeys.png", &img);
         }
 

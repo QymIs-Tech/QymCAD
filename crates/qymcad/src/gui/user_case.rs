@@ -1555,25 +1555,27 @@ mod tests {
                 check_all(&mut app, "sketch: a rectangle with its centre fixed resized by a corner", &mut problems);
             }
 
-            // A KEY OF TWO PRESSES, recorded in the shortcuts window and used at once: the line goes on G, G while a
+            // A KEY OF TWO PRESSES, recorded in Settings -> Keyboard and used at once: the line goes on G, G while a
             // bare G stays the polygon, and a G, G drawn line must come out like one drawn from the button.
             {
                 let before = app.project.sketches[si].entities.len();
                 let mut hand = Hand::canvas(&mut app);
-                let menu = crate::i18n::tr("help-hotkeys");
+                let (windows, settings) = (crate::i18n::tr("menu-windows"), crate::i18n::tr("menu-settings"));
                 let line = crate::gui::hotkeys::hotkey_what(crate::gui::hotkeys::HOTKEYS.iter().find(|r| r.action == "sketch.line").expect("the line row"));
-                let opened = hand.press_word(&crate::i18n::tr("menu-help"), egui::Pos2::ZERO) && hand.press_word(&menu, egui::Pos2::ZERO);
+                let opened =
+                    hand.press_word(&windows, egui::Pos2::ZERO) && hand.press_word(&settings, egui::Pos2::ZERO) && hand.press_word(&crate::i18n::tr("settings-sec-keyboard"), egui::Pos2::ZERO);
                 // the sketch rows stand below the fold: the row is found by the filter, the way a person looks for it
                 let filtered = opened && hand.press_word(&crate::i18n::tr("hotkeys-filter-hint"), egui::Pos2::ZERO);
                 hand.type_text(&line);
                 let row = hand.written_at(&line).filter(|_| filtered);
                 let recorded = row.is_some_and(|r| hand.press_word("L", r.center())) && {
-                    hand.key(egui::Key::G).key(egui::Key::G).key(egui::Key::Enter).key(egui::Key::Escape);
+                    hand.key(egui::Key::G).key(egui::Key::G).key(egui::Key::Enter);
                     qymcad_ui_state::hotkey_key(&hand.app.set, "sketch.line") == "G, G"
                 };
-                if !opened || !recorded {
+                let closed = hand.press_word(&windows, egui::Pos2::ZERO) && hand.press_word(&settings, egui::Pos2::ZERO);
+                if !opened || !recorded || !closed {
                     problems.push(format!(
-                        "sketch: G, G was not recorded for the line in the shortcuts window (window opened: {opened}, key now {:?})",
+                        "sketch: G, G was not recorded for the line in Settings -> Keyboard (opened: {opened}, closed: {closed}, key now {:?})",
                         qymcad_ui_state::hotkey_key(&hand.app.set, "sketch.line")
                     ));
                 }

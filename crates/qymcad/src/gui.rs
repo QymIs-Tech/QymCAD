@@ -1940,7 +1940,7 @@ impl App {
             crate::gui::file_ask::inert_while_choosing(ui); // the system chooser is modal: nothing here answers until it does
         }
         // the reference window's keys go nowhere else: Esc must not walk the cancel ladder, E must not extrude
-        let capturing = hotkeys::hotkeys_take_keyboard(&mut self.win, &mut self.hotkeys, ctx);
+        let capturing = hotkeys::hotkeys_take_keyboard(&self.win, &mut self.hotkeys, ctx);
         // Ctrl+S saves (silently into the current file, or a dialogue for a new one); Ctrl+Shift+S is "save as".
         if !choosing && !capturing && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             if ctx.input(|i| i.modifiers.shift) {
@@ -2012,7 +2012,6 @@ impl App {
                                                                                                 // "Finish" lives in one place: the button in the breadcrumbs (the toolbar). There is no separate banner.
         tick_view_anim(&mut self.viewing.cam, &mut self.viewing.view_anim, ctx); // the smooth turn of the view (the ViewCube)
         tick_joint_anim(&mut self.joint_anim, &mut self.project, ctx); // sweeping a joint's degree of freedom
-        self.hotkeys_window(ctx); // Help -> Shortcuts
         self.command_search_window(ctx); // the command search (Space or Ctrl+K)
         shell.run_slot(qymcad_shell::Slot::Top, ui, self);
         shell.run_slot(qymcad_shell::Slot::Bottom, ui, self);

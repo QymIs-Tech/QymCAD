@@ -281,8 +281,6 @@ pub enum WinKind {
     Report,
     /// The command search.
     CmdSearch,
-    /// The hotkeys reference (under Help), built from ONE source - see hotkeys.rs.
-    Hotkeys,
     /// The project parameters (the named dimensions and formulas).
     Params,
     /// The settings.
@@ -296,14 +294,13 @@ pub enum WinKind {
 impl WinKind {
     /// EVERY KIND, so that a walk over the windows cannot silently miss one added later. A guard checks that the
     /// count here matches the number of variants declared above.
-    pub const ALL: [WinKind; 11] = [
+    pub const ALL: [WinKind; 10] = [
         WinKind::SaveTemplate,
         WinKind::Start,
         WinKind::DocProps,
         WinKind::About,
         WinKind::Report,
         WinKind::CmdSearch,
-        WinKind::Hotkeys,
         WinKind::Params,
         WinKind::Settings,
         WinKind::PartsLibrary,

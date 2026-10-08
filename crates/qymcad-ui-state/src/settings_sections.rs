@@ -71,7 +71,7 @@ impl SettingsSection {
                 "settings-recent-limit",
                 "settings-profile",
             ],
-            Keyboard => &["settings-key-wait"],
+            Keyboard => &["settings-key-wait", "settings-hotkeys"],
             Appearance => &["settings-scheme", "settings-ui-scale"],
             Viewport => &[
                 "settings-engine",

@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-The full list is “Help -> Keyboard shortcuts”. Keys are reassigned there too.
+The full list is in “Settings -> Keyboard”. Keys are reassigned there too.
 
 ![The shortcut reference: the key on the left, what it does on the right.](img/hotkeys.png)
 
@@ -74,7 +74,7 @@ sequence”: 400 ms by default. If `G` runs before the second press is made, mak
 
 ## Reassigning
 
-In the reference window click the key of an action, then press the one you want — or several in turn for a key
+In the table click the key of an action, then press the one you want — or several in turn for a key
 of several presses. `Enter` saves at once; a pause of a second saves too, and so does the fourth press, the
 most a key can have. `Backspace` removes the last press. If the key is already
 taken in the same workbench, the program says which command has it and asks what to do — see below.
@@ -87,9 +87,9 @@ Instead of a single key you can press a combination with `Ctrl` or `Shift`: a le
 A `Ctrl` combination types nothing, so it works from a text field as it is. The right `Alt` (`AltGr`, the right
 `Option` on a Mac) is a key of its own: `AltGr+F` can be assigned, but it does not work from a text field, where
 `AltGr` types characters such as `@` or `€`. On a Mac `Ctrl` here means `Cmd`,
-`Alt` means `Option`, and the window writes the keys the Mac way, with the symbols of these keys. A Mac also
+`Alt` means `Option`, and the table writes the keys the Mac way, with the symbols of these keys. A Mac also
 takes combinations with its own `Control` key, `Control+J` or `Control+Cmd+J`; they work only on a Mac, and on
-another system the window shows such a key crossed out. `Esc` while the window waits leaves the key as it was,
+another system the table shows such a key crossed out. `Esc` while the table waits leaves the key as it was,
 `Backspace` with nothing pressed yet leaves the action without a key.
 
 Some combinations cannot be taken — as the first press of a key; later presses are free. `Ctrl` with `A`, `C`, `K`, `S`, `V`, `X`, `Y` or `Z` — with or without
@@ -101,7 +101,7 @@ macOS takes `Shift+Cmd+Q`, `Control+Cmd+Q`, `Shift+Cmd+3`, `Shift+Cmd+4`, `Shift
 `Control+A`, `Control+E`, `Control+B`, `Control+F`, `Control+P`, `Control+N` move the cursor. Hover over a
 crossed-out key to see why.
 
-When the key is taken, the window offers **Swap** (that command gets the key you are replacing), **Take
+When the key is taken, the table offers **Swap** (that command gets the key you are replacing), **Take
 it** (that command is left without a key) or **Keep as it was**. The filter above the table finds a command
 by a word of its description or by its key. In an interface in another language it also finds a command by
 its English name: `mirror` finds Mirror. The command search (Ctrl+K) finds the same way.

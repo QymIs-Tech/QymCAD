@@ -43,7 +43,6 @@ file-quit = Quit
 
 ## Help menu
 
-help-hotkeys = Keyboard shortcuts…
 help-about = About…
 
 ## Settings — language
@@ -286,7 +285,7 @@ scheme-color-cam_op5 = operation 5 toolpath
 scheme-color-cam_op6 = operation 6 toolpath
 
 # --- KEYBOARD SHORTCUTS ---
-hotkeys-title = Keyboard shortcuts
+settings-hotkeys = Keyboard shortcuts
 help-title = Help
 help-search = Search the help
 help-back = Back
