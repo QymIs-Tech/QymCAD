@@ -145,9 +145,13 @@ def main():
     for src in sources_to_check:
         if src and os.path.isdir(src):
             for fname in os.listdir(src):
-                if fname.lower().endswith(".dll") and fname.lower() != "combase.dll":
-                    # Skip WinRT-dependent libraries not used by QymCAD
-                    if fname.lower() in ["vccorlib140.dll", "vccorlib140d.dll", "qt5bluetooth.dll", "qt5bluetoothd.dll"]:
+                fl = fname.lower()
+                if fl.endswith(".dll") and fl != "combase.dll":
+                    # Exclude huge unused frameworks (VTK, Qt5), debug builds and WinRT helpers
+                    if (fl.startswith("vtk") or fl.startswith("qt") or
+                        (fl.startswith("q") and not fl.startswith("qymcad")) or
+                        "debug" in fl or fl.endswith("d.dll") or
+                        fl in ["vccorlib140.dll", "vccorlib140d.dll"]):
                         continue
                     dest = os.path.join(out_dir, fname)
                     if not os.path.exists(dest):
@@ -159,8 +163,13 @@ def main():
     if os.path.isdir(thirdparty_dir):
         for root, dirs, files in os.walk(thirdparty_dir):
             for f in files:
-                if f.lower().endswith(".dll"):
-                    if f.lower() in ["vccorlib140.dll", "vccorlib140d.dll", "qt5bluetooth.dll", "qt5bluetoothd.dll"]:
+                fl = f.lower()
+                if fl.endswith(".dll"):
+                    # Exclude huge unused frameworks (VTK, Qt5), debug builds and WinRT helpers
+                    if (fl.startswith("vtk") or fl.startswith("qt") or
+                        (fl.startswith("q") and not fl.startswith("qymcad")) or
+                        "debug" in fl or fl.endswith("d.dll") or
+                        fl in ["vccorlib140.dll", "vccorlib140d.dll"]):
                         continue
                     dest = os.path.join(out_dir, f)
                     if not os.path.exists(dest):
@@ -174,18 +183,6 @@ def main():
 
     # Patch TBB for Windows 7 compatibility
     patch_tbb_for_win7(out_dir)
-
-    # VC Redist installer
-    vcredist_candidates = [
-        os.path.join("dist", "qymcad-windows-x64", "VC_redist.x64.exe"),
-        os.path.join("target", "occt-win64", "vcredist", "VC_redist.x64.exe"),
-        os.path.join("packaging", "win", "VC_redist.x64.exe"),
-    ]
-    for vc in vcredist_candidates:
-        if os.path.isfile(vc):
-            shutil.copy2(vc, os.path.join(out_dir, "VC_redist.x64.exe"))
-            print(f">>> Included VC_redist.x64.exe from {vc}")
-            break
 
     # Copy assets
     assets_src = "assets"
