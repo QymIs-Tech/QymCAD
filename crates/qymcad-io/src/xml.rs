@@ -14,6 +14,8 @@ pub struct Node {
     pub attrs: Vec<(String, String)>,
     pub children: Vec<Node>,
     pub text: String,
+    /// The line of the file its opening tag stands on, from 1: a refusal says where to look.
+    pub line: usize,
 }
 
 impl Node {
@@ -90,6 +92,7 @@ pub fn parse(text: &str) -> Option<Node> {
     let b = text.as_bytes();
     let mut i = 0usize;
     let mut stack: Vec<Node> = vec![Node::default()]; // a holder for the root
+    let (mut counted, mut line) = (0usize, 1usize); // the line at byte `counted`, carried forward to each element
     while i < b.len() {
         if b[i] != b'<' {
             let end = text[i..].find('<').map(|k| i + k).unwrap_or(b.len());
@@ -124,7 +127,10 @@ pub fn parse(text: &str) -> Option<Node> {
             while k < b.len() && !b[k].is_ascii_whitespace() && b[k] != b'>' && b[k] != b'/' {
                 k += 1;
             }
-            let mut node = Node { name: local(&text[i + 1..k]).to_string(), ..Node::default() };
+            line += text[counted..i].matches('\n').count();
+            counted = i;
+            // every field named, none taken from `Node::default()`: the form stays good if `Node` gets a `Drop` of its own
+            let mut node = Node { name: local(&text[i + 1..k]).to_string(), attrs: Vec::new(), children: Vec::new(), text: String::new(), line };
             loop {
                 while k < b.len() && b[k].is_ascii_whitespace() {
                     k += 1;

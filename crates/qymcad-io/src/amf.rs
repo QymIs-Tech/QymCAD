@@ -16,6 +16,15 @@ fn unit_mm(unit: &str) -> Option<f64> {
     crate::FileUnit::of_word(unit).map(crate::FileUnit::mm)
 }
 
+/// A NUMBER IS FINITE: of the elements `names` under `n`, the first written as `NaN` or `inf` is refused with its line
+/// and its text.
+fn finite_children(n: &Node, names: &[&str]) -> Result<(), String> {
+    match names.iter().filter_map(|k| n.child(k)).find(|c| c.text.trim().parse::<f64>().is_ok_and(|v| !v.is_finite())) {
+        Some(c) => Err(crate::not_finite("io-amf-not-finite-line", &[&c.line, &c.text.trim()])),
+        None => Ok(()),
+    }
+}
+
 /// Read an AMF file - plain, or zipped - into bodies in millimetres.
 pub fn import_amf(path: &str) -> Result<Vec<NamedMesh>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("io-amf-read-failed#{e}"))?;
@@ -91,6 +100,7 @@ fn parse(xml: &str) -> Result<Vec<NamedMesh>, String> {
             for v in m.child("vertices").map(|vs| vs.all("vertex").collect::<Vec<_>>()).unwrap_or_default() {
                 let c = v.child("coordinates").ok_or("io-amf-bad-vertex")?;
                 let [Some(x), Some(y), Some(z)] = [number(c.child("x")), number(c.child("y")), number(c.child("z"))] else { return Err("io-amf-bad-vertex".into()) };
+                finite_children(c, &["x", "y", "z"])?;
                 mesh.verts.push(Point3::new(x, y, z));
                 n += 1;
             }
@@ -188,6 +198,7 @@ impl Tree<'_> {
         inner.push(Group { index: self.next, name, at: *at });
         self.next += 1;
         for i in c.all("instance") {
+            finite_children(i, &["deltax", "deltay", "deltaz", "rx", "ry", "rz"])?;
             let num = |name: &str| i.child(name).and_then(|n| n.text.trim().parse::<f64>().ok()).unwrap_or(0.0);
             let local = Place::instance([num("deltax"), num("deltay"), num("deltaz")], [num("rx"), num("ry"), num("rz")]);
             self.expand(i.attr("objectid").ok_or("io-amf-bad-constellation")?, &inner, &local, depth + 1, out)?;

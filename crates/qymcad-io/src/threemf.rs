@@ -24,9 +24,13 @@ fn unit_mm(unit: &str) -> Option<f64> {
 type T = [f64; 12];
 const ONE: T = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
 
-fn parse_t(s: Option<&str>) -> Result<T, String> {
-    let Some(s) = s else { return Ok(ONE) };
+fn parse_t(n: &Node) -> Result<T, String> {
+    let Some(s) = n.attr("transform") else { return Ok(ONE) };
     let v: Vec<f64> = s.split_whitespace().map(|w| w.parse::<f64>()).collect::<Result<_, _>>().map_err(|_| "io-3mf-bad-transform".to_string())?;
+    // a placement is a finite number, as a corner is
+    if let Some(k) = v.iter().position(|x| !x.is_finite()) {
+        return Err(crate::not_finite("io-3mf-not-finite-line", &[&n.line, &s.split_whitespace().nth(k).unwrap_or_default()]));
+    }
     <[f64; 12]>::try_from(v).map_err(|_| "io-3mf-bad-transform".to_string())
 }
 
@@ -118,16 +122,16 @@ fn parse_model(xml: &str, names: &std::collections::HashMap<String, String>) -> 
     let scale: T = [to_mm, 0.0, 0.0, 0.0, to_mm, 0.0, 0.0, 0.0, to_mm, 0.0, 0.0, 0.0];
     for item in everything.iter().filter(|n| n.name == "item") {
         let id = item.attr("objectid").ok_or("io-3mf-bad-model")?;
-        let t = then(&parse_t(item.attr("transform"))?, &scale);
+        let t = then(&parse_t(item)?, &scale);
         // AN OBJECT OF NAMED PARTS comes in a piece per part: the project names them, so they are the author's pieces
         // and not one body. Components nobody names stay one piece of their item, as before.
         let components: Vec<&Node> = objects.get(id).and_then(|o| o.child("components")).map(|cs| cs.all("component").collect()).unwrap_or_default();
         if components.iter().any(|c| c.attr("objectid").is_some_and(|p| parts.named(p))) {
             // each part in its own coordinates; where it stands is its component's transform, then the item's - so the
             // part can be moved and mated as a part, not a mesh baked into place
-            let item_t = parse_t(item.attr("transform"))?;
+            let item_t = parse_t(item)?;
             for c in components {
-                parts.part(c.attr("objectid").ok_or("io-3mf-bad-model")?, &then(&parse_t(c.attr("transform"))?, &item_t), &[], &mut out)?;
+                parts.part(c.attr("objectid").ok_or("io-3mf-bad-model")?, &then(&parse_t(c)?, &item_t), &[], &mut out)?;
             }
             continue;
         }
@@ -184,7 +188,7 @@ impl Parts<'_> {
             w.push(qymcad_core::model::FileGroup { index: self.groups.replace(self.groups.get() + 1), name: self.name(id), place: at });
             let left = row(&rest, [0.0; 3]);
             for c in components {
-                self.part(c.attr("objectid").ok_or("io-3mf-bad-model")?, &then(&parse_t(c.attr("transform"))?, &left), &w, out)?;
+                self.part(c.attr("objectid").ok_or("io-3mf-bad-model")?, &then(&parse_t(c)?, &left), &w, out)?;
             }
             return Ok(());
         }
@@ -236,7 +240,13 @@ fn colour_of(o: &Node, colours: &std::collections::HashMap<String, Vec<Option<[u
 }
 
 fn num(n: &Node, a: &str) -> Result<f64, String> {
-    n.attr(a).and_then(|v| v.parse().ok()).ok_or_else(|| "io-3mf-bad-model".to_string())
+    let word = n.attr(a).ok_or_else(|| "io-3mf-bad-model".to_string())?;
+    let v: f64 = word.parse().map_err(|_| "io-3mf-bad-model".to_string())?;
+    // A NUMBER IS FINITE: `NaN` and `inf` parse as f64
+    if !v.is_finite() {
+        return Err(crate::not_finite("io-3mf-not-finite-line", &[&n.line, &word]));
+    }
+    Ok(v)
 }
 
 /// Place object `id` under `t` into `mesh`: its own triangles, then its components, each under its transform.
@@ -269,7 +279,7 @@ fn place(id: &str, t: &T, depth: usize, objects: &std::collections::HashMap<&str
     }
     if let Some(cs) = o.child("components") {
         for c in cs.all("component") {
-            let own = parse_t(c.attr("transform"))?;
+            let own = parse_t(c)?;
             place(c.attr("objectid").ok_or("io-3mf-bad-model")?, &then(&own, t), depth + 1, objects, colours, mesh, per)?;
         }
     }

@@ -55,6 +55,15 @@ pub struct NamedMesh {
     pub within: Vec<qymcad_core::model::FileGroup>,
 }
 
+/// A NUMBER THAT IS NOT FINITE, refused with its place and its value. Text parses `NaN` and `inf` as numbers and binary
+/// floats carry them too: such a corner came into the document without a word, and a mesh with one then stopped the
+/// recognition of its body. `key` names the format and the kind of place; the values follow the `#` apart by U+001F,
+/// which `qymcad_i18n::name` reads into `$v`, `$w`, ... in order.
+pub(crate) fn not_finite(key: &str, values: &[&dyn std::fmt::Display]) -> String {
+    let values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+    format!("{key}#{}", values.join("\u{1f}"))
+}
+
 /// A NAME A WRITER PUTS WHERE IT HAS NONE is no name: the program that wrote the owner's print head numbers its pieces
 /// "empty_2", "empty_3"... in both its glTF and its OBJ. The piece is then named after its file, as an unnamed one is.
 /// THE COLOURS OF A PIECE'S TRIANGLES as a piece carries them: a colour per triangle - the piece's own `colour`
