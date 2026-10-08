@@ -69,10 +69,18 @@ for fname in ['tbb12.dll', 'tbb12_debug.dll']:
         pos = d.find(old_sym)
         if pos != -1:
             d[pos:pos+len(new_sym)] = new_sym
+        # Replace stack size detection with standard 2 MB thread stack:
+        # b8 00 00 20 00        mov eax, 0x200000 (2 MB)
+        # 16x 90                nop padding
+        # 48 8d 0d 98 22 04 00  lea rcx, [rip + 0x42298] (mutex address preserved exactly)
+        # 5x 90                 nop padding
         orig_code = bytes.fromhex('488d542438488d4c2440ff15b44e0100488b442438488d0d98220400482b442440')
+        prev_patch = bytes.fromhex('65488b04250800000065482b042510000000909090488d0d982204009090909090')
         c_pos = d.find(orig_code)
+        if c_pos == -1:
+            c_pos = d.find(prev_patch)
         if c_pos != -1:
-            new_code = bytes.fromhex('65488b042508000000' + '65482b042510000000' + '909090' + '488d0d98220400' + '9090909090')
+            new_code = bytes.fromhex('b800002000' + '90' * 16 + '488d0d98220400' + '90' * 5)
             d[c_pos:c_pos+len(new_code)] = new_code
         with open(p, 'wb') as f:
             f.write(d)
