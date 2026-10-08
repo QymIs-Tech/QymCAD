@@ -236,5 +236,9 @@ For Windows 10/11, the primary `qymcad-win64` release is recommended.
     zip_size_mb = os.path.getsize(zip_path) / (1024 * 1024)
     print(f">>> DONE: {zip_path} ({zip_size_mb:.1f} MB, {len(os.listdir(out_dir))} files staged)")
 
+    stable_zip = os.path.join(dist_dir, "qymcad-windows7-x64.zip")
+    shutil.copy2(zip_path, stable_zip)
+    print(f">>> Updated stable archive: {stable_zip}")
+
 if __name__ == "__main__":
     main()
