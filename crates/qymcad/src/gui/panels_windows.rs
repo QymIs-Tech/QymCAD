@@ -1133,6 +1133,15 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 });
             }
         }
+        Sec::Keyboard => {
+            if show("settings-key-wait") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-key-wait"));
+                    ui.add(egui::DragValue::new(&mut wc.set.key_wait_ms).range(100..=3000).speed(10).suffix(crate::i18n::tr("unit-ms")));
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-key-wait-hint")).weak().small());
+            }
+        }
         Sec::Appearance => {
             // THE INTERFACE SCALE is applied LIVE - choosing a size blind, with the window closed, is
             // impossible.

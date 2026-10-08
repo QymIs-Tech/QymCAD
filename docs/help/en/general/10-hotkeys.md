@@ -50,12 +50,33 @@ To call a tool straight from a field, **hold Alt**: `Alt+U` instead of `U`.
 
 There is no need to click away to free the keyboard.
 
+For a key of several presses, hold Alt on the first one only: `Alt+G, G`. Once the first press is taken, the
+program waits for the next one, and that letter is not typed into the field.
+
 `Ctrl+K` opens the command search **always**, including from a field. Space does the same, but only
 while the cursor is outside a field — inside one it types a space.
 
+## Keys of several presses
+
+A key can be several presses in turn: `G, G` — press G, release it, press G again; `Ctrl+T, F` — Ctrl+T, then F.
+After the first press the status line shows what has been pressed, `G …`, and the program waits for the next
+press.
+
+- The next press completes the key: the command runs.
+- A press that continues no key ends the wait and works as a press of its own.
+- `Esc` ends the wait and does nothing else.
+- If no press comes in time, the wait ends. If what was pressed is itself a key — `G` beside `G, G` — that
+  command runs then.
+
+`G` and `G, G` can be assigned at the same time. A `G` that starts no longer key runs at once; a `G` that does
+waits for the next press. How long it waits is set in Settings -> Keyboard, “Wait for the next key of a
+sequence”: 400 ms by default. If `G` runs before the second press is made, make the wait longer.
+
 ## Reassigning
 
-In the reference window click the key of an action, then press the one you want. If it is already
+In the reference window click the key of an action, then press the one you want — or several in turn for a key
+of several presses. `Enter` saves at once; a pause of a second saves too, and so does the fourth press, the
+most a key can have. `Backspace` removes the last press. If the key is already
 taken in the same workbench, the program says which command has it and asks what to do — see below.
 
 Reassignments are kept in the settings and travel with the profile. **reset** next to a key
@@ -63,13 +84,15 @@ returns its default; **Reset every key to the default** returns them all.
 
 Instead of a single key you can press a combination with `Ctrl` or `Shift`: a letter, a digit or `F3`–`F12` —
 `W`, `Shift+W`, `Ctrl+Shift+F5`. `Alt` cannot be part of a key: it is what reaches the keys from a text field.
-A `Ctrl` combination types nothing, so it works from a text field as it is. On a Mac `Ctrl` here means `Cmd`,
+A `Ctrl` combination types nothing, so it works from a text field as it is. The right `Alt` (`AltGr`, the right
+`Option` on a Mac) is a key of its own: `AltGr+F` can be assigned, but it does not work from a text field, where
+`AltGr` types characters such as `@` or `€`. On a Mac `Ctrl` here means `Cmd`,
 `Alt` means `Option`, and the window writes the keys the Mac way, with the symbols of these keys. A Mac also
 takes combinations with its own `Control` key, `Control+J` or `Control+Cmd+J`; they work only on a Mac, and on
 another system the window shows such a key crossed out. `Esc` while the window waits leaves the key as it was,
-`Backspace` leaves the action without a key.
+`Backspace` with nothing pressed yet leaves the action without a key.
 
-Some combinations cannot be taken. `Ctrl` with `A`, `C`, `K`, `S`, `V`, `X`, `Y` or `Z` — with or without
+Some combinations cannot be taken — as the first press of a key; later presses are free. `Ctrl` with `A`, `C`, `K`, `S`, `V`, `X`, `Y` or `Z` — with or without
 `Shift` — belongs to every workbench at once: selection, the clipboard, the search, saving, undo. A bare `X`
 toggles construction geometry. The rest depends on the system. On Linux and Windows `Ctrl+H`, `Ctrl+U` and
 `Ctrl+W` erase text in a field. On a Mac those are free, but `Cmd+H` hides the program, `Cmd+Q` quits it,

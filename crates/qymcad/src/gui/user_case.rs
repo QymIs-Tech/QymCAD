@@ -1555,6 +1555,37 @@ mod tests {
                 check_all(&mut app, "sketch: a rectangle with its centre fixed resized by a corner", &mut problems);
             }
 
+            // A KEY OF TWO PRESSES, recorded in the shortcuts window and used at once: the line goes on G, G while a
+            // bare G stays the polygon, and a G, G drawn line must come out like one drawn from the button.
+            {
+                let before = app.project.sketches[si].entities.len();
+                let mut hand = Hand::canvas(&mut app);
+                let menu = crate::i18n::tr("help-hotkeys");
+                let line = crate::gui::hotkeys::hotkey_what(crate::gui::hotkeys::HOTKEYS.iter().find(|r| r.action == "sketch.line").expect("the line row"));
+                let opened = hand.press_word(&crate::i18n::tr("menu-help"), egui::Pos2::ZERO) && hand.press_word(&menu, egui::Pos2::ZERO);
+                // the sketch rows stand below the fold: the row is found by the filter, the way a person looks for it
+                let filtered = opened && hand.press_word(&crate::i18n::tr("hotkeys-filter-hint"), egui::Pos2::ZERO);
+                hand.type_text(&line);
+                let row = hand.written_at(&line).filter(|_| filtered);
+                let recorded = row.is_some_and(|r| hand.press_word("L", r.center())) && {
+                    hand.key(egui::Key::G).key(egui::Key::G).key(egui::Key::Enter).key(egui::Key::Escape);
+                    qymcad_ui_state::hotkey_key(&hand.app.set, "sketch.line") == "G, G"
+                };
+                if !opened || !recorded {
+                    problems.push(format!(
+                        "sketch: G, G was not recorded for the line in the shortcuts window (window opened: {opened}, key now {:?})",
+                        qymcad_ui_state::hotkey_key(&hand.app.set, "sketch.line")
+                    ));
+                }
+                hand.key(egui::Key::G).key(egui::Key::G);
+                hand.click2d(0.0, 90.0).click2d(25.0, 90.0);
+                let drawn: Vec<_> = app.project.sketches[si].entities[before..].iter().map(|e| e.kind).collect();
+                if !matches!(drawn.as_slice(), [qymcad_core::model::EntityKind::Line { .. }]) {
+                    problems.push(format!("sketch: G, G and two clicks drew {drawn:?} rather than one line"));
+                }
+                check_all(&mut app, "sketch: a line drawn by the key G, G", &mut problems);
+            }
+
             // CONSTRAINTS: each is placed on a suitable selection. One that did not take must say so through
             // the status line rather than silently doing nothing.
             let codes: [(u8, &str); 9] =

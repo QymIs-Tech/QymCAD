@@ -83,6 +83,7 @@ mod tests {
             msaa: 8,
             autosave_secs: 600,
             undo_cap: 7,
+            key_wait_ms: 750,
             ghost_alpha: 200,
             kernel_threads: 0, // all the cores but one
             persp_fov_deg: 60.0,
@@ -129,6 +130,7 @@ mod tests {
                 // a field that ONLY `other` changes must stay changed in ours
                 match other {
                     Sec::General => assert_eq!(s.language, c.language, "{sec:?}: the reset touched the language"),
+                    Sec::Keyboard => assert_eq!(s.key_wait_ms, c.key_wait_ms, "{sec:?}: the reset touched the key wait"),
                     Sec::Appearance => assert_eq!(s.scheme, c.scheme, "{sec:?}: the reset touched the scheme"),
                     Sec::Viewport => assert_eq!(s.viewcube_size, c.viewcube_size, "{sec:?}: the reset touched the viewport"),
                     Sec::Sketch => assert_eq!(s.snap.grid, c.snap.grid, "{sec:?}: the reset touched the sketch"),
@@ -147,6 +149,7 @@ mod tests {
         };
         assert_eq!(after(Sec::Layout).layout, d.layout, "the layout section must restore the registered places");
         assert_eq!(after(Sec::General).language, d.language);
+        assert_eq!(after(Sec::Keyboard).key_wait_ms, d.key_wait_ms);
         assert_eq!(after(Sec::Appearance).scheme, d.scheme);
         let v = after(Sec::Viewport);
         assert_eq!((v.viewcube_size, v.gpu_viewport, v.projection, v.shading), (d.viewcube_size, d.gpu_viewport, d.projection, d.shading));

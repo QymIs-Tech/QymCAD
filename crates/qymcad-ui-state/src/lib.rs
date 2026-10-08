@@ -12,7 +12,9 @@
 //! THIS FILE NAMES `App` NOWHERE. That is the whole point, and it is guarded rather than promised.
 
 pub mod grab;
+pub mod key_seq;
 pub mod platform_keys;
+pub use key_seq::{hotkey_presses, seq_match, seq_step, KeySeq, KeyWait, Press, SeqClock, SeqMatch, SeqStep, SEQ_MAX};
 /// Clipping a triangle by a plane for the SECTION view: a pure module with no `self`, so it can be unit-tested.
 pub mod smallvec_tris {
     /// A clipped vertex: its world position plus the barycentric weights of the original vertices (for interpolating colour).
@@ -1545,6 +1547,10 @@ pub struct Settings {
     /// who had ever touched the keys - their action simply would not be in the record. The differences, by
     /// contrast, survive any growth of the table.
     pub hotkeys: std::collections::BTreeMap<String, String>,
+    /// HOW LONG A KEY SEQUENCE WAITS FOR ITS NEXT CHORD, in milliseconds, from the last press. When it runs out, what
+    /// was pressed runs if it is a binding of its own. Short keeps a bound first chord quick (it waits this long
+    /// whenever a longer binding starts with it); long gives a slow hand time for the second chord.
+    pub key_wait_ms: u32,
     /// THE HELP'S LANGUAGE, SEPARATE FROM THE INTERFACE'S. Empty means whatever the interface uses.
     ///
     /// Not a whim: CAD terminology is English, and someone working in a translated interface may well want to read
@@ -1717,6 +1723,7 @@ impl Default for Settings {
             kernel_threads: 0,   // all the cores but one
             persp_fov_deg: 35.5, // equals the former PERSP_FOV_HALF_TAN of 0.32: 2*atan(0.32)
             hotkeys: Default::default(),
+            key_wait_ms: 400,
             help_lang: String::new(),
             help_external: false,
             gpu_viewport: true,
@@ -4576,6 +4583,8 @@ pub struct StatusCtx<'a> {
     pub set: &'a mut Settings,
     pub sketch_ses: &'a SketchSession,
     pub status: &'a str,
+    /// A key sequence under way: its chords so far stand in the line until it ends.
+    pub keys: &'a KeyWait,
     /// The badge leads to the window, so the line must be able to open it.
     pub win: &'a mut Windows,
 }
@@ -7665,12 +7674,14 @@ impl Tools<'_> {
     }
 }
 
-/// WHILE A KEY IS BEING REASSIGNED: what is being waited for, and why the last press was refused.
+/// THE STATE OF THE HOTKEYS: a sequence half pressed, and - while a key is being reassigned - what is being waited
+/// for and why the last press was refused.
 ///
-/// Two fields on the application that only ever moved together and only ever meant something while one
-/// window was open.
+/// Fields on the application that only ever moved together and only ever meant something to the keys.
 #[derive(Default)]
 pub struct HotkeyCapture {
+    /// A KEY SEQUENCE UNDER WAY in the workbench, waiting for its next chord (see `key_seq`).
+    pub wait: KeyWait,
     /// The action a key is being assigned to right now - the window is waiting for a press.
     pub action: Option<String>,
     /// Why the last press was refused. Shown in that same window; empty means nothing was refused.
@@ -7681,7 +7692,15 @@ pub struct HotkeyCapture {
     pub clash: Option<HotkeyClash>,
     /// The filter typed above the table: a word of the description or a key.
     pub filter: String,
+    /// THE CHORDS RECORDED SO FAR for the action being reassigned, and the frame clock at the last of them: a
+    /// sequence is saved on Enter, on reaching `SEQ_MAX`, or once no chord has come for `RECORD_WAIT` seconds.
+    pub recorded: KeyWait,
 }
+
+/// HOW LONG THE WINDOW WAITS FOR ANOTHER CHORD of the key being recorded, in seconds: the pause after which a
+/// sequence is taken as finished. Longer than the wait while pressing one - the hand is looking for a key it has
+/// not pressed before.
+pub const RECORD_WAIT: f64 = 1.0;
 
 /// A key asked for by one action while another already holds it in the same area.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -7701,18 +7720,83 @@ pub struct HotkeyClash {
 /// its own there; what each system refuses is in `platform_keys`. ALT IS NOT A MODIFIER OF A BINDING: it is the
 /// way to reach a bare binding from inside a text field (Alt+U instead of U), and a chord that needed Alt would be
 /// unreachable exactly there.
+///
+/// ALTGR IS A MODIFIER OF A BINDING, apart from Alt: the right Alt key, the right Option key on a Mac. It is the
+/// one Alt that does not lead out of a field, so a chord under it costs the field nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Chord {
     /// The Mac's Control key (never set elsewhere: off a Mac the Ctrl key is `ctrl`).
     pub control: bool,
     pub ctrl: bool,
     pub shift: bool,
+    /// The right Alt key (right Option on a Mac).
+    pub altgr: bool,
     pub key: egui::Key,
 }
 
 impl From<egui::Key> for Chord {
     fn from(key: egui::Key) -> Self {
-        Chord { control: false, ctrl: false, shift: false, key }
+        Chord { control: false, ctrl: false, shift: false, altgr: false, key }
+    }
+}
+
+/// WHICH ALT KEY IS HELD. egui merges the two into one `alt`; the keys themselves arrive as `AltLeft` and
+/// `AltRight` and are told apart by `keys_down`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AltHeld {
+    None,
+    /// The left Alt: the way out of a text field.
+    Left,
+    /// The right Alt, AltGr: a modifier of the binding.
+    Right,
+    Both,
+}
+
+impl AltHeld {
+    /// Read from the frame, with `alt` the Alt egui reports. An Alt with neither key down - a press whose key event
+    /// never came - is taken for the left one, the Alt every keyboard has.
+    pub fn of(i: &egui::InputState, alt: bool) -> AltHeld {
+        let right = i.key_down(egui::Key::AltRight);
+        let left = i.key_down(egui::Key::AltLeft) || (alt && !right);
+        match (left, right) {
+            (false, false) => AltHeld::None,
+            (true, false) => AltHeld::Left,
+            (false, true) => AltHeld::Right,
+            (true, true) => AltHeld::Both,
+        }
+    }
+
+    pub fn left(self) -> bool {
+        matches!(self, AltHeld::Left | AltHeld::Both)
+    }
+
+    pub fn right(self) -> bool {
+        matches!(self, AltHeld::Right | AltHeld::Both)
+    }
+}
+
+/// THE MODIFIERS OF A PRESS as the frame holds them: egui's four, and which Alt of the two.
+#[derive(Clone, Copy, Debug)]
+pub struct HeldKeys {
+    pub mods: egui::Modifiers,
+    pub alt: AltHeld,
+}
+
+impl HeldKeys {
+    pub fn of(i: &egui::InputState) -> HeldKeys {
+        HeldKeys::of_event(i, i.modifiers)
+    }
+
+    /// With the modifiers a key event carries rather than the frame's.
+    pub fn of_event(i: &egui::InputState, mods: egui::Modifiers) -> HeldKeys {
+        HeldKeys { mods, alt: AltHeld::of(i, mods.alt) }
+    }
+}
+
+/// The modifiers alone, with no key events to tell the two Alts apart: an Alt is the left one.
+impl From<egui::Modifiers> for HeldKeys {
+    fn from(mods: egui::Modifiers) -> Self {
+        HeldKeys { mods, alt: if mods.alt { AltHeld::Left } else { AltHeld::None } }
     }
 }
 
@@ -7721,7 +7805,21 @@ impl Chord {
     /// Ctrl key as `ctrl`; off a Mac they are one key, on a Mac `command` is Cmd (`mac_cmd`) and `ctrl` is Control.
     /// So Control is `ctrl` that is not the command key, or `ctrl` held beside Cmd.
     pub fn of_press(mods: egui::Modifiers, key: egui::Key) -> Chord {
-        Chord { control: mods.ctrl && (mods.mac_cmd || !mods.command), ctrl: mods.command, shift: mods.shift, key }
+        Chord { control: mods.ctrl && (mods.mac_cmd || !mods.command), ctrl: mods.command, shift: mods.shift, altgr: false, key }
+    }
+
+    /// THE CHORD OF A PRESS with AltGr read too, on a given system.
+    ///
+    /// Windows sends a left Ctrl with every AltGr press, a key nobody pressed: with the right Alt held there, Ctrl
+    /// is dropped, and AltGr+F is AltGr+F rather than Ctrl+AltGr+F.
+    pub fn of_held(os: platform_keys::Os, held: HeldKeys, key: egui::Key) -> Chord {
+        let altgr = held.alt.right();
+        let mut mods = held.mods;
+        if altgr && os == platform_keys::Os::Windows {
+            mods.ctrl = false;
+            mods.command = false;
+        }
+        Chord { altgr, ..Chord::of_press(mods, key) }
     }
 
     /// Reads the stored spelling. `None` for anything that is not a chord: an empty record (an unbound
@@ -7738,6 +7836,7 @@ impl Chord {
                 "Control" => c.control = true,
                 "Ctrl" => c.ctrl = true,
                 "Shift" => c.shift = true,
+                "AltGr" => c.altgr = true,
                 _ => return None,
             }
         }
@@ -7755,6 +7854,9 @@ impl Chord {
         }
         if self.shift {
             s.push_str("Shift+");
+        }
+        if self.altgr {
+            s.push_str("AltGr+");
         }
         s.push_str(self.key.name());
         s
@@ -7778,22 +7880,29 @@ impl Chord {
 // sentence ("Copy (Ctrl+C)") has to follow the system just like a key in the table.
 pub use qymcad_i18n::keys::{key_label, key_label_in, key_style, set_key_style, KeyStyle};
 
-/// WHY A CHORD CANNOT GO TO THIS ACTION on this system - a catalogue key, or `None` when it can.
-pub fn hotkey_refusal(action: &str, chord: &Chord) -> Option<&'static str> {
-    hotkey_refusal_on(platform_keys::Os::current(), action, chord)
+/// WHY A BINDING CANNOT GO TO THIS ACTION on this system - a catalogue key, or `None` when it can.
+pub fn hotkey_refusal(action: &str, keys: impl Into<KeySeq>) -> Option<&'static str> {
+    hotkey_refusal_on(platform_keys::Os::current(), action, keys)
 }
 
 /// The same for a given system, so the rules of each can be checked on any of them.
 ///
 /// An action's own factory key is never refused: bare X is the factory key of the sketch's construction
 /// toggle, and refusing it would make "put it back as it was" impossible by hand.
-pub fn hotkey_refusal_on(os: platform_keys::Os, action: &str, chord: &Chord) -> Option<&'static str> {
-    if !chord.bindable_key() {
+///
+/// EVERY CHORD OF A SEQUENCE must be a bindable key, and on a keyboard that has its modifiers. Only the FIRST is
+/// held to the system's table: a later one is pressed while the program already waits for it, so nothing else
+/// hears it - `Ctrl+S, F` is refused, Ctrl+S stays save, while `G, Ctrl+S` is free.
+pub fn hotkey_refusal_on(os: platform_keys::Os, action: &str, keys: impl Into<KeySeq>) -> Option<&'static str> {
+    let seq = keys.into();
+    if seq.chords.iter().any(|c| !c.bindable_key()) {
         return Some("hotkeys-reserved");
     }
-    let factory = HOTKEYS.iter().find(|r| r.action == action).is_some_and(|r| Chord::parse(r.key) == Some(*chord));
+    let factory = HOTKEYS.iter().find(|r| r.action == action).is_some_and(|r| KeySeq::parse(r.key).as_ref() == Some(&seq));
+    let table = platform_keys::platform_keys(os);
+    let first = seq.chords.first().and_then(|c| table.refusal(c));
     // everything else is the system's table (see `platform_keys`)
-    platform_keys::platform_keys(os).refusal(chord).filter(|_| !factory)
+    first.or_else(|| seq.chords.iter().skip(1).find_map(|c| table.missing_modifier(c))).filter(|_| !factory)
 }
 
 /// WHETHER THE KEY in this area is taken by somebody else - the name of the neighbouring action.
@@ -7801,9 +7910,12 @@ pub fn hotkey_refusal_on(os: platform_keys::Os, action: &str, chord: &Chord) -> 
 /// Two commands on one key is not "the last one wins" but a silently lost tool: the habitual key is
 /// pressed, something else arrives, and it is not clear what broke. So rebinding asks here first.
 /// Compared as CHORDS, not as text: `Shift+Ctrl+W` written by hand and `Ctrl+Shift+W` are one key.
+///
+/// A SEQUENCE CLASHES ONLY WITH ITSELF. `G` beside `G, G` is no clash: `G` runs when no second G follows in time
+/// (see `seq_step`).
 pub fn hotkey_taken_by(set: &Settings, area: &str, key: &str, except: &str) -> Option<&'static str> {
-    let want = Chord::parse(key)?;
-    HOTKEYS.iter().filter(|r| r.area == area && r.action != except).find(|r| Chord::parse(&hotkey_key(set, r.action)) == Some(want)).map(|r| r.action)
+    let want = KeySeq::parse(key)?;
+    HOTKEYS.iter().filter(|r| r.area == area && r.action != except).find(|r| KeySeq::parse(&hotkey_key(set, r.action)).as_ref() == Some(&want)).map(|r| r.action)
 }
 
 /// The key bound to an action now: the person's record, else the factory one. EMPTY means the action
@@ -11664,7 +11776,7 @@ pub fn ring_drag_sign(axis_depth: f64) -> f64 {
     }
 }
 
-/// THE CHORD PRESSED THIS FRAME that a tool key may answer to, or `None`.
+/// THE PRESS OF THIS FRAME as the bindings hear it.
 ///
 /// FOCUS IN A FIELD MUST NOT KILL EVERY KEY - and must not let a letter through either. A bare letter in a
 /// field types itself (expressions hold both `w` and `len`); Alt plus a letter types nothing, so it goes to the
@@ -11672,38 +11784,73 @@ pub fn ring_drag_sign(axis_depth: f64) -> f64 {
 ///
 /// CHORDS: a Ctrl or Control chord that can be bound types nothing in a field - the letters a field edits with
 /// under either are refused at binding (`platform_keys`) - so it is heard as it is, focus or not. Without them the
-/// rule above holds, Shift included: Shift+W in a field is a capital letter.
+/// rule above holds, Shift included: Shift+W in a field is a capital letter. AltGr types in a field (`@`, the euro sign), so
+/// an AltGr chord is not heard from one.
+///
+/// THE RULE IS THE FIRST CHORD'S. A press that fails it may still go on with a sequence already under way
+/// (`Press::Continue`): `Alt+G, G` from a field, `Ctrl+T, F`. The program is waiting for that chord, and takes it
+/// from the field (`hotkey_presses`).
 ///
 /// "CTRL" IS THE COMMAND KEY: Cmd on a Mac. The Mac's own Control key is a modifier of its own (`Chord::of_press`).
 ///
 /// ANY BINDABLE KEY, NOT A FIXED LIST. Twenty-three letters were listed by hand in the handler, and a tool
 /// rebound to W or Z was saved, shown in the window, and never heard: the press did not reach the table.
-pub fn pressed_chord(ctx: &egui::Context) -> Option<Chord> {
+pub fn pressed_chord(ctx: &egui::Context) -> Press {
     // asked BEFORE `ctx.input`: inside it `wants_keyboard_input` deadlocks on the input lock
     let typing = ctx.egui_wants_keyboard_input();
     ctx.input(|i| {
-        let held = Chord::of_press(i.modifiers, egui::Key::Escape);
-        let chord_key = held.ctrl || held.control;
-        // Alt and Ctrl together reach nothing: Alt is the way out of a field, Ctrl and Control do not need one
-        let ok = if typing { i.modifiers.alt != chord_key } else { !i.modifiers.alt };
-        if !ok {
-            return None;
-        }
-        i.events.iter().find_map(|e| match e {
-            egui::Event::Key { key, pressed: true, repeat: false, .. } => Some(Chord { key: *key, ..held }),
+        let Some(key) = i.events.iter().find_map(|e| match e {
+            egui::Event::Key { key, pressed: true, repeat: false, .. } if !modifier_key(*key) => Some(*key),
             _ => None,
-        })
+        }) else {
+            return Press::Nothing;
+        };
+        if key == egui::Key::Escape {
+            return Press::Escape;
+        }
+        let held = HeldKeys::of(i);
+        let chord = Chord::of_held(platform_keys::Os::current(), held, key);
+        if !chord.bindable_key() {
+            return Press::Other;
+        }
+        let chord_key = chord.ctrl || chord.control;
+        // Alt and Ctrl together reach nothing: Alt is the way out of a field, Ctrl and Control do not need one
+        let alt = held.alt.left();
+        let starts = if typing { !chord.altgr && alt != chord_key } else { !alt };
+        if starts {
+            Press::Start(chord)
+        } else {
+            Press::Continue(chord)
+        }
     })
-    .filter(Chord::bindable_key)
 }
 
-/// Which action a key press means in this area. It reads the settings and nothing else - the whole
-/// application was never needed for a table lookup.
+/// WHETHER THE KEY IS A MODIFIER ITSELF. egui reports Shift, Ctrl, Alt and Cmd as keys of their own when they go
+/// down; held before a letter, such a key is the start of a chord, not a press.
+pub fn modifier_key(key: egui::Key) -> bool {
+    use egui::Key as K;
+    matches!(key, K::ShiftLeft | K::ShiftRight | K::ControlLeft | K::ControlRight | K::AltLeft | K::AltRight | K::SuperLeft | K::SuperRight)
+}
+
+/// Which action a single chord means in this area - a binding of one chord, not the start of a longer one. It
+/// reads the settings and nothing else - the whole application was never needed for a table lookup.
+///
+/// A BINDING THIS SYSTEM REFUSES IS NOT RUN. The settings travel with the profile: Cmd+W bound on a Mac arrives
+/// on Linux as Ctrl+W, which a field erases a word with - running the tool there would do both.
 pub fn hotkey_action(set: &Settings, area: &str, key: impl Into<Chord>) -> Option<&'static str> {
-    let pressed = key.into();
-    // A BINDING THIS SYSTEM REFUSES IS NOT RUN. The settings travel with the profile: Cmd+W bound on a Mac arrives
-    // on Linux as Ctrl+W, which a field erases a word with - running the tool there would do both.
-    HOTKEYS.iter().filter(|r| r.area == area).find(|r| Chord::parse(&hotkey_key(set, r.action)) == Some(pressed)).map(|r| r.action).filter(|a| hotkey_refusal(a, &pressed).is_none())
+    seq_match(set, area, &[key.into()]).exact
+}
+
+/// WHERE THE KEYS ARE HEARD NOW: the sketch being edited, else the workbench; `None` where no bindings are.
+pub fn hotkey_area(project: &Project, sketch_ses: &SketchSession, workbench: Workbench) -> Option<&'static str> {
+    if edit_si(project, sketch_ses).is_some() {
+        return Some("sketch");
+    }
+    match workbench {
+        Workbench::Part => Some("part"),
+        Workbench::Assembly => Some("assembly"),
+        _ => None,
+    }
 }
 
 pub fn sel_point_ids(sel_sk: &SketchSelection) -> Vec<Id> {
@@ -15169,14 +15316,14 @@ pub fn end_feat_cmd_state(picks: FeatPicks, cmd: &mut FeatCommand, gsel: &mut Ge
 /// unused: `U` gets pressed once, nothing happens, and it is never tried again.
 pub fn hotkey_hint(dc: &DrawCtx, ctx: &egui::Context, action: &str) -> String {
     let k = hotkey_key(dc.set, action);
-    if k.is_empty() {
-        return String::new();
-    }
-    // a Ctrl chord types nothing, so it works from a field as it is; only the rest need Alt there
-    if ctx.egui_wants_keyboard_input() && !k.starts_with("Ctrl+") {
-        key_label(&format!("Alt+{k}"))
+    let Some(seq) = KeySeq::parse(&k) else { return key_label(&k) };
+    // a Ctrl chord types nothing, so it works from a field as it is; only the rest need Alt there - on the FIRST
+    // chord, as `pressed_chord` asks
+    let first = seq.chords[0];
+    if ctx.egui_wants_keyboard_input() && !(first.ctrl || first.control || first.altgr) {
+        key_label(&format!("Alt+{}", seq.name()))
     } else {
-        key_label(&k)
+        key_label(&seq.name())
     }
 }
 

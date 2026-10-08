@@ -1879,6 +1879,7 @@ impl qymcad_shell::Fills for App {
                     set: &mut self.set,
                     sketch_ses: &self.sketch_ses,
                     status: &self.status,
+                    keys: &self.hotkeys.wait,
                     win: &mut self.win,
                 },
                 ui,
@@ -1969,8 +1970,8 @@ impl App {
                                                 // THE KEYBOARD IS THE CHOOSER'S while it is open: a barrier eats clicks, but these two read the
                                                 // input directly and would go on obeying Delete, Escape and every tool letter behind it.
         if !choosing && !capturing {
+            self.handle_tool_hotkeys(ctx); // the tool shortcuts first: a key sequence under way takes its Esc from the ladder
             self.handle_key_commands(ctx); // the frame's keyboard commands — in one phase
-            self.handle_tool_hotkeys(ctx); // the tool shortcuts (L/R/C/A/P/G/D/S, E)
         }
         self.maybe_autosave(false); // a silent autosave every 3 minutes while there are unsaved edits
         self.help_window(ctx); // the help window
@@ -2324,11 +2325,10 @@ impl App {
 
     /// The Part layout: K a new sketch, D a datum plane, E extrude, Q cut, R revolve, F fillet, C chamfer,
     /// H shell, O hole, M mirror, B box, Y cylinder.
-    pub(super) fn part_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {
+    pub(super) fn part_hotkey(&mut self, action: &str) {
         // WE MATCH ON THE ACTION, NOT ON THE KEY. While `Key::E` stood in the `match`, remapping was
-        // inexpressible: the letter and the meaning were one and the same thing. Which key leads to which
-        // action is decided by `hotkey_action` — one place for every workbench.
-        let Some(action) = qymcad_ui_state::hotkey_action(&self.set, "part", key) else { return };
+        // inexpressible: the letter and the meaning were one and the same thing. Which keys lead to which
+        // action is decided by `seq_step` — one place for every workbench.
         match action {
             "part.sketch-pick" => self.toggle_sketch_pick(),
             "part.datum-plane" => self.start_feat_cmd(20),
@@ -2359,8 +2359,7 @@ impl App {
 
     /// The Assembly layout: K a new skeleton sketch, D a datum plane, N a new part, U a subassembly,
     /// I insert a component (STEP or STL), J a rigid joint (picking faces).
-    pub(super) fn assembly_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {
-        let Some(action) = qymcad_ui_state::hotkey_action(&self.set, "assembly", key) else { return };
+    pub(super) fn assembly_hotkey(&mut self, action: &str) {
         match action {
             // there are NO sketch keys in an Assembly: a sketch is inert there (see `create_panel_common`)
             "assembly.datum-plane" => self.start_feat_cmd(20),

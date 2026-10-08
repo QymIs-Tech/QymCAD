@@ -37,7 +37,7 @@ mod tests {
         }
         let si = app.project.sketches.iter().position(|s| !s.entities.is_empty()).expect("there is a sketch");
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.part_hotkey(egui::Key::Q);
+        app.part_hotkey(qymcad_ui_state::hotkey_action(&app.set, "part", egui::Key::Q).unwrap_or_default());
         assert_eq!(app.tools.armed.cmd_kind(), 1, "\"cut\" must open the extrude command");
         assert_eq!(app.feat.op, 2, "...with the operation preset to Cut");
     }
