@@ -45,7 +45,6 @@ file-quit = Quit
 
 ## Help menu
 
-help-hotkeys = Keyboard shortcuts…
 help-about = About…
 
 ## Settings — language
@@ -303,7 +302,7 @@ scheme-color-icon_datum_primary = datum primary accent
 scheme-color-icon_datum_secondary = datum secondary accent
 
 # --- KEYBOARD SHORTCUTS ---
-hotkeys-title = Keyboard shortcuts
+settings-hotkeys = Keyboard shortcuts
 help-title = Help
 help-search = Search the help
 help-back = Back

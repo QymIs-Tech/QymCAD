@@ -45,7 +45,6 @@ file-quit = Вихід
 
 ## Меню «Довідка»
 
-help-hotkeys = Гарячі клавіші…
 help-about = Про програму…
 
 ## Налаштування — мова
@@ -302,7 +301,7 @@ scheme-color-icon_assembly_secondary = складання: додатковий 
 scheme-color-icon_datum_primary = бази: основний акцент
 scheme-color-icon_datum_secondary = бази: додатковий акцент
 # --- ГАРЯЧІ КЛАВІШІ ---
-hotkeys-title = Гарячі клавіші
+settings-hotkeys = Гарячі клавіші
 help-title = Довідка
 help-search = Пошук у довідці
 help-back = Назад

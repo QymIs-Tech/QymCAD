@@ -247,7 +247,10 @@ pub(in crate::gui) mod tests {
                 crate::gui::panels_windows::parts_library_window(&mut a.win_ctx(&mut asks), c);
                 a.do_win_asks(asks, c);
             }),
-            surface("hotkeys", |a, c| a.hotkeys_window(c)),
+            surface("keyboard settings", |a, c| {
+                a.scheme.section = qymcad_ui_state::settings_sections::SettingsSection::Keyboard;
+                crate::gui::hotkeys::draw_settings(a, c);
+            }),
             surface("about", |a, c| crate::gui::panels_windows::about_dialog(&mut a.win, &a.scheme, c)),
             // THE OTHER FIVE WINDOWS. They were absent, so an untranslated key in any of them reached the
             // screen with nothing to say so - and this is the check whose whole job is to notice that.
@@ -281,7 +284,6 @@ pub(in crate::gui) mod tests {
                 app.win.open(WinKind::Settings);
                 app.win.open(WinKind::Params);
                 app.win.open(WinKind::PartsLibrary);
-                app.win.open(WinKind::Hotkeys);
                 app.win.open(WinKind::About);
                 app.win.open(WinKind::DocProps);
                 app.win.open(WinKind::SaveTemplate);

@@ -45,7 +45,6 @@ file-quit = Выход
 
 ## Меню «Справка»
 
-help-hotkeys = Горячие клавиши…
 help-about = О программе…
 
 ## Настройки — язык
@@ -303,7 +302,7 @@ scheme-color-icon_datum_primary = базы: основной акцент
 scheme-color-icon_datum_secondary = базы: дополнительный акцент
 
 # --- ГОРЯЧИЕ КЛАВИШИ ---
-hotkeys-title = Горячие клавиши
+settings-hotkeys = Горячие клавиши
 help-title = Справка
 help-search = Поиск по справке
 help-back = Назад

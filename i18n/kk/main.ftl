@@ -43,7 +43,6 @@ file-quit = Шығу
 
 ## Help menu
 
-help-hotkeys = Пернелер тіркесімі…
 help-about = Бағдарлама туралы…
 
 ## Settings — language
@@ -301,7 +300,7 @@ scheme-color-icon_datum_primary = База (негізгі)
 scheme-color-icon_datum_secondary = База (қосымша)
 
 # --- KEYBOARD SHORTCUTS ---
-hotkeys-title = Пернелер тіркесімі
+settings-hotkeys = Пернелер тіркесімі
 help-title = Анықтама
 help-search = Анықтамадан іздеу
 help-back = Артқа
