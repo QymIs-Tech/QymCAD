@@ -4048,6 +4048,7 @@ mod dragging_a_joint_does_not_flicker_the_rebuild_modal;
 mod a_chain_of_parts_follows_the_hand;
 mod a_global_mate_is_dragged_by_its_part;
 mod preparing_the_brep_never_loops;
+mod a_failed_rebuild_keeps_the_brep;
 mod dragging_a_part_pulls_the_whole_chain;
 mod a_part_is_dragged_by_real_mouse;
 mod a_moved_part_does_not_rebuild_its_block;

@@ -311,20 +311,14 @@ impl App {
         // whole on every round and immediately asked for the next one.
         qymcad_ui_state::mark_changed_params_dirty(&self.params_seen, &mut self.project);
         let plan = self.project.regen_plan();
-        let mut proj = self.project.clone_without_source_data();
+        let proj = self.project.clone_without_source_data();
         let shapes = std::mem::take(&mut self.live.shapes);
         // precision is a property of THE DOCUMENT, taken here: in the thread there is no project to ask
         let quality_k = self.project.geom_quality.deflection_k();
         let (tx, rx) = std::sync::mpsc::channel();
         let pulse = std::sync::Arc::new(qymcad_ui_state::RegenPulse { stamp, ..Default::default() });
         let watch = pulse.clone();
-        std::thread::spawn(move || {
-            let _gate = qymcad_kernel::kernel_gate();
-            let kernel = OcctKernel { shapes: std::cell::RefCell::new(shapes), quality_k, stop: watch.stop.clone(), ..Default::default() };
-            let report = proj.regenerate_watched(&kernel, watch.as_ref());
-            let shapes = kernel.shapes.into_inner().into_iter().collect::<Vec<_>>();
-            let _ = tx.send(JobResult::Regenerated { stamp, project: Box::new(proj), shapes, built: report.built, errors: report.errors, cancelled: report.cancelled });
-        });
+        std::thread::spawn(move || rebuild_in_worker(proj, shapes, quality_k, watch, stamp, tx));
         // WHAT EXACTLY IS BEING REBUILT IS ASKED IN ADVANCE, and how to announce it depends on the answer.
         //
         // Reported: a cut in a single part pops up a modal window and makes you wait. A modal window over a
@@ -555,6 +549,93 @@ impl App {
 /// What must be asked for is exactly WHAT THE RESULT WAS COMPUTED FROM: recipes, sketches, parameters.
 /// Dragging a part is none of those, and there is no reason to discard finished work over it - the live
 /// placement is carried across by [`Project::take_placement_from`].
+/// THE REBUILD ON ITS WORKER THREAD, sent back over `tx`. A free function rather than a closure inside `spawn_regen`:
+/// it needs nothing of the window.
+fn rebuild_in_worker(
+    mut proj: Project,
+    shapes: std::collections::HashMap<Id, qymcad_kernel::Shape>,
+    quality_k: f64,
+    watch: std::sync::Arc<qymcad_ui_state::RegenPulse>,
+    stamp: u64,
+    tx: std::sync::mpsc::Sender<JobResult>,
+) {
+    let _gate = qymcad_kernel::kernel_gate();
+    let kernel = OcctKernel { shapes: std::cell::RefCell::new(shapes), quality_k, stop: watch.stop.clone(), ..Default::default() };
+    // A PANIC IN THE REBUILD DOES NOT TAKE THE LIVE B-rep WITH IT. The cache came into this thread whole and
+    // goes back only in the result; a panic used to end the thread with it, and every body of the document
+    // was left without its live B-rep (reported behaviour, issue #119: live shapes [4] before, [] after,
+    // still [] 100 frames later). Caught, the panic leaves the kernel to hand the cache back.
+    //
+    // Unwind-safe as asserted: after a panic only `kernel.shapes` is read, by value (`into_inner` - the
+    // borrows of the `RefCell` ended as the panic unwound), and the half-rebuilt copy of the document is
+    // dropped unread. What is caught is a Rust panic on this thread, in core or in the kernel's Rust side. A
+    // C++ exception escaping the bridge or a crash inside OCCT still ends the process, as before; a panic
+    // outside the caught region goes the `Disconnected` way in `tick_async`.
+    let report = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        #[cfg(test)]
+        if proj.meta.comment == REBUILD_PANICS_FOR_TEST {
+            panic!("a rebuild made to fail by a test");
+        }
+        proj.regenerate_watched(&kernel, watch.as_ref())
+    }));
+    let shapes = kernel.shapes.into_inner().into_iter().collect::<Vec<_>>();
+    let _ = tx.send(match report {
+        Ok(report) => JobResult::Regenerated { stamp, project: Box::new(proj), shapes, built: report.built, errors: report.errors, cancelled: report.cancelled },
+        // the first line: the status is one line
+        Err(panic) => {
+            let text = crate::crash::panic_text(panic.as_ref());
+            let why = text.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("(the panic carried no message)").to_string();
+            JobResult::RegenFailed { stamp, shapes, why }
+        }
+    });
+}
+
+/// A REBUILD THAT PANICKED, met as a cancelled one is (`finish_regen_checked`) where the document is concerned,
+/// and as a worker that died (`tick_async`'s `Disconnected` branch) where the B-rep wait is: the live B-rep the
+/// thread took is taken back, the document stays what it was, and nothing is started again - the same rebuild
+/// would fail the same way. When the rebuild was for the last edit, that edit is taken back, and Redo brings it
+/// back. The status says what failed rather than only that something was interrupted.
+///
+/// The shapes taken back are what the kernel held at the panic: a body the failed rebuild had finished carries
+/// its new B-rep, as after a Cancel. When the edit is taken back, the rebuild of the restored document replaces
+/// them; when it is not, they stay until the next edit rebuilds those bodies.
+///
+/// A free function over the rebuild's context rather than a method of `App`: it needs nothing else. Answers the
+/// context path to stand at when an edit was taken back.
+pub(crate) fn finish_regen_failed(rc: &mut qymcad_ui_state::RebuildCtx, stamp: u64, shapes: Vec<(Id, qymcad_kernel::Shape)>, why: String) -> Option<Vec<Id>> {
+    adopt_shapes(rc.live, shapes);
+    // the B-rep preparation was waiting for this result: left in place, the wait would stick
+    rc.live.wait = None;
+    // what a quiet start put aside to bring back at the end: this rebuild has no end to bring it back at, and left
+    // here it would come back after some later rebuild, in place of that one's words
+    rc.regen.over.clear();
+    if regen_doc_stamp(rc.project) != stamp {
+        // the document moved on under the rebuild: the new one is computed, as for a stale result. Every failure
+        // ends in a pause, an edit taken back or (this one) a rebuild of the new document - never a loop.
+        rebuild_says(rc.regen, rc.status, crate::i18n::tr("io-doc-changed"));
+        qymcad_ui_state::mark_dirty_for_rebuild(rc);
+        return None;
+    }
+    let warn = egui_phosphor::regular::WARNING;
+    // `rebuild_cancelled` writes a line about a cancel; it is replaced, on purpose, by one about the failure
+    match qymcad_ui_state::rebuild_cancelled(rc) {
+        Some(path) => {
+            let what = rc.edits.redo.last().map(|s| s.name.clone()).unwrap_or_default();
+            // WRITTEN AS THE OPERATION'S OWN WORDS, NOT THE REBUILD'S, as a Cancel's are: taking the edit back
+            // starts a rebuild of the document it restored, and a quiet one puts these words aside and back when
+            // it ends. Written as the rebuild's line, they were replaced by "Done" before anyone read that the
+            // edit was gone.
+            *rc.status = format!("{warn} {}", crate::i18n::trn("io-rebuild-failed-undone", &[("why", &why), ("what", &what)]));
+            Some(path)
+        }
+        // the rebuild's own line, so a later quiet rebuild that succeeds says so instead of bringing this one back
+        None => {
+            rebuild_says(rc.regen, rc.status, format!("{warn} {}", crate::i18n::tr1("io-rebuild-failed", "why", &why)));
+            None
+        }
+    }
+}
+
 pub(crate) fn regen_doc_stamp(project: &qymcad_core::model::Project) -> u64 {
     project.rebuild_key()
 }
@@ -610,6 +691,12 @@ pub(crate) fn adopt_shapes(live: &mut super::LiveGeom, shapes: Vec<(Id, qymcad_k
         live.shapes.insert(body, shape);
     }
 }
+
+/// THE TEST-ONLY SWITCH: a rebuild of a document whose comment is this panics in the worker, inside the caught region.
+/// A mark in the document rather than a flag of the process, so tests rebuilding side by side cannot take each other's
+/// panic.
+#[cfg(test)]
+pub(crate) const REBUILD_PANICS_FOR_TEST: &str = "a test asks this rebuild to panic";
 
 /// Writing the STL, once a name has been given. Like STEP, the solids leave the cache only here: while
 /// the chooser is up the program goes on drawing, and a viewport whose bodies were taken out from under

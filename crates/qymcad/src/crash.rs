@@ -90,12 +90,15 @@ pub fn without_home(s: &str) -> String {
     s.replace(&home, "~")
 }
 
+/// What a panic said. The payload is a `&str` for `panic!("literal")` and a `String` for a formatted one; anything else
+/// has no text to show.
+pub(crate) fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
+    payload.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| payload.downcast_ref::<String>().cloned()).unwrap_or_else(|| "(the panic carried no message)".to_string())
+}
+
 fn write_report(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf> {
     let path = next_report_path()?;
-    // The payload is a `&str` for `panic!("literal")` and a `String` for a formatted one; anything else
-    // has no text to show.
-    let message =
-        info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_else(|| "(the panic carried no message)".to_string());
+    let message = panic_text(info.payload());
     let place = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_else(|| "(unknown)".into());
     write_note(&path, "Panic", &message, &without_home(&place))
 }

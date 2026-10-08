@@ -3180,6 +3180,17 @@ pub enum JobResult {
     /// A project was loaded (in a thread): the parsed timeline plus the faces. The bodies' geometry comes from the
     /// bundle rather than being rebuilt, so the window shows the model at once.
     ProjectLoaded { path: String, project: Box<Project>, shapes: Vec<(Id, qymcad_kernel::Shape)> },
+    /// A REBUILD THAT PANICKED in the worker thread. Its copy of the document is dropped half-done, as a cancelled
+    /// one is; the live B-rep it took with it comes home. Reported behaviour (issue #119): the thread died with the
+    /// whole cache in it, and every body of the document was left without its live B-rep.
+    RegenFailed {
+        /// The document's fingerprint at the start, as for `Regenerated`.
+        stamp: u64,
+        /// The live B-rep the rebuild took with it, back for the cache.
+        shapes: Vec<(Id, qymcad_kernel::Shape)>,
+        /// What the panic said, for the status line.
+        why: String,
+    },
     /// A REBUILD of the timeline carried out in a worker thread. Heavy operations (a thread takes seconds on a
     /// boolean) no longer hold the interface thread: the window draws a spinner, and the system does not consider
     /// the program hung nor offer to kill it.

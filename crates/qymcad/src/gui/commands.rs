@@ -84,6 +84,11 @@ impl App {
     pub(super) fn apply_job_result(&mut self, res: JobResult) {
         match res {
             JobResult::Regenerated { stamp, project, shapes, built, errors, cancelled } => self.finish_regen_checked(stamp, *project, shapes, built, errors, cancelled),
+            JobResult::RegenFailed { stamp, shapes, why } => {
+                if let Some(path) = crate::gui::io_jobs::finish_regen_failed(&mut self.rebuild_ctx(), stamp, shapes, why) {
+                    self.active_path = path;
+                }
+            }
             JobResult::ExactImported { path, format, bodies, shapes, nodes } => crate::gui::import_scale::land_exact(&mut self.win_ctx(&mut Vec::new()), path, format, bodies, shapes, nodes),
             JobResult::DrawingRead { path, curves, note } => {
                 self.arm_sketch_import(curves, &path);
