@@ -261,6 +261,31 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
     }
 }
 
+/// THE LENGTH OF CURVE `eid` of sketch `si`, mm: a line end to end, an arc along its span, a circle and an ellipse round
+/// their circle (the ellipse by Ramanujan's formula).
+fn curve_length(project: &Project, si: usize, eid: Id) -> f64 {
+    use qymcad_core::model::EntityKind as EK;
+    let Some(s) = project.sketches.get(si) else { return 0.0 };
+    let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).unwrap_or_default();
+    let dist = |p: (f64, f64), q: (f64, f64)| (q.0 - p.0).hypot(q.1 - p.1);
+    match s.entities.iter().find(|e| e.id == eid).map(|e| e.kind) {
+        Some(EK::Line { a, b }) => dist(at(a), at(b)),
+        Some(EK::Arc { center, a, b, ccw }) => {
+            let (c, pa, pb) = (at(center), at(a), at(b));
+            let (a0, a1) = ((pa.1 - c.1).atan2(pa.0 - c.0), (pb.1 - c.1).atan2(pb.0 - c.0));
+            let sweep = if ccw { (a1 - a0).rem_euclid(std::f64::consts::TAU) } else { (a0 - a1).rem_euclid(std::f64::consts::TAU) };
+            dist(c, pa) * sweep
+        }
+        Some(EK::Circle { r, .. }) => std::f64::consts::TAU * r,
+        Some(EK::Ellipse { c, ma, mi }) => {
+            let (x, y) = (dist(at(c), at(ma)), dist(at(c), at(mi)));
+            let h = ((x - y) / (x + y)).powi(2);
+            std::f64::consts::PI * (x + y) * (1.0 + 3.0 * h / (10.0 + (4.0 - 3.0 * h).sqrt()))
+        }
+        None => 0.0,
+    }
+}
+
 /// THE NAME OF A SKETCH ENTITY FOR A PERSON: "Line 3", "Circle 1".
 ///
 /// The number is the ordinal among entities OF THE SAME kind rather than a running id: "Line 3" can be
@@ -2446,6 +2471,32 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
         qymcad_ui_state::invalidate(&mut *sk.regen);
         ui.close();
     }
+    // THE CURVES LYING HERE: a curve picked that others lie over - a side drawn over another - lists them all, each by
+    // its name and length, and the one clicked becomes the selection
+    let picked: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    if let [one] = picked.as_slice() {
+        let here = sk.project.overlapping_curves(si, *one);
+        if here.len() > 1 {
+            ui.menu_button(qymcad_i18n::tr1("sk-overlapping", "n", &here.len().to_string()), |ui| {
+                for id in here {
+                    let name = sketch_entity_name(&*sk.project, si, id);
+                    let len = qymcad_i18n::num(curve_length(&*sk.project, si, id), 1);
+                    // the rectangle the curve is a side of, by its number in the sketch: two sides of one length are told
+                    // apart by the shape they belong to
+                    let rect = sk.project.sketches[si].rects.iter().position(|r| r.sides.contains(&id));
+                    let label = match rect {
+                        Some(k) => qymcad_i18n::trn("sk-overlapping-side", &[("name", &name), ("rect", &(k + 1).to_string()), ("len", &len)]),
+                        None => qymcad_i18n::tr2("sk-overlapping-item", "name", &name, "len", &len),
+                    };
+                    if ui.button(label).clicked() {
+                        sk.sel_sk.items = vec![(1, id)];
+                        *sk.status = qymcad_i18n::tr1("sk-overlapping-picked", "name", &name);
+                        ui.close();
+                    }
+                }
+            });
+        }
+    }
     // A PROJECTION MADE ORDINARY: the curves selected that a body drives are let go of it, and stay where they are
     let projected: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, id)| *k == 1 && sk.project.sketches[si].projected_entities().contains(id)).map(|(_, id)| *id).collect();
     if !projected.is_empty() && ui.button(qymcad_i18n::tr("sk-make-ordinary")).on_hover_text(qymcad_i18n::tr("sk-make-ordinary-hint")).clicked() {
@@ -4535,10 +4586,13 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     let was_open = sk.corner.at.is_some();
                     // WHAT THE CURSOR IS OVER: a POINT OF THE ZONE outranks a line under it, because a
                     // point is the end of the lines meeting there and a person aims at the point when they
-                    // mean the corner. The zone is three times the reach of a pick of a point.
+                    // mean the corner. The zone is three times the reach of a pick of a point. A point that is
+                    // no corner - a line going on from a fillet along its tangent - does not: the click on the
+                    // line beside it named that joint and nothing, and the line aimed at was not taken.
                     let over = {
                         let zone = qymcad_ui_state::corner_zone_px(sk.set);
-                        let point = qymcad_pick::nearest_point_within(&sk.pick(), rect, pos, si, zone).map(|id| {
+                        let is_corner = |id: Id| sk.project.vertex_pairs(si, id).into_iter().any(|(a, b)| sk.project.corner_of_pair(si, a, b).is_some());
+                        let point = qymcad_pick::nearest_point_within(&sk.pick(), rect, pos, si, zone).filter(|id| is_corner(*id)).map(|id| {
                             let w = qymcad_ui_state::to_world(sk.view, rect, pos);
                             qymcad_ui_state::CornerOver::Point { id, at: (w.x, w.y) }
                         });

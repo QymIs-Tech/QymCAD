@@ -119,3 +119,5 @@ Fillets usually go **last**, once the contour is defined: before that they get i
   Join them.
 - The wrong corner of the four at one point was taken — the cursor has to stand in that sector, and where a line was
   picked first, only the corners that line takes part in are among the answers.
+- A click by the end of a fillet took the line rather than a corner — the line goes on from the arc along its tangent
+  there, and there is no corner.

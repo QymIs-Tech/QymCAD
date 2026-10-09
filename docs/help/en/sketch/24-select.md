@@ -17,7 +17,15 @@ The editing tools and the constraints take what is selected: Delete removes it, 
 "Construction" turns it into layout, and the mirror, the offset and the patterns work on it. A point or a line can be
 dragged with the mouse - the sketch follows its constraints and dimensions.
 
+## Lines lying over each other
+
+A rectangle drawn against another lays its side over the neighbour's: two lines lie where one is seen. A click takes
+one of them. To take the one you mean, right-click it and open **Curves lying here** - it lists every line of that
+place with its number, the rectangle it is a side of, and its length. A click on a row selects it.
+
 ## If it does not select
 
 - **The neighbour is hit.** Zoom in with the mouse wheel.
 - **The selection goes at a click.** Hold Shift to add rather than replace.
+- **The wrong one of two lines lying over each other is selected.** Right button -> **Curves lying here**, pick the
+  one you mean.

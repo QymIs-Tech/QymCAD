@@ -137,6 +137,11 @@ probe! {
         s.double_click(row.center());
         let k = s.document().sketches.iter().position(|k| k.name == name).expect("the sketch");
         let mut failures = Vec::new();
+        // six corners rounded, each held by its fillet and nothing more: it showed 12 redundant constraints
+        let redundant = s.document().sketches[k].redundant;
+        if redundant != 0 {
+            failures.push(format!("the sketch as built holds {redundant} redundant constraints"));
+        }
         let (said, before, after) = extend(&mut s, k, (-75.0, 70.0));
         if said != s.word("sk-extend-end-joined") || before != after {
             failures.push(format!("Extend on the shared side: the status line says {said:?}, the points moved {}", before != after));
@@ -144,5 +149,68 @@ probe! {
         let arc = (-85.0 + 10.0 * std::f64::consts::FRAC_PI_4.cos(), 115.0 + 10.0 * std::f64::consts::FRAC_PI_4.sin());
         failures.extend(a_line_drawn(&mut s, k, (-85.0, 125.0), (-75.0, 125.0), &[(-125.0, 70.0), (-100.0, 25.0), (-100.0, 125.0), arc, (-40.0, 70.0)]));
         assert!(failures.is_empty(), "the reported sketch:\n{}", failures.join("\n"));
+    }
+}
+
+/// The words of the catalogue line `key` between its values: "{ $name }, side of rectangle { $rect }, { $len } mm"
+/// gives ", side of rectangle " and so on.
+fn between_values(s: &Session, key: &str) -> Vec<String> {
+    let line = s.word(key);
+    line.split('{').filter_map(|piece| piece.split_once('}').map(|(_, rest)| rest.to_string()).or(Some(piece.to_string()))).map(|w| w.trim().to_string()).filter(|w| !w.is_empty()).collect()
+}
+
+/// The right button on the sheet at (x, y), and from the list of the curves lying there the side of rectangle `rect`.
+fn pick_from_the_list(s: &mut Session, at: (f64, f64), rect: usize) {
+    let p = s.on_sketch(at.0, at.1);
+    s.click_with(p, qymcad::PointerButton::Secondary, Modifiers::default());
+    let head = between_values(s, "sk-overlapping");
+    let lead = head.first().cloned().unwrap_or_default();
+    let menu = s
+        .words_at()
+        .into_iter()
+        .find(|(w, _)| w.starts_with(&lead))
+        .map(|(_, r)| r)
+        .unwrap_or_else(|| panic!("the menu of the right button offers no list of the curves lying at {at:?}; on screen: {:?}", s.words()));
+    s.click(menu.center());
+    let side = between_values(s, "sk-overlapping-side");
+    let mark = format!("{} {rect}", side.first().cloned().unwrap_or_default());
+    let item = s.words_at().into_iter().find(|(w, _)| w.contains(&mark)).map(|(_, r)| r).unwrap_or_else(|| panic!("the list names no side of rectangle {rect} ({mark:?}); on screen: {:?}", s.words()));
+    s.click(item.center());
+}
+
+probe! {
+    /// A SIDE DRAWN OVER ANOTHER IS PICKED FROM THE LIST OF THE RIGHT BUTTON, and the corners rounded on it are the
+    /// corners meant: the three shapes of the report; the top of the right rectangle and the bottom of the square lie
+    /// over each other. Each lower corner of the square is rounded 8 on the bottom of the square, picked from the list,
+    /// and its side picked with Shift; its upper corners by their lines. The top of the right rectangle keeps its whole
+    /// length, the square is rounded all round, and nothing is redundant.
+    fn a_side_drawn_over_another_is_picked_from_the_list_and_rounded() {
+        let mut s = a_sketch();
+        for (a, b) in [((0.0, 0.0), (20.0, 60.0)), ((20.0, 0.0), (40.0, 60.0)), ((20.0, 60.0), (40.0, 80.0))] {
+            draw(&mut s, "tb-rect-hint", &[a, b]);
+        }
+        round(&mut s, (10.0, 60.0), (20.0, 30.0), "12");
+        round(&mut s, (30.0, 80.0), (20.0, 70.0), "8");
+        round(&mut s, (30.0, 80.0), (40.0, 70.0), "8");
+        for side in [(40.0, 70.0), (20.0, 70.0)] {
+            pick_from_the_list(&mut s, (30.0, 60.0), 3);
+            let said = s.status();
+            let at = s.on_sketch(side.0, side.1);
+            s.click_with(at, qymcad::PointerButton::Primary, Modifiers::SHIFT);
+            let hint = s.word("tb-fillet-sketch-hint");
+            s.press_hint(&hint);
+            // the click that opens the field of the tool, inside the square by the corner: the lines chosen are the set
+            let inside = s.on_sketch(if side.0 > 30.0 { 37.0 } else { 23.0 }, 63.0);
+            s.click(inside);
+            let field = field_near(&mut s, inside);
+            s.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text("8");
+            s.key(Key::Enter);
+            s.key(Key::Escape).key(Key::Escape);
+            assert!(said.contains(&between_values(&s, "sk-overlapping-picked").first().cloned().unwrap_or_default()), "the pick from the list says {said:?}");
+        }
+        let sk = s.document().sketches[0].clone();
+        let at = |x: f64, y: f64| sk.places.iter().any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - y).abs() < 1e-3);
+        let missing: Vec<(f64, f64)> = [(20.0, 60.0), (40.0, 60.0), (28.0, 60.0), (32.0, 60.0), (20.0, 68.0), (40.0, 68.0), (28.0, 80.0), (32.0, 80.0), (20.0, 72.0), (40.0, 72.0)].into_iter().filter(|&(x, y)| !at(x, y)).collect();
+        assert!(missing.is_empty() && sk.arcs == 5 && sk.redundant == 0, "the square rounded on its own bottom: nothing stands at {missing:?}, {} arcs, {} redundant; the sketch shows {:?}", sk.arcs, sk.redundant, sk.places);
     }
 }

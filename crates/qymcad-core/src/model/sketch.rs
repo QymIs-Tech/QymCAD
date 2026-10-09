@@ -199,6 +199,22 @@ pub struct LineExtension {
     pub kept: EndKept,
 }
 
+/// A STRETCH OF A STRAIGHT OR OF A CIRCLE, from one parameter to the other: a length along a line, or angles taken
+/// counter-clockwise round a circle.
+#[derive(Clone, Copy)]
+struct Stretch {
+    from: f64,
+    to: f64,
+}
+
+/// A ROUND CURVE BY ITS CIRCLE: the centre, the radius, and the stretch of it an arc takes (none for a whole circle).
+#[derive(Clone, Copy)]
+struct OnCircle {
+    centre: (f64, f64),
+    r: f64,
+    span: Option<Stretch>,
+}
+
 /// WHY AN END OF A LINE STAYS WHERE IT IS under Extend.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum EndKept {
@@ -1915,6 +1931,63 @@ impl Project {
         LineExtension { a: free.a.filter(|_| !held_a), b: free.b.filter(|_| !held_b), kept: if held_a || held_b { EndKept::Joined } else { EndKept::Free } }
     }
 
+    /// THE CURVES LYING OVER CURVE `eid` - `eid` first, then the others in the order of the sketch: a line on the same
+    /// straight with a stretch in common, an arc or a circle on the same circle with a stretch of it in common. A side
+    /// drawn over another (two rectangles drawn against each other) is a curve of its own, and a click takes either of the
+    /// two by chance: the list lets a person name the one meant.
+    pub fn overlapping_curves(&self, si: usize, eid: Id) -> Vec<Id> {
+        let Some(s) = self.sketches.get(si) else { return Vec::new() };
+        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+        let Some(me) = s.entities.iter().find(|e| e.id == eid) else { return Vec::new() };
+        const TOL: f64 = 1e-6;
+        // a stretch along the straight through `a` and `b` that `p` and `q` span, when both stand on it
+        let line_span = |a: (f64, f64), b: (f64, f64), p: (f64, f64), q: (f64, f64)| -> Option<Stretch> {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let l = dx.hypot(dy);
+            let off = |r: (f64, f64)| ((r.0 - a.0) * dy - (r.1 - a.1) * dx).abs() / l;
+            if l < TOL || off(p) > TOL || off(q) > TOL {
+                return None;
+            }
+            let t = |r: (f64, f64)| ((r.0 - a.0) * dx + (r.1 - a.1) * dy) / l;
+            Some(Stretch { from: t(p).min(t(q)), to: t(p).max(t(q)) })
+        };
+        let round = |e: &super::SketchEntity| -> Option<OnCircle> {
+            match e.kind {
+                EntityKind::Circle { center, r } => Some(OnCircle { centre: at(center)?, r, span: None }),
+                EntityKind::Arc { center, a, b, ccw } => {
+                    let (c, pa, pb) = (at(center)?, at(a)?, at(b)?);
+                    let ang = |p: (f64, f64)| (p.1 - c.1).atan2(p.0 - c.0);
+                    let (from, to) = if ccw { (ang(pa), ang(pb)) } else { (ang(pb), ang(pa)) };
+                    Some(OnCircle { centre: c, r: (pa.0 - c.0).hypot(pa.1 - c.1), span: Some(Stretch { from, to }) })
+                }
+                _ => None,
+            }
+        };
+        // whether an angle stands on a counter-clockwise stretch of a circle (none: the whole of it)
+        let inside = |span: Option<Stretch>, t: f64| match span {
+            None => true,
+            Some(Stretch { from, to }) => (t - from).rem_euclid(std::f64::consts::TAU) <= (to - from).rem_euclid(std::f64::consts::TAU),
+        };
+        // whether two stretches of one circle share more than a point: sampled along the circle
+        let share = |x: Option<Stretch>, y: Option<Stretch>| -> bool {
+            (0..64).map(|k| f64::from(k) / 64.0 * std::f64::consts::TAU).any(|t| inside(x, t) && inside(y, t) && inside(x, t + 0.01) && inside(y, t + 0.01))
+        };
+        let over = |e: &super::SketchEntity| -> bool {
+            match (me.kind, e.kind) {
+                (EntityKind::Line { a, b }, EntityKind::Line { a: c, b: d }) => {
+                    let (Some(a), Some(b), Some(c), Some(d)) = (at(a), at(b), at(c), at(d)) else { return false };
+                    let Some(mine) = line_span(a, b, a, b) else { return false };
+                    line_span(a, b, c, d).is_some_and(|other| other.to.min(mine.to) - other.from.max(mine.from) > TOL)
+                }
+                _ => match (round(me), round(e)) {
+                    (Some(x), Some(y)) => (x.centre.0 - y.centre.0).hypot(x.centre.1 - y.centre.1) < TOL && (x.r - y.r).abs() < TOL && share(x.span, y.span),
+                    _ => false,
+                },
+            }
+        };
+        std::iter::once(eid).chain(s.entities.iter().filter(|e| e.id != eid && over(e)).map(|e| e.id)).collect()
+    }
+
     /// WHETHER END `p` OF LINE `eid` IS HELD BY SOMETHING BUT THE DIRECTION OF THE LINE: another curve ends there, or a
     /// constraint other than one that turns the line (horizontal, vertical, an angle, parallel, perpendicular,
     /// collinear) holds the point - a coincidence, a point on a curve, a midpoint, an anchor, a dimension.
@@ -3111,20 +3184,41 @@ impl Project {
     /// A shared point is not enough: two lines lying along ONE straight line through it share a vertex and no angle
     /// at all - there is nothing to round between them and nothing to cut. That pair names no corner, and a pair that
     /// names none is not an error: the search for a corner goes on with the second line as the first of the next pair.
+    ///
+    /// AN ARC IS TAKEN BY ITS TANGENT at the point, not by the chord to its far end: a line going on from a fillet along
+    /// its tangent makes no corner either. Taken by the chord, it did: a click on the top of a rounded square by the end
+    /// of its fillet named the joint a corner, and the fillet put on it stood its centre 8 above the square. The two
+    /// are one straight within 1e-6 of a turn - what a solve leaves at a tangency.
     pub fn corner_of_pair(&self, si: usize, e1: Id, e2: Id) -> Option<Id> {
         let pid = self.shared_vertex(si, e1, e2)?;
         let (pcx, pcy) = self.point_xy(si, pid)?;
         let dir = |me: &Self, eid: Id| -> Option<(f64, f64)> {
-            let (a, b) = me.edge_end_ids(si, eid)?;
-            let other = if a == pid { b } else { a };
-            let (ox, oy) = me.point_xy(si, other)?;
-            let (dx, dy) = (ox - pcx, oy - pcy);
+            let kind = me.sketches.get(si)?.entities.iter().find(|e| e.id == eid)?.kind;
+            let (dx, dy) = match kind {
+                EntityKind::Arc { center, a, ccw, .. } => {
+                    // the way along the arc out of the point: from its start the way it turns, from its end back
+                    let (cx, cy) = me.point_xy(si, center)?;
+                    let (rx, ry) = (pcx - cx, pcy - cy);
+                    let left = (a == pid) == ccw;
+                    if left {
+                        (-ry, rx)
+                    } else {
+                        (ry, -rx)
+                    }
+                }
+                _ => {
+                    let (a, b) = me.edge_end_ids(si, eid)?;
+                    let other = if a == pid { b } else { a };
+                    let (ox, oy) = me.point_xy(si, other)?;
+                    (ox - pcx, oy - pcy)
+                }
+            };
             let l = (dx * dx + dy * dy).sqrt();
             (l > 1e-9).then_some((dx / l, dy / l))
         };
         let (Some((x1, y1)), Some((x2, y2))) = (dir(self, e1), dir(self, e2)) else { return None };
         // parallel means one straight line: the angle between them is 180 degrees, and there is no corner in it
-        ((x1 * y2 - y1 * x2).abs() > 1e-9).then_some(pid)
+        ((x1 * y2 - y1 * x2).abs() > 1e-6).then_some(pid)
     }
     /// THE CORNERS A NAMED SET OF LINES MAKES: every pair of them that meets, two at a time, in the order they
     /// were named.
@@ -3827,6 +3921,22 @@ impl Project {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         let mut out = Vec::new();
         let projected = s.projected_entities();
+        // THE END OF A FILLET WHERE ITS LINE ENDS: the line touches the arc (`Tangent`) and ends at the arc's end. On the
+        // circle, the row of that end measures the radius along the normal of the line, as the row of the tangency
+        // does, and the rank took one of the two for redundant: every rounded corner showed one redundant constraint
+        // and one freedom too many - 12 on a drawing of three rectangles with six fillets. The end is held instead by
+        // the radius to it standing square to the line: the centre at the distance r from the line, its foot on the line
+        // at the end - the end is on the circle all the same, and the two rows look across and along the line.
+        let touched_at = |centre: Id, end: Id| -> Option<(Id, Id)> {
+            s.constraints.iter().find_map(|c| match *c {
+                Constraint::Tangent { a, b, c, .. } if c == centre && (a == end || b == end) => Some((a, b)),
+                _ => None,
+            })
+        };
+        let on_the_arc = |centre: Id, end: Id| match touched_at(centre, end) {
+            Some((a, b)) => Constraint::Perpendicular { a: centre, b: end, c: a, d: b },
+            None => Constraint::PointOnCircle { p: end, c: centre },
+        };
         for e in &s.entities {
             match e.kind {
                 // an arc of a projection has its centre and both ends pinned by the body: one end on the circle sets the
@@ -3835,8 +3945,8 @@ impl Project {
                     out.push(Constraint::PointOnCircle { p: a, c: center });
                 }
                 EntityKind::Arc { center, a, b, .. } => {
-                    out.push(Constraint::PointOnCircle { p: a, c: center });
-                    out.push(Constraint::PointOnCircle { p: b, c: center });
+                    out.push(on_the_arc(center, a));
+                    out.push(on_the_arc(center, b));
                 }
                 EntityKind::Ellipse { c, ma, mi } => {
                     out.push(Constraint::Perpendicular { a: c, b: ma, c, d: mi });

@@ -30,8 +30,10 @@ mod tests {
     #[test]
     fn a_slot_is_not_flagged_as_overconstrained() {
         let (app, si) = slot();
+        // the rank itself finds none: the ends of the arcs, where the lines touch them, are held square to the lines
+        // rather than on the circle (`entity_intrinsics`), and the false redundancy of a tangency is gone at its source
         let raw = app.project.sketch_redundant_constraints(si);
-        assert!(!raw.is_empty(), "the rank analysis found no redundancy on the slot — the guard is checking emptiness and the scene must be changed");
+        assert!(raw.is_empty(), "the rank analysis finds redundancy on a slot: {raw:?}");
         assert!(
             qymcad_ui_state::flagged_redundant(&app.cache, &app.project, si).is_empty(),
             "the slot is marked as overconstrained: {:?}",
