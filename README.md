@@ -84,6 +84,10 @@ dependencies are inside the package.
 
 - **Portable ZIP**: download `qymcad-win64.zip`, unpack anywhere and run `qymcad.exe`.
 - **MSI Installer**: download and run `qymcad-*-x64.msi` for a standard system installation.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
 
 </details>
 

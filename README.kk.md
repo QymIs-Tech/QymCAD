@@ -83,6 +83,10 @@ FreeCAD жұмыс істейтін сол ядро. Сондықтан торл
 
 - **Портативті нұсқа**: `qymcad-win64.zip` жүктеп алып, кез келген жерге ашып, `qymcad.exe` іске қосыңыз.
 - **MSI орнатқышы**: жүйеге орнату үшін `qymcad-*-x64.msi` жүктеп алып, іске қосыңыз.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
 
 </details>
 
