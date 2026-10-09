@@ -142,6 +142,41 @@ impl Project {
         }
     }
 
+    /// THE PROJECTIONS OF A SKETCH FOLLOW THE BODIES, AND WHAT IS TIED TO THEM FOLLOWS: the projections resolved
+    /// (`resolve_sketch_projections`), and when they moved, the sketch solved along the way in steps of at most 1 mm
+    /// (at most 32), the projected points led from where they stood to where the body put them. A dimension holds its
+    /// side by where its points stand when a solve begins: moved in one jump, a projection carried the geometry tied 5 off
+    /// its inside past its corner, and the solve held it 5 off the outside. Reported behaviour: "tie to the projection by
+    /// dimensions, change the body above: it falls apart" - the base made 30 x 20 from 60 x 60, the square tied 5 inside
+    /// the projected outline came out 40 x 30, outside it. Answers whether a projection moved.
+    pub fn follow_sketch_projections(&mut self, si: usize, kernel: &dyn crate::feature::Kernel) -> bool {
+        let before = self.sketch_projection_key(si);
+        let was: std::collections::HashMap<Id, [f64; 2]> = self.projected_places(si);
+        self.resolve_sketch_projections(si, kernel);
+        if self.sketch_projection_key(si) == before {
+            return false;
+        }
+        let now = self.projected_places(si);
+        let jump = now.iter().filter_map(|(id, b)| was.get(id).map(|a| (b[0] - a[0]).hypot(b[1] - a[1]))).fold(0.0_f64, f64::max);
+        let steps = (jump.ceil() as usize).clamp(1, 32);
+        for k in 1..=steps {
+            let t = k as f64 / steps as f64;
+            for (id, b) in &now {
+                let a = was.get(id).copied().unwrap_or(*b);
+                self.set_point_xy(si, Some(*id), [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+            }
+            self.solve_sketch(si);
+        }
+        true
+    }
+
+    /// Where every point of the projections of sketch `si` stands, by its id.
+    fn projected_places(&self, si: usize) -> std::collections::HashMap<Id, [f64; 2]> {
+        let Some(s) = self.sketches.get(si) else { return Default::default() };
+        let ids: std::collections::HashSet<Id> = s.projected_points();
+        s.points.iter().filter(|q| ids.contains(&q.id)).map(|q| (q.id, [q.x, q.y])).collect()
+    }
+
     /// A fingerprint of the driven geometry of a sketch, which shows whether a projection moved. Without it the
     /// consumers of the contour would have to be rebuilt on every regeneration, even when the part did not
     /// change.

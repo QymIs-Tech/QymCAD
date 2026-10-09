@@ -3938,6 +3938,7 @@ mod a_copy_goes_to_the_clipboard;
 mod extend_is_worked_by_hand;
 mod a_projection_is_sketch_geometry;
 mod a_point_put_on_a_line_is_tied_to_it;
+mod a_projection_follows_the_parameters;
 mod an_arc_by_its_centre_ends_on_itself;
 mod a_shift_box_leaves_the_sheet_still;
 mod a_dimension_being_placed_follows_the_pointer;

@@ -1168,15 +1168,10 @@ impl Project {
                     // because a projection depends on another body and "the sketch itself did not change" says
                     // nothing about whether that body did.
                     if let Some(si) = self.sketch_index(sketch) {
-                        if !self.sketches[si].projections.is_empty() {
-                            let before = self.sketch_projection_key(si);
-                            self.resolve_sketch_projections(si, kernel);
-                            if self.sketch_projection_key(si) != before {
-                                // SOLVED, NOT ONLY REBUILT: what is tied to the projection - an end snapped to its corner, a
-                                // dimension from it - follows it to where the body put it
-                                self.solve_sketch(si);
-                                dirty.insert(sketch); // The projection moved, so the consumers of the contour follow.
-                            }
+                        // SOLVED, NOT ONLY REBUILT, and along the way: what is tied to the projection - an end snapped to
+                        // its corner, a dimension from it - follows it to where the body put it, on its own side
+                        if !self.sketches[si].projections.is_empty() && self.follow_sketch_projections(si, kernel) {
+                            dirty.insert(sketch); // The projection moved, so the consumers of the contour follow.
                         }
                     }
                     if needs {

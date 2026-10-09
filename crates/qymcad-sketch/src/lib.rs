@@ -2327,6 +2327,27 @@ pub fn project_clicked_edge(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rect
     qymcad_ui_state::invalidate(sk.regen);
 }
 
+/// A POINT PUT ON AN EDGE OF THE BODY UNDER THE SKETCH TAKES THE EDGE INTO IT: the edge is projected (`ProjSource::Edge`)
+/// as construction geometry - it holds what is drawn and makes no contour - so the point put on its end is that end, and
+/// a point put along it or at its middle is tied there (`tie_to_the_line_under`). The edge then moves with the body, and
+/// what is drawn from it follows. Nothing when a curve of the sketch lies there already. Reported behaviour: "even
+/// without projecting, tie to the edges of the face (the thin grey ones) - at a rebuild everything falls apart" - a point
+/// put on a grey edge was held by nothing, and the body moved away from under it.
+fn auto_project_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, si: usize, at: Point2) {
+    use qymcad_core::model::ProjSource;
+    let pos = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(at);
+    if qymcad_pick::nearest_line_eid(&sk.pick(), rect, pos, si).is_some() || qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si).is_some() {
+        return;
+    }
+    let Some((body, edge)) = nearest_ref_edge(sk, si, rect, pos) else { return };
+    let id = qymcad_ui_state::with_kernel(&mut sk.rebuild(), |project, k| project.add_sketch_projection(si, body, ProjSource::Edge(edge), k));
+    let Some(proj) = sk.project.sketches[si].projections.iter().find(|p| p.id == id) else { return };
+    let curves = proj.entities.clone();
+    for e in sk.project.sketches[si].entities.iter_mut().filter(|e| curves.contains(&e.id)) {
+        e.construction = true;
+    }
+}
+
 /// WHERE A CLICK OR AN ENTER OF EXTEND LANDS: the canvas, the pointer on it, the sketch, and the line under the pointer.
 #[derive(Clone, Copy)]
 struct ExtendAt {
@@ -3429,6 +3450,13 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
             }
             if let Some(&last) = sk.tool.pts.last() {
                 let prev = (sk.tool.pts.len() >= 2).then(|| sk.tool.pts[sk.tool.pts.len() - 2]);
+                // an end put on an edge of the body under the sketch takes the edge in first, so the end is tied to it
+                if !con && sk.set.auto_constrain {
+                    if prev.is_none() {
+                        auto_project_under(sk, rect, si, last);
+                    }
+                    auto_project_under(sk, rect, si, w);
+                }
                 let seg = sk.project.add_line_entity(si, last.x, last.y, w.x, w.y, qymcad_core::feature::Purpose::of(con));
                 if !con && sk.set.auto_constrain {
                     // automatic constraints: horizontal or vertical, perpendicular to the previous segment,

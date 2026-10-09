@@ -152,3 +152,99 @@ probe! {
         assert!(s.document().bodies.is_empty(), "the rectangle turned into construction still made a body: {:?}", s.document().bodies);
     }
 }
+
+/// A DIMENSION BETWEEN TWO PARALLEL LINES laid by hand with the dimension tool: a click on each line, a click to put it
+/// down between them, the value typed, Enter, the tool put down.
+fn a_distance_between(s: &mut Session, one: (f64, f64), other: (f64, f64), value: &str) {
+    let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+    s.press_hint(&hint);
+    s.click_on_sketch(one.0, one.1);
+    s.click_on_sketch(other.0, other.1);
+    // the dimension put down between the two, a little along them
+    s.click_on_sketch((one.0 + other.0) / 2.0 + 3.0, (one.1 + other.1) / 2.0 + 3.0);
+    s.fill_hinted(&field, value).key(Key::Enter);
+    s.key(Key::Escape);
+    let arrow = s.word("tb-select-hint");
+    s.press_hint(&arrow);
+}
+
+/// Whether the sketch shows a point of its own at (`x`, `y`).
+fn a_point_at(sk: &qymcad::SketchInfo, x: f64, y: f64) -> bool {
+    sk.places.iter().any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - y).abs() < 1e-3)
+}
+
+probe! {
+    /// WHAT IS TIED TO A PROJECTION BY DIMENSIONS FOLLOWS THE BODY, on the path of the report, by hand: a block 40 x 30 whose
+    /// sides are the parameters w and h; on its top face the outline projected, made construction, a rectangle inside it
+    /// held 5 off each side by the dimension tool, extruded; w and h changed to 30 and 20 in the table of parameters. The
+    /// outline of the projection stands on the new top, and the rectangle 5 inside it.
+    ///
+    /// Reported behaviour: "tie to the projection by dimensions, change the body above in the tree: does not work at all".
+    fn what_is_tied_to_a_projection_by_dimensions_follows_the_parameters() {
+        let mut s = Session::start();
+        build::into_the_first_part(&mut s);
+        build::parameter(&mut s, "w", "40");
+        build::parameter(&mut s, "h", "30");
+        build::rectangle_on_xy(&mut s);
+        s.key(Key::Escape);
+        // the lower side given w, the right side given h, by the dimension tool
+        for (on, off, value) in [((20.0, 0.0), (20.0, -10.0), "w"), ((40.0, 15.0), (50.0, 15.0), "h")] {
+            let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+            s.press_hint(&hint);
+            s.click_on_sketch(on.0, on.1);
+            s.click_on_sketch(off.0, off.1);
+            s.fill_hinted(&field, value).key(Key::Enter);
+            s.key(Key::Escape);
+        }
+        let finish = s.word("wb-finish");
+        s.press_word(&finish);
+        take(&mut s, "tb-extrude-hint");
+        s.key(Key::Enter);
+        s.key(Key::Escape);
+        // on the top: the outline of the face projected and made construction
+        build::sketch_on_face(&mut s, [20.0, 15.0, 10.0]);
+        take(&mut s, "tb-project-body-hint");
+        bar_word(&mut s, "opt-face-outline");
+        s.click_on_sketch(20.0, 15.0);
+        s.key(Key::Escape);
+        let arrow = s.word("tb-select-hint");
+        s.press_hint(&arrow);
+        for (k, (x, y)) in [(20.0, 0.0), (40.0, 15.0), (20.0, 30.0), (0.0, 15.0)].into_iter().enumerate() {
+            let at = s.on_sketch(x, y);
+            if k == 0 {
+                s.click(at);
+            } else {
+                s.click_with(at, PointerButton::Primary, qymcad::Modifiers::SHIFT);
+            }
+        }
+        s.key(Key::X);
+        s.key(Key::Escape);
+        // a rectangle inside, each side held 5 off the side of the outline beside it
+        build::draw(&mut s, "tb-rect-hint", &[(6.0, 6.0), (34.0, 24.0)]);
+        a_distance_between(&mut s, (20.0, 0.0), (20.0, 6.0), "5");
+        a_distance_between(&mut s, (40.0, 15.0), (34.0, 15.0), "5");
+        a_distance_between(&mut s, (20.0, 30.0), (20.0, 24.0), "5");
+        a_distance_between(&mut s, (0.0, 15.0), (6.0, 15.0), "5");
+        let before = s.document().sketches.last().cloned().expect("the sketch on the top");
+        assert!(a_point_at(&before, 5.0, 5.0) && a_point_at(&before, 35.0, 25.0), "GUARD: the rectangle inside stands 5 off the outline; the sketch shows {:?}", before.places);
+        let finish = s.word("wb-finish");
+        s.press_word(&finish);
+        take(&mut s, "tb-extrude-hint");
+        s.key(Key::Enter);
+        s.key(Key::Escape);
+
+        build::set_parameter(&mut s, "w", "30");
+        build::set_parameter(&mut s, "h", "20");
+
+        let sk = s.document().sketches.last().cloned().expect("the sketch on the top");
+        let outline = [(0.0, 0.0), (30.0, 0.0), (30.0, 20.0), (0.0, 20.0)];
+        let inside = [(5.0, 5.0), (25.0, 5.0), (25.0, 15.0), (5.0, 15.0)];
+        let missing: Vec<(f64, f64)> = outline.iter().chain(&inside).copied().filter(|&(x, y)| !a_point_at(&sk, x, y)).collect();
+        assert!(
+            missing.is_empty(),
+            "w 30, h 20: the outline 30 x 20 and the rectangle 5 inside it should stand there, and nothing stands at {missing:?}; the sketch shows {:?}, {} redundant",
+            sk.places,
+            sk.redundant
+        );
+    }
+}
