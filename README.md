@@ -14,7 +14,7 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 [![Release](https://img.shields.io/github/v/release/QymIs-Tech/QymCAD?logo=github)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
 <br>
-[![Windows](https://img.shields.io/badge/Windows-7%2B%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
 
@@ -80,15 +80,18 @@ The builds are in [Releases](https://github.com/QymIs-Tech/QymCAD/releases). No 
 dependencies are inside the package.
 
 <details>
-<summary><b>Windows (7+ x64)</b></summary>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-- **Portable ZIP**: download `qymcad-win64.zip`, unpack anywhere and run `qymcad.exe` (Windows 10 / 11).
-- **MSI Installer**: download and run `qymcad-*-x64.msi` for a standard system installation (Windows 10 / 11).
+- **Portable ZIP**: download `qymcad-win64.zip`, unpack anywhere and run `qymcad.exe`.
+- **MSI Installer**: download and run `qymcad-*-x64.msi` for a standard system installation.
 - **winget**:
   ```powershell
   winget install QymIsTech.QymCAD
   ```
-- **Windows 7 / 8.x (Legacy build)**: download `qymcad-*-win7-x64.zip`, unpack anywhere and run `qymcad.exe` (supports Windows 7 SP1, 8, 8.1).
+- **Windows 7 / 8.x (Legacy build)**: download `qymcad-*-win7-x64.zip`, unpack anywhere and run `qymcad.exe`.
+
+> [!NOTE]
+> Official support is only for Windows 10+. A separate legacy build (`qymcad-*-win7-x64.zip`) is available for Windows 7 SP1 and 8.x: it works, but stability is not guaranteed.
 
 </details>
 

@@ -14,7 +14,7 @@
 [![Release](https://img.shields.io/github/v/release/QymIs-Tech/QymCAD?logo=github)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
 <br>
-[![Windows](https://img.shields.io/badge/Windows-7%2B%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
 
@@ -78,15 +78,18 @@ QymCAD — настольный САПР для механических дет�
 Сборки — в разделе [Releases](https://github.com/QymIs-Tech/QymCAD/releases). Дополнительные библиотеки не требуются: OpenCASCADE и зависимости входят в пакет.
 
 <details>
-<summary><b>Windows (7+ x64)</b></summary>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-- **Портативная версия**: скачайте `qymcad-win64.zip`, распакуйте в любую папку и запустите `qymcad.exe` (Windows 10 / 11).
-- **MSI-инсталлятор**: скачайте и запустите `qymcad-*-x64.msi` для стандартной установки в систему (Windows 10 / 11).
+- **Портативная версия**: скачайте `qymcad-win64.zip`, распакуйте в любую папку и запустите `qymcad.exe`.
+- **MSI-инсталлятор**: скачайте и запустите `qymcad-*-x64.msi` для стандартной установки в систему.
 - **winget**:
   ```powershell
   winget install QymIsTech.QymCAD
   ```
-- **Windows 7 / 8.x (Legacy-сборка)**: скачайте `qymcad-*-win7-x64.zip`, распакуйте в любую папку и запустите `qymcad.exe` (поддерживает Windows 7 SP1, 8, 8.1).
+- **Windows 7 / 8.x (Legacy-сборка)**: скачайте `qymcad-*-win7-x64.zip`, распакуйте в любую папку и запустите `qymcad.exe`.
+
+> [!NOTE]
+> Официальная поддержка предоставляется только для Windows 10+. Для Windows 7 SP1 и 8.x доступна отдельная сборка (`qymcad-*-win7-x64.zip`), которая работает, но её стабильность не гарантирована.
 
 </details>
 
