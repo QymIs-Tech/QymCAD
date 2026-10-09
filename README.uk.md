@@ -14,7 +14,7 @@
 [![Release](https://img.shields.io/github/v/release/QymIs-Tech/QymCAD?logo=github)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
 <br>
-[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![Windows](https://img.shields.io/badge/Windows-7%2B%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/QymIs-Tech/QymCAD/releases)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
 
@@ -79,14 +79,15 @@ QymCAD — настільний САПР для механічних детал�
 Збірки розміщені у розділі [Releases](https://github.com/QymIs-Tech/QymCAD/releases). Додаткові бібліотеки не потрібні: OpenCASCADE та залежності вже запаковані всередині.
 
 <details>
-<summary><b>Windows (10 / 11 x64)</b></summary>
+<summary><b>Windows (7+ x64)</b></summary>
 
-- **Портативна версія**: завантажте `qymcad-win64.zip`, розархівуйте в будь-яку папку та запустіть `qymcad.exe`.
-- **MSI-інсталятор**: завантажте та запустіть `qymcad-*-x64.msi` для встановлення в систему.
+- **Портативна версія**: завантажте `qymcad-win64.zip`, розархівуйте в будь-яку папку та запустіть `qymcad.exe` (Windows 10 / 11).
+- **MSI-інсталятор**: завантажте та запустіть `qymcad-*-x64.msi` для встановлення в систему (Windows 10 / 11).
 - **winget**:
   ```powershell
   winget install QymIsTech.QymCAD
   ```
+- **Windows 7 / 8.x (Legacy-збірка)**: завантажте `qymcad-*-win7-x64.zip`, розархівуйте та запустіть `qymcad.exe` (підтримує Windows 7 SP1, 8, 8.1).
 
 </details>
 
