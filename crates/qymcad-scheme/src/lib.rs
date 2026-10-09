@@ -126,6 +126,8 @@ pub struct Palette {
     pub sketch_construction: [u8; 3],
     /// a live projection of outside geometry into the sketch
     pub sketch_driven: [u8; 3],
+    /// a live projection made construction geometry: drawn dashed and thin in it
+    pub sketch_driven_construction: [u8; 3],
     /// the edges of the face the sketch lies on
     pub sketch_face_edge: [u8; 3],
     /// a sketch shown in 3D, on its own, not selected
@@ -492,15 +494,137 @@ macro_rules! readers {
 }
 
 readers!(
-    viewport_bg, toolbar_bg, panel_bg, panel_border, splash_bg, thumbnail_bg, scrim, text_strong, text_dim, text_faint, emphasis, glyph_text, glyph_backing, grid, grid_minor, axis_x, axis_y, axis_z,
-    grid_axis_x, grid_axis_y, grid_axis_z, sketch_axis_x, sketch_axis_y, sketch_axis_idle, sketch_line, sketch_construction, sketch_driven, sketch_face_edge, sketch_edge_3d, dimension,
-    dimension_driven, dim_helper, dim_helper_ring, selected, highlight, active, handle, handle_face, snap_point, axis_pick_idle, clip, plate_text, pattern_center, sketch_point, annotation, note,
-    hint, hint_action, tree_selected, connector, rollback, select_window, select_cross, rubber_band, snap_marker, snap_intersection, snap_edge, snap_axis, snap_grid, edge_idle, body_face, body_ghost,
-    body_clash, add, remove, modify, reference, offset_in, plane_face, plane_fill, plane_idle, plane_normal, datum_point, datum_axis, preview, preview_prim, preview_array, preview_axis,
-    preview_datum, preview_corner_new, preview_corner_fixed, measure, cut_line, gizmo_label, constraint_ok, constraint_selected, constraint_hover, joint_idle, joint_hover, joint_pick_a, joint_pick_b,
-    grounded, contour_idle, contour_hover, contour_profile, ok, ok_soft, underdefined, warning, error, error_mild, confirm, refuse, cam_plunge, cam_rapid, cam_table, cam_table_grid, cam_stock,
-    ghost_target, viewcube_face, viewcube_edge, cam_stock_idle, cam_op1, cam_op2, cam_op3, cam_op4, cam_op5, cam_op6, ui_window, ui_field, ui_stripe, ui_outline, ui_control, ui_control_hover,
-    ui_control_active, ui_accent, ui_text, ui_text_dim, ui_text_strong, ui_link,
+    viewport_bg,
+    toolbar_bg,
+    panel_bg,
+    panel_border,
+    splash_bg,
+    thumbnail_bg,
+    scrim,
+    text_strong,
+    text_dim,
+    text_faint,
+    emphasis,
+    glyph_text,
+    glyph_backing,
+    grid,
+    grid_minor,
+    axis_x,
+    axis_y,
+    axis_z,
+    grid_axis_x,
+    grid_axis_y,
+    grid_axis_z,
+    sketch_axis_x,
+    sketch_axis_y,
+    sketch_axis_idle,
+    sketch_line,
+    sketch_construction,
+    sketch_driven,
+    sketch_driven_construction,
+    sketch_face_edge,
+    sketch_edge_3d,
+    dimension,
+    dimension_driven,
+    dim_helper,
+    dim_helper_ring,
+    selected,
+    highlight,
+    active,
+    handle,
+    handle_face,
+    snap_point,
+    axis_pick_idle,
+    clip,
+    plate_text,
+    pattern_center,
+    sketch_point,
+    annotation,
+    note,
+    hint,
+    hint_action,
+    tree_selected,
+    connector,
+    rollback,
+    select_window,
+    select_cross,
+    rubber_band,
+    snap_marker,
+    snap_intersection,
+    snap_edge,
+    snap_axis,
+    snap_grid,
+    edge_idle,
+    body_face,
+    body_ghost,
+    body_clash,
+    add,
+    remove,
+    modify,
+    reference,
+    offset_in,
+    plane_face,
+    plane_fill,
+    plane_idle,
+    plane_normal,
+    datum_point,
+    datum_axis,
+    preview,
+    preview_prim,
+    preview_array,
+    preview_axis,
+    preview_datum,
+    preview_corner_new,
+    preview_corner_fixed,
+    measure,
+    cut_line,
+    gizmo_label,
+    constraint_ok,
+    constraint_selected,
+    constraint_hover,
+    joint_idle,
+    joint_hover,
+    joint_pick_a,
+    joint_pick_b,
+    grounded,
+    contour_idle,
+    contour_hover,
+    contour_profile,
+    ok,
+    ok_soft,
+    underdefined,
+    warning,
+    error,
+    error_mild,
+    confirm,
+    refuse,
+    cam_plunge,
+    cam_rapid,
+    cam_table,
+    cam_table_grid,
+    cam_stock,
+    ghost_target,
+    viewcube_face,
+    viewcube_edge,
+    cam_stock_idle,
+    cam_op1,
+    cam_op2,
+    cam_op3,
+    cam_op4,
+    cam_op5,
+    cam_op6,
+    ui_window,
+    ui_field,
+    ui_stripe,
+    ui_outline,
+    ui_control,
+    ui_control_hover,
+    ui_control_active,
+    ui_accent,
+    ui_text,
+    ui_text_dim,
+    ui_text_strong,
+    ui_link,
 );
 
 impl Palette {
@@ -584,11 +708,12 @@ pub fn dark() -> Palette {
         sketch_axis_y: [90, 165, 95],   //
         sketch_axis_idle: [60, 60, 60], // draw_axes: from_gray(60)
 
-        sketch_line: [250, 230, 120],         // draw_sketch_preview
-        sketch_construction: [120, 170, 230], // also the helper leader of a dimension
-        sketch_driven: [150, 210, 255],       // a live projection
-        sketch_face_edge: [150, 170, 210],    // draw_sketch_face_edges
-        sketch_edge_3d: [150, 180, 235],      // a sketch shown in 3D
+        sketch_line: [250, 230, 120],                // draw_sketch_preview
+        sketch_construction: [120, 170, 230],        // also the helper leader of a dimension
+        sketch_driven: [150, 210, 255],              // a live projection
+        sketch_driven_construction: [255, 140, 200], // a live projection made construction: pink
+        sketch_face_edge: [150, 170, 210],           // draw_sketch_face_edges
+        sketch_edge_3d: [150, 180, 235],             // a sketch shown in 3D
 
         dimension: [110, 200, 230],
         dimension_driven: [135, 135, 135],
@@ -839,6 +964,7 @@ pub fn dracula() -> Palette {
     p.sketch_line = [241, 250, 140]; // yellow
     p.sketch_construction = [98, 114, 164];
     p.sketch_driven = [189, 147, 249]; // purple
+    p.sketch_driven_construction = [255, 121, 198]; // pink
     p.dimension = [139, 233, 253];
     p.dimension_driven = [98, 114, 164];
     p.selected = [255, 121, 198]; // pink
@@ -912,6 +1038,7 @@ pub fn alucard() -> Palette {
     p.sketch_line = [132, 110, 21]; // yellow
     p.sketch_construction = [108, 102, 75];
     p.sketch_driven = [100, 74, 201]; // purple
+    p.sketch_driven_construction = [196, 52, 132]; // pink
     p.dimension = [3, 106, 150];
     p.dimension_driven = [108, 102, 75];
     p.selected = [163, 20, 77]; // pink

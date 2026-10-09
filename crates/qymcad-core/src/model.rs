@@ -1116,10 +1116,11 @@ pub struct SketchProjection {
     /// Derived entities (driven).
     #[serde(default)]
     pub entities: Vec<Id>,
-    /// The source is gone (the edge or face was not found after a rebuild). The geometry stays at its last
-    /// good state but is marked broken: it must not vanish silently, because constraints reference it.
+    /// THE EDGE OF THE BODY EACH OF `entities` CAME FROM, by its persistent id, in the same order: a rebuild matches the
+    /// curves by their edge, so the ids - and the dimensions and the ties on them - stay with the edge whatever order the
+    /// kernel gives the edges in.
     #[serde(default)]
-    pub lost: bool,
+    pub edges: Vec<u32>,
 }
 
 /// A sketch spline: a smooth Catmull-Rom curve through control points.

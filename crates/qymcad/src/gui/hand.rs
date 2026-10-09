@@ -372,6 +372,17 @@ impl<'a> Hand<'a> {
         self.press_at2d(egui::Modifiers::default(), (x, y))
     }
 
+    /// THE RIGHT BUTTON ON A PLACE OF THE SKETCH: the hand rests over it, then presses and releases the right button,
+    /// each in a frame of its own - the menu of the right button comes up there.
+    pub fn right_click2d(&mut self, x: f64, y: f64) -> &mut Self {
+        self.in_view2d(&[(x, y)]);
+        let at = self.rest_over2d((x, y));
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+        self.frame(vec![button(true)]);
+        self.frame(vec![button(false)]);
+        self.frame(Vec::new())
+    }
+
     /// The hand rests over a place already in view, then presses and releases with `modifiers` held.
     fn press_at2d(&mut self, modifiers: egui::Modifiers, place: (f64, f64)) -> &mut Self {
         let at = self.rest_over2d(place);

@@ -1235,6 +1235,44 @@ impl Project {
     /// Delete constraint `ci` of a sketch. For a midpoint constraint the orphaned midpoint is pruned as well
     /// (nothing else uses it and it is not a system point), so no debris is left behind. The sketch is then
     /// re-solved.
+    /// AN EDIT `op` OF CURVE `eid` THAT CUTS A PROJECTION: done as on any curve, and when it is done the projection the curve
+    /// belonged to is let go - what is left of it is ordinary geometry - and its lines left, with the pieces the edit made,
+    /// get what they plainly have (`relate_lines`), as the sides of a broken rectangle. An edit that did nothing leaves the
+    /// projection as it was. Reported behaviour: a piece of a projection trimmed, broken or deleted - what is left must stop
+    /// being a projection at once, or the next rebuild of the body brings the piece back over it.
+    fn cut_projection(&mut self, si: usize, eid: Id, op: impl FnOnce(&mut Self) -> bool) -> bool {
+        let Some(s) = self.sketches.get(si) else { return false };
+        let pids: Vec<Id> = s.projections.iter().filter(|p| p.entities.contains(&eid)).map(|p| p.id).collect();
+        if pids.is_empty() {
+            return op(self);
+        }
+        let curves: Vec<Id> = s.projections.iter().filter(|p| pids.contains(&p.id)).flat_map(|p| p.entities.clone()).collect();
+        let before: std::collections::HashSet<Id> = s.entities.iter().map(|e| e.id).collect();
+        if !op(self) {
+            return false;
+        }
+        let Some(s) = self.sketches.get_mut(si) else { return true };
+        s.projections.retain(|p| !pids.contains(&p.id));
+        let mut left: Vec<Id> = s.entities.iter().map(|e| e.id).filter(|id| curves.contains(id) || !before.contains(id)).collect();
+        left.dedup();
+        self.relate_lines(si, &left);
+        self.solve_sketch(si);
+        true
+    }
+
+    /// DELETE CURVES `eids` OF THE SKETCH, cutting what projections they belong to (`cut_projection`): the projection lets go,
+    /// the curves go, and what is left of the projection is ordinary geometry held by what it plainly is.
+    pub fn delete_sketch_curves(&mut self, si: usize, eids: &[Id]) {
+        let Some(s) = self.sketches.get(si) else { return };
+        let pids: Vec<Id> = s.projections.iter().filter(|p| p.entities.iter().any(|e| eids.contains(e))).map(|p| p.id).collect();
+        let left: Vec<Id> = s.projections.iter().filter(|p| pids.contains(&p.id)).flat_map(|p| p.entities.clone()).filter(|e| !eids.contains(e)).collect();
+        if let Some(s) = self.sketches.get_mut(si) {
+            s.projections.retain(|p| !pids.contains(&p.id));
+        }
+        self.delete_entities(si, eids);
+        self.relate_lines(si, &left);
+    }
+
     /// THE LINES A BROKEN RECTANGLE LEAVES GET WHAT THEY PLAINLY HAVE, as lines drawn by hand get it with auto-constraints
     /// on: of every rectangle of `before` the sketch no longer holds, the sides still standing are laid Horizontal or
     /// Vertical where they stand so, then Perpendicular and Parallel between them, then Equal between those of one
@@ -1243,11 +1281,19 @@ impl Project {
     /// dragged pulled it out of shape. Answers how many constraints were laid.
     pub fn relate_lines_left(&mut self, si: usize, before: &[crate::model::SketchRect]) -> usize {
         let Some(s) = self.sketches.get(si) else { return 0 };
-        let lines: Vec<(Id, Id)> = before
+        let sides: Vec<Id> = before.iter().filter(|r| !s.rects.iter().any(|k| k.id == r.id)).flat_map(|r| r.sides).collect();
+        self.relate_lines(si, &sides)
+    }
+
+    /// THE LINES `eids` GET WHAT THEY PLAINLY HAVE, as lines drawn by hand get it with auto-constraints on: Horizontal or
+    /// Vertical where they stand so, then Perpendicular and Parallel between them, then Equal between those of one length -
+    /// each only where it constrains something (`add_constraint_if_independent`). For the sides a broken rectangle leaves,
+    /// and for what a cut projection leaves. Answers how many constraints were laid.
+    pub fn relate_lines(&mut self, si: usize, eids: &[Id]) -> usize {
+        let Some(s) = self.sketches.get(si) else { return 0 };
+        let lines: Vec<(Id, Id)> = eids
             .iter()
-            .filter(|r| !s.rects.iter().any(|k| k.id == r.id))
-            .flat_map(|r| r.sides)
-            .filter_map(|side| match s.entities.iter().find(|e| e.id == side)?.kind {
+            .filter_map(|side| match s.entities.iter().find(|e| e.id == *side)?.kind {
                 EntityKind::Line { a, b } => Some((a, b)),
                 _ => None,
             })
@@ -1678,6 +1724,9 @@ impl Project {
     /// Trim segment `eid` at the clicked point: the segment is divided by its intersections with other
     /// entities and the piece containing the click is removed.
     pub fn trim_line(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
+        self.cut_projection(si, eid, |p| p.trim_line_here(si, eid, clickx, clicky))
+    }
+    fn trim_line_here(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
         let Some((a, b)) = self.line_ends(si, eid) else { return false };
         let (Some((pax, pay)), Some((pbx, pby))) = (self.point_xy(si, a), self.point_xy(si, b)) else { return false };
         let dlen2 = (pbx - pax).powi(2) + (pby - pay).powi(2);
@@ -1868,6 +1917,9 @@ impl Project {
     /// EXTEND LINE `eid` AS `ext` SAYS: each end given a place along the axis goes there, and the sketch is solved.
     /// Returns whether an end moved.
     pub fn extend_line_by(&mut self, si: usize, eid: Id, ext: LineExtension) -> bool {
+        self.cut_projection(si, eid, |p| p.extend_line_by_here(si, eid, ext))
+    }
+    fn extend_line_by_here(&mut self, si: usize, eid: Id, ext: LineExtension) -> bool {
         let Some((a, b)) = self.line_ends(si, eid) else { return false };
         let (Some((pax, pay)), Some((pbx, pby))) = (self.point_xy(si, a), self.point_xy(si, b)) else { return false };
         let mut moved = false;
@@ -1934,6 +1986,9 @@ impl Project {
     }
     /// Break: split a segment into two at the clicked point.
     pub fn break_line(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
+        self.cut_projection(si, eid, |p| p.break_line_here(si, eid, clickx, clicky))
+    }
+    fn break_line_here(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
         let Some((a, b)) = self.line_ends(si, eid) else { return false };
         let (Some((pax, pay)), Some((pbx, pby))) = (self.point_xy(si, a), self.point_xy(si, b)) else { return false };
         let dlen2 = (pbx - pax).powi(2) + (pby - pay).powi(2);
@@ -2116,6 +2171,9 @@ impl Project {
     /// Trim a circle or an arc: it is cut at the intersections, the angular span under the click is removed and
     /// the remaining spans become arcs. Lines are handled by `trim_line`. Returns whether it succeeded.
     pub fn trim_curve(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
+        self.cut_projection(si, eid, |p| p.trim_curve_here(si, eid, clickx, clicky))
+    }
+    fn trim_curve_here(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
         use std::f64::consts::TAU;
         let Some(s) = self.sketches.get(si) else { return false };
         let Some(e) = s.entities.iter().find(|e| e.id == eid) else { return false };
@@ -2208,6 +2266,9 @@ impl Project {
     /// (split at the click and at the opposite point). Lines are handled by `break_line`. Returns whether it
     /// succeeded.
     pub fn break_curve(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
+        self.cut_projection(si, eid, |p| p.break_curve_here(si, eid, clickx, clicky))
+    }
+    fn break_curve_here(&mut self, si: usize, eid: Id, clickx: f64, clicky: f64) -> bool {
         let Some(s) = self.sketches.get(si) else { return false };
         let Some(e) = s.entities.iter().find(|e| e.id == eid) else { return false };
         let con = e.construction;

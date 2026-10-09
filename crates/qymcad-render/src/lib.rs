@@ -1113,8 +1113,9 @@ pub fn draw_clip_ghost(clip: &Clipboard, cursor: Option<Point2>, scheme: &Scheme
 ///
 /// A projection enters a profile on a par with one's own geometry (it is what gets extruded), so it
 /// is drawn as an ordinary outline. But a person must SEE that it is a view of the part rather than
-/// something they drew: otherwise it is not clear why the line does not drag with the mouse. A lost
-/// source is drawn in red.
+/// something they drew: otherwise it is not clear why the line does not drag with the mouse. A projected curve made
+/// construction is drawn pink, dashed and thin. A projection whose source is gone is ordinary geometry and is not drawn
+/// here at all.
 pub fn draw_projection_overlay(project: &Project, scheme: &SchemeUi, sel: Sel, view: View2d, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view, rect };
     use qymcad_core::model::EntityKind;
@@ -1126,41 +1127,41 @@ pub fn draw_projection_overlay(project: &Project, scheme: &SchemeUi, sel: Sel, v
     let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
     let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
     for proj in &s.projections {
-        let col = if proj.lost { scheme.pal.error() } else { scheme.pal.sketch_driven() };
-        let stroke = Stroke::new(if proj.lost { 2.2 } else { 1.8 }, col);
+        let stroke = Stroke::new(1.8, scheme.pal.sketch_driven());
         for eid in &proj.entities {
-            let Some(kind) = s.entities.iter().find(|e| e.id == *eid).map(|e| e.kind) else { continue };
-            match kind {
-                EntityKind::Line { a, b } => {
-                    if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
-                        painter.line_segment([sh.at(pa), sh.at(pb)], stroke);
-                    }
-                }
-                EntityKind::Circle { center, r } => {
-                    if let Some(c) = pt(center) {
-                        let sc = sh.at(c);
-                        let rp = (sh.at(Point2::new(c.x + r, c.y)).x - sc.x).abs();
-                        painter.circle_stroke(sc, rp.max(1.0), stroke);
-                    }
-                }
-                EntityKind::Arc { center, a, b, ccw } => {
-                    if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) {
+            let Some(e) = s.entities.iter().find(|e| e.id == *eid) else { continue };
+            // PROJECTED AND CONSTRUCTION: pink, dashed and thin - told from a projection that makes a contour, and from
+            // construction geometry drawn by hand
+            let construction = e.construction;
+            let stroke = if construction { Stroke::new(1.0, scheme.pal.sketch_driven_construction()) } else { stroke };
+            let path: Vec<Pos2> = match e.kind {
+                EntityKind::Line { a, b } => pt(a).zip(pt(b)).map(|(pa, pb)| vec![sh.at(pa), sh.at(pb)]).unwrap_or_default(),
+                EntityKind::Circle { center, r } => pt(center)
+                    .map(|c| qymcad_core::geom::tessellate_arc(c.x, c.y, r, 0.0, std::f64::consts::TAU, true, 0.02).iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect())
+                    .unwrap_or_default(),
+                EntityKind::Arc { center, a, b, ccw } => match (pt(center), pt(a), pt(b)) {
+                    (Some(c), Some(pa), Some(pb)) => {
                         let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
                         let (a0, a1) = ((pa.y - c.y).atan2(pa.x - c.x), (pb.y - c.y).atan2(pb.x - c.x));
-                        let arc = qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02);
-                        let sp: Vec<Pos2> = arc.iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect();
-                        if sp.len() >= 2 {
-                            painter.add(egui::Shape::line(sp, stroke));
-                        }
+                        qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02).iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect()
                     }
-                }
-                EntityKind::Ellipse { .. } => {}
+                    _ => Vec::new(),
+                },
+                EntityKind::Ellipse { .. } => Vec::new(),
+            };
+            if path.len() < 2 {
+                continue;
+            }
+            if construction {
+                painter.extend(egui::Shape::dashed_line(&path, stroke, 6.0, 4.0));
+            } else {
+                painter.add(egui::Shape::line(path, stroke));
             }
         }
         // THE DRIVEN NODES as small circles: they can be snapped to, but not dragged
         for pid in &proj.points {
             if let Some(q) = pt(*pid) {
-                painter.circle_stroke(sh.at(q), 3.0, Stroke::new(1.2, col));
+                painter.circle_stroke(sh.at(q), 3.0, Stroke::new(1.2, scheme.pal.sketch_driven()));
             }
         }
     }

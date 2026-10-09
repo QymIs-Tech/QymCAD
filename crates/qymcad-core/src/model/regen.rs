@@ -1172,7 +1172,9 @@ impl Project {
                             let before = self.sketch_projection_key(si);
                             self.resolve_sketch_projections(si, kernel);
                             if self.sketch_projection_key(si) != before {
-                                self.regen_sketch(si);
+                                // SOLVED, NOT ONLY REBUILT: what is tied to the projection - an end snapped to its corner, a
+                                // dimension from it - follows it to where the body put it
+                                self.solve_sketch(si);
                                 dirty.insert(sketch); // The projection moved, so the consumers of the contour follow.
                             }
                         }

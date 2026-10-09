@@ -19,7 +19,7 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
             ],
         ),
         ("grid", vec!["grid", "grid_minor", "axis_x", "axis_y", "axis_z", "grid_axis_x", "grid_axis_y", "grid_axis_z", "sketch_axis_x", "sketch_axis_y", "sketch_axis_idle"]),
-        ("sketch", vec!["sketch_line", "sketch_construction", "sketch_driven", "sketch_face_edge", "sketch_edge_3d"]),
+        ("sketch", vec!["sketch_line", "sketch_construction", "sketch_driven", "sketch_driven_construction", "sketch_face_edge", "sketch_edge_3d"]),
         ("dims", vec!["dimension", "dimension_driven", "dim_helper", "dim_helper_ring"]),
         (
             "select",

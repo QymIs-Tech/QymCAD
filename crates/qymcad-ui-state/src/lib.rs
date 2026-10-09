@@ -12367,16 +12367,6 @@ pub fn select_all_sketch(annot: &mut AnnotEdit, gsel: &mut GeomSelection, projec
 /// Delete the current sketch selection (entities, primitives and points, apart from the system ones).
 pub fn delete_sketch_sel(project: &mut Project, regen: &mut Rebuilding, sel_sk: &mut SketchSelection, status: &mut String, si: usize) {
     let eids: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
-    // DRIVEN GEOMETRY IS DELETED AS A WHOLE PROJECTION. One segment of a projected contour cannot be
-    // removed on its own: it is not "geometry" but a view of an edge of the part — the record left
-    // behind would bring it straight back.
-    let doomed: Vec<Id> = {
-        let s = &project.sketches[si];
-        s.projections.iter().filter(|p| p.entities.iter().any(|e| eids.contains(e))).map(|p| p.id).collect()
-    };
-    for pid in doomed {
-        project.remove_sketch_projection(si, pid);
-    }
     let eids: Vec<Id> = {
         let s = &project.sketches[si];
         eids.into_iter().filter(|e| s.entities.iter().any(|x| x.id == *e)).collect()
@@ -12386,8 +12376,10 @@ pub fn delete_sketch_sel(project: &mut Project, regen: &mut Rebuilding, sel_sk: 
         s.immovable_points().into_iter().collect() // system and driven points: they are not deleted one by one
     };
     let pids: Vec<Id> = sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
+    // A PIECE OF A PROJECTION DELETED cuts it: the rest is ordinary geometry held by what it plainly is
+    // (`delete_sketch_curves`)
     if !eids.is_empty() {
-        project.delete_entities(si, &eids);
+        project.delete_sketch_curves(si, &eids);
     }
     if !pids.is_empty() {
         project.delete_points(si, &pids);

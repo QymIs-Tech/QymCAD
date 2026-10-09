@@ -4,7 +4,6 @@
 pub(crate) use qymcad_ui_state::ensure_brep;
 #[allow(unused_imports)] // used by the checks through this module, which is the address they know
 pub(crate) use qymcad_ui_state::regenerate_now;
-pub(crate) use qymcad_ui_state::finish_dim;
 use super::*;
 
 /// The rebuild writes `line` on the status line and remembers it as its own.

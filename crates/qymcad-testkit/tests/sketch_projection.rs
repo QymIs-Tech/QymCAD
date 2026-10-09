@@ -180,22 +180,37 @@ fn a_circular_edge_projects_as_a_real_circle() {
     assert!((circles[0] - 8.0).abs() < 1e-6, "the radius must be exact (8), and it came out {}", circles[0]);
 }
 
-/// THE SOURCE IS GONE — the projection is marked broken rather than silently disappearing or silently
-/// staying "real".
+/// A SOURCE GONE ALTOGETHER LEAVES ORDINARY GEOMETRY: the projection lets go, its curves stay where they were - the
+/// constraints on them stay met - and nothing is marked broken.
 #[test]
-fn a_lost_source_marks_the_projection_broken() {
+fn a_lost_source_leaves_ordinary_geometry() {
     let (mut live, body, si) = part_and_sketch();
     let face = top_face_id(&live.p, body);
     live.project_into(si, body, ProjSource::Face(face));
-    assert!(!live.p.sketches[si].projections[0].lost, "setup: the projection is intact");
-    let ents_before = live.p.sketches[si].projections[0].entities.len();
+    let ents = live.p.sketches[si].projections[0].entities.clone();
+    let at: Vec<[f64; 2]> = live.p.sketches[si].points.iter().map(|q| [q.x, q.y]).collect();
 
     // a reference to a face the body does not have
     live.p.sketches[si].projections[0].src = ProjSource::Face(999_999);
     live.rebuild();
 
-    assert!(live.p.sketches[si].projections[0].lost, "a lost source must be flagged");
-    assert_eq!(live.p.sketches[si].projections[0].entities.len(), ents_before, "the geometry stays: user constraints refer to it");
+    assert!(live.p.sketches[si].projections.is_empty(), "a projection whose source is gone is still a projection");
+    assert!(ents.iter().all(|e| live.p.sketches[si].entities.iter().any(|x| x.id == *e)), "its curves went with the source");
+    assert_eq!(live.p.sketches[si].points.iter().map(|q| [q.x, q.y]).collect::<Vec<_>>(), at, "its curves moved");
+}
+
+/// A BODY NOT LIVE YET SAYS NOTHING OF THE SOURCE: a document just opened keeps its meshes and builds its solids on
+/// demand, and a projection resolved against a kernel holding no shape stays the projection it was. Taken for a source
+/// gone, every projection of a file was let go on opening it.
+#[test]
+fn a_body_not_live_yet_leaves_the_projection_as_it_is() {
+    let (mut live, body, si) = part_and_sketch();
+    let face = top_face_id(&live.p, body);
+    live.project_into(si, body, ProjSource::Face(face));
+    let ents = proj_entities(&live.p, si);
+    let empty = OcctKernel::default();
+    live.p.resolve_sketch_projections(si, &empty);
+    assert_eq!(proj_entities(&live.p, si), ents, "the projection did not stay as it was against a kernel with no shape");
 }
 
 /// Picking the same source again does not breed a second copy on top of the first.

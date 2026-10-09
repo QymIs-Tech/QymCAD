@@ -162,12 +162,12 @@ mod tests {
         assert!(dense(crate::gui::sketch_source::SKETCH).contains(&dense("draw_projection_overlay(")), "the layer must be called from the sketch frame");
         // EVERY function of that name. Once the layer was lifted out of `App` a one-line wrapper stayed
         // behind under the same name, and it is the one `find` hits first: reading only there says the
-        // lost-source branch is gone when it has merely moved next door.
-        let lost = src.match_indices("fn draw_projection_overlay").any(|(a, _)| {
+        // construction branch is gone when it has merely moved next door.
+        let construction = src.match_indices("fn draw_projection_overlay").any(|(a, _)| {
             let rest = &src[a..];
             let end = ["\n    pub(super) fn ", "\n    pub(crate) fn ", "\n    fn ", "\npub(crate) fn ", "\nfn "].iter().filter_map(|m| rest.find(m)).min().unwrap_or(rest.len());
-            rest[..end].contains("proj.lost")
+            rest[..end].contains("sketch_driven_construction")
         });
-        assert!(lost, "a lost source must be visible separately");
+        assert!(construction, "a projected curve made construction must be visible separately");
     }
 }

@@ -11,8 +11,9 @@
 //! 2. **The ids of the derived points are stable.** A constraint may be placed on a corner of a projection; if
 //!    the points were created afresh on every rebuild, that constraint would fall off silently. As long as the
 //!    structure of the source is unchanged — the same curves in the same order — the points only move.
-//! 3. **When the source disappears the projection goes red rather than vanishing.** Constraints and dimensions
-//!    reference it, and removing it silently would break the sketch.
+//! 3. **A curve whose edge is gone stays as ordinary geometry**, and a projection whose source is gone altogether
+//!    becomes ordinary geometry whole. Constraints and dimensions reference it: deleted, the sketch would lose them; kept
+//!    driven by nothing, it would be a broken mark nobody can act on.
 use super::{EntityKind, Id, ProjSource, Project, SketchEntity, SketchPoint};
 use crate::feature::PlaneFrame;
 use crate::geom::Point3;
@@ -27,15 +28,6 @@ enum Curve2 {
 }
 
 impl Curve2 {
-    /// How many points the curve will occupy in the sketch; used to check whether the structure changed.
-    fn point_count(&self) -> usize {
-        match self {
-            Curve2::Line(..) => 2,
-            Curve2::Circle(..) => 1,
-            Curve2::Poly(p) => p.len(),
-        }
-    }
-
     /// How many entities the curve yields: a polyline has one segment fewer than it has points.
     fn entity_count(&self) -> usize {
         match self {
@@ -43,15 +35,21 @@ impl Curve2 {
             Curve2::Poly(p) => p.len().saturating_sub(1),
         }
     }
+}
 
-    /// A kind tag, for comparing structure: a line, a circle, or a polyline of the same length.
-    fn shape_key(&self) -> (u8, usize) {
-        match self {
-            Curve2::Line(..) => (0, 2),
-            Curve2::Circle(..) => (1, 1),
-            Curve2::Poly(p) => (2, p.len()),
-        }
-    }
+/// WHAT THE BODY SAYS OF THE SOURCE OF A PROJECTION: its curves, that it is gone, or nothing yet - the body is not live
+/// (a document just opened builds its solids on demand). Taken for gone, a projection was let go on opening a file.
+enum Source {
+    Found(Vec<(u32, Curve2)>),
+    Gone,
+    Unknown,
+}
+
+/// WHAT A PASS OF `apply_curves` HAS PLACED: each point given its place, and the centres of circles among them.
+#[derive(Default)]
+struct Placing {
+    at: Vec<(Id, [f64; 2])>,
+    centres: Vec<Id>,
 }
 
 impl Project {
@@ -66,7 +64,7 @@ impl Project {
             return p.id;
         }
         let id = self.alloc_id();
-        self.sketches[si].projections.push(super::SketchProjection { id, body, src, points: Vec::new(), entities: Vec::new(), lost: false });
+        self.sketches[si].projections.push(super::SketchProjection { id, body, src, points: Vec::new(), entities: Vec::new(), edges: Vec::new() });
         self.resolve_sketch_projections(si, kernel);
         // the source yielded nothing, so no empty record is left behind to look like completed work
         let empty = self.sketches[si].projections.iter().any(|p| p.id == id && p.entities.is_empty());
@@ -93,30 +91,53 @@ impl Project {
         true
     }
 
+    /// A PROJECTION MADE ORDINARY GEOMETRY OF THE SKETCH: the record that ties it to the body goes, its points and curves
+    /// stay where they stand. Nothing pins them any more - the pins of a projection are laid from the record at every
+    /// solve - so they are dragged, deleted and given dimensions as any geometry, and a change of the body no longer
+    /// moves them. Answers whether there was such a projection.
+    pub fn release_sketch_projection(&mut self, si: usize, pid: Id) -> bool {
+        let Some(s) = self.sketches.get_mut(si) else { return false };
+        let before = s.projections.len();
+        s.projections.retain(|p| p.id != pid);
+        let released = s.projections.len() < before;
+        if released {
+            self.solve_sketch(si);
+        }
+        released
+    }
+
+    /// THE PROJECTIONS ANY OF `eids` IS A CURVE OF, made ordinary geometry (`release_sketch_projection`). Answers how many.
+    pub fn release_projections_of(&mut self, si: usize, eids: &[Id]) -> usize {
+        let Some(s) = self.sketches.get(si) else { return 0 };
+        let pids: Vec<Id> = s.projections.iter().filter(|p| p.entities.iter().any(|e| eids.contains(e))).map(|p| p.id).collect();
+        pids.into_iter().filter(|&pid| self.release_sketch_projection(si, pid)).count()
+    }
+
     /// Recompute every projection of a sketch from the live geometry of the bodies. Called from the rebuild in
     /// timeline order, by which point the source bodies are already built, so a projection follows its part on
-    /// its own.
+    /// its own. A projection whose source is gone altogether is made ordinary geometry (`release_sketch_projection`).
     pub fn resolve_sketch_projections(&mut self, si: usize, kernel: &dyn crate::feature::Kernel) {
         if self.sketches.get(si).is_none_or(|s| s.projections.is_empty()) {
             return;
         }
         let Some(frame) = self.sketch_frame(si) else { return };
-        let n = self.sketches[si].projections.len();
-        for k in 0..n {
-            let (body, src) = {
+        let mut gone = Vec::new();
+        for k in 0..self.sketches[si].projections.len() {
+            let (pid, body, src) = {
                 let p = &self.sketches[si].projections[k];
-                (p.body, p.src)
+                (p.id, p.body, p.src)
             };
-            let curves = self.projected_curves(body, src, &frame, kernel);
-            match curves {
-                // The source is gone. The geometry stays as it is, since constraints reference it, but is
-                // marked broken: a projection that vanished silently would break the sketch, and one that
-                // stayed silently would lie.
-                None => self.sketches[si].projections[k].lost = true,
-                Some(c) => {
-                    self.sketches[si].projections[k].lost = false;
-                    self.apply_curves(si, k, c);
-                }
+            match self.projected_curves(body, src, &frame, kernel) {
+                Source::Found(curves) => self.apply_curves(si, k, curves),
+                Source::Gone => gone.push(pid),
+                Source::Unknown => {}
+            }
+        }
+        // the source is gone: the geometry stays as ordinary geometry - the constraints on it stay met - rather than a
+        // broken mark pinned in place
+        for pid in gone {
+            if let Some(s) = self.sketches.get_mut(si) {
+                s.projections.retain(|p| p.id != pid);
             }
         }
     }
@@ -130,7 +151,6 @@ impl Project {
         let Some(s) = self.sketches.get(si) else { return 0 };
         for p in &s.projections {
             p.id.hash(&mut h);
-            p.lost.hash(&mut h);
             p.entities.hash(&mut h);
             for pid in &p.points {
                 if let Some(pt) = s.points.iter().find(|x| x.id == *pid) {
@@ -148,10 +168,12 @@ impl Project {
 
     /// The curves of the source, already converted into the 2D of the sketch. `None` means the source was not
     /// found in the body.
-    fn projected_curves(&self, body: Id, src: ProjSource, frame: &PlaneFrame, kernel: &dyn crate::feature::Kernel) -> Option<Vec<Curve2>> {
+    fn projected_curves(&self, body: Id, src: ProjSource, frame: &PlaneFrame, kernel: &dyn crate::feature::Kernel) -> Source {
         let geom = kernel.body_edge_geometry(body);
         if geom.is_empty() {
-            return None; // the body is not built or the kernel cannot do it; this is not a vanished source
+            // the body is not built here, or not yet live - a document just opened keeps its meshes and builds the solid
+            // on demand: this says nothing about the source
+            return Source::Unknown;
         }
         let want: Vec<u32> = match src {
             ProjSource::Edge(e) => vec![e],
@@ -161,16 +183,20 @@ impl Project {
             ProjSource::Face(f) => kernel.edge_face_pairs(body).into_iter().filter(|(_, a, b)| *a == f || *b == f).map(|(e, _, _)| e).collect(),
         };
         if want.is_empty() {
-            return None;
+            return Source::Gone;
         }
         let mut out = Vec::new();
         for (id, poly, circ) in geom {
             if !want.contains(&id) || poly.len() < 2 {
                 continue;
             }
-            out.push(Self::curve_to_2d(&poly, circ, frame));
+            out.push((id, Self::curve_to_2d(&poly, circ, frame)));
         }
-        (!out.is_empty()).then_some(out)
+        if out.is_empty() {
+            Source::Gone
+        } else {
+            Source::Found(out)
+        }
     }
 
     /// An edge becomes a sketch curve. A circle stays a circle and a straight edge stays a line; everything
@@ -211,127 +237,128 @@ impl Project {
         Curve2::Poly(pts)
     }
 
-    /// Place the curves into the sketch, preserving ids while the structure of the source is unchanged.
-    fn apply_curves(&mut self, si: usize, k: usize, curves: Vec<Curve2>) {
-        let same = {
+    /// PLACE THE CURVES INTO THE SKETCH, each matched to the curve its edge gave before. A curve of an edge still there keeps
+    /// its id and moves, its ends keeping theirs - the dimensions and the ties on it stay; a corner two edges shared stays
+    /// one point while they still meet there, and parts when they do not (a fillet put between them). A new edge gives new
+    /// curves. A curve whose edge is gone, or whose shape changed (a line become a polyline), is let go of the projection
+    /// and stays as ordinary geometry: deleted, the constraints on it would go with it. Reported behaviour: "if other
+    /// geometry is tied to the projection by dimensions or constraints, the projection may fall apart when the model it
+    /// came from is rebuilt" - the curves were matched by their place in the list of edges, and a change of the
+    /// structure deleted them all and made them anew.
+    fn apply_curves(&mut self, si: usize, k: usize, curves: Vec<(u32, Curve2)>) {
+        let (old_ents, old_edges) = {
             let p = &self.sketches[si].projections[k];
-            let keys: Vec<(u8, usize)> = curves.iter().map(|c| c.shape_key()).collect();
-            let slots: usize = curves.iter().map(|c| c.point_count()).sum();
-            let segs: usize = curves.iter().map(|c| c.entity_count()).sum();
-            p.entities.len() == segs && p.points.len() == slots && self.entity_keys_match(si, &p.entities, &keys)
+            // a projection made before the edges were kept: taken in the order the edges come, as it was laid
+            let edges = if p.edges.len() == p.entities.len() { p.edges.clone() } else { curves.iter().flat_map(|(e, c)| std::iter::repeat_n(*e, c.entity_count())).collect() };
+            (p.entities.clone(), edges)
         };
-        if same {
-            self.move_projected_points(si, k, &curves);
-            return;
+        let mut by_edge: std::collections::HashMap<u32, Vec<Id>> = std::collections::HashMap::new();
+        for (e, edge) in old_ents.iter().zip(&old_edges) {
+            by_edge.entry(*edge).or_default().push(*e);
         }
-        // The structure of the source changed — an edge appeared, a corner was cut — so the old driven
-        // geometry is removed and built again. The constraints that referenced it go with the points, as they
-        // should: keeping them on geometry that no longer exists in the part would mean lying to the solver.
-        let (old_pts, old_ents) = {
-            let p = &self.sketches[si].projections[k];
-            (p.points.clone(), p.entities.clone())
-        };
-        self.delete_entities(si, &old_ents);
-        let mut uniq = old_pts.clone();
-        uniq.sort_unstable();
-        uniq.dedup(); // a shared corner occupies two slots and need not be removed twice
-        self.delete_points(si, &uniq);
-        // The list of points follows the slots of the curves and contains repeats. A corner shared by two
-        // edges appears in both slots under the same id, so the recomputation for an unchanged structure runs
-        // positionally, without guessing which point belongs to which, and the ids survive the rebuild along
-        // with the constraints placed on them.
-        let (mut pts, mut ents): (Vec<Id>, Vec<Id>) = (Vec::new(), Vec::new());
-        // A shared corner is one point. The edges of a face meet at vertices, and if every segment created its
-        // own endpoints the outline would come out open: it could not be extruded, and tracing along the
-        // projection would not close. The deduplication stays within this projection only — attaching to a
-        // point placed by hand would make the projection move it on every rebuild of the body.
-        let mut mine: Vec<(Id, [f64; 2])> = Vec::new();
-        for c in &curves {
+        let mut placing = Placing::default();
+        let (mut ents, mut edges, mut pts): (Vec<Id>, Vec<u32>, Vec<Id>) = (Vec::new(), Vec::new(), Vec::new());
+        for (edge, c) in &curves {
+            let olds = by_edge.remove(edge).unwrap_or_default();
+            let kinds: Vec<EntityKind> = olds.iter().filter_map(|id| self.sketches[si].entities.iter().find(|e| e.id == *id).map(|e| e.kind)).collect();
             match c {
                 Curve2::Line(a, b) => {
-                    let (pa, pb) = (self.proj_point_at(si, *a, &mut mine), self.proj_point_at(si, *b, &mut mine));
-                    pts.push(pa);
-                    pts.push(pb);
-                    ents.push(self.push_proj_entity(si, EntityKind::Line { a: pa, b: pb }));
+                    let old = match kinds.as_slice() {
+                        [EntityKind::Line { a, b }] => Some((olds[0], *a, *b)),
+                        _ => None,
+                    };
+                    let pa = self.proj_point(si, &mut placing, old.map(|o| o.1), *a);
+                    let pb = self.proj_point(si, &mut placing, old.map(|o| o.2), *b);
+                    let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::Line { a: pa, b: pb });
+                    ents.push(e);
+                    edges.push(*edge);
+                    pts.extend([pa, pb]);
                 }
                 Curve2::Circle(c0, r) => {
-                    // the centre of a circle is shared with nobody: it carries the radius variable of the
-                    // solver, and a shared centre would collapse the radii of two curves
-                    let pc = self.push_proj_point(si, *c0);
+                    let old = match kinds.as_slice() {
+                        [EntityKind::Circle { center, .. }] => Some((olds[0], *center)),
+                        _ => None,
+                    };
+                    // the centre of a circle is shared with nobody: it carries the radius variable of the solver
+                    let pc = self.proj_centre(si, &mut placing, old.map(|o| o.1), *c0);
+                    let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::Circle { center: pc, r: *r });
+                    ents.push(e);
+                    edges.push(*edge);
                     pts.push(pc);
-                    ents.push(self.push_proj_entity(si, EntityKind::Circle { center: pc, r: *r }));
                 }
                 Curve2::Poly(p) => {
-                    let ids: Vec<Id> = p.iter().map(|q| self.proj_point_at(si, *q, &mut mine)).collect();
-                    for w in ids.windows(2) {
-                        if w[0] != w[1] {
-                            ents.push(self.push_proj_entity(si, EntityKind::Line { a: w[0], b: w[1] }));
-                        }
+                    // the chain of points the old segments ran through, when they were as many lines as the new
+                    let chain: Option<Vec<Id>> = (kinds.len() + 1 == p.len() && kinds.iter().all(|k| matches!(k, EntityKind::Line { .. }))).then(|| {
+                        kinds
+                            .iter()
+                            .enumerate()
+                            .flat_map(|(n, k)| {
+                                if let EntityKind::Line { a, b } = k {
+                                    if n == 0 {
+                                        vec![*a, *b]
+                                    } else {
+                                        vec![*b]
+                                    }
+                                } else {
+                                    Vec::new()
+                                }
+                            })
+                            .collect()
+                    });
+                    let ids: Vec<Id> = p.iter().enumerate().map(|(n, q)| self.proj_point(si, &mut placing, chain.as_ref().map(|c| c[n]), *q)).collect();
+                    for (n, w) in ids.windows(2).filter(|w| w[0] != w[1]).enumerate() {
+                        let old = chain.as_ref().and(olds.get(n).copied());
+                        let e = self.proj_entity(si, old, EntityKind::Line { a: w[0], b: w[1] });
+                        ents.push(e);
+                        edges.push(*edge);
                     }
                     pts.extend(ids);
                 }
             }
         }
-        // a polyline yields one segment fewer than it has points; the structure check looks at the keys rather
-        // than at the length of `entities`, so the actual lists are stored as they are
+        for (pid, at) in &placing.at {
+            self.set_point_xy(si, Some(*pid), *at);
+        }
+        // what the projection no longer holds - the curves of gone edges, a curve reshaped - stays as ordinary geometry
         let p = &mut self.sketches[si].projections[k];
         p.points = pts;
         p.entities = ents;
+        p.edges = edges;
     }
 
-    /// Whether the kinds of the existing driven entities match the new curves.
-    fn entity_keys_match(&self, si: usize, ents: &[Id], keys: &[(u8, usize)]) -> bool {
-        let s = &self.sketches[si];
-        // expand the curve keys into a sequence of entity kinds, a polyline giving n − 1 segments
-        let mut want: Vec<u8> = Vec::new();
-        for k in keys {
-            match k.0 {
-                1 => want.push(1),
-                2 => want.extend(std::iter::repeat_n(0u8, k.1.saturating_sub(1))),
-                _ => want.push(0),
-            }
+    /// A POINT OF THE PROJECTION AT `at`: the corner already placed there in this pass, or the point `old` stood for when
+    /// no other place has taken it, or a new one.
+    fn proj_point(&mut self, si: usize, placing: &mut Placing, old: Option<Id>, at: [f64; 2]) -> Id {
+        // a corner is shared by the curves that meet there; the centre of a circle on that spot is not one of them
+        if let Some((id, _)) = placing.at.iter().find(|(id, q)| !placing.centres.contains(id) && (q[0] - at[0]).hypot(q[1] - at[1]) < 1e-6) {
+            return *id;
         }
-        if want.len() != ents.len() {
-            return false;
-        }
-        ents.iter().zip(want).all(|(e, w)| s.entities.iter().find(|x| x.id == *e).is_some_and(|ent| matches!((ent.kind, w), (EntityKind::Line { .. }, 0) | (EntityKind::Circle { .. }, 1))))
+        let id = match old.filter(|o| !placing.at.iter().any(|(id, _)| id == o) && self.sketches[si].points.iter().any(|q| q.id == *o)) {
+            Some(o) => o,
+            None => self.push_proj_point(si, at),
+        };
+        placing.at.push((id, at));
+        id
     }
 
-    /// The structure is unchanged, so this is only a move: new coordinates, the same ids, and the constraints
-    /// placed on them stay alive.
-    fn move_projected_points(&mut self, si: usize, k: usize, curves: &[Curve2]) {
-        let ids = self.sketches[si].projections[k].points.clone();
-        let ents = self.sketches[si].projections[k].entities.clone();
-        let mut i = 0;
-        let mut ei = 0;
-        for c in curves {
-            match c {
-                Curve2::Line(a, b) => {
-                    self.set_point_xy(si, ids.get(i).copied(), *a);
-                    self.set_point_xy(si, ids.get(i + 1).copied(), *b);
-                    i += 2;
-                    ei += 1;
-                }
-                Curve2::Circle(c0, r) => {
-                    self.set_point_xy(si, ids.get(i).copied(), *c0);
-                    // the radius lives in the entity itself rather than in the points, so it moves too
-                    if let Some(e) = ents.get(ei).and_then(|id| self.sketches[si].entities.iter_mut().find(|x| x.id == *id)) {
-                        if let EntityKind::Circle { r: er, .. } = &mut e.kind {
-                            *er = *r;
-                        }
-                    }
-                    i += 1;
-                    ei += 1;
-                }
-                Curve2::Poly(p) => {
-                    for q in p {
-                        self.set_point_xy(si, ids.get(i).copied(), *q);
-                        i += 1;
-                    }
-                    ei += p.len().saturating_sub(1);
-                }
-            }
+    /// The centre of a projected circle: its own point, never shared with a corner.
+    fn proj_centre(&mut self, si: usize, placing: &mut Placing, old: Option<Id>, at: [f64; 2]) -> Id {
+        let id = match old.filter(|o| !placing.at.iter().any(|(id, _)| id == o) && self.sketches[si].points.iter().any(|q| q.id == *o)) {
+            Some(o) => o,
+            None => self.push_proj_point(si, at),
+        };
+        placing.centres.push(id);
+        placing.at.push((id, at));
+        id
+    }
+
+    /// The curve `old` given its new shape, or a new curve when there is none to keep.
+    fn proj_entity(&mut self, si: usize, old: Option<Id>, kind: EntityKind) -> Id {
+        if let Some(e) = old.and_then(|o| self.sketches[si].entities.iter_mut().find(|e| e.id == o)) {
+            e.kind = kind;
+            return e.id;
         }
+        self.push_proj_entity(si, kind)
     }
 
     fn set_point_xy(&mut self, si: usize, pid: Option<Id>, at: [f64; 2]) {
@@ -347,17 +374,6 @@ impl Project {
     fn push_proj_point(&mut self, si: usize, at: [f64; 2]) -> Id {
         let id = self.alloc_id();
         self.sketches[si].points.push(SketchPoint { id, x: at[0], y: at[1] });
-        id
-    }
-
-    /// A driven point of a projection, deduplicated within that same projection, so corners shared by edges
-    /// become one point.
-    fn proj_point_at(&mut self, si: usize, at: [f64; 2], mine: &mut Vec<(Id, [f64; 2])>) -> Id {
-        if let Some((id, _)) = mine.iter().find(|(_, q)| (q[0] - at[0]).hypot(q[1] - at[1]) < 1e-6) {
-            return *id;
-        }
-        let id = self.push_proj_point(si, at);
-        mine.push((id, at));
         id
     }
 

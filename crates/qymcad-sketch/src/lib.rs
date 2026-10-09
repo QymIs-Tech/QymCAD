@@ -1223,6 +1223,27 @@ pub fn poly_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context,
     }
 }
 
+/// A POINT OF A NEW LINE where it was put: the place, the point, and the ends of the new line itself.
+#[derive(Clone, Copy)]
+struct LandedOn {
+    at: Point2,
+    point: Id,
+    own: (Id, Id),
+}
+
+/// THE POINT TIED TO THE LINE IT LANDED ON (not its own): at its middle - within the 2 px a point lands on a line by - a
+/// midpoint, anywhere else along it a point on the line. Reported behaviour: "nothing snaps to projected geometry" - the
+/// pointer stuck to the middle of a line and along it, and the point put there was held by nothing, on a projected
+/// line as on a line drawn by hand.
+fn tie_to_the_line_under(project: &mut Project, view: qymcad_ui_state::View2d, si: usize, landed: LandedOn) {
+    use qymcad_core::model::Constraint;
+    let Some((la, lb)) = qymcad_ui_state::line_under_point(project, &view, si, landed.at, landed.own.0, landed.own.1) else { return };
+    let at = |id: Id| project.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+    let middle = at(la).zip(at(lb)).is_some_and(|(u, v)| ((u.0 + v.0) / 2.0 - landed.at.x).hypot((u.1 + v.1) / 2.0 - landed.at.y) * f64::from(view.scale) <= 2.0);
+    let tie = if middle { Constraint::Midpoint { p: landed.point, a: la, b: lb } } else { Constraint::PointOnLine { p: landed.point, a: la, b: lb } };
+    project.add_constraint_if_independent(si, tie);
+}
+
 /// Automatic constraints while drawing the segment prev-p1-p2: horizontal or vertical, perpendicular to
 /// the previous segment, and a point-on-edge for the new end. Every constraint is added ONLY if it is
 /// independent (does not over-define the sketch), so no redundant ones appear.
@@ -1269,9 +1290,11 @@ pub fn infer_on_segment(project: &mut Project, view: qymcad_ui_state::View2d, si
     if let Some((la, lb)) = qymcad_pick::nearest_equal_line(project, si, p1, p2, a, b) {
         project.add_constraint_if_independent(si, Constraint::Equal { a: la, b: lb, c: a, d: b });
     }
-    // 3) point on an edge: the new end landed on an existing line (not its own), so it is tied to it
-    if let Some((la, lb)) = qymcad_ui_state::line_under_point(project, &view, si, p2, a, b) {
-        project.add_constraint_if_independent(si, Constraint::PointOnLine { p: b, a: la, b: lb });
+    // 3) a point on an edge: the new end landed on an existing line (not its own), so it is tied to it - and so is the start
+    // of the first segment of a chain; the start of a next segment is the end of the one before, tied already
+    tie_to_the_line_under(project, view, si, LandedOn { at: p2, point: b, own: (a, b) });
+    if prev.is_none() {
+        tie_to_the_line_under(project, view, si, LandedOn { at: p1, point: a, own: (a, b) });
     }
     // (a coincidence with a vertex happens by itself: `sketch_point_at(1e-6)` already shares the point)
     project.solve_sketch(si);
@@ -2360,6 +2383,107 @@ pub fn sketch_tool_keys(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context
     qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-extend"));
     extend_apply(sk, ExtendAt { rect, pos, si, line: None }, held);
     qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
+}
+
+/// THE MENU OF THE RIGHT BUTTON ON A SKETCH OPEN FOR EDITING, over what is selected: delete, construction, a projection
+/// made ordinary geometry, the dimensions an arc and two round edges take, the constraints, select all.
+pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::Ui, si: usize) {
+    let has_sel = !sk.sel_sk.items.is_empty();
+    let has_ent = sk.sel_sk.items.iter().any(|(k, _)| *k == 1);
+    if ui.add_enabled(has_sel, egui::Button::new(format!("{} {}", ph::TRASH, qymcad_i18n::tr("props-delete")))).clicked() {
+        qymcad_ui_state::delete_sketch_sel(&mut *sk.project, &mut *sk.regen, &mut *sk.sel_sk, &mut *sk.status, si);
+        ui.close();
+    }
+    if ui.add_enabled(has_ent, egui::Button::new(qymcad_i18n::tr("sk-construction-toggle"))).clicked() {
+        let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+        sk.project.toggle_construction(si, &eids);
+        sk.project.solve_sketch(si);
+        qymcad_ui_state::invalidate(&mut *sk.regen);
+        ui.close();
+    }
+    // A PROJECTION MADE ORDINARY: the curves selected that a body drives are let go of it, and stay where they are
+    let projected: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, id)| *k == 1 && sk.project.sketches[si].projected_entities().contains(id)).map(|(_, id)| *id).collect();
+    if !projected.is_empty() && ui.button(qymcad_i18n::tr("sk-make-ordinary")).on_hover_text(qymcad_i18n::tr("sk-make-ordinary-hint")).clicked() {
+        qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("sk-make-ordinary"));
+        sk.project.release_projections_of(si, &projected);
+        qymcad_ui_state::invalidate(&mut *sk.regen);
+        qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
+        *sk.status = qymcad_i18n::tr("sk-made-ordinary");
+        ui.close();
+    }
+    // an arc length dimension, for the picked arc
+    let arc_eid = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).find_map(|(_, id)| {
+        sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == *id)).and_then(|e| matches!(e.kind, qymcad_core::model::EntityKind::Arc { .. }).then_some(*id))
+    });
+    if let Some(aid) = arc_eid {
+        if ui.button(qymcad_i18n::tr("sk-arc-length-dim")).clicked() {
+            if let Some(ci) = sk.project.ensure_arc_length(si, aid) {
+                qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);
+                sk.place.dim = Some(ci);
+            }
+            ui.close();
+        }
+    }
+    // a tangent (edge-to-edge) dimension: two references are picked, at least one of
+    // them a circle or an arc
+    let edge_refs: Vec<(Id, i8)> = sk
+        .project
+        .sketches
+        .get(si)
+        .map(|s| {
+            sk.sel_sk
+                .items
+                .iter()
+                .filter_map(|&(k, id)| {
+                    if k == 1 {
+                        s.entities.iter().find(|e| e.id == id).and_then(|e| match e.kind {
+                            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some((center, -1i8)),
+                            _ => None,
+                        })
+                    } else if k == 0 {
+                        Some((id, 0i8))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let can_edge = edge_refs.len() == 2 && edge_refs.iter().any(|(_, m)| *m != 0);
+    if ui.add_enabled(can_edge, egui::Button::new(qymcad_i18n::tr("sk-tangent-dim"))).on_hover_text(qymcad_i18n::tr("sk-gap-hint")).clicked() {
+        let ((c1, m1), (c2, m2)) = (edge_refs[0], edge_refs[1]);
+        let d = sk.project.measure_edge_distance(si, c1, m1, c2, m2);
+        let ci = sk.project.sketches[si].constraints.len();
+        sk.project.sketches[si].constraints.push(qymcad_core::model::Constraint::EdgeDistance { c1, c2, d, m1, m2, off: 0.0, expr: String::new(), driven: false, at: None });
+        qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);
+        sk.gsel.constraint = Some(ci);
+        qymcad_ui_state::invalidate(&mut *sk.regen);
+        ui.close();
+    }
+    ui.separator();
+    ui.menu_button(qymcad_i18n::tr("sk-constraint"), |ui| {
+        for (label, code) in [
+            (&qymcad_i18n::tr("sk-coincident"), 0u8),
+            (&qymcad_i18n::tr("sk-horizontal"), 1),
+            (&qymcad_i18n::tr("sk-vertical"), 2),
+            (&qymcad_i18n::tr("sk-parallel"), 3),
+            (&qymcad_i18n::tr("sk-perpendicular"), 4),
+            (&qymcad_i18n::tr("sk-equal"), 5),
+            (&qymcad_i18n::tr("sk-tangency"), 9),
+            (&qymcad_i18n::tr("sk-midpoint"), 11),
+            (&qymcad_i18n::tr("sk-fix"), 6),
+        ] {
+            if ui.button(label).clicked() {
+                constraint_button(sk, code);
+                ui.close();
+            }
+        }
+    });
+    ui.separator();
+    if ui.button(qymcad_i18n::tr("sk-select-all")).clicked() {
+        qymcad_ui_state::select_all_sketch(&mut *sk.annot, &mut *sk.gsel, &*sk.project, &mut *sk.sel_sk, &mut *sk.status, si);
+        ui.close();
+    }
 }
 
 /// A click with the dimension tool. Returns true when the click was handled.
@@ -5033,7 +5157,7 @@ fn delete_selected_in(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
         return;
     }
     if !eids.is_empty() {
-        sk.project.delete_entities(si, &eids);
+        sk.project.delete_sketch_curves(si, &eids); // a piece of a projection cuts it
     }
     if !pids.is_empty() {
         sk.project.delete_points(si, &pids); // the points go together with the lines and arcs incident to them

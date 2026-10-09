@@ -772,6 +772,39 @@ mod tests {
             problems.push(format!("[a cut from the sketch on the face] the volume did not decrease: it was {v_before_cut:.1}, it is {after_cut:.1} - the cut did not cut through"));
         }
 
+        // --- A PROJECTION OF THE HOUSING'S SIDE: the outline of the side face projected into a sketch on it, by its button
+        // and "Face outline", a line drawn from its top corner. The height of the housing is changed below, and the
+        // projection and the line tied to it follow ---
+        let projected = {
+            let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
+            let side = app.project.regen_faces[&body].iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned().expect("the side face");
+            let key = qymcad_core::feature::FaceKey { index: 0, centroid: [side.centroid.x, side.centroid.y, side.centroid.z], normal: side.normal, id: side.id };
+            let si5 = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
+            let mut hand = Hand::new(&mut app);
+            let taken = hand.press_hint(&crate::i18n::tr("tb-project-body-hint")) && hand.press_word(&crate::i18n::tr("opt-face-outline"), egui::pos2(0.0, 0.0));
+            hand.click2d(0.0, 0.0);
+            let corner = hand.app.project.sketches[si5]
+                .projected_points()
+                .into_iter()
+                .filter_map(|id| hand.app.project.sketches[si5].points.iter().find(|q| q.id == id).map(|q| (id, (q.x, q.y))))
+                .max_by(|a, b| (a.1 .1 + a.1 .0 * 1e-3).total_cmp(&(b.1 .1 + b.1 .0 * 1e-3)));
+            match (taken, corner) {
+                (true, Some((cid, at))) => {
+                    hand.key(egui::Key::Escape);
+                    hand.sk_tool(1).click2d(at.0, at.1).click2d(at.0 + 10.0, at.1 + 10.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                    let sid = hand.app.project.sketches[si5].id;
+                    app.finish_sketch_edit();
+                    check_all(&mut app, "the side of the housing projected, a line drawn from its corner", &mut problems);
+                    Some((sid, cid, at))
+                }
+                _ => {
+                    problems.push(format!("the outline of the side of the housing was not projected: the tool taken {taken}, the status {:?}", hand.app.status));
+                    app.finish_sketch_edit();
+                    None
+                }
+            }
+        };
+
         // --- SAVE AND REOPEN ---
         let mut app = save_and_reopen(&mut app, "the housing is finished", &mut problems);
 
@@ -785,6 +818,28 @@ mod tests {
             }
             app.apply_feat_cmd();
             check_all(&mut app, "the height of the housing was changed to 35", &mut problems);
+        }
+        // the projection of the side followed the height, and the line drawn from its corner with it
+        if let Some((sid, corner, at)) = projected {
+            match app.project.sketch_index(sid) {
+                Some(si) => {
+                    let s = &app.project.sketches[si];
+                    let now = s.points.iter().find(|q| q.id == corner).map(|q| (q.x, q.y));
+                    let start = s.entities.iter().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Line { a, .. } if !s.projected_entities().contains(&e.id) => s.points.iter().find(|q| q.id == a).map(|q| (q.x, q.y)),
+                        _ => None,
+                    });
+                    let moved = now.is_some_and(|n| (n.0 - at.0).hypot(n.1 - at.1) > 5.0);
+                    let tied = now.zip(start).is_some_and(|(n, b)| (n.0 - b.0).hypot(n.1 - b.1) < 1e-6);
+                    if s.projections.is_empty() || !moved || !tied {
+                        problems.push(format!(
+                            "[the height changed under a projection] still projected {}, its corner went from {at:?} to {now:?}, the line drawn from it starts at {start:?}",
+                            !s.projections.is_empty()
+                        ));
+                    }
+                }
+                None => problems.push("[the height changed under a projection] the sketch of the projection is gone".into()),
+            }
         }
 
         // --- A SECOND PART IN THE SAME DOCUMENT: THE LID ---
