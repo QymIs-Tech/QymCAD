@@ -173,9 +173,23 @@ fn a_point_at(sk: &qymcad::SketchInfo, x: f64, y: f64) -> bool {
     sk.places.iter().any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - y).abs() < 1e-3)
 }
 
+/// HOW THE OUTLINE OF THE TOP COMES INTO THE SKETCH.
+#[derive(Clone, Copy, Debug)]
+enum Taken {
+    /// the projection tool with "Face outline"
+    FaceOutline,
+    /// the projection tool, a click on each of the four edges
+    EdgeByEdge,
+}
+
 /// THE CHAIN OF THE REPORT, by hand: a block 40 x 30 whose sides are the parameters w and h; on its top face the outline
 /// projected, made construction, a rectangle inside it held 5 off each side by the dimension tool, extruded 10 on.
 fn the_chain_of_the_report() -> Session {
+    the_chain_taken(Taken::FaceOutline)
+}
+
+/// A block 40 x 30 x 10 whose sides are the parameters w and h, a sketch open on its top.
+fn a_block_of_parameters_and_a_sketch_on_its_top() -> Session {
     let mut s = Session::start();
     build::into_the_first_part(&mut s);
     build::parameter(&mut s, "w", "40");
@@ -196,11 +210,26 @@ fn the_chain_of_the_report() -> Session {
     take(&mut s, "tb-extrude-hint");
     s.key(Key::Enter);
     s.key(Key::Escape);
-    // on the top: the outline of the face projected and made construction
     build::sketch_on_face(&mut s, [20.0, 15.0, 10.0]);
+    s
+}
+
+/// The chain of the report with the outline of the top taken `taken`.
+fn the_chain_taken(taken: Taken) -> Session {
+    let mut s = a_block_of_parameters_and_a_sketch_on_its_top();
+    // on the top: the outline of the face projected and made construction
     take(&mut s, "tb-project-body-hint");
-    bar_word(&mut s, "opt-face-outline");
-    s.click_on_sketch(20.0, 15.0);
+    match taken {
+        Taken::FaceOutline => {
+            bar_word(&mut s, "opt-face-outline");
+            s.click_on_sketch(20.0, 15.0);
+        }
+        Taken::EdgeByEdge => {
+            for (x, y) in [(20.0, 0.0), (40.0, 15.0), (20.0, 30.0), (0.0, 15.0)] {
+                s.click_on_sketch(x, y);
+            }
+        }
+    }
     s.key(Key::Escape);
     let arrow = s.word("tb-select-hint");
     s.press_hint(&arrow);
@@ -295,5 +324,40 @@ probe! {
         let _ = std::fs::remove_file(&path);
 
         assert!(failures.is_empty(), "what is tied to a projection, the body changed:\n{}", failures.join("\n"));
+    }
+}
+
+probe! {
+    /// WHAT IS TIED TO AN OUTLINE TAKEN EDGE BY EDGE FOLLOWS THE BODY as when it is taken whole: the parameters changed,
+    /// undone and done again.
+    fn what_is_tied_to_an_outline_taken_edge_by_edge_follows_the_parameters() {
+        let mut failures = Vec::new();
+        let mut s = the_chain_taken(Taken::EdgeByEdge);
+        failures.extend(tied_to(&mut s, 40.0, 30.0).map(|e| format!("GUARD, as built: {e}")));
+        build::set_parameter(&mut s, "w", "30");
+        build::set_parameter(&mut s, "h", "20");
+        failures.extend(tied_to(&mut s, 30.0, 20.0).map(|e| format!("the parameters changed: {e}")));
+        s.chord(qymcad::Modifiers::COMMAND, Key::Z);
+        s.chord(qymcad::Modifiers::COMMAND, Key::Z);
+        failures.extend(tied_to(&mut s, 40.0, 30.0).map(|e| format!("the change undone: {e}")));
+        assert!(failures.is_empty(), "an outline taken edge by edge:\n{}", failures.join("\n"));
+    }
+}
+
+probe! {
+    /// A LINE DRAWN FROM A GREY CORNER OF THE FACE, with nothing projected, follows the body: the edge it starts on is
+    /// taken into the sketch, and the parameters changed carry the line's start with the corner.
+    ///
+    /// Reported behaviour: "even if you do not project, but tie to the edges of the face (the thin grey ones), at a
+    /// rebuild everything falls apart".
+    fn a_line_from_a_grey_corner_follows_the_parameters() {
+        let mut s = a_block_of_parameters_and_a_sketch_on_its_top();
+        build::draw(&mut s, "tb-line-hint", &[(40.0, 30.0), (20.0, 20.0)]);
+        let finish = s.word("wb-finish");
+        s.press_word(&finish);
+        build::set_parameter(&mut s, "w", "30");
+        build::set_parameter(&mut s, "h", "20");
+        let sk = s.document().sketches.last().cloned().expect("the sketch on the top");
+        assert!(a_point_at(&sk, 30.0, 20.0), "w 30, h 20: the line drawn from the corner (40, 30) does not start at the corner (30, 20); the sketch shows {:?}", sk.places);
     }
 }
