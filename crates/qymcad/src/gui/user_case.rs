@@ -864,6 +864,66 @@ mod tests {
         }
         check_all(&mut app, "the lid was filleted", &mut problems);
 
+        // --- A SKETCH OF THE LID ON THE SIDE OF THE HOUSING: the outline of that face of the neighbour projected into it,
+        // a line drawn from its top corner; the housing made taller - the projection in the lid's sketch and the line tied
+        // to it follow ---
+        let housing = projected.and_then(|(sid, _, _)| app.project.sketch_index(sid)).and_then(|si| app.project.sketches[si].projections.first().map(|p| p.body)).map(|b| app.project.live_body(b));
+        // THE STEP MUST HAPPEN: without the housing found it would be skipped and the green would mean nothing
+        if housing.is_none() {
+            problems.push("[the lid's sketch on the housing] the body of the housing was not found from the projection of its side".into());
+        }
+        let in_the_lid = housing.and_then(|body| {
+            let side = app.project.regen_faces.get(&body)?.iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned()?;
+            let key = qymcad_core::feature::FaceKey { index: 0, centroid: [side.centroid.x, side.centroid.y, side.centroid.z], normal: side.normal, id: side.id };
+            let si6 = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
+            let mut hand = Hand::new(&mut app);
+            let taken = hand.press_hint(&crate::i18n::tr("tb-project-body-hint")) && hand.press_word(&crate::i18n::tr("opt-face-outline"), egui::pos2(0.0, 0.0));
+            hand.click2d(0.0, 0.0);
+            let s = &hand.app.project.sketches[si6];
+            let corner = s
+                .projected_points()
+                .into_iter()
+                .filter_map(|id| s.points.iter().find(|q| q.id == id).map(|q| (id, (q.x, q.y))))
+                .max_by(|a, b| (a.1 .1 + a.1 .0 * 1e-3).total_cmp(&(b.1 .1 + b.1 .0 * 1e-3)));
+            hand.key(egui::Key::Escape);
+            let Some((cid, at)) = corner.filter(|_| taken) else {
+                problems.push(format!("[the lid's sketch on the housing] the outline of the side of the housing was not projected: the tool taken {taken}, the status {:?}", hand.app.status));
+                app.finish_sketch_edit();
+                return None;
+            };
+            hand.sk_tool(1).click2d(at.0, at.1).click2d(at.0 + 10.0, at.1 + 10.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            let sid = hand.app.project.sketches[si6].id;
+            app.finish_sketch_edit();
+            check_all(&mut app, "a sketch of the lid on the side of the housing, its outline projected", &mut problems);
+            Some((sid, cid, at))
+        });
+        if let Some((sid, corner, at)) = in_the_lid {
+            app.exit_context();
+            if let Some(ti) = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })) {
+                let nid = app.project.timeline[ti].id;
+                app.tree_action(1, ti, nid, None, None);
+                if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
+                    p.val = 45.0;
+                    p.txt = "45".into();
+                }
+                app.apply_feat_cmd();
+                check_all(&mut app, "the housing made 45 tall under the lid's sketch", &mut problems);
+            }
+            let s = app.project.sketch_index(sid).map(|si| &app.project.sketches[si]);
+            let now = s.and_then(|s| s.points.iter().find(|q| q.id == corner).map(|q| (q.x, q.y)));
+            let start = s.and_then(|s| {
+                s.entities.iter().find_map(|e| match e.kind {
+                    qymcad_core::model::EntityKind::Line { a, .. } if !s.projected_entities().contains(&e.id) => s.points.iter().find(|q| q.id == a).map(|q| (q.x, q.y)),
+                    _ => None,
+                })
+            });
+            let moved = now.is_some_and(|n| (n.0 - at.0).hypot(n.1 - at.1) > 5.0);
+            let tied = now.zip(start).is_some_and(|(n, b)| (n.0 - b.0).hypot(n.1 - b.1) < 1e-6);
+            if !moved || !tied {
+                problems.push(format!("[the housing changed under the lid's sketch] the corner of the projection went from {at:?} to {now:?}, the line drawn from it starts at {start:?}"));
+            }
+        }
+
         // --- THE ASSEMBLY: THE LID IS FASTENED TO THE HOUSING ---
         app.exit_context();
         let comps: Vec<u64> = app.project.components.iter().filter(|c| c.id != app.project.root).map(|c| c.id).collect();

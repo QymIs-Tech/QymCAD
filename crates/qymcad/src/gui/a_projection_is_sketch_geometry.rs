@@ -180,6 +180,13 @@ mod tests {
             let si = a_projected_outline(&mut app);
             let (side, mid) = a_projected_side(&app, si);
             let outline: Vec<u64> = app.project.sketches[si].projected_entities().into_iter().collect();
+            // the side runs level when its ends stand at one height
+            let level = {
+                let s = &app.project.sketches[si];
+                let Some(EntityKind::Line { a, b }) = s.entities.iter().find(|e| e.id == side).map(|e| e.kind) else { panic!("the side") };
+                let y = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| q.y).unwrap_or_default();
+                (y(a) - y(b)).abs() < 1e-6
+            };
             let mut hand = Hand::new(&mut app);
             match cut {
                 Cut::Delete => {
@@ -205,14 +212,47 @@ mod tests {
                 }
             }
             let s = &hand.app.project.sketches[si];
-            if !s.projections.is_empty() {
-                failures.push(format!("{cut:?}: what is left is still a projection"));
+            let driven = s.projected_entities();
+            // the other three sides stay projected, each on its own edge; what is left of the side cut is ordinary
+            let others = outline.iter().filter(|e| **e != side && driven.contains(e)).count();
+            if others != 3 || driven.contains(&side) {
+                failures.push(format!("{cut:?}: {others} of the 3 other sides still projected, the side cut projected: {}", driven.contains(&side)));
                 continue;
             }
-            let left: Vec<u64> = outline.iter().copied().filter(|e| s.entities.iter().any(|x| x.id == *e)).collect();
-            let held = s.constraints.iter().filter(|c| matches!(c, Constraint::Horizontal { .. } | Constraint::Vertical { .. })).count();
-            if left.is_empty() || held < left.len() {
-                failures.push(format!("{cut:?}: {} sides of the outline left, {held} of them held level or upright", left.len()));
+            if matches!(cut, Cut::Delete) {
+                if s.entities.iter().any(|e| e.id == side) {
+                    failures.push("Delete: the side deleted is still in the sketch".into());
+                }
+                continue;
+            }
+            // the pieces of the side cut: ordinary lines standing along it
+            let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).unwrap_or_default();
+            let along = |q: (f64, f64)| if level { (q.1 - mid.1).abs() < 1e-6 } else { (q.0 - mid.0).abs() < 1e-6 };
+            let pieces: Vec<(u64, u64)> = s
+                .entities
+                .iter()
+                .filter(|e| !driven.contains(&e.id))
+                .filter_map(|e| match e.kind {
+                    EntityKind::Line { a, b } if along(at(a)) && along(at(b)) => Some((a, b)),
+                    _ => None,
+                })
+                .collect();
+            if pieces.is_empty() {
+                failures.push(format!("{cut:?}: nothing of the side cut is left"));
+                continue;
+            }
+            // each end of a piece not pinned by the projection dragged across the side, as a person would: the piece stays
+            // along it, held level or upright by what it plainly is
+            let pinned = s.projected_points();
+            let ends: Vec<(u64, (f64, f64))> = pieces.iter().flat_map(|(a, b)| [*a, *b]).filter(|q| !pinned.contains(q)).map(|q| (q, at(q))).collect();
+            for (q, from) in ends {
+                let to = if level { (from.0, from.1 + 4.0) } else { (from.0 + 4.0, from.1) };
+                hand.key(egui::Key::Escape).drag2d(from, to);
+                let s = &hand.app.project.sketches[si];
+                let now = s.points.iter().find(|p| p.id == q).map(|p| (p.x, p.y)).unwrap_or_default();
+                if !along(now) {
+                    failures.push(format!("{cut:?}: the end of a piece at {from:?} dragged across the side went to {now:?}, off it"));
+                }
             }
         }
         assert!(failures.is_empty(), "a projection cut:\n{}", failures.join("\n"));

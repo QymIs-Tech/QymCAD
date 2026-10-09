@@ -1244,6 +1244,28 @@ fn tie_to_the_line_under(project: &mut Project, view: qymcad_ui_state::View2d, s
     project.add_constraint_if_independent(si, tie);
 }
 
+/// THE POINTS OF A SHAPE JUST PUT WHERE IT WAS CLICKED, TIED TO WHAT THEY LANDED ON, as the ends of a line are: of the
+/// points `own` the shape stands on, the one at each of `clicks` - put on a point of the sketch (a corner of a
+/// projection, a grey corner of the face `auto_project_under` took in) is made coincident with it, put on a line is held
+/// on it (`tie_to_the_line_under`). Reported behaviour: "even without projecting, tie to the edges of the face (the thin
+/// grey ones) - at a rebuild everything falls apart" - a rectangle drawn from a grey corner and a circle around one
+/// stood where they were drawn when the body changed.
+fn tie_the_clicked_points(project: &mut Project, view: qymcad_ui_state::View2d, si: usize, clicks: &[Point2], own: &[Id]) {
+    use qymcad_core::model::Constraint;
+    for at in clicks {
+        let Some(s) = project.sketches.get(si) else { return };
+        let near = |q: &qymcad_core::model::SketchPoint| (q.x - at.x).hypot(q.y - at.y) < 1e-6;
+        let Some(point) = s.points.iter().find(|q| own.contains(&q.id) && near(q)).map(|q| q.id) else { continue };
+        let used: std::collections::HashSet<Id> = s.entities.iter().flat_map(qymcad_core::model::entity_points).collect();
+        match s.points.iter().find(|q| !own.contains(&q.id) && used.contains(&q.id) && near(q)).map(|q| q.id) {
+            Some(other) => {
+                project.add_constraint_if_independent(si, Constraint::Coincident { a: other, b: point });
+            }
+            None => tie_to_the_line_under(project, view, si, LandedOn { at: *at, point, own: (point, point) }),
+        }
+    }
+}
+
 /// Automatic constraints while drawing the segment prev-p1-p2: horizontal or vertical, perpendicular to
 /// the previous segment, and a point-on-edge for the new end. Every constraint is added ONLY if it is
 /// independent (does not over-define the sketch), so no redundant ones appear.
@@ -2548,6 +2570,13 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
         *sk.status = qymcad_i18n::tr("sk-pick-sketch-first");
         return true;
     };
+    // A GREY EDGE OF THE BODY CLICKED IS TAKEN INTO THE SKETCH FIRST, as construction, and the dimension is laid on it:
+    // a dimension from the edge of the face the sketch sits on holds what it measures to the body. The click went to
+    // nothing, and the value typed after it was laid as the length of the line clicked next.
+    if sk.place.dim.is_none() && sk.armed.dim_kind() != 3 {
+        let w = qymcad_ui_state::to_world(&*sk.view, rect, pos);
+        auto_project_under(sk, rect, si, Point2::new(w.x, w.y));
+    }
     // the dimension follows the cursor: a click places it, OR (when it is a provisional length of a line
     // and a SECOND element was hit) switches it to a distance between the two.
     if let Some(ci) = sk.place.dim {
@@ -3428,6 +3457,34 @@ pub fn sketch_tool_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: P
     qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
 }
 
+/// WHICH SIDE OF PUTTING A RECTANGLE `tie_the_rect_to_what_is_under` STANDS ON.
+#[derive(Clone, Copy, PartialEq)]
+enum RectPut {
+    /// before it is made: the edges of the body under the clicks taken in
+    Before,
+    /// after: its points at the clicks tied to what they landed on
+    After,
+}
+
+/// A RECTANGLE CLICKED AT `clicks` TIED TO WHAT IS UNDER THEM, as the ends of a line are, when the automatic constraints
+/// are on and it is not construction.
+fn tie_the_rect_to_what_is_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, si: usize, clicks: &[Point2], put: RectPut) {
+    if sk.tool.construction || !sk.set.auto_constrain {
+        return;
+    }
+    match put {
+        RectPut::Before => {
+            for at in clicks {
+                auto_project_under(sk, rect, si, *at);
+            }
+        }
+        RectPut::After => {
+            let own: Vec<Id> = sk.project.sketches[si].rects.last().map(|r| r.corners.iter().copied().chain([r.centre]).collect()).unwrap_or_default();
+            tie_the_clicked_points(&mut *sk.project, *sk.view, si, clicks, &own);
+        }
+    }
+}
+
 /// Where the two ends of line `seg` of sketch `si` stand, first end first.
 fn segment_ends(project: &Project, si: usize, seg: Id) -> Option<[Point2; 2]> {
     let s = project.sketches.get(si)?;
@@ -3497,7 +3554,9 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                     1 => {
                         // centre plus a corner: the opposite corner is its mirror through the centre, and the rectangle keeps the centre
                         let (c, cr) = (sk.tool.pts[0], sk.tool.pts[1]);
+                        tie_the_rect_to_what_is_under(sk, rect, si, &[c, cr], RectPut::Before);
                         let ids = sk.project.add_rect_from_centre(si, c, cr, qymcad_core::feature::Purpose::of(con));
+                        tie_the_rect_to_what_is_under(sk, rect, si, &[c, cr], RectPut::After);
                         sk.tool.pts.clear();
                         qymcad_ui_state::invalidate(&mut *sk.regen);
                         if !con {
@@ -3514,7 +3573,9 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                     }
                     _ => {
                         let (a, b) = (sk.tool.pts[0], sk.tool.pts[1]);
+                        tie_the_rect_to_what_is_under(sk, rect, si, &[a, b], RectPut::Before);
                         let ids = sk.project.add_rect_entity(si, a.x, a.y, b.x, b.y, qymcad_core::feature::Purpose::of(con));
+                        tie_the_rect_to_what_is_under(sk, rect, si, &[a, b], RectPut::After);
                         sk.tool.pts.clear();
                         qymcad_ui_state::invalidate(&mut *sk.regen);
                         if !con {
@@ -3561,7 +3622,16 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                     // centre plus radius
                     (p0.x, p0.y, ((p1.x - p0.x).powi(2) + (p1.y - p0.y).powi(2)).sqrt())
                 };
+                // the centre clicked on an edge of the body under the sketch takes the edge in, and is tied to it
+                let centre_clicked = sk.tool_prefs.circ_mode != 1 && !con && sk.set.auto_constrain;
+                if centre_clicked {
+                    auto_project_under(sk, rect, si, p0);
+                }
                 let eid = sk.project.add_circle_entity(si, cx, cy, r, qymcad_core::feature::Purpose::of(con));
+                if centre_clicked {
+                    let centre: Vec<Id> = sk.project.sketches[si].entities.iter().find(|e| e.id == eid).map(qymcad_core::model::entity_points).unwrap_or_default();
+                    tie_the_clicked_points(&mut *sk.project, *sk.view, si, &[p0], &centre);
+                }
                 sk.tool.pts.clear();
                 qymcad_ui_state::invalidate(&mut *sk.regen);
                 open_the_size_of_the_new_shape(sk, eid, qymcad_core::feature::Purpose::of(con));

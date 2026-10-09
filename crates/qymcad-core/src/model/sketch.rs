@@ -1235,17 +1235,18 @@ impl Project {
     /// Delete constraint `ci` of a sketch. For a midpoint constraint the orphaned midpoint is pruned as well
     /// (nothing else uses it and it is not a system point), so no debris is left behind. The sketch is then
     /// re-solved.
-    /// AN EDIT `op` OF CURVE `eid` THAT CUTS A PROJECTION: done as on any curve, and when it is done the projection the curve
-    /// belonged to is let go - what is left of it is ordinary geometry - and its lines left, with the pieces the edit made,
-    /// get what they plainly have (`relate_lines`), as the sides of a broken rectangle. An edit that did nothing leaves the
-    /// projection as it was. Reported behaviour: a piece of a projection trimmed, broken or deleted - what is left must stop
+    /// AN EDIT `op` OF CURVE `eid` THAT CUTS A PROJECTION: the projection parted one per edge (`part_projections_holding`),
+    /// the edit done as on any curve, and when it is done the projection of the edge cut is let go - what is left of that
+    /// edge is ordinary geometry, and its lines, with the pieces the edit made, get what they plainly have
+    /// (`relate_lines`). The other edges stay projected and follow the body. An edit that did nothing leaves the edges
+    /// projected. Reported behaviour: a piece of a projection trimmed, broken or deleted - what is left of it must stop
     /// being a projection at once, or the next rebuild of the body brings the piece back over it.
     fn cut_projection(&mut self, si: usize, eid: Id, op: impl FnOnce(&mut Self) -> bool) -> bool {
-        let Some(s) = self.sketches.get(si) else { return false };
-        let pids: Vec<Id> = s.projections.iter().filter(|p| p.entities.contains(&eid)).map(|p| p.id).collect();
-        if pids.is_empty() {
+        if self.sketches.get(si).is_none_or(|s| !s.projections.iter().any(|p| p.entities.contains(&eid))) {
             return op(self);
         }
+        let pids = self.part_projections_holding(si, &[eid]);
+        let Some(s) = self.sketches.get(si) else { return false };
         let curves: Vec<Id> = s.projections.iter().filter(|p| pids.contains(&p.id)).flat_map(|p| p.entities.clone()).collect();
         let before: std::collections::HashSet<Id> = s.entities.iter().map(|e| e.id).collect();
         if !op(self) {
@@ -1260,11 +1261,12 @@ impl Project {
         true
     }
 
-    /// DELETE CURVES `eids` OF THE SKETCH, cutting what projections they belong to (`cut_projection`): the projection lets go,
-    /// the curves go, and what is left of the projection is ordinary geometry held by what it plainly is.
+    /// DELETE CURVES `eids` OF THE SKETCH, cutting what projections they belong to: parted one per edge, the projections
+    /// of the edges deleted go with their curves, the other edges stay projected, and what is left of an edge cut is
+    /// ordinary geometry held by what it plainly is.
     pub fn delete_sketch_curves(&mut self, si: usize, eids: &[Id]) {
+        let pids = self.part_projections_holding(si, eids);
         let Some(s) = self.sketches.get(si) else { return };
-        let pids: Vec<Id> = s.projections.iter().filter(|p| p.entities.iter().any(|e| eids.contains(e))).map(|p| p.id).collect();
         let left: Vec<Id> = s.projections.iter().filter(|p| pids.contains(&p.id)).flat_map(|p| p.entities.clone()).filter(|e| !eids.contains(e)).collect();
         if let Some(s) = self.sketches.get_mut(si) {
             s.projections.retain(|p| !pids.contains(&p.id));
@@ -3759,7 +3761,9 @@ impl Project {
                 EntityKind::Circle { center, r } => out.push(crate::solver::RadiusVar { center, value: r }),
                 EntityKind::Arc { center, a, .. } => {
                     if let (Some(&(cx, cy)), Some(&(ax, ay))) = (pos.get(&center), pos.get(&a)) {
-                        let rr = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt().max(0.001);
+                        // `hypot`, as the drag session reads it (`drag_session`): the root of the squares rounds the last
+                        // bit apart from it, and a frame kept by the drag and the frame solved alone came out different
+                        let rr = (ax - cx).hypot(ay - cy).max(0.001);
                         out.push(crate::solver::RadiusVar { center, value: rr });
                     }
                 }
@@ -3775,8 +3779,14 @@ impl Project {
     pub(super) fn entity_intrinsics(&self, si: usize) -> Vec<Constraint> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         let mut out = Vec::new();
+        let projected = s.projected_entities();
         for e in &s.entities {
             match e.kind {
+                // an arc of a projection has its centre and both ends pinned by the body: one end on the circle sets the
+                // radius, the other would say it again - a fillet of the body projected showed one redundant
+                EntityKind::Arc { center, a, .. } if projected.contains(&e.id) => {
+                    out.push(Constraint::PointOnCircle { p: a, c: center });
+                }
                 EntityKind::Arc { center, a, b, .. } => {
                     out.push(Constraint::PointOnCircle { p: a, c: center });
                     out.push(Constraint::PointOnCircle { p: b, c: center });

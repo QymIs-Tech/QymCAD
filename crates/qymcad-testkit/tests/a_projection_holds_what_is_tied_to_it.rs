@@ -160,3 +160,73 @@ fn a_projection_keeps_the_ties_on_its_curves_when_its_face_changes_structure() {
     }
     assert!(failures.is_empty(), "the projection through a change of its face:\n{}", failures.join("\n"));
 }
+
+#[test]
+fn a_fillet_put_above_the_sketch_parts_the_corner_and_the_ties_keep_their_sides() {
+    // a plate 60 x 40 extruded 14, its top face projected into a second sketch
+    let mut p = Project::default();
+    p.new_document();
+    let sid1 = p.add_line_sketch("Sketch 1", vec![Point2::new(0.0, 0.0), Point2::new(60.0, 0.0), Point2::new(60.0, 40.0), Point2::new(0.0, 40.0)], true);
+    let si1 = p.sketch_index(sid1).expect("the sketch");
+    p.regen_sketch(si1);
+    if let Some(o) = p.sketch_owner(sid1) {
+        p.set_active_component(Some(o));
+    }
+    p.add_sketch_node(sid1, "Sketch 1");
+    let closed: Vec<u64> = p.sketches[si1].contour_ids.iter().copied().filter(|c| p.contour_profile_xy(*c).is_some()).collect();
+    let body = p.add_extrude_multi(sid1, closed, 14.0, qymcad_core::feature::Reach::Forward, 0.0, vec![]);
+    let si = p.new_sketch("Sketch 2");
+    let sid = p.sketches[si].id;
+    p.add_sketch_node(sid, "Sketch 2");
+    let mut live = Live { p, shapes: HashMap::new() };
+    live.rebuild();
+    let face = top_face_id(&live.p, body);
+    live.project_into(si, body, ProjSource::Face(face));
+
+    // the corner (60, 0) and the right side of the outline
+    let pts = live.p.sketches[si].projections[0].points.clone();
+    let corner = *pts.iter().find(|q| at(&live.p, si, **q) == (60.0, 0.0)).expect("the corner (60, 0)");
+    let top = *pts.iter().find(|q| at(&live.p, si, **q) == (60.0, 40.0)).expect("the corner (60, 40)");
+    // a line of the sketch held 5 off the corner, on its left (the distance to a line is signed by the side), and a
+    // point held on the right side
+    let (la, lb) = (a_point(&mut live.p, si, 55.0, 10.0), a_point(&mut live.p, si, 55.0, 30.0));
+    let id = live.p.alloc_id();
+    live.p.sketches[si].entities.push(qymcad_core::model::SketchEntity { id, kind: EntityKind::Line { a: la, b: lb }, construction: false });
+    let on = a_point(&mut live.p, si, 60.0, 20.0);
+    live.p.sketches[si].constraints.push(Constraint::Vertical { a: la, b: lb });
+    live.p.sketches[si].constraints.push(Constraint::DistancePL { p: corner, a: la, b: lb, d: -5.0, off: 3.0, expr: String::new(), driven: false, at: None });
+    live.p.sketches[si].constraints.push(Constraint::PointOnLine { p: on, a: corner, b: top });
+    live.p.solve_sketch(si);
+    assert!((at(&live.p, si, la).0 - 55.0).abs() < 1e-6, "GUARD: the line held 5 off the corner at X 55, it stands at {:?}", at(&live.p, si, la));
+
+    // the upright edge at (60, 0) rounded 3, the fillet put above the sketch
+    let edge = live.p.regen_edges[&body]
+        .iter()
+        .find(|e| (e.a[0] - 60.0).abs() < 1e-6 && e.a[1].abs() < 1e-6 && (e.b[0] - 60.0).abs() < 1e-6 && e.b[1].abs() < 1e-6)
+        .map(|e| e.id)
+        .expect("the upright edge at (60, 0)");
+    live.p.add_fillet(body, 3.0, vec![edge]);
+    let (from, to) =
+        (live.p.timeline.len() - 1, live.p.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Sketch { sketch } if sketch == sid)).expect("the node of sketch 2"));
+    assert!(live.p.reorder_feature(from, to), "GUARD: the fillet put above the sketch");
+    live.rebuild();
+
+    let s = &live.p.sketches[si];
+    let mut failures = Vec::new();
+    let arcs = s.entities.iter().filter(|e| s.projections[0].entities.contains(&e.id) && matches!(e.kind, EntityKind::Arc { .. })).count();
+    if arcs != 1 {
+        failures.push(format!("the rounded corner is {arcs} arcs of the projection, not one"));
+    }
+    let (a, o) = (at(&live.p, si, la), at(&live.p, si, on));
+    if (a.0 - 55.0).abs() > 1e-6 {
+        failures.push(format!("the line held 5 off the corner stands at X {:.4}, not 55", a.0));
+    }
+    if (o.0 - 60.0).abs() > 1e-6 {
+        failures.push(format!("the point held on the right side stands at {o:?}, off the side at X 60"));
+    }
+    let (_, redundant) = live.p.sketch_dof(si);
+    if redundant != 0 {
+        failures.push(format!("the sketch has {redundant} redundant"));
+    }
+    assert!(failures.is_empty(), "a fillet above the sketch:\n{}", failures.join("\n"));
+}

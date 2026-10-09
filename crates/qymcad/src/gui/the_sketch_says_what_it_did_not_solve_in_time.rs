@@ -21,7 +21,7 @@ mod tests {
         hand.click2d(10.0, 10.0).click2d(40.0, 10.5);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
         hand.sk_tool(0);
-        hand.app.project.solve_sketch_within(si, Budget { steps: 120, time: Some(std::time::Duration::ZERO) });
+        hand.app.project.solve_sketch_within(si, Budget { time: Some(std::time::Duration::ZERO), ..Budget::FULL });
         let left = hand.app.project.sketches[si].left_unsolved;
         assert!(left > 0, "a solve with no time left nothing to say");
         let said = crate::i18n::tr1("sk-unsolved-left", "n", &left.to_string());

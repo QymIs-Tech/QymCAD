@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 fn the_parts_a_solve_had_no_time_for_are_counted_and_solved_next() {
     let mut p = build(Kind::Tangents, 1_000);
     let before = p.sketches[0].points.clone();
-    p.solve_sketch_within(0, Budget { steps: 120, time: Some(Duration::ZERO) });
+    p.solve_sketch_within(0, Budget { time: Some(Duration::ZERO), ..Budget::FULL });
     assert_eq!(p.sketches[0].left_unsolved, 1_000, "a solve with no time left every part to the next");
     let moved = p.sketches[0].points.iter().zip(&before).filter(|(a, b)| a.x != b.x || a.y != b.y).count();
     assert_eq!(moved, 0, "a part the time ran out before was moved");

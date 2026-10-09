@@ -21,7 +21,12 @@ That is why a projection cannot be dragged by hand: it has no degrees of freedom
 source sets them.
 
 Draw from it as from any line: the pointer snaps to its corners, its middles and along it, and the line drawn is tied
-there - when the body changes, what is tied to the projection follows it.
+there - when the body changes, what is tied to the projection follows it. Dimensions and constraints put on it hold the
+same way. A fillet or a chamfer put on the body higher up the history comes into the projection as its arc or its line,
+and what was tied to the sides stays on them.
+
+Nothing projected, a line, a rectangle or a circle started on a thin grey edge or corner of the face under the sketch
+takes that edge in by itself, as construction, and is tied to it; so does a dimension clicked on a grey edge.
 
 ## Making it ordinary or construction
 
@@ -29,13 +34,14 @@ there - when the body changes, what is tied to the projection follows it.
   drawn pink, dashed and thin, and still follows the body.
 - **Ordinary geometry**: pick it, right-click and press **Make ordinary geometry**. The curves stay where they are, are
   dragged and dimensioned as any line, and the body no longer moves them.
-- **Cut**: delete a projected line, trim it or break it - what is left of the projection becomes ordinary geometry at
-  once, held level, upright and square where it stands so.
+- **Cut**: delete a projected line, trim it or break it - only that line lets go of the body: what is left of it is
+  ordinary geometry, held level, upright and square where it stands so. The other lines of the outline still follow
+  the body.
 
 ## If it did not work
 
-- The projection does not follow the body any more - it was made ordinary geometry, cut, or the edge it came from is
-  gone from the part (a fillet over it, say). It is ordinary geometry now: project the edge again if it should follow.
+- A line of the projection does not follow the body any more - it was made ordinary geometry, cut, or the edge it came
+  from is gone from the part. It is ordinary geometry now: project the edge again if it should follow.
 - A projected line does not drag - that is right while it is projected; make it ordinary geometry first.
 
 ## Another part's geometry

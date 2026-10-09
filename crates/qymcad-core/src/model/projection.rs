@@ -22,6 +22,13 @@ use crate::geom::Point3;
 enum Curve2 {
     Line([f64; 2], [f64; 2]),
     Circle([f64; 2], f64),
+    /// An arc of a circle around `centre` from `from` to `to`, counter-clockwise when `ccw`.
+    Arc {
+        centre: [f64; 2],
+        from: [f64; 2],
+        to: [f64; 2],
+        ccw: bool,
+    },
     /// A polyline: everything that is neither a straight line nor a circle — elliptical arcs, splines,
     /// intersection curves.
     Poly(Vec<[f64; 2]>),
@@ -31,7 +38,7 @@ impl Curve2 {
     /// How many entities the curve yields: a polyline has one segment fewer than it has points.
     fn entity_count(&self) -> usize {
         match self {
-            Curve2::Line(..) | Curve2::Circle(..) => 1,
+            Curve2::Line(..) | Curve2::Circle(..) | Curve2::Arc { .. } => 1,
             Curve2::Poly(p) => p.len().saturating_sub(1),
         }
     }
@@ -43,6 +50,19 @@ enum Source {
     Found(Vec<(u32, Curve2)>),
     Gone,
     Unknown,
+}
+
+/// THE TWO ENDS OF A LINE, by which a constraint holds the line.
+#[derive(Clone, Copy, PartialEq)]
+struct Ends {
+    a: Id,
+    b: Id,
+}
+
+/// A LINE OF A PROJECTION WHOSE ENDS CHANGED: the ends it had, and the ends it has now.
+struct Rehung {
+    from: Ends,
+    to: Ends,
 }
 
 /// WHAT A PASS OF `apply_curves` HAS PLACED: each point given its place, and the centres of circles among them.
@@ -91,6 +111,48 @@ impl Project {
         true
     }
 
+    /// THE PROJECTIONS HOLDING ANY OF THE CURVES `eids` PARTED, ONE PROJECTION PER EDGE, and the ids of those that hold
+    /// any of them answered. A face outline is one record; cutting one of its sides - trimmed, broken, deleted - let the
+    /// whole outline go, and the three sides left stopped following the body. Parted, each side is tied to its own edge as
+    /// a projected curve is in every CAD, and only the one cut is let go.
+    pub(super) fn part_projections_holding(&mut self, si: usize, eids: &[Id]) -> Vec<Id> {
+        let Some(s) = self.sketches.get(si) else { return Vec::new() };
+        let whole: Vec<super::SketchProjection> = s.projections.iter().filter(|p| p.entities.iter().any(|e| eids.contains(e))).cloned().collect();
+        let mut cut = Vec::new();
+        for p in whole {
+            // one edge already, or a record whose curves do not say their edges: let go whole, as it is
+            if matches!(p.src, ProjSource::Edge(_)) || p.edges.len() != p.entities.len() {
+                cut.push(p.id);
+                continue;
+            }
+            let mut order: Vec<u32> = Vec::new();
+            for e in &p.edges {
+                if !order.contains(e) {
+                    order.push(*e);
+                }
+            }
+            let mut parts = Vec::new();
+            for edge in order {
+                let ents: Vec<Id> = p.entities.iter().zip(&p.edges).filter(|(_, x)| **x == edge).map(|(e, _)| *e).collect();
+                let mut points: Vec<Id> = Vec::new();
+                for e in self.sketches[si].entities.iter().filter(|x| ents.contains(&x.id)) {
+                    points.extend(super::entity_points(e).into_iter().filter(|q| p.points.contains(q)));
+                }
+                let id = self.alloc_id();
+                if ents.iter().any(|e| eids.contains(e)) {
+                    cut.push(id);
+                }
+                let edges = vec![edge; ents.len()];
+                parts.push(super::SketchProjection { id, body: p.body, src: ProjSource::Edge(edge), points, entities: ents, edges });
+            }
+            let projections = &mut self.sketches[si].projections;
+            if let Some(k) = projections.iter().position(|x| x.id == p.id) {
+                projections.splice(k..=k, parts);
+            }
+        }
+        cut
+    }
+
     /// A PROJECTION MADE ORDINARY GEOMETRY OF THE SKETCH: the record that ties it to the body goes, its points and curves
     /// stay where they stand. Nothing pins them any more - the pins of a projection are laid from the record at every
     /// solve - so they are dragged, deleted and given dimensions as any geometry, and a change of the body no longer
@@ -127,6 +189,7 @@ impl Project {
                 let p = &self.sketches[si].projections[k];
                 (p.id, p.body, p.src)
             };
+            let body = self.body_seen_from(si, body);
             match self.projected_curves(body, src, &frame, kernel) {
                 Source::Found(curves) => self.apply_curves(si, k, curves),
                 Source::Gone => gone.push(pid),
@@ -168,6 +231,26 @@ impl Project {
             self.solve_sketch(si);
         }
         true
+    }
+
+    /// THE BODY OF THE LINEAGE OF `body` AS SKETCH `si` SEES IT: walked forward through the nodes standing above the
+    /// sketch in the timeline that consume it. Every operation makes a new body of its part, and a projection keeps
+    /// the body it was taken from; read as it was, a fillet put above the sketch later was not seen - the corner of the
+    /// projected outline stayed sharp over a rounded edge. The nodes below the sketch are not walked: a boss built on
+    /// the sketch is not what the sketch stands on.
+    fn body_seen_from(&self, si: usize, body: Id) -> Id {
+        let Some(sid) = self.sketches.get(si).map(|s| s.id) else { return body };
+        let end = self.timeline.iter().position(|n| matches!(n.kind, crate::feature::FeatureKind::Sketch { sketch } if sketch == sid)).unwrap_or(self.timeline.len());
+        let above = &self.timeline[..end];
+        let mut cur = body;
+        // bounded: a cycle in a broken timeline must not hang the rebuild
+        for _ in 0..256 {
+            match above.iter().find(|n| !n.suppressed && n.kind.consumed().contains(&cur)).and_then(|n| n.kind.body()) {
+                Some(next) if next != cur => cur = next,
+                _ => break,
+            }
+        }
+        cur
     }
 
     /// Where every point of the projections of sketch `si` stands, by its id.
@@ -255,6 +338,13 @@ impl Project {
             if closed && dot.abs() > 0.999 && r > 1e-9 {
                 return Curve2::Circle(to2(&c), r);
             }
+            // an open arc parallel to the plane - the edge of a fillet seen from above - is an arc of the sketch, not a
+            // polyline of 36 segments: a dimension and a tangency take an arc
+            if dot.abs() > 0.999 && r > 1e-9 && poly.len() >= 3 {
+                let (centre, from, mid, to) = (to2(&c), to2(&poly[0]), to2(&poly[poly.len() / 2]), to2(&poly[poly.len() - 1]));
+                let ccw = (from[0] - centre[0]) * (mid[1] - centre[1]) - (from[1] - centre[1]) * (mid[0] - centre[0]) > 0.0;
+                return Curve2::Arc { centre, from, to, ccw };
+            }
         }
         let pts: Vec<[f64; 2]> = poly.iter().map(to2).collect();
         // A straight edge, where every intermediate point lies on the segment between the ends, is stored as a
@@ -292,6 +382,7 @@ impl Project {
             by_edge.entry(*edge).or_default().push(*e);
         }
         let mut placing = Placing::default();
+        let mut rehung = Vec::new();
         let (mut ents, mut edges, mut pts): (Vec<Id>, Vec<u32>, Vec<Id>) = (Vec::new(), Vec::new(), Vec::new());
         for (edge, c) in &curves {
             let olds = by_edge.remove(edge).unwrap_or_default();
@@ -305,6 +396,9 @@ impl Project {
                     let pa = self.proj_point(si, &mut placing, old.map(|o| o.1), *a);
                     let pb = self.proj_point(si, &mut placing, old.map(|o| o.2), *b);
                     let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::Line { a: pa, b: pb });
+                    if let Some((_, oa, ob)) = old.filter(|o| (o.1, o.2) != (pa, pb)) {
+                        rehung.push(Rehung { from: Ends { a: oa, b: ob }, to: Ends { a: pa, b: pb } });
+                    }
                     ents.push(e);
                     edges.push(*edge);
                     pts.extend([pa, pb]);
@@ -320,6 +414,19 @@ impl Project {
                     ents.push(e);
                     edges.push(*edge);
                     pts.push(pc);
+                }
+                Curve2::Arc { centre, from, to, ccw } => {
+                    let old = match kinds.as_slice() {
+                        [EntityKind::Arc { center, a, b, .. }] => Some((olds[0], *center, *a, *b)),
+                        _ => None,
+                    };
+                    let pc = self.proj_centre(si, &mut placing, old.map(|o| o.1), *centre);
+                    let pa = self.proj_point(si, &mut placing, old.map(|o| o.2), *from);
+                    let pb = self.proj_point(si, &mut placing, old.map(|o| o.3), *to);
+                    let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::Arc { center: pc, a: pa, b: pb, ccw: *ccw });
+                    ents.push(e);
+                    edges.push(*edge);
+                    pts.extend([pc, pa, pb]);
                 }
                 Curve2::Poly(p) => {
                     // the chain of points the old segments ran through, when they were as many lines as the new
@@ -351,8 +458,23 @@ impl Project {
                 }
             }
         }
+        // a curve the body brought in anew (the arc of a fillet put on a corner) is construction when every curve the
+        // projection held was: an outline made construction stays construction whole
+        let construction = !old_ents.is_empty() && self.sketches[si].entities.iter().filter(|e| old_ents.contains(&e.id)).all(|e| e.construction);
+        if construction {
+            for e in self.sketches[si].entities.iter_mut().filter(|e| ents.contains(&e.id) && !old_ents.contains(&e.id)) {
+                e.construction = true;
+            }
+        }
+        let corners = parted_corners(&self.sketches[si], &rehung, &placing);
         for (pid, at) in &placing.at {
             self.set_point_xy(si, Some(*pid), *at);
+        }
+        for r in &rehung {
+            rehang_line_ties(&mut self.sketches[si], r);
+        }
+        for c in &corners {
+            hand_down_corner(&mut self.sketches[si], c);
         }
         // what the projection no longer holds - the curves of gone edges, a curve reshaped - stays as ordinary geometry
         let p = &mut self.sketches[si].projections[k];
@@ -416,5 +538,133 @@ impl Project {
         let id = self.alloc_id();
         self.sketches[si].entities.push(SketchEntity { id, kind, construction: false });
         id
+    }
+}
+
+/// THE TIES ON A LINE FOLLOW IT TO ITS NEW ENDS: every constraint that holds the line by its two ends - parallel, at a
+/// distance from a point, a point on it, an angle to it - is given the ends the line has now. A corner of a projection
+/// is one point shared by the two sides that meet there; a fillet put on that corner of the body parts the sides, one
+/// keeps the corner, the other takes a new end, and a dimension held 5 off the side by (the corner, its far end) was
+/// left holding a slanted line from the end of the other side: the rectangle tied 5 inside came out 27 wide, not 30.
+fn rehang_line_ties(s: &mut super::Sketch, r: &Rehung) {
+    let swap = |a: &mut Id, b: &mut Id| {
+        if (*a, *b) == (r.from.a, r.from.b) {
+            (*a, *b) = (r.to.a, r.to.b);
+        } else if (*a, *b) == (r.from.b, r.from.a) {
+            (*a, *b) = (r.to.b, r.to.a);
+        }
+    };
+    use super::Constraint as C;
+    for c in &mut s.constraints {
+        match c {
+            C::Horizontal { a, b }
+            | C::Vertical { a, b }
+            | C::Orientation { a, b, .. }
+            | C::PointOnLine { a, b, .. }
+            | C::DistancePL { a, b, .. }
+            | C::Midpoint { a, b, .. }
+            | C::Tangent { a, b, .. } => swap(a, b),
+            C::Parallel { a, b, c, d } | C::Perpendicular { a, b, c, d } | C::Equal { a, b, c, d } | C::Collinear { a, b, c, d } | C::AngleLines { a, b, c, d, .. } => {
+                swap(a, b);
+                swap(c, d);
+            }
+            C::Symmetric { la, lb, .. } => swap(la, lb),
+            _ => {}
+        }
+    }
+}
+
+/// A CORNER OF A PROJECTION THE BODY PARTED: the point, where it stood, and the points that end the sides there now -
+/// the corner itself, kept by one side, and the new ends of the others - with where they stand.
+struct Parted {
+    corner: Id,
+    was: [f64; 2],
+    heirs: Vec<(Id, [f64; 2])>,
+}
+
+/// The corners of a projection parted in this pass: an end of a line that the line no longer ends at, the old point
+/// read where it stood before the pass moves it.
+fn parted_corners(s: &super::Sketch, rehung: &[Rehung], placing: &Placing) -> Vec<Parted> {
+    let at = |id: Id| placing.at.iter().find(|(p, _)| *p == id).map(|(_, q)| *q);
+    let mut out: Vec<Parted> = Vec::new();
+    for r in rehung {
+        for (old, new) in [(r.from.a, r.to.a), (r.from.b, r.to.b)] {
+            if old == new {
+                continue;
+            }
+            let Some(was) = s.points.iter().find(|q| q.id == old).map(|q| [q.x, q.y]) else { continue };
+            let k = match out.iter().position(|c| c.corner == old) {
+                Some(k) => k,
+                None => {
+                    out.push(Parted { corner: old, was, heirs: at(old).map(|q| vec![(old, q)]).unwrap_or_default() });
+                    out.len() - 1
+                }
+            };
+            if let Some(q) = at(new).filter(|_| !out[k].heirs.iter().any(|(h, _)| *h == new)) {
+                out[k].heirs.push((new, q));
+            }
+        }
+    }
+    out
+}
+
+/// WHAT HELD A PARTED CORNER AS A POINT GOES TO THE HEIR THAT KEEPS WHAT IT MEASURED: a distance to a line to the end
+/// as far from that line as the corner was, a dimension along X to the end whose X did not change, along Y to the one
+/// whose Y did not, anything else to the nearest. Measured on a block 40 x 30 with its corner (40, 0) rounded 3: the
+/// corner went to the lower side at (37, 0), and a rectangle whose right side was held 5 off the corner came out 27
+/// wide; held 5 off the right side's new end (40, 3), it is 30. Both ends stand 3 from the corner, so the nearest
+/// is a toss.
+fn hand_down_corner(s: &mut super::Sketch, c: &Parted) {
+    use super::Constraint as C;
+    if c.heirs.len() < 2 {
+        return;
+    }
+    let heir = |off: &dyn Fn([f64; 2]) -> f64| c.heirs.iter().min_by(|a, b| off(a.1).total_cmp(&off(b.1))).map(|h| h.0).unwrap_or(c.corner);
+    let along_x = heir(&|q| (q[0] - c.was[0]).abs());
+    let along_y = heir(&|q| (q[1] - c.was[1]).abs());
+    let nearest = heir(&|q| (q[0] - c.was[0]).hypot(q[1] - c.was[1]));
+    let place = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| [q.x, q.y]);
+    // how far `q` stands from the line through `a` and `b`, signed by its side
+    let off_line = |q: [f64; 2], a: Id, b: Id| -> f64 {
+        let (Some(a), Some(b)) = (place(a), place(b)) else { return 0.0 };
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let len = dx.hypot(dy).max(1e-12);
+        ((q[0] - a[0]) * dy - (q[1] - a[1]) * dx) / len
+    };
+    let from_line: Vec<Option<Id>> = s
+        .constraints
+        .iter()
+        .map(|k| match *k {
+            C::DistancePL { p, a, b, .. } | C::PointOnLine { p, a, b } if p == c.corner => {
+                let was = off_line(c.was, a, b);
+                Some(heir(&|q| (off_line(q, a, b) - was).abs()))
+            }
+            _ => None,
+        })
+        .collect();
+    let give = |id: &mut Id, to: Id| {
+        if *id == c.corner {
+            *id = to;
+        }
+    };
+    for (k, line) in s.constraints.iter_mut().zip(from_line) {
+        match (k, line) {
+            (C::DistancePL { p, .. } | C::PointOnLine { p, .. }, Some(to)) => give(p, to),
+            (C::Distance { a, b, axis, .. }, _) => {
+                let to = match axis {
+                    1 => along_x,
+                    2 => along_y,
+                    _ => nearest,
+                };
+                give(a, to);
+                give(b, to);
+            }
+            (C::Coincident { a, b }, _) => {
+                give(a, nearest);
+                give(b, nearest);
+            }
+            (C::Fixed { p } | C::Midpoint { p, .. } | C::PointOnCircle { p, .. }, _) => give(p, nearest),
+            _ => {}
+        }
     }
 }
