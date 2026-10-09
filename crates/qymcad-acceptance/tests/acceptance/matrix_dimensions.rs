@@ -1,7 +1,7 @@
 //! THE RADIUS AND DIAMETER OF A SKETCH ON FIGURES AS THE TOOLS DRAW THEM - the auto constraints on, as a person has
-//! them. A circle comes with its diameter: the tool opens that one, and a new value changes the circle, not the count
-//! of constraints. An arc comes with none: the tool puts a radius on it, one more constraint and one freedom less. A
-//! circle whose diameter was deleted gets it back. Whatever is typed must be what the figure then measures.
+//! them. A circle and an arc come with no size until one is typed: the tool puts a diameter on the circle and a radius
+//! on the arc, one more constraint and one freedom less. A circle whose diameter was deleted gets it back. Whatever is
+//! typed must be what the figure then measures.
 use qymcad::{Key, Session, SketchPick};
 use qymcad_acceptance::build::{circle, draw, into_the_first_part};
 use qymcad_acceptance::probe;
@@ -45,9 +45,10 @@ fn held(s: &mut Session) -> (usize, i32, i32) {
 }
 
 probe! {
-    /// A CIRCLE AS THE TOOL DRAWS IT carries its diameter: the radius tool opens it, 30 typed makes the circle 30
-    /// across, and no second dimension is put on it.
-    fn the_diameter_a_circle_came_with_is_the_one_changed() {
+    /// A CIRCLE AS THE TOOL DRAWS IT, its field left with Esc, carries no size: the radius tool puts its diameter on -
+    /// 30 typed makes the circle 30 across, one constraint more, one freedom less, nothing over-defined; the same tool
+    /// again changes that diameter and puts no second one.
+    fn the_radius_tool_puts_a_diameter_on_a_circle() {
         let mut s = Session::start();
         sketched(&mut s, |s| circle(s, (0.0, 0.0), (10.0, 0.0)));
         let before = held(&mut s);
@@ -55,7 +56,13 @@ probe! {
         let after = held(&mut s);
         let r = radius_at(&mut s, 15.0, 0.0).or_else(|| radius_at(&mut s, 10.0, 0.0));
         assert!(r.is_some_and(|r| (r - 15.0).abs() < 1e-6), "the diameter typed as 30 left the circle of radius {r:?}");
-        assert!(after == before, "a second dimension went on the circle: constraints, freedoms, redundant {before:?} became {after:?}");
+        assert!(after.0 == before.0 + 1 && after.1 == before.1 - 1 && after.2 == 0, "the diameter did not go on the circle as a dimension: constraints, freedoms, redundant {before:?} became {after:?}");
+        // the tool stays in hand after it is applied, and its button pressed again would put it down: Esc first
+        s.key(Key::Escape);
+        dimension(&mut s, 15.0, 0.0, "40");
+        let again = held(&mut s);
+        let r = radius_at(&mut s, 20.0, 0.0).or_else(|| radius_at(&mut s, 15.0, 0.0));
+        assert!(r.is_some_and(|r| (r - 20.0).abs() < 1e-6) && again == after, "the diameter changed to 40: the circle of radius {r:?}, constraints, freedoms, redundant {after:?} became {again:?}");
     }
 }
 
@@ -80,6 +87,8 @@ probe! {
     fn a_deleted_diameter_comes_back_with_the_radius_tool() {
         let mut s = Session::start();
         sketched(&mut s, |s| circle(s, (0.0, 0.0), (10.0, 0.0)));
+        dimension(&mut s, 10.0, 0.0, "20");
+        s.key(Key::Escape).key(Key::Escape);
         let with = held(&mut s);
         let canvas = s.canvas();
         let label = s.words_at().into_iter().find(|(w, r)| canvas.contains(r.center()) && w.contains("20")).map(|(_, r)| r.center());
