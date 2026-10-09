@@ -2409,6 +2409,8 @@ fn extend_apply(sk: &mut qymcad_ui_state::SketchCtx, at: ExtendAt, held: Id) {
         sk.sel_sk.clear(); // the selection and whatever was waiting for it
         qymcad_ui_state::invalidate(&mut *sk.regen);
         *sk.status = qymcad_i18n::tr("sk-done");
+    } else if ext.kept == qymcad_core::model::EndKept::Joined {
+        *sk.status = qymcad_i18n::tr("sk-extend-end-joined");
     } else {
         *sk.status = qymcad_i18n::tr("sk-op-failed-no-intersection");
     }

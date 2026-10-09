@@ -2281,6 +2281,7 @@ sk-corner-straight = The third line at ({ $p }) is not taken: there is no corner
 sk-done = Done
 sk-click-curve = Click a line, a circle or an arc
 sk-op-failed-no-intersection = The operation did not apply (no intersection?)
+sk-extend-end-joined = The end of the line is joined to other geometry and stays where it is. Draw a new line from it
 sk-clipboard = { $what } ({ $n } entities) — Ctrl+V, then click where to place it
 sk-cut-done = Cut
 sk-copied = Copied

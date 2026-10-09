@@ -761,9 +761,33 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
             // Taking the minimum s with the twin excluded put the choice on the wrong edge at tangencies, where
             // a line and an arc share a tangent and s is near zero, and the arrangement lost faces — the
             // dumbbell case dropped to no regions at all.
+            //
+            // A TANGENCY IS A TIE WITHIN WHAT WELDING MOVES AN ANGLE BY: a node stands up to `WELD` off the true point,
+            // which turns the tangent of an arc by up to WELD / r and a line by WELD / its length. Two edges whose
+            // first-order angles differ by less than that leave as one tangent, and the curvature decides. Measured:
+            // a sketch solved after an edit left the end of a fillet of R10 4.7e-6 mm off, the tangent of the arc
+            // 4.7e-7 rad off the line touching it there - past the second-order term of 1e-8 - and the walk took
+            // the line for the way back along the arc: the face of the rounded rectangle was lost, and its lines
+            // were no longer drawn.
             const CURV_DELTA: f64 = 1e-7;
-            let s_eff = |oe: usize| -> f64 {
-                let s = (back - tang(&edges[oe], true)).rem_euclid(TAU);
+            let slack = |e: &DE| -> f64 {
+                let span = if e.line { (nodes[e.to].0 - nodes[e.from].0).hypot(nodes[e.to].1 - nodes[e.from].1) } else { e.r };
+                WELD / span.max(WELD)
+            };
+            let raw = |oe: usize| -> f64 { (back - tang(&edges[oe], true)).rem_euclid(TAU) };
+            let st_raw = raw(twin);
+            let mut taken: Vec<(f64, f64)> = vec![(st_raw, slack(&edges[twin]))]; // (first-order angle, its slack)
+            let mut s_eff = |oe: usize| -> f64 {
+                let mut s = raw(oe);
+                let own = slack(&edges[oe]);
+                if let Some(&(t, _)) = taken.iter().find(|(t, sl)| {
+                    let d = (s - t).rem_euclid(TAU);
+                    d.min(TAU - d) <= own + sl
+                }) {
+                    s = t;
+                } else {
+                    taken.push((s, own));
+                }
                 (s - curv(&edges[oe]) * CURV_DELTA).rem_euclid(TAU)
             };
             let st = s_eff(twin);
@@ -945,6 +969,91 @@ pub(super) fn tessellate_spline_hermite(pts: &[Point2], tangents: &[Option<[f64;
 
 #[cfg(test)]
 mod tests {
+    /// A LINE TOUCHING A FILLET AT ITS END, the ends of the fillet off by what a solve leaves: three rectangles drawn side by
+    /// side, the top right corner of the left one rounded 10, the sketch solved after an edit - the ends of the arc
+    /// 4.7e-6 and 5.7e-6 mm off its circle - and a line drawn along the top from the end of the arc to the corner. The
+    /// rounded rectangle stays a face, and the chip between the arc, the line and the side is one too. Reported behaviour:
+    /// the lines of the left rectangle vanished from the sheet and its points stayed.
+    #[test]
+    fn a_line_touching_a_fillet_off_by_a_solve_keeps_the_face_of_the_rectangle() {
+        use crate::model::{EntityKind, SketchEntity, SketchPoint};
+        let pts: Vec<SketchPoint> = [
+            (5, 0.0, 0.0),
+            (6, -125.0, 24.99999999357503),
+            (7, -75.0, 24.99999999357503),
+            (8, -75.0, 125.0),
+            (9, -125.0, 125.0),
+            (14, -100.0, 74.99999999678752),
+            (16, 0.0, 0.0),
+            (18, -39.999999999999275, 24.99999999357503),
+            (19, -40.0, 125.0),
+            (24, -57.5, 74.99999999678752),
+            (27, -40.0, 160.0),
+            (28, -75.0, 160.0),
+            (33, -57.5, 142.5),
+            (36, -75.0, 135.0),
+            (37, -65.0, 125.0),
+            (38, -65.0, 135.0),
+            (40, -75.0, 150.0),
+            (41, -65.0, 160.0),
+            (42, -65.0, 150.0),
+            (44, -50.0, 125.0),
+            (45, -40.0, 135.0),
+            (46, -50.0, 135.0),
+            (48, -50.0, 160.0),
+            (49, -40.0, 150.0),
+            (50, -50.0, 150.0),
+            (52, -85.00000474124738, 125.0),
+            (53, -75.0, 115.0000056834509),
+            (54, -85.0, 115.0),
+            (56, -125.0, 114.99999986304107),
+            (57, -114.99999989346223, 125.0),
+            (58, -115.0, 115.0),
+        ]
+        .iter()
+        .map(|&(id, x, y)| SketchPoint { id, x, y })
+        .collect();
+        let l = |id, a, b| SketchEntity { id, kind: EntityKind::Line { a, b }, construction: false };
+        let arc = |id, center, a, b, ccw| SketchEntity { id, kind: EntityKind::Arc { center, a, b, ccw }, construction: false };
+        let all: Vec<SketchEntity> = vec![
+            l(10, 6, 7),
+            l(11, 7, 53),
+            l(12, 52, 57),
+            l(13, 56, 6),
+            l(20, 7, 18),
+            l(21, 18, 19),
+            l(22, 44, 37),
+            l(23, 8, 7),
+            l(29, 8, 19),
+            l(30, 45, 49),
+            l(31, 48, 41),
+            l(32, 40, 36),
+            arc(39, 38, 36, 37, true),
+            arc(43, 42, 40, 41, false),
+            arc(47, 46, 44, 45, true),
+            arc(51, 50, 48, 49, false),
+            arc(55, 54, 52, 53, false),
+            arc(59, 58, 56, 57, false),
+            l(138, 52, 8),
+        ];
+        let before: Vec<SketchEntity> = all.iter().filter(|e| e.id != 138).cloned().collect();
+        let faces = |ents: &[SketchEntity]| -> Vec<Vec<u64>> {
+            super::arrangement_regions_prov(&pts, ents)
+                .into_iter()
+                .map(|r| {
+                    let mut ids = r.1;
+                    ids.sort_unstable();
+                    ids.dedup();
+                    ids
+                })
+                .collect()
+        };
+        let rounded = vec![10, 11, 12, 13, 55, 59];
+        assert!(faces(&before).contains(&rounded), "GUARD: the rounded rectangle is a face before the line: {:?}", faces(&before));
+        let after = faces(&all);
+        assert!(after.contains(&rounded) && after.contains(&vec![23, 55, 138]), "the line along the top, touching the fillet at its end, lost the faces: {after:?}");
+    }
+
     use super::{arr_intersect, meeting_pairs, within_weld, ArrCurve, BoxPair, Welded, WELD};
 
     /// A fixed pseudo-random sequence in 0..1.

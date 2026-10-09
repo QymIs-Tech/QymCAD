@@ -190,11 +190,23 @@ pub struct ExtendAsk {
     pub sides: ExtendSides,
 }
 
-/// WHERE EACH END OF A LINE GOES along its axis (`ExtendStop::t`), or `None` where it stays.
+/// WHERE EACH END OF A LINE GOES along its axis (`ExtendStop::t`), or `None` where it stays, and whether an end that
+/// had somewhere to go was kept because it is joined to other geometry.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LineExtension {
     pub a: Option<f64>,
     pub b: Option<f64>,
+    pub kept: EndKept,
+}
+
+/// WHY AN END OF A LINE STAYS WHERE IT IS under Extend.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum EndKept {
+    /// nothing kept it: an end with nowhere to go stays, and so does the end the tool did not ask for
+    #[default]
+    Free,
+    /// it is joined to other geometry - the end of another curve, a point tied onto it, a dimension - and is not moved
+    Joined,
 }
 
 /// WHETHER THE CENTRE OF A RECTANGLE IS HELD by the sketch - fixed, or set by dimensions - so that no motion the
@@ -1891,12 +1903,47 @@ impl Project {
     /// WHERE LINE `eid` GOES, ASKED AS THE EXTEND TOOL ASKS: each end taken to the curve the pointer is over when that
     /// curve lies on its side of the axis, else to the nearest curve there; an end with nothing on its side stays. One
     /// end - the one on the side of the curve under the pointer, else the one nearer the pointer - or both.
+    ///
+    /// AN END JOINED TO OTHER GEOMETRY STAYS (`end_held`): moved, it pulled what it is joined to, and the solve pulled
+    /// it back. Reported behaviour: Extend on the side two rectangles share, its end the end of a fillet, moved the
+    /// drawing (the ends of the fillet by 5e-6 mm, enough to lose the face of the rectangle), extended nothing and said
+    /// it was done. The line answers `EndKept::Joined`, and a new line is drawn from that end instead.
     pub fn line_extension(&self, si: usize, eid: Id, ask: &ExtendAsk) -> LineExtension {
+        let free = self.line_extension_free(si, eid, ask);
+        let Some((a, b)) = self.line_ends(si, eid) else { return free };
+        let (held_a, held_b) = (free.a.is_some() && self.end_held(si, eid, a), free.b.is_some() && self.end_held(si, eid, b));
+        LineExtension { a: free.a.filter(|_| !held_a), b: free.b.filter(|_| !held_b), kept: if held_a || held_b { EndKept::Joined } else { EndKept::Free } }
+    }
+
+    /// WHETHER END `p` OF LINE `eid` IS HELD BY SOMETHING BUT THE DIRECTION OF THE LINE: another curve ends there, or a
+    /// constraint other than one that turns the line (horizontal, vertical, an angle, parallel, perpendicular,
+    /// collinear) holds the point - a coincidence, a point on a curve, a midpoint, an anchor, a dimension.
+    pub(crate) fn end_held(&self, si: usize, eid: Id, p: Id) -> bool {
+        let Some(s) = self.sketches.get(si) else { return false };
+        if s.entities.iter().any(|e| e.id != eid && entity_points(e).contains(&p)) {
+            return true;
+        }
+        s.constraints.iter().any(|c| {
+            let turns_the_line = matches!(
+                c,
+                Constraint::Horizontal { .. }
+                    | Constraint::Vertical { .. }
+                    | Constraint::Orientation { .. }
+                    | Constraint::Parallel { .. }
+                    | Constraint::Perpendicular { .. }
+                    | Constraint::Collinear { .. }
+                    | Constraint::AngleLines { .. }
+            );
+            !turns_the_line && c.points().contains(&p)
+        })
+    }
+
+    fn line_extension_free(&self, si: usize, eid: Id, ask: &ExtendAsk) -> LineExtension {
         let Some(stops) = self.extend_stops(si, eid) else { return LineExtension::default() };
         let to = |side: &[ExtendStop]| side.iter().find(|s| Some(s.by) == ask.over).or(side.first()).map(|s| s.t);
         let (at_a, at_b) = (to(&stops.before_a), to(&stops.past_b));
         if ask.sides == ExtendSides::Both {
-            return LineExtension { a: at_a, b: at_b };
+            return LineExtension { a: at_a, b: at_b, ..Default::default() };
         }
         let over_side = |side: &[ExtendStop]| ask.over.is_some_and(|o| side.iter().any(|s| s.by == o));
         let past_b = if over_side(&stops.past_b) {
@@ -1910,9 +1957,9 @@ impl Project {
             tc >= 0.5
         };
         if past_b {
-            LineExtension { a: None, b: at_b }
+            LineExtension { a: None, b: at_b, ..Default::default() }
         } else {
-            LineExtension { a: at_a, b: None }
+            LineExtension { a: at_a, b: None, ..Default::default() }
         }
     }
 

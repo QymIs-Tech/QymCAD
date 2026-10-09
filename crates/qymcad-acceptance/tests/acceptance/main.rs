@@ -58,6 +58,7 @@ mod size_and_time;
 mod sketch_constraints;
 mod sketch_dimensions;
 mod sketch_editing;
+mod sketch_shapes_side_by_side;
 mod sketch_measure;
 mod sketch_mouse;
 mod sketch_projection;

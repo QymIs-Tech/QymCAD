@@ -63,3 +63,39 @@ fn a_line_is_extended_to_where_it_is_asked() {
     }
     assert!(failures.is_empty(), "a line extended as asked:\n{}", failures.join("\n"));
 }
+
+/// AN END JOINED TO OTHER GEOMETRY STAYS, and Extend says why: the line (0, 0) - (10, 0) with a line across at 20, its
+/// end (10, 0) the end of another line too, or tied by a dimension. Asked to extend that end, the line keeps it -
+/// `EndKept::Joined` - and nothing in the sketch moves; its free end still extends. Reported behaviour: Extend on a side
+/// whose end is the end of a fillet moved the drawing and extended nothing.
+#[test]
+fn an_end_joined_to_other_geometry_is_not_extended() {
+    use qymcad_core::model::{Constraint, EndKept, EntityKind};
+    let mut failures = Vec::new();
+    for joined in ["another line ends there", "a dimension holds it"] {
+        let (mut p, si, line, _) = lines(&[-15.0, 20.0]);
+        let EntityKind::Line { a, b } = p.sketches[si].entities.iter().find(|e| e.id == line).expect("the line").kind else { panic!("a line") };
+        if joined == "another line ends there" {
+            let free = p.sketch_point_at(si, 10.0, 8.0, 1e-9);
+            let id = p.alloc_id();
+            p.sketches[si].entities.push(qymcad_core::model::SketchEntity { id, kind: EntityKind::Line { a: b, b: free }, construction: false });
+        } else {
+            p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 10.0, off: 3.0, expr: String::new(), driven: false, axis: 0, at: None });
+        }
+        let places = |p: &Project| p.sketches[si].points.iter().map(|q| (q.id, q.x.to_bits(), q.y.to_bits())).collect::<Vec<_>>();
+        let before = places(&p);
+        let ask = ExtendAsk { pointer: Point2::new(9.0, 0.0), over: None, sides: ExtendSides::Nearer };
+        let ext = p.line_extension(si, line, &ask);
+        if ext.b.is_some() || ext.kept != EndKept::Joined {
+            failures.push(format!("{joined}: the joined end is asked to go to {:?}, kept {:?}", ext.b, ext.kept));
+        }
+        if p.extend_line_by(si, line, ext) || places(&p) != before {
+            failures.push(format!("{joined}: extending the joined end moved the sketch"));
+        }
+        let free = p.line_extension(si, line, &ExtendAsk { pointer: Point2::new(1.0, 0.0), over: None, sides: ExtendSides::Nearer });
+        if joined == "another line ends there" && free.a != Some(-1.5) {
+            failures.push(format!("{joined}: the free end (0, 0) is not extended to the line at -15: {:?}", free.a));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
