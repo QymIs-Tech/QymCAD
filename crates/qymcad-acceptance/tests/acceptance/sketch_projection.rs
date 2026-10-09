@@ -173,78 +173,127 @@ fn a_point_at(sk: &qymcad::SketchInfo, x: f64, y: f64) -> bool {
     sk.places.iter().any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - y).abs() < 1e-3)
 }
 
+/// THE CHAIN OF THE REPORT, by hand: a block 40 x 30 whose sides are the parameters w and h; on its top face the outline
+/// projected, made construction, a rectangle inside it held 5 off each side by the dimension tool, extruded 10 on.
+fn the_chain_of_the_report() -> Session {
+    let mut s = Session::start();
+    build::into_the_first_part(&mut s);
+    build::parameter(&mut s, "w", "40");
+    build::parameter(&mut s, "h", "30");
+    build::rectangle_on_xy(&mut s);
+    s.key(Key::Escape);
+    // the lower side given w, the right side given h, by the dimension tool
+    for (on, off, value) in [((20.0, 0.0), (20.0, -10.0), "w"), ((40.0, 15.0), (50.0, 15.0), "h")] {
+        let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+        s.press_hint(&hint);
+        s.click_on_sketch(on.0, on.1);
+        s.click_on_sketch(off.0, off.1);
+        s.fill_hinted(&field, value).key(Key::Enter);
+        s.key(Key::Escape);
+    }
+    let finish = s.word("wb-finish");
+    s.press_word(&finish);
+    take(&mut s, "tb-extrude-hint");
+    s.key(Key::Enter);
+    s.key(Key::Escape);
+    // on the top: the outline of the face projected and made construction
+    build::sketch_on_face(&mut s, [20.0, 15.0, 10.0]);
+    take(&mut s, "tb-project-body-hint");
+    bar_word(&mut s, "opt-face-outline");
+    s.click_on_sketch(20.0, 15.0);
+    s.key(Key::Escape);
+    let arrow = s.word("tb-select-hint");
+    s.press_hint(&arrow);
+    for (k, (x, y)) in [(20.0, 0.0), (40.0, 15.0), (20.0, 30.0), (0.0, 15.0)].into_iter().enumerate() {
+        let at = s.on_sketch(x, y);
+        if k == 0 {
+            s.click(at);
+        } else {
+            s.click_with(at, PointerButton::Primary, qymcad::Modifiers::SHIFT);
+        }
+    }
+    s.key(Key::X);
+    s.key(Key::Escape);
+    // a rectangle inside, each side held 5 off the side of the outline beside it
+    build::draw(&mut s, "tb-rect-hint", &[(6.0, 6.0), (34.0, 24.0)]);
+    a_distance_between(&mut s, (20.0, 0.0), (20.0, 6.0), "5");
+    a_distance_between(&mut s, (40.0, 15.0), (34.0, 15.0), "5");
+    a_distance_between(&mut s, (20.0, 30.0), (20.0, 24.0), "5");
+    a_distance_between(&mut s, (0.0, 15.0), (6.0, 15.0), "5");
+    let finish = s.word("wb-finish");
+    s.press_word(&finish);
+    take(&mut s, "tb-extrude-hint");
+    s.key(Key::Enter);
+    s.key(Key::Escape);
+    s
+}
+
+/// What is wrong with the sketch on the top, against an outline `w` x `h` with the rectangle 5 inside it: the points
+/// that stand nowhere.
+fn tied_to(s: &mut Session, w: f64, h: f64) -> Option<String> {
+    let sk = s.document().sketches.last().cloned().expect("the sketch on the top");
+    let want = [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h), (5.0, 5.0), (w - 5.0, 5.0), (w - 5.0, h - 5.0), (5.0, h - 5.0)];
+    let missing: Vec<(f64, f64)> = want.into_iter().filter(|&(x, y)| !a_point_at(&sk, x, y)).collect();
+    (!missing.is_empty()).then(|| format!("for {w} x {h} nothing stands at {missing:?}; the sketch shows {:?}, {} redundant", sk.places, sk.redundant))
+}
+
+/// A dimension of the first sketch, the one whose label reads `label`, given `value` by a double click on it, the
+/// sketch opened from the tree and finished again.
+fn the_first_sketch_given(s: &mut Session, sizes: &[(&str, &str)]) {
+    let first = s.document().sketches[0].name.clone();
+    let row = s.find(&first, qymcad::pos2(0.0, 300.0)).unwrap_or_else(|| panic!("the first sketch is not in the tree; on screen: {:?}", s.words()));
+    s.double_click(row.center());
+    for (label, value) in sizes {
+        let at = s.find(label, qymcad::pos2(640.0, 400.0)).unwrap_or_else(|| panic!("no dimension {label:?} on the sheet; on screen: {:?}", s.words()));
+        s.double_click(at.center());
+        let field = s.word("sk-expr-example");
+        s.fill_hinted(&field, value).key(Key::Enter);
+    }
+    let finish = s.word("wb-finish");
+    s.press_word(&finish);
+}
+
 probe! {
-    /// WHAT IS TIED TO A PROJECTION BY DIMENSIONS FOLLOWS THE BODY, on the path of the report, by hand: a block 40 x 30 whose
-    /// sides are the parameters w and h; on its top face the outline projected, made construction, a rectangle inside it
-    /// held 5 off each side by the dimension tool, extruded; w and h changed to 30 and 20 in the table of parameters. The
-    /// outline of the projection stands on the new top, and the rectangle 5 inside it.
+    /// WHAT IS TIED TO A PROJECTION BY DIMENSIONS FOLLOWS THE BODY, on the chain of the report, whatever way the body
+    /// above it is changed: the parameters in their table; the dimensions of the first sketch by a double click; the
+    /// parameters changed and the change undone and done again; the document saved, opened and then changed. The outline
+    /// of the projection stands on the new top, and the rectangle 5 inside it.
     ///
     /// Reported behaviour: "tie to the projection by dimensions, change the body above in the tree: does not work at all".
-    fn what_is_tied_to_a_projection_by_dimensions_follows_the_parameters() {
-        let mut s = Session::start();
-        build::into_the_first_part(&mut s);
-        build::parameter(&mut s, "w", "40");
-        build::parameter(&mut s, "h", "30");
-        build::rectangle_on_xy(&mut s);
-        s.key(Key::Escape);
-        // the lower side given w, the right side given h, by the dimension tool
-        for (on, off, value) in [((20.0, 0.0), (20.0, -10.0), "w"), ((40.0, 15.0), (50.0, 15.0), "h")] {
-            let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
-            s.press_hint(&hint);
-            s.click_on_sketch(on.0, on.1);
-            s.click_on_sketch(off.0, off.1);
-            s.fill_hinted(&field, value).key(Key::Enter);
-            s.key(Key::Escape);
+    fn what_is_tied_to_a_projection_by_dimensions_follows_the_body_changed_every_way() {
+        let mut failures = Vec::new();
+        // the parameters in their table
+        let mut s = the_chain_of_the_report();
+        if let Some(e) = tied_to(&mut s, 40.0, 30.0) {
+            failures.push(format!("GUARD, as built: {e}"));
         }
-        let finish = s.word("wb-finish");
-        s.press_word(&finish);
-        take(&mut s, "tb-extrude-hint");
-        s.key(Key::Enter);
-        s.key(Key::Escape);
-        // on the top: the outline of the face projected and made construction
-        build::sketch_on_face(&mut s, [20.0, 15.0, 10.0]);
-        take(&mut s, "tb-project-body-hint");
-        bar_word(&mut s, "opt-face-outline");
-        s.click_on_sketch(20.0, 15.0);
-        s.key(Key::Escape);
-        let arrow = s.word("tb-select-hint");
-        s.press_hint(&arrow);
-        for (k, (x, y)) in [(20.0, 0.0), (40.0, 15.0), (20.0, 30.0), (0.0, 15.0)].into_iter().enumerate() {
-            let at = s.on_sketch(x, y);
-            if k == 0 {
-                s.click(at);
-            } else {
-                s.click_with(at, PointerButton::Primary, qymcad::Modifiers::SHIFT);
-            }
-        }
-        s.key(Key::X);
-        s.key(Key::Escape);
-        // a rectangle inside, each side held 5 off the side of the outline beside it
-        build::draw(&mut s, "tb-rect-hint", &[(6.0, 6.0), (34.0, 24.0)]);
-        a_distance_between(&mut s, (20.0, 0.0), (20.0, 6.0), "5");
-        a_distance_between(&mut s, (40.0, 15.0), (34.0, 15.0), "5");
-        a_distance_between(&mut s, (20.0, 30.0), (20.0, 24.0), "5");
-        a_distance_between(&mut s, (0.0, 15.0), (6.0, 15.0), "5");
-        let before = s.document().sketches.last().cloned().expect("the sketch on the top");
-        assert!(a_point_at(&before, 5.0, 5.0) && a_point_at(&before, 35.0, 25.0), "GUARD: the rectangle inside stands 5 off the outline; the sketch shows {:?}", before.places);
-        let finish = s.word("wb-finish");
-        s.press_word(&finish);
-        take(&mut s, "tb-extrude-hint");
-        s.key(Key::Enter);
-        s.key(Key::Escape);
-
         build::set_parameter(&mut s, "w", "30");
         build::set_parameter(&mut s, "h", "20");
+        failures.extend(tied_to(&mut s, 30.0, 20.0).map(|e| format!("the parameters changed: {e}")));
+        // undone, and done again
+        s.chord(qymcad::Modifiers::COMMAND, Key::Z);
+        s.chord(qymcad::Modifiers::COMMAND, Key::Z);
+        failures.extend(tied_to(&mut s, 40.0, 30.0).map(|e| format!("the change undone: {e}")));
+        s.chord(qymcad::Modifiers::COMMAND | qymcad::Modifiers::SHIFT, Key::Z);
+        s.chord(qymcad::Modifiers::COMMAND | qymcad::Modifiers::SHIFT, Key::Z);
+        failures.extend(tied_to(&mut s, 30.0, 20.0).map(|e| format!("the change done again: {e}")));
 
-        let sk = s.document().sketches.last().cloned().expect("the sketch on the top");
-        let outline = [(0.0, 0.0), (30.0, 0.0), (30.0, 20.0), (0.0, 20.0)];
-        let inside = [(5.0, 5.0), (25.0, 5.0), (25.0, 15.0), (5.0, 15.0)];
-        let missing: Vec<(f64, f64)> = outline.iter().chain(&inside).copied().filter(|&(x, y)| !a_point_at(&sk, x, y)).collect();
-        assert!(
-            missing.is_empty(),
-            "w 30, h 20: the outline 30 x 20 and the rectangle 5 inside it should stand there, and nothing stands at {missing:?}; the sketch shows {:?}, {} redundant",
-            sk.places,
-            sk.redundant
-        );
+        // the dimensions of the first sketch by a double click
+        let mut s = the_chain_of_the_report();
+        the_first_sketch_given(&mut s, &[("40.0", "30"), ("30.0", "20")]);
+        failures.extend(tied_to(&mut s, 30.0, 20.0).map(|e| format!("the first sketch given 30 and 20: {e}")));
+
+        // saved, opened, then changed
+        let mut s = the_chain_of_the_report();
+        let path = std::env::temp_dir().join(format!("projection-tied-{}.qcad", std::process::id()));
+        let path = path.to_string_lossy().to_string();
+        build::save_as(&mut s, &path);
+        build::open_project(&mut s, &path);
+        build::set_parameter(&mut s, "w", "30");
+        build::set_parameter(&mut s, "h", "20");
+        failures.extend(tied_to(&mut s, 30.0, 20.0).map(|e| format!("saved, opened, then changed: {e}")));
+        let _ = std::fs::remove_file(&path);
+
+        assert!(failures.is_empty(), "what is tied to a projection, the body changed:\n{}", failures.join("\n"));
     }
 }

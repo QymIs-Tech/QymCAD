@@ -405,23 +405,12 @@ impl App {
                                                           // joints.
         project.take_placement_from(&self.project);
         self.project = project;
-        self.project.solve_joints(); // live placement, new geometry - reconcile them at once, in this same frame
-        qymcad_ui_state::settle_params_seen(&mut self.params_seen, &mut self.project); // the rebuild ARRIVED - the values from IT are the ones now "seen"
-                                                                                       // LIVE SHAPES ARE ADDED, THEY DO NOT REPLACE THE CACHE WHOLE.
-                                                                                       //
-                                                                                       // THIS USED TO BE `self.live.shapes = shapes...`, AND IT WAS THE LATCH OF AN ENDLESS CIRCLE. A rebuild
-                                                                                       // TAKES the cache with it into the thread (`mem::take` at dispatch) and returns its own copy. If the
-                                                                                       // cache was empty at dispatch - and right after "Rebuild all" it is exactly empty - then the copy is
-                                                                                       // empty, and the return WIPED everything that had come up while the thread was computing: the
-                                                                                       // imports restored from the embedded STEP. The preparation then saw zero shapes again and asked for
-                                                                                       // another rebuild.
-                                                                                       //
-                                                                                       // A MEASUREMENT IN A LIVE WINDOW caught it word for word: "B-rep preparation started: 136 live
-                                                                                       // shapes" -> "rebuild result accepted" -> "B-rep preparation started: 0 live shapes". Without end.
-                                                                                       //
-                                                                                       // The same class as the placement just above: the copy from the thread is stale for EVERYTHING THE
-                                                                                       // THREAD DID NOT COMPUTE. It brings back its own and lays it on top; it does not touch anyone
-                                                                                       // else's.
+        // live placement, new geometry - reconcile them at once, in this same frame
+        self.project.solve_joints();
+        // the rebuild ARRIVED - the values from IT are the ones now "seen"
+        qymcad_ui_state::settle_params_seen(&mut self.params_seen, &mut self.project);
+        // LIVE SHAPES ARE ADDED, NOT PUT IN PLACE OF THE CACHE: the thread took the cache with it and brings back only what
+        // it computed; laid in place of the cache, an empty copy wiped the imports restored while it ran
         adopt_shapes(&mut self.live, shapes);
         qymcad_ui_state::keep_live_shapes(&mut self.live, &self.project);
         for (body, faces) in built {

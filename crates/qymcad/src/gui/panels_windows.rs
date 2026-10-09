@@ -893,6 +893,9 @@ pub(crate) fn apply_param_edit(wc: &mut qymcad_ui_state::WinCtx) {
             wc.project.mark_sketch_dirty(sid);
         }
     }
+    // THE SKETCHES SOLVED BY THE NEW VALUES ARE PART OF THE EDIT that changed them: solved after its step closed, they
+    // were a step of their own ("Edit"), and a change of two parameters took four presses of Ctrl+Z to undo
+    qymcad_ui_state::fold_into_last_step(wc.edits, wc.project);
     wc.ask.push(qymcad_ui_state::WinAsk::RegenerateAll); // the bodies rebuild associatively from the new parameters
 }
 
