@@ -49,7 +49,11 @@ if (Test-Path $fwdSrc) {
 # --- OCCT libraries ---
 $occtBin = Join-Path $env:OCCT_ROOT "bin"
 if (-not (Test-Path $occtBin)) { throw "no OCCT binaries at $occtBin" }
-$dlls = Get-ChildItem "$occtBin\*.dll"
+$dlls = Get-ChildItem "$occtBin\*.dll" | Where-Object {
+    $_.Name -notmatch '^(?i)(vtk|qt|q(?!ymcad))' -and
+    $_.Name -notmatch '(?i)debug' -and
+    $_.Name -notmatch '(?i)(draw|test|inspector|tkivtk|shapeview|dfbrowser|treemodel|messagemodel|messageview|tkview\.dll|tkdcaf\.dll)'
+}
 if ($dlls.Count -eq 0) { throw "$occtBin holds no DLLs" }
 Write-Host ">>> OCCT libraries: $($dlls.Count)"
 Copy-Item $dlls.FullName $out

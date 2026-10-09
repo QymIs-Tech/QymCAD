@@ -104,6 +104,32 @@ def patch_tbb_for_win7(out_dir):
         with open(tbb_path, "wb") as f:
             f.write(data)
 
+def is_excluded(fname):
+    """
+    Filter out unused frameworks (VTK, Qt5), debug libraries, and test/inspection tools.
+    Core OpenCASCADE modeling/exchange libraries (like TKG3d, TKG2d, TKStd, TKV3d)
+    must NOT be excluded, even though some end with 'd.dll'.
+    """
+    fl = fname.lower()
+    if fl == "combase.dll":
+        return True
+    if fl.startswith("vtk") or fl.startswith("qt"):
+        return True
+    if fl.startswith("q") and not fl.startswith("qymcad"):
+        return True
+    if "debug" in fl:
+        return True
+    if fl in ["vccorlib140.dll", "vccorlib140d.dll"]:
+        return True
+    if fl.startswith("tkivtk") or "inspector" in fl or "draw" in fl or "test" in fl:
+        return True
+    if fl in [
+        "tkshapeview.dll", "tkdfbrowser.dll", "tktreemodel.dll",
+        "tkmessagemodel.dll", "tkmessageview.dll", "tkview.dll", "tkdcaf.dll"
+    ]:
+        return True
+    return False
+
 def main():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     os.chdir(repo_root)
@@ -146,13 +172,7 @@ def main():
         if src and os.path.isdir(src):
             for fname in os.listdir(src):
                 fl = fname.lower()
-                if fl.endswith(".dll") and fl != "combase.dll":
-                    # Exclude huge unused frameworks (VTK, Qt5), debug builds and WinRT helpers
-                    if (fl.startswith("vtk") or fl.startswith("qt") or
-                        (fl.startswith("q") and not fl.startswith("qymcad")) or
-                        "debug" in fl or fl.endswith("d.dll") or
-                        fl in ["vccorlib140.dll", "vccorlib140d.dll"]):
-                        continue
+                if fl.endswith(".dll") and not is_excluded(fname):
                     dest = os.path.join(out_dir, fname)
                     if not os.path.exists(dest):
                         shutil.copy2(os.path.join(src, fname), dest)
@@ -162,15 +182,11 @@ def main():
     thirdparty_dir = os.path.join("target", "occt-win64", "3rdparty")
     if os.path.isdir(thirdparty_dir):
         for root, dirs, files in os.walk(thirdparty_dir):
+            if "debug" in root.lower():
+                continue
             for f in files:
                 fl = f.lower()
-                if fl.endswith(".dll"):
-                    # Exclude huge unused frameworks (VTK, Qt5), debug builds and WinRT helpers
-                    if (fl.startswith("vtk") or fl.startswith("qt") or
-                        (fl.startswith("q") and not fl.startswith("qymcad")) or
-                        "debug" in fl or fl.endswith("d.dll") or
-                        fl in ["vccorlib140.dll", "vccorlib140d.dll"]):
-                        continue
+                if fl.endswith(".dll") and not is_excluded(f):
                     dest = os.path.join(out_dir, f)
                     if not os.path.exists(dest):
                         shutil.copy2(os.path.join(root, f), dest)
