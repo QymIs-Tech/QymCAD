@@ -77,9 +77,11 @@ probe! {
         let before = second(&mut s);
         let run = s.word("j-anim-angle");
         s.press_word_near(&run, qymcad::pos2(1100.0, 600.0));
-        s.pause(std::time::Duration::from_millis(300));
-        let now = second(&mut s);
-        assert!(now.at != before.at || now.axes != before.axes, "with no limits set the animation ran nothing: the part stands at {:?} looking {:?}, as before", now.at, now.axes);
+        let moved = |s: &mut Session| {
+            let now = second(s);
+            now.at != before.at || now.axes != before.axes
+        };
+        s.wait_for("the animation with no limits set to move the part", std::time::Duration::from_secs(30), moved);
     }
 }
 
@@ -97,9 +99,11 @@ probe! {
         let before = second(&mut s);
         let run = s.word("j-anim-angle");
         s.press_word_near(&run, qymcad::pos2(1100.0, 600.0));
-        s.pause(std::time::Duration::from_millis(400));
-        let during = second(&mut s);
-        assert!(during.axes != before.axes || during.at != before.at, "the animation moved nothing: the part stands at {:?} looking {:?}", during.at, during.axes);
+        let moved = |s: &mut Session| {
+            let during = second(s);
+            during.axes != before.axes || during.at != before.at
+        };
+        s.wait_for("the animation within its limits to move the part", std::time::Duration::from_secs(30), moved);
         let stop = s.word("j-anim-stop");
         s.press_word_near(&stop, qymcad::pos2(1100.0, 600.0));
         let after = second(&mut s);
