@@ -3522,7 +3522,7 @@ enum RectPut {
 /// A RECTANGLE CLICKED AT `clicks` TIED TO WHAT IS UNDER THEM, as the ends of a line are, when the automatic constraints
 /// are on and it is not construction.
 fn tie_the_rect_to_what_is_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, si: usize, clicks: &[Point2], put: RectPut) {
-    if sk.tool.construction || !sk.set.auto_constrain {
+    if !tied(sk) {
         return;
     }
     match put {
@@ -3536,6 +3536,12 @@ fn tie_the_rect_to_what_is_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect
             tie_the_clicked_points(&mut *sk.project, *sk.view, si, clicks, &own);
         }
     }
+}
+
+/// WHETHER WHAT IS DRAWN NOW IS TIED TO WHAT IT LANDS ON: "No ties" not ticked on the bar of the tool and the auto
+/// constraints of the sketch on - construction geometry as any other.
+fn tied(sk: &qymcad_ui_state::SketchCtx) -> bool {
+    sk.tool.ties == qymcad_ui_state::Ties::Laid && sk.set.auto_constrain
 }
 
 /// Where the two ends of line `seg` of sketch `si` stand, first end first.
@@ -3561,14 +3567,14 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
             if let Some(&last) = sk.tool.pts.last() {
                 let prev = (sk.tool.pts.len() >= 2).then(|| sk.tool.pts[sk.tool.pts.len() - 2]);
                 // an end put on an edge of the body under the sketch takes the edge in first, so the end is tied to it
-                if !con && sk.set.auto_constrain {
+                if tied(sk) {
                     if prev.is_none() {
                         auto_project_under(sk, rect, si, last);
                     }
                     auto_project_under(sk, rect, si, w);
                 }
                 let seg = sk.project.add_line_entity(si, last.x, last.y, w.x, w.y, qymcad_core::feature::Purpose::of(con));
-                if !con && sk.set.auto_constrain {
+                if tied(sk) {
                     // automatic constraints: horizontal or vertical, perpendicular to the previous segment,
                     // point-on-edge
                     infer_on_segment(&mut *sk.project, *sk.view, si, prev, last, w);
@@ -3581,7 +3587,9 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 // zoom it merges only what the eye cannot tell apart anyway. Snapping already returns the
                 // exact coordinates of a vertex on a hit.
                 let tol = (8.0 / sk.view.scale as f64).clamp(1e-4, 0.4);
-                sk.project.merge_close_points(si, tol);
+                if sk.tool.ties == qymcad_ui_state::Ties::Laid {
+                    sk.project.merge_close_points(si, tol);
+                }
                 qymcad_ui_state::invalidate(&mut *sk.regen);
                 // THE CHAIN GOES ON FROM ITS CORNERS AS THEY STAND: an automatic constraint and the solve after it move
                 // the ends of the segment just laid (a corner squared by a Perpendicular), and kept at the clicks, the
@@ -3676,7 +3684,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                     (p0.x, p0.y, ((p1.x - p0.x).powi(2) + (p1.y - p0.y).powi(2)).sqrt())
                 };
                 // the centre clicked on an edge of the body under the sketch takes the edge in, and is tied to it
-                let centre_clicked = sk.tool_prefs.circ_mode != 1 && !con && sk.set.auto_constrain;
+                let centre_clicked = sk.tool_prefs.circ_mode != 1 && tied(sk);
                 if centre_clicked {
                     auto_project_under(sk, rect, si, p0);
                 }
@@ -4919,6 +4927,11 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
 pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2) -> Point2 {
     let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
     let w = qymcad_ui_state::to_world(&*sk.view, rect, screen);
+    // "No ties" on the bar of a drawing tool: the point goes where the pointer is, and the preview snaps to nothing
+    if sk.armed.draw_kind() != 0 && sk.tool.ties == qymcad_ui_state::Ties::Free {
+        *sk.snap_hint = None;
+        return Point2::new(w.x, w.y);
+    }
     let sd = |p: Point2, view: &qymcad_ui_state::View2d| qymcad_ui_state::Sheet { view: *view, rect }.at(p).distance(screen);
     // the centres of the circles and arcs of the active sketch, so a centre can be told from a plain vertex
     let centers: std::collections::HashSet<u64> = qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses)

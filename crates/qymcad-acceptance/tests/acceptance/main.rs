@@ -56,6 +56,7 @@ mod settings;
 mod side_panels;
 mod size_and_time;
 mod sketch_constraints;
+mod sketch_construction_ties;
 mod sketch_dimensions;
 mod sketch_editing;
 mod sketch_shapes_side_by_side;

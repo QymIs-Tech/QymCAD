@@ -6466,6 +6466,10 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
         // ONLY the parameters of the active tool or operation
         if bc.armed.draw_kind() != 0 {
             ui.checkbox(&mut bc.tool.construction, qymcad_i18n::tr("opt-construction-short")).on_hover_text(qymcad_i18n::tr("opt-construction-hint"));
+            let mut free = bc.tool.ties == qymcad_ui_state::Ties::Free;
+            if ui.checkbox(&mut free, qymcad_i18n::tr("opt-no-ties-short")).on_hover_text(qymcad_i18n::tr("opt-no-ties-hint")).changed() {
+                bc.tool.ties = if free { qymcad_ui_state::Ties::Free } else { qymcad_ui_state::Ties::Laid };
+            }
             if bc.armed.draw_kind() == 11 {
                 ui.separator();
                 ui.label(qymcad_i18n::tr("tool-text"));

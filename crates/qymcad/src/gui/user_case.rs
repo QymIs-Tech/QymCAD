@@ -758,6 +758,40 @@ mod tests {
         let si2 = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
         let mut hand = Hand::new(&mut app);
         hand.sk_tool(3).click2d(30.0, 12.0).click2d(36.0, 12.0); // a circle of diameter 12
+                                                                 // A CONSTRUCTION LINE IS TIED AS ANY LINE: up from the centre of the circle with "Constr." ticked on the bar - it
+                                                                 // starts on the centre and stands upright, held so by a constraint
+        let laid = app.project.sketches[si2].constraints.len();
+        let mut hand = Hand::new(&mut app);
+        hand.key(egui::Key::Escape).sk_tool(1);
+        let ticked = hand.press_word(&crate::i18n::tr("opt-construction-short"), egui::pos2(0.0, 0.0));
+        hand.click2d(30.0, 12.0).click2d(30.0, 22.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        if hand.app.tools.tool.construction {
+            hand.sk_tool(1);
+            hand.press_word(&crate::i18n::tr("opt-construction-short"), egui::pos2(0.0, 0.0));
+            hand.key(egui::Key::Escape);
+        }
+        {
+            let s = &app.project.sketches[si2];
+            let centre = s.entities.iter().find_map(|e| match e.kind {
+                qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
+                _ => None,
+            });
+            let up = s.entities.iter().rev().find_map(|e| match e.kind {
+                qymcad_core::model::EntityKind::Line { a, .. } if e.construction => Some(a),
+                _ => None,
+            });
+            let on_centre = up
+                .zip(centre)
+                .is_some_and(|(a, c)| a == c || s.constraints.iter().any(|k| matches!(*k, qymcad_core::model::Constraint::Coincident { a: x, b: y } if (x, y) == (a, c) || (x, y) == (c, a))));
+            if !ticked || up.is_none() || !on_centre || s.constraints.len() <= laid {
+                problems.push(format!(
+                    "[a construction line from the centre] the switch ticked {ticked}, the line drawn {}, on the centre {on_centre}, constraints {} -> {}",
+                    up.is_some(),
+                    laid,
+                    s.constraints.len()
+                ));
+            }
+        }
         app.finish_sketch_edit();
         check_all(&mut app, "a sketch on a face of the housing", &mut problems);
 

@@ -848,6 +848,19 @@ pub struct SketchPattern {
     pub angle: f64,
 }
 
+/// WHETHER WHAT A DRAWING TOOL PUTS DOWN IS TIED TO WHAT IT LANDS ON, construction or not. Reported behaviour:
+/// "construction geometry is built without ties" - drawing construction switched the ties off, and nothing switched
+/// them off for ordinary geometry.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Ties {
+    /// the pointer snaps to points and lines, and what is drawn is tied there and laid level or upright where it
+    /// stands so, as the auto constraints of the sketch say
+    #[default]
+    Laid,
+    /// "No ties": put down exactly where it is clicked - nothing snaps, nothing is tied, the preview snaps to nothing
+    Free,
+}
+
 /// THE ACTIVE SKETCH TOOL: what is chosen on the panel and what has already been clicked with it.
 /// "Which tool" and "how many points it has gathered" used to be different fields of `App`, and changing the tool
 /// was not obliged to clear what had been gathered - yet it must: a line's points mean nothing to an arc.
@@ -857,6 +870,8 @@ pub struct SketchTool {
     pub pts: Vec<Point2>,
     /// construction geometry is being drawn
     pub construction: bool,
+    /// whether what is drawn is tied to what it lands on - "No ties" on the bar of a drawing tool
+    pub ties: Ties,
     /// PROJECTION: take not one edge but THE WHOLE outline of the face the sketch stands on. By a switch of its
     /// own rather than a guess from the click: "clicked inside the face" is indistinguishable from a miss past an
     /// edge on outlines with complicated cut-outs.

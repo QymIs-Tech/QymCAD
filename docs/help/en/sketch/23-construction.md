@@ -8,6 +8,15 @@ drawn dashed, and left out of the contour a body is made from.
 Select elements with the arrow and press the button (or X). Pressed again on elements already construction, it turns
 them back into ordinary geometry. With nothing selected the button asks what to turn.
 
+## Drawing it as construction
+
+On the top bar of a drawing tool (the line, the rectangle, the circle and the others) tick **Constr.** - whatever is
+drawn is laid dashed at once. It is tied as ordinary geometry is: the pointer snaps to points and lines, a line from a
+corner starts on that corner, level and upright are laid by themselves.
+
+Beside it, **No ties** puts down what is drawn exactly where you click - the pointer snaps to nothing while drawing,
+and nothing is tied to anything. It works for ordinary and construction geometry alike.
+
 ## What it is for
 
 Construction geometry is layout: axes of symmetry, the circle the holes stand on, the diagonal that finds the centre of
