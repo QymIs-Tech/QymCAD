@@ -1533,6 +1533,7 @@ io-rebuild-cancelled = Rebuild cancelled — the model is shown as it was. Rebui
 io-rebuild-cancelled-undone = Rebuild cancelled, "{ $what }" taken back - Redo brings it back
 io-rebuild-failed = The rebuild failed ({ $why }) — the model is shown as it was. Rebuild it from the Edit menu when you need it.
 io-rebuild-failed-undone = The rebuild failed ({ $why }), "{ $what }" taken back - Redo brings it back
+io-export-failed = { $format }: the export failed ({ $why }) — the model is as it was
 io-project-loaded = The project is loaded.
 io-saving = Saving…
 io-existing = Existing:

@@ -538,17 +538,6 @@ impl App {
     }
 }
 
-/// AN IMPRINT OF WHAT THE REBUILD WAS COMPUTED FROM - to check whether its result has gone stale.
-///
-/// THE FULL DOCUMENT KEY (`state_key`) USED TO BE HERE, and it was THE SAME mistake the planner made: it
-/// includes THE PLACEMENT - where the parts stand. Drag a part, and the imprint changes on every frame,
-/// the arriving result is declared stale and thrown away, and another rebuild is requested right after.
-/// The circle closes and does not open until the hand stops: the window blinks twenty times a second
-/// while the parts lag behind, as if on rubber bands.
-///
-/// What must be asked for is exactly WHAT THE RESULT WAS COMPUTED FROM: recipes, sketches, parameters.
-/// Dragging a part is none of those, and there is no reason to discard finished work over it - the live
-/// placement is carried across by [`Project::take_placement_from`].
 /// THE REBUILD ON ITS WORKER THREAD, sent back over `tx`. A free function rather than a closure inside `spawn_regen`:
 /// it needs nothing of the window.
 fn rebuild_in_worker(
@@ -582,12 +571,20 @@ fn rebuild_in_worker(
     let _ = tx.send(match report {
         Ok(report) => JobResult::Regenerated { stamp, project: Box::new(proj), shapes, built: report.built, errors: report.errors, cancelled: report.cancelled },
         // the first line: the status is one line
-        Err(panic) => {
-            let text = crate::crash::panic_text(panic.as_ref());
-            let why = text.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("(the panic carried no message)").to_string();
-            JobResult::RegenFailed { stamp, shapes, why }
-        }
+        Err(panic) => JobResult::RegenFailed { stamp, shapes, why: panic_line(panic.as_ref()) },
     });
+}
+
+/// THE FIRST LINE OF WHAT A PANIC SAID, for the status line, which is one line.
+fn panic_line(payload: &(dyn std::any::Any + Send)) -> String {
+    let text = crate::crash::panic_text(payload);
+    text.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("(the panic carried no message)").to_string()
+}
+
+/// AN EXPORT THAT PANICKED, said on the status line: the format and what the panic said. The bodies it took into its
+/// thread are back in the cache by then (`JobResult::Exported`), so the model is as it was.
+fn export_failed(format: &str, payload: &(dyn std::any::Any + Send)) -> String {
+    format!("{} {}", egui_phosphor::regular::WARNING, crate::i18n::tr2("io-export-failed", "format", format, "why", &panic_line(payload)))
 }
 
 /// A REBUILD THAT PANICKED, met as a cancelled one is (`finish_regen_checked`) where the document is concerned,
@@ -636,6 +633,17 @@ pub(crate) fn finish_regen_failed(rc: &mut qymcad_ui_state::RebuildCtx, stamp: u
     }
 }
 
+/// AN IMPRINT OF WHAT THE REBUILD WAS COMPUTED FROM - to check whether its result has gone stale.
+///
+/// THE FULL DOCUMENT KEY (`state_key`) USED TO BE HERE, and it was THE SAME mistake the planner made: it
+/// includes THE PLACEMENT - where the parts stand. Drag a part, and the imprint changes on every frame,
+/// the arriving result is declared stale and thrown away, and another rebuild is requested right after.
+/// The circle closes and does not open until the hand stops: the window blinks twenty times a second
+/// while the parts lag behind, as if on rubber bands.
+///
+/// What must be asked for is exactly WHAT THE RESULT WAS COMPUTED FROM: recipes, sketches, parameters.
+/// Dragging a part is none of those, and there is no reason to discard finished work over it - the live
+/// placement is carried across by [`Project::take_placement_from`].
 pub(crate) fn regen_doc_stamp(project: &qymcad_core::model::Project) -> u64 {
     project.rebuild_key()
 }
@@ -697,6 +705,11 @@ pub(crate) fn adopt_shapes(live: &mut super::LiveGeom, shapes: Vec<(Id, qymcad_k
 /// panic.
 #[cfg(test)]
 pub(crate) const REBUILD_PANICS_FOR_TEST: &str = "a test asks this rebuild to panic";
+
+/// THE TEST-ONLY SWITCH OF AN EXPORT: a file whose name holds this is written by a worker that panics, inside the caught
+/// region. A mark in the path rather than a flag of the process, so exports side by side cannot take each other's panic.
+#[cfg(test)]
+pub(crate) const EXPORT_PANICS_FOR_TEST: &str = "export-panics-for-test";
 
 /// Writing the STL, once a name has been given. Like STEP, the solids leave the cache only here: while
 /// the chooser is up the program goes on drawing, and a viewport whose bodies were taken out from under
@@ -814,46 +827,57 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
     let p = path.to_string_lossy().into_owned();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        // every body's mesh in its own coordinates, and where it stands in the world
-        let mut own: Vec<Placed> = Vec::new();
-        let mut failed = 0usize; // a body whose tessellation failed is NOT dropped silently but reported
-        for (id, s, m) in &moved {
-            if let Some(qymcad_core::geom::Built { mesh, faces }) = s.tessellate_merged(deflection) {
-                let tri = tri_colours(&tree, *id, &mesh, &faces);
-                own.push(Placed { own: qymcad_core::model::ExportMesh { body: *id, mesh, tri_colors: tri }, place: *m });
+        // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT, as a rebuild's does not (`rebuild_in_worker`): the
+        // bodies came into this thread from the cache and go back only in the result, so the work that may panic is
+        // caught and the shapes are sent home whatever came of it. Unwind-safe as asserted: after a panic only `moved`
+        // is read, by value, and what the work built is dropped unread.
+        let said = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            if p.contains(EXPORT_PANICS_FOR_TEST) {
+                panic!("an export made to fail by a test");
+            }
+            // every body's mesh in its own coordinates, and where it stands in the world
+            let mut own: Vec<Placed> = Vec::new();
+            let mut failed = 0usize; // a body whose tessellation failed is NOT dropped silently but reported
+            for (id, s, m) in &moved {
+                if let Some(qymcad_core::geom::Built { mesh, faces }) = s.tessellate_merged(deflection) {
+                    let tri = tri_colours(&tree, *id, &mesh, &faces);
+                    own.push(Placed { own: qymcad_core::model::ExportMesh { body: *id, mesh, tri_colors: tri }, place: *m });
+                } else {
+                    failed += 1;
+                }
+            }
+            own.extend(raw);
+            let n = own.len();
+            // STL writes EVERYTHING that is on screen (B-rep plus meshes), but it must say that some of the
+            // bodies have no B-rep: the same sort STEP uses, so that the contents of the two files do not
+            // drift apart SILENTLY.
+            let done = || crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
+            // a tree goes out with every part in its own coordinates, placed by the tree; flat, every body where it stands
+            let written = if tree.is_empty() {
+                let world: Vec<qymcad_core::geom::Mesh> = own
+                    .into_iter()
+                    .map(|Placed { own: qymcad_core::model::ExportMesh { mut mesh, .. }, place }| {
+                        mesh.transform(&place);
+                        mesh
+                    })
+                    .collect();
+                write_meshes(format, &world, &p)
             } else {
-                failed += 1;
+                let own: Vec<qymcad_core::model::ExportMesh> = own.into_iter().map(|p| p.own).collect();
+                match format {
+                    qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::export_3mf_tree(&tree, &own, &p),
+                    _ => qymcad_io::export_glb_tree(&tree, &own, &p), // `mesh_job` gives a tree to GLB and 3MF alone
+                }
+            };
+            match written {
+                Ok(()) if failed > 0 => format!("(!) {}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &n.to_string()), ("path", &p), ("failed", &failed.to_string())]), note),
+                Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
+                Ok(()) => done(),
+                Err(e) => crate::i18n::name(&e),
             }
-        }
-        own.extend(raw);
-        let n = own.len();
-        // STL writes EVERYTHING that is on screen (B-rep plus meshes), but it must say that some of the
-        // bodies have no B-rep: the same sort STEP uses, so that the contents of the two files do not
-        // drift apart SILENTLY.
-        let done = || crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
-        // a tree goes out with every part in its own coordinates, placed by the tree; flat, every body where it stands
-        let written = if tree.is_empty() {
-            let world: Vec<qymcad_core::geom::Mesh> = own
-                .into_iter()
-                .map(|Placed { own: qymcad_core::model::ExportMesh { mut mesh, .. }, place }| {
-                    mesh.transform(&place);
-                    mesh
-                })
-                .collect();
-            write_meshes(format, &world, &p)
-        } else {
-            let own: Vec<qymcad_core::model::ExportMesh> = own.into_iter().map(|p| p.own).collect();
-            match format {
-                qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::export_3mf_tree(&tree, &own, &p),
-                _ => qymcad_io::export_glb_tree(&tree, &own, &p), // `mesh_job` gives a tree to GLB and 3MF alone
-            }
-        };
-        let said = match written {
-            Ok(()) if failed > 0 => format!("(!) {}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &n.to_string()), ("path", &p), ("failed", &failed.to_string())]), note),
-            Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
-            Ok(()) => done(),
-            Err(e) => crate::i18n::name(&e),
-        };
+        }))
+        .unwrap_or_else(|panic| export_failed(name, panic.as_ref()));
         let shapes_back = moved.into_iter().map(|(id, s, _)| (id, s)).collect();
         let _ = tx.send(JobResult::Exported { status: said, shapes_back });
     });
@@ -1030,21 +1054,30 @@ pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: 
     let tree = job.tree.clone();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let pairs: Vec<(&qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(_, s, m)| (s, *m)).collect();
-        // honest about what was skipped: a body with no live B-rep (an imported STL, a failed regen)
-        // does not get into the STEP - such a file used to come out short of parts SILENTLY, and that
-        // was discovered only by whoever received it.
-        let done = || crate::i18n::trn("io-exact-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
-        // a STEP goes out as the document's tree; a format with none, flat
-        let by_id: Vec<(Id, &qymcad_kernel::Shape)> = moved.iter().map(|(id, s, _)| (*id, s)).collect();
-        let written = if tree.is_empty() { qymcad_kernel::write_exact(format, &pairs, &p) } else { qymcad_kernel::write_step_tree(&tree, &by_id, &p) };
-        drop(by_id);
-        let status = match written {
-            Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
-            Ok(()) => done(),
-            Err(e) => crate::i18n::name(&e),
-        };
-        drop(pairs);
+        // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT: caught as in `write_mesh_to`, the shapes sent home
+        // whatever came of the write.
+        let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            if p.contains(EXPORT_PANICS_FOR_TEST) {
+                panic!("an export made to fail by a test");
+            }
+            let pairs: Vec<(&qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(_, s, m)| (s, *m)).collect();
+            // honest about what was skipped: a body with no live B-rep (an imported STL, a failed regen)
+            // does not get into the STEP - such a file used to come out short of parts SILENTLY, and that
+            // was discovered only by whoever received it.
+            let done = || crate::i18n::trn("io-exact-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
+            // a STEP goes out as the document's tree; a format with none, flat
+            let by_id: Vec<(Id, &qymcad_kernel::Shape)> = moved.iter().map(|(id, s, _)| (*id, s)).collect();
+            let written = if tree.is_empty() { qymcad_kernel::write_exact(format, &pairs, &p) } else { qymcad_kernel::write_step_tree(&tree, &by_id, &p) };
+            drop(by_id);
+            drop(pairs);
+            match written {
+                Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
+                Ok(()) => done(),
+                Err(e) => crate::i18n::name(&e),
+            }
+        }))
+        .unwrap_or_else(|panic| export_failed(name, panic.as_ref()));
         let shapes_back = moved.into_iter().map(|(id, s, _)| (id, s)).collect();
         let _ = tx.send(JobResult::Exported { status, shapes_back });
     });
