@@ -106,7 +106,7 @@ def header(img, width, bold, regular):
     text_w = d.textlength("QymCAD", font=name)
     gap = px(12)
     x = (px(width) - (side + gap + text_w)) / 2
-    top = px(28)
+    top = px(22)
     img.alpha_composite(logo, (round(x), top))
     # The name sits on a baseline just above the logo's middle, the line under it hangs from just below it.
     d.text((x + side + gap, top + side / 2 + px(3)), "QymCAD", font=name, fill=INK, anchor="ls")
@@ -176,8 +176,9 @@ def arrow(img, start, end, lift):
     img.alpha_composite(paint)
 
 
-def panel(img, width, top, bottom, bold, regular):
-    """The card under the two notes: what to do before the first launch, in both languages."""
+def panel(img, width, top, bottom, notes, bold, regular):
+    """The card under the notes: what to do before the first launch, and under each note's name the name
+    of its language, written in that language - the file name alone says "read me", not whose."""
     box = [px(40), px(top), px(width - 40), px(bottom)]
     radius = px(14)
     img.alpha_composite(soft_shadow(img.size, lambda d: d.rounded_rectangle(box, radius, fill=255), px(8), 0.10, (0, px(3))))
@@ -192,7 +193,12 @@ def panel(img, width, top, bottom, bold, regular):
     body = ImageFont.truetype(regular, px(12))
     y = px(top + 20)
     d.text((cx, y), "Before the first launch, open the note in your language", font=head, fill=INK, anchor="mm")
-    d.text((cx, y + px(17)), "Перед первым запуском откройте заметку на своём языке", font=body, fill=MUTED, anchor="mm")
+    d.text((cx, y + px(17)), "Прочтите  \u00b7  Прочитайте  \u00b7  Оқыңыз", font=body, fill=MUTED, anchor="mm")
+
+    # Under Finder's label of each note: about 4 points below the icon, then a 16-point line of 13-point text.
+    lang = ImageFont.truetype(regular, px(11))
+    for (x, y_note), language, half in notes:
+        d.text((px(x), px(y_note + half + 4 + 16 + 9)), language, font=lang, fill=MUTED, anchor="mm")
 
     # A thin rule of the logo's gradient along the card's top edge: the one place the colour repeats.
     rule = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -213,20 +219,22 @@ def main():
 
     s = layout()
     width, height = s["WIDTH"], s["HEIGHT"]
+    # The picture runs on under the status bar's strip; the design stays within `height`.
+    picture = height + s["STATUS_BAR"]
     app, apps = s["APP"], s["APPLICATIONS"]
-    note_top = min(s["NOTE_EN"][1], s["NOTE_RU"][1])
+    half = s["icon_size"] / 2
+    notes = [(place, s["LANGUAGES"][name], half) for name, place in s["NOTES"].items()]
 
-    img = ground(width, height)
+    img = ground(width, picture)
     header(img, width, bold, args.regular)
     wells(img, [app, apps])
-    half = s["icon_size"] / 2
     arrow(img, (app[0] + half + 16, app[1] - 2), (apps[0] - half - 16, apps[1] - 2), 34)
-    panel(img, width, note_top - 100, height - 10, bold, args.regular)
+    panel(img, width, s["NOTE_Y"] - 100, height - 10, notes, bold, args.regular)
 
     img = img.convert("RGB")
-    img.resize((width * 2, height * 2), Image.LANCZOS).save(os.path.join(HERE, "background@2x.png"), optimize=True)
-    img.resize((width, height), Image.LANCZOS).save(os.path.join(HERE, "background.png"), optimize=True)
-    print(f"background.png {width}x{height}, background@2x.png {width * 2}x{height * 2}")
+    img.resize((width * 2, picture * 2), Image.LANCZOS).save(os.path.join(HERE, "background@2x.png"), optimize=True)
+    img.resize((width, picture), Image.LANCZOS).save(os.path.join(HERE, "background.png"), optimize=True)
+    print(f"background.png {width}x{picture}, background@2x.png {width * 2}x{picture * 2}")
     return 0
 
 
