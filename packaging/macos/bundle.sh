@@ -127,40 +127,85 @@ if [ -n "$left" ]; then
     exit 1
 fi
 
-# UNSIGNED, AND SAID SO IN BOTH LANGUAGES. Without an Apple signature the system marks the download as
-# quarantined and refuses to open it: "the app is damaged, move it to the Bin" - which it is not.
+# --- the signature, made LAST: any change to a signed file breaks it ---
 #
-# THE RIGHT-CLICK IS NOT THE WAY ANY MORE. These notes used to say "Control-click and choose Open", the
-# advice that worked for years. Reported behaviour: on a current macOS it does nothing - the same refusal
-# appears, and the program went to the Bin instead. Recent releases block code that carries no signature
-# from an identified developer in every condition, and the Control-click exception went with them.
+# THE BUNDLE IS SEALED AS A WHOLE. The linker signs the executable by itself, and that signature says the
+# file belongs to a bundle whose resources it vouches for - yet the bundle around it was never signed.
+# `codesign --verify` on such an .app answers "code has no resources but signature indicates they must be
+# present", measured on the CI package, and macOS reads a broken signature as a damaged download.
 #
-# What is left is the mark itself: `xattr -cr` clears the quarantine attribute, and the program then opens
-# by an ordinary double click. It is done once per download - an extended attribute stays cleared, a
-# restart does not bring it back - so the steps are written out plainly, for a person who has never opened
-# a terminal.
+# THE CERTIFICATE. `MACOS_SIGN_P12` is the .p12 made by `make-signing-cert.sh`, `MACOS_SIGN_P12_PASSWORD_FILE`
+# the file holding its password; without them the signature is ad hoc, which still seals the bundle.
+#
+# `rcodesign`, NOT `codesign`, FOR THE CERTIFICATE. `codesign` takes an identity only from a keychain and only
+# when the system trusts it: a self-signed one is listed as CSSMERR_TP_NOT_TRUSTED and refused with "no
+# identity found", measured. Trusting it would mean declaring a home-made certificate trusted on the
+# signing machine. `rcodesign` reads the .p12 itself and needs neither. It signs the nested libraries
+# before the bundle, as sealing requires, and writes the requirement `identifier "tech.qymis.cad" and
+# certificate root = H"..."` - the same for every version signed with that certificate, which is what
+# lets the system tell a new release from a stranger.
+#
+# No hardened runtime: under it the loader takes a library only from the same Apple team, and a self-signed
+# certificate has no team, so not one OCCT module would load. No timestamp: Apple's timestamp service is
+# for Apple-issued certificates.
+#
+# WRITABLE FIRST. OCCT as Homebrew installs it is read-only (0444), `cp` keeps that, and `rcodesign` stops
+# on the first library with "Permission denied".
+chmod -R u+w "$APP"
+if [ -n "${MACOS_SIGN_P12:-}" ]; then
+    echo ">>> signing with the certificate in $MACOS_SIGN_P12"
+    rcodesign sign --timestamp-url none \
+        --p12-file "$MACOS_SIGN_P12" --p12-password-file "${MACOS_SIGN_P12_PASSWORD_FILE:?the .p12 needs its password file}" \
+        "$APP"
+else
+    echo ">>> no certificate given (MACOS_SIGN_P12): signing ad hoc"
+    find "$APP/Contents/Frameworks" -type f -name '*.dylib' -print0 |
+        xargs -0 codesign --force --timestamp=none --sign -
+    codesign --force --timestamp=none --sign - "$APP"
+fi
+
+# A signature that does not verify is the "damaged" message again, found by whoever downloads it.
+codesign --verify --deep --strict --verbose "$APP"
+
+# SIGNED, BUT NOT BY APPLE, AND SAID SO IN EVERY LANGUAGE OF THE PROGRAM. A certificate Apple did not issue proves the
+# bundle is whole, not who made it, so the system refuses to open the download the first time: "Apple could
+# not verify QymCAD is free of malware", with "Done" and "Move to Bin".
+#
+# THE WAY PAST IT IS IN SYSTEM SETTINGS, NOT IN A TERMINAL. Once the bundle carries a signature that
+# verifies, Privacy & Security lists the refused program with an "Open Anyway" button; one press, the
+# password, and the program opens from then on by an ordinary double click. Reported behaviour: the
+# Terminal steps the notes used to give (`xattr -cr`) are outdated - they were the way round a BROKEN
+# signature, which the system called damaged and offered no button for. The Control-click-and-Open
+# exception is gone as well on a current macOS.
+#
+# The steps are written out plainly, for a person who has never opened System Settings by that path.
+# ONE NOTE PER LANGUAGE OF THE PROGRAM, each named in its own language so it is found at a glance. The
+# names of the system's buttons are given in the note's language AND in English, in brackets: the note's
+# language says nothing about the language macOS itself is set to.
+NOTES=(README.txt ПРОЧТИ.txt ПРОЧИТАЙ.txt ОҚЫҢЫЗ.txt)
+
 cat > dist/README.txt <<'TXT'
 QymCAD - build for macOS (Apple Silicon).
 
-FIRST RUN. The build carries no Apple developer signature, and macOS marks everything downloaded
-from the internet as "quarantined": it will say the app is damaged and offer to move it to the Bin.
-It is not damaged. The mark has to be cleared, once.
+INSTALL. From the disk image (.dmg): drag QymCAD onto the Applications folder beside it. From the
+archive (.zip): unpack it and move QymCAD.app into Applications.
 
-  1. Unpack the archive.
+FIRST RUN. The build is signed, but not with a certificate Apple issued, so macOS refuses to open it
+the first time and says Apple could not verify it is free of malware. It is allowed once, in System
+Settings:
 
-  2. Open Terminal: Command+Space, type "Terminal", press Enter.
+  1. Open QymCAD with a double click. When the message appears, press "Done".
 
-  3. Type this into it, with a space at the end. Do NOT press Enter yet:
+  2. Open the Apple menu -> System Settings -> Privacy & Security.
 
-        xattr -cr 
+  3. Scroll down to "Security". It says "QymCAD" was blocked to protect your Mac.
+     Press "Open Anyway" beside it, and enter your password (or use Touch ID).
 
-  4. Drag QymCAD.app into the Terminal window - the path fills itself in. Now press Enter.
-     Nothing is printed in reply; that is how it should be.
+  4. The message appears once more, now with an "Open Anyway" button. Press it.
 
-  5. Open QymCAD.app with an ordinary double click.
-
-The mark is gone for good on this copy: a restart does not bring it back. A build downloaded anew
-has to be cleared the same way.
+From then on QymCAD opens with an ordinary double click. If the "Open Anyway" button is not there,
+repeat step 1 first: it is shown for about an hour after a refused launch. A new version downloaded
+later is allowed the same way, once.
 
 Requires macOS 12 or newer, an Apple Silicon machine.
 TXT
@@ -168,30 +213,120 @@ TXT
 cat > dist/ПРОЧТИ.txt <<'TXT'
 QymCAD - сборка для macOS (Apple Silicon).
 
-ПЕРВЫЙ ЗАПУСК. У сборки нет подписи разработчика Apple, а macOS помечает всё скачанное из интернета
-«карантином»: она скажет, что программа повреждена, и предложит переместить её в Корзину. Она не
-повреждена. Метку нужно снять, один раз.
+УСТАНОВКА. Из образа диска (.dmg): перетащите QymCAD на папку «Программы» (Applications) рядом с ним.
+Из архива (.zip): распакуйте его и переместите QymCAD.app в «Программы».
 
-  1. Распакуйте архив.
+ПЕРВЫЙ ЗАПУСК. Сборка подписана, но не сертификатом, выданным Apple, поэтому в первый раз macOS
+откажется её открыть и скажет, что Apple не может проверить её на вредоносное ПО. Разрешить запуск
+нужно один раз, в Системных настройках. В скобках - названия кнопок в macOS на английском.
 
-  2. Откройте Терминал: Command+Пробел, наберите «Терминал», Enter.
+  1. Откройте QymCAD двойным щелчком. Когда появится сообщение, нажмите «Готово» ("Done").
 
-  3. Наберите в нём вот это, с пробелом в конце. Enter пока НЕ нажимайте:
+  2. Откройте меню Apple -> Системные настройки -> Конфиденциальность и безопасность
+     (System Settings -> Privacy & Security).
 
-        xattr -cr 
+  3. Прокрутите вниз до раздела «Безопасность» ("Security"). Там написано, что «QymCAD»
+     заблокирована для защиты Mac. Нажмите рядом «Все равно открыть» ("Open Anyway")
+     и введите пароль (или Touch ID).
 
-  4. Перетащите QymCAD.app мышью прямо в окно Терминала — путь подставится сам. Вот теперь Enter.
-     В ответ ничего не напечатается, так и должно быть.
+  4. Сообщение появится ещё раз, теперь с кнопкой «Все равно открыть» ("Open Anyway"). Нажмите её.
 
-  5. Откройте QymCAD.app обычным двойным щелчком.
-
-Метка снята навсегда для этой копии: перезагрузка её не вернёт. Сборку, скачанную заново, придётся
-освободить так же.
+Дальше QymCAD открывается обычным двойным щелчком. Если кнопки «Все равно открыть» нет, сначала
+повторите шаг 1: она показывается примерно час после отказа в запуске. Новую версию, скачанную
+позже, разрешают так же, один раз.
 
 Требуется macOS 12 или новее, компьютер на Apple Silicon.
 TXT
 
+cat > dist/ПРОЧИТАЙ.txt <<'TXT'
+QymCAD - збірка для macOS (Apple Silicon).
+
+ВСТАНОВЛЕННЯ. З образу диска (.dmg): перетягніть QymCAD на папку «Програми» (Applications) поруч
+із ним. З архіву (.zip): розархівуйте його та перемістіть QymCAD.app у «Програми».
+
+ПЕРШИЙ ЗАПУСК. Збірку підписано, але не сертифікатом, виданим Apple, тож першого разу macOS
+відмовиться її відкрити й повідомить, що Apple не може перевірити її на зловмисне ПЗ. Дозволити
+запуск потрібно один раз, у Системних параметрах. У дужках - назви кнопок у macOS англійською.
+
+  1. Відкрийте QymCAD подвійним клацанням. Коли з'явиться повідомлення, натисніть «Готово» ("Done").
+
+  2. Відкрийте меню Apple -> Системні параметри -> Приватність і безпека
+     (System Settings -> Privacy & Security).
+
+  3. Прокрутіть униз до розділу «Безпека» ("Security"). Там написано, що «QymCAD»
+     заблоковано для захисту Mac. Натисніть поруч «Усе одно відкрити» ("Open Anyway")
+     і введіть пароль (або Touch ID).
+
+  4. Повідомлення з'явиться ще раз, тепер із кнопкою «Усе одно відкрити» ("Open Anyway").
+     Натисніть її.
+
+Далі QymCAD відкривається звичайним подвійним клацанням. Якщо кнопки «Усе одно відкрити» немає,
+спершу повторіть крок 1: вона показується приблизно годину після відмови в запуску. Нову версію,
+завантажену пізніше, дозволяють так само, один раз.
+
+Потрібна macOS 12 або новіша, комп'ютер на Apple Silicon.
+TXT
+
+cat > dist/ОҚЫҢЫЗ.txt <<'TXT'
+QymCAD - macOS (Apple Silicon) жинағы.
+
+ОРНАТУ. Диск бейнесінен (.dmg): QymCAD-ты жанындағы «Бағдарламалар» (Applications) қалтасына
+сүйреңіз. Мұрағаттан (.zip): оны ашып, QymCAD.app-ты «Бағдарламалар» қалтасына жылжытыңыз.
+
+АЛҒАШҚЫ ІСКЕ ҚОСУ. Жинаққа қол қойылған, бірақ сертификатты Apple бермеген, сондықтан macOS оны
+алғаш рет ашудан бас тартып, Apple оны зиянды бағдарламаға тексере алмайтынын айтады. Іске қосуға
+бір рет, System Settings ішінде рұқсат беру керек. Жақшада - macOS батырмаларының ағылшынша атаулары.
+
+  1. QymCAD-ты екі рет басып ашыңыз. Хабарлама шыққанда «Дайын» ("Done") батырмасын басыңыз.
+
+  2. Apple мәзірі -> Жүйе параметрлері -> Құпиялылық және қауіпсіздік
+     (System Settings -> Privacy & Security) бөлімін ашыңыз.
+
+  3. Төмен қарай «Қауіпсіздік» ("Security") бөліміне дейін айналдырыңыз. Онда «QymCAD»
+     Mac-ты қорғау үшін бұғатталғаны жазылған. Жанындағы «Бәрібір ашу» ("Open Anyway")
+     батырмасын басып, құпиясөзді енгізіңіз (немесе Touch ID).
+
+  4. Хабарлама тағы бір рет, енді «Бәрібір ашу» ("Open Anyway") батырмасымен шығады.
+     Оны басыңыз.
+
+Осыдан кейін QymCAD әдеттегідей екі рет басқанда ашылады. «Бәрібір ашу» батырмасы болмаса, алдымен
+1-қадамды қайталаңыз: ол іске қосудан бас тартылғаннан кейін шамамен бір сағат көрсетіледі. Кейін
+жүктелген жаңа нұсқаға да дәл осылай, бір рет рұқсат беріледі.
+
+macOS 12 немесе жаңарағы, Apple Silicon компьютері қажет.
+TXT
+
 ZIP="dist/$NAME-macos-arm64.zip"
 rm -f "$ZIP"
-( cd dist && zip -r -y -q "$(basename "$ZIP")" QymCAD.app README.txt ПРОЧТИ.txt )
+( cd dist && zip -r -y -q "$(basename "$ZIP")" QymCAD.app "${NOTES[@]}" )
 echo ">>> DONE: $ZIP ($(du -h "$ZIP" | cut -f1))"
+
+# THE DISK IMAGE, the form a mac download is expected in. Opened, it shows one window drawn for it: the
+# program on the left, Applications on the right, an arrow from one to the other, and under them a card
+# holding the notes. It holds the same signed bundle as the archive - made after the check above, so
+# nothing unverified goes in - and the same notes, because the first launch is refused the same way for
+# the copy dragged out of it. The mounted volume carries the program's icon.
+#
+# The zip stays beside it: it is the file older links point at.
+#
+# `dmgbuild`, NOT A FINDER SCRIPT. The window's layout - its size, the background, where each icon stands
+# - lives in a `.DS_Store` file inside the image. The usual way to make one is to mount the image and have
+# Finder arrange it through AppleScript, which needs a logged-in session with Finder automation allowed;
+# `dmgbuild` writes that file itself and runs headless. The places and the picture both come from
+# packaging/macos/dmg/settings.py, see there and draw_background.py beside it.
+#
+# Neither the staging copy (`cp -RP`) nor the image breaks the seal: `codesign --verify --deep --strict`
+# passes on the QymCAD bundle inside the mounted image, measured on a release build with 67 OCCT libraries,
+# and a signed test bundle starts from the image with its libraries found through the links.
+DMG="dist/$NAME-macos-arm64.dmg"
+STAGE=dist/dmg
+rm -rf "$STAGE" "$DMG"
+mkdir -p "$STAGE"
+cp -RP "$APP" "${NOTES[@]/#/dist/}" "$STAGE/"
+command -v dmgbuild >/dev/null || { echo "!!! dmgbuild is not installed: python3 -m pip install --require-hashes -r packaging/macos/dmg/requirements.txt"; exit 1; }
+# The layout lies beside this script, wherever the script is run from.
+ART="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dmg"
+dmgbuild -s "$ART/settings.py" -D stage="$STAGE" -D art="$ART" QymCAD "$DMG"
+rm -rf "$STAGE"
+[ -f "$DMG" ] || { echo "!!! dmgbuild reported success and made no $DMG"; exit 1; }
+echo ">>> DONE: $DMG ($(du -h "$DMG" | cut -f1))"

@@ -86,22 +86,25 @@ cargo build --release --bin qymcad
 bash packaging/macos/bundle.sh
 ```
 
+It leaves two packages in `dist/` holding the same signed bundle and the same four notes: `*-macos-arm64.zip`, and
+`*-macos-arm64.dmg`, a disk image that shows the program beside a link to Applications.
+
 **What makes a mac bundle different.** A dylib carries the path it was BUILT at, baked into whatever
 loads it - so a copied library is looked for where it used to live, and the program dies on start. The
 script rewrites those paths to `@rpath` with `install_name_tool` and points `@rpath` at the bundle's own
 `Frameworks`. It then checks that nothing still names the build machine: one path left over means the
 program starts here and nowhere else, and it says so only on somebody else's computer.
 
-**The build carries no Apple signature.** macOS quarantines an unsigned download and refuses to open it:
-"the app is damaged, move it to the Bin". The Control-click-and-Open exception that worked for years is
-gone - recent releases block code with no identified-developer signature in every condition, and a tester
-on a current macOS hit exactly that. What clears it is `xattr -cr` on the `.app`, once per download; the
-notes inside the archive walk a person through it in both languages, step by step, because whoever is not
-told deletes the program instead.
+**The build is not signed by Apple.** `bundle.sh` signs it - with the project's self-signed certificate in
+CI, ad hoc otherwise - so the bundle verifies, but no certificate Apple issued vouches for it. On the first
+launch macOS refuses it: "Apple could not verify QymCAD is free of malware". System Settings -> Privacy &
+Security then lists it with an "Open Anyway" button; one press and the password, and it opens from then on.
+The notes beside the app - one per language of the program - walk a person through that step by step, because whoever is not
+told deletes the program instead. The Terminal steps (`xattr -cr`) were the way round a broken signature,
+which macOS called damaged and offered no button for; with a signature that verifies they are not needed.
 
-Nothing free removes that step: only notarisation does, and notarisation needs the paid Apple Developer
-Program. An ad-hoc signature (`codesign -s -`) does not help a quarantined app either - it is still
-blocked.
+Nothing free removes the step itself: only notarisation does, and notarisation needs the paid Apple
+Developer Program.
 
 **The script runs on any machine, not only on a mac.** `crates/qymcad/src/packaging_macos.rs` puts stub
 `otool` and `install_name_tool` on PATH and runs this very script over a sandbox tree, in three shapes:

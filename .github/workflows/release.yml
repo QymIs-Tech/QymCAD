@@ -296,17 +296,62 @@ jobs:
           OCCT_LIB_DIR: /Users/runner/occt/lib
         run: cargo build --release --locked --bin qymcad
 
+      # THE SIGNING CERTIFICATE, from two secrets: `MACOS_CERT_P12` is the base64 of the .p12 and
+      # `MACOS_CERT_PASSWORD` its password, both made by `packaging/macos/make-signing-cert.sh`. A missing
+      # secret stops the job: a package signed ad hoc on one run and by the certificate on the next would
+      # change its identity between releases, and the permissions granted to it with that.
+      #
+      # `rcodesign` signs from the .p12 itself - no keychain, no trust setting on the runner; the reason is
+      # at the signing step of bundle.sh. A pinned release, checked against its published sha256, like every
+      # other tool here.
+      - name: Signing tool and certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERT_P12" ] || [ -z "$MACOS_CERT_PASSWORD" ]; then
+            echo "!!! the secrets MACOS_CERT_P12 and MACOS_CERT_PASSWORD are not set"
+            echo "!!! make them with packaging/macos/make-signing-cert.sh"
+            exit 1
+          fi
+          RC=apple-codesign-0.29.0-macos-universal
+          URL=https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.29.0
+          curl -sSLf -o "$RUNNER_TEMP/$RC.tar.gz" "$URL/$RC.tar.gz"
+          curl -sSLf -o "$RUNNER_TEMP/$RC.tar.gz.sha256" "$URL/$RC.tar.gz.sha256"
+          ( cd "$RUNNER_TEMP" && echo "$(cut -d' ' -f1 "$RC.tar.gz.sha256")  $RC.tar.gz" | shasum -a 256 -c - )
+          tar xzf "$RUNNER_TEMP/$RC.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$RC" >> "$GITHUB_PATH"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          printf '%s' "$MACOS_CERT_PASSWORD" > "$RUNNER_TEMP/signing.pw"
+          echo "MACOS_SIGN_P12=$RUNNER_TEMP/signing.p12" >> "$GITHUB_ENV"
+          echo "MACOS_SIGN_P12_PASSWORD_FILE=$RUNNER_TEMP/signing.pw" >> "$GITHUB_ENV"
+
+      # THE DISK IMAGE'S BUILDER, into a virtual environment of its own: the runner's Python refuses packages
+      # installed into it directly. Every package is pinned by version and by the hash of its file.
+      - name: Disk image builder
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet --require-hashes -r packaging/macos/dmg/requirements.txt
+          echo "$RUNNER_TEMP/dmgbuild/bin" >> "$GITHUB_PATH"
+
       - name: Bundle the .app
         env:
           QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           OCCT_ROOT: /Users/runner/occt
         run: bash packaging/macos/bundle.sh
 
-      # A single file, uploaded as it is - see the reason at the Windows job.
-      - name: Upload artifact (for workflow_dispatch)
+      # Two files, two steps, each uploaded as it is - see the reason at the Windows job. The disk image is
+      # not an archive to this action, but `archive: false` keeps it a file and names the artifact after it.
+      - name: Upload the zip (for workflow_dispatch)
         uses: actions/upload-artifact@v7
         with:
           path: dist/*.zip
+          archive: false
+
+      - name: Upload the disk image (for workflow_dispatch)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*.dmg
           archive: false
 
   # ONE JOB PUBLISHES, AND ONLY WHEN A TAG WAS BUILT.
@@ -343,13 +388,13 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
-      # FOUR FILES, AND ALL FOUR ACTUALLY FILES. The packages are uploaded unzipped, and the release
+      # FIVE FILES, AND ALL FIVE ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
       # the Release page would go up with a download missing. Fifteen seconds against that.
       #
-      # Four, not three, since Windows produces two: the portable zip and the MSI installer. The number
-      # is written out rather than counted from the jobs on purpose - a package that silently stopped
-      # being built is exactly what this step exists to catch.
+      # Five, not three, since Windows produces two - the portable zip and the MSI installer - and macOS two -
+      # the zip and the disk image. The number is written out rather than counted from the jobs on purpose -
+      # a package that silently stopped being built is exactly what this step exists to catch.
       - name: What was built
         run: |
           ls -lh dist
@@ -357,7 +402,7 @@ jobs:
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
           n=$(ls dist | wc -l)
-          [ "$n" -eq 4 ] || { echo "!!! four packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq 5 ] || { echo "!!! five packages were expected, $n arrived"; exit 1; }
 
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #

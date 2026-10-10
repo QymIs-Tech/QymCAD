@@ -41,9 +41,10 @@ A development build. The program works and is fit for real parts, but it is upda
 - **The CNC (CAM) module does not work.** The settings do carry a “Machining” tab (CAM) checkbox, but
   what is behind it is groundwork: part of the code came from an earlier version and is not
   maintained. The module returns for the stable alpha.
-- **The macOS build carries no Apple signature.** macOS marks a downloaded application as quarantined
-  and refuses to open it, saying it is damaged - it is not. The mark is cleared once, with one command,
-  written out step by step in the notes inside the archive. Apple Silicon only; there is no Intel build.
+- **The macOS build is not signed by Apple.** It is signed and whole, but with a certificate Apple did not
+  issue, so on the first launch macOS says it cannot verify the app and refuses to open it. It is allowed
+  once, with the "Open Anyway" button in System Settings -> Privacy & Security; the steps are in the notes
+  beside the app. Apple Silicon only; there is no Intel build.
 
 ## Features
 
@@ -81,9 +82,10 @@ chmod +x qymcad-*.AppImage
 ./qymcad-*.AppImage
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Unpack it and read `README.txt` lying beside
-the application: the build carries no Apple signature, so the quarantine mark has to be cleared once,
-before the first launch. It takes one command and is written out step by step.
+**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.dmg`: open it and drag QymCAD onto Applications; or
+`qymcad-*-macos-arm64.zip`: unpack it. The first launch is refused once, because the build is not signed by
+Apple: press "Open Anyway" in System Settings -> Privacy & Security. `README.txt` beside the app walks
+through it step by step.
 
 ## Help
 
