@@ -326,17 +326,32 @@ jobs:
           echo "MACOS_SIGN_P12=$RUNNER_TEMP/signing.p12" >> "$GITHUB_ENV"
           echo "MACOS_SIGN_P12_PASSWORD_FILE=$RUNNER_TEMP/signing.pw" >> "$GITHUB_ENV"
 
+      # THE DISK IMAGE'S BUILDER, into a virtual environment of its own: the runner's Python refuses packages
+      # installed into it directly. Every package is pinned by version and by the hash of its file.
+      - name: Disk image builder
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet --require-hashes -r packaging/macos/dmg/requirements.txt
+          echo "$RUNNER_TEMP/dmgbuild/bin" >> "$GITHUB_PATH"
+
       - name: Bundle the .app
         env:
           QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           OCCT_ROOT: /Users/runner/occt
         run: bash packaging/macos/bundle.sh
 
-      # A single file, uploaded as it is - see the reason at the Windows job.
-      - name: Upload artifact (for workflow_dispatch)
+      # Two files, two steps, each uploaded as it is - see the reason at the Windows job. The disk image is
+      # not an archive to this action, but `archive: false` keeps it a file and names the artifact after it.
+      - name: Upload the zip (for workflow_dispatch)
         uses: actions/upload-artifact@v7
         with:
           path: dist/*.zip
+          archive: false
+
+      - name: Upload the disk image (for workflow_dispatch)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*.dmg
           archive: false
 
   # ONE JOB PUBLISHES, AND ONLY WHEN A TAG WAS BUILT.
@@ -373,13 +388,13 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
-      # FOUR FILES, AND ALL FOUR ACTUALLY FILES. The packages are uploaded unzipped, and the release
+      # FIVE FILES, AND ALL FIVE ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
       # the Release page would go up with a download missing. Fifteen seconds against that.
       #
-      # Four, not three, since Windows produces two: the portable zip and the MSI installer. The number
-      # is written out rather than counted from the jobs on purpose - a package that silently stopped
-      # being built is exactly what this step exists to catch.
+      # Five, not three, since Windows produces two - the portable zip and the MSI installer - and macOS two -
+      # the zip and the disk image. The number is written out rather than counted from the jobs on purpose -
+      # a package that silently stopped being built is exactly what this step exists to catch.
       - name: What was built
         run: |
           ls -lh dist
@@ -387,7 +402,7 @@ jobs:
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
           n=$(ls dist | wc -l)
-          [ "$n" -eq 4 ] || { echo "!!! four packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq 5 ] || { echo "!!! five packages were expected, $n arrived"; exit 1; }
 
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #

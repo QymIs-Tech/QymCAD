@@ -6,12 +6,14 @@
 //! `grep` matched no library naming the build machine, `grep` returns 1 when it matches nothing, and
 //! `set -o pipefail` turned that into the end of the script.
 //!
-//! `install_name_tool`, `otool` and `codesign` exist only on macOS, `rcodesign` only where it is installed.
+//! `install_name_tool`, `otool` and `codesign` exist only on macOS, `rcodesign` and `dmgbuild` only where they are
+//! installed.
 //! They are replaced by stubs on PATH - one records what it was asked to do and remembers which files it
 //! rewrote, another prints a dependency list in the real format and answers according to those marks, the
-//! signing two record their calls and seal the bundle, and `codesign --verify` answers by that seal.
+//! signing two record their calls and seal the bundle, `codesign --verify` answers by that seal, and `dmgbuild`
+//! records what the folder it was given held and writes the image file.
 //! Everything the mistakes were actually in - the copying, the loops, the sentinel, the order of signing,
-//! the archive - is ordinary shell and runs anywhere.
+//! the archive, the disk image's folder - is ordinary shell and runs anywhere.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -150,6 +152,35 @@ exit 0
             seals = seals
         ),
     ));
+
+    // `dmgbuild -s SETTINGS -D stage=DIR -D art=DIR VOLUME FILE` lays the staged folder out by the settings
+    // file and writes the image. The stub writes down what the staged folder held at the moment of the call -
+    // the script removes it afterwards - refuses a settings file that is not there, and logs the call beside
+    // the signing ones, so its place after the check is visible.
+    executable(&write(
+        "bin/dmgbuild",
+        &format!(
+            "#!/usr/bin/env bash
+printf 'dmgbuild %s\\n' \"$*\" >> {signs}
+\
+             settings=; stage=; prev=
+for a in \"$@\"; do
+  [ \"$prev\" = -s ] && settings=$a
+  \
+             [ \"$prev\" = -D ] && case \"$a\" in stage=*) stage=${{a#stage=}} ;; esac
+  prev=$a
+done
+\
+             [ -f \"$settings\" ] || {{ echo \"no settings file: $settings\" >&2; exit 1; }}
+\
+             (cd \"$stage\" && ls -1) > {held}
+: > \"${{@: -1}}\"
+exit 0
+",
+            signs = signs.display(),
+            held = dir.join("dmg-held.txt").display()
+        ),
+    ));
     dir
 }
 
@@ -180,6 +211,11 @@ fn signs(dir: &Path) -> Vec<String> {
 
 fn said(out: &Output) -> String {
     format!("--- stdout ---\n{}--- stderr ---\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
+}
+
+/// The disk image the script makes beside the archive.
+fn disk_image(dir: &Path) -> PathBuf {
+    dir.join("dist/qymcad-0.1.0-macos-arm64.dmg")
 }
 
 /// What the archive holds, one entry per line.
@@ -266,6 +302,7 @@ fn a_path_left_naming_the_build_machine_fails_the_bundle() {
     assert!(!out.status.success(), "a library still named the build machine and the script was happy:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("still points at the build machine"), "the refusal did not say what was wrong:\n{}", said(&out));
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that cannot start");
+    assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that cannot start");
 }
 
 /// THE BUNDLE IS SEALED, INSIDE OUT. The CI package carried only the linker's signature on the program and
@@ -318,4 +355,123 @@ fn a_bundle_that_does_not_verify_is_not_archived() {
     assert!(!out.status.success(), "a bundle that does not verify was let through:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stderr).contains("code has no resources"), "the refusal did not say what was wrong:\n{}", said(&out));
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that does not verify");
+    assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that does not verify");
+}
+
+/// THE DISK IMAGE, BESIDE THE ARCHIVE. It holds the program and the two notes, laid out by the settings
+/// file beside the script, and it is made from the bundle only after that bundle verified. The staging
+/// folder is gone afterwards, so `dist/` holds the packages and the bundle and nothing half-made.
+#[test]
+fn a_disk_image_holds_the_verified_bundle_and_the_notes() {
+    let dir = sandbox("dmg", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+    assert!(disk_image(&dir).exists(), "the disk image was not made:\n{}", said(&out));
+    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"), "the archive stopped being made beside the image");
+
+    let held = fs::read_to_string(dir.join("dmg-held.txt")).expect("dmgbuild was called");
+    let lines: Vec<&str> = held.lines().collect();
+    for entry in ["QymCAD.app", "README.txt"] {
+        assert!(lines.contains(&entry), "the image's folder does not hold {entry}:\n{held}");
+    }
+    assert_eq!(lines.iter().filter(|l| l.ends_with(".txt")).count(), 2, "both notes must be in the image:\n{held}");
+
+    let calls = signs(&dir);
+    let verify = calls.iter().position(|c| c.starts_with("codesign --verify"));
+    let image = calls.iter().position(|c| c.starts_with("dmgbuild -s ") && c.contains("/dmg/settings.py") && c.ends_with(" QymCAD dist/qymcad-0.1.0-macos-arm64.dmg"));
+    assert!(matches!((verify, image), (Some(v), Some(i)) if v < i), "the image must be made from the bundle after it verified:\n{calls:#?}");
+    assert!(!dir.join("dist/dmg").exists(), "the staging folder was left in dist/");
+}
+
+/// THE FIRST LAUNCH GOES THROUGH SYSTEM SETTINGS. With a signature that verifies, macOS refuses the first
+/// launch and then offers "Open Anyway" under Privacy & Security; the notes lead there. Reported behaviour:
+/// the notes sent the reader to Terminal and `xattr -cr`, the way round a broken signature, now outdated.
+#[test]
+fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
+    let dir = sandbox("notes", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let en = fs::read_to_string(dir.join("dist/README.txt")).expect("the English note is written");
+    for step in ["Privacy & Security", "Open Anyway", "Applications"] {
+        assert!(en.contains(step), "the English note does not name {step:?}:\n{en}");
+    }
+    // The Russian note is the other `.txt` in dist/; its words are not spelled out in this file, so it is held
+    // to the same shape: the same four steps, the same Touch ID, the same menu path written with `->`.
+    let ru = fs::read_dir(dir.join("dist"))
+        .expect("dist/ is readable")
+        .map(|e| e.expect("an entry").path())
+        .find(|p| p.extension().is_some_and(|x| x == "txt") && !p.ends_with("README.txt"))
+        .map(|p| fs::read_to_string(p).expect("the Russian note is readable"))
+        .expect("the Russian note is written");
+    for step in ["  1. ", "  2. ", "  3. ", "  4. ", "Touch ID", " -> "] {
+        assert!(en.contains(step) && ru.contains(step), "the two notes differ at {step:?}:\n{en}\n{ru}");
+    }
+    for text in [&en, &ru] {
+        assert!(!text.contains("xattr") && !text.contains("Terminal"), "a note still sends the reader to a terminal:\n{text}");
+    }
+}
+
+/// The width and height a PNG file declares in its header.
+fn png_size(path: &Path) -> (u32, u32) {
+    let bytes = fs::read(path).unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
+    assert_eq!(&bytes[1..4], b"PNG", "{} is not a PNG", path.display());
+    let at = |i: usize| u32::from_be_bytes(bytes[i..i + 4].try_into().expect("four bytes"));
+    (at(16), at(20))
+}
+
+/// One icon of the window, as the settings file places it.
+struct Placed {
+    name: String,
+    x: f64,
+    y: f64,
+}
+
+/// THE PICTURE AND THE PLACES AGREE. The background is painted around the icons - the arrow between the
+/// program and Applications, the card under the notes - from the numbers in settings.py. A picture of the
+/// wrong size is stretched by nobody and cropped by Finder; an icon moved off its place sits on the arrow.
+/// The settings file is executed by python3 the way dmgbuild executes it.
+#[test]
+fn the_window_layout_fits_its_background() {
+    let art = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/dmg");
+    let probe = "import sys\n\
+                 scope = {'defines': {'stage': 'S', 'art': sys.argv[2]}}\n\
+                 exec(compile(open(sys.argv[1], encoding='utf-8').read(), 'settings.py', 'exec'), scope, scope)\n\
+                 print(scope['WIDTH'], scope['HEIGHT'], scope['icon_size'])\n\
+                 for n, (x, y) in scope['icon_locations'].items(): print(n, x, y, sep='\\t')\n\
+                 print('files', *scope['files'], sep='\\t')\n\
+                 print('symlinks', *scope['symlinks'], sep='\\t')\n";
+    let out = Command::new("python3").arg("-c").arg(probe).arg(art.join("settings.py")).arg(&art).output().expect("python3 runs");
+    assert!(out.status.success(), "settings.py does not execute:\n{}", said(&out));
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let mut lines = text.lines();
+    let size: Vec<f64> = lines.next().expect("the window size").split(' ').map(|v| v.parse().expect("a number")).collect();
+    let (width, height, icon) = (size[0], size[1], size[2]);
+    let mut placed = Vec::new();
+    let mut shown = Vec::new();
+    for line in lines {
+        let cells: Vec<&str> = line.split('\t').collect();
+        match cells[0] {
+            "files" => shown.extend(cells[1..].iter().map(|f| f.trim_start_matches("S/").to_string())),
+            "symlinks" => shown.extend(cells[1..].iter().map(|s| s.to_string())),
+            _ => placed.push(Placed { name: cells[0].to_string(), x: cells[1].parse().expect("x"), y: cells[2].parse().expect("y") }),
+        }
+    }
+
+    assert_eq!(png_size(&art.join("background.png")), (width as u32, height as u32), "background.png is not the window's size");
+    assert_eq!(png_size(&art.join("background@2x.png")), (2 * width as u32, 2 * height as u32), "background@2x.png is not twice the window's size");
+
+    for name in &shown {
+        assert!(placed.iter().any(|p| &p.name == name), "{name} goes into the image with no place in the window:\n{text}");
+    }
+    let half = icon / 2.0;
+    for p in &placed {
+        // The label hangs under the icon, about 20 points of 13-point text.
+        assert!(p.x - half >= 0.0 && p.x + half <= width && p.y - half >= 0.0 && p.y + half + 20.0 <= height, "{} runs off the window:\n{text}", p.name);
+    }
+    for (i, a) in placed.iter().enumerate() {
+        for b in &placed[i + 1..] {
+            assert!((a.x - b.x).abs() >= icon || (a.y - b.y).abs() >= icon + 20.0, "{} and {} overlap:\n{text}", a.name, b.name);
+        }
+    }
 }

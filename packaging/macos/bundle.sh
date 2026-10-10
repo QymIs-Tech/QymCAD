@@ -168,41 +168,39 @@ fi
 codesign --verify --deep --strict --verbose "$APP"
 
 # SIGNED, BUT NOT BY APPLE, AND SAID SO IN BOTH LANGUAGES. A certificate Apple did not issue proves the
-# bundle is whole, not who made it, so the system still marks the download as quarantined and refuses to
-# open it the first time.
+# bundle is whole, not who made it, so the system refuses to open the download the first time: "Apple could
+# not verify QymCAD is free of malware", with "Done" and "Move to Bin".
 #
-# THE RIGHT-CLICK IS NOT THE WAY ANY MORE. These notes used to say "Control-click and choose Open", the
-# advice that worked for years. Reported behaviour: on a current macOS it does nothing - the same refusal
-# appears, and the program went to the Bin instead. Recent releases block code that carries no signature
-# from an identified developer in every condition, and the Control-click exception went with them.
+# THE WAY PAST IT IS IN SYSTEM SETTINGS, NOT IN A TERMINAL. Once the bundle carries a signature that
+# verifies, Privacy & Security lists the refused program with an "Open Anyway" button; one press, the
+# password, and the program opens from then on by an ordinary double click. Reported behaviour: the
+# Terminal steps the notes used to give (`xattr -cr`) are outdated - they were the way round a BROKEN
+# signature, which the system called damaged and offered no button for. The Control-click-and-Open
+# exception is gone as well on a current macOS.
 #
-# What is left is the mark itself: `xattr -cr` clears the quarantine attribute, and the program then opens
-# by an ordinary double click. It is done once per download - an extended attribute stays cleared, a
-# restart does not bring it back - so the steps are written out plainly, for a person who has never opened
-# a terminal.
+# The steps are written out plainly, for a person who has never opened System Settings by that path.
 cat > dist/README.txt <<'TXT'
 QymCAD - build for macOS (Apple Silicon).
 
-FIRST RUN. The build is signed, but not with a certificate Apple issued, and macOS marks everything
-downloaded from the internet as "quarantined": it will refuse to open the app, saying Apple cannot
-check it or that it is damaged, and offer to move it to the Bin. It is not damaged. The mark has to
-be cleared, once.
+INSTALL. From the disk image (.dmg): drag QymCAD onto the Applications folder beside it. From the
+archive (.zip): unpack it and move QymCAD.app into Applications.
 
-  1. Unpack the archive.
+FIRST RUN. The build is signed, but not with a certificate Apple issued, so macOS refuses to open it
+the first time and says Apple could not verify it is free of malware. It is allowed once, in System
+Settings:
 
-  2. Open Terminal: Command+Space, type "Terminal", press Enter.
+  1. Open QymCAD with a double click. When the message appears, press "Done".
 
-  3. Type this into it, with a space at the end. Do NOT press Enter yet:
+  2. Open the Apple menu -> System Settings -> Privacy & Security.
 
-        xattr -cr 
+  3. Scroll down to "Security". It says "QymCAD" was blocked to protect your Mac.
+     Press "Open Anyway" beside it, and enter your password (or use Touch ID).
 
-  4. Drag QymCAD.app into the Terminal window - the path fills itself in. Now press Enter.
-     Nothing is printed in reply; that is how it should be.
+  4. The message appears once more, now with an "Open Anyway" button. Press it.
 
-  5. Open QymCAD.app with an ordinary double click.
-
-The mark is gone for good on this copy: a restart does not bring it back. A build downloaded anew
-has to be cleared the same way.
+From then on QymCAD opens with an ordinary double click. If the "Open Anyway" button is not there,
+repeat step 1 first: it is shown for about an hour after a refused launch. A new version downloaded
+later is allowed the same way, once.
 
 Requires macOS 12 or newer, an Apple Silicon machine.
 TXT
@@ -210,26 +208,25 @@ TXT
 cat > dist/ПРОЧТИ.txt <<'TXT'
 QymCAD - сборка для macOS (Apple Silicon).
 
-ПЕРВЫЙ ЗАПУСК. Сборка подписана, но не сертификатом, выданным Apple, а macOS помечает всё скачанное
-из интернета «карантином»: она откажется открыть программу, сказав, что Apple не может её проверить
-или что она повреждена, и предложит переместить её в Корзину. Она не повреждена. Метку нужно снять,
-один раз.
+УСТАНОВКА. Из образа диска (.dmg): перетащите QymCAD на папку «Программы» рядом с ним. Из архива
+(.zip): распакуйте его и переместите QymCAD.app в «Программы».
 
-  1. Распакуйте архив.
+ПЕРВЫЙ ЗАПУСК. Сборка подписана, но не сертификатом, выданным Apple, поэтому в первый раз macOS
+откажется её открыть и скажет, что Apple не может проверить её на вредоносное ПО. Разрешить запуск
+нужно один раз, в Системных настройках:
 
-  2. Откройте Терминал: Command+Пробел, наберите «Терминал», Enter.
+  1. Откройте QymCAD двойным щелчком. Когда появится сообщение, нажмите «Готово».
 
-  3. Наберите в нём вот это, с пробелом в конце. Enter пока НЕ нажимайте:
+  2. Откройте меню Apple -> Системные настройки -> Конфиденциальность и безопасность.
 
-        xattr -cr 
+  3. Прокрутите вниз до раздела «Безопасность». Там написано, что «QymCAD» заблокирована
+     для защиты Mac. Нажмите рядом «Все равно открыть» и введите пароль (или Touch ID).
 
-  4. Перетащите QymCAD.app мышью прямо в окно Терминала — путь подставится сам. Вот теперь Enter.
-     В ответ ничего не напечатается, так и должно быть.
+  4. Сообщение появится ещё раз, теперь с кнопкой «Все равно открыть». Нажмите её.
 
-  5. Откройте QymCAD.app обычным двойным щелчком.
-
-Метка снята навсегда для этой копии: перезагрузка её не вернёт. Сборку, скачанную заново, придётся
-освободить так же.
+Дальше QymCAD открывается обычным двойным щелчком. Если кнопки «Все равно открыть» нет, сначала
+повторите шаг 1: она показывается примерно час после отказа в запуске. Новую версию, скачанную
+позже, разрешают так же, один раз.
 
 Требуется macOS 12 или новее, компьютер на Apple Silicon.
 TXT
@@ -238,3 +235,33 @@ ZIP="dist/$NAME-macos-arm64.zip"
 rm -f "$ZIP"
 ( cd dist && zip -r -y -q "$(basename "$ZIP")" QymCAD.app README.txt ПРОЧТИ.txt )
 echo ">>> DONE: $ZIP ($(du -h "$ZIP" | cut -f1))"
+
+# THE DISK IMAGE, the form a mac download is expected in. Opened, it shows one window drawn for it: the
+# program on the left, Applications on the right, an arrow from one to the other, and under them a card
+# holding the two notes. It holds the same signed bundle as the archive - made after the check above, so
+# nothing unverified goes in - and the same notes, because the first launch is refused the same way for
+# the copy dragged out of it. The mounted volume carries the program's icon.
+#
+# The zip stays beside it: it is the file older links point at.
+#
+# `dmgbuild`, NOT A FINDER SCRIPT. The window's layout - its size, the background, where each icon stands
+# - lives in a `.DS_Store` file inside the image. The usual way to make one is to mount the image and have
+# Finder arrange it through AppleScript, which needs a logged-in session with Finder automation allowed;
+# `dmgbuild` writes that file itself and runs headless. The places and the picture both come from
+# packaging/macos/dmg/settings.py, see there and draw_background.py beside it.
+#
+# Neither the staging copy (`cp -RP`) nor the image breaks the seal: `codesign --verify --deep --strict`
+# passes on the QymCAD bundle inside the mounted image, measured on a release build with 67 OCCT libraries,
+# and a signed test bundle starts from the image with its libraries found through the links.
+DMG="dist/$NAME-macos-arm64.dmg"
+STAGE=dist/dmg
+rm -rf "$STAGE" "$DMG"
+mkdir -p "$STAGE"
+cp -RP "$APP" dist/README.txt dist/ПРОЧТИ.txt "$STAGE/"
+command -v dmgbuild >/dev/null || { echo "!!! dmgbuild is not installed: python3 -m pip install --require-hashes -r packaging/macos/dmg/requirements.txt"; exit 1; }
+# The layout lies beside this script, wherever the script is run from.
+ART="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dmg"
+dmgbuild -s "$ART/settings.py" -D stage="$STAGE" -D art="$ART" QymCAD "$DMG"
+rm -rf "$STAGE"
+[ -f "$DMG" ] || { echo "!!! dmgbuild reported success and made no $DMG"; exit 1; }
+echo ">>> DONE: $DMG ($(du -h "$DMG" | cut -f1))"
