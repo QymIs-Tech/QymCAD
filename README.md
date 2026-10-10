@@ -10,6 +10,14 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 
 [cad.qymis.tech](https://cad.qymis.tech)
 
+[![CI](https://github.com/QymIs-Tech/QymCAD/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/QymIs-Tech/QymCAD/actions/workflows/checks.yml)
+[![Release](https://img.shields.io/github/v/release/QymIs-Tech/QymCAD?logo=github)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+<br>
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+
 **English** | [Русский](README.ru.md) | [Українська](README.uk.md) | [Қазақша](README.kk.md)
 
 <img src="docs/screenshots/01-assembly.png" width="900" alt="A CNC machine assembled in QymCAD: components, joints and their degrees of freedom">
@@ -68,22 +76,56 @@ out.
 
 ## Installation
 
-The builds are in [Releases](../../releases). No extra libraries are needed: OpenCASCADE and the
+The builds are in [Releases](https://github.com/QymIs-Tech/QymCAD/releases). No extra libraries are needed: OpenCASCADE and the
 dependencies are inside the package.
 
-**Windows 10/11 x64** — `qymcad-win64.zip`. Unpack anywhere and run `qymcad.exe`.
+<details>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-**Linux** — `qymcad-*.AppImage`, a single file. Requires glibc 2.35 or newer: Ubuntu 22.04+,
-Debian 12+, Fedora 36+, Arch.
+- **Portable ZIP**: download `qymcad-win64.zip`, unpack anywhere and run `qymcad.exe`.
+- **MSI Installer**: download and run `qymcad-*-x64.msi` for a standard system installation.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
+- **Windows 7 / 8.x (Legacy build)**: download `qymcad-*-win7-x64.zip`, unpack anywhere and run `qymcad.exe`.
+
+> [!NOTE]
+> Official support is only for Windows 10+. A separate legacy build (`qymcad-*-win7-x64.zip`) is available for Windows 7 SP1 and 8.x: it works, but stability is not guaranteed.
+
+</details>
+
+<details>
+<summary><b>Linux (x86_64)</b></summary>
+
+Requires glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch Linux).
+
+- **AppImage** (standalone):
+  ```bash
+  chmod +x qymcad-*.AppImage
+  ./qymcad-*.AppImage
+  ```
+- **Arch Linux (AUR)**:
+  ```bash
+  yay -S qymcad-bin
+  ```
+
+</details>
+
+<details>
+<summary><b>macOS 12+ (Apple Silicon)</b></summary>
+
+Download `qymcad-*-macos-arm64.zip` and unpack it. The build carries no Apple signature, so clear the quarantine attribute once before the first launch:
 
 ```bash
-chmod +x qymcad-*.AppImage
-./qymcad-*.AppImage
+xattr -cr QymCAD.app
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Unpack it and read `README.txt` lying beside
-the application: the build carries no Apple signature, so the quarantine mark has to be cleared once,
-before the first launch. It takes one command and is written out step by step.
+Then open `QymCAD.app` with a normal double-click.
+
+*Note: Apple Silicon only (M1/M2/M3/M4); there is no Intel build.*
+
+</details>
 
 ## Help
 
@@ -108,7 +150,23 @@ kernel from source as well, then `packaging/macos/bundle.sh`. The details are in
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+We welcome contributions of all kinds — code, documentation, translations, and bug reports. Check the [Contributing Guide](CONTRIBUTING.md) and pick a [good first issue](https://github.com/QymIs-Tech/QymCAD/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) to get started.
+
+## Contributors
+
+<a href="https://github.com/QymIs-Tech/QymCAD/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=QymIs-Tech/QymCAD" alt="Contributors" />
+</a>
+
+## Star History
+
+<a href="https://star-history.com/#QymIs-Tech/QymCAD&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+ </picture>
+</a>
 
 ## Licence
 

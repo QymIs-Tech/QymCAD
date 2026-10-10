@@ -10,6 +10,14 @@
 
 [cad.qymis.tech](https://cad.qymis.tech)
 
+[![CI](https://github.com/QymIs-Tech/QymCAD/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/QymIs-Tech/QymCAD/actions/workflows/checks.yml)
+[![Release](https://img.shields.io/github/v/release/QymIs-Tech/QymCAD?logo=github)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![License: AGPL 3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+<br>
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](https://github.com/QymIs-Tech/QymCAD/releases)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://github.com/QymIs-Tech/QymCAD/releases)
+
 [English](README.md) | [Русский](README.ru.md) | [Українська](README.uk.md) | **Қазақша**
 
 <img src="docs/screenshots/01-assembly.png" width="900" alt="QymCAD-та жиналған станок: компоненттер, қосылыстар және олардың еркіндік дәрежелері">
@@ -68,22 +76,55 @@ FreeCAD жұмыс істейтін сол ядро. Сондықтан торл
 
 ## Орнату
 
-Жинақтар [Releases](../../releases) бөлімінде. Қосымша кітапханалар қажет емес: OpenCASCADE және
-тәуелділіктер пакеттің ішінде.
+Жинақтар [Releases](https://github.com/QymIs-Tech/QymCAD/releases) бөлімінде. Қосымша кітапханалар қажет емес: OpenCASCADE және тәуелділіктер пакеттің ішінде.
 
-**Windows 10/11 x64** — `qymcad-win64.zip`. Кез келген жерге ашып, `qymcad.exe` іске қосыңыз.
+<details>
+<summary><b>Windows (10 / 11 x64)</b></summary>
 
-**Linux** — `qymcad-*.AppImage`, бір файл. glibc 2.35 не жаңарағы керек: Ubuntu 22.04+, Debian 12+,
-Fedora 36+, Arch.
+- **Портативті нұсқа**: `qymcad-win64.zip` жүктеп алып, кез келген жерге ашып, `qymcad.exe` іске қосыңыз.
+- **MSI орнатқышы**: жүйеге орнату үшін `qymcad-*-x64.msi` жүктеп алып, іске қосыңыз.
+- **winget**:
+  ```powershell
+  winget install QymIsTech.QymCAD
+  ```
+- **Windows 7 / 8.x (Legacy жинағы)**: `qymcad-*-win7-x64.zip` жүктеп алып, кез келген жерге ашып, `qymcad.exe` іске қосыңыз.
+
+> [!NOTE]
+> Ресми қолдау тек Windows 10+ үшін беріледі. Windows 7 SP1 және 8.x үшін бөлек жинақ (`qymcad-*-win7-x64.zip`) қолжетімді: ол жұмыс істейді, бірақ тұрақтылығына кепілдік берілмейді.
+
+</details>
+
+<details>
+<summary><b>Linux (x86_64)</b></summary>
+
+glibc 2.35 не жаңарағы керек (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch Linux).
+
+- **AppImage** (бір файл):
+  ```bash
+  chmod +x qymcad-*.AppImage
+  ./qymcad-*.AppImage
+  ```
+- **Arch Linux (AUR)**:
+  ```bash
+  yay -S qymcad-bin
+  ```
+
+</details>
+
+<details>
+<summary><b>macOS 12+ (Apple Silicon)</b></summary>
+
+`qymcad-*-macos-arm64.zip` файлын жүктеп алып, ашыңыз. Жинақта Apple қолтаңбасы жоқ, сондықтан бірінші іске қосу алдында Терминалда карантин белгісін бір рет алып тастау керек:
 
 ```bash
-chmod +x qymcad-*.AppImage
-./qymcad-*.AppImage
+xattr -cr QymCAD.app
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Ашып, бағдарламаның жанындағы
-`README.txt` файлын оқыңыз: жинақта Apple қолтаңбасы жоқ, сондықтан алғашқы іске қосудың алдында
-карантин белгісін бір рет алу керек. Бұл бір командамен орындалады және қадам бойынша жазылған.
+Содан соң `QymCAD.app` кәдімгідей екі рет басу арқылы ашыңыз.
+
+*Ескертпе: тек Apple Silicon үшін (M1/M2/M3/M4); Intel жинағы жоқ.*
+
+</details>
 
 ## Анықтама
 
@@ -109,7 +150,23 @@ Linux — `just pkg-linux`, Docker керек. Windows — MSVC, ядро бас
 
 ## Әзірлеуге қатысу
 
-[CONTRIBUTING.md](CONTRIBUTING.md) қараңыз.
+Біз кез келген үлесті қуана қабылдаймыз — код, құжаттама, жаңа аудармалар және қателер туралы есептер. Бастау үшін [үлес қосу нұсқаулығын](CONTRIBUTING.md) қарап шығып, [good first issue](https://github.com/QymIs-Tech/QymCAD/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) белгісі бар тапсырманы таңдаңыз.
+
+## Үлес қосушылар
+
+<a href="https://github.com/QymIs-Tech/QymCAD/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=QymIs-Tech/QymCAD" alt="Contributors" />
+</a>
+
+## Жұлдыздар тарихы
+
+<a href="https://star-history.com/#QymIs-Tech/QymCAD&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=QymIs-Tech/QymCAD&type=Date" />
+ </picture>
+</a>
 
 ## Лицензия
 
