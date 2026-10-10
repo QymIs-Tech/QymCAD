@@ -70,3 +70,36 @@ probe! {
         assert!(failures.is_empty(), "no ties:\n{}", failures.join("\n"));
     }
 }
+
+probe! {
+    /// A RECTANGLE DRAWN AS CONSTRUCTION IS A RECTANGLE: "Constr." ticked, a rectangle (0, 0) - (40, 20) opens the fields
+    /// of its size as any rectangle does, and its corner (40, 20) dragged to (50, 30) takes the rectangle with it - the
+    /// sides stay level and upright, the corners (50, 0) and (0, 30) follow. Reported behaviour: "a construction
+    /// rectangle is just four lines: its size cannot be changed and it cannot be dragged by its corners".
+    fn a_rectangle_drawn_as_construction_is_a_rectangle() {
+        let mut s = Session::start();
+        into_the_first_part(&mut s);
+        let xy = s.word("plane-xy-table");
+        s.press_word(&xy);
+        let hint = s.word("tb-rect-hint");
+        s.press_hint(&hint);
+        switch(&mut s, "opt-construction-short", true);
+        s.click_on_sketch(0.0, 0.0);
+        s.click_on_sketch(40.0, 20.0);
+        let sheet = s.canvas();
+        let fields = s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField && sheet.contains(w.rect.center())).count();
+        s.key(Key::Escape).key(Key::Escape);
+        let arrow = s.word("tb-select-hint");
+        s.press_hint(&arrow);
+        s.drag_on_sketch((40.0, 20.0), (50.0, 30.0));
+        let sk = s.document().sketches[0].clone();
+        let at = |x: f64, y: f64| sk.places.iter().any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - y).abs() < 1e-3);
+        let corners = [(0.0, 0.0), (50.0, 0.0), (50.0, 30.0), (0.0, 30.0)].into_iter().filter(|&(x, y)| !at(x, y)).collect::<Vec<_>>();
+        assert!(
+            fields >= 1 && corners.is_empty() && sk.construction == 4,
+            "a construction rectangle: {fields} fields of its size, {} construction curves, its corner dragged to (50, 30) leaves nothing at {corners:?}; the sketch shows {:?}",
+            sk.construction,
+            sk.places
+        );
+    }
+}

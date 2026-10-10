@@ -3619,10 +3619,8 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                         tie_the_rect_to_what_is_under(sk, rect, si, &[c, cr], RectPut::After);
                         sk.tool.pts.clear();
                         qymcad_ui_state::invalidate(&mut *sk.regen);
-                        if !con {
-                            sk.place.set(qymcad_ui_state::PlacingShape::RectCenter { center: c, corner: cr, ids }); // typing the width and height about the centre
-                            sk.place.focus = true;
-                        }
+                        sk.place.set(qymcad_ui_state::PlacingShape::RectCenter { center: c, corner: cr, ids }); // typing the width and height about the centre
+                        sk.place.focus = true;
                     }
                     2 => {
                         // three points give a rotated rectangle
@@ -3638,10 +3636,8 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                         tie_the_rect_to_what_is_under(sk, rect, si, &[a, b], RectPut::After);
                         sk.tool.pts.clear();
                         qymcad_ui_state::invalidate(&mut *sk.regen);
-                        if !con {
-                            sk.place.set(qymcad_ui_state::PlacingShape::Rect { a, b, ids }); // typing the width and height from the first corner
-                            sk.place.focus = true;
-                        }
+                        sk.place.set(qymcad_ui_state::PlacingShape::Rect { a, b, ids }); // typing the width and height from the first corner
+                        sk.place.focus = true;
                     }
                 };
             }

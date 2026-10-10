@@ -4662,29 +4662,30 @@ impl Project {
             *side = self.alloc_id();
             self.sketches[si].entities.push(SketchEntity { id: *side, kind: EntityKind::Line { a: pids[k], b: pids[(k + 1) % 4] }, construction });
         }
-        if !construction {
-            let [c0, c1, c2, c3] = [pids[0], pids[1], pids[2], pids[3]];
-            let mid = Point2::new((corners[0].x + corners[2].x) / 2.0, (corners[0].y + corners[2].y) / 2.0);
-            let centre = self.sketch_point_at(si, mid.x, mid.y, 1e-6);
-            let diagonals = matches!(from, DrawnFrom::Centre).then(|| {
-                let mut d = [0; 2];
-                for (id, (a, b)) in d.iter_mut().zip([(c0, c2), (c1, c3)]) {
-                    *id = self.alloc_id();
-                    self.sketches[si].entities.push(SketchEntity { id: *id, kind: EntityKind::Line { a, b }, construction: true });
-                }
-                d
-            });
-            let deg = (corners[1].y - corners[0].y).atan2(corners[1].x - corners[0].x).to_degrees();
-            for c in rect_own_constraints(c0, c1, c2, c3, centre, deg) {
-                self.add_constraint_if_independent(si, c);
+        // A RECTANGLE DRAWN AS CONSTRUCTION IS A RECTANGLE all the same - its own constraints and its record - so its size
+        // is typed and it is dragged by its corners whole. Reported behaviour: "a construction rectangle is just four
+        // lines: its size cannot be changed and it cannot be dragged by its corners".
+        let [c0, c1, c2, c3] = [pids[0], pids[1], pids[2], pids[3]];
+        let mid = Point2::new((corners[0].x + corners[2].x) / 2.0, (corners[0].y + corners[2].y) / 2.0);
+        let centre = self.sketch_point_at(si, mid.x, mid.y, 1e-6);
+        let diagonals = matches!(from, DrawnFrom::Centre).then(|| {
+            let mut d = [0; 2];
+            for (id, (a, b)) in d.iter_mut().zip([(c0, c2), (c1, c3)]) {
+                *id = self.alloc_id();
+                self.sketches[si].entities.push(SketchEntity { id: *id, kind: EntityKind::Line { a, b }, construction: true });
             }
-            let anchor = match from {
-                DrawnFrom::Corner(k) => crate::model::RectAnchor::Corner(pids[k]),
-                DrawnFrom::Centre => crate::model::RectAnchor::Centre,
-            };
-            let id = self.alloc_id();
-            self.sketches[si].rects.push(crate::model::SketchRect { id, corners: [c0, c1, c2, c3], sides, centre, diagonals, anchor });
+            d
+        });
+        let deg = (corners[1].y - corners[0].y).atan2(corners[1].x - corners[0].x).to_degrees();
+        for c in rect_own_constraints(c0, c1, c2, c3, centre, deg) {
+            self.add_constraint_if_independent(si, c);
         }
+        let anchor = match from {
+            DrawnFrom::Corner(k) => crate::model::RectAnchor::Corner(pids[k]),
+            DrawnFrom::Centre => crate::model::RectAnchor::Centre,
+        };
+        let id = self.alloc_id();
+        self.sketches[si].rects.push(crate::model::SketchRect { id, corners: [c0, c1, c2, c3], sides, centre, diagonals, anchor });
         self.regen_sketch(si);
         sides.to_vec()
     }
