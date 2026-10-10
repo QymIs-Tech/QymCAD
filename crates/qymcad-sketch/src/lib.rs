@@ -811,6 +811,16 @@ const CORNER_BOX_GAP: f32 = 16.0;
 const CORNER_BOX_PROBE: f64 = 1e-3;
 
 pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Context, rect: Rect) {
+    // THE SIDE OF A CORNER WITH MORE THAN ONE TO GIVE IS WHERE THE POINTER IS, while the field is open: the corner of a
+    // crossing follows it into the quarter it stands in, and the first leg of a chamfer is the line it is nearer to.
+    // Reported behaviour: "the side of the fillet or the chamfer is chosen by where the cursor is, with the preview
+    // drawn there".
+    if let (Some((si, _, _)), Some(pos)) = (cc.corner.at, ctx.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p))) {
+        let w = qymcad_ui_state::to_world(cc.view, rect, pos);
+        if cc.corner.set.steer(&*cc.project, si, (w.x, w.y)) == qymcad_ui_state::Steered::Yes {
+            cc.corner.near = Some(Point2::new(w.x, w.y));
+        }
+    }
     // THE PREVIEW IS DRAWN FIRST, AND ALWAYS: it belongs to the sheet and not to the field, and a person deciding
     // where to click cannot see it if the field has to be open before it appears.
     draw_the_corner_preview(cc, ctx, rect);
@@ -4639,7 +4649,27 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         });
                         point.or_else(|| qymcad_pick::nearest_line_eid(&sk.pick(), rect, pos, si).map(qymcad_ui_state::CornerOver::Line)).unwrap_or(qymcad_ui_state::CornerOver::Nothing)
                     };
-                    let act = qymcad_ui_state::corner_click(sk.project, si, sk.corner, sk.sel_sk, over, shift);
+                    let mut act = qymcad_ui_state::corner_click(sk.project, si, sk.corner, sk.sel_sk, over, shift);
+                    // TWO CHOSEN LINES THAT CROSS make their corners where they cross: the two are cut there - a step of
+                    // undo the corner cut joins - and the corner is named at that point, on the side the pointer is.
+                    // Reported behaviour: "it must work as well with two lines chosen with Shift".
+                    let chosen: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+                    let crossing = chosen.iter().enumerate().find_map(|(i, &one)| chosen[i + 1..].iter().find_map(|&other| sk.project.crossing_of(si, one, other)));
+                    if let Some(crossing) = crossing {
+                        qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr(if chamfer { "tool-chamfer" } else { "tool-fillet" }));
+                        let cut = sk.project.cut_at_crossing(si, crossing);
+                        qymcad_ui_state::close_edit(&mut *sk.edits, &*sk.project);
+                        qymcad_ui_state::invalidate(&mut *sk.regen);
+                        sk.corner.crossing = qymcad_ui_state::CrossingCut::Cut;
+                        sk.sel_sk.items.retain(|&(k, id)| !(k == 1 && (id == crossing.one || id == crossing.other)));
+                        let rest: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+                        sk.corner.set.follow(&*sk.project, si, &rest);
+                        if let Some(pid) = cut {
+                            let w = qymcad_ui_state::to_world(sk.view, rect, pos);
+                            let read = sk.corner.set.read_at_point(&*sk.project, si, pid, Some((w.x, w.y)));
+                            act = qymcad_ui_state::CornerClick::AtPoint(sk.corner.set.click_at_point(&*sk.project, si, pid, read));
+                        }
+                    }
                     // WHERE THE CORNER WAS POINTED AT, on the sheet: the line of the corner the pointer stands
                     // nearer to is the one the FIRST leg of a chamfer of two is measured from. It is written
                     // down on every click of the corner tool, because a person may say which of the two lines by

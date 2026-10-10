@@ -22,7 +22,11 @@
   **Enter**.
 - **A corner at a crossing**: two lines going through each other make four corners. Click the fillet or the chamfer
   inside the corner you want, by the crossing - both lines are cut there, that corner is rounded or cut, and the other
-  two halves stay lines. One **Ctrl+Z** brings the whole lines back; so does **Esc** before **Enter**.
+  two halves stay lines. The same with both lines chosen with **Shift**. While the field is open, the corner and its
+  preview move into the quarter the pointer stands in - **Enter** cuts there. One **Ctrl+Z** brings the whole lines
+  back; so does **Esc** before **Enter**.
+- **A corner at a point of several shapes**: where the corners of several shapes meet at one point, click the point
+  and lead the pointer - the corner and its preview move to the side the pointer is on.
 
 ## How corners are named
 

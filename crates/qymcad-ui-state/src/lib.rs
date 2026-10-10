@@ -992,6 +992,13 @@ pub struct CornerInput {
     pub crossing: CrossingCut,
 }
 
+/// WHETHER THE POINTER STEERS THE CORNER OF A SET (`CornerSet::steer`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Steered {
+    Yes,
+    No,
+}
+
 /// WHETHER THE CORNER TOOL CUT LINES AT A CROSSING to name its corner.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum CrossingCut {
@@ -13752,6 +13759,26 @@ impl CornerSet {
     /// NOTHING OF THE SET, which is what an applied answer and a refused one both leave behind.
     pub fn clear(&mut self) {
         *self = Self::default();
+    }
+
+    /// THE ONE CORNER NAMED AT A POINT FOLLOWS THE POINTER, where the point has more than one corner to give - a
+    /// crossing cut into four, a T, a point several lines meet at: the corner is the one the sector of the pointer
+    /// is, so the preview is drawn and the cut made on the side the pointer is on. A set of more corners than one is
+    /// left as it was named: one pointer does not say a side for every point of a set. Answers whether the pointer
+    /// steers the corner.
+    pub fn steer(&mut self, project: &Project, si: usize, cursor: (f64, f64)) -> Steered {
+        let [one] = self.points.as_mut_slice() else { return Steered::No };
+        if !self.made.is_empty() {
+            return Steered::No;
+        }
+        let corners = project.vertex_pairs(si, one.point).into_iter().filter(|&(a, b)| project.corner_of_pair(si, a, b).is_some()).count();
+        if corners < 2 {
+            return Steered::No;
+        }
+        if let Some(pair) = project.vertex_pair(si, one.point, Some(cursor)) {
+            one.pair = pair;
+        }
+        Steered::Yes
     }
 
     /// THE CORNERS ONE ANSWER CUTS, each with the point it stands at: what stands, in the order it was made.

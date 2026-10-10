@@ -2160,42 +2160,43 @@ impl Project {
     /// Where both end there, they already share a corner and there is no crossing to find.
     pub fn crossing_near(&self, si: usize, at: Point2, reach: f64) -> Option<LinesCrossing> {
         let s = self.sketches.get(si)?;
-        let place = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
-        let lines: Vec<(Id, Point2, Point2)> = s
-            .entities
-            .iter()
-            .filter(|e| !e.construction)
-            .filter_map(|e| match e.kind {
-                EntityKind::Line { a, b } => Some((e.id, place(a)?, place(b)?)),
-                _ => None,
-            })
-            .collect();
-        const END: f64 = 1e-9;
+        let lines: Vec<Id> = s.entities.iter().filter(|e| !e.construction && matches!(e.kind, EntityKind::Line { .. })).map(|e| e.id).collect();
         let mut best: Option<(f64, LinesCrossing)> = None;
-        for (i, &(one, a, b)) in lines.iter().enumerate() {
-            for &(other, c, d) in &lines[i + 1..] {
-                let (r, q) = ((b.x - a.x, b.y - a.y), (d.x - c.x, d.y - c.y));
-                let den = r.0 * q.1 - r.1 * q.0;
-                if den.abs() < 1e-12 {
-                    continue; // parallel: no crossing
-                }
-                let t = ((c.x - a.x) * q.1 - (c.y - a.y) * q.0) / den;
-                let u = ((c.x - a.x) * r.1 - (c.y - a.y) * r.0) / den;
-                if !(-END..=1.0 + END).contains(&t) || !(-END..=1.0 + END).contains(&u) {
-                    continue;
-                }
-                let inside = |v: f64| v > END && v < 1.0 - END;
-                if !inside(t) && !inside(u) {
-                    continue; // both end there: a corner, not a crossing
-                }
-                let p = Point2::new(a.x + r.0 * t, a.y + r.1 * t);
-                let d2 = (p.x - at.x).hypot(p.y - at.y);
-                if d2 <= reach && best.as_ref().is_none_or(|(bd, _)| d2 < *bd) {
-                    best = Some((d2, LinesCrossing { one, other, at: p }));
+        for (i, &one) in lines.iter().enumerate() {
+            for &other in &lines[i + 1..] {
+                let Some(c) = self.crossing_of(si, one, other) else { continue };
+                let d = (c.at.x - at.x).hypot(c.at.y - at.y);
+                if d <= reach && best.as_ref().is_none_or(|(bd, _)| d < *bd) {
+                    best = Some((d, c));
                 }
             }
         }
         best.map(|(_, c)| c)
+    }
+
+    /// WHERE LINES `one` AND `other` CROSS: through each other, or one ending on the middle of the other. Lines that both
+    /// end there make a corner, not a crossing, and parallel lines never cross.
+    pub fn crossing_of(&self, si: usize, one: Id, other: Id) -> Option<LinesCrossing> {
+        let ends = |eid: Id| -> Option<(Point2, Point2)> {
+            let (a, b) = self.line_ends(si, eid)?;
+            let (pa, pb) = (self.point_xy(si, a)?, self.point_xy(si, b)?);
+            Some((Point2::new(pa.0, pa.1), Point2::new(pb.0, pb.1)))
+        };
+        let ((a, b), (c, d)) = (ends(one)?, ends(other)?);
+        const END: f64 = 1e-9;
+        let (r, q) = ((b.x - a.x, b.y - a.y), (d.x - c.x, d.y - c.y));
+        let den = r.0 * q.1 - r.1 * q.0;
+        if den.abs() < 1e-12 {
+            return None; // parallel: no crossing
+        }
+        let t = ((c.x - a.x) * q.1 - (c.y - a.y) * q.0) / den;
+        let u = ((c.x - a.x) * r.1 - (c.y - a.y) * r.0) / den;
+        let on = |v: f64| (-END..=1.0 + END).contains(&v);
+        let inside = |v: f64| v > END && v < 1.0 - END;
+        if !on(t) || !on(u) || (!inside(t) && !inside(u)) {
+            return None; // apart, or both end there: a corner, not a crossing
+        }
+        Some(LinesCrossing { one, other, at: Point2::new(a.x + r.0 * t, a.y + r.1 * t) })
     }
 
     /// THE TWO LINES OF `crossing` CUT WHERE THEY CROSS, each that goes on past it in two (`break_line`), so the four
