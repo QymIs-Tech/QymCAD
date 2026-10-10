@@ -257,6 +257,7 @@ io-3mf-not-finite-line = 3MF: { $v } жолындағы мән шекті сан
 io-amf-not-finite-line = AMF: { $v } жолындағы мән шекті сан емес ({ $w })
 io-stl-not-finite-line = STL: { $v } жолындағы мән шекті сан емес ({ $w })
 io-stl-not-finite-triangle = STL: { $v } үшбұрышының координатасы ({ $w } байт) шекті сан емес ({ $x })
+io-xml-too-deep = Файл { $v } деңгейден тереңірек салынған және оқылмайды
 io-gltf-no-buffer = glTF: файлда ол атаған екілік бөлік жоқ
 io-gltf-bad-buffer = glTF: кірістірілген деректерді декодтау мүмкін емес
 io-gltf-missing-buffer = glTF: оның «{ $v }» деректері файлдың жанында жоқ
