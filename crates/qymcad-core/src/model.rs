@@ -4537,6 +4537,7 @@ impl Project {
             mates_conflict: _,
             drag_pull: _,
             snap_rebinds: _,
+            held_rebuilds: _, // OUT: the rebuilds a tool holds back while it lays many elements, not written
         } = self;
         let mut h = std::collections::hash_map::DefaultHasher::new();
         let bits = |v: f64, h: &mut std::collections::hash_map::DefaultHasher| v.to_bits().hash(h);
@@ -4618,6 +4619,13 @@ impl Project {
                 axis_pts,
                 frame,
                 origin_uv,
+                // OUT: what the solver, a drag and the rebuild of loops keep between calls, none of it written
+                left_unsolved: _,
+                drag_session: _,
+                laid: _,
+                checked: _,
+                point_at: _,
+                entity_at: _,
             } = s;
             (id, name, source, closed, origin, axis_pts, frame).hash(&mut h);
             // the plane whole, save the persistent id of the face a sketch stands on: the rebuild writes that one
@@ -4673,7 +4681,7 @@ impl Project {
             // a projection: what it projects; the points and lines it made, and whether its source was lost, the
             // rebuild writes
             for pr in projections {
-                let SketchProjection { id, body, src, points: _, entities: _, lost: _ } = pr;
+                let SketchProjection { id, body, src, points: _, entities: _, edges: _ } = pr; // OUT: the edge of each curve, written by the rebuild with them
                 (id, body).hash(&mut h);
                 feed(src, &mut h);
             }
