@@ -14,14 +14,16 @@
     tools/gate.py L --shard K/N     the acceptance probes of the level split in N shares, only the K-th run (and no mark)
     tools/gate.py L --skip-probe P  the acceptance probes matching P left out (and no mark)
     tools/gate.py time              the probes of time alone, one at a time; CI sets QYMCAD_TIME_SCALE=2
+    tools/gate.py --self-test       the gate's own reckoning checked on cases: the threads it picks, the times it reads
 
 EVERY RED STOPS THE GATE: a red probe is a trouble to mend before the commit, not a row to keep beside it.
 
 `full` leaves `target/gate-full.json` with the tree it ran on, and `tools/hooks/pre-commit` lets a commit through only
 when that tree is the one being committed and the level passed (switched on by `git config core.hooksPath tools/hooks`).
 
-Each step runs under a memory cap without swap - the acceptance set is a process a probe, six at a time. The report
-names what passed, what is red, and how long each step took.
+Each step runs under a memory cap without swap - the acceptance set is a process a probe, as many at a time as the
+machine holds (`pick_threads`; QYMCAD_TEST_THREADS sets it by hand). The report names what passed, what is red, how
+long each step took, and the slowest acceptance probes.
 """
 import argparse
 import json
@@ -34,7 +36,22 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # THE CAP IS FOR A DESKTOP: without it a run that ate the memory took the editor down with it, twice. A CI runner is a
 # machine of its own with no user session of systemd to put a scope in, and the machine is the bound there.
-CAP = [] if os.environ.get("CI") else ["systemd-run", "--user", "--scope", "-q", "-p", "MemoryMax=16G", "-p", "MemorySwapMax=0"]
+CAP_GB = 16
+CAP = [] if os.environ.get("CI") else ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={CAP_GB}G", "-p", "MemorySwapMax=0"]
+
+# THE ACCEPTANCE PROBES SIDE BY SIDE: as many as the machine has threads for and memory for. One number for every machine
+# did not fit: on 20 threads and 31 GB the fast level took 1209 s at 6, 851 s at 12 (the scope's peak 1.38 GB) and 754 s
+# at 20 (1.66 GB), while a laptop of 4 threads was given the same 6.
+# The memory of one probe: the heaviest measured 670 MB (`crates/qymcad-acceptance/src/isolation.rs`, where a probe is
+# stopped past 2 GB). Reckoning every probe at its 2 GB limit would give 8 under the cap of 16 GB, yet 20 side by side
+# peaked at 1.66 GB together.
+PROBE_MB = 700
+# On a desktop a tenth of the threads, at least one, is left to the person's own programs, so the editor and the window
+# stay usable while the gate runs: 18 of 20. A runner of the CI has nobody else on it.
+THREADS_VAR = "QYMCAD_TEST_THREADS"
+# THE TIME OF EACH PROBE, written by the runner (`isolation.rs`, the same variable) as `seconds<TAB>name` a line.
+TIMES_VAR = "QYMCAD_PROBE_TIMES"
+SLOWEST = 10
 
 # THE PROBES OF HEAVY GEOMETRY, left out of the fast level: the kernel's own work - booleans, fillets, meshes, the
 # exchange of files, the placing of parts - and the pictures of the window, which are the release's. A module not
@@ -50,7 +67,9 @@ HEAVY = [
 # THE STEPS BOTH LEVELS SHARE, and the acceptance run each makes.
 BUILDS = ("the code builds with no warning", ["cargo", "check", "--workspace", "--all-targets"], {})
 ORACLES = ("the oracles and the runner", ["cargo", "test", "-p", "qymcad-acceptance", "--lib"], {})
-ACCEPTANCE = ["cargo", "test", "-p", "qymcad-acceptance", "--test", "acceptance", "--no-fail-fast", "--", "--test-threads=6"]
+ACCEPTANCE = ["cargo", "test", "-p", "qymcad-acceptance", "--test", "acceptance", "--no-fail-fast", "--"]
+# the place of the number of threads in a run of the acceptance set, filled once the machine is looked at
+PICKED = "--test-threads=PICKED"
 
 # THE PROBES OF TIME: they measure the machine as much as the program. Run apart and one at a time by the `time` level,
 # which CI uses with QYMCAD_TIME_SCALE=2 - on a runner of four cores, among five other probes, a sample project of 3 MB rebuilt in
@@ -77,7 +96,7 @@ LEVELS = {
         ("every language is whole", ["cargo", "test", "-p", "qymcad-i18n", "--test", "every_language_is_complete_for_a_release"], {"QYMCAD_TIER": "release"}),
         ORACLES,
         # the long chains: six of 150 steps a slot - see `chains::Tier`
-        ("every acceptance probe", ACCEPTANCE, {"QYMCAD_TIER": "release"}),
+        ("every acceptance probe", ACCEPTANCE + [PICKED], {"QYMCAD_TIER": "release"}),
         # every path of a person broken on purpose, one line at a time, must turn its probe red; the script puts its
         # own memory cap on each run and writes every file back as it read it
         ("every breakage on order caught", ["python3", "tools/breakages.py", "--fresh"], {}),
@@ -88,10 +107,10 @@ LEVELS = {
         # geometry, the testkit's matrices
         ("every crate's own checks", ["cargo", "test", "--workspace", "--exclude", "qymcad-acceptance", "--no-fail-fast"], {}),
         ORACLES,
-        ("every acceptance probe", ACCEPTANCE, {"QYMCAD_TIER": "full"}),
+        ("every acceptance probe", ACCEPTANCE + [PICKED], {"QYMCAD_TIER": "full"}),
     ],
     "time": [
-        ("the probes of time, one at a time", ACCEPTANCE[:-1] + ["--test-threads=1", TIME], {"QYMCAD_TIER": "fast"}),
+        ("the probes of time, one at a time", ACCEPTANCE + ["--test-threads=1", TIME], {"QYMCAD_TIER": "fast"}),
         SKETCH_TIME,
     ],
     "fast": [
@@ -108,7 +127,7 @@ LEVELS = {
         ORACLES,
         (
             "the acceptance probes without heavy geometry",
-            ACCEPTANCE + [a for h in HEAVY for a in ("--skip", h)],
+            ACCEPTANCE + [PICKED] + [a for h in HEAVY for a in ("--skip", h)],
             {"QYMCAD_TIER": "fast"},
         ),
     ],
@@ -170,10 +189,126 @@ def shard_of(cmd, env, k, n):
     names = sorted(l[: -len(": test")] for l in listed.stdout.splitlines() if l.endswith(": test"))
     mine = names[k - 1 :: n]
     print(f"share {k}/{n}: {len(mine)} of {len(names)} acceptance probes")
-    return ACCEPTANCE + ["--exact"] + mine
+    return ACCEPTANCE + [PICKED, "--exact"] + mine
+
+
+class Machine:
+    """What a run of the acceptance set has to work with: logical CPUs, memory it may take in megabytes, and whether a
+    person works at it."""
+
+    def __init__(self, cpus, memory_mb, desktop):
+        self.cpus, self.memory_mb, self.desktop = cpus, memory_mb, desktop
+
+
+class Pick:
+    """How many acceptance probes run side by side, and the words that say why."""
+
+    def __init__(self, threads, why):
+        self.threads, self.why = threads, why
+
+
+def pick_threads(machine, asked):
+    """THE NUMBER OF PROBES SIDE BY SIDE on `machine`: what `asked` (the value of QYMCAD_TEST_THREADS, or None) says,
+    else the fewer of the threads - less a tenth on a desktop - and the memory over the memory of one probe; at least
+    one. A value asked for that is not a whole number above zero is refused: ValueError with the words."""
+    if asked is not None and asked.strip():
+        try:
+            threads = int(asked)
+        except ValueError:
+            threads = 0
+        if threads < 1:
+            raise ValueError(f"{THREADS_VAR} takes a whole number above zero, not {asked!r}")
+        return Pick(threads, f"{THREADS_VAR}={threads}")
+    left = max(1, machine.cpus // 10) if machine.desktop else 0
+    by_cpus = max(1, machine.cpus - left)
+    by_memory = max(1, machine.memory_mb // PROBE_MB)
+    spare = f" less {left} for the desktop" if left else ""
+    why = f"{machine.cpus} threads{spare} -> {by_cpus}; {machine.memory_mb / 1024:.1f} GB / {PROBE_MB} MB a probe -> {by_memory}"
+    return Pick(min(by_cpus, by_memory), why)
+
+
+def read_mb(text, key):
+    """The value of `key` in the text of /proc/meminfo, in megabytes; None when it is not there."""
+    for line in text.splitlines():
+        if line.startswith(key + ":"):
+            return int(line.split()[1]) // 1024
+    return None
+
+
+def this_machine():
+    """THE MACHINE THE GATE RUNS ON: the CPUs this process may use, and the memory a run may take - what the system
+    has available, no more than the cap the gate puts on a desktop, nor than the memory limit of the group the process
+    runs in (a container of the CI)."""
+    cpus = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    bounds = []
+    try:
+        with open("/proc/meminfo", encoding="ascii") as f:
+            available = read_mb(f.read(), "MemAvailable")
+        if available:
+            bounds.append(available)
+    except OSError:
+        pass
+    if CAP:
+        bounds.append(CAP_GB * 1024)
+    try:
+        with open("/sys/fs/cgroup/memory.max", encoding="ascii") as f:
+            limit = f.read().strip()
+        if limit.isdigit():
+            bounds.append(int(limit) // (1024 * 1024))
+    except OSError:
+        pass
+    return Machine(cpus, min(bounds) if bounds else CAP_GB * 1024, bool(CAP))
+
+
+def slowest(text, count):
+    """The `count` slowest probes of the times the runner wrote (`seconds<TAB>name` a line), slowest first, as
+    (seconds, name); a line that is not of that shape is passed over."""
+    times = []
+    for line in text.splitlines():
+        seconds, _, name = line.partition("\t")
+        try:
+            times.append((float(seconds), name))
+        except ValueError:
+            continue
+    return sorted(times, key=lambda t: -t[0])[:count]
+
+
+def self_test():
+    """THE GATE'S OWN RECKONING on cases, each with the answer it must give."""
+    wrong = []
+
+    def expect(what, got, want):
+        if got != want:
+            wrong.append(f"{what}: {got!r}, not {want!r}")
+
+    gb = 1024
+    expect("the owner's desktop, 20 threads, under the cap of 16 GB", pick_threads(Machine(20, 16 * gb, True), None).threads, 18)
+    expect("a runner of the CI, 4 threads, 15 GB", pick_threads(Machine(4, 15 * gb, False), None).threads, 4)
+    expect("a laptop, 4 threads, 2 GB available", pick_threads(Machine(4, 2 * gb, True), None).threads, 2)
+    expect("one thread on a desktop", pick_threads(Machine(1, 16 * gb, True), None).threads, 1)
+    expect("no memory to speak of", pick_threads(Machine(8, 100, False), None).threads, 1)
+    expect("asked by hand", pick_threads(Machine(20, 16 * gb, True), "6").threads, 6)
+    expect("asked empty is not asked", pick_threads(Machine(20, 16 * gb, True), " ").threads, 18)
+    for bad in ("0", "-2", "many"):
+        try:
+            pick_threads(Machine(20, 16 * gb, True), bad)
+            wrong.append(f"{THREADS_VAR}={bad!r} was taken")
+        except ValueError:
+            pass
+    meminfo = "MemTotal:       32000000 kB\nMemAvailable:   18061028 kB\n"
+    expect("the available memory of /proc/meminfo", read_mb(meminfo, "MemAvailable"), 17637)
+    expect("a key that is not there", read_mb(meminfo, "SwapTotal"), None)
+    times = "1.5\tpart::a\n30.2\tsketch::b\nnonsense\n7.0\tasm::c\n"
+    expect("the slowest two", slowest(times, 2), [(30.2, "sketch::b"), (7.0, "asm::c")])
+    for w in wrong:
+        print(f"  wrong: {w}")
+    print("the gate's reckoning: " + ("right" if not wrong else f"{len(wrong)} wrong"))
+    return 0 if not wrong else 1
 
 
 def main():
+    if sys.argv[1:] == ["--self-test"]:
+        return self_test()
     ap = argparse.ArgumentParser(description="Run a level of the checks and report it.")
     ap.add_argument("level", choices=sorted(LEVELS))
     ap.add_argument("--step", help="run only the step whose name begins with this")
@@ -199,10 +334,24 @@ def main():
             print(f"--shard takes K/N with 1 <= K <= N, not {args.shard!r}")
             return 2
         steps = [(name, shard_of(cmd, env, k, n), env) if cmd[:len(ACCEPTANCE)] == ACCEPTANCE else (name, cmd, env) for name, cmd, env in steps]
+    if any(PICKED in cmd for _, cmd, _ in steps):
+        try:
+            pick = pick_threads(this_machine(), os.environ.get(THREADS_VAR))
+        except ValueError as e:
+            print(e)
+            return 2
+        print(f"acceptance probes side by side: {pick.threads} ({pick.why})", flush=True)
+        steps = [(name, [f"--test-threads={pick.threads}" if a == PICKED else a for a in cmd], env) for name, cmd, env in steps]
     whole = args.step is None and args.skip is None and args.shard is None and not args.skip_probe
     total_began = time.time()
     all_red, broken_steps = [], []
     for name, cmd, env in steps:
+        times = None
+        if cmd[: len(ACCEPTANCE)] == ACCEPTANCE:
+            times = os.path.join(ROOT, "target", f"gate-{args.level}-probe-times.tsv")
+            os.makedirs(os.path.dirname(times), exist_ok=True)
+            open(times, "w", encoding="utf-8").close()
+            env = {**env, TIMES_VAR: times}
         seconds, passed, red, broken, said = run_step(name, cmd, env)
         # THE WHOLE OF WHAT A STEP SAID is kept: a red chain comes back shrunk and written out as a probe, and that is
         # in the words, not in the report
@@ -215,6 +364,10 @@ def main():
         if broken:
             broken_steps.append(name)
             print("\n".join("    " + l for l in said.splitlines()[-15:]))
+        if times:
+            with open(times, encoding="utf-8") as f:
+                for took, probe in slowest(f.read(), SLOWEST):
+                    print(f"    {took:6.1f} s  {probe}")
         all_red.extend(red)
     print(f"\nthe {args.level} level: {time.time() - total_began:.0f} s; {len(all_red)} red" + (f", {len(broken_steps)} steps did not run" if broken_steps else ""))
     for r in all_red:

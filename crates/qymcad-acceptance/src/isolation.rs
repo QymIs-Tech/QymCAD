@@ -28,6 +28,20 @@ const TIER_BUDGET_VAR: &str = "QYMCAD_TIER_BUDGET_SECS";
 const PROBE_MEMORY_MB: u64 = 2048;
 const PROBE_MEMORY_VAR: &str = "QYMCAD_PROBE_MEMORY_MB";
 
+/// The file the time of every check run in a process of its own is added to, as `seconds<TAB>name` a line; nothing is
+/// written when it is not set. `tools/gate.py` sets it and names the slowest checks of the run.
+const PROBE_TIMES_VAR: &str = "QYMCAD_PROBE_TIMES";
+
+/// ADD THE TIME `took` OF THE CHECK `path` to the file `file`, one line in one write: the checks of a run finish on
+/// several threads at once, and a file opened for appending takes each whole write after the last.
+fn note_time(file: &std::path::Path, path: &str, took: Duration) {
+    use std::io::Write;
+    let line = format!("{:.1}\t{path}\n", took.as_secs_f64());
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(file) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 /// How much memory the process `pid` holds now, in megabytes; `None` where the system does not say (no `/proc`).
 fn resident_mb(pid: u32) -> Option<u64> {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
@@ -82,7 +96,12 @@ fn in_a_process_of_its_own(module: &str, name: &str, budget: Duration, memory: u
     }
     // the name the test binary knows the check by: the module path inside the binary, without the binary itself
     let path = module.split_once("::").map(|(_, rest)| format!("{rest}::{name}")).unwrap_or_else(|| name.to_string());
-    if let Err(said) = apart(&path, budget, memory, &[]) {
+    let began = Instant::now();
+    let ended = apart(&path, budget, memory, &[]);
+    if let Some(file) = std::env::var_os(PROBE_TIMES_VAR) {
+        note_time(std::path::Path::new(&file), &path, began.elapsed());
+    }
+    if let Err(said) = ended {
         panic!("{said}");
     }
 }
@@ -214,6 +233,30 @@ mod tests {
     fn a_name_that_finds_no_check_fails() {
         let said = crate::refusal(|| super::in_a_process_of_its_own(module_path!(), "no_such_check", Duration::from_secs(60), super::PROBE_MEMORY_MB, None));
         assert!(said.contains("ran no check"), "a name that finds nothing: {said:?}");
+    }
+
+    /// THE TIMES OF CHECKS FINISHING TOGETHER ARE KEPT WHOLE: eight threads adding fifty lines each leave four hundred
+    /// lines, every one of them `seconds<TAB>name`.
+    #[test]
+    fn the_times_of_checks_finishing_together_are_kept_whole() {
+        let file = std::env::temp_dir().join(format!("qymcad-probe-times-{}.tsv", std::process::id()));
+        let _ = std::fs::remove_file(&file);
+        std::thread::scope(|s| {
+            for t in 0..8 {
+                let file = &file;
+                s.spawn(move || {
+                    for i in 0..50 {
+                        super::note_time(file, &format!("module::check_{t}_{i}"), Duration::from_millis(1234));
+                    }
+                });
+            }
+        });
+        let said = std::fs::read_to_string(&file).unwrap_or_default();
+        let _ = std::fs::remove_file(&file);
+        let lines: Vec<&str> = said.lines().collect();
+        assert_eq!(lines.len(), 400, "lines kept: {}", lines.len());
+        let whole = lines.iter().filter(|l| l.starts_with("1.2\tmodule::check_")).count();
+        assert_eq!(whole, 400, "lines whole of 400: {whole}; the file:\n{said}");
     }
 
     /// A RUN PAST ITS BUDGET STARTS NO MORE CHECKS.
