@@ -188,13 +188,40 @@ jobs:
       - name: Upload the portable zip (for workflow_dispatch)
         uses: actions/upload-artifact@v7
         with:
-          path: dist/*.zip
+          path: dist/*-win64.zip
           archive: false
 
       - name: Upload the installer (for workflow_dispatch)
         uses: actions/upload-artifact@v7
         with:
           path: dist/*.msi
+          archive: false
+
+      # WINDOWS 7/8.x LEGACY BUILD (x64)
+      # Uses the Tier 3 target x86_64-win7-windows-msvc with std built from source via -Zbuild-std.
+      # Bypasses Windows 10+ APIs (ProcessPrng, WaitOnAddress) and provides combase.dll export forwarder.
+      - name: Add rust-src for Windows 7 target
+        run: rustup component add rust-src
+
+      - name: Build Windows 7 (release)
+        env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          OCCT_INCLUDE_DIR: C:\occt\include\opencascade
+          OCCT_LIB_DIR: C:\occt\lib
+          RUSTC_BOOTSTRAP: 1
+        run: cargo build --release --locked --bin qymcad --target x86_64-win7-windows-msvc -Zbuild-std=std,panic_abort
+
+      - name: Bundle Windows 7 portable zip
+        shell: pwsh
+        env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          OCCT_ROOT: C:\occt
+        run: pwsh -File packaging/win/bundle-win7.ps1
+
+      - name: Upload the Windows 7 portable zip (for workflow_dispatch)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*-win7-x64.zip
           archive: false
 
   linux:
@@ -343,13 +370,13 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
-      # FOUR FILES, AND ALL FOUR ACTUALLY FILES. The packages are uploaded unzipped, and the release
+      # FIVE FILES, AND ALL FIVE ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
       # the Release page would go up with a download missing. Fifteen seconds against that.
       #
-      # Four, not three, since Windows produces two: the portable zip and the MSI installer. The number
-      # is written out rather than counted from the jobs on purpose - a package that silently stopped
-      # being built is exactly what this step exists to catch.
+      # Five, since Windows produces three: the portable zip, the MSI installer, and the Windows 7 legacy zip.
+      # The number is written out rather than counted from the jobs on purpose - a package that silently
+      # stopped being built is exactly what this step exists to catch.
       - name: What was built
         run: |
           ls -lh dist
@@ -357,7 +384,7 @@ jobs:
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
           n=$(ls dist | wc -l)
-          [ "$n" -eq 4 ] || { echo "!!! four packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq 5 ] || { echo "!!! five packages were expected, $n arrived"; exit 1; }
 
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #
