@@ -3745,7 +3745,7 @@ pub(crate) fn sketch_entry_status(project: &Project, s: &qymcad_core::model::Ske
             return crate::i18n::tr1("g-sketch-on-foreign-face", "name", &src);
         }
     }
-    crate::i18n::tr1("g-editing-sketch", "name", &s.name)
+    crate::i18n::tr1("g-editing-sketch", "name", &crate::i18n::name(&s.name))
 }
 
 /// Resolve the PLACEMENT plane (a shared step for a new sketch AND for an import).
