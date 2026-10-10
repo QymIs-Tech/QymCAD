@@ -62,6 +62,10 @@ HEAVY = [
     # the matrices of the tools of the part: every tool across bodies, picks and values, the round trips with them at
     # the level of a release
     "matrix_",
+    # every rounding and chamfer of the sample PC case rolled back to, suppressed and put back - four rebuilds of the
+    # whole document a node, 340 s; started late among the probes in name order it ran alone for the last 270 s of a fast
+    # step of 819 s. The same check on the filter sample stays in the fast level (41 s)
+    "project_checks::every_rounding_of_the_case_sample",
 ]
 
 # THE STEPS BOTH LEVELS SHARE, and the acceptance run each makes.
