@@ -8,9 +8,12 @@ Key **M**.
 
 ## How to do it
 
-1. Select what to reflect and press **Mirror**.
-2. Press the button again — or point at the axis straight away: a line of the sketch, or the sketch's X or Y axis.
-3. The reflection lies on the other side of the axis; one step of undo.
+1. Select what to reflect and press **Mirror**. Or the other way round: press **Mirror**, then click what to reflect.
+2. To add more: **Shift** + a click on a line or an arc, or **Shift** + a box.
+3. A plain click names what to reflect about: a line of the sketch (construction too), the sketch's X or Y axis, or a
+   point. About a point, the copy lies on the far side of it, the same distance off.
+4. The reflection is made at once, one step of undo. The tool stays in hand for the next geometry; **Esc** puts it
+   down.
 
 For a symmetric part, draw one half, draw the centreline as **construction** (key **X**) and mirror about it: the
 centreline stays out of the body's profile.
@@ -22,4 +25,5 @@ constraints between pairs of points yourself.
 
 ## If it did not work
 
-- Nothing was reflected — nothing was selected before the press. Select and press again.
+- Nothing was reflected — nothing to reflect was chosen. Click a line or an arc, then the axis.
+- A click reflected instead of adding — hold **Shift** while adding geometry.

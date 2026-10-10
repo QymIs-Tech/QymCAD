@@ -13545,6 +13545,7 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
             // as "it mirrored everything". Reported behaviour: "the geometry simply loses its selection -
             // it has to stay highlighted so one can see it is still chosen."
             sel_sk.mirror_of = eids;
+            sel_sk.modify = Some(op); // the tool in hand on its second step too, so a click or a box is read as its own
             *ed.status = qymcad_i18n::tr("sk-mirror-pick-axis");
         } else {
             sel_sk.clear();
@@ -13585,8 +13586,8 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
 /// The axes are drawn in every sketch and were, until now, the only drawn thing a person could not point
 /// at: mirroring about Y happened silently when no line was selected, and X could not be asked for at all.
 pub fn mirror_about_axis(ed: Editing, sel_sk: &mut SketchSelection, which: usize) {
-    let (bx, by) = if which == 0 { (1.0, 0.0) } else { (0.0, 1.0) };
-    mirror_about(ed, sel_sk, 0.0, 0.0, bx, by);
+    let along = if which == 0 { Point2::new(1.0, 0.0) } else { Point2::new(0.0, 1.0) };
+    mirror_about(ed, sel_sk, MirrorAbout::Line(Point2::new(0.0, 0.0), along));
 }
 
 /// MIRROR WHAT THE TOOL HOLDS ABOUT A LINE OF THE SKETCH, given by its two points.
@@ -13596,18 +13597,32 @@ pub fn mirror_about_axis(ed: Editing, sel_sk: &mut SketchSelection, which: usize
 pub fn mirror_about_line(ed: Editing, sel_sk: &mut SketchSelection, a: Id, b: Id) {
     let Sel::Sketch(si) = *ed.sel else { return };
     let (Some(pa), Some(pb)) = (sketch_pt(ed.project, si, a), sketch_pt(ed.project, si, b)) else { return };
-    mirror_about(ed, sel_sk, pa.x, pa.y, pb.x, pb.y);
+    mirror_about(ed, sel_sk, MirrorAbout::Line(pa, pb));
 }
 
-/// The two doors above meet here: reflect what is held about the line through (ax, ay) and (bx, by) - one step of undo,
-/// named after the tool.
-fn mirror_about(mut ed: Editing, sel_sk: &mut SketchSelection, ax: f64, ay: f64, bx: f64, by: f64) {
+/// MIRROR WHAT THE TOOL HOLDS ABOUT A POINT OF THE SKETCH: each point of it to the far side of that point, the same
+/// distance off. Reported behaviour: "a plain click on something mirrors about it - a point, a line and so on".
+pub fn mirror_about_point(ed: Editing, sel_sk: &mut SketchSelection, p: Id) {
+    let Sel::Sketch(si) = *ed.sel else { return };
+    let Some(at) = sketch_pt(ed.project, si, p) else { return };
+    mirror_about(ed, sel_sk, MirrorAbout::Point(at));
+}
+
+/// WHAT THE MIRROR REFLECTS ABOUT: the straight line through two places, or a place.
+#[derive(Clone, Copy)]
+enum MirrorAbout {
+    Line(Point2, Point2),
+    Point(Point2),
+}
+
+/// The doors above meet here: reflect what is held - one step of undo, named after the tool.
+fn mirror_about(mut ed: Editing, sel_sk: &mut SketchSelection, about: MirrorAbout) {
     begin_edit(ed.edits, &*ed.project, qymcad_i18n::tr("tool-mirror"));
-    mirror_about_in(ed.reborrow(), sel_sk, ax, ay, bx, by);
+    mirror_about_in(ed.reborrow(), sel_sk, about);
     close_edit(ed.edits, ed.project);
 }
 
-fn mirror_about_in(ed: Editing, sel_sk: &mut SketchSelection, ax: f64, ay: f64, bx: f64, by: f64) {
+fn mirror_about_in(ed: Editing, sel_sk: &mut SketchSelection, about: MirrorAbout) {
     let Sel::Sketch(si) = *ed.sel else { return };
     // THE AXIS IS NOT MIRRORED WITH THE REST. It used to be: the line serving as the axis sat in the same
     // selection as everything else, so the tool reflected it onto itself along with the geometry.
@@ -13615,9 +13630,22 @@ fn mirror_about_in(ed: Editing, sel_sk: &mut SketchSelection, ax: f64, ay: f64, 
     if eids.is_empty() {
         return;
     }
-    ed.project.mirror_entities(si, &eids, ax, ay, bx, by);
-    sel_sk.clear(); // the tool is done and lets go: nothing is left in hand to catch the next click
+    match about {
+        MirrorAbout::Line(a, b) => ed.project.mirror_entities(si, &eids, a.x, a.y, b.x, b.y),
+        MirrorAbout::Point(p) => ed.project.mirror_about_point(si, &eids, p.x, p.y),
+    }
+    // THE TOOL STAYS IN HAND for the next geometry, its choice let go. Cleared with the selection, its mode went while
+    // the bar went on saying Mirror, and the next click chose as the arrow does.
+    sel_sk.clear();
+    sel_sk.modify = Some(EditTool::Mirror);
     *ed.status = qymcad_i18n::tr("sk-mirror-done");
+}
+
+/// THE MIRROR TAKES WHAT IS CHOSEN as what it reflects: the curves of the selection, which stays lit on screen. The
+/// first click with the tool in hand and nothing held, a Shift + click and a box all choose through here.
+pub fn mirror_takes_the_choice(sel_sk: &mut SketchSelection, status: &mut String) {
+    sel_sk.mirror_of = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    *status = qymcad_i18n::tr(if sel_sk.mirror_of.is_empty() { "sk-mirror-pick-what" } else { "sk-mirror-pick-axis" });
 }
 
 /// ESC FROM AN EDITING BUTTON THAT WORKS ON A CLICK, whatever it is: the tool goes down, and what it was working on
@@ -13677,6 +13705,7 @@ pub fn escape_waiting_tool(t: &mut Tools, status: &mut String) {
     t.sel_sk.constraint = None;
     t.sel_sk.modify = None;
     t.sel_sk.offset = OffsetAim::default();
+    t.sel_sk.mirror_of.clear();
     *t.armed = Armed::None;
 }
 

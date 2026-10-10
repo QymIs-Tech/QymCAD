@@ -27,7 +27,7 @@ says what it needs and starts picking afresh.
 | Equal length | two lines | the lengths become equal; for circles, the radii |
 | Collinear | two lines | they lie on one straight line |
 | Concentric | two circles or arcs | the centres coincide |
-| Tangent | a line and a circle | the line touches the circle |
+| Tangent | a line and a circle | the line touches the circle; short of it, the nearer end runs on to the touch point; picked at its middle, it touches by the middle |
 | Midpoint | a point and a line | the point moves to the middle of the line |
 | Coincident | two points, or a point and a line | the points meet; the point lies on the line |
 | Fix | points | the points stay where they are through any edit |

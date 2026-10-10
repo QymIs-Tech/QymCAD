@@ -3006,6 +3006,7 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
     sk.gsel.constraint = None;
     // while a constraint or modify tool is active, the selection accumulates WITHOUT Shift: elements are
     // clicked one at a time, and the constraint applies as soon as there are enough of them.
+    let shift = additive; // Shift itself: in the mirror's second step it adds, and a plain click names the axis
     let additive = additive || sk.sel_sk.constraint.is_some() || sk.sel_sk.modify.is_some();
     let mut hit = sketch_hit(&sk.pick(), rect, pos, si);
     // A LINE CLICKED AT ITS MIDDLE, WHERE ITS TRIANGLE SHOWS, IS PICKED AS THE LINE and remembered as clicked there:
@@ -3044,14 +3045,28 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             hit = Some((3u8, 1));
         }
     }
-    // THE MIRROR'S SECOND STEP: the click NAMES THE AXIS instead of adding to a selection.
+    // THE MIRROR'S SECOND STEP: a plain click NAMES WHAT IT REFLECTS ABOUT - a line, a point or an axis - and Shift adds
+    // the curve under it to what is reflected.
     //
     // It stands before the ordinary selection on purpose. In this state the person has already said what to
     // reflect; letting the click fall through to the selection would quietly replace the answer to the first
     // question with an answer to the second.
     if !sk.sel_sk.mirror_of.is_empty() {
+        if shift {
+            if let Some(refr @ (1, _)) = hit {
+                match sk.sel_sk.items.iter().position(|r| *r == refr) {
+                    Some(k) => {
+                        sk.sel_sk.items.remove(k);
+                    }
+                    None => sk.sel_sk.items.push(refr),
+                }
+                qymcad_ui_state::mirror_takes_the_choice(&mut *sk.sel_sk, &mut *sk.status);
+            }
+            return;
+        }
         match hit {
             Some((3, w)) => qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, w as usize),
+            Some((0, p)) => qymcad_ui_state::mirror_about_point(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, p),
             Some((1, eid)) => match sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).map(|e| e.kind) {
                 // CONSTRUCTION GEOMETRY SERVES AS WELL: what matters is that two points make a line, and a
                 // construction line is exactly what people draw to mirror about.
@@ -3059,6 +3074,21 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
                 _ => *sk.status = qymcad_i18n::tr("sk-mirror-pick-axis"),
             },
             _ => *sk.status = qymcad_i18n::tr("sk-mirror-pick-axis"),
+        }
+        return;
+    }
+    // THE MIRROR'S FIRST STEP, the tool taken with nothing chosen: the first click on a curve chooses what it reflects
+    // and the next plain click names what about. Reported behaviour: "with the tool first, the first click chooses the
+    // geometry to mirror; then Shift + click or Shift + box adds, and a plain click mirrors about what it is on".
+    if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror) {
+        if let Some(refr @ (1, _)) = hit {
+            sk.sel_sk.items.retain(|r| r.0 == 1);
+            if !sk.sel_sk.items.contains(&refr) {
+                sk.sel_sk.items.push(refr);
+            }
+            qymcad_ui_state::mirror_takes_the_choice(&mut *sk.sel_sk, &mut *sk.status);
+        } else {
+            *sk.status = qymcad_i18n::tr("sk-mirror-pick-what");
         }
         return;
     }
@@ -4684,6 +4714,10 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
                 qymcad_ui_state::box_select(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, *sk.sketch_ses, rect, a, b);
                 if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
                     *sk.status = qymcad_i18n::tr("sk-offset-side"); // what to do next, not how many were chosen
+                }
+                // the box chooses what the mirror reflects, in either of its steps, as its Shift + click does
+                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror) {
+                    qymcad_ui_state::mirror_takes_the_choice(&mut *sk.sel_sk, &mut *sk.status);
                 }
             }
             sk.tree_sel.box_start = None;

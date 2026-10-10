@@ -1917,6 +1917,61 @@ mod tests {
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
                 check_all(&mut app, "sketch: an open chain offset", &mut problems);
 
+                // TANGENT RUNS A LINE ON TO A CIRCLE IT DOES NOT REACH: a circle and a line apart from it on a place of their
+                // own, the line picked off its middle and the circle with Shift, Tangent. The nearer end of the line is the
+                // point it touches at: the radius to it square to the line.
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(3).look2d((425.0, -35.0)).click2d(410.0, -25.0).click2d(415.0, -25.0).key(egui::Key::Escape);
+                    hand.sk_tool(1).look2d((425.0, -35.0)).click2d(420.0, -45.0).double_click2d(440.0, -40.0);
+                    hand.key(egui::Key::Escape).sk_tool(0).look2d((425.0, -35.0));
+                    hand.click2d(435.0, -41.25).shift_click2d(410.0, -20.0).constraint(9);
+                    let sk = &app.project.sketches[si];
+                    let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+                    let centre = sk.entities.iter().rev().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Circle { center, .. } => at(center),
+                        _ => None,
+                    });
+                    let ends = sk.entities.iter().rev().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Line { a, b } => at(a).zip(at(b)),
+                        _ => None,
+                    });
+                    let touches = centre.zip(ends).is_some_and(|(c, (a, b))| {
+                        [(a, b), (b, a)].into_iter().any(|(t, o)| {
+                            let (rx, ry, dx, dy) = (t.0 - c.0, t.1 - c.1, o.0 - t.0, o.1 - t.1);
+                            rx.hypot(ry) > 1.0 && (rx * dx + ry * dy).abs() < 1e-6 * rx.hypot(ry) * dx.hypot(dy)
+                        })
+                    });
+                    if !touches {
+                        problems.push(format!("sketch: Tangent on a line apart from a circle did not run the line on to it (centre {centre:?}, line {ends:?}); status: {}", app.status));
+                    }
+                }
+                check_all(&mut app, "sketch: tangent runs a line on to a circle", &mut problems);
+
+                // THE MIRROR ADDS WITH SHIFT AND REFLECTS ABOUT A POINT: a slanted line chosen, Mirror taken, a short level
+                // line added with Shift, a plain click on the lower end of the slanted one. Both are copied to the far side
+                // of that point, and the tool stays in hand.
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(1).look2d((470.0, -35.0)).click2d(460.0, -40.0).double_click2d(470.0, -30.0);
+                    hand.key(egui::Key::Escape).sk_tool(1).look2d((470.0, -35.0)).click2d(475.0, -40.0).double_click2d(485.0, -40.0);
+                    hand.key(egui::Key::Escape).sk_tool(0).look2d((470.0, -35.0));
+                    hand.click2d(465.0, -35.0);
+                    let pressed = hand.press_hint(&qymcad_i18n::tr("tb-mirror-sketch-hint"));
+                    hand.shift_click2d(482.0, -40.0).click2d(460.0, -40.0);
+                    let sk = &app.project.sketches[si];
+                    let stands = |x: f64, y: f64| sk.points.iter().any(|q| (q.x - x).abs() < 1e-6 && (q.y - y).abs() < 1e-6);
+                    let in_hand = app.tools.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror);
+                    if !pressed || !stands(450.0, -50.0) || !stands(445.0, -40.0) || !stands(435.0, -40.0) || !in_hand {
+                        problems.push(format!(
+                            "sketch: two lines mirrored about the point (460, -40) are not on its far side, or the tool went (pressed: {pressed}, in hand: {in_hand}); status: {}",
+                            app.status
+                        ));
+                    }
+                }
+                qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
+                check_all(&mut app, "sketch: the mirror adds with Shift and reflects about a point", &mut problems);
+
                 // A RECTANGLE IS ONE SHAPE: drawn on a place of its own, picked by one side with Rotate and turned 30 deg
                 // about its centre, it turns as a whole and stays square.
                 {

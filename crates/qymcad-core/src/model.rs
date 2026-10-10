@@ -2155,6 +2155,12 @@ impl Project {
         );
     }
 
+    /// MIRROR THE ENTITIES (as a copy) ABOUT THE POINT (px, py): each point goes to the far side of it, the same distance
+    /// off - a half turn about it, so an arc keeps its way round.
+    pub fn mirror_about_point(&mut self, si: usize, eids: &[Id], px: f64, py: f64) {
+        self.dup_entities(si, eids, |x, y| (2.0 * px - x, 2.0 * py - y), false);
+    }
+
     /// Duplicate the selected entities with an offset of (dx, dy) and return the ids of the copies. Used by
     /// the interactive copy command, which reads as base point then target.
     pub fn copy_entities(&mut self, si: usize, eids: &[Id], dx: f64, dy: f64) -> Vec<Id> {

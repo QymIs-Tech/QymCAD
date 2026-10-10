@@ -1569,11 +1569,16 @@ impl Project {
             map.insert(old, nid);
         }
         let m = |id: Id| map.get(&id).copied().unwrap_or(id);
+        // A REFLECTION TURNS THE WAY ROUND OF AN ARC: copied with its winding, a mirrored arc ran round the other side of
+        // its circle between the mirrored ends. Read off the map itself - a unit square taken through it comes out
+        // turned over - so a move, a turn and a point mirror keep the winding and a line mirror flips it.
+        let ((ox, oy), (ex, ey), (fx, fy)) = (f(0.0, 0.0), f(1.0, 0.0), f(0.0, 1.0));
+        let flips = (ex - ox) * (fy - oy) - (ey - oy) * (fx - ox) < 0.0;
         let mut new_ids = Vec::new();
         for e in ents {
             let nk = match e.kind {
                 EntityKind::Line { a, b } => EntityKind::Line { a: m(a), b: m(b) },
-                EntityKind::Arc { center, a, b, ccw } => EntityKind::Arc { center: m(center), a: m(a), b: m(b), ccw },
+                EntityKind::Arc { center, a, b, ccw } => EntityKind::Arc { center: m(center), a: m(a), b: m(b), ccw: ccw != flips },
                 EntityKind::Circle { center, r } => EntityKind::Circle { center: m(center), r },
                 EntityKind::Ellipse { c, ma, mi } => EntityKind::Ellipse { c: m(c), ma: m(ma), mi: m(mi) },
             };
