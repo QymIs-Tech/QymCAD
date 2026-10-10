@@ -20,6 +20,9 @@
   offers to take that corner off straight away.
 - **Fillet every corner of the contour**: select the contour, press the button, type the **R of every corner**,
   **Enter**.
+- **A corner at a crossing**: two lines going through each other make four corners. Click the fillet or the chamfer
+  inside the corner you want, by the crossing - both lines are cut there, that corner is rounded or cut, and the other
+  two halves stay lines. One **Ctrl+Z** brings the whole lines back; so does **Esc** before **Enter**.
 
 ## How corners are named
 
@@ -115,8 +118,7 @@ Fillets usually go **last**, once the contour is defined: before that they get i
 - A line was not taken and the status names a point — that is a straight joint: two chosen lines lie along one
   straight line and the third would have fallen on it. Let go of the line already standing at that point, or choose
   another pair.
-- No corner appears — the lines merely cross rather than sharing a point: a corner is where the **ends** coincide.
-  Join them.
+- A click by a crossing took no corner — click nearer the crossing, inside the corner you want.
 - The wrong corner of the four at one point was taken — the cursor has to stand in that sector, and where a line was
   picked first, only the corners that line takes part in are among the answers.
 - A click by the end of a fillet took the line rather than a corner — the line goes on from the arc along its tangent

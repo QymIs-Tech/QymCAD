@@ -970,7 +970,12 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
         // THE BOUNDARY OF AN OPERATION: one step of undo, named after the tool. A person naming four corners of a
         // shape meant one act, and undo taking back one corner of it would leave the drawing in a state nobody
         // asked for.
-        qymcad_ui_state::begin_edit(&mut *cc.edits, &*cc.project, qymcad_i18n::tr(if chamfer { "tool-chamfer" } else { "tool-fillet" }));
+        // the lines cut at a crossing to name the corner are the start of this step: the cut joins it, and one undo
+        // takes back the whole of it
+        let joins = cc.corner.crossing == qymcad_ui_state::CrossingCut::Cut;
+        if !joins {
+            qymcad_ui_state::begin_edit(&mut *cc.edits, &*cc.project, qymcad_i18n::tr(if chamfer { "tool-chamfer" } else { "tool-fillet" }));
+        }
         if r > 1e-6 {
             cc.tool_prefs.fillet = r; // sticky: the next corner offers the same value
                                       // THE SIZE AS IT WAS GIVEN, not only as a radius: a fillet taken by the length of its arc or by the chord
@@ -1012,18 +1017,31 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
                 *cc.status = format!("{} {}", ph::WARNING, qymcad_i18n::tr("sk-fillet-too-big"));
                 cc.corner.why = Some(qymcad_i18n::tr("sk-fillet-too-big"));
             }
-            qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
+            if joins {
+                qymcad_ui_state::fold_into_last_step(&mut *cc.edits, &*cc.project);
+            } else {
+                qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
+            }
             if cut > 0 {
                 cc.corner.clear(); // ALL of the input, so nothing of this set travels into the next call
             }
             // A VALUE THE CORNERS CANNOT TAKE keeps the field open with it, the reason said: closed, it left a
             // person no field to put a smaller one in, and no words beside it.
         } else {
-            qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
+            // a size of nothing cuts nothing: the lines cut at a crossing for it are whole again
+            if joins {
+                qymcad_ui_state::take_back_last_step(&mut *cc.edits, &mut *cc.project, &mut *cc.regen);
+            } else {
+                qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
+            }
             cc.corner.clear();
         }
     }
     if cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        // the lines cut at a crossing for a corner never cut are whole again
+        if cc.corner.crossing != qymcad_ui_state::CrossingCut::None {
+            qymcad_ui_state::take_back_last_step(&mut *cc.edits, &mut *cc.project, &mut *cc.regen);
+        }
         cc.corner.clear();
     }
 }
@@ -2444,6 +2462,11 @@ fn extend_apply(sk: &mut qymcad_ui_state::SketchCtx, at: ExtendAt, held: Id) {
 /// THE KEYS OF THE SKETCH TOOLS IN HAND, each frame: Enter makes the extension Extend previews, as a click does; and
 /// the field of the rotation angle at its centre (`sketch_rotate_popup`).
 pub fn sketch_tool_keys(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
+    // LINES A CORNER TOOL CUT AT A CROSSING, the tool put down with no corner cut, are whole again
+    if sk.corner.crossing == qymcad_ui_state::CrossingCut::Left {
+        qymcad_ui_state::take_back_last_step(&mut *sk.edits, &mut *sk.project, &mut *sk.regen);
+        sk.corner.crossing = qymcad_ui_state::CrossingCut::None;
+    }
     sketch_rotate_popup(sk, ctx, rect);
     let (Some(held), qymcad_ui_state::Sel::Sketch(si)) = (sk.tool.extend, *sk.sel) else { return };
     if sk.armed.click_op() != 2 || ctx.egui_wants_keyboard_input() || !ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -4598,6 +4621,21 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         let point = qymcad_pick::nearest_point_within(&sk.pick(), rect, pos, si, zone).filter(|id| is_corner(*id)).map(|id| {
                             let w = qymcad_ui_state::to_world(sk.view, rect, pos);
                             qymcad_ui_state::CornerOver::Point { id, at: (w.x, w.y) }
+                        });
+                        // A CROSSING OF TWO LINES IN THE ZONE, where no corner stands: the two are cut there, a step of
+                        // undo of its own that the corner cut joins, and the click names the corner of the quarter the
+                        // pointer is in, at the point the cut made. Reported behaviour: "a sketch fillet or chamfer
+                        // cannot be put where two lines cross - a click at the crossing picks no corner".
+                        let point = point.or_else(|| {
+                            let w = qymcad_ui_state::to_world(sk.view, rect, pos);
+                            let reach = f64::from(zone) / f64::from(sk.view.scale);
+                            let crossing = sk.project.crossing_near(si, Point2::new(w.x, w.y), reach)?;
+                            qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr(if chamfer { "tool-chamfer" } else { "tool-fillet" }));
+                            let id = sk.project.cut_at_crossing(si, crossing);
+                            qymcad_ui_state::close_edit(&mut *sk.edits, &*sk.project);
+                            qymcad_ui_state::invalidate(&mut *sk.regen);
+                            sk.corner.crossing = qymcad_ui_state::CrossingCut::Cut;
+                            id.map(|id| qymcad_ui_state::CornerOver::Point { id, at: (w.x, w.y) })
                         });
                         point.or_else(|| qymcad_pick::nearest_line_eid(&sk.pick(), rect, pos, si).map(qymcad_ui_state::CornerOver::Line)).unwrap_or(qymcad_ui_state::CornerOver::Nothing)
                     };

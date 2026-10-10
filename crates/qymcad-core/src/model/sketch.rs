@@ -215,6 +215,14 @@ struct OnCircle {
     span: Option<Stretch>,
 }
 
+/// WHERE TWO LINES CROSS: the two lines and the point of their crossing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LinesCrossing {
+    pub one: Id,
+    pub other: Id,
+    pub at: Point2,
+}
+
 /// WHY AN END OF A LINE STAYS WHERE IT IS under Extend.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum EndKept {
@@ -2146,6 +2154,75 @@ impl Project {
         self.prune_orphan_sketch_points(si); // Leave no dangling points behind a trim.
         self.solve_sketch(si); // the edit ends at the solver, not at a rebuild: `regen_sketch` recomputes the contours and checks no constraint
         true
+    }
+    /// THE CROSSING OF TWO LINES NEAREST `at`, within `reach` of it: two lines of the drawing (not construction) going
+    /// through each other where neither has a point the other ends at - or one ending on the middle of the other.
+    /// Where both end there, they already share a corner and there is no crossing to find.
+    pub fn crossing_near(&self, si: usize, at: Point2, reach: f64) -> Option<LinesCrossing> {
+        let s = self.sketches.get(si)?;
+        let place = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+        let lines: Vec<(Id, Point2, Point2)> = s
+            .entities
+            .iter()
+            .filter(|e| !e.construction)
+            .filter_map(|e| match e.kind {
+                EntityKind::Line { a, b } => Some((e.id, place(a)?, place(b)?)),
+                _ => None,
+            })
+            .collect();
+        const END: f64 = 1e-9;
+        let mut best: Option<(f64, LinesCrossing)> = None;
+        for (i, &(one, a, b)) in lines.iter().enumerate() {
+            for &(other, c, d) in &lines[i + 1..] {
+                let (r, q) = ((b.x - a.x, b.y - a.y), (d.x - c.x, d.y - c.y));
+                let den = r.0 * q.1 - r.1 * q.0;
+                if den.abs() < 1e-12 {
+                    continue; // parallel: no crossing
+                }
+                let t = ((c.x - a.x) * q.1 - (c.y - a.y) * q.0) / den;
+                let u = ((c.x - a.x) * r.1 - (c.y - a.y) * r.0) / den;
+                if !(-END..=1.0 + END).contains(&t) || !(-END..=1.0 + END).contains(&u) {
+                    continue;
+                }
+                let inside = |v: f64| v > END && v < 1.0 - END;
+                if !inside(t) && !inside(u) {
+                    continue; // both end there: a corner, not a crossing
+                }
+                let p = Point2::new(a.x + r.0 * t, a.y + r.1 * t);
+                let d2 = (p.x - at.x).hypot(p.y - at.y);
+                if d2 <= reach && best.as_ref().is_none_or(|(bd, _)| d2 < *bd) {
+                    best = Some((d2, LinesCrossing { one, other, at: p }));
+                }
+            }
+        }
+        best.map(|(_, c)| c)
+    }
+
+    /// THE TWO LINES OF `crossing` CUT WHERE THEY CROSS, each that goes on past it in two (`break_line`), so the four
+    /// halves - or three, where one line ends on the other - share one point there: the corners of a crossing are then
+    /// corners of the drawing, rounded and cut as any are. Answers that point.
+    pub fn cut_at_crossing(&mut self, si: usize, crossing: LinesCrossing) -> Option<Id> {
+        let LinesCrossing { one, other, at } = crossing;
+        // the far ends of the two lines: the halves are the lines that run from one of them to the crossing
+        let far: Vec<Id> = [one, other].into_iter().filter_map(|eid| self.line_ends(si, eid)).flat_map(|(a, b)| [a, b]).collect();
+        for eid in [one, other] {
+            let (a, b) = self.line_ends(si, eid)?;
+            let ends_here = [a, b].into_iter().filter_map(|p| self.point_xy(si, p)).any(|(x, y)| (x - at.x).hypot(y - at.y) < 1e-9);
+            if !ends_here {
+                self.break_line(si, eid, at.x, at.y);
+            }
+        }
+        self.merge_close_points(si, 1e-9);
+        let s = self.sketches.get(si)?;
+        // the point the halves end at: a point of the origin may stand on the same place, and is not stitched to them
+        let half_end = |p: Id| {
+            s.entities.iter().any(|e| match e.kind {
+                EntityKind::Line { a, b } => (a == p && far.contains(&b)) || (b == p && far.contains(&a)),
+                _ => false,
+            })
+        };
+        let here = s.points.iter().filter(|q| (q.x - at.x).hypot(q.y - at.y) < 1e-6).map(|q| q.id).find(|&p| half_end(p))?;
+        Some(here)
     }
     pub(super) fn line_ends(&self, si: usize, eid: Id) -> Option<(Id, Id)> {
         let s = self.sketches.get(si)?;

@@ -1861,6 +1861,41 @@ mod tests {
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
                 check_all(&mut app, "sketch: a fillet by its chord", &mut problems);
 
+                // A FILLET AT A CROSSING: two lines drawn through each other on a place of their own, the fillet clicked in
+                // the upper right quarter by the crossing, 4 typed, Enter. The quarter is rounded about (284, -21).
+                {
+                    let mut hand = Hand::new(&mut app);
+                    // the line tool stays in hand after a chain is ended: the second line is drawn with it as it is
+                    hand.sk_tool(1).look2d((280.0, -25.0)).click2d(265.0, -25.0).double_click2d(295.0, -25.0);
+                    hand.click2d(280.0, -40.0).double_click2d(280.0, -10.0);
+                    hand.sk_tool(0).look2d((280.0, -25.0));
+                    // by its radius: the way of the fillet stays as the step before left it, by its chord
+                    let pressed = hand.press_hint(&qymcad_i18n::tr("tb-fillet-sketch-hint")) && hand.press_word(&qymcad_i18n::tr("opt-radius"), egui::pos2(0.0, 0.0));
+                    hand.click2d(280.6, -24.4).type_text("4").key(egui::Key::Enter);
+                    let sk = &app.project.sketches[si];
+                    let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+                    let rounded = sk.entities.iter().any(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Arc { center, .. } => at(center).is_some_and(|c| (c.0 - 284.0).hypot(c.1 + 21.0) < 1e-5),
+                        _ => false,
+                    });
+                    if !pressed || !rounded {
+                        let centres: Vec<(f64, f64)> = sk
+                            .entities
+                            .iter()
+                            .filter_map(|e| match e.kind {
+                                qymcad_core::model::EntityKind::Arc { center, .. } => at(center).filter(|c| c.0 > 250.0),
+                                _ => None,
+                            })
+                            .collect();
+                        problems.push(format!(
+                            "sketch: a fillet clicked by a crossing did not round its quarter about (284, -21) (pressed: {pressed}); the arcs there stand about {centres:?}; status: {}",
+                            app.status
+                        ));
+                    }
+                }
+                qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
+                check_all(&mut app, "sketch: a fillet at a crossing", &mut problems);
+
                 // A RECTANGLE IS ONE SHAPE: drawn on a place of its own, picked by one side with Rotate and turned 30 deg
                 // about its centre, it turns as a whole and stays square.
                 {

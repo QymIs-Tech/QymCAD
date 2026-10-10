@@ -987,6 +987,33 @@ pub struct CornerInput {
     /// WHETHER THE SET IN HAND IS BEING BUILT WITH SHIFT. Shift is the only way more than one line is chosen, so
     /// every left click without it leaves the set and the tool goes back to choosing one line at a time.
     pub shifted: bool,
+    /// WHETHER A CLICK CUT TWO LINES WHERE THEY CROSS to name a corner there - a step of undo of its own, which the
+    /// corner cut joins and Esc takes back
+    pub crossing: CrossingCut,
+}
+
+/// WHETHER THE CORNER TOOL CUT LINES AT A CROSSING to name its corner.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum CrossingCut {
+    #[default]
+    None,
+    /// the lines were cut, and the cut is the last step of undo: the corner joins it, Esc takes it back
+    Cut,
+    /// the tool was put down - Esc, another tool - with the lines cut and no corner cut: the cut is taken back on the
+    /// next frame (`qymcad_sketch::sketch_tool_keys`), where the document is at hand
+    Left,
+}
+
+impl CornerInput {
+    /// THE TOOL PUT DOWN: all of the input goes, and lines it cut at a crossing for a corner never cut are left to be
+    /// made whole again.
+    pub fn put_down(&mut self) {
+        let left = self.crossing == CrossingCut::Cut;
+        self.clear();
+        if left {
+            self.crossing = CrossingCut::Left;
+        }
+    }
 }
 
 /// THE POINT THE FIELD OF A WHOLE SET NAMES, and it is not a point of the drawing.
@@ -5144,7 +5171,7 @@ pub fn exit_draw_tools(t: &mut Tools) {
     drag.clear();
     inline.clear();
     picking.clear(); // exclusivity: the shape pick of "Fillet all" does not survive a change of mode
-    corner.clear();
+    corner.put_down();
     measure.clear(); // both the FLAG and the points collected: otherwise they outlived the exit
     tool.move_base = None;
     tool.extend = None; // the line Extend held
@@ -10347,6 +10374,19 @@ pub fn commit_edit_if_changed(rc: &mut RebuildCtx) {
 
 /// FOLD WHAT CHANGED SINCE INTO THE LAST STEP: undoing that step takes this change with it, and no step of its own
 /// is made. Only between operations; with one open, it is the open one that takes the change.
+/// THE LAST STEP TAKEN BACK AND FORGOTTEN: the document as it was before it, and no step to redo - for a step a tool laid
+/// on its way and is put down without finishing (the lines a corner tool cut at a crossing, the corner never cut).
+pub fn take_back_last_step(edits: &mut Edits, project: &mut Project, regen: &mut Rebuilding) {
+    if edits.open.is_some() {
+        return;
+    }
+    let Some(step) = edits.undo.pop() else { return };
+    *project = step.snap.project.clone();
+    edits.baseline = step.snap;
+    edits.committed_key = doc_key(project);
+    invalidate(regen);
+}
+
 pub fn fold_into_last_step(edits: &mut Edits, project: &Project) {
     if edits.open.is_some() || edits.undo.is_empty() {
         return;
@@ -13537,7 +13577,7 @@ pub fn leave_editing_tool(t: &mut Tools, status: &mut String) -> Option<()> {
     }
     *t.armed = Armed::None;
     if corner {
-        t.corner.clear();
+        t.corner.put_down();
         t.sel_sk.clear();
         *status = qymcad_i18n::tr("in-selection-cleared");
     }
