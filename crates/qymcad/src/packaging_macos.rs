@@ -251,8 +251,8 @@ fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
     ] {
         assert!(held.contains(entry), "the archive does not hold {entry}:\n{held}");
     }
-    // Both notes travel, in both languages; the second is named in an alphabet this file does not spell out.
-    assert_eq!(held.lines().filter(|l| l.ends_with(".txt") && !l.contains("Contents/")).count(), 2, "both notes must be in the archive:\n{held}");
+    // A note per language of the program travels; three are named in an alphabet this file does not spell out.
+    assert_eq!(held.lines().filter(|l| l.ends_with(".txt") && !l.contains("Contents/")).count(), 4, "all four notes must be in the archive:\n{held}");
 
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(calls.contains("-add_rpath @executable_path/../Frameworks"), "the bundle was not pointed at its own Frameworks:\n{calls}");
@@ -358,7 +358,7 @@ fn a_bundle_that_does_not_verify_is_not_archived() {
     assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that does not verify");
 }
 
-/// THE DISK IMAGE, BESIDE THE ARCHIVE. It holds the program and the two notes, laid out by the settings
+/// THE DISK IMAGE, BESIDE THE ARCHIVE. It holds the program and the four notes, laid out by the settings
 /// file beside the script, and it is made from the bundle only after that bundle verified. The staging
 /// folder is gone afterwards, so `dist/` holds the packages and the bundle and nothing half-made.
 #[test]
@@ -374,7 +374,7 @@ fn a_disk_image_holds_the_verified_bundle_and_the_notes() {
     for entry in ["QymCAD.app", "README.txt"] {
         assert!(lines.contains(&entry), "the image's folder does not hold {entry}:\n{held}");
     }
-    assert_eq!(lines.iter().filter(|l| l.ends_with(".txt")).count(), 2, "both notes must be in the image:\n{held}");
+    assert_eq!(lines.iter().filter(|l| l.ends_with(".txt")).count(), 4, "all four notes must be in the image:\n{held}");
 
     let calls = signs(&dir);
     let verify = calls.iter().position(|c| c.starts_with("codesign --verify"));
@@ -396,18 +396,20 @@ fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
     for step in ["Privacy & Security", "Open Anyway", "Applications"] {
         assert!(en.contains(step), "the English note does not name {step:?}:\n{en}");
     }
-    // The Russian note is the other `.txt` in dist/; its words are not spelled out in this file, so it is held
-    // to the same shape: the same four steps, the same Touch ID, the same menu path written with `->`.
-    let ru = fs::read_dir(dir.join("dist"))
+    // The other three are named and written in alphabets this file does not spell out, so each is held to the
+    // English one's shape: the same four steps, Touch ID, the menu path written with `->`, and the system's
+    // button names in English beside its own words - the note's language says nothing of the system's.
+    let notes: Vec<String> = fs::read_dir(dir.join("dist"))
         .expect("dist/ is readable")
         .map(|e| e.expect("an entry").path())
-        .find(|p| p.extension().is_some_and(|x| x == "txt") && !p.ends_with("README.txt"))
-        .map(|p| fs::read_to_string(p).expect("the Russian note is readable"))
-        .expect("the Russian note is written");
-    for step in ["  1. ", "  2. ", "  3. ", "  4. ", "Touch ID", " -> "] {
-        assert!(en.contains(step) && ru.contains(step), "the two notes differ at {step:?}:\n{en}\n{ru}");
-    }
-    for text in [&en, &ru] {
+        .filter(|p| p.extension().is_some_and(|x| x == "txt"))
+        .map(|p| fs::read_to_string(p).expect("a note is readable"))
+        .collect();
+    assert_eq!(notes.len(), 4, "a note per language of the program: English, Russian, Ukrainian, Kazakh");
+    for text in &notes {
+        for step in ["  1. ", "  2. ", "  3. ", "  4. ", "Touch ID", " -> ", "Privacy & Security", "Open Anyway"] {
+            assert!(text.contains(step), "a note lacks {step:?}:\n{text}");
+        }
         assert!(!text.contains("xattr") && !text.contains("Terminal"), "a note still sends the reader to a terminal:\n{text}");
     }
 }
@@ -431,22 +433,27 @@ struct Placed {
 /// program and Applications, the card under the notes - from the numbers in settings.py. A picture of the
 /// wrong size is stretched by nobody and cropped by Finder; an icon moved off its place sits on the arrow.
 /// The settings file is executed by python3 the way dmgbuild executes it.
+///
+/// A file is matched to its place by its name as HFS+ stores it, decomposed (NFD): the probe prints the files
+/// decomposed and the places as written, so a place keyed by a composed letter with a breve finds no file -
+/// as the Ukrainian note found none on the screen. The picture runs on under the status bar's strip, so it is that much taller.
 #[test]
 fn the_window_layout_fits_its_background() {
     let art = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/dmg");
     let probe = "import sys\n\
                  scope = {'defines': {'stage': 'S', 'art': sys.argv[2]}}\n\
                  exec(compile(open(sys.argv[1], encoding='utf-8').read(), 'settings.py', 'exec'), scope, scope)\n\
-                 print(scope['WIDTH'], scope['HEIGHT'], scope['icon_size'])\n\
+                 import unicodedata\n\
+                 print(scope['WIDTH'], scope['HEIGHT'], scope['STATUS_BAR'], scope['icon_size'])\n\
                  for n, (x, y) in scope['icon_locations'].items(): print(n, x, y, sep='\\t')\n\
-                 print('files', *scope['files'], sep='\\t')\n\
+                 print('files', *(unicodedata.normalize('NFD', f) for f in scope['files']), sep='\\t')\n\
                  print('symlinks', *scope['symlinks'], sep='\\t')\n";
     let out = Command::new("python3").arg("-c").arg(probe).arg(art.join("settings.py")).arg(&art).output().expect("python3 runs");
     assert!(out.status.success(), "settings.py does not execute:\n{}", said(&out));
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let mut lines = text.lines();
     let size: Vec<f64> = lines.next().expect("the window size").split(' ').map(|v| v.parse().expect("a number")).collect();
-    let (width, height, icon) = (size[0], size[1], size[2]);
+    let (width, height, strip, icon) = (size[0], size[1], size[2], size[3]);
     let mut placed = Vec::new();
     let mut shown = Vec::new();
     for line in lines {
@@ -458,8 +465,9 @@ fn the_window_layout_fits_its_background() {
         }
     }
 
-    assert_eq!(png_size(&art.join("background.png")), (width as u32, height as u32), "background.png is not the window's size");
-    assert_eq!(png_size(&art.join("background@2x.png")), (2 * width as u32, 2 * height as u32), "background@2x.png is not twice the window's size");
+    let picture = (width as u32, (height + strip) as u32);
+    assert_eq!(png_size(&art.join("background.png")), picture, "background.png is not the window's size");
+    assert_eq!(png_size(&art.join("background@2x.png")), (2 * picture.0, 2 * picture.1), "background@2x.png is not twice the window's size");
 
     for name in &shown {
         assert!(placed.iter().any(|p| &p.name == name), "{name} goes into the image with no place in the window:\n{text}");

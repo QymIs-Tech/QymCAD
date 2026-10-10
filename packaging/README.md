@@ -86,7 +86,7 @@ cargo build --release --bin qymcad
 bash packaging/macos/bundle.sh
 ```
 
-It leaves two packages in `dist/` holding the same signed bundle and the same notes: `*-macos-arm64.zip`, and
+It leaves two packages in `dist/` holding the same signed bundle and the same four notes: `*-macos-arm64.zip`, and
 `*-macos-arm64.dmg`, a disk image that shows the program beside a link to Applications.
 
 **What makes a mac bundle different.** A dylib carries the path it was BUILT at, baked into whatever
@@ -99,7 +99,7 @@ program starts here and nowhere else, and it says so only on somebody else's com
 CI, ad hoc otherwise - so the bundle verifies, but no certificate Apple issued vouches for it. On the first
 launch macOS refuses it: "Apple could not verify QymCAD is free of malware". System Settings -> Privacy &
 Security then lists it with an "Open Anyway" button; one press and the password, and it opens from then on.
-The notes beside the app walk a person through that in both languages, step by step, because whoever is not
+The notes beside the app - one per language of the program - walk a person through that step by step, because whoever is not
 told deletes the program instead. The Terminal steps (`xattr -cr`) were the way round a broken signature,
 which macOS called damaged and offered no button for; with a signature that verifies they are not needed.
 
