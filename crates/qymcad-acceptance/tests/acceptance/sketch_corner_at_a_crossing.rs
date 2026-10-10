@@ -64,6 +64,13 @@ fn cut_in_session(s: &mut Session, cut: Cut, o: (f64, f64), quarter: (f64, f64))
     }
     let at = s.on_sketch(o.0 + quarter.0, o.1 + quarter.1);
     s.click(at);
+    // the crossing has four corners to give: a second click in the quarter fixes the corner there
+    let fix = s.word("sk-corner-click-to-fix");
+    if s.status() != fix {
+        return Some(format!("{hint} at {o:?} in the quarter {quarter:?}: a click at the crossing did not ask for the side, the status says {:?}", s.status()));
+    }
+    let side = s.on_sketch(o.0 + 1.5 * quarter.0, o.1 + 1.5 * quarter.1);
+    s.click(side);
     if field_near(s, at).is_none() {
         return Some(format!("{hint} at {o:?} in the quarter {quarter:?}: no field opened, the status says {:?}", s.status()));
     }
@@ -219,9 +226,9 @@ probe! {
 }
 
 probe! {
-    /// THE CORNER OF A POINT SEVERAL SHAPES SHARE IS THE ONE CLICKED: two squares touching at their corner (20, 20), the
-    /// chamfer clicked at that point from the side of the upper square, the pointer then led to the side of the lower
-    /// one, the size typed, Enter - the upper square is cut, the lower keeps its sharp corner.
+    /// THE CORNER OF A POINT SEVERAL SHAPES SHARE IS CHOSEN BY A CLICK ON ITS SIDE: two squares touching at their corner
+    /// (20, 20), the chamfer clicked at that point - it asks for a side - then clicked by the upper square, the pointer
+    /// led to the lower one, the size typed, Enter: the upper square is cut, the lower keeps its sharp corner.
     fn the_corner_of_a_point_of_two_shapes_is_on_the_side_clicked() {
         let mut s = qymcad_acceptance::build::empty_sketch();
         qymcad_acceptance::build::draw(&mut s, "tb-rect-hint", &[(0.0, 0.0), (20.0, 20.0)]);
@@ -230,14 +237,17 @@ probe! {
         s.press_hint(&word);
         let mode = s.word("cmd-symmetric");
         s.press_word_near(&mode, qymcad::pos2(400.0, 0.0));
-        let at = s.on_sketch(20.5, 20.5);
+        let at = s.on_sketch(19.8, 19.8);
         s.click(at);
+        let asked = s.status() == s.word("sk-corner-click-to-fix");
+        let side = s.on_sketch(21.5, 21.5);
+        s.click(side);
         let pointer = s.on_sketch(18.5, 18.5);
         s.move_to(pointer);
         s.chord(Modifiers::COMMAND, Key::A).type_text("7.0710678");
         s.key(Key::Enter);
         let sk = s.document().sketches[0].clone();
         let at = |x: f64, y: f64| sk.places.iter().any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - y).abs() < 1e-3);
-        assert!(at(25.0, 20.0) && at(20.0, 25.0) && !at(15.0, 20.0) && !at(20.0, 15.0), "the chamfer clicked at the shared point by the upper square, the pointer led to the lower: cut at (25, 20) {}, (20, 25) {}, the lower square cut {}; the sketch shows {:?}", at(25.0, 20.0), at(20.0, 25.0), at(15.0, 20.0) || at(20.0, 15.0), sk.places);
+        assert!(asked && at(25.0, 20.0) && at(20.0, 25.0) && !at(15.0, 20.0) && !at(20.0, 15.0), "the chamfer clicked at the shared point (asked for a side {asked}), then by the upper square, the pointer led to the lower: cut at (25, 20) {}, (20, 25) {}, the lower square cut {}; the sketch shows {:?}", at(25.0, 20.0), at(20.0, 25.0), at(15.0, 20.0) || at(20.0, 15.0), sk.places);
     }
 }

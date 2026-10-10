@@ -994,18 +994,27 @@ pub struct CornerInput {
     pub aim: Aim,
 }
 
-/// WHETHER THE CORNER OF THE SET FOLLOWS THE POINTER OR STANDS WHERE IT WAS CLICKED. Two crossing lines chosen with
-/// Shift name their crossing and not a side of it: the corner follows the pointer into the quarter it is in, drawn as a
-/// corner not named yet, and a click fixes it there - its preview turns the colour of the set, and the box of its size
-/// opens beside it and stays, so the pointer can go to it. Reported behaviour: "the box runs away from the cursor; the
-/// corner must be fixed by a click, the preview changing its colour, so the person can reach the box".
+/// WHETHER THE CORNER OF THE SET FOLLOWS THE POINTER OR STANDS WHERE IT WAS CLICKED. A point with more than one corner
+/// to give (two crossing lines chosen with Shift, a click at a crossing, a point the corners of several shapes meet at)
+/// is named, not a side of it: the corner follows the pointer into the sector it is in, drawn as a corner not named
+/// yet, and a click fixes it there. Its preview turns the colour of the set, and the box of its size opens beside it
+/// and stays, so the pointer can go to it. Reported behaviour: "the box runs away from the cursor; the corner must be
+/// fixed by a click"; "a click at the crossing puts a corner at random - the same choice by a click as for two lines,
+/// the standard for the fillet and the chamfer wherever more than one corner can be chosen".
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Aim {
-    /// named by a click at its corner, or fixed by one: it stays
+    /// fixed by a click on its side, or the only corner of its point: it stays
     #[default]
     Fixed,
-    /// named by its lines and not yet by a side: it follows the pointer, no box yet
+    /// named at a point of more corners than one, not yet by a side: it follows the pointer, no box yet
     Following,
+}
+
+/// HOW MANY CORNERS THE POINT OF THE SET HAS TO GIVE (`CornerSet::choice`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Choice {
+    One,
+    Many,
 }
 
 /// WHETHER THE POINTER STEERS THE CORNER OF A SET (`CornerSet::steer`).
@@ -13783,18 +13792,30 @@ impl CornerSet {
     /// left as it was named: one pointer does not say a side for every point of a set. Answers whether the pointer
     /// steers the corner.
     pub fn steer(&mut self, project: &Project, si: usize, cursor: (f64, f64)) -> Steered {
+        if self.choice(project, si) == Choice::One {
+            return Steered::No;
+        }
         let [one] = self.points.as_mut_slice() else { return Steered::No };
-        if !self.made.is_empty() {
-            return Steered::No;
-        }
-        let corners = project.vertex_pairs(si, one.point).into_iter().filter(|&(a, b)| project.corner_of_pair(si, a, b).is_some()).count();
-        if corners < 2 {
-            return Steered::No;
-        }
         if let Some(pair) = project.vertex_pair(si, one.point, Some(cursor)) {
             one.pair = pair;
         }
         Steered::Yes
+    }
+
+    /// WHETHER THE SET IS ONE CORNER NAMED AT A POINT THAT HAS MORE THAN ONE TO GIVE: a crossing cut into four, a T, a
+    /// point the corners of several shapes meet at. Such a corner is chosen by a click on its side, not by the click that
+    /// named the point.
+    pub fn choice(&self, project: &Project, si: usize) -> Choice {
+        let [one] = self.points.as_slice() else { return Choice::One };
+        if !self.made.is_empty() {
+            return Choice::One;
+        }
+        let corners = project.vertex_pairs(si, one.point).into_iter().filter(|&(a, b)| project.corner_of_pair(si, a, b).is_some()).count();
+        if corners < 2 {
+            Choice::One
+        } else {
+            Choice::Many
+        }
     }
 
     /// THE CORNERS ONE ANSWER CUTS, each with the point it stands at: what stands, in the order it was made.

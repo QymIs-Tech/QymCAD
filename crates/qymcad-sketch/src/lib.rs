@@ -4689,9 +4689,13 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                             let w = qymcad_ui_state::to_world(sk.view, rect, pos);
                             let read = sk.corner.set.read_at_point(&*sk.project, si, pid, Some((w.x, w.y)));
                             act = qymcad_ui_state::CornerClick::AtPoint(sk.corner.set.click_at_point(&*sk.project, si, pid, read));
-                            // the lines name the crossing and not a side of it: the corner follows the pointer until a click
-                            sk.corner.aim = qymcad_ui_state::Aim::Following;
                         }
+                    }
+                    // A POINT WITH MORE THAN ONE CORNER TO GIVE IS NAMED, NOT A SIDE OF IT: the corner follows the pointer
+                    // until a click on its side fixes it - for a crossing clicked or chosen by its lines, and for a point
+                    // several shapes meet at alike
+                    if matches!(act, qymcad_ui_state::CornerClick::AtPoint(qymcad_ui_state::PointAct::PointAdded)) && sk.corner.set.choice(&*sk.project, si) == qymcad_ui_state::Choice::Many {
+                        sk.corner.aim = qymcad_ui_state::Aim::Following;
                     }
                     // WHERE THE CORNER WAS POINTED AT, on the sheet: the line of the corner the pointer stands
                     // nearer to is the one the FIRST leg of a chamfer of two is measured from. It is written

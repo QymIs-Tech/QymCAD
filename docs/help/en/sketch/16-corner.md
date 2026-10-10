@@ -20,13 +20,13 @@
   offers to take that corner off straight away.
 - **Fillet every corner of the contour**: select the contour, press the button, type the **R of every corner**,
   **Enter**.
-- **A corner at a crossing**: two lines going through each other make four corners. Click the fillet or the chamfer
-  inside the corner you want, by the crossing - both lines are cut there, that corner is rounded or cut, and the other
-  two halves stay lines. Or choose both lines with **Shift** - the preview of the corner follows the pointer from
-  quarter to quarter; click in the one you want, the preview changes colour and stays there, and the field of the size
-  opens beside it. One **Ctrl+Z** brings the whole lines back; so does **Esc** before **Enter**.
-- **A corner at a point of several shapes**: where the corners of several shapes meet at one point, click the point on
-  the side of the corner you want.
+- **A corner at a crossing**: two lines going through each other make four corners. Click the fillet or the chamfer by
+  the crossing (or choose both lines with **Shift**) - the preview of the corner follows the pointer from quarter to
+  quarter. Click in the quarter you want: the preview changes colour and stays there, and the field of the size opens
+  beside it. Both lines are cut at the crossing, and the other two halves stay lines. One **Ctrl+Z** brings the whole
+  lines back; so does **Esc** before **Enter**.
+- **A corner at a point of several shapes**: where the corners of several shapes meet at one point, the same - click the
+  point, the preview follows the pointer, click on the side of the corner you want.
 
 ## How corners are named
 

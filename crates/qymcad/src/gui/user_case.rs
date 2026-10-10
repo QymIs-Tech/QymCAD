@@ -1871,7 +1871,8 @@ mod tests {
                     hand.sk_tool(0).look2d((280.0, -25.0));
                     // by its radius: the way of the fillet stays as the step before left it, by its chord
                     let pressed = hand.press_hint(&qymcad_i18n::tr("tb-fillet-sketch-hint")) && hand.press_word(&qymcad_i18n::tr("opt-radius"), egui::pos2(0.0, 0.0));
-                    hand.click2d(280.6, -24.4).type_text("4").key(egui::Key::Enter);
+                    // the crossing has four corners to give: a second click in the quarter fixes the corner there
+                    hand.click2d(280.6, -24.4).click2d(281.0, -24.0).type_text("4").key(egui::Key::Enter);
                     let sk = &app.project.sketches[si];
                     let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
                     let rounded = sk.entities.iter().any(|e| match e.kind {
