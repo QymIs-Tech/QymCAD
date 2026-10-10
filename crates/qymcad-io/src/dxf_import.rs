@@ -167,12 +167,11 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                 run(|t| place.at(e.center.x + mx * t.cos() + nx * t.sin(), e.center.y + my * t.cos() + ny * t.sin()), from, to, curves);
             }
             EntityType::Spline(sp) => {
-                let got = spline(sp, place, curves);
-                let under = match (got.drawn, got.invalid) {
-                    (true, false) => None,
-                    (true, true) => Some(&mut left.redrawn),
-                    (false, true) => Some(&mut left.invalid),
-                    (false, false) => Some(&mut left.skipped),
+                let under = match spline(sp, place, curves) {
+                    SplineRead::Drawn => None,
+                    SplineRead::Redrawn => Some(&mut left.redrawn),
+                    SplineRead::Invalid => Some(&mut left.invalid),
+                    SplineRead::Skipped => Some(&mut left.skipped),
                 };
                 if let Some(counts) = under {
                     *counts.entry("SPLINE".into()).or_default() += 1;
@@ -254,7 +253,7 @@ fn off_chord(p: Point2, q: Point2, m: Point2) -> f64 {
 /// weights are finite and positive and the points finite; otherwise the spline runs through its fit points, which lie
 /// on the curve, when it has them, and is left out when it has not. Either way the person is told its numbers were
 /// invalid: a curve drawn through its fit points instead of its control data is not quite the curve the file meant.
-/// Whether it was drawn, and whether it was invalid, comes back for the counts of what did not come in.
+/// What became of it comes back for the counts of what did not come in.
 fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>) -> SplineRead {
     let ctrl: Vec<(f64, f64)> = sp.control_points.iter().map(|p| (p.x, p.y)).collect();
     let p = sp.degree_of_curve.max(1) as usize;
@@ -316,13 +315,24 @@ fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>)
             run(at, 0.0, 1.0, curves);
         }
     }
-    SplineRead { drawn, invalid }
+    match (drawn, invalid) {
+        (true, false) => SplineRead::Drawn,
+        (true, true) => SplineRead::Redrawn,
+        (false, true) => SplineRead::Invalid,
+        (false, false) => SplineRead::Skipped,
+    }
 }
 
-/// What became of a spline: whether it was drawn, and whether numbers it carries make no curve.
-struct SplineRead {
-    drawn: bool,
-    invalid: bool,
+/// WHAT BECAME OF A SPLINE, one of four: two flags side by side read the same and swap without a word.
+enum SplineRead {
+    /// drawn by its control data, or by its fit points when it is given by them alone
+    Drawn,
+    /// its control data makes no curve, so it is drawn through its fit points instead
+    Redrawn,
+    /// its numbers make no curve and it has nothing else to be drawn by: left out
+    Invalid,
+    /// nothing to draw it by, and nothing invalid in it: not read
+    Skipped,
 }
 
 /// A polyline under a place: exact where the place keeps arcs arcs, its arcs as runs of segments otherwise.
