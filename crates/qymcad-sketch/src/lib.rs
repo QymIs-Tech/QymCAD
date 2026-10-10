@@ -4644,11 +4644,18 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
     } else if sk.tree_sel.box_start.is_some() {
         if resp.drag_stopped() {
             if let (Some(a), Some(b)) = (sk.tree_sel.box_start, resp.interact_pointer_pos()) {
-                // without Shift the box REPLACES the selection; with Shift it adds to it
-                if !ctx.input(|i| i.modifiers.shift) && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {
+                // without Shift the box REPLACES the selection; with Shift it adds to it. A TOOL WAITING FOR ITS CURVES is
+                // given them by the box as by its clicks - added, the tool left in hand. Cleared with the selection, the
+                // tool's mode went and its name stayed on the bar: Enter did nothing. Reported behaviour: "the tool is put
+                // down when the geometry is chosen all at once with the left button held".
+                let waiting = sk.sel_sk.constraint.is_some() || sk.sel_sk.modify.is_some();
+                if !ctx.input(|i| i.modifiers.shift) && !waiting && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {
                     sk.sel_sk.clear(); // the selection and whatever was waiting for it
                 }
                 qymcad_ui_state::box_select(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, *sk.sketch_ses, rect, a, b);
+                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
+                    *sk.status = qymcad_i18n::tr("sk-offset-side"); // what to do next, not how many were chosen
+                }
             }
             sk.tree_sel.box_start = None;
         }

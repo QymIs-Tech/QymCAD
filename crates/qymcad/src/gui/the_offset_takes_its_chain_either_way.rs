@@ -2,11 +2,13 @@
 //! side until a click there fixes it - its preview turns the colour of a fixed corner and stays when the pointer goes -
 //! and the box of its distance opens beside the copy with the keyboard in it; Enter makes the copy, its corners sharp
 //! where the source has sharp corners. The tool stays in hand: the next curves are clicked and offset the same way
-//! without pressing it again. Esc in the box frees the side; Esc again puts the tool down.
+//! without pressing it again. Esc in the box frees the side; Esc again puts the tool down. A box dragged over the curves
+//! with the tool in hand chooses them for it and leaves the tool in hand.
 //!
 //! Reported behaviour: "the polyline has no fillets, and the copy is rounded"; "I take the tool, choose something, and
 //! nothing happens - the choice works every other time"; "a popup with a field, the same choice as the fillet: a click
-//! fixes the side, then the mouse can go to the popup".
+//! fixes the side, then the mouse can go to the popup"; "the tool is put down when the geometry is chosen all at once
+//! with the left button held".
 #[cfg(test)]
 mod tests {
     use super::super::hand::Hand;
@@ -85,6 +87,39 @@ mod tests {
         hand.key(egui::Key::Escape);
         if hand.app.tools.sel_sk.modify.is_some() || hand.app.tools.armed.modify().is_some() {
             failures.push("a second Esc did not put the tool down".to_string());
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn a_box_dragged_with_the_tool_in_hand_chooses_for_it_and_keeps_it() {
+        let mut app = App::default();
+        let si = app.create_sketch_on(SketchPlane::default());
+        app.chosen.sel = Sel::Sketch(si);
+        let mut hand = Hand::new(&mut app);
+        let [a, b, c, d] = ZIGZAG;
+        hand.sk_tool(1).click2d(a.0, a.1).click2d(b.0, b.1).click2d(c.0, c.1).double_click2d(d.0, d.1);
+        hand.key(egui::Key::Escape).sk_tool(0);
+        assert!(hand.press_hint(&crate::i18n::tr("tb-offset-hint")), "no sketch offset button");
+        // the box from above the left end down past the right end, over the whole zigzag, on nothing but paper
+        hand.drag2d((-38.0, 22.0), (38.0, -12.0));
+        let curves = hand.app.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).count();
+        let mut failures = Vec::new();
+        if hand.app.tools.sel_sk.modify != Some(EditTool::Offset) || hand.app.tools.armed.modify() != Some(EditTool::Offset) || curves != 3 {
+            failures.push(format!(
+                "a box over the zigzag with Offset in hand: modify {:?}, armed {:?}, {curves} curves chosen; status: {}",
+                hand.app.tools.sel_sk.modify,
+                hand.app.tools.armed.modify(),
+                hand.app.status
+            ));
+        }
+        if hand.app.status != crate::i18n::tr("sk-offset-side") {
+            failures.push(format!("after the box the status does not say what to do next: {}", hand.app.status));
+        }
+        // the pointer by the start, to the right, Enter: the copy by the distance of the bar, 3, starts square to it there
+        hand.hover2d(-27.0, -3.0).key(egui::Key::Enter);
+        if !stands(hand.app, -28.2, -2.4) {
+            failures.push(format!("Enter after the box made no copy to the right of the zigzag; status: {}", hand.app.status));
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
