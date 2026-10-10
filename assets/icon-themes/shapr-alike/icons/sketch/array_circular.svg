@@ -1,0 +1,52 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="array_circular">
+<path id="Union" d="M15.709 23.2051L11.0068 29.6777L4.53516 24.9756L9.2373 18.5029L15.709 23.2051ZM27.4648 24.9756L20.9932 29.6777L16.291 23.2051L22.7627 18.5029L27.4648 24.9756ZM11.5293 10.3418L9.05762 17.9502L1.44922 15.4775L3.9209 7.86914L11.5293 10.3418ZM30.5508 15.4775L22.9424 17.9502L20.4707 10.3418L28.0791 7.86914L30.5508 15.4775ZM20 10H12V2H20V10Z" fill="var(--icon-sketch-secondary, #333333FF)" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<g id="Group 12">
+<g id="Group 1">
+<g id="Rectangle 6">
+<path d="M12 2H20V10H12V2Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<mask id="stroke0_1_338" fill="#FFFFFF">
+<path d="M12 2H20V10H12V2Z"/>
+</mask>
+<path d="M12 2H20V10H12V2Z" stroke-width="4" stroke="var(--icon-neutral, #BCBCBCFF)" mask="url(#stroke0_1_338)"/>
+</g>
+</g>
+<g id="Group 2">
+<g id="Rectangle 6_2">
+<path d="M28.0787 7.86954L30.5509 15.478L22.9424 17.9501L20.4703 10.3417L28.0787 7.86954Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<mask id="stroke1_1_338" fill="#FFFFFF">
+<path d="M28.0787 7.86954L30.5509 15.478L22.9424 17.9501L20.4703 10.3417L28.0787 7.86954Z"/>
+</mask>
+<path d="M28.0787 7.86954L30.5509 15.478L22.9424 17.9501L20.4703 10.3417L28.0787 7.86954Z" stroke-width="4" stroke="var(--icon-accent, #18F2F2FF)" mask="url(#stroke1_1_338)"/>
+</g>
+</g>
+<g id="Group 3" opacity="0.8">
+<g id="Rectangle 6_3">
+<path d="M27.4651 24.9751L20.9929 29.6774L16.2906 23.2052L22.7628 18.503L27.4651 24.9751Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<mask id="stroke2_1_338" fill="#FFFFFF">
+<path d="M27.4651 24.9751L20.9929 29.6774L16.2906 23.2052L22.7628 18.503L27.4651 24.9751Z"/>
+</mask>
+<path d="M27.4651 24.9751L20.9929 29.6774L16.2906 23.2052L22.7628 18.503L27.4651 24.9751Z" stroke-width="4" stroke="var(--icon-accent, #18F2F2FF)" mask="url(#stroke2_1_338)"/>
+</g>
+</g>
+<g id="Group 4" opacity="0.6">
+<g id="Rectangle 6_4">
+<path d="M11.0071 29.6774L4.53493 24.9751L9.23721 18.503L15.7093 23.2052L11.0071 29.6774Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<mask id="stroke3_1_338" fill="#FFFFFF">
+<path d="M11.0071 29.6774L4.53493 24.9751L9.23721 18.503L15.7093 23.2052L11.0071 29.6774Z"/>
+</mask>
+<path d="M11.0071 29.6774L4.53493 24.9751L9.23721 18.503L15.7093 23.2052L11.0071 29.6774Z" stroke-width="4" stroke="var(--icon-accent, #18F2F2FF)" mask="url(#stroke3_1_338)"/>
+</g>
+</g>
+<g id="Group 5" opacity="0.4">
+<g id="Rectangle 6_5">
+<path d="M1.44913 15.478L3.92126 7.86953L11.5297 10.3417L9.05758 17.9501L1.44913 15.478Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<mask id="stroke4_1_338" fill="#FFFFFF">
+<path d="M1.44913 15.478L3.92126 7.86953L11.5297 10.3417L9.05758 17.9501L1.44913 15.478Z"/>
+</mask>
+<path d="M1.44913 15.478L3.92126 7.86953L11.5297 10.3417L9.05758 17.9501L1.44913 15.478Z" stroke-width="4" stroke="var(--icon-accent, #18F2F2FF)" mask="url(#stroke4_1_338)"/>
+</g>
+</g>
+</g>
+</g>
+</svg>

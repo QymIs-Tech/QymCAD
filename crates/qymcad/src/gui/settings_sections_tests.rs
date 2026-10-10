@@ -106,6 +106,10 @@ mod tests {
             pick_precision: 2,
             import_ask_always: true,
             import_units: [("STL".to_string(), "m".to_string())].into_iter().collect(),
+            active_icon_packs: vec!["custom-theme".into()],
+            inactive_icon_packs: vec!["old-theme".into()],
+            icon_dev_watch: true,
+            watched_icon_packs: vec!["custom-theme".into()],
         }
     }
 

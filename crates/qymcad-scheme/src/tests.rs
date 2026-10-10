@@ -196,7 +196,7 @@ fn every_colour_is_legible_on_its_own_background() {
             // THE COLOURS OF THE INTERFACE ITSELF HAVE NEVER SEEN THE CANVAS: a button lies on a panel and
             // not on the scene. There is no point measuring them against the background of the viewport —
             // they have a guard of their own below.
-            if key.starts_with("ui_") {
+            if key.starts_with("ui_") || key.starts_with("icon_") {
                 continue;
             }
             let diff = (luma(v) - bg).abs();
@@ -558,4 +558,26 @@ fn a_scheme_that_paints_the_interface_actually_paints_it() {
         assert_eq!(v.widgets.hovered.fg_stroke.width, stock.widgets.hovered.fg_stroke.width, "the scheme \"{}\" reached into the width of a line", p.id);
     }
     assert_eq!(builtin().iter().filter(|p| p.ui_on).count(), 2, "exactly two built-in schemes paint the interface: Dracula and Alucard");
+}
+
+#[test]
+fn icon_palette_tokens_format_and_fingerprint() {
+    let d = dark();
+    let l = light();
+
+    for &tok in ICON_TOKENS {
+        let with_dash = format!("--{tok}");
+        assert!(d.format_icon_color(tok).is_some(), "dark theme must format {tok}");
+        assert_eq!(d.format_icon_color(tok), d.format_icon_color(&with_dash), "token formatting must accept both with and without leading '--'");
+        assert!(l.format_icon_color(tok).is_some(), "light theme must format {tok}");
+    }
+
+    assert_eq!(d.format_icon_color("icon-stroke").unwrap(), "#000000");
+    assert_eq!(l.format_icon_color("icon-stroke").unwrap(), "#808080");
+
+    assert!(d.format_icon_color("invalid-token").is_none());
+
+    let mut modified = d.clone();
+    modified.icon_stroke = [255, 255, 255];
+    assert_ne!(d.fingerprint(), modified.fingerprint());
 }

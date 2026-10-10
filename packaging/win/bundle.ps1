@@ -51,6 +51,7 @@ if ($redist) {
 Copy-Item LICENSE "$out\LICENSE.txt"
 Copy-Item THIRD-PARTY-NOTICES.md $out
 
+
 # A SHORT NOTE IN BOTH LANGUAGES. Whoever unpacks this may read either, and a note in a language they do
 # not read is the same as no note at all.
 @"

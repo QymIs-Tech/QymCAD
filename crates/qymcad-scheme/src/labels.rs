@@ -50,5 +50,24 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
             ],
         ),
         ("cam", vec!["cam_plunge", "cam_rapid", "cam_table", "cam_table_grid", "cam_stock", "cam_stock_idle", "cam_op1", "cam_op2", "cam_op3", "cam_op4", "cam_op5", "cam_op6"]),
+        (
+            "icons",
+            vec![
+                "icon_stroke",
+                "icon_neutral",
+                "icon_accent",
+                "icon_dimmed",
+                "icon_sketch_primary",
+                "icon_sketch_secondary",
+                "icon_constraint_primary",
+                "icon_constraint_secondary",
+                "icon_part_primary",
+                "icon_part_secondary",
+                "icon_assembly_primary",
+                "icon_assembly_secondary",
+                "icon_datum_primary",
+                "icon_datum_secondary",
+            ],
+        ),
     ]
 }

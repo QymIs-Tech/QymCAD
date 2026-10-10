@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / extrude">
+<path id="Polygon 16" d="M28.9904 23.5V19.5L16 27L3.00961 19.5V23.5L16 31L28.9904 23.5Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<g id="Polygon 17">
+<path d="M16 27L28.9904 19.5L28.9808 8.5L15.9904 16L16 27Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M28.9808 8.5L15.9904 1L3 8.5L15.9904 16L28.9808 8.5Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M3.00961 19.5L16 27L15.9904 16L3 8.5L3.00961 19.5Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M3 8.5L15.9904 1L28.9808 8.5L28.9904 19.5L16 27L3.00961 19.5L3 8.5ZM16 27L15.9904 16M28.9808 8.5L15.9904 16M3 8.5L15.9904 16" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<path id="Vector 4" d="M16 11.5L16 5.5M19 8.5L16 5.5L13 8.5" stroke-width="2" stroke-linecap="square" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

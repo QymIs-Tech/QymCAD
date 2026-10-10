@@ -35,6 +35,7 @@ cp assets/icons/macos/qymcad.icns "$APP/Contents/Resources/"
 cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 cp THIRD-PARTY-NOTICES.md "$APP/Contents/Resources/"
 
+
 VER_PLIST=$(grep -m1 '^version' Cargo.toml | sed 's/[^0-9.]//g')
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

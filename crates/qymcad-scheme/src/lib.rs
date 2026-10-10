@@ -46,6 +46,24 @@
 use egui::Color32;
 use serde::{Deserialize, Serialize};
 
+/// All supported CAD icon color token names.
+pub const ICON_TOKENS: &[&str] = &[
+    "icon-stroke",
+    "icon-neutral",
+    "icon-accent",
+    "icon-dimmed",
+    "icon-sketch-primary",
+    "icon-sketch-secondary",
+    "icon-constraint-primary",
+    "icon-constraint-secondary",
+    "icon-part-primary",
+    "icon-part-secondary",
+    "icon-assembly-primary",
+    "icon-assembly-secondary",
+    "icon-datum-primary",
+    "icon-datum-secondary",
+];
+
 /// NAMED COLOURS. The fields are named BY MEANING: the code asks for "the sketch line", not "yellow" -
 /// otherwise the light scheme would send you hunting for where yellow meant a selection and where it meant
 /// a warning.
@@ -411,6 +429,36 @@ pub struct Palette {
     pub ui_text_strong: [u8; 3],
     /// a link
     pub ui_link: [u8; 3],
+
+    // --- icon theme color tokens ---
+    /// the outline and contours of CAD icons
+    pub icon_stroke: [u8; 3],
+    /// the neutral solid body fill of CAD icons
+    pub icon_neutral: [u8; 3],
+    /// universal accent for icons
+    pub icon_accent: [u8; 3],
+    /// translucent dimmed underlay for CAD icons
+    pub icon_dimmed: [u8; 3],
+    /// sketch group primary accent
+    pub icon_sketch_primary: [u8; 3],
+    /// sketch group secondary accent
+    pub icon_sketch_secondary: [u8; 3],
+    /// constraint group primary accent
+    pub icon_constraint_primary: [u8; 3],
+    /// constraint group secondary accent
+    pub icon_constraint_secondary: [u8; 3],
+    /// 3D part group primary accent
+    pub icon_part_primary: [u8; 3],
+    /// 3D part group secondary accent
+    pub icon_part_secondary: [u8; 3],
+    /// assembly group primary accent
+    pub icon_assembly_primary: [u8; 3],
+    /// assembly group secondary accent
+    pub icon_assembly_secondary: [u8; 3],
+    /// datum group primary accent
+    pub icon_datum_primary: [u8; 3],
+    /// datum group secondary accent
+    pub icon_datum_secondary: [u8; 3],
 }
 
 impl Default for Palette {
@@ -625,9 +673,34 @@ readers!(
     ui_text_dim,
     ui_text_strong,
     ui_link,
+    icon_stroke,
+    icon_neutral,
+    icon_accent,
+    icon_dimmed,
+    icon_sketch_primary,
+    icon_sketch_secondary,
+    icon_constraint_primary,
+    icon_constraint_secondary,
+    icon_part_primary,
+    icon_part_secondary,
+    icon_assembly_primary,
+    icon_assembly_secondary,
+    icon_datum_primary,
+    icon_datum_secondary,
 );
 
 impl Palette {
+    /// The unique scheme identifier or name (e.g. "dark", "light", or a custom scheme name).
+    pub fn identifier(&self) -> &str {
+        if !self.id.is_empty() {
+            &self.id
+        } else if !self.name.is_empty() {
+            &self.name
+        } else {
+            "default"
+        }
+    }
+
     /// AN IMPRINT OF THE SCHEME - for the keys of the image caches.
     ///
     /// The raster of the viewport and the GPU vertex buffer are computed once and reused while their key
@@ -648,6 +721,29 @@ impl Palette {
             f.to_bits().hash(&mut h);
         }
         h.finish()
+    }
+
+    /// Format an icon color token value (e.g. "icon-stroke" or "--icon-stroke") as hex string.
+    pub fn format_icon_color(&self, token: &str) -> Option<String> {
+        let name = token.strip_prefix("--").unwrap_or(token);
+        let rgb = match name {
+            "icon-stroke" => self.icon_stroke,
+            "icon-neutral" => self.icon_neutral,
+            "icon-accent" => self.icon_accent,
+            "icon-dimmed" => self.icon_dimmed,
+            "icon-sketch-primary" => self.icon_sketch_primary,
+            "icon-sketch-secondary" => self.icon_sketch_secondary,
+            "icon-constraint-primary" => self.icon_constraint_primary,
+            "icon-constraint-secondary" => self.icon_constraint_secondary,
+            "icon-part-primary" => self.icon_part_primary,
+            "icon-part-secondary" => self.icon_part_secondary,
+            "icon-assembly-primary" => self.icon_assembly_primary,
+            "icon-assembly-secondary" => self.icon_assembly_secondary,
+            "icon-datum-primary" => self.icon_datum_primary,
+            "icon-datum-secondary" => self.icon_datum_secondary,
+            _ => return None,
+        };
+        Some(format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]))
     }
 
     /// The caption of a scheme in the person's language.
@@ -839,6 +935,22 @@ pub fn dark() -> Palette {
         ui_text_dim: [140, 140, 140],    // widgets.noninteractive.fg_stroke
         ui_text_strong: [240, 240, 240], // widgets.hovered.fg_stroke
         ui_link: [90, 170, 255],         // hyperlink_color
+
+        // icon theme color tokens
+        icon_stroke: [0, 0, 0],                  // #000000
+        icon_neutral: [188, 188, 188],           // #BCBCBC
+        icon_accent: [24, 242, 242],             // #18F2F2
+        icon_dimmed: [124, 124, 124],            // #7C7C7C
+        icon_sketch_primary: [24, 242, 242],     // #18F2F2
+        icon_sketch_secondary: [38, 38, 38],     // #262626
+        icon_constraint_primary: [242, 97, 24],  // #F26118
+        icon_constraint_secondary: [51, 51, 51], // #333333
+        icon_part_primary: [24, 242, 242],       // #18F2F2
+        icon_part_secondary: [242, 170, 24],     // #F2AA18
+        icon_assembly_primary: [24, 242, 242],   // #18F2F2
+        icon_assembly_secondary: [242, 170, 24], // #F2AA18
+        icon_datum_primary: [24, 242, 242],      // #18F2F2
+        icon_datum_secondary: [242, 170, 24],    // #F2AA18
     }
 }
 
@@ -917,6 +1029,22 @@ pub fn light() -> Palette {
     p.ui_text_dim = [80, 80, 80]; // widgets.noninteractive.fg_stroke
     p.ui_text_strong = [0, 0, 0]; // widgets.hovered.fg_stroke
     p.ui_link = [0, 155, 255]; // hyperlink_color
+
+    // icon theme color tokens for light scheme
+    p.icon_stroke = [128, 128, 128]; // #808080
+    p.icon_neutral = [204, 204, 204]; // #CCCCCC
+    p.icon_accent = [24, 242, 242]; // #18F2F2
+    p.icon_dimmed = [171, 171, 171]; // #ABABAB
+    p.icon_sketch_primary = [24, 242, 242]; // #18F2F2
+    p.icon_sketch_secondary = [128, 128, 128]; // #808080
+    p.icon_constraint_primary = [242, 97, 24]; // #F26118
+    p.icon_constraint_secondary = [128, 128, 128]; // #808080
+    p.icon_part_primary = [24, 242, 242]; // #18F2F2
+    p.icon_part_secondary = [242, 170, 24]; // #F2AA18
+    p.icon_assembly_primary = [24, 242, 242]; // #18F2F2
+    p.icon_assembly_secondary = [242, 170, 24]; // #F2AA18
+    p.icon_datum_primary = [24, 242, 242]; // #18F2F2
+    p.icon_datum_secondary = [242, 170, 24]; // #F2AA18
 
     p
 }

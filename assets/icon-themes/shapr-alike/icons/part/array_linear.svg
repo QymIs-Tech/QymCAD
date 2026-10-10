@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / array_linear">
+<path id="Polygon 18" d="M25 3L31.0622 6.5V13.5L25 17L18.9378 13.5V6.5L25 3Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Polygon 17" d="M16 9L22.0622 12.5V19.5L16 23L9.93782 19.5V12.5L16 9Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Polygon 16" d="M7 15L13.0622 18.5V25.5L7 29L0.937822 25.5V18.5L7 15Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

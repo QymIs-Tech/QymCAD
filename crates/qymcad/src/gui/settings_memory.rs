@@ -60,6 +60,10 @@ mod tests {
             pick_precision: 2,
             import_ask_always: !d.import_ask_always,
             import_units: [("STL".to_string(), "m".to_string())].into_iter().collect(), // the factory value is empty
+            active_icon_packs: vec!["custom-theme".into()],
+            inactive_icon_packs: vec!["old-theme".into()],
+            icon_dev_watch: true,
+            watched_icon_packs: vec!["custom-theme".into()],
         }
     }
 
@@ -95,6 +99,10 @@ mod tests {
         assert_eq!(a.zoom_at, b.zoom_at, "where the view zooms from");
         assert_eq!(a.zoom_editing, b.zoom_editing, "where the view zooms from while a command is open");
         assert_eq!(a.orbit_about, b.orbit_about, "what the view turns about");
+        assert_eq!(a.active_icon_packs, b.active_icon_packs, "active icon packs");
+        assert_eq!(a.inactive_icon_packs, b.inactive_icon_packs, "inactive icon packs");
+        assert_eq!(a.icon_dev_watch, b.icon_dev_watch, "icon dev watch mode");
+        assert_eq!(a.watched_icon_packs, b.watched_icon_packs, "watched icon packs");
     }
 
     /// THE MAIN THING: EVERY setting survives the save-and-load round trip.

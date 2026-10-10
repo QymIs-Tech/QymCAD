@@ -1,0 +1,14 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / push_face">
+<g id="Polygon 16">
+<path d="M28.9904 20.5V16.5L16 24L3.00961 16.5V20.5L16 28L28.9904 20.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28.9904 16.5L16 24L3.00961 16.5M3.00961 16.5L16.0096 9L28.9904 16.5V20.5L16 28L3.00961 20.5V16.5Z" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<g id="Polygon 17">
+<path d="M28.9808 11.5L15.9904 4L3 11.5L15.9904 19L28.9808 11.5Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M28.9808 11.5L15.9904 19L3 11.5L3.00961 16.5L16 24L28.9904 16.5L28.9808 11.5Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M3 11.5L3.00961 16.5L16 24L28.9904 16.5L28.9808 11.5L15.9904 4L3 11.5ZM28.9808 11.5L15.9904 19L3 11.5" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<path id="Vector 4" d="M16 14.5L16 8.5M19 11.5L16 8.5L13 11.5" stroke-width="2" stroke-linecap="square" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

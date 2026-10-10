@@ -1,0 +1,13 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="line" clip-path="url(#clip0_54_34)">
+<path id="Union" d="M4 25C5.65685 25 7 26.3431 7 28C7 29.6569 5.65685 31 4 31C2.34315 31 1 29.6569 1 28C1 26.3431 2.34315 25 4 25ZM24.5537 6.03223C24.8978 6.61441 25.3856 7.1012 25.9678 7.44531L7.44531 25.9678C7.10105 25.3854 6.61375 24.8978 6.03125 24.5537L24.5537 6.03223ZM28 1C29.6569 1 31 2.34315 31 4C31 5.65685 29.6569 7 28 7C26.3431 7 25 5.65685 25 4C25 2.34315 26.3431 1 28 1Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Subtract" d="M24.5537 6.03223C24.8978 6.61441 25.3856 7.1012 25.9678 7.44531L7.44531 25.9678C7.10105 25.3854 6.61375 24.8978 6.03125 24.5537L24.5537 6.03223Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<circle id="Ellipse 1" cx="4" cy="28" r="3" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<circle id="Ellipse 4" cx="28" cy="4" r="3" fill="var(--icon-neutral, #BCBCBCFF)"/>
+</g>
+<defs>
+<clipPath id="clip0_54_34">
+<rect width="32" height="32" fill="#FFFFFF"/>
+</clipPath>
+</defs>
+</svg>

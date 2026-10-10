@@ -43,14 +43,14 @@ mod tests {
     ///
     /// THE LAST THREE ARE NOT OUR DEBT, and each is somebody else's version to move.
     ///
-    /// Two of them are one release of `egui` and `eframe`, held back by `egui-phosphor`, which has no
+    /// Three of them are one release of `egui`, `eframe` and `egui_extras`, held back by `egui-phosphor`, which has no
     /// build for 0.36 yet. Lowering that would mean dropping the icons or vendoring somebody else's font,
     /// and neither is worth one release. It moves when phosphor does.
     ///
-    /// The third is `pollster` (0.4 against 1.0.1): `wgpu` and `rfd` both pull 0.4, and it is 0.4 that is
+    /// The fourth is `pollster` (0.4 against 1.0.1): `wgpu` and `rfd` both pull 0.4, and it is 0.4 that is
     /// already compiled in. Declaring 1.0 would put a SECOND copy of the same forty lines in the binary
     /// to close a gap on paper. It moves when the graphics stack moves.
-    const CEILING: usize = 3;
+    const CEILING: usize = 4;
 
     struct Dep {
         name: String,

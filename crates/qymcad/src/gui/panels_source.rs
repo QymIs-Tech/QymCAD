@@ -36,6 +36,22 @@ pub(crate) const PANELS: &str = concat!(
     include_str!("export_menu.rs"),
     "\n",
     include_str!("panels_windows.rs"),
+    "\n",
+    include_str!("icon_themes.rs"),
+    "\n",
+    include_str!("icon_themes/discovery.rs"),
+    "\n",
+    include_str!("icon_themes/appearance_section.rs"),
+    "\n",
+    include_str!("icon_themes/conflicts.rs"),
+    "\n",
+    include_str!("icon_themes/sidebar.rs"),
+    "\n",
+    include_str!("icon_themes/manager_window.rs"),
+    "\n",
+    include_str!("icon_themes/gallery.rs"),
+    "\n",
+    include_str!("icon_themes/packager_dialog.rs"),
 );
 
 /// THE WINDOWS AND DIALOGUES OF THE APPLICATION, as one text.
@@ -121,7 +137,7 @@ mod tests {
         // KEYED BY PATH, not by file name. Every workbench crate is a single `lib.rs`, so an exception
         // written as "lib.rs" would have quietly excused the Part, the sketcher and the assembly along with
         // the one file it was meant for.
-        const NOT_A_PANEL: [(&str, &str); 6] = [
+        const NOT_A_PANEL: [(&str, &str); 9] = [
             ("qymcad/src/gui/input.rs", "keyboard handling: it draws nothing, it only takes a frame's context to read keys from"),
             ("qymcad/src/gui/orbit_about.rs", "the centre of a turn of the view: it draws nothing, it only keeps the point of a turn in a frame's context memory"),
             ("qymcad-part/src/trial.rs", "the trial build of a command: it draws nothing, it only keeps its verdict in a frame's context memory"),
@@ -132,6 +148,9 @@ mod tests {
                 "the shell: it opens the CONTAINERS and hands each to whoever fills it, so it draws places rather than content. \
                  Being absent from every panel list is the rule it exists to hold, not an oversight",
             ),
+            ("qymcad-ui-state/src/icons/runtime.rs", "widgets for rendering icons into panels, reached through the panels that place them"),
+            ("qymcad-ui-state/src/icons/manager.rs", "icon resolution and loader registration into egui::Context, not a panel"),
+            ("qymcad-ui-state/src/icons/watcher.rs", "background directory watcher and polling thread, not a panel"),
         ];
         // EVERY LIST IN THE FILE, not the four panel ones. What is asserted below is "no source check reads
         // this file at all", so the four panel lists are the wrong measure of it: `gui.rs` is read by

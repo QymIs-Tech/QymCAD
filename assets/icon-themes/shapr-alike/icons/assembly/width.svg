@@ -1,0 +1,14 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="assembly / width" clip-path="url(#clip0_42_414)">
+<path id="Polygon 17" d="M30.2404 9.93301C30.5737 9.74056 30.9904 9.98113 30.9904 10.366V24.2113C30.9904 24.39 30.8951 24.555 30.7404 24.6443L24.4952 28.25L19.1614 31.3294C18.7605 31.5609 18.2874 31.1702 18.439 30.7328L24.4342 13.4261C24.4735 13.3125 24.5525 13.2169 24.6566 13.1568L30.2404 9.93301Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Polygon 18" d="M1.75961 22.067C1.42628 22.2594 1.00961 22.0189 1.00961 21.634V7.78868C1.00961 7.61004 1.10491 7.44498 1.25961 7.35566L7.5048 3.75L12.8386 0.670556C13.2395 0.439085 13.7125 0.829792 13.561 1.26723L7.56582 18.5739C7.52647 18.6875 7.44749 18.7831 7.34337 18.8432L1.75961 22.067Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Polygon 19" d="M24.4952 20.75L23.0793 19.9583M7.50479 11.25L8.92066 12.0417M10.3365 12.8333L13.1683 14.4167M14.5841 15.2083L16 16L17.4159 16.7917M18.8317 17.5833L21.6634 19.1667" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Vector 4" d="M16 8.5L16 14.5M19 11.5L16 14.5L13 11.5" stroke-width="2" stroke-linecap="square" stroke="var(--icon-accent, #18F2F2FF)"/>
+<path id="Vector 5" d="M16 23.5L16 17.5M19 20.5L16 17.5L13 20.5" stroke-width="2" stroke-linecap="square" stroke="var(--icon-accent, #18F2F2FF)"/>
+</g>
+<defs>
+<clipPath id="clip0_42_414">
+<rect width="32" height="32" fill="#FFFFFF"/>
+</clipPath>
+</defs>
+</svg>
