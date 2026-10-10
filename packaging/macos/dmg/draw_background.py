@@ -33,6 +33,7 @@ BLUE = (18, 112, 183)
 MAGENTA = (198, 78, 152)
 INK = (26, 34, 48)
 MUTED = (104, 116, 133)
+TAGLINE = "Parametric associative CAD"
 
 
 def layout():
@@ -97,20 +98,30 @@ def soft_shadow(size, shape, blur, opacity, offset):
 
 def header(img, width, bold, regular):
     """The logo beside the name, and one line under them, centred as a group above the icons."""
+    # CROPPED TO WHAT IS DRAWN. logo.png keeps about a fifth of its width as a transparent margin on each side;
+    # placed whole, that margin counted into the group's width while showing nothing, and the visible group
+    # stood 5 points right of the centre, measured on the picture. The row is `side` tall; the logo's ink is
+    # 37 points of it, the size it had inside the uncropped 54-point square.
     logo = Image.open(os.path.join(ROOT, "assets", "logo.png")).convert("RGBA")
+    logo = logo.crop(logo.getbbox())
     side = px(54)
-    logo = logo.resize((side, side), Image.LANCZOS)
+    ink_h = px(37)
+    ink_w = round(logo.width * ink_h / logo.height)
+    logo = logo.resize((ink_w, ink_h), Image.LANCZOS)
     name = ImageFont.truetype(bold, px(28))
     line = ImageFont.truetype(regular, px(12.5))
     d = ImageDraw.Draw(img)
-    text_w = d.textlength("QymCAD", font=name)
-    gap = px(12)
-    x = (px(width) - (side + gap + text_w)) / 2
+    # The group is centred on its widest line: centring it on the name alone put it 22 points right of the
+    # window's centre, the tagline being the wider of the two - measured on the screenshot of the window.
+    text_w = max(d.textlength("QymCAD", font=name), px(1) + d.textlength(TAGLINE, font=line))
+    gap = px(20)
+    x = (px(width) - (ink_w + gap + text_w)) / 2
     top = px(22)
-    img.alpha_composite(logo, (round(x), top))
-    # The name sits on a baseline just above the logo's middle, the line under it hangs from just below it.
-    d.text((x + side + gap, top + side / 2 + px(3)), "QymCAD", font=name, fill=INK, anchor="ls")
-    d.text((x + side + gap + px(1), top + side / 2 + px(12)), "Parametric associative CAD", font=line, fill=MUTED, anchor="lt")
+    img.alpha_composite(logo, (round(x), top + (side - ink_h) // 2))
+    # The name sits on a baseline just above the row's middle, the line under it hangs from just below it.
+    text_x = x + ink_w + gap
+    d.text((text_x, top + side / 2 + px(3)), "QymCAD", font=name, fill=INK, anchor="ls")
+    d.text((text_x + px(1), top + side / 2 + px(12)), TAGLINE, font=line, fill=MUTED, anchor="lt")
 
 
 def wells(img, centres):

@@ -483,3 +483,25 @@ fn the_window_layout_fits_its_background() {
         }
     }
 }
+
+/// THE HEADER STANDS ON THE WINDOW'S CENTRE. The logo, the name and the line under it are one group above the
+/// icons; centred on the name alone, the group stood 22 points right of the centre, the line under the name
+/// being wider. Measured here on the picture itself: the columns holding anything darker than the pale ground,
+/// above the icons' row, must be centred within a point.
+#[test]
+fn the_header_is_centred_in_the_window() {
+    let art = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/dmg");
+    let probe = "scope = {'defines': {'stage': '', 'art': ''}}\n\
+                 exec(compile(open(__import__('sys').argv[1], encoding='utf-8').read(), 'settings.py', 'exec'), scope, scope)\n\
+                 print(scope['APP'][1] - scope['icon_size'] / 2)\n";
+    let out = Command::new("python3").arg("-c").arg(probe).arg(art.join("settings.py")).output().expect("python3 runs");
+    assert!(out.status.success(), "settings.py does not execute:\n{}", said(&out));
+    let icons_top: f64 = String::from_utf8_lossy(&out.stdout).trim().parse().expect("the top of the icons' row");
+
+    let picture = image::open(art.join("background@2x.png")).expect("background@2x.png decodes").to_rgb8();
+    let band = (icons_top * 2.0) as u32 - 20;
+    let inked: Vec<u32> = (0..picture.width()).filter(|&x| (0..band).any(|y| picture.get_pixel(x, y).0.iter().any(|&c| c < 200))).collect();
+    let (first, last) = (inked.first().copied().expect("the header has ink"), inked.last().copied().expect("the header has ink"));
+    let off = (f64::from(first + last) / 2.0 - f64::from(picture.width()) / 2.0) / 2.0;
+    assert!(off.abs() <= 1.0, "the header is {off:.1} points off the window's centre: ink from {first} to {last} of {} pixels", picture.width());
+}
