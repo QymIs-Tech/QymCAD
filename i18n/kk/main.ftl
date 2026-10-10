@@ -2284,6 +2284,7 @@ sk-overlapping = Осы жердегі қисықтар ({ $n })
 sk-overlapping-item = { $name }, { $len } мм
 sk-overlapping-side = { $name }, { $rect }-тіктөртбұрыштың қабырғасы, { $len } мм
 sk-overlapping-picked = Таңдалды: { $name }
+sk-corner-click-to-fix = Курсорды бұрыштың қажетті жағына апарып, сол жерде шертіңіз
 sk-clipboard = { $what } ({ $n } нысан) — Ctrl+V, содан соң қайда қою керегін шертіңіз
 sk-cut-done = Қиып алынды
 sk-copied = Көшірілді

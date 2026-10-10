@@ -180,9 +180,10 @@ probe! {
 }
 
 probe! {
-    /// TWO CROSSING LINES CHOSEN WITH SHIFT, THE CORNER WHERE THE POINTER IS: the fillet taken, the level line and the
-    /// upright one chosen with Shift away from the crossing, the pointer led into a quarter by the crossing, 5 typed,
-    /// Enter - that quarter is rounded; the same for a chamfer. Reported behaviour: "a click on the crossing is needed
+    /// TWO CROSSING LINES CHOSEN WITH SHIFT, THE CORNER WHERE THE POINTER IS, FIXED BY A CLICK: the fillet taken, the
+    /// level line and the upright one chosen with Shift away from the crossing, the pointer led into a quarter by the
+    /// crossing and clicked there, then led away to the opposite side, 5 typed, Enter - the quarter clicked is rounded;
+    /// the same for a chamfer. Reported behaviour: "a click on the crossing is needed
     /// first; it must work as well with two lines chosen with Shift, the side of the fillet or chamfer chosen by where
     /// the cursor is, with the preview drawn there".
     fn two_crossing_lines_chosen_with_shift_take_the_corner_the_pointer_is_in() {
@@ -199,6 +200,10 @@ probe! {
                 }
                 let pointer = s.on_sketch(o.0 + 2.0 * q.0, o.1 + 2.0 * q.1);
                 s.move_to(pointer);
+                s.click(pointer);
+                // led on to the quarter across: the corner was fixed by the click and stays
+                let away = s.on_sketch(o.0 - 2.0 * q.0, o.1 - 2.0 * q.1);
+                s.move_to(away);
                 s.chord(Modifiers::COMMAND, Key::A).type_text(if arcs == 1 { "5" } else { "7.0710678" });
                 s.key(Key::Enter);
                 let sk = s.document().sketches[0].clone();
@@ -214,10 +219,10 @@ probe! {
 }
 
 probe! {
-    /// THE CORNER OF A POINT SEVERAL SHAPES SHARE FOLLOWS THE POINTER: two squares touching at their corner (20, 20), the
-    /// chamfer clicked at that point from the side of the lower square, the pointer then led to the side of the upper
+    /// THE CORNER OF A POINT SEVERAL SHAPES SHARE IS THE ONE CLICKED: two squares touching at their corner (20, 20), the
+    /// chamfer clicked at that point from the side of the upper square, the pointer then led to the side of the lower
     /// one, the size typed, Enter - the upper square is cut, the lower keeps its sharp corner.
-    fn the_corner_of_a_point_of_two_shapes_is_on_the_side_of_the_pointer() {
+    fn the_corner_of_a_point_of_two_shapes_is_on_the_side_clicked() {
         let mut s = qymcad_acceptance::build::empty_sketch();
         qymcad_acceptance::build::draw(&mut s, "tb-rect-hint", &[(0.0, 0.0), (20.0, 20.0)]);
         qymcad_acceptance::build::draw(&mut s, "tb-rect-hint", &[(20.0, 20.0), (40.0, 40.0)]);
@@ -225,14 +230,14 @@ probe! {
         s.press_hint(&word);
         let mode = s.word("cmd-symmetric");
         s.press_word_near(&mode, qymcad::pos2(400.0, 0.0));
-        let at = s.on_sketch(19.5, 19.5);
+        let at = s.on_sketch(20.5, 20.5);
         s.click(at);
-        let pointer = s.on_sketch(21.5, 21.5);
+        let pointer = s.on_sketch(18.5, 18.5);
         s.move_to(pointer);
         s.chord(Modifiers::COMMAND, Key::A).type_text("7.0710678");
         s.key(Key::Enter);
         let sk = s.document().sketches[0].clone();
         let at = |x: f64, y: f64| sk.places.iter().any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - y).abs() < 1e-3);
-        assert!(at(25.0, 20.0) && at(20.0, 25.0) && !at(15.0, 20.0) && !at(20.0, 15.0), "the chamfer clicked at the shared point, the pointer by the upper square: cut at (25, 20) {}, (20, 25) {}, the lower square cut {}; the sketch shows {:?}", at(25.0, 20.0), at(20.0, 25.0), at(15.0, 20.0) || at(20.0, 15.0), sk.places);
+        assert!(at(25.0, 20.0) && at(20.0, 25.0) && !at(15.0, 20.0) && !at(20.0, 15.0), "the chamfer clicked at the shared point by the upper square, the pointer led to the lower: cut at (25, 20) {}, (20, 25) {}, the lower square cut {}; the sketch shows {:?}", at(25.0, 20.0), at(20.0, 25.0), at(15.0, 20.0) || at(20.0, 15.0), sk.places);
     }
 }

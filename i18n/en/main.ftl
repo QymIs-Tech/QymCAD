@@ -2288,6 +2288,7 @@ sk-overlapping = Curves lying here ({ $n })
 sk-overlapping-item = { $name }, { $len } mm
 sk-overlapping-side = { $name }, side of rectangle { $rect }, { $len } mm
 sk-overlapping-picked = Selected: { $name }
+sk-corner-click-to-fix = Lead the pointer to the side of the corner you want and click there
 sk-clipboard = { $what } ({ $n } entities) — Ctrl+V, then click where to place it
 sk-cut-done = Cut
 sk-copied = Copied

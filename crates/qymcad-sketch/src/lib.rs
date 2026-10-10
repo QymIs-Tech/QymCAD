@@ -760,7 +760,9 @@ fn draw_the_corner_preview(cc: &qymcad_ui_state::CornerCtx, ctx: &egui::Context,
     // the two it is: the corners in the set are violet and the one that is not named yet is amber. Both colours
     // are read off the scheme HERE, on every frame - never written into the state of the tool, where every other
     // way of opening this field left them at the transparent default of a Color32 and drew nothing.
-    let mut shown: Vec<Shown> = cc.corner.set.standing().iter().map(|&(point, pair)| Shown { point, pair: Some(pair), in_set: true }).collect();
+    // a corner following the pointer is not named yet, and is drawn so
+    let in_set = cc.corner.aim == qymcad_ui_state::Aim::Fixed;
+    let mut shown: Vec<Shown> = cc.corner.set.standing().iter().map(|&(point, pair)| Shown { point, pair: Some(pair), in_set }).collect();
     if let Some((point, pair)) = corner_hover_under(cc, ctx, rect, si) {
         if !shown.iter().any(|c| c.point == point) {
             shown.push(Shown { point, pair: Some(pair), in_set: false });
@@ -815,7 +817,8 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
     // crossing follows it into the quarter it stands in, and the first leg of a chamfer is the line it is nearer to.
     // Reported behaviour: "the side of the fillet or the chamfer is chosen by where the cursor is, with the preview
     // drawn there".
-    if let (Some((si, _, _)), Some(pos)) = (cc.corner.at, ctx.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p))) {
+    let following = cc.corner.aim == qymcad_ui_state::Aim::Following;
+    if let (true, Some((si, _, _)), Some(pos)) = (following, cc.corner.at, ctx.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p))) {
         let w = qymcad_ui_state::to_world(cc.view, rect, pos);
         if cc.corner.set.steer(&*cc.project, si, (w.x, w.y)) == qymcad_ui_state::Steered::Yes {
             cc.corner.near = Some(Point2::new(w.x, w.y));
@@ -824,6 +827,12 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
     // THE PREVIEW IS DRAWN FIRST, AND ALWAYS: it belongs to the sheet and not to the field, and a person deciding
     // where to click cannot see it if the field has to be open before it appears.
     draw_the_corner_preview(cc, ctx, rect);
+    // A CORNER FOLLOWING THE POINTER HAS NO BOX YET: the box would stand beside a corner that moves, and run from the
+    // pointer that goes to it. A click fixes the corner, and the box opens then.
+    if following && cc.corner.at.is_some() {
+        *cc.status = qymcad_i18n::tr("sk-corner-click-to-fix");
+        return;
+    }
     // THE FIELD OF THE WHOLE SET, not of one corner: one value cuts every corner the chosen lines make, and the
     // set is beside the field rather than under the pointer, so it does not move with it (Enter applies, Esc
     // cancels, and both act on the whole set as one step of undo).
@@ -4613,6 +4622,18 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                 // for the whole set and one answer cuts all of it; Shift is what lets a set be more than
                 // one line, and any left click without it leaves the multi-selection behind.
                 if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel {
+                    // A CORNER FOLLOWING THE POINTER IS FIXED BY A CLICK, on the side the click is, and the click does
+                    // nothing else: the box of its size opens beside it and stays.
+                    if sk.corner.aim == qymcad_ui_state::Aim::Following {
+                        let w = qymcad_ui_state::to_world(sk.view, rect, pos);
+                        sk.corner.set.steer(&*sk.project, si, (w.x, w.y));
+                        sk.corner.near = Some(Point2::new(w.x, w.y));
+                        sk.corner.aim = qymcad_ui_state::Aim::Fixed;
+                        sk.corner.pos = Some(pos);
+                        sk.corner.focus = true;
+                        *sk.status = corner_set_says(sk);
+                        return;
+                    }
                     sk.corner.track_px = qymcad_ui_state::corner_reach(sk.set);
                     let chamfer = sk.armed.click_op() == 5;
                     let shift = ctx.input(|i| i.modifiers.shift);
@@ -4668,6 +4689,8 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                             let w = qymcad_ui_state::to_world(sk.view, rect, pos);
                             let read = sk.corner.set.read_at_point(&*sk.project, si, pid, Some((w.x, w.y)));
                             act = qymcad_ui_state::CornerClick::AtPoint(sk.corner.set.click_at_point(&*sk.project, si, pid, read));
+                            // the lines name the crossing and not a side of it: the corner follows the pointer until a click
+                            sk.corner.aim = qymcad_ui_state::Aim::Following;
                         }
                     }
                     // WHERE THE CORNER WAS POINTED AT, on the sheet: the line of the corner the pointer stands

@@ -990,6 +990,22 @@ pub struct CornerInput {
     /// WHETHER A CLICK CUT TWO LINES WHERE THEY CROSS to name a corner there - a step of undo of its own, which the
     /// corner cut joins and Esc takes back
     pub crossing: CrossingCut,
+    /// whether the corner follows the pointer or is fixed where it was clicked
+    pub aim: Aim,
+}
+
+/// WHETHER THE CORNER OF THE SET FOLLOWS THE POINTER OR STANDS WHERE IT WAS CLICKED. Two crossing lines chosen with
+/// Shift name their crossing and not a side of it: the corner follows the pointer into the quarter it is in, drawn as a
+/// corner not named yet, and a click fixes it there - its preview turns the colour of the set, and the box of its size
+/// opens beside it and stays, so the pointer can go to it. Reported behaviour: "the box runs away from the cursor; the
+/// corner must be fixed by a click, the preview changing its colour, so the person can reach the box".
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Aim {
+    /// named by a click at its corner, or fixed by one: it stays
+    #[default]
+    Fixed,
+    /// named by its lines and not yet by a side: it follows the pointer, no box yet
+    Following,
 }
 
 /// WHETHER THE POINTER STEERS THE CORNER OF A SET (`CornerSet::steer`).

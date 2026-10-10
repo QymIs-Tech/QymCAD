@@ -2282,6 +2282,7 @@ sk-overlapping = Криві в цьому місці ({ $n })
 sk-overlapping-item = { $name }, { $len } мм
 sk-overlapping-side = { $name }, сторона прямокутника { $rect }, { $len } мм
 sk-overlapping-picked = Вибрано: { $name }
+sk-corner-click-to-fix = Наведіть курсор на потрібний бік кута й клацніть там
 sk-clipboard = { $what } ({ $n } сутн.) — Ctrl+V, потім клік розміщення
 sk-cut-done = Вирізано
 sk-copied = Скопійовано
