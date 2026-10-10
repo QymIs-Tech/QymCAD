@@ -261,6 +261,10 @@ pub enum CoreError {
     TorusThroughItself,
     /// A pattern of one copy is the body alone.
     ArrayOfOne,
+    /// A pattern asks for `asked` instances, more than `MAX_PATTERN_INSTANCES` (`limit`).
+    PatternTooLarge { asked: u64, limit: u32 },
+    /// A thread or an auger has more starts than `MAX_HELIX_STARTS` (`limit`).
+    TooManyStarts { starts: u32, limit: u32 },
     /// The thread is not the size of the face it is cut on: a shaft or a hole of another diameter.
     ThreadNotItsSize { face: f64, nominal: f64 },
     /// A WARNING, not a failure: the blend was built, but `dropped` of the `asked` edges could not be taken.
@@ -449,6 +453,8 @@ impl CoreError {
             DraftAngleZero => "error-draft-angle-zero".into(),
             TorusThroughItself => "error-torus-through-itself".into(),
             ArrayOfOne => "error-array-of-one".into(),
+            PatternTooLarge { .. } => "error-pattern-too-large".into(),
+            TooManyStarts { .. } => "error-too-many-starts".into(),
             ThreadNotItsSize { .. } => "error-thread-not-its-size".into(),
             EdgesDropped { .. } => "warn-edges-dropped".into(),
             PushFaceOnSheet => "error-push-face-on-sheet".into(),
@@ -566,6 +572,8 @@ impl std::fmt::Display for CoreError {
             DraftAngleZero => write!(f, "a draft of 0 degrees tilts nothing"),
             TorusThroughItself => write!(f, "the tube is as thick as the ring: the torus passes through itself"),
             ArrayOfOne => write!(f, "a pattern of one copy is the body alone"),
+            PatternTooLarge { asked, limit } => write!(f, "a pattern of {asked} instances is past the limit of {limit}"),
+            TooManyStarts { starts, limit } => write!(f, "{starts} starts is too many (at most {limit})"),
             ThreadNotItsSize { face, nominal } => write!(f, "a thread of {nominal:.2} does not fit a face of {face:.2}"),
             EdgesDropped { asked, dropped } => write!(f, "{dropped} of the {asked} edges could not be taken"),
             PushFaceOnSheet => write!(f, "push face on a sheet"),

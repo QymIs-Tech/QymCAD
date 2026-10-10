@@ -61,6 +61,28 @@ pub(super) mod tests {
         assert_eq!(app.side.carr.mode, 0, "after applying, the command closes");
     }
 
+    /// A GRID PAST THE LIMIT IS REFUSED WITH THE LIMIT IN WORDS: 100 by 11 is 1,100 instances, past
+    /// `MAX_PATTERN_INSTANCES`. Before the limit the zero it reads as was taken for "a pattern of one instance".
+    #[test]
+    fn a_grid_past_the_limit_is_refused_with_its_numbers() {
+        let mut app = App::default();
+        let comp = assembly_with_part(&mut app);
+        let ci = app.project.components.iter().position(|c| c.id == comp).expect("the index");
+        app.chosen.sel = Sel::Component(ci);
+        app.start_comp_array(1);
+        app.params.arr.count = 100;
+        app.params.arr.two = true;
+        app.params.arr.count2 = 11;
+        for p in app.tools.cmd.params.iter_mut().filter(|p| p.key.starts_with("cstep")) {
+            p.val = 30.0;
+            p.txt = "30".into();
+        }
+        crate::gui::commands::apply_comp_array(&mut app.part_ctx());
+        assert!(app.project.comp_pattern_of(comp).is_none(), "a grid past the limit was made; the status line: {}", app.status);
+        let limit = qymcad_core::feature::MAX_PATTERN_INSTANCES.to_string();
+        assert!(app.status.contains("1100") && app.status.contains(&limit), "the refusal does not name the grid and the limit: {}", app.status);
+    }
+
     /// With no part selected the command does not start and says why.
     #[test]
     fn without_a_part_the_command_refuses() {

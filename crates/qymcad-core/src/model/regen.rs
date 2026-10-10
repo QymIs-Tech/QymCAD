@@ -1191,11 +1191,19 @@ impl Project {
                     let mut p = pass!(node_id);
                     clear = self.regen_partinstance(&mut p, i, src_comp, body);
                 }
-                FeatureKind::ComponentPattern { src, ref bodies, .. } if needs => {
+                FeatureKind::ComponentPattern { src, ref bodies, kind, .. } if needs => {
                     // every copy's body is the source's as it is; the pattern moves the copies, not the shapes
-                    let mut p = pass!(node_id);
-                    for b in bodies.clone() {
-                        clear &= self.regen_partinstance(&mut p, i, src, b);
+                    if kind.count() == 0 {
+                        // a layout past `MAX_PATTERN_INSTANCES`, from a file: refused in words, nothing built
+                        let e = crate::feature::pattern_too_large(&kind.counts());
+                        self.regen_errors.insert(node_id, e.clone());
+                        report.errors.push((node_id, e));
+                        clear = false;
+                    } else {
+                        let mut p = pass!(node_id);
+                        for b in bodies.clone() {
+                            clear &= self.regen_partinstance(&mut p, i, src, b);
+                        }
                     }
                 }
                 FeatureKind::MirrorPart { src_comp, ln, body } if needs => {
@@ -1900,6 +1908,8 @@ impl Project {
             Some(crate::errors::CoreError::ThreadDepthTooDeep { depth: g.depth, radius: r, dia: spec.nominal_d, pitch: g.pitch })
         } else if g.pitch < 0.05 {
             Some(crate::errors::CoreError::ThreadPitchTooSmall { pitch: g.pitch })
+        } else if spec.starts > crate::feature::MAX_HELIX_STARTS {
+            Some(crate::errors::CoreError::TooManyStarts { starts: spec.starts, limit: crate::feature::MAX_HELIX_STARTS })
         } else if turns > 400.0 {
             Some(crate::errors::CoreError::ThreadTooManyTurns { turns })
         } else if length <= 1e-6 {
@@ -2028,6 +2038,8 @@ impl Project {
         let lead_in = p.dim("lead_in", lead_in);
         let lead_out = p.dim("lead_out", lead_out);
         let res = match self.helical_axis(p.kernel, src, edge) {
+            // the starts are checked before the flight faces are named: the names are reserved per start
+            Some(_) if spec.starts > crate::feature::MAX_HELIX_STARTS => Err(crate::errors::CoreError::TooManyStarts { starts: spec.starts, limit: crate::feature::MAX_HELIX_STARTS }),
             Some((c, ax, r)) => {
                 spec.shaft_d = r * 2.0; // The shaft diameter is taken from the geometry, so it stays
                                         // associative.
@@ -2249,8 +2261,13 @@ impl Project {
         for (a, key) in axes.iter_mut().zip(["count", "count2", "count3"]) {
             a.count = p.dim(key, a.count as f64).round().max(1.0) as u32;
         }
+        // the product is checked before anything is reserved: past the limit the pattern is refused, not built
+        let counts = [axes[0].count, axes[1].count, axes[2].count];
+        let Some(total) = crate::feature::pattern_instances(&counts) else {
+            return crate::feature::KernelJob::refused(crate::feature::pattern_too_large(&counts));
+        };
         // a pattern of one copy is the body alone: it stood green and changed nothing
-        if axes.iter().map(|a| a.count.max(1)).product::<u32>() < 2 {
+        if total < 2 {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::ArrayOfOne);
         }
         // Parametric: the step lives as an expression per vector component, so global parameters move
@@ -2267,7 +2284,7 @@ impl Project {
         // A 3D grid: direction one (i*d1) by two (j*d2) by three (k*d3). A count of one or less in
         // the second or third direction reduces the dimensionality.
         let (c1, c2, c3) = (axes[0].count.max(1), axes[1].count.max(1), axes[2].count.max(1));
-        let mut ts: Vec<[f64; 12]> = Vec::with_capacity((c1 * c2 * c3) as usize);
+        let mut ts: Vec<[f64; 12]> = Vec::with_capacity(total as usize);
         for i in 0..c1 {
             for j in 0..c2 {
                 for k in 0..c3 {
@@ -2289,6 +2306,9 @@ impl Project {
         let angle = p.dim("angle", angle);
         // the count is a dimension of the node as the angle is: a count typed as `k` follows `k`
         let count = p.dim("count", count as f64).round().max(1.0) as u32;
+        if crate::feature::pattern_instances(&[count]).is_none() {
+            return crate::feature::KernelJob::refused(crate::feature::pattern_too_large(&[count]));
+        }
         if count < 2 {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::ArrayOfOne);
         }

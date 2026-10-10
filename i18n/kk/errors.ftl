@@ -3,6 +3,8 @@ error-thicken-added-nothing = Пластина дененің ішіне кір�
 error-draft-angle-zero = 0 градус еңіс ештеңені еңкейтпейді — нөлден өзгеше бұрыш беріңіз
 error-torus-through-itself = Түтік сақинамен бірдей не одан қалың — мұндай тор өзін-өзі қиып өтеді; түтік радиусын сақина радиусынан кіші етіңіз
 error-array-of-one = Бір көшірмеден тұратын массив — тек дененің өзі; екі не одан көп көшірме беріңіз
+error-pattern-too-large = { $asked } данадан тұратын массив { $limit } шегінен асады — санын азайтыңыз
+error-too-many-starts = { $starts } кіріс тым көп — ең көбі { $limit }
 ### { $name } placeholders carry data from the core — keep them, they are not decoration.
 
 ## Operation failed in the geometry kernel.

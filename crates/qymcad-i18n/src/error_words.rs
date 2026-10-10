@@ -27,6 +27,14 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
         E::EdgesNotFound { asked } => args.set("asked", *asked as i64),
         E::ThreadPitchTooSmall { pitch } => args.set("pitch", fmt2(*pitch)),
         E::ThreadTooManyTurns { turns } => args.set("turns", fmt0(*turns)),
+        E::PatternTooLarge { asked, limit } => {
+            args.set("asked", asked.to_string());
+            args.set("limit", *limit as i64);
+        }
+        E::TooManyStarts { starts, limit } => {
+            args.set("starts", *starts as i64);
+            args.set("limit", *limit as i64);
+        }
         E::ThreadLongerThanFace { length, face } => {
             args.set("length", fmt1(*length));
             args.set("face", fmt1(*face));

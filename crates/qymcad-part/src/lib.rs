@@ -1793,6 +1793,11 @@ pub fn apply_comp_array(pc: &mut qymcad_ui_state::PartCtx) {
         return;
     }
     let kind = qymcad_ui_state::comp_array_kind(*pc.arr, pc.carr, pc.cmd);
+    // a layout past the limit is refused with the limit in words, before the "one instance" reading of a zero count
+    if kind.count() == 0 {
+        *pc.status = qymcad_i18n::error_words::error_text(&qymcad_core::feature::pattern_too_large(&kind.counts()));
+        return;
+    }
     // a row of one instance is the source alone: nothing to make, and said so
     if kind.count() < 2 {
         *pc.status = qymcad_i18n::tr("msg-comp-array-one");
