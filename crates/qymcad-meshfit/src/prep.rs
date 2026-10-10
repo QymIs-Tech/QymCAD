@@ -22,7 +22,8 @@ pub struct Prepared {
     pub normals: Vec<[f64; 3]>,
     /// Every border as a loop of corner indices, in the order the border runs.
     pub holes: Vec<Vec<u32>>,
-    /// Triangles dropped: no area, two corners welded into one, or a repeat of a triangle already there.
+    /// Triangles dropped: no area, two corners welded into one, a repeat of a triangle already there, or a corner
+    /// that is not a finite number.
     pub dropped: usize,
     /// Edges that three or more triangles share. No neighbour is chosen across them: which two of the
     /// triangles belong together is a question the mesh does not answer.
@@ -71,9 +72,14 @@ pub fn prepare(mesh: &Mesh, weld: f64) -> Prepared {
             dropped += 1;
             continue;
         };
+        // A CORNER THAT IS NOT A NUMBER has no place to be: an ASCII STL may write `NaN`, and it parses. Kept, the
+        // triangles round it were flat and closed, so they stayed slivers no surface could hold; the regions read the
+        // owner of an unplaced sliver past their end ("index out of bounds: the len is 6 but the index is
+        // 4294967295"), and past that the kernel, given the corner, never came back from building the face.
+        let finite = |i: u32| verts.get(i as usize).is_some_and(|p| p.x.is_finite() && p.y.is_finite() && p.z.is_finite());
         let mut key = [a, b, c];
         key.sort_unstable();
-        if a == b || b == c || a == c || !seen.insert(key) {
+        if !(finite(a) && finite(b) && finite(c)) || a == b || b == c || a == c || !seen.insert(key) {
             dropped += 1;
             continue;
         }

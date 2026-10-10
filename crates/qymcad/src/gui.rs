@@ -3120,6 +3120,45 @@ pub(super) fn open_exact(regen: &mut Rebuilding, path: String, format: qymcad_ke
     regen.busy = Some(Busy { started: std::time::Instant::now(), label: crate::i18n::tr1("io-exact-importing", "format", name), rx, kind: BgKind::ImportShapes, pulse: None, quiet: false });
 }
 
+/// AN SVG IS READ ON A WORKER THREAD, as the meshes and the exact formats are: the window does not wait on a large
+/// drawing, and a panic in the reading ends that thread with a message instead of the program. A stack overflow is not
+/// a panic - it ends the process from any thread - and what stops it is `qymcad_io::SVG_MAX_DEPTH`, which refuses a
+/// drawing nested past 1024 before the parse. The thread gets the 8 MB stack the main thread has, so a legal drawing
+/// keeps the margin it had there: the XML parser recurses once per level, and a 2 MB thread ran out at 3,466 nested
+/// groups, the main thread at 13,866.
+pub(super) fn open_svg(regen: &mut Rebuilding, path: String) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let p = path.clone();
+    std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(move || {
+            let res = match qymcad_io::import_svg(&p) {
+                Ok(d) => JobResult::DrawingRead { note: not_read_note(&d.skipped), path: p, curves: d.curves },
+                Err(e) => JobResult::Failed(crate::i18n::tr1("pk-svg-error", "error", &crate::i18n::name(&e))),
+            };
+            let _ = tx.send(res);
+        })
+        .expect("a thread for the SVG import");
+    regen.busy = Some(Busy {
+        started: std::time::Instant::now(),
+        label: crate::i18n::tr1("io-exact-importing", "format", qymcad_io::Format::Svg.name()),
+        rx,
+        kind: BgKind::ImportShapes,
+        pulse: None,
+        quiet: false,
+    });
+}
+
+/// What a drawing read in the background held and was not read, in the words the import door uses for one read in
+/// place ("· Not read: TEXT 1"), or nothing.
+fn not_read_note(skipped: &[(String, usize)]) -> String {
+    if skipped.is_empty() {
+        return String::new();
+    }
+    let list = skipped.iter().map(|(kind, n)| format!("{kind} {n}")).collect::<Vec<_>>().join(", ");
+    format!("· {}", crate::i18n::tr1("import-not-read", "list", &list))
+}
+
 /// Load the logo lazily (a 256x256 PNG embedded in the binary) into a texture for the splash screen.
 pub(super) fn ensure_logo(logo_tex: &mut Option<egui::TextureHandle>, ctx: &egui::Context) {
     if logo_tex.is_some() {

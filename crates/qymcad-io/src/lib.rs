@@ -32,7 +32,7 @@ pub use project_file::{content_weight, load_project, load_project_with_brep, Loa
 pub use stl_export::export_stl;
 pub use stl_import::{import_stl, import_stl_named};
 pub use svg_export::export_svg;
-pub use svg_import::import_svg;
+pub use svg_import::{import_svg, SVG_MAX_DEPTH};
 pub use threemf::{export_3mf, export_3mf_tree, import_3mf};
 pub use units::FileUnit;
 
@@ -53,6 +53,15 @@ pub struct NamedMesh {
     /// the file, its name and its place in the group above it; `place` is then the piece's place in the last of them.
     /// Empty for a piece at the top of its file, and for every piece of a file that holds no groups.
     pub within: Vec<qymcad_core::model::FileGroup>,
+}
+
+/// A NUMBER THAT IS NOT FINITE, refused with its place and its value. Text parses `NaN` and `inf` as numbers and binary
+/// floats carry them too: such a corner came into the document without a word, and a mesh with one then stopped the
+/// recognition of its body. `key` names the format and the kind of place; the values follow the `#` apart by U+001F,
+/// which `qymcad_i18n::name` reads into `$v`, `$w`, ... in order.
+pub(crate) fn not_finite(key: &str, values: &[&dyn std::fmt::Display]) -> String {
+    let values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+    format!("{key}#{}", values.join("\u{1f}"))
 }
 
 /// A NAME A WRITER PUTS WHERE IT HAS NONE is no name: the program that wrote the owner's print head numbers its pieces
@@ -91,4 +100,9 @@ pub struct ImportedSketch {
     pub curves: Vec<ProfEdge>,
     /// The kinds of entity the file holds that were not read, each with how many - named to a person, not dropped.
     pub skipped: Vec<(String, usize)>,
+    /// The kinds of entity left out because their numbers in the file are invalid, each with how many.
+    pub invalid: Vec<(String, usize)>,
+    /// The kinds of entity whose numbers are invalid but which were drawn another way the file allows - a spline
+    /// through its fit points - each with how many: not quite what the file meant, so said to the person.
+    pub redrawn: Vec<(String, usize)>,
 }

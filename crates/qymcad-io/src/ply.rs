@@ -117,6 +117,23 @@ impl Cursor<'_> {
         (self.at > start).then(|| std::str::from_utf8(&self.bytes[start..self.at]).ok()).flatten()
     }
 
+    /// A COORDINATE IS A FINITE NUMBER: text parses `nan` and `inf`, binary floats carry them. One that is not is refused
+    /// with where it stands - its line in a text file, its vertex and byte in a binary one - and what it is.
+    fn coordinate(&mut self, s: Scalar, vertex: usize) -> Result<f64, String> {
+        let start = self.at;
+        let v = self.value(s).ok_or_else(|| "io-ply-truncated".to_string())?;
+        if v.is_finite() {
+            return Ok(v);
+        }
+        if matches!(self.enc, Encoding::Text) {
+            let word_start = start + self.bytes[start..self.at].iter().take_while(|b| b.is_ascii_whitespace()).count();
+            let line = 1 + self.bytes[..word_start].iter().filter(|&&b| b == b'\n').count();
+            let word = String::from_utf8_lossy(&self.bytes[word_start..self.at]).into_owned();
+            return Err(crate::not_finite("io-ply-not-finite-line", &[&line, &word]));
+        }
+        Err(crate::not_finite("io-ply-not-finite-vertex", &[&vertex, &start, &v]))
+    }
+
     fn take<const N: usize>(&mut self) -> Option<[u8; N]> {
         let b: [u8; N] = self.bytes.get(self.at..self.at + N)?.try_into().ok()?;
         self.at += N;
@@ -207,15 +224,15 @@ fn parse(bytes: &[u8]) -> Result<(Mesh, Vec<[u8; 3]>), String> {
     let mut tri_rgb: Vec<[u8; 3]> = Vec::new();
     let mut vert_rgb: Vec<Option<[u8; 3]>> = Vec::new();
     for el in &elements {
-        for _ in 0..el.count {
+        for i in 0..el.count {
             match el.name.as_str() {
                 "vertex" => {
                     let (mut xyz, mut rgb) = ([0.0f64; 3], [None; 3]);
                     for (name, p) in &el.props {
                         match (name.as_str(), p) {
-                            ("x", Prop::One(s)) => xyz[0] = cur.value(*s).ok_or_else(truncated)?,
-                            ("y", Prop::One(s)) => xyz[1] = cur.value(*s).ok_or_else(truncated)?,
-                            ("z", Prop::One(s)) => xyz[2] = cur.value(*s).ok_or_else(truncated)?,
+                            ("x", Prop::One(s)) => xyz[0] = cur.coordinate(*s, i)?,
+                            ("y", Prop::One(s)) => xyz[1] = cur.coordinate(*s, i)?,
+                            ("z", Prop::One(s)) => xyz[2] = cur.coordinate(*s, i)?,
                             ("red" | "diffuse_red", Prop::One(s)) => rgb[0] = Some(channel(cur.value(*s).ok_or_else(truncated)?, *s)),
                             ("green" | "diffuse_green", Prop::One(s)) => rgb[1] = Some(channel(cur.value(*s).ok_or_else(truncated)?, *s)),
                             ("blue" | "diffuse_blue", Prop::One(s)) => rgb[2] = Some(channel(cur.value(*s).ok_or_else(truncated)?, *s)),

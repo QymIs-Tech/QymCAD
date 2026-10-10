@@ -68,9 +68,14 @@ fn parse(text: &str) -> Result<Parsed, String> {
         let mut words = line.split_whitespace();
         match words.next() {
             Some("v") => {
-                let c: Vec<f64> = words.take(3).map(|w| w.parse::<f64>()).collect::<Result<_, _>>().map_err(|_| bad())?;
+                let w: Vec<&str> = words.take(3).collect();
+                let c: Vec<f64> = w.iter().map(|w| w.parse::<f64>()).collect::<Result<_, _>>().map_err(|_| bad())?;
                 if c.len() < 3 {
                     return Err(bad());
+                }
+                // A CORNER IS A FINITE NUMBER: `NaN` and `inf` parse as f64
+                if let Some(k) = c.iter().position(|v| !v.is_finite()) {
+                    return Err(crate::not_finite("io-obj-not-finite-line", &[&(no + 1), &w[k]]));
                 }
                 all.push(Point3::new(c[0], c[1], c[2]));
             }

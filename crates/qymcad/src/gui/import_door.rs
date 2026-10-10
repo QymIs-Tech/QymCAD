@@ -14,7 +14,7 @@ use qymcad_kernel::ExactFormat;
 
 use qymcad_ui_state::MeshFormat;
 
-use super::{open_exact, open_mesh, App, Rebuilding};
+use super::{open_exact, open_mesh, open_svg, App, Rebuilding};
 
 /// Whether a file that becomes `lands` may come in at a place that wants `want`.
 fn takes(want: Want, lands: Lands) -> bool {
@@ -51,8 +51,8 @@ pub(crate) enum Landing {
     /// A solid or a mesh is being read in the background; the job puts it into the document when it is done.
     Started,
     /// The curves of a drawing, waiting for the plane they are laid on.
-    /// A drawing read into curves, with the kinds of entity it holds that were not read and how many of each.
-    Drawing(Vec<qymcad_core::geom::ProfEdge>, Vec<(String, usize)>),
+    /// A drawing read into curves, with what of it did not come in as the file has it.
+    Drawing(qymcad_io::ImportedSketch),
     /// Nothing came in, and this says why.
     Refused(String),
 }
@@ -66,7 +66,7 @@ pub(crate) fn land_import(regen: &mut Rebuilding, path: &str, want: Want) -> Lan
         return Landing::Refused(crate::i18n::tr1("import-not-a-part", "format", format.name()));
     }
     let drawing = |read: Result<qymcad_io::ImportedSketch, String>| match read {
-        Ok(sketch) => Landing::Drawing(sketch.curves, sketch.skipped),
+        Ok(sketch) => Landing::Drawing(sketch),
         Err(why) => Landing::Refused(why),
     };
     // no wildcard: a format added to the table does not compile until it has a reader here
@@ -104,7 +104,10 @@ pub(crate) fn land_import(regen: &mut Rebuilding, path: &str, want: Want) -> Lan
             Landing::Started
         }
         Format::Dxf => drawing(qymcad_io::import_dxf(path).map_err(|e| crate::i18n::tr1("g-dxf-error", "error", &e.to_string()))),
-        Format::Svg => drawing(qymcad_io::import_svg(path).map_err(|e| crate::i18n::tr1("pk-svg-error", "error", &e.to_string()))),
+        Format::Svg => {
+            open_svg(regen, path.to_string());
+            Landing::Started
+        }
     }
 }
 
@@ -114,13 +117,17 @@ pub(crate) fn import_answer(want: Want) -> impl FnOnce(&mut App, PathBuf) + 'sta
         let path = p.to_string_lossy().into_owned();
         match land_import(&mut app.regen, &path, want) {
             Landing::Started => {}
-            Landing::Drawing(curves, skipped) => {
-                app.arm_sketch_import(curves, &path);
-                // WHAT DID NOT COME IN IS SAID, beside what the door asks next: a text or a hatch silently lost is found
-                // missing only later, by the person, on the drawing
-                if !skipped.is_empty() {
-                    let list = skipped.iter().map(|(kind, n)| format!("{kind} {n}")).collect::<Vec<_>>().join(", ");
-                    app.status = format!("{} · {}", app.status, crate::i18n::tr1("import-not-read", "list", &list));
+            Landing::Drawing(sketch) => {
+                app.arm_sketch_import(sketch.curves, &path);
+                // WHAT DID NOT COME IN AS THE FILE HAS IT IS SAID, beside what the door asks next: a text or a hatch
+                // silently lost is found missing only later, by the person, on the drawing; a spline drawn through its
+                // fit points because its control data is invalid is not quite the curve the file meant. Each entity is
+                // named once, under what happened to it.
+                for (key, kinds) in [("import-redrawn", &sketch.redrawn), ("import-invalid", &sketch.invalid), ("import-not-read", &sketch.skipped)] {
+                    if !kinds.is_empty() {
+                        let list = kinds.iter().map(|(kind, n)| format!("{kind} {n}")).collect::<Vec<_>>().join(", ");
+                        app.status = format!("{} · {}", app.status, crate::i18n::tr1(key, "list", &list));
+                    }
                 }
             }
             Landing::Refused(why) => app.status = why,
@@ -292,6 +299,31 @@ pub(crate) mod tests {
             let said = crate::i18n::name(&format!("cad-file-not-found#{path}"));
             assert!(app.status.contains(&said), "{ext}: a missing file is reported as {:?}, not as {said:?}", app.status);
         }
+    }
+
+    /// AN SVG IS READ IN THE BACKGROUND, as a solid or a mesh is, and comes in as a sketch waiting for its plane. One
+    /// nested deeper than the reader takes is refused with a message, and the program goes on.
+    #[test]
+    fn an_svg_is_read_in_the_background() {
+        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
+        std::fs::create_dir_all(&dir).expect("a folder for the check");
+        let plate = dir.join("plate.svg");
+        std::fs::write(&plate, r#"<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="30mm" viewBox="0 0 40 30"><rect x="5" y="5" width="30" height="20"/></svg>"#).expect("written");
+        let (mut app, ctx) = running();
+        answer(&mut app, &ctx, Want::Anything, &plate.to_string_lossy());
+        assert!(app.regen.busy.is_some(), "the SVG was read on the UI thread: nothing runs in the background");
+        settle(&mut app, &ctx);
+        let waiting = app.tools.pending_import.curves.as_ref().map(|(c, _, _)| c.len()).unwrap_or(0);
+        assert!(waiting > 0, "the drawing did not come in; the status says: {}", app.status);
+
+        let deep = dir.join("deep.svg");
+        let groups = 5_000;
+        std::fs::write(&deep, format!("<svg xmlns=\"http://www.w3.org/2000/svg\">{}<path d=\"M 1 1 L 9 1\"/>{}</svg>", "<g>".repeat(groups), "</g>".repeat(groups))).expect("written");
+        let (mut app, ctx) = running();
+        answer(&mut app, &ctx, Want::Anything, &deep.to_string_lossy());
+        settle(&mut app, &ctx);
+        let said = crate::i18n::name(&format!("io-svg-too-deep#{}", qymcad_io::SVG_MAX_DEPTH));
+        assert!(app.status.contains(&said), "a drawing {groups} levels deep is reported as {:?}, not as {said:?}", app.status);
     }
 
     /// SOLIDS AND A MESH ARE READ IN THE BACKGROUND, each by its own reader.
@@ -1550,5 +1582,35 @@ pub(crate) mod tests {
         let _ = frame(&mut app, &ctx, Vec::new());
         let said = crate::i18n::tr1("import-not-read", "list", "TEXT 1");
         assert!(app.status.contains(&said), "the door does not say the text was not read: {:?}", app.status);
+    }
+
+    /// WHAT A DRAWING HOLDS WITH INVALID NUMBERS IS SAID AT THE DOOR: a DXF spline whose knots run backwards, with fit
+    /// points - it comes in through its fit points, and the status line says so, once: not also as not read.
+    #[test]
+    fn a_drawing_says_what_it_held_invalid() {
+        let (mut app, ctx) = running();
+        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
+        std::fs::create_dir_all(&dir).expect("a folder for the check");
+        let p = dir.join("backwards-spline.dxf");
+        let knots: String = [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0].iter().map(|k| format!("40\n{k:.1}\n")).collect();
+        let control: String = [(0.0, 0.0), (10.0, 20.0), (30.0, -20.0), (40.0, 0.0)].iter().map(|(x, y)| format!("10\n{x:.1}\n20\n{y:.1}\n30\n0.0\n")).collect();
+        let fit: String = [(0.0, 0.0), (20.0, 0.0), (40.0, 0.0)].iter().map(|(x, y)| format!("11\n{x:.1}\n21\n{y:.1}\n31\n0.0\n")).collect();
+        std::fs::write(
+            &p,
+            format!(
+                "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1027\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nSPLINE\n5\n2A\n100\nAcDbEntity\n8\n0\n100\nAcDbSpline\n70\n8\n71\n3\n72\n8\n73\n4\n74\n3\n{knots}{control}{fit}0\nENDSEC\n0\nEOF\n"
+            ),
+        )
+        .expect("written");
+        answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
+        let _ = frame(&mut app, &ctx, Vec::new());
+        let waiting = app.tools.pending_import.curves.as_ref().map(|(c, _, _)| c.len()).unwrap_or(0);
+        assert!(waiting > 0, "the spline did not come in through its fit points; the status says: {}", app.status);
+        let said = crate::i18n::tr1("import-redrawn", "list", "SPLINE 1");
+        assert!(app.status.contains(&said), "the door does not say the spline was drawn through its fit points: {:?}", app.status);
+        for other in ["import-invalid", "import-not-read"] {
+            let wrong = crate::i18n::tr1(other, "list", "SPLINE 1");
+            assert!(!app.status.contains(&wrong), "a spline drawn through its fit points is also named as {other}: {:?}", app.status);
+        }
     }
 }
