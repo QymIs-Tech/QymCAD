@@ -52,39 +52,40 @@ pub fn key_label_in(stored: &str, style: KeyStyle) -> String {
     if style == KeyStyle::Plain {
         return stored.to_string();
     }
-    stored
-        .split(" / ")
-        .map(|part| {
-            let mut tokens: Vec<&str> = part.split('+').collect();
-            let key = tokens.pop().unwrap_or("");
-            let (mut control, mut opt, mut shift, mut cmd, mut other) = (false, false, false, false, Vec::new());
-            for t in tokens {
-                match t {
-                    "Control" => control = true,
-                    "Ctrl" => cmd = true,
-                    "Shift" => shift = true,
-                    "Alt" => opt = true,
-                    _ => other.push(t),
+    stored.split(" / ").map(|part| part.split(", ").map(|chord| chord_label(chord, style)).collect::<Vec<_>>().join(", ")).collect::<Vec<_>>().join(" / ")
+}
+
+/// One chord of a key in a Mac style. AltGr is the right Option key there: the Option sign after an R, or
+/// `Right Option+`.
+fn chord_label(chord: &str, style: KeyStyle) -> String {
+    let mut tokens: Vec<&str> = chord.split('+').collect();
+    let key = tokens.pop().unwrap_or("");
+    let (mut control, mut opt, mut ropt, mut shift, mut cmd, mut other) = (false, false, false, false, false, Vec::new());
+    for t in tokens {
+        match t {
+            "Control" => control = true,
+            "Ctrl" => cmd = true,
+            "Shift" => shift = true,
+            "Alt" => opt = true,
+            "AltGr" => ropt = true,
+            _ => other.push(t),
+        }
+    }
+    let mods = [(control, "⌃", "Control"), (opt, "⌥", "Option"), (ropt, "R⌥", "Right Option"), (shift, "⇧", "Shift"), (cmd, "⌘", "Cmd")];
+    let mut out: String = other.iter().map(|t| format!("{t}+")).collect();
+    for (on, symbol, word) in mods {
+        if on {
+            match style {
+                KeyStyle::MacSymbols => out.push_str(symbol),
+                _ => {
+                    out.push_str(word);
+                    out.push('+');
                 }
             }
-            let mods = [(control, "⌃", "Control"), (opt, "⌥", "Option"), (shift, "⇧", "Shift"), (cmd, "⌘", "Cmd")];
-            let mut out: String = other.iter().map(|t| format!("{t}+")).collect();
-            for (on, symbol, word) in mods {
-                if on {
-                    match style {
-                        KeyStyle::MacSymbols => out.push_str(symbol),
-                        _ => {
-                            out.push_str(word);
-                            out.push('+');
-                        }
-                    }
-                }
-            }
-            out.push_str(key);
-            out
-        })
-        .collect::<Vec<_>>()
-        .join(" / ")
+        }
+    }
+    out.push_str(key);
+    out
 }
 
 /// THE KEYS INSIDE A SENTENCE, written the way this system writes them: "Copy (Ctrl+C)" is "Copy (⌘C)" on a
@@ -151,6 +152,17 @@ mod tests {
         assert_eq!(key_label_in("Control+Shift+J", KeyStyle::MacWords), "Control+Shift+J");
         assert_eq!(keys_in_text_in("press Control+A in a field", KeyStyle::MacSymbols), "press ⌃A in a field");
         assert_eq!(key_label_in("Control+J", KeyStyle::Plain), "Control+J", "off a Mac the record reads as it is");
+    }
+
+    /// A SEQUENCE IS WRITTEN CHORD BY CHORD, and the right Option key apart from the left one.
+    #[test]
+    fn a_mac_writes_a_sequence_chord_by_chord() {
+        assert_eq!(key_label_in("Ctrl+T, Ctrl+Shift+F", KeyStyle::MacSymbols), "⌘T, ⇧⌘F");
+        assert_eq!(key_label_in("G, G", KeyStyle::MacSymbols), "G, G");
+        assert_eq!(key_label_in("Alt+G, G", KeyStyle::MacSymbols), "⌥G, G");
+        assert_eq!(key_label_in("AltGr+F", KeyStyle::MacSymbols), "R⌥F");
+        assert_eq!(key_label_in("Shift+AltGr+F", KeyStyle::MacWords), "Right Option+Shift+F");
+        assert_eq!(key_label_in("Ctrl+T, F", KeyStyle::Plain), "Ctrl+T, F");
     }
 
     #[test]

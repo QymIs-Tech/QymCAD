@@ -22,11 +22,11 @@ mod tests {
         app.enter_component(root);
         app.workbench = Workbench::Assembly;
         app.cancel_all_tools();
-        app.assembly_hotkey(egui::Key::K);
+        app.assembly_hotkey(qymcad_ui_state::hotkey_action(&app.set, "assembly", egui::Key::K).unwrap_or_default());
         assert!(!app.tools.picking.is_sketch_plane(), "there is nothing to start a sketch with in an assembly: it could not be referenced anyway");
         // a datum, however, can be started: it works there (mirror, section)
         app.cancel_all_tools();
-        app.assembly_hotkey(egui::Key::D);
+        app.assembly_hotkey(qymcad_ui_state::hotkey_action(&app.set, "assembly", egui::Key::D).unwrap_or_default());
         assert_ne!(app.tools.armed.cmd_kind(), 0, "a datum must stay in an assembly: the mirror and the section consume it");
 
         // THE PART: a sketch does start
@@ -35,7 +35,7 @@ mod tests {
         app.enter_component(owner);
         app.workbench = Workbench::Part;
         app.cancel_all_tools();
-        app.part_hotkey(egui::Key::K);
+        app.part_hotkey(qymcad_ui_state::hotkey_action(&app.set, "part", egui::Key::K).unwrap_or_default());
         assert!(app.tools.picking.is_sketch_plane(), "in a part a sketch must start");
     }
 

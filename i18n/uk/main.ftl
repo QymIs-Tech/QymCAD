@@ -43,7 +43,6 @@ file-quit = Вихід
 
 ## Меню «Довідка»
 
-help-hotkeys = Гарячі клавіші…
 help-about = Про програму…
 
 ## Налаштування — мова
@@ -285,7 +284,7 @@ scheme-color-cam_op4 = траєкторія операції 4
 scheme-color-cam_op5 = траєкторія операції 5
 scheme-color-cam_op6 = траєкторія операції 6
 # --- ГАРЯЧІ КЛАВІШІ ---
-hotkeys-title = Гарячі клавіші
+settings-hotkeys = Гарячі клавіші
 help-title = Довідка
 help-search = Пошук у довідці
 help-back = Назад
@@ -368,8 +367,8 @@ hotkeys-note = Клавіші верстаків діють у своєму ве
 hotkeys-press = натисніть…
 hotkeys-reset-all = Повернути всі заводські клавіші
 hotkeys-default-is = Заводська клавіша: { $key }
-hotkeys-rebind-note = Клавіші верстаків перепризначаються: натисніть на клавішу в таблиці й натисніть нову. Esc, Enter, Delete і Ctrl-сполучення закріплені за системою.
-hotkeys-alt-note = Курсор у полі введення — літера друкується, а не запускає команду. Щоб запустити її звідти, не збиваючи фокус мишею, тримайте Alt: Alt+U замість U.
+hotkeys-rebind-note = Клавіші верстаків перепризначаються: натисніть на клавішу в таблиці й натисніть нову або кілька по черзі (G, G). Esc, Enter, Delete і Ctrl-сполучення закріплені за системою.
+hotkeys-alt-note = Курсор у полі введення — літера друкується, а не запускає команду. Щоб запустити її звідти, не збиваючи фокус мишею, тримайте Alt: Alt+U замість U. Для клавіші з кількох натискань Alt тримають лише на першому: Alt+G, G.
 hotkeys-taken = Клавіша { $key } уже зайнята: { $what }
 hotkeys-reserved = Ця клавіша закріплена за системою й не призначається.
 hotkeys-filter-hint = Знайти команду або клавішу
@@ -380,7 +379,8 @@ hotkeys-swap-tip = «{ $what }» отримає { $key }
 hotkeys-take = Забрати
 hotkeys-take-tip = «{ $what }» залишиться без клавіші
 hotkeys-cancel = Залишити як було
-hotkeys-waiting = Esc — скасування, Backspace — прибрати клавішу.
+hotkeys-waiting = Enter — зберегти, Backspace — стерти, Esc — скасування.
+hotkeys-seq-waiting = { $keys } …
 hotkeys-unbound = немає клавіші
 hotkeys-clear = Залишити без клавіші
 hotkeys-reset-area = Повернути розділ
@@ -2358,6 +2358,7 @@ face-center = Центр: [{ $v }]
 settings-search = Пошук за налаштуваннями
 settings-search-empty = Нічого не знайдено — спробуйте інше слово
 settings-sec-general = Загальне
+settings-sec-keyboard = Клавіатура
 settings-sec-appearance = Зовнішній вигляд
 settings-sec-viewport = В'юпорт
 settings-sec-sketch = Ескіз
@@ -2396,6 +2397,8 @@ settings-kernel-threads-auto = усі, крім одного
 settings-kernel-threads-hint = Скільки ядер виділяти на перебудову. Одне ядро — обчислення в один потік: варто спробувати, якщо деталь побудувалася дивно.
 settings-undo-cap = Кроків скасування
 settings-undo-cap-hint = Більше кроків — більше пам'яті: знімок великої збірки важить десятки мегабайтів.
+settings-key-wait = Чекати наступну клавішу сполучення
+settings-key-wait-hint = Клавіша з кількох натискань (G, G) чекає наступне натискання стільки часу. Якщо його немає, натиснуте спрацьовує як окрема клавіша.
 settings-profile = Профіль налаштувань
 settings-profile-export = Зберегти у файл
 settings-profile-import = Завантажити з файлу
@@ -2412,6 +2415,7 @@ settings-msaa-restart = Застосується при наступному з�
 settings-fov-needs-persp = працює лише при перспективній проекції
 settings-msaa-needs-gpu = працює лише з GPU-в'юпортом
 unit-seconds = с
+unit-ms =  мс
 start-title = З чого почати
 start-recent = Нещодавні
 start-recent-empty = Поки нічого не відкривали

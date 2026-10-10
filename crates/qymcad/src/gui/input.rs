@@ -305,18 +305,14 @@ impl App {
     /// editing, dimensions and constraints; a Part gives features and primitives; an Assembly gives components
     /// and mates. The hotkeys are repeated in the tooltips of the buttons.
     pub(super) fn handle_tool_hotkeys(&mut self, ctx: &egui::Context) {
-        if self.hotkeys.action.is_some() {
-            return; // the reference window is waiting for a key to ASSIGN, not to run
-        }
-        // which press a tool key answers to (bare, Alt from a field, Ctrl always) is decided by `pressed_chord`
-        let Some(key) = qymcad_ui_state::pressed_chord(ctx) else { return };
-        if qymcad_ui_state::edit_si(&self.project, &self.sketch_ses).is_some() {
-            self.sketch_hotkey(key);
-        } else {
-            match self.workbench {
-                Workbench::Part => self.part_hotkey(key),
-                Workbench::Assembly => self.assembly_hotkey(key),
-                _ => {}
+        // which press a tool key answers to (bare, Alt from a field, Ctrl always) is decided by `pressed_chord`, what
+        // a sequence of them comes to by `seq_step`; the reference window waiting for a key to ASSIGN hears no area
+        let area = qymcad_ui_state::hotkey_area(&self.project, &self.sketch_ses, self.workbench).filter(|_| self.hotkeys.action.is_none());
+        for action in qymcad_ui_state::hotkey_presses(ctx, &self.set, area, &mut self.hotkeys.wait).actions() {
+            match area {
+                Some("sketch") => self.sketch_hotkey(action),
+                Some("part") => self.part_hotkey(action),
+                _ => self.assembly_hotkey(action),
             }
         }
     }

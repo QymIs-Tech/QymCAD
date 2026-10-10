@@ -914,7 +914,7 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
         return;
     }
     let mut open = wc.win.is(WinKind::Settings);
-    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(620.0).default_height(460.0).show(ctx, |ui| {
+    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(760.0).default_height(560.0).show(ctx, |ui| {
         let mut q = std::mem::take(&mut wc.scheme.search);
         // the field's width does NOT come from the window's width - otherwise the window swells as text is typed (see the tree)
         ui.horizontal(|ui| {
@@ -954,6 +954,7 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                     if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() {
                         wc.scheme.section = *sec;
                         wc.scheme.note.clear();
+                        crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
                     }
                 }
                 ui.separator();
@@ -994,6 +995,9 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
             });
         }
     });
+    if !open {
+        crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
+    }
     wc.win.set(WinKind::Settings, open);
 }
 
@@ -1131,6 +1135,20 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                         wc.set.recent.truncate(n);
                     }
                 });
+            }
+        }
+        Sec::Keyboard => {
+            if show("settings-key-wait") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-key-wait"));
+                    ui.add(egui::DragValue::new(&mut wc.set.key_wait_ms).range(100..=3000).speed(10).suffix(crate::i18n::tr("unit-ms")));
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-key-wait-hint")).weak().small());
+            }
+            if show("settings-hotkeys") {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-hotkeys")).strong());
+                crate::gui::hotkeys::hotkeys_table(wc, ui, ctx);
             }
         }
         Sec::Appearance => {

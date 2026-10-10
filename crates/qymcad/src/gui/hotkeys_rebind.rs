@@ -100,7 +100,7 @@ mod tests {
         }
     }
 
-    use super::super::hotkeys::{capture_outcome, Capture};
+    use super::super::hotkeys::{capture_outcome, finish_recording, Capture};
     use egui::{Key, Modifiers};
     use qymcad_ui_state::{reset_hotkey, resolve_hotkey_clash, Chord, ClashChoice, HotkeyClash};
 
@@ -121,8 +121,10 @@ mod tests {
     fn the_window_records_a_chord() {
         let app = App::default();
         let mods = Modifiers { shift: true, ..Modifiers::COMMAND };
-        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", Key::J, mods), Capture::Bind("Ctrl+Shift+J".into()));
-        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", Key::W, Modifiers::NONE), Capture::Bind("W".into()));
+        let ctrl_shift_j = Chord::of_press(mods, Key::J);
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], Key::J, mods), Capture::Record(vec![ctrl_shift_j]));
+        assert_eq!(finish_recording(&app.set, "part", "part.extrude", &[ctrl_shift_j]), Capture::Bind("Ctrl+Shift+J".into()));
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], Key::W, Modifiers::NONE), Capture::Record(vec![Chord::from(Key::W)]));
     }
 
     /// WHAT THE SYSTEM HOLDS IS REFUSED: undo, the clipboard, Space, F1 - and Alt, which reaches keys from a field.
@@ -138,13 +140,13 @@ mod tests {
             (Key::Enter, Modifiers::NONE),
             (Key::ArrowUp, Modifiers::NONE),
         ] {
-            assert!(matches!(capture_outcome(&app.set, "part", "part.extrude", key, mods), Capture::Refused(_)), "{key:?} with {mods:?} was accepted for a tool");
+            assert!(matches!(capture_outcome(&app.set, "part", "part.extrude", &[], key, mods), Capture::Refused(_)), "{key:?} with {mods:?} was accepted for a tool");
         }
-        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", Key::W, Modifiers::ALT), Capture::Refused("hotkeys-no-alt"));
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], Key::W, Modifiers::ALT), Capture::Refused("hotkeys-no-alt"));
         // bare X belongs to the general area - except to the action whose factory key it is
-        assert!(matches!(capture_outcome(&app.set, "sketch", "sketch.line", Key::X, Modifiers::NONE), Capture::Refused(_)), "bare X went to a tool, and it toggles construction everywhere");
+        assert!(matches!(capture_outcome(&app.set, "sketch", "sketch.line", &[], Key::X, Modifiers::NONE), Capture::Refused(_)), "bare X went to a tool, and it toggles construction everywhere");
         assert!(
-            !matches!(capture_outcome(&app.set, "sketch", "sketch.construction", Key::X, Modifiers::NONE), Capture::Refused(_)),
+            !matches!(capture_outcome(&app.set, "sketch", "sketch.construction", &[], Key::X, Modifiers::NONE), Capture::Refused(_)),
             "the construction toggle cannot be put back on its own factory key"
         );
     }
@@ -158,10 +160,10 @@ mod tests {
         let ctrl_shift = Modifiers { shift: true, ..Modifiers::COMMAND };
         for key in [Key::A, Key::C, Key::K, Key::S, Key::V, Key::X, Key::Y, Key::Z] {
             for mods in [Modifiers::COMMAND, ctrl_shift] {
-                assert_eq!(capture_outcome(&app.set, "part", "part.extrude", key, mods), Capture::Refused("hotkeys-reserved"), "{key:?} with {mods:?} went to a tool");
+                assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], key, mods), Capture::Refused("hotkeys-reserved"), "{key:?} with {mods:?} went to a tool");
             }
         }
-        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", Key::X, Modifiers::SHIFT), Capture::Bind("Shift+X".into()));
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], Key::X, Modifiers::SHIFT), Capture::Record(vec![Chord::of_press(Modifiers::SHIFT, Key::X)]));
     }
 
     /// ON LINUX AND WINDOWS THE LETTERS A FIELD EDITS WITH ARE REFUSED UNDER CTRL: egui erases with Ctrl+H, Ctrl+U
@@ -173,11 +175,11 @@ mod tests {
             for key in [Key::H, Key::U, Key::W] {
                 for shift in [false, true] {
                     let chord = Chord { ctrl: true, shift, ..Chord::from(key) };
-                    assert_eq!(hotkey_refusal_on(os, "part.extrude", &chord), Some("hotkeys-field-edits"), "{os:?}: {} went to a tool", chord.name());
+                    assert_eq!(hotkey_refusal_on(os, "part.extrude", chord), Some("hotkeys-field-edits"), "{os:?}: {} went to a tool", chord.name());
                 }
             }
             // the bare letters stay free: a field types them, and Alt reaches the tool from there
-            assert_eq!(hotkey_refusal_on(os, "part.extrude", &Chord::from(Key::W)), None);
+            assert_eq!(hotkey_refusal_on(os, "part.extrude", Chord::from(Key::W)), None);
         }
     }
 
@@ -187,14 +189,14 @@ mod tests {
     fn on_a_mac_cmd_h_and_cmd_q_are_kept_and_the_field_letters_are_free() {
         use qymcad_ui_state::{hotkey_refusal_on, platform_keys::Os};
         let cmd = |key| Chord { ctrl: true, ..Chord::from(key) };
-        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", &cmd(Key::H)), Some("hotkeys-os-hide"));
-        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", &cmd(Key::Q)), Some("hotkeys-os-quit"));
+        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", cmd(Key::H)), Some("hotkeys-os-hide"));
+        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", cmd(Key::Q)), Some("hotkeys-os-quit"));
         for key in [Key::U, Key::W] {
-            assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", &cmd(key)), None, "Cmd+{key:?} edits nothing on a Mac and was refused");
+            assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", cmd(key)), None, "Cmd+{key:?} edits nothing on a Mac and was refused");
         }
-        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", &Chord { ctrl: true, shift: true, ..Chord::from(Key::H) }), None, "Shift+Cmd+H is no menu item");
+        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", Chord { ctrl: true, shift: true, ..Chord::from(Key::H) }), None, "Shift+Cmd+H is no menu item");
         // the General letters are the program's own on every system
-        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", &cmd(Key::S)), Some("hotkeys-reserved"));
+        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", cmd(Key::S)), Some("hotkeys-reserved"));
     }
 
     /// EVERY SYSTEM HAS A TABLE OF ITS OWN, and every reason in a table has words.
@@ -225,10 +227,10 @@ mod tests {
         // off a Mac the Ctrl key is the command key, and nothing else
         assert_eq!(Chord::of_press(Modifiers::COMMAND, Key::J).name(), "Ctrl+J");
         assert_eq!(Chord::parse("Control+Ctrl+J"), Some(both));
-        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", &control), None);
-        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", &both), None);
+        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", control), None);
+        assert_eq!(hotkey_refusal_on(Os::Mac, "part.extrude", both), None);
         for os in [Os::Linux, Os::Windows] {
-            assert_eq!(hotkey_refusal_on(os, "part.extrude", &control), Some("hotkeys-mac-only"), "{os:?} has no Control key apart from Ctrl");
+            assert_eq!(hotkey_refusal_on(os, "part.extrude", control), Some("hotkeys-mac-only"), "{os:?} has no Control key apart from Ctrl");
         }
     }
 
@@ -237,7 +239,7 @@ mod tests {
     #[test]
     fn on_a_mac_the_field_and_the_system_keep_their_combinations() {
         use qymcad_ui_state::{hotkey_refusal_on, platform_keys::Os};
-        let on_mac = |s: &str| hotkey_refusal_on(Os::Mac, "part.extrude", &Chord::parse(s).expect(s));
+        let on_mac = |s: &str| hotkey_refusal_on(Os::Mac, "part.extrude", Chord::parse(s).expect(s));
         for s in ["Control+H", "Control+Shift+W", "Control+Ctrl+U", "Control+A", "Control+N"] {
             assert_eq!(on_mac(s), Some("hotkeys-mac-field-edits"), "{s} edits a field and went to a tool");
         }
@@ -291,15 +293,19 @@ mod tests {
     #[test]
     fn escape_leaves_and_backspace_erases() {
         let app = App::default();
-        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", Key::Escape, Modifiers::NONE), Capture::Cancel);
-        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", Key::Backspace, Modifiers::NONE), Capture::Bind(String::new()));
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], Key::Escape, Modifiers::NONE), Capture::Cancel);
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], Key::Backspace, Modifiers::NONE), Capture::Bind(String::new()));
     }
 
     /// A TAKEN KEY IS A QUESTION, NOT A REFUSAL.
     #[test]
     fn a_taken_key_becomes_a_question() {
         let app = App::default();
-        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", Key::F, Modifiers::NONE), Capture::Clash(HotkeyClash { action: "part.extrude".into(), chord: "F".into(), holder: "part.fillet" }));
+        let f = [Chord::from(Key::F)];
+        assert_eq!(
+            capture_outcome(&app.set, "part", "part.extrude", &f, Key::Enter, Modifiers::NONE),
+            Capture::Clash(HotkeyClash { action: "part.extrude".into(), chord: "F".into(), holder: "part.fillet" })
+        );
     }
 
     /// SWAP: each gets the other's key, and the record holds both as differences from the factory.
@@ -425,7 +431,7 @@ mod tests {
         let prev = qymcad_i18n::language();
         qymcad_i18n::set_language("en");
         let mut app = App::default();
-        app.win.open(crate::gui::WinKind::Hotkeys);
+        super::super::hotkeys::open_keyboard_settings(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
@@ -433,7 +439,7 @@ mod tests {
         let mut frame = |app: &mut App, events: Vec<egui::Event>| {
             time += 1.0 / 60.0;
             let input = egui::RawInput { screen_rect: Some(screen), time: Some(time), events, ..Default::default() };
-            let out = ctx.run_ui(input, |ui| app.hotkeys_window(ui.ctx()));
+            let out = ctx.run_ui(input, |ui| super::super::hotkeys::draw_settings(app, ui.ctx()));
             let mut shapes = Vec::new();
             out.shapes.into_iter().for_each(|c| flat(c.shape, &mut shapes));
             shapes
@@ -516,7 +522,7 @@ mod tests {
             (Key::AltLeft, Modifiers::ALT),
             (Key::AltRight, Modifiers::ALT),
         ] {
-            assert_eq!(capture_outcome(&app.set, "part", "part.extrude", key, mods), Capture::Pending, "{key:?} alone was judged as a chord");
+            assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], key, mods), Capture::Pending, "{key:?} alone was judged as a chord");
         }
     }
 
@@ -537,7 +543,7 @@ mod tests {
             let lang = qymcad_i18n::language();
             qymcad_i18n::set_language(code);
             let mut app = App::default();
-            app.win.open(crate::gui::WinKind::Hotkeys);
+            super::super::hotkeys::open_keyboard_settings(&mut app);
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx);
             let mut w = Frames { app, ctx, time: 0.0, lang };
@@ -552,7 +558,7 @@ mod tests {
             let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
             let input = egui::RawInput { screen_rect: Some(screen), time: Some(self.time), events, ..Default::default() };
             let app = &mut self.app;
-            let out = self.ctx.run_ui(input, |ui| app.hotkeys_window(ui.ctx()));
+            let out = self.ctx.run_ui(input, |ui| super::super::hotkeys::draw_settings(app, ui.ctx()));
             let mut shapes = Vec::new();
             out.shapes.into_iter().for_each(|c| flat_shape(c.shape, &mut shapes));
             shapes
@@ -699,8 +705,10 @@ mod tests {
         let before = text_rect(&w.frame(Vec::new()), &next).expect("the row under the extrusion is drawn").min.y;
         w.wait_for_extrude_key("E");
         w.key_down(Key::W, Modifiers::NONE);
-        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "W", "the press did not assign W");
-        let mut after = vec![w.key_up(Key::W)];
+        w.key_up(Key::W);
+        w.key_down(Key::Enter, Modifiers::NONE);
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "W", "W and Enter did not assign W");
+        let mut after = vec![w.key_up(Key::Enter)];
         for _ in 0..3 {
             after.push(w.frame(Vec::new()));
         }
@@ -758,6 +766,7 @@ mod tests {
         let what = w.wait_for_extrude_key("E");
         w.key_down(Key::F, Modifiers::NONE);
         w.key_up(Key::F);
+        w.key_down(Key::Enter, Modifiers::NONE);
         let swap = text_rect(&w.frame(Vec::new()), &crate::i18n::tr("hotkeys-swap")).expect("the clash of F is not asked");
         w.click(swap.center());
         assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.fillet"), "E", "Swap did not give the fillet E");
@@ -781,6 +790,107 @@ mod tests {
         assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.fillet"), "F", "Swap did not put the fillet back on F");
     }
 
+    /// A KEY OF SEVERAL PRESSES IS RECORDED PRESS BY PRESS, shown on the key while it is built, and saved by Enter.
+    /// Driven by a click on the extrude key and presses through whole frames.
+    #[test]
+    fn a_sequence_is_recorded_and_saved_by_enter() {
+        let mut w = Frames::open();
+        w.wait_for_extrude_key("E");
+        w.key_down(Key::G, Modifiers::NONE);
+        w.key_up(Key::G);
+        w.key_down(Key::G, Modifiers::NONE);
+        // the press is heard after the window is drawn, so the frame after it shows it
+        let shapes = w.key_up(Key::G);
+        let built = crate::i18n::tr1("hotkeys-seq-waiting", "keys", &qymcad_ui_state::key_label("G, G"));
+        assert!(text_rect(&shapes, &built).is_some(), "the key being recorded is not shown as it grows");
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "E", "the key changed before it was finished");
+        w.key_down(Key::Enter, Modifiers::NONE);
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "G, G", "G, G and Enter did not record G, G");
+        assert_eq!(w.app.hotkeys.action, None, "the window still waits after Enter");
+    }
+
+    /// BACKSPACE TAKES BACK THE LAST PRESS, and with nothing pressed leaves the action without a key.
+    #[test]
+    fn backspace_takes_back_the_last_press() {
+        let mut w = Frames::open();
+        w.wait_for_extrude_key("E");
+        for key in [Key::G, Key::C, Key::Backspace, Key::V, Key::Enter] {
+            w.key_down(key, Modifiers::NONE);
+            w.key_up(key);
+        }
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "G, V", "Backspace did not take back the C");
+        w.wait_for_extrude_key(&qymcad_ui_state::key_label("G, V"));
+        w.key_down(Key::Backspace, Modifiers::NONE);
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "", "Backspace with nothing pressed did not clear the key");
+    }
+
+    /// A PAUSE SAVES, AND SO DOES THE LAST PRESS A KEY CAN HOLD: no Enter is needed for a key of one press.
+    #[test]
+    fn a_pause_or_the_longest_key_saves() {
+        let mut w = Frames::open();
+        w.wait_for_extrude_key("E");
+        w.key_down(Key::W, Modifiers::NONE);
+        w.key_up(Key::W);
+        for _ in 0..30 {
+            w.frame(Vec::new());
+        }
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "E", "half a second after the press the key was taken as finished");
+        for _ in 0..40 {
+            w.frame(Vec::new());
+        }
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "W", "a second after the press W was not saved");
+
+        w.wait_for_extrude_key("W");
+        for key in [Key::G, Key::G, Key::G, Key::G] {
+            w.key_down(key, Modifiers::NONE);
+            w.key_up(key);
+        }
+        assert_eq!(qymcad_ui_state::hotkey_key(&w.app.set, "part.extrude"), "G, G, G, G", "the fourth press did not finish the key");
+        assert_eq!(w.app.hotkeys.action, None);
+    }
+
+    /// A KEY THAT STARTS ANOTHER IS NO CLASH - `G` beside `G, G` - while the same sequence twice is.
+    #[test]
+    fn only_the_same_sequence_clashes() {
+        let mut app = App::default();
+        qymcad_ui_state::set_hotkey(&mut app.set, "part.fillet", "G");
+        let g = Chord::from(Key::G);
+        assert_eq!(finish_recording(&app.set, "part", "part.extrude", &[g, g]), Capture::Bind("G, G".into()));
+        qymcad_ui_state::set_hotkey(&mut app.set, "part.extrude", "G, G");
+        assert_eq!(finish_recording(&app.set, "part", "part.hole", &[g, g]), Capture::Clash(HotkeyClash { action: "part.hole".into(), chord: "G, G".into(), holder: "part.extrude" }));
+        assert_eq!(qymcad_ui_state::hotkey_taken_by(&app.set, "part", "G,G", "part.hole"), Some("part.extrude"), "the same sequence written without a space is another key");
+    }
+
+    /// A REFUSED PRESS IS SAID AT ONCE and the presses before it are kept: Ctrl+S cannot start a key, and after G it
+    /// can be its second press.
+    #[test]
+    fn a_refused_press_keeps_what_was_recorded() {
+        let app = App::default();
+        let g = Chord::from(Key::G);
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[], Key::S, Modifiers::COMMAND), Capture::Refused("hotkeys-reserved"));
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[g], Key::S, Modifiers::COMMAND), Capture::Record(vec![g, Chord::of_press(Modifiers::COMMAND, Key::S)]));
+        assert_eq!(capture_outcome(&app.set, "part", "part.extrude", &[g], Key::Space, Modifiers::NONE), Capture::Refused("hotkeys-reserved"));
+    }
+
+    /// THE TABLE KEEPS ITS WIDTH WHILE A LONG KEY IS RECORDED: the descriptions do not move aside under the person's
+    /// eyes.
+    #[test]
+    fn the_table_keeps_its_width_while_a_key_is_recorded() {
+        let mut w = Frames::open();
+        let what = w.wait_for_extrude_key("E");
+        let before = text_rect(&w.frame(Vec::new()), &what).expect("the extrude row is drawn");
+        let ctrl_shift = Modifiers { shift: true, ..Modifiers::COMMAND };
+        for key in [Key::F5, Key::F6, Key::F7] {
+            w.key_down(key, ctrl_shift);
+            w.key_up(key);
+        }
+        assert_eq!(w.app.hotkeys.recorded.pressed.len(), 3, "the presses were not recorded");
+        for i in 0..3 {
+            let now = text_rect(&w.frame(Vec::new()), &what).expect("the extrude row is drawn");
+            assert!((now.min.x - before.min.x).abs() < 0.5, "frame {i}: the description moved from x {} to {} while the key was recorded", before.min.x, now.min.x);
+        }
+    }
+
     /// THE CHOICES OF A CLASH STAND ON A LINE OF THEIR OWN, under the question. Driven by a click on the extrude key
     /// and a press of F, the fillet's key, through whole frames.
     #[test]
@@ -789,6 +899,7 @@ mod tests {
         let what = w.wait_for_extrude_key("E");
         w.key_down(Key::F, Modifiers::NONE);
         w.key_up(Key::F);
+        w.key_down(Key::Enter, Modifiers::NONE);
         let shapes = w.frame(Vec::new());
         let holder = super::super::hotkeys::hotkey_what(HOTKEYS.iter().find(|r| r.action == "part.fillet").expect("the fillet row"));
         let question = text_rect(&shapes, &crate::i18n::tr2("hotkeys-taken", "key", &qymcad_ui_state::key_label("F"), "what", &holder)).expect("the clash question is not drawn");
@@ -849,5 +960,66 @@ mod tests {
             }
         }
         assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+}
+
+/// THE TABLE OF KEYS LIVES IN SETTINGS -> KEYBOARD, reached and left through whole frames of the program.
+#[cfg(test)]
+mod in_the_settings {
+    use egui::Key;
+    use crate::gui::hand::Hand;
+    use crate::gui::App;
+    use crate::i18n::tr;
+
+    fn extrude_row() -> String {
+        crate::gui::hotkeys::hotkey_what(qymcad_ui_state::HOTKEYS.iter().find(|r| r.action == "part.extrude").expect("the extrude row"))
+    }
+
+    /// The start screen's "Keyboard shortcuts" opens the settings at the keyboard section, the table in it; the Help
+    /// menu no longer has an item of its own for it.
+    #[test]
+    fn the_start_screen_opens_the_keys_in_the_settings() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut plain = App::default();
+        let mut hand = Hand::new(&mut plain);
+        hand.press_word(&tr("start-close"), egui::Pos2::ZERO); // the start screen greets a blank document, and it has a button of its own
+        let keys = tr("settings-hotkeys");
+        let before = hand.words().iter().any(|w| w.contains(&keys));
+        let help = hand.press_word(&tr("menu-help"), egui::Pos2::ZERO);
+        let in_help: Vec<String> = hand.words().into_iter().filter(|w| w.contains(&keys)).collect();
+        let mut app = App::default();
+        app.win.open(crate::gui::WinKind::Start);
+        app.win.start_asked = true;
+        let mut hand = Hand::new(&mut app);
+        let pressed = hand.press_word(&tr("start-hotkeys"), egui::Pos2::ZERO);
+        let (table, row) = (hand.shows(&tr("settings-sec-keyboard")) && hand.shows(&keys), hand.shows(&extrude_row()));
+        qymcad_i18n::set_language(&prev);
+        assert!(!before && help && in_help.is_empty(), "the Help menu still offers the keys: {in_help:?} (opened: {help}, shown before: {before})");
+        assert!(pressed, "the start screen has no keyboard shortcuts button");
+        assert!(table && row, "the start screen's button did not show the table in the settings (caption: {table}, extrude row: {row})");
+    }
+
+    /// ESC ANSWERS A CLASH "KEEP AS IT WAS" and leaves the settings open: the key stays, the question goes.
+    #[test]
+    fn esc_answers_a_clash_and_keeps_the_settings() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened =
+            hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO) && hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO);
+        let row = hand.written_at(&extrude_row());
+        let waits = row.is_some_and(|r| hand.press_word("E", r.center()));
+        hand.key(Key::F).key(Key::Enter); // F is the fillet's
+        let asked = hand.shows(&tr("hotkeys-swap"));
+        hand.key(Key::Escape);
+        let (still_asked, open) = (hand.shows(&tr("hotkeys-swap")), hand.shows(&tr("settings-hotkeys")));
+        let key = qymcad_ui_state::hotkey_key(&hand.app.set, "part.extrude");
+        qymcad_i18n::set_language(&prev);
+        assert!(opened && waits, "the extrude key was not reached in Settings -> Keyboard (opened: {opened}, row: {row:?})");
+        assert!(asked, "F is the fillet's and the table asked nothing");
+        assert!(!still_asked && key == "E", "Esc did not answer the clash with the old key (question left: {still_asked}, key now {key:?})");
+        assert!(open, "Esc answered the clash and closed the settings too");
     }
 }

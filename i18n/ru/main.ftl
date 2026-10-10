@@ -43,7 +43,6 @@ file-quit = Выход
 
 ## Меню «Справка»
 
-help-hotkeys = Горячие клавиши…
 help-about = О программе…
 
 ## Настройки — язык
@@ -286,7 +285,7 @@ scheme-color-cam_op5 = траектория операции 5
 scheme-color-cam_op6 = траектория операции 6
 
 # --- ГОРЯЧИЕ КЛАВИШИ ---
-hotkeys-title = Горячие клавиши
+settings-hotkeys = Горячие клавиши
 help-title = Справка
 help-search = Поиск по справке
 help-back = Назад
@@ -369,8 +368,8 @@ hotkeys-note = Клавиши верстаков действуют в своё�
 hotkeys-press = нажмите…
 hotkeys-reset-all = Вернуть все заводские клавиши
 hotkeys-default-is = Заводская клавиша: { $key }
-hotkeys-rebind-note = Клавиши верстаков переназначаются: нажмите на клавишу в таблице и нажмите новую. Esc, Enter, Delete и Ctrl-сочетания закреплены за системой.
-hotkeys-alt-note = Курсор в поле ввода — буква печатается, а не запускает команду. Чтобы запустить её оттуда, не сбивая фокус мышью, держите Alt: Alt+U вместо U.
+hotkeys-rebind-note = Клавиши верстаков переназначаются: нажмите на клавишу в таблице и нажмите новую или несколько по очереди (G, G). Esc, Enter, Delete и Ctrl-сочетания закреплены за системой.
+hotkeys-alt-note = Курсор в поле ввода — буква печатается, а не запускает команду. Чтобы запустить её оттуда, не сбивая фокус мышью, держите Alt: Alt+U вместо U. Для клавиши из нескольких нажатий Alt держат только на первом: Alt+G, G.
 hotkeys-taken = Клавиша { $key } уже занята: { $what }
 hotkeys-reserved = Эта клавиша закреплена за системой и не назначается.
 hotkeys-filter-hint = Найти команду или клавишу
@@ -381,7 +380,8 @@ hotkeys-swap-tip = «{ $what }» получит { $key }
 hotkeys-take = Забрать
 hotkeys-take-tip = «{ $what }» останется без клавиши
 hotkeys-cancel = Оставить как было
-hotkeys-waiting = Esc — отмена, Backspace — убрать клавишу.
+hotkeys-waiting = Enter — сохранить, Backspace — стереть, Esc — отмена.
+hotkeys-seq-waiting = { $keys } …
 hotkeys-unbound = нет клавиши
 hotkeys-clear = Оставить без клавиши
 hotkeys-reset-area = Вернуть раздел
@@ -2365,6 +2365,7 @@ face-center = Центр: [{ $v }]
 settings-search = Поиск по настройкам
 settings-search-empty = Ничего не нашлось — попробуйте другое слово
 settings-sec-general = Общее
+settings-sec-keyboard = Клавиатура
 settings-sec-appearance = Внешний вид
 settings-sec-viewport = Вьюпорт
 settings-sec-sketch = Эскиз
@@ -2403,6 +2404,8 @@ settings-kernel-threads-auto = все, кроме одного
 settings-kernel-threads-hint = Сколько ядер отдавать перестроению. Одно ядро — счёт в один поток: так стоит проверить, если деталь построилась странно.
 settings-undo-cap = Шагов отмены
 settings-undo-cap-hint = Больше шагов — больше памяти: снимок крупной сборки весит десятки мегабайт.
+settings-key-wait = Ждать следующую клавишу сочетания
+settings-key-wait-hint = Клавиша из нескольких нажатий (G, G) ждёт следующее нажатие столько времени. Если его нет, нажатое срабатывает как отдельная клавиша.
 settings-profile = Профиль настроек
 settings-profile-export = Сохранить в файл
 settings-profile-import = Загрузить из файла
@@ -2418,6 +2421,7 @@ settings-msaa-restart = Применится при следующем запу�
 settings-fov-needs-persp = работает только при перспективной проекции
 settings-msaa-needs-gpu = работает только с GPU-вьюпортом
 unit-seconds =  с
+unit-ms =  мс
 start-title = С чего начать
 start-recent = Недавние
 start-recent-empty = Пока ничего не открывали

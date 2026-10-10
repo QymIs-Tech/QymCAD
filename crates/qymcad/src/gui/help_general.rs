@@ -81,18 +81,23 @@ mod tests {
         let input = include_str!("input.rs");
         let from = input.find("fn handle_tool_hotkeys").expect("the key handler is in place");
         let to = input[from..].find("\n    /// ").map(|i| from + i).unwrap_or(input.len());
-        // the handler reads the press through `pressed_chord`, and that is where Alt is looked at
-        assert!(input[from..to].contains("pressed_chord("), "the key handler no longer reads the press through the common rule");
+        // the handler reads the press through `hotkey_presses`, that through `pressed_chord`, and that is where Alt
+        // is looked at - on the first chord of a sequence only
+        assert!(input[from..to].contains("hotkey_presses("), "the key handler no longer reads the press through the common rule");
+        assert!(include_str!("../../../qymcad-ui-state/src/key_seq.rs").contains("crate::pressed_chord(ctx)"), "the key sequences no longer read the press through the common rule");
         let state = include_str!("../../../qymcad-ui-state/src/lib.rs");
         let rule = state.find("pub fn pressed_chord").map(|i| &state[i..i + state[i..].find("\n}\n").unwrap_or(0)]).unwrap_or("");
-        assert!(rule.contains("modifiers.alt"), "the Alt rule is declared in the help, and the key handler knows nothing about Alt");
+        assert!(rule.contains("held.alt.left()"), "the Alt rule is declared in the help, and the key handler knows nothing about Alt");
+        assert!(rule.contains("Press::Continue"), "the help says Alt is held on the first press only, and the key handler asks it of every press");
 
         for l in langs() {
             let note = crate::i18n::tr_in(&l, "hotkeys-alt-note").unwrap_or_else(|| panic!("there is no remark about Alt in language {l}"));
             assert!(note.contains("Alt"), "the remark ({l}) must name the key itself: {note}");
+            assert!(note.contains("Alt+G, G"), "the remark ({l}) must show that Alt goes on the first press only: {note}");
             assert!(include_str!("hotkeys.rs").contains("hotkeys-alt-note"), "the remark is in the language catalogue, and the reference window does not print it — the rule stayed a secret");
             let md = article_in(&l, "general/10-hotkeys");
             assert!(md.contains("Alt+U"), "the article ({l}) must show the rule BY EXAMPLE: Alt+U instead of U");
+            assert!(md.contains("`Alt+G, G`"), "the article ({l}) must show BY EXAMPLE that Alt goes on the first press of a sequence only");
         }
     }
 

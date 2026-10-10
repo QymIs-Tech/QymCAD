@@ -37,6 +37,7 @@ mod tests {
             msaa: 8,
             autosave_secs: 600,
             undo_cap: 7,
+            key_wait_ms: 750,
             ghost_alpha: 200,
             kernel_threads: 0, // all the cores but one
             persp_fov_deg: 60.0,

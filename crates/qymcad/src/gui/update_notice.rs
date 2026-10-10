@@ -55,6 +55,7 @@ mod tests {
                     set: &mut app.set,
                     sketch_ses: &app.sketch_ses,
                     status: "",
+                    keys: &qymcad_ui_state::KeyWait::default(),
                     win: &mut app.win,
                 },
                 ui,

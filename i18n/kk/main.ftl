@@ -43,7 +43,6 @@ file-quit = Шығу
 
 ## Help menu
 
-help-hotkeys = Пернелер тіркесімі…
 help-about = Бағдарлама туралы…
 
 ## Settings — language
@@ -286,7 +285,7 @@ scheme-color-cam_op5 = 5-операция траекториясы
 scheme-color-cam_op6 = 6-операция траекториясы
 
 # --- KEYBOARD SHORTCUTS ---
-hotkeys-title = Пернелер тіркесімі
+settings-hotkeys = Пернелер тіркесімі
 help-title = Анықтама
 help-search = Анықтамадан іздеу
 help-back = Артқа
@@ -369,8 +368,8 @@ hotkeys-note = Верстак пернелері өз верстагында ғ�
 hotkeys-press = басыңыз…
 hotkeys-reset-all = Барлық пернелерді әдепкіге қайтару
 hotkeys-default-is = Әдепкі перне: { $key }
-hotkeys-rebind-note = Верстак пернелерін қайта тағайындауға болады: кестедегі пернені шертіп, жаңасын басыңыз. Esc, Enter, Delete және Ctrl тіркесімдері жүйеге тиесілі.
-hotkeys-alt-note = Курсор енгізу өрісінде тұрғанда әріп командаға емес, мәтінге жазылады. Оны сол жерден тінтуірмен шертпей іске қосу үшін Alt-ты басып тұрыңыз: U орнына Alt+U.
+hotkeys-rebind-note = Верстак пернелерін қайта тағайындауға болады: кестедегі пернені шертіп, жаңасын немесе бірнешеуін кезекпен басыңыз (G, G). Esc, Enter, Delete және Ctrl тіркесімдері жүйеге тиесілі.
+hotkeys-alt-note = Курсор енгізу өрісінде тұрғанда әріп командаға емес, мәтінге жазылады. Оны сол жерден тінтуірмен шертпей іске қосу үшін Alt-ты басып тұрыңыз: U орнына Alt+U. Бірнеше басудан тұратын пернеде Alt тек біріншісінде басылады: Alt+G, G.
 hotkeys-taken = { $key } бос емес: { $what }
 hotkeys-reserved = Бұл перне жүйеге тиесілі, оны тағайындауға болмайды.
 hotkeys-filter-hint = Команданы немесе пернені табу
@@ -381,7 +380,8 @@ hotkeys-swap-tip = «{ $what }» оның орнына { $key } алады
 hotkeys-take = Алып қою
 hotkeys-take-tip = «{ $what }» пернесіз қалады
 hotkeys-cancel = Бұрынғыдай қалдыру
-hotkeys-waiting = Esc — болдырмау, Backspace — пернені тазарту.
+hotkeys-waiting = Enter — сақтау, Backspace — өшіру, Esc — болдырмау.
+hotkeys-seq-waiting = { $keys } …
 hotkeys-unbound = перне жоқ
 hotkeys-clear = Пернесіз қалдыру
 hotkeys-reset-area = Бұл бөлімді қайтару
@@ -2361,6 +2361,7 @@ face-center = Центрі: [{ $v }]
 settings-search = Баптаулардан іздеу
 settings-search-empty = Ештеңе табылмады — басқа сөзді байқап көріңіз
 settings-sec-general = Жалпы
+settings-sec-keyboard = Пернетақта
 settings-sec-appearance = Сыртқы көрініс
 settings-sec-viewport = Көрініс терезесі
 settings-sec-sketch = Эскиз
@@ -2399,6 +2400,8 @@ settings-kernel-threads-auto = біреуінен басқасының бәрі
 settings-kernel-threads-hint = Қайта құру қанша ядро ала алады. Бір ядро — бір ағынмен есептеу: бөлшек біртүрлі құрылса, байқап көруге тұрарлық.
 settings-undo-cap = Болдырмау қадамдары
 settings-undo-cap-hint = Қадам көп болса, жад та көп керек: үлкен жинақтың суреті ондаған мегабайт тартады.
+settings-key-wait = Тіркесімнің келесі пернесін күту
+settings-key-wait-hint = Бірнеше басудан тұратын перне (G, G) келесі басуды осынша уақыт күтеді. Ол болмаса, басылғаны жеке перне ретінде іске қосылады.
 settings-profile = Баптаулар профилі
 settings-profile-export = Файлға сақтау
 settings-profile-import = Файлдан жүктеу
@@ -2414,6 +2417,7 @@ settings-msaa-restart = Бағдарламаны келесі іске қосқ�
 settings-fov-needs-persp = тек перспективалық проекцияда жұмыс істейді
 settings-msaa-needs-gpu = тек GPU көрінісінде жұмыс істейді
 unit-seconds =  с
+unit-ms =  мс
 start-title = Неден бастау керек
 start-recent = Соңғылар
 start-recent-empty = Әлі ештеңе ашылмаған

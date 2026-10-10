@@ -214,10 +214,6 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 ui.close();
             }
             ui.separator();
-            if ui.button(format!("{} {}", ph::KEYBOARD, qymcad_i18n::tr("help-hotkeys"))).clicked() {
-                bc.win.open(WinKind::Hotkeys);
-                ui.close();
-            }
             // CHECK FOR UPDATES. Pressed by hand it asks ALWAYS - even with the automatic check switched
             // off, because pressing it IS the asking. Absent where it cannot work: inside Flatpak there
             // is no network, and a build with no release tag has nothing to compare against.
@@ -289,8 +285,12 @@ fn update_note(scheme: &qymcad_ui_state::SchemeUi, win: &mut qymcad_ui_state::Wi
 /// DEFINEDNESS is the sketcher's main state, and in CAD it belongs in the status line: one looks at the
 /// drawing rather than hunting for it in a panel off to the side.
 pub(crate) fn status_bar(sc: &mut qymcad_ui_state::StatusCtx, ui: &mut egui::Ui) {
-    let qymcad_ui_state::StatusCtx { cache, cursor, project, scheme, set, sketch_ses, status, win } = sc;
+    let qymcad_ui_state::StatusCtx { cache, cursor, project, scheme, set, sketch_ses, status, keys, win } = sc;
     let (cursor, status) = (*cursor, *status);
+    // A KEY SEQUENCE UNDER WAY says so where the eye goes after a press: `G ...` until the next chord or the end of
+    // the wait. Without it a first chord that waits looks exactly like a key that did nothing.
+    let waiting = keys.label();
+    let status = if waiting.is_empty() { status.to_string() } else { crate::i18n::tr1("hotkeys-seq-waiting", "keys", &waiting) };
     // THE CHECK FOR A NEWER VERSION IS STARTED HERE, and shown here, so that the two cannot drift apart.
     //
     // A frame is where it belongs: nothing else in the program knows that a start happened, and this

@@ -27,13 +27,13 @@ mod tests {
     ///
     /// The target is one: the application's own frame loop. Every other block is a panel or a tool that has
     /// not yet been given a narrow context to work through.
-    const IMPL_APP_CEILING: usize = 36;
+    const IMPL_APP_CEILING: usize = 35;
 
     /// Methods hanging on `App` THAT THE PROGRAM ITSELF USES.
     ///
     /// The target is the few that are genuinely the application's own: start, the frame, the split into a
     /// context. A panel's drawing is not the application's business and should not be reachable from it.
-    const APP_METHODS_CEILING: usize = 167;
+    const APP_METHODS_CEILING: usize = 166;
 
     /// The size of what lives inside `impl App` blocks, comments included, counted in WORD CHARACTERS (`word_chars`)
     /// rather than in lines. Lines were the measure until the tree was first formatted: rustfmt took the same code
@@ -49,7 +49,7 @@ mod tests {
     /// It also cannot be gamed the other way. Splitting a method in two adds a line and no more; the only
     /// way this number falls is code leaving `impl App`. That is the thing that has to reach zero before the
     /// interface can live in a crate of its own, since a method belongs to the crate declaring the type.
-    const APP_SIZE_CEILING: usize = 178_165;
+    const APP_SIZE_CEILING: usize = 177_746;
 
     /// Methods that exist ONLY so a check can reach inside - `*_for_test` and `*_pub`.
     ///
