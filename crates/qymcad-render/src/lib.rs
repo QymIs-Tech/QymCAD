@@ -1847,8 +1847,9 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         1 => {
             if let Some(&last) = pn.tool.pts.last() {
                 painter.line_segment([sh.at(last), sc], stroke);
-                // a live preview of the automatic constraints: what will be attached if a point is placed here
-                if let Some(si) = qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses) {
+                // a live preview of the automatic constraints: what will be attached if a point is placed here - none
+                // where none will be ("No ties", the auto constraints off)
+                if let Some(si) = qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses).filter(|_| qymcad_ui_state::ties_laid(pn.tool, pn.set)) {
                     let prev = (pn.tool.pts.len() >= 2).then(|| pn.tool.pts[pn.tool.pts.len() - 2]);
                     for (g, at) in qymcad_pick::infer_hints(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, si, prev, last, cur) {
                         let sat = sh.at(at) + egui::vec2(11.0, -11.0);

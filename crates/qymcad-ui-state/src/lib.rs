@@ -861,6 +861,13 @@ pub enum Ties {
     Free,
 }
 
+/// WHETHER A DRAWING TOOL TIES WHAT IT PUTS DOWN: "No ties" not ticked on its bar and the auto constraints of the
+/// sketch on - construction geometry as any other. One rule for what is laid and for what the preview shows: the
+/// preview of a line showed the badge of a level tie with "No ties" ticked, a tie the click was not going to lay.
+pub fn ties_laid(tool: &SketchTool, set: &Settings) -> bool {
+    tool.ties == Ties::Laid && set.auto_constrain
+}
+
 /// THE ACTIVE SKETCH TOOL: what is chosen on the panel and what has already been clicked with it.
 /// "Which tool" and "how many points it has gathered" used to be different fields of `App`, and changing the tool
 /// was not obliged to clear what had been gathered - yet it must: a line's points mean nothing to an arc.

@@ -917,6 +917,21 @@ impl<'a> Hand<'a> {
         self.circles_drawn(radius, |c| c.fill != egui::Color32::TRANSPARENT)
     }
 
+    /// THE BADGES IN `colour` THE LAST FRAME DREW, by their centres: the filled squares of 14 px a constraint is shown in,
+    /// the live preview of a tie that a drawing tool is about to lay among them.
+    pub fn badges_in(&self, colour: egui::Color32) -> Vec<egui::Pos2> {
+        fn walk(s: &egui::Shape, colour: egui::Color32, out: &mut Vec<egui::Pos2>) {
+            match s {
+                egui::Shape::Rect(r) if r.fill == colour && (r.rect.width() - 14.0).abs() < 0.5 && (r.rect.height() - 14.0).abs() < 0.5 => out.push(r.rect.center()),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, colour, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        self.win.shapes.iter().for_each(|cs| walk(&cs.shape, colour, &mut out));
+        out
+    }
+
     /// THE FILLED DOTS OF `radius` px IN `colour` THE LAST FRAME DREW: the points of a sketch drawn free, or defined.
     pub fn dots_in(&self, radius: f32, colour: egui::Color32) -> Vec<egui::Pos2> {
         fn walk(s: &egui::Shape, dot: &egui::epaint::CircleShape, out: &mut Vec<egui::Pos2>) {

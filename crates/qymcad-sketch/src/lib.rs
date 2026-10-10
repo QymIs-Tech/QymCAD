@@ -3538,10 +3538,9 @@ fn tie_the_rect_to_what_is_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect
     }
 }
 
-/// WHETHER WHAT IS DRAWN NOW IS TIED TO WHAT IT LANDS ON: "No ties" not ticked on the bar of the tool and the auto
-/// constraints of the sketch on - construction geometry as any other.
+/// WHETHER WHAT IS DRAWN NOW IS TIED TO WHAT IT LANDS ON (`qymcad_ui_state::ties_laid`).
 fn tied(sk: &qymcad_ui_state::SketchCtx) -> bool {
-    sk.tool.ties == qymcad_ui_state::Ties::Laid && sk.set.auto_constrain
+    qymcad_ui_state::ties_laid(sk.tool, sk.set)
 }
 
 /// Where the two ends of line `seg` of sketch `si` stand, first end first.

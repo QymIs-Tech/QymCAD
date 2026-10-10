@@ -3917,6 +3917,7 @@ mod a_construction_line_is_no_side_of_a_corner;
 mod the_corner_box_stands_clear_of_the_corner;
 mod a_rounded_rectangle_turns_whole;
 mod a_cut_corner_draws_clean;
+mod no_ties_shows_no_tie;
 mod the_dimensions_of_a_cut_corner_stand_outside;
 mod a_corner_set_takes_its_size_whole;
 mod the_box_of_fillet_all_stands_at_the_clicked_side;
