@@ -6,16 +6,25 @@ A contour or a chain standing off the selected one at a given distance.
 
 ## How to do it
 
-Choose a contour, a chain of lines and arcs or a circle (by clicks, with **Shift** for several) and press **Offset**;
-or the other way round - the button first, then clicks on the curves. Type the **Distance** in the bar above. Point to
-the side the copy should go to - the preview is drawn there. **Enter** makes it, **Esc** cancels.
+1. Choose a contour, a chain of lines and arcs or a circle (by clicks, with **Shift** for several) and press **Offset**.
+   Or the other way round - the button first, then clicks on the curves.
+2. Point to the side the copy should go to - the preview is drawn there.
+3. Click on that side, off the curves. The side is fixed, the preview changes colour, and the **Distance** box opens
+   beside the copy. The pointer can now go to the box - the copy stays where it is.
+4. Type the distance - the preview follows the number. **Enter** or the tick makes the copy.
+
+**Enter** without a click makes the copy at once, on the side of the pointer, with the distance of the bar above.
+
+After a copy the tool stays in hand: choose the next curves and go on. **Esc** in the box frees the side - the copy
+follows the pointer again; one more **Esc** puts the tool down.
 
 A negative distance lays the copy on the side away from the pointer.
 
 ## An open chain
 
-A polyline or a chain of lines and arcs is offset to one side: at a convex joint the copy is rounded by an arc about
-the corner, at a concave one it is cut, and the ends of the copy stand opposite the ends of the chain.
+A polyline or a chain of lines and arcs is offset to one side. A corner between two lines stays a sharp corner in the
+copy - the lines of the copy run on to where they meet. Where an arc meets a line, a convex joint is rounded. The ends
+of the copy stand opposite the ends of the chain. A closed contour of lines keeps sharp corners in its copy too.
 
 ## The copy holds to its source
 
@@ -39,4 +48,6 @@ For an even wall over a whole body, **Shell** in the part is better: it works on
   lies free. Make the distance smaller or split the contour into parts.
 - The status says "Offset takes lines, arcs and circles" — nothing chosen is a curve (points only, or construction
   lines). Choose a contour, a chain or a circle.
-- The copy went to the wrong side — point nearer the side you want before **Enter**.
+- The copy went to the wrong side — press **Esc** to free the side, and click nearer the one you want.
+- The click added a curve instead of fixing the side — it landed on a line. Click on an empty place beside the copy;
+  take the extra curve off with another click on it.

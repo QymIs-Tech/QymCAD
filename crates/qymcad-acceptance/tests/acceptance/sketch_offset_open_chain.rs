@@ -1,6 +1,7 @@
-//! AN OPEN CHAIN IS OFFSET by hand: a polyline drawn, its three lines chosen, Offset taken, the distance on its bar, the
-//! pointer on the side the copy should go to, Enter. The copy runs 3 off the chain on that side, its joints kept, and
-//! the window says what the tool takes where nothing it can offset is chosen.
+//! AN OPEN CHAIN IS OFFSET by hand: a polyline drawn, its three lines chosen, Offset taken, the pointer on the side the
+//! copy should go to - Enter there, or a click fixing the side and the distance typed beside the copy. The copy runs off
+//! the chain on that side, its corners sharp, and the window says what the tool takes where nothing it can offset is
+//! chosen.
 //!
 //! Reported behaviour: a polyline of three lines chosen, Offset, a distance - no copy, and the window said to choose
 //! something, as though nothing were chosen.
@@ -28,21 +29,31 @@ fn stands(s: &mut Session, x: f64, y: f64) -> bool {
 }
 
 probe! {
-    /// THE COPY GOES TO THE SIDE OF THE POINTER: above the polyline it runs 3 to its left - the concave joint cut to
-    /// (17, 3), the convex one rounded about (20, 15) - and below it, 3 to its right, the joint (20, 0) rounded about
-    /// it and the joint (20, 15) cut to (23, 12).
+    /// THE COPY GOES TO THE SIDE OF THE POINTER, ITS CORNERS SHARP. Above the polyline, Enter with the pointer there: 3 to
+    /// its left, the corners at (17, 3) and (17, 18). Below it, a click fixing the side and 4 typed into the box beside the
+    /// copy, Enter: 4 to its right, the corners at (24, -4) and (24, 11). A corner of two lines is a corner of the copy,
+    /// not an arc - reported behaviour: "the polyline has no fillets, and the copy is rounded".
     fn an_open_chain_is_offset_to_the_side_of_the_pointer() {
         let mut failures = Vec::new();
-        for (pointer, want) in [((5.0, 6.0), [(0.0, 3.0), (17.0, 3.0), (17.0, 15.0), (20.0, 18.0), (40.0, 18.0)]), ((5.0, -6.0), [(0.0, -3.0), (20.0, -3.0), (23.0, 0.0), (23.0, 12.0), (40.0, 12.0)])] {
-            let mut s = a_polyline_in_hand();
-            let at = s.on_sketch(pointer.0, pointer.1);
-            s.move_to(at);
-            s.key(Key::Enter);
-            let missing: Vec<(f64, f64)> = want.into_iter().filter(|&(x, y)| !stands(&mut s, x, y)).collect();
-            let sk = s.document().sketches[0].clone();
-            if !missing.is_empty() || sk.redundant != 0 {
-                failures.push(format!("the pointer at {pointer:?}: nothing stands at {missing:?}, {} redundant; status {:?}; the sketch shows {:?}", sk.redundant, s.status(), sk.places));
-            }
+        let mut s = a_polyline_in_hand();
+        let at = s.on_sketch(5.0, 6.0);
+        s.move_to(at);
+        s.key(Key::Enter);
+        let above = [(0.0, 3.0), (17.0, 3.0), (17.0, 18.0), (40.0, 18.0)];
+        let missing: Vec<(f64, f64)> = above.into_iter().filter(|&(x, y)| !stands(&mut s, x, y)).collect();
+        let sk = s.document().sketches[0].clone();
+        if !missing.is_empty() || sk.redundant != 0 || sk.arcs != 0 {
+            failures.push(format!("Enter with the pointer above: nothing stands at {missing:?}, {} redundant, {} arcs; status {:?}; the sketch shows {:?}", sk.redundant, sk.arcs, s.status(), sk.places));
+        }
+        let mut s = a_polyline_in_hand();
+        s.click_on_sketch(5.0, -6.0);
+        s.type_text("4");
+        s.key(Key::Enter);
+        let below = [(0.0, -4.0), (24.0, -4.0), (24.0, 11.0), (40.0, 11.0)];
+        let missing: Vec<(f64, f64)> = below.into_iter().filter(|&(x, y)| !stands(&mut s, x, y)).collect();
+        let sk = s.document().sketches[0].clone();
+        if !missing.is_empty() || sk.redundant != 0 || sk.arcs != 0 {
+            failures.push(format!("the side fixed below by a click, 4 typed beside the copy: nothing stands at {missing:?}, {} redundant, {} arcs; status {:?}; the sketch shows {:?}", sk.redundant, sk.arcs, s.status(), sk.places));
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }

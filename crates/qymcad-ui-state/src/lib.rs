@@ -1889,6 +1889,22 @@ pub struct SketchSelection {
     /// THE LINES OF `items` CLICKED AT THEIR MIDDLE, where the triangle of the midpoint showed. Picked as lines; a
     /// constraint that takes points reads them as their midpoints (`qymcad_sketch::middles_for`).
     pub at_middle: Vec<Id>,
+    /// THE SIDE OF THE OFFSET a click has fixed, and the distance typed beside the copy (`qymcad_sketch::offset_box`).
+    pub offset: OffsetAim,
+}
+
+/// THE OFFSET, AIMED: the copy follows the pointer to one side until a click fixes it there, and the box of its
+/// distance opens beside it and stays, so the pointer can go to it - the way the corner of a fillet is chosen.
+/// Reported behaviour: "a popup with a field, the same choice as the fillet: the side picked, a click fixes it, then
+/// the mouse can go to the popup".
+#[derive(Clone, Default, PartialEq)]
+pub struct OffsetAim {
+    /// where the click fixed the side, on the sheet; none while the copy follows the pointer
+    pub at: Option<qymcad_core::geom::Point2>,
+    /// the distance as typed in the box
+    pub buf: String,
+    /// the box takes the keyboard on the frame it opens
+    pub focus: bool,
 }
 
 impl SketchSelection {
@@ -5196,6 +5212,7 @@ pub fn exit_draw_tools(t: &mut Tools) {
     tool.circ_tan = None;
     sel_sk.constraint = None;
     sel_sk.modify = None;
+    sel_sk.offset = OffsetAim::default();
     dim.pick.clear();
     dim.first = None;
     place.dim = None;
@@ -13541,6 +13558,7 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
     // distance, and a click on a line - one side of a polyline - offset that line alone before the rest was chosen.
     if op == EditTool::Offset {
         sel_sk.modify = Some(op);
+        sel_sk.offset = OffsetAim::default(); // a side fixed for the copy before is not this copy's side
         let curves = sel_sk.items.iter().any(|(k, _)| *k == 1);
         // points chosen and no curve: said what the tool takes, not "pick the entities" as though nothing were chosen
         *ed.status = qymcad_i18n::tr(match (curves, sel_sk.items.is_empty()) {
@@ -13640,6 +13658,26 @@ impl Tools<'_> {
     pub fn leave_click_tool(&mut self, status: &mut String) -> bool {
         leave_editing_tool(self, status).is_some()
     }
+}
+
+/// ESC WITH A CONSTRAINT OR AN EDITING TOOL WAITING FOR ITS CURVES. An offset whose side a click has fixed lets the side
+/// go and stays in hand - the box of its distance closes and the copy follows the pointer again; a second Esc puts it
+/// down. egui takes the keyboard from a field at an Escape before the frame is drawn, so the box never hears it: the
+/// ladder did, and put the whole tool down from inside its box.
+///
+/// Otherwise the tool goes AND THE EDIT MODE WITH IT. Only the expected pick was extinguished while the mode stayed:
+/// the tool bar went on saying "Mirror" and the button in the panel stayed pressed - switched off yet looking switched
+/// on, and a click did nothing.
+pub fn escape_waiting_tool(t: &mut Tools, status: &mut String) {
+    if t.sel_sk.modify == Some(EditTool::Offset) && t.sel_sk.offset.at.is_some() {
+        t.sel_sk.offset = OffsetAim::default();
+        *status = qymcad_i18n::tr("sk-offset-side");
+        return;
+    }
+    t.sel_sk.constraint = None;
+    t.sel_sk.modify = None;
+    t.sel_sk.offset = OffsetAim::default();
+    *t.armed = Armed::None;
 }
 
 /// PUT DOWN THE SKETCH TOOL THAT IS IN HAND, and say what to tell the person.

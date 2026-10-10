@@ -257,14 +257,7 @@ impl App {
             self.tools.picking.set_plane_face(None);
             self.status = crate::i18n::tr("in-plane-face-cancelled");
         } else if self.tools.sel_sk.constraint.is_some() || self.tools.sel_sk.modify.is_some() {
-            self.tools.sel_sk.constraint = None;
-            self.tools.sel_sk.modify = None;
-            // AND THE EDIT MODE ITSELF. Only THE EXPECTED PICK was extinguished while `tool.modify`
-            // stayed: the cancellation worked, yet the tool bar went on saying "Mirror" and the button in
-            // the panel stayed pressed. Switched off yet looking switched on is the worst kind of
-            // cancellation: one is sure the tool is active and cannot understand why a click does
-            // nothing.
-            self.tools.armed = qymcad_ui_state::Armed::None;
+            qymcad_ui_state::escape_waiting_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.status);
         } else if qymcad_ui_state::tools_of!(self).leave_click_tool(&mut self.status) {
         } else if self.tools.armed.pat_op() != 0 {
             self.tools.armed = qymcad_ui_state::Armed::None;

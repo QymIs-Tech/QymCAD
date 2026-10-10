@@ -1822,13 +1822,15 @@ fn draw_offset_preview(pn: &Painting, painter: &egui::Painter, sh: &qymcad_ui_st
     if pn.sel_sk.modify != Some(qymcad_ui_state::EditTool::Offset) {
         return;
     }
-    let (Some(si), Some(cur)) = (qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses), pn.cursor) else { return };
+    // the side a click fixed, in the colour of a fixed corner; before the click, the side of the pointer
+    let fixed = pn.sel_sk.offset.at;
+    let (Some(si), Some(cur)) = (qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses), fixed.or(pn.cursor)) else { return };
     let eids: Vec<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
     if eids.is_empty() {
         return;
     }
     let dist = pn.project.offset_toward(si, &eids, pn.tool_prefs.offset, cur);
-    let stroke = Stroke::new(1.5, pn.scheme.pal.preview_corner_new());
+    let stroke = Stroke::new(1.5, if fixed.is_some() { pn.scheme.pal.preview_corner_fixed() } else { pn.scheme.pal.preview_corner_new() });
     for pl in pn.project.offset_preview(si, &eids, dist) {
         painter.add(egui::Shape::line(pl.into_iter().map(|p| sh.at(p)).collect(), stroke));
     }

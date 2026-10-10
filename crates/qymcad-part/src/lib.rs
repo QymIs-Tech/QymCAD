@@ -6712,6 +6712,10 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     }
                 }
                 Some(qymcad_ui_state::EditTool::Offset) => {
+                    // the box at the copy types the distance: the bar shows it rather than its own old text over it
+                    if bc.sel_sk.offset.at.is_some() && !ui.memory(|m| m.has_focus(qymcad_ui_state::bar_field_id("sk_offset"))) {
+                        bc.bar_exprs.remove("sk_offset");
+                    }
                     ui.label(qymcad_i18n::tr("opt-distance"));
                     bc.tool_prefs.offset = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },

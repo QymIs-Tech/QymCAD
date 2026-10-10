@@ -1898,20 +1898,20 @@ mod tests {
                 check_all(&mut app, "sketch: a fillet at a crossing", &mut problems);
 
                 // AN OPEN CHAIN OFFSET: a polyline east then north on a place of its own, its two lines chosen, Offset
-                // taken with the distance of its bar, the pointer to the left of the chain, Enter. The copy starts square
-                // to the start of the chain, the distance above it.
+                // taken, a click to the left of the chain fixing the side, 2 typed into the box beside the copy, Enter.
+                // The copy starts square to the start of the chain, 2 above it; its corner is sharp, not an arc.
                 {
                     let mut hand = Hand::new(&mut app);
                     hand.sk_tool(1).look2d((320.0, -25.0)).click2d(310.0, -35.0).click2d(330.0, -35.0).double_click2d(330.0, -15.0);
                     hand.key(egui::Key::Escape).sk_tool(0).look2d((320.0, -25.0));
                     hand.click2d(320.0, -35.0).shift_click2d(330.0, -25.0);
                     let pressed = hand.press_hint(&qymcad_i18n::tr("tb-offset-hint"));
-                    let d = hand.app.tool_prefs.offset.abs();
-                    hand.hover2d(315.0, -30.0).key(egui::Key::Enter);
+                    hand.click2d(315.0, -30.0).type_text("2").key(egui::Key::Enter);
                     let sk = &app.project.sketches[si];
-                    let copied = sk.points.iter().any(|q| (q.x - 310.0).abs() < 1e-6 && (q.y + 35.0 - d).abs() < 1e-6);
-                    if !pressed || !copied {
-                        problems.push(format!("sketch: an open chain offset by {d} to its left left no copy above its start (pressed: {pressed}); status: {}", app.status));
+                    let copied = sk.points.iter().any(|q| (q.x - 310.0).abs() < 1e-6 && (q.y + 33.0).abs() < 1e-6);
+                    let sharp = sk.points.iter().any(|q| (q.x - 328.0).abs() < 1e-6 && (q.y + 33.0).abs() < 1e-6);
+                    if !pressed || !copied || !sharp {
+                        problems.push(format!("sketch: an open chain offset by 2 to its left: no copy above its start, or its corner not at (328, -33) (pressed: {pressed}); status: {}", app.status));
                     }
                 }
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);

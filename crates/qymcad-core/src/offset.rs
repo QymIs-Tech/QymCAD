@@ -40,12 +40,13 @@ pub fn offset_bulge(verts: &[BVert], dist: f64) -> Vec<Vec<BVert>> {
                 })
                 .collect::<Vec<_>>()
         })
+        .map(|v| sharpen(v, verts, dist, Ends::Closed))
         .filter(|v: &Vec<BVert>| v.len() >= 2)
         .collect()
 }
 
-/// OFFSET AN OPEN BULGE POLYLINE by a signed distance, positive to the left of its way, keeping the arcs: the convex
-/// joints rounded, the concave ones cut, the ends square to the ends of the source. Answers the pieces, as a chain
+/// OFFSET AN OPEN BULGE POLYLINE by a signed distance, positive to the left of its way, keeping the arcs: the joints of
+/// two lines sharp (`sharpen`), the other convex ones rounded, the concave ones cut, the ends square to the ends of the source. Answers the pieces, as a chain
 /// may break where it turns back on itself.
 pub fn offset_bulge_open(verts: &[BVert], dist: f64) -> Vec<Vec<BVert>> {
     if verts.len() < 2 {
@@ -65,8 +66,71 @@ pub fn offset_bulge_open(verts: &[BVert], dist: f64) -> Vec<Vec<BVert>> {
                 })
                 .collect::<Vec<_>>()
         })
+        .map(|v| sharpen(v, verts, dist, Ends::Open))
         .filter(|v: &Vec<BVert>| v.len() >= 2)
         .collect()
+}
+
+/// WHETHER A BULGE POLYLINE GOES BACK TO ITS START.
+#[derive(Clone, Copy, PartialEq)]
+enum Ends {
+    Closed,
+    Open,
+}
+
+/// THE CORNER OF TWO LINES STAYS A CORNER IN THE COPY: an arc the offset puts on a convex joint of two straight spans of
+/// the source - centred on the source corner, the offset for a radius, a straight span on either side of it - is taken
+/// out, and the two lines beside it are run on to where they meet. The library rounds every convex joint; a sketch copy
+/// of a polyline is a polyline. Reported behaviour: "the polyline has no fillets, and the copy is rounded". A joint
+/// where an arc meets keeps its rounding: two curves do not meet in one point a line can be run to.
+fn sharpen(out: Vec<BVert>, src: &[BVert], dist: f64, ends: Ends) -> Vec<BVert> {
+    let (n, m) = (out.len(), src.len());
+    let spans = |len: usize| if ends == Ends::Closed { len } else { len.saturating_sub(1) };
+    // the span before vertex `i` and the one from it, where both exist
+    let around = |i: usize, len: usize| -> Option<(usize, usize)> {
+        match ends {
+            Ends::Closed if len >= 3 => Some(((i + len - 1) % len, i)),
+            Ends::Open if i >= 1 && i + 1 < len => Some((i - 1, i)),
+            _ => None,
+        }
+    };
+    let straight = |v: &[BVert], k: usize| v[k].bulge.abs() < 1e-9;
+    let tol = 1e-6 * (1.0 + dist.abs());
+    // the sharp corners of the source: a vertex between two straight spans
+    let corners: Vec<Point2> = (0..m).filter(|&j| around(j, m).is_some_and(|(a, b)| straight(src, a) && straight(src, b))).map(|j| Point2::new(src[j].x, src[j].y)).collect();
+    let mut moved = out.clone();
+    let mut dropped = vec![false; n];
+    for i in 0..spans(n) {
+        let j = (i + 1) % n;
+        let (Some((before, _)), Some((_, after))) = (around(i, n), around(j, n)) else { continue };
+        if straight(&out, i) || !straight(&out, before) || !straight(&out, after) {
+            continue;
+        }
+        let (p, q) = (Point2::new(out[i].x, out[i].y), Point2::new(out[j].x, out[j].y));
+        let c = bulge_centre(p, q, out[i].bulge);
+        if (c.dist(p) - dist.abs()).abs() > tol || !corners.iter().any(|k| k.dist(c) < tol) {
+            continue;
+        }
+        let (a, b) = (out[before], out[(j + 1) % n]);
+        let (d1, d2) = ((p.x - a.x, p.y - a.y), (b.x - q.x, b.y - q.y));
+        let cross = d1.0 * d2.1 - d1.1 * d2.0;
+        if cross.abs() < 1e-12 * (1.0 + d1.0.hypot(d1.1) * d2.0.hypot(d2.1)) {
+            continue; // the lines run back along each other: there is no point to meet in
+        }
+        let t = ((q.x - a.x) * d2.1 - (q.y - a.y) * d2.0) / cross;
+        moved[i] = BVert { x: a.x + d1.0 * t, y: a.y + d1.1 * t, bulge: 0.0 };
+        dropped[j] = true;
+    }
+    moved.into_iter().zip(dropped).filter(|(_, d)| !d).map(|(v, _)| v).collect()
+}
+
+/// The centre of the arc of a bulge from `p0` to `p1`.
+fn bulge_centre(p0: Point2, p1: Point2, bulge: f64) -> Point2 {
+    let half = 2.0 * bulge.atan();
+    let chord = p0.dist(p1).max(1e-12);
+    let (ux, uy) = ((p1.x - p0.x) / chord, (p1.y - p0.y) / chord);
+    let apo = chord / 2.0 / half.tan();
+    Point2::new((p0.x + p1.x) / 2.0 - uy * apo, (p0.y + p1.y) / 2.0 + ux * apo)
 }
 
 /// Offset a contour by a signed distance. May return several loops if the shape breaks apart. Works on closed
