@@ -366,8 +366,12 @@ probe! {
         for (x, y) in [(20.0, 0.0), (40.0, 15.0), (20.0, 30.0), (0.0, 15.0)] {
             pick(&mut s, x, y, (x, y) != (20.0, 0.0));
         }
+        // the copy goes to the side the pointer is on - outside - and Enter makes it
+        let outside = s.on_sketch(50.0, 15.0);
+        s.move_to(outside);
+        s.key(Key::Enter);
         assert!(counts(&mut s).0 == 8, "the contour was not copied: {:?}", counts(&mut s));
-        assert!(box_is(&mut s, [-5.0, -5.0], [45.0, 35.0]) || box_is(&mut s, [0.0, 0.0], [40.0, 30.0]), "the copy does not stand 5 from the contour: {:?}", box_of(&mut s));
+        assert!(box_is(&mut s, [-5.0, -5.0], [45.0, 35.0]), "the copy does not stand 5 outside the contour: {:?}", box_of(&mut s));
     }
 }
 

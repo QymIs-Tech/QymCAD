@@ -1075,10 +1075,11 @@ fn offset_ring(d: f64) -> Outcome {
     }
 }
 
-/// OFFSET: the circle copied 3 outwards - the distance stands in the bar, the contour is clicked.
+/// OFFSET: the circle copied 3 outwards - the distance stands in the bar, the circle is clicked, the pointer stands
+/// outside it, Enter; a negative distance takes the other side, inwards.
 pub static OFFSET: Tool = Tool {
     id: "sketch.offset",
-    flow: Flow::Drawing(&[(10.0, 0.0)], Finish::LastClick),
+    flow: Flow::Drawing(&[(10.0, 0.0)], Finish::EnterAt((20.0, 0.0))),
     title: "tool-offset",
     entries: &[Entry::Button("tb-offset-hint"), Entry::SearchByArticle],
     other: (Entry::Button("tb-line-hint"), "tool-line"),

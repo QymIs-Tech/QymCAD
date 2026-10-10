@@ -3631,6 +3631,43 @@ impl Project {
     }
     /// Offset the selected entities: their closed loops are moved by `dist`, inwards or outwards, and added as
     /// new entities.
+    /// THE COPY AN OFFSET OF `eids` BY `dist` WOULD MAKE, as polylines with their arcs drawn out, the sketch left as it
+    /// is: what the tool previews before Enter. Circles, loops and open chains alike (`offset_entities`).
+    pub fn offset_preview(&self, si: usize, eids: &[Id], dist: f64) -> Vec<Vec<Point2>> {
+        let Some(s) = self.sketches.get(si) else { return Vec::new() };
+        let ents: Vec<SketchEntity> = s.entities.iter().filter(|e| eids.contains(&e.id)).copied().collect();
+        let mut out = Vec::new();
+        for e in &ents {
+            if let EntityKind::Circle { center, r } = e.kind {
+                let nr = r + dist;
+                if let (Some(c), true) = (s.points.iter().find(|p| p.id == center), nr > 0.05) {
+                    out.push((0..=72).map(|k| f64::from(k) / 72.0 * std::f64::consts::TAU).map(|t| Point2::new(c.x + nr * t.cos(), c.y + nr * t.sin())).collect());
+                }
+            }
+        }
+        for lp in entity_bulge_loops(&s.points, &ents) {
+            out.extend(crate::offset::offset_bulge(&lp, dist).iter().map(|v| crate::offset::bulge_points(v, true)));
+        }
+        for ch in entity_bulge_chains(&s.points, &ents) {
+            out.extend(crate::offset::offset_bulge_open(&ch, dist).iter().map(|v| crate::offset::bulge_points(v, false)));
+        }
+        out
+    }
+
+    /// THE OFFSET OF `eids` TOWARD THE POINTER: `dist` signed for the side whose copy passes nearer `pointer` - the
+    /// inside or the outside of a loop, the left or the right of a chain. A person shows the side rather than types its
+    /// sign; a negative distance typed takes the other side, as in the systems a person comes from.
+    pub fn offset_toward(&self, si: usize, eids: &[Id], dist: f64, pointer: Point2) -> f64 {
+        let near = |d: f64| -> f64 { self.offset_preview(si, eids, d).iter().flat_map(|pl| pl.windows(2).map(|w| seg_dist(pointer, w[0], w[1])).collect::<Vec<_>>()).fold(f64::MAX, f64::min) };
+        let d = dist.abs();
+        let toward = if near(-d) < near(d) { -d } else { d };
+        if dist < 0.0 {
+            -toward
+        } else {
+            toward
+        }
+    }
+
     pub fn offset_entities(&mut self, si: usize, eids: &[Id], dist: f64) -> usize {
         let (pts, ents) = {
             let Some(s) = self.sketches.get(si) else { return 0 };
@@ -3663,7 +3700,7 @@ impl Project {
         }
         // Lines and arcs are collected into bulge loops, offset with the arcs preserved, and reassembled into
         // lines and arcs - HELD TO THEIR SOURCE, as the circle is. Laid free, a rectangle's copy had eight freedoms of
-        // its own, and resizing the rectangle left the copy where it was. See `hold_offset_loop` for how.
+        // its own, and resizing the rectangle left the copy where it was. See `hold_offset` for how.
         let src_lines: Vec<SourceLine> = ents
             .iter()
             .filter(|e| !e.construction)
@@ -3705,7 +3742,47 @@ impl Project {
                         kinds.push((EntityKind::Arc { center, a, b, ccw }, offset_arc_source(&src_arcs, &src_lines, (cx, cy), rc, dist)));
                     }
                 }
-                let held = hold_offset_loop(&ids, &kinds, dist);
+                let held = side_of_place(hold_offset(&ids, &kinds, dist, OffsetShape::Closed), &self.sketches[si]);
+                for (kind, _) in kinds {
+                    let id = self.alloc_id();
+                    self.sketches[si].entities.push(SketchEntity { id, kind, construction: false });
+                }
+                self.sketches[si].constraints.extend(held);
+                count += 1;
+            }
+        }
+        // AN OPEN CHAIN of lines and arcs is offset to one side of its way - positive to the left - its joints kept
+        // (the convex ones rounded about the source corner, the concave ones cut), its ends square to the ends of the
+        // source, and held to the source as a loop is. Reported behaviour: a polyline of three lines chosen, Offset, a
+        // distance - no copy, and the window said to choose something, as though nothing were chosen.
+        for chain in entity_bulge_chains(&pts, &ents) {
+            let src_id = |v: &crate::offset::BVert| pts.iter().find(|p| (p.x - v.x).hypot(p.y - v.y) < 1e-9).map(|p| p.id);
+            let (Some(first), Some(last)) = (chain.first(), chain.last()) else { continue };
+            let ends = [(*first, src_id(first)), (*last, src_id(last))];
+            for piece in crate::offset::offset_bulge_open(&chain, dist) {
+                let n = piece.len();
+                let ids: Vec<Id> = piece.iter().map(|v| self.sketch_point_at(si, v.x, v.y, 1e-6)).collect();
+                let mut kinds: Vec<(EntityKind, OffsetSource)> = Vec::new();
+                for k in 0..n - 1 {
+                    let (v, w) = (piece[k], piece[k + 1]);
+                    let (a, b) = (ids[k], ids[k + 1]);
+                    if v.bulge.abs() < 1e-9 {
+                        kinds.push((EntityKind::Line { a, b }, offset_line_source(&src_lines, (v.x, v.y), (w.x, w.y), dist)));
+                    } else {
+                        let (cx, cy, ccw) = arc_center_from_bulge(v.x, v.y, w.x, w.y, v.bulge);
+                        let center = self.alloc_id();
+                        self.sketches[si].points.push(SketchPoint { id: center, x: cx, y: cy });
+                        let rc = (v.x - cx).hypot(v.y - cy);
+                        kinds.push((EntityKind::Arc { center, a, b, ccw }, offset_arc_source(&src_arcs, &src_lines, (cx, cy), rc, dist)));
+                    }
+                }
+                // an end of the copy stands square to an end of the source where it is the offset away from it; a piece
+                // cut short where the chain turns back on itself has an end of its own
+                let end_of = |v: crate::offset::BVert| {
+                    ends.iter().find(|(e, id)| id.is_some() && ((e.x - v.x).hypot(e.y - v.y) - dist.abs()).abs() < 1e-6 * (1.0 + dist.abs())).and_then(|(_, id)| id.map(|src| EndOf { src }))
+                };
+                let shape = OffsetShape::Open { first: end_of(piece[0]), last: end_of(piece[n - 1]) };
+                let held = side_of_place(hold_offset(&ids, &kinds, dist, shape), &self.sketches[si]);
                 for (kind, _) in kinds {
                     let id = self.alloc_id();
                     self.sketches[si].entities.push(SketchEntity { id, kind, construction: false });
@@ -5861,6 +5938,50 @@ enum OffsetSource {
     None,
 }
 
+/// How far `p` stands from the segment `a` - `b`.
+fn seg_dist(p: Point2, a: Point2, b: Point2) -> f64 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let l2 = dx * dx + dy * dy;
+    let t = if l2 < 1e-18 { 0.0 } else { (((p.x - a.x) * dx + (p.y - a.y) * dy) / l2).clamp(0.0, 1.0) };
+    (p.x - a.x - dx * t).hypot(p.y - a.y - dy * t)
+}
+
+/// THE DISTANCES OF THE COPY FROM ITS SOURCE LINES, SIGNED AS THEY STAND: a distance from a point to a line is signed by
+/// the side of the line it is on, its way from the line's first point to its second (`DistancePL`), and the offset was
+/// laid unsigned. Where a source line runs against the way of its chain the copy stood on the side the sign did not
+/// say: measured on a single line offset 2, one redundant constraint and a freedom too many, and the copy of a polyline
+/// pulled across its source when a corner of it was moved.
+fn side_of_place(mut held: Vec<Constraint>, s: &super::Sketch) -> Vec<Constraint> {
+    let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+    for c in &mut held {
+        if let Constraint::DistancePL { p, a, b, d, .. } = c {
+            if let (Some(pp), Some(pa), Some(pb)) = (at(*p), at(*a), at(*b)) {
+                let (dx, dy) = (pb.0 - pa.0, pb.1 - pa.1);
+                let len = dx.hypot(dy);
+                if len > 1e-12 {
+                    let side = (dx * (pp.1 - pa.1) - dy * (pp.0 - pa.0)) / len;
+                    *d = d.abs().copysign(side);
+                }
+            }
+        }
+    }
+    held
+}
+
+/// WHAT AN OFFSET COPY IS: a loop, every corner of it between two of its curves, or a chain with two free ends, each
+/// standing square to the end of the source it was offset from where that end is known.
+#[derive(Clone, Copy)]
+enum OffsetShape {
+    Closed,
+    Open { first: Option<EndOf>, last: Option<EndOf> },
+}
+
+/// THE END OF THE SOURCE an end of an open copy stands square to.
+#[derive(Clone, Copy)]
+struct EndOf {
+    src: Id,
+}
+
 /// A line of the source of an offset: its end points, and where they stand.
 struct SourceLine {
     a: Id,
@@ -5920,7 +6041,7 @@ fn offset_arc_source(arcs: &[SourceArc], lines: &[SourceLine], c: (f64, f64), r:
 /// a rounded rectangle's copy took 2 of its source's 4 freedoms.
 ///
 /// A loop with a segment whose source is not found - an offset that dropped or merged segments - is left free: nothing.
-fn hold_offset_loop(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64) -> Vec<Constraint> {
+fn hold_offset(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64, shape: OffsetShape) -> Vec<Constraint> {
     let n = kinds.len();
     if kinds.iter().any(|(_, s)| matches!(s, OffsetSource::None)) {
         return Vec::new();
@@ -5938,8 +6059,13 @@ fn hold_offset_loop(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64)
     // the rank read from it took two freedoms from the source.
     let mut sized = vec![false; n];
     let dim = |a: Id, b: Id| Constraint::Distance { a, b, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
-    for (k, &v) in ids.iter().enumerate().take(n) {
-        let (pk, nk) = ((k + n - 1) % n, k);
+    // the corners between two curves of the copy: all of a loop, the inner ones of a chain
+    let joints: Vec<(usize, usize, usize)> = match shape {
+        OffsetShape::Closed => (0..n).map(|k| (k, (k + n - 1) % n, k)).collect(),
+        OffsetShape::Open { .. } => (1..n).map(|k| (k, k - 1, k)).collect(),
+    };
+    for (k, pk, nk) in joints {
+        let v = ids[k];
         let (prev, next) = (kinds[pk].1, kinds[nk].1);
         match (prev, next) {
             (OffsetSource::Line(a1, b1), OffsetSource::Line(a2, b2)) => {
@@ -5974,6 +6100,28 @@ fn hold_offset_loop(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64)
                 }
             }
             _ => {}
+        }
+    }
+    // THE FREE ENDS OF A CHAIN, each square to the end of its source it was offset from: on the line as far as the offset
+    // and square to it from that end, or on the ray from the centre of the source arc through that end, the offset away
+    if let OffsetShape::Open { first, last } = shape {
+        // (the curve the end belongs to, the vertex it is, the source end): one curve is both the first and the last
+        for (k, at, end) in [(0, 0, first), (n - 1, n, last)] {
+            let (Some(EndOf { src }), Some(&v)) = (end, ids.get(at)) else { continue };
+            match kinds[k].1 {
+                OffsetSource::Line(la, lb) => {
+                    held.push(Constraint::DistancePL { p: v, a: la, b: lb, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, at: None });
+                    held.push(Constraint::Perpendicular { a: src, b: v, c: la, d: lb });
+                }
+                OffsetSource::Arc { center, .. } => {
+                    held.push(Constraint::PointOnLine { p: v, a: center, b: src });
+                    if !sized[k] {
+                        sized[k] = true;
+                        held.push(dim(src, v));
+                    }
+                }
+                _ => {}
+            }
         }
     }
     held

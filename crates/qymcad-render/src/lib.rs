@@ -1817,8 +1817,26 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
 /// The radius of the ring that marks a line picked at its middle, px.
 pub const MIDDLE_RING: f32 = 6.0;
 
+/// THE COPY THE OFFSET IN HAND WOULD MAKE, on the side of the pointer, at the distance of the bar - what Enter makes.
+fn draw_offset_preview(pn: &Painting, painter: &egui::Painter, sh: &qymcad_ui_state::Sheet) {
+    if pn.sel_sk.modify != Some(qymcad_ui_state::EditTool::Offset) {
+        return;
+    }
+    let (Some(si), Some(cur)) = (qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses), pn.cursor) else { return };
+    let eids: Vec<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    if eids.is_empty() {
+        return;
+    }
+    let dist = pn.project.offset_toward(si, &eids, pn.tool_prefs.offset, cur);
+    let stroke = Stroke::new(1.5, pn.scheme.pal.preview_corner_new());
+    for pl in pn.project.offset_preview(si, &eids, dist) {
+        painter.add(egui::Shape::line(pl.into_iter().map(|p| sh.at(p)).collect(), stroke));
+    }
+}
+
 pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
+    draw_offset_preview(pn, painter, &sh);
     if pn.armed.draw_kind() == 0 {
         return;
     }

@@ -13536,12 +13536,29 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
         }
         return;
     }
+    // THE OFFSET IS NOT MADE BY THE PRESS: what is chosen stays chosen, the copy is previewed on the side of the pointer,
+    // and Enter makes it there (`qymcad_sketch::sketch_tool_keys`). Made at once, it had no side but the sign of the
+    // distance, and a click on a line - one side of a polyline - offset that line alone before the rest was chosen.
+    if op == EditTool::Offset {
+        sel_sk.modify = Some(op);
+        let curves = sel_sk.items.iter().any(|(k, _)| *k == 1);
+        // points chosen and no curve: said what the tool takes, not "pick the entities" as though nothing were chosen
+        *ed.status = qymcad_i18n::tr(match (curves, sel_sk.items.is_empty()) {
+            (true, _) => "sk-offset-side",
+            (false, false) => "sk-offset-takes",
+            (false, true) => "g-pick-for-op",
+        });
+        return;
+    }
+    let chosen = !sel_sk.items.is_empty();
     if try_modify(ed.reborrow(), sel_sk, sk_pat, tool_prefs, op) {
         sel_sk.modify = None;
     } else {
         sel_sk.clear(); // the selection, and whatever was waiting on it: pick anew, with nothing stuck from before
         sel_sk.modify = Some(op);
-        *ed.status = qymcad_i18n::tr("g-pick-for-op");
+        // SOMETHING WAS CHOSEN AND NOTHING OF IT COULD BE OFFSET (points, construction): said so, and what the tool
+        // takes. "Pick the entities" read as though nothing had been chosen, and the tool looked broken.
+        *ed.status = qymcad_i18n::tr(if chosen && op == EditTool::Offset { "sk-offset-takes" } else { "g-pick-for-op" });
     }
 }
 

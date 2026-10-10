@@ -277,6 +277,12 @@ pub(crate) fn finish_click(s: &mut Session, x: f64, y: f64, last: Finish) {
             let at = s.on_sketch(x, y);
             s.double_click(at);
         }
+        Finish::EnterAt((px, py)) => {
+            s.click_on_sketch(x, y);
+            let at = s.on_sketch(px, py);
+            s.move_to(at);
+            s.key(Key::Enter);
+        }
     }
 }
 
@@ -1433,7 +1439,7 @@ fn cancel(tool: &Tool) {
         }
         // WHAT WAS CANCELLED CANNOT BE FINISHED: the click that would have made the shape makes none of it now - it
         // begins a new one at most
-        if let (true, Flow::Drawing([_, .., (x, y)], Finish::LastClick | Finish::Placed)) = (how == "Esc", tool.flow) {
+        if let (true, Flow::Drawing([_, .., (x, y)], Finish::LastClick | Finish::Placed | Finish::EnterAt(_))) = (how == "Esc", tool.flow) {
             s.click_on_sketch(*x, *y);
         }
         if shape_of(&s.document()) != doc {

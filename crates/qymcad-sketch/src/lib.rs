@@ -2481,6 +2481,7 @@ fn extend_apply(sk: &mut qymcad_ui_state::SketchCtx, at: ExtendAt, held: Id) {
 /// THE KEYS OF THE SKETCH TOOLS IN HAND, each frame: Enter makes the extension Extend previews, as a click does; and
 /// the field of the rotation angle at its centre (`sketch_rotate_popup`).
 pub fn sketch_tool_keys(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
+    offset_on_enter(sk, ctx, rect);
     // LINES A CORNER TOOL CUT AT A CROSSING, the tool put down with no corner cut, are whole again
     if sk.corner.crossing == qymcad_ui_state::CrossingCut::Left {
         qymcad_ui_state::take_back_last_step(&mut *sk.edits, &mut *sk.project, &mut *sk.regen);
@@ -3059,10 +3060,48 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             sk.sel_sk.constraint = None;
         }
     }
-    if let Some(op) = sk.sel_sk.modify {
+    // THE OFFSET GATHERS ITS CURVES: a click adds to what it will offset, and Enter offsets them (`sketch_tool_keys`)
+    if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) {
+        if sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
+            *sk.status = qymcad_i18n::tr("sk-offset-side");
+        }
+    } else if let Some(op) = sk.sel_sk.modify {
         if qymcad_ui_state::try_modify(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, *sk.sk_pat, &*sk.tool_prefs, op) {
             sk.sel_sk.modify = None;
         }
+    }
+}
+
+/// THE OFFSET MADE BY ENTER: what the tool gathered offset by the distance of the bar, on the side of the pointer
+/// (`Project::offset_toward`), one step of undo. Nothing it can offset says what it takes.
+fn offset_on_enter(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
+    let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return };
+    if sk.sel_sk.modify != Some(qymcad_ui_state::EditTool::Offset) || ctx.egui_wants_keyboard_input() || !ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+        return;
+    }
+    let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    if eids.is_empty() {
+        return;
+    }
+    if qymcad_ui_state::bar_field_bad("sk_offset") {
+        *sk.status = qymcad_i18n::tr("sk-offset-field-bad");
+        return;
+    }
+    let pointer = ctx.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p)).map(|p| qymcad_ui_state::to_world(sk.view, rect, p));
+    let dist = match pointer {
+        Some(w) => sk.project.offset_toward(si, &eids, sk.tool_prefs.offset, Point2::new(w.x, w.y)),
+        None => sk.tool_prefs.offset,
+    };
+    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-offset"));
+    let made = sk.project.offset_entities(si, &eids, dist);
+    qymcad_ui_state::close_edit(&mut *sk.edits, &*sk.project);
+    if made > 0 {
+        qymcad_ui_state::invalidate(&mut *sk.regen);
+        sk.sel_sk.clear();
+        sk.sel_sk.modify = None;
+        *sk.status = qymcad_i18n::tr("sk-done");
+    } else {
+        *sk.status = qymcad_i18n::tr("sk-offset-takes");
     }
 }
 

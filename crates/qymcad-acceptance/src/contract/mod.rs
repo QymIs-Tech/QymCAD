@@ -111,6 +111,9 @@ pub enum Finish {
     /// before it (what shows meanwhile follows the cursor), so cancelling on the way leaves the sketch as it was
     /// before the tool.
     Placed,
+    /// The clicks pick what the tool works on, then the pointer stands at this place of the sheet - the side the
+    /// result goes to - and Enter makes it: the offset.
+    EnterAt((f64, f64)),
 }
 
 /// A way to take a tool.

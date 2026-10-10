@@ -112,6 +112,11 @@ probe! {
                     for (x, y) in [(20.0, 0.0), (40.0, 15.0), (20.0, 30.0), (0.0, 15.0)] {
                         pick(s, x, y, (x, y) != (20.0, 0.0));
                     }
+                    // the side of the copy shown by the pointer, inside - the corners of the copy sharp - and Enter
+                    // makes it
+                    let inside = s.on_sketch(20.0, 15.0);
+                    s.move_to(inside);
+                    s.key(qymcad::Key::Enter);
                 },
                 (8, 0, 0),
                 "the rectangle offset 5",

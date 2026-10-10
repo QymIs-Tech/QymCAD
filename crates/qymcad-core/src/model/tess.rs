@@ -156,6 +156,78 @@ pub(super) fn entity_bulge_loops(pts: &[SketchPoint], ents: &[SketchEntity]) -> 
     out
 }
 
+/// THE OPEN CHAINS OF LINES AND ARCS AMONG `ents`, each as a bulge polyline from one free end to the other - its last
+/// vertex the far end, with no bulge. A chain is walked from an end no other of the curves meets; a closed loop has
+/// none and is left to `entity_bulge_loops`.
+pub(super) fn entity_bulge_chains(pts: &[SketchPoint], ents: &[SketchEntity]) -> Vec<Vec<crate::offset::BVert>> {
+    use std::f64::consts::TAU;
+    let pt = |id: Id| pts.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
+    let segs: Vec<(usize, Id, Id)> = ents
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| !e.construction)
+        .filter_map(|(i, e)| match e.kind {
+            EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => Some((i, a, b)),
+            _ => None,
+        })
+        .collect();
+    let mut adj: std::collections::HashMap<Id, Vec<usize>> = std::collections::HashMap::new();
+    for (k, &(_, a, b)) in segs.iter().enumerate() {
+        adj.entry(a).or_default().push(k);
+        adj.entry(b).or_default().push(k);
+    }
+    // the free ends, in the order the curves were drawn: a chain starts where its first curve does
+    let mut ends: Vec<Id> = Vec::new();
+    for &(_, a, b) in &segs {
+        for p in [a, b] {
+            if adj.get(&p).is_some_and(|v| v.len() == 1) && !ends.contains(&p) {
+                ends.push(p);
+            }
+        }
+    }
+    let mut used = vec![false; segs.len()];
+    let mut out: Vec<Vec<crate::offset::BVert>> = Vec::new();
+    for start in ends {
+        let Some(&first) = adj.get(&start).and_then(|v| v.first()) else { continue };
+        if used[first] {
+            continue;
+        }
+        let mut verts: Vec<crate::offset::BVert> = Vec::new();
+        let (mut cur_pt, mut cur_k) = (start, first);
+        loop {
+            used[cur_k] = true;
+            let (ei, a, b) = segs[cur_k];
+            let to = if cur_pt == a { b } else { a };
+            let Some((fx, fy)) = pt(cur_pt) else { break };
+            let bulge = match ents[ei].kind {
+                EntityKind::Arc { center, a: aa, ccw, .. } => match (pt(center), pt(cur_pt), pt(to)) {
+                    (Some((cx, cy)), Some((sx, sy)), Some((ex, ey))) => {
+                        let (sa_, ea_) = ((sy - cy).atan2(sx - cx), (ey - cy).atan2(ex - cx));
+                        let dir_ccw = if cur_pt == aa { ccw } else { !ccw };
+                        let sweep = if dir_ccw { (ea_ - sa_).rem_euclid(TAU) } else { -((sa_ - ea_).rem_euclid(TAU)) };
+                        (sweep / 4.0).tan()
+                    }
+                    _ => 0.0,
+                },
+                _ => 0.0,
+            };
+            verts.push(crate::offset::BVert { x: fx, y: fy, bulge });
+            cur_pt = to;
+            match adj.get(&cur_pt).and_then(|v| v.iter().copied().find(|&k| !used[k])) {
+                Some(nk) => cur_k = nk,
+                None => break,
+            }
+        }
+        if let Some((x, y)) = pt(cur_pt) {
+            verts.push(crate::offset::BVert { x, y, bulge: 0.0 });
+        }
+        if verts.len() >= 2 {
+            out.push(verts);
+        }
+    }
+    out
+}
+
 /// A closed contour for an ellipse, from its centre and the endpoints of its semi-axes. The major semi-axis is
 /// c→ma and the minor one is perpendicular to it with length |c−mi|. The tessellation adapts to the larger
 /// semi-axis.

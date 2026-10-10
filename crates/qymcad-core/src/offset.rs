@@ -44,6 +44,31 @@ pub fn offset_bulge(verts: &[BVert], dist: f64) -> Vec<Vec<BVert>> {
         .collect()
 }
 
+/// OFFSET AN OPEN BULGE POLYLINE by a signed distance, positive to the left of its way, keeping the arcs: the convex
+/// joints rounded, the concave ones cut, the ends square to the ends of the source. Answers the pieces, as a chain
+/// may break where it turns back on itself.
+pub fn offset_bulge_open(verts: &[BVert], dist: f64) -> Vec<Vec<BVert>> {
+    if verts.len() < 2 {
+        return Vec::new();
+    }
+    let mut pl: Polyline<f64> = Polyline::new();
+    for v in verts {
+        pl.add(v.x, v.y, v.bulge);
+    }
+    pl.parallel_offset(dist)
+        .iter()
+        .map(|r| {
+            (0..r.vertex_count())
+                .map(|i| {
+                    let v = r.at(i);
+                    BVert { x: v.x, y: v.y, bulge: v.bulge }
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|v: &Vec<BVert>| v.len() >= 2)
+        .collect()
+}
+
 /// Offset a contour by a signed distance. May return several loops if the shape breaks apart. Works on closed
 /// contours.
 pub fn offset(contour: &Contour, dist: f64) -> Vec<Contour> {
@@ -116,6 +141,22 @@ fn pline_to_contour(pl: &Polyline<f64>) -> Contour {
         }
     }
     Contour { points: pts, closed, edges: Vec::new(), edge_src: Vec::new() }
+}
+
+/// THE POINTS OF A BULGE POLYLINE, its arcs drawn out: what a preview of it draws. A closed one goes back to its start.
+pub fn bulge_points(verts: &[BVert], closed: bool) -> Vec<Point2> {
+    let n = verts.len();
+    let mut out = Vec::new();
+    let spans = if closed { n } else { n.saturating_sub(1) };
+    for k in 0..spans {
+        let (v, w) = (verts[k], verts[(k + 1) % n]);
+        out.push(Point2::new(v.x, v.y));
+        out.extend(tessellate_bulge(Point2::new(v.x, v.y), Point2::new(w.x, w.y), v.bulge, ARC_SAG));
+    }
+    if let Some(last) = if closed { verts.first() } else { verts.last() } {
+        out.push(Point2::new(last.x, last.y));
+    }
+    out
 }
 
 /// Tessellate a bulge arc between p0 and p1, where `bulge = tan(θ/4)`. Returns the intermediate points only,

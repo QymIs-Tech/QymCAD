@@ -222,8 +222,14 @@ pub fn tools() -> Vec<Tool> {
         Tool {
             name: "a rectangle offset",
             work: |p, t| {
-                // the offset takes closed loops and circles; an open chain is passed over by the tool as it stands
                 let _ = p.offset_entities(0, &t.rect, 2.0);
+            },
+            effect: Effect::Adds,
+        },
+        Tool {
+            name: "an open chain offset",
+            work: |p, t| {
+                let _ = p.offset_entities(0, &t.chain, 2.0);
             },
             effect: Effect::Adds,
         },
