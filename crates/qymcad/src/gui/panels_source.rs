@@ -91,6 +91,10 @@ const WINDOW_OPENERS: &str = concat!(
     "\n",
     include_str!("command_search.rs"),
     "\n",
+    include_str!("icon_themes/appearance_section.rs"),
+    "\n",
+    include_str!("icon_themes/packager_dialog.rs"),
+    "\n",
     include_str!("../gui.rs"),
 );
 

@@ -36,6 +36,8 @@ sha2 = "0.10.8"
 ron = { workspace = true }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sha2 = "0.10.8"
+quick-xml = "0.39.4"
+qymcad-scheme = { path = "../qymcad-scheme" }
 
 [dev-dependencies]
 egui_extras = { version = "0.35", features = ["svg"] }

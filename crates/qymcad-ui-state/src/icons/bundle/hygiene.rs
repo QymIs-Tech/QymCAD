@@ -1,297 +1,40 @@
 //! SVG validation, security sanitization, and junk element hygiene repair.
 
+use std::io::Write;
 use std::path::Path;
 
 use super::id::IconId;
 use super::pack::IconPack;
 
-/// Parse width and height from an SVG viewBox attribute value.
-pub fn parse_viewbox_values(val_str: &str) -> Option<(f32, f32)> {
-    let parts: Vec<&str> = val_str.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).collect();
-    if parts.len() == 4 {
-        let x: f32 = parts[0].parse().ok()?;
-        let y: f32 = parts[1].parse().ok()?;
-        let w: f32 = parts[2].parse().ok()?;
-        let h: f32 = parts[3].parse().ok()?;
-        (x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()).then_some((w, h))
-    } else {
-        None
-    }
-}
+pub use super::super::svg_validator::{parse_viewbox_values, ViewboxDimensions};
 
-/// Inspect SVG text for extraneous editor metadata, dangerous executable elements, or junk tags.
-/// Returns a list of human-readable issues detected.
+/// Return shared-validator diagnostics for SVG security and structure issues.
 pub fn find_svg_junk_issues(text: &str) -> Vec<String> {
-    let lower = text.to_lowercase();
-    let mut issues = Vec::new();
-
-    // Dangerous / executable tags
-    if lower.contains("<script") {
-        issues.push("prohibited <script> tag".to_string());
-    }
-    if lower.contains("<foreignobject") {
-        issues.push("prohibited <foreignObject> tag".to_string());
-    }
-    for tag in ["<applet", "<object", "<embed", "<iframe", "<audio", "<video"] {
-        if lower.contains(tag) {
-            issues.push(format!("prohibited {tag}> tag"));
-        }
-    }
-
-    // Inline event handlers (onload=, onclick=, onerror=, etc.)
-    let mut search_from = 0;
-    while let Some(idx) = lower[search_from..].find(" on") {
-        let abs_idx = search_from + idx + 3;
-        search_from = abs_idx;
-        let rest = &lower[abs_idx..];
-        if let Some(word) = rest.split_whitespace().next() {
-            if let Some((attr, _)) = word.split_once('=') {
-                if !attr.is_empty() && attr.chars().all(|c| c.is_ascii_alphabetic()) {
-                    issues.push(format!("prohibited event handler attribute (on{attr})"));
-                    break;
-                }
-            }
-        }
-    }
-    if lower.contains("javascript:") {
-        issues.push("prohibited javascript: URL".to_string());
-    }
-
-    // Editor metadata & proprietary elements or namespaces
-    if lower.contains("<sodipodi:") || lower.contains("sodipodi:") || lower.contains("xmlns:sodipodi") {
-        issues.push("editor metadata (Sodipodi)".to_string());
-    }
-    if lower.contains("<inkscape:") || lower.contains("inkscape:") || lower.contains("xmlns:inkscape") {
-        issues.push("editor metadata (Inkscape)".to_string());
-    }
-    if lower.contains("<metadata") {
-        issues.push("extraneous <metadata> block".to_string());
-    }
-    if lower.contains("<rdf:rdf") || lower.contains("xmlns:rdf") {
-        issues.push("extraneous <rdf:RDF> block or namespace".to_string());
-    }
-    if lower.contains("xmlns:dc") || lower.contains("xmlns:cc") {
-        issues.push("extraneous metadata namespace (dc/cc)".to_string());
-    }
-    if lower.contains("<i:pgf") || lower.contains("i:pgf") {
-        issues.push("proprietary Illustrator metadata (<i:pgf>)".to_string());
-    }
-    if lower.contains("<adobe:") || lower.contains("adobe:") || lower.contains("<x:xmpmeta") || lower.contains("x:xmpmeta") {
-        issues.push("proprietary Adobe/XMP metadata".to_string());
-    }
-    if lower.contains("<sketch:") || lower.contains("sketch:") {
-        issues.push("proprietary Sketch metadata".to_string());
-    }
-    if lower.contains("<figma:") || lower.contains("figma:") {
-        issues.push("proprietary Figma metadata".to_string());
-    }
-    if lower.contains("<!entity") {
-        issues.push("prohibited <!ENTITY> declaration".to_string());
-    }
-
-    issues
+    super::super::svg_validator::validate_svg(text.as_bytes(), super::super::svg_validator::SvgPurpose::Artwork).err().map(|error| vec![error.to_string()]).unwrap_or_default()
 }
 
-fn validate_svg_element_security(element: &quick_xml::events::BytesStart<'_>) -> Result<Option<String>, String> {
-    let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
-
-    if name == "image" {
-        return Err("embedded raster images (<image>) are prohibited".to_string());
-    }
-    if matches!(name.as_str(), "script" | "foreignobject" | "applet" | "object" | "embed" | "iframe" | "audio" | "video") {
-        return Err(format!("prohibited <{name}> tag"));
-    }
-
-    let mut viewbox = None;
-    for attr in element.attributes() {
-        let attr = attr.map_err(|err| format!("invalid attribute: {err}"))?;
-        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| format!("invalid attribute name: {err}"))?.to_ascii_lowercase();
-
-        if key == "viewbox" {
-            let val = attr.unescape_value().map_err(|err| format!("invalid viewBox attribute value: {err}"))?;
-            viewbox = Some(val.into_owned());
-        }
-        if key.starts_with("on") && key.len() > 2 && key.chars().skip(2).all(|c| c.is_ascii_alphabetic()) {
-            return Err(format!("prohibited event handler attribute '{key}'"));
-        }
-        if key == "href" || key.ends_with(":href") {
-            let val = attr.unescape_value().map_err(|err| format!("invalid attribute value: {err}"))?.to_ascii_lowercase();
-            if val.trim().starts_with("javascript:") {
-                return Err("prohibited javascript: URL in href".to_string());
-            }
-        }
-    }
-
-    Ok(viewbox)
+/// Validate SVG bytes and retain the exact source location of a failure.
+pub fn validate_svg_detailed(data: &[u8], purpose: super::super::svg_validator::SvgPurpose) -> Result<(), super::super::svg_validator::SvgDiagnostic> {
+    super::super::svg_validator::validate_svg(data, purpose)
 }
 
-/// Validate SVG data according to the theme specification:
-/// - Must be well-formed XML with properly nested tags.
-/// - Must contain a single valid root `<svg>` element.
-/// - Must contain a valid square `viewBox` attribute (1:1 aspect ratio, e.g. `viewBox="0 0 64 64"`).
-/// - Must NOT contain embedded raster images (`<image>` or `data:image/`).
-/// - Must NOT contain junk tags, editor metadata, or executable elements.
+/// Validate an icon using the shared SVG policy.
 pub fn validate_svg(data: &[u8]) -> Result<(), String> {
-    validate_svg_structural(data, true)
+    validate_svg_detailed(data, super::super::svg_validator::SvgPurpose::Icon).map_err(|error| error.to_string())
 }
 
-/// Validate SVG structure, optionally enforcing 1:1 square aspect ratio.
-/// Non-square SVGs are allowed for theme banners (`preview.svg`), but must still pass
-/// all security, XML well-formedness, and raster image checks.
+/// Validate SVG structure, allowing non-square artwork when `require_square` is false.
 pub fn validate_svg_structural(data: &[u8], require_square: bool) -> Result<(), String> {
-    let text = std::str::from_utf8(data).map_err(|_| "SVG data is not valid UTF-8".to_string())?;
-
-    let mut reader = quick_xml::Reader::from_str(text);
-    reader.config_mut().check_end_names = true;
-
-    let mut depth: usize = 0;
-    let mut root_svg_found = false;
-    let mut viewbox_attr: Option<String> = None;
-
-    loop {
-        use quick_xml::events::Event;
-        match reader.read_event() {
-            Ok(Event::Start(element)) => {
-                let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
-
-                if depth == 0 {
-                    if root_svg_found {
-                        return Err("multiple root elements in SVG".to_string());
-                    }
-                    if name != "svg" {
-                        return Err(format!("expected root element <svg>, found <{name}>"));
-                    }
-                    root_svg_found = true;
-                    viewbox_attr = validate_svg_element_security(&element)?;
-                } else {
-                    let _ = validate_svg_element_security(&element)?;
-                }
-                depth += 1;
-            }
-            Ok(Event::Empty(element)) => {
-                let name = std::str::from_utf8(element.local_name().as_ref()).map_err(|err| format!("invalid XML element name: {err}"))?.to_ascii_lowercase();
-
-                if depth == 0 {
-                    if root_svg_found {
-                        return Err("multiple root elements in SVG".to_string());
-                    }
-                    if name != "svg" {
-                        return Err(format!("expected root element <svg>, found <{name}>"));
-                    }
-                    root_svg_found = true;
-                    viewbox_attr = validate_svg_element_security(&element)?;
-                } else {
-                    let _ = validate_svg_element_security(&element)?;
-                }
-            }
-            Ok(Event::End(_)) => {
-                if depth == 0 {
-                    return Err("unexpected closing tag".to_string());
-                }
-                depth -= 1;
-            }
-            Ok(Event::DocType(_) | Event::Decl(_) | Event::Comment(_) | Event::Text(_)) => {}
-            Ok(Event::Eof) => break,
-            Err(e) => return Err(format!("XML syntax error: {e}")),
-            _ => {}
-        }
-    }
-
-    if !root_svg_found {
-        return Err("missing <svg> root element".to_string());
-    }
-    if depth != 0 {
-        return Err("unclosed XML tags in SVG".to_string());
-    }
-
-    let Some(viewbox_str) = viewbox_attr else {
-        return Err("missing viewBox attribute (expected 1:1, e.g. viewBox=\"0 0 64 64\")".to_string());
-    };
-
-    let (w, h) = parse_viewbox_values(&viewbox_str).ok_or_else(|| "invalid viewBox attribute (expected four finite numbers)".to_string())?;
-    if w <= 0.0 || h <= 0.0 {
-        return Err(format!("non-positive viewBox dimensions: {w}x{h}"));
-    }
-    if require_square {
-        let ratio = w / h;
-        if !(0.95..=1.05).contains(&ratio) {
-            return Err(format!("non-square viewBox: {w}x{h} (aspect ratio must be 1:1)"));
-        }
-    }
-
-    if text.contains("data:image/") {
-        return Err("embedded raster images (<image>) are prohibited".to_string());
-    }
-
-    let junk = find_svg_junk_issues(text);
-    if !junk.is_empty() {
-        return Err(format!("extraneous/junk tags detected: {}", junk.join(", ")));
-    }
-
-    Ok(())
+    let purpose = if require_square { super::super::svg_validator::SvgPurpose::Icon } else { super::super::svg_validator::SvgPurpose::Artwork };
+    validate_svg_detailed(data, purpose).map_err(|error| error.to_string())
 }
 
 pub fn validate_icon_svg(data: &[u8]) -> Result<(), String> {
-    validate_svg(data)?;
-    validate_icon_tokens(data)?;
-    Ok(())
+    validate_svg(data)
 }
 
-/// Check that any CSS `var(...)` references in the SVG use valid approved tokens and specify fallbacks.
-/// Recursively validates nested `var(...)` expressions.
 pub fn validate_icon_tokens(data: &[u8]) -> Result<(), String> {
-    if !data.windows(4).any(|w| w == b"var(") {
-        return Ok(());
-    }
-    let text = std::str::from_utf8(data).map_err(|err| format!("invalid UTF-8 in SVG: {err}"))?;
-    validate_tokens_recursive(text, 0)
-}
-
-fn validate_tokens_recursive(text: &str, depth: usize) -> Result<(), String> {
-    if depth > 10 {
-        return Err("excessive var(...) nesting depth (> 10)".to_string());
-    }
-    let mut rest = text;
-
-    while let Some(start_idx) = rest.find("var(") {
-        let after_var = &rest[start_idx + 4..];
-        let mut paren_depth = 0usize;
-        let mut close_idx = None;
-        for (idx, ch) in after_var.char_indices() {
-            if ch == '(' {
-                paren_depth += 1;
-            } else if ch == ')' {
-                if paren_depth == 0 {
-                    close_idx = Some(idx);
-                    break;
-                }
-                paren_depth -= 1;
-            }
-        }
-        let end_idx = close_idx.ok_or_else(|| "SVG has unclosed var(...) expression".to_string())?;
-        let inner = &after_var[..end_idx];
-        let (tok, fallback) = inner.split_once(',').ok_or_else(|| format!("icon variable `{}` must specify a fallback color, e.g. var({}, #HEX)", inner.trim(), inner.trim()))?;
-
-        let tok_trimmed = tok.trim();
-        let fallback_trimmed = fallback.trim();
-        if fallback_trimmed.is_empty() {
-            return Err(format!("icon variable `{tok_trimmed}` has an empty fallback color"));
-        }
-
-        let token_name = tok_trimmed.strip_prefix("--").ok_or_else(|| format!("icon variable `{tok_trimmed}` must start with '--', e.g. --icon-stroke"))?;
-
-        if !qymcad_scheme::ICON_TOKENS.contains(&token_name) {
-            return Err(format!("unknown icon token `{tok_trimmed}`; supported tokens are {:?}", qymcad_scheme::ICON_TOKENS));
-        }
-
-        if fallback_trimmed.contains("var(") {
-            validate_tokens_recursive(fallback_trimmed, depth + 1)?;
-        }
-
-        rest = &after_var[end_idx + 1..];
-    }
-
-    Ok(())
+    super::super::svg_validator::validate_icon_tokens(data).map_err(|error| error.to_string())
 }
 
 fn removable_svg_element(name: &[u8]) -> bool {
@@ -307,7 +50,13 @@ fn removable_svg_element(name: &[u8]) -> bool {
         || matches!(lower.as_str(), "rdf:rdf" | "i:pgf" | "x:xmpmeta")
 }
 
-fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, is_root: bool, has_xlink: bool, changed: &mut bool) -> Result<quick_xml::events::BytesStart<'static>, String> {
+#[derive(Clone, Copy, Debug)]
+struct SvgCleanFlags {
+    pub is_root: bool,
+    pub has_xlink: bool,
+}
+
+fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, flags: SvgCleanFlags, changed: &mut bool) -> Result<quick_xml::events::BytesStart<'static>, String> {
     let mut cleaned = start.to_owned();
     cleaned.clear_attributes();
     let mut has_xmlns = false;
@@ -324,10 +73,11 @@ fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, is_root: bool, h
             || (lower_key.starts_with("ns") && lower_key.find(':').is_some_and(|idx| lower_key[2..idx].chars().all(|c| c.is_ascii_digit()) && !lower_key.ends_with("href")));
         let export_attribute = lower_key.starts_with("export-") || lower_key.contains(":export-");
         let non_standard_xmlns = lower_key.starts_with("xmlns:") && lower_key != "xmlns:xlink";
-        let root_junk = is_root && (lower_key == "id" || lower_key == "width" || lower_key == "height" || lower_key == "version");
-        let external_link = lower_key.ends_with("href") && ["http:", "https:", "file:", "javascript:", "//"].iter().any(|prefix| lower_value.trim_start().starts_with(prefix));
+        let root_junk = flags.is_root && (lower_key == "id" || lower_key == "width" || lower_key == "height" || lower_key == "version");
+        let external_link = lower_key.ends_with("href") && super::super::svg_validator::unsafe_reference(&value);
+        let external_style = super::super::svg_validator::external_css_reference(&value).is_some();
 
-        if event_handler || editor_attribute || export_attribute || non_standard_xmlns || root_junk || lower_value.contains("data:image/") || external_link {
+        if event_handler || editor_attribute || export_attribute || non_standard_xmlns || root_junk || lower_value.contains("data:image/") || external_link || external_style {
             *changed = true;
         } else if lower_key.ends_with(":href") && lower_key != "xlink:href" {
             *changed = true;
@@ -361,12 +111,12 @@ fn cleaned_svg_start(start: &quick_xml::events::BytesStart<'_>, is_root: bool, h
         }
     }
 
-    if is_root {
+    if flags.is_root {
         if !has_xmlns {
             *changed = true;
             cleaned.push_attribute(("xmlns", "http://www.w3.org/2000/svg"));
         }
-        if has_xlink && !has_xmlns_xlink {
+        if flags.has_xlink && !has_xmlns_xlink {
             *changed = true;
             cleaned.push_attribute(("xmlns:xlink", "http://www.w3.org/1999/xlink"));
         }
@@ -426,13 +176,13 @@ pub fn clean_svg(data: &[u8]) -> Result<Vec<u8>, String> {
             }
             Event::Start(start) => {
                 let is_root = open_depth == 1 && start.name().as_ref() == b"svg";
-                writer.write_event(Event::Start(cleaned_svg_start(&start, is_root, has_xlink, &mut changed)?)).map_err(|err| err.to_string())?;
+                writer.write_event(Event::Start(cleaned_svg_start(&start, SvgCleanFlags { is_root, has_xlink }, &mut changed)?)).map_err(|err| err.to_string())?;
             }
             Event::Empty(_) if skipped_depth > 0 => {}
             Event::Empty(empty) if removable_svg_element(empty.name().as_ref()) => changed = true,
             Event::Empty(empty) => {
                 let is_root = open_depth == 0 && empty.name().as_ref() == b"svg";
-                writer.write_event(Event::Empty(cleaned_svg_start(&empty, is_root, has_xlink, &mut changed)?)).map_err(|err| err.to_string())?;
+                writer.write_event(Event::Empty(cleaned_svg_start(&empty, SvgCleanFlags { is_root, has_xlink }, &mut changed)?)).map_err(|err| err.to_string())?;
             }
             Event::End(_) if skipped_depth > 0 => skipped_depth -= 1,
             Event::Text(text) if open_depth == 0 => {
@@ -508,26 +258,25 @@ fn clean_svg_file(path: &Path) -> Result<CleanIconResult, String> {
     if cleaned == original {
         return Err("SVG needs manual repair".to_string());
     }
-    static CLEAN_TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let counter = CLEAN_TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let temp = path.with_extension(format!("svg.qymcad-{}-{counter}.tmp", std::process::id()));
+    let TempCleanerFile { path: temp, file: mut temp_file } = create_cleaner_temp(path)?;
 
-    struct TempFileGuard<'a> {
-        path: &'a Path,
+    struct TempFileGuard {
+        path: std::path::PathBuf,
         active: bool,
     }
-    impl<'a> Drop for TempFileGuard<'a> {
+    impl Drop for TempFileGuard {
         fn drop(&mut self) {
             if self.active {
-                let _ = std::fs::remove_file(self.path);
+                let _ = std::fs::remove_file(&self.path);
             }
         }
     }
 
-    let mut guard = TempFileGuard { path: &temp, active: true };
-    if let Err(err) = std::fs::write(&temp, &cleaned) {
+    let mut guard = TempFileGuard { path: temp.clone(), active: true };
+    if let Err(err) = temp_file.write_all(&cleaned) {
         return Err(format!("cannot write cleaned SVG: {err}"));
     }
+    drop(temp_file);
     let mut rename_err = None;
     for attempt in 0..6 {
         match std::fs::rename(&temp, path) {
@@ -546,6 +295,30 @@ fn clean_svg_file(path: &Path) -> Result<CleanIconResult, String> {
     Err(format!("cannot replace SVG: {}", rename_err.unwrap()))
 }
 
+struct TempCleanerFile {
+    pub path: std::path::PathBuf,
+    pub file: std::fs::File,
+}
+
+fn create_cleaner_temp(path: &Path) -> Result<TempCleanerFile, String> {
+    static CLEAN_TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let process_id = std::process::id();
+    for _attempt in 0..100 {
+        let counter = CLEAN_TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let name = format!("{}.svg.qymcad-{process_id}-{counter}.tmp", path.file_stem().and_then(|stem| stem.to_str()).unwrap_or("icon"));
+        let temp = path.with_file_name(&name);
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&temp) {
+            Ok(file) => return Ok(TempCleanerFile { path: temp, file }),
+            Err(error) => {
+                if error.kind() != std::io::ErrorKind::AlreadyExists {
+                    return Err(format!("cannot create temporary SVG: {error}"));
+                }
+            }
+        }
+    }
+    Err("cannot reserve a unique temporary SVG file".to_string())
+}
+
 /// Check whether a file name matches the SVG cleaner's temporary file pattern
 /// (`*.svg.qymcad-<pid>-<counter>.tmp`).
 pub fn is_cleaner_temp_file(name: &str) -> bool {
@@ -561,30 +334,6 @@ pub fn is_cleaner_temp_file(name: &str) -> bool {
     parts.next().is_none() && !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()) && !counter.is_empty() && counter.chars().all(|c| c.is_ascii_digit())
 }
 
-/// Remove residual temporary files (`*.svg.qymcad-<pid>-<counter>.tmp`) created during failed SVG cleaning attempts.
-/// Traverses directory entries using `file_type()` without following symbolic links to prevent loops.
-pub fn cleanup_residual_tmp_files(dir: &Path) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_dir() {
-            cleanup_residual_tmp_files(&entry.path());
-        } else if file_type.is_file() {
-            let name = entry.file_name();
-            if let Some(name_str) = name.to_str() {
-                if is_cleaner_temp_file(name_str) {
-                    let _ = std::fs::remove_file(entry.path());
-                }
-            }
-        }
-    }
-}
-
 pub fn clean_directory_icon(pack: &IconPack, id: IconId) -> Result<CleanIconResult, String> {
     if !pack.is_directory() {
         return Err("only editable directory packs can be cleaned".to_string());
@@ -593,9 +342,6 @@ pub fn clean_directory_icon(pack: &IconPack, id: IconId) -> Result<CleanIconResu
         return Err("only directory packs can be cleaned".to_string());
     };
     let file_path = root.join("icons").join(format!("{}.svg", id.relative_path()));
-    if let Some(parent) = file_path.parent() {
-        cleanup_residual_tmp_files(parent);
-    }
     clean_svg_file(&file_path)
 }
 
@@ -613,9 +359,7 @@ fn collect_svg_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<
             collect_svg_files(&path, files)?;
         } else if kind.is_file() {
             let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
-            if is_cleaner_temp_file(name) {
-                let _ = std::fs::remove_file(&path);
-            } else if path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("svg")) {
+            if !is_cleaner_temp_file(name) && path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extension.eq_ignore_ascii_case("svg")) {
                 files.push(path);
             }
         }
@@ -656,7 +400,6 @@ pub fn clean_directory_icons(pack: &IconPack) -> Result<CleanPackReport, String>
     let super::pack::PackSource::Directory(root) = &pack.source else {
         return Err("only directory packs can be cleaned".to_string());
     };
-    cleanup_residual_tmp_files(root);
     let mut files = Vec::new();
     collect_svg_files(&root.join("icons"), &mut files)?;
     files.push(root.join("icon.svg"));
@@ -670,6 +413,5 @@ pub fn clean_directory_icons(pack: &IconPack) -> Result<CleanPackReport, String>
             Err(reason) => report.failed.push(CleanFileFailure { path: relative, reason }),
         }
     }
-    cleanup_residual_tmp_files(root);
     Ok(report)
 }

@@ -5,68 +5,39 @@
 
 use egui::Color32;
 use egui_phosphor::regular as ph;
-use qymcad_ui_state::icons::{inspect_pack_directory, package_bundle, IconManifest, IconPack, PackageType, ValidationReport};
+use qymcad_ui_state::icons::{inspect_pack_directory, package_bundle, IconManifest, IconPack, PackageType};
 use std::path::{Path, PathBuf};
 
 use super::discovery::invalidate_theme_discovery_cache;
 
-/// Developer Packager modal state kept in UI context.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PackagerDialogState {
-    pub is_open: bool,
-    pub id: String,
-    pub name: String,
-    pub version: String,
-    pub author: String,
-    pub license: String,
-    pub description: String,
-    pub source_dir: String,
-    pub output_file: String,
-    pub message: Option<String>,
-    pub is_error: bool,
-    pub report: Option<ValidationReport>,
-}
+pub(crate) use qymcad_ui_state::icons::PackagerDialogState;
+use qymcad_ui_state::{WinCtx, WinKind};
 
-impl Default for PackagerDialogState {
-    fn default() -> Self {
-        Self {
-            is_open: false,
-            id: "my-cad-theme".into(),
-            name: "My CAD Theme".into(),
-            version: "1.0.0".into(),
-            author: "".into(),
-            license: "LGPL-2.1-or-later".into(),
-            description: "Custom CAD vector icons".into(),
-            source_dir: "".into(),
-            output_file: "".into(),
-            message: None,
-            is_error: false,
-            report: None,
-        }
-    }
-}
-
-pub(crate) fn open_packager_for_directory(ctx: &egui::Context, pack: &IconPack, source: &Path) {
-    ctx.data_mut(|data| {
-        let state = data.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog"));
-        state.is_open = true;
-        state.id = pack.manifest.id.clone();
-        state.name = pack.manifest.name.clone();
-        state.version = pack.manifest.version.clone();
-        state.author = pack.manifest.author.clone();
-        state.license = pack.manifest.license.clone();
-        state.description = pack.manifest.description.clone();
-        state.source_dir = source.display().to_string();
-        state.output_file = source.with_extension("qicons").display().to_string();
-        state.message = None;
-        state.report = None;
-        state.is_error = false;
-    });
+pub(crate) fn open_packager_for_directory(wc: &mut WinCtx, pack: &IconPack, source: &Path) {
+    wc.win.icon_packager = PackagerDialogState {
+        id: pack.manifest.id.clone(),
+        name: pack.manifest.name.clone(),
+        version: pack.manifest.version.clone(),
+        author: pack.manifest.author.clone(),
+        license: pack.manifest.license.clone(),
+        description: pack.manifest.description.clone(),
+        source_dir: source.display().to_string(),
+        output_file: source.with_extension("qicons").display().to_string(),
+        message: None,
+        is_error: false,
+        report: None,
+    };
+    wc.win.open(WinKind::IconPackager);
 }
 
 /// In-app developer modal dialog for packaging an icon bundle into `.qicons`.
-pub(crate) fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialogState) {
-    let mut open = state.is_open;
+pub(crate) fn draw_packager_modal(ctx: &egui::Context, wc: &mut WinCtx) {
+    if !wc.win.is(WinKind::IconPackager) {
+        return;
+    }
+    let state = &mut wc.win.icon_packager;
+    let mut open = true;
+    let mut cancel_clicked = false;
     egui::Window::new(crate::i18n::tr("icontheme-packager-title")).id(egui::Id::new("icon_packager_dialog")).open(&mut open).collapsible(false).resizable(true).default_width(450.0).show(ctx, |ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("icontheme-packager-desc")).small().weak());
         ui.add_space(4.0);
@@ -169,7 +140,6 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialo
                             license: state.license.trim().to_string(),
                             description: state.description.trim().to_string(),
                             translations,
-                            verified: true,
                         };
                         manifest.validate()?;
                         package_bundle(&source_path, &manifest, &output_path)
@@ -199,7 +169,7 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialo
             }
 
             if ui.button(crate::i18n::tr("nav-cancel")).clicked() {
-                state.is_open = false;
+                cancel_clicked = true;
             }
         });
 
@@ -272,5 +242,7 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, state: &mut PackagerDialo
             });
         }
     });
-    state.is_open = open && state.is_open;
+    if !open || cancel_clicked {
+        wc.win.close(WinKind::IconPackager);
+    }
 }

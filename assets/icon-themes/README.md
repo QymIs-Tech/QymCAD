@@ -12,9 +12,9 @@ QymCAD features a modular, dynamic vector icon theme engine. It supports both bu
 >
 > When an icon is requested, QymCAD resolves it through a multi-tier **Fallback Cascade**:
 >
-> $$\text{Active Custom Pack} \longrightarrow \text{Next Active Pack} \longrightarrow \dots \longrightarrow \text{Built-in Default Pack (shapr-alike)}$$
+> $$\text{Active Custom Pack} \longrightarrow \text{Next Active Pack} \longrightarrow \dots \longrightarrow \text{Built-in Default Pack (default)}$$
 >
-> If an icon is missing from a custom theme, QymCAD automatically and silently falls back to the next pack in the active stack, down to the built-in default theme (`shapr-alike`, which provides 100% complete SVG coverage). No buttons will ever appear blank or broken.
+> If an icon is missing from a custom theme, QymCAD automatically and silently falls back to the next pack in the active stack, down to the built-in default theme (`default`, which provides 100% complete SVG coverage). No buttons will ever appear blank or broken.
 
 ---
 
@@ -66,10 +66,10 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
     package_type: IconTheme,
 
     // Unique machine identifier (alphanumeric, hyphens allowed)
-    id: "shapr-alike",
+    id: "default",
 
     // User-facing display name shown in settings
-    name: "Shapr-Alike",
+    name: "Default",
 
     // Semantic version string
     version: "1.0.0",
@@ -81,21 +81,21 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
     license: "AGPL-3.0-or-later",
 
     // Short summary describing the theme
-    description: "QymCAD icons inspired by Shapr3D",
+    description: "Default QymCAD icon set designed from scratch, inspired by modern mobile CAD ergonomics.",
 
     // Optional translated display text, keyed by language tag
     translations: {
         "uk": (
-            name: "Shapr-Alike",
-            description: "Іконки QymCAD, натхненні Shapr3D",
+            name: "Типова",
+            description: "Типовий набір іконок QymCAD, створений з нуля з натхненням від ергономіки сучасних мобільних CAD-систем.",
         ),
         "ru": (
-            name: "Shapr-Alike",
-            description: "Иконки QymCAD, вдохновлённые Shapr3D",
+            name: "По умолчанию",
+            description: "Стандартный набор иконок QymCAD, созданный с нуля с ориентацией на эргономику современных мобильных CAD-систем.",
         ),
         "kk": (
-            name: "Shapr-Alike",
-            description: "Shapr3D үлгісінде жасалған QymCAD таңбашалары",
+            name: "Әдепкі",
+            description: "Заманауи мобильдік CAD эргономикасынан шабыттанып, нөлден жасалған QymCAD әдепкі таңбашалар жиынтығы.",
         ),
     },
 )
@@ -106,7 +106,7 @@ The manifest is written in [RON (Rusty Object Notation)](https://github.com/ron-
 | Field | Type | Required | Description |
 | :--- | :--- | :---: | :--- |
 | `package_type` | `PackageType` | No (default `IconTheme`) | Extension type identifier. Always `IconTheme`. |
-| `id` | `String` | **Yes** | Unique package ID (e.g., `shapr-alike`, `custom-theme`). |
+| `id` | `String` | **Yes** | Unique package ID (e.g., `default`, `custom-theme`). |
 | `name` | `String` | **Yes** | Human-readable name displayed in Settings -> Icon Themes. |
 | `version` | `String` | No | Semantic version string (e.g., `"1.0.0"`). |
 | `author` | `String` | No | Author, maintainer, or contributing community. |
@@ -337,19 +337,7 @@ Below is the complete dictionary of icons recognized across the 5 categories:
 
 ### 8.1. Packaging into `.qicons`
 
-A `.qicons` bundle can be prepared in two ways:
-
-1. **In-App Packager (Recommended — Verified Archive):**
-   Use the built-in Packager UI inside QymCAD (**Settings $\rightarrow$ Appearance $\rightarrow$ Manage Icon Themes $\rightarrow$ Package Theme**).
-   The Packager validates SVG elements, enforces square viewBox ratios, verifies token fallback values, builds a clean ZIP archive, and appends a SHA-256 integrity trailer (`QCAD` magic trailer). Bundles packaged with this trailer load with **Verified Archive** status for maximum speed and security.
-
-2. **Standard ZIP Archive (Community Archive):**
-   You can also create a plain ZIP archive using standard command-line tools:
-   ```bash
-   cd my-custom-theme/
-   zip -r ../my-custom-theme.qicons manifest.ron README*.md icons/
-   ```
-   *Note:* Archives packaged with standard `zip` do not include the cryptographic trailer and will be loaded in community **Archive** mode with runtime crash-guards.
+Use the built-in Packager in QymCAD (**Settings $\rightarrow$ Appearance $\rightarrow$ Manage Icon Themes $\rightarrow$ Package Theme**). It checks SVG structure, icon names, viewBox ratios, and token fallback values before creating the `.qicons` package. A regular ZIP renamed to `.qicons` is not accepted. QymCAD rejects damaged or invalid packages. To make changes, edit the source theme folder and package it again.
 
 ### 8.2. User Installation Paths
 Place your unpacked theme folder or `.qicons` archive into the user configuration directory:

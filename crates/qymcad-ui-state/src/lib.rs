@@ -291,12 +291,16 @@ pub enum WinKind {
     PartsLibrary,
     /// What the check for a newer version came to (Help -> Check for updates).
     Updates,
+    /// The icon theme manager window.
+    IconManager,
+    /// The developer icon theme packager modal.
+    IconPackager,
 }
 
 impl WinKind {
     /// EVERY KIND, so that a walk over the windows cannot silently miss one added later. A guard checks that the
     /// count here matches the number of variants declared above.
-    pub const ALL: [WinKind; 11] = [
+    pub const ALL: [WinKind; 13] = [
         WinKind::SaveTemplate,
         WinKind::Start,
         WinKind::DocProps,
@@ -308,6 +312,8 @@ impl WinKind {
         WinKind::Settings,
         WinKind::PartsLibrary,
         WinKind::Updates,
+        WinKind::IconManager,
+        WinKind::IconPackager,
     ];
 }
 
@@ -341,6 +347,10 @@ pub struct Windows {
     pub constraints: bool,
     /// A file just read, waiting for its units and scale (see `ImportScale`).
     pub import_scale: Option<ImportScale>,
+    /// Persistent state of the icon theme manager window.
+    pub icon_manager: crate::icons::IconManagerState,
+    /// Persistent state of the developer icon theme packager modal.
+    pub icon_packager: crate::icons::PackagerDialogState,
 }
 
 impl Windows {

@@ -4,10 +4,17 @@
 
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{load_default_pack, BundleFormat, DEFAULT_THEME_ID};
-use qymcad_ui_state::{Settings, WinCtx};
+use qymcad_ui_state::{Settings, WinCtx, WinKind};
 
 use super::discovery::{all_theme_dirs, discover_all_theme_packs, ensure_discovery_worker};
-use super::manager_window::open_icon_manager;
+
+/// Visual style parameters for the bundle format badge.
+struct BundleBadgeStyle {
+    icon: &'static str,
+    label_key: &'static str,
+    bg: egui::Color32,
+    fg: egui::Color32,
+}
 
 /// Apply the active icon packs from settings into the egui context.
 pub(crate) fn apply_icon_themes(set: &Settings, ctx: &egui::Context, palette: &qymcad_scheme::Palette) {
@@ -18,24 +25,20 @@ pub(crate) fn apply_icon_themes(set: &Settings, ctx: &egui::Context, palette: &q
     qymcad_ui_state::icons::set_active_icon_stack(ctx, stack, palette);
 }
 
-/// Render a compact, colored visual badge indicating the format and provenance of an icon bundle.
-pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat, is_tampered: bool) {
+/// Render the kind of theme source shown in the manager.
+pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat) {
     let visuals = ui.visuals();
-    let (icon, label_key, bg, fg) = if is_tampered {
-        (ph::WARNING, "bundle-format-tampered", visuals.error_fg_color.linear_multiply(0.20), visuals.error_fg_color)
-    } else {
-        match format {
-            BundleFormat::Directory => (ph::FOLDER_OPEN, "bundle-format-folder", visuals.warn_fg_color.linear_multiply(0.18), visuals.warn_fg_color),
-            BundleFormat::Package => (ph::PACKAGE, "bundle-format-package", visuals.selection.bg_fill.linear_multiply(0.22), visuals.selection.bg_fill),
-            BundleFormat::Embedded => (ph::GEAR, "bundle-format-embedded", visuals.faint_bg_color, visuals.weak_text_color()),
-        }
+    let style = match format {
+        BundleFormat::Directory => BundleBadgeStyle { icon: ph::FOLDER_OPEN, label_key: "bundle-format-folder", bg: visuals.warn_fg_color.linear_multiply(0.18), fg: visuals.warn_fg_color },
+        BundleFormat::Embedded => BundleBadgeStyle { icon: ph::GEAR, label_key: "bundle-format-embedded", bg: visuals.faint_bg_color, fg: visuals.weak_text_color() },
+        BundleFormat::Package => BundleBadgeStyle { icon: ph::PACKAGE, label_key: "bundle-format-package", bg: visuals.selection.bg_fill.linear_multiply(0.22), fg: visuals.selection.bg_fill },
     };
 
-    egui::Frame::NONE.fill(bg).corner_radius(3.0).inner_margin(egui::Margin::symmetric(5, 2)).show(ui, |ui| {
+    egui::Frame::NONE.fill(style.bg).corner_radius(3.0).inner_margin(egui::Margin::symmetric(5, 2)).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 3.0;
-            ui.label(egui::RichText::new(icon).color(fg).small());
-            ui.label(egui::RichText::new(crate::i18n::tr(label_key)).color(fg).small().strong());
+            ui.label(egui::RichText::new(style.icon).color(style.fg).small());
+            ui.label(egui::RichText::new(crate::i18n::tr(style.label_key)).color(style.fg).small().strong());
         });
     });
 }
@@ -63,7 +66,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
         for id in &wc.set.active_icon_packs {
             if let Some(pack) = all_packs.iter().find(|p| &p.manifest.id == id) {
                 ui.label(egui::RichText::new(pack.manifest.name_for_locale(&crate::i18n::language())).strong());
-                draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
+                draw_bundle_format_badge(ui, pack.format());
                 ui.label(egui::RichText::new(ph::ARROW_RIGHT).weak());
             } else {
                 ui.label(egui::RichText::new(id).weak());
@@ -78,11 +81,11 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
             .map(|pack| pack.manifest.name_for_locale(&crate::i18n::language()).to_string())
             .unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base"));
         ui.label(egui::RichText::new(base_name).strong());
-        draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
+        draw_bundle_format_badge(ui, BundleFormat::Embedded);
     });
 
     ui.add_space(6.0);
     if ui.button(format!("{} {}", ph::PALETTE, crate::i18n::tr("settings-open-icon-manager"))).clicked() {
-        open_icon_manager(ctx);
+        wc.win.open(WinKind::IconManager);
     }
 }

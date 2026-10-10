@@ -143,9 +143,6 @@ pub struct IconManifest {
     pub description: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub translations: BTreeMap<String, LocalizedThemeText>,
-    /// Whether the package is verified by QymCAD packager.
-    #[serde(default)]
-    pub verified: bool,
 }
 
 impl IconManifest {

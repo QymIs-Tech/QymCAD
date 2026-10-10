@@ -23,7 +23,7 @@ pub(crate) fn draw_duplicate_conflict_view(ui: &mut egui::Ui, pack: &IconPack, c
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new(name).strong().size(18.0));
                 ui.horizontal(|ui| {
-                    draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
+                    draw_bundle_format_badge(ui, pack.format());
                     egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.20)).corner_radius(3.0).inner_margin(egui::Margin::symmetric(5, 2)).show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 3.0;

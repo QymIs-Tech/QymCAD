@@ -1,7 +1,7 @@
 // Build script for qymcad-ui-state:
 // 1. Reads the clean `IconId` enum variants from `src/icons/id.rs`.
 // 2. Maps each variant to its canonical `icons/<category>/<name>.svg` path.
-// 3. Validates all base icons in `assets/icon-themes/shapr-alike/` (SVG validity, viewBox, no raster images).
+// 3. Validates all base icons in `assets/icon-themes/default/` (SVG validity, viewBox, no raster images).
 // 4. Discovers all icon theme folders in `assets/icon-themes/` containing `manifest.ron`.
 // 5. Packages all discovered themes into compressed `.qicons` bundles written to `OUT_DIR/<theme>.qicons`.
 // 6. Generates `OUT_DIR/icon_generated.rs` implementing `relative_path(&self)`, `from_id_str(s)`, `ALL_ICONS`,
@@ -13,9 +13,13 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-#[allow(dead_code)]
+#[allow(dead_code)] // The build script uses only SHA-256 trailer appending; verification and unpack routines are used by the runtime package loader.
 #[path = "src/icons/sha256.rs"]
 mod sha256;
+
+#[allow(dead_code)] // The build script uses only icon mode; the library uses the artwork and token APIs.
+#[path = "src/icons/svg_validator.rs"]
+mod svg_validator;
 
 fn variant_to_relative_path(var: &str) -> String {
     if var == "SketchPickPlane" {
@@ -39,13 +43,16 @@ fn variant_to_relative_path(var: &str) -> String {
     panic!("Unknown icon variant category for: {}", var);
 }
 
-fn extract_manifest_id(content: &str) -> Option<String> {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("id:") {
-            let part = trimmed.strip_prefix("id:")?.trim();
-            let id = part.trim_matches(|c| c == '"' || c == ',' || c == ' ');
-            return Some(id.to_string());
+fn extract_manifest_id(value: ron::Value) -> Option<String> {
+    if let ron::Value::Map(entries) = value {
+        for (k, v) in entries {
+            if let ron::Value::String(key) = k {
+                if key == "id" {
+                    if let ron::Value::String(id) = v {
+                        return Some(id);
+                    }
+                }
+            }
         }
     }
     None
@@ -55,6 +62,16 @@ struct DiscoveredTheme {
     dir_name: String,
     dir_path: PathBuf,
     manifest_id: String,
+}
+
+struct ThemeDocFile {
+    name: String,
+    path: PathBuf,
+}
+
+struct IconVariantMapping {
+    variant: String,
+    relative_path: String,
 }
 
 fn package_theme_archive(theme_dir: &Path, out_archive: &Path) {
@@ -79,21 +96,21 @@ fn package_theme_archive(theme_dir: &Path, out_archive: &Path) {
 
     // Include the base and localized descriptions, license, preview in the embedded archive.
     if let Ok(entries) = fs::read_dir(theme_dir) {
-        let mut readmes = Vec::new();
+        let mut readmes: Vec<ThemeDocFile> = Vec::new();
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_file() {
                 if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
                     if name == "README.md" || (name.starts_with("README.") && name.ends_with(".md")) || name == "description.md" || name.starts_with("LICENSE") || name.starts_with("preview.") {
-                        readmes.push((name.to_string(), p));
+                        readmes.push(ThemeDocFile { name: name.to_string(), path: p });
                     }
                 }
             }
         }
-        readmes.sort_by(|left, right| left.0.cmp(&right.0));
-        for (name, path) in readmes {
-            let content = fs::read(&path).expect("theme file reads");
-            zip.start_file(name, options).expect("writes localized readme into zip");
+        readmes.sort_by(|left, right| left.name.cmp(&right.name));
+        for doc in readmes {
+            let content = fs::read(&doc.path).expect("theme file reads");
+            zip.start_file(doc.name, options).expect("writes localized readme into zip");
             zip.write_all(&content).expect("writes localized readme bytes");
         }
     }
@@ -130,6 +147,7 @@ fn walk_dir(base: &Path, current: &Path, zip: &mut zip::ZipWriter<fs::File>, opt
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=src/icons/svg_validator.rs");
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let repo_root = manifest_dir.join("../..");
     let icon_themes_dir = repo_root.join("assets/icon-themes");
@@ -153,25 +171,28 @@ fn main() {
                 println!("cargo:rerun-if-changed={}", p.display());
                 let dir_name = entry.file_name().to_string_lossy().to_string();
                 let manifest_content = fs::read_to_string(&manifest_path).expect("manifest.ron reads");
-                let _: ron::Value = ron::from_str(&manifest_content).expect("manifest.ron is valid RON");
-                let manifest_id = extract_manifest_id(&manifest_content).expect("manifest has id field");
+                let ron_val: ron::Value = ron::from_str(&manifest_content).expect("manifest.ron is valid RON");
+                let manifest_id = extract_manifest_id(ron_val).expect("manifest has id field");
                 theme_entries.push(DiscoveredTheme { dir_name, dir_path: p, manifest_id });
             }
         }
     }
 
-    // Sort themes: ensure "shapr-alike" is first, others sorted alphabetically by directory name
+    const DEFAULT_THEME_MANIFEST_ID: &str = "default";
+
+    // Sort themes: ensure default theme is first, others sorted alphabetically by directory name
     theme_entries.sort_by(|a, b| {
-        if a.manifest_id == "shapr-alike" {
+        if a.manifest_id == DEFAULT_THEME_MANIFEST_ID {
             std::cmp::Ordering::Less
-        } else if b.manifest_id == "shapr-alike" {
+        } else if b.manifest_id == DEFAULT_THEME_MANIFEST_ID {
             std::cmp::Ordering::Greater
         } else {
             a.dir_name.cmp(&b.dir_name)
         }
     });
 
-    let default_theme = theme_entries.iter().find(|t| t.manifest_id == "shapr-alike").or_else(|| theme_entries.first()).expect("At least one built-in icon theme must exist in assets/icon-themes");
+    let default_theme =
+        theme_entries.iter().find(|t| t.manifest_id == DEFAULT_THEME_MANIFEST_ID).or_else(|| theme_entries.first()).expect("At least one built-in icon theme must exist in assets/icon-themes");
 
     // 2. Extract variants from `src/icons/id.rs`
     let id_rs_path = manifest_dir.join("src/icons/id.rs");
@@ -205,13 +226,13 @@ fn main() {
     }
 
     // 3. Map variants to relative paths and check uniqueness
-    let mut var_to_path = Vec::new();
+    let mut var_to_path: Vec<IconVariantMapping> = Vec::new();
     let mut path_to_var = HashMap::new();
     let mut expected_icons = HashSet::new();
 
     for v in &variants {
         let rel_path = variant_to_relative_path(v);
-        var_to_path.push((v.clone(), rel_path.clone()));
+        var_to_path.push(IconVariantMapping { variant: v.clone(), relative_path: rel_path.clone() });
         path_to_var.insert(rel_path.clone(), v.clone());
         expected_icons.insert(format!("{rel_path}.svg"));
     }
@@ -228,20 +249,7 @@ fn main() {
             panic!("Failed to read {}: {e}", full_path.display());
         });
 
-        let text = match std::str::from_utf8(&svg_data) {
-            Ok(t) => t,
-            Err(_) => panic!("SVG data in {} is not valid UTF-8", full_path.display()),
-        };
-
-        if !text.contains("<svg") {
-            panic!("Missing <svg> root element in {}", full_path.display());
-        }
-        if !text.contains("viewBox") {
-            panic!("Missing viewBox attribute in {}", full_path.display());
-        }
-        if text.contains("<image") || text.contains("data:image/") {
-            panic!("Prohibited raster image found in {}", full_path.display());
-        }
+        svg_validator::validate_svg(&svg_data, svg_validator::SvgPurpose::Icon).unwrap_or_else(|error| panic!("Invalid SVG in {}: {error}", full_path.display()));
     }
 
     // 5. Generate OUT_DIR/icon_generated.rs
@@ -252,16 +260,16 @@ fn main() {
     gen.push_str("    /// Relative path inside the `icons/` folder, without `.svg` extension.\n");
     gen.push_str("    pub fn relative_path(&self) -> &'static str {\n");
     gen.push_str("        match self {\n");
-    for (v, p) in &var_to_path {
-        gen.push_str(&format!("            Self::{v} => \"{p}\",\n"));
+    for mapping in &var_to_path {
+        gen.push_str(&format!("            Self::{} => \"{}\",\n", mapping.variant, mapping.relative_path));
     }
     gen.push_str("        }\n");
     gen.push_str("    }\n\n");
     gen.push_str("    /// Canonical egui image URI for this icon.\n");
     gen.push_str("    pub fn uri(&self) -> &'static str {\n");
     gen.push_str("        match self {\n");
-    for (v, p) in &var_to_path {
-        gen.push_str(&format!("            Self::{v} => \"bytes://qicons/{p}.svg\",\n"));
+    for mapping in &var_to_path {
+        gen.push_str(&format!("            Self::{} => \"bytes://qicons/{}.svg\",\n", mapping.variant, mapping.relative_path));
     }
     gen.push_str("        }\n");
     gen.push_str("    }\n\n");
@@ -270,8 +278,8 @@ fn main() {
     gen.push_str("    pub fn from_id_str(s: &str) -> Option<Self> {\n");
     gen.push_str("        let clean = s.trim().trim_end_matches(\".svg\").replace('.', \"/\");\n");
     gen.push_str("        match clean.as_str() {\n");
-    for (v, p) in &var_to_path {
-        gen.push_str(&format!("            \"{p}\" => Some(Self::{v}),\n"));
+    for mapping in &var_to_path {
+        gen.push_str(&format!("            \"{}\" => Some(Self::{}),\n", mapping.relative_path, mapping.variant));
     }
     gen.push_str("            _ => None,\n");
     gen.push_str("        }\n");

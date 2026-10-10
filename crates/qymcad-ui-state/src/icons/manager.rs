@@ -178,7 +178,7 @@ pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette) -> Vec
         while let Some(pos) = lower[search_from..].find("currentcolor") {
             let abs_pos = search_from + pos;
             let after_idx = abs_pos + 12;
-            if is_color_context(&result, abs_pos, after_idx) {
+            if is_color_context(&result, abs_pos..after_idx) {
                 replaced.push_str(&result[search_from..abs_pos]);
                 replaced.push_str(&stroke_hex);
             } else {
@@ -193,11 +193,11 @@ pub fn resolve_icon_tokens(data: &[u8], palette: &qymcad_scheme::Palette) -> Vec
     result.into_bytes()
 }
 
-/// Check if the match of `currentColor` at `[start..end]` is in a valid SVG color attribute
+/// Check if the match of `currentColor` at `range` is in a valid SVG color attribute
 /// or CSS color property context, rather than in an element id, class, or text node.
-fn is_color_context(full_text: &str, start: usize, end: usize) -> bool {
-    let before_str = &full_text[..start];
-    let after_str = &full_text[end..];
+fn is_color_context(full_text: &str, range: std::ops::Range<usize>) -> bool {
+    let before_str = &full_text[..range.start];
+    let after_str = &full_text[range.end..];
 
     let next_char = after_str.chars().next();
     if !matches!(next_char, None | Some('"' | '\'' | ';' | ')' | '}' | '>' | '/' | '!' | ' ' | '\t' | '\r' | '\n')) {

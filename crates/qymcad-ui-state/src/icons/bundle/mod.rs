@@ -12,8 +12,9 @@ pub mod hygiene;
 pub mod packaging;
 
 pub use discovery::{discover_packs_detailed, discover_packs_in, inspect_pack_directory, CategoryCoverage, CoverageCount, DiscoveryError, DiscoveryReport, RejectedArchive, ValidationReport};
+pub use super::svg_validator::{SvgDiagnostic, SvgPurpose};
 pub use hygiene::{
-    clean_directory_icon, clean_directory_icons, clean_svg, cleanup_residual_tmp_files, directory_has_cleanable_icons, find_svg_junk_issues, is_cleaner_temp_file, parse_viewbox_values,
-    validate_icon_svg, validate_icon_tokens, validate_svg, validate_svg_structural, CleanFileFailure, CleanIconResult, CleanPackReport,
+    clean_directory_icon, clean_directory_icons, clean_svg, directory_has_cleanable_icons, find_svg_junk_issues, is_cleaner_temp_file, parse_viewbox_values, validate_icon_svg, validate_icon_tokens,
+    validate_svg, validate_svg_detailed, validate_svg_structural, CleanFileFailure, CleanIconResult, CleanPackReport, ViewboxDimensions,
 };
 pub use packaging::{package_bundle, package_bundle_to_bytes, package_bundle_to_writer, PackagedBundle};

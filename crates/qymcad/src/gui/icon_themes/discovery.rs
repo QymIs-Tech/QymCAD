@@ -11,40 +11,13 @@ pub(crate) fn user_themes_dir() -> Option<PathBuf> {
     qymcad_paths::config("icon_themes")
 }
 
-/// The directory for bundled icon themes.
+/// The directory for bundled icon themes in the repository, used exclusively by test fixtures.
+#[cfg(test)]
 pub(crate) fn bundled_themes_dir() -> PathBuf {
-    static BUNDLED: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    BUNDLED.get_or_init(|| bundled_themes_dir_with(Some(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes"))), std::env::current_exe().ok().as_deref())).clone()
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icon-themes"))
 }
 
-pub(crate) fn bundled_themes_dir_with(dev_candidate: Option<&Path>, exe_path: Option<&Path>) -> PathBuf {
-    if let Some(dev) = dev_candidate {
-        if dev.exists() {
-            return dev.to_path_buf();
-        }
-    }
-    if let Some(exe) = exe_path {
-        if let Some(parent) = exe.parent() {
-            let beside = parent.join("assets/icon-themes");
-            if beside.exists() {
-                return beside;
-            }
-            if let Some(contents) = parent.parent() {
-                let mac_resources = contents.join("Resources/assets/icon-themes");
-                if mac_resources.exists() {
-                    return mac_resources;
-                }
-                let mac_resources_flat = contents.join("Resources/icon-themes");
-                if mac_resources_flat.exists() {
-                    return mac_resources_flat;
-                }
-            }
-        }
-    }
-    PathBuf::from("assets/icon-themes")
-}
-
-/// All search directories for icon themes (user directories followed by bundled directory).
+/// All search directories for user-installed icon themes.
 pub(crate) fn all_theme_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(user_dir) = user_themes_dir() {
@@ -66,10 +39,6 @@ pub(crate) fn all_theme_dirs() -> Vec<PathBuf> {
         if !dirs.contains(&xdg_config) {
             dirs.push(xdg_config);
         }
-    }
-    let bundled = bundled_themes_dir();
-    if !dirs.contains(&bundled) {
-        dirs.push(bundled);
     }
     dirs
 }
@@ -204,54 +173,20 @@ pub(crate) fn discover_theme_packs_in_dirs(dirs: &[PathBuf]) -> DiscoveredThemes
     themes
 }
 
-pub(crate) fn is_pack_from_bundled_dir(pack: &IconPack, bundled_dir: &Path) -> bool {
-    let Some(source_path) = pack.source_path() else {
-        return false;
-    };
-    if source_path.starts_with(bundled_dir) {
-        return true;
-    }
-    static CANONICAL_BUNDLED: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-    let canon_bundled = CANONICAL_BUNDLED.get_or_init(|| std::fs::canonicalize(bundled_dir).ok());
-    if let (Ok(canon_pack), Some(canon_bundled)) = (std::fs::canonicalize(source_path), canon_bundled.as_deref()) {
-        return canon_pack.starts_with(canon_bundled);
-    }
-    false
-}
-
-fn assemble_all_themes(discovered: DiscoveredThemes, bundled_dir: &Path) -> DiscoveredThemes {
+fn assemble_all_themes(discovered: DiscoveredThemes) -> DiscoveredThemes {
     let builtin_packs = load_builtin_packs();
     let mut packs = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
 
     for pack in discovered.packs {
-        let is_bundled = is_pack_from_bundled_dir(&pack, bundled_dir);
         if pack.manifest.id == DEFAULT_THEME_ID {
-            if is_bundled {
-                if let Some(builtin) = builtin_packs.iter().find(|b| b.manifest.id == DEFAULT_THEME_ID) {
-                    if seen_ids.insert(DEFAULT_THEME_ID.to_string()) {
-                        packs.push(builtin.clone());
-                    }
-                } else if seen_ids.insert(DEFAULT_THEME_ID.to_string()) {
-                    packs.push(pack);
-                }
-            } else {
-                let mut conflict_pack = pack;
-                conflict_pack.duplicate_conflict = Some(DuplicateConflict { conflicting_id: DEFAULT_THEME_ID.to_string(), is_default_theme: true });
-                packs.push(conflict_pack);
-            }
-        } else if let Some(builtin) = builtin_packs.iter().find(|b| b.manifest.id == pack.manifest.id) {
-            if is_bundled {
-                if seen_ids.insert(builtin.manifest.id.clone()) {
-                    packs.push(builtin.clone());
-                }
-            } else if seen_ids.insert(pack.manifest.id.clone()) {
-                packs.push(pack);
-            } else {
-                let mut conflict_pack = pack;
-                conflict_pack.duplicate_conflict = Some(DuplicateConflict { conflicting_id: conflict_pack.manifest.id.clone(), is_default_theme: false });
-                packs.push(conflict_pack);
-            }
+            let mut conflict_pack = pack;
+            conflict_pack.duplicate_conflict = Some(DuplicateConflict { conflicting_id: DEFAULT_THEME_ID.to_string(), is_default_theme: true });
+            packs.push(conflict_pack);
+        } else if builtin_packs.iter().any(|b| b.manifest.id == pack.manifest.id) {
+            let mut conflict_pack = pack;
+            conflict_pack.duplicate_conflict = Some(DuplicateConflict { conflicting_id: conflict_pack.manifest.id.clone(), is_default_theme: false });
+            packs.push(conflict_pack);
         } else if seen_ids.insert(pack.manifest.id.clone()) {
             packs.push(pack);
         } else {
@@ -293,8 +228,7 @@ pub(crate) fn poll_theme_discovery(dirs: &[PathBuf]) -> bool {
         errors.extend(report.errors);
     }
     let themes = DiscoveredThemes { packs, errors };
-    let bundled_dir = bundled_themes_dir();
-    let all_themes = assemble_all_themes(themes.clone(), &bundled_dir);
+    let all_themes = assemble_all_themes(themes.clone());
 
     if let Ok(mut guard) = DISCOVERY_CACHE.write() {
         let map = guard.get_or_insert_with(std::collections::HashMap::new);
@@ -310,6 +244,10 @@ pub(crate) fn poll_theme_discovery(dirs: &[PathBuf]) -> bool {
     }
 
     true
+}
+
+pub(crate) fn theme_discovery_ready(dirs: &[PathBuf]) -> bool {
+    DISCOVERY_CACHE.read().ok().is_some_and(|guard| guard.as_ref().and_then(|map| map.get(dirs)).is_some_and(|cached| cached.all_themes.is_some()))
 }
 
 /// Ensure background discovery watcher thread is running to check theme directories periodically (1s).
@@ -331,12 +269,19 @@ pub(crate) fn ensure_discovery_worker(ctx: &egui::Context, dirs: &[PathBuf]) {
         let thread_ctx = ctx.clone();
         let thread_dirs = dirs.to_vec();
         let _ = std::thread::Builder::new().name("theme-discovery-watcher".to_string()).spawn(move || {
+            let discovery_changed = poll_theme_discovery(&thread_dirs);
+            let preview_changed = super::gallery::manager_disk_pack_preview_changed(&thread_ctx);
+            if discovery_changed || preview_changed {
+                thread_ctx.request_repaint();
+            }
             while flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
                 std::thread::sleep(std::time::Duration::from_millis(1000));
                 if !flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
                     break;
                 }
-                if poll_theme_discovery(&thread_dirs) {
+                let discovery_changed = poll_theme_discovery(&thread_dirs);
+                let preview_changed = super::gallery::manager_disk_pack_preview_changed(&thread_ctx);
+                if discovery_changed || preview_changed {
                     thread_ctx.request_repaint();
                 }
             }
@@ -383,30 +328,5 @@ pub(crate) fn discover_all_theme_packs(dirs: &[PathBuf]) -> DiscoveredThemes {
         }
     }
 
-    let current_signatures: Vec<ThemeDirSignature> = dirs.iter().map(|d| compute_dir_signature(d)).collect();
-    let mut packs = Vec::new();
-    let mut errors = Vec::new();
-    for dir in dirs {
-        let report = discover_packs_detailed(dir);
-        packs.extend(report.packs);
-        errors.extend(report.errors);
-    }
-    let themes = DiscoveredThemes { packs, errors };
-    let bundled_dir = bundled_themes_dir();
-    let all_themes = assemble_all_themes(themes.clone(), &bundled_dir);
-
-    if let Ok(mut guard) = DISCOVERY_CACHE.write() {
-        let map = guard.get_or_insert_with(std::collections::HashMap::new);
-        map.insert(
-            dirs.to_vec(),
-            CachedDiscovery {
-                signatures: current_signatures,
-                #[cfg(test)]
-                themes,
-                all_themes: Some(all_themes.clone()),
-            },
-        );
-    }
-
-    all_themes
+    DiscoveredThemes { packs: load_builtin_packs().to_vec(), errors: Vec::new() }
 }

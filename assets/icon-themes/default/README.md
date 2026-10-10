@@ -1,10 +1,10 @@
-# Shapr-Alike
+# Default
 
-QymCAD icons inspired by Shapr3D.
+Default QymCAD icon set designed from scratch, inspired by modern mobile CAD ergonomics.
 
 ## Overview
-- **ID**: `shapr-alike`
-- **Name**: Shapr-Alike
+- **ID**: `default`
+- **Name**: Default
 - **Version**: `1.0.0`
 - **Package Type**: `IconTheme`
 - **Color Mode**: Adaptive (uses CSS color tokens like `var(--token, fallback)` for live adaptation to UI color schemes)

@@ -7,7 +7,7 @@ use super::hygiene::{validate_svg, validate_svg_structural};
 use super::manifest::IconManifest;
 
 /// Package an icon folder into any writer (e.g. file or in-memory cursor).
-/// Only valid, verified icons that match a known `IconId` are packaged into the archive.
+/// Only valid icons that match a known `IconId` are packaged into the archive.
 /// Extraneous files and invalid SVGs are automatically excluded.
 pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: impl AsRef<Path>, manifest: &IconManifest, mut writer: W) -> Result<ValidationReport, String> {
     manifest.validate()?;
@@ -22,9 +22,7 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut mem_buf));
     let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-    // 1. Write manifest.ron (marked verified)
-    let mut manifest = manifest.clone();
-    manifest.verified = true;
+    // 1. Write manifest.ron
     let ron_text = manifest.to_ron().map_err(|e| format!("manifest serialization error: {e}"))?;
     zip.start_file("manifest.ron", options).map_err(|e| e.to_string())?;
     std::io::Write::write_all(&mut zip, ron_text.as_bytes()).map_err(|e| e.to_string())?;
@@ -40,13 +38,7 @@ pub fn package_bundle_to_writer<W: std::io::Write + std::io::Seek>(source_dir: i
             } else {
                 super::pack::MAX_TEXT_FILE_SIZE
             };
-            if std::fs::metadata(&doc_path).ok().is_some_and(|m| m.len() > limit) {
-                continue;
-            }
-            if let Ok(content) = std::fs::read(&doc_path) {
-                if content.len() as u64 > limit {
-                    continue;
-                }
+            if let Some(content) = super::pack::read_file_with_limit(&doc_path, limit) {
                 if *doc == "icon.svg" && validate_svg(&content).is_err() {
                     continue;
                 }
@@ -118,8 +110,7 @@ pub fn package_bundle_to_bytes(source_dir: impl AsRef<Path>, manifest: &IconMani
 }
 
 /// Package an icon folder into a `.qicons` bundle file on disk.
-/// Automatically validates all icons, guarantees that only verified CAD icons enter the bundle,
-/// and seals the bundle with a trailing cryptographic SHA-256 integrity record.
+/// Validates all icons and appends a SHA-256 checksum trailer for detecting later archive edits.
 pub fn package_bundle(source_dir: impl AsRef<Path>, manifest: &IconManifest, output_archive: impl AsRef<Path>) -> Result<ValidationReport, String> {
     let packaged = package_bundle_to_bytes(source_dir, manifest)?;
     std::fs::write(output_archive.as_ref(), packaged.bytes).map_err(|e| e.to_string())?;

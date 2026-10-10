@@ -1190,7 +1190,7 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             }
             if show("settings-icon-themes") {
                 ui.separator();
-                icon_theme_section(wc, ui, ctx);
+                crate::gui::icon_themes::icon_theme_section(wc, ui, ctx);
             }
         }
         Sec::Viewport => {
@@ -1814,7 +1814,4 @@ pub(crate) fn scheme_section(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
     if ask.apply_theme {
         crate::gui::apply_theme(&mut *wc.scheme, &*wc.set, ctx);
     }
-}
-pub(crate) fn icon_theme_section(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context) {
-    crate::gui::icon_themes::icon_theme_section(wc, ui, ctx);
 }

@@ -29,7 +29,7 @@ pub fn compute_sha256(data: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// 4-byte magic signature placed at the very end of a verified QymCAD bundle file.
+/// 4-byte marker placed at the very end of a QymCAD bundle checksum trailer.
 pub const QICONS_TRAILER_MAGIC: &[u8; 4] = b"QCAD";
 
 /// Current version of the trailer format.

@@ -15,7 +15,19 @@ pub struct IconWatcher {
     pub dev_watch_enabled: bool,
     pub watched_pack_ids: Vec<String>,
     pub last_seen_snapshots: HashMap<String, HashMap<PathBuf, FileSignature>>,
+    pub removed_pack_ids: Vec<String>,
     pub last_poll_time: Option<std::time::Instant>,
+}
+
+/// Take IDs of active themes whose manifest ID changed while they were watched.
+pub fn take_removed_icon_pack_ids(ctx: &egui::Context) -> Vec<String> {
+    ctx.data_mut(|data| {
+        let watcher_id = egui::Id::new("cad_icon_watcher");
+        let mut watcher = data.get_temp::<IconWatcher>(watcher_id).unwrap_or_default();
+        let removed = std::mem::take(&mut watcher.removed_pack_ids);
+        data.insert_temp(watcher_id, watcher);
+        removed
+    })
 }
 
 /// Synchronize watched pack IDs in `egui::Context`.
@@ -145,43 +157,61 @@ pub fn poll_watched_icon_packs(ctx: &egui::Context, palette: &qymcad_scheme::Pal
 
     let stack_id = egui::Id::new("cad_active_icon_stack");
     let mut stack = ctx.data(|d| d.get_temp::<ActiveIconStack>(stack_id)).map(|s| s.0).unwrap_or_default();
-    let mut updated_snapshots = Vec::new();
+    let mut updated_snapshots = HashMap::new();
+    let mut removed_ids = Vec::new();
+    let mut removed_paths = HashSet::new();
     let mut affected_icons = HashSet::new();
     let mut manifest_changed = false;
     let mut other_file_changed = false;
 
     for pack in &mut stack {
         if pack.is_directory() && (watcher.dev_watch_enabled || watcher.watched_pack_ids.iter().any(|id| id == &pack.manifest.id)) {
+            let old_id = pack.manifest.id.clone();
             if let Some(snap) = pack.directory_snapshot() {
-                if let Some(prev) = watcher.last_seen_snapshots.get(&pack.manifest.id) {
+                if let Some(prev) = watcher.last_seen_snapshots.get(&old_id) {
                     if prev != &snap {
+                        let mut this_manifest_changed = false;
                         for (path, sig) in &snap {
                             if prev.get(path) != Some(sig) {
-                                classify_changed_path(path, &mut manifest_changed, &mut affected_icons, &mut other_file_changed);
+                                classify_changed_path(path, &mut this_manifest_changed, &mut affected_icons, &mut other_file_changed);
                             }
                         }
                         for path in prev.keys() {
                             if !snap.contains_key(path) {
-                                classify_changed_path(path, &mut manifest_changed, &mut affected_icons, &mut other_file_changed);
+                                classify_changed_path(path, &mut this_manifest_changed, &mut affected_icons, &mut other_file_changed);
                             }
                         }
-                        if manifest_changed {
-                            let _ = pack.reload_manifest();
+                        if this_manifest_changed {
+                            manifest_changed = true;
+                            if pack.reload_manifest().is_ok() && pack.manifest.id != old_id {
+                                if let Some(path) = pack.source_path() {
+                                    removed_paths.insert(path.to_path_buf());
+                                }
+                                removed_ids.push(old_id);
+                                continue;
+                            }
                         }
-                        updated_snapshots.push((pack.manifest.id.clone(), snap));
+                        updated_snapshots.insert(old_id, snap);
                     }
                 } else {
-                    updated_snapshots.push((pack.manifest.id.clone(), snap));
+                    updated_snapshots.insert(old_id, snap);
                 }
             }
         }
     }
 
+    stack.retain(|pack| pack.source_path().is_none_or(|path| !removed_paths.contains(path)));
+
     ctx.data_mut(|d| {
         let mut w = d.get_temp::<IconWatcher>(watcher_id).unwrap_or_default();
         w.last_poll_time = Some(now);
-        for (id, snap) in updated_snapshots {
-            w.last_seen_snapshots.insert(id, snap);
+        w.last_seen_snapshots.extend(updated_snapshots);
+        for id in removed_ids {
+            w.last_seen_snapshots.remove(&id);
+            w.watched_pack_ids.retain(|watched| watched != &id);
+            if !w.removed_pack_ids.contains(&id) {
+                w.removed_pack_ids.push(id);
+            }
         }
         d.insert_temp(watcher_id, w);
     });
@@ -190,13 +220,18 @@ pub fn poll_watched_icon_packs(ctx: &egui::Context, palette: &qymcad_scheme::Pal
     if any_changed {
         if manifest_changed {
             install_cad_icons(ctx, &stack, palette);
+            ctx.data_mut(|d| {
+                if let Some(mut current_stack) = d.get_temp::<ActiveIconStack>(stack_id) {
+                    current_stack.0.retain(|pack| pack.source_path().is_none_or(|path| !removed_paths.contains(path)));
+                    d.insert_temp(stack_id, current_stack);
+                }
+            });
         } else {
             for &icon in &affected_icons {
                 update_cad_icon(ctx, icon, &stack, palette);
             }
         }
         bump_icon_revision(ctx);
-        ctx.data_mut(|d| d.insert_temp(stack_id, ActiveIconStack(stack)));
         ctx.request_repaint();
     }
 

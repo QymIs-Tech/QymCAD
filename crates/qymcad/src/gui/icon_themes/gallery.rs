@@ -8,6 +8,29 @@ use qymcad_ui_state::icons::{directory_has_cleanable_icons, FileSignature, IconI
 use std::path::PathBuf;
 
 pub(crate) fn draw_pack_icon(ui: &mut egui::Ui, pack: &IconPack, palette: &qymcad_scheme::Palette, size: f32) {
+    match &pack.source {
+        PackSource::Directory(_) => {
+            let cache_id = egui::Id::new("icon_manager_directory_cache").with(&pack.manifest.id);
+            let cached = ui.ctx().data(|data| data.get_temp::<ManagerDirectoryCache>(cache_id).map(|cache| cache.preview));
+            if let Some(preview) = cached {
+                draw_pack_icon_bytes(ui, pack, palette, size, preview.pack_icon.clone(), preview.image_generation);
+            } else {
+                ui.add_sized([size, size], egui::Label::new(ph::FOLDER_OPEN));
+            }
+            return;
+        }
+        PackSource::Archive { .. } => {
+            let cache_id = egui::Id::new("icon_manager_archive_cache").with(&pack.manifest.id);
+            let cached = ui.ctx().data(|data| data.get_temp::<ManagerArchiveCache>(cache_id).map(|cache| cache.preview));
+            if let Some(preview) = cached {
+                draw_pack_icon_bytes(ui, pack, palette, size, preview.pack_icon.clone(), preview.image_generation);
+            } else {
+                ui.add_sized([size, size], egui::Label::new(ph::PACKAGE));
+            }
+            return;
+        }
+        PackSource::Memory(_) | PackSource::Embedded(_) => {}
+    }
     draw_pack_icon_role(ui, pack, palette, size, None, 0, "sidebar");
 }
 
@@ -202,6 +225,19 @@ pub(crate) struct ManagerDirectoryCache {
     pub preview: std::sync::Arc<ManagerPackPreview>,
 }
 
+const MANAGER_DISK_PACK_PREVIEW_REQUEST: &str = "icon_manager_disk_pack_preview_request";
+
+pub(crate) fn request_manager_pack_preview(ctx: &egui::Context, pack: Option<&IconPack>) {
+    ctx.data_mut(|data| {
+        let request_id = egui::Id::new(MANAGER_DISK_PACK_PREVIEW_REQUEST);
+        if let Some(pack) = pack.filter(|pack| matches!(&pack.source, PackSource::Directory(_) | PackSource::Archive { .. })) {
+            data.insert_temp(request_id, pack.clone());
+        } else {
+            data.remove::<IconPack>(request_id);
+        }
+    });
+}
+
 #[derive(Clone)]
 pub(crate) struct ManagerPreviewImage {
     pub bytes: egui::load::Bytes,
@@ -258,19 +294,43 @@ pub(crate) fn manager_embedded_preview(ctx: &egui::Context, pack: &IconPack) -> 
 }
 
 pub(crate) fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::sync::Arc<ManagerPackPreview>> {
-    let PackSource::Archive(path) = &pack.source else {
+    let PackSource::Archive { path, .. } = &pack.source else {
         return None;
     };
-    let metadata = std::fs::metadata(path).ok()?;
+    let cache_id = egui::Id::new("icon_manager_archive_cache").with(&pack.manifest.id);
+    ctx.data(|data| data.get_temp::<ManagerArchiveCache>(cache_id).filter(|cache| cache.path == *path).map(|cache| cache.preview))
+}
+
+pub(crate) fn manager_disk_pack_preview_changed(ctx: &egui::Context) -> bool {
+    let request_id = egui::Id::new(MANAGER_DISK_PACK_PREVIEW_REQUEST);
+    let Some(pack) = ctx.data(|data| data.get_temp::<IconPack>(request_id)) else {
+        return false;
+    };
+    match pack.source {
+        PackSource::Directory(_) => refresh_manager_directory_preview_for_pack(ctx, &pack),
+        PackSource::Archive { .. } => refresh_manager_archive_preview(ctx, &pack),
+        PackSource::Memory(_) | PackSource::Embedded(_) => false,
+    }
+}
+
+fn refresh_manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> bool {
+    let PackSource::Archive { path, .. } = &pack.source else {
+        return false;
+    };
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
     let modified = metadata.modified().ok();
     let revision = qymcad_ui_state::icons::get_icon_revision(ctx);
     let cache_id = egui::Id::new("icon_manager_archive_cache").with(&pack.manifest.id);
     if let Some(cached) = ctx.data(|data| data.get_temp::<ManagerArchiveCache>(cache_id)) {
         if cached.path == *path && cached.file_size == metadata.len() && cached.modified == modified && cached.revision == revision {
-            return Some(cached.preview);
+            return false;
         }
     }
-    let snapshot = pack.archive_snapshot().ok()?;
+    let Ok(snapshot) = pack.archive_snapshot() else {
+        return false;
+    };
     let mut coverage = 0;
     let mut invalid_icons = 0;
     let mut icons = std::collections::HashMap::new();
@@ -299,14 +359,24 @@ pub(crate) fn manager_archive_preview(ctx: &egui::Context, pack: &IconPack) -> O
     ctx.data_mut(|data| {
         data.insert_temp(cache_id, ManagerArchiveCache { path: path.clone(), file_size: metadata.len(), modified, revision, preview: preview.clone() });
     });
-    Some(preview)
+    true
 }
 
 pub(crate) fn manager_directory_preview(ctx: &egui::Context, pack: &IconPack) -> Option<std::sync::Arc<ManagerPackPreview>> {
     let PackSource::Directory(path) = &pack.source else {
         return None;
     };
-    let mut snapshot = pack.directory_snapshot()?;
+    let cache_id = egui::Id::new("icon_manager_directory_cache").with(&pack.manifest.id);
+    ctx.data(|data| data.get_temp::<ManagerDirectoryCache>(cache_id).filter(|cache| cache.path == *path).map(|cache| cache.preview))
+}
+
+fn refresh_manager_directory_preview_for_pack(ctx: &egui::Context, pack: &IconPack) -> bool {
+    let PackSource::Directory(path) = &pack.source else {
+        return false;
+    };
+    let Some(mut snapshot) = pack.directory_snapshot() else {
+        return false;
+    };
     for name in ["README.md", "readme.md", "README.txt", "description.md", "preview.svg", "preview.png", "preview.webp"] {
         let file = path.join(name);
         if let Ok(metadata) = std::fs::metadata(file) {
@@ -329,7 +399,7 @@ pub(crate) fn manager_directory_preview(ctx: &egui::Context, pack: &IconPack) ->
     let cached = ctx.data(|data| data.get_temp::<ManagerDirectoryCache>(cache_id));
     if let Some(cache) = &cached {
         if cache.path == *path && *cache.snapshot == snapshot && cache.revision == revision {
-            return Some(cache.preview.clone());
+            return false;
         }
     }
 
@@ -362,5 +432,5 @@ pub(crate) fn manager_directory_preview(ctx: &egui::Context, pack: &IconPack) ->
     ctx.data_mut(|data| {
         data.insert_temp(cache_id, ManagerDirectoryCache { path: path.clone(), snapshot: std::sync::Arc::new(snapshot), revision, preview: preview.clone() });
     });
-    Some(preview)
+    true
 }

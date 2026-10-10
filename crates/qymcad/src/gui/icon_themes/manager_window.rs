@@ -5,102 +5,63 @@
 
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{clean_directory_icon, clean_directory_icons, load_default_pack, BundleFormat, CleanIconResult, PackSource, ALL_ICONS, DEFAULT_THEME_ID};
-use qymcad_ui_state::WinCtx;
+use qymcad_ui_state::{Settings, WinCtx};
 use std::path::PathBuf;
 
 use super::appearance_section::draw_bundle_format_badge;
 pub(crate) use super::appearance_section::apply_icon_themes;
 use super::conflicts::draw_duplicate_conflict_view;
-use super::discovery::{all_theme_dirs, discover_all_theme_packs, ensure_discovery_worker, stop_discovery_worker};
+use super::discovery::{all_theme_dirs, discover_all_theme_packs, ensure_discovery_worker, stop_discovery_worker, theme_discovery_ready};
 use super::gallery::{
-    draw_gallery_icon_row, draw_pack_icon, draw_pack_icon_bytes, forget_pack_gallery_textures, manager_archive_preview, manager_directory_preview, manager_embedded_preview, GalleryRowParams,
-    ManagerPreviewImage,
+    draw_gallery_icon_row, draw_pack_icon, draw_pack_icon_bytes, forget_pack_gallery_textures, manager_archive_preview, manager_directory_preview, manager_embedded_preview,
+    request_manager_pack_preview, GalleryRowParams, ManagerPreviewImage,
 };
-use super::packager_dialog::{draw_packager_modal, open_packager_for_directory, PackagerDialogState};
+use super::packager_dialog::{draw_packager_modal, open_packager_for_directory};
 use super::sidebar::{draw_icon_manager_actions, draw_manager_card_title, manager_sidebar_shell, manager_theme_card, IndexSwap};
 
-/// Active tab in the Icon Theme Manager window.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum IconManagerTab {
-    Readme,
-    Gallery,
+use qymcad_ui_state::icons::{CleanNotice, CopiedPathNotice, IconManagerTab};
+use qymcad_ui_state::WinKind;
+
+pub(super) fn remove_deleted_icon_theme_ids(set: &mut Settings, removed: &[String]) {
+    set.active_icon_packs.retain(|id| !removed.contains(id));
+    set.inactive_icon_packs.retain(|id| !removed.contains(id));
+    set.watched_icon_packs.retain(|id| !removed.contains(id));
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct CopiedPathNotice {
-    pub path: String,
-    pub timestamp: f64,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct IconManagerState {
-    pub is_open: bool,
-    pub selected_pack_id: String,
-    pub active_tab: IconManagerTab,
-    pub search_query: String,
-    pub category_filter: String,
-    pub(crate) clean_notice: Option<CleanNotice>,
-    pub(crate) copied_path: Option<CopiedPathNotice>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct CleanNotice {
-    pub pack_id: String,
-    pub text: String,
-    pub is_error: bool,
-    pub details: Vec<String>,
-}
-
-impl Default for IconManagerState {
-    fn default() -> Self {
-        Self { is_open: false, selected_pack_id: String::new(), active_tab: IconManagerTab::Readme, search_query: String::new(), category_filter: "all".into(), clean_notice: None, copied_path: None }
-    }
-}
-
-/// Request to open the Icon Theme Manager window.
-pub(crate) fn open_icon_manager(ctx: &egui::Context) {
-    ctx.data_mut(|d| {
-        let state = d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window"));
-        state.is_open = true;
-    });
-}
-
-/// Poll watched theme packs during the frame.
-pub(crate) fn poll_icon_themes_frame(ctx: &egui::Context, palette: &qymcad_scheme::Palette) {
+/// Poll watched theme packs and remove renamed themes from saved selections.
+pub(crate) fn poll_icon_themes_frame(ctx: &egui::Context, wc: &mut WinCtx) {
     if qymcad_ui_state::icons::has_watched_icon_packs(ctx) {
-        qymcad_ui_state::icons::ensure_watcher_thread(ctx, palette);
+        qymcad_ui_state::icons::ensure_watcher_thread(ctx, &wc.scheme.pal);
+    }
+    let removed = qymcad_ui_state::icons::take_removed_icon_pack_ids(ctx);
+    if !removed.is_empty() {
+        remove_deleted_icon_theme_ids(wc.set, &removed);
+        apply_icon_themes(wc.set, ctx, &wc.scheme.pal);
+        ctx.request_repaint();
     }
 }
 
 /// Draw the dedicated Icon Theme Manager window.
 pub(crate) fn draw_icon_manager_window(ctx: &egui::Context, wc: &mut WinCtx) {
-    poll_icon_themes_frame(ctx, &wc.scheme.pal);
+    poll_icon_themes_frame(ctx, wc);
     draw_icon_manager_window_in_dirs(ctx, wc, &all_theme_dirs());
 }
 
 pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut WinCtx, dirs: &[PathBuf]) {
     let locale = crate::i18n::language();
-    let mut state = ctx.data_mut(|d| d.get_temp_mut_or_default::<IconManagerState>(egui::Id::new("icon_manager_window")).clone());
 
-    let mut packager_state = ctx.data_mut(|d| d.get_temp_mut_or_default::<PackagerDialogState>(egui::Id::new("icon_packager_dialog")).clone());
+    draw_packager_modal(ctx, wc);
 
-    if packager_state.is_open {
-        draw_packager_modal(ctx, &mut packager_state);
-    }
-
-    ctx.data_mut(|d| {
-        d.insert_temp(egui::Id::new("icon_packager_dialog"), packager_state);
-    });
-
-    if !state.is_open {
+    if !wc.win.is(WinKind::IconManager) {
+        request_manager_pack_preview(ctx, None);
         stop_discovery_worker(ctx);
         return;
     }
     ensure_discovery_worker(ctx, dirs);
 
-    let initial_selected_pack_id = state.selected_pack_id.clone();
-    let mut open = state.is_open;
+    let mut open = true;
     let mut changed = false;
+    let mut to_package: Option<(qymcad_ui_state::icons::IconPack, PathBuf)> = None;
 
     // Ensure the built-in default pack is never placed in the user's active or inactive cascade lists
     if wc.set.active_icon_packs.iter().any(|id| id == DEFAULT_THEME_ID) {
@@ -112,11 +73,14 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
         changed = true;
     }
 
+    let discovery_ready = theme_discovery_ready(dirs);
     let discovered = discover_all_theme_packs(dirs);
     let mut all_packs = discovered.packs;
 
     // Retain only directory packs in watched list
-    wc.set.watched_icon_packs.retain(|id| all_packs.iter().find(|p| &p.manifest.id == id).is_some_and(|p| p.is_directory()));
+    if discovery_ready {
+        wc.set.watched_icon_packs.retain(|id| all_packs.iter().find(|p| &p.manifest.id == id).is_some_and(|p| p.is_directory()));
+    }
 
     // Ensure the built-in default pack is always represented if discovered or from embedded
     if !all_packs.iter().any(|p| p.manifest.id == DEFAULT_THEME_ID && !p.has_id_conflict()) {
@@ -126,11 +90,13 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
     }
 
     // Default selection if current is invalid
-    if !all_packs.iter().any(|p| p.selection_key() == state.selected_pack_id || p.manifest.id == state.selected_pack_id) {
+    if discovery_ready && !all_packs.iter().any(|p| p.selection_key() == wc.win.icon_manager.selected_pack_id || p.manifest.id == wc.win.icon_manager.selected_pack_id) {
         if let Some(first) = all_packs.first() {
-            state.selected_pack_id = first.selection_key();
+            wc.win.icon_manager.selected_pack_id = first.selection_key();
         }
     }
+
+    let initial_selected_pack_id = wc.win.icon_manager.selected_pack_id.clone();
 
     egui::Window::new(format!("{} {}", ph::PALETTE, crate::i18n::tr("icontheme-mgr-title")))
         .id(egui::Id::new("icon_manager_window"))
@@ -139,6 +105,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
         .min_size(egui::vec2(760.0, 500.0))
         .resizable(true)
         .show(ctx, |ui| {
+            let state = &mut wc.win.icon_manager;
             ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-desc")).weak());
             ui.add_space(8.0);
             ui.separator();
@@ -173,7 +140,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                     draw_manager_card_title(ui, text_width, &title, name);
                                     if let Some(p) = pack_opt {
                                         ui.horizontal(|ui| {
-                                            draw_bundle_format_badge(ui, p.format(), p.is_tampered);
+                                            draw_bundle_format_badge(ui, p.format());
                                             if p.is_directory() && wc.set.watched_icon_packs.contains(id) {
                                                 ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icontheme-mgr-watch-this-pack"));
                                             }
@@ -219,7 +186,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                 let name = base_pack.map(|pack| pack.manifest.name_for_locale(&locale).to_string()).unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base"));
                                 let description = base_pack.map(|pack| pack.manifest.description_for_locale(&locale).to_string()).unwrap_or_else(|| crate::i18n::tr("settings-icon-themes-base-desc"));
                                 draw_manager_card_title(ui, text_width, &name, &description);
-                                draw_bundle_format_badge(ui, BundleFormat::Embedded, false);
+                                draw_bundle_format_badge(ui, BundleFormat::Embedded);
                             });
                         });
                         None
@@ -264,7 +231,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                     let name = p.manifest.name_for_locale(&locale);
                                     draw_manager_card_title(ui, text_width, name, name);
                                     ui.horizontal(|ui| {
-                                        draw_bundle_format_badge(ui, p.format(), p.is_tampered);
+                                        draw_bundle_format_badge(ui, p.format());
                                         if p.has_id_conflict() {
                                             egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.20)).corner_radius(3.0).inner_margin(egui::Margin::symmetric(5, 2)).show(ui, |ui| {
                                                 ui.horizontal(|ui| {
@@ -321,7 +288,8 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                             egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.12)).corner_radius(4.0).inner_margin(egui::Margin::symmetric(6, 4)).show(ui, |ui| {
                                 ui.vertical(|ui| {
                                     ui.label(egui::RichText::new(file_name).strong());
-                                    ui.label(egui::RichText::new(&err.reason).small().weak());
+                                    let reason = if err.reason == qymcad_ui_state::icons::pack::INVALID_PACKAGE_ERROR { crate::i18n::tr("icontheme-mgr-invalid-package") } else { err.reason.clone() };
+                                    ui.label(egui::RichText::new(reason).small().weak());
                                 });
                             });
                             ui.add_space(3.0);
@@ -347,6 +315,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
 
             egui::CentralPanel::default().show(ui, |ui| {
                 let pack_opt = all_packs.iter().find(|p| p.selection_key() == state.selected_pack_id).or_else(|| all_packs.iter().find(|p| p.manifest.id == state.selected_pack_id));
+                request_manager_pack_preview(ctx, pack_opt);
                 let Some(pack) = pack_opt else {
                     ui.label(crate::i18n::tr("icontheme-mgr-no-pack-selected"));
                     return;
@@ -357,12 +326,15 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                 }
                 let pack_preview = manager_embedded_preview(ctx, pack).or_else(|| manager_archive_preview(ctx, pack)).or_else(|| manager_directory_preview(ctx, pack));
                 let folder_source = pack.is_directory();
+                let disk_source = matches!(&pack.source, PackSource::Directory(_) | PackSource::Archive { .. });
 
                 egui::Frame::group(ui.style()).inner_margin(12).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         if let Some(preview) = pack_preview.as_ref() {
                             draw_pack_icon_bytes(ui, pack, &wc.scheme.pal, 48.0, preview.pack_icon.clone(), preview.image_generation);
+                        } else if folder_source {
+                            ui.add_sized([48.0, 48.0], egui::Label::new(ph::FOLDER_OPEN));
                         } else {
                             draw_pack_icon(ui, pack, &wc.scheme.pal, 48.0);
                         }
@@ -373,10 +345,10 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                 ui.add(egui::Label::new(egui::RichText::new(description).small().weak()).wrap());
                             }
                             ui.horizontal(|ui| {
-                                draw_bundle_format_badge(ui, pack.format(), pack.is_tampered);
+                                draw_bundle_format_badge(ui, pack.format());
                                 if let PackSource::Directory(source) = &pack.source {
                                     if wc.set.active_icon_packs.contains(&pack.manifest.id) && ui.button(format!("{} {}", ph::PACKAGE, crate::i18n::tr("settings-icon-package-btn"))).clicked() {
-                                        open_packager_for_directory(ctx, pack, source);
+                                        to_package = Some((pack.clone(), source.clone()));
                                     }
                                 }
                                 ui.label(egui::RichText::new(format!("v{}", pack.manifest.version)).small().weak());
@@ -394,7 +366,10 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                         }
                     });
 
-                    let cov = pack_preview.as_ref().map_or_else(|| pack.coverage(), |preview| qymcad_ui_state::icons::CoverageCount { present: preview.coverage, total: ALL_ICONS.len() });
+                    let cov = pack_preview.as_ref().map_or_else(
+                        || if disk_source { qymcad_ui_state::icons::CoverageCount { present: 0, total: ALL_ICONS.len() } } else { pack.coverage() },
+                        |preview| qymcad_ui_state::icons::CoverageCount { present: preview.coverage, total: ALL_ICONS.len() },
+                    );
                     let pct = (cov.present * 100).checked_div(cov.total).unwrap_or(0);
                     let cov_msg = crate::i18n::trn("icontheme-mgr-total-icons", &[("count", &cov.present.to_string()), ("total", &cov.total.to_string()), ("percent", &pct.to_string())]);
                     ui.add_space(8.0);
@@ -403,22 +378,17 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                     });
                     ui.add(egui::ProgressBar::new(pct as f32 / 100.0).desired_width(ui.available_width()));
 
-                    // Verified bundle / Tampered status and hygiene checks
-                    if pack.is_tampered {
-                        ui.add_space(2.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icontheme-mgr-tampered-desc"))).color(ui.visuals().error_fg_color).small().strong());
-                        });
-                    } else if pack.format() == BundleFormat::Package {
+                    // Only packages accepted during discovery reach this view.
+                    if pack.format() == BundleFormat::Package {
                         ui.add_space(2.0);
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("icontheme-mgr-package-desc"))).color(ui.visuals().selection.bg_fill).small().strong());
                         });
                     }
 
-                    // For packs requiring runtime validation (Directory or tampered bundle), scan for SVG hygiene issues
-                    if folder_source || pack.is_tampered {
-                        let invalid_count = pack_preview.as_ref().map_or_else(|| ALL_ICONS.iter().filter(|id| pack.inspect_svg_for_id(**id).is_err()).count(), |preview| preview.invalid_icons);
+                    // Editable folders may need per-file hygiene diagnostics.
+                    if folder_source {
+                        let invalid_count = pack_preview.as_ref().map_or(0, |preview| preview.invalid_icons);
 
                         ui.add_space(2.0);
                         if invalid_count > 0 {
@@ -532,7 +502,10 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                             let preview_display = if let Some(preview) = pack_preview.as_ref() {
                                 PreviewDisplay { image: preview.preview_image.clone(), generation: preview.image_generation }
                             } else {
-                                PreviewDisplay { image: pack.get_preview_image().map(|asset| ManagerPreviewImage { bytes: asset.data.into(), extension: asset.extension }), generation: 0 }
+                                PreviewDisplay {
+                                    image: if disk_source { None } else { pack.get_preview_image().map(|asset| ManagerPreviewImage { bytes: asset.data.into(), extension: asset.extension }) },
+                                    generation: 0,
+                                }
                             };
                             let id_key = egui::Id::new("preview_image_prev_uri").with(&pack.manifest.id);
                             if let Some(image) = preview_display.image {
@@ -565,7 +538,13 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                 }
                             }
 
-                            let readme_md = pack_preview.as_ref().and_then(|preview| preview.readmes.get(&locale)).cloned().unwrap_or_else(|| pack.get_readme_for_locale(&locale));
+                            let readme_md = pack_preview.as_ref().and_then(|preview| preview.readmes.get(&locale)).cloned().unwrap_or_else(|| {
+                                if disk_source {
+                                    String::new()
+                                } else {
+                                    pack.get_readme_for_locale(&locale)
+                                }
+                            });
                             crate::gui::help_window::markdown(&wc.scheme.pal, ui, &readme_md);
                         });
                     }
@@ -630,7 +609,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                         },
                                     )
                                 } else {
-                                    let icon = pack.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from));
+                                    let icon = if disk_source { Ok(None) } else { pack.inspect_svg_for_id(id).map(|data| data.map(egui::load::Bytes::from)) };
                                     draw_gallery_icon_row(
                                         ui,
                                         &GalleryRowParams { pack, id, icon: &icon, palette: &wc.scheme.pal, cleanable: folder_source, generation: 0, copied_path: active_copied_path.as_deref() },
@@ -680,16 +659,16 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
         ctx.request_repaint();
     }
 
-    if initial_selected_pack_id != state.selected_pack_id {
+    if initial_selected_pack_id != wc.win.icon_manager.selected_pack_id {
         forget_pack_gallery_textures(ctx, &initial_selected_pack_id);
     }
     if !open {
+        wc.win.close(WinKind::IconManager);
         stop_discovery_worker(ctx);
-        forget_pack_gallery_textures(ctx, &state.selected_pack_id);
+        forget_pack_gallery_textures(ctx, &wc.win.icon_manager.selected_pack_id);
     }
 
-    state.is_open = open;
-    ctx.data_mut(|d| {
-        d.insert_temp(egui::Id::new("icon_manager_window"), state);
-    });
+    if let Some((pack, source)) = to_package {
+        open_packager_for_directory(wc, &pack, &source);
+    }
 }
