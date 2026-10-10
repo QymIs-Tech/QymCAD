@@ -1330,7 +1330,8 @@ impl Session {
         // the live bodies go with it, as File -> Save writes them
         let live = &self.app.live;
         let breps: Vec<(qymcad_core::model::Id, Vec<u8>)> = live.shapes.iter().filter_map(|(id, sh)| live.blobs.get(id).cloned().or_else(|| sh.to_brep_bytes()).map(|b| (*id, b))).collect();
-        qymcad_io::save_project_guarded_with_brep(&self.app.project, path, &breps).map_err(|e| e.to_string())
+        let thumb = crate::gui::render_scene::render_project_file_preview_png(&self.app.project, &self.app.scheme.pal, self.app.set.ghost_alpha);
+        qymcad_io::save_project_guarded_bundle(&self.app.project, path, &breps, thumb.as_deref()).map_err(|e| e.to_string())
     }
 
     /// THE DOCUMENT once the program is at rest.

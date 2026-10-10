@@ -337,24 +337,35 @@ impl App {
         // and the price of the pause against the price of lost work is different for everybody. Zero means
         // no autosave; `force` (quitting, a test) works even then: that is no longer "once every N
         // minutes" but an explicit request to write.
-        if !force {
-            if self.set.autosave_secs == 0 {
-                return;
-            }
-            if self.disk.edits.last_autosave.elapsed() < std::time::Duration::from_secs(self.set.autosave_secs) {
-                return;
-            }
-        }
-        self.disk.edits.last_autosave = std::time::Instant::now();
-        let key = qymcad_ui_state::edit_key(&self.draw_ctx());
-        if key == self.disk.edits.saved_key || key == self.disk.edits.autosave_key {
-            return; // clean, or this state has been autosaved already
-        }
-        if self.regen.bg.iter().any(|b| b.kind == BgKind::Save) {
-            return; // a write is already under way — no jostling, we try again next period
-        }
-        let path = qymcad_ui_state::autosave_path(&self.disk.project_path);
-        self.disk.io.autosave_key = Some(key); // applied ONLY if the write really went through
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
+        tick_autosave_action(self, force);
     }
+}
+
+fn tick_autosave_action(app: &mut App, force: bool) {
+    if !force {
+        if app.set.autosave_secs == 0 {
+            return;
+        }
+        if app.disk.edits.last_autosave.elapsed() < std::time::Duration::from_secs(app.set.autosave_secs) {
+            return;
+        }
+    }
+    app.disk.edits.last_autosave = std::time::Instant::now();
+    let key = qymcad_ui_state::edit_key(&app.draw_ctx());
+    if key == app.disk.edits.saved_key || key == app.disk.edits.autosave_key {
+        return; // clean, or this state has been autosaved already
+    }
+    if app.regen.bg.iter().any(|b| b.kind == BgKind::Save) {
+        return; // a write is already under way — no jostling, we try again next period
+    }
+    let path = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    app.disk.io.autosave_key = Some(key); // applied ONLY if the write really went through
+    crate::gui::io_jobs::spawn_save(
+        &mut app.disk.io,
+        &mut app.live,
+        &mut app.project,
+        &mut app.regen,
+        &mut app.status,
+        crate::gui::io_jobs::SaveTask { path, autosave: true, pal: None, ghost_alpha: 0 },
+    );
 }

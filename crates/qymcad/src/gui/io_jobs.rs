@@ -176,29 +176,12 @@ impl App {
 
     /// Save (Ctrl+S): if the project has been saved before, write there silently; otherwise Save As.
     pub(crate) fn save_project(&mut self) {
-        match self.disk.project_path.clone() {
-            Some(path) => {
-                // the write is in the background; the key is taken from the SNAPSHOT - edits made during the
-                // write leave the project dirty. But it is APPLIED only after a successful write, otherwise a
-                // failed save silently marked the project clean and leaving never asked about unsaved work.
-                self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
-                spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
-            }
-            None => self.save_project_as(),
-        }
+        save_project_action(self);
     }
 
     /// Save As (Ctrl+Shift+S): always ask for the path and the name.
     pub(super) fn save_project_as(&mut self) {
-        let start = self.disk.project_path.clone().unwrap_or_else(|| "project.qcad".into());
-        let name = std::path::Path::new(&start).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(name).add_filter("QymCAD project", &["qcad", "ron"]), |app, path| {
-            let path = path.to_string_lossy().into_owned();
-            crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
-            app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx())); // confirmed once the write actually succeeds
-            spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path, false);
-            // the write goes to the background
-        });
+        save_project_as_action(self);
     }
 
     /// Finish editing a sketch.
@@ -911,11 +894,56 @@ pub(crate) fn export_base_name(project: &Project, project_path: &Option<String>,
     }
 }
 
-pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut String, path: String, autosave: bool) {
+/// The arguments for spawning an asynchronous project file save.
+#[derive(Clone, Debug)]
+pub(crate) struct SaveTask {
+    pub path: String,
+    pub autosave: bool,
+    pub pal: Option<qymcad_scheme::Palette>,
+    pub ghost_alpha: u8,
+}
+
+pub(crate) fn save_project_action(app: &mut App) {
+    match app.disk.project_path.clone() {
+        Some(path) => {
+            app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx()));
+            spawn_save(
+                &mut app.disk.io,
+                &mut app.live,
+                &mut app.project,
+                &mut app.regen,
+                &mut app.status,
+                SaveTask { path, autosave: false, pal: Some(app.scheme.pal.clone()), ghost_alpha: app.set.ghost_alpha },
+            );
+        }
+        None => app.save_project_as(),
+    }
+}
+
+pub(crate) fn save_project_as_action(app: &mut App) {
+    let start = app.disk.project_path.clone().unwrap_or_else(|| "project.qcad".into());
+    let name = std::path::Path::new(&start).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    app.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(name).add_filter("QymCAD project", &["qcad", "ron"]), |app, path| {
+        let path = path.to_string_lossy().into_owned();
+        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
+        app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx()));
+        spawn_save(
+            &mut app.disk.io,
+            &mut app.live,
+            &mut app.project,
+            &mut app.regen,
+            &mut app.status,
+            SaveTask { path, autosave: false, pal: Some(app.scheme.pal.clone()), ghost_alpha: app.set.ghost_alpha },
+        );
+    });
+}
+
+pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut String, task: SaveTask) {
+    let SaveTask { path, autosave, pal, ghost_alpha } = task;
     // two writes of one file at once are a tmp+rename race. While the first is running, the LAST
     // request is remembered and started when the first reports back (see the JobResult::Saved handler).
     if regen.bg.iter().any(|b| b.kind == BgKind::Save) {
-        io.save_request = Some((path, autosave));
+        io.save_request = Some(SaveTask { path, autosave, pal, ghost_alpha });
         return;
     }
     // "WHEN IT WAS STARTED" IS A FACT, NOT A PROPERTY OF THE LAST WRITE: set once, on the first save,
@@ -939,8 +967,10 @@ pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Proj
     let (tx, rx) = std::sync::mpsc::channel();
     let p = path.clone();
     std::thread::spawn(move || {
+        // Thumbnail rasterization and PNG encoding happen in the background thread so the UI is never stalled.
+        let thumb = if autosave { None } else { pal.as_ref().and_then(|pl| crate::gui::render_scene::render_project_file_preview_png(&proj, pl, ghost_alpha)) };
         // THROUGH THE GUARDED WRITE: an empty document over a non-empty file is a refusal, not a loss.
-        let res = qymcad_io::save_project_guarded_with_brep(&proj, &p, &breps);
+        let res = qymcad_io::save_project_guarded_bundle(&proj, &p, &breps, thumb.as_deref());
         let _ = tx.send(JobResult::Saved { path: p, autosave, error: res.err() });
     });
     regen.bg.push(Busy {

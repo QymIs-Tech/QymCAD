@@ -128,13 +128,13 @@ impl App {
                     }
                 }
                 // another write may have been asked for while this one ran - start the deferred request
-                if let Some((p, auto)) = self.disk.io.save_request.take() {
-                    if auto {
+                if let Some(task) = self.disk.io.save_request.take() {
+                    if task.autosave {
                         self.disk.io.autosave_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
                     } else {
                         self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
                     }
-                    crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, p, auto);
+                    crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, task);
                 }
             }
             JobResult::ImportShapes { shapes, regen } => {

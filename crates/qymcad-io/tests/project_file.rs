@@ -240,3 +240,34 @@ fn a_reversed_cut_survives_a_save_and_a_load() {
     assert_eq!(*extent, ext, "the extent of the tool came back exactly as it was written");
     let _ = std::fs::remove_file(path);
 }
+
+/// A PREVIEW THUMBNAIL IS STORED AT THE BUNDLE ROOT AND SURVIVES ROUND-TRIP.
+///
+/// Project files embed `thumb.png` so that system file managers and shell previewers can display the
+/// document's thumbnail without parsing or decompressing the model geometry. Re-saving without a preview
+/// omits the thumbnail entry.
+#[test]
+fn thumbnail_saved_in_bundle_and_extracted() {
+    let path = std::env::temp_dir().join("qym_thumb_rt.qcad");
+    let path = path.to_str().unwrap();
+    let orig = sample();
+    let fake_png = b"\x89PNG\r\n\x1a\nfake-png-payload";
+
+    qymcad_io::save_project_bundle(&orig, path, &[], Some(fake_png)).expect("saved with thumb");
+
+    // Extracted directly via load_project_thumb
+    let thumb = qymcad_io::load_project_thumb(path);
+    assert_eq!(thumb.as_deref(), Some(&fake_png[..]), "thumbnail bytes match");
+
+    // Extracted from raw bytes
+    let bytes = std::fs::read(path).unwrap();
+    let thumb_bytes = qymcad_io::load_project_thumb_bytes(&bytes);
+    assert_eq!(thumb_bytes.as_deref(), Some(&fake_png[..]), "thumbnail from memory bytes match");
+
+    // Resaving without supplying a thumbnail leaves no thumb.png in the bundle
+    qymcad_io::save_project_bundle(&orig, path, &[], None).expect("resaved without new thumb");
+    let preserved = qymcad_io::load_project_thumb(path);
+    assert!(preserved.is_none(), "thumbnail is absent when None is provided");
+
+    let _ = std::fs::remove_file(path);
+}

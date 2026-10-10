@@ -1083,6 +1083,61 @@ mod command_flow_tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// A PROJECT SAVED THROUGH THE INTERFACE EMBEDS A PREVIEW THUMBNAIL IN THE BUNDLE.
+    ///
+    /// The preview raster is placed directly inside the `.qcad` bundle as `thumb.png` so that file managers
+    /// and shell previewers can display thumbnails without parsing the project geometry.
+    #[test]
+    fn save_project_embeds_preview_thumbnail() {
+        let dir = std::env::temp_dir().join(format!("qym_test_thumb_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("model.qcad").to_string_lossy().into_owned();
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = App::default();
+        let _cube = build_cube(&mut app);
+        app.disk.project_path = Some(path.clone());
+
+        app.save_project();
+        app.wait_bg();
+
+        let thumb = qymcad_io::load_project_thumb(&path).expect("project bundle embeds thumb.png");
+        assert!(thumb.starts_with(b"\x89PNG\r\n\x1a\n"), "embedded thumbnail is a valid PNG image");
+        assert!(thumb.len() > 100, "thumbnail contains raster data");
+
+        let decoded = image::load_from_memory(&thumb).expect("decodes as image").to_rgba8();
+        let corner = decoded.get_pixel(0, 0);
+        assert_eq!(corner[3], 0, "background is transparent (alpha = 0)");
+        let center = decoded.get_pixel(128, 128);
+        assert_eq!(center[3], 255, "model pixel is opaque (alpha = 255)");
+        let watermark = decoded.get_pixel(216, 216);
+        assert_eq!(watermark[3], 255, "watermark is stamped in bottom-right corner (alpha = 255)");
+
+        let auto_path = dir.join("model.autosave.qcad").to_string_lossy().into_owned();
+        app.autosave_for_test(auto_path.clone());
+        let auto_thumb = qymcad_io::load_project_thumb(&auto_path);
+        assert!(auto_thumb.is_none(), "autosave bundle does not generate a thumbnail");
+        let _ = std::fs::remove_file(&auto_path);
+
+        // Resaving with bodies cleared removes the preview thumbnail so OS shows default file icon
+        app.project.bodies.clear();
+        app.save_project();
+        app.wait_bg();
+        assert!(qymcad_io::load_project_thumb(&path).is_none(), "resaving without geometry removes preview thumbnail");
+
+        // Saving a project with no geometry produces no preview thumbnail
+        let empty_path = dir.join("empty.qcad").to_string_lossy().into_owned();
+        let mut empty_app = App::default();
+        empty_app.disk.project_path = Some(empty_path.clone());
+        empty_app.save_project();
+        empty_app.wait_bg();
+        assert!(qymcad_io::load_project_thumb(&empty_path).is_none(), "empty project bundle embeds no thumbnail");
+        let _ = std::fs::remove_file(&empty_path);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Save used to mark the project CLEAN before the background write had finished. If the write failed (no
     /// permission, a full disk, a broken path), `is_dirty()` was already false, the "save?" dialogue would not
     /// appear on closing and the edits would go silently. The snapshot's key must be applied ONLY on success.

@@ -582,13 +582,15 @@ pub(crate) struct App {
     joint_anim: Option<JointAnim>,
 }
 
+pub(crate) use io_jobs::SaveTask;
+
 /// THE STATE OF WRITING AND OPENING A DOCUMENT: what is awaiting a write, what the thread has already confirmed,
 /// what to open at start-up. As separate fields, "the deferred request to write" and "the key it will confirm"
 /// drifted apart: a failed save marked the project clean, because the key was applied without regard to the fact.
 #[derive(Clone, Default)]
 pub(crate) struct DocIo {
     /// a write was requested while the previous one was still running (the last one wins)
-    pub save_request: Option<(String, bool)>,
+    pub save_request: Option<SaveTask>,
     /// the state keys AWAITING the thread's confirmation: applied only on success
     pub saved_key: Option<u64>,
     pub autosave_key: Option<u64>,
@@ -1702,17 +1704,14 @@ impl App {
         self.request_nav(nav, &ctx);
     }
 
-    /// Test facades for saving: a test must take the same path as Save does.
     #[cfg(test)]
     pub(crate) fn save_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
-        self.wait_bg();
+        save_for_test_action(self, path);
     }
 
     #[cfg(test)]
     pub(crate) fn autosave_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
-        self.wait_bg();
+        autosave_for_test_action(self, path);
     }
 
     #[cfg(test)]
@@ -1780,6 +1779,25 @@ impl App {
     fn redo(&mut self) {
         self.active_path = qymcad_ui_state::step_through_history(&mut self.rebuild_ctx(), true).unwrap_or_else(|| self.active_path.clone());
     }
+}
+
+#[cfg(test)]
+fn save_for_test_action(app: &mut App, path: String) {
+    crate::gui::io_jobs::spawn_save(
+        &mut app.disk.io,
+        &mut app.live,
+        &mut app.project,
+        &mut app.regen,
+        &mut app.status,
+        SaveTask { path, autosave: false, pal: Some(app.scheme.pal.clone()), ghost_alpha: app.set.ghost_alpha },
+    );
+    app.wait_bg();
+}
+
+#[cfg(test)]
+fn autosave_for_test_action(app: &mut App, path: String) {
+    crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, SaveTask { path, autosave: true, pal: None, ghost_alpha: 0 });
+    app.wait_bg();
 }
 
 /// WHERE THE PANELS GO. The sizes and the framing that used to be written inside each panel are said here
