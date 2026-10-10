@@ -319,3 +319,53 @@ probe! {
         assert!(problems.is_empty(), "a pair that cannot take a constraint:\n{}", problems.join("\n"));
     }
 }
+
+/// The places of the sheet.
+fn places(s: &mut Session) -> Vec<(f64, f64)> {
+    s.document().sketches[0].places.iter().map(|p| (p[0], p[1])).collect()
+}
+
+/// A line from `from` to `to`, tangent to a circle about `c`, touches it at `t`: the radius to `t` is square to the line,
+/// so `t` is the foot of the centre on the line - the point a tangent line touches at. The circle is free and the solve
+/// may carry and size it too, so its centre is read off the sheet and its radius is not assumed.
+fn touches_at(c: (f64, f64), t: (f64, f64), from: (f64, f64), to: (f64, f64)) -> bool {
+    let (rx, ry) = (t.0 - c.0, t.1 - c.1);
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    rx.hypot(ry) > 1.0 && (dx * rx + dy * ry).abs() < 1e-6 * dx.hypot(dy).max(1.0) * rx.hypot(ry)
+}
+
+probe! {
+    /// TANGENT TO A CIRCLE THE LINE DOES NOT REACH: the line is run on to the circle - its nearer end becomes the point
+    /// it touches at - not only turned so that the straight line it lies on touches it. Reported behaviour: "a circle
+    /// and a line apart from it, Tangent: the line is not lengthened".
+    fn tangent_runs_a_line_apart_from_a_circle_on_to_it() {
+        let mut s = empty_sketch();
+        circle(&mut s, (0.0, 0.0), (10.0, 0.0));
+        line(&mut s, (20.0, -30.0), (40.0, -20.0));
+        pick(&mut s, 35.0, -22.5, false);
+        pick(&mut s, 10.0, 0.0, true);
+        let said = constrain(&mut s, "con-tangent-hint");
+        let places = places(&mut s);
+        let touched = places.iter().any(|&c| places.iter().any(|&t| t != c && places.iter().any(|&o| o != t && o != c && touches_at(c, t, t, o))));
+        assert!(said == s.word("sk-constraint-added") && touched, "the line was not run on to the circle: the status says {said:?}, the sheet holds {places:?}");
+    }
+}
+
+probe! {
+    /// TANGENT WITH THE LINE PICKED AT ITS MIDDLE: the line is carried onto the circle by its middle - the middle is the
+    /// point it touches at. Reported behaviour: "with the centre of the line picked, the line is not carried onto the
+    /// circle by its middle point".
+    fn tangent_carries_a_line_picked_at_its_middle_onto_the_circle_by_it() {
+        let mut s = empty_sketch();
+        circle(&mut s, (0.0, 0.0), (10.0, 0.0));
+        line(&mut s, (20.0, -30.0), (40.0, -20.0));
+        pick(&mut s, 30.0, -25.0, false);
+        let at_middle = s.status() == s.word("sk-midpoint-picked");
+        pick(&mut s, 10.0, 0.0, true);
+        let said = constrain(&mut s, "con-tangent-hint");
+        let places = places(&mut s);
+        let middle_of = |a: (f64, f64), b: (f64, f64), m: (f64, f64)| a != b && (m.0 - (a.0 + b.0) / 2.0).hypot(m.1 - (a.1 + b.1) / 2.0) < 1e-6;
+        let by_middle = places.iter().any(|&c| places.iter().any(|&a| places.iter().any(|&b| places.iter().any(|&m| middle_of(a, b, m) && touches_at(c, m, a, b)))));
+        assert!(at_middle && said == s.word("sk-constraint-added") && by_middle, "picked at its middle ({at_middle}), Tangent: the line is not carried onto the circle by its middle; the status says {said:?}, the sheet holds {places:?}");
+    }
+}

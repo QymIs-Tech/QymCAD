@@ -1831,6 +1831,32 @@ fn middles_for(project: &mut Project, si: usize, sel_sk: &mut qymcad_ui_state::S
     }
 }
 
+/// WHERE A LINE MADE TANGENT TOUCHES THE CIRCLE, when that is a point of the line and not only of the straight line it
+/// lies on: the middle of a line picked at its middle (`at_middle`), held there so the line is carried onto the circle by
+/// it; or, where the foot of the centre falls off the line, the end nearer to it, so the line runs on to the circle.
+/// Tangency alone touches the circle with the straight line the segment lies on: a line apart from the circle turned to
+/// it and stayed apart. Reported behaviour: "the line is not lengthened; with the centre of the line picked, the line is
+/// not carried onto the circle by its middle". None where the foot already falls on the line.
+fn touch_point(project: &mut Project, si: usize, sel_sk: &qymcad_ui_state::SketchSelection, (a, b): (Id, Id), centre: Id) -> Option<Id> {
+    if sel_sk.at_middle.iter().any(|&e| line_ends_of(project, si, e) == Some((a, b))) {
+        return Some(qymcad_ui_state::materialize_ref(project, si, qymcad_ui_state::SketchRef::Midpoint(a, b)));
+    }
+    let (pa, pb, c) = (qymcad_ui_state::sketch_pt(project, si, a)?, qymcad_ui_state::sketch_pt(project, si, b)?, qymcad_ui_state::sketch_pt(project, si, centre)?);
+    let (dx, dy) = (pb.x - pa.x, pb.y - pa.y);
+    let len2 = dx * dx + dy * dy;
+    if len2 < 1e-18 {
+        return None;
+    }
+    let t = ((c.x - pa.x) * dx + (c.y - pa.y) * dy) / len2;
+    if t < 0.0 {
+        Some(a)
+    } else if t > 1.0 {
+        Some(b)
+    } else {
+        None
+    }
+}
+
 pub fn try_constraint_inner(
     project: &mut Project,
     regen: &mut qymcad_ui_state::Rebuilding,
@@ -1892,9 +1918,12 @@ pub fn try_constraint_inner(
             }
         }
         9 => {
-            // tangency: a line plus a circle
+            // tangency: a line plus a circle, the line touching it at a point of its own (`touch_point`)
             if let (Some((la, lb)), Some((cc, rr))) = (lines.first().copied(), qymcad_ui_state::sel_circle_cr(project, sel_sk, si)) {
                 new.push(Constraint::Tangent { a: la, b: lb, c: cc, r: rr });
+                if let Some(p) = touch_point(project, si, sel_sk, (la, lb), cc) {
+                    new.push(Constraint::PointOnCircle { p, c: cc });
+                }
             }
         }
         10 => {
