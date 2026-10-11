@@ -104,13 +104,54 @@ pub fn step() -> Step {
     Step::from_number(STEP.load(Ordering::Relaxed))
 }
 
-/// THE SAMPLES A PIXEL IS DRAWN WITH at this step: the setting, or one from the second step down.
+/// THE SAMPLES A PIXEL IS DRAWN WITH at this step: the setting, or one from the second step down or when the self-test
+/// found the card drawing nothing with several.
 pub fn samples(setting: u32) -> u32 {
-    if step() >= Step::NoAntialiasing {
+    if step() >= Step::NoAntialiasing || NO_ANTIALIASING.load(Ordering::Relaxed) {
         1
     } else {
         setting
     }
+}
+
+/// The self-test found the chosen card drawing nothing with several samples a pixel, and something with one.
+static NO_ANTIALIASING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The samples a self-test draws with first: four, the level every device must be able to do.
+pub const TEST_SAMPLES: u32 = 4;
+
+/// WHAT THE SELF-TEST CHOSE: which of the adapters, in the order offered to it, and whether it drew at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Choice {
+    pub index: usize,
+    pub antialiasing: bool,
+    pub drew: bool,
+}
+
+/// THE FIRST ADAPTER THAT DRAWS, the adapters taken best first: with `TEST_SAMPLES` a pixel, and if not, with one.
+/// None drew - the first is taken all the same, as before the test was there: a picture read back blank may still be
+/// a card that draws on screen, and a program that does not start helps no one.
+pub fn first_that_draws(count: usize, mut draws: impl FnMut(usize, u32) -> bool) -> Choice {
+    for index in 0..count {
+        if draws(index, TEST_SAMPLES) {
+            return Choice { index, antialiasing: true, drew: true };
+        }
+        if draws(index, 1) {
+            return Choice { index, antialiasing: false, drew: true };
+        }
+    }
+    Choice { index: 0, antialiasing: false, drew: false }
+}
+
+/// The self-test's answer is taken: no antialiasing when the card drew only without it.
+pub fn take_choice(choice: Choice) {
+    NO_ANTIALIASING.store(!choice.antialiasing, Ordering::Relaxed);
+    let how = match (choice.drew, choice.antialiasing) {
+        (false, _) => "none drew the test - the best is taken all the same",
+        (true, true) => "it drew with antialiasing",
+        (true, false) => "it drew without antialiasing only - antialiasing is off",
+    };
+    crate::crash::journal(&format!("self-test chose adapter {} of those offered: {how}", choice.index + 1));
 }
 
 /// THE CATALOGUE KEY OF WHAT THE STATUS LINE SAYS at this step - nothing at the first.
@@ -193,6 +234,19 @@ mod tests {
         assert_eq!(best(Step::Processor, Some("Dx12"), &rx480), Some(o(DeviceType::Cpu, Backend::Dx12)));
         let nvk = [o(DeviceType::DiscreteGpu, Backend::Vulkan), o(DeviceType::DiscreteGpu, Backend::Gl), o(DeviceType::Cpu, Backend::Vulkan)];
         assert_eq!(best(Step::OtherBackend, Some("Vulkan"), &nvk), Some(o(DeviceType::DiscreteGpu, Backend::Gl)), "Vulkan died: GL of the same card");
+    }
+
+    /// THE SELF-TEST TAKES THE FIRST ADAPTER THAT DRAWS: with several samples if it can, with one if only that; the next
+    /// adapter when the first draws nothing; the first all the same when none does.
+    #[test]
+    fn the_self_test_takes_the_first_adapter_that_draws() {
+        use super::{first_that_draws, Choice, TEST_SAMPLES};
+        // what each adapter draws: (with several samples, with one)
+        let run = |answers: &[(bool, bool)]| first_that_draws(answers.len(), |i, samples| if samples == TEST_SAMPLES { answers[i].0 } else { answers[i].1 });
+        assert_eq!(run(&[(true, true), (true, true)]), Choice { index: 0, antialiasing: true, drew: true });
+        assert_eq!(run(&[(false, true), (true, true)]), Choice { index: 0, antialiasing: false, drew: true }, "the RX 580 of wgpu #3838: blank with samples, drawn without");
+        assert_eq!(run(&[(false, false), (true, true)]), Choice { index: 1, antialiasing: true, drew: true });
+        assert_eq!(run(&[(false, false), (false, false)]), Choice { index: 0, antialiasing: false, drew: false });
     }
 
     /// THE BACKEND AVOIDED IS THE ONE THE RUN BEFORE DIED WITH, and it stays avoided while the step holds - a run that

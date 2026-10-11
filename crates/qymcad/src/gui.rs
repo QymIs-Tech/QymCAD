@@ -275,7 +275,13 @@ fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
         let seen: Vec<String> = adapters.iter().map(describe_adapter).collect();
         crate::diagnostics::note_adapters(&seen);
         // a card that cannot draw into THIS window is no use, whatever else it can do
-        let best = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).max_by_key(|a| rank_adapter(a));
+        // THE ADAPTERS THAT CAN DRAW INTO THIS WINDOW, best first, and the first of them that really draws: a card can
+        // open, take every command and draw a transparent picture (`viewport_gpu::draws`)
+        let mut fit: Vec<&wgpu::Adapter> = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).collect();
+        fit.sort_by_key(|a| std::cmp::Reverse(rank_adapter(a)));
+        let choice = crate::safe_graphics::first_that_draws(fit.len(), |i, samples| self_test(fit[i], samples));
+        crate::safe_graphics::take_choice(choice);
+        let best = fit.get(choice.index).copied();
         match best {
             Some(a) => {
                 let info = a.get_info();
@@ -299,6 +305,14 @@ fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
             }),
         }
     }));
+}
+
+/// THE SELF-TEST OF ONE ADAPTER with `samples` a pixel, its answer written into the journal.
+fn self_test(adapter: &eframe::wgpu::Adapter, samples: u32) -> bool {
+    let began = std::time::Instant::now();
+    let drew = pollster::block_on(adapter.request_device(&eframe::wgpu::DeviceDescriptor::default())).is_ok_and(|(device, queue)| crate::viewport_gpu::draws(&device, &queue, samples));
+    crate::crash::journal(&format!("self-test: {} with {samples} sample(s): {} in {} ms", describe_adapter(adapter), if drew { "drew" } else { "drew nothing" }, began.elapsed().as_millis()));
+    drew
 }
 
 /// One adapter in one line, for the report.
