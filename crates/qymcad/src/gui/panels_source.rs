@@ -59,6 +59,8 @@ pub(crate) const WINDOWS: &str = concat!(
     include_str!("start_screen.rs"),
     "\n",
     include_str!("command_search.rs"),
+    "\n",
+    include_str!("graphics_settings.rs"),
 );
 
 /// THE WINDOWS AS ONE TEXT: everywhere a window is opened. The panels plus the three files that open a window

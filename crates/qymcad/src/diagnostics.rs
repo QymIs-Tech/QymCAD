@@ -44,9 +44,12 @@ static VIEW_W: AtomicU32 = AtomicU32::new(0);
 static VIEW_H: AtomicU32 = AtomicU32::new(0);
 /// The scale times a hundred: an integer, because atomics hold no floats.
 static VIEW_PPP: AtomicU32 = AtomicU32::new(0);
+/// The frames drawn by this run, for the journal.
+static FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// WHICH ADAPTER IS DRAWING. Called once, when the window has chosen its backend.
 pub fn note_gpu(line: String) {
+    crate::crash::journal(&format!("drawing with: {line}"));
     if let Ok(mut g) = GPU.lock() {
         *g = Some(line);
     }
@@ -54,13 +57,38 @@ pub fn note_gpu(line: String) {
 
 /// EVERY adapter that was offered. Called once, before one of them is chosen.
 pub fn note_adapters(lines: &[String]) {
+    for line in lines {
+        crate::crash::journal(&format!("adapter offered: {line}"));
+    }
     if let Ok(mut a) = ADAPTERS.lock() {
         *a = lines.to_vec();
     }
 }
 
+/// THE ADAPTERS AND THE ONE DRAWING PUT BACK as a check found them, so a check that set its own leaves no trace.
+#[cfg(test)]
+pub(crate) fn put_back_gpu_for_test(adapters: Vec<String>, drawing: Option<String>) {
+    if let Ok(mut a) = ADAPTERS.lock() {
+        *a = adapters;
+    }
+    if let Ok(mut g) = GPU.lock() {
+        *g = drawing;
+    }
+}
+
+/// The adapters the system offered this run, one line each, as the report writes them.
+pub fn offered_adapters() -> Vec<String> {
+    ADAPTERS.lock().map(|a| a.clone()).unwrap_or_default()
+}
+
+/// The adapter drawing this run, as the report writes it.
+pub fn drawing_with() -> Option<String> {
+    GPU.lock().ok().and_then(|g| g.clone())
+}
+
 /// The chosen adapter draws on the processor - there was no working card to draw on.
 pub fn note_drawing_on_the_processor(name: &str) {
+    crate::crash::journal(&format!("drawing on the processor: {name}"));
     if let Ok(mut p) = ON_THE_PROCESSOR.lock() {
         *p = Some(name.to_string());
     }
@@ -74,6 +102,7 @@ pub fn drawing_on_the_processor() -> Option<String> {
 /// Not one adapter would draw into the window. Recorded by the chooser, read by whatever tells the person:
 /// the advice for this is different from the advice for anything else that can go wrong at the door.
 pub fn note_no_adapter() {
+    crate::crash::journal("no adapter would draw into the window");
     if let Ok(mut f) = START_FAILURE.lock() {
         f.get_or_insert(StartFailure { reason: String::new(), report: None, no_adapter: false }).no_adapter = true;
     }
@@ -81,6 +110,7 @@ pub fn note_no_adapter() {
 
 /// The window never opened, and this is why.
 pub fn note_start_failure(reason: &str, report: Option<&std::path::Path>) {
+    crate::crash::journal(&format!("the window did not open: {reason}"));
     if let Ok(mut f) = START_FAILURE.lock() {
         let entry = f.get_or_insert(StartFailure { reason: String::new(), report: None, no_adapter: false });
         entry.reason = reason.to_string();
@@ -96,6 +126,14 @@ pub fn start_failure() -> Option<StartFailure> {
 /// The canvas of the current frame. Called every frame, so it costs three atomic stores and nothing
 /// else - a string built per frame would be measurable at this rate.
 pub fn note_viewport(size: egui::Vec2, points_per_pixel: f32) {
+    // THE FIRST FRAMES GO INTO THE JOURNAL: a run that died after the first frame died drawing, one that died before
+    // it died opening the window - the two are told apart by this line and by nothing else. Ten seconds of frames
+    // say the drawing itself held.
+    match FRAMES.fetch_add(1, Ordering::Relaxed) + 1 {
+        1 => crate::crash::journal("the first frame is drawn"),
+        600 => crate::crash::journal(crate::crash::DREW_A_WHILE),
+        _ => {}
+    }
     VIEW_W.store(size.x as u32, Ordering::Relaxed);
     VIEW_H.store(size.y as u32, Ordering::Relaxed);
     VIEW_PPP.store((points_per_pixel * 100.0) as u32, Ordering::Relaxed);

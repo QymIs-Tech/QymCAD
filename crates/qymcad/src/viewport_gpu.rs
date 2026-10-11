@@ -851,6 +851,77 @@ impl egui_wgpu::CallbackTrait for MeshPaint {
     }
 }
 
+/// THE SIDE OF THE PICTURE A SELF-TEST DRAWS, in pixels: small, so a test on the processor costs little.
+const TEST_SIDE: u32 = 64;
+
+/// DOES THIS DEVICE DRAW: the viewport's own pipeline draws a square into its offscreen target with `samples` per
+/// pixel, the picture is read back, and its middle must be covered. Any error of wgpu on the way is a "no".
+///
+/// Reported behaviour: on some cards the window opened and the bodies were not there - an RX 580 under DX12 drew a
+/// transparent picture when it drew with several samples (wgpu #3838). Nothing fails when that happens; the only
+/// way to know is to draw and look. The square is drawn in both windings, so one of them faces the eye whatever the
+/// pipeline takes for the front.
+pub fn draws(device: &wgpu::Device, queue: &wgpu::Queue, samples: u32) -> bool {
+    let feats = device.features();
+    let ok = |fmt: wgpu::TextureFormat| fmt.guaranteed_format_features(feats).flags.sample_count_supported(samples);
+    if samples > 1 && !(ok(OFFSCREEN_FORMAT) && ok(DEPTH_FORMAT)) {
+        return false;
+    }
+    let scopes = [wgpu::ErrorFilter::Validation, wgpu::ErrorFilter::OutOfMemory, wgpu::ErrorFilter::Internal].map(|f| device.push_error_scope(f));
+    let covered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| draw_the_square(device, queue, samples))).unwrap_or(0);
+    let clean = scopes.into_iter().rev().all(|scope| pollster::block_on(scope.pop()).is_none());
+    // the square covers 80 % of the side, so the middle quarter of the picture lies wholly inside it
+    clean && covered >= (TEST_SIDE / 2) * (TEST_SIDE / 2)
+}
+
+/// The square drawn and read back: how many pixels of the middle quarter it covers.
+fn draw_the_square(device: &wgpu::Device, queue: &wgpu::Queue, samples: u32) -> u32 {
+    let mut resources = egui_wgpu::CallbackResources::default();
+    resources.insert(GpuRenderer::new(device, OFFSCREEN_FORMAT, samples));
+    let side = TEST_SIDE as f32;
+    let basis = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let shade = ShadeRaw { light: [0.0, 0.0, 1.0], floor: 0.5, ghost_alpha: 0.5, ghost_target: [0.5; 3] };
+    let cam = CamRaw::new(&basis, side / 2.0 * 0.8, [0.0; 3], egui::vec2(side, side), 0.0, ZRange { near: 0.1, far: 10.0 }, shade);
+    let corner = |x: f32, y: f32| GpuVert { pos: [x, y, 0.0], body: 0, nrm: 0 };
+    let verts = vec![corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0)];
+    let idx = vec![0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2];
+    let piece = qymcad_ui_state::ScenePiece { verts: std::sync::Arc::new(verts), idx: std::sync::Arc::new(idx), body: 0, rows: 1 };
+    let looks = vec![qymcad_ui_state::BodyLook { tint: 0x00C0_C0C0, state: 0 }];
+    let paint = MeshPaint::new(cam, [TEST_SIDE; 2], Some(vec![piece]), looks, 1);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("qym_self_test") });
+    let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [TEST_SIDE; 2], pixels_per_point: 1.0 };
+    use egui_wgpu::CallbackTrait;
+    let extra = paint.prepare(device, queue, &screen, &mut encoder, &mut resources);
+    let Some(tex) = resources.get::<GpuRenderer>().and_then(|g| g.color_tex.clone()) else { return 0 };
+    let row = (TEST_SIDE * 4).div_ceil(256) * 256;
+    let buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("qym_self_test_read"),
+        size: (row * TEST_SIDE) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(TEST_SIDE) } },
+        wgpu::Extent3d { width: TEST_SIDE, height: TEST_SIDE, depth_or_array_layers: 1 },
+    );
+    queue.submit(extra.into_iter().chain(std::iter::once(encoder.finish())));
+    let slice = buf.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    if device.poll(wgpu::PollType::wait_indefinitely()).is_err() || !matches!(rx.recv(), Ok(Ok(()))) {
+        return 0;
+    }
+    let data = slice.get_mapped_range();
+    let quarter = TEST_SIDE / 4..TEST_SIDE * 3 / 4;
+    let covered = quarter.clone().flat_map(|y| quarter.clone().map(move |x| (y * row + x * 4 + 3) as usize)).filter(|&o| data[o] > 128).count() as u32;
+    drop(data);
+    buf.unmap();
+    covered
+}
+
 /// THE SAME RESOURCES, INTO A BARE BAG - for a check that renders without a window.
 ///
 /// `install` below needs the render state of eframe, which exists only when a window is open. A check has a
@@ -878,6 +949,7 @@ pub fn install(render_state: &egui_wgpu::RenderState) -> bool {
     set_msaa(MSAA_SAMPLES.load(std::sync::atomic::Ordering::Relaxed));
     let renderer = GpuRenderer::new(&render_state.device, render_state.target_format, msaa_samples());
     render_state.renderer.write().callback_resources.insert(renderer);
+    crate::crash::journal(&format!("the viewport is built with {} samples a pixel", msaa_samples()));
     true
 }
 
@@ -896,6 +968,26 @@ mod tests {
     /// Shading plays no part in what these checks measure - the projection does.
     fn plain() -> super::ShadeRaw {
         super::ShadeRaw { light: [0.0, 0.0, 1.0], floor: 0.35, ghost_alpha: 0.5, ghost_target: [0.1, 0.1, 0.12] }
+    }
+
+    /// THE SELF-TEST SEES A DEVICE THAT DRAWS: on this machine's device the square is drawn, with one sample and
+    /// with four. Where there is no device it says so and stands aside.
+    #[test]
+    fn the_self_test_sees_a_device_that_draws() {
+        use eframe::wgpu;
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())) else {
+            eprintln!("PASSED OVER: no graphics device to test");
+            return;
+        };
+        let Ok((device, queue)) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())) else {
+            eprintln!("PASSED OVER: the graphics device would not open");
+            return;
+        };
+        let began = std::time::Instant::now();
+        assert!(super::draws(&device, &queue, 1), "the device of this machine draws, and the self-test says it does not (one sample)");
+        assert!(super::draws(&device, &queue, 4), "the device of this machine draws, and the self-test says it does not (four samples)");
+        eprintln!("the self-test on {}: {:?} for both", adapter.get_info().name, began.elapsed());
     }
 
     #[test]

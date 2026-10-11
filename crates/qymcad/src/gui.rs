@@ -178,6 +178,10 @@ pub fn launch() -> eframe::Result<()> {
     // AND THE CRASH STOPS DISAPPEARING. Installed before anything can panic: an autosave can fire in the very
     // first seconds of a session.
     crate::crash::install();
+    // THE JOURNAL OF THIS RUN, and a report of the one before when it stopped without closing
+    let previous = crate::crash::begin_journal();
+    // A START AFTER A START THAT DIED DRAWING TAKES A STEP DOWN (`safe_graphics`)
+    let step = crate::safe_graphics::take(previous.journal.as_deref());
 
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -198,6 +202,7 @@ pub fn launch() -> eframe::Result<()> {
         ..Default::default()
     };
     choose_the_adapter_ourselves(&mut options);
+    options.wgpu_options.on_surface_status = crate::crash::journaled_surface_status(options.wgpu_options.on_surface_status.clone());
     let started = eframe::run_native(
         APP_ID,
         options,
@@ -208,8 +213,9 @@ pub fn launch() -> eframe::Result<()> {
             if let Some(rs) = &cc.wgpu_render_state {
                 // ANTIALIASING COMES BEFORE THE PIPELINES ARE CREATED: they bake the sample count into themselves,
                 // so the setting takes effect on a restart (which is what the window says).
-                crate::viewport_gpu::set_msaa(app.set.msaa);
+                crate::viewport_gpu::set_msaa(crate::safe_graphics::samples(app.set.msaa));
                 app.gpu_ok = crate::viewport_gpu::install(rs);
+                crate::crash::watch_the_device(&rs.device);
                 // WHICH ADAPTER IS DRAWING - half the complaints about a viewport are answered by this line
                 // and by nothing else, and it cannot be guessed from a screenshot.
                 let i = rs.adapter.get_info();
@@ -225,6 +231,10 @@ pub fn launch() -> eframe::Result<()> {
             if let Some(name) = crate::diagnostics::drawing_on_the_processor() {
                 app.status = crate::i18n::tr1("gpu-on-the-processor", "name", &name);
             }
+            // A STEP DOWN IS SAID, with why: otherwise the person sees a rougher picture and no reason for it
+            if let Some(key) = crate::safe_graphics::said(step) {
+                app.status = crate::i18n::tr(key);
+            }
             Ok(Box::new(app))
         }),
     );
@@ -236,6 +246,7 @@ pub fn launch() -> eframe::Result<()> {
         let path = crate::crash::note_failed_start(&e.to_string());
         crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
     }
+    crate::crash::end_journal();
     started
 }
 
@@ -264,7 +275,14 @@ fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
         let seen: Vec<String> = adapters.iter().map(describe_adapter).collect();
         crate::diagnostics::note_adapters(&seen);
         // a card that cannot draw into THIS window is no use, whatever else it can do
-        let best = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).max_by_key(|a| rank_adapter(a));
+        // THE ADAPTERS THAT CAN DRAW INTO THIS WINDOW, best first, and the first of them that really draws: a card can
+        // open, take every command and draw a transparent picture (`viewport_gpu::draws`)
+        let mut fit: Vec<&wgpu::Adapter> = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).collect();
+        let wanted = crate::safe_graphics::wanted_adapter();
+        fit.sort_by_key(|a| std::cmp::Reverse(rank_adapter(a, wanted.as_deref())));
+        let choice = crate::safe_graphics::first_that_draws(fit.len(), |i, samples| self_test(fit[i], samples));
+        crate::safe_graphics::take_choice(choice);
+        let best = fit.get(choice.index).copied();
         match best {
             Some(a) => {
                 let info = a.get_info();
@@ -290,6 +308,14 @@ fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
     }));
 }
 
+/// THE SELF-TEST OF ONE ADAPTER with `samples` a pixel, its answer written into the journal.
+fn self_test(adapter: &eframe::wgpu::Adapter, samples: u32) -> bool {
+    let began = std::time::Instant::now();
+    let drew = pollster::block_on(adapter.request_device(&eframe::wgpu::DeviceDescriptor::default())).is_ok_and(|(device, queue)| crate::viewport_gpu::draws(&device, &queue, samples));
+    crate::crash::journal(&format!("self-test: {} with {samples} sample(s): {} in {} ms", describe_adapter(adapter), if drew { "drew" } else { "drew nothing" }, began.elapsed().as_millis()));
+    drew
+}
+
 /// One adapter in one line, for the report.
 fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
     let i = a.get_info();
@@ -297,9 +323,12 @@ fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
 }
 
 /// HOW GOOD AN ADAPTER IS, highest first. A real card beats a shared one, a shared one beats a virtual one,
-/// and everything beats the processor - which is taken only when nothing else answers.
-fn rank_adapter(a: &eframe::wgpu::Adapter) -> u8 {
-    rank_device_type(a.get_info().device_type)
+/// and everything beats the processor - which is taken only when nothing else answers; the step of a start after a
+/// start that died moves the backend and, at the last, the processor (`safe_graphics::rank`).
+fn rank_adapter(a: &eframe::wgpu::Adapter, wanted: Option<&str>) -> u16 {
+    let i = a.get_info();
+    let offered = crate::safe_graphics::Offered { kind: i.device_type, backend: i.backend, wanted: wanted == Some(describe_adapter(a).as_str()) };
+    crate::safe_graphics::rank(crate::safe_graphics::step(), offered, crate::safe_graphics::avoided().as_deref())
 }
 
 /// The ranking itself, apart from any adapter: a machine with no graphics is exactly the machine a test
@@ -3990,6 +4019,7 @@ mod the_sketch_of_the_report_takes_a_line;
 mod a_big_sketch_selected_keeps_the_3d_frame;
 mod a_dimension_past_its_field_is_left_as_it_stands;
 mod the_point_numbers_wait_for_their_setting;
+mod graphics_settings;
 mod a_drawing_tool_drops_the_selection;
 mod a_circle_and_an_arc_take_a_size_only_when_typed;
 mod a_rectangle_with_its_centre_fixed_is_worked_by_hand;
@@ -4183,6 +4213,7 @@ mod param_error_readable;
 mod ghost_highlight;
 mod look_at_a_document;
 mod gpu_shot;
+mod a_scene_lost_in_a_discarded_pass_is_sent_again;
 mod card_matches_raster;
 mod drag_cost_look;
 mod release_build;
