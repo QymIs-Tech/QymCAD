@@ -182,6 +182,9 @@ pub struct Caches {
     pub norm: std::cell::RefCell<Cached<Vec<Normals>>>,
     /// The key of the scene uploaded into the GPU vertex buffer (re-uploaded only on a change). It does NOT depend on the camera.
     pub gpu_scene_key: std::cell::Cell<u64>,
+    /// The pass of egui (`cumulative_pass_nr`) the scene was handed to the card in. A pass that is discarded takes
+    /// its paint callback with it, so a later pass of the same frame hands the scene over again.
+    pub gpu_scene_pass: std::cell::Cell<u64>,
     /// The cache of the visible scene's world bounding sphere (a centre and a radius) keyed by the scene - for
     /// tight near and far planes in perspective (the z buffer's precision). Recomputed only when the scene changes,
     /// not every frame.
@@ -241,6 +244,7 @@ impl Default for Caches {
             view: std::cell::RefCell::new(None),
             norm: std::cell::RefCell::new(Cached { rev: u64::MAX, value: Vec::new() }),
             gpu_scene_key: std::cell::Cell::new(u64::MAX),
+            gpu_scene_pass: std::cell::Cell::new(0),
             bounds: std::cell::Cell::new(Cached { rev: u64::MAX, value: None }),
             consumed: std::cell::RefCell::new(Cached { rev: u64::MAX, value: std::collections::HashSet::new() }),
             shown_bodies: std::cell::RefCell::new(Cached { rev: u64::MAX, value: ShownBodies::default() }),

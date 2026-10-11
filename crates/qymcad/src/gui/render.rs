@@ -90,8 +90,19 @@ pub(crate) fn draw_3d_gpu(pn: &qymcad_ui_state::Painting, painter: &egui::Painte
     // THE GEOMETRY IS REBUILT RARELY, THE LOOK EVERY FRAME. Moving the pointer over the model, stepping into
     // a subassembly, changing a colour - none of that touches a vertex now; it rewrites a table of two numbers
     // per body. That is what used to send the whole scene to the card again.
-    let (pieces, looks) = if pn.cache.gpu_scene_key.get() != key {
+    //
+    // A PASS THAT IS DISCARDED TAKES ITS CALLBACK WITH IT. egui runs a frame again when a widget asks it to
+    // (`request_discard`) and keeps the shapes of the last pass only, so the scene handed over in an earlier pass of
+    // this frame never reached the card. Reported behaviour: a cube without walls, edges drawn and faces not, until
+    // drawing was switched to the processor and back - which only cleared the key.
+    let ctx = painter.ctx();
+    let this_pass = ctx.cumulative_pass_nr();
+    let first_of_frame = this_pass.saturating_sub(ctx.current_pass_index() as u64);
+    let sent_in = pn.cache.gpu_scene_pass.get();
+    let lost = sent_in >= first_of_frame && sent_in < this_pass;
+    let (pieces, looks) = if pn.cache.gpu_scene_key.get() != key || lost {
         pn.cache.gpu_scene_key.set(key);
+        pn.cache.gpu_scene_pass.set(this_pass);
         let scene = render_scene::gpu_scene(pn);
         (Some(scene.pieces), scene.looks)
     } else {
