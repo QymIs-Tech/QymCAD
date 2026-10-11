@@ -11,6 +11,8 @@
 //!
 //! THIS FILE NAMES `App` NOWHERE. That is the whole point, and it is guarded rather than promised.
 
+pub mod icons;
+pub use icons::*;
 pub mod grab;
 pub mod platform_keys;
 /// Clipping a triangle by a plane for the SECTION view: a pure module with no `self`, so it can be unit-tested.
@@ -289,12 +291,16 @@ pub enum WinKind {
     PartsLibrary,
     /// What the check for a newer version came to (Help -> Check for updates).
     Updates,
+    /// The icon theme manager window.
+    IconManager,
+    /// The developer icon theme packager modal.
+    IconPackager,
 }
 
 impl WinKind {
     /// EVERY KIND, so that a walk over the windows cannot silently miss one added later. A guard checks that the
     /// count here matches the number of variants declared above.
-    pub const ALL: [WinKind; 11] = [
+    pub const ALL: [WinKind; 13] = [
         WinKind::SaveTemplate,
         WinKind::Start,
         WinKind::DocProps,
@@ -306,6 +312,8 @@ impl WinKind {
         WinKind::Settings,
         WinKind::PartsLibrary,
         WinKind::Updates,
+        WinKind::IconManager,
+        WinKind::IconPackager,
     ];
 }
 
@@ -339,6 +347,10 @@ pub struct Windows {
     pub constraints: bool,
     /// A file just read, waiting for its units and scale (see `ImportScale`).
     pub import_scale: Option<ImportScale>,
+    /// Persistent state of the icon theme manager window.
+    pub icon_manager: crate::icons::IconManagerState,
+    /// Persistent state of the developer icon theme packager modal.
+    pub icon_packager: crate::icons::PackagerDialogState,
 }
 
 impl Windows {
@@ -1648,9 +1660,21 @@ pub struct Settings {
     /// for a model under 1 mm or over 10 m.
     #[serde(default)]
     pub import_ask_always: bool,
+    /// Active icon theme packs in descending order of priority.
+    #[serde(default)]
+    pub active_icon_packs: Vec<String>,
+    /// Whether dev watch mode (live auto-reload) is enabled for unpacked icon packs.
+    #[serde(default)]
+    pub icon_dev_watch: bool,
+    /// Installed but disabled icon theme packs.
+    #[serde(default)]
+    pub inactive_icon_packs: Vec<String>,
     /// THE UNIT LAST CHOSEN FOR A FORMAT WITHOUT UNITS, by the format's name: the next file of it comes in the same.
     #[serde(default)]
     pub import_units: std::collections::BTreeMap<String, String>,
+    /// Packs with live file watching enabled (specifically for directory packs).
+    #[serde(default)]
+    pub watched_icon_packs: Vec<String>,
 }
 
 fn default_orbit_about() -> OrbitAbout {
@@ -1747,6 +1771,10 @@ impl Default for Settings {
             orbit_about: default_orbit_about(),
             import_ask_always: false,
             import_units: Default::default(),
+            active_icon_packs: Vec::new(),
+            inactive_icon_packs: Vec::new(),
+            icon_dev_watch: false,
+            watched_icon_packs: Vec::new(),
         }
     }
 }
@@ -14521,10 +14549,14 @@ pub fn take_or_drop(held: bool, ask: BarAsk) -> BarAsk {
     }
 }
 
-pub fn icon_tool(ui: &mut egui::Ui, icon: &str, tip: &str, active: bool) -> bool {
-    let btn = egui::Button::new(egui::RichText::new(icon).size(19.0)).selected(active);
+pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bool {
+    let img = icon_image(ui, icon, 22.0);
+    let btn = egui::Button::image(img).selected(active);
+
     ui.add_sized(egui::vec2(40.0, 34.0), btn).on_hover_text(tip).clicked()
 }
+
+pub use icons::{forget_all_cad_icons, icon_button, icon_image, icon_label, icon_small_button, ResolvedIcon};
 
 /// The direction of an offset vector, as (dir 0/1/2, a signed step) — for reopening a linear pattern.
 pub fn arr_dir_of(dx: f64, dy: f64, dz: f64) -> (u8, f64) {
@@ -14867,6 +14899,7 @@ pub fn put_look(ctx: &egui::Context, pal: &qymcad_scheme::Palette) {
     let v = qymcad_scheme::visuals(pal);
     ctx.set_visuals_of(egui::Theme::Dark, v.clone());
     ctx.set_visuals_of(egui::Theme::Light, v);
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("cad_active_palette"), pal.clone()));
 }
 
 pub fn apply_theme(scheme: &mut SchemeUi, set: &Settings, ctx: &egui::Context) {
@@ -14879,6 +14912,8 @@ pub fn apply_theme(scheme: &mut SchemeUi, set: &Settings, ctx: &egui::Context) {
     // would stay factory-coloured. Schemes with no interface colours of their own get exactly that
     // same factory look.
     put_look(ctx, &scheme.pal);
+    let stack = icons::get_active_icon_stack(ctx);
+    icons::set_active_icon_stack(ctx, stack, &scheme.pal);
     // THE INTERFACE SCALE IS NOT APPLIED HERE: it has nothing to do with the theme. The coupling was
     // hidden and harmful — because of it "adopt the settings" would work even without its own call to
     // the scale, and the guard would stay silent. The scale is applied by those whose business it is:

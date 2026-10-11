@@ -1352,25 +1352,20 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
                     // THE GRABBED ROW TRAVELS WITH THE CURSOR - that same row, not a text in a popup.
                     // Reported behaviour: while holding, there was no sign at all that an item had been picked
                     // up and was being moved; and a popup with a text instead of the row was rejected
-                    // separately. What is wanted is THE ITEM ITSELF travelling under the cursor. It is drawn in
-                    // a layer of its own and that layer is shifted by the distance the mouse has covered:
-                    // exactly what the built-in `dnd_drag_source` does, only the click and the double click
-                    // stay where they were.
+                    // separately. What is wanted is THE ITEM ITSELF travelling under the cursor. An overlay
+                    // area paints the same row at the cursor while the original row keeps click and double-click.
                     let carried = tc.tree.drag.is_some_and(|src| src == cid || (tc.tree_sel.multi.contains(&src) && tc.tree_sel.multi.contains(&cid)));
                     let picked = *tc.sel == Sel::Component(ci) || in_multi;
                     let row = |ui: &mut egui::Ui| ui.selectable_label(picked, format!("{icon} {name}")).interact(egui::Sense::click_and_drag()).on_hover_text(crate::i18n::tr("tree-component-hint"));
-                    let resp = if carried {
-                        let layer = egui::LayerId::new(egui::Order::Tooltip, ui.id().with(("carry", cid)));
-                        let inner = ui.scope_builder(egui::UiBuilder::new().layer_id(layer), |ui| row(ui));
-                        // The shift follows the cursor, as the built-in `dnd_drag_source` does.
+                    let resp = row(ui);
+                    if carried {
                         if let Some(at) = ui.ctx().pointer_interact_pos() {
-                            let delta = at - inner.inner.rect.center();
-                            ui.ctx().transform_layer_shapes(layer, egui::emath::TSTransform::from_translation(delta));
+                            let position = at - egui::vec2(0.0, resp.rect.height() / 2.0);
+                            egui::Area::new(ui.id().with(("carry", cid))).order(egui::Order::Tooltip).fixed_pos(position).interactable(false).fade_in(false).show(ui.ctx(), |ui| {
+                                let _ = ui.selectable_label(picked, format!("{icon} {name}"));
+                            });
                         }
-                        inner.inner
-                    } else {
-                        row(ui)
-                    };
+                    }
                     if origin != cid {
                         let of = tc.project.components.iter().find(|c| c.id == origin).map(|c| crate::i18n::name(&c.name)).unwrap_or_default();
                         ui.weak(crate::i18n::tr("tree-clone-mark")).on_hover_text(crate::i18n::tr1("tree-clone-hint", "name", &of));

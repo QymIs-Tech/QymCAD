@@ -14,6 +14,7 @@ mod gestures;
 mod export_scope;
 mod gizmo_in_space;
 mod help_and_start;
+mod icon_themes;
 mod import_export;
 mod inputs;
 mod menu_bar;

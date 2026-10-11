@@ -335,4 +335,31 @@ mod tests {
         let fresh = App { set: ron::from_str(&saved).expect("loaded"), ..Default::default() };
         assert_eq!(fresh.set.scheme, "light", "the chosen scheme must survive a restart");
     }
+
+    /// EDITING A SCHEME LIVE RECOLOURS ICONS WITHOUT SAVING OR RE-READING FROM DISK.
+    #[test]
+    fn editing_a_scheme_live_recolours_icons() {
+        let mut app = App::default();
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+
+        crate::gui::sync_visuals(&app.scheme, &ctx);
+
+        let uri = qymcad_ui_state::IconId::SketchLine.uri();
+        let first_pixels = match ctx.try_load_image(uri, egui::load::SizeHint::default()).expect("loaded icon") {
+            egui::load::ImagePoll::Ready { image } => image.pixels.clone(),
+            egui::load::ImagePoll::Pending { .. } => panic!("must be ready synchronously"),
+        };
+
+        // Live edit: change icon accent color in memory
+        app.scheme.pal.icon_accent = [255, 0, 128];
+        crate::gui::sync_visuals(&app.scheme, &ctx);
+
+        let second_pixels = match ctx.try_load_image(uri, egui::load::SizeHint::default()).expect("loaded icon") {
+            egui::load::ImagePoll::Ready { image } => image.pixels.clone(),
+            egui::load::ImagePoll::Pending { .. } => panic!("must be ready synchronously"),
+        };
+
+        assert_ne!(first_pixels, second_pixels, "live editing an icon color must immediately update the icon texture in egui");
+    }
 }

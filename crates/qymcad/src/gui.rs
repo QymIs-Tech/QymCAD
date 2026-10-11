@@ -236,6 +236,8 @@ pub fn launch() -> eframe::Result<()> {
         let path = crate::crash::note_failed_start(&e.to_string());
         crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
     }
+    qymcad_ui_state::icons::stop_all_watcher_threads();
+    icon_themes::discovery::stop_all_discovery_workers();
     started
 }
 
@@ -614,6 +616,8 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
     fonts.families.insert(egui::FontFamily::Name(BOLD_FONT.into()), vec![BOLD_FONT.to_string()]);
     mac_key_symbols(&mut fonts);
     ctx.set_fonts(fonts);
+    // SVG and image loaders for custom icon themes.
+    egui_extras::install_image_loaders(ctx);
     // THE HINT SIZE, set here because this is the one place that already decides how text is drawn - and
     // because a size set in two places drifts.
     //
@@ -3027,6 +3031,8 @@ pub(super) fn sync_visuals(scheme: &SchemeUi, ctx: &egui::Context) {
                                                  // was a hidden one: because of it "adopt the settings" worked even without its own call to the
                                                  // scale, and the guard stayed silent about that. The scale is applied by those whose business it
                                                  // is: `adopt_settings` and the slider in the window.
+    let stack = qymcad_ui_state::icons::get_active_icon_stack(ctx);
+    qymcad_ui_state::icons::set_active_icon_stack(ctx, stack, &scheme.pal);
 }
 
 /// APPLY THE INTERFACE SCALE TO `egui`.
@@ -3861,6 +3867,7 @@ pub(crate) fn adopt_settings(regen: &mut Rebuilding, scheme: &mut SchemeUi, set:
     apply_theme(scheme, set, ctx);
     apply_language(set);
     apply_ui_scale(set, ctx);
+    icon_themes::apply_icon_themes(set, ctx, &scheme.pal);
     invalidate(regen); // the colours and the scale are part of the picture caches' keys
 }
 
@@ -4225,6 +4232,7 @@ mod viewport_3d;
 mod panels_props;
 mod panels_tree;
 mod panels_windows;
+pub(crate) mod icon_themes;
 
 /// The single expression field and its list of drivers. One for the whole project, so that a dimension's
 /// field, a feature's field and a table cell all behave the same way.

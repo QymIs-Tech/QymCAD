@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="constraint / dim_radius">
+<path id="Union" d="M6 23C7.65685 23 9 24.3431 9 26C9 27.6569 7.65685 29 6 29C4.34315 29 3 27.6569 3 26C3 24.3431 4.34315 23 6 23ZM6 3C18.7025 3 29 13.2975 29 26C29 26.5523 28.5523 27 28 27C27.4477 27 27 26.5523 27 26C27 14.402 17.598 5 6 5C5.44772 5 5 4.55228 5 4C5 3.44772 5.44772 3 6 3ZM18.709 11.877C19.2045 12.3231 19.6768 12.7945 20.123 13.29L9.44531 23.9678C9.10105 23.3854 8.61375 22.8978 8.03125 22.5537L18.709 11.877Z" stroke-width="2" stroke="var(--icon-constraint-secondary, #333333FF)"/>
+<path id="Ellipse 26" d="M6 4C18.1503 4 28 13.8497 28 26" stroke-width="2" stroke-linecap="round" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Subtract" d="M19.417 11.1689C19.9113 11.6164 20.3836 12.0877 20.8311 12.582L9.44531 23.9678C9.10105 23.3854 8.61375 22.8978 8.03125 22.5537L19.417 11.1689Z" fill="var(--icon-constraint-primary, #F26118FF)"/>
+<circle id="Ellipse 27" cx="6" cy="26" r="3" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+</g>
+</svg>

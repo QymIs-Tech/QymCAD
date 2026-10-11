@@ -23,6 +23,7 @@ qymcad-io.workspace = true
 # glow stays (the default) as a compiled-in fallback; wgpu is the main path for the GPU viewport, chosen at runtime
 eframe = { version = "0.35", features = ["persistence", "wgpu"] }
 egui = "0.35"
+egui_extras = { version = "0.35", features = ["svg", "image", "webp"] }
 qymcad-shell = { path = "../qymcad-shell" }
 qymcad-i18n = { path = "../qymcad-i18n" }
 qymcad-scheme = { path = "../qymcad-scheme" }

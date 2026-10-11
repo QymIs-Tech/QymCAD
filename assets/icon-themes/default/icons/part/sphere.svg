@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / sphere">
+<circle id="Ellipse 32" cx="16" cy="16" r="14" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Ellipse 33" d="M30 16C30 18.7614 23.732 21 16 21C8.26801 21 2 18.7614 2 16" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

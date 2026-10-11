@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / chamfer">
+<g id="Polygon 10">
+<path d="M3.00962 23.5L16 31V23.5L3.00962 16V23.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28.9904 8.5L16 1L9.50481 4.75L22.4952 12.25L28.9904 8.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28.9904 23.5V8.5L22.4952 12.25L16 23.5V31L28.9904 23.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M22.4952 12.25L9.50481 4.75L3.00962 16L16 23.5L22.4952 12.25Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M3.00962 16L9.50481 4.75L16 1L28.9904 8.5V23.5L16 31L3.00962 23.5V16ZM28.9904 8.5L22.4952 12.25M16 31V23.5M22.4952 12.25L9.50481 4.75M22.4952 12.25L16 23.5M16 23.5L3.00962 16" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<path id="Polygon 11" d="M22.2452 12.683C22.3833 12.4439 22.3013 12.1381 22.0622 12L9.93782 5C9.69868 4.86193 9.39288 4.94387 9.25481 5.18301L3.25962 15.567C3.12155 15.8061 3.20349 16.1119 3.44263 16.25L15.567 23.25C15.8061 23.3881 16.1119 23.3061 16.25 23.067L22.2452 12.683Z" fill="var(--icon-part-secondary, #F2AA18FF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

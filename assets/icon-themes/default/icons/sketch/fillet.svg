@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="fillet">
+<path id="Union" d="M27 4C27.5523 4 28 4.44772 28 5C28 5.55228 27.5523 6 27 6H17C10.9249 6 6 10.9249 6 17V27C6 27.5523 5.55228 28 5 28C4.44772 28 4 27.5523 4 27V17C4 9.8203 9.8203 4 17 4H27Z" fill="var(--icon-dimmed, #7C7C7CFF)" stroke-width="2" stroke-linecap="round" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Rectangle 11" d="M27 5H17C10.3726 5 5 10.3726 5 17V27" stroke-width="2" stroke-linecap="round" stroke="var(--icon-dimmed, #7C7C7CFF)"/>
+<path id="Rectangle 10" d="M17 5C10.3726 5 5 10.3726 5 17" stroke-width="2" stroke-linecap="round" stroke="var(--icon-accent, #18F2F2FF)"/>
+</g>
+</svg>

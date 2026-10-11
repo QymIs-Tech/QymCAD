@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / sweep">
+<path id="Vector 16" d="M13 11.5C6.92487 11.5 2 16.4249 2 22.5L2 27C2 28.6569 4.46244 30 7.5 30C10.5376 30 13 28.6569 13 27L13 22.5C13 21.3954 13.8954 20.5 15 20.5L19 20.5C25.0751 20.5 30 15.5751 30 9.5L30 5C30 6.65685 27.5376 8 24.5 8C21.4624 8 19 6.65686 19 5L19 9.5C19 10.6046 18.1046 11.5 17 11.5L13 11.5Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Ellipse 42" d="M24.5 2C21.4624 2 19 3.34315 19 5C19 6.65686 21.4624 8 24.5 8C27.5376 8 30 6.65685 30 5C30 3.34314 27.5376 2 24.5 2Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="constraint / vertical">
+<path id="Union" d="M14 29H12V3H14V29ZM20 29H18V26.5195H20V29ZM20 24.6797H18V21.7197H20V24.6797ZM20 19.8799H18V16.9199H20V19.8799ZM20 15.0801H18V12.1201H20V15.0801ZM20 10.2803H18V7.32031H20V10.2803ZM20 5.48047H18V3H20V5.48047Z" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-secondary, #333333FF)"/>
+<path id="Vector 3" d="M13 28L13 4" stroke-width="2" stroke-linecap="square" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Vector 4" d="M19 28L19 27.52M19 4L19 4.48M19 23.68L19 22.72M19 18.88L19 17.92M19 14.08L19 13.12M19 9.28L19 8.32" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-primary, #F26118FF)"/>
+</g>
+</svg>

@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="constraint / dim_angle" clip-path="url(#clip0_1_513)">
+<path id="Union" d="M17.3623 3.50586L4.74609 25H30V27H1.25391L2.1377 25.4941L15.6377 2.49414L17.3623 3.50586ZM14.2871 10.7188C16.3833 12.2671 18.147 14.2328 19.457 16.5029C20.7884 18.8101 21.6138 21.3655 21.8926 24H19.8789C19.6085 21.7175 18.8803 19.5056 17.7246 17.5029C16.5879 15.5331 15.0697 13.8194 13.2686 12.4541L14.2871 10.7188Z" stroke-width="2" stroke="var(--icon-constraint-secondary, #333333FF)"/>
+<path id="Polygon 7" d="M30 26L3 26L16.5 3" stroke-width="2" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Subtract" d="M14.2871 10.7188C16.3833 12.2671 18.147 14.2328 19.457 16.5029C20.7884 18.8101 21.6138 21.3655 21.8926 24H19.8789C19.6085 21.7175 18.8803 19.5056 17.7246 17.5029C16.5879 15.5331 15.0697 13.8194 13.2686 12.4541L14.2871 10.7188Z" fill="var(--icon-constraint-primary, #F26118FF)"/>
+</g>
+<defs>
+<clipPath id="clip0_1_513">
+<rect width="32" height="32" fill="#FFFFFF"/>
+</clipPath>
+</defs>
+</svg>

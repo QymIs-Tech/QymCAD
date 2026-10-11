@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="array_linear">
+<path id="Union" d="M14 28H4V18H14V28ZM28 28H18V18H28V28ZM6 26H12V20H6V26ZM20 26H26V20H20V26ZM14 14H4V4H14V14ZM28 14H18V4H28V14ZM6 12H12V6H6V12ZM20 12H26V6H20V12Z" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Rectangle 9" d="M19 5H27V13H19V5Z" fill="var(--icon-dimmed, #7C7C7CFF)" stroke-width="2" stroke="var(--icon-accent, #18F2F2FF)"/>
+<path id="Rectangle 10" d="M5 5H13V13H5V5Z" fill="var(--icon-dimmed, #7C7C7CFF)" stroke-width="2" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Rectangle 11" opacity="0.66" d="M5 19H13V27H5V19Z" fill="var(--icon-dimmed, #7C7C7CFF)" stroke-width="2" stroke="var(--icon-accent, #18F2F2FF)"/>
+<path id="Rectangle 12" opacity="0.33" d="M19 19H27V27H19V19Z" fill="var(--icon-dimmed, #7C7C7CFF)" stroke-width="2" stroke="var(--icon-accent, #18F2F2FF)"/>
+</g>
+</svg>

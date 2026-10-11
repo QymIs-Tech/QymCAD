@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="move">
+<path id="Union" d="M20 28H4V12H20V28ZM30.4141 20L26 24.4141L24.5859 23L26.5859 21H22V19H26.5859L24.5859 17L26 15.5859L30.4141 20ZM12 16C9.79086 16 8 17.7909 8 20C8 22.2091 9.79086 24 12 24C14.2091 24 16 22.2091 16 20C16 17.7909 14.2091 16 12 16ZM16.4141 6L15 7.41406L13 5.41406V10H11V5.41406L9 7.41406L7.58594 6L12 1.58594L16.4141 6Z" stroke-width="2" stroke-linecap="square" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Subtract" d="M20 28H4V12H20V28ZM12 16C9.79086 16 8 17.7909 8 20C8 22.2091 9.79086 24 12 24C14.2091 24 16 22.2091 16 20C16 17.7909 14.2091 16 12 16Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 4" cx="12" cy="20" r="3" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Vector 3" d="M23 20H29M26 23L29 20L26 17" stroke-width="2" stroke-linecap="square" stroke="var(--icon-accent, #18F2F2FF)"/>
+<path id="Vector 4" d="M12 9L12 3M15 6L12 3L9 6" stroke-width="2" stroke-linecap="square" stroke="var(--icon-accent, #18F2F2FF)"/>
+</g>
+</svg>
