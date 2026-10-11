@@ -6,10 +6,18 @@
 //! read the same answer through these functions, and none of them needs the application at all.
 //!
 //! Nothing here waits for the network: `ask` starts a thread, `outcome` reads whatever has arrived.
-use qymcad_update::{Checker, Install, Outcome};
+use qymcad_update::{Checker, Install, InstallState, Installer, Outcome};
 
 /// The one check of the session.
 static CHECKER: std::sync::Mutex<Checker> = std::sync::Mutex::new(Checker::new());
+
+/// The one background fetch of the session. Lives here for the same reason the check does: one
+/// program, one window, one fetch - process-wide state with no place on the application object.
+static INSTALLER: std::sync::Mutex<Installer> = std::sync::Mutex::new(Installer::new());
+
+/// Whether the sweep of the last update's backups has run. Once per session: the folder does not
+/// change under a running program, so looking twice is work for nothing.
+static SWEPT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 // A RELEASE TAG PRETENDED FOR THE DURATION OF A CHECK, and nothing else.
 //
@@ -27,6 +35,8 @@ static CHECKER: std::sync::Mutex<Checker> = std::sync::Mutex::new(Checker::new()
 #[cfg(test)]
 thread_local! {
     static PRETEND: std::cell::RefCell<Option<(String, Outcome)>> = const { std::cell::RefCell::new(None) };
+    static PRETEND_AUTO: std::cell::RefCell<Option<InstallState>> = const { std::cell::RefCell::new(None) };
+    static RESTART_ASKED: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
 }
 
 /// What this build calls itself, as far as the check is concerned.
@@ -50,10 +60,25 @@ pub(crate) fn pretend(tag: &str, outcome: Outcome) {
     PRETEND.with_borrow_mut(|p| *p = Some((tag.to_string(), outcome)));
 }
 
+/// Stand in for a background fetch answer, so a frame can be drawn and clicked.
+#[cfg(test)]
+pub(crate) fn pretend_auto(state: InstallState) {
+    PRETEND_AUTO.with_borrow_mut(|p| *p = Some(state));
+}
+
+/// Whether the restart button was pressed. The button must never end the test process, so under
+/// `cfg(test)` it records the press instead of relaunching anything.
+#[cfg(test)]
+pub(crate) fn restart_asked() -> bool {
+    RESTART_ASKED.with_borrow(|asked| *asked)
+}
+
 /// Stop pretending. Called at the end of a test so the next one starts clean.
 #[cfg(test)]
 pub(crate) fn stop_pretending() {
     PRETEND.with_borrow_mut(|p| *p = None);
+    PRETEND_AUTO.with_borrow_mut(|p| *p = None);
+    RESTART_ASKED.with_borrow_mut(|asked| *asked = false);
 }
 
 /// Seconds since the epoch. A clock before 1970 gives zero, which reads as "never asked".
@@ -109,6 +134,95 @@ pub(crate) fn outcome() -> Outcome {
         c.poll(&release);
     }
     c.outcome().clone()
+}
+
+/// WHAT THE BACKGROUND FETCH CAME TO. Never blocks; a poisoned lock reads as "nothing fetched".
+pub(crate) fn auto_state() -> InstallState {
+    #[cfg(test)]
+    if let Some(s) = PRETEND_AUTO.with_borrow(|p| p.clone()) {
+        return s;
+    }
+    let Ok(mut installer) = INSTALLER.lock() else { return InstallState::Idle };
+    installer.poll();
+    installer.state().clone()
+}
+
+/// ONE FRAME OF THE BACKGROUND UPDATE, run from the status line beside the check.
+///
+/// Sweeps the last update's backups once, polls the fetch, and starts one when a newer version
+/// waits on a copy that can install it. Cheap and never waiting: two comparisons when there is
+/// nothing to do. Returns true on the frame the new version starts waiting for a restart, so the
+/// frame can raise the window over it; afterwards the status line carries the news without forcing
+/// the window open again.
+pub(crate) fn tick_auto() -> bool {
+    sweep_once();
+    let Outcome::Found(latest) = outcome() else { return just_became_ready() };
+    if just_became_ready() {
+        return true;
+    }
+    start_if_installable(&latest);
+    false
+}
+
+/// Sweeps the last update's backups, once per session: the folder does not change under a running
+/// program, so looking twice is work for nothing.
+fn sweep_once() {
+    if SWEPT.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
+        qymcad_update::cleanup_backups(&dir);
+    }
+}
+
+/// Starts the background fetch when this copy can install what it brings. Compiled out under
+/// `cfg(test)`: the answer there is pretended, and a real thread would outlive the frame - and the
+/// test process - that started it.
+#[cfg(not(test))]
+fn start_if_installable(latest: &qymcad_update::Latest) {
+    if !qymcad_update::Target::current().can_self_install() {
+        return;
+    }
+    let Ok(mut installer) = INSTALLER.lock() else { return };
+    installer.poll();
+    if !matches!(installer.state(), InstallState::Idle) {
+        return; // fetching, waiting, or refused already: never twice
+    }
+    installer.start(latest, &qymcad_update::StageEnv::current());
+}
+
+#[cfg(test)]
+fn start_if_installable(_latest: &qymcad_update::Latest) {}
+
+/// Polls the fetch and says whether it has JUST come to wait for a restart.
+fn just_became_ready() -> bool {
+    let Ok(mut installer) = INSTALLER.lock() else { return false };
+    installer.poll() && matches!(installer.state(), InstallState::Ready(_))
+}
+
+/// APPLY WHAT WAITS AND RESTART, for the restart button. A staged archive is unpacked over the
+/// folder first; a replaced file needs no applying, only the restart.
+///
+/// When anything on the way is missing - no waiting version, no standing copy, an archive that
+/// will not unpack - it returns and the window stays: the release page button is still there, and
+/// a restart into a half-unpacked folder would be worse than no restart at all.
+pub(crate) fn apply_and_restart() {
+    #[cfg(test)]
+    {
+        RESTART_ASKED.with(|asked| *asked.borrow_mut() = true);
+    }
+    #[cfg(not(test))]
+    {
+        let InstallState::Ready(ready) = auto_state() else { return };
+        if let Some(zip) = ready.staged_zip {
+            let Some(exe) = std::env::current_exe().ok() else { return };
+            if qymcad_update::apply_staged_zip(&zip, &exe).is_err() {
+                return;
+            }
+        }
+        let Some(program) = qymcad_update::current_program_target() else { return };
+        qymcad_update::restart_now(&qymcad_update::restart_cmd(&program));
+    }
 }
 
 #[cfg(test)]

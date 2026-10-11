@@ -273,11 +273,27 @@ fn update_note(scheme: &qymcad_ui_state::SchemeUi, win: &mut qymcad_ui_state::Wi
         Outcome::UpToDate | Outcome::Unreachable => {}
         Outcome::Found(latest) => {
             ui.separator();
-            // The badge leads where the menu item leads: seeing the news and being unable to act on it
-            // from the same place is what makes people hunt through menus.
-            let text = format!("{} {} {}", ph::ARROW_CIRCLE_UP, crate::i18n::tr("update-found"), latest.latest);
-            if ui.button(egui::RichText::new(text).color(scheme.pal.hint_action())).clicked() {
-                win.open(qymcad_ui_state::WinKind::Updates);
+            match crate::gui::update_ui::auto_state() {
+                // The fetch is on its way: said wordlessly and weakly, like the check itself.
+                qymcad_update::InstallState::Downloading => {
+                    ui.label(egui::RichText::new(crate::i18n::tr("update-downloading")).weak());
+                }
+                // The news itself, not a pointer to it: the restart is what was promised, and the
+                // press leads where the menu item leads - to the window holding the button.
+                qymcad_update::InstallState::Ready(_) => {
+                    let text = format!("{} {}", ph::ARROW_COUNTER_CLOCKWISE, crate::i18n::tr("update-ready"));
+                    if ui.button(egui::RichText::new(text).color(scheme.pal.hint_action())).clicked() {
+                        win.open(qymcad_ui_state::WinKind::Updates);
+                    }
+                }
+                qymcad_update::InstallState::Idle => {
+                    // The badge leads where the menu item leads: seeing the news and being unable to act on it
+                    // from the same place is what makes people hunt through menus.
+                    let text = format!("{} {} {}", ph::ARROW_CIRCLE_UP, crate::i18n::tr("update-found"), latest.latest);
+                    if ui.button(egui::RichText::new(text).color(scheme.pal.hint_action())).clicked() {
+                        win.open(qymcad_ui_state::WinKind::Updates);
+                    }
+                }
             }
         }
     }
@@ -296,6 +312,11 @@ pub(crate) fn status_bar(sc: &mut qymcad_ui_state::StatusCtx, ui: &mut egui::Ui)
     // A frame is where it belongs: nothing else in the program knows that a start happened, and this
     // costs one comparison of two numbers when there is nothing to do. It never waits for the network.
     crate::gui::update_ui::ask_if_due(set);
+    // THE BACKGROUND UPDATE TICKS HERE TOO, for the same reason. A fresh install raises the window
+    // over itself once; afterwards the status line carries the news without forcing it open again.
+    if crate::gui::update_ui::tick_auto() {
+        win.open(qymcad_ui_state::WinKind::Updates);
+    }
     ui.horizontal(|ui| {
         ui.label(status);
         update_note(scheme, win, ui);

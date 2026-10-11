@@ -8,12 +8,23 @@ new version number — press it and a window opens with the details.
 
 ## What happens when you press it
 
-A window opens: your version, the available version with its date, and what changed in it. At the bottom
-there is one button — **Open the release page**. It opens a browser on the page holding the files for
-every system and the full list of changes.
+A window opens: your version, the available version with its date, and what changed in it. What
+stands at the bottom depends on how this copy was installed.
 
-**The program downloads nothing and does not replace itself.** You fetch the file with the browser and
-install it the same way you did the first time.
+**A copy that can replace itself** — a single AppImage file, or an unpacked archive outside the
+system folders — downloads the new version in the background as soon as it learns about it. The
+status line then says the update is arriving, and when it waits, that a restart applies it:
+
+> The application was updated in the background. Restart it to apply the changes.
+> [Restart now]
+
+Pressing **Restart now** unpacks what is left (an unpacked archive on Windows arrives as an archive
+of its own folder) and starts the new version. Nothing is asked on the way: the check already
+happened at startup, in the background.
+
+**Any other copy only offers one button — Open the release page.** It opens a browser on the page
+holding the files for every system and the full list of changes. You fetch the file with the
+browser and install it the same way you did the first time.
 
 ## If you installed through a package manager
 
@@ -46,6 +57,9 @@ One request to `https://cad.qymis.tech/latest.json`, carrying three things about
 
 All of that is written on the download page and singles nobody out: the request carries no name of yours,
 no name of your machine and no number issued to you. Documents, models and file paths go nowhere, ever.
+
+When the copy can replace itself, a second request follows: the release file for your platform, from
+the release host. It carries nothing beyond the three things above.
 
 To switch it off, choose "never" in the same setting. There are then no requests at all.
 

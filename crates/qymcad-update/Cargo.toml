@@ -19,3 +19,9 @@ license.workspace = true
 ureq = "3.4.1"
 serde = { workspace = true }
 serde_json = "1.0.151"
+# READING THE WINDOWS PORTABLE ARCHIVE, and writing the small ones the tests stage with.
+#
+# The release run packs the portable copy as a zip of its own folder, so an update of such a copy
+# is an unpacking over that folder. The same spec `qymcad-io` already carries (`deflate` and nothing
+# else): reading what `Compress-Archive` wrote and writing test archives needs no more.
+zip = { version = "8", default-features = false, features = ["deflate"] }

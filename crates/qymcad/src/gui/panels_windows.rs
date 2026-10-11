@@ -82,10 +82,12 @@ pub(crate) fn crash_notice(crash_report: &mut Vec<std::path::PathBuf>, ctx: &egu
 /// The About window (Help -> About).
 /// WHAT THE CHECK FOR A NEWER VERSION CAME TO (Help -> Check for updates).
 ///
-/// ONE BUTTON, AND IT OPENS A BROWSER. The program downloads nothing: behind self-replacement come
-/// resuming a broken transfer, checksums, write permissions, the macOS quarantine flag and an argument
-/// with an antivirus on Windows. A browser does all of that better and every person already has one -
-/// and whoever installed from a package manager updates with that manager, which they know.
+/// ONE BUTTON, AND IT OPENS A BROWSER - for a copy the background could not touch. A copy that can
+/// replace itself (a single AppImage file, an unpacked archive outside the system folders) downloads
+/// the release file in the background instead and offers a restart; the button stays either way.
+/// Behind the split is what self-replacement costs elsewhere: resuming a broken transfer, write
+/// permissions and elevation, the macOS quarantine flag, and an argument with an antivirus on
+/// Windows - and whoever installed from a package manager updates with that manager, which they know.
 pub(crate) fn updates_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) {
     if !win.is(WinKind::Updates) {
         return;
@@ -150,6 +152,25 @@ pub(crate) fn updates_dialog(win: &mut super::Windows, scheme: &super::SchemeUi,
                     ui.add_space(10.0);
                     ui.separator();
                     ui.add_space(6.0);
+                    // THE BACKGROUND UPDATE, when this copy can install what it brings. Downloading says
+                    // so wordlessly; a waiting version names itself and offers the restart it was
+                    // promised. The release page button below stays either way: a copy the background
+                    // could not touch still tells where to go by hand.
+                    match crate::gui::update_ui::auto_state() {
+                        qymcad_update::InstallState::Downloading => {
+                            ui.label(crate::i18n::tr("update-downloading"));
+                            ui.add_space(6.0);
+                        }
+                        qymcad_update::InstallState::Ready(_) => {
+                            ui.colored_label(scheme.pal.hint_action(), format!("{} {}", ph::ARROW_COUNTER_CLOCKWISE, crate::i18n::tr("update-ready")));
+                            ui.add_space(6.0);
+                            if ui.button(format!("{} {}", ph::ARROW_COUNTER_CLOCKWISE, crate::i18n::tr("update-restart-now"))).clicked() {
+                                crate::gui::update_ui::apply_and_restart();
+                            }
+                            ui.add_space(6.0);
+                        }
+                        qymcad_update::InstallState::Idle => {}
+                    }
                     if ui.button(format!("{} {}", ph::ARROW_SQUARE_OUT, crate::i18n::tr("update-open-page"))).clicked() {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(&latest.url));
                     }

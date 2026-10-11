@@ -10,7 +10,7 @@
 //! the check pretends a tag and an answer for the length of a test; see `update_ui::pretend`.
 #[cfg(test)]
 mod tests {
-    use qymcad_update::{Latest, Outcome};
+    use qymcad_update::{InstallState, Latest, Outcome, ReadyInfo};
 
     const SCREEN: egui::Vec2 = egui::vec2(1400.0, 900.0);
 
@@ -174,6 +174,91 @@ mod tests {
             let choice = crate::i18n::tr(u.key());
             assert!(with.iter().any(|t| t.contains(&choice)), "the choice \"{choice}\" is missing from the window: {with:?}");
         }
+        crate::gui::update_ui::stop_pretending();
+    }
+
+    /// Draw one frame the way the tests below do and hand back what it painted: the texts with
+    /// their spots. One name for the shape of it, so the click helper below does not spell the
+    /// whole signature out.
+    type PaintOneFrame = dyn Fn(&mut crate::gui::App, &egui::Context, egui::RawInput) -> Vec<(String, egui::Rect)>;
+
+    /// Draw the updates window for one frame and hand back what it painted.
+    fn updates_frame(app: &mut crate::gui::App, ctx: &egui::Context, input: egui::RawInput) -> Vec<(String, egui::Rect)> {
+        // Twice, like the window tests above: the first frame warms the layout, the second is read.
+        let _ = ctx.run_ui(input.clone(), |c| crate::gui::panels_windows::updates_dialog(&mut app.win, &app.scheme, c.ctx()));
+        let out = ctx.run_ui(input, |c| crate::gui::panels_windows::updates_dialog(&mut app.win, &app.scheme, c.ctx()));
+        texts(&out.shapes)
+    }
+
+    /// Click the middle of the given spot: a press and a release, the way the badge test does it.
+    fn click(app: &mut crate::gui::App, ctx: &egui::Context, spot: egui::Pos2, paint: &PaintOneFrame) {
+        for pressed in [true, false] {
+            let ev = egui::RawInput {
+                events: vec![egui::Event::PointerMoved(spot), egui::Event::PointerButton { pos: spot, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() }],
+                ..raw()
+            };
+            paint(app, ctx, ev);
+        }
+    }
+
+    /// WHILE THE PACKAGE ARRIVES, THE SCREEN SAYS SO AND NOTHING ELSE.
+    ///
+    /// Downloading takes a minute on a slow line; a badge that still offers the release page for a
+    /// version already on its way would send the person to fetch by hand what is arriving by itself.
+    #[test]
+    fn while_the_package_arrives_the_screen_says_so() {
+        crate::gui::update_ui::pretend("v0.1.0-dev.20260828", Outcome::Found(newer()));
+        crate::gui::update_ui::pretend_auto(InstallState::Downloading);
+        let mut app = crate::gui::screen_keys::tests::populated();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+
+        let said = crate::i18n::tr("update-downloading");
+        let painted = status_frame(&mut app, &ctx, raw());
+        assert!(painted.iter().any(|(t, _)| t.contains(&said)), "the status line does not say the update is arriving: {:?}", painted.iter().map(|(t, _)| t).collect::<Vec<_>>());
+
+        app.win.open(qymcad_ui_state::WinKind::Updates);
+        let windowed = updates_frame(&mut app, &ctx, raw());
+        assert!(windowed.iter().any(|(t, _)| t.contains(&said)), "the window does not say the update is arriving: {:?}", windowed.iter().map(|(t, _)| t).collect::<Vec<_>>());
+        crate::gui::update_ui::stop_pretending();
+    }
+
+    /// THE WAITING VERSION NAMES ITSELF AND OFFERS THE RESTART.
+    ///
+    /// The whole scenario the background update exists for: the program fetched the new version
+    /// itself, and the one thing left is to restart into it. The release page button stays beside
+    /// the restart one - a copy the background could not touch still tells where to go by hand.
+    #[test]
+    fn the_waiting_version_names_itself_and_offers_the_restart() {
+        crate::gui::update_ui::pretend("v0.1.0-dev.20260828", Outcome::Found(newer()));
+        crate::gui::update_ui::pretend_auto(InstallState::Ready(ReadyInfo { tag: "v9.9.9-dev.20991231".into(), staged_zip: None }));
+        let mut app = crate::gui::screen_keys::tests::populated();
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        assert!(!crate::gui::update_ui::restart_asked(), "a restart was asked before anything was pressed");
+
+        // the status line carries the news itself, and pressing it opens the window
+        let painted = status_frame(&mut app, &ctx, raw());
+        let said = crate::i18n::tr("update-ready");
+        let spot = painted
+            .iter()
+            .find(|(t, _)| t.contains(&said))
+            .map(|(_, r)| r.center())
+            .unwrap_or_else(|| panic!("the status line does not carry the background news; it painted: {:?}", painted.iter().map(|(t, _)| t).collect::<Vec<_>>()));
+        click(&mut app, &ctx, spot, &status_frame);
+        assert!(app.win.is(qymcad_ui_state::WinKind::Updates), "pressing the news led nowhere");
+
+        // the window names the version, offers the restart, and keeps the page button
+        let windowed = updates_frame(&mut app, &ctx, raw());
+        let all: Vec<&String> = windowed.iter().map(|(t, _)| t).collect();
+        assert!(windowed.iter().any(|(t, _)| t.contains(&said)), "the window does not carry the background news: {all:?}");
+        let button = crate::i18n::tr("update-restart-now");
+        let at = windowed.iter().find(|(t, _)| t.contains(&button)).map(|(_, r)| r.center()).unwrap_or_else(|| panic!("the window offers no restart: {all:?}"));
+        let page = crate::i18n::tr("update-open-page");
+        assert!(windowed.iter().any(|(t, _)| t.contains(&page)), "the release page button is gone with the restart one: {all:?}");
+
+        click(&mut app, &ctx, at, &updates_frame);
+        assert!(crate::gui::update_ui::restart_asked(), "pressing the restart button asked for nothing");
         crate::gui::update_ui::stop_pretending();
     }
 }
