@@ -89,6 +89,8 @@ const JOURNAL_NAME: &str = "start_journal.txt";
 pub(crate) const ENDED: &str = "ended";
 /// The line that says the run drew for ten seconds: a fault after it is more likely the kernel's than the driver's.
 pub(crate) const DREW_A_WHILE: &str = "600 frames drawn";
+/// The line that says the graphics device was taken away while the run drew.
+pub(crate) const DEVICE_LOST: &str = "the graphics device was lost";
 
 /// BEGIN THIS RUN'S JOURNAL, and answer the report written for the run before when that one stopped without closing.
 /// Only the start of the program calls it: until then nothing is written, so a check never writes into a person's
@@ -148,7 +150,7 @@ pub fn journal(line: &str) {
 /// and what follows it is a fault that names nothing.
 pub fn watch_the_device(device: &eframe::wgpu::Device) {
     device.set_device_lost_callback(|reason, message| {
-        journal(&format!("the graphics device was lost ({reason:?}): {message}"));
+        journal(&format!("{DEVICE_LOST} ({reason:?}): {message}"));
         if let Some(path) = next_report_path() {
             let _ = write_note(&path, "Graphics device lost", &format!("{reason:?}: {message}"), "(the graphics driver)");
         }

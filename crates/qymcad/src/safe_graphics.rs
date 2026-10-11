@@ -13,7 +13,8 @@
 //! 4. the processor - slow, and it draws.
 //!
 //! A run that closed as it should, or that died after the first ten seconds of drawing (more likely the kernel than
-//! the driver), keeps the step it had. The step is written into the journal, so the start after reads it back.
+//! the driver), keeps the step it had - unless its graphics device was lost: the window draws through that one device
+//! and cannot make another, so the run is over for drawing whenever it happens, and the next start steps down. The step is written into the journal, so the start after reads it back.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -58,7 +59,8 @@ pub fn step_after(previous: Option<&str>) -> Step {
     let had = journal.lines().rev().find_map(|l| l.strip_prefix(STEP_LINE)).and_then(|n| n.trim().parse::<u8>().ok()).map(Step::from_number).unwrap_or(Step::AsChosen);
     let closed = journal.lines().last().map(str::trim) == Some(crate::crash::ENDED);
     let drew_a_while = journal.lines().any(|l| l.trim() == crate::crash::DREW_A_WHILE);
-    if closed || drew_a_while {
+    let lost = journal.lines().any(|l| l.starts_with(crate::crash::DEVICE_LOST));
+    if (closed || drew_a_while) && !lost {
         had
     } else {
         had.down()
@@ -273,6 +275,15 @@ mod tests {
         assert_eq!(step_after(Some(&journal(&["started", "graphics step: 1", "the first frame is drawn", "ended"]))), Step::NoAntialiasing);
         assert_eq!(step_after(Some(&journal(&["started", "graphics step: 2", "the first frame is drawn", "600 frames drawn", "operation: Fillet"]))), Step::OtherBackend);
         assert_eq!(step_after(Some(&journal(&["started", "the first frame is drawn", "ended"]))), Step::AsChosen, "an older journal without a step");
+    }
+
+    /// A LOST GRAPHICS DEVICE SENDS THE NEXT START A STEP DOWN however long the run drew, and whether it closed or not:
+    /// the window cannot make another device.
+    #[test]
+    fn a_lost_device_sends_the_next_start_a_step_down() {
+        let lost = "the graphics device was lost (Unknown): device removed";
+        assert_eq!(step_after(Some(&journal(&["started", "graphics step: 0", "the first frame is drawn", "600 frames drawn", lost]))), Step::NoAntialiasing);
+        assert_eq!(step_after(Some(&journal(&["started", "graphics step: 1", "600 frames drawn", lost, "ended"]))), Step::OtherBackend);
     }
 
     /// THE CARD IS TAKEN BEFORE THE PROCESSOR AND DX12 BEFORE VULKAN; from the third step the backend the run before
