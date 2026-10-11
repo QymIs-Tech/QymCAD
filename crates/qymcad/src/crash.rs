@@ -128,6 +128,53 @@ pub fn journal(line: &str) {
     }
 }
 
+/// THE GRAPHICS DEVICE IS WATCHED: when the driver takes it away (a reset of the card, a driver that hung, the device
+/// removed), the reason wgpu gives goes into the journal and into a report at once - nothing can be drawn after it,
+/// and what follows it is a fault that names nothing.
+pub fn watch_the_device(device: &eframe::wgpu::Device) {
+    device.set_device_lost_callback(|reason, message| {
+        journal(&format!("the graphics device was lost ({reason:?}): {message}"));
+        if let Some(path) = next_report_path() {
+            let _ = write_note(&path, "Graphics device lost", &format!("{reason:?}: {message}"), "(the graphics driver)");
+        }
+    });
+}
+
+/// HOW MANY TIMES EACH KIND OF FAILED FRAME HAS BEEN SEEN, so the journal holds the first of each and then every
+/// hundredth - a surface timing out on every frame would otherwise fill the disk.
+static SURFACE_FAILURES: Mutex<Vec<SurfaceFailure>> = Mutex::new(Vec::new());
+
+/// One kind of frame the window could not get, and how often.
+struct SurfaceFailure {
+    kind: String,
+    seen: u64,
+}
+
+/// What the framework does with a frame it could not get.
+pub type SurfaceAnswer = dyn Fn(&eframe::wgpu::CurrentSurfaceTexture) -> eframe::egui_wgpu::SurfaceErrorAction + Send + Sync;
+
+/// THE FRAMEWORK'S ANSWER TO A FRAME IT COULD NOT GET, kept as it is, with the failure written into the journal
+/// first. A window hidden from view is no failure and is not written.
+pub fn journaled_surface_status(answer: std::sync::Arc<SurfaceAnswer>) -> std::sync::Arc<SurfaceAnswer> {
+    std::sync::Arc::new(move |status| {
+        if !matches!(status, eframe::wgpu::CurrentSurfaceTexture::Occluded) {
+            let kind = format!("{status:?}");
+            let seen = SURFACE_FAILURES.lock().ok().map(|mut all| {
+                let i = all.iter().position(|f| f.kind == kind).unwrap_or_else(|| {
+                    all.push(SurfaceFailure { kind: kind.clone(), seen: 0 });
+                    all.len() - 1
+                });
+                all[i].seen += 1;
+                all[i].seen
+            });
+            if let Some(n) = seen.filter(|n| *n == 1 || n % 100 == 0) {
+                journal(&format!("the window could not get a frame ({kind}), {n} time(s)"));
+            }
+        }
+        answer(status)
+    })
+}
+
 /// THE RUN CLOSED AS IT SHOULD: the journal says so, and the next start writes no report for it.
 pub fn end_journal() {
     journal(ENDED);
@@ -423,6 +470,61 @@ mod tests {
         super::use_dir_for_test(None);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(after_a_clean_close.is_none(), "a run that closed as it should was reported as stopped: {after_a_clean_close:?}");
+    }
+
+    /// A LOST GRAPHICS DEVICE IS WRITTEN DOWN with the reason the driver gave, and a report is left at once.
+    #[test]
+    fn a_lost_graphics_device_is_written_down_and_reported() {
+        use eframe::wgpu;
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())) else {
+            eprintln!("PASSED OVER: no graphics device to lose");
+            return;
+        };
+        let Ok((device, _queue)) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())) else {
+            eprintln!("PASSED OVER: the graphics device would not open");
+            return;
+        };
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-device-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+        let _ = super::begin_journal();
+
+        super::watch_the_device(&device);
+        device.destroy();
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+
+        let journal = std::fs::read_to_string(dir.join(super::JOURNAL_NAME)).unwrap_or_default();
+        let reported = super::unseen_reports().iter().any(|p| std::fs::read_to_string(p).is_ok_and(|t| t.contains("Graphics device lost")));
+        super::end_journal();
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(journal.contains("the graphics device was lost"), "the journal does not say the device was lost:\n{journal}");
+        assert!(reported, "no report was left for the lost device");
+    }
+
+    /// A FRAME THE WINDOW COULD NOT GET IS WRITTEN DOWN, the first of each kind, and the framework's answer is kept.
+    #[test]
+    fn a_frame_the_window_could_not_get_is_written_down() {
+        use eframe::egui_wgpu::SurfaceErrorAction;
+        use eframe::wgpu::CurrentSurfaceTexture;
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-surface-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+        let _ = super::begin_journal();
+
+        let answer = super::journaled_surface_status(std::sync::Arc::new(|_| SurfaceErrorAction::Reconfigure));
+        let kept = matches!(answer(&CurrentSurfaceTexture::Timeout), SurfaceErrorAction::Reconfigure);
+        let _ = answer(&CurrentSurfaceTexture::Occluded);
+        let journal = std::fs::read_to_string(dir.join(super::JOURNAL_NAME)).unwrap_or_default();
+        super::end_journal();
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(kept, "the framework's answer to a failed frame was changed");
+        assert!(journal.contains("could not get a frame (Timeout)"), "a timed-out frame is not in the journal:\n{journal}");
+        assert!(!journal.contains("Occluded"), "a hidden window was written down as a failure:\n{journal}");
     }
 
     /// A repeated command must not fill the whole trail with one word.

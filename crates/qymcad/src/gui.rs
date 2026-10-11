@@ -200,6 +200,7 @@ pub fn launch() -> eframe::Result<()> {
         ..Default::default()
     };
     choose_the_adapter_ourselves(&mut options);
+    options.wgpu_options.on_surface_status = crate::crash::journaled_surface_status(options.wgpu_options.on_surface_status.clone());
     let started = eframe::run_native(
         APP_ID,
         options,
@@ -212,6 +213,7 @@ pub fn launch() -> eframe::Result<()> {
                 // so the setting takes effect on a restart (which is what the window says).
                 crate::viewport_gpu::set_msaa(app.set.msaa);
                 app.gpu_ok = crate::viewport_gpu::install(rs);
+                crate::crash::watch_the_device(&rs.device);
                 // WHICH ADAPTER IS DRAWING - half the complaints about a viewport are answered by this line
                 // and by nothing else, and it cannot be guessed from a screenshot.
                 let i = rs.adapter.get_info();
