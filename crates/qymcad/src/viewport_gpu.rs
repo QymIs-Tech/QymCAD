@@ -878,6 +878,7 @@ pub fn install(render_state: &egui_wgpu::RenderState) -> bool {
     set_msaa(MSAA_SAMPLES.load(std::sync::atomic::Ordering::Relaxed));
     let renderer = GpuRenderer::new(&render_state.device, render_state.target_format, msaa_samples());
     render_state.renderer.write().callback_resources.insert(renderer);
+    crate::crash::journal(&format!("the viewport is built with {} samples a pixel", msaa_samples()));
     true
 }
 

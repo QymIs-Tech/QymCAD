@@ -50,6 +50,8 @@ pub fn note_step(name: &str) {
     if s.steps.len() > TRAIL {
         s.steps.remove(0);
     }
+    drop(s);
+    journal(&format!("operation: {name}"));
 }
 
 /// WHERE THE DOCUMENT LIVES, so the next start can offer it back.
@@ -64,9 +66,74 @@ pub fn note_document(doc: Option<&str>, autosave: Option<&str>) {
 pub fn install() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let _ = write_report(info);
+        let report = write_report(info);
+        journal(&format!(
+            "panicked: {} (report {})",
+            panic_text(info.payload()),
+            report.as_deref().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "not written".into())
+        ));
         previous(info);
     }));
+}
+
+/// THE JOURNAL OF THIS RUN, on disk, a line at a time.
+///
+/// Reported behaviour: every person whose graphics went wrong had no crash file to send. The hook above sees a panic
+/// of Rust and nothing else: a fault inside a graphics driver - an access violation in DX12 or Vulkan - or the
+/// system ending the process takes the program away before any hook runs. So the run writes down where it is as it
+/// goes - the adapters offered, the one chosen, the first frame drawn, every operation opened - each line handed to
+/// the system the moment it is written, which a dying process cannot take back. A clean close writes `ended`. The
+/// next start finds a journal without it and turns it into a report.
+static JOURNAL: Mutex<Option<PathBuf>> = Mutex::new(None);
+const JOURNAL_NAME: &str = "start_journal.txt";
+const ENDED: &str = "ended";
+
+/// BEGIN THIS RUN'S JOURNAL, and answer the report written for the run before when that one stopped without closing.
+/// Only the start of the program calls it: until then nothing is written, so a check never writes into a person's
+/// profile.
+pub fn begin_journal() -> Option<PathBuf> {
+    let dir = dir()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(JOURNAL_NAME);
+    let report = std::fs::read_to_string(&path).ok().filter(|t| !t.trim().is_empty() && t.lines().last().map(str::trim) != Some(ENDED)).and_then(|t| journal_report(&t));
+    std::fs::write(&path, format!("started {}\n", crate::gui::now_iso8601())).ok()?;
+    if let Ok(mut j) = JOURNAL.lock() {
+        *j = Some(path);
+    }
+    report
+}
+
+/// A REPORT OF A RUN THAT STOPPED WITHOUT CLOSING: this machine, and the journal that run left, its last line last.
+/// No backtrace - the process that could have given one is gone.
+fn journal_report(journal: &str) -> Option<PathBuf> {
+    let path = next_report_path()?;
+    let mut out = crate::diagnostics::block();
+    out.push_str(&format!("\nTime: {}\n", crate::gui::now_iso8601()));
+    out.push_str("Stopped without a word: the run before this one ended without closing - the program, the graphics driver or the system stopped it.\n");
+    out.push_str("\nIts journal, the last line last:\n");
+    for line in journal.lines() {
+        out.push_str(&format!("  {}\n", without_home(line)));
+    }
+    std::fs::write(&path, out).ok()?;
+    Some(path)
+}
+
+/// ADD A LINE TO THIS RUN'S JOURNAL - nothing before `begin_journal`.
+pub fn journal(line: &str) {
+    use std::io::Write;
+    let Ok(j) = JOURNAL.lock() else { return };
+    let Some(path) = j.as_ref() else { return };
+    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(path) {
+        let _ = f.write_all(format!("{line}\n").as_bytes());
+    }
+}
+
+/// THE RUN CLOSED AS IT SHOULD: the journal says so, and the next start writes no report for it.
+pub fn end_journal() {
+    journal(ENDED);
+    if let Ok(mut j) = JOURNAL.lock() {
+        *j = None;
+    }
 }
 
 /// Where the reports live: the data directory of the program, beside the parts library.
@@ -239,6 +306,9 @@ pub(crate) fn use_dir_for_test(d: Option<&Path>) {
         s.doc = None;
         s.autosave = None;
     }
+    if let Ok(mut j) = JOURNAL.lock() {
+        *j = None;
+    }
 }
 
 #[cfg(test)]
@@ -323,6 +393,36 @@ mod tests {
 
         super::use_dir_for_test(None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A RUN THAT STOPPED WITHOUT CLOSING IS TOLD ABOUT AT THE NEXT START, with where it was. Reported behaviour: no
+    /// one whose graphics went wrong had a crash file - a fault inside the driver passes no hook.
+    #[test]
+    fn a_run_that_stopped_without_closing_leaves_a_report_at_the_next_start() {
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-journal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+
+        // the run that died: its journal as the program writes it, and no `ended`
+        assert!(super::begin_journal().is_none(), "a first start found a run before it");
+        super::journal("drawing with: wgpu Dx12, Radeon (TM) RX 480 Series (DiscreteGpu)");
+        super::journal("the first frame is drawn");
+        super::note_step("Extrude");
+        let report = super::begin_journal().expect("the run that stopped without closing left no report");
+        let text = std::fs::read_to_string(&report).expect("the report is unreadable");
+        assert!(text.contains("Stopped without a word"), "the report does not say how the run ended:\n{text}");
+        assert!(text.contains("Radeon (TM) RX 480") && text.contains("the first frame is drawn") && text.contains("operation: Extrude"), "the report lost the journal:\n{text}");
+        assert!(super::unseen_reports().contains(&report), "the report is not offered at the start");
+
+        // this run closes as it should: the next start says nothing
+        super::journal("the first frame is drawn");
+        super::end_journal();
+        let after_a_clean_close = super::begin_journal();
+        super::end_journal();
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(after_a_clean_close.is_none(), "a run that closed as it should was reported as stopped: {after_a_clean_close:?}");
     }
 
     /// A repeated command must not fill the whole trail with one word.

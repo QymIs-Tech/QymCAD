@@ -178,6 +178,8 @@ pub fn launch() -> eframe::Result<()> {
     // AND THE CRASH STOPS DISAPPEARING. Installed before anything can panic: an autosave can fire in the very
     // first seconds of a session.
     crate::crash::install();
+    // THE JOURNAL OF THIS RUN, and a report of the one before when it stopped without closing
+    let _ = crate::crash::begin_journal();
 
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -236,6 +238,7 @@ pub fn launch() -> eframe::Result<()> {
         let path = crate::crash::note_failed_start(&e.to_string());
         crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
     }
+    crate::crash::end_journal();
     started
 }
 
