@@ -86,21 +86,36 @@ pub fn install() {
 /// next start finds a journal without it and turns it into a report.
 static JOURNAL: Mutex<Option<PathBuf>> = Mutex::new(None);
 const JOURNAL_NAME: &str = "start_journal.txt";
-const ENDED: &str = "ended";
+pub(crate) const ENDED: &str = "ended";
+/// The line that says the run drew for ten seconds: a fault after it is more likely the kernel's than the driver's.
+pub(crate) const DREW_A_WHILE: &str = "600 frames drawn";
 
 /// BEGIN THIS RUN'S JOURNAL, and answer the report written for the run before when that one stopped without closing.
 /// Only the start of the program calls it: until then nothing is written, so a check never writes into a person's
 /// profile.
-pub fn begin_journal() -> Option<PathBuf> {
-    let dir = dir()?;
-    std::fs::create_dir_all(&dir).ok()?;
-    let path = dir.join(JOURNAL_NAME);
-    let report = std::fs::read_to_string(&path).ok().filter(|t| !t.trim().is_empty() && t.lines().last().map(str::trim) != Some(ENDED)).and_then(|t| journal_report(&t));
-    std::fs::write(&path, format!("started {}\n", crate::gui::now_iso8601())).ok()?;
-    if let Ok(mut j) = JOURNAL.lock() {
-        *j = Some(path);
+pub fn begin_journal() -> PreviousRun {
+    let Some(dir) = dir() else { return PreviousRun::default() };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return PreviousRun::default();
     }
-    report
+    let path = dir.join(JOURNAL_NAME);
+    let journal = std::fs::read_to_string(&path).ok().filter(|t| !t.trim().is_empty());
+    // the report is offered at the start like any other (`unseen_reports`)
+    if let Some(stopped) = journal.as_deref().filter(|t| t.lines().last().map(str::trim) != Some(ENDED)) {
+        let _ = journal_report(stopped);
+    }
+    if std::fs::write(&path, format!("started {}\n", crate::gui::now_iso8601())).is_ok() {
+        if let Ok(mut j) = JOURNAL.lock() {
+            *j = Some(path);
+        }
+    }
+    PreviousRun { journal }
+}
+
+/// WHAT THE RUN BEFORE LEFT: its journal.
+#[derive(Debug, Default)]
+pub struct PreviousRun {
+    pub journal: Option<String>,
 }
 
 /// A REPORT OF A RUN THAT STOPPED WITHOUT CLOSING: this machine, and the journal that run left, its last line last.
@@ -452,11 +467,13 @@ mod tests {
         super::use_dir_for_test(Some(&dir));
 
         // the run that died: its journal as the program writes it, and no `ended`
-        assert!(super::begin_journal().is_none(), "a first start found a run before it");
+        assert!(super::begin_journal().journal.is_none(), "a first start found a run before it");
         super::journal("drawing with: wgpu Dx12, Radeon (TM) RX 480 Series (DiscreteGpu)");
         super::journal("the first frame is drawn");
         super::note_step("Extrude");
-        let report = super::begin_journal().expect("the run that stopped without closing left no report");
+        let _ = super::begin_journal();
+        let report =
+            super::unseen_reports().into_iter().find(|p| std::fs::read_to_string(p).is_ok_and(|t| t.contains("Stopped without a word"))).expect("the run that stopped without closing left no report");
         let text = std::fs::read_to_string(&report).expect("the report is unreadable");
         assert!(text.contains("Stopped without a word"), "the report does not say how the run ended:\n{text}");
         assert!(text.contains("Radeon (TM) RX 480") && text.contains("the first frame is drawn") && text.contains("operation: Extrude"), "the report lost the journal:\n{text}");
@@ -465,11 +482,13 @@ mod tests {
         // this run closes as it should: the next start says nothing
         super::journal("the first frame is drawn");
         super::end_journal();
-        let after_a_clean_close = super::begin_journal();
+        let before = super::unseen_reports().len();
+        let _ = super::begin_journal();
+        let after_a_clean_close = super::unseen_reports().len() - before;
         super::end_journal();
         super::use_dir_for_test(None);
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(after_a_clean_close.is_none(), "a run that closed as it should was reported as stopped: {after_a_clean_close:?}");
+        assert_eq!(after_a_clean_close, 0, "a run that closed as it should was reported as stopped");
     }
 
     /// A LOST GRAPHICS DEVICE IS WRITTEN DOWN with the reason the driver gave, and a report is left at once.

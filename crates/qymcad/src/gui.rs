@@ -179,7 +179,9 @@ pub fn launch() -> eframe::Result<()> {
     // first seconds of a session.
     crate::crash::install();
     // THE JOURNAL OF THIS RUN, and a report of the one before when it stopped without closing
-    let _ = crate::crash::begin_journal();
+    let previous = crate::crash::begin_journal();
+    // A START AFTER A START THAT DIED DRAWING TAKES A STEP DOWN (`safe_graphics`)
+    let step = crate::safe_graphics::take(previous.journal.as_deref());
 
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -211,7 +213,7 @@ pub fn launch() -> eframe::Result<()> {
             if let Some(rs) = &cc.wgpu_render_state {
                 // ANTIALIASING COMES BEFORE THE PIPELINES ARE CREATED: they bake the sample count into themselves,
                 // so the setting takes effect on a restart (which is what the window says).
-                crate::viewport_gpu::set_msaa(app.set.msaa);
+                crate::viewport_gpu::set_msaa(crate::safe_graphics::samples(app.set.msaa));
                 app.gpu_ok = crate::viewport_gpu::install(rs);
                 crate::crash::watch_the_device(&rs.device);
                 // WHICH ADAPTER IS DRAWING - half the complaints about a viewport are answered by this line
@@ -228,6 +230,10 @@ pub fn launch() -> eframe::Result<()> {
             // reports it as a fault in the program rather than as a graphics driver they have not installed.
             if let Some(name) = crate::diagnostics::drawing_on_the_processor() {
                 app.status = crate::i18n::tr1("gpu-on-the-processor", "name", &name);
+            }
+            // A STEP DOWN IS SAID, with why: otherwise the person sees a rougher picture and no reason for it
+            if let Some(key) = crate::safe_graphics::said(step) {
+                app.status = crate::i18n::tr(key);
             }
             Ok(Box::new(app))
         }),
@@ -302,9 +308,11 @@ fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
 }
 
 /// HOW GOOD AN ADAPTER IS, highest first. A real card beats a shared one, a shared one beats a virtual one,
-/// and everything beats the processor - which is taken only when nothing else answers.
-fn rank_adapter(a: &eframe::wgpu::Adapter) -> u8 {
-    rank_device_type(a.get_info().device_type)
+/// and everything beats the processor - which is taken only when nothing else answers; the step of a start after a
+/// start that died moves the backend and, at the last, the processor (`safe_graphics::rank`).
+fn rank_adapter(a: &eframe::wgpu::Adapter) -> u16 {
+    let i = a.get_info();
+    crate::safe_graphics::rank(crate::safe_graphics::step(), crate::safe_graphics::Offered { kind: i.device_type, backend: i.backend }, crate::safe_graphics::avoided().as_deref())
 }
 
 /// The ranking itself, apart from any adapter: a machine with no graphics is exactly the machine a test

@@ -110,7 +110,7 @@ pub fn note_viewport(size: egui::Vec2, points_per_pixel: f32) {
     // say the drawing itself held.
     match FRAMES.fetch_add(1, Ordering::Relaxed) + 1 {
         1 => crate::crash::journal("the first frame is drawn"),
-        600 => crate::crash::journal("600 frames drawn"),
+        600 => crate::crash::journal(crate::crash::DREW_A_WHILE),
         _ => {}
     }
     VIEW_W.store(size.x as u32, Ordering::Relaxed);
