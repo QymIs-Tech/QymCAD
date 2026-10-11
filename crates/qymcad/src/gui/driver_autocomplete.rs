@@ -25,8 +25,8 @@ mod tests {
         let si = p.sketch_index(sid).unwrap();
         p.add_sketch_node(sid, sketch);
         let pts: Vec<Id> = p.sketches[si].points.iter().map(|q| q.id).collect();
-        p.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: len, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-        assert!(p.add_named_dim(driver.into(), sid, vec![pts[0], pts[1]]));
+        p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: pts[0], b: pts[1], d: len, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        assert!(p.name_sketch_dimension(driver.into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: p.sketches[si].constraints.len() - 1 }));
     }
 
     /// The word under a caret standing at the end of the text — the commonest case.

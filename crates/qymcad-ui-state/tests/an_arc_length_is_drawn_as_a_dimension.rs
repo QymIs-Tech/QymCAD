@@ -28,7 +28,7 @@ fn an_arc_with_its_length(winding: Winding) -> (Project, usize, usize) {
         panic!("the arc")
     };
     let len = 10.0 * std::f64::consts::FRAC_PI_2;
-    p.sketches[si].constraints.push(Constraint::ArcLength { c, a, b, ccw, len, off: 0.0, expr: String::new(), driven: false });
+    p.sketches[si].constraints.push(Constraint::ArcLength { dimension: Default::default(), c, a, b, ccw, len, off: 0.0, expr: String::new(), driven: false });
     let ci = p.sketches[si].constraints.len() - 1;
     (p, si, ci)
 }

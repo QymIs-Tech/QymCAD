@@ -121,7 +121,7 @@ impl Laying {
     fn circle(&mut self, c: Cell) {
         let center = self.point(c.x + 5.0, c.y + 5.0);
         self.entity(EntityKind::Circle { center, r: 4.0 });
-        self.constraint(Constraint::Diameter { c: center, d: 4.5, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+        self.constraint(Constraint::Diameter { dimension: Default::default(), c: center, d: 4.5, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     }
 
     fn hexagon(&mut self, c: Cell) {
@@ -154,7 +154,7 @@ impl Laying {
 }
 
 fn distance(a: u64, b: u64, d: f64, axis: u8) -> Constraint {
-    Constraint::Distance { a, b, d, off: 2.0, expr: String::new(), driven: false, axis, at: None }
+    Constraint::Distance { dimension: Default::default(), a, b, d, off: 2.0, expr: String::new(), driven: false, axis, at: None }
 }
 
 /// A sketch of `n` shapes of `kind`, each with a constraint not yet met. The sketch is the first of the project.

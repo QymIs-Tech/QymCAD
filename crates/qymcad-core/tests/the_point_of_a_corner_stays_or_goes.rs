@@ -67,7 +67,7 @@ fn a_chamfered_corner_keeps_the_sharp_its_legs_are_measured_from() {
 #[test]
 fn a_dimension_on_the_rounded_corner_keeps_the_point_as_the_virtual_sharp() {
     let (mut p, si, corner, far, _) = an_angle();
-    p.sketches[si].constraints.push(Constraint::Distance { a: corner, b: far, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: corner, b: far, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     assert!(p.fillet_at_vertex(si, corner, 5.0), "the corner was not rounded");
     assert!(p.sketches[si].points.iter().any(|q| q.id == corner), "the point the dimension is measured to went with the corner");

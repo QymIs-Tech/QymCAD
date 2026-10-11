@@ -138,9 +138,11 @@ fn arguing(mut i: Input) -> Input {
     let had = i.constraints.clone();
     i.constraints.extend(had.iter().step_by(3).cloned());
     let against = had.iter().find_map(|c| match c {
-        Constraint::Horizontal { a, b } => Some(Constraint::Distance { a: *a, b: *b, d: 5.0, off: 2.0, expr: String::new(), driven: false, axis: 2, at: None }),
-        Constraint::Distance { a, b, d, axis, .. } => Some(Constraint::Distance { a: *a, b: *b, d: d + 5.0, off: 2.0, expr: String::new(), driven: false, axis: *axis, at: None }),
-        Constraint::Diameter { c, d, .. } => Some(Constraint::Diameter { c: *c, d: d + 5.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None }),
+        Constraint::Horizontal { a, b } => Some(Constraint::Distance { dimension: Default::default(), a: *a, b: *b, d: 5.0, off: 2.0, expr: String::new(), driven: false, axis: 2, at: None }),
+        Constraint::Distance { a, b, d, axis, .. } => {
+            Some(Constraint::Distance { dimension: Default::default(), a: *a, b: *b, d: d + 5.0, off: 2.0, expr: String::new(), driven: false, axis: *axis, at: None })
+        }
+        Constraint::Diameter { c, d, .. } => Some(Constraint::Diameter { dimension: Default::default(), c: *c, d: d + 5.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None }),
         _ => None,
     });
     i.constraints.extend(against);
@@ -290,10 +292,10 @@ fn random_chain(seed: u64, n: usize) -> Input {
             1 => Constraint::Vertical { a, b },
             2 => Constraint::Equal { a: id(0), b: id(1), c: a, d: b },
             3 => Constraint::Coincident { a, b },
-            _ => Constraint::Distance { a, b, d, off: 2.0, expr: String::new(), driven: false, axis: s.next(3) as u8, at: None },
+            _ => Constraint::Distance { dimension: Default::default(), a, b, d, off: 2.0, expr: String::new(), driven: false, axis: s.next(3) as u8, at: None },
         });
         if s.next(5) == 0 {
-            constraints.push(Constraint::Distance { a, b, d: d + 3.0, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
+            constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: d + 3.0, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
         }
     }
     Input { points, radii: Vec::new(), constraints }

@@ -452,7 +452,7 @@ pub fn tools() -> Vec<Tool> {
             name: "a distance laid and solved",
             work: |p, t| {
                 let (a, b) = ends(p, t.one);
-                lay(p, Constraint::Distance { a, b, d: 25.0, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
+                lay(p, Constraint::Distance { dimension: Default::default(), a, b, d: 25.0, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
             },
             effect: Effect::Constrains,
         },
@@ -461,13 +461,13 @@ pub fn tools() -> Vec<Tool> {
             work: |p, t| {
                 let (a, b) = ends(p, t.chain[0]);
                 let (_, c) = ends(p, t.chain[1]);
-                lay(p, Constraint::Angle { a, b, c, deg: 80.0, expr: String::new(), driven: false, off: 2.0, at: None });
+                lay(p, Constraint::Angle { dimension: Default::default(), a, b, c, deg: 80.0, expr: String::new(), driven: false, off: 2.0, at: None });
             },
             effect: Effect::Constrains,
         },
         Tool {
             name: "a diameter laid and solved",
-            work: |p, t| lay(p, Constraint::Diameter { c: t.circle, d: 24.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None }),
+            work: |p, t| lay(p, Constraint::Diameter { dimension: Default::default(), c: t.circle, d: 24.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None }),
             effect: Effect::Constrains,
         },
         Tool {
@@ -477,7 +477,7 @@ pub fn tools() -> Vec<Tool> {
                 let (a, b) = ends(p, t.two);
                 let ci = p.sketches[0].constraints.len();
                 let d = (at(p, a).x - at(p, b).x).hypot(at(p, a).y - at(p, b).y);
-                p.sketches[0].constraints.push(Constraint::Distance { a, b, d, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
+                p.sketches[0].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
                 p.solve_sketch(0);
                 let _ = p.dim_redundant(0, ci);
                 let _ = p.sketch_conflicts(0);

@@ -21,7 +21,7 @@ fn dpl_to_axis(p: &mut Project, si: usize, pid: u64, which: usize) -> usize {
     let (dx, dy) = (bx - ox, by - oy);
     let len = (dx * dx + dy * dy).sqrt().max(1e-9);
     let d = (dx * (py - oy) - dy * (px - ox)) / len;
-    p.sketches[si].constraints.push(Constraint::DistancePL { p: pid, a: o, b: ax, d, off: 0.0, expr: String::new(), driven: false, at: None });
+    p.sketches[si].constraints.push(Constraint::DistancePL { dimension: Default::default(), p: pid, a: o, b: ax, d, off: 0.0, expr: String::new(), driven: false, at: None });
     p.sketches[si].constraints.len() - 1
 }
 

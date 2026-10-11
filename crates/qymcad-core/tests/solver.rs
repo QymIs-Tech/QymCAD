@@ -14,7 +14,7 @@ fn solve_horizontal_and_distance() {
     p.sketches[si].constraints = vec![
         Constraint::Fixed { p: a },
         Constraint::Horizontal { a, b },
-        Constraint::Distance { a, b, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+        Constraint::Distance { dimension: Default::default(), a, b, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
     ];
     let resid = p.solve_sketch(si);
     assert!(resid < 1e-3, "the constraints are solved, residual={resid}");
@@ -34,7 +34,11 @@ fn solve_angle_90() {
     let sid = p.add_line_sketch("ang", vec![Point2::new(10.0, 0.0), Point2::new(0.0, 0.0), Point2::new(8.0, 3.0)], false);
     let si = p.sketch_index(sid).unwrap();
     let (a, b, c) = (p.sketches[si].points[0].id, p.sketches[si].points[1].id, p.sketches[si].points[2].id);
-    p.sketches[si].constraints = vec![Constraint::Fixed { p: b }, Constraint::Fixed { p: a }, Constraint::Angle { a, b, c, deg: 90.0, expr: String::new(), driven: false, off: 0.0, at: None }];
+    p.sketches[si].constraints = vec![
+        Constraint::Fixed { p: b },
+        Constraint::Fixed { p: a },
+        Constraint::Angle { dimension: Default::default(), a, b, c, deg: 90.0, expr: String::new(), driven: false, off: 0.0, at: None },
+    ];
     let resid = p.solve_sketch(si);
     assert!(resid < 1e-2, "the angle is solved, residual={resid}");
     // the dot product BA·BC has to be about zero
@@ -192,7 +196,7 @@ fn dimension_from_origin_to_midpoint() {
     p.sketches[si].constraints.push(Constraint::Midpoint { p: mid, a, b });
     // a dimension of 8 from the origin to the midpoint moves the line up until the midpoint is 8 away
     let o = p.ensure_origin(si);
-    p.sketches[si].constraints.push(Constraint::Distance { a: o, b: mid, d: 8.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: o, b: mid, d: 8.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     let resid = p.solve_sketch(si);
     assert!(resid < 1e-2, "solved, residual={resid}");
     let pm = p.sketches[si].points.iter().find(|q| q.id == mid).unwrap();
@@ -215,7 +219,7 @@ fn parametric_dimension_follows_parameter() {
     p.sketches[si].constraints.push(Constraint::Fixed { p: a });
     p.sketches[si].constraints.push(Constraint::Horizontal { a, b });
     // the dimension is the expression w/2, and with the parameter w = 50 the length has to be 25
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 0.0, off: 0.0, expr: "w/2".into(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 0.0, off: 0.0, expr: "w/2".into(), driven: false, axis: 0, at: None });
     p.parameters.push(Param { name: "w".into(), expr: "50".into(), value: 0.0 });
     p.solve_sketch(si);
     let len = {
@@ -260,7 +264,7 @@ fn redundant_dimension_becomes_driven() {
     p.sketches[si].constraints.push(Constraint::Fixed { p: a });
     p.sketches[si].constraints.push(Constraint::Fixed { p: b });
     // adding a dimension now is redundant, since the geometry is already fully constrained
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     let ci = p.sketches[si].constraints.len() - 1;
     assert!(p.dim_redundant(si, ci), "a dimension between two anchored points is redundant");
     assert!(p.auto_driven(si, ci), "it becomes a driven dimension");
@@ -279,7 +283,7 @@ fn driven_dimension_measures_geometry() {
     let ids: Vec<u64> = p.sketches[si].points.iter().map(|q| q.id).collect();
     let (a, b) = (ids[0], ids[1]);
     // a driven dimension with a deliberately wrong d has to report the actual value of 7
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 999.0, off: 0.0, expr: String::new(), driven: true, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 999.0, off: 0.0, expr: String::new(), driven: true, axis: 0, at: None });
     p.solve_sketch(si);
     if let Constraint::Distance { d, .. } = &p.sketches[si].constraints[0] {
         assert!((d - 7.0).abs() < 1e-6, "the driven dimension measured a length of 7, got {d}");
@@ -373,7 +377,7 @@ fn distance_point_to_line() {
     p.sketches[si].constraints.push(Constraint::Fixed { p: a });
     p.sketches[si].constraints.push(Constraint::Fixed { p: b });
     // a point-to-line distance of 8 moves the point to y = 8
-    p.sketches[si].constraints.push(Constraint::DistancePL { p: q, a, b, d: 8.0, off: 0.0, expr: String::new(), driven: false, at: None });
+    p.sketches[si].constraints.push(Constraint::DistancePL { dimension: Default::default(), p: q, a, b, d: 8.0, off: 0.0, expr: String::new(), driven: false, at: None });
     let resid = p.solve_sketch(si);
     assert!(resid < 1e-2, "solved, residual={resid}");
     let qp = p.sketches[si].points.iter().find(|x| x.id == q).unwrap();
@@ -392,13 +396,13 @@ fn horizontal_vertical_distance_variants() {
     p.sketches[si].points.push(SketchPoint { id: b, x: 6.0, y: 8.0 });
     p.sketches[si].constraints.push(Constraint::Fixed { p: a });
     // a horizontal dimension, axis = 1: |Δx| = 20 moves b.x to 20 while b.y stays free
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
     p.solve_sketch(si);
     let bp = p.sketches[si].points.iter().find(|q| q.id == b).unwrap();
     assert!((bp.x.abs() - 20.0).abs() < 1e-2, "horizontal: |Δx| = 20, got {}", bp.x);
     // switch to a vertical one, axis = 2: |Δy| = 15
     p.sketches[si].constraints.pop();
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 15.0, off: 0.0, expr: String::new(), driven: false, axis: 2, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 15.0, off: 0.0, expr: String::new(), driven: false, axis: 2, at: None });
     p.solve_sketch(si);
     let bp = p.sketches[si].points.iter().find(|q| q.id == b).unwrap();
     assert!((bp.y.abs() - 15.0).abs() < 1e-2, "vertical: |Δy| = 15, got {}", bp.y);
@@ -462,7 +466,7 @@ fn angle_between_two_lines() {
     p.sketches[si].constraints.push(Constraint::Fixed { p: b });
     p.sketches[si].constraints.push(Constraint::Fixed { p: c });
     // an angle of 45° between the lines rotates the endpoint d
-    p.sketches[si].constraints.push(Constraint::AngleLines { a, b, c, d, deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
+    p.sketches[si].constraints.push(Constraint::AngleLines { dimension: Default::default(), a, b, c, d, deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
     let resid = p.solve_sketch(si);
     assert!(resid < 1e-1, "solved, residual={resid}");
     let pd = p.sketches[si].points.iter().find(|q| q.id == d).unwrap();
@@ -485,7 +489,11 @@ fn angle_change_preserves_line_length() {
         ((pc.x - pb.x).powi(2) + (pc.y - pb.y).powi(2)).sqrt()
     };
     let len0 = bc(&p);
-    p.sketches[si].constraints = vec![Constraint::Fixed { p: a }, Constraint::Fixed { p: b }, Constraint::Angle { a, b, c, deg: 90.0, expr: String::new(), driven: false, off: 0.0, at: None }];
+    p.sketches[si].constraints = vec![
+        Constraint::Fixed { p: a },
+        Constraint::Fixed { p: b },
+        Constraint::Angle { dimension: Default::default(), a, b, c, deg: 90.0, expr: String::new(), driven: false, off: 0.0, at: None },
+    ];
     let resid = p.solve_sketch(si);
     assert!(resid < 1e-3, "the 90° angle is solved, residual={resid}");
     let (pb, pc) = (p.sketches[si].points[1], p.sketches[si].points[2]);
@@ -546,7 +554,7 @@ fn equal_radius_links_circles() {
         .collect();
     let (c1, c2) = (centers[0], centers[1]);
     // fix the radius of the first circle at 5 and tie the radii together
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c1, d: 5.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c1, d: 5.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     p.sketches[si].constraints.push(Constraint::EqualRadius { c1, c2 });
     p.solve_sketch(si);
     let radii: Vec<f64> = p.sketches[si]
@@ -581,7 +589,7 @@ fn circle_radius_counts_in_dof() {
     let (dof, _) = p.sketch_dof(si);
     assert_eq!(dof, 1, "a free radius is one degree of freedom");
     // adding a diameter dimension brings it to zero
-    p.sketches[si].constraints.push(Constraint::Diameter { c: center, d: 10.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: center, d: 10.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
     let (dof2, _) = p.sketch_dof(si);
     assert_eq!(dof2, 0, "with the radius dimensioned the sketch is fully constrained");
 }
@@ -684,7 +692,7 @@ fn point_on_circle_constraint() {
     let pid = p.alloc_id();
     p.sketches[si].points.push(SketchPoint { id: pid, x: 20.0, y: 0.0 }); // outside the circle
     p.sketches[si].constraints.push(Constraint::Fixed { p: center });
-    p.sketches[si].constraints.push(Constraint::Diameter { c: center, d: 10.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: center, d: 10.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     p.sketches[si].constraints.push(Constraint::PointOnCircle { p: pid, c: center });
     p.solve_sketch(si);
     let pt = p.sketches[si].points.iter().find(|q| q.id == pid).unwrap();
@@ -827,7 +835,7 @@ fn point_on_line_distance_keeps_side() {
     // d is signed: for a point above the line the perpendicular is +5, which depends on the direction la->lb
     let dx = 20.0_f64; // (lb-la).x
     let perp = (dx * (5.0 - 0.0)) / 20.0; // = +5
-    p.sketches[si].constraints.push(Constraint::DistancePL { p: pid, a: la, b: lb, d: perp, off: 0.0, expr: String::new(), driven: false, at: None });
+    p.sketches[si].constraints.push(Constraint::DistancePL { dimension: Default::default(), p: pid, a: la, b: lb, d: perp, off: 0.0, expr: String::new(), driven: false, at: None });
     // perturb the point downwards and solve: it has to return to its own side, y > 0, not to -5
     if let Some(q) = p.sketches[si].points.iter_mut().find(|q| q.id == pid) {
         q.y = 1.0;
@@ -849,13 +857,13 @@ fn conflict_vs_redundant_distinguished() {
     let a = p.sketch_point_at(si, 0.0, 0.0, 1e-6);
     let b = p.sketch_point_at(si, 10.0, 0.0, 1e-6);
     p.sketches[si].constraints.push(Constraint::Fixed { p: a });
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     // an extra dimension that agrees, also 10, is not a conflict
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     assert!(p.sketch_conflicts(si).is_empty(), "an agreeing extra dimension is not a conflict");
     // a contradictory dimension, 20 on the same edge, is a conflict
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     let conf = p.sketch_conflicts(si);
     assert!(!conf.is_empty(), "contradictory dimensions, 10 and 20, produce a conflict: {conf:?}");
@@ -948,8 +956,8 @@ fn circle_tangent_external_pulls_to_sum_of_radii() {
     let c1 = p.sketch_point_at(si, 0.0, 0.0, 1e-6);
     let c2 = p.sketch_point_at(si, 10.0, 0.0, 1e-6);
     p.sketches[si].constraints.push(Constraint::Fixed { p: c1 });
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c1, d: 3.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c2, d: 2.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c1, d: 3.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c2, d: 2.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     p.sketches[si].constraints.push(Constraint::CircleTangent { c1, c2, external: true });
     p.solve_sketch(si);
     let g = |id: u64| {
@@ -979,7 +987,7 @@ fn tangent_arc_to_line_holds_under_radius_change() {
     p.sketches[si].constraints.push(Constraint::Fixed { p: la });
     p.sketches[si].constraints.push(Constraint::Fixed { p: lb });
     // change the radius of the arc to 3
-    p.sketches[si].constraints.push(Constraint::Diameter { c: cen, d: 3.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: cen, d: 3.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     p.solve_sketch(si);
     let c = p.sketches[si].points.iter().find(|q| q.id == cen).unwrap();
     // the centre stays above the shared point at cx = 10, at distance R = 3 from the line y = 0
@@ -998,10 +1006,10 @@ fn edge_distance_between_circle_edges() {
     let c1 = p.sketch_point_at(si, 0.0, 0.0, 1e-6);
     let c2 = p.sketch_point_at(si, 20.0, 0.0, 1e-6);
     p.sketches[si].constraints.push(Constraint::Fixed { p: c1 });
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c1, d: 3.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c2, d: 2.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c1, d: 3.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c2, d: 2.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     // a gap of 2 between the nearest rims means a centre distance of 3 + 2 + 2 = 7
-    p.sketches[si].constraints.push(Constraint::EdgeDistance { c1, c2, d: 2.0, m1: -1, m2: -1, off: 0.0, expr: String::new(), driven: false, at: None });
+    p.sketches[si].constraints.push(Constraint::EdgeDistance { dimension: Default::default(), c1, c2, d: 2.0, m1: -1, m2: -1, off: 0.0, expr: String::new(), driven: false, at: None });
     p.solve_sketch(si);
     let g = |id: u64| {
         let q = p.sketches[si].points.iter().find(|q| q.id == id).unwrap();

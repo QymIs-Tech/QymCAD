@@ -319,8 +319,11 @@ fn skeleton_named_dim_drives_parameter() {
     let si = p.sketch_index(sid).unwrap();
     let pts: Vec<Id> = p.sketches[si].points.iter().map(|pt| pt.id).collect();
     let (a, b) = (pts[0], pts[1]);
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    assert!(p.add_named_dim("len".into(), sid, vec![a, b]), "the dimension must be named as a driver");
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    assert!(
+        p.name_sketch_dimension("len".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: p.sketches[si].constraints.len() - 1 }),
+        "the dimension must be named as a driver"
+    );
     assert_eq!(p.param_map().get("len"), Some(&30.0), "a named dimension must be visible as a parameter");
     assert_eq!(p.eval_expr("len*2").unwrap(), 60.0, "a part must be able to reference it from an expression");
     // Editing the skeleton dimension moves the parameter with it.

@@ -352,7 +352,7 @@ fn a_contradiction_in_a_big_part_is_solved_without_a_run_for_nothing() {
             _ => None,
         })
         .expect("a dimension in the pattern");
-    p.sketches[0].constraints.push(qymcad_core::model::Constraint::Distance { a, b, d: d + 5.0, off: 2.0, expr: String::new(), driven: false, axis, at: None });
+    p.sketches[0].constraints.push(qymcad_core::model::Constraint::Distance { dimension: Default::default(), a, b, d: d + 5.0, off: 2.0, expr: String::new(), driven: false, axis, at: None });
     // THE SAME PART WITH AN ANGLE DIMENSION, where the second run has arms to hold and is made: its time is the measure,
     // taken beside, so the check reads the same on a fast machine and a loaded one. Two sides of the first rectangle at
     // the 90 deg they stand at - the part and its contradiction are unchanged.
@@ -367,6 +367,7 @@ fn a_contradiction_in_a_big_part_is_solved_without_a_run_for_nothing() {
         .collect();
     let mut with_an_angle = p.clone();
     with_an_angle.sketches[0].constraints.push(qymcad_core::model::Constraint::AngleLines {
+        dimension: Default::default(),
         a: sides[0].0,
         b: sides[0].1,
         c: sides[1].0,

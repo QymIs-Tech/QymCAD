@@ -69,8 +69,8 @@ fn rect_dims_then_fillet_stays_solvable() {
     // edge dimensions: width 40 on the bottom, height 30 on the right edge, plus the corner anchored at the
     // origin
     p.sketches[si].constraints.push(Constraint::Fixed { p: c00 });
-    p.sketches[si].constraints.push(Constraint::Distance { a: c00, b: c40, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    p.sketches[si].constraints.push(Constraint::Distance { a: c40, b: c43, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: c00, b: c40, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: c40, b: c43, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     assert!(p.sketch_conflicts(si).is_empty(), "there are no conflicts before filleting");
 
@@ -153,8 +153,8 @@ fn filleted_rect_stays_associative_on_edits() {
     let corner = |p: &Project, x: f64, y: f64| p.sketches[si].points.iter().find(|q| (q.x - x).abs() < 1e-6 && (q.y - y).abs() < 1e-6).map(|q| q.id).unwrap();
     let (c00, c40, c43) = (corner(&p, 0.0, 0.0), corner(&p, 40.0, 0.0), corner(&p, 40.0, 30.0));
     p.sketches[si].constraints.push(Constraint::Fixed { p: c00 });
-    p.sketches[si].constraints.push(Constraint::Distance { a: c00, b: c40, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    p.sketches[si].constraints.push(Constraint::Distance { a: c40, b: c43, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: c00, b: c40, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: c40, b: c43, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     p.fillet_all_corners(si, 5.0);
     p.solve_sketch(si);

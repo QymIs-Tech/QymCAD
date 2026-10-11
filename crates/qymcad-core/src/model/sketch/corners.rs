@@ -19,7 +19,7 @@ impl Project {
         if let Some(s) = self.sketches.get_mut(si) {
             if !s.constraints.iter().any(|c| matches!(c, Constraint::Diameter { c: cc, .. } if *cc == center)) {
                 let off = arc_label_angle(&s.points, ArcEnds { center, a, b, ccw });
-                s.constraints.push(Constraint::Diameter { c: center, d: rr, off, expr: String::new(), driven: false, diam: false, at: None });
+                s.constraints.push(Constraint::Diameter { dimension: Default::default(), c: center, d: rr, off, expr: String::new(), driven: false, diam: false, at: None });
             }
         }
         self.solve_sketch(si);
@@ -254,7 +254,7 @@ impl Project {
             s.constraints.push(Constraint::Tangent { a: o1, b: t1, c: cen, r });
             s.constraints.push(Constraint::Tangent { a: o2, b: t2, c: cen, r });
             let off = fillet_label_angle(&s.points, cen, t1, t2);
-            s.constraints.push(Constraint::Diameter { c: cen, d: r, off, expr: String::new(), driven: false, diam: false, at: None });
+            s.constraints.push(Constraint::Diameter { dimension: Default::default(), c: cen, d: r, off, expr: String::new(), driven: false, diam: false, at: None });
         }
         // The point of the corner (described in `settle_the_corner_point`): it goes with the corner, and what was
         // stated about it goes with it. What is left on each shortened line is a real point of it.
@@ -405,7 +405,7 @@ impl Project {
             let (sharp, at1, at2) = (Point2::new(px, py), Point2::new(t1x, t1y), Point2::new(t2x, t2y));
             let leg = |ends: [DimEnd; 2], side: Side, d: f64| {
                 let [a, b] = ends_facing(ends, side);
-                Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }
+                Constraint::Distance { dimension: Default::default(), a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }
             };
             let (end_c, end_1, end_2) = (DimEnd { id: pc, at: sharp }, DimEnd { id: t1, at: at1 }, DimEnd { id: t2, at: at2 });
             match legs.mode {
@@ -423,7 +423,7 @@ impl Project {
                     // THE ARC OF THE ANGLE STANDS PAST THE END OF THE CUT, 1.25 of its length out, both sides carried to it:
                     // at the radius of every angle, 24 px, it was a tick tucked between the cut and the line
                     let off = 1.25 * (t2x - t1x).hypot(t2y - t1y);
-                    s.constraints.push(Constraint::AngleLines { a: o1, b: t1, c: t1, d: t2, deg: legs.second, expr: String::new(), driven: false, off, at: None });
+                    s.constraints.push(Constraint::AngleLines { dimension: Default::default(), a: o1, b: t1, c: t1, d: t2, deg: legs.second, expr: String::new(), driven: false, off, at: None });
                 }
             }
         }
@@ -666,7 +666,7 @@ impl Project {
                 }
             }
             let off = fillet_label_angle(&s.points, cen, t1, t2);
-            s.constraints.push(Constraint::Diameter { c: cen, d: r, off, expr: String::new(), driven: false, diam: false, at: None });
+            s.constraints.push(Constraint::Diameter { dimension: Default::default(), c: cen, d: r, off, expr: String::new(), driven: false, diam: false, at: None });
         }
         // Virtual corner: vertex `pc` is kept and the constraints and dimensions on it are left alone, so it
         // stays the sharp corner on the extensions of both shortened edges.
@@ -695,6 +695,26 @@ impl Project {
         self.regen_sketch(si);
         true
     }
+    /// Add an unbound edge-gap dimension with the current measured value.
+    pub fn add_edge_dimension(&mut self, si: usize, ends: [super::EdgeDimensionEnd; 2]) -> usize {
+        let [first, second] = ends;
+        let d = self.measure_edge_distance(si, first.center, first.mode, second.center, second.mode);
+        let index = self.sketches[si].constraints.len();
+        self.sketches[si].constraints.push(Constraint::EdgeDistance {
+            dimension: Default::default(),
+            c1: first.center,
+            c2: second.center,
+            d,
+            m1: first.mode,
+            m2: second.mode,
+            off: 0.0,
+            expr: String::new(),
+            driven: false,
+            at: None,
+        });
+        index
+    }
+
     /// Current value of a tangent (edge-to-edge) dimension: the centre distance plus m1*r1 + m2*r2. The radii
     /// come from the circle or arc with the matching centre, and are zero when the centre is an ordinary
     /// point.

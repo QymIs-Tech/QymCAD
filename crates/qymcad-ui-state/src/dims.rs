@@ -67,9 +67,12 @@ pub fn dim_caption(project: &Project, si: usize, c: &qymcad_core::model::Constra
     };
     let mut parts: Vec<String> = Vec::new();
     if set.dim_show_name {
-        let sketch = project.sketches.get(si)?.id;
-        let refs = Project::dim_refs(c).map(|r| Project::dim_key_pub(&r)).unwrap_or_default();
-        let name = project.name_of_target(&qymcad_core::model::DimTarget::Sketch { sketch, refs });
+        let sketch = project.sketches.get(si)?;
+        let target = c.dimension_id().filter(|id| id.0 != 0).and_then(|dimension| {
+            let index = sketch.constraints.iter().position(|constraint| constraint.dimension_id() == Some(dimension))?;
+            project.sketch_dimension_target(qymcad_core::model::SketchDimensionSelection { sketch: sketch.id, index })
+        });
+        let name = target.map(|target| project.name_of_target(&target)).unwrap_or_default();
         if !name.is_empty() {
             parts.push(name);
         }

@@ -1047,7 +1047,16 @@ impl Project {
         // usual way puts the "R20" label exactly on that vertex and the value becomes unreadable. Half a step
         // around the circle moves it into the gap and keeps it there for any number of sides and any rotation.
         // The sign is in screen space, where the canvas Y axis points down.
-        s.constraints.push(Constraint::Diameter { c: center, d: r, off: -a0 + std::f64::consts::PI / n as f64, expr: String::new(), driven: false, diam: false, at: None });
+        s.constraints.push(Constraint::Diameter {
+            dimension: Default::default(),
+            c: center,
+            d: r,
+            off: -a0 + std::f64::consts::PI / n as f64,
+            expr: String::new(),
+            driven: false,
+            diam: false,
+            at: None,
+        });
         self.regen_sketch(si);
         (center, eids)
     }

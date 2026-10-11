@@ -131,7 +131,7 @@ fn solver_never_produces_wild_or_nan_geometry() {
                 0 => Constraint::Horizontal { a, b },
                 1 => Constraint::Vertical { a, b },
                 2 => Constraint::Coincident { a, b },
-                3 => Constraint::Distance { a, b, d: rng.f(span * 0.05, span), off: 0.0, expr: String::new(), driven: false, axis: rng.usize(3) as u8, at: None },
+                3 => Constraint::Distance { dimension: Default::default(), a, b, d: rng.f(span * 0.05, span), off: 0.0, expr: String::new(), driven: false, axis: rng.usize(3) as u8, at: None },
                 _ => Constraint::Fixed { p: a },
             };
             p.sketches[si].constraints.push(c);
@@ -173,7 +173,7 @@ fn solving_twice_is_stable() {
                 p.sketches[si].constraints.push(match rng.usize(3) {
                     0 => Constraint::Horizontal { a, b },
                     1 => Constraint::Vertical { a, b },
-                    _ => Constraint::Distance { a, b, d: rng.f(5.0, span), off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+                    _ => Constraint::Distance { dimension: Default::default(), a, b, d: rng.f(5.0, span), off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
                 });
             }
         }
@@ -211,7 +211,7 @@ fn dof_is_scale_invariant_on_random_sketches() {
                     p.sketches[si].constraints.push(match r2.usize(3) {
                         0 => Constraint::Horizontal { a, b },
                         1 => Constraint::Vertical { a, b },
-                        _ => Constraint::Distance { a, b, d: 5.0 * k, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+                        _ => Constraint::Distance { dimension: Default::default(), a, b, d: 5.0 * k, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
                     });
                 }
             }

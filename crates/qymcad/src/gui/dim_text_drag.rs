@@ -22,9 +22,9 @@ mod tests {
         app.project.add_circle_entity(si, 80.0, 0.0, 10.0, real);
         let pt = |app: &App, x: f64, y: f64| app.project.sketches[si].points.iter().find(|p| (p.x - x).abs() < 1e-6 && (p.y - y).abs() < 1e-6).map(|p| p.id).expect("a point of the sketch");
         let (a, b, c) = (pt(&app, 0.0, 0.0), pt(&app, 40.0, 0.0), pt(&app, 80.0, 0.0));
-        app.project.sketches[si].constraints.push(Constraint::Distance { a, b, d: 40.0, off: 2.0, expr: String::new(), driven: true, axis: 0, at: None });
+        app.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 40.0, off: 2.0, expr: String::new(), driven: true, axis: 0, at: None });
         let length = app.project.sketches[si].constraints.len() - 1;
-        app.project.sketches[si].constraints.push(Constraint::Diameter { c, d: 20.0, off: 0.0, expr: String::new(), driven: true, diam: true, at: None });
+        app.project.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c, d: 20.0, off: 0.0, expr: String::new(), driven: true, diam: true, at: None });
         let diameter = app.project.sketches[si].constraints.len() - 1;
         app.project.solve_sketch(si);
         app.project.regen_sketch(si);

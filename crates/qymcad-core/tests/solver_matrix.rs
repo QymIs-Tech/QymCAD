@@ -58,7 +58,7 @@ fn matrix_constraints() {
         let si = p.new_sketch("s");
         let (a, b) = line(&mut p, si, 0.0, 0.0, 7.0, 4.0);
         add(&mut p, si, Constraint::Fixed { p: a });
-        add(&mut p, si, Constraint::Distance { a, b, d: 25.0, off: 0.0, expr: String::new(), driven: false, axis, at: None });
+        add(&mut p, si, Constraint::Distance { dimension: Default::default(), a, b, d: 25.0, off: 0.0, expr: String::new(), driven: false, axis, at: None });
         p.solve_sketch(si);
         let (ax, ay) = pt(&p, si, a);
         let (bx, by) = pt(&p, si, b);
@@ -77,7 +77,7 @@ fn matrix_constraints() {
         let si = p.new_sketch("s");
         let (a, b) = line(&mut p, si, 0.0, 0.0, 1e-6, 30.0);
         add(&mut p, si, Constraint::Fixed { p: a });
-        add(&mut p, si, Constraint::Distance { a, b, d: 12.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
+        add(&mut p, si, Constraint::Distance { dimension: Default::default(), a, b, d: 12.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
         p.solve_sketch(si);
         let m = (pt(&p, si, a).0 - pt(&p, si, b).0).abs();
         if (m - 12.0).abs() > 1e-3 {
@@ -169,7 +169,7 @@ fn matrix_constraints() {
         let (c, d) = line(&mut p, si, 0.0, 0.0, 10.0, 3.0);
         add(&mut p, si, Constraint::Fixed { p: a });
         add(&mut p, si, Constraint::Fixed { p: b });
-        add(&mut p, si, Constraint::AngleLines { a, b, c, d, deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
+        add(&mut p, si, Constraint::AngleLines { dimension: Default::default(), a, b, c, d, deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
         p.solve_sketch(si);
         let (cx, cy) = pt(&p, si, c);
         let (dx, dy) = pt(&p, si, d);
@@ -186,7 +186,7 @@ fn matrix_constraints() {
         let (c, d) = line(&mut p, si, 0.0, 0.0, -8.66, 5.0);
         add(&mut p, si, Constraint::Fixed { p: a });
         add(&mut p, si, Constraint::Fixed { p: b });
-        add(&mut p, si, Constraint::AngleLines { a, b, c, d, deg: 179.0, expr: String::new(), driven: false, off: 0.0, at: None });
+        add(&mut p, si, Constraint::AngleLines { dimension: Default::default(), a, b, c, d, deg: 179.0, expr: String::new(), driven: false, off: 0.0, at: None });
         p.solve_sketch(si);
         let (cx, cy) = pt(&p, si, c);
         let (dx, dy) = pt(&p, si, d);
@@ -206,7 +206,7 @@ fn matrix_constraints() {
             _ => unreachable!(),
         };
         add(&mut p, si, Constraint::Fixed { p: c1 });
-        add(&mut p, si, Constraint::Diameter { c: c1, d: 24.0, diam: true, off: 0.0, expr: String::new(), driven: false, at: None });
+        add(&mut p, si, Constraint::Diameter { dimension: Default::default(), c: c1, d: 24.0, diam: true, off: 0.0, expr: String::new(), driven: false, at: None });
         p.solve_sketch(si);
         let r = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind {
             qymcad_core::model::EntityKind::Circle { r, .. } => r,

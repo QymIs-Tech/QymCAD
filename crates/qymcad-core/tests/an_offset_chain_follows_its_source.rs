@@ -20,8 +20,8 @@ fn a_dimensioned_rectangle(p: &mut Project) -> (usize, Vec<u64>, (u64, u64)) {
     };
     let (a0, b0) = ends(p, lines[0]);
     let (a1, b1) = ends(p, lines[1]);
-    let width = Constraint::Distance { a: a0, b: b0, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
-    let height = Constraint::Distance { a: a1, b: b1, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
+    let width = Constraint::Distance { dimension: Default::default(), a: a0, b: b0, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
+    let height = Constraint::Distance { dimension: Default::default(), a: a1, b: b1, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
     p.sketches[si].constraints.push(width);
     p.sketches[si].constraints.push(height);
     p.regen_sketch(si);

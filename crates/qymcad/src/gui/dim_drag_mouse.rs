@@ -30,7 +30,7 @@ mod tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 25.0, qymcad_core::feature::Purpose::Real);
         let pt = |app: &App, x: f64, y: f64| app.project.sketches[si].points.iter().find(|p| (p.x - x).abs() < 1e-6 && (p.y - y).abs() < 1e-6).map(|p| p.id).expect("a point of the rectangle");
         let (a, b) = (pt(&app, 0.0, 0.0), pt(&app, 40.0, 0.0));
-        app.project.sketches[si].constraints.push(Constraint::Distance { a, b, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        app.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
         app.project.solve_sketch(si);
         app.project.regen_sketch(si);
 

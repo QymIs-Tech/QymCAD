@@ -21,8 +21,8 @@ fn app_with_conflict() -> (App, usize) {
     let s = &mut app.project.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
     s.constraints.push(Constraint::Horizontal { a, b });
-    s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    s.constraints.push(Constraint::Distance { a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     app.project.solve_sketch(si);
     (app, si)
 }
@@ -43,7 +43,7 @@ fn app_with_geometric_conflict() -> (App, usize) {
     };
     let s = &mut app.project.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
-    s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     s.constraints.push(Constraint::Horizontal { a, b });
     s.constraints.push(Constraint::Vertical { a, b });
     app.project.solve_sketch(si);

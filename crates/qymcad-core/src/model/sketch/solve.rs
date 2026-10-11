@@ -3,9 +3,7 @@
 use super::*;
 
 impl Project {
-    /// Value of a named driving dimension: the `Distance` constraint of the sketch is looked up by its points
-    /// (a and b, in either order) and its `d` is read. `None` when the sketch or the constraint was not
-    /// found.
+    /// Value of the named dimension record. Missing or ambiguous identities have no value.
     pub fn named_dim_value(&self, nd: &NamedDim) -> Option<f64> {
         self.dim_target_value(&nd.target)
     }
@@ -18,13 +16,10 @@ impl Project {
     /// `param_map`.
     pub fn dim_target_value(&self, target: &crate::model::DimTarget) -> Option<f64> {
         match target {
-            crate::model::DimTarget::Sketch { sketch, refs } => {
+            crate::model::DimTarget::Sketch { sketch, dimension } => {
                 let si = self.sketch_index(*sketch)?;
-                let want: std::collections::BTreeSet<crate::model::Id> = refs.iter().copied().collect();
-                self.sketches[si].constraints.iter().find_map(|c| {
-                    let r: std::collections::BTreeSet<crate::model::Id> = Project::dim_refs(c)?.into_iter().collect();
-                    (r == want).then(|| Project::dim_value_of(c)).flatten()
-                })
+                let ci = self.sketch_dimension_index(si, *dimension)?;
+                Project::dim_value_of(&self.sketches[si].constraints[ci])
             }
             crate::model::DimTarget::Feature { node, key } => {
                 if let Some(e) = self.feat_dim(*node, key) {
@@ -330,7 +325,7 @@ impl Project {
             out.extend(pr.points.iter().filter(|&&p| pinned.insert(p)).map(|&p| Constraint::Fixed { p }));
             for e in s.entities.iter().filter(|e| pr.entities.contains(&e.id)) {
                 if let EntityKind::Circle { center, r } = e.kind {
-                    out.push(Constraint::Diameter { c: center, d: r, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+                    out.push(Constraint::Diameter { dimension: Default::default(), c: center, d: r, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
                 }
             }
         }
@@ -350,7 +345,7 @@ impl Project {
         })?;
         let d = if diam { 2.0 * r } else { r };
         let s = self.sketches.get_mut(si)?;
-        s.constraints.push(Constraint::Diameter { c, d, off: 0.0, expr: String::new(), driven: false, diam, at: None });
+        s.constraints.push(Constraint::Diameter { dimension: Default::default(), c, d, off: 0.0, expr: String::new(), driven: false, diam, at: None });
         Some(s.constraints.len() - 1)
     }
     /// Find or create a driving arc-length dimension for arc entity `arc_eid`. Returns its index.
@@ -370,7 +365,7 @@ impl Project {
         let theta = if ccw { (a1 - a0).rem_euclid(std::f64::consts::TAU) } else { (a0 - a1).rem_euclid(std::f64::consts::TAU) };
         let len = rad * theta;
         let s = self.sketches.get_mut(si)?;
-        s.constraints.push(Constraint::ArcLength { c, a, b, ccw, len, off: 0.0, expr: String::new(), driven: false });
+        s.constraints.push(Constraint::ArcLength { dimension: Default::default(), c, a, b, ccw, len, off: 0.0, expr: String::new(), driven: false });
         Some(s.constraints.len() - 1)
     }
     /// Update the values of the reference (driven) dimensions from the current geometry: they measure rather

@@ -26,7 +26,7 @@ fn dimension_is_met_exactly_at_any_scale() {
         let (si, a, b) = line(&mut p, 0.0, 0.0, target * 0.6, 0.0);
         p.sketches[si].constraints.push(Constraint::Fixed { p: a });
         p.sketches[si].constraints.push(Constraint::Horizontal { a, b });
-        p.sketches[si].constraints.push(Constraint::Distance { a, b, d: target, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: target, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
         p.solve_sketch(si);
         let s = &p.sketches[si];
         let len = (s.points[1].x - s.points[0].x).hypot(s.points[1].y - s.points[0].y);
@@ -58,7 +58,7 @@ fn reference_line_lands_exactly_on_its_dimension() {
 
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Vertical { a: a0, b: a1 });
-    s.constraints.push(Constraint::DistancePL { p: a1, a: axis_o, b: axis_up, d: 130.0, off: 0.0, expr: String::new(), driven: false, at: None });
+    s.constraints.push(Constraint::DistancePL { dimension: Default::default(), p: a1, a: axis_o, b: axis_up, d: 130.0, off: 0.0, expr: String::new(), driven: false, at: None });
     s.constraints.push(Constraint::Collinear { a: a0, b: a1, c: rect_left[0], d: rect_left[1] });
     p.solve_sketch(si);
     // 1) the line itself landed on the dimension

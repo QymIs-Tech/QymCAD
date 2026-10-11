@@ -15,7 +15,7 @@ fn parallel_against_an_angle_of_45_is_taken_back() {
     let l2 = p.add_line_entity(si, 0.0, 0.0, 30.0, 30.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(si);
     let q: Vec<u64> = p.sketches[si].points.iter().map(|x| x.id).collect();
-    p.sketches[si].constraints.push(Constraint::AngleLines { a: q[0], b: q[1], c: q[0], d: q[2], deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
+    p.sketches[si].constraints.push(Constraint::AngleLines { dimension: Default::default(), a: q[0], b: q[1], c: q[0], d: q[2], deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
     p.solve_sketch(si);
     let before: Vec<(f64, f64)> = p.sketches[si].points.iter().map(|x| (x.x, x.y)).collect();
     let mut regen = qymcad_ui_state::Rebuilding::default();
@@ -42,8 +42,8 @@ fn equal_on_two_dimensioned_circles_makes_the_second_radius_a_reference() {
     p.regen_sketch(si);
     let centre = |p: &Project, x: f64| p.sketches[si].points.iter().find(|q| (q.x - x).abs() < 1e-6 && q.y.abs() < 1e-6).map(|q| q.id).expect("the centre");
     let (c1, c2) = (centre(&p, 0.0), centre(&p, 40.0));
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c1, d: 10.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c2, d: 7.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c1, d: 10.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c2, d: 7.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     p.solve_sketch(si);
     let mut regen = qymcad_ui_state::Rebuilding::default();
     let mut sel_sk = qymcad_ui_state::SketchSelection { items: vec![(1, e1), (1, e2)], ..Default::default() };

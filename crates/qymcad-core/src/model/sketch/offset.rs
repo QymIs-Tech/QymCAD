@@ -65,7 +65,18 @@ impl Project {
                         if let Some(cc) = copy_centre.filter(|cc| *cc != center) {
                             let (m1, m2) = if dist > 0.0 { (-1, 1) } else { (1, -1) }; // r(copy) - r(source) = dist
                             self.sketches[si].constraints.push(Constraint::Concentric { c1: center, c2: cc });
-                            self.sketches[si].constraints.push(Constraint::EdgeDistance { c1: center, c2: cc, d: dist.abs(), m1, m2, off: 0.0, expr: String::new(), driven: false, at: None });
+                            self.sketches[si].constraints.push(Constraint::EdgeDistance {
+                                dimension: Default::default(),
+                                c1: center,
+                                c2: cc,
+                                d: dist.abs(),
+                                m1,
+                                m2,
+                                off: 0.0,
+                                expr: String::new(),
+                                driven: false,
+                                at: None,
+                            });
                         }
                         count += 1;
                     }

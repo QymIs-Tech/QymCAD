@@ -320,8 +320,18 @@ mod tests {
         let si = app.project.sketch_index(sid).unwrap();
         app.project.add_sketch_node(sid, "Profile");
         let pts: Vec<Id> = app.project.sketches[si].points.iter().map(|q| q.id).collect();
-        app.project.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-        assert!(app.project.add_named_dim("len".into(), sid, vec![pts[0], pts[1]]));
+        app.project.sketches[si].constraints.push(Constraint::Distance {
+            dimension: Default::default(),
+            a: pts[0],
+            b: pts[1],
+            d: 40.0,
+            off: 0.0,
+            expr: String::new(),
+            driven: false,
+            axis: 0,
+            at: None,
+        });
+        assert!(app.project.name_sketch_dimension("len".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: app.project.sketches[si].constraints.len() - 1 }));
 
         let mut t = Table::new();
         let at = t.stable_driver_value_pos(&mut app, 0).expect("the value field of the driver is in the frame");
@@ -359,8 +369,18 @@ mod tests {
         let si = app.project.sketch_index(sid).unwrap();
         app.project.add_sketch_node(sid, "Profile");
         let pts: Vec<Id> = app.project.sketches[si].points.iter().take(2).map(|q| q.id).collect();
-        app.project.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-        assert!(app.project.add_named_dim("len".into(), sid, pts));
+        app.project.sketches[si].constraints.push(Constraint::Distance {
+            dimension: Default::default(),
+            a: pts[0],
+            b: pts[1],
+            d: 40.0,
+            off: 0.0,
+            expr: String::new(),
+            driven: false,
+            axis: 0,
+            at: None,
+        });
+        assert!(app.project.name_sketch_dimension("len".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: app.project.sketches[si].constraints.len() - 1 }));
         // We leave the part so that the jump is visible: it must also ENTER it.
         app.exit_context();
         app.chosen.sel = super::super::Sel::None;
@@ -389,7 +409,7 @@ mod tests {
     /// The check measures THE SIZE OF THE BODY — the very thing a person looks at.
     #[test]
     fn editing_a_driver_rebuilds_the_body_not_only_the_sketch() {
-        use qymcad_core::model::{Constraint, Id};
+        use qymcad_core::model::Constraint;
         let mut app = App::default();
         app.project.new_document();
         let comp = app.project.add_part("Ring");
@@ -406,7 +426,7 @@ mod tests {
             Some(qymcad_core::model::EntityKind::Circle { center, .. }) => center,
             _ => panic!("the circle was not created"),
         };
-        app.project.sketches[si].constraints.push(Constraint::Diameter { c, d: 90.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
+        app.project.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c, d: 90.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
         app.project.regen_sketch(si);
         let prof = app.project.contour_id(0).unwrap_or(0);
         app.project.add_extrude_on(sid, prof, 10.0, qymcad_core::feature::Reach::Forward, 0.0);
@@ -418,8 +438,7 @@ mod tests {
         let before = width(&app);
         assert!(before > 80.0 && before < 100.0, "setup: the body must be 90 mm across, and its width is {before:.1}");
 
-        let refs: Vec<Id> = vec![c];
-        assert!(app.project.add_named_dim("S_diametr_out".into(), sid, refs));
+        assert!(app.project.name_sketch_dimension("S_diametr_out".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: app.project.sketches[si].constraints.len() - 1 }));
 
         let mut t = Table::new();
         let at = t.stable_driver_value_pos(&mut app, 0).expect("the value field of the driver is in the frame");

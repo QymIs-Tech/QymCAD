@@ -34,10 +34,10 @@ fn every_constraint_has_correct_analytic_derivatives() {
     check("Vertical", Constraint::Vertical { a: 1, b: 2 });
     check("Coincident", Constraint::Coincident { a: 1, b: 2 });
     check("Concentric", Constraint::Concentric { c1: 3, c2: 4 });
-    check("Distance (aligned)", Constraint::Distance { a: 1, b: 2, d: 3.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    check("Distance (along X)", Constraint::Distance { a: 1, b: 2, d: 3.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
-    check("Distance (along Y)", Constraint::Distance { a: 1, b: 2, d: 3.0, off: 0.0, expr: String::new(), driven: false, axis: 2, at: None });
-    check("EdgeDistance", Constraint::EdgeDistance { c1: 3, c2: 4, d: 7.0, m1: 1, m2: -1, off: 0.0, expr: String::new(), driven: false, at: None });
+    check("Distance (aligned)", Constraint::Distance { dimension: Default::default(), a: 1, b: 2, d: 3.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    check("Distance (along X)", Constraint::Distance { dimension: Default::default(), a: 1, b: 2, d: 3.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
+    check("Distance (along Y)", Constraint::Distance { dimension: Default::default(), a: 1, b: 2, d: 3.0, off: 0.0, expr: String::new(), driven: false, axis: 2, at: None });
+    check("EdgeDistance", Constraint::EdgeDistance { dimension: Default::default(), c1: 3, c2: 4, d: 7.0, m1: 1, m2: -1, off: 0.0, expr: String::new(), driven: false, at: None });
     check("Parallel", Constraint::Parallel { a: 1, b: 2, c: 3, d: 4 });
     check("Perpendicular", Constraint::Perpendicular { a: 1, b: 2, c: 3, d: 4 });
     check("Equal", Constraint::Equal { a: 1, b: 2, c: 3, d: 4 });
@@ -47,13 +47,13 @@ fn every_constraint_has_correct_analytic_derivatives() {
     check("CircleTangent (external)", Constraint::CircleTangent { c1: 3, c2: 4, external: true });
     check("CircleTangent (internal)", Constraint::CircleTangent { c1: 3, c2: 4, external: false });
     check("Symmetric", Constraint::Symmetric { a: 1, b: 2, la: 3, lb: 4 });
-    check("Angle", Constraint::Angle { a: 1, b: 2, c: 3, deg: 42.0, expr: String::new(), driven: false, off: 0.0, at: None });
-    check("AngleLines", Constraint::AngleLines { a: 1, b: 2, c: 3, d: 4, deg: 42.0, expr: String::new(), driven: false, off: 0.0, at: None });
+    check("Angle", Constraint::Angle { dimension: Default::default(), a: 1, b: 2, c: 3, deg: 42.0, expr: String::new(), driven: false, off: 0.0, at: None });
+    check("AngleLines", Constraint::AngleLines { dimension: Default::default(), a: 1, b: 2, c: 3, d: 4, deg: 42.0, expr: String::new(), driven: false, off: 0.0, at: None });
     check("PointOnLine", Constraint::PointOnLine { p: 5, a: 1, b: 2 });
-    check("DistancePL", Constraint::DistancePL { p: 5, a: 1, b: 2, d: 1.5, off: 0.0, expr: String::new(), driven: false, at: None });
-    check("Diameter", Constraint::Diameter { c: 3, d: 4.0, diam: true, off: 0.0, expr: String::new(), driven: false, at: None });
+    check("DistancePL", Constraint::DistancePL { dimension: Default::default(), p: 5, a: 1, b: 2, d: 1.5, off: 0.0, expr: String::new(), driven: false, at: None });
+    check("Diameter", Constraint::Diameter { dimension: Default::default(), c: 3, d: 4.0, diam: true, off: 0.0, expr: String::new(), driven: false, at: None });
     check("EqualRadius", Constraint::EqualRadius { c1: 3, c2: 4 });
     check("PointOnCircle", Constraint::PointOnCircle { p: 5, c: 3 });
-    check("ArcLength(ccw)", Constraint::ArcLength { c: 3, a: 1, b: 2, ccw: true, len: 5.0, off: 0.0, expr: String::new(), driven: false });
-    check("ArcLength(cw)", Constraint::ArcLength { c: 3, a: 1, b: 2, ccw: false, len: 5.0, off: 0.0, expr: String::new(), driven: false });
+    check("ArcLength(ccw)", Constraint::ArcLength { dimension: Default::default(), c: 3, a: 1, b: 2, ccw: true, len: 5.0, off: 0.0, expr: String::new(), driven: false });
+    check("ArcLength(cw)", Constraint::ArcLength { dimension: Default::default(), c: 3, a: 1, b: 2, ccw: false, len: 5.0, off: 0.0, expr: String::new(), driven: false });
 }

@@ -19,6 +19,24 @@ pub enum Units {
 /// rather than by array index, so a reference survives insertion, removal and reordering.
 pub type Id = u64;
 
+/// Identity of a dimension record, independent of its participants and measurement mode. Zero is unbound.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DimensionId(pub Id);
+
+/// A dimension selected for naming. The index is used only while binding, never stored as its identity.
+#[derive(Clone, Copy, Debug)]
+pub struct SketchDimensionSelection {
+    pub sketch: Id,
+    pub index: usize,
+}
+
+/// One end of an edge-gap dimension: the centre and which rim is measured (-1 near, 0 point, 1 far).
+#[derive(Clone, Copy)]
+pub struct EdgeDimensionEnd {
+    pub center: Id,
+    pub mode: i8,
+}
+
 /// A body of the document: geometry, its faces, its name and its visibility in one place.
 ///
 /// `mesh` is the tessellation for the screen and for export, `faces` are the recognised faces (they
@@ -504,17 +522,17 @@ pub struct Param {
 
 /// What exactly a named driver points at.
 ///
-/// One enum instead of two mechanisms: a sketch dimension is addressed by a set of entities, a feature
+/// One enum instead of two mechanisms: a sketch dimension is addressed by its record identity, a feature
 /// parameter by a timeline node and a key. Separate fields for the two would mean writing the rules
 /// (name already taken, renaming, breadcrumbs, listing) twice, and the two copies would drift apart.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum DimTarget {
-    /// A sketch dimension, identified by the entities it is attached to (points, a circle, an arc,
-    /// depending on the dimension kind). Order does not matter: the comparison is set-based.
-    ///
-    /// A pair of points would only cover a linear dimension between two points, leaving angle, diameter,
-    /// distance to a line, arc length and tangent gap with nowhere in the model to hold a name.
-    Sketch { sketch: Id, refs: Vec<Id> },
+    /// A sketch dimension record. Different axes, kinds and reference dimensions may share participants.
+    Sketch {
+        sketch: Id,
+        #[serde(default)]
+        dimension: DimensionId,
+    },
     /// A feature parameter: a timeline node and a key (`height`, `radius`, `thickness` and so on) — the
     /// same keys `feat_dims` uses to override numbers with expressions.
     ///
@@ -525,7 +543,7 @@ pub enum DimTarget {
 
 impl Default for DimTarget {
     fn default() -> Self {
-        DimTarget::Sketch { sketch: 0, refs: Vec::new() }
+        DimTarget::Sketch { sketch: 0, dimension: DimensionId::default() }
     }
 }
 

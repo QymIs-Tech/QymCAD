@@ -828,7 +828,7 @@ fn hold_offset(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64, shap
     // the difference of the two radii about one centre - a distance between two points that coincide has no slope, and
     // the rank read from it took two freedoms from the source.
     let mut sized = vec![false; n];
-    let dim = |a: Id, b: Id| Constraint::Distance { a, b, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
+    let dim = |a: Id, b: Id| Constraint::Distance { dimension: Default::default(), a, b, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
     // the corners between two curves of the copy: all of a loop, the inner ones of a chain
     let joints: Vec<(usize, usize, usize)> = match shape {
         OffsetShape::Closed => (0..n).map(|k| (k, (k + n - 1) % n, k)).collect(),
@@ -839,8 +839,8 @@ fn hold_offset(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64, shap
         let (prev, next) = (kinds[pk].1, kinds[nk].1);
         match (prev, next) {
             (OffsetSource::Line(a1, b1), OffsetSource::Line(a2, b2)) => {
-                held.push(Constraint::DistancePL { p: v, a: a1, b: b1, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, at: None });
-                held.push(Constraint::DistancePL { p: v, a: a2, b: b2, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, at: None });
+                held.push(Constraint::DistancePL { dimension: Default::default(), p: v, a: a1, b: b1, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, at: None });
+                held.push(Constraint::DistancePL { dimension: Default::default(), p: v, a: a2, b: b2, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, at: None });
             }
             (OffsetSource::Arc { center, a, b, .. }, other) | (other, OffsetSource::Arc { center, a, b, .. }) => {
                 let arc_at = if matches!(prev, OffsetSource::Arc { center: c, .. } if c == center) { pk } else { nk };
@@ -880,7 +880,7 @@ fn hold_offset(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64, shap
             let (Some(EndOf { src }), Some(&v)) = (end, ids.get(at)) else { continue };
             match kinds[k].1 {
                 OffsetSource::Line(la, lb) => {
-                    held.push(Constraint::DistancePL { p: v, a: la, b: lb, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, at: None });
+                    held.push(Constraint::DistancePL { dimension: Default::default(), p: v, a: la, b: lb, d: dist.abs(), off: 0.0, expr: String::new(), driven: false, at: None });
                     held.push(Constraint::Perpendicular { a: src, b: v, c: la, d: lb });
                 }
                 OffsetSource::Arc { center, .. } => {

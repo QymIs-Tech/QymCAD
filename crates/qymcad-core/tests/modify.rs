@@ -174,7 +174,7 @@ fn fillet_stays_tangent_after_dimensioning() {
     let bl = pts.iter().find(|(_, x, y)| x.abs() < 0.1 && y.abs() < 0.1).unwrap().0;
     let tl = pts.iter().find(|(_, x, y)| x.abs() < 0.1 && (*y - 10.0).abs() < 0.1).unwrap().0;
     p.sketches[si].constraints.push(Constraint::Fixed { p: bl });
-    p.sketches[si].constraints.push(Constraint::Distance { a: bl, b: tl, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: bl, b: tl, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     // The radius of the arc, found by id.
     fn arc_radius(p: &Project, si: usize, arc: u64) -> f64 {
@@ -650,7 +650,7 @@ fn slot_stays_parametric() {
     assert_eq!(centers.len(), 2, "two end arcs");
     let (c1, c2) = (centers[0], centers[1]);
     // A radius of 8 on one end; the other must follow.
-    p.sketches[si].constraints.push(Constraint::Diameter { c: c1, d: 8.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: c1, d: 8.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     p.solve_sketch(si);
     let rad = |cid: u64| -> f64 {
         let c = p.sketches[si].points.iter().find(|q| q.id == cid).unwrap();

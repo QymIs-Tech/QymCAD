@@ -14,7 +14,7 @@ fn rounded() -> (Project, usize) {
     let si = p.new_sketch("S");
     p.add_rect_entity(si, 0.0, 0.0, 45.0, 35.0, Purpose::Real);
     let c = p.sketches[si].rects[0].corners;
-    let dim = |a, b, d| Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
+    let dim = |a, b, d| Constraint::Distance { dimension: Default::default(), a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
     p.sketches[si].constraints.extend([dim(c[0], c[1], 45.0), dim(c[1], c[2], 35.0)]);
     p.solve_sketch(si);
     assert_eq!(p.fillet_all_corners(si, 3.0), 4, "four corners rounded");

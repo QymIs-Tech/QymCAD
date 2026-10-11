@@ -96,7 +96,7 @@ fn scaling_a_dimensioned_line_leaves_the_dimension_true() {
     let (mut p, si) = new_sketch();
     let eid = p.add_line_entity(si, 10.0, 0.0, 30.0, 0.0, qymcad_core::feature::Purpose::Real);
     let (a, b) = line(&p, si);
-    p.sketches[si].constraints.push(Constraint::Distance { a: a.0, b: b.0, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: a.0, b: b.0, d: 20.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
 
     p.scale_entities(si, &[eid], 10.0, 0.0, 2.0);
 

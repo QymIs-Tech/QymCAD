@@ -43,7 +43,7 @@ fn a_point(p: &mut Project, si: usize, x: f64, y: f64) -> Id {
 }
 
 fn distance(a: Id, b: Id, d: f64, axis: u8) -> Constraint {
-    Constraint::Distance { a, b, d, off: 3.0, expr: String::new(), driven: false, axis, at: None }
+    Constraint::Distance { dimension: Default::default(), a, b, d, off: 3.0, expr: String::new(), driven: false, axis, at: None }
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn a_fillet_put_above_the_sketch_parts_the_corner_and_the_ties_keep_their_sides(
     live.p.sketches[si].entities.push(qymcad_core::model::SketchEntity { id, kind: EntityKind::Line { a: la, b: lb }, construction: false });
     let on = a_point(&mut live.p, si, 60.0, 20.0);
     live.p.sketches[si].constraints.push(Constraint::Vertical { a: la, b: lb });
-    live.p.sketches[si].constraints.push(Constraint::DistancePL { p: corner, a: la, b: lb, d: -5.0, off: 3.0, expr: String::new(), driven: false, at: None });
+    live.p.sketches[si].constraints.push(Constraint::DistancePL { dimension: Default::default(), p: corner, a: la, b: lb, d: -5.0, off: 3.0, expr: String::new(), driven: false, at: None });
     live.p.sketches[si].constraints.push(Constraint::PointOnLine { p: on, a: corner, b: top });
     live.p.solve_sketch(si);
     assert!((at(&live.p, si, la).0 - 55.0).abs() < 1e-6, "GUARD: the line held 5 off the corner at X 55, it stands at {:?}", at(&live.p, si, la));

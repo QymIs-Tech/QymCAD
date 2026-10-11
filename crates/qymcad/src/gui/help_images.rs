@@ -9,9 +9,9 @@
 //! To redraw: `cargo test -p qymcad -- --ignored --nocapture help_images`.
 #[cfg(test)]
 mod tests {
-    use crate::gui::WinKind;
-    use super::super::App;
+    use super::super::{App, WinKind};
     use egui::{Color32, ColorImage, Rect};
+    use qymcad_core::model::Constraint;
 
     /// Where they go. The directory is SHARED across languages: a drawing is not translated.
     fn img_dir() -> std::path::PathBuf {
@@ -614,9 +614,9 @@ mod tests {
                     .id
             };
             let (bl, br, tl) = (corner(&app, (true, true)), corner(&app, (false, true)), corner(&app, (true, false)));
-            app.project.sketches[si].constraints.push(qymcad_core::model::Constraint::Fixed { p: bl });
-            app.project.sketches[si].constraints.push(qymcad_core::model::Constraint::Distance { a: bl, b: br, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
-            app.project.sketches[si].constraints.push(qymcad_core::model::Constraint::Distance { a: bl, b: tl, d: 36.0, off: 0.0, expr: String::new(), driven: false, axis: 2, at: None });
+            app.project.sketches[si].constraints.push(Constraint::Fixed { p: bl });
+            app.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: bl, b: br, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 1, at: None });
+            app.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: bl, b: tl, d: 36.0, off: 0.0, expr: String::new(), driven: false, axis: 2, at: None });
             sketch_frame(&mut app, si, "sketch-dimensions", 1);
         }
 

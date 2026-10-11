@@ -383,7 +383,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                     if let (Some(pa), Some(pb)) = (qymcad_ui_state::sketch_pt(&*sk.project, si, a), qymcad_ui_state::sketch_pt(&*sk.project, si, b)) {
                         sk.dim.before = before;
                         let d = ((pa.x - pb.x).powi(2) + (pa.y - pb.y).powi(2)).sqrt();
-                        sk.project.sketches[si].constraints.push(Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+                        sk.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
                         let ci = sk.project.sketches[si].constraints.len() - 1;
                         let (_, conflict) = qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);
                         sk.place.dim = Some(ci);
@@ -438,7 +438,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
             let (ux, uy) = (pa.x - pb.x, pa.y - pb.y);
             let (vx, vy) = (pc.x - pb.x, pc.y - pb.y);
             let deg = (ux * vy - uy * vx).atan2(ux * vx + uy * vy).abs().to_degrees();
-            sk.project.sketches[si].constraints.push(Constraint::Angle { a, b, c, deg, expr: String::new(), driven: false, off: 0.0, at: None });
+            sk.project.sketches[si].constraints.push(Constraint::Angle { dimension: Default::default(), a, b, c, deg, expr: String::new(), driven: false, off: 0.0, at: None });
             let ci = sk.project.sketches[si].constraints.len() - 1;
             let (redundant, conflict) = qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);
             sk.place.dim = Some(ci); // the next click places it and opens its value
@@ -507,11 +507,11 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
                 (Some(a), Some(b)) => ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt(),
                 _ => 0.0,
             };
-            Some(Constraint::Distance { a: p1, b: p2, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None })
+            Some(Constraint::Distance { dimension: Default::default(), a: p1, b: p2, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None })
         }
         (qymcad_ui_state::DimRef::Point(p), qymcad_ui_state::DimRef::Line(a, b)) | (qymcad_ui_state::DimRef::Line(a, b), qymcad_ui_state::DimRef::Point(p)) => {
             let d = perp(&*sk.project, p, a, b);
-            Some(Constraint::DistancePL { p, a, b, d, off: 0.0, expr: String::new(), driven: false, at: None })
+            Some(Constraint::DistancePL { dimension: Default::default(), p, a, b, d, off: 0.0, expr: String::new(), driven: false, at: None })
         }
         (qymcad_ui_state::DimRef::Line(a1, b1), qymcad_ui_state::DimRef::Line(a2, b2)) => {
             let (ax1, ax2) = (qymcad_ui_state::is_axis_line(&*sk.project, si, a1, b1), qymcad_ui_state::is_axis_line(&*sk.project, si, a2, b2));
@@ -523,7 +523,7 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
                 let (ga, gb, axa, axb) = if ax2 { (a1, b1, a2, b2) } else { (a2, b2, a1, b1) };
                 let (da, db) = (perp(&*sk.project, ga, axa, axb), perp(&*sk.project, gb, axa, axb));
                 let (p, d) = if db.abs() > da.abs() { (gb, db) } else { (ga, da) };
-                Some(Constraint::DistancePL { p, a: axa, b: axb, d, off: 0.0, expr: String::new(), driven: false, at: None })
+                Some(Constraint::DistancePL { dimension: Default::default(), p, a: axa, b: axb, d, off: 0.0, expr: String::new(), driven: false, at: None })
             } else {
                 // parallel? then it is the distance between the lines (a perpendicular from the end of one
                 // to the other)
@@ -536,7 +536,7 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
                 if cross.abs() / (l1 * l2).max(1e-9) < 0.05 {
                     // parallel: the distance from the end a1 to the line (a2, b2)
                     let d = perp(&*sk.project, a1, a2, b2);
-                    Some(Constraint::DistancePL { p: a1, a: a2, b: b2, d, off: 0.0, expr: String::new(), driven: false, at: None })
+                    Some(Constraint::DistancePL { dimension: Default::default(), p: a1, a: a2, b: b2, d, off: 0.0, expr: String::new(), driven: false, at: None })
                 } else if let (Some(pa1), Some(pb1), Some(pa2), Some(pb2)) = (pt(&*sk.project, a1), pt(&*sk.project, b1), pt(&*sk.project, a2), pt(&*sk.project, b2)) {
                     // THE ANGLE between the lines. The directions of both lines are ORIENTED OUTWARDS FROM
                     // their (virtual) INTERSECTION, so the angle equals the visual opening between the
@@ -551,7 +551,7 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
                     let (na2, nb2, ec, ed) = if far(pa2, pb2) { (a2, b2, pa2, pb2) } else { (b2, a2, pb2, pa2) };
                     let (u, v) = ((eb.x - ea.x, eb.y - ea.y), (ed.x - ec.x, ed.y - ec.y));
                     let deg = (u.0 * v.1 - u.1 * v.0).atan2(u.0 * v.0 + u.1 * v.1).abs().to_degrees();
-                    Some(Constraint::AngleLines { a: na1, b: nb1, c: na2, d: nb2, deg, expr: String::new(), driven: false, off: 0.0, at: None })
+                    Some(Constraint::AngleLines { dimension: Default::default(), a: na1, b: nb1, c: na2, d: nb2, deg, expr: String::new(), driven: false, off: 0.0, at: None })
                 } else {
                     None
                 }

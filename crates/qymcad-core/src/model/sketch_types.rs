@@ -634,6 +634,8 @@ pub enum Constraint {
     /// expression (`w/2`, `len+5`); when it is not empty, `d` is recomputed from the project parameters,
     /// making the dimension parametric.
     Distance {
+        #[serde(default)]
+        dimension: DimensionId,
         a: Id,
         b: Id,
         d: f64,
@@ -664,6 +666,8 @@ pub enum Constraint {
     /// Angle at vertex `b` between the rays `b-a` and `b-c`, in degrees. `expr` is a parametric
     /// expression; when it is not empty, `deg` is recomputed from the project parameters.
     Angle {
+        #[serde(default)]
+        dimension: DimensionId,
         a: Id,
         b: Id,
         c: Id,
@@ -708,6 +712,8 @@ pub enum Constraint {
     Concentric { c1: Id, c2: Id },
     /// Angle between two segments `a-b` and `c-d` that share no vertex, in degrees.
     AngleLines {
+        #[serde(default)]
+        dimension: DimensionId,
         a: Id,
         b: Id,
         c: Id,
@@ -728,6 +734,8 @@ pub enum Constraint {
     /// Radius or diameter dimension of the circle centred at `c`. `d` is the value — a radius, or a
     /// diameter when `diam` is set. `off` is the label offset; `expr` and `driven` behave as in `Distance`.
     Diameter {
+        #[serde(default)]
+        dimension: DimensionId,
         c: Id,
         d: f64,
         #[serde(default)]
@@ -747,6 +755,8 @@ pub enum Constraint {
     /// point-to-line, line-to-parallel-line and distance-to-axis dimensions. `off`, `expr` and `driven`
     /// behave as in `Distance`.
     DistancePL {
+        #[serde(default)]
+        dimension: DimensionId,
         p: Id,
         a: Id,
         b: Id,
@@ -767,6 +777,8 @@ pub enum Constraint {
     /// circles. `m1` and `m2` are in {-1, 0, +1}: 0 is an ordinary point, -1 the near edge of the circle,
     /// +1 the far edge. The residual is `dist(c1,c2) + m1*r1 + m2*r2 - d`.
     EdgeDistance {
+        #[serde(default)]
+        dimension: DimensionId,
         c1: Id,
         c2: Id,
         d: f64,
@@ -786,6 +798,8 @@ pub enum Constraint {
     /// equal to R * theta for radius R and swept angle theta. A driving one holds the length, a reference
     /// one measures it.
     ArcLength {
+        #[serde(default)]
+        dimension: DimensionId,
         c: Id,
         a: Id,
         b: Id,
@@ -801,6 +815,33 @@ pub enum Constraint {
 }
 
 impl Constraint {
+    /// The record identity of a dimension, including the unbound zero; none for geometric constraints.
+    pub fn dimension_id(&self) -> Option<DimensionId> {
+        match self {
+            Self::Distance { dimension, .. }
+            | Self::Angle { dimension, .. }
+            | Self::AngleLines { dimension, .. }
+            | Self::Diameter { dimension, .. }
+            | Self::DistancePL { dimension, .. }
+            | Self::EdgeDistance { dimension, .. }
+            | Self::ArcLength { dimension, .. } => Some(*dimension),
+            _ => None,
+        }
+    }
+
+    pub(super) fn dimension_id_mut(&mut self) -> Option<&mut DimensionId> {
+        match self {
+            Self::Distance { dimension, .. }
+            | Self::Angle { dimension, .. }
+            | Self::AngleLines { dimension, .. }
+            | Self::Diameter { dimension, .. }
+            | Self::DistancePL { dimension, .. }
+            | Self::EdgeDistance { dimension, .. }
+            | Self::ArcLength { dimension, .. } => Some(dimension),
+            _ => None,
+        }
+    }
+
     /// Points a constraint references.
     ///
     /// A fact about the constraint itself, so it lives in the core rather than in the interface. The
