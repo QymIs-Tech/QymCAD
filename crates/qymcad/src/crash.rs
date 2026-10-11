@@ -208,6 +208,11 @@ fn dir() -> Option<PathBuf> {
     qymcad_paths::data("crashes")
 }
 
+/// A FILE BESIDE THE REPORTS: what the start of the program needs before a window and its settings exist.
+pub(crate) fn file(name: &str) -> Option<PathBuf> {
+    dir().map(|d| d.join(name))
+}
+
 /// A PATH WITHOUT THE NAME OF WHOEVER RAN THE PROGRAM. The file is meant to be attached to a public
 /// report, and a home directory carries a person's name in it.
 pub fn without_home(s: &str) -> String {

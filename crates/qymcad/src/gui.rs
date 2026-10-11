@@ -278,7 +278,8 @@ fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
         // THE ADAPTERS THAT CAN DRAW INTO THIS WINDOW, best first, and the first of them that really draws: a card can
         // open, take every command and draw a transparent picture (`viewport_gpu::draws`)
         let mut fit: Vec<&wgpu::Adapter> = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).collect();
-        fit.sort_by_key(|a| std::cmp::Reverse(rank_adapter(a)));
+        let wanted = crate::safe_graphics::wanted_adapter();
+        fit.sort_by_key(|a| std::cmp::Reverse(rank_adapter(a, wanted.as_deref())));
         let choice = crate::safe_graphics::first_that_draws(fit.len(), |i, samples| self_test(fit[i], samples));
         crate::safe_graphics::take_choice(choice);
         let best = fit.get(choice.index).copied();
@@ -324,9 +325,10 @@ fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
 /// HOW GOOD AN ADAPTER IS, highest first. A real card beats a shared one, a shared one beats a virtual one,
 /// and everything beats the processor - which is taken only when nothing else answers; the step of a start after a
 /// start that died moves the backend and, at the last, the processor (`safe_graphics::rank`).
-fn rank_adapter(a: &eframe::wgpu::Adapter) -> u16 {
+fn rank_adapter(a: &eframe::wgpu::Adapter, wanted: Option<&str>) -> u16 {
     let i = a.get_info();
-    crate::safe_graphics::rank(crate::safe_graphics::step(), crate::safe_graphics::Offered { kind: i.device_type, backend: i.backend }, crate::safe_graphics::avoided().as_deref())
+    let offered = crate::safe_graphics::Offered { kind: i.device_type, backend: i.backend, wanted: wanted == Some(describe_adapter(a).as_str()) };
+    crate::safe_graphics::rank(crate::safe_graphics::step(), offered, crate::safe_graphics::avoided().as_deref())
 }
 
 /// The ranking itself, apart from any adapter: a machine with no graphics is exactly the machine a test
@@ -4017,6 +4019,7 @@ mod the_sketch_of_the_report_takes_a_line;
 mod a_big_sketch_selected_keeps_the_3d_frame;
 mod a_dimension_past_its_field_is_left_as_it_stands;
 mod the_point_numbers_wait_for_their_setting;
+mod graphics_settings;
 mod a_drawing_tool_drops_the_selection;
 mod a_circle_and_an_arc_take_a_size_only_when_typed;
 mod a_rectangle_with_its_centre_fixed_is_worked_by_hand;

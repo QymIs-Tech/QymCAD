@@ -164,20 +164,75 @@ pub fn said(step: Step) -> Option<&'static str> {
     }
 }
 
-/// One adapter as the ranking sees it: what kind of device, through which backend.
+/// One adapter as the ranking sees it: what kind of device, through which backend, and whether it is the one picked
+/// in the settings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Offered {
     pub kind: eframe::wgpu::DeviceType,
     pub backend: eframe::wgpu::Backend,
+    pub wanted: bool,
 }
 
-/// HOW GOOD AN ADAPTER IS AT A STEP, highest first: the kind of device, then the backend - DX12 and Metal, then
-/// Vulkan, then GL. From the third step the backend `avoid` falls below every other one of the same card; from the
-/// fourth the processor comes first of all.
+/// The file the adapter picked in the settings is kept in: it is read before the window - and the settings - exist.
+const WANTED_NAME: &str = "graphics_adapter.txt";
+
+/// THE ADAPTER PICKED IN THE SETTINGS, as the report writes it; `None` - chosen by the program.
+pub fn wanted_adapter() -> Option<String> {
+    let path = crate::crash::file(WANTED_NAME)?;
+    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// PICK THE ADAPTER for the starts to come, or leave it to the program (`None`).
+pub fn want_adapter(line: Option<&str>) {
+    let Some(path) = crate::crash::file(WANTED_NAME) else { return };
+    match line {
+        Some(l) => {
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(path, l);
+        }
+        None => {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// The person asked to draw as usual from the next start.
+static BACK_TO_NORMAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// DRAW AS USUAL FROM THE NEXT START: the journal is given the first step again, which the next start reads back.
+pub fn back_to_normal() {
+    crate::crash::journal(&format!("{STEP_LINE}{}", Step::AsChosen.number()));
+    BACK_TO_NORMAL.store(true, Ordering::Relaxed);
+}
+
+/// Has the person asked to draw as usual from the next start?
+pub fn back_to_normal_asked() -> bool {
+    BACK_TO_NORMAL.load(Ordering::Relaxed)
+}
+
+/// The step of this run set by a check, and the request to go back to normal cleared.
+#[cfg(test)]
+pub(crate) fn set_step_for_test(step: Step) {
+    STEP.store(step.number(), Ordering::Relaxed);
+    BACK_TO_NORMAL.store(false, Ordering::Relaxed);
+}
+
+/// HOW GOOD AN ADAPTER IS AT A STEP, highest first: the one picked in the settings, then the kind of device, then
+/// the backend - DX12 and Metal, then Vulkan, then GL. From the third step the pick of the settings yields - it may be
+/// what died - and the backend `avoid` falls below every other one of the same card; from the fourth the processor
+/// comes first of all.
 pub fn rank(step: Step, offered: Offered, avoid: Option<&str>) -> u16 {
     use eframe::wgpu::{Backend, DeviceType};
     let device = crate::gui::rank_device_type(offered.kind) as u16;
-    let device = if step == Step::Processor && offered.kind == DeviceType::Cpu { 100 } else { device };
+    let device = if step == Step::Processor && offered.kind == DeviceType::Cpu {
+        100
+    } else if offered.wanted && step < Step::OtherBackend {
+        200
+    } else {
+        device
+    };
     let api = match offered.backend {
         Backend::Dx12 | Backend::Metal => 4,
         Backend::Vulkan => 3,
@@ -224,7 +279,7 @@ mod tests {
     /// died with is kept away from, and from the fourth the processor comes first.
     #[test]
     fn the_adapter_follows_the_step() {
-        let o = |kind, backend| Offered { kind, backend };
+        let o = |kind, backend| Offered { kind, backend, wanted: false };
         let best = |step: Step, avoid: Option<&str>, offered: &[Offered]| offered.iter().copied().max_by_key(|a| rank(step, *a, avoid));
         let rx480 = [o(DeviceType::DiscreteGpu, Backend::Vulkan), o(DeviceType::DiscreteGpu, Backend::Dx12), o(DeviceType::Cpu, Backend::Dx12), o(DeviceType::Other, Backend::Gl)];
         assert_eq!(best(Step::AsChosen, None, &rx480), Some(o(DeviceType::DiscreteGpu, Backend::Dx12)));
@@ -234,6 +289,11 @@ mod tests {
         assert_eq!(best(Step::Processor, Some("Dx12"), &rx480), Some(o(DeviceType::Cpu, Backend::Dx12)));
         let nvk = [o(DeviceType::DiscreteGpu, Backend::Vulkan), o(DeviceType::DiscreteGpu, Backend::Gl), o(DeviceType::Cpu, Backend::Vulkan)];
         assert_eq!(best(Step::OtherBackend, Some("Vulkan"), &nvk), Some(o(DeviceType::DiscreteGpu, Backend::Gl)), "Vulkan died: GL of the same card");
+        // THE PICK OF THE SETTINGS comes first while it holds, and yields from the third step
+        let picked = [o(DeviceType::DiscreteGpu, Backend::Dx12), Offered { kind: DeviceType::DiscreteGpu, backend: Backend::Vulkan, wanted: true }, o(DeviceType::Cpu, Backend::Dx12)];
+        assert_eq!(best(Step::AsChosen, None, &picked).map(|a| a.backend), Some(Backend::Vulkan));
+        assert_eq!(best(Step::NoAntialiasing, None, &picked).map(|a| a.backend), Some(Backend::Vulkan));
+        assert_eq!(best(Step::OtherBackend, Some("Vulkan"), &picked).map(|a| a.backend), Some(Backend::Dx12), "the pick died: another backend");
     }
 
     /// THE SELF-TEST TAKES THE FIRST ADAPTER THAT DRAWS: with several samples if it can, with one if only that; the next

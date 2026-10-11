@@ -1366,6 +1366,9 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 // raster what is said is not "restart" but that the setting has nothing to do with it.
                 ui.label(egui::RichText::new(if gpu { crate::i18n::tr("settings-msaa-restart") } else { crate::i18n::tr("settings-msaa-needs-gpu") }).weak().small());
             }
+            if show("settings-graphics-adapter") {
+                super::graphics_settings::rows(ui);
+            }
         }
         Sec::Sketch => {
             if show("settings-snap-on") {

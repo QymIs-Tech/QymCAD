@@ -81,6 +81,7 @@ impl SettingsSection {
                 "settings-ghost-alpha",
                 "settings-fov",
                 "settings-msaa",
+                "settings-graphics-adapter",
             ],
             Sketch => &[
                 "settings-snap-on",

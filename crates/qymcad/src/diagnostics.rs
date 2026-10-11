@@ -65,6 +65,27 @@ pub fn note_adapters(lines: &[String]) {
     }
 }
 
+/// THE ADAPTERS AND THE ONE DRAWING PUT BACK as a check found them, so a check that set its own leaves no trace.
+#[cfg(test)]
+pub(crate) fn put_back_gpu_for_test(adapters: Vec<String>, drawing: Option<String>) {
+    if let Ok(mut a) = ADAPTERS.lock() {
+        *a = adapters;
+    }
+    if let Ok(mut g) = GPU.lock() {
+        *g = drawing;
+    }
+}
+
+/// The adapters the system offered this run, one line each, as the report writes them.
+pub fn offered_adapters() -> Vec<String> {
+    ADAPTERS.lock().map(|a| a.clone()).unwrap_or_default()
+}
+
+/// The adapter drawing this run, as the report writes it.
+pub fn drawing_with() -> Option<String> {
+    GPU.lock().ok().and_then(|g| g.clone())
+}
+
 /// The chosen adapter draws on the processor - there was no working card to draw on.
 pub fn note_drawing_on_the_processor(name: &str) {
     crate::crash::journal(&format!("drawing on the processor: {name}"));
