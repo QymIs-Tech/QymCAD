@@ -4442,7 +4442,7 @@ impl Project {
                 // pa became 45.
                 let exprs = self.feat_dims.get(&j.id);
                 for (slot, key) in ["angle", "offset", "offset2"].into_iter().enumerate() {
-                    if !exprs.and_then(|d| d.get(key)).is_some_and(|e| !e.trim().is_empty()) {
+                    if exprs.and_then(|d| d.get(key)).is_none_or(|e| e.trim().is_empty()) {
                         j.drive[slot] = l.drive[slot];
                     }
                 }

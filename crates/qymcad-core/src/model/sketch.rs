@@ -2678,7 +2678,7 @@ impl Project {
         let (vx, vy) = ((o2x - px) / l2, (o2y - py) / l2);
         let cosang = (ux * vx + uy * vy).clamp(-1.0, 1.0);
         let theta = cosang.acos();
-        if theta < 1e-3 || theta > std::f64::consts::PI - 1e-3 {
+        if !(1e-3..=std::f64::consts::PI - 1e-3).contains(&theta) {
             return false;
         }
         let half = theta / 2.0;
@@ -2774,7 +2774,7 @@ impl Project {
         let (vx, vy) = ((bx - px) / lb, (by - py) / lb);
         let cos = (ux * vx + uy * vy).clamp(-1.0, 1.0);
         let theta = cos.acos();
-        if theta < 1e-3 || theta > std::f64::consts::PI - 1e-3 {
+        if !(1e-3..=std::f64::consts::PI - 1e-3).contains(&theta) {
             return false; // Collinear: there is no corner to fillet.
         }
         let half = theta / 2.0;
