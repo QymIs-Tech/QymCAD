@@ -158,7 +158,7 @@ fn walk(scene: &Scene, at: usize, rest: &crate::rigid::Lin, within: &[qymcad_cor
         (within.to_vec(), place)
     };
     if let Some(mi) = node["mesh"].as_u64() {
-        let mut mesh = Mesh { verts: Vec::new(), tris: Vec::new() };
+        let mut mesh = Mesh { verts: Vec::new(), tris: Vec::new(), ..Default::default() };
         let mut per: Vec<Option<[u8; 3]>> = Vec::new(); // the colour of every triangle, by its primitive's material
         for prim in doc["meshes"][mi as usize]["primitives"].as_array().cloned().unwrap_or_default() {
             let before = mesh.tris.len();
@@ -231,6 +231,7 @@ fn primitive(doc: &Value, buffers: &[Vec<u8>], prim: &Value, m: &M4, mesh: &mut 
 /// The numbers of an accessor, whatever their component type, as `f64`. A normalised integer stays a raw integer:
 /// positions and indices are never normalised.
 fn accessor(doc: &Value, buffers: &[Vec<u8>], at: usize) -> Result<Vec<f64>, String> {
+    let index = at;
     let bad = || "io-gltf-bad-accessor".to_string();
     let a = &doc["accessors"][at];
     let count = a["count"].as_u64().ok_or_else(bad)? as usize;
@@ -281,7 +282,12 @@ fn accessor(doc: &Value, buffers: &[Vec<u8>], at: usize) -> Result<Vec<f64>, Str
     for i in 0..count {
         for k in 0..width {
             let at = start + i * stride + k * size;
-            out.push(read(buf.get(at..at + size).ok_or_else(bad)?));
+            let value = read(buf.get(at..at + size).ok_or_else(bad)?);
+            // A POSITION IS A FINITE NUMBER: four bytes may hold a NaN or an infinity
+            if !value.is_finite() {
+                return Err(crate::not_finite("io-gltf-not-finite", &[&index, &i, &at, &value]));
+            }
+            out.push(value);
         }
     }
     Ok(out)

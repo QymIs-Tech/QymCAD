@@ -425,11 +425,49 @@ pub struct Bbox3 {
     pub max: Point3,
 }
 
+/// A UNIT DIRECTION IN FOUR BYTES: the octahedral form, 16 bits a coordinate, from 1 up so that 0 is free to mean "no
+/// direction". Off by 0.003 deg at most; three signed bytes (1/127 an axis) were off by up to 0.5 deg, which a smooth
+/// gradient of light shows. Zero or not finite packs to 0.
+pub fn pack_direction(n: [f64; 3]) -> u32 {
+    let s = n[0].abs() + n[1].abs() + n[2].abs();
+    if !s.is_finite() || s < 1e-12 {
+        return 0;
+    }
+    let (mut x, mut y) = (n[0] / s, n[1] / s);
+    if n[2] < 0.0 {
+        let (ax, ay) = (x.abs(), y.abs());
+        x = (1.0 - ay) * x.signum();
+        y = (1.0 - ax) * y.signum();
+    }
+    let q = |v: f64| 1 + ((v.clamp(-1.0, 1.0) * 0.5 + 0.5) * 65534.0).round() as u32;
+    q(x) | (q(y) << 16)
+}
+
+/// The direction `pack_direction` packed, unit length; `None` for 0.
+pub fn unpack_direction(p: u32) -> Option<[f64; 3]> {
+    if p == 0 {
+        return None;
+    }
+    let d = |q: u32| ((q as f64 - 1.0) / 65534.0) * 2.0 - 1.0;
+    let (ex, ey) = (d(p & 0xffff), d(p >> 16));
+    let z = 1.0 - ex.abs() - ey.abs();
+    let (x, y) = if z < 0.0 { ((1.0 - ey.abs()) * ex.signum(), (1.0 - ex.abs()) * ey.signum()) } else { (ex, ey) };
+    let len = (x * x + y * y + z * z).sqrt();
+    Some([x / len, y / len, z / len])
+}
+
 /// A triangle mesh, used for STL and STEP output and for 3D machining.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Mesh {
     pub verts: Vec<Point3>,
     pub tris: Vec<[u32; 3]>,
+    /// THE SURFACE'S OWN NORMAL AT EVERY VERTEX, from the kernel (`add_face`), facing out of the body; empty for a mesh
+    /// with no surface behind it (a file of triangles), and (0, 0, 0) at a vertex whose face gave none. The smooth light
+    /// is shaded by it (`vertex_normals`): an average of the triangles around a vertex stood up to 6.4 deg off a
+    /// sphere's own normal and broke the light along its seam and where a rounding meets the face it is tangent to.
+    /// Packed by `pack_direction`, four bytes a vertex: the reference engine holds 23 million vertices.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub norms: Vec<u32>,
 }
 
 impl Mesh {
@@ -483,6 +521,16 @@ impl Mesh {
             v.y = m[4] * x + m[5] * y + m[6] * z + m[7];
             v.z = m[8] * x + m[9] * y + m[10] * z + m[11];
         }
+        self.turn_normals(|n| crate::feature::apply12_dir(m, n));
+    }
+
+    /// The surface's normals turned as the vertices were, and made unit again.
+    fn turn_normals(&mut self, turn: impl Fn([f64; 3]) -> [f64; 3]) {
+        for n in &mut self.norms {
+            if let Some(d) = unpack_direction(*n) {
+                *n = pack_direction(turn(d));
+            }
+        }
     }
 
     /// Rotate about the vertical axis through (cx, cy) by `deg` degrees.
@@ -493,6 +541,7 @@ impl Mesh {
             v.x = cx + dx * co - dy * s;
             v.y = cy + dx * s + dy * co;
         }
+        self.turn_normals(|n| [n[0] * co - n[1] * s, n[0] * s + n[1] * co, n[2]]);
     }
 
     /// Scale uniformly about the point (cx, cy, cz).
@@ -578,6 +627,16 @@ impl Mesh {
     /// share indices, the normals merge and the surface is smooth. The topology of the mesh already encodes the
     /// smoothing groups, so no separate pass over angles is needed. Planar faces yield the same normal either way.
     pub fn vertex_normals(&self) -> Vec<[f64; 3]> {
+        let averaged = self.averaged_normals();
+        if self.norms.len() != self.verts.len() {
+            return averaged;
+        }
+        // THE SURFACE'S OWN NORMAL where the kernel gave one, the average of the triangles where it gave none
+        self.norms.iter().zip(averaged).map(|(&n, a)| unpack_direction(n).unwrap_or(a)).collect()
+    }
+
+    /// The area-weighted average of the triangle normals around every vertex - for a mesh with no surface behind it.
+    fn averaged_normals(&self) -> Vec<[f64; 3]> {
         let mut acc = vec![[0.0_f64; 3]; self.verts.len()];
         for i in 0..self.tris.len() {
             // The unnormalised triangle normal: its length is twice the area, a natural area weight.
@@ -1527,16 +1586,45 @@ mod normal_tests {
 
     // THE CORNERS OF A SHARED EDGE: the roof of `vertex_normals_shared_edge_averages_bisector` turns by 90 degrees and
     // stays sharp - a corner of each face is lit by its face - while a fold of 10 degrees is smoothed into the bisector.
+    /// A DIRECTION PACKED INTO FOUR BYTES COMES BACK within 0.01 deg, over the whole sphere of directions and on every
+    /// axis and octant edge; and a real direction never packs to 0, which means "none".
+    #[test]
+    fn a_packed_direction_comes_back_within_a_hundredth_of_a_degree() {
+        let mut worst = 0.0f64;
+        let mut check = |d: [f64; 3]| {
+            let p = pack_direction(d);
+            assert_ne!(p, 0, "the direction {d:?} packed to 0");
+            let u = unpack_direction(p).expect("a packed direction unpacks");
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            let c = (u[0] * d[0] + u[1] * d[1] + u[2] * d[2]) / len;
+            worst = worst.max(c.clamp(-1.0, 1.0).acos().to_degrees());
+        };
+        for i in 0..200 {
+            for j in 0..400 {
+                let (t, f) = (std::f64::consts::PI * i as f64 / 199.0, std::f64::consts::TAU * j as f64 / 400.0);
+                check([t.sin() * f.cos(), t.sin() * f.sin(), t.cos()]);
+            }
+        }
+        for d in [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [1.0, 1.0, 0.0], [-1.0, 0.0, -1.0]] {
+            check(d);
+        }
+        assert!(worst <= 0.01, "a packed direction comes back {worst:.4} deg off");
+        assert_eq!(pack_direction([0.0; 3]), 0, "no direction packs to 0");
+        assert_eq!(unpack_direction(0), None);
+    }
+
     #[test]
     fn corner_normals_keep_a_sharp_edge_sharp_and_smooth_a_shallow_fold() {
         let roof = |z: f64| Mesh {
             verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0), Point3::new(2.0, 0.0, z), Point3::new(2.0, 1.0, z)],
             tris: vec![[0, 1, 2], [1, 3, 4], [1, 4, 2]],
+            ..Default::default()
         };
         // the roof's second face turned straight up: its corners at the shared vertex 1 keep their faces' normals
         let sharp = Mesh {
             verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 0.0, 1.0), Point3::new(1.0, 1.0, 1.0)],
             tris: vec![[0, 1, 2], [1, 2, 4], [1, 4, 3]],
+            ..Default::default()
         };
         let n = sharp.corner_normals(30.0);
         assert!((n[1][2] - 1.0).abs() < 1e-9, "the flat face's corner at the edge is {:?}, not +Z", n[1]);
@@ -1550,7 +1638,11 @@ mod normal_tests {
     // A flat quad of two triangles with shared vertices: the vertex normal equals the face normal, +Z.
     #[test]
     fn vertex_normals_flat_quad_shares_face_normal() {
-        let m = Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0), Point3::new(0.0, 1.0, 0.0)], tris: vec![[0, 1, 2], [0, 2, 3]] };
+        let m = Mesh {
+            verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            tris: vec![[0, 1, 2], [0, 2, 3]],
+            ..Default::default()
+        };
         for n in m.vertex_normals() {
             assert!((n[0]).abs() < 1e-9 && (n[1]).abs() < 1e-9 && (n[2] - 1.0).abs() < 1e-9, "a flat quad must give +Z, got {n:?}");
         }
@@ -1572,6 +1664,7 @@ mod normal_tests {
                 Point3::new(1.0, 1.0, 1.0), // 4, on B only.
             ],
             tris: vec![[0, 1, 2], [1, 2, 4], [1, 4, 3]],
+            ..Default::default()
         };
         let n = m.vertex_normals();
         // Vertex 0 belongs to face A only, so it is +Z.
@@ -1606,7 +1699,7 @@ mod normal_tests {
                 [3, 0, 4],
                 [3, 4, 7], // x0
             ];
-            Mesh { verts, tris }
+            Mesh { verts, tris, ..Default::default() }
         }
 
         fn cap_area(tris: &[[Point3; 3]], n: [f64; 3]) -> f64 {

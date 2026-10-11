@@ -30,7 +30,7 @@ fn ball(r: f64, rings: usize, segs: usize) -> Mesh {
             }
         }
     }
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 /// A cube of `side` with a `grid` x `grid` net on every face.
@@ -59,7 +59,7 @@ fn cube(side: f64, grid: usize) -> Mesh {
             }
         }
     }
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 fn volume(m: &Mesh) -> f64 {

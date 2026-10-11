@@ -17,7 +17,7 @@ fn file(name: &str, bytes: Option<&[u8]>) -> String {
 
 fn tetra(x: f64, z: f64) -> Mesh {
     let v = |a: f64, b: f64, c: f64| Point3::new(x + a, b, z + c);
-    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 0.0), v(0.0, 0.0, 10.0)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] }
+    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 0.0), v(0.0, 0.0, 10.0)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]], ..Default::default() }
 }
 
 /// glTF stores positions as 32-bit floats, so a millimetre model comes back to about 1e-7 of its size.

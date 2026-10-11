@@ -28,7 +28,7 @@ fn cube() -> Mesh {
         [1, 2, 6],
         [1, 6, 5], // right
     ];
-    Mesh { verts: v, tris }
+    Mesh { verts: v, tris, ..Default::default() }
 }
 
 #[test]

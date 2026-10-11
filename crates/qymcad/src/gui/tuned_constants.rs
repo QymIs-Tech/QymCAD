@@ -55,7 +55,8 @@ mod tests {
         crate::viewport_gpu::set_msaa(4);
 
         let gui = include_str!("../gui.rs");
-        assert!(gui.contains("crate::viewport_gpu::set_msaa(app.set.msaa);"), "the antialiasing setting does not reach the renderer at startup");
+        // the setting goes through the step of a safe start, which may take it down to one sample (`safe_graphics`)
+        assert!(gui.contains("crate::viewport_gpu::set_msaa(crate::safe_graphics::samples(app.set.msaa));"), "the antialiasing setting does not reach the renderer at startup");
         let panels = crate::gui::panels_source::PANELS;
         assert!(panels.contains("settings-msaa-restart"), "the \"applies on the next start\" note is gone — the setting started lying");
         assert!(

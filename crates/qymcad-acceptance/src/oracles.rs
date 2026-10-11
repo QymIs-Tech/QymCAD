@@ -405,6 +405,7 @@ mod tests {
                     visible: true,
                     consumed: false,
                     sheet: false,
+                    lit_by_the_surface: 0,
                 })
                 .collect(),
             parameters: vec![],
@@ -461,6 +462,7 @@ mod green_and_idle_tests {
             visible: true,
             consumed: false,
             sheet: false,
+            lit_by_the_surface: 0,
         }
     }
 

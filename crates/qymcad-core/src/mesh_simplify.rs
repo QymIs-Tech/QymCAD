@@ -310,5 +310,5 @@ fn compact(pos: &[[f64; 3]], tris: &[[u32; 3]]) -> Mesh {
             })
         })
         .collect();
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }

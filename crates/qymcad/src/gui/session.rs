@@ -272,6 +272,9 @@ pub struct Solid {
     pub consumed: bool,
     /// A surface rather than a solid.
     pub sheet: bool,
+    /// How many vertices of its mesh carry the surface's own normal - what its smooth light is shaded by. None: a mesh
+    /// saved before the normals were kept, or one with no surface behind it.
+    pub lit_by_the_surface: usize,
 }
 
 /// WHAT AN EXACT BODY IS MADE OF, read on demand ([`Session::inspect`]): checking a large body takes time, so it is
@@ -465,6 +468,24 @@ impl Session {
             }
         }
         self
+    }
+
+    /// WAIT FOR `what` TO HAPPEN, as a person does - frames drawn, the clock on the wall moving - until `happened` says
+    /// it has, for no longer than `deadline`. A probe that slept a fixed span and then looked passed on a fast machine
+    /// and went red now and then on a runner of the CI, where the same work came later: an autosave of 1 s and an
+    /// extrude did not fit in 2.5 s there. The deadline is the bound of a fault, not of a slow machine.
+    ///
+    /// # Panics
+    /// When `deadline` passes first, naming what was waited for.
+    pub fn wait_for(&mut self, what: &str, deadline: Duration, mut happened: impl FnMut(&mut Self) -> bool) -> &mut Self {
+        let began = Instant::now();
+        while !happened(self) {
+            assert!(began.elapsed() < deadline, "waited {deadline:?} for {what}, and it did not happen");
+            assert!(!self.win.closed, "the window closed while waiting for {what}");
+            std::thread::sleep(Duration::from_millis(16));
+            self.frame(Vec::new());
+        }
+        self.settle()
     }
 
     /// LET `span` OF REAL TIME PASS with the window drawing its frames, as a person waits with the program in front
@@ -1460,6 +1481,7 @@ impl Session {
                     max: bounds.as_ref().map(|bb| [bb.max.x, bb.max.y, bb.max.z]).unwrap_or([f64::NAN; 3]),
                     visible: b.visible,
                     consumed: consumed.contains(&b.id),
+                    lit_by_the_surface: m.norms.iter().filter(|&&n| n != 0).count(),
                     sheet: b.sheet,
                 }
             })

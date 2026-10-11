@@ -168,8 +168,8 @@ probe! {
         let extrude = s.word("tb-extrude-hint");
         s.press_hint(&extrude);
         s.key(Key::Enter);
-        s.pause(std::time::Duration::from_secs(4));
-        assert!(std::path::Path::new(&beside).exists(), "no copy was written beside the project in the four seconds after an autosave of two: {beside}");
+        let what = format!("the autosave of 2 s to write a copy beside the project, {beside}");
+        s.wait_for(&what, std::time::Duration::from_secs(30), |_| std::path::Path::new(&beside).exists());
         file_menu(&mut s, &["file-save"]);
         assert!(!std::path::Path::new(&beside).exists(), "the copy beside the project is still there after the work was saved: {beside}");
     }

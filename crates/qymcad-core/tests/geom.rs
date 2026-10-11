@@ -67,7 +67,7 @@ fn mesh_volume_matches_exact_solids() {
     // a 2×3×4 cube of twelve triangles, with vertices at the corners
     let (a, b, c) = (2.0, 3.0, 4.0);
     let v = |x: f64, y: f64, z: f64| Point3::new(x, y, z);
-    let mut m = Mesh { verts: vec![v(0., 0., 0.), v(a, 0., 0.), v(a, b, 0.), v(0., b, 0.), v(0., 0., c), v(a, 0., c), v(a, b, c), v(0., b, c)], tris: vec![] };
+    let mut m = Mesh { verts: vec![v(0., 0., 0.), v(a, 0., 0.), v(a, b, 0.), v(0., b, 0.), v(0., 0., c), v(a, 0., c), v(a, b, c), v(0., b, c)], tris: vec![], ..Default::default() };
     for f in [[0u32, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]] {
         m.tris.push(f);
     }

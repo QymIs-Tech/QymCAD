@@ -166,6 +166,7 @@ fn nothing() -> Solid {
         visible: true,
         consumed: false,
         sheet: false,
+        lit_by_the_surface: 0,
     }
 }
 

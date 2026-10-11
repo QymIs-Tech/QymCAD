@@ -97,10 +97,19 @@ def search_commits(root, span, patterns):
         if "\x00" not in entry:
             continue
         sha, body = entry.strip("\n").split("\x00", 1)
-        # the attribution lines name a tool account, not a person
-        body = "\n".join(l for l in body.splitlines() if not l.startswith(("Co-Authored-By:", "Signed-off-by:")))
-        found += search(body, f"commit {sha[:9]}", patterns)
+        found += search(without_attribution(body), f"commit {sha[:9]}", patterns)
     return found
+
+
+# THE TRAILERS THAT NAME WHO MADE A COMMIT: a person signs off and names who wrote it with them, and the address there is
+# theirs to give. Git reads a trailer's key without regard to case - GitHub writes `Co-authored-by:`, our tool
+# `Co-Authored-By:` - and a check that took only one spelling stopped a contributor's commit on its own co-author's address.
+ATTRIBUTION = ("co-authored-by:", "signed-off-by:")
+
+
+def without_attribution(body):
+    """The message of a commit without its attribution trailers, whatever the case of their keys."""
+    return "\n".join(l for l in body.splitlines() if not l.strip().lower().startswith(ATTRIBUTION))
 
 
 def self_test():
@@ -117,6 +126,13 @@ def self_test():
                  "Copyright (c) Some Author <author@freetype.org>", "docs/help/en/part/01-extrude.md"]
     patterns = GENERAL
     bad = []
+    # the trailers of a commit name who made it in any case of their keys; an address anywhere else is still caught
+    for body in ["fix: x\n\nCo-authored-by: A Person <a.person@gmail.com>", "fix: x\n\nCo-Authored-By: A Person <a.person@gmail.com>",
+                 "fix: x\n\nco-authored-by: A Person <a.person@gmail.com>", "fix: x\n\nSigned-off-by: A Person <a.person@gmail.com>"]:
+        if search(without_attribution(body), "case", patterns):
+            bad.append(f"caught an attribution trailer: {body.splitlines()[-1]!r}")
+    if not search(without_attribution("fix: write to a.person@gmail.com\n\nSigned-off-by: A <a@gmail.com>"), "case", patterns):
+        bad.append("an address outside the trailers went through")
     for line in must_catch:
         if not search(line, "case", patterns):
             bad.append(f"not caught: {line!r}")

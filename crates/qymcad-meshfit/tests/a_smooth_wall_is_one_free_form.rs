@@ -152,7 +152,7 @@ fn vaulted_box(grid: usize) -> (qymcad_core::geom::Mesh, f64) {
             }
         }
     }
-    let mesh = Mesh { verts, tris };
+    let mesh = Mesh { verts, tris, ..Default::default() };
     let volume = mesh
         .tris
         .iter()

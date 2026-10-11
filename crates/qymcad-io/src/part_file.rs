@@ -24,7 +24,7 @@ pub fn save_part(project: &Project, manifest: &PartManifest, faces: &[Vec<MeshFa
     let ids = doc.bodies.iter().map(|b| b.id).collect::<Vec<_>>();
     let geoms: Vec<Mesh> = doc.bodies.iter().map(|b| b.mesh.clone()).collect::<Vec<_>>();
     for m in doc.bodies.iter_mut().map(|b| &mut b.mesh) {
-        *m = Mesh { verts: Vec::new(), tris: Vec::new() };
+        *m = Mesh { verts: Vec::new(), tris: Vec::new(), ..Default::default() };
     }
 
     // atomic: a temporary file and a rename, so an error halfway through does not damage the existing file

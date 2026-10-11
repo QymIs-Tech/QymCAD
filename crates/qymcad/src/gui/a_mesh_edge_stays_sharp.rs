@@ -34,7 +34,8 @@ mod tests {
     fn the_scene_for_the_device_keeps_a_cubes_edges_sharp() {
         let app = the_cube();
         let (verts, _) = crate::gui::render_scene::gpu_scene_flat(&app.painting());
-        let axes = |v: &qymcad_ui_state::GpuVert| v.nrm.to_le_bytes()[..3].iter().filter(|b| (**b as i8).unsigned_abs() > 20).count();
+        // how many axes the normal leans along: one for a face of the cube, more for a corner lit along a diagonal
+        let axes = |v: &qymcad_ui_state::GpuVert| qymcad_core::geom::unpack_direction(v.nrm).map_or(0, |n| n.iter().filter(|c| c.abs() > 0.16).count());
         let diagonal = verts.iter().filter(|v| axes(v) > 1).count();
         let lit: std::collections::HashSet<([u32; 3], u32)> = verts.iter().map(|v| (v.pos.map(f32::to_bits), v.nrm)).collect();
         assert_eq!((verts.len(), lit.len(), diagonal), (36, 24, 0), "the cube's {} corners go to the device as {} lit points, {diagonal} corners lit along a diagonal", verts.len(), lit.len());

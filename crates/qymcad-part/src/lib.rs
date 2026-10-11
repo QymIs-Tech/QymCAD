@@ -3141,6 +3141,7 @@ pub fn begin_contour_pick(pc: &mut qymcad_ui_state::PartCtx, slot: qymcad_ui_sta
     };
     *pc.picking = qymcad_ui_state::Picking::Contour(slot);
     pc.cmd.sketch = Some(si);
+    *pc.sel = qymcad_ui_state::Sel::Sketch(si); // the picker shows the selected sketch, as `enter_contour_reselect` says
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore); // the view is borrowed while the contour is picked and restored on the way out
     *pc.mode_3d = false;
     pc.view.initialized = false;
@@ -3154,9 +3155,12 @@ pub fn begin_contour_pick(pc: &mut qymcad_ui_state::PartCtx, slot: qymcad_ui_sta
 }
 
 pub fn enter_contour_reselect(pc: &mut qymcad_ui_state::PartCtx) {
-    if !matches!(pc.armed.cmd_kind(), 1 | 3) || pc.cmd.sketch.is_none() {
+    let Some(si) = pc.cmd.sketch.filter(|_| matches!(pc.armed.cmd_kind(), 1 | 3)) else {
         return;
-    }
+    };
+    // THE PICKER SHOWS THE SELECTED SKETCH: its regions, the ones taken lit. Reopened for editing, a feature has its
+    // node selected - the row of the tree stays on it - and the picker opened over it showed no region at all.
+    *pc.sel = qymcad_ui_state::Sel::Sketch(si);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore); // the view is borrowed while contours are picked and restored on the way out
     *pc.mode_3d = false; // back to the flat half-sketcher: a click on a contour changes the set of profiles
     pc.view.initialized = false;

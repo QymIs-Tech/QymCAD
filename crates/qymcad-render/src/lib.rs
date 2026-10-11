@@ -1601,6 +1601,69 @@ pub fn draw_loft_preview(cam: Cam3, loft: &LoftParams, project: &Project, scheme
     }
 }
 
+/// THE TRIANGLES OF A REGION OF A SKETCH, in the sketch's plane: contour `cid` minus its direct children - the material
+/// an extrusion takes from it (`Project::feature_holes`). Regions told apart this way never overlap, so their fills do
+/// not add up where contours nest.
+pub fn region_triangles(project: &qymcad_core::model::Project, cid: Id) -> Vec<[Point2; 3]> {
+    let Some(ci) = project.contour_index(cid) else { return Vec::new() };
+    let outer = &project.contours[ci];
+    if !outer.closed || outer.points.len() < 3 {
+        return Vec::new();
+    }
+    let holes: Vec<Vec<Point2>> = project
+        .sketch_of_contour(cid)
+        .map(|sid| project.feature_holes(sid, cid))
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|h| project.contour_index(h).map(|hi| project.contours[hi].points.clone()))
+        .collect();
+    qymcad_core::geom::triangulate_with_holes(&outer.points, &holes)
+}
+
+/// FILL THE TRIANGLES OF A REGION, each corner placed on the screen by `at`.
+fn fill_region(painter: &egui::Painter, tris: &[[Point2; 3]], at: impl Fn(Point2) -> Pos2, colour: Color32) {
+    let mut mesh = egui::Mesh::default();
+    for t in tris {
+        let base = mesh.vertices.len() as u32;
+        for p in t {
+            mesh.colored_vertex(at(*p), colour);
+        }
+        mesh.add_triangle(base, base + 1, base + 2);
+    }
+    if !mesh.is_empty() {
+        painter.add(egui::Shape::mesh(mesh));
+    }
+}
+
+/// THE REGION UNDER THE POINTER in the sketch of the running command, among its closed contours: the innermost one the
+/// point lies in, as a click picks it (`contour_under_2d`).
+fn region_under(project: &qymcad_core::model::Project, si: usize, at: Point2) -> Option<Id> {
+    qymcad_ui_state::sketch_closed_contours(project, si)
+        .into_iter()
+        .filter_map(|cid| project.contour_index(cid).map(|ci| (cid, &project.contours[ci])))
+        .filter(|(_, c)| c.points.len() >= 3 && c.contains(at))
+        .min_by(|a, b| a.1.area().total_cmp(&b.1.area()))
+        .map(|(cid, _)| cid)
+}
+
+/// THE REGIONS OF A PROFILE PICKER, FILLED: the picked ones in the colour of a profile, the one under the pointer
+/// lighter, both under the lines. The owner's request: a picked region shown only by its outline did not tell a ring
+/// from its rectangle, nor which region a click would take.
+fn fill_picked_regions(pn: &Painting, painter: &egui::Painter, rect: Rect) {
+    let sheet = qymcad_ui_state::Sheet { view: pn.view, rect };
+    let picked: Vec<Id> = if pn.armed.commanding() { pn.gsel.profiles.iter().copied().collect() } else { Vec::new() };
+    let slot: Vec<Id> = pn.picking.contour().map(|s| qymcad_ui_state::slot_current_cid(pn.loft, pn.project, pn.sweep, s)).into_iter().collect();
+    for cid in picked.iter().chain(&slot) {
+        fill_region(painter, &region_triangles(pn.project, *cid), |p| sheet.at(p), qymcad_scheme::a(pn.scheme.pal.contour_profile(), 110));
+    }
+    let picking = pn.armed.commanding() || pn.picking.contour().is_some();
+    if let (true, Some(si), Some(at)) = (picking, pn.cmd.sketch, pn.cursor) {
+        if let Some(cid) = region_under(pn.project, si, at).filter(|c| !picked.contains(c) && !slot.contains(c)) {
+            fill_region(painter, &region_triangles(pn.project, cid), |p| sheet.at(p), qymcad_scheme::a(pn.scheme.pal.contour_hover(), 90));
+        }
+    }
+}
+
 pub fn draw_contours(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     // while a sketch is being edited, ONLY its outlines are shown (the neighbouring sketches and the
     // part's original one do not get in the way); outside editing, the filter goes by owner (sketch
@@ -1615,6 +1678,10 @@ pub fn draw_contours(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         return;
     }
     let hidden_cids = hidden_contour_ids(pn.project, pn.sketch_hidden);
+    // THE REGIONS ARE FILLED, under the lines: the picked ones, and the one a click would take
+    if !edit_only_none {
+        fill_picked_regions(pn, painter, rect);
+    }
     // the contours picked by the active operation are brighter
     let selected: &[Id] = &[];
     let hovered = qymcad_ui_state::hovered_contour(pn.cursor, pn.project, pn.view);
@@ -1643,10 +1710,9 @@ pub fn draw_contours(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         if c.closed {
             pts.push(pts[0]);
         }
-        // the profile is picked for a command (extrude, cut, revolve). It is NOT filled translucently:
-        // where three or four contours overlapped the fills added up (alpha), everything grew pale and the
-        // boundaries were lost. Instead there is a BRIGHT THICK outline - a thickness does not accumulate,
-        // so every picked contour stays visible on its own.
+        // the profile is picked for a command (extrude, cut, revolve): its REGION is filled above - the contour minus its
+        // direct children, so nested regions never overlap and their fills do not add up into a pale wash, which is
+        // what filling whole contours did - and its outline is drawn bright and thick over the fill.
         let is_profile = pn.armed.commanding() && pn.project.contour_id(i).is_some_and(|id| pn.gsel.profiles.contains(&id) || pick_cid == Some(id));
         let stroke = if is_profile {
             Stroke::new(3.0, pn.scheme.pal.contour_profile())
@@ -3968,6 +4034,14 @@ pub fn draw_feat_cmd_preview(pn: &Painting, painter: &egui::Painter, rect: Rect)
     let down = if pn.cmd.extent.two_sided() { qymcad_ui_state::cmd_val(pn.cmd, "down").abs() } else { 0.0 };
     let (start, total) = qymcad_core::feature::extrude_extent(h, down, qymcad_ui_state::cmd_reach(pn.cmd, pn.feat));
     let col = qymcad_scheme::a(pn.scheme.pal.preview(), 220);
+    // THE PICKED REGIONS FILLED ON THE SKETCH'S PLANE, where the extrusion starts, as on the flat sheet
+    for cid in &pn.gsel.profiles {
+        let base = |p: Point2| {
+            let w = f.lift(p);
+            scr.at([w.x + n[0] * start, w.y + n[1] * start, w.z + n[2] * start]).0
+        };
+        fill_region(painter, &region_triangles(pn.project, *cid), base, qymcad_scheme::a(pn.scheme.pal.contour_profile(), 100));
+    }
     for cid in &pn.gsel.profiles {
         let Some(xy) = pn.project.contour_profile_xy(*cid) else { continue };
         let m = xy.len() / 2;

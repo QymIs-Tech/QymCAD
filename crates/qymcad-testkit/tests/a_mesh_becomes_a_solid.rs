@@ -10,6 +10,7 @@ fn cube(side: f64) -> Mesh {
     Mesh {
         verts: vec![v(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0), v(1.0, 1.0, 0.0), v(0.0, 1.0, 0.0), v(0.0, 0.0, 1.0), v(1.0, 0.0, 1.0), v(1.0, 1.0, 1.0), v(0.0, 1.0, 1.0)],
         tris: vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]],
+        ..Default::default()
     }
 }
 
@@ -56,7 +57,7 @@ fn ball(r: f64, rings: usize, segs: usize) -> Mesh {
             tris.push([id(i, j), id(i + 1, j + 1), id(i, j + 1)]);
         }
     }
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 /// A HEAVY MESH MADE LIGHTER BY ITS NODE: a fine ball of 57 000 triangles turned into a solid within 0.01 mm comes out a
@@ -110,7 +111,7 @@ fn cylinder(r: f64, h: f64, segs: usize, rows: usize) -> Mesh {
         tris.push([bottom, id(0, j + 1), id(0, j)]);
         tris.push([top, id(rows, j), id(rows, j + 1)]);
     }
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 /// A MESH MADE LIGHTER IS RECOGNISED WITHIN ITS SIMPLIFICATION: a fine cylinder simplified by 0.01 mm stands off the true

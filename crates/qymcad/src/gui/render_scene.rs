@@ -157,12 +157,10 @@ pub(crate) fn scene_looks(pn: &qymcad_ui_state::Painting) -> Vec<qymcad_ui_state
     looks
 }
 
-/// A normal packed into four bytes: one signed byte per axis.
-///
-/// 1/127 of accuracy - far finer than shading can show, and four bytes instead of twelve.
+/// A normal packed into four bytes, as the shader unpacks it (`octa` in `viewport_gpu`): `geom::pack_direction`, off
+/// by 0.003 deg. Three signed bytes, one an axis, were off by up to 0.5 deg - a smooth gradient of light shows it.
 fn pack_normal(n: [f64; 3]) -> u32 {
-    let b = |v: f64| ((v.clamp(-1.0, 1.0) * 127.0).round() as i8) as u8;
-    u32::from_le_bytes([b(n[0]), b(n[1]), b(n[2]), 0])
+    qymcad_core::geom::pack_direction(n)
 }
 
 /// A BLOCK TAKEN READY-MADE ANSWERS TO THE BODY'S NUMBER OF THIS FRAME.

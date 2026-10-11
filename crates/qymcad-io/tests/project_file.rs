@@ -7,7 +7,7 @@ use qymcad_io::{load_project, save_project};
 fn sample() -> Project {
     let mut p = Project::default();
     p.set_contours(vec![circle_contour(0.0, 0.0, 5.0, 0.1)]);
-    p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 5.0)], tris: vec![[0, 1, 2]] });
+    p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 5.0)], tris: vec![[0, 1, 2]], ..Default::default() });
     p
 }
 
@@ -48,7 +48,7 @@ fn embedded_source_survives_reload() {
 fn op_mesh_ref_survives_reload() {
     // an operation references a mesh by its stable id, and the reference survives the round trip
     let mut p = Project::default();
-    let mid = p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 5.0)], tris: vec![[0, 1, 2]] });
+    let mid = p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 5.0)], tris: vec![[0, 1, 2]], ..Default::default() });
 
     let path = std::env::temp_dir().join("qym_ref.qcad");
     let path = path.to_str().unwrap();
@@ -63,7 +63,7 @@ fn op_mesh_ref_survives_reload() {
 fn brep_faces_survive_reload() {
     use qymcad_core::geom::MeshFace;
     let mut p = Project::default();
-    p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)], tris: vec![[0, 1, 2]] });
+    p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)], tris: vec![[0, 1, 2]], ..Default::default() });
     // a B-rep face from STEP lives inside the body itself; there is no parallel list any more
     p.bodies[0].faces = vec![MeshFace { triangles: vec![0], normal: [0.0, 0.0, 1.0], centroid: Point3::new(3.3, 3.3, 0.0), area: 50.0, id: 0 }];
 

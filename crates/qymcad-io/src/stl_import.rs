@@ -71,7 +71,7 @@ fn ascii(bytes: &[u8]) -> Result<Vec<NamedMesh>, String> {
     let mut out = Vec::new();
     let mut solid: Option<(String, Weld)> = None;
     let mut corners: Vec<[f32; 3]> = Vec::new();
-    for line in text.lines().map(str::trim) {
+    for (no, line) in text.lines().map(str::trim).enumerate() {
         let mut words = line.split_whitespace();
         match words.next() {
             Some("solid") => {
@@ -86,7 +86,12 @@ fn ascii(bytes: &[u8]) -> Result<Vec<NamedMesh>, String> {
                 }
             }
             Some("vertex") => {
-                let [Some(x), Some(y), Some(z)] = [words.next(), words.next(), words.next()].map(|w| w.and_then(|w| w.parse::<f32>().ok())) else { return Err("io-stl-bad-facet".into()) };
+                let w = [words.next(), words.next(), words.next()];
+                let [Some(x), Some(y), Some(z)] = w.map(|w| w.and_then(|w| w.parse::<f32>().ok())) else { return Err("io-stl-bad-facet".into()) };
+                // A CORNER IS A FINITE NUMBER: `NaN` and `inf` parse as f32, and "1e39" overflows into an infinity
+                if let Some(k) = [x, y, z].iter().position(|c| !c.is_finite()) {
+                    return Err(crate::not_finite("io-stl-not-finite-line", &[&(no + 1), &w[k].unwrap_or_default()]));
+                }
                 corners.push([x, y, z]);
             }
             Some("endloop") => {
@@ -130,7 +135,13 @@ fn binary(b: &[u8]) -> Result<Vec<NamedMesh>, String> {
     for k in 0..n {
         let f = &b[84 + 50 * k..84 + 50 * (k + 1)];
         let corner = |i: usize| [0, 1, 2].map(|c| f32::from_le_bytes([f[12 + 12 * i + 4 * c], f[13 + 12 * i + 4 * c], f[14 + 12 * i + 4 * c], f[15 + 12 * i + 4 * c]]));
-        weld.triangle([corner(0), corner(1), corner(2)]);
+        let corners = [corner(0), corner(1), corner(2)];
+        // the same rule as the text: four bytes may hold a NaN or an infinity. Nothing in the file numbers its triangles,
+        // so they are counted from 1, as a person counts them
+        if let Some(j) = (0..9).find(|&j| !corners[j / 3][j % 3].is_finite()) {
+            return Err(crate::not_finite("io-stl-not-finite-triangle", &[&(k + 1), &(84 + 50 * k + 12 + 4 * j), &corners[j / 3][j % 3]]));
+        }
+        weld.triangle(corners);
         let a = u16::from_le_bytes([f[48], f[49]]);
         let (low, mid, high) = (five(a & 31), five((a >> 5) & 31), five((a >> 10) & 31));
         per.push(if magics.is_some() { (a & 0x8000 == 0).then_some([low, mid, high]) } else { (a & 0x8000 != 0).then_some([high, mid, low]) });

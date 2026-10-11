@@ -141,7 +141,7 @@ mod tests {
                 pieces.sort_by_key(|p| std::cmp::Reverse(p.len()));
                 eprintln!("  pieces: {:?}, drawing number {want}", pieces.iter().map(|p| p.len()).collect::<Vec<_>>());
                 let keep = pieces.get(want).cloned().unwrap_or_default();
-                qymcad_core::geom::Mesh { verts: mesh.verts.clone(), tris: keep.iter().map(|&i| mesh.tris[i as usize]).collect() }
+                qymcad_core::geom::Mesh { verts: mesh.verts.clone(), tris: keep.iter().map(|&i| mesh.tris[i as usize]).collect(), ..Default::default() }
             }
         };
         // IN THE ROOT, with no part around it: a body with no owner is drawn in the root assembly and nowhere

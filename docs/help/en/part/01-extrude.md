@@ -15,6 +15,11 @@ Key **E**; straight as a cut — **Q**.
 
 **Pick contours (U)** takes you back to picking contours after you have gone on to the size.
 
+A region is picked by a click anywhere inside it, not only on its line: a click between a rectangle and a circle in it
+takes the ring, a click in the circle takes the disk. The region under the pointer is lit before the click, and a
+picked one is filled - its holes stay open, so you see exactly what will be extruded. A second click on a region lets it
+go.
+
 ## Operation and direction
 
 In the bar above:

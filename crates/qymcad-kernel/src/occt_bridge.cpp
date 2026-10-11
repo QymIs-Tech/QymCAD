@@ -6,6 +6,7 @@
 // Split out of one 5 077-line file with 69 entry points, where finding a function meant scrolling.
 // What the parts share lives in `occt_common.hpp`.
 #include "occt_common.hpp"
+#include <BRepLib_ToolTriangulatedShape.hxx>
 
 // -- WHY THE KERNEL REFUSED ------------------------------------------------------------------------
 //
@@ -56,6 +57,24 @@ static void add_face(const TopoDS_Face& face, QymBody& b, uint32_t fid) {
         b.verts.push_back(static_cast<float>(p.X()));
         b.verts.push_back(static_cast<float>(p.Y()));
         b.verts.push_back(static_cast<float>(p.Z()));
+    }
+    // THE NORMAL OF THE SURFACE AT EVERY VERTEX, from its point (u, v) on it - not an average of the triangles around the
+    // vertex. Reported behaviour: blotches along every rounding, a line along a sphere, a step in the shadow where a
+    // rounding meets the face it is tangent to; measured on a sphere of R20, the averaged normal stood up to 6.4 deg off
+    // the sphere's own and two sides of its seam 12.75 deg apart. OCCT turns the normal with the orientation of the face
+    // and takes another way at a pole, where the surface has none of its own.
+    try {
+        BRepLib_ToolTriangulatedShape::ComputeNormals(face, t);
+    } catch (...) {
+        // no normals: the face is shaded by its triangles, as before
+    }
+    for (int i = 1; i <= nb; ++i) {
+        gp_Dir n = t->HasNormals() ? gp_Dir(t->Normal(i)) : gp_Dir(0, 0, 1);
+        n.Transform(trsf);
+        const bool known = t->HasNormals();
+        b.norms.push_back(known ? static_cast<float>(n.X()) : 0.0f);
+        b.norms.push_back(known ? static_cast<float>(n.Y()) : 0.0f);
+        b.norms.push_back(known ? static_cast<float>(n.Z()) : 0.0f);
     }
     const bool rev = (face.Orientation() == TopAbs_REVERSED);
     const int nt = t->NbTriangles();
@@ -2370,6 +2389,11 @@ extern "C" size_t qym_body_face_count(const QymDoc* d, size_t i) { return (d && 
 
 extern "C" void qym_body_copy_verts(const QymDoc* d, size_t i, float* out) {
     if (d && i < d->bodies.size() && !d->bodies[i].verts.empty()) std::memcpy(out, d->bodies[i].verts.data(), d->bodies[i].verts.size() * sizeof(float));
+}
+// The surface's normal at every vertex, three floats each, parallel to `qym_body_copy_verts`; (0, 0, 0) where the face
+// had none.
+extern "C" void qym_body_copy_normals(const QymDoc* d, size_t i, float* out) {
+    if (d && i < d->bodies.size() && d->bodies[i].norms.size() == d->bodies[i].verts.size() && !d->bodies[i].norms.empty()) std::memcpy(out, d->bodies[i].norms.data(), d->bodies[i].norms.size() * sizeof(float));
 }
 extern "C" void qym_body_copy_tris(const QymDoc* d, size_t i, uint32_t* out) {
     if (d && i < d->bodies.size() && !d->bodies[i].tris.empty()) std::memcpy(out, d->bodies[i].tris.data(), d->bodies[i].tris.size() * sizeof(uint32_t));

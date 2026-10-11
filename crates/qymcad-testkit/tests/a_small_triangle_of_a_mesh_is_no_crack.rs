@@ -30,7 +30,7 @@ fn ball(r: f64, n: usize, m: usize) -> Mesh {
             tris.push([at(j, i + 1), at(j + 1, i), at(j + 1, i + 1)]);
         }
     }
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn a_body_of_a_mesh_keeps_its_own_triangles() {
 fn a_body_of_a_mesh_is_sound_as_it_is_made() {
     let out = ball(0.2, 40, 20);
     // the same ball wound the other way round: a mesh may come in wound inwards, all of it
-    let inward = Mesh { verts: out.verts.clone(), tris: out.tris.iter().map(|t| [t[0], t[2], t[1]]).collect() };
+    let inward = Mesh { verts: out.verts.clone(), tris: out.tris.iter().map(|t| [t[0], t[2], t[1]]).collect(), ..Default::default() };
     for (name, mesh) in [("wound outwards", out), ("wound inwards", inward)] {
         let body = Shape::from_mesh(&mesh).expect("a body of the mesh");
         assert!(body.volume() > 0.0, "{name}: the body holds {} - it is inside out", body.volume());
@@ -98,7 +98,7 @@ fn a_large_body_of_a_mesh_with_a_face_flat_to_its_precision_is_sound() {
         [6, 7, 8],
         [7, 4, 8], // the top, around its lifted middle
     ];
-    let body = Shape::from_mesh(&Mesh { verts, tris }).expect("a body of the mesh");
+    let body = Shape::from_mesh(&Mesh { verts, tris, ..Default::default() }).expect("a body of the mesh");
     assert!(body.volume() > 0.0, "setup: the cube is inside out");
     let top = body.face_kinds().map(|k| k.iter().sum::<u32>()).unwrap_or(0);
     assert_eq!(top, 6, "setup: the top of four triangles within the precision is to be one flat face");

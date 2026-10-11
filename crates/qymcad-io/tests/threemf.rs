@@ -41,7 +41,7 @@ fn model(unit: &str, resources: &str, build: &str) -> String {
 
 fn tetra(x: f64) -> Mesh {
     let v = |a: f64, b: f64, c: f64| Point3::new(x + a, b, c);
-    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 1.0 / 3.0), v(0.1, 0.2, 10.000000000000002)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] }
+    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 1.0 / 3.0), v(0.1, 0.2, 10.000000000000002)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]], ..Default::default() }
 }
 
 /// THREE BODIES GO OUT AND THREE COME BACK, every coordinate to the last bit, every triangle on its numbers.

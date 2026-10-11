@@ -184,7 +184,7 @@ fn a_corner_off_its_faces_is_placed_where_they_meet() {
             }
         }
     }
-    let mesh = Mesh { verts, tris };
+    let mesh = Mesh { verts, tris, ..Default::default() };
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);

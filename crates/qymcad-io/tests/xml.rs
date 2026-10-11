@@ -20,6 +20,6 @@ fn elements_attributes_and_text_read_as_written() {
 #[test]
 fn broken_documents_are_refused() {
     for bad in ["<a><b></a>", "<a>", "<a x=1/>", "not xml", "<a/><b/>", "<a x=\"&nope;\"/>"] {
-        assert!(xml::parse(bad).is_none(), "{bad:?} was read");
+        assert_eq!(xml::parse(bad).err(), Some(xml::XmlError::Malformed), "{bad:?} was read");
     }
 }

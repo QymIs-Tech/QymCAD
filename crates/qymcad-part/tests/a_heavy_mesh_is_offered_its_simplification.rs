@@ -18,7 +18,7 @@ fn strip(tris: usize, length: f64) -> Mesh {
             [[k, k + 2, k + 1], [k + 1, k + 2, k + 3]]
         })
         .collect();
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 fn command() -> FeatCommand {

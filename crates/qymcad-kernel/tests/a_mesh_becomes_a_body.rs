@@ -9,7 +9,7 @@ fn cube(open_top: bool) -> Mesh {
     if !open_top {
         tris.extend([[4, 5, 6], [4, 6, 7]]);
     }
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 /// A CLOSED MESH IS A SOLID: twelve triangles make six faces - the two of each side merged - and the volume.
@@ -41,7 +41,7 @@ fn a_triangle_with_no_area_does_not_spoil_the_rest() {
     m.tris.pop();
     let s = Shape::from_mesh(&m).expect("becomes a body");
     assert_eq!(s.solid_count(), 1, "a zero-area triangle broke the solid");
-    assert!(Shape::from_mesh(&Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0); 3], tris: vec![[0, 1, 2]] }).is_none(), "a mesh of nothing became a body");
+    assert!(Shape::from_mesh(&Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0); 3], tris: vec![[0, 1, 2]], ..Default::default() }).is_none(), "a mesh of nothing became a body");
 }
 
 /// HOW LONG A MESH TAKES TO BECOME A POLYHEDRON: a sphere of our kernel tessellated finer and finer, each mesh turned

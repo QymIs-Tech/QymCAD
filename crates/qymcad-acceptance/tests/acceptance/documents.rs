@@ -29,6 +29,35 @@ probe! {
 }
 
 probe! {
+    budget = 600;
+    /// A PROJECT REBUILT WITH NEW MESHES ASKS TO BE SAVED. Reported behaviour: Edit -> Rebuild everything mended the
+    /// roundings and the light of an old document - its meshes came back with the surface's normals - yet the title
+    /// had no mark of a change, closing asked nothing, and opened again the roundings were broken as before.
+    fn a_project_rebuilt_with_new_meshes_asks_to_be_saved() {
+        let mut s = Session::start();
+        let (file, open) = (s.word("menu-file"), s.word("file-open"));
+        s.menu(&[&file, &open]);
+        let dont_save = s.word("nav-dont-save");
+        if let Some(button) = s.find(&dont_save, pos2(0.0, 0.0)) {
+            s.click(button.center());
+        }
+        s.answer_file(SAMPLE);
+        let old = s.document().bodies.iter().all(|b| b.lit_by_the_surface == 0);
+        assert!(old, "setup: the sample was saved with the surface's normals - it no longer stands for an old document");
+        let title = s.title();
+        assert!(!title.ends_with('*'), "a project just opened calls itself unsaved: {title:?}");
+
+        let (edit, rebuild) = (s.word("menu-edit"), s.word("menu-rebuild"));
+        s.menu(&[&edit, &rebuild]);
+        let lit = s.document().bodies.iter().map(|b| b.lit_by_the_surface).sum::<usize>();
+        assert!(lit > 0, "setup: rebuilt, the bodies carry no normals of the surface");
+        let title = s.title();
+        assert!(title.ends_with('*'), "the bodies were rebuilt with new meshes and the title does not say the project changed: {title:?}");
+        assert!(s.quit().is_err(), "the bodies were rebuilt with new meshes and closing asks nothing - they would be lost");
+    }
+}
+
+probe! {
     /// THE QUESTION ABOUT UNSAVED WORK HOLDS THE WINDOW: while it waits for an answer, nothing behind it takes a click.
     fn the_question_about_unsaved_work_holds_the_window() {
         let mut s = Session::start();

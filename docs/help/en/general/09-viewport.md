@@ -78,3 +78,20 @@ from “precise” to “coarse”: a touch screen and a 4K display need differe
 
 A part outside the current context is shown semi-transparent — so that you can refer to it without it
 getting in the way. The transparency is set in the settings.
+
+## If the bodies are not drawn or the program closes at the start
+
+The edges of a part are drawn and its faces are not, the picture breaks up, or the program closes without a word
+while its window opens - all of these come from the graphics card and its driver.
+
+* Before the window opens, the program asks each graphics adapter to draw a test picture and takes the first one
+  that draws. If an adapter draws only without antialiasing, the antialiasing is switched off for that start.
+* If a start closes while the window is opening or in its first seconds, the next start draws more safely, one step
+  at a time: without antialiasing, then through another graphics interface of the card, then on the processor. The
+  status line says which, and a report of the start that closed is offered when the program opens.
+* **Settings -> Viewport**, at the end of the section: **Drawing with** names the adapter in use. In
+  **Graphics adapter** you can pick another one; it takes effect at the next start. After a safe start the button
+  **Draw as usual from the next start** brings the usual drawing back.
+
+If nothing helps, update the driver of the graphics card, and send the report with the problem (see
+[Report a problem](general/13-report)).

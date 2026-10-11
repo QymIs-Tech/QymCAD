@@ -35,7 +35,7 @@ struct MockKernel {
 impl MockKernel {
     fn placed(x: f64, m: [f64; 12]) -> Built {
         let v = Point3::new(m[0] * x + m[3], m[4] * x + m[7], m[8] * x + m[11]);
-        Built { mesh: Mesh { verts: vec![v], tris: vec![] }, faces: Vec::new() }
+        Built { mesh: Mesh { verts: vec![v], tris: vec![], ..Default::default() }, faces: Vec::new() }
     }
     fn count(&self) -> usize {
         self.calls.borrow().len()
@@ -618,7 +618,7 @@ fn from_origin_normal_builds_orthonormal_frame() {
 #[test]
 fn place_body_lifts_only_when_non_identity() {
     use qymcad_core::feature::{BasePlane, PlaneFrame};
-    let mesh = Mesh { verts: vec![Point3::new(1.0, 2.0, 3.0)], tris: vec![] };
+    let mesh = Mesh { verts: vec![Point3::new(1.0, 2.0, 3.0)], tris: vec![], ..Default::default() };
     // XY is the identity, so nothing changes.
     let xy = BasePlane::XY.frame();
     assert!(xy.is_identity());

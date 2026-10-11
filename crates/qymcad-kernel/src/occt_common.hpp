@@ -216,6 +216,8 @@
 
 struct QymBody {
     std::vector<float> verts;     // x, y, z in a row
+    std::vector<float> norms;     // the SURFACE's normal at every vertex, x, y, z in a row, facing out of the body: the
+                                  // light of a smooth face is shaded by it rather than by an average of its triangles
     std::vector<uint32_t> tris;   // indices, three per triangle
     std::vector<uint32_t> fstart; // the first triangle of each B-rep face
     std::vector<uint32_t> fcount; // how many triangles the face has

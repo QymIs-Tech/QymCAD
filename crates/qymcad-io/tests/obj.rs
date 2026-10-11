@@ -17,7 +17,7 @@ fn cube(at: f64) -> Mesh {
     let v = |x: f64, y: f64, z: f64| Point3::new(at + x, y, z);
     let verts = vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(10.0, 10.0, 0.0), v(0.0, 10.0, 0.0), v(0.0, 0.0, 10.0), v(10.0, 0.0, 10.0), v(10.0, 10.0, 10.0), v(0.0, 10.0, 10.0)];
     let tris = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 /// TWO BODIES GO OUT AND TWO COME BACK, every coordinate to the last bit, every triangle in its place.

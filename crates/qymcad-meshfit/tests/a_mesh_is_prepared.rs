@@ -54,7 +54,7 @@ fn soup(tris: &[Tri]) -> Mesh {
         }
         out.push([base, base + 1, base + 2]);
     }
-    Mesh { verts, tris: out }
+    Mesh { verts, tris: out, ..Default::default() }
 }
 
 /// A cube centred on the origin; the two triangles of the top face are 2 and 3.

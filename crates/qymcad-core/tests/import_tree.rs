@@ -5,7 +5,7 @@ use qymcad_core::geom::{Mesh, Point3};
 use qymcad_core::model::{ImportNode, Project};
 
 fn tri() -> Mesh {
-    Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], tris: vec![[0, 1, 2]] }
+    Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], tris: vec![[0, 1, 2]], ..Default::default() }
 }
 
 fn moved(x: f64, y: f64, z: f64) -> [f64; 12] {
@@ -177,7 +177,7 @@ fn a_piece_of_more_colours_than_its_palette_holds_keeps_them_near() {
     p.new_document();
     let source = p.add_source("scan.ply", vec![1]);
     let n = 300u32;
-    let mut mesh = Mesh { verts: Vec::new(), tris: Vec::new() };
+    let mut mesh = Mesh { verts: Vec::new(), tris: Vec::new(), ..Default::default() };
     for k in 0..n {
         let x = f64::from(k);
         mesh.verts.extend([Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0), Point3::new(x, 1.0, 0.0)]);

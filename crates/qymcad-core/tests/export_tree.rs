@@ -5,7 +5,7 @@ use qymcad_core::geom::{Mesh, Point3};
 use qymcad_core::model::{ImportNode, Project};
 
 fn tri() -> Mesh {
-    Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], tris: vec![[0, 1, 2]] }
+    Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], tris: vec![[0, 1, 2]], ..Default::default() }
 }
 
 fn moved(x: f64, y: f64, z: f64) -> [f64; 12] {

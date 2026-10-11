@@ -241,14 +241,14 @@ mod tests {
                     .collect();
                 app.project.bodies[i].visible = false;
                 for (colour, tris) in groups {
-                    app.project.add_mesh(Mesh { verts: verts.clone(), tris });
+                    app.project.add_mesh(Mesh { verts: verts.clone(), tris, ..Default::default() });
                     app.project.set_mesh_color(app.project.bodies.len() - 1, colour);
                 }
                 // WHERE THE REGIONS MEET, in black: every edge a thin square tube along its points, a thousandth of the
                 // diagonal across
                 let b = qymcad_meshfit::boundaries(&p, &found);
                 let across = p.mesh.bounds().map(|bb| ((bb.max.x - bb.min.x).powi(2) + (bb.max.y - bb.min.y).powi(2) + (bb.max.z - bb.min.z).powi(2)).sqrt() * 1e-3).unwrap_or(0.01);
-                let mut tube = Mesh { verts: Vec::new(), tris: Vec::new() };
+                let mut tube = Mesh { verts: Vec::new(), tris: Vec::new(), ..Default::default() };
                 let cross = |x: [f64; 3], y: [f64; 3]| [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
                 for e in &b.edges {
                     let mut pts = e.points.clone();
@@ -367,7 +367,7 @@ mod tests {
                         groups.entry(k % COLOURS.len()).or_default().extend(face.triangles.iter().map(|&t| mesh.tris[t as usize]));
                     }
                     for (k, tris) in groups {
-                        app.project.add_mesh(Mesh { verts: verts.clone(), tris });
+                        app.project.add_mesh(Mesh { verts: verts.clone(), tris, ..Default::default() });
                         app.project.set_mesh_color(app.project.bodies.len() - 1, COLOURS[k]);
                     }
                 }
@@ -421,7 +421,7 @@ mod tests {
                 let Some(id) = app.project.mesh_id(i) else { continue };
                 let p = prepare(&app.project.bodies[i].mesh, weld_tolerance(&app.project.bodies[i].mesh));
                 let torn: Vec<bool> = (0..p.mesh.tris.len()).map(|t| p.neighbours[t].contains(&NO_NEIGHBOUR) || p.slivers.contains(&(t as u32))).collect();
-                let pick = |want: bool| Mesh { verts: p.mesh.verts.clone(), tris: p.mesh.tris.iter().zip(&torn).filter(|(_, b)| **b == want).map(|(t, _)| *t).collect() };
+                let pick = |want: bool| Mesh { verts: p.mesh.verts.clone(), tris: p.mesh.tris.iter().zip(&torn).filter(|(_, b)| **b == want).map(|(t, _)| *t).collect(), ..Default::default() };
                 torn_all += torn.iter().filter(|b| **b).count();
                 all += torn.len();
                 let wt = app.project.body_world_transform(id);

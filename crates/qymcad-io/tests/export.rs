@@ -10,7 +10,11 @@ fn tmp(name: &str) -> String {
 
 /// A tetrahedron of four vertices and four faces: the minimal closed body for checking STL.
 fn tetra() -> Mesh {
-    Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0), Point3::new(0.0, 0.0, 10.0)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] }
+    Mesh {
+        verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0), Point3::new(0.0, 0.0, 10.0)],
+        tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+        ..Default::default()
+    }
 }
 
 #[test]
@@ -29,7 +33,7 @@ fn stl_roundtrip_preserves_tris_and_bounds() {
 
 #[test]
 fn stl_empty_is_error() {
-    let empty = Mesh { verts: vec![], tris: vec![] };
+    let empty = Mesh { verts: vec![], tris: vec![], ..Default::default() };
     assert!(export_stl(&[empty], &tmp("qym_empty.stl")).is_err());
 }
 

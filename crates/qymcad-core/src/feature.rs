@@ -221,6 +221,11 @@ impl PlaneFrame {
         for v in &mut mesh.verts {
             *v = self.lift3(*v);
         }
+        for n in &mut mesh.norms {
+            if let Some(d) = crate::geom::unpack_direction(*n) {
+                *n = crate::geom::pack_direction(self.rotate_dir(d));
+            }
+        }
         for f in &mut faces {
             f.centroid = self.lift3(f.centroid);
             f.normal = self.rotate_dir(f.normal);

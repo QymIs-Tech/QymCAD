@@ -39,6 +39,7 @@ extern "C" {
     fn qym_body_tri_count(d: *const QymDoc, i: usize) -> usize;
     fn qym_body_face_count(d: *const QymDoc, i: usize) -> usize;
     fn qym_body_copy_verts(d: *const QymDoc, i: usize, out: *mut f32);
+    fn qym_body_copy_normals(d: *const QymDoc, i: usize, out: *mut f32);
     fn qym_body_copy_tris(d: *const QymDoc, i: usize, out: *mut u32);
     fn qym_body_copy_face_starts(d: *const QymDoc, i: usize, out: *mut u32);
     fn qym_body_copy_face_counts(d: *const QymDoc, i: usize, out: *mut u32);
@@ -1713,9 +1714,17 @@ impl Shape {
             return None;
         }
         let (mut verts, mut tris, mut faces) = (Vec::new(), Vec::new(), Vec::new());
+        let mut norms: Vec<u32> = Vec::new();
         for Built { mesh: m, faces: fs } in bodies {
             let voff = verts.len() as u32;
             let toff = tris.len() as u32;
+            // THE SURFACE'S NORMALS GO WITH THEIR VERTICES; a solid that came without them leaves zeros in its place,
+            // so the ones after it stay beside their own vertices
+            if m.norms.len() == m.verts.len() {
+                norms.extend(m.norms);
+            } else {
+                norms.resize(norms.len() + m.verts.len(), 0);
+            }
             verts.extend(m.verts);
             tris.extend(m.tris.into_iter().map(|t| [t[0] + voff, t[1] + voff, t[2] + voff]));
             for mut f in fs {
@@ -1723,7 +1732,7 @@ impl Shape {
                 faces.push(f);
             }
         }
-        Some(Built { mesh: qymcad_core::geom::Mesh { verts, tris }, faces })
+        Some(Built { mesh: qymcad_core::geom::Mesh { verts, tris, norms }, faces })
     }
 }
 
@@ -2273,7 +2282,13 @@ unsafe fn doc_to_bodies(d: *mut QymDoc) -> Vec<Built> {
         }
         let verts = vbuf.as_chunks::<3>().0.iter().map(|c| Point3::new(c[0] as f64, c[1] as f64, c[2] as f64)).collect();
         let tris = tbuf.as_chunks::<3>().0.iter().map(|c| [c[0], c[1], c[2]]).collect();
-        let mesh = Mesh { verts, tris };
+        // THE SURFACE'S NORMALS, parallel to the vertices: the smooth light is shaded by them (`Mesh::norms`)
+        let mut nbuf = vec![0f32; vc * 3];
+        if vc > 0 {
+            qym_body_copy_normals(d, i, nbuf.as_mut_ptr());
+        }
+        let norms = nbuf.as_chunks::<3>().0.iter().map(|c| qymcad_core::geom::pack_direction([c[0] as f64, c[1] as f64, c[2] as f64])).collect();
+        let mesh = Mesh { verts, tris, norms };
 
         // faces from the B-rep: each is a contiguous range of triangles plus a persistent id
         let mut starts = vec![0u32; fc];
@@ -2408,7 +2423,7 @@ pub fn box_mesh(dx: f64, dy: f64, dz: f64, deflection: f64) -> Mesh {
         let d = qym_occt_box_doc(dx, dy, dz, defl);
         let mut bodies = doc_to_bodies(d);
         if bodies.is_empty() {
-            return Mesh { verts: Vec::new(), tris: Vec::new() };
+            return Mesh { verts: Vec::new(), tris: Vec::new(), ..Default::default() };
         }
         bodies.remove(0).mesh
     }

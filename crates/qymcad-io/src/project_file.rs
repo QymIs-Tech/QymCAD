@@ -38,7 +38,7 @@ pub fn save_project_with_brep(project: &Project, path: &str, breps: &[(model::Id
     let facelists: Vec<Vec<MeshFace>> = doc.bodies.iter().map(|b| b.faces.clone()).collect();
     // the document keeps placeholders: the heavy geometry lives in separate files of the bundle
     for b in doc.bodies.iter_mut() {
-        b.mesh = Mesh { verts: Vec::new(), tris: Vec::new() };
+        b.mesh = Mesh { verts: Vec::new(), tris: Vec::new(), ..Default::default() };
         b.faces = Vec::new();
     }
 

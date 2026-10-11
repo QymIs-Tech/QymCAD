@@ -332,6 +332,14 @@ pub fn name(stored: &str) -> String {
         return stored.split(' ').map(|w| if w == stored { w.to_string() } else { name(w) }).collect::<Vec<_>>().join(" ");
     }
     match arg {
+        // SEVERAL SUBSTITUTIONS follow the `#` apart by U+001F, the unit separator, which no name holds; they go into
+        // `$v`, `$w`, `$x` and `$y` in that order. A refusal from a file names a place and what stood there: "PLY: a
+        // coordinate of vertex 12 (byte 684) is not a finite number (NaN)". A name with a `#` in it reads as before.
+        Some(v) if v.contains('\u{1f}') => {
+            let values: Vec<String> = v.split('\u{1f}').map(name).collect();
+            let args: Vec<(&str, &str)> = ["v", "w", "x", "y"].into_iter().zip(values.iter().map(String::as_str)).collect();
+            trn(key, &args)
+        }
         // A SUBSTITUTION MAY ITSELF BE A KEY. A mirrored part is called `name-mirror-of#<the name of the
         // source>`, and the name of the source is a key too (`name-part-n#1`). Without unwrapping it, what
         // was seen was "name-part-n#1 (mirror)": half the name translated, half a raw catalogue key.

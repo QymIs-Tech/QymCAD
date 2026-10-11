@@ -23,7 +23,7 @@ fn big_assembly(parts: usize) -> Project {
         p.set_active_component(Some(root));
         let c = p.add_part(format!("Part {i}"));
         p.set_active_component(Some(c));
-        let body = p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], tris: vec![[0, 1, 2]] });
+        let body = p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], tris: vec![[0, 1, 2]], ..Default::default() });
         p.imported_bodies.insert(body);
         p.timeline.push(qymcad_core::feature::FeatureNode {
             id: body,

@@ -16,7 +16,7 @@ fn file(name: &str, bytes: Option<&[u8]>) -> String {
 
 fn tetra(at: f64) -> Mesh {
     let v = |x: f64, y: f64, z: f64| Point3::new(at + x, y, z);
-    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 1.0 / 3.0), v(0.1, 0.2, 10.000000000000002)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] }
+    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 1.0 / 3.0), v(0.1, 0.2, 10.000000000000002)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]], ..Default::default() }
 }
 
 /// TWO BODIES GO OUT AS ONE MESH AND COME BACK to the last bit - PLY holds one mesh, so they come back together.

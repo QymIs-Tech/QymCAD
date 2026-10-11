@@ -50,6 +50,8 @@ pub fn note_step(name: &str) {
     if s.steps.len() > TRAIL {
         s.steps.remove(0);
     }
+    drop(s);
+    journal(&format!("operation: {name}"));
 }
 
 /// WHERE THE DOCUMENT LIVES, so the next start can offer it back.
@@ -64,9 +66,138 @@ pub fn note_document(doc: Option<&str>, autosave: Option<&str>) {
 pub fn install() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let _ = write_report(info);
+        let report = write_report(info);
+        journal(&format!(
+            "panicked: {} (report {})",
+            panic_text(info.payload()),
+            report.as_deref().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "not written".into())
+        ));
         previous(info);
     }));
+}
+
+/// THE JOURNAL OF THIS RUN, on disk, a line at a time.
+///
+/// Reported behaviour: every person whose graphics went wrong had no crash file to send. The hook above sees a panic
+/// of Rust and nothing else: a fault inside a graphics driver - an access violation in DX12 or Vulkan - or the
+/// system ending the process takes the program away before any hook runs. So the run writes down where it is as it
+/// goes - the adapters offered, the one chosen, the first frame drawn, every operation opened - each line handed to
+/// the system the moment it is written, which a dying process cannot take back. A clean close writes `ended`. The
+/// next start finds a journal without it and turns it into a report.
+static JOURNAL: Mutex<Option<PathBuf>> = Mutex::new(None);
+const JOURNAL_NAME: &str = "start_journal.txt";
+pub(crate) const ENDED: &str = "ended";
+/// The line that says the run drew for ten seconds: a fault after it is more likely the kernel's than the driver's.
+pub(crate) const DREW_A_WHILE: &str = "600 frames drawn";
+/// The line that says the graphics device was taken away while the run drew.
+pub(crate) const DEVICE_LOST: &str = "the graphics device was lost";
+
+/// BEGIN THIS RUN'S JOURNAL, and answer the report written for the run before when that one stopped without closing.
+/// Only the start of the program calls it: until then nothing is written, so a check never writes into a person's
+/// profile.
+pub fn begin_journal() -> PreviousRun {
+    let Some(dir) = dir() else { return PreviousRun::default() };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return PreviousRun::default();
+    }
+    let path = dir.join(JOURNAL_NAME);
+    let journal = std::fs::read_to_string(&path).ok().filter(|t| !t.trim().is_empty());
+    // the report is offered at the start like any other (`unseen_reports`)
+    if let Some(stopped) = journal.as_deref().filter(|t| t.lines().last().map(str::trim) != Some(ENDED)) {
+        let _ = journal_report(stopped);
+    }
+    if std::fs::write(&path, format!("started {}\n", crate::gui::now_iso8601())).is_ok() {
+        if let Ok(mut j) = JOURNAL.lock() {
+            *j = Some(path);
+        }
+    }
+    PreviousRun { journal }
+}
+
+/// WHAT THE RUN BEFORE LEFT: its journal.
+#[derive(Debug, Default)]
+pub struct PreviousRun {
+    pub journal: Option<String>,
+}
+
+/// A REPORT OF A RUN THAT STOPPED WITHOUT CLOSING: this machine, and the journal that run left, its last line last.
+/// No backtrace - the process that could have given one is gone.
+fn journal_report(journal: &str) -> Option<PathBuf> {
+    let path = next_report_path()?;
+    let mut out = crate::diagnostics::block();
+    out.push_str(&format!("\nTime: {}\n", crate::gui::now_iso8601()));
+    out.push_str("Stopped without a word: the run before this one ended without closing - the program, the graphics driver or the system stopped it.\n");
+    out.push_str("\nIts journal, the last line last:\n");
+    for line in journal.lines() {
+        out.push_str(&format!("  {}\n", without_home(line)));
+    }
+    std::fs::write(&path, out).ok()?;
+    Some(path)
+}
+
+/// ADD A LINE TO THIS RUN'S JOURNAL - nothing before `begin_journal`.
+pub fn journal(line: &str) {
+    use std::io::Write;
+    let Ok(j) = JOURNAL.lock() else { return };
+    let Some(path) = j.as_ref() else { return };
+    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(path) {
+        let _ = f.write_all(format!("{line}\n").as_bytes());
+    }
+}
+
+/// THE GRAPHICS DEVICE IS WATCHED: when the driver takes it away (a reset of the card, a driver that hung, the device
+/// removed), the reason wgpu gives goes into the journal and into a report at once - nothing can be drawn after it,
+/// and what follows it is a fault that names nothing.
+pub fn watch_the_device(device: &eframe::wgpu::Device) {
+    device.set_device_lost_callback(|reason, message| {
+        journal(&format!("{DEVICE_LOST} ({reason:?}): {message}"));
+        if let Some(path) = next_report_path() {
+            let _ = write_note(&path, "Graphics device lost", &format!("{reason:?}: {message}"), "(the graphics driver)");
+        }
+    });
+}
+
+/// HOW MANY TIMES EACH KIND OF FAILED FRAME HAS BEEN SEEN, so the journal holds the first of each and then every
+/// hundredth - a surface timing out on every frame would otherwise fill the disk.
+static SURFACE_FAILURES: Mutex<Vec<SurfaceFailure>> = Mutex::new(Vec::new());
+
+/// One kind of frame the window could not get, and how often.
+struct SurfaceFailure {
+    kind: String,
+    seen: u64,
+}
+
+/// What the framework does with a frame it could not get.
+pub type SurfaceAnswer = dyn Fn(&eframe::wgpu::CurrentSurfaceTexture) -> eframe::egui_wgpu::SurfaceErrorAction + Send + Sync;
+
+/// THE FRAMEWORK'S ANSWER TO A FRAME IT COULD NOT GET, kept as it is, with the failure written into the journal
+/// first. A window hidden from view is no failure and is not written.
+pub fn journaled_surface_status(answer: std::sync::Arc<SurfaceAnswer>) -> std::sync::Arc<SurfaceAnswer> {
+    std::sync::Arc::new(move |status| {
+        if !matches!(status, eframe::wgpu::CurrentSurfaceTexture::Occluded) {
+            let kind = format!("{status:?}");
+            let seen = SURFACE_FAILURES.lock().ok().map(|mut all| {
+                let i = all.iter().position(|f| f.kind == kind).unwrap_or_else(|| {
+                    all.push(SurfaceFailure { kind: kind.clone(), seen: 0 });
+                    all.len() - 1
+                });
+                all[i].seen += 1;
+                all[i].seen
+            });
+            if let Some(n) = seen.filter(|n| *n == 1 || n % 100 == 0) {
+                journal(&format!("the window could not get a frame ({kind}), {n} time(s)"));
+            }
+        }
+        answer(status)
+    })
+}
+
+/// THE RUN CLOSED AS IT SHOULD: the journal says so, and the next start writes no report for it.
+pub fn end_journal() {
+    journal(ENDED);
+    if let Ok(mut j) = JOURNAL.lock() {
+        *j = None;
+    }
 }
 
 /// Where the reports live: the data directory of the program, beside the parts library.
@@ -77,6 +208,11 @@ fn dir() -> Option<PathBuf> {
         }
     }
     qymcad_paths::data("crashes")
+}
+
+/// A FILE BESIDE THE REPORTS: what the start of the program needs before a window and its settings exist.
+pub(crate) fn file(name: &str) -> Option<PathBuf> {
+    dir().map(|d| d.join(name))
 }
 
 /// A PATH WITHOUT THE NAME OF WHOEVER RAN THE PROGRAM. The file is meant to be attached to a public
@@ -239,6 +375,9 @@ pub(crate) fn use_dir_for_test(d: Option<&Path>) {
         s.doc = None;
         s.autosave = None;
     }
+    if let Ok(mut j) = JOURNAL.lock() {
+        *j = None;
+    }
 }
 
 #[cfg(test)]
@@ -323,6 +462,95 @@ mod tests {
 
         super::use_dir_for_test(None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A RUN THAT STOPPED WITHOUT CLOSING IS TOLD ABOUT AT THE NEXT START, with where it was. Reported behaviour: no
+    /// one whose graphics went wrong had a crash file - a fault inside the driver passes no hook.
+    #[test]
+    fn a_run_that_stopped_without_closing_leaves_a_report_at_the_next_start() {
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-journal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+
+        // the run that died: its journal as the program writes it, and no `ended`
+        assert!(super::begin_journal().journal.is_none(), "a first start found a run before it");
+        super::journal("drawing with: wgpu Dx12, Radeon (TM) RX 480 Series (DiscreteGpu)");
+        super::journal("the first frame is drawn");
+        super::note_step("Extrude");
+        let _ = super::begin_journal();
+        let report =
+            super::unseen_reports().into_iter().find(|p| std::fs::read_to_string(p).is_ok_and(|t| t.contains("Stopped without a word"))).expect("the run that stopped without closing left no report");
+        let text = std::fs::read_to_string(&report).expect("the report is unreadable");
+        assert!(text.contains("Stopped without a word"), "the report does not say how the run ended:\n{text}");
+        assert!(text.contains("Radeon (TM) RX 480") && text.contains("the first frame is drawn") && text.contains("operation: Extrude"), "the report lost the journal:\n{text}");
+        assert!(super::unseen_reports().contains(&report), "the report is not offered at the start");
+
+        // this run closes as it should: the next start says nothing
+        super::journal("the first frame is drawn");
+        super::end_journal();
+        let before = super::unseen_reports().len();
+        let _ = super::begin_journal();
+        let after_a_clean_close = super::unseen_reports().len() - before;
+        super::end_journal();
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(after_a_clean_close, 0, "a run that closed as it should was reported as stopped");
+    }
+
+    /// A LOST GRAPHICS DEVICE IS WRITTEN DOWN with the reason the driver gave, and a report is left at once.
+    #[test]
+    fn a_lost_graphics_device_is_written_down_and_reported() {
+        use eframe::wgpu;
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())) else {
+            eprintln!("PASSED OVER: no graphics device to lose");
+            return;
+        };
+        let Ok((device, _queue)) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())) else {
+            eprintln!("PASSED OVER: the graphics device would not open");
+            return;
+        };
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-device-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+        let _ = super::begin_journal();
+
+        super::watch_the_device(&device);
+        device.destroy();
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+
+        let journal = std::fs::read_to_string(dir.join(super::JOURNAL_NAME)).unwrap_or_default();
+        let reported = super::unseen_reports().iter().any(|p| std::fs::read_to_string(p).is_ok_and(|t| t.contains("Graphics device lost")));
+        super::end_journal();
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(journal.contains("the graphics device was lost"), "the journal does not say the device was lost:\n{journal}");
+        assert!(reported, "no report was left for the lost device");
+    }
+
+    /// A FRAME THE WINDOW COULD NOT GET IS WRITTEN DOWN, the first of each kind, and the framework's answer is kept.
+    #[test]
+    fn a_frame_the_window_could_not_get_is_written_down() {
+        use eframe::egui_wgpu::SurfaceErrorAction;
+        use eframe::wgpu::CurrentSurfaceTexture;
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-surface-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+        let _ = super::begin_journal();
+
+        let answer = super::journaled_surface_status(std::sync::Arc::new(|_| SurfaceErrorAction::Reconfigure));
+        let kept = matches!(answer(&CurrentSurfaceTexture::Timeout), SurfaceErrorAction::Reconfigure);
+        let _ = answer(&CurrentSurfaceTexture::Occluded);
+        let journal = std::fs::read_to_string(dir.join(super::JOURNAL_NAME)).unwrap_or_default();
+        super::end_journal();
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(kept, "the framework's answer to a failed frame was changed");
+        assert!(journal.contains("could not get a frame (Timeout)"), "a timed-out frame is not in the journal:\n{journal}");
+        assert!(!journal.contains("Occluded"), "a hidden window was written down as a failure:\n{journal}");
     }
 
     /// A repeated command must not fill the whole trail with one word.

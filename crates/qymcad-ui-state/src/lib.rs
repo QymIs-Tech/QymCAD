@@ -182,6 +182,9 @@ pub struct Caches {
     pub norm: std::cell::RefCell<Cached<Vec<Normals>>>,
     /// The key of the scene uploaded into the GPU vertex buffer (re-uploaded only on a change). It does NOT depend on the camera.
     pub gpu_scene_key: std::cell::Cell<u64>,
+    /// The pass of egui (`cumulative_pass_nr`) the scene was handed to the card in. A pass that is discarded takes
+    /// its paint callback with it, so a later pass of the same frame hands the scene over again.
+    pub gpu_scene_pass: std::cell::Cell<u64>,
     /// The cache of the visible scene's world bounding sphere (a centre and a radius) keyed by the scene - for
     /// tight near and far planes in perspective (the z buffer's precision). Recomputed only when the scene changes,
     /// not every frame.
@@ -241,6 +244,7 @@ impl Default for Caches {
             view: std::cell::RefCell::new(None),
             norm: std::cell::RefCell::new(Cached { rev: u64::MAX, value: Vec::new() }),
             gpu_scene_key: std::cell::Cell::new(u64::MAX),
+            gpu_scene_pass: std::cell::Cell::new(0),
             bounds: std::cell::Cell::new(Cached { rev: u64::MAX, value: None }),
             consumed: std::cell::RefCell::new(Cached { rev: u64::MAX, value: std::collections::HashSet::new() }),
             shown_bodies: std::cell::RefCell::new(Cached { rev: u64::MAX, value: ShownBodies::default() }),
@@ -12624,11 +12628,15 @@ pub fn begin_text_edit(project: &Project, tools: &mut Tools, prefs: &mut SketchT
 }
 
 pub fn text_obj_editor(ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx, ctx: &egui::Context, rect: Rect) {
+    // NO LABEL BEING EDITED, NOTHING TO END. This runs on every flat frame, and ending a text edit puts the tool in hand
+    // down: asked first whether the sketch was selected, it put down whatever was in hand whenever it was not.
+    // Reported behaviour: an extrusion opened for editing, "Pick contours" pressed - the view went flat with nothing to
+    // pick and no bar, the extrusion gone from the hand (its node, not its sketch, was selected).
+    let Some(ti) = tc.inline.text() else { return };
     let Sel::Sketch(si) = *ed.sel else {
         end_text_edit(tc);
         return;
     };
-    let Some(ti) = tc.inline.text() else { return };
     let Some((bx, _by, _, maxy)) = ed.project.sketch_text_bbox(si, ti) else {
         end_text_edit(tc);
         return;
@@ -15253,7 +15261,7 @@ mod blend_outline {
     /// The top front edge of a 40 x 30 x 10 block: one triangle of the top face, one of the front face, sharing it.
     fn corner() -> Mesh {
         let p = |x, y, z| Point3::new(x, y, z);
-        Mesh { verts: vec![p(0.0, 0.0, 10.0), p(40.0, 0.0, 10.0), p(40.0, 30.0, 10.0), p(0.0, 0.0, 0.0)], tris: vec![[0, 1, 2], [1, 0, 3]] }
+        Mesh { verts: vec![p(0.0, 0.0, 10.0), p(40.0, 0.0, 10.0), p(40.0, 30.0, 10.0), p(0.0, 0.0, 0.0)], tris: vec![[0, 1, 2], [1, 0, 3]], ..Default::default() }
     }
 
     fn near(a: [f64; 3], b: [f64; 3]) -> bool {
@@ -15302,7 +15310,7 @@ mod blend_outline {
     #[test]
     fn a_draft_outline_leans_by_its_angle() {
         let p = |x, y, z| Point3::new(x, y, z);
-        let mesh = Mesh { verts: vec![p(0.0, 0.0, 0.0), p(40.0, 0.0, 0.0), p(40.0, 0.0, 10.0), p(0.0, 0.0, 10.0)], tris: vec![[0, 1, 2], [0, 2, 3]] };
+        let mesh = Mesh { verts: vec![p(0.0, 0.0, 0.0), p(40.0, 0.0, 0.0), p(40.0, 0.0, 10.0), p(0.0, 0.0, 10.0)], tris: vec![[0, 1, 2], [0, 2, 3]], ..Default::default() };
         let face = qymcad_core::geom::MeshFace { triangles: vec![0, 1], normal: [0.0, -1.0, 0.0], centroid: p(20.0, 0.0, 5.0), area: 400.0, id: 1 };
         for angle in [3.0f64, 6.0] {
             let out = super::draft_outline(&mesh, &face, [20.0, 15.0, 10.0], [0.0, 0.0, 1.0], angle);
@@ -15350,7 +15358,7 @@ mod blend_outline {
     #[test]
     fn a_fillet_in_an_inner_corner_lies_in_the_corner() {
         let p = |x, y, z| Point3::new(x, y, z);
-        let m = Mesh { verts: vec![p(0.0, 0.0, 0.0), p(40.0, 0.0, 0.0), p(40.0, 30.0, 0.0), p(0.0, 0.0, 10.0)], tris: vec![[0, 1, 2], [1, 0, 3]] };
+        let m = Mesh { verts: vec![p(0.0, 0.0, 0.0), p(40.0, 0.0, 0.0), p(40.0, 30.0, 0.0), p(0.0, 0.0, 10.0)], tris: vec![[0, 1, 2], [1, 0, 3]], ..Default::default() };
         let edge = [[0.0f32, 0.0, 0.0], [40.0, 0.0, 0.0]];
         let out = edge_blend_outline(&m, &edge, Blend::Round(2.0));
         assert_eq!(out.len(), 4, "{out:?}");

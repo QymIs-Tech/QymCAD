@@ -43,8 +43,9 @@ Guards: `comment_ratchet.rs`, `i18n/tests.rs`, `i18n/ratchet.rs`, `gui/font_cove
 * Before a commit: `cargo test --workspace` AND `cargo check --workspace --all-targets`; read the exit code of
   cargo, not of the last command in a pipeline. One is not enough: `cargo test` builds the binary only as a
   test build, and a fault absent under `cfg(test)` passes a green run.
-* Heavy runs under a memory cap: `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 …`, the
-  acceptance set with `--test-threads=6`.
+* Heavy runs under a memory cap: `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 …`. The
+  acceptance set runs as many probes side by side as `tools/gate.py` picks for the machine; `QYMCAD_TEST_THREADS`
+  sets the number by hand.
 * Samples that cannot be distributed live outside the tree; a check that needs one says `PASSED OVER` and
   returns when it is absent (`qymcad_acceptance::private_sample`).
 

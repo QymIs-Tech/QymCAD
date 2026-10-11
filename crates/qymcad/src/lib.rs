@@ -62,6 +62,7 @@ mod packaging_occt;
 mod app_identity;
 mod build_info;
 mod crash;
+mod safe_graphics;
 mod diagnostics;
 /// THE DICTIONARY LIVES IN ITS OWN CRATE NOW. Re-exported under the old name because 2159 places say
 /// `crate::i18n::tr`, and rewriting every one of them would change no meaning at all.

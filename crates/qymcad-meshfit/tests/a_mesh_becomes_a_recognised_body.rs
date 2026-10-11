@@ -223,7 +223,7 @@ fn gridded_cube(grid: usize, side: f64, dent: f64) -> qymcad_core::geom::Mesh {
             }
         }
     }
-    Mesh { verts, tris }
+    Mesh { verts, tris, ..Default::default() }
 }
 
 /// A mesh of `shape` whose every corner is moved along its radius by up to `amp`, the same way every time: the noise of
@@ -423,7 +423,7 @@ fn a_triangle_too_small_for_its_normal_joins_its_surface() {
     verts.push(v(5.0 - s * 0.866, 5.0 + s * 0.5, 10.0)); // 10: r
     let (a, b, c, d, p, q, r) = (4, 5, 6, 7, 8, 9, 10);
     tris.extend([[a, b, p], [b, q, p], [b, c, q], [c, r, q], [c, d, r], [d, p, r], [d, a, p], [p, q, r]]);
-    let mesh = qymcad_core::geom::Mesh { verts, tris };
+    let mesh = qymcad_core::geom::Mesh { verts, tris, ..Default::default() };
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let mut tol = Tolerance::for_mesh(&p);
     tol.distance *= 100.0;
@@ -606,7 +606,7 @@ fn a_spring_of_round_wire_comes_back_a_tube() {
             tris.push(if inward { [middle, id(i, j + 1), id(i, j)] } else { [middle, id(i, j), id(i, j + 1)] });
         }
     }
-    let mesh = qymcad_core::geom::Mesh { verts, tris };
+    let mesh = qymcad_core::geom::Mesh { verts, tris, ..Default::default() };
     let exact = std::f64::consts::PI * wire * wire * 2.0 * std::f64::consts::PI * turns * length;
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);

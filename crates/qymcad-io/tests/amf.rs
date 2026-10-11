@@ -18,7 +18,7 @@ fn file(name: &str, text: Option<&str>) -> String {
 
 fn tetra(x: f64) -> Mesh {
     let v = |a: f64, b: f64, c: f64| Point3::new(x + a, b, c);
-    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 1.0 / 3.0), v(0.1, 0.2, 10.000000000000002)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] }
+    Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 1.0 / 3.0), v(0.1, 0.2, 10.000000000000002)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]], ..Default::default() }
 }
 
 /// A piece where it stands: its mesh put at its place, then at the places of the groups it stands in.

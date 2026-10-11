@@ -52,3 +52,18 @@ probe! {
         assert!(switch.is_none(), "the bar of the sketch holds a word of another language: {switch:?}");
     }
 }
+
+probe! {
+    /// THE SKETCH OF THE FIRST CUBE IS CALLED BY ITS NAME when it is entered: the status line says the name the tree
+    /// gives it, not the key the name is kept under. Reported behaviour: entering Sketch 1 of a new document, the status
+    /// line read `Editing the sketch "name-sketch-n#1"`, in every language.
+    fn the_sketch_of_the_first_cube_is_called_by_its_name_when_entered() {
+        let mut s = Session::start_on(qymcad::Machine::first_run());
+        build::into_the_first_part(&mut s);
+        let sketch = s.document().sketches.first().map(|k| k.name.clone()).unwrap_or_else(|| panic!("the first cube holds no sketch; on screen: {:?}", s.words()));
+        let row = s.find(&sketch, qymcad::pos2(0.0, 300.0)).unwrap_or_else(|| panic!("the sketch {sketch:?} is not in the tree; on screen: {:?}", s.words()));
+        s.double_click(row.center());
+        let status = s.status();
+        assert!(status.contains(&sketch) && !status.contains("name-"), "entering {sketch:?} the status line reads {status:?}");
+    }
+}
