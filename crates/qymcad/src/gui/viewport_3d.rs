@@ -437,8 +437,8 @@ impl App {
                     let hit = crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi));
                     qymcad_part::take_boolean_pick(&mut self.part_ctx(), hit);
                 }
-                // an extrusion or a revolution in hand: the click picks a contour - see `profile_click_3d`
-                else if matches!(self.tools.armed.cmd_kind(), 1 | 3) && self.tools.cmd.sketch.is_some() {
+                // an extrusion, revolution or loft in hand: the click picks a contour
+                else if matches!(self.tools.armed.cmd_kind(), 1 | 3 | 9) {
                     qymcad_part::profile_click_3d(&mut self.part_ctx(), rect, pos);
                 }
                 // A WAITING TOOL: the click names the sketch. High in the chain - see `name_the_sketch`.

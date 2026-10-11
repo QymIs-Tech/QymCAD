@@ -39,6 +39,7 @@ fn the_walk_finds_a_font_by_its_own_name_and_ignores_what_is_not_one() {
 /// runtime's own few. A list that knows only the ordinary paths shows a person three fonts and none of their
 /// own. Nothing needs to be granted for those paths - they are there for every application.
 #[test]
+#[cfg(target_os = "linux")]
 fn the_places_to_look_include_the_ones_a_sandbox_uses() {
     let dirs: Vec<String> = qymcad_ui_state::font_directories().iter().map(|d| d.to_string_lossy().into_owned()).collect();
     for want in ["/run/host/fonts", "/run/host/local-fonts", "/run/host/user-fonts"] {

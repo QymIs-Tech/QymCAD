@@ -2209,6 +2209,10 @@ pub fn start_array_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
 /// systems. A click past every contour says so and leaves what is gathered. Reported behaviour: a click on a contour in
 /// 3D changed nothing - neither the picture, nor the bar, nor the status line.
 pub fn profile_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos: egui::Pos2) {
+    if pc.armed.cmd_kind() == 9 {
+        loft_contour_click_3d(pc, rect, pos);
+        return;
+    }
     let Some(si) = pc.cmd.sketch else { return };
     let basis = pc.cam.basis();
     let hit = qymcad_ui_state::contour_under_3d(&*pc.project, &qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis }, pos, si);
@@ -2218,6 +2222,35 @@ pub fn profile_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos
                 pc.gsel.profiles.insert(cid);
             }
             *pc.status = qymcad_i18n::tr1("sk-profiles-n", "n", &pc.gsel.profiles.len().to_string());
+        }
+        None => *pc.status = qymcad_i18n::tr("sk-miss-contour"),
+    }
+}
+
+/// A click in 3D while a Loft command is open picks the section contour of the sketch under the cursor.
+pub fn loft_contour_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos: egui::Pos2) {
+    let basis = pc.cam.basis();
+    let scr = qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis };
+    let mut best: Option<(f64, usize, Id)> = None;
+    for (i, &sid) in pc.loft.sids.iter().enumerate() {
+        let Some(si) = pc.project.sketch_index(sid) else { continue };
+        if let Some((depth, cid)) = qymcad_ui_state::contour_under_3d_depth(&*pc.project, &scr, pos, si) {
+            if best.is_none_or(|(bd, _, _)| depth < bd) {
+                best = Some((depth, i, cid));
+            }
+        }
+    }
+    match best {
+        Some((_, i, cid)) => {
+            if i < pc.loft.cids.len() {
+                pc.loft.cids[i] = cid;
+            }
+            if let Some(slot) = pc.picking.contour() {
+                if slot == qymcad_ui_state::ContourSlot::LoftSection(i) {
+                    pc.picking.clear();
+                }
+            }
+            *pc.status = if pc.cmd.edit.is_some() { qymcad_i18n::tr("msg-edit-feature") } else { qymcad_i18n::tr("sk-contour-picked") };
         }
         None => *pc.status = qymcad_i18n::tr("sk-miss-contour"),
     }

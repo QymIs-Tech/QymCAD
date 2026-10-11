@@ -12994,28 +12994,55 @@ pub fn contour_under_2d(project: &Project, view: &View2d, rect: Rect, screen: Po
 }
 
 /// The closed contour of sketch `si` under a screen point of the 3D view: each contour lifted into the world by the
-/// sketch's frame - as the command's arrow is - and laid onto the screen; the smaller area wins, as on the sheet.
+/// sketch's frame - as the command's arrow is - and laid onto the screen; the nearest polyline wins, then smaller area.
 pub fn contour_under_3d(project: &Project, scr: &Screen, screen: Pos2, si: usize) -> Option<Id> {
+    contour_under_3d_depth(project, scr, screen, si).map(|(_, id)| id)
+}
+
+/// The closed contour of sketch `si` under a screen point of the 3D view, along with its average depth.
+pub fn contour_under_3d_depth(project: &Project, scr: &Screen, screen: Pos2, si: usize) -> Option<(f64, Id)> {
     let frame = project.sketch_frame(si)?;
-    let mut best: Option<(f64, Id)> = None;
+    let seg_d = |p: Pos2, a: Pos2, b: Pos2| -> f32 {
+        let ab = b - a;
+        let l2 = ab.length_sq();
+        let t = if l2 <= 1e-6 { 0.0 } else { ((p - a).dot(ab) / l2).clamp(0.0, 1.0) };
+        (p - (a + ab * t)).length()
+    };
+    let mut inside: Option<(f64, f64, Id)> = None; // (area, depth, id)
+    let mut near: Option<(f32, f64, Id)> = None; // (distance, depth, id)
     for cid in sketch_closed_contours(project, si) {
         let Some(ci) = project.contour_index(cid) else { continue };
+        let mut depths = Vec::new();
         let pts: Vec<Pos2> = project.contours[ci]
             .points
             .iter()
             .map(|p| {
                 let w = frame.lift(*p);
-                scr.at([w.x, w.y, w.z]).0
+                let (pt, d) = scr.at([w.x, w.y, w.z]);
+                depths.push(d);
+                pt
             })
             .collect();
-        if pts.len() >= 3 && point_in_poly(screen, &pts) {
+        if pts.len() < 3 {
+            continue;
+        }
+        let avg_depth = depths.iter().sum::<f64>() / depths.len() as f64;
+        if point_in_poly(screen, &pts) {
             let area = poly_area(&pts);
-            if best.is_none_or(|(ba, _)| area < ba) {
-                best = Some((area, cid));
+            if inside.is_none_or(|(ba, _, _)| area < ba) {
+                inside = Some((area, avg_depth, cid));
             }
         }
+        let n = pts.len();
+        let mut d = f32::INFINITY;
+        for k in 0..n {
+            d = d.min(seg_d(screen, pts[k], pts[(k + 1) % n]));
+        }
+        if d < 8.0 && near.is_none_or(|(bd, _, _)| d < bd) {
+            near = Some((d, avg_depth, cid));
+        }
     }
-    best.map(|(_, id)| id)
+    near.map(|(_, depth, id)| (depth, id)).or(inside.map(|(_, depth, id)| (depth, id)))
 }
 
 /// The geometry of the active sketch, for snapping: segments and circles (arcs count as circles).
@@ -13337,9 +13364,8 @@ pub fn sketch_closed_contours(project: &qymcad_core::model::Project, si: usize) 
 }
 
 /// The contour under the cursor among the slot's CANDIDATES (for the half-sketcher of a sweep or a
-/// loft). A closed one with the cursor inside wins (the smaller area is the nearer); otherwise the
-/// NEAREST polyline within the threshold, which is how an OPEN path gets caught, since point-in-polygon
-/// will not take it. `cands` holds the slot's candidate contours.
+/// loft). A polyline within the threshold wins (the nearest edge); otherwise a closed one with the
+/// cursor inside (the smaller area is the nearer). `cands` holds the slot's candidate contours.
 pub fn slot_contour_under_2d(pick: &PickCtx, rect: Rect, screen: Pos2, cands: &[Id]) -> Option<Id> {
     let seg_d = |p: Pos2, a: Pos2, b: Pos2| -> f32 {
         let ab = b - a;
@@ -13372,7 +13398,7 @@ pub fn slot_contour_under_2d(pick: &PickCtx, rect: Rect, screen: Pos2, cands: &[
             near = Some((d, cid));
         }
     }
-    inside.map(|(_, id)| id).or(near.map(|(_, id)| id))
+    near.map(|(_, id)| id).or(inside.map(|(_, id)| id))
 }
 
 /// Apply an edit operation to the selection. Returns true when it was applied.
