@@ -58,7 +58,7 @@ impl App {
         power_trim_drag(&mut self.sketch_ctx(), resp, rect); // trimming by dragging (the trim tool)
         qymcad_ui_state::pan_sheet_2d(&mut self.viewing.view, ctx, resp, self.set.mouse_nav);
         if scroll != 0.0 && resp.contains_pointer() {
-            qymcad_ui_state::wheel_zoom_2d(&mut self.viewing.view, &self.set, rect, resp.hover_pos(), scroll);
+            qymcad_ui_state::wheel_zoom_2d(&mut self.viewing.view, &self.set, rect, crate::gui::viewport_pointer(ctx, rect), scroll);
         }
         // A CLICK IN A SKETCH: a drawing tool, placing a dimension, or picking geometry
         sketch_click(&mut self.sketch_ctx(), ctx, resp, rect);
