@@ -777,6 +777,104 @@ pub struct MeshFace {
     pub id: u32,
 }
 
+/// One straight silhouette piece: its ends in the frame the mesh stands in. A named struct rather than
+/// a pair of points: a pair travels nameless and the reader counts commas.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SilhouetteSeg {
+    /// The first end.
+    pub a: [f64; 3],
+    /// The second end.
+    pub b: [f64; 3],
+}
+
+/// A welded mesh corner: grid coordinates shared by coincident vertices. A seam duplicates its
+/// vertices (two coincident rows for its two sides), so corners weld by coordinates, not by index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct WeldPoint {
+    /// Grid steps from the origin.
+    x: i64,
+    /// Grid steps from the origin.
+    y: i64,
+    /// Grid steps from the origin.
+    z: i64,
+}
+
+/// A welded mesh edge: its ordered corners plus the triangles on its sides.
+#[derive(Clone, Debug)]
+struct WeldEdge {
+    /// The triangles on its sides, by mesh index.
+    tris: Vec<usize>,
+    /// The ends from the first triangle seen, in world numbers rather than grid steps.
+    ends: [[f64; 3]; 2],
+}
+
+/// SILHOUETTE SEGMENTS of a mesh as seen from `view`: mesh edges whose two triangles look opposite
+/// ways, one toward the viewer and one away. `view` points from the body toward the viewer and need
+/// not be a unit vector.
+///
+/// Triangle normals, not face normals: faces of one B-rep body need not share their rim vertices (a
+/// T-junction where 42 wall segments meet 40 cap segments), so face grouping cannot tell which edge
+/// belongs to whom. Adjacent triangles decide pairwise, on the spot.
+///
+/// Only strict opposites count: an edge against an edge-on triangle, inside one face, or on a mesh
+/// border is no silhouette. That is what keeps sharp box edges out of here - they come exact from
+/// hidden-line projection, and counting them twice would double every line of the sheet. Open-sheet
+/// borders come exact the same way, from their boundary wires.
+pub fn silhouette_segments(mesh: &Mesh, view: [f64; 3]) -> Vec<SilhouetteSeg> {
+    let vl = (view[0] * view[0] + view[1] * view[1] + view[2] * view[2]).sqrt();
+    if vl < 1e-12 || !vl.is_finite() {
+        return Vec::new();
+    }
+    let v = [view[0] / vl, view[1] / vl, view[2] / vl];
+    // Good triangles with their unit normals; degenerate ones cannot face anywhere and stay out.
+    let mut normal: Vec<Option<[f64; 3]>> = Vec::with_capacity(mesh.tris.len());
+    for (i, _) in mesh.tris.iter().enumerate() {
+        let (n, area, _) = mesh.tri_normal_area(i);
+        normal.push(if area > 1e-12 { Some(n) } else { None });
+    }
+    // The weld grid is relative: a quantum of 1e-9 of the mesh size welds only what duplicated
+    // computation split, an order below what the kernel resolves.
+    let mut bound = 1.0f64;
+    for vert in &mesh.verts {
+        bound = bound.max(vert.x.abs()).max(vert.y.abs()).max(vert.z.abs());
+    }
+    let quantum = bound * 1e-9;
+    let qi = |x: f64| (x / quantum).round() as i64;
+    let weld = |p: Point3| WeldPoint { x: qi(p.x), y: qi(p.y), z: qi(p.z) };
+    let mut edges: std::collections::HashMap<(WeldPoint, WeldPoint), WeldEdge> = std::collections::HashMap::new();
+    for (i, t) in mesh.tris.iter().enumerate() {
+        if normal[i].is_none() {
+            continue;
+        }
+        let (Some(p0), Some(p1), Some(p2)) = (mesh.verts.get(t[0] as usize), mesh.verts.get(t[1] as usize), mesh.verts.get(t[2] as usize)) else { continue };
+        for e in [(*p0, *p1), (*p1, *p2), (*p2, *p0)] {
+            let (wa, wb) = (weld(e.0), weld(e.1));
+            let (low, high) = if wa < wb { (wa, wb) } else { (wb, wa) };
+            let slot = edges.entry((low, high)).or_insert_with(|| WeldEdge { tris: Vec::new(), ends: [[e.0.x, e.0.y, e.0.z], [e.1.x, e.1.y, e.1.z]] });
+            slot.tris.push(i);
+        }
+    }
+    let facing = |n: [f64; 3]| n[0] * v[0] + n[1] * v[1] + n[2] * v[2];
+    let mut out = Vec::new();
+    for WeldEdge { mut tris, ends } in edges.into_values() {
+        tris.sort_unstable();
+        tris.dedup();
+        let draws = match tris.as_slice() {
+            [_] => false, // a border: open-sheet boundaries come exact from hidden-line projection
+            [f, g] => {
+                let (df, dg) = (facing(normal[*f].unwrap_or([0.0; 3])), facing(normal[*g].unwrap_or([0.0; 3])));
+                df > 1e-9 && dg < -1e-9 || df < -1e-9 && dg > 1e-9
+            }
+            _ => false,
+        };
+        if !draws {
+            continue;
+        }
+        out.push(SilhouetteSeg { a: ends[0], b: ends[1] });
+    }
+    out
+}
+
 /// WHAT THE KERNEL GIVES BACK FOR ONE NODE: the triangles of the body and the faces they are grouped into, each
 /// face carrying its persistent id.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1578,6 +1676,40 @@ pub fn triangulate_with_holes(outer: &[Point2], holes: &[Vec<Point2>]) -> Vec<[P
         }
     }
     out
+}
+
+#[cfg(test)]
+mod silhouette_tests {
+    use super::*;
+
+    /// A 90-degree ridge seen across its corner draws its shared edge and nothing else: the two
+    /// triangles look opposite ways, and their common edge is the outline between them. Open borders
+    /// draw exact from hidden-line projection, never from here.
+    #[test]
+    fn a_ridge_across_the_corner_draws_its_edge() {
+        let mesh = Mesh {
+            verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
+            tris: vec![[0, 1, 2], [0, 2, 3]],
+            ..Default::default()
+        };
+        let segs = silhouette_segments(&mesh, [1.0, -1.0, -1.0]);
+        assert_eq!(segs.len(), 1, "the shared edge alone: {segs:?}");
+        assert!(
+            (segs[0].a[1] - 0.0).abs() < 1e-12 && (segs[0].b[1] - 1.0).abs() < 1e-12 || (segs[0].a[1] - 1.0).abs() < 1e-12 && (segs[0].b[1] - 0.0).abs() < 1e-12,
+            "from (0,0,0) to (0,1,0): {segs:?}"
+        );
+
+        // Both triangles looking the same way: nothing at all.
+        let flat = Mesh {
+            verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            tris: vec![[0, 1, 2], [1, 3, 2]],
+            ..Default::default()
+        };
+        assert!(silhouette_segments(&flat, [0.0, 0.0, -1.0]).is_empty(), "nothing turns away");
+
+        // No direction to look from: nothing to draw rather than a guess.
+        assert!(silhouette_segments(&mesh, [0.0, 0.0, 0.0]).is_empty(), "a zero view draws nothing");
+    }
 }
 
 #[cfg(test)]

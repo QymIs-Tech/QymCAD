@@ -53,6 +53,10 @@ struct QymShape {
     _private: [u8; 0],
 }
 #[repr(C)]
+struct QymHlr {
+    _private: [u8; 0],
+}
+#[repr(C)]
 struct QymShapeList {
     _private: [u8; 0],
 }
@@ -106,6 +110,12 @@ extern "C" {
     fn qym_shape_face_cylinder(s: *const QymShape, fid: u32, origin: *mut c_double, dir: *mut c_double, radius: *mut c_double) -> i32;
     fn qym_shape_split_faces(s: *const QymShape, origin: *const c_double, normal: *const c_double) -> *mut QymShape;
     fn qym_shape_split_by_plane(s: *const QymShape, origin: *const c_double, normal: *const c_double, section: u32) -> *mut QymShapeList;
+    fn qym_shape_hlr(s: *const QymShape, dir: *const c_double) -> *mut QymHlr;
+    fn qym_hlr_count(h: *const QymHlr) -> usize;
+    fn qym_hlr_visible(h: *const QymHlr, i: usize) -> i32;
+    fn qym_hlr_points(h: *const QymHlr, i: usize) -> usize;
+    fn qym_hlr_copy(h: *const QymHlr, i: usize, pts_out: *mut c_double);
+    fn qym_hlr_free(h: *mut QymHlr);
     fn qym_shape_draft(
         s: *const QymShape,
         idx: *const u32,
@@ -313,6 +323,16 @@ pub struct EdgeInfo {
 /// bodies, whatever built them — an extrusion, a revolve or a STEP import.
 pub struct Shape {
     ptr: *mut QymShape,
+}
+
+/// One outline from a hidden-line projection: its points in 3D and whether it is visible from the view
+/// direction. A group of values travelling together, with named fields.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HlrPoly {
+    /// Seen from the view direction, rather than hidden behind the body.
+    pub visible: bool,
+    /// The sampled edge, corners on the curve.
+    pub points: Vec<[f64; 3]>,
 }
 
 /// A HELICAL RIB OR GROOVE, as the kernel needs it: where the helix runs, what is swept along it, and
@@ -1328,6 +1348,38 @@ impl Shape {
             }
             qym_shapelist_free(l);
             (out.len() >= 2).then_some(out)
+        }
+    }
+
+    /// Hidden-line projection of the body seen along `dir`: the outlines a drawing sheet shows, visible
+    /// and hidden, as 3D polylines. The sheet projects them onto its plane itself; exact HLR, not the
+    /// tessellated kind, so a dimension off these lines meets the body.
+    ///
+    /// Takes the kernel gate for the computation: OCCT keeps shared state without protection, so two
+    /// projections at once corrupt each other. Do not call while holding the gate (it does not re-enter).
+    ///
+    /// `None` when the direction is missing, zero or not finite, or the computation did not run: better
+    /// an honest refusal than outlines of nothing.
+    pub fn hlr(&self, dir: [f64; 3]) -> Option<Vec<HlrPoly>> {
+        if !dir.iter().all(|v| v.is_finite()) || dir.iter().all(|v| *v == 0.0) {
+            return None;
+        }
+        let _gate = crate::kernel_gate();
+        unsafe {
+            let h = qym_shape_hlr(self.ptr, dir.as_ptr());
+            if h.is_null() {
+                return None;
+            }
+            let n = qym_hlr_count(h);
+            let mut out = Vec::with_capacity(n);
+            for i in 0..n {
+                let m = qym_hlr_points(h, i);
+                let mut pts = vec![[0.0; 3]; m];
+                qym_hlr_copy(h, i, pts.as_mut_ptr() as *mut c_double);
+                out.push(HlrPoly { visible: qym_hlr_visible(h, i) != 0, points: pts });
+            }
+            qym_hlr_free(h);
+            (!out.is_empty()).then_some(out)
         }
     }
 
