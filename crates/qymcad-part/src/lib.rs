@@ -6403,6 +6403,12 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                             bc.ask.push(qymcad_ui_state::BarAsk::RelationPick);
                         }
                     }
+                    // Reported behaviour (issue #45): the ruler stands in the Assembly toolbar too, not
+                    // only in a part - a pitch is measured between parts, where the parts stand. Its
+                    // icon is the assembly's own ruler, not the part's: tools do not share icons.
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyMeasure, &qymcad_i18n::tr("tb-measure3d-hint"), bc.m3.on) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::ToggleMeasure3d);
+                    }
                 }
             }
         });

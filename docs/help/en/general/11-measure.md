@@ -6,6 +6,7 @@ The tool is there both in a sketch and in 3D.
 
 - **In a sketch** — the **Measure a distance** button, two clicks: the distance between points.
 - **In 3D** — the **Measure in 3D** button (the ruler): click **vertices, edges and faces**, two elements at a time.
+  The ruler stands both in a part and in an assembly, so a pitch is measured between parts where they stand.
   **Esc** leaves.
 
 ## What the program works out
@@ -16,7 +17,10 @@ The answer depends on WHAT you clicked — there is no separate switch:
 |---|---|
 | two vertices | distance |
 | an edge | length |
-| a circle or a cylinder | diameter |
+| a circle | diameter |
+| a cylindrical face | diameter, length and side area |
+| a planar face | area and perimeter |
+| two holes | wall clearance, centre distance and its X, Y and Z parts |
 | two faces or two edges | the distance if they are parallel, otherwise the angle |
 
 If a pair has no meaningful distance — the faces are not parallel — the program says so rather than

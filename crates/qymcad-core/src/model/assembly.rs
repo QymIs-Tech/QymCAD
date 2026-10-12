@@ -2308,6 +2308,16 @@ impl Project {
         self.set_component_transform(moving, mat_mul12(&mat_inv12(&parent), &mat_mul12(&turn, &world)));
     }
 
+    /// THE MESH TRIANGLES OF ONE FACE: the mesh of the body and the indexes of the face's triangles
+    /// in it. `None` when the face record or the mesh is missing: a face with nothing behind it measures
+    /// nothing, and the caller says so rather than showing a zero.
+    pub fn face_tris(&self, body: Id, fid: u32) -> Option<(&crate::geom::Mesh, &[u32])> {
+        let faces = self.regen_faces.get(&body)?;
+        let f = faces.iter().find(|f| f.id == fid)?;
+        let mesh = self.mesh_index(body).map(|i| &self.bodies[i].mesh)?;
+        Some((mesh, &f.triangles))
+    }
+
     /// A cylindrical face in full: a point on the axis, the axis, and the radius.
     ///
     /// `face_axis` supplies no radius, while the radius is what tangency is about — the distance to the plane

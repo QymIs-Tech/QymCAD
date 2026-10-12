@@ -9,7 +9,7 @@ pub(crate) use qymcad_ui_state::measure_text;
 use super::{App, Id};
 use egui::{Pos2, Rect};
 use qymcad_core::feature::{apply12, apply12_dir};
-use qymcad_core::measure::{MeasureItem};
+use qymcad_core::measure::{boundary_len, span_along, tris_area, CylSize, FaceSize, MeasureItem};
 
 impl App {
     /// THE RESULT TEXT — the only place where the numbers turn into a string (the status line and the
@@ -127,17 +127,42 @@ impl App {
         let (body, fid, hit) = crate::gui::pick::pick_face_ray(&self.painting(), rect, pos)?;
         let ctx = qymcad_ui_state::current_ctx_id(&self.active_path, &self.project);
         let wt = self.project.body_display_transform(body, ctx);
-        // A CYLINDER is a kind of its own: on the wall of a hole one measures the diameter and the
-        // gap to that wall, not to an imaginary plane it does not have.
-        if let Some((o, ax, r)) = self.live.shapes.get(&body).and_then(|s| s.face_cylinder(fid)) {
-            let origin = apply12(&wt, o);
-            let axis = apply12_dir(&wt, ax);
-            return Some(MeasurePick { item: MeasureItem::Cylinder { origin, axis, r }, what: crate::i18n::tr1("m3-cylinder", "d", &crate::i18n::num(2.0 * r, 2)), at: hit });
-        }
-        let key = qymcad_core::feature::FaceKey { index: 0, centroid: [0.0; 3], normal: [0.0, 0.0, 1.0], id: fid };
-        let (c, n) = self.project.resolve_face(body, &key);
-        let origin = apply12(&wt, c);
-        let normal = apply12_dir(&wt, n);
-        Some(MeasurePick { item: MeasureItem::Plane { origin, normal }, what: crate::i18n::tr("m3-face"), at: hit })
+        let cyl = self.live.shapes.get(&body).and_then(|s| s.face_cylinder(fid));
+        Some(face_measure_pick(&self.project, cyl, body, fid, wt, hit))
     }
+}
+
+/// THE FACE UNDER THE CURSOR AS A MEASURED ELEMENT, in world coordinates: a cylinder for a round
+/// wall, a plane for anything else, each with its mesh-measured size where the face record is at
+/// hand. Beside the application rather than on it: resolving a pick needs no more of it than this.
+fn face_measure_pick(project: &qymcad_core::model::Project, cyl: Option<([f64; 3], [f64; 3], f64)>, body: Id, fid: u32, wt: [f64; 12], hit: [f64; 3]) -> MeasurePick {
+    // A CYLINDER is a kind of its own: on the wall of a hole one measures the diameter and the
+    // gap to that wall, not to an imaginary plane it does not have.
+    if let Some((o, ax, r)) = cyl {
+        let origin = apply12(&wt, o);
+        let axis = apply12_dir(&wt, ax);
+        return MeasurePick {
+            item: MeasureItem::Cylinder { origin, axis, r, size: cyl_face_size(project, body, fid, ax) },
+            what: crate::i18n::tr1("m3-cylinder", "d", &crate::i18n::num(2.0 * r, 2)),
+            at: hit,
+        };
+    }
+    let key = qymcad_core::feature::FaceKey { index: 0, centroid: [0.0; 3], normal: [0.0, 0.0, 1.0], id: fid };
+    let (c, n) = project.resolve_face(body, &key);
+    let origin = apply12(&wt, c);
+    let normal = apply12_dir(&wt, n);
+    MeasurePick { item: MeasureItem::Plane { origin, normal, size: plane_face_size(project, body, fid) }, what: crate::i18n::tr("m3-face"), at: hit }
+}
+
+/// THE SIZE OF A PLANAR FACE FOR THE RULER: its area and the length of its boundary, from the face's
+/// own mesh triangles. None when the face record is missing: a face with nothing behind it measures
+/// what it always did rather than a zero.
+fn plane_face_size(project: &qymcad_core::model::Project, body: Id, fid: u32) -> Option<FaceSize> {
+    project.face_tris(body, fid).map(|(m, t)| FaceSize { area: tris_area(m, t), perimeter: boundary_len(m, t) }).filter(|s| s.area > 0.0 && s.perimeter > 0.0)
+}
+
+/// THE SIZE OF A CYLINDRICAL FACE FOR THE RULER: its length along `axis` and its side area, from the
+/// face's own mesh triangles. None under the same honesty rule as [`plane_face_size`].
+fn cyl_face_size(project: &qymcad_core::model::Project, body: Id, fid: u32, axis: [f64; 3]) -> Option<CylSize> {
+    project.face_tris(body, fid).map(|(m, t)| CylSize { len: span_along(m, t, axis), area: tris_area(m, t) }).filter(|s| s.len > 0.0 && s.area > 0.0)
 }

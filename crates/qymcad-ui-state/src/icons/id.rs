@@ -117,6 +117,7 @@ pub enum IconId {
     AssemblyArrayCircular,
     AssemblyMirror,
     AssemblySection,
+    AssemblyMeasure,
 }
 
 /// A built-in icon theme bundled into the application executable.

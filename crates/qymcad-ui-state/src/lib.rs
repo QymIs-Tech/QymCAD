@@ -10293,9 +10293,14 @@ pub fn measure_text(pn: &Painting) -> String {
     let Some(r) = measure_result(pn.m3) else { return qymcad_i18n::tr("m3-hint-short") };
     let names: Vec<&str> = pn.m3.picks.iter().map(|p| p.what.as_str()).collect();
     let mut parts: Vec<String> = Vec::new();
-    if let Some((label, v)) = r.value {
-        // the label is a code of the catalogue (`m3-length`) or a sign (`Ø`): translated where it is a code
-        parts.push(qymcad_i18n::tr2("m3-value-mm", "label", &qymcad_i18n::name(label), "v", &qymcad_i18n::num(v, 3)));
+    for (label, v) in r.values {
+        // the label is a code of the catalogue (`m3-length`) or a sign (`Ø`): translated where it is a code.
+        // An area reads in square millimetres, every other size in millimetres.
+        if label == "m3-area" {
+            parts.push(qymcad_i18n::tr2("m3-value-mm2", "label", &qymcad_i18n::name(label), "v", &qymcad_i18n::num(v, 3)));
+        } else {
+            parts.push(qymcad_i18n::tr2("m3-value-mm", "label", &qymcad_i18n::name(label), "v", &qymcad_i18n::num(v, 3)));
+        }
     }
     if let Some(d) = r.distance {
         parts.push(qymcad_i18n::tr1("m3-distance", "v", &qymcad_i18n::num(d, 3)));
