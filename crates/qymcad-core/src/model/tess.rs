@@ -510,12 +510,26 @@ impl Welded {
     }
 
     fn cell(&self, p: (f64, f64)) -> (i64, i64) {
-        ((p.0 / self.reach).floor() as i64, (p.1 / self.reach).floor() as i64)
+        // Reported behaviour: a coordinate past about 9.2e14 mm floored and cast to i64 saturates at
+        // i64::MAX, and cx - 1..=cx + 1 then overflows in debug or wraps empty in release, so the end
+        // is not welded. Clamp the quotient to 4e12 cells (4e8 mm at 1e-4 reach, 1000x past any table)
+        // so the neighbour range stays computable and far points weld as the linear search did.
+        const CELL_MAX: f64 = 4e12;
+        let raw = [(p.0 / self.reach).floor(), (p.1 / self.reach).floor()];
+        let clamp = |v: f64| {
+            if !v.is_finite() {
+                0
+            } else {
+                v.clamp(-CELL_MAX, CELL_MAX) as i64
+            }
+        };
+        (clamp(raw[0]), clamp(raw[1]))
     }
 
     pub(super) fn weld(&mut self, p: (f64, f64), near: impl Fn((f64, f64), (f64, f64)) -> bool) -> usize {
         let (cx, cy) = self.cell(p);
-        let found = (cx - 1..=cx + 1).flat_map(|x| (cy - 1..=cy + 1).map(move |y| (x, y))).filter_map(|c| self.cells.get(&c)).flatten().copied().filter(|&k| near(self.at[k], p)).min();
+        let xr = cx.saturating_sub(1)..=cx.saturating_add(1);
+        let found = xr.flat_map(|x| (cy.saturating_sub(1)..=cy.saturating_add(1)).map(move |y| (x, y))).filter_map(|c| self.cells.get(&c)).flatten().copied().filter(|&k| near(self.at[k], p)).min();
         if let Some(k) = found {
             return k;
         }

@@ -2678,7 +2678,7 @@ impl Project {
         let (vx, vy) = ((o2x - px) / l2, (o2y - py) / l2);
         let cosang = (ux * vx + uy * vy).clamp(-1.0, 1.0);
         let theta = cosang.acos();
-        if theta < 1e-3 || theta > std::f64::consts::PI - 1e-3 {
+        if !(1e-3..=std::f64::consts::PI - 1e-3).contains(&theta) {
             return false;
         }
         let half = theta / 2.0;
@@ -2774,7 +2774,7 @@ impl Project {
         let (vx, vy) = ((bx - px) / lb, (by - py) / lb);
         let cos = (ux * vx + uy * vy).clamp(-1.0, 1.0);
         let theta = cos.acos();
-        if theta < 1e-3 || theta > std::f64::consts::PI - 1e-3 {
+        if !(1e-3..=std::f64::consts::PI - 1e-3).contains(&theta) {
             return false; // Collinear: there is no corner to fillet.
         }
         let half = theta / 2.0;
@@ -5076,6 +5076,17 @@ impl Project {
         // what makes the chain connected and closable.
         let mut cache = ImportPoints { welded: super::tess::Welded::new(IMPORT_WELD), ids: Vec::new() };
         for e in &curves {
+            // Reported behaviour: a file coordinate of inf or past 1e15 either panics the weld grid
+            // in debug or leaves the end unwelded in release. A non-finite point cannot be drawn, so
+            // the curve carrying it is left out before any point is interned.
+            let ok = match *e {
+                ProfEdge::Line { a, b } => a.x.is_finite() && a.y.is_finite() && b.x.is_finite() && b.y.is_finite(),
+                ProfEdge::Arc { a, b, center, .. } => a.x.is_finite() && a.y.is_finite() && b.x.is_finite() && b.y.is_finite() && center.x.is_finite() && center.y.is_finite(),
+                ProfEdge::Circle { center, r } => center.x.is_finite() && center.y.is_finite() && r.is_finite() && r > 0.0,
+            };
+            if !ok {
+                continue;
+            }
             match *e {
                 ProfEdge::Line { a, b } => {
                     let (ai, bi) = (self.import_intern_pt(si, &mut cache, a.x, a.y), self.import_intern_pt(si, &mut cache, b.x, b.y));
