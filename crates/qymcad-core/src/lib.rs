@@ -5,6 +5,7 @@
 
 pub mod asm;
 mod doc_file;
+pub mod drawing;
 pub mod drivers;
 pub mod errors;
 pub mod expr;

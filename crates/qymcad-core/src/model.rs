@@ -288,6 +288,11 @@ pub struct Project {
     /// bundle separately (`sources/<id>.<ext>`), not in `document.ron`.
     #[serde(default)]
     pub sources: Vec<SourceFile>,
+    /// Drawing sheets: 2D documentation derived from the model (see `drawing`). Views store the id of the
+    /// component they show and project its live bodies on demand, so sheets follow model edits with no
+    /// rebuild of their own. Old files carry no sheets and open with none.
+    #[serde(default)]
+    pub sheets: Vec<crate::drawing::DrawingSheet>,
     /// Named project parameters (`w = 50`, `d = w/2`): parametric dimensions. Dimensional constraints can
     /// reference them from an expression.
     #[serde(default)]
@@ -4529,6 +4534,7 @@ impl Project {
             external_refs: _,
             named_dims: _,
             sources: _,
+            sheets: _,
             parameters: _,
             feat_dims: _,
             bodies: _,
@@ -4849,6 +4855,11 @@ impl Project {
         for s in &self.sources {
             let SourceFile { id, name, ext, data } = s;
             (id, name, ext, data.len()).hash(&mut h);
+        }
+        // Drawing sheets: saved documentation that builds nothing. A moved view or an added dimension
+        // asks to save and rebuilds nothing, like a moved sketch label.
+        if placement {
+            feed(&self.sheets, &mut h);
         }
         h.finish()
     }

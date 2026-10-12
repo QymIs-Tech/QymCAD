@@ -106,6 +106,9 @@ pub(crate) struct DocumentFile {
     pub named_dims: Vec<NamedDim>,
     #[serde(default)]
     pub sources: Vec<SourceFile>,
+    /// Drawing sheets (see `drawing`): views and dimensions by stable ids, following the model on demand.
+    #[serde(default)]
+    pub sheets: Vec<crate::drawing::DrawingSheet>,
     #[serde(default)]
     pub parameters: Vec<Param>,
     #[serde(default)]
@@ -165,6 +168,7 @@ impl DocumentFile {
             external_refs: p.external_refs.clone(),
             named_dims: p.named_dims.clone(),
             sources: p.sources.clone(),
+            sheets: p.sheets.clone(),
             parameters: p.parameters.clone(),
             feat_dims: p.feat_dims.iter().map(|(k, v)| (*k, v.iter().map(|(a, b)| (a.clone(), b.clone())).collect())).collect(),
             edge_refs: p.edge_refs.iter().map(|(k, v)| (*k, v.clone())).collect(),
@@ -205,6 +209,7 @@ impl DocumentFile {
             external_refs: self.external_refs,
             named_dims: self.named_dims,
             sources: self.sources,
+            sheets: self.sheets,
             parameters: self.parameters,
             feat_dims: self.feat_dims.into_iter().map(|(k, v)| (k, v.into_iter().collect())).collect(),
             edge_refs: self.edge_refs.into_iter().collect(),

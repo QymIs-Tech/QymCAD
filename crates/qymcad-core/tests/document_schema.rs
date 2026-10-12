@@ -13,6 +13,10 @@
 /// The field names of a struct, read from the source. A crude parse, but exact for the declaration style used
 /// here.
 fn fields_of(src: &str, decl: &str) -> Vec<String> {
+    // On a Windows checkout the sources end in CRLF, so `"\n}\n"` never matches and the window runs
+    // past the struct into every sub-struct below it, failing the guard on a clean tree. The parse
+    // runs on one line-ending.
+    let src = src.replace("\r\n", "\n");
     let a = src.find(decl).unwrap_or_else(|| panic!("the struct {decl} was not found"));
     let b = src[a..].find("\n}\n").map(|i| a + i).unwrap_or(src.len());
     let mut out = Vec::new();
