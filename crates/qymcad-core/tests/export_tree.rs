@@ -50,6 +50,25 @@ fn a_tree_goes_out_as_it_stands() {
     assert_eq!((tree[4].body, tree[4].place, tree[4].color), (Some(pin), moved(0.0, 0.0, 5.0), Some([26, 51, 230])));
 }
 
+/// A PART SPLIT INTO TWO BODIES GOES OUT WHOLE (#195). The export took `active_body` only, so a part of
+/// 2 bodies went out as 1 solid while the status counted 2. Every visible body of the part goes out as its
+/// own node: two extrusions with no boolean between them (the shape of split pieces) give two body nodes.
+#[test]
+fn a_part_of_two_bodies_goes_out_whole() {
+    use qymcad_core::geom::Point2;
+    let mut p = Project::default();
+    let _part = p.new_document();
+    for (name, x) in [("s1", 0.0), ("s2", 30.0)] {
+        let sid = p.add_line_sketch(name, vec![Point2::new(x, 0.0), Point2::new(x + 10.0, 0.0), Point2::new(x + 10.0, 10.0), Point2::new(x, 10.0)], true);
+        p.add_sketch_node(sid, name);
+        p.add_extrude(sid, 5.0);
+    }
+    let tree = p.export_tree(p.root, |_| true);
+    let bodies: Vec<_> = tree.iter().filter_map(|n| n.body).collect();
+    assert_eq!(bodies.len(), 2, "both bodies go out, not just the active one: {tree:?}");
+    assert!(tree.iter().all(|n| n.same_as.is_none()), "no silent repeat stands in for a missing body: {tree:?}");
+}
+
 /// A PART WITH NO SHAPE TO WRITE DOES NOT GO OUT, and a subassembly left empty by it goes with it.
 #[test]
 fn what_has_no_shape_does_not_go_out() {

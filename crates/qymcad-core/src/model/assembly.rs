@@ -360,14 +360,25 @@ impl Project {
         let at = out.len();
         if c.kind == ComponentKind::Part {
             let origin = self.instance_origin(id);
-            if let Some(&k) = written.get(&origin).filter(|_| origin != id) {
-                out.push(ExportNode { name: c.name.clone(), parent, place, body: None, same_as: Some(k), color: None, face_colors: Vec::new() });
-                return true;
+            // Reported behaviour: a part split into 2 bodies went out as 1 MANIFOLD_SOLID_BREP while
+            // the status said 2 bodies - `active_body` carries one body and the rest were dropped
+            // silently. Every visible body of the part goes out as its own node under one name.
+            let consumed = self.consumed_bodies();
+            let bodies: Vec<Id> = self.component_bodies(id).into_iter().filter(|b| !consumed.contains(b) && has_shape(*b)).collect();
+            if bodies.is_empty() {
+                return false;
             }
-            let Some(body) = self.active_body(id).filter(|b| has_shape(*b)) else { return false };
-            let color = self.mesh_index(body).map(|i| self.mesh_color(i));
-            let face_colors = self.face_colors.get(&self.lineage_root(body)).cloned().unwrap_or_default();
-            out.push(ExportNode { name: c.name.clone(), parent, place, body: Some(body), same_as: None, color, face_colors });
+            if bodies.len() == 1 {
+                if let Some(&k) = written.get(&origin).filter(|_| origin != id) {
+                    out.push(ExportNode { name: c.name.clone(), parent, place, body: None, same_as: Some(k), color: None, face_colors: Vec::new() });
+                    return true;
+                }
+            }
+            for body in bodies {
+                let color = self.mesh_index(body).map(|i| self.mesh_color(i));
+                let face_colors = self.face_colors.get(&self.lineage_root(body)).cloned().unwrap_or_default();
+                out.push(ExportNode { name: c.name.clone(), parent, place, body: Some(body), same_as: None, color, face_colors });
+            }
             if origin == id {
                 written.insert(id, at);
             }
