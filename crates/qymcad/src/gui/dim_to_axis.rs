@@ -30,6 +30,7 @@ mod tests {
     use super::super::hand::Hand;
     use super::super::{App, Sel};
     use qymcad_core::feature::SketchPlane;
+    use qymcad_core::model::SketchAxis;
 
     /// A sketch being edited, with one circle away from both axes.
     fn sketch_with_a_circle() -> (App, usize) {
@@ -97,7 +98,7 @@ mod tests {
     #[test]
     fn the_frame_anchor_cannot_be_dragged_away_from_zero() {
         let (mut app, si) = sketch_with_a_circle();
-        let (a, _) = app.project.ensure_axis(si, 0);
+        let (a, _) = app.project.ensure_axis(si, SketchAxis::X);
         assert_eq!(a, app.project.sketches[si].frame, "setup: the X axis does not stand on the anchor");
         assert_ne!(a, app.project.sketches[si].origin, "setup: the anchor and the origin are the same point again");
 
@@ -127,7 +128,7 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         // a circle centred exactly at zero, drawn by hand
         Hand::new(&mut app).sk_tool(3).click2d(0.0, 0.0).click2d(25.0, 0.0);
-        app.project.ensure_axis(si, 0); // as a dimension to the axis would
+        app.project.ensure_axis(si, SketchAxis::X); // as a dimension to the axis would
         app.project.regen_sketch(si);
         let centre = match app.project.sketches[si].entities.iter().find_map(|e| match e.kind {
             qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
@@ -170,8 +171,8 @@ mod tests {
     #[test]
     fn the_axis_guides_stay_where_the_frame_needs_them() {
         let (mut app, si) = sketch_with_a_circle();
-        let (_, gx) = app.project.ensure_axis(si, 0);
-        let (_, gy) = app.project.ensure_axis(si, 1);
+        let (_, gx) = app.project.ensure_axis(si, SketchAxis::X);
+        let (_, gy) = app.project.ensure_axis(si, SketchAxis::Y);
 
         canvas(&mut app).drag2d((1.0, 0.0), (25.0, 25.0));
         canvas(&mut app).drag2d((0.0, 1.0), (-25.0, 25.0));

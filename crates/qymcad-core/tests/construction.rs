@@ -1,6 +1,6 @@
 //! Construction geometry must not reach the profile of a contour.
 use qymcad_core::geom::Point2;
-use qymcad_core::model::Project;
+use qymcad_core::model::{Project, SketchAxis};
 
 #[test]
 fn construction_line_excluded_from_profile() {
@@ -29,8 +29,8 @@ fn delete_keeps_system_points() {
     let si = p.new_sketch("s");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     p.ensure_origin(si);
-    p.ensure_axis(si, 0);
-    p.ensure_axis(si, 1);
+    p.ensure_axis(si, SketchAxis::X);
+    p.ensure_axis(si, SketchAxis::Y);
     let origin = p.sketches[si].origin;
     let axes = p.sketches[si].axis_pts;
     // THE ANCHOR OF THE FRAME is a system point too: the axes stand on it rather than on the origin, so
