@@ -32,10 +32,9 @@ fn close_the_program(s: Session) -> qymcad::Kept {
     }
 }
 
-/// The table of the keys, opened from the Help menu.
+/// The table of the keys, in Settings -> Keyboard.
 fn open_the_keys(s: &mut Session) {
-    let (help, keys) = (s.word("menu-help"), s.word("help-hotkeys"));
-    s.menu(&[&help, &keys]);
+    open_at(s, "settings-sec-keyboard");
 }
 
 /// WHERE THE KEY OF THE ACTION THAT READS `what` IS PRESSED: the button stands at the head of its row.
@@ -140,8 +139,8 @@ probe! {
         let waiting = s.word("hotkeys-press");
         assert!(s.shows(&waiting), "the key of {what:?} was clicked and the table does not wait for a new one; on screen: {:?}", s.words());
         s.key(Key::J); // a key no tool of this workbench holds
-        let title = s.word("hotkeys-title");
-        s.close_window(&title);
+        s.key(Key::Enter); // the key is one press: Enter saves it rather than waiting for a second
+        close_the_settings(&mut s);
         s.key(Key::J);
         assert!(the_extrusion_is_in_hand(&mut s), "the extrusion was put on J and J does not take it: the bar says {:?}", s.in_hand());
         // the Esc ladder: the first takes the focus out of the length field, the next puts the command down
@@ -158,7 +157,7 @@ probe! {
         open_the_keys(&mut s);
         let reset = s.word("hotkeys-reset-all");
         s.press_word(&reset);
-        s.close_window(&title);
+        close_the_settings(&mut s);
         s.key(Key::E);
         assert!(the_extrusion_is_in_hand(&mut s), "every key was put back and E does not take the extrusion: the bar says {:?}", s.in_hand());
     }
@@ -182,7 +181,7 @@ fn waiting_for_a_key(s: &mut Session) -> String {
 /// WHAT THE TABLE SAYS about the key just pressed. The answer stands under the row that waits, so it is read
 /// where the row is: scrolling the table down takes it off the screen.
 fn what_the_table_says(s: &mut Session) -> Vec<String> {
-    let title = s.word("hotkeys-title");
+    let title = s.word("settings-hotkeys");
     assert!(s.shows(&title), "the table of the keys is not open; on screen: {:?}", s.words());
     s.words()
 }
@@ -194,14 +193,14 @@ probe! {
         let mut s = Session::start();
         let _ = waiting_for_a_key(&mut s);
         s.key(Key::H); // the shell's key in this workbench
+        s.key(Key::Enter); // the key is one press: Enter ends it and asks about the clash
         let said = what_the_table_says(&mut s);
         let line = s.word("hotkeys-taken").replace("{ $key }", "H").replace("{$key}", "H");
         let head = line.split(['{', ':']).next().unwrap_or(&line).trim().to_string();
         assert!(said.iter().any(|w| w.contains(&head)), "H is taken by another tool and the table says nothing of {head:?}; on screen: {said:?}");
         let swap = s.word("hotkeys-swap");
         s.press_word(&swap);
-        let title = s.word("hotkeys-title");
-        s.close_window(&title);
+        close_the_settings(&mut s);
         s.key(Key::H);
         assert!(the_extrusion_is_in_hand(&mut s), "the extrusion was swapped onto H and H does not take it: the bar says {:?}", s.in_hand());
     }

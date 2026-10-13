@@ -1,4 +1,4 @@
-//! THE HOTKEY REFERENCE — the single source for the Help -> Hotkeys window.
+//! THE HOTKEY REFERENCE — the single source for the table in Settings -> Keyboard.
 //!
 //! There are more than sixty keys in the application, and they lived ONLY in the tooltips of the
 //! buttons: the only way to learn them was to hover the mouse over every one. A list typed apart from
@@ -7,7 +7,6 @@
 //! `part_hotkey`/`sketch_hotkey`/`assembly_hotkey` and is not in the table (or the other way round) and
 //! the test is red.
 pub(crate) use qymcad_ui_state::{HotkeyRow, HOTKEYS};
-use super::App;
 use egui_phosphor::regular as ph;
 use crate::gui::WinKind;
 
@@ -34,143 +33,120 @@ pub(crate) fn rebindable(area: &str) -> bool {
     area != "general"
 }
 
-impl App {
-    /// The Help -> Hotkeys window: the door that builds the narrow context and hands it to the free function below.
-    pub(super) fn hotkeys_window(&mut self, ctx: &egui::Context) {
-        let mut asks = Vec::new();
-        hotkeys_window(&mut self.win_ctx(&mut asks), ctx);
-        self.do_win_asks(asks, ctx);
-    }
+/// THE TABLE OF KEYS, the body of Settings -> Keyboard. A reference that can be edited: every key of a workbench is
+/// a button, pressing it puts the table into waiting, and the next presses - keys or chords - are recorded.
+///
+/// Laid out for the question people bring to it, "what is the key for X": a filter on top, the areas below, and in
+/// every row the key and what it does. Everything that is not the factory layout is marked, and each mark has its
+/// own way back. No scroll of its own: the settings section around it scrolls, and a scroll inside a scroll takes
+/// the wheel from the outer one.
+pub(crate) fn hotkeys_table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context) {
+    // THE ROOM OF THE SCROLL BAR is left free: the settings scroll floats its bar over the right edge of what it
+    // holds and takes the clicks there, and the clear icon of the filter and the reset icons of the rows stand at
+    // that edge. Measured: the bar took x 751..761 of a section ending at 761, and a click on the clear icon at
+    // 751.5 went to the bar.
+    // A child of its own, since a ui is never narrowed below what it already holds and the hint above the table
+    // spans the whole section.
+    let bar = ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_outer_margin;
+    let width = ui.available_width() - bar;
+    ui.vertical(|ui| {
+        ui.set_max_width(width);
+        table(wc, ui, ctx);
+    });
 }
 
-/// THE HOTKEY WINDOW. A reference that can be edited: every key of a workbench is a button, pressing it puts
-/// the window into waiting, and the next press - a key or a Ctrl/Shift chord - is recorded.
-///
-/// Laid out for the question people bring to it, "what is the key for X": a filter on top, the sections
-/// below, and in every row the key and what it does. Everything that is not the
-/// factory layout is marked, and each mark has its own way back.
-pub(crate) fn hotkeys_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
-    if !wc.win.is(WinKind::Hotkeys) {
-        return;
-    }
-    let mut open = true;
-    // ONE WIDTH, AS TALL AS A PERSON DRAGS IT: dragging the width only ever showed empty space or cut the
-    // descriptions, while the height is what decides how much of the table is seen at once. The width is fixed rather
-    // than taken from the longest text: a long description or message wraps onto the next line instead of
-    // stretching the window.
-    //
-    // THE WIDTH IS THE WINDOW'S, and everything inside takes what it leaves: the title bar and the body share the
-    // window's width, and content given a width of its own - 540 pt inside margins the window keeps - stood wider than
-    // the title bar. Held by min and max because egui keeps a window's size between runs and only ever grows it to
-    // the content: a width saved while the window could still be dragged wider came back at every start. The saved
-    // height, the one a person drags, is kept.
-    egui::Window::new(crate::i18n::tr("hotkeys-title")).id(egui::Id::new("win_hotkeys")).open(&mut open).resizable([false, true]).default_height(520.0).min_width(WINDOW_W).max_width(WINDOW_W).show(
-        ctx,
-        |ui| {
-            ui.vertical(|ui| {
-                // laid out from the right: the reset button takes what it needs, the filter the rest - no guessed width.
-                // Inside a one-row `horizontal`: a right-to-left layout of its own would take the whole remaining height
-                // and centre the row in it.
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if !wc.set.hotkeys.is_empty() && ui.button(crate::i18n::tr("hotkeys-reset-all")).clicked() {
-                            wc.set.hotkeys.clear();
-                            settle(wc.hotkeys);
-                        }
-                        let glass = ui.fonts_mut(|f| f.layout_no_wrap(ph::MAGNIFYING_GLASS.to_string(), egui::TextStyle::Body.resolve(ui.style()), egui::Color32::WHITE).size().x);
-                        // THE WHOLE FIELD, margins included: `desired_width` is the width of the text alone, and the field's
-                        // own margins on top of it pushed the row, and the body with it, past the title bar
-                        let field = (ui.available_width() - glass - ui.spacing().item_spacing.x).max(60.0);
-                        let side = ui.spacing().interact_size.y;
-                        // the right margin keeps the text clear of the clear icon drawn over the field's right end, and is
-                        // kept while the field is empty too, so the text does not move when the icon appears
-                        let edit = egui::TextEdit::singleline(&mut wc.hotkeys.filter).hint_text(crate::i18n::tr("hotkeys-filter-hint")).margin(egui::Margin {
-                            left: 4,
-                            right: 4 + side as i8,
-                            top: 2,
-                            bottom: 2,
-                        });
-                        let resp = ui.add_sized([field, side], edit);
-                        filter_clear(ui, &resp, &mut wc.hotkeys.filter);
-                        ui.label(ph::MAGNIFYING_GLASS);
-                    });
+/// The filter, the areas and the notes, in the width `hotkeys_table` leaves them.
+fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context) {
+    // laid out from the right: the reset button takes what it needs, the filter the rest - no guessed width.
+    // Inside a one-row `horizontal`: a right-to-left layout of its own would take the whole remaining height
+    // and centre the row in it.
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if !wc.set.hotkeys.is_empty() && ui.button(crate::i18n::tr("hotkeys-reset-all")).clicked() {
+                wc.set.hotkeys.clear();
+                settle(wc.hotkeys);
+            }
+            let glass = ui.fonts_mut(|f| f.layout_no_wrap(ph::MAGNIFYING_GLASS.to_string(), egui::TextStyle::Body.resolve(ui.style()), egui::Color32::WHITE).size().x);
+            // THE WHOLE FIELD, margins included: `desired_width` is the width of the text alone, and the field's
+            // own margins on top of it pushed the row past the section
+            let field = (ui.available_width() - glass - ui.spacing().item_spacing.x).max(60.0);
+            let side = ui.spacing().interact_size.y;
+            // the right margin keeps the text clear of the clear icon drawn over the field's right end, and is
+            // kept while the field is empty too, so the text does not move when the icon appears
+            let edit = egui::TextEdit::singleline(&mut wc.hotkeys.filter).hint_text(crate::i18n::tr("hotkeys-filter-hint")).margin(egui::Margin { left: 4, right: 4 + side as i8, top: 2, bottom: 2 });
+            let resp = ui.add_sized([field, side], edit);
+            filter_clear(ui, &resp, &mut wc.hotkeys.filter);
+            ui.label(ph::MAGNIFYING_GLASS);
+        });
+    });
+    ui.separator();
+    let q = crate::i18n::search::query(&wc.hotkeys.filter);
+    let mut shown = 0;
+    let cols = columns(wc.set, ui, ui.available_width());
+    for area in AREAS {
+        let rows: Vec<&HotkeyRow> = HOTKEYS.iter().filter(|r| r.area == area && row_matches(wc.set, r, &q)).collect();
+        if rows.is_empty() {
+            continue;
+        }
+        shown += rows.len();
+        area_header(wc, ui, area);
+        egui::Grid::new(format!("hk_{area}")).num_columns(3).min_col_width(0.0).spacing([GRID_GAP, 4.0]).striped(true).show(ui, |ui| {
+            for r in rows {
+                key_cell(wc, ui, r, cols.key);
+                // A GRID CELL LAYS ITS CONTENT OUT LEFT TO RIGHT (the grid lives in a `horizontal`), so the
+                // lines under the description are stacked by an explicit `vertical`. Inside the row's own
+                // cell rather than a grid row of their own: an extra row shifted every row below it, and
+                // the grid sized each row from the height the previous frame had at that index.
+                // The `vertical` is the cell itself, not wrapped in a `scope`: a scope takes the whole cell
+                // at the previous frame's row height in the grid's centred layout, and a row that had just
+                // lost its waiting line stood 24 pt tall for one frame instead of 18, every row below 6 pt
+                // low.
+                ui.vertical(|ui| {
+                    ui.set_width(cols.what);
+                    ui.add(egui::Label::new(hotkey_what(r)).wrap());
+                    row_status(wc, ui, r.action);
                 });
-                ui.separator();
-                let q = crate::i18n::search::query(&wc.hotkeys.filter);
-                let mut shown = 0;
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    // measured inside the scroll area: whatever margin it keeps around its content is not the table's
-                    let cols = columns(wc.set, ui, ui.available_width());
-                    for area in AREAS {
-                        let rows: Vec<&HotkeyRow> = HOTKEYS.iter().filter(|r| r.area == area && row_matches(wc.set, r, &q)).collect();
-                        if rows.is_empty() {
-                            continue;
-                        }
-                        shown += rows.len();
-                        area_header(wc, ui, area);
-                        egui::Grid::new(format!("hk_{area}")).num_columns(3).min_col_width(0.0).spacing([GRID_GAP, 4.0]).striped(true).show(ui, |ui| {
-                            for r in rows {
-                                key_cell(wc, ui, r, cols.key);
-                                // A GRID CELL LAYS ITS CONTENT OUT LEFT TO RIGHT (the grid lives in a `horizontal`), so the
-                                // lines under the description are stacked by an explicit `vertical`. Inside the row's own
-                                // cell rather than a grid row of their own: an extra row shifted every row below it, and
-                                // the grid sized each row from the height the previous frame had at that index.
-                                // The `vertical` is the cell itself, not wrapped in a `scope`: a scope takes the whole cell
-                                // at the previous frame's row height in the grid's centred layout, and a row that had just
-                                // lost its waiting line stood 24 pt tall for one frame instead of 18, every row below 6 pt
-                                // low.
-                                ui.vertical(|ui| {
-                                    ui.set_width(cols.what);
-                                    ui.add(egui::Label::new(hotkey_what(r)).wrap());
-                                    row_status(wc, ui, r.action);
-                                });
-                                row_tools(wc, ui, r);
-                                ui.end_row();
-                            }
-                        });
-                        ui.add_space(10.0);
-                    }
-                    if shown == 0 {
-                        ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr1("hotkeys-nothing", "q", wc.hotkeys.filter.trim())).weak()).wrap());
-                    }
-                    ui.separator();
-                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
-                    // THE FOCUS RULE GOES HERE AND NOT ONLY IN THE HELP. A caret in a field extinguishes
-                    // bare letters (otherwise `w` in an expression would launch a command), and Alt is the
-                    // only way to reach a tool from there. Not saying so in the hotkey reference means
-                    // hiding half the rule: U is pressed in the length field, nothing happens, and the
-                    // conclusion drawn is about the program.
-                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
-                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
-                });
-            });
-        },
-    );
-    if !open {
-        // closing the window drops whatever it was in the middle of: a later press must not land in it
-        settle(wc.hotkeys);
+                row_tools(wc, ui, r);
+                ui.end_row();
+            }
+        });
+        ui.add_space(10.0);
     }
-    wc.win.set(WinKind::Hotkeys, open);
+    if shown == 0 {
+        ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr1("hotkeys-nothing", "q", wc.hotkeys.filter.trim())).weak()).wrap());
+    }
+    ui.separator();
+    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
+    // THE FOCUS RULE GOES HERE AND NOT ONLY IN THE HELP. A caret in a field extinguishes
+    // bare letters (otherwise `w` in an expression would launch a command), and Alt is the
+    // only way to reach a tool from there. Not saying so in the hotkey reference means
+    // hiding half the rule: U is pressed in the length field, nothing happens, and the
+    // conclusion drawn is about the program.
+    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
+    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
     capture_hotkey(wc, ctx);
 }
 
-/// WHETHER THE KEYBOARD IS THE REFERENCE WINDOW'S this frame - asked before the cancel ladder, which runs before
-/// anything is drawn.
+/// THE TABLE IS LEFT: the settings closed, or another section chosen. Whatever it was in the middle of is dropped,
+/// so a later press does not land in a table no longer on screen.
+pub(crate) fn hotkeys_left(hk: &mut qymcad_ui_state::HotkeyCapture) {
+    settle(hk);
+}
+
+/// WHETHER THE KEYBOARD IS THE TABLE'S this frame - asked before the cancel ladder, which runs before anything is
+/// drawn.
 ///
-/// While the window waits for a key, every press is the name of a binding. Otherwise Esc, with no field holding
-/// the keyboard, steps back through the window: an open clash question is answered "keep as it was", and then
-/// the window closes. The key is taken, so the ladder does not also clear the selection behind the window.
-pub(crate) fn hotkeys_take_keyboard(win: &mut qymcad_ui_state::Windows, hk: &mut qymcad_ui_state::HotkeyCapture, ctx: &egui::Context) -> bool {
+/// While the table waits for a key, every press is the name of a binding. Otherwise Esc, with no field holding the
+/// keyboard, answers an open clash question "keep as it was"; the key is taken, so the ladder does not also clear
+/// the selection behind the settings.
+pub(crate) fn hotkeys_take_keyboard(win: &qymcad_ui_state::Windows, hk: &mut qymcad_ui_state::HotkeyCapture, ctx: &egui::Context) -> bool {
     if hk.action.is_some() {
         return true;
     }
-    if !win.is(WinKind::Hotkeys) || ctx.egui_wants_keyboard_input() || !ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+    if hk.clash.is_none() || !win.is(WinKind::Settings) || ctx.egui_wants_keyboard_input() || !ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
         return false;
     }
-    if hk.clash.take().is_none() {
-        win.set(WinKind::Hotkeys, false);
-        hk.note.clear();
-    }
+    hk.clash = None;
     true
 }
 
@@ -190,9 +166,6 @@ fn what_of(action: &str) -> String {
 
 /// The gap between the columns of the table.
 const GRID_GAP: f32 = 14.0;
-
-/// The width of the window, title bar and margins included.
-const WINDOW_W: f32 = 556.0;
 
 /// THE WIDTHS EVERY SECTION SHARES, fixed rather than left to each grid: the sections line up, and nothing that
 /// appears in a row - a reset icon, a clash under it - can widen a column a frame later.
@@ -306,9 +279,13 @@ fn key_cell(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, r: &HotkeyRow, 
     let changed = wc.set.hotkeys.contains_key(r.action);
     // A KEY THIS SYSTEM KEEPS, brought by a profile from another one: it does not run here (see `hotkey_action`),
     // and saying nothing would leave a key in the table that silently does nothing
-    let refused = qymcad_ui_state::Chord::parse(&qymcad_ui_state::hotkey_key(wc.set, r.action)).and_then(|c| qymcad_ui_state::hotkey_refusal(r.action, &c));
-    let text = if waiting {
+    let refused = qymcad_ui_state::KeySeq::parse(&qymcad_ui_state::hotkey_key(wc.set, r.action)).and_then(|k| qymcad_ui_state::hotkey_refusal(r.action, &k));
+    let recorded = wc.hotkeys.recorded.label();
+    let text = if waiting && recorded.is_empty() {
         egui::RichText::new(crate::i18n::tr("hotkeys-press")).italics()
+    } else if waiting {
+        // THE CHORDS RECORDED SO FAR, as they are pressed: the key being built is seen while it is built
+        egui::RichText::new(crate::i18n::tr1("hotkeys-seq-waiting", "keys", &recorded)).monospace().strong()
     } else if cur.is_empty() {
         egui::RichText::new(crate::i18n::tr("hotkeys-unbound")).italics().weak()
     } else if refused.is_some() {
@@ -319,7 +296,13 @@ fn key_cell(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, r: &HotkeyRow, 
     } else {
         egui::RichText::new(&cur).monospace().strong()
     };
-    let mut resp = ui.add(egui::Button::new(text).selected(waiting).min_size(egui::vec2(width, 0.0)));
+    // A KEY BEING RECORDED KEEPS TO ITS COLUMN, cut short rather than widening the table under the person's eyes
+    let mut resp = ui
+        .scope(|ui| {
+            ui.set_max_width(width);
+            ui.add(egui::Button::new(text).selected(waiting).min_size(egui::vec2(width, 0.0)).truncate())
+        })
+        .inner;
     if let Some(why) = refused {
         resp = resp.on_hover_text(crate::i18n::tr(why));
     }
@@ -327,6 +310,7 @@ fn key_cell(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, r: &HotkeyRow, 
         wc.hotkeys.action = if waiting { None } else { Some(r.action.to_string()) };
         wc.hotkeys.note.clear();
         wc.hotkeys.clash = None;
+        wc.hotkeys.recorded = Default::default();
         // A FOCUSED BUTTON TAKES SPACE AND ENTER for a click: the press meant for the binding would
         // switch the waiting straight back off.
         resp.surrender_focus();
@@ -371,6 +355,7 @@ fn settle(hk: &mut qymcad_ui_state::HotkeyCapture) {
     hk.action = None;
     hk.clash = None;
     hk.note.clear();
+    hk.recorded = Default::default();
 }
 
 /// THE CLEAR ICON INSIDE THE FILTER FIELD, at its right end, while there is something to clear. Placed over the field
@@ -405,52 +390,62 @@ fn row_icon(ui: &mut egui::Ui, shown: bool, icon: &str) -> egui::Response {
     ui.add_visible(shown, egui::Button::new(icon).frame_when_inactive(false).min_size(egui::vec2(side, side)))
 }
 
-/// THE PRESS THAT ASSIGNS A KEY, while the window waits for one.
+/// THE PRESS THAT ASSIGNS A KEY, while the window waits for one - or for the next chord of it.
 fn capture_hotkey(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
     let Some(action) = wc.hotkeys.action.clone() else { return };
     let Some(area) = HOTKEYS.iter().find(|r| r.action == action).map(|r| r.area) else {
         wc.hotkeys.action = None;
         return;
     };
-    let (pressed, clipboard) = ctx.input(|i| {
+    let (pressed, clipboard, now) = ctx.input(|i| {
         let key = i.events.iter().find_map(|e| match e {
             // a modifier on its own is the start of a chord, not a press: the key that completes it may come in the same frame
-            egui::Event::Key { key, pressed: true, repeat: false, modifiers, .. } if !modifier_alone(*key) => Some((*key, *modifiers)),
+            egui::Event::Key { key, pressed: true, repeat: false, modifiers, .. } if !qymcad_ui_state::modifier_key(*key) => Some((*key, qymcad_ui_state::HeldKeys::of_event(i, *modifiers))),
             _ => None,
         });
         // egui turns Ctrl+C/X/V into clipboard events and the key itself never arrives
-        (key, i.events.iter().any(|e| matches!(e, egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_))))
+        (key, i.events.iter().any(|e| matches!(e, egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_))), i.time)
     });
     if clipboard {
         wc.hotkeys.note = crate::i18n::tr("hotkeys-reserved");
         return;
     }
-    let Some((key, mods)) = pressed else { return };
-    match capture_outcome(wc.set, area, &action, key, mods) {
-        Capture::Pending => return,
+    let recorded = wc.hotkeys.recorded.pressed.clone();
+    let outcome = match pressed {
+        Some((key, held)) => capture_outcome(wc.set, area, &action, &recorded, key, held),
+        // A PAUSE ENDS THE SEQUENCE: no Enter is needed for a key of one chord, as before sequences
+        None if !recorded.is_empty() && now - wc.hotkeys.recorded.at >= qymcad_ui_state::RECORD_WAIT => finish_recording(wc.set, area, &action, &recorded),
+        None => Capture::Pending,
+    };
+    match outcome {
+        Capture::Pending => {
+            if !recorded.is_empty() {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64((wc.hotkeys.recorded.at + qymcad_ui_state::RECORD_WAIT - now).max(0.0)));
+            }
+            return;
+        }
         Capture::Cancel => wc.hotkeys.action = None,
         Capture::Refused(why) => {
             wc.hotkeys.note = crate::i18n::tr(why);
+            return;
+        }
+        Capture::Record(chords) => {
+            wc.hotkeys.recorded = qymcad_ui_state::KeyWait { pressed: chords, at: now, area };
+            wc.hotkeys.note.clear();
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(qymcad_ui_state::RECORD_WAIT));
             return;
         }
         Capture::Clash(clash) => {
             wc.hotkeys.clash = Some(clash);
             wc.hotkeys.action = None;
         }
-        Capture::Bind(chord) => {
-            qymcad_ui_state::set_hotkey(wc.set, &action, &chord);
+        Capture::Bind(keys) => {
+            qymcad_ui_state::set_hotkey(wc.set, &action, &keys);
             wc.hotkeys.action = None;
         }
     }
+    wc.hotkeys.recorded = Default::default();
     wc.hotkeys.note.clear();
-}
-
-/// WHETHER THE PRESS IS A MODIFIER KEY ITSELF. egui reports Shift, Ctrl, Alt and Cmd as keys of their own when they
-/// go down. Reported behaviour: holding Cmd before the letter showed "This key belongs to the system" - the Cmd
-/// press was judged as a whole chord and refused.
-fn modifier_alone(key: egui::Key) -> bool {
-    use egui::Key as K;
-    matches!(key, K::ShiftLeft | K::ShiftRight | K::ControlLeft | K::ControlRight | K::AltLeft | K::AltRight | K::SuperLeft | K::SuperRight)
 }
 
 /// What a press in the waiting window comes to.
@@ -458,36 +453,59 @@ fn modifier_alone(key: egui::Key) -> bool {
 pub(super) enum Capture {
     /// Esc: leave the waiting, change nothing.
     Cancel,
-    /// A modifier on its own: the chord is not finished, the window goes on waiting.
+    /// A modifier on its own, or no press at all: the window goes on waiting.
     Pending,
     /// Not assignable; the catalogue key says why.
     Refused(&'static str),
+    /// The chords of the key so far: the window waits for the next one, or for Enter.
+    Record(Vec<qymcad_ui_state::Chord>),
     /// Taken in the same area - the person decides.
     Clash(qymcad_ui_state::HotkeyClash),
     /// Recorded as is (empty: left without a key).
     Bind(String),
 }
 
-/// THE DECISION, apart from the window, so the tests can ask it without a frame.
-pub(super) fn capture_outcome(set: &qymcad_ui_state::Settings, area: &str, action: &str, key: egui::Key, mods: egui::Modifiers) -> Capture {
-    if modifier_alone(key) {
+/// THE DECISION, apart from the window, so the tests can ask it without a frame. `recorded` holds the chords
+/// pressed for this key so far.
+pub(super) fn capture_outcome(
+    set: &qymcad_ui_state::Settings,
+    area: &'static str,
+    action: &str,
+    recorded: &[qymcad_ui_state::Chord],
+    key: egui::Key,
+    held: impl Into<qymcad_ui_state::HeldKeys>,
+) -> Capture {
+    let held = held.into();
+    if qymcad_ui_state::modifier_key(key) {
         return Capture::Pending;
     }
-    let bare = !mods.any();
-    if key == egui::Key::Escape && bare {
-        return Capture::Cancel; // leaving the mode rather than assigning Esc
+    let bare = !held.mods.any();
+    match key {
+        egui::Key::Escape if bare => return Capture::Cancel, // leaving the mode rather than assigning Esc
+        // the gesture of every field: erase - the last chord, or with none yet, the key itself
+        egui::Key::Backspace | egui::Key::Delete if bare && !recorded.is_empty() => return Capture::Record(recorded[..recorded.len() - 1].to_vec()),
+        egui::Key::Backspace | egui::Key::Delete if bare => return Capture::Bind(String::new()),
+        egui::Key::Enter if bare && !recorded.is_empty() => return finish_recording(set, area, action, recorded),
+        _ => {}
     }
-    if matches!(key, egui::Key::Backspace | egui::Key::Delete) && bare {
-        return Capture::Bind(String::new()); // the gesture of every field: erase
-    }
-    if mods.alt {
+    if held.alt.left() {
         return Capture::Refused("hotkeys-no-alt");
     }
-    let chord = qymcad_ui_state::Chord::of_press(mods, key);
-    if let Some(why) = qymcad_ui_state::hotkey_refusal(action, &chord) {
+    let mut chords = recorded.to_vec();
+    chords.push(qymcad_ui_state::Chord::of_held(qymcad_ui_state::platform_keys::Os::current(), held, key));
+    // judged as it grows: a refused chord is said at once, under the row, and the chords before it are kept
+    if let Some(why) = qymcad_ui_state::hotkey_refusal(action, &qymcad_ui_state::KeySeq { chords: chords.clone() }) {
         return Capture::Refused(why);
     }
-    let name = chord.name();
+    if chords.len() == qymcad_ui_state::SEQ_MAX {
+        return finish_recording(set, area, action, &chords);
+    }
+    Capture::Record(chords)
+}
+
+/// THE KEY RECORDED IS COMPLETE: it is bound, or asked about when another action of the area holds it.
+pub(super) fn finish_recording(set: &qymcad_ui_state::Settings, area: &str, action: &str, chords: &[qymcad_ui_state::Chord]) -> Capture {
+    let name = qymcad_ui_state::KeySeq { chords: chords.to_vec() }.name();
     match qymcad_ui_state::hotkey_taken_by(set, area, &name, action) {
         Some(holder) => Capture::Clash(qymcad_ui_state::HotkeyClash { action: action.to_string(), chord: name, holder }),
         None => Capture::Bind(name),
@@ -537,14 +555,13 @@ mod tests {
     /// the rest. A guard that read only the window would call every tool of the reference a phantom.
     /// WHERE THE ACTIONS OF AN AREA LIVE, and whether that place is the one that HEARS THE KEY.
     ///
-    /// Two places for the sketch: the window hears the key, and the workbench crate holds the table of "this
-    /// action means that drawing tool". The table hears no key and asks nothing about bindings - so the guard
-    /// that watches for a handler matching a raw key must not demand `hotkey_action` of it, while the guards
-    /// that compare the reference with the code must read both.
+    /// Two places for the sketch: the window is handed the action, and the workbench crate holds the table of
+    /// "this action means that drawing tool". The guards that compare the reference with the code must read both.
+    /// The bool says whether the place is a handler the key handler calls with the action it matched.
     const HANDLERS: [(&str, &str, bool); 4] = [
-        ("part", "pub(super) fn part_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {", true),
-        ("assembly", "pub(super) fn assembly_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {", true),
-        ("sketch", "pub(super) fn sketch_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>)", true),
+        ("part", "pub(super) fn part_hotkey(&mut self, action: &str) {", true),
+        ("assembly", "pub(super) fn assembly_hotkey(&mut self, action: &str) {", true),
+        ("sketch", "pub(super) fn sketch_hotkey(&mut self, action: &str)", true),
         ("sketch", "pub fn tool_for_action(action: &str) -> Option<u8>", false),
     ];
 
@@ -597,12 +614,16 @@ mod tests {
     ///
     /// Let one of them go back to `match key { Key::E => ... }` and rebinding will start working in one
     /// workbench and silently not in another. That is the worst kind of breakage: the program does not
-    /// crash, it quietly disobeys.
+    /// crash, it quietly disobeys. Which keys lead to an action is decided once, by `hotkey_presses`, and every
+    /// handler is called from there with the action.
     #[test]
     fn no_handler_matches_a_raw_key() {
-        for (area, sig, src, hears_the_key) in handler_sources() {
+        let input = include_str!("input.rs");
+        let keys = body_of(input, "pub(super) fn handle_tool_hotkeys(");
+        assert!(keys.contains("qymcad_ui_state::hotkey_presses("), "the key handler no longer matches the keys through `hotkey_presses`");
+        for (area, sig, src, called) in handler_sources() {
             let body = body_of(src, sig);
-            assert!(!hears_the_key || body.contains("hotkey_action("), "the handler \"{area}\" has stopped asking `hotkey_action`");
+            assert!(!called || keys.contains(&format!("self.{area}_hotkey(action)")), "the handler \"{area}\" is not called with the action the keys matched");
             // COMMENTS EXCLUDED: `Key::E` stands in them lawfully, as an explanation of why it is no
             // longer done that way. A guard that trips over an explanation teaches people to erase
             // explanations.
@@ -622,7 +643,7 @@ mod tests {
         let mut holes: Vec<String> = Vec::new();
         for (code, _) in crate::i18n::available() {
             crate::i18n::set_language(&code);
-            for key in super::AREAS.iter().map(|a| format!("hotkeys-area-{a}")).chain(["hotkeys-title".into(), "hotkeys-note".into()]).chain(HOTKEYS.iter().map(|r| r.what.to_string())) {
+            for key in super::AREAS.iter().map(|a| format!("hotkeys-area-{a}")).chain(["settings-hotkeys".into(), "hotkeys-note".into()]).chain(HOTKEYS.iter().map(|r| r.what.to_string())) {
                 let text = crate::i18n::tr(&key);
                 if text == key || text.trim().is_empty() {
                     holes.push(format!("{code}: {key}"));
@@ -645,13 +666,29 @@ mod tests {
         assert!(cyr.is_empty(), "a phrase has appeared in the reference instead of a key again:\n{}", cyr.join("\n"));
     }
 
-    /// The window opens from the Help menu — otherwise the reference exists only in the code.
+    /// The table is drawn in Settings -> Keyboard — otherwise the reference exists only in the code.
     #[test]
-    fn the_window_is_reachable_from_the_menu() {
+    fn the_table_is_drawn_in_the_keyboard_settings() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(panels.contains(".win.open(WinKind::Hotkeys);"), "the window must open from the Help menu");
-        assert!(include_str!("../gui.rs").contains("self.hotkeys_window(ctx);"), "the window must be drawn in the frame");
+        let body = &panels[panels.find("Sec::Keyboard => {").expect("the keyboard section")..];
+        let body = &body[..body.find("Sec::Appearance => {").expect("the section after it")];
+        assert!(body.contains("crate::gui::hotkeys::hotkeys_table(wc, ui, ctx);"), "the keyboard section must draw the table of keys");
     }
+}
+
+/// THE SETTINGS OPENED AT THE KEYBOARD SECTION, as the start screen opens them - for the checks that draw the table.
+#[cfg(test)]
+pub(crate) fn open_keyboard_settings(app: &mut super::App) {
+    app.win.open(WinKind::Settings);
+    app.scheme.section = qymcad_ui_state::settings_sections::SettingsSection::Keyboard;
+}
+
+/// One frame of the settings window, which holds the table of keys while the keyboard section is chosen.
+#[cfg(test)]
+pub(crate) fn draw_settings(app: &mut super::App, ctx: &egui::Context) {
+    let mut asks = Vec::new();
+    crate::gui::panels_windows::settings_window(&mut app.win_ctx(&mut asks), ctx);
+    app.do_win_asks(asks, ctx);
 }
 
 #[cfg(test)]

@@ -280,6 +280,12 @@ impl<'a> Hand<'a> {
         &self.win.drawn
     }
 
+    /// EVERY WORD WRITTEN in the window, the next frame drawn - for a word that must stand nowhere, in no spelling.
+    pub fn words(&mut self) -> Vec<String> {
+        self.frame(Vec::new());
+        self.win.drawn.iter().map(|(t, _)| t.clone()).collect()
+    }
+
     /// WHERE `word` IS WRITTEN, the next frame drawn - the place written first, when it is written in several.
     pub fn written_at(&mut self, word: &str) -> Option<egui::Rect> {
         self.frame(Vec::new());

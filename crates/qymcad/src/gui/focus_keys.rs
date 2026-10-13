@@ -156,9 +156,11 @@ mod tests {
     fn the_rule_lives_in_one_place() {
         // the rule moved out of the god object into `pressed_chord`, and the handler must still go through it
         let rule = include_str!("../../../qymcad-ui-state/src/lib.rs");
-        assert!(crate::gui::render_source::has(rule, "if typing { i.modifiers.alt"), "the \"with focus, use Alt\" rule is gone from the common place");
+        assert!(crate::gui::render_source::has(rule, "if typing { !chord.altgr && alt != chord_key }"), "the \"with focus, use Alt\" rule is gone from the common place");
+        let seq = include_str!("../../../qymcad-ui-state/src/key_seq.rs");
+        assert!(seq.contains("let press = crate::pressed_chord(ctx);"), "the key sequences no longer read the press through the common rule");
         let src = include_str!("input.rs");
-        assert!(src.contains("qymcad_ui_state::pressed_chord(ctx)"), "the tool keys no longer read the press through the common rule");
+        assert!(src.contains("qymcad_ui_state::hotkey_presses(ctx"), "the tool keys no longer read the press through the common rule");
         assert!(
             !crate::gui::render_source::has(src, "if ctx.egui_wants_keyboard_input() {\n            return;\n        }\n        use egui::Key;"),
             "the unconditional muting of every key on focus has come back"
@@ -271,5 +273,209 @@ mod tests {
         app.set.hotkeys.insert("part.contour-reselect".into(), "Ctrl+W".into());
         press(&mut app, Key::W, Modifiers::COMMAND, false);
         assert!(!repicking(&app), "Ctrl+W, carried from a Mac, ran a tool where it erases a word");
+    }
+
+    /// KEY SEQUENCES THROUGH WHOLE FRAMES of one context, on a clock of sixty frames a second. The wait for the next
+    /// chord is time, and a context made afresh for every press would forget the frames before it.
+    struct Keys {
+        ctx: egui::Context,
+        time: f64,
+        /// A real text field holding the keyboard, and what has been typed into it; `None` - no field.
+        field: Option<String>,
+        /// The status line of the last frame, as drawn.
+        status: Vec<String>,
+    }
+
+    impl Keys {
+        fn new(field: bool) -> Self {
+            let ctx = egui::Context::default();
+            super::super::install_fonts(&ctx);
+            let mut k = Keys { ctx, time: 0.0, field: field.then(String::new), status: Vec::new() };
+            k.idle_frames(&mut App::default(), 2); // the field takes the focus
+            k
+        }
+
+        /// One frame in the order of the live one: the keys are heard before anything is drawn, then the field,
+        /// then the status line.
+        fn frame(&mut self, app: &mut App, modifiers: Modifiers, events: Vec<Event>) {
+            self.time += 1.0 / 60.0;
+            let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(self.time), modifiers, events, ..Default::default() };
+            let field = &mut self.field;
+            let out = self.ctx.run_ui(input, |ui| {
+                let c = ui.ctx().clone();
+                app.handle_tool_hotkeys(&c);
+                app.handle_key_commands(&c);
+                if let Some(text) = field.as_mut() {
+                    egui::Area::new(egui::Id::new("probe_field")).show(&c, |ui| ui.text_edit_singleline(text).request_focus());
+                }
+                egui::Area::new(egui::Id::new("probe_status")).fixed_pos(egui::pos2(0.0, 800.0)).show(&c, |ui| {
+                    crate::gui::panels_bars::status_bar(
+                        &mut qymcad_ui_state::StatusCtx {
+                            cache: &app.cache,
+                            cursor: None,
+                            project: &app.project,
+                            scheme: &app.scheme,
+                            set: &mut app.set,
+                            sketch_ses: &app.sketch_ses,
+                            status: &app.status,
+                            keys: &app.hotkeys.wait,
+                            win: &mut app.win,
+                        },
+                        ui,
+                    )
+                });
+            });
+            let mut texts = Vec::new();
+            for cs in out.shapes {
+                walk(&cs.shape, &mut texts);
+            }
+            self.status = texts;
+        }
+
+        /// A key pressed and let go, with the text it types where it types one, as the window sends them.
+        fn press(&mut self, app: &mut App, key: Key, modifiers: Modifiers) {
+            let mut down = vec![Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }];
+            if !modifiers.command && !modifiers.ctrl && !modifiers.alt {
+                down.push(Event::Text(key.name().to_lowercase()));
+            }
+            self.frame(app, modifiers, down);
+            self.frame(app, Modifiers::NONE, vec![Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers }]);
+        }
+
+        fn idle_frames(&mut self, app: &mut App, n: usize) {
+            for _ in 0..n {
+                self.frame(app, Modifiers::NONE, Vec::new());
+            }
+        }
+
+        /// Frames with no input for `secs` of the clock.
+        fn idle(&mut self, app: &mut App, secs: f64) {
+            self.idle_frames(app, (secs * 60.0).ceil() as usize);
+        }
+
+        fn shows(&self, text: &str) -> bool {
+            self.status.iter().any(|t| t == text)
+        }
+    }
+
+    fn walk(s: &egui::epaint::Shape, out: &mut Vec<String>) {
+        match s {
+            egui::epaint::Shape::Text(t) => out.push(t.galley.text().to_string()),
+            egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
+    }
+
+    /// G, G RUNS ITS ACTION, AND G ALONE DOES NOT. The status line shows the G pressed while the next one is waited
+    /// for, and clears when the wait runs out.
+    #[test]
+    fn a_sequence_runs_on_its_second_press_and_shows_the_first() {
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "G, G".into());
+        let mut keys = Keys::new(false);
+        let waiting = crate::i18n::tr1("hotkeys-seq-waiting", "keys", &qymcad_ui_state::key_label("G"));
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        assert!(!repicking(&app), "G alone ran what is bound to G, G");
+        assert!(keys.shows(&waiting), "the status line does not show the G waiting for its second press: {:?}", keys.status);
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        assert!(repicking(&app), "G, G is bound and the second G did nothing");
+        assert!(!keys.shows(&waiting), "the sequence ran and the status line still waits");
+
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "G, G".into());
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        keys.idle(&mut app, 0.5);
+        assert!(!keys.shows(&waiting), "the wait ran out and the status line still shows it: {:?}", keys.status);
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        assert!(!repicking(&app), "a G after the wait ran out finished the sequence");
+    }
+
+    /// A FIRST PRESS THAT IS A BINDING OF ITS OWN runs when no second press comes in time, and at once when no longer
+    /// binding starts with it. The wait is the setting's.
+    #[test]
+    fn a_bound_first_press_runs_when_the_wait_runs_out() {
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "G".into());
+        app.set.hotkeys.insert("part.hole".into(), "G, G".into());
+        app.set.key_wait_ms = 500;
+        let mut keys = Keys::new(false);
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        keys.idle(&mut app, 0.4);
+        assert!(!repicking(&app), "G ran before the wait of 500 ms was up");
+        keys.idle(&mut app, 0.2);
+        assert!(repicking(&app), "the wait ran out and G did not run");
+
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "G".into());
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        assert!(repicking(&app), "G starts no longer binding and still waited");
+    }
+
+    /// ESC ENDS THE WAIT AND DOES NOTHING ELSE: the command in hand stays. A second Esc walks the ladder as ever.
+    #[test]
+    fn escape_ends_the_wait_and_keeps_the_command() {
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "G, G".into());
+        app.set.hotkeys.insert("part.hole".into(), "G".into());
+        let mut keys = Keys::new(false);
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        keys.press(&mut app, Key::Escape, Modifiers::NONE);
+        assert!(app.tools.armed.commanding(), "the Esc that ended the wait cancelled the command too");
+        keys.idle(&mut app, 0.5);
+        assert!(!repicking(&app) && app.tools.armed.cmd_kind() == 1, "the G dropped by Esc ran after all");
+        keys.press(&mut app, Key::Escape, Modifiers::NONE);
+        assert!(!app.tools.armed.commanding(), "with nothing waiting, Esc no longer cancels the command");
+    }
+
+    /// FROM A FIELD ALT GOES ON THE FIRST PRESS ONLY: Alt+G, then a bare G runs the binding, and that G is not typed.
+    /// A bare G first is typed and starts nothing.
+    #[test]
+    fn from_a_field_alt_goes_on_the_first_press_only() {
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "G, G".into());
+        let mut keys = Keys::new(true);
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        assert!(!repicking(&app), "bare letters typed into a field ran a sequence");
+        assert_eq!(keys.field.as_deref(), Some("gg"), "the letters were not typed into the field");
+
+        keys.press(&mut app, Key::G, Modifiers::ALT);
+        keys.press(&mut app, Key::G, Modifiers::NONE);
+        assert!(repicking(&app), "Alt+G, G from a field did nothing");
+        assert_eq!(keys.field.as_deref(), Some("gg"), "the second G of the sequence was typed into the field as well");
+    }
+
+    /// A CTRL FIRST PRESS needs no Alt from a field, and the bare press after it is taken from the field; a press
+    /// that continues nothing is typed as ever.
+    #[test]
+    fn from_a_field_a_ctrl_sequence_takes_its_second_press() {
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "Ctrl+T, F".into());
+        let mut keys = Keys::new(true);
+        keys.press(&mut app, Key::T, Modifiers::COMMAND);
+        keys.press(&mut app, Key::Q, Modifiers::NONE);
+        assert!(!repicking(&app));
+        assert_eq!(keys.field.as_deref(), Some("q"), "a letter that continues nothing was kept from the field");
+        keys.press(&mut app, Key::T, Modifiers::COMMAND);
+        keys.press(&mut app, Key::F, Modifiers::NONE);
+        assert!(repicking(&app), "Ctrl+T, F from a field did nothing");
+        assert_eq!(keys.field.as_deref(), Some("q"), "the F of the sequence was typed into the field");
+    }
+
+    /// ALTGR IS A MODIFIER OF ITS OWN: AltGr+W runs what is bound to it, and neither the bare W nor Alt+W does.
+    #[test]
+    fn altgr_is_a_modifier_of_its_own() {
+        let mut app = extruding();
+        app.set.hotkeys.insert("part.contour-reselect".into(), "AltGr+W".into());
+        let mut keys = Keys::new(false);
+        keys.press(&mut app, Key::W, Modifiers::NONE);
+        keys.press(&mut app, Key::W, Modifiers::ALT);
+        assert!(!repicking(&app), "W or the left Alt+W ran what is bound to AltGr+W");
+        let alt_right = |pressed| Event::Key { key: Key::AltRight, physical_key: None, pressed, repeat: false, modifiers: Modifiers::ALT };
+        keys.frame(&mut app, Modifiers::ALT, vec![alt_right(true)]);
+        keys.press(&mut app, Key::W, Modifiers::ALT);
+        keys.frame(&mut app, Modifiers::NONE, vec![alt_right(false)]);
+        assert!(repicking(&app), "AltGr+W is bound and does nothing");
     }
 }
