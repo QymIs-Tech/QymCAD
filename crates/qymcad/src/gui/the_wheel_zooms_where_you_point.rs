@@ -81,17 +81,39 @@ mod tests {
     #[test]
     fn a_command_holds_its_own_geometry_still() {
         let mut app = a_part_in_view();
-        app.set.zoom_at = ZoomAt::Cursor;
+        app.set.zoom_at = ZoomAt::ViewCentre;
         app.set.zoom_editing = ZoomWhileEditing::PartCentre;
         let popup = egui::pos2(300.0, 500.0); // where the command's fields stand
         let cursor = egui::pos2(800.0, 100.0); // and where the hand happens to be
 
         let at = qymcad_ui_state::zoom_anchor(&app.set, RECT, Some(cursor), Some(popup));
-        assert_eq!(at, popup, "with a command open the view must hold the part, not the cursor");
+        assert_eq!(at, popup, "with the view-centre rule and its exception the command geometry stays put");
 
         app.set.zoom_editing = ZoomWhileEditing::AsUsual;
         let at = qymcad_ui_state::zoom_anchor(&app.set, RECT, Some(cursor), Some(popup));
-        assert_eq!(at, cursor, "and with the exception switched off the ordinary rule applies");
+        assert_eq!(at, RECT.center(), "with the exception switched off the view-centre rule applies");
+    }
+
+    /// THE CURSOR RULE KEEPS THE CURSOR AS ANCHOR EVEN WHEN A COMMAND IS OPEN.
+    #[test]
+    fn a_command_does_not_override_cursor_zoom() {
+        let mut app = a_part_in_view();
+        app.set.zoom_at = ZoomAt::Cursor;
+        app.set.zoom_editing = ZoomWhileEditing::PartCentre;
+        let popup = egui::pos2(300.0, 500.0);
+        let cursor = egui::pos2(800.0, 100.0);
+
+        assert_eq!(qymcad_ui_state::zoom_anchor(&app.set, RECT, Some(cursor), Some(popup)), cursor);
+    }
+
+    /// OPENING A COMMAND DOES NOT CHANGE THE DEFAULT ZOOM ANCHOR.
+    #[test]
+    fn the_default_while_editing_zoom_uses_the_cursor() {
+        let set = qymcad_ui_state::Settings::default();
+        let cursor = egui::pos2(800.0, 100.0);
+        let popup = egui::pos2(300.0, 500.0);
+
+        assert_eq!(qymcad_ui_state::zoom_anchor(&set, RECT, Some(cursor), Some(popup)), cursor);
     }
 
     /// THE FLAT VIEW OF A SKETCH DOES THE SAME.
@@ -160,6 +182,48 @@ mod tests {
             }
         }
         assert!(moved.is_empty(), "the wheel over the viewport does not honour the setting:\n{}", moved.join("\n"));
+    }
+
+    /// A foreground parameter field can own hover while the wheel still reaches the canvas beneath it.
+    #[test]
+    fn the_wheel_uses_the_pointer_position_through_a_parameter_dialog() {
+        let mut app = a_part_in_view();
+        app.set.zoom_at = ZoomAt::Cursor;
+        app.set.zoom_editing = ZoomWhileEditing::AsUsual;
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        app.waiting.splash_until = None;
+        let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
+        let mut value = String::from("20");
+        let mut frame = |app: &mut App, events: Vec<egui::Event>, dialog_at: Option<egui::Pos2>| {
+            let raw = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            let _ = ctx.run_ui(raw, |ui| {
+                if let Some(at) = dialog_at {
+                    egui::Area::new(egui::Id::new("test_parameter_dialog")).order(egui::Order::Foreground).fixed_pos(at - egui::vec2(60.0, 20.0)).show(ui.ctx(), |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut value).desired_width(120.0));
+                    });
+                }
+                app.draw_frame(ui);
+            });
+        };
+        for _ in 0..3 {
+            frame(&mut app, Vec::new(), None);
+        }
+        let spot = app.viewing.view_rect.center() + egui::vec2(app.viewing.view_rect.width() * 0.3, -app.viewing.view_rect.height() * 0.3);
+        for _ in 0..2 {
+            frame(&mut app, vec![egui::Event::PointerMoved(spot)], Some(spot));
+        }
+        let before = app.viewing.cam.target;
+        frame(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(spot),
+                egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, 120.0), phase: egui::TouchPhase::Move, modifiers: Default::default() },
+            ],
+            Some(spot),
+        );
+        let travelled = (0..3).map(|a| (app.viewing.cam.target[a] - before[a]).abs()).fold(0.0f64, f64::max);
+        assert!(travelled > 1e-6, "the dialog hid the cursor from the viewport, so zoom fell back to the viewport centre");
     }
 
     /// THE FLAT VIEW TAKES IN A SKETCH OF ANY SIZE, AND THE WHEEL ZOOMS ON FROM WHERE IT FRAMED IT, as the 3D view

@@ -2547,6 +2547,14 @@ impl App {
 
 // ---------- helpers ----------
 
+/// THE MOUSE POSITION OVER THE CANVAS, even when a foreground dialog owns hover.
+///
+/// `Response::hover_pos` is empty when another interactive layer covers the canvas. The canvas still accepts wheel
+/// zoom through that layer, so use the pointer's screen position for its anchor.
+pub(super) fn viewport_pointer(ctx: &egui::Context, rect: Rect) -> Option<Pos2> {
+    ctx.pointer_latest_pos().filter(|p| rect.contains(*p))
+}
+
 /// WHETHER TWO PLACEMENTS ARE ROTATED THE SAME WAY (the translation may be anything).
 ///
 /// The scene buffer needs this: if a part has only moved, the vertices already built need the difference

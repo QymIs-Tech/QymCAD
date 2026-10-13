@@ -1695,7 +1695,7 @@ fn default_update_check() -> UpdateCheck {
 }
 
 fn default_zoom_editing() -> ZoomWhileEditing {
-    ZoomWhileEditing::PartCentre
+    ZoomWhileEditing::AsUsual
 }
 
 fn default_mouse_nav() -> MouseNav {
@@ -6529,18 +6529,21 @@ pub fn zoom_cam_3d(cam: &mut Cam3, rect: Rect, anchor: Pos2, factor: f32, lo: f3
     }
 }
 
-/// WHERE THE VIEW MUST HOLD STILL WHILE IT IS ZOOMED: the cursor, the middle of the part being edited, or
-/// the middle of the viewport.
+/// WHERE THE VIEW MUST HOLD STILL WHILE IT IS ZOOMED: the cursor, or the middle of the viewport. With the
+/// view-centre rule, an open command can instead keep its parameter anchor still.
 ///
 /// One place decides it for both viewports - the flat one and the 3D one - because it is one rule and a
 /// second copy of it would drift on the first change.
 pub fn zoom_anchor(set: &Settings, rect: Rect, cursor: Option<Pos2>, part_centre: Option<Pos2>) -> Pos2 {
-    if let (ZoomWhileEditing::PartCentre, Some(p)) = (set.zoom_editing, part_centre) {
-        return p; // a command is open and its fields stand at the geometry: hold the geometry still
-    }
     match set.zoom_at {
         ZoomAt::Cursor => cursor.unwrap_or_else(|| rect.center()),
-        ZoomAt::ViewCentre => rect.center(),
+        ZoomAt::ViewCentre => {
+            if let (ZoomWhileEditing::PartCentre, Some(p)) = (set.zoom_editing, part_centre) {
+                p // the view-centre rule has the command's geometry as its optional exception
+            } else {
+                rect.center()
+            }
+        }
     }
 }
 

@@ -45,7 +45,7 @@ impl App {
         }
         if scroll != 0.0 && resp.contains_pointer() {
             let part = crate::gui::commands::cmd_anchor_screen(&mut self.part_ctx(), rect); // where the open command's fields stand
-            qymcad_ui_state::wheel_zoom_3d(&mut self.viewing.cam, &self.set, rect, resp.hover_pos(), part, scroll);
+            qymcad_ui_state::wheel_zoom_3d(&mut self.viewing.cam, &self.set, rect, crate::gui::viewport_pointer(ctx, rect), part, scroll);
         }
         if let Some(p) = crate::gui::look_at_point::look_at(&self.painting(), self.set.mouse_nav, resp, rect) {
             crate::gui::animate_look_to(self.viewing.cam, &mut self.viewing.view_anim, p);
