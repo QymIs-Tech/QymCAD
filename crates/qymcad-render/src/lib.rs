@@ -1931,8 +1931,25 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             }
         }
         1 => {
+            // Dashed auxiliary line and dot for tangency are only drawn when guiding the second point or beyond
+            // (i.e., there is already at least one full segment in the chain: pn.tool.pts.len() >= 2).
             if let Some(&last) = pn.tool.pts.last() {
                 painter.line_segment([sh.at(last), sc], stroke);
+                // Draw dashed auxiliary line from circle/arc center to tangency point when almost tangent
+                if pn.tool.pts.len() >= 2 && (Some(si), true) == (qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses), qymcad_ui_state::ties_laid(pn.tool, pn.set)) {
+                    if let Some((tp, cen_id, _r)) = qymcad_pick::nearest_tangent_info(pn.project, si, last, cur) {
+                        // Find the center point
+                        if let Some(s) = pn.project.sketches.get(si) {
+                            if let Some(cpt) = s.points.iter().find(|p| p.id == cen_id).map(|p| Point2::new(p.x, p.y)) {
+                                // Use the same color as the line being drawn
+                                painter.add(egui::Shape::dashed_line(&[sh.at(cpt), sh.at(tp)], Stroke::new(1.0, col), 6.0, 4.0));
+                                // Draw a small dot at the tangency point on the circle/arc for snapping/magnetizing
+                                // Absolutely identical to the point at the end of a line
+                                painter.circle_filled(sh.at(tp), 3.0, col);
+                            }
+                        }
+                    }
+                }
                 // a live preview of the automatic constraints: what will be attached if a point is placed here - none
                 // where none will be ("No ties", the auto constraints off)
                 if let Some(si) = qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses).filter(|_| qymcad_ui_state::ties_laid(pn.tool, pn.set)) {

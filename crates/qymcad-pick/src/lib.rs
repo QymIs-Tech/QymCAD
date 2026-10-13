@@ -273,6 +273,61 @@ pub fn nearest_tangent_circle(project: &Project, si: usize, p1: Point2, p2: Poin
     best.map(|(_, v)| v)
 }
 
+/// Tangency point and circle/arc info: the tangency point on the line p1-p2 for a circle or arc that is
+/// ALMOST TANGENT to it. Returns (tangency_point_on_circle, centre_id, radius). For drawing dashed preview lines
+/// and snapping during tangent line creation.
+pub fn nearest_tangent_info(project: &Project, si: usize, p1: Point2, p2: Point2) -> Option<(Point2, Id, f64)> {
+    use qymcad_core::model::EntityKind;
+    let s = project.sketches.get(si)?;
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect();
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
+    let (dx, dy) = (p2.x - p1.x, p2.y - p1.y);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-6 {
+        return None;
+    }
+    let mut best: Option<(f64, Point2, Id, f64)> = None;
+    for e in &s.entities {
+        let (center, actual_r) = match e.kind {
+            EntityKind::Circle { center, r } => (center, r),
+            EntityKind::Arc { center, a, .. } => match (pt(center), pt(a)) {
+                (Some(c0), Some(a0)) => (center, ((a0.x - c0.x).powi(2) + (a0.y - c0.y).powi(2)).sqrt()),
+                _ => continue,
+            },
+            _ => continue,
+        };
+
+        let Some(c0) = pt(center) else { continue };
+        let (cx, cy) = (c0.x, c0.y);
+
+        // the signed perpendicular distance from the centre to the line, plus where the projection
+        // falls on the segment
+        let dist = ((dx * (cy - p1.y) - dy * (cx - p1.x)) / len).abs();
+        let t = ((cx - p1.x) * dx + (cy - p1.y) * dy) / (len * len);
+        let err = (dist - actual_r).abs();
+        if err < 0.06 * actual_r && t > -0.1 && t < 1.1 {
+            // Calculate tangency point: foot of perpendicular from center to the line
+            let tp = Point2::new(p1.x + t * dx, p1.y + t * dy);
+
+            // Adjust tp to be exactly at distance actual_r from center (on the circle/arc boundary)
+            let dx_tp = tp.x - cx;
+            let dy_tp = tp.y - cy;
+            let dist_sq = dx_tp * dx_tp + dy_tp * dy_tp;
+            let tp_exact = if dist_sq > 1e-12 {
+                let d_sqrt = dist_sq.sqrt();
+                Point2::new(cx + (dx_tp / d_sqrt) * actual_r, cy + (dy_tp / d_sqrt) * actual_r)
+            } else {
+                tp
+            };
+
+            if best.is_none_or(|(be, _, _, _)| err < be) {
+                best = Some((err, tp_exact, center, actual_r));
+            }
+        }
+    }
+    best.map(|(_, tp, cen, r)| (tp, cen, r))
+}
+
 /// The ends of an ADJACENT line (sharing an end with p1 or p2) whose length is about the length of the
 /// segment p1-p2 — for the automatic equal-length constraint. The requirement of adjacency plus a hard
 /// tolerance of 2% guard against false matches of length with distant unrelated geometry. The line's
