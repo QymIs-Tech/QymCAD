@@ -41,6 +41,15 @@ mod tests {
         assert!(!app.side.m3.on, "a second press switches it off");
     }
 
+    /// THE RULER STANDS IN THE ASSEMBLY TOOLBAR TOO, not only in a part (issue #45): a pitch is
+    /// measured between parts, where the parts stand.
+    #[test]
+    fn the_ruler_stands_in_the_assembly_toolbar_too() {
+        let bar = include_str!("../../../qymcad-part/src/lib.rs");
+        let at = bar.find("Workbench::Assembly").expect("the assembly bar");
+        assert!(bar[at..].contains("BarAsk::ToggleMeasure3d"), "the assembly bar has no ruler: the pitch between parts cannot be measured where they stand");
+    }
+
     /// THE WHOLE PATH: a click on a face, a click on the opposite face, and the height of the cube.
     #[test]
     fn clicking_two_opposite_faces_measures_the_thickness() {
@@ -110,14 +119,32 @@ mod tests {
         assert!(t.contains("42.000"), "the length of a single edge must be shown at once: {t}");
     }
 
+    /// A CLICK ON A FACE reports its area and perimeter at once (issue #45): the top of the 20x20
+    /// block reads 400 mm^2 of area and 80 mm of boundary.
+    #[test]
+    fn a_click_on_a_face_reports_its_area_and_perimeter() {
+        let mut app = App::default();
+        let (mi, _body) = cube_in_view(&mut app);
+        let bb = app.project.bodies[mi].mesh.bounds().expect("the bounding box");
+        app.toggle_measure_3d();
+        let basis = app.viewing.cam.basis();
+        let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(top).0;
+        app.measure_3d_click(rect(), at);
+        assert_eq!(app.side.m3.picks.len(), 1, "the click must land; status: {}", app.status);
+        let t = app.measure_text();
+        assert!(t.contains("400.000"), "the area of the 20x20 top must be shown: {t}");
+        assert!(t.contains("80.000"), "the perimeter of the 20x20 top must be shown: {t}");
+    }
+
     /// NON-PARALLEL FACES: an angle and an honest explanation instead of an invented distance.
     #[test]
     fn converging_faces_report_the_angle_not_a_made_up_distance() {
         let mut app = App::default();
         app.toggle_measure_3d();
         app.side.m3.picks = vec![
-            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 0.0, 1.0] }, what: "face".into(), at: [0.0; 3] },
-            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 1.0, 1.0] }, what: "face".into(), at: [0.0; 3] },
+            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 0.0, 1.0], size: None }, what: "face".into(), at: [0.0; 3] },
+            super::super::measure3d::MeasurePick { item: MeasureItem::Plane { origin: [0.0; 3], normal: [0.0, 1.0, 1.0], size: None }, what: "face".into(), at: [0.0; 3] },
         ];
         let t = app.measure_text();
         assert!(t.contains(&crate::i18n::tr1("m3-angle", "v", "45.000")), "the angle must be shown: {t}");

@@ -2038,6 +2038,7 @@ unit-mm-value = { $v } mm
 vp-mirror-created = A mirrored copy is created ({ $n } parts) — drag it by its gizmo; its shape follows the source
 vp-cut-plane-picked = The cutting plane is picked: { $n } pieces -> Enter to apply (Esc cancels)
 m3-value-mm = { $label } { $v } mm
+m3-value-mm2 = { $label } { $v } mm²
 m3-distance = Distance { $v } mm
 m3-angle = Angle { $v }°
 m3-not-parallel = { $what }: there is no meaningful distance — the items are not parallel
@@ -2104,6 +2105,8 @@ conn-middle = middle
 conn-start = start face
 conn-end = end face
 m3-length = Length
+m3-area = Area
+m3-perimeter = Perimeter
 
 # --- CONSTRAINTS AND DIMENSIONS IN THE SKETCH LIST ---
 con-fixed = Fixed point

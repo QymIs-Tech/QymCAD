@@ -302,7 +302,7 @@ Below is the complete dictionary of icons recognized across the 5 categories:
 
 ---
 
-### 7.4. Category `assembly/` — Components, Mates & Mechanisms (13 icons)
+### 7.4. Category `assembly/` — Components, Mates & Mechanisms (14 icons)
 
 | Icon Path | Function & Description |
 | :--- | :--- |
@@ -319,6 +319,7 @@ Below is the complete dictionary of icons recognized across the 5 categories:
 | `assembly/array_circular.svg` | **Circular Component Pattern:** Replicate components in circular assembly patterns. |
 | `assembly/mirror.svg` | **Mirror Component:** Mirror parts or subassemblies across a planar symmetry datum. |
 | `assembly/section.svg` | **Assembly Section View:** Toggle parametric cross-section cut plane view of the assembly. |
+| `assembly/measure.svg` | **Assembly Measure:** Measure vertices, edges and faces between parts where they stand. |
 
 ---
 
