@@ -341,6 +341,13 @@ impl App {
         }
         let path = qymcad_ui_state::autosave_path(&self.disk.project_path);
         self.disk.io.autosave_key = Some(key); // applied ONLY if the write really went through
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
+        crate::gui::io_jobs::spawn_save(
+            &mut self.disk.io,
+            &mut self.live,
+            &mut self.project,
+            &mut self.regen,
+            &mut self.status,
+            crate::gui::io_jobs::SaveTask { path, autosave: true, pal: None, ghost_alpha: 0 },
+        );
     }
 }
