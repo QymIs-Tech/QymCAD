@@ -111,6 +111,38 @@ fn import_sketch_keeps_circle_and_dedups_shared_corners() {
     assert!(closed_areas.iter().any(|a| (a - std::f64::consts::PI * 16.0).abs() < 1.0), "circle of area ~50: {closed_areas:?}");
 }
 
+/// FAR AND NON-FINITE ENDPOINTS WELD WITHOUT PANIC (#152). Past about 9.2e14 mm the weld grid cell
+/// saturated i64::MAX and `cx - 1..=cx + 1` overflowed in debug (panic) or wrapped empty in release (4 points
+/// instead of 3); an infinite coordinate is not drawable at all. Two lines sharing an end at 1e16 give 3 points,
+/// and a curve through inf is left out rather than panicking.
+#[test]
+fn import_sketch_welds_far_corners_and_drops_non_finite() {
+    use qymcad_core::feature::{BasePlane, SketchPlane};
+    use qymcad_core::geom::{Point2, ProfEdge};
+    use qymcad_core::model::EntityKind;
+    let mut p = Project::default();
+    p.new_document();
+    let root = p.root;
+    p.set_active_component(Some(root));
+    let part = p.add_part("part");
+    p.set_active_component(Some(part));
+
+    let sq = |x: f64, y: f64| Point2::new(x, y);
+    let si = p.import_sketch(
+        "far.dxf",
+        vec![
+            ProfEdge::Line { a: sq(1e16, 0.0), b: sq(1e16, 10.0) },
+            ProfEdge::Line { a: sq(1e16, 10.0), b: sq(0.0, 10.0) },
+            ProfEdge::Line { a: sq(f64::INFINITY, 0.0), b: sq(5.0, 5.0) },
+        ],
+        None,
+        SketchPlane::World(BasePlane::XY),
+    );
+    assert_eq!(p.sketches[si].points.len(), 3, "the shared far end welds and the inf curve is left out: {:?}", p.sketches[si].points);
+    let lines = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count();
+    assert_eq!(lines, 2, "two drawable lines, the inf one refused");
+}
+
 /// A circle entity: changing the radius through a dimension and the solver regenerates the contour, while
 /// the contour id is preserved - which is what anything referring to that contour depends on.
 #[test]
