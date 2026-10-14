@@ -21,6 +21,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::App;
+    use qymcad_core::model::SketchAxis;
 
     /// A sketch with a rectangle away from the origin, so a mirror about an axis visibly moves it.
     fn a_sketch_with_a_rectangle() -> (App, usize) {
@@ -40,11 +41,11 @@ mod tests {
         qymcad_ui_state::modify_button(qymcad_ui_state::editing_in!(bc), &mut qymcad_ui_state::tools_in!(bc), *bc.sk_pat, &*bc.tool_prefs, qymcad_ui_state::EditTool::Mirror);
     }
 
-    /// Pointing at the X (0) or Y (1) axis as the thing to mirror about.
-    fn mirror_about_axis(app: &mut App, which: usize) {
+    /// Pointing at the X or Y axis as the thing to mirror about.
+    fn mirror_about_axis(app: &mut App, axis: SketchAxis) {
         let mut asks = Vec::new();
         let bc = app.bar_ctx(&mut asks);
-        qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(bc), &mut *bc.sel_sk, which);
+        qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(bc), &mut *bc.sel_sk, axis);
     }
 
     fn select_all_entities(app: &mut App, si: usize) {
@@ -106,7 +107,7 @@ mod tests {
         press_mirror(&mut app);
 
         let ys_before: Vec<i64> = app.project.sketches[si].points.iter().map(|p| (p.y * 1000.0) as i64).collect();
-        mirror_about_axis(&mut app, 0); // 0 = X
+        mirror_about_axis(&mut app, SketchAxis::X);
         let ys_after: Vec<i64> = app.project.sketches[si].points.iter().map(|p| (p.y * 1000.0) as i64).collect();
 
         assert!(ys_after.iter().any(|y| *y < 0), "mirroring about X must put copies below the axis, and the sketch sat entirely above it: {ys_before:?} -> {ys_after:?}");
@@ -161,7 +162,7 @@ mod tests {
         select_all_entities(&mut app, si);
         press_mirror(&mut app);
 
-        mirror_about_axis(&mut app, 1); // 1 = Y
+        mirror_about_axis(&mut app, SketchAxis::Y);
         let xs: Vec<i64> = app.project.sketches[si].points.iter().map(|p| (p.x * 1000.0) as i64).collect();
 
         assert!(xs.iter().any(|x| *x < 0), "mirroring about Y must put copies left of the axis: {xs:?}");

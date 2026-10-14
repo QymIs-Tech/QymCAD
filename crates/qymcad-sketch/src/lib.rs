@@ -7,7 +7,7 @@
 use egui::{Color32, Pos2, Rect};
 use egui_phosphor::regular as ph;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Id, Project};
+use qymcad_core::model::{Id, Project, SketchAxis};
 use qymcad_ui_state::grab::Grab;
 use qymcad_ui_state::WinKind;
 
@@ -1417,7 +1417,11 @@ fn tie_what_landed(project: &mut Project, view: qymcad_ui_state::View2d, si: usi
                 EntityKind::Ellipse { .. } => {}
             }
         }
-        for (axis, off) in [(0, at.y), (1, at.x)] {
+        for axis in SketchAxis::ALL {
+            let off = match axis {
+                SketchAxis::X => at.y,
+                SketchAxis::Y => at.x,
+            };
             if off.abs() <= reach {
                 let (o, guide) = project.ensure_axis(si, axis);
                 ties.push(Constraint::PointOnLine { p: point, a: o, b: guide });
@@ -1985,10 +1989,10 @@ pub fn try_constraint_inner(
     let mut lines = qymcad_ui_state::sel_line_pts(project, sel_sk, si);
     // the lines drawn, before the axes join them: Vertical and Horizontal go on these, an axis already stands so
     let drawn = lines.clone();
-    // coordinate axes picked as lines (kind 3): their straight lines are materialised and used as lines
-    let axes: Vec<u64> = sel_sk.items.iter().filter(|(k, _)| *k == 3).map(|(_, id)| *id).collect();
-    for w in axes {
-        let (o, d) = project.ensure_axis(si, w as usize);
+    // coordinate axes picked as lines: their straight lines are materialised and used as lines
+    let axes: Vec<SketchAxis> = sel_sk.items.iter().filter_map(|&entry| qymcad_ui_state::axis_of_selection_entry(entry)).collect();
+    for axis in axes {
+        let (o, d) = project.ensure_axis(si, axis);
         lines.push((o, d));
     }
     let mut new: Vec<Constraint> = Vec::new();
@@ -2834,10 +2838,10 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                 .or_else(|| {
                     let o = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(Point2::new(0.0, 0.0));
                     if (pos.y - o.y).abs() <= qymcad_ui_state::grab::grab(&*sk.set, Grab::Guide) {
-                        let (a, b) = sk.project.ensure_axis(si, 0);
+                        let (a, b) = sk.project.ensure_axis(si, SketchAxis::X);
                         Some(qymcad_ui_state::DimRef::Line(a, b))
                     } else if (pos.x - o.x).abs() <= qymcad_ui_state::grab::grab(&*sk.set, Grab::Guide) {
-                        let (a, b) = sk.project.ensure_axis(si, 1);
+                        let (a, b) = sk.project.ensure_axis(si, SketchAxis::Y);
                         Some(qymcad_ui_state::DimRef::Line(a, b))
                     } else {
                         None
@@ -3151,16 +3155,15 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             hit = Some((1u8, eid));
         }
     }
-    // a click on the X or Y axis (when no other geometry is near) picks the axis as a line (kind 3, id 0
-    // or 1)
+    // a click on the X or Y axis (when no other geometry is near) picks the axis as a line
     if hit.is_none() {
         let o = sh.at(Point2::new(0.0, 0.0));
         let near_x = (pos.y - o.y).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide); // the horizontal X axis (y = 0)
         let near_y = (pos.x - o.x).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide); // the vertical Y axis (x = 0)
         if near_x && (!near_y || (pos.y - o.y).abs() <= (pos.x - o.x).abs()) {
-            hit = Some((3u8, 0));
+            hit = Some(qymcad_ui_state::selection_entry_for_axis(SketchAxis::X));
         } else if near_y {
-            hit = Some((3u8, 1));
+            hit = Some(qymcad_ui_state::selection_entry_for_axis(SketchAxis::Y));
         }
     }
     // THE MIRROR'S SECOND STEP: a plain click NAMES WHAT IT REFLECTS ABOUT - a line, a point or an axis - and Shift adds
@@ -3183,7 +3186,11 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             return;
         }
         match hit {
-            Some((3, w)) => qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, w as usize),
+            Some(entry @ (qymcad_ui_state::SELECTION_AXIS, _)) => {
+                if let Some(axis) = qymcad_ui_state::axis_of_selection_entry(entry) {
+                    qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, axis);
+                }
+            }
             Some((0, p)) => qymcad_ui_state::mirror_about_point(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, p),
             Some((1, eid)) => match sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).map(|e| e.kind) {
                 // CONSTRUCTION GEOMETRY SERVES AS WELL: what matters is that two points make a line, and a
@@ -4603,11 +4610,11 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // 3) a coordinate axis
     let o = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(Point2::new(0.0, 0.0));
     if (pos.y - o.y).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide) {
-        let (a, b) = sk.project.ensure_axis(si, 0);
+        let (a, b) = sk.project.ensure_axis(si, SketchAxis::X);
         return Some(qymcad_ui_state::DimRef::Line(a, b));
     }
     if (pos.x - o.x).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide) {
-        let (a, b) = sk.project.ensure_axis(si, 1);
+        let (a, b) = sk.project.ensure_axis(si, SketchAxis::Y);
         return Some(qymcad_ui_state::DimRef::Line(a, b));
     }
     // 4) the midpoint of a line or the origin (through the shared reference resolver)

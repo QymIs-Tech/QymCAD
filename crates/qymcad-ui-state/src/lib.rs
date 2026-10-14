@@ -73,7 +73,7 @@ use qymcad_core::measure::MeasureItem;
 use qymcad_core::part::PartManifest;
 use qymcad_core::refs::Query;
 use qymcad_core::geom::{Contour, MeshFace, Point2};
-use qymcad_core::model::{Id, Project};
+use qymcad_core::model::{Id, Project, SketchAxis};
 
 #[derive(Clone, Copy)]
 pub struct View2d {
@@ -1845,9 +1845,29 @@ pub struct FeatOptions {
     pub rot_deg: f64,
 }
 
+/// THE KIND OF A SKETCH AXIS in the sketch selection (`SketchSelection::items`), picked as a line. Kept by the slot of the
+/// axis (`SketchAxis::slot`), not by a point id: an axis is drawn in every sketch, and its guide point is created only
+/// when a constraint or a dimension needs it (`Project::ensure_axis`).
+pub const SELECTION_AXIS: u8 = 3;
+
+/// THE ENTRY OF THE SKETCH SELECTION FOR AN AXIS: the `(kind, id)` pair `SketchSelection::items` holds for it, of kind
+/// `SELECTION_AXIS` with the slot of the axis as its id. Also what a click on the axis hits.
+pub fn selection_entry_for_axis(axis: SketchAxis) -> (u8, Id) {
+    (SELECTION_AXIS, axis.slot() as Id)
+}
+
+/// THE AXIS A `(kind, id)` ENTRY OF THE SKETCH SELECTION NAMES, read back from `selection_entry_for_axis`; none for an
+/// entry of another kind - an entity or a point whose id happens to be 0 or 1 is not an axis.
+pub fn axis_of_selection_entry(entry: (u8, Id)) -> Option<SketchAxis> {
+    match entry {
+        (SELECTION_AXIS, slot) => SketchAxis::from_slot(slot as usize),
+        _ => None,
+    }
+}
+
 /// THE KIND OF A TEXT in the sketch selection (`SketchSelection::items`), beside a point (0), an entity (1) and an axis
-/// (3): a text kept by its id, so the move tools take it, alone or with lines. Reported behaviour (issue #32): a text was
-/// picked apart from the selection, and Move and Rotate never saw it.
+/// (`SELECTION_AXIS`): a text kept by its id, so the move tools take it, alone or with lines. Reported behaviour (issue
+/// #32): a text was picked apart from the selection, and Move and Rotate never saw it.
 pub const SEL_TEXT: u8 = 4;
 
 /// DOES THE TEXT TOOL SHOW ITS LABEL AT THE POINTER - where a click would put a new one. Not while a label is being
@@ -14080,13 +14100,12 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
     }
 }
 
-/// MIRROR WHAT THE TOOL HOLDS ABOUT ONE OF THE SKETCH AXES (0 = X, 1 = Y).
+/// MIRROR WHAT THE TOOL HOLDS ABOUT ONE OF THE SKETCH AXES.
 ///
 /// The axes are drawn in every sketch and were, until now, the only drawn thing a person could not point
 /// at: mirroring about Y happened silently when no line was selected, and X could not be asked for at all.
-pub fn mirror_about_axis(ed: Editing, sel_sk: &mut SketchSelection, which: usize) {
-    let along = if which == 0 { Point2::new(1.0, 0.0) } else { Point2::new(0.0, 1.0) };
-    mirror_about(ed, sel_sk, MirrorAbout::Line(Point2::new(0.0, 0.0), along));
+pub fn mirror_about_axis(ed: Editing, sel_sk: &mut SketchSelection, axis: SketchAxis) {
+    mirror_about(ed, sel_sk, MirrorAbout::Line(Point2::new(0.0, 0.0), axis.guide()));
 }
 
 /// MIRROR WHAT THE TOOL HOLDS ABOUT A LINE OF THE SKETCH, given by its two points.

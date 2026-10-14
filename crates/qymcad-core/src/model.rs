@@ -538,6 +538,34 @@ pub struct NamedDim {
     pub target: DimTarget,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SketchAxis {
+    X,
+    Y,
+}
+
+impl SketchAxis {
+    pub const ALL: [SketchAxis; 2] = [SketchAxis::X, SketchAxis::Y];
+
+    pub fn slot(self) -> usize {
+        match self {
+            SketchAxis::X => 0,
+            SketchAxis::Y => 1,
+        }
+    }
+
+    pub fn from_slot(slot: usize) -> Option<SketchAxis> {
+        SketchAxis::ALL.into_iter().find(|axis| axis.slot() == slot)
+    }
+
+    pub fn guide(self) -> Point2 {
+        match self {
+            SketchAxis::X => Point2::new(1.0, 0.0),
+            SketchAxis::Y => Point2::new(0.0, 1.0),
+        }
+    }
+}
+
 /// A sketch: a named group of contours (a tree node). It may be the result of an import, in which case
 /// `source` references the embedded original.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -589,7 +617,8 @@ pub struct Sketch {
     #[serde(default)]
     pub origin: Id,
     /// Guide points of the X and Y axes (fixed, at (1,0) and (0,1)), so the axes can be picked as lines for
-    /// constraints (parallel, point-on-axis, symmetry). Zero means they have not been created.
+    /// constraints (parallel, point-on-axis, symmetry). Zero means they have not been created. Indexed by
+    /// `SketchAxis::slot`, read through `Sketch::axis_guide`.
     #[serde(default)]
     pub axis_pts: [Id; 2],
     /// THE ANCHOR OF THE FRAME OF REFERENCE at (0,0) - the second end of both axis lines.
@@ -794,6 +823,11 @@ impl Sketch {
         std::iter::once(self.origin).chain(std::iter::once(self.frame)).chain(self.axis_pts).filter(|id| *id != 0).collect()
     }
 
+    /// The guide point of an axis; zero while the axis has not been created (`Project::ensure_axis`).
+    pub fn axis_guide(&self, axis: SketchAxis) -> Id {
+        self.axis_pts[axis.slot()]
+    }
+
     /// PUT THE FRAME OF REFERENCE BACK WHERE IT BELONGS: the origin at (0,0), the axis guides at (1,0)
     /// and (0,1). Returns whether anything had to be moved.
     ///
@@ -809,41 +843,55 @@ impl Sketch {
     /// not to zero, so a frame that moved once is locked in the wrong place for good - and documents in
     /// that state already exist. Called on every rebuild of the sketch, so a file opens repaired.
     pub fn pin_frame(&mut self) -> bool {
-        // THE ORIGIN IS PINNED HERE TOO, and that is safe only because it is nobody's geometry by the time
-        // this runs: `regen_sketch` calls `detach_geometry_from_origin` first, which gives any drawing
-        // welded to the origin a point of its own. Pinning a point that geometry sits on is what nailed
-        // down a shape drawn at zero. The frame itself stands on `frame`, which is never anybody's.
-        // A DOCUMENT WHOSE AXES WERE HUNG ON THE ORIGIN IS REPAIRED HERE.
-        //
-        // Before the anchor existed, an axis was the line through the ORIGIN and its guide, and every
-        // dimension to an axis holds those two ids. Such files exist and open crooked. Any constraint
-        // naming the origin together with an axis guide is re-pointed at the anchor: the line it means
-        // is the axis, and the axis now stands on the anchor.
-        if self.origin != 0 && self.frame != 0 {
-            let guides = self.axis_pts;
-            let (origin, frame) = (self.origin, self.frame);
-            for c in &mut self.constraints {
-                let pts = c.points();
-                if pts.contains(&origin) && guides.iter().any(|g| *g != 0 && pts.contains(g)) {
-                    remap_constraint_point(c, origin, frame);
-                }
+        self.hang_the_axes_on_the_anchor();
+        self.put_the_frame_back()
+    }
+
+    /// A DOCUMENT WHOSE AXES WERE HUNG ON THE ORIGIN IS REPAIRED HERE.
+    ///
+    /// Before the anchor existed, an axis was the line through the ORIGIN and its guide, and every
+    /// dimension to an axis holds those two ids. Such files exist and open crooked. Any constraint
+    /// naming the origin together with an axis guide is re-pointed at the anchor: the line it means
+    /// is the axis, and the axis now stands on the anchor.
+    fn hang_the_axes_on_the_anchor(&mut self) {
+        if self.origin == 0 || self.frame == 0 {
+            return;
+        }
+
+        let guides = self.axis_pts;
+        let (origin, frame) = (self.origin, self.frame);
+
+        for c in &mut self.constraints {
+            let pts = c.points();
+            if pts.contains(&origin) && guides.iter().any(|g| *g != 0 && pts.contains(g)) {
+                remap_constraint_point(c, origin, frame);
             }
         }
-        let want: [(Id, f64, f64); 4] = [(self.frame, 0.0, 0.0), (self.origin, 0.0, 0.0), (self.axis_pts[0], 1.0, 0.0), (self.axis_pts[1], 0.0, 1.0)];
-        let mut moved = false;
-        for (id, x, y) in want {
-            if id == 0 {
-                continue;
-            }
-            if let Some(p) = self.points.iter_mut().find(|p| p.id == id) {
-                if p.x != x || p.y != y {
-                    p.x = x;
-                    p.y = y;
-                    moved = true;
-                }
-            }
+    }
+
+    fn put_the_frame_back(&mut self) -> bool {
+        let zero = Point2::new(0.0, 0.0);
+        let mut moved = self.put_point_at(self.frame, zero);
+        moved |= self.put_point_at(self.origin, zero);
+
+        for axis in SketchAxis::ALL {
+            moved |= self.put_point_at(self.axis_guide(axis), axis.guide());
         }
+
         moved
+    }
+
+    fn put_point_at(&mut self, id: Id, at: Point2) -> bool {
+        let Some(p) = self.points.iter_mut().find(|p| id != 0 && p.id == id) else { return false };
+
+        if p.x == at.x && p.y == at.y {
+            return false;
+        }
+
+        p.x = at.x;
+        p.y = at.y;
+
+        true
     }
 
     /// Driven points (projections of a body). They cannot be dragged or deleted one by one, being derived

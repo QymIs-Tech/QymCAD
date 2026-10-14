@@ -8,7 +8,7 @@
 use egui::{Color32, Pos2, Rect, Stroke};
 use egui_phosphor::regular as ph;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Id, Project};
+use qymcad_core::model::{Id, Project, SketchAxis};
 use qymcad_ui_state::*;
 
 pub const CARD_BUTTON: egui::Vec2 = egui::vec2(150.0, 28.0);
@@ -1181,8 +1181,8 @@ pub fn draw_axes(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         return;
     }
     // the axes as reference geometry: X red, Y green; the selected one orange and thicker
-    let xsel = pn.sel_sk.items.contains(&(3, 0));
-    let ysel = pn.sel_sk.items.contains(&(3, 1));
+    let xsel = pn.sel_sk.items.contains(&qymcad_ui_state::selection_entry_for_axis(SketchAxis::X));
+    let ysel = pn.sel_sk.items.contains(&qymcad_ui_state::selection_entry_for_axis(SketchAxis::Y));
     let xst = if xsel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_x()) };
     let yst = if ysel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_y()) };
     painter.line_segment([Pos2::new(rect.left(), o.y), Pos2::new(rect.right(), o.y)], xst);
