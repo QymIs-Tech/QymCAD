@@ -397,3 +397,127 @@ fn the_clock_is_read_in_the_zone_asked() {
     assert_eq!(super::super::hh_mm_in(at_23_30, &hour(3)), "02:30");
     assert_eq!(super::super::hh_mm_in(at_11_27, &hour(-12)), "23:27");
 }
+
+/// A PROJECT SAVED THROUGH THE INTERFACE EMBEDS A PREVIEW THUMBNAIL IN THE BUNDLE.
+///
+/// The preview raster is placed directly inside the `.qcad` bundle as `thumb.png` so that file managers
+/// and shell previewers can display thumbnails without parsing the project geometry.
+#[test]
+fn save_project_embeds_preview_thumbnail() {
+    let dir = std::env::temp_dir().join(format!("qym_test_thumb_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("model.qcad").to_string_lossy().into_owned();
+    let _ = std::fs::remove_file(&path);
+
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    app.disk.project_path = Some(path.clone());
+
+    app.save_project();
+    app.wait_bg();
+
+    let thumb = qymcad_io::load_project_thumb(&path).expect("project bundle embeds thumb.png");
+    assert!(thumb.starts_with(b"\x89PNG\r\n\x1a\n"), "embedded thumbnail is a valid PNG image");
+    assert!(thumb.len() > 100, "thumbnail contains raster data");
+
+    let decoded = image::load_from_memory(&thumb).expect("decodes as image").to_rgba8();
+    let corner = decoded.get_pixel(0, 0);
+    assert_eq!(corner[3], 0, "background is transparent (alpha = 0)");
+    let center = decoded.get_pixel(128, 128);
+    assert_eq!(center[3], 255, "model pixel is opaque (alpha = 255)");
+    let watermark = decoded.get_pixel(216, 216);
+    assert_eq!(watermark[3], 255, "watermark is stamped in bottom-right corner (alpha = 255)");
+
+    let auto_path = dir.join("model.autosave.qcad").to_string_lossy().into_owned();
+    app.autosave_for_test(auto_path.clone());
+    let auto_thumb = qymcad_io::load_project_thumb(&auto_path);
+    assert!(auto_thumb.is_none(), "autosave bundle does not generate a thumbnail");
+    let _ = std::fs::remove_file(&auto_path);
+
+    // Resaving with bodies cleared removes the preview thumbnail so OS shows default file icon
+    app.project.bodies.clear();
+    app.save_project();
+    app.wait_bg();
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "resaving without geometry removes preview thumbnail");
+
+    // Saving a project with no geometry produces no preview thumbnail
+    let empty_path = dir.join("empty.qcad").to_string_lossy().into_owned();
+    let mut empty_app = App::default();
+    empty_app.disk.project_path = Some(empty_path.clone());
+    empty_app.save_project();
+    empty_app.wait_bg();
+    assert!(qymcad_io::load_project_thumb(&empty_path).is_none(), "empty project bundle embeds no thumbnail");
+    let _ = std::fs::remove_file(&empty_path);
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// PREVIEWS RENDER ONLY WHAT THE PERSON SEES: CONSUMED AND HIDDEN BODIES ARE EXCLUDED.
+///
+/// Consumed bodies (tools of cuts, booleans, modifiers) and bodies hidden by the user must not
+/// appear on preview thumbnails, matching the visible 3D scene and file exports.
+#[test]
+fn preview_thumbnail_filters_consumed_and_hidden_bodies() {
+    let dir = std::env::temp_dir().join(format!("qym_test_thumb_vis_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("vis_model.qcad").to_string_lossy().into_owned();
+
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    assert!(!app.project.bodies.is_empty());
+
+    // When the body is hidden, preview raster is omitted entirely
+    app.project.bodies[0].visible = false;
+    app.disk.project_path = Some(path.clone());
+    app.save_project();
+    app.wait_bg();
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "hidden body must not be rendered on preview");
+
+    // When the body is consumed, preview raster is also omitted
+    let mut app2 = App::default();
+    let _cube2 = build_cube(&mut app2);
+    let b0 = app2.project.bodies[0].id;
+    app2.project.timeline.push(qymcad_core::feature::FeatureNode {
+        id: 999,
+        name: "Boolean".into(),
+        parent: None,
+        kind: qymcad_core::feature::FeatureKind::BodyBoolean { op: 1, a: b0, b: b0, body: 1000, pieces: Vec::new() },
+        dirty: false,
+        suppressed: false,
+    });
+    assert!(app2.project.consumed_bodies().contains(&b0));
+    app2.disk.project_path = Some(path.clone());
+    app2.save_project();
+    app2.wait_bg();
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "consumed body must not be rendered on preview");
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A MESH WITHOUT TRIANGLES (NO 3D FACES) DOES NOT PRODUCE AN EMPTY THUMBNAIL WITH A WATERMARK.
+///
+/// When a body's mesh holds vertices but zero triangles, or when rasterization yields no visible surface,
+/// thumb.png is omitted so the operating system falls back to the file type icon.
+#[test]
+fn preview_thumbnail_omitted_when_mesh_has_no_triangles() {
+    let dir = std::env::temp_dir().join(format!("qym_test_thumb_notris_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("notris_model.qcad").to_string_lossy().into_owned();
+
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    app.project.bodies[0].mesh.tris.clear();
+    assert!(!app.project.bodies[0].mesh.verts.is_empty());
+    assert!(app.project.bodies[0].mesh.tris.is_empty());
+
+    app.disk.project_path = Some(path.clone());
+    app.save_project();
+    app.wait_bg();
+
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "mesh without triangles must produce no preview thumbnail");
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir_all(&dir);
+}

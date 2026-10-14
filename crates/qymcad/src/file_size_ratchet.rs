@@ -28,7 +28,7 @@ mod tests {
 
     const KNOWN: &[Known] = &[
         Known { path: "crates/qymcad/src/gui/user_case.rs", lines: 3390 },
-        Known { path: "crates/qymcad/src/gui.rs", lines: 2546 },
+        Known { path: "crates/qymcad/src/gui.rs", lines: 2540 },
         Known { path: "crates/qymcad/src/gui/help_images.rs", lines: 1907 },
     ];
 

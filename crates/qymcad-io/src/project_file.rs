@@ -1,9 +1,11 @@
 //! The project file `.qcad`: a zip bundle.
 //!
 //! The layout: `meta.ron` with the schema version, `document.ron` with the project and the mesh geometry moved
-//! out, `meshes/<id>.ron` with the geometry of a mesh under its stable id, deflated, and `sources/*` with the
-//! originals of imports. The old flat format is not read: the project is in development and compatibility is
-//! not needed.
+//! out, `meshes/<id>.ron` with the geometry of a mesh under its stable id, deflated, `faces/<id>.ron` with the
+//! cache of B-rep faces, `brep/<id>.brep` with the live bodies, `sources/*` with the originals of imports, and
+//! `thumb.png` at the archive root with an optional 256x256 preview raster stored uncompressed (Stored). See
+//! `docs/thumbnails.md` for shell integration details.
+//! The old flat format is not read: the project is in development and compatibility is not needed.
 
 use std::io::{Read, Write};
 
@@ -16,7 +18,7 @@ const SCHEMA: u32 = 2;
 /// Save a project as a `.qcad` zip bundle. The faces live inside the body itself (`Body.faces`), so a separate
 /// parallel list is no longer needed and cannot drift apart from the meshes.
 pub fn save_project(project: &Project, path: &str) -> Result<(), String> {
-    save_project_with_brep(project, path, &[])
+    save_project_bundle(project, path, &[], None)
 }
 
 /// The same, but with the live bodies: `breps` maps a body id to a B-rep blob.
@@ -27,8 +29,23 @@ pub fn save_project(project: &Project, path: &str) -> Result<(), String> {
 /// body, so the kernel built everything anew. A professional CAD puts the body itself into the file, and so
 /// does this one now.
 ///
-/// The bytes arrive ready-made: the format need know nothing of the kernel, and the kernel nothing of zip.
+/// A live B-rep entry mapping body id to its serialized blob.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BrepEntry {
+    pub id: model::Id,
+    pub bytes: Vec<u8>,
+}
+
 pub fn save_project_with_brep(project: &Project, path: &str, breps: &[(model::Id, Vec<u8>)]) -> Result<(), String> {
+    let entries: Vec<BrepEntry> = breps.iter().map(|(id, bytes)| BrepEntry { id: *id, bytes: bytes.clone() }).collect();
+    save_project_bundle(project, path, &entries, None)
+}
+
+/// Save a project as a `.qcad` zip bundle with live B-rep bodies and an optional thumbnail preview.
+///
+/// `thumb_png` carries an optional PNG raster preview of the project. If `None` is passed, no preview
+/// thumbnail is embedded in the bundle.
+pub fn save_project_bundle(project: &Project, path: &str, breps: &[BrepEntry], thumb_png: Option<&[u8]>) -> Result<(), String> {
     let mut doc = project.clone();
     doc.ensure_ids(); // in case of geometry without ids, built directly
 
@@ -74,12 +91,12 @@ pub fn save_project_with_brep(project: &Project, path: &str, breps: &[(model::Id
 
     // The live bodies sit next to the meshes. Without them opening shows the model instantly, but the very
     // first operation pays for a full rebuild of the timeline.
-    for (id, blob) in breps {
-        if blob.is_empty() {
+    for b in breps {
+        if b.bytes.is_empty() {
             continue;
         }
-        zip.start_file(format!("brep/{id}.brep"), opts).map_err(|e| e.to_string())?;
-        zip.write_all(blob).map_err(|e| e.to_string())?;
+        zip.start_file(format!("brep/{}.brep", b.id), opts).map_err(|e| e.to_string())?;
+        zip.write_all(&b.bytes).map_err(|e| e.to_string())?;
     }
 
     // The embedded originals of imports; their bytes live here rather than in `document.ron`.
@@ -107,6 +124,15 @@ pub fn save_project_with_brep(project: &Project, path: &str, breps: &[(model::Id
         }
     }
 
+    // The preview thumbnail at the archive root: written when provided. PNG is already compressed, so it is
+    // stored directly without recompression. When absent (or if geometry was deleted), no thumbnail is embedded.
+    if let Some(png) = thumb_png {
+        let thumb_opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("thumb.png", thumb_opts).map_err(|e| e.to_string())?;
+        zip.write_all(png).map_err(|e| e.to_string())?;
+    }
+
+    drop(prev);
     zip.finish().map_err(|e| e.to_string())?;
 
     // The previous version stays alongside. An atomic swap saves from a truncated write but not from writing
@@ -142,11 +168,17 @@ pub fn content_weight(p: &Project) -> usize {
 /// from the previous file, and saving erased the work. Whether the mistake was human or in the program does not
 /// matter here: a write that destroys content and creates nothing makes sense in no scenario.
 pub fn save_project_guarded(project: &Project, path: &str) -> Result<(), String> {
-    save_project_guarded_with_brep(project, path, &[])
+    save_project_guarded_bundle(project, path, &[], None)
 }
 
 /// The same, but with the live bodies; see [`save_project_with_brep`].
 pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[(model::Id, Vec<u8>)]) -> Result<(), String> {
+    let entries: Vec<BrepEntry> = breps.iter().map(|(id, bytes)| BrepEntry { id: *id, bytes: bytes.clone() }).collect();
+    save_project_guarded_bundle(project, path, &entries, None)
+}
+
+/// The same, but with the live bodies and an optional preview thumbnail; see [`save_project_bundle`].
+pub fn save_project_guarded_bundle(project: &Project, path: &str, breps: &[BrepEntry], thumb_png: Option<&[u8]>) -> Result<(), String> {
     if content_weight(project) == 0 {
         if let Ok(existing) = load_project(path) {
             if content_weight(&existing) > 0 {
@@ -154,7 +186,7 @@ pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[(m
             }
         }
     }
-    save_project_with_brep(project, path, breps)
+    save_project_bundle(project, path, breps, thumb_png)
 }
 
 /// A BODY READ FROM A FILE HOLDS NUMBERS, or the file is refused with the place of the first that is not one, as the
@@ -179,6 +211,50 @@ pub(crate) fn finite_body(body: usize, mesh: &qymcad_core::geom::Mesh, faces: &[
 /// empty vector for a mesh means the bundle held no faces for it.
 pub fn load_project(path: &str) -> Result<Project, String> {
     load_project_with_brep(path).map(|l| l.project)
+}
+
+/// Maximum uncompressed size accepted for an embedded preview thumbnail (2 MB).
+/// A standard 256x256 RGBA8 image is 256 KB uncompressed; 2 MB leaves room for metadata
+/// while bounding memory against corrupted or malicious archives.
+pub const MAX_THUMB_SIZE: u64 = 2 * 1024 * 1024;
+
+/// Read the preview thumbnail alone from a `.qcad` bundle on disk, without unpacking document or geometry.
+///
+/// Looks up `thumb.png` directly at the archive root. Because the thumbnail is stored using `Stored`
+/// compression, it is read directly without decompressing either the image stream or other entries.
+/// Entries exceeding `MAX_THUMB_SIZE` are refused.
+/// Returns `None` if the archive holds no preview (e.g. no 3D geometry exists, or autosave) or could not be read.
+pub fn load_project_thumb(path: &str) -> Option<Vec<u8>> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    let mut zip = zip::ZipArchive::new(reader).ok()?;
+    read_thumb_bytes(&mut zip)
+}
+
+/// The same from bytes in memory. Avoids redundant allocations by reading through a cursor over the slice.
+pub fn load_project_thumb_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !bytes.starts_with(b"PK") {
+        return None;
+    }
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    read_thumb_bytes(&mut zip)
+}
+
+pub(crate) fn read_thumb_bytes<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>) -> Option<Vec<u8>> {
+    let mut f = zip.by_name("thumb.png").ok()?;
+    if f.size() > MAX_THUMB_SIZE {
+        return None;
+    }
+    let mut v = Vec::with_capacity(f.size().min(MAX_THUMB_SIZE) as usize);
+    f.by_ref().take(MAX_THUMB_SIZE + 1).read_to_end(&mut v).ok()?;
+    if v.len() as u64 > MAX_THUMB_SIZE || v.is_empty() {
+        return None;
+    }
+    const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if !v.starts_with(PNG_MAGIC) {
+        return None;
+    }
+    Some(v)
 }
 
 /// WHAT CAME OUT OF A BUNDLE: the document, and the live bodies where the file carries them.
