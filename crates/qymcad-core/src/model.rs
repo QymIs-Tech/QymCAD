@@ -540,6 +540,19 @@ impl Default for DimTarget {
     }
 }
 
+/// A formula of the document whose value the reading of a sign before a power changed: where a person finds it, the
+/// formula, and its value as it was read before and as it is read now (`Project::formulas_changed_by_sign_rule`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SignRuleChange {
+    pub place: String,
+    /// the formula as written
+    pub formula: String,
+    /// the value as read before, `None` where it did not evaluate
+    pub was: Option<f64>,
+    /// the value as read now, `None` where it does not evaluate
+    pub now: Option<f64>,
+}
+
 /// A named driving dimension: the value of a sketch dimension or of a feature parameter is exposed as a
 /// global parameter `name`, so a skeleton sketch of an assembly can drive part dimensions through
 /// expressions. Bound by stable ids, not by index.

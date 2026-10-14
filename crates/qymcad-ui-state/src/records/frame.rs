@@ -506,6 +506,10 @@ pub struct Rebuilding {
     pub line: crate::Notice,
     /// What stood on the status line before a quiet rebuild wrote its progress over it - put back when it ends well.
     pub over: crate::Notice,
+    /// A NOTE FOR THE END OF THE REBUILD THAT APPLIES IT: what opening a document changed in it, said when the rebuild
+    /// that makes the document show the change has ended (and no B-rep restore is still to come), rather than on a
+    /// status line the next thing to finish writes over.
+    pub after_note: Option<crate::Notice>,
     /// THE STATE AS OF THE PREVIOUS REBUILD: the document's key, the list of dirty nodes and the number of live
     /// B-reps. The scheduler recomputes only if AT LEAST ONE of those has changed.
     ///

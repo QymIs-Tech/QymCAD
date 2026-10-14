@@ -208,6 +208,9 @@ pub(crate) struct WorkedOut {
     pub(crate) values: std::collections::HashMap<String, f64>,
     pub(crate) faults: std::collections::HashMap<String, crate::errors::ExprError>,
     pub(crate) without_value: std::collections::BTreeSet<String>,
+    /// How the formulas were read: the mathematical way, but for telling which stored formulas the old reading of a
+    /// sign before a power changes (`Project::formulas_changed_by_sign_rule`).
+    pub(crate) rule: crate::expr::SignRule,
 }
 
 impl Project {
@@ -322,8 +325,13 @@ impl Project {
     /// Reported behaviour: the values started from the ones before and went round up to eight times - a circle grew on
     /// every evaluation, and a chain of twelve standing in reverse order stopped at its ninth name.
     pub(crate) fn work_out_names(&self) -> WorkedOut {
+        self.work_out_names_by(crate::expr::SignRule::Mathematics)
+    }
+
+    /// The same, every formula read under `rule`.
+    pub(crate) fn work_out_names_by(&self, rule: crate::expr::SignRule) -> WorkedOut {
         let names = self.names_graph(None);
-        let mut w = WorkedOut::default();
+        let mut w = WorkedOut { rule, ..WorkedOut::default() };
         // a name in a circle has no value from the start: its chain is said, and the names reading it learn it has none
         for n in Circles::from(&names, names.formulas.keys()) {
             let chain = names.formulas.get(&n).cloned().flatten().and_then(|f| names.chain_back(&NamedFormula { name: &n, text: &f }));
@@ -359,7 +367,7 @@ impl Project {
             w.without_value.insert(name.to_string());
             return;
         }
-        match crate::expr::eval(&f, &w.values) {
+        match crate::expr::eval_by(&f, &w.values, w.rule) {
             Ok(v) => {
                 w.values.insert(name.to_string(), v);
             }
