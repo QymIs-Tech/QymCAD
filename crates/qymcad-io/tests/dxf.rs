@@ -159,6 +159,43 @@ fn splines_ellipses_and_blocks_are_read() {
     assert_eq!(got.skipped, vec![("TEXT".to_string(), 1)], "what was not read is not named");
 }
 
+/// A MIRRORED ARC STAYS ON ITS SIDE (#83). Mirrored exporters write ARC/CIRCLE centres in OCS with
+/// extrusion (0, 0, -1); the centre (-40, 10) is then WCS (40, 10). A 40x20 slot of two lines and two arcs
+/// closes on the right only when the OCS frame is applied: before it the right arc landed at x = -50..-40
+/// and the profile stayed open with 4 contours.
+#[test]
+fn a_mirrored_arc_lands_on_its_side() {
+    use dxf::entities::{Arc, Entity, EntityType, Line};
+    use dxf::{Drawing, Point, Vector};
+    let mut d = Drawing::new();
+    d.add_entity(Entity::new(EntityType::Line(Line::new(Point::new(0.0, 0.0, 0.0), Point::new(40.0, 0.0, 0.0)))));
+    d.add_entity(Entity::new(EntityType::Line(Line::new(Point::new(0.0, 20.0, 0.0), Point::new(40.0, 20.0, 0.0)))));
+    d.add_entity(Entity::new(EntityType::Arc(Arc { center: Point::new(0.0, 10.0, 0.0), radius: 10.0, start_angle: 90.0, end_angle: 270.0, ..Default::default() })));
+    d.add_entity(Entity::new(EntityType::Arc(Arc {
+        center: Point::new(-40.0, 10.0, 0.0),
+        radius: 10.0,
+        normal: Vector::new(0.0, 0.0, -1.0),
+        start_angle: 90.0,
+        end_angle: 270.0,
+        ..Default::default()
+    })));
+    let p = written("ocs.dxf");
+    d.save_file(&p).expect("written");
+
+    let got = import_dxf(&p).expect("read");
+    let centres: Vec<(f64, f64)> = got
+        .curves
+        .iter()
+        .filter_map(|c| match c {
+            qymcad_core::geom::ProfEdge::Arc { center, .. } => Some((center.x, center.y)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(centres.len(), 2, "both arcs stayed arcs: {got:?}");
+    assert!(centres.iter().any(|c| (c.0 - 0.0).abs() < 1e-9 && (c.1 - 10.0).abs() < 1e-9), "plain arc at (0, 10): {centres:?}");
+    assert!(centres.iter().any(|c| (c.0 - 40.0).abs() < 1e-9 && (c.1 - 10.0).abs() < 1e-9), "mirrored arc at WCS (40, 10), not OCS (-40, 10): {centres:?}");
+}
+
 /// WHAT REAL DRAWINGS BRING IN: every `.dxf` in the folder `QYM_DXF` read, and its curves counted by kind, with what was
 /// not read. Ignored: it reads files that are not in the tree.
 #[test]

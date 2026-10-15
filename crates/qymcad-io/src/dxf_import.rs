@@ -111,6 +111,36 @@ impl Place {
     }
 }
 
+/// The OCS frame of an extrusion direction: the WCS axes of the entity's own XY plane.
+/// The arbitrary-axis algorithm from the DXF reference: Ax is Y x W near the Z axis and Z x W
+/// elsewhere, Ay is W x Ax. `flip` says the OCS XY runs mirrored in WCS (a negative 2D determinant),
+/// which reverses arcs and bulges, as a (0, 0, -1) extrusion mirrors X.
+fn ocs_axes(nx: f64, ny: f64, nz: f64) -> ([f64; 3], [f64; 3], [f64; 3], bool) {
+    let l = (nx * nx + ny * ny + nz * nz).sqrt();
+    if l < 1e-12 {
+        return ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], false);
+    }
+    let w = [nx / l, ny / l, nz / l];
+    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let norm = |mut v: [f64; 3]| {
+        let m = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if m > 1e-12 {
+            v[0] /= m;
+            v[1] /= m;
+            v[2] /= m;
+        }
+        v
+    };
+    let ax = if w[0].abs() < 1.0 / 64.0 && w[1].abs() < 1.0 / 64.0 { norm(cross([0.0, 1.0, 0.0], w)) } else { norm(cross([0.0, 0.0, 1.0], w)) };
+    let ay = norm(cross(w, ax));
+    (ax, ay, w, ax[0] * ay[1] - ax[1] * ay[0] < 0.0)
+}
+
+/// An OCS point into WCS XY: x * Ax + y * Ay + z * W. The axes are orthonormal, so lengths survive.
+fn ocs_at(x: f64, y: f64, z: f64, ax: [f64; 3], ay: [f64; 3], w: [f64; 3]) -> (f64, f64) {
+    (x * ax[0] + y * ay[0] + z * w[0], x * ax[1] + y * ay[1] + z * w[1])
+}
+
 /// How many entities of each kind.
 type Counts = std::collections::BTreeMap<String, usize>;
 
@@ -128,29 +158,71 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
     for entity in entities {
         match &entity.specific {
             EntityType::Line(line) => {
-                curves.push(ProfEdge::Line { a: place.at(line.p1.x, line.p1.y), b: place.at(line.p2.x, line.p2.y) });
+                // Reported behaviour: a mirrored exporter writes ARC/CIRCLE centres in OCS with
+                // extrusion (0, 0, -1) and the arc lands mirrored about Y, leaving the profile open.
+                // Every planar endpoint runs through the OCS frame first; an identity extrusion costs
+                // one line of arithmetic and changes nothing.
+                let (ax, ay, w, _) = ocs_axes(line.extrusion_direction.x, line.extrusion_direction.y, line.extrusion_direction.z);
+                let (ax1, ay1) = ocs_at(line.p1.x, line.p1.y, line.p1.z, ax, ay, w);
+                let (bx1, by1) = ocs_at(line.p2.x, line.p2.y, line.p2.z, ax, ay, w);
+                curves.push(ProfEdge::Line { a: place.at(ax1, ay1), b: place.at(bx1, by1) });
             }
-            EntityType::Circle(c) => match place.uniform() {
-                Some((k, _)) => curves.push(ProfEdge::Circle { center: place.at(c.center.x, c.center.y), r: c.radius * k }),
-                None => run(|t| place.at(c.center.x + c.radius * t.cos(), c.center.y + c.radius * t.sin()), 0.0, std::f64::consts::TAU, curves),
-            },
+            EntityType::Circle(c) => {
+                let (ax, ay, w, _) = ocs_axes(c.normal.x, c.normal.y, c.normal.z);
+                let (cx, cy) = ocs_at(c.center.x, c.center.y, c.center.z, ax, ay, w);
+                match place.uniform() {
+                    Some((k, _)) => curves.push(ProfEdge::Circle { center: place.at(cx, cy), r: c.radius * k }),
+                    None => run(
+                        |t| {
+                            let (x, y) = ocs_at(c.center.x + c.radius * t.cos(), c.center.y + c.radius * t.sin(), c.center.z, ax, ay, w);
+                            place.at(x, y)
+                        },
+                        0.0,
+                        std::f64::consts::TAU,
+                        curves,
+                    ),
+                }
+            }
             EntityType::Arc(a) => {
+                let (ax, ay, w, flip) = ocs_axes(a.normal.x, a.normal.y, a.normal.z);
                 let (from, to) = (a.start_angle.to_radians(), a.end_angle.to_radians());
                 match place.uniform() {
                     Some((_, mirrored)) => {
+                        // The endpoints are found in OCS and carried to WCS, so no angle remap is needed;
+                        // the sense flips once for the block and once for a mirrored extrusion.
                         let arc = arc_from_angles(Point2::new(a.center.x, a.center.y), a.radius, from, to);
                         let ProfEdge::Arc { a: p, b: q, center, .. } = arc else { continue };
-                        let (p, q, center) = (place.at(p.x, p.y), place.at(q.x, q.y), place.at(center.x, center.y));
-                        curves.push(ProfEdge::Arc { a: p, b: q, center, ccw: !mirrored });
+                        let (cx, cy) = ocs_at(center.x, center.y, a.center.z, ax, ay, w);
+                        let (px, py) = ocs_at(p.x, p.y, a.center.z, ax, ay, w);
+                        let (qx, qy) = ocs_at(q.x, q.y, a.center.z, ax, ay, w);
+                        let (p, q, center) = (place.at(px, py), place.at(qx, qy), place.at(cx, cy));
+                        curves.push(ProfEdge::Arc { a: p, b: q, center, ccw: !(mirrored ^ flip) });
                     }
                     _ => {
-                        let to = if to <= from { to + std::f64::consts::TAU } else { to };
-                        run(|t| place.at(a.center.x + a.radius * t.cos(), a.center.y + a.radius * t.sin()), from, to, curves);
+                        // A skewed block place draws the arc as segments; every parameter point runs
+                        // through OCS first, so a mirrored extrusion draws backwards with no angle remap.
+                        run(
+                            |t| {
+                                let (x, y) = ocs_at(a.center.x + a.radius * t.cos(), a.center.y + a.radius * t.sin(), a.center.z, ax, ay, w);
+                                place.at(x, y)
+                            },
+                            from,
+                            if to <= from { to + std::f64::consts::TAU } else { to },
+                            curves,
+                        );
                     }
                 }
             }
             EntityType::LwPolyline(p) => {
-                let verts: Vec<(Point2, f64)> = p.vertices.iter().map(|v| (Point2::new(v.x, v.y), v.bulge)).collect();
+                let (ax, ay, w, flip) = ocs_axes(p.extrusion_direction.x, p.extrusion_direction.y, p.extrusion_direction.z);
+                let verts: Vec<(Point2, f64)> = p
+                    .vertices
+                    .iter()
+                    .map(|v| {
+                        let (x, y) = ocs_at(v.x, v.y, 0.0, ax, ay, w);
+                        (Point2::new(x, y), if flip { -v.bulge } else { v.bulge })
+                    })
+                    .collect();
                 placed_polyline(&verts, is_closed_flag(p.flags), place, curves);
             }
             EntityType::Polyline(p) => {
