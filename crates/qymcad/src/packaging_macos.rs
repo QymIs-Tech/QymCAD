@@ -236,3 +236,20 @@ fn an_unknown_processor_is_refused() {
     assert!(!out.status.success(), "the script packed a build for a processor it does not know:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("unknown macOS architecture"), "the refusal did not say what was wrong:\n{}", said(&out));
 }
+
+/// THE .qcad DOCUMENT TYPE IS REGISTERED WITH macOS.
+///
+/// Without CFBundleDocumentTypes and UTExportedTypeDeclarations Finder does not know which application
+/// opens .qcad, so double-clicking a project in Finder does not open it.
+#[test]
+fn qcad_document_type_is_registered_in_bundle() {
+    let dir = sandbox("doctype", Deps::Rpath);
+    let out = bundle(&dir);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let plist = fs::read_to_string(dir.join("dist/QymCAD.app/Contents/Info.plist")).expect("Info.plist is written");
+    assert!(plist.contains("<key>CFBundleDocumentTypes</key>"), "Info.plist does not declare CFBundleDocumentTypes:\n{plist}");
+    assert!(plist.contains("<string>tech.qymis.cad.project</string>"), "Info.plist does not declare the project content type:\n{plist}");
+    assert!(plist.contains("<key>UTExportedTypeDeclarations</key>"), "Info.plist does not export the UTType:\n{plist}");
+    assert!(plist.contains("<string>qcad</string>"), "Info.plist does not declare the .qcad extension:\n{plist}");
+}

@@ -1,0 +1,17 @@
+[package]
+name = "qymcad-materials"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Engineering materials database, physical and thermal properties, and mass properties calculator"
+
+[dependencies]
+qymcad-core.workspace = true
+serde.workspace = true
+ron.workspace = true
+
+[lints]
+workspace = true

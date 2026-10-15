@@ -429,11 +429,9 @@ impl App {
         if self.regen.busy.is_none() && self.disk.edits.open.is_none() {
             qymcad_ui_state::rebuild_if_dirty(&mut self.rebuild_ctx());
         }
-        // 1) Loading the project at startup: it goes to a worker (the heavy STEP reparse), and from there
-        //    the `busy` branch below carries it - the splash spinner turns and the window does not hang.
-        if let Some(path) = self.disk.io.startup.take() {
-            spawn_project_load(&mut self.regen, path);
-        }
+        // 1) Loading the project at startup or handed by the system (e.g. Finder): it goes to a worker
+        //    (the heavy STEP reparse), and from there the `busy` branch below carries it.
+        poll_incoming_loads(&mut self.disk.io.startup, &mut self.regen);
         // THE SPLASH AT STARTUP IS UNCONDITIONAL, at least `SPLASH_MIN`. It must stand AFTER the startup
         // load has been launched: an early return BEFORE it kept the load from starting at all - `io.startup`
         // stayed non-empty, the "still loading" condition held forever, and the result was a white window
@@ -630,6 +628,18 @@ pub(crate) fn finish_regen_failed(rc: &mut qymcad_ui_state::RebuildCtx, stamp: u
 /// placement is carried across by [`Project::take_placement_from`].
 pub(crate) fn regen_doc_stamp(project: &qymcad_core::model::Project) -> u64 {
     project.rebuild_key()
+}
+
+/// Launch any pending project load: either the file passed on startup, or one handed to the running
+/// instance by the desktop (e.g. double-clicked in Finder).
+pub(crate) fn poll_incoming_loads(startup: &mut Option<String>, regen: &mut super::Rebuilding) {
+    if let Some(path) = startup.take() {
+        spawn_project_load(regen, path);
+    } else if regen.busy.is_none() {
+        if let Some(path) = crate::system_open::poll_pending_path() {
+            spawn_project_load(regen, path);
+        }
+    }
 }
 
 /// Open a project asynchronously: the heavy part (RON parsing of the timeline plus reparsing the

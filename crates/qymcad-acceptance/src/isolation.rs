@@ -200,6 +200,9 @@ mod tests {
     /// A CHECK PAST ITS MEMORY IS STOPPED, says so and says how much it held - long before it would have finished.
     #[test]
     fn a_check_past_its_memory_is_stopped() {
+        if super::resident_mb(std::process::id()).is_none() {
+            return;
+        }
         let began = std::time::Instant::now();
         let said = crate::refusal(|| super::in_a_process_of_its_own(module_path!(), "a_greedy_check_for_the_runner", Duration::from_secs(60), 100, None));
         assert!(said.contains("ran past its memory of 100 MB"), "a check of 300 MB under a memory of 100: {said:?}");

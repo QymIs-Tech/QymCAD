@@ -3778,6 +3778,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "qymcad-manufacturing"
+version = "0.1.0"
+dependencies = [
+ "qymcad-core",
+ "qymcad-materials",
+ "ron",
+ "serde",
+]
+
+[[package]]
+name = "qymcad-materials"
+version = "0.1.0"
+dependencies = [
+ "qymcad-core",
+ "ron",
+ "serde",
+]
+
+[[package]]
 name = "qymcad-meshfit"
 version = "0.1.0"
 dependencies = [

@@ -10,15 +10,42 @@ use std::env;
 include!("src/cxx_runtime.rs");
 
 fn main() {
-    let inc = env::var("OCCT_INCLUDE_DIR").unwrap_or_else(|_| "/usr/include/opencascade".into());
-    let libdir = env::var("OCCT_LIB_DIR").unwrap_or_else(|_| "/usr/lib".into());
-
-    // WHICH TOOLCHAIN IS ON THE OTHER SIDE. The C++ ABI does not mix: the bridge must be compiled by the
-    // same compiler that built OCCT. On Windows that is MSVC - the mainstream target for Rust there, and
-    // the one every desktop CAD is built with.
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let msvc = target_env == "msvc";
+
+    let inc = env::var("OCCT_INCLUDE_DIR").unwrap_or_else(|_| {
+        if target_os == "macos" {
+            for p in ["/opt/homebrew/include/opencascade", "/usr/local/include/opencascade", "/opt/homebrew/opt/opencascade/include/opencascade"] {
+                if std::path::Path::new(p).exists() {
+                    return p.into();
+                }
+            }
+        } else if target_os == "windows" {
+            for p in ["C:/occt/opencascade-7.9.3-vc14-64/inc", "C:/occt/include/opencascade", "C:/occt/inc"] {
+                if std::path::Path::new(p).exists() {
+                    return p.into();
+                }
+            }
+        }
+        "/usr/include/opencascade".into()
+    });
+    let libdir = env::var("OCCT_LIB_DIR").unwrap_or_else(|_| {
+        if target_os == "macos" {
+            for p in ["/opt/homebrew/lib", "/usr/local/lib", "/opt/homebrew/opt/opencascade/lib"] {
+                if std::path::Path::new(p).exists() {
+                    return p.into();
+                }
+            }
+        } else if target_os == "windows" {
+            for p in ["C:/occt/opencascade-7.9.3-vc14-64/win64/vc14/lib", "C:/occt/lib", "C:/occt/win64/vc14/lib"] {
+                if std::path::Path::new(p).exists() {
+                    return p.into();
+                }
+            }
+        }
+        "/usr/lib".into()
+    });
 
     let mut build = cc::Build::new();
     build

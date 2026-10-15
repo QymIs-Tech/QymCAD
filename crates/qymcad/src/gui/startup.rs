@@ -94,6 +94,7 @@ pub(crate) fn prepare_the_process() {
     // THE BREADCRUMB SINK. Opening an edit records what a person just did; the crate of records does not
     // know what a crash report is, so the application plugs its trail in here, once.
     qymcad_ui_state::set_step_recorder(crate::crash::note_step);
+    crate::system_open::install_open_document_handler();
 }
 
 /// THE PROGRAM AS IT COMES UP, before the first frame: fonts, the settings a previous run kept in `storage`,
@@ -127,30 +128,35 @@ pub(crate) fn start_the_program(ctx: &egui::Context, storage: Option<&dyn eframe
         // than here. The decision used to be "always reopen the last project" with nothing to say
         // otherwise, and it lived in this closure - which no check can run, so it was a decision
         // nobody measured.
-        let last = eframe::get_value::<Option<String>>(storage, "last_project").flatten();
-        match qymcad_ui_state::opening(&app.set, last.as_deref()) {
-            qymcad_ui_state::Opening::LastProject(path) => {
-                app.disk.io.startup = Some(path); // loaded asynchronously on the first frame (the splash with the spinner)
-            }
-            qymcad_ui_state::Opening::Empty { start_screen } => {
-                // AN EMPTY DOCUMENT IS EMPTY: the root and nothing else. `App::default` hands out a
-                // document with a part in it, which is right for a check that needs somewhere to
-                // draw and wrong for the first minute of a person - reported as "a person opens the
-                // CAD and sees an empty part".
-                // A FIRST START MEETS A PERSON WITH A CUBE: a part of a sketch and its extrusion, to step into and see
-                // how the work goes here (decided 25.09). Later an empty document is empty - a fresh one, not the
-                // default's part left standing under a root made active.
-                app.project = Project::default();
-                if first_start {
-                    app.project.cube_sample();
-                } else {
-                    app.project.new_empty_document();
+        let handed = crate::system_open::startup_path();
+        if let Some(path) = handed {
+            app.disk.io.startup = Some(path);
+        } else {
+            let last = eframe::get_value::<Option<String>>(storage, "last_project").flatten();
+            match qymcad_ui_state::opening(&app.set, last.as_deref()) {
+                qymcad_ui_state::Opening::LastProject(path) => {
+                    app.disk.io.startup = Some(path); // loaded asynchronously on the first frame (the splash with the spinner)
                 }
-                // the keys of "saved" and "committed" were taken of the document `App::default` made; the empty one
-                // is another document, and without taking them again a fresh start called itself unsaved
-                app.disk.edits.committed_key = doc_key(&app.project);
-                app.disk.edits.saved_key = edit_key(&app.draw_ctx());
-                app.win.show_start(start_screen);
+                qymcad_ui_state::Opening::Empty { start_screen } => {
+                    // AN EMPTY DOCUMENT IS EMPTY: the root and nothing else. `App::default` hands out a
+                    // document with a part in it, which is right for a check that needs somewhere to
+                    // draw and wrong for the first minute of a person - reported as "a person opens the
+                    // CAD and sees an empty part".
+                    // A FIRST START MEETS A PERSON WITH A CUBE: a part of a sketch and its extrusion, to step into and see
+                    // how the work goes here (decided 25.09). Later an empty document is empty - a fresh one, not the
+                    // default's part left standing under a root made active.
+                    app.project = Project::default();
+                    if first_start {
+                        app.project.cube_sample();
+                    } else {
+                        app.project.new_empty_document();
+                    }
+                    // the keys of "saved" and "committed" were taken of the document `App::default` made; the empty one
+                    // is another document, and without taking them again a fresh start called itself unsaved
+                    app.disk.edits.committed_key = doc_key(&app.project);
+                    app.disk.edits.saved_key = edit_key(&app.draw_ctx());
+                    app.win.show_start(start_screen);
+                }
             }
         }
     }

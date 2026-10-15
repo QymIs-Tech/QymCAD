@@ -345,7 +345,10 @@ impl Cage {
     }
 }
 
+pub mod opensubdiv;
 pub mod patch;
+
+pub use opensubdiv::{EdgeCrease, OpenSubdivCage, SubdivEdge};
 
 #[cfg(test)]
 mod tests;

@@ -40,6 +40,12 @@ pkg-linux: pkg-linux-image
 #   $env:OCCT_INCLUDE_DIR = "C:\occt\include\opencascade"; $env:OCCT_ROOT = "C:\occt"
 #   cargo build --release --bin qymcad; pwsh -File packaging/win/bundle.ps1
 
+# --- macOS application bundle (.app) and zip ---
+# Build release binary and assemble QymCAD.app into dist/
+pkg-macos:
+    cargo build --release --bin qymcad
+    ./packaging/macos/bundle.sh
+
 # clear out what packaging produced
 clean-dist:
     rm -rf dist

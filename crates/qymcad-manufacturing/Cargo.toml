@@ -1,0 +1,18 @@
+[package]
+name = "qymcad-manufacturing"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Manufacturing preparation, DFM analysis, 3D printing slicer adapters, CAM toolpaths, and costing"
+
+[dependencies]
+qymcad-core.workspace = true
+qymcad-materials = { path = "../qymcad-materials" }
+serde.workspace = true
+ron.workspace = true
+
+[lints]
+workspace = true

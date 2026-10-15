@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -39,7 +40,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # THE CAP IS FOR A DESKTOP: without it a run that ate the memory took the editor down with it, twice. A CI runner is a
 # machine of its own with no user session of systemd to put a scope in, and the machine is the bound there.
 CAP_GB = 16
-CAP = [] if os.environ.get("CI") else ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={CAP_GB}G", "-p", "MemorySwapMax=0"]
+CAP = (
+    ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={CAP_GB}G", "-p", "MemorySwapMax=0"]
+    if not os.environ.get("CI") and shutil.which("systemd-run")
+    else []
+)
 
 # THE ACCEPTANCE PROBES SIDE BY SIDE: as many as the machine has threads for and memory for. One number for every machine
 # did not fit: on 20 threads and 31 GB the fast level took 1209 s at 6, 851 s at 12 (the scope's peak 1.38 GB) and 754 s
