@@ -97,7 +97,9 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
         // geometry and is reliable).
         let flagged = qymcad_ui_state::flagged_redundant(&*pr.cache, &*pr.project, si); // ONE rule for the list and for the canvas
         let holders = pr.project.sketches[si].corner_holders();
-        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+        // the list takes the REST OF THE PANEL, whatever its height: a fixed 360-point cap left the
+        // lower third of a tall panel standing empty
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             for (ci, c) in cons.iter_mut().enumerate() {
                 if is_sys(c) {
                     continue; // a system `Fixed` on the origin or an axis is not shown
