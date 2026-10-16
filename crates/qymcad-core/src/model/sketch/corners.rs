@@ -1099,7 +1099,10 @@ impl Project {
     pub fn fillet_all_corners_by(&mut self, si: usize, size: FilletSize, only: Option<&std::collections::HashSet<Id>>) -> usize {
         let corners: Vec<Id> = {
             let Some(s) = self.sketches.get(si) else { return 0 };
-            let mut count: std::collections::HashMap<Id, usize> = std::collections::HashMap::new();
+            // BY ID: a hash map is walked in an order chosen at random for every map, and each corner filleted takes
+            // its ids (two tangency points, a centre, an arc) in the order it is reached - the same edit gave the arcs
+            // other ids in another run, and so another file
+            let mut count: std::collections::BTreeMap<Id, usize> = std::collections::BTreeMap::new();
             for e in &s.entities {
                 if e.construction || only.is_some_and(|f| !f.contains(&e.id)) {
                     continue;
