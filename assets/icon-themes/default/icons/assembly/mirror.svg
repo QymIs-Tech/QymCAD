@@ -1,0 +1,20 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / mirror" clip-path="url(#clip0_23_25)">
+<path id="Polygon 16" d="M9 4L15.4952 7.75V15.25L9 19L2.50481 15.25V7.75L9 4Z" fill="var(--icon-dimmed, #7C7C7CFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<g id="Polygon 19">
+<path d="M15.4952 15.25L8.99999 19L4.50446 16.4045L4.50481 15.25L15.4952 8.4379V15.25Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<mask id="stroke0_23_25" fill="#FFFFFF">
+<path d="M15.4952 15.25L8.99999 19L4.50446 16.4045L4.50481 15.25L15.4952 8.4379V15.25Z"/>
+</mask>
+<path d="M15.4952 15.25L8.99999 19L4.50446 16.4045L4.50481 15.25L15.4952 8.4379V15.25Z" stroke="var(--icon-stroke, #000000FF)" mask="url(#stroke0_23_25)"/>
+</g>
+<path id="Union" d="M27.4951 15.75L4.5 31L4.50488 15.25L27.4951 1V15.75ZM6.50391 16.3633L6.50098 27.2725L25.4951 14.6758V4.59277L6.50391 16.3633Z" stroke-width="2" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Union_2" d="M27.4951 15.75L4.5 31L4.50488 15.25L27.4951 1V15.75ZM6.50391 16.3633L6.50098 27.2725L25.4951 14.6758V4.59277L6.50391 16.3633Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Polygon 18" d="M23 12L29.4952 15.75V23.25L23 27L16.5048 23.25L16.5048 15.75L23 12Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<defs>
+<clipPath id="clip0_23_25">
+<rect width="32" height="32" fill="#FFFFFF"/>
+</clipPath>
+</defs>
+</svg>

@@ -3,6 +3,7 @@
 //! A click lands on a datum axis, a straight edge or a cylindrical face, and the pattern turns about it; or on two
 //! points one after the other - datum points or vertices - and the axis runs through them. Every one of them gives an
 //! axis that follows its source: a vertex is taken as a datum point standing on it.
+use qymcad_ui_state::Notice;
 use super::*;
 
 /// What a click in the view aims at while an axis is being picked.
@@ -38,7 +39,7 @@ pub(crate) fn take(pc: &mut PartCtx, at: ArrayAxisAim) {
         ArrayAxisAim::Point(p) => match pc.arr.axis_first.take() {
             None => {
                 pc.arr.axis_first = Some(p);
-                *pc.status = crate::i18n::tr("vp-array-axis-point1");
+                *pc.status = Notice::info(crate::i18n::tr("vp-array-axis-point1"));
                 return;
             }
             Some(first) => through_two_points(pc.project, pc.live, first, p).map(|id| (id, "vp-array-axis-points")).ok_or("msg-points-coincide"),
@@ -48,9 +49,9 @@ pub(crate) fn take(pc: &mut PartCtx, at: ArrayAxisAim) {
     match axis {
         Ok((id, words)) => {
             (pc.arr.axis, pc.arr.axis_pick, pc.arr.axis_first) = (id, false, None);
-            *pc.status = crate::i18n::tr(words);
+            *pc.status = Notice::info(crate::i18n::tr(words));
         }
-        Err(words) => *pc.status = crate::i18n::tr(words),
+        Err(words) => *pc.status = Notice::refusal(crate::i18n::tr(words)),
     }
 }
 

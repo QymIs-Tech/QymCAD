@@ -91,7 +91,7 @@ mod tests {
 
         assert!(app.project.mate_constraints.is_empty(), "a group of one part was assembled — there is nothing in it to fasten");
         assert!(app.side.joint.group_pick.is_some(), "the tool was dropped instead of letting the second part be clicked");
-        assert_eq!(app.status, crate::i18n::tr("j-group-need-two"), "the person was not told what is missing: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-group-need-two")), "the person was not told what is missing: {}", app.status);
     }
 
     /// A GROUP CAN BE DELETED FROM THE PANEL — otherwise it is forever.

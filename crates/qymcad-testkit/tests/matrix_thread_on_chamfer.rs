@@ -41,7 +41,7 @@ fn thread_on_a_chamfered_shaft_cuts_into_the_body() {
     let last = p.finish_base_body(t, 1);
     let (rep, shapes) = qymcad_testkit::regenerate(&mut p);
     assert!(rep.errors.is_empty(), "a thread on a chamfered shaft builds without errors: {:?}", rep.errors);
-    let after = shapes.get(&last).map(|s| s.tessellate(0.05).iter().map(|b| b.mesh.volume()).sum::<f64>()).unwrap_or(0.0);
+    let after = shapes.get(&last).map(|s| qymcad_kernel::specimen::mesh(s, 0.05).iter().map(|b| b.mesh.volume()).sum::<f64>()).unwrap_or(0.0);
     let removed = before - after;
     // the ring between the major diameter and the root over the threaded length; the groove takes about half
     // of it

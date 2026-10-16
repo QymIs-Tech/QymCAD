@@ -80,8 +80,8 @@ pub enum Fixture {
     RectangleInSketch,
     /// The same rectangle with its bottom side, from (0, 0) to (40, 0), picked by the arrow.
     RectangleSidePicked,
-    /// The same sketch with a line from (10, 0) to (30, 20) and an upright line from (0, -20) to (0, 20) to reflect it
-    /// about; the first line picked by the arrow.
+    /// The same sketch with a line from (10, 5) to (30, 25) and an upright line from (0, -20) to (0, 20) to reflect it
+    /// about; the first line picked by the arrow. The first line keeps off the axes: an end put on one is held there.
     LineAndAxisPicked,
     /// The same rectangle with its bottom side cut away by Edit -> Cut, the base point clicked on it: the side waits in
     /// the clipboard.
@@ -348,9 +348,9 @@ impl Fixture {
             }
             Fixture::LineAndAxisPicked => {
                 Fixture::SketchOnXy.build_here(s);
-                draw(s, "tb-line-hint", &[(10.0, 0.0), (30.0, 20.0)]);
+                draw(s, "tb-line-hint", &[(10.0, 5.0), (30.0, 25.0)]);
                 draw(s, "tb-line-hint", &[(0.0, -20.0), (0.0, 20.0)]);
-                s.click_on_sketch(20.0, 10.0);
+                s.click_on_sketch(20.0, 15.0);
             }
             Fixture::RectangleSideCut => {
                 Fixture::RectangleSidePicked.build_here(s);

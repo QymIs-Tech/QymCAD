@@ -12,10 +12,12 @@
 mod tests {
     use crate::gui::App;
 
-    /// The palette and the light of a plain scene, so the numbers below are about the flags and nothing else.
+    /// The palette and the light of a plain scene - a face looking straight at the eye - so the numbers below are about
+    /// the flags and nothing else.
     fn shade(hot: bool, ghost: bool) -> egui::Color32 {
         let app = App::default();
-        crate::gui::shade_tri_for_test(&app.scheme.pal, app.set.ghost_alpha, hot, ghost, [120, 135, 162], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0])
+        let lights = qymcad_ui_state::scene_lights(&([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]));
+        crate::gui::shade_tri_for_test(&app.scheme.pal, app.set.ghost_alpha, hot, ghost, [120, 135, 162], [0.0, 0.0, 1.0], &lights)
     }
 
     #[test]

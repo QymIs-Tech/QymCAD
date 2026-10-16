@@ -303,8 +303,10 @@ fn failure(f: impl FnOnce()) -> Option<(String, String)> {
 
 /// Is a failure raised in `file` one of aiming - the session could not find what the step points at - rather than
 /// of the program? Aiming is done by the door and by the gestures of the checks; everything else is the program.
+/// The door is `gui/session.rs` and its modules in `gui/session/`: a miss raised in `session/finding.rs` read as the
+/// program's failure stopped the kept chain of seed 43 at a step that a miss of aim only skips.
 fn is_aiming(file: &str) -> bool {
-    file.contains("gui/session.rs") || file.contains("qymcad-acceptance")
+    file.contains("gui/session.rs") || file.contains("gui/session/") || file.contains("qymcad-acceptance")
 }
 
 /// How much memory this process holds now, in megabytes; `None` where the system does not say (no `/proc`).
@@ -676,6 +678,16 @@ mod tests {
     }
 
     /// THE SAME SEED GROWS THE SAME CHAIN, and another seed another one.
+    #[test]
+    fn a_miss_of_aim_is_told_by_the_session_and_its_modules() {
+        for aiming in ["crates/qymcad/src/gui/session.rs", "crates/qymcad/src/gui/session/finding.rs", "crates/qymcad-acceptance/src/contract/run/steps.rs"] {
+            assert!(super::is_aiming(aiming), "a failure raised in {aiming} is a miss of aim");
+        }
+        for program in ["crates/qymcad/src/gui/sketching.rs", "crates/qymcad-ui-state/src/session_tools.rs"] {
+            assert!(!super::is_aiming(program), "a failure raised in {program} is the program's");
+        }
+    }
+
     #[test]
     fn a_seed_grows_the_same_chain() {
         assert_eq!(grow(7, 60, Scene::Sketch), grow(7, 60, Scene::Sketch), "two chains of the seed 7 came out different");

@@ -53,11 +53,17 @@ impl CompPatternKind {
     }
 
     /// How many instances there are in total, including the source, which is the first: along a grid, the product of
-    /// the counts of its directions.
+    /// the counts of its directions. Zero when that is past `MAX_PATTERN_INSTANCES`: such a layout is refused, and a
+    /// zero makes no copies wherever the count is used.
     pub fn count(&self) -> u32 {
+        crate::feature::pattern_instances(&self.counts()).unwrap_or(0)
+    }
+
+    /// The count along each direction, as the layout states it.
+    pub fn counts(&self) -> [u32; 3] {
         match *self {
-            CompPatternKind::Linear { count, more, .. } => count.max(1) * more[0].2.max(1) * more[1].2.max(1),
-            CompPatternKind::Circular { count, .. } => count.max(1),
+            CompPatternKind::Linear { count, more, .. } => [count, more[0].2, more[1].2],
+            CompPatternKind::Circular { count, .. } => [count, 1, 1],
         }
     }
 
@@ -66,7 +72,8 @@ impl CompPatternKind {
         match *self {
             CompPatternKind::Linear { dir, step, count, more } => {
                 // instance i of the grid: along the first direction first, then the second, then the third
-                let (c1, c2) = (count.max(1), more[0].2.max(1));
+                // in 64 bits: the product of two counts no longer wraps round to zero and divides by it
+                let (c1, c2, i) = (count.max(1) as u64, more[0].2.max(1) as u64, i as u64);
                 let (a, b, c) = (i % c1, (i / c1) % c2, i / (c1 * c2));
                 let mut m = PLACE_IDENTITY;
                 for (d, s, k) in [(dir, step, a), (more[0].0, more[0].1, b), (more[1].0, more[1].1, c)] {
@@ -125,6 +132,9 @@ impl Project {
     /// ones kept keep their ids: joints may rest on them, and recreating everything would tear those apart on every
     /// change of the count.
     pub fn set_comp_pattern(&mut self, id: Id, kind: CompPatternKind) -> bool {
+        if kind.count() == 0 {
+            return false; // past `MAX_PATTERN_INSTANCES`: the pattern keeps the layout it had
+        }
         let Some(i) = self.timeline.iter().position(|n| n.id == id && matches!(n.kind, FeatureKind::ComponentPattern { .. })) else { return false };
         let want = kind.count().saturating_sub(1) as usize;
         let mut gone = Vec::new();

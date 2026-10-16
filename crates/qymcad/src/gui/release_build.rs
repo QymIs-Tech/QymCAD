@@ -29,7 +29,24 @@ mod tests {
     /// nobody tests.
     #[test]
     fn no_field_of_app_belongs_to_one_build_only() {
-        let body = struct_body(include_str!("../gui.rs"), "pub(crate) struct App {");
+        let body = struct_body(
+            concat!(
+                include_str!("file_doors.rs"),
+                "\n",
+                include_str!("gizmo_math.rs"),
+                "\n",
+                include_str!("look.rs"),
+                "\n",
+                include_str!("panel_bits.rs"),
+                "\n",
+                include_str!("startup.rs"),
+                "\n",
+                include_str!("view_anim.rs"),
+                "\n",
+                include_str!("../gui.rs")
+            ),
+            "pub(crate) struct App {",
+        );
         let gated: Vec<&str> = body.lines().map(str::trim).filter(|l| l.starts_with("#[cfg(")).collect();
         assert!(
             gated.is_empty(),
@@ -45,7 +62,21 @@ mod tests {
     /// first, then attributes - leaves nothing to detach.
     #[test]
     fn a_build_switch_is_never_separated_from_its_item_by_a_doc_comment() {
-        let source = include_str!("../gui.rs");
+        let source = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         let lines: Vec<&str> = source.lines().map(str::trim).collect();
         let stray: Vec<usize> = (0..lines.len().saturating_sub(1)).filter(|&i| lines[i].starts_with("#[cfg(debug_assertions)]") && lines[i + 1].starts_with("///")).map(|i| i + 1).collect();
         assert!(

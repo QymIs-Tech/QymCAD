@@ -42,3 +42,34 @@ fn an_edit_of_a_parameter_in_capitals_marks_its_extrusion_alone() {
     assert!(dirty(over_capital), "the parameter H was made 40 and the extrusion of height H is not marked to rebuild");
     assert!(!dirty(over_small), "the parameter H was made 40 and the extrusion of height h is marked to rebuild");
 }
+
+/// A HINGE WHOSE ANGLE IS A FORMULA COUNTS FROM ITS PARAMETER: a mate is no node to mark, so the scheduler is told the
+/// placement has to be solved again - by the edit of that parameter and by no other. Reported behaviour: pa made 45
+/// under a hinge of angle pa, and the part stayed turned by 90.
+#[test]
+fn an_edit_of_the_parameter_of_a_hinge_asks_for_the_placement() {
+    use qymcad_core::feature::{AnchorRef, JointKind};
+    let mut p = Project::default();
+    p.new_document();
+    p.parameters.push(Param { name: "pa".into(), expr: "90".into(), value: 90.0 });
+    p.parameters.push(Param { name: "h".into(), expr: "30".into(), value: 30.0 });
+    let hub = p.add_part("hub");
+    let wheel = p.add_part("wheel");
+    let a = p.add_connector(hub, AnchorRef::Origin);
+    let b = p.add_connector(wheel, AnchorRef::Origin);
+    let hinge = p.add_joint(a, b, JointKind::Revolute);
+    p.set_feat_dim(hinge, "angle", "pa".into());
+    let mut seen = std::collections::HashMap::new();
+    settle_params_seen(&mut seen, &mut p);
+
+    let set = |p: &mut Project, name: &str, v: f64| {
+        if let Some(prm) = p.parameters.iter_mut().find(|q| q.name == name) {
+            prm.expr = v.to_string();
+            prm.value = v;
+        }
+    };
+    set(&mut p, "h", 40.0);
+    assert!(!mark_changed_params_dirty(&seen, &mut p), "h, which no mate counts from, was made 40 and the placement is asked for");
+    set(&mut p, "pa", 45.0);
+    assert!(mark_changed_params_dirty(&seen, &mut p), "pa was made 45 under a hinge of angle pa and the placement is not asked for");
+}

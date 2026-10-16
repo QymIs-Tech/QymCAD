@@ -19,5 +19,6 @@ short.
 - The joint came apart after editing dimensions — extend stretches once and does not hold the joint. To hold it, add
   the **Point on a line** or **Coincident** constraint.
 - The line did not extend and the status says its end is joined — that end is shared with another line or an arc, or
-  a constraint or a dimension holds it. It is not moved, so as not to pull the neighbours along. Draw a new line from
-  that end.
+  the **Fix** constraint or a dimension holds it. It is not moved, so as not to pull the neighbours along. Draw a new line from
+  that end. An end that only stands on a line, an axis, a circle or the origin is extended, and that constraint is
+  removed.

@@ -416,7 +416,13 @@ mod tests {
 
         let mut i3 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i3.events.push(egui::Event::PointerMoved(end));
-        let out = ctx.run_ui(i3, |x| draw(&mut app, x));
+        let _ = ctx.run_ui(i3, |x| draw(&mut app, x));
+        assert_eq!(app.tree.drag, Some(c), "the drag must start on the source row");
+        let steady = || egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let _ = ctx.run_ui(steady(), |x| draw(&mut app, x));
+        let out = ctx.run_ui(steady(), |x| draw(&mut app, x));
+        assert_eq!(app.tree.drag, Some(c), "the drag must remain active while the button is held");
+        assert!(ctx.pointer_interact_pos().is_some(), "the pointer position must remain available during a drag");
 
         let mut texts = Vec::new();
         for cs in &out.shapes {

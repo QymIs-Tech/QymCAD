@@ -13,7 +13,7 @@ mod tests {
     const SCREEN: egui::Vec2 = egui::vec2(1400.0, 900.0);
 
     /// What one frame of the overlay painted: (the card, every piece of text with where it landed).
-    fn painted(app: &App, label: &str, progress: Option<(usize, usize)>) -> (egui::Rect, Vec<(String, egui::Rect)>) {
+    fn painted(app: &App, label: &str, progress: Option<qymcad_ui_state::NodeCount>) -> (egui::Rect, Vec<(String, egui::Rect)>) {
         fn walk(s: &egui::epaint::Shape, cards: &mut Vec<egui::Rect>, texts: &mut Vec<(String, egui::Rect)>) {
             match s {
                 egui::epaint::Shape::Text(t) => texts.push((t.galley.text().to_string(), egui::Rect::from_min_size(t.pos, t.galley.size()))),
@@ -48,7 +48,7 @@ mod tests {
     fn the_longest_rebuild_line_stays_inside_the_card() {
         let app = App::default();
         let label = crate::i18n::tr1("io-rebuilding-heavy-n", "n", "28");
-        let (card, texts) = painted(&app, &label, Some((9, 28)));
+        let (card, texts) = painted(&app, &label, Some(qymcad_ui_state::NodeCount { done: 9, total: 28 }));
 
         assert!(texts.iter().any(|(t, _)| t.contains(&label)), "the label was not painted at all; painted: {:?}", texts.iter().map(|(t, _)| t.clone()).collect::<Vec<_>>());
         for (t, r) in &texts {
@@ -93,7 +93,7 @@ mod tests {
                     Some((name, v)) => crate::i18n::tr1(key, name, v),
                     None => crate::i18n::tr(key),
                 };
-                let (card, texts) = painted(&app, &label, Some((9, 28)));
+                let (card, texts) = painted(&app, &label, Some(qymcad_ui_state::NodeCount { done: 9, total: 28 }));
                 for (t, r) in &texts {
                     assert!(card.contains_rect(*r), "[{lang}] \"{t}\" ({key}) is painted outside the card: {r:?} against {card:?}");
                 }

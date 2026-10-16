@@ -20,11 +20,31 @@
 ///
 /// Keyed by the path from `crates/`: an exception written as a bare file name would excuse every namesake,
 /// and each workbench crate is a single `lib.rs`.
-const ALLOWED: [(&str, &str); 1] = [(
-    "qymcad/src/god_object_ratchet.rs",
-    "it addresses ONE NAMED FILE, `src/gui.rs`, because the god object being measured is that file - not a \
-     kind of code that could live anywhere else",
-)];
+const ALLOWED: [Allowed; 2] = [
+    Allowed {
+        file: "qymcad/src/god_object_ratchet.rs",
+        why: "it addresses ONE NAMED FILE, `src/gui.rs`, because the god object being measured is that file - not a \
+              kind of code that could live anywhere else",
+    },
+    Allowed {
+        file: "qymcad-kernel/tests/every_operation_goes_through_the_door.rs",
+        why: "it addresses NAMED FILES, `kernel.rs`, the door `door/` and the operations `ops/` of the bridge: the one implementation of `Kernel` and the door \
+              of its results live there and nowhere else - the walk of every C++ entry is its neighbour's",
+    },
+];
+
+/// A guard allowed to read files of its own crate, and why.
+struct Allowed {
+    file: &'static str,
+    why: &'static str,
+}
+
+/// AN EXCEPTION WITHOUT A REASON IS NO EXCEPTION: the reason is what a person reads deciding whether it still holds.
+#[test]
+fn every_exception_says_why() {
+    let bare: Vec<&str> = ALLOWED.iter().filter(|a| a.why.split_whitespace().count() < 8).map(|a| a.file).collect();
+    assert!(bare.is_empty(), "an exception names no reason: {bare:?}");
+}
 
 #[test]
 fn no_source_guard_is_rooted_at_its_own_crate() {
@@ -47,7 +67,7 @@ fn no_source_guard_is_rooted_at_its_own_crate() {
             }
             looked += 1;
             let name = p.strip_prefix(&crates).unwrap_or(&p).to_string_lossy().replace('\\', "/");
-            if name == "qymcad-i18n/tests/a_guard_walks_the_whole_tree.rs" || ALLOWED.iter().any(|(n, _)| *n == name) {
+            if name == "qymcad-i18n/tests/a_guard_walks_the_whole_tree.rs" || ALLOWED.iter().any(|a| a.file == name) {
                 continue; // this file names the form in order to forbid it
             }
             for (i, line) in std::fs::read_to_string(&p).unwrap_or_default().lines().enumerate() {

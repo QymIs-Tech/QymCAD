@@ -114,7 +114,7 @@ mod tests {
             (Kind::Frame, true) => Duration::from_secs(1),
             (Kind::Frame, false) => Duration::from_millis(200),
         };
-        assert!(steps.iter().all(|s| s.took <= budget(s.kind)), "steps over their budget in the sketch of the report: {}", said.join(", "));
+        assert!(steps.iter().all(|s| qymcad_core::time_budget::within(s.took, budget(s.kind))), "steps over their budget in the sketch of the report: {}", said.join(", "));
     }
 
     /// The loops of the first sketch as a sorted list of what each is, as the probes of the loops print them.

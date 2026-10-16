@@ -129,7 +129,7 @@ mod tests {
 
         assert!(app.project.mate_constraints.is_empty(), "a tangency was assembled from two planes");
         assert!(app.side.joint.tangent_pick.is_some(), "the tool was dropped instead of letting a cylinder be pointed at");
-        assert_eq!(app.status, crate::i18n::tr("j-tangent-need-cylinder"), "the person was not told what is wrong: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-tangent-need-cylinder")), "the person was not told what is wrong: {}", app.status);
     }
 
     /// THE SURFACE CLICKED AGAIN IS LET GO, as a second click on any pick.

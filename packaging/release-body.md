@@ -29,6 +29,7 @@
 * **Faster rebuilds:** a rebuild computes independent nodes on several cores (how many is a setting); the scene
   draws large models with less memory.
 * **First start** opens a sample; afterwards the last project opens.
+* **A macOS build for Intel** beside the one for Apple Silicon: `macos-x86_64.zip` and `macos-arm64.zip`.
 
 **Fixed**
 
@@ -50,4 +51,4 @@
 
 The document format changes with no backward compatibility; `convert_qcad.py` brings older files forward.
 Recognising a mesh: smooth rounded walls come out in several faces with visible seams between them.
-The CNC (CAM) module is groundwork and does not work yet. There is no Intel macOS build.
+The CNC (CAM) module is groundwork and does not work yet.

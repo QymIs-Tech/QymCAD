@@ -33,4 +33,21 @@ the left, not from here.
 ## At the bottom — the status
 
 The status line says what is happening now and what the program is waiting for from you; on the right — the
-coordinates of the pointer and the units.
+coordinates of the pointer and the units. A warning is written in yellow and an error in red, each with its sign;
+a value or a click that was not taken is written in soft red.
+
+Beside the message, two counters show the errors and warnings of the whole document as they are now, whatever the
+line said last:
+
+* **red** — operations that did not build, mates that do not hold, sketches whose constraints conflict, parameters
+  whose formula gives no value;
+* **yellow** — operations that built only a part of what was asked (a fillet that left some edges sharp), drivers
+  whose dimension is gone.
+
+A kind with nothing in it has no counter. Click a counter, or the red or yellow message: with one entry the program
+goes straight to it — the part becomes current and the operation, sketch or mate is selected; with several, the window
+**Errors and warnings** opens with each of them, what is wrong and where, those of the part you work in first. Click
+a row to go there. A parameter opens the table of parameters narrowed to its name.
+
+**If an operation is red**, read why in its row or in the hint over it in the tree, then open it with a double click
+and change the value or the selection it needs — or the parameter it depends on. When it builds, its count goes.

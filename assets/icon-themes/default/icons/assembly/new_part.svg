@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="assembly / new_part">
+<g id="Polygon 16">
+<path d="M16 31L28.9904 23.5V16L22.4952 19.75L16 23.5V31Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M9.50481 19.75L16 23.5L22.4952 19.75L28.9904 16L22.4952 12.25L9.50481 19.75Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M9.50481 12.25V19.75L22.4952 12.25V4.75L9.50481 12.25Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M16 1L3.00962 8.5L9.50481 12.25L22.4952 4.75L16 1Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M3.00962 23.5L16 31V23.5L9.50481 19.75V12.25L3.00962 8.5V16V23.5Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path d="M22.4952 12.25V4.75L16 1L3.00962 8.5V16V23.5L16 31L28.9904 23.5V16L22.4952 12.25ZM16 31V23.5M3.00962 8.5L9.50481 12.25M9.50481 12.25V19.75L16 23.5M16 23.5L22.4952 19.75L28.9904 16M9.50481 12.25L22.4952 4.75M9.50481 19.75L22.4952 12.25" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</g>
+</svg>

@@ -17,6 +17,11 @@ angle to the previous one gets **perpendicular**, and an end that lands on anoth
 line**. An end clicked into an existing point becomes one point with it. Only constraints that do not
 over-define the sketch are added.
 
+Every drawing tool ties the points it puts down to what they land on: on a point or the origin —
+**Coincident**, on a line or the X or Y axis — **Point on a line**, on a circle or an arc — **Point on a
+circle**. The badge at the pointer shows the constraint the click will add. A point on a spline between its
+knots, or on an ellipse, is not held.
+
 If the wrong constraint appears, remove it from the constraint list: the geometry does not change, it
 only becomes freer. If auto constraints get in the way, switch them off.
 

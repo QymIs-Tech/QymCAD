@@ -14,7 +14,7 @@ nalgebra = "0.35" # the least-squares fits of planes, cylinders and spheres; the
 
 [dev-dependencies]
 qymcad-io.workspace = true
-qymcad-kernel.workspace = true # the probes build the bodies the recognition finds
+qymcad-kernel = { workspace = true, features = ["specimens"] } # the probes build the bodies the recognition finds
 
 [lints]
 workspace = true

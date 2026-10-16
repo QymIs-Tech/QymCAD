@@ -165,32 +165,20 @@ mod tests {
         assert!(covered > 1000, "the weakest device drew {covered} pixels of the cylinder");
     }
 
-    /// THE LONGEST RUN OF PIXELS OF ONE BRIGHTNESS along the middle row of the picture.
+    /// HOW MANY TIMES THE BRIGHTNESS CHANGES along the middle row of the body in the picture.
     ///
-    /// Flat shading paints a whole facet in one colour, so the row comes out in wide steps; smooth shading
-    /// blends across the triangle and the row is a ramp. The number tells the two apart without knowing
-    /// anything about the geometry.
-    fn longest_step(img: &egui::ColorImage) -> usize {
+    /// Flat shading paints a whole facet in one colour, so the row changes once a facet; smooth shading blends across
+    /// the triangle and the row changes every few pixels. The number tells the two apart without knowing anything
+    /// about the geometry. The widest run of one brightness, measured first, tells the lights apart instead: lit from
+    /// in front, the middle of a cylinder is a plateau 20 px wide whatever the normals do.
+    fn tone_changes(img: &egui::ColorImage) -> usize {
         let w = img.size[0];
         let row = img.size[1] / 2;
-        let (mut best, mut run, mut prev) = (0usize, 0usize, None);
-        for x in 0..w {
+        let lum = |x: usize| {
             let p = img.pixels[row * w + x];
-            if p.a() < 128 {
-                run = 0;
-                prev = None;
-                continue;
-            }
-            let lum = (p.r() as u32 * 2 + p.g() as u32 * 3 + p.b() as u32) / 6;
-            if prev == Some(lum) {
-                run += 1;
-            } else {
-                run = 1;
-                prev = Some(lum);
-            }
-            best = best.max(run);
-        }
-        best
+            (p.a() >= 128).then(|| (p.r() as u32 * 2 + p.g() as u32 * 3 + p.b() as u32) / 6)
+        };
+        (1..w).filter(|&x| matches!((lum(x - 1), lum(x)), (Some(a), Some(b)) if a != b)).count()
     }
 
     /// SMOOTH SHADING MUST ACTUALLY BE SMOOTH ON THE CARD.
@@ -199,7 +187,7 @@ mod tests {
     /// planes - while the software raster drew the same bodies smooth. The vertex normal was carried to the
     /// fragment FLAT, so every triangle took one vertex's normal and the smooth mode shaded facets.
     ///
-    /// The check compares the two modes on one body: smooth must paint in finer steps than flat. Comparing
+    /// The check compares the two modes on one body: smooth must change its tone far oftener than flat. Comparing
     /// against a number of pixels alone would pass the moment both modes became flat.
     #[test]
     fn smooth_shading_on_the_card_is_smoother_than_flat() {
@@ -214,10 +202,10 @@ mod tests {
         };
         app.set.shading = qymcad_ui_state::Shading::Smooth;
         let smooth = crate::gui::gpu_shot::eyes::shot(&app.painting(), rect()).expect("the card drew the flat picture but not the smooth one");
-        let (fs, ss) = (longest_step(&flat), longest_step(&smooth));
-        eprintln!("MEASURED the widest step of one brightness: flat {fs} px, smooth {ss} px");
-        assert!(fs > 4, "even in flat shading the picture came out without steps ({fs} px) - the check has nothing to compare against");
-        assert!(ss * 2 < fs, "smooth shading paints in steps of {ss} px against {fs} in flat: the vertex normal is not being interpolated");
+        let (fc, sc) = (tone_changes(&flat), tone_changes(&smooth));
+        eprintln!("MEASURED the changes of brightness along the row: flat {fc}, smooth {sc}");
+        assert!(fc > 4, "even in flat shading the picture came out without steps ({fc} changes) - the check has nothing to compare against");
+        assert!(sc > fc * 2, "smooth shading changes its tone {sc} times against {fc} in flat: the vertex normal is not being interpolated");
     }
 
     /// A CYLINDER IN A WIDE PERSPECTIVE, where the culling is hardest: the ray of sight is its own at every

@@ -107,7 +107,19 @@ mod tests {
     fn the_kind_is_chosen_in_the_command_bar() {
         let mut app = App::default();
         app.start_joint_pick();
-        let bar = include_str!("../../../qymcad-assembly/src/lib.rs");
+        let bar = concat!(
+            include_str!("../../../qymcad-assembly/src/bars.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/gizmo.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/picks.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/popup.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/slots.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/lib.rs")
+        );
         let head = &bar[bar.find("fn joint_tool_bar").expect("the command bar")..];
         for k in ["Rigid", "Revolute", "Slider", "Cylindrical", "Planar", "Ball", "PinSlot"] {
             assert!(head.contains(k), "the kind \"{k}\" is gone from the command bar");

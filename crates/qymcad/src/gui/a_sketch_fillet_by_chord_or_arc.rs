@@ -70,7 +70,7 @@ mod tests {
         let mut app = App::default();
         let si = fillet_in_hand(&mut app, "opt-fillet-chord");
         Hand::new(&mut app).click2d(0.0, 0.0).type_text("45").key(egui::Key::Enter);
-        if measure(&app, si).is_some() || !app.status.contains(&qymcad_i18n::tr("sk-fillet-too-big")) {
+        if measure(&app, si).is_some() || !app.status.words.contains(&qymcad_i18n::tr("sk-fillet-too-big")) {
             sins.push(format!("a chord of 45 on lines of 30: rounded {:?}, the status line says {:?}", measure(&app, si).map(|m| m.radius), app.status));
         }
         assert!(sins.is_empty(), "{}", sins.join("\n"));

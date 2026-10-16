@@ -75,7 +75,7 @@ mod tests {
             crate::gui::assembly_tools::doors::arm(&mut app, t);
 
             // 1. THE TOOL SAID WHAT IT WAITS FOR. An empty status line means "work it out yourself".
-            if app.status.trim().is_empty() {
+            if app.status.words.trim().is_empty() {
                 mute.push(format!("\"{name}\": taken up in silence — the person is not told what is expected of them"));
             }
             // 2. AND THE SCREEN DOES NOT COMPLAIN ABOUT ITSELF.

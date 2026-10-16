@@ -271,7 +271,91 @@ mod tests {
     #[test]
     fn the_general_ctrl_letters_are_the_ones_the_handlers_hear() {
         let mut heard: Vec<String> = Vec::new();
-        for src in [include_str!("input.rs"), include_str!("../gui.rs"), include_str!("../../../qymcad-ui-state/src/lib.rs")] {
+        for src in [
+            include_str!("input.rs"),
+            concat!(
+                include_str!("file_doors.rs"),
+                "\n",
+                include_str!("gizmo_math.rs"),
+                "\n",
+                include_str!("look.rs"),
+                "\n",
+                include_str!("panel_bits.rs"),
+                "\n",
+                include_str!("startup.rs"),
+                "\n",
+                include_str!("view_anim.rs"),
+                "\n",
+                include_str!("../gui.rs")
+            ),
+            concat!(
+                include_str!("../../../qymcad-ui-state/src/contexts.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/corners.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/dims.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/edits.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/fields.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/fonts.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/geom.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/gizmos.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/handles.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/hotkeys.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/jobs.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/joints.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/navigation.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/painting.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/rebuild.rs"),
+                "\n",
+                concat!(
+                    include_str!("../../../qymcad-ui-state/src/records/commands.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/frame.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/gizmos.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/pieces.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/scene.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/tools.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records.rs")
+                ),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/scene.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/section.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/selection.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/settings.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/sketch_diag.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/sketch_edit.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/text.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/tool_steps.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/tree.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/lib.rs")
+            ),
+        ] {
             for line in src.lines().filter(|l| !l.trim_start().starts_with("//") && (l.contains("modifiers.command") || l.contains("cmd &&"))) {
                 for part in line.split("key_pressed(egui::Key::").skip(1) {
                     let name: String = part.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
@@ -674,9 +758,9 @@ mod tests {
         let why = text_with(&shapes, &refused).expect("the refusal of Ctrl+Z is not drawn");
         assert!(text_rect(&shapes, &waiting).is_none(), "the waiting line still stands beside the refusal");
         assert!((why.pos - line.min).length() < 0.5, "the refusal starts at {:?}, the waiting line stood at {:?}", why.pos, line.min);
-        // THE STOP SIGN OPENS THE LINE: a refusal is not the clash, which asks a question under a warning triangle
-        let stop = egui_phosphor::regular::WARNING_OCTAGON;
-        assert!(why.galley.text().starts_with(stop), "the refusal is drawn without its stop sign: {:?}", why.galley.text());
+        // THE SIGN OF A REFUSAL OPENS THE LINE: a refusal is not the clash, which asks a question under a warning's sign
+        let stop = qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Refusal).expect("a refusal has its sign");
+        assert!(why.galley.text().starts_with(stop), "the refusal is drawn without the sign of a refusal: {:?}", why.galley.text());
         // THE SIGN SAYS STOP, the words are read in the colour of the row's own: red words beside a red sign shout
         let plain = text_color(&shapes, &what).expect("the extrude row is drawn");
         let color_of = |part: &str| why.galley.job.sections.iter().find(|s| why.galley.text().get(s.byte_range.start.0..s.byte_range.end.0) == Some(part)).map(|s| s.format.color);

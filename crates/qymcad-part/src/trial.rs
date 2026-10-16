@@ -13,6 +13,7 @@
 //! The trial runs on a worker, the frames keep coming: while it runs the command says it is checking and does not
 //! apply, and the answer takes its place beside the field when it lands. Run on the frame thread a trial of a heavy part
 //! stood the window still for as long as the kernel took.
+use qymcad_ui_state::Notice;
 use qymcad_core::model::Id;
 use qymcad_ui_state::PartCtx;
 use std::sync::{Arc, Mutex};
@@ -70,7 +71,7 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
     let job = gather(pc);
     let answer: Arc<Mutex<Option<qymcad_ui_state::TrialAnswer>>> = Arc::new(Mutex::new(None));
     let out = answer.clone();
-    std::thread::spawn(move || {
+    qymcad_kernel::worker(move || {
         // a trial names no field: the command's first one says it
         let (words, faces) = run_trial(job);
         let verdict = words.map_or(Trial::Clear, |w| Trial::Refused(first, w));
@@ -242,16 +243,11 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     } = job;
     let before: std::collections::HashSet<Id> = project.timeline.iter().map(|n| n.id).collect();
     let mut live = qymcad_ui_state::LiveGeom { ready: true, ..Default::default() };
-    {
-        let _gate = qymcad_kernel::kernel_gate(); // the kernel is not safe across threads: the bodies are read under its lock
-        for (id, bytes) in bodies {
-            if let Some(copy) = qymcad_kernel::Shape::from_brep_bytes(&bytes) {
-                live.shapes.insert(id, copy);
-            }
-        }
-    }
+    // the copies of the bodies, read back by the bridge under the lock of the kernel
+    let saved = bodies.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
+    live.shapes.extend(qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)));
     // a rebuild outside a running window happens at once, here, rather than being handed to a thread of its own
-    let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), String::new(), false);
+    let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), Notice::default(), false);
     let (mut recognise, mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default(), Default::default());
     let scheme = qymcad_ui_state::SchemeUi::default();
     let edited = cmd.edit;
@@ -307,12 +303,12 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     };
     super::apply_feat_cmd(&mut trial);
     if cmd_failed {
-        return (Some(status), Vec::new());
+        return (Some(status.words), Vec::new());
     }
     let laid: Vec<Id> = project.timeline.iter().map(|n| n.id).filter(|id| !before.contains(id) || Some(*id) == edited).collect();
     // a command that laid nothing refused by itself, and its status says why (a split plane that cuts nothing)
     if laid.is_empty() {
-        return (Some(status), Vec::new());
+        return (Some(status.words), Vec::new());
     }
     let refused = laid.iter().find_map(|id| project.regen_errors.get(id).filter(|e| !e.retryable())).map(qymcad_i18n::error_words::error_text);
     if refused.is_some() {

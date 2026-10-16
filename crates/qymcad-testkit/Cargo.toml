@@ -14,5 +14,8 @@ qymcad-kernel.workspace = true
 qymcad-io.workspace = true
 ron.workspace = true
 
+[dev-dependencies]
+qymcad-kernel = { workspace = true, features = ["specimens"] } # the probes build the bodies they import or measure
+
 [lints]
 workspace = true

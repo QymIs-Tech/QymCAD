@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Assemble QymCAD into a macOS .app and zip it. Runs after `cargo build --release` on an Apple Silicon
-# machine, with OCCT installed at $OCCT_ROOT (built from source - see .github/workflows/release.yml).
+# Assemble QymCAD into a macOS .app and zip it. Runs after `cargo build --release` on the machine it is
+# packing for - Apple Silicon or Intel - with OCCT installed at $OCCT_ROOT (built from source - see
+# .github/workflows/release.yml).
 #
 # WHAT MAKES A MAC BUNDLE DIFFERENT. On Linux `linuxdeploy` gathers the shared libraries and rewrites
 # their paths; on Windows the DLLs simply sit beside the executable and are found there. macOS does
@@ -12,6 +13,16 @@ set -euo pipefail
 BIN=target/release/qymcad
 [ -x "$BIN" ] || { echo "!!! no $BIN - run cargo build --release first"; exit 1; }
 OCCT_ROOT=${OCCT_ROOT:?set OCCT_ROOT to the OCCT installation}
+
+# THE PROCESSOR, in the archive name and in the notes. Two packages go up side by side, and a person
+# holding an Intel mac must be able to tell theirs from the file name alone. CI names it (MACOS_ARCH);
+# by hand it is the machine the script runs on, which is the machine cargo just built for.
+ARCH=${MACOS_ARCH:-$(uname -m)}
+case "$ARCH" in
+    arm64)  MACHINE="Apple Silicon" ;;
+    x86_64) MACHINE="Intel" ;;
+    *) echo "!!! unknown macOS architecture: $ARCH (expected arm64 or x86_64)"; exit 1 ;;
+esac
 
 # THE NAME. A tag names the package itself; anything else carries the commit, so two builds three days
 # apart cannot share a file name and a report can always be traced to one of them.
@@ -139,8 +150,11 @@ fi
 # by an ordinary double click. It is done once per download - an extended attribute stays cleared, a
 # restart does not bring it back - so the steps are written out plainly, for a person who has never opened
 # a terminal.
-cat > dist/README.txt <<'TXT'
-QymCAD - build for macOS (Apple Silicon).
+#
+# The notes are unquoted heredocs for the one word that differs between the two builds - the processor.
+# Nothing else in them may carry a `$` or a backtick.
+cat > dist/README.txt <<TXT
+QymCAD - build for macOS ($MACHINE).
 
 FIRST RUN. The build carries no Apple developer signature, and macOS marks everything downloaded
 from the internet as "quarantined": it will say the app is damaged and offer to move it to the Bin.
@@ -162,11 +176,11 @@ It is not damaged. The mark has to be cleared, once.
 The mark is gone for good on this copy: a restart does not bring it back. A build downloaded anew
 has to be cleared the same way.
 
-Requires macOS 12 or newer, an Apple Silicon machine.
+Requires macOS 12 or newer, a mac with an $MACHINE processor.
 TXT
 
-cat > dist/ПРОЧТИ.txt <<'TXT'
-QymCAD - сборка для macOS (Apple Silicon).
+cat > dist/ПРОЧТИ.txt <<TXT
+QymCAD - сборка для macOS ($MACHINE).
 
 ПЕРВЫЙ ЗАПУСК. У сборки нет подписи разработчика Apple, а macOS помечает всё скачанное из интернета
 «карантином»: она скажет, что программа повреждена, и предложит переместить её в Корзину. Она не
@@ -188,10 +202,10 @@ QymCAD - сборка для macOS (Apple Silicon).
 Метка снята навсегда для этой копии: перезагрузка её не вернёт. Сборку, скачанную заново, придётся
 освободить так же.
 
-Требуется macOS 12 или новее, компьютер на Apple Silicon.
+Требуется macOS 12 или новее, компьютер с процессором $MACHINE.
 TXT
 
-ZIP="dist/$NAME-macos-arm64.zip"
+ZIP="dist/$NAME-macos-$ARCH.zip"
 rm -f "$ZIP"
 ( cd dist && zip -r -y -q "$(basename "$ZIP")" QymCAD.app README.txt ПРОЧТИ.txt )
 echo ">>> DONE: $ZIP ($(du -h "$ZIP" | cut -f1))"

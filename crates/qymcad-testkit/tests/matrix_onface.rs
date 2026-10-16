@@ -5,6 +5,7 @@
 
 use qymcad_core::feature::{FaceKey, SketchPlane};
 use qymcad_core::model::Project;
+use qymcad_kernel::specimen::Specimen as _;
 
 /// A 10x10x5 pocket in the centre of the TOP face of a 20x20xh box. Returns (project, box body, cut
 /// body, sid of the pocket sketch).
@@ -54,13 +55,13 @@ fn probe_top(shape: &qymcad_kernel::Shape, ztop: f64) -> f64 {
         qymcad_core::geom::Point2::new(-5.0, 5.0),
     ]);
     let prof = qymcad_core::geom::encode_profile(&outer, &[]);
-    let probe = qymcad_kernel::Shape::extrude_profile(&prof, 5.0).expect("the probe");
+    let probe = qymcad_kernel::specimen::extrude_profile(&prof, 5.0).expect("the probe");
     let mut place = qymcad_core::feature::PLACE_IDENTITY;
     place[3] = 10.0; // the centre of the box (the box is 0..20)
     place[7] = 10.0;
     place[11] = ztop - 5.0;
-    let probe = probe.transformed(&place).expect("moving the probe");
-    shape.boolean(&probe, 2).map(|s| s.volume()).unwrap_or(-1.0)
+    let probe = qymcad_kernel::specimen::placed(&probe, &place).expect("moving the probe");
+    shape.combined(&probe, 2).map(|s| s.volume()).unwrap_or(-1.0)
 }
 
 #[test]

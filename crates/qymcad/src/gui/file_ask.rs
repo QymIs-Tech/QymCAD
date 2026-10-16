@@ -285,7 +285,7 @@ mod exporting_over_a_rebuild {
         );
 
         assert!(matches!(&app.regen.busy, Some(b) if b.kind == qymcad_ui_state::BgKind::Regen), "the rebuild lost the modal slot - its result would then never land");
-        assert_eq!(app.status, crate::i18n::tr("io-export-busy"), "the refusal has to be said out loud, not swallowed");
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("io-export-busy")), "the refusal has to be said out loud, not swallowed");
         assert!(!path.exists(), "nothing was written either");
     }
 
@@ -301,6 +301,6 @@ mod exporting_over_a_rebuild {
             &crate::gui::io_jobs::MeshJob { format: qymcad_ui_state::MeshFormat::Stl, bodies: [].to_vec(), note: ("").to_string(), deflection: 0.1, tree: Vec::new() },
         );
         assert!(matches!(&app.regen.busy, Some(b) if b.kind == qymcad_ui_state::BgKind::Regen));
-        assert_eq!(app.status, crate::i18n::tr("io-export-busy"));
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("io-export-busy")));
     }
 }

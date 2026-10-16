@@ -69,7 +69,7 @@ mod tests {
         let r = qymcad_ui_state::measure_result(&app.side.m3).expect("there is a result");
         let d = r.distance.expect("there must be a distance between parallel faces");
         assert!((d - h).abs() < 1e-6, "the thickness of the cube is {h}, and {d} was measured");
-        assert!(app.status.contains(&crate::i18n::tr1("m3-distance", "v", "10.000")), "the number must be IN THE STATUS LINE rather than only inside: {}", app.status);
+        assert!(app.status.words.contains(&crate::i18n::tr1("m3-distance", "v", "10.000")), "the number must be IN THE STATUS LINE rather than only inside: {}", app.status);
     }
 
     /// A THIRD CLICK starts a new measurement rather than accumulating a third element.
@@ -97,7 +97,7 @@ mod tests {
         app.toggle_measure_3d();
         app.measure_3d_click(rect(), egui::pos2(895.0, 695.0)); // a corner of the screen — deliberately a miss
         assert!(app.side.m3.picks.is_empty(), "a miss collects nothing");
-        assert_eq!(app.status, crate::i18n::tr("m3-miss"), "the reason must be said");
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("m3-miss")), "the reason must be said");
     }
 
     /// ONE ELEMENT already gives a number: the length of an edge or the diameter of a hole.
@@ -186,7 +186,7 @@ mod tests {
         let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(top).0;
 
         // at this point there IS a nearby edge — but it is on the far side of the part
-        let got = app.measure_resolve(rect(), at).expect("there is a hit");
+        let got = crate::gui::measure3d::measure_resolve(&app.painting(), rect(), at).expect("there is a hit");
         assert!(matches!(got.item, MeasureItem::Plane { .. }), "a click on a visible face must give a FACE, and it gave {:?} ({})", got.item, got.what);
     }
 }

@@ -353,7 +353,7 @@ mod tests {
                 };
                 let (body, built, free) = (made.shape, made.areas.iter().flatten().count(), made.free_edges);
                 app.project.bodies[i].visible = false;
-                for qymcad_core::geom::Built { mesh, faces } in body.tessellate(body.bbox_diag() * 2e-4) {
+                for qymcad_core::geom::Built { mesh, faces } in qymcad_kernel::specimen::mesh(&body, body.bbox_diag() * 2e-4) {
                     let verts: Vec<Point3> = mesh
                         .verts
                         .iter()

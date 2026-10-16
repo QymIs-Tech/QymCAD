@@ -142,13 +142,13 @@ mod tests {
             app.finish_regen_checked(stamp, rebuilt, Vec::new(), Vec::new(), Vec::new(), false);
         };
         let said = crate::i18n::tr1("jt-grounded", "name", "Part 2");
-        app.status = said.clone();
+        app.status = qymcad_ui_state::Notice::info(said.clone());
         rebuild(&mut app);
-        assert!(app.status == said, "the operation said {said:?}, the rebuild it asked for ended and the line says {:?}", app.status);
+        assert!(app.status.words == said, "the operation said {said:?}, the rebuild it asked for ended and the line says {:?}", app.status);
         // the words were put back by the rebuild and are its own now: the next one, asked for by nothing that
         // spoke, ends with "Done" rather than with old news
         rebuild(&mut app);
         let done = format!("{} {}", crate::gui::ph::CHECK, crate::i18n::tr("io-ready"));
-        assert!(app.status == done, "a rebuild nobody spoke before ended well and the line says {:?}", app.status);
+        assert!(app.status == qymcad_ui_state::Notice::info(done), "a rebuild nobody spoke before ended well and the line says {:?}", app.status);
     }
 }

@@ -83,7 +83,7 @@ mod tests {
 
             let now = traces(&app);
             let did = now != was;
-            let said = app.status != said_before && !app.status.trim().is_empty();
+            let said = app.status != said_before && !app.status.words.trim().is_empty();
             if !did && !said {
                 silent.push(format!("\"{name}\": a part was clicked, nothing changed and not a word was said (it was \"{said_before}\")"));
             }

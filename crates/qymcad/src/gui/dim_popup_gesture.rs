@@ -252,4 +252,46 @@ mod tests {
         p.key(egui::Key::Enter).frame(&mut app, si, ci);
         assert_eq!(app.project.named_dims.len(), 1, "a taken name was applied after all — the project holds two \"len\": {:?}", app.project.named_dims);
     }
+
+    /// AN OPEN SKETCH HOLDS THE REBUILD. A dimension named in its popup and given another value - an extrusion of another
+    /// sketch counted from that name - asks for no rebuild while the sketch is open; closing the sketch asks for it.
+    /// Reported behaviour: naming a driver rebuilt under the sign of a rebuild while the sketch was still being drawn in.
+    #[test]
+    fn the_popup_asks_for_no_rebuild_while_the_sketch_is_open() {
+        let mut app = App::default();
+        app.project.new_document();
+        let (si, ci) = sketch_with_dim(&mut app);
+        let sid = app.project.sketches[si].id;
+        let other = app.project.add_line_sketch("Other", vec![Point2::new(0.0, 50.0), Point2::new(10.0, 50.0), Point2::new(10.0, 60.0), Point2::new(0.0, 60.0)], true);
+        app.project.add_sketch_node(other, "Other");
+        let body = app.project.add_extrude(other, 5.0);
+        let node = app.project.timeline.iter().find(|n| n.kind.body() == Some(body)).map(|n| n.id).expect("the extrusion");
+        app.project.set_feat_dim(node, "height", "dlina".into());
+        crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
+        // a live window: a rebuild asked for goes to the background and stands as `wanted`
+        app.regen.ui_running = true;
+        qymcad_ui_state::open_sketch_session(&mut app.sketch_ses, &app.project, sid);
+
+        let mut p = Popup::new();
+        p.enter_driver_field(&mut app, si, ci);
+        p.type_text("dlina").frame(&mut app, si, ci);
+        p.key(egui::Key::Enter).frame(&mut app, si, ci);
+        assert_eq!(app.project.param_map().get("dlina"), Some(&40.0), "setup: the dimension did not take the name");
+        let asked = |app: &App| app.regen.wanted || app.regen.pending || app.regen.busy.is_some();
+        assert!(!asked(&app), "naming a dimension asked for a rebuild while the sketch is open");
+
+        app.tools.inline = InlineEdit::Dim(ci);
+        p.enter_value_field(&mut app, si, ci);
+        for _ in 0..4 {
+            p.key(egui::Key::Backspace);
+        }
+        p.type_text("50").frame(&mut app, si, ci);
+        p.key(egui::Key::Enter).frame(&mut app, si, ci);
+        p.frame(&mut app, si, ci);
+        assert_eq!(app.project.param_map().get("dlina"), Some(&50.0), "setup: the dimension did not take the value 50");
+        assert!(!asked(&app), "a driver given another value asked for a rebuild while its sketch is open");
+
+        app.finish_sketch_edit();
+        assert!(asked(&app), "the sketch closed with its driver changed, and the extrusion counted from it was not asked to rebuild");
+    }
 }

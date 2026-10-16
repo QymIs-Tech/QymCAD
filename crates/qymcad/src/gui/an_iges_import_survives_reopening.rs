@@ -12,7 +12,7 @@ mod tests {
         let dir = std::path::PathBuf::from(format!("{}/../../target/iges-reopen-app", env!("CARGO_MANIFEST_DIR")));
         std::fs::create_dir_all(&dir).expect("a folder for the check");
         let path = dir.join("cube.igs");
-        let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+        let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
         qymcad_kernel::write_iges(&[(&cube, PLACE_IDENTITY)], &path.to_string_lossy(), qymcad_kernel::LengthUnit::Millimetre).expect("written");
         let mut p = Project::default();
         p.new_document();

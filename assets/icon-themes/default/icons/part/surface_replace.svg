@@ -1,0 +1,11 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / surface_replace" clip-path="url(#clip0_45_526)">
+<path id="Polygon 14" d="M16 7.5L25.5263 13V25.5L16 31L6.47372 25.5V13L16 7.5Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Vector 21" d="M15 20C15 20 18.708 22.855 21.5 23C24.6503 23.1637 29 20 29 20L31 4C31 4 26.6503 7.16366 23.5 7C20.708 6.85497 17 4 17 4C17 4 13.292 1.14504 10.5 1C7.34969 0.836351 3 4 3 4L1 20C1 20 5.34969 16.8364 8.5 17C11.292 17.145 15 20 15 20Z" fill="var(--icon-accent, #18F2F2FF)" stroke-linecap="round" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<defs>
+<clipPath id="clip0_45_526">
+<rect width="32" height="32" fill="#FFFFFF"/>
+</clipPath>
+</defs>
+</svg>

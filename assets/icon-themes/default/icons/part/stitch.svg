@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / stitch">
+<path id="Vector 24" d="M15 26C15 26 18.708 28.855 21.5 29C24.6503 29.1637 29 26 29 26L31 6C31 6 26.6503 9.16366 23.5 9C20.708 8.85497 17 6 17 6C17 6 13.292 3.14504 10.5 3C7.34969 2.83635 3 6 3 6L1 26C1 26 5.34969 22.8364 8.5 23C11.292 23.145 15 26 15 26Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke-linecap="round" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Vector 22" d="M16 16C16 16 19.7043 19 22.5 19M16 16C16 16 12.2957 13 9.5 13M16 16L17 12M16 16L15 20M22.5 19C25.2957 19 29 16 29 16M22.5 19L23.5 15M22.5 19L21.5 23M3 16C3 16 6.70427 13 9.5 13M9.5 13L10.5 9M9.5 13L8.5 17" stroke-width="3.5" stroke-linecap="round" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Vector 23" d="M16 16C16 16 19.7043 19 22.5 19M16 16C16 16 12.2957 13 9.5 13M16 16L17 12M16 16L15 20M22.5 19C25.2957 19 29 16 29 16M22.5 19L23.5 15M22.5 19L21.5 23M3 16C3 16 6.70427 13 9.5 13M9.5 13L10.5 9M9.5 13L8.5 17" stroke-width="1.5" stroke-linecap="round" stroke="var(--icon-accent, #18F2F2FF)"/>
+</g>
+</svg>

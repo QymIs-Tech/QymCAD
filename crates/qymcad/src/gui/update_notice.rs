@@ -54,8 +54,10 @@ mod tests {
                     scheme: &app.scheme,
                     set: &mut app.set,
                     sketch_ses: &app.sketch_ses,
-                    status: "",
+                    line: qymcad_ui_state::StatusLine { said: &mut qymcad_ui_state::Notice::default(), rebuild: &mut qymcad_ui_state::Notice::default() },
                     win: &mut app.win,
+                    par_search: &mut app.par_search,
+                    ask: &mut Vec::new(),
                 },
                 ui,
             );

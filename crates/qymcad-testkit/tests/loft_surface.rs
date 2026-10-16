@@ -20,7 +20,15 @@ fn two_sections() -> (Project, Vec<u64>, Vec<u64>) {
         let si = p.new_sketch(format!("section {}", i + 1));
         let sid = p.sketches[si].id;
         if z != 0.0 {
-            let pl = p.add_plane(qymcad_core::model::WorkPlane { id: 0, name: format!("z{z}"), origin: [0.0, 0.0, z], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+            let pl = p.add_plane(qymcad_core::model::WorkPlane {
+                id: 0,
+                name: format!("z{z}"),
+                origin: [0.0, 0.0, z],
+                normal: [0.0, 0.0, 1.0],
+                rot_deg: 0.0,
+                tilt: Default::default(),
+                def: Default::default(),
+            });
             p.sketches[si].plane = qymcad_core::feature::SketchPlane::Datum(pl);
         }
         p.add_rect_entity(si, -half, -half, half, half, qymcad_core::feature::Purpose::Real);

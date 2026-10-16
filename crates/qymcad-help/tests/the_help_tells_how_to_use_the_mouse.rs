@@ -68,7 +68,8 @@ fn the_bindings_the_help_promises_are_the_ones_the_code_has() {
     // went red the moment that line moved house - correctly: it is what holds the promise, and a guard
     // pointed at the old address would have gone quiet instead of following it.
     let root = qymcad_i18n::ratchet::crates_root();
-    let src = std::fs::read_to_string(root.join("qymcad-ui-state/src/lib.rs")).expect("the view module reads");
+    // the whole of the ui state, its modules with it: the view went to a module of its own
+    let src = ui_state_source(&root);
     let pan = src.split("pub fn pan_sheet_2d").nth(1).expect("panning the sheet is a function of the view module");
     let body = &pan[..pan.find("\n}\n").map(|i| i + 2).unwrap_or(pan.len())];
     assert!(body.contains("pointer.middle_down()"), "the help says the middle button pans a sketch, and panning the sheet no longer asks about that button");
@@ -96,4 +97,13 @@ fn the_help_says_which_button_navigates_is_a_setting() {
         let name = qymcad_i18n::tr(&nav.key());
         assert!(t.contains(&name), "the article does not name the \"{name}\" layout, so a person cannot tell it is on offer");
     }
+}
+
+/// EVERY FILE OF THE UI STATE as one text: a guard reading the lib alone would read the root left after its modules
+/// went out, green and blind.
+fn ui_state_source(root: &std::path::Path) -> String {
+    let dir = root.join("qymcad-ui-state/src");
+    let mut files: Vec<_> = std::fs::read_dir(&dir).expect("the ui state reads").flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "rs")).collect();
+    files.sort();
+    files.iter().map(|p| std::fs::read_to_string(p).expect("a file of the ui state reads")).collect::<Vec<_>>().join("\n")
 }

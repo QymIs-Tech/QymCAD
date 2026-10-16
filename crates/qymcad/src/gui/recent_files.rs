@@ -74,7 +74,24 @@ mod tests {
     fn the_current_path_is_set_through_a_single_door() {
         let mut sins = Vec::new();
         for (name, src) in [
-            ("gui.rs", include_str!("../gui.rs")),
+            (
+                "gui.rs",
+                concat!(
+                    include_str!("file_doors.rs"),
+                    "\n",
+                    include_str!("gizmo_math.rs"),
+                    "\n",
+                    include_str!("look.rs"),
+                    "\n",
+                    include_str!("panel_bits.rs"),
+                    "\n",
+                    include_str!("startup.rs"),
+                    "\n",
+                    include_str!("view_anim.rs"),
+                    "\n",
+                    include_str!("../gui.rs")
+                ),
+            ),
             ("io_jobs.rs", include_str!("io_jobs.rs")),
             ("panels.rs", crate::gui::panels_source::PANELS),
             ("commands.rs", crate::gui::sketch_source::PART),

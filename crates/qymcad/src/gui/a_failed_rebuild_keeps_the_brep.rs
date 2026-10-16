@@ -42,7 +42,7 @@ mod tests {
         }
         assert_eq!(held(&app), before, "the live B-rep did not come back from the failed rebuild; the status says: {}", app.status);
         let failed = crate::i18n::tr1("io-rebuild-failed", "why", "a rebuild made to fail by a test");
-        assert!(app.status.contains(&failed), "the status does not say the rebuild failed and why: {:?}, not {failed:?}", app.status);
+        assert!(app.status.words.contains(&failed), "the status does not say the rebuild failed and why: {:?}, not {failed:?}", app.status);
     }
 
     /// A rebuild that fails for the last edit takes that edit back, as Cancel does: the document is the one before the
@@ -91,6 +91,6 @@ mod tests {
         after.sort_unstable();
         assert_eq!(after, before, "the live B-rep did not come back from the failed rebuild");
         let said = crate::i18n::trn("io-rebuild-failed-undone", &[("why", "a rebuild made to fail by a test"), ("what", "move a corner")]);
-        assert!(app.status.contains(&said), "the status does not say the rebuild failed and what was taken back: {:?}, not {said:?}", app.status);
+        assert!(app.status.words.contains(&said), "the status does not say the rebuild failed and what was taken back: {:?}, not {said:?}", app.status);
     }
 }

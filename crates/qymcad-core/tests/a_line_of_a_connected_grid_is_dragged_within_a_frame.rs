@@ -154,7 +154,7 @@ fn a_frame_of_a_drag_in_a_grid_of_200_takes_a_frame() {
     // and 14 ms with the loops of the drag on a grid of their own size
     let budget = Duration::from_millis(50);
     let after_first = &frames[1..];
-    assert!(after_first.iter().all(|t| *t < budget), "frames of a drag in a grid of 200 by 200 took {frames:?}, budget {budget:?} after the first");
+    assert!(after_first.iter().all(|t| qymcad_core::time_budget::within(*t, budget)), "frames of a drag in a grid of 200 by 200 took {frames:?}, budget {budget:?} after the first");
 }
 
 #[test]
@@ -173,5 +173,5 @@ fn an_edit_of_a_grid_of_200_takes_a_frame() {
     eprintln!("a line of a grid of 200 by 200 moved: {edits:?}, the grid rebuilt whole {whole:?}");
     // measured in a release build: 0.27 s with the whole grid rebuilt for every edit, 37 ms with the cells round the line
     let budget = Duration::from_millis(60);
-    assert!(edits.iter().all(|t| *t < budget), "a line of a grid of 200 by 200 moved in {edits:?}, budget {budget:?}");
+    assert!(edits.iter().all(|t| qymcad_core::time_budget::within(*t, budget)), "a line of a grid of 200 by 200 moved in {edits:?}, budget {budget:?}");
 }

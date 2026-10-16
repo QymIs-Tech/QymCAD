@@ -132,7 +132,7 @@ mod tests {
         let t = &app.project.sketches[si].texts[0];
         assert_eq!(t.height, height_before, "the height was applied while the font was not there to bake with");
         assert_eq!(t.glyphs.len(), before.len(), "the drawing was re-baked without its own font");
-        assert!(!app.status.trim().is_empty(), "the edit was refused and nothing was said about it");
+        assert!(!app.status.words.trim().is_empty(), "the edit was refused and nothing was said about it");
     }
 
     /// THE LIST OF FONTS IS A LIST: it opens, it narrows to what is typed, and a click on a row takes that
@@ -170,8 +170,110 @@ mod tests {
 
         // AND BOTH PLACES ASK THROUGH IT. Read out of the source: a copy of "family, or else a word" in one
         // of them drifts from the other, and both answer the same question.
-        let bar = include_str!("../../../qymcad-part/src/lib.rs");
-        let state = include_str!("../../../qymcad-ui-state/src/lib.rs");
+        let bar = concat!(
+            concat!(
+                include_str!("../../../qymcad-part/src/apply/copies.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/apply/faces.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/apply/solids.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/apply/update.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/apply.rs")
+            ),
+            "\n",
+            concat!(
+                include_str!("../../../qymcad-part/src/bars/feat_bar.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/bars/options.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/bars/toolbar.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/bars.rs")
+            ),
+            "\n",
+            include_str!("../../../qymcad-part/src/params.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/picks.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/popups.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/reopen.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/start.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/topology.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/lib.rs")
+        );
+        let state = concat!(
+            include_str!("../../../qymcad-ui-state/src/contexts.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/corners.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/dims.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/edits.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/fields.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/fonts.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/geom.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/gizmos.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/handles.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/hotkeys.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/jobs.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/joints.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/navigation.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/painting.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/rebuild.rs"),
+            "\n",
+            concat!(
+                include_str!("../../../qymcad-ui-state/src/records/commands.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/frame.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/gizmos.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/pieces.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/scene.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/tools.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records.rs")
+            ),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/scene.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/section.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/selection.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/settings.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/sketch_diag.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/sketch_edit.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/text.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/tool_steps.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/tree.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/lib.rs")
+        );
         assert!(bar.contains("font_label(&bc.tool_prefs.font"), "the bar names the font of the tool some other way");
         assert!(state.contains("font_label(&of_label"), "the editor of a label names its font some other way");
     }
@@ -191,7 +293,11 @@ mod tests {
 
         assert!(app.project.sketches[si].texts.is_empty(), "a label with nothing in it was placed all the same");
         let said = app.status.clone();
-        assert_eq!(said, qymcad_i18n::tr1("sk-text-no-letters", "name", "Liberation Sans"), "the program blamed the string instead of naming the font that cannot write it: {said:?}");
+        assert_eq!(
+            said,
+            qymcad_ui_state::Notice::refusal(qymcad_i18n::tr1("sk-text-no-letters", "name", "Liberation Sans")),
+            "the program blamed the string instead of naming the font that cannot write it: {said:?}"
+        );
     }
 
     /// A NOTE ASKS ITS LETTERS OF THE FONT IT IS DRAWN IN: the interface's. A letter no font of the window has (a
@@ -208,7 +314,7 @@ mod tests {
         hand.sk_text("A\u{17000}", 20.0).frame(Vec::new());
         drop(hand);
         assert_eq!(app.tool_prefs.text, "A", "the note kept a letter no font of the window can draw");
-        assert_eq!(app.status, qymcad_i18n::tr("sk-note-no-letters"), "nothing says why the letter went");
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("sk-note-no-letters")), "nothing says why the letter went");
     }
 
     /// THE FONT OF A LABEL IS CHANGED WHERE THE LABEL IS EDITED, and the label changes at once.

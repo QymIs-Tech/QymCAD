@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / split_body">
+<path id="Polygon 16" d="M28.9904 8.5L16 1L3.00962 8.5V16C3.00962 16 4.93748 15.139 6.25722 15C11.4085 14.4576 11.315 22 16 22C20.685 22 20.5915 14.4576 25.7428 15C27.0625 15.139 28.9904 16 28.9904 16V8.5Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Polygon 17" d="M16 31L28.9904 23.5V16C28.9904 16 27.0625 15.139 25.7428 15C20.5915 14.4576 20.685 22 16 22C11.315 22 11.4085 14.4576 6.25721 15C4.93747 15.139 3.00961 16 3.00961 16V23.5L16 31Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

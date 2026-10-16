@@ -28,9 +28,12 @@ of its own.
 
 ## Deleting
 
-**Del** or **Delete** in the menu. The program asks and says how much is built on what you delete. By default only
+**Del** or **Delete** in the menu. To delete several rows at once, pick them first: **Shift** and a click pick every row
+from the one picked before, **Ctrl** (on a Mac **Cmd**) and a click add a row or take it away. The program asks and
+says how much is built on what you delete. By default only
 the row itself goes: whatever stood on it stays in the timeline in red with the reason — to be repaired or deleted.
-The tick box **Delete what is built on it too** removes it all at once. A mistake — **Ctrl+Z**.
+The tick box **Delete what is built on it too** removes it all at once. A mistake — **Ctrl+Z**: one press brings back
+everything deleted together.
 
 ## Search
 

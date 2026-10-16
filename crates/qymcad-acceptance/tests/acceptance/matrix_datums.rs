@@ -103,13 +103,9 @@ fn plane_off(s: &mut Session, at: Spot, dist: &str) {
     let p = show(s, at);
     let click = s.in_space(p);
     s.click(click);
-    let field = s
-        .widgets()
-        .into_iter()
-        .filter(|w| w.kind == qymcad::Kind::TextField)
-        .min_by(|a, b| a.rect.center().distance(click).total_cmp(&b.rect.center().distance(click)))
-        .unwrap_or_else(|| panic!("the datum plane asks for no offset; on screen: {:?}", s.words()));
-    s.click(field.rect.center()).chord(qymcad::Modifiers::COMMAND, Key::A).type_text(dist).key(Key::Enter);
+    // the offset typed into its own field, by its caption: the plane has its tilts and its turn beside it
+    let offset = s.word("f-offset");
+    s.fill(&offset, dist).key(Key::Enter);
 }
 
 /// A datum axis along the edge or the round face at the spot.

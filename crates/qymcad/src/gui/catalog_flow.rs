@@ -51,7 +51,25 @@ mod tests {
     /// TWO FILES: the workbench panel lives in `panels.rs`, the common creation panel (datums, sketch)
     /// in `gui.rs`. The help guard was already caught out by this once, missing the datums entirely.
     fn tools_in_ui() -> Wired {
-        let joined = format!("{}\n{}", crate::gui::panels_source::PANELS, include_str!("../gui.rs"));
+        let joined = format!(
+            "{}\n{}",
+            crate::gui::panels_source::PANELS,
+            concat!(
+                include_str!("file_doors.rs"),
+                "\n",
+                include_str!("gizmo_math.rs"),
+                "\n",
+                include_str!("look.rs"),
+                "\n",
+                include_str!("panel_bits.rs"),
+                "\n",
+                include_str!("startup.rs"),
+                "\n",
+                include_str!("view_anim.rs"),
+                "\n",
+                include_str!("../gui.rs")
+            )
+        );
         let src: &str = &joined;
         let mut feats: Vec<(&'static str, u8)> = Vec::new();
         let mut sk: Vec<(String, u8)> = Vec::new();

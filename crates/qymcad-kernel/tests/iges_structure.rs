@@ -107,7 +107,7 @@ fn an_iges_face_brings_a_colour_of_its_own() {
     let faces = &nodes[plate].faces;
     assert_eq!(faces.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [6], "the plate's faces of a colour of their own: {faces:?}");
     assert!(near(Some(faces[0].1), [0.1, 0.8, 0.1]), "the top face is not green: {:?}", faces[0].1);
-    let live = shapes[nodes[plate].solid.expect("the plate's body")].tessellate_merged(0.5).expect("the plate tessellates");
+    let live = qymcad_kernel::ask::export_mesh(&shapes[nodes[plate].solid.expect("the plate's body")], 0.5).expect("the plate tessellates");
     assert_eq!(live.faces.iter().find(|f| f.id == 6).map(|f| f.centroid.z), Some(5.0), "face 6 of the plate is not its top face");
     assert!(nodes[named(&nodes, name(3))[0]].faces.is_empty(), "the pin has no face of a colour of its own");
 }

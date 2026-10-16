@@ -204,6 +204,10 @@ pub enum ExprError {
     TrailingInput(String),
     /// the result is not a number, from a division by zero or similar
     NotANumber,
+    /// The formula nests deeper than `limit` levels - parentheses, function calls, signs or powers inside one
+    /// another. The parser goes down one call per level, and a stored formula nested a few thousand deep ran the
+    /// stack out and ended the program (`expr::MAX_FORMULA_DEPTH`).
+    TooDeep { limit: usize },
 }
 
 /// A kernel error: a fact rather than a phrase, with the words supplied by the application.
@@ -259,12 +263,22 @@ pub enum CoreError {
     DraftAngleZero,
     /// A torus whose tube is as thick as its ring or thicker passes through itself.
     TorusThroughItself,
+    /// A primitive with a size of zero or below: a box, a prism, a cylinder or a sphere of nothing has no body.
+    PrimitiveSizeNotAboveZero,
+    /// A round face moved towards its axis by its radius or more closes on the axis and turns inside out.
+    OffsetPastRadius { radius: f64 },
     /// A pattern of one copy is the body alone.
     ArrayOfOne,
+    /// A pattern asks for `asked` instances, more than `MAX_PATTERN_INSTANCES` (`limit`).
+    PatternTooLarge { asked: u64, limit: u32 },
+    /// A thread or an auger has more starts than `MAX_HELIX_STARTS` (`limit`).
+    TooManyStarts { starts: u32, limit: u32 },
     /// The thread is not the size of the face it is cut on: a shaft or a hole of another diameter.
     ThreadNotItsSize { face: f64, nominal: f64 },
     /// A WARNING, not a failure: the blend was built, but `dropped` of the `asked` edges could not be taken.
     EdgesDropped { asked: usize, dropped: usize },
+    /// A body brought in from a file failed the checks of the door and could not be repaired: it is kept as it came.
+    ImportKeptAsItCame,
     /// A shell cannot be built on this body: offsetting the faces fails inside the kernel, which raises an
     /// internal error. This is neither the user's fault nor a lost reference but a limit of the algorithm.
     ShellNotBuiltHere,
@@ -448,9 +462,14 @@ impl CoreError {
             ThickenAddedNothing => "error-thicken-added-nothing".into(),
             DraftAngleZero => "error-draft-angle-zero".into(),
             TorusThroughItself => "error-torus-through-itself".into(),
+            PrimitiveSizeNotAboveZero => "error-primitive-size-not-above-zero".into(),
+            OffsetPastRadius { .. } => "error-offset-past-radius".into(),
             ArrayOfOne => "error-array-of-one".into(),
+            PatternTooLarge { .. } => "error-pattern-too-large".into(),
+            TooManyStarts { .. } => "error-too-many-starts".into(),
             ThreadNotItsSize { .. } => "error-thread-not-its-size".into(),
             EdgesDropped { .. } => "warn-edges-dropped".into(),
+            ImportKeptAsItCame => "warn-import-kept-as-it-came".into(),
             PushFaceOnSheet => "error-push-face-on-sheet".into(),
             NeedsSolidNotSheet => "error-needs-solid-not-sheet".into(),
             DraftFailed { .. } => "error-draft-failed".into(),
@@ -522,6 +541,7 @@ impl ExprError {
             UnexpectedEnd => "error-expr-unexpected-end",
             TrailingInput(_) => "error-expr-trailing-input",
             NotANumber => "error-expr-not-a-number",
+            TooDeep { .. } => "error-expr-too-deep",
         }
     }
 }
@@ -565,9 +585,14 @@ impl std::fmt::Display for CoreError {
             ThickenAddedNothing => write!(f, "the plate went into the body and added nothing"),
             DraftAngleZero => write!(f, "a draft of 0 degrees tilts nothing"),
             TorusThroughItself => write!(f, "the tube is as thick as the ring: the torus passes through itself"),
+            PrimitiveSizeNotAboveZero => write!(f, "a size of the primitive is zero or below"),
+            OffsetPastRadius { radius } => write!(f, "a round face moved in by its radius {radius:.2} or more"),
             ArrayOfOne => write!(f, "a pattern of one copy is the body alone"),
+            PatternTooLarge { asked, limit } => write!(f, "a pattern of {asked} instances is past the limit of {limit}"),
+            TooManyStarts { starts, limit } => write!(f, "{starts} starts is too many (at most {limit})"),
             ThreadNotItsSize { face, nominal } => write!(f, "a thread of {nominal:.2} does not fit a face of {face:.2}"),
             EdgesDropped { asked, dropped } => write!(f, "{dropped} of the {asked} edges could not be taken"),
+            ImportKeptAsItCame => write!(f, "the body brought in failed the checks and is kept as it came"),
             PushFaceOnSheet => write!(f, "push face on a sheet"),
             NeedsSolidNotSheet => write!(f, "solid tool on a sheet"),
             DraftFailed { angle } => write!(f, "draft {angle:.1} failed"),
@@ -594,6 +619,7 @@ impl std::fmt::Display for ExprError {
             ExpectedParen => write!(f, "expected ')'"),
             ExpectedParenAfterArgs => write!(f, "expected ')' after arguments"),
             NotANumber => write!(f, "result is not a number"),
+            TooDeep { limit } => write!(f, "the formula nests deeper than {limit} levels"),
         }
     }
 }

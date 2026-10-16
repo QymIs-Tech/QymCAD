@@ -96,14 +96,94 @@ mod tests {
     #[test]
     fn the_canvas_and_toolbar_ask_the_scheme() {
         use crate::gui::render_source::dense;
-        let gui = dense(include_str!("../gui.rs"));
+        let gui = dense(concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        ));
         assert!(gui.contains(&dense("pal.viewport_bg()")), "the background of the canvas must come from the scheme");
         assert!(!gui.contains(&dense("rect_filled(rect, 0.0, Color32::from_gray(26))")), "there must be no literal background left");
         // IT TAKES THE SCHEME OUTRIGHT NOW, which is what "sees it" was always about. It used to be a
         // method on the application and the guard asked for `&self`; as a free function it names the
         // scheme in its own signature, and that says the same thing louder.
         // THE FRAME MOVED TO THE RECORDS CRATE with the scheme it reads; the rule did not move.
-        let state = include_str!("../../../qymcad-ui-state/src/lib.rs");
+        let state = concat!(
+            include_str!("../../../qymcad-ui-state/src/contexts.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/corners.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/dims.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/edits.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/fields.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/fonts.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/geom.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/gizmos.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/handles.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/hotkeys.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/jobs.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/joints.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/navigation.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/painting.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/rebuild.rs"),
+            "\n",
+            concat!(
+                include_str!("../../../qymcad-ui-state/src/records/commands.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/frame.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/gizmos.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/pieces.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/scene.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/tools.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records.rs")
+            ),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/scene.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/section.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/selection.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/settings.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/sketch_diag.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/sketch_edit.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/text.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/tool_steps.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/tree.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/lib.rs")
+        );
         assert!(dense(state).contains(&dense("fn tool_bar_frame(scheme: &SchemeUi)")), "the tool bar must SEE the scheme - it takes it by argument");
         // THE NEEDLE IS THE PALETTE CALL, not the path to it. Inside the free function the scheme arrives
         // by argument and is spelled `scheme.pal`; in a method it was `self.scheme.pal`. What the guard is
@@ -152,7 +232,15 @@ mod tests {
         // THE SHADING MOVED TO THE PICKING CRATE with the questions it answers; the rule did not move -
         // both knobs still have to be read where a part is painted. The needle names the PALETTE by type
         // and not by the path it is reached through: the path changed twice already.
-        let src = include_str!("../../../qymcad-pick/src/lib.rs");
+        let src = concat!(
+            include_str!("../../../qymcad-pick/src/body_hits.rs"),
+            "\n",
+            include_str!("../../../qymcad-pick/src/infer.rs"),
+            "\n",
+            include_str!("../../../qymcad-pick/src/sketch_hits.rs"),
+            "\n",
+            include_str!("../../../qymcad-pick/src/lib.rs")
+        );
         assert!(src.contains("pal.shade_floor_body"), "the floor of the shading must come from the scheme");
         assert!(
             src.contains("pal.body_lighten") && src.contains("pal.body_saturate"),
@@ -334,5 +422,32 @@ mod tests {
         let saved = ron::ser::to_string(&app.set).expect("saved");
         let fresh = App { set: ron::from_str(&saved).expect("loaded"), ..Default::default() };
         assert_eq!(fresh.set.scheme, "light", "the chosen scheme must survive a restart");
+    }
+
+    /// EDITING A SCHEME LIVE RECOLOURS ICONS WITHOUT SAVING OR RE-READING FROM DISK.
+    #[test]
+    fn editing_a_scheme_live_recolours_icons() {
+        let mut app = App::default();
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+
+        crate::gui::sync_visuals(&app.scheme, &ctx);
+
+        let uri = qymcad_ui_state::IconId::SketchLine.uri();
+        let first_pixels = match ctx.try_load_image(uri, egui::load::SizeHint::default()).expect("loaded icon") {
+            egui::load::ImagePoll::Ready { image } => image.pixels.clone(),
+            egui::load::ImagePoll::Pending { .. } => panic!("must be ready synchronously"),
+        };
+
+        // Live edit: change icon accent color in memory
+        app.scheme.pal.icon_accent = [255, 0, 128];
+        crate::gui::sync_visuals(&app.scheme, &ctx);
+
+        let second_pixels = match ctx.try_load_image(uri, egui::load::SizeHint::default()).expect("loaded icon") {
+            egui::load::ImagePoll::Ready { image } => image.pixels.clone(),
+            egui::load::ImagePoll::Pending { .. } => panic!("must be ready synchronously"),
+        };
+
+        assert_ne!(first_pixels, second_pixels, "live editing an icon color must immediately update the icon texture in egui");
     }
 }

@@ -28,9 +28,10 @@ mod tests {
         (app, si)
     }
 
-    /// The points standing within `(lo, hi)` in x.
+    /// The points drawn standing within `(lo, hi)` in x - not the origin and the axes, which hold what is put on them.
     fn points_between(app: &App, si: usize, lo: f64, hi: f64) -> Vec<u64> {
-        app.project.sketches[si].points.iter().filter(|q| q.x > lo && q.x < hi).map(|q| q.id).collect()
+        let system = app.project.sketches[si].system_ids();
+        app.project.sketches[si].points.iter().filter(|q| q.x > lo && q.x < hi && !system.contains(&q.id)).map(|q| q.id).collect()
     }
 
     #[test]

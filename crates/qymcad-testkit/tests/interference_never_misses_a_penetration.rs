@@ -44,7 +44,7 @@ fn bolt(d: f64, pitch: f64, len: f64, lead: f64, fit: f64) -> Shape {
 
 /// A slab of space: a disc wide enough to swallow anything under test, `t` thick, its bottom at `z`.
 fn slab(t: f64, z: f64) -> Shape {
-    Shape::cylinder(50.0, t).expect("the slab").transformed(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, z]).expect("the slab moved into place")
+    qymcad_kernel::specimen::placed(&qymcad_kernel::specimen::cylinder(50.0, t).expect("the slab"), &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, z]).expect("the slab moved into place")
 }
 
 /// THE SAME SLAB OF THE SAME BOLT WEIGHS THE SAME AT EVERY HEIGHT.
@@ -62,7 +62,8 @@ fn the_bolt_of_the_complaint_weighs_the_same_at_every_height() {
     let mut seen: Vec<(f64, f64)> = Vec::new();
     for i in 0..24 {
         let z = lead + 1.0 + 0.5 * i as f64;
-        let got = b.interference_volume(&slab(pitch, z)).unwrap_or_else(|| panic!("the kernel refused to measure a slab at z={z:.2}: an assembly would have read that as 'clear'"));
+        let got =
+            qymcad_kernel::specimen::common_volume(&b, &slab(pitch, z)).unwrap_or_else(|| panic!("the kernel refused to measure a slab at z={z:.2}: an assembly would have read that as 'clear'"));
         seen.push((z, got));
     }
     let lo = seen.iter().map(|s| s.1).fold(f64::INFINITY, f64::min);
@@ -89,12 +90,12 @@ fn the_bolt_of_the_complaint_weighs_the_same_at_every_height() {
 #[test]
 fn a_rod_driven_through_a_block_is_caught_at_every_depth() {
     let (r, len, thick) = (4.0, 30.0, 6.0);
-    let rod = Shape::cylinder(r, len).expect("the rod");
-    let block = Shape::cylinder(20.0, thick).expect("the block");
+    let rod = qymcad_kernel::specimen::cylinder(r, len).expect("the rod");
+    let block = qymcad_kernel::specimen::cylinder(20.0, thick).expect("the block");
     for i in 0..20 {
         let z = 1.0 + 1.5 * i as f64; // from well inside the rod to hanging off its far end
-        let at = block.transformed(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, z]).expect("the block moved");
-        let got = rod.interference_volume(&at).unwrap_or_else(|| panic!("the kernel refused to measure the pair at z={z}"));
+        let at = qymcad_kernel::specimen::placed(&block, &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, z]).expect("the block moved");
+        let got = qymcad_kernel::specimen::common_volume(&rod, &at).unwrap_or_else(|| panic!("the kernel refused to measure the pair at z={z}"));
         let overlap = len.min(z + thick) - z.max(0.0); // how much of the block the rod actually crosses
         if overlap < 0.5 {
             continue; // a grazing contact is a different question, and not this one

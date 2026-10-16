@@ -44,7 +44,21 @@ mod tests {
     /// `AppData\Roaming\qymis\qymcad\data` side by side, and macOS `qymcad` beside `tech.qymis.qymcad`.
     #[test]
     fn the_framework_is_not_left_to_pick_the_folder() {
-        let src = include_str!("../gui.rs");
+        let src = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         let code: String = src.lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
         assert!(
             !code.contains("eframe::storage_dir("),
@@ -64,7 +78,73 @@ mod tests {
 mod cores {
     #[test]
     fn every_rebuild_tells_the_kernel_how_many_cores_it_may_take() {
-        let src = include_str!("../../../qymcad-ui-state/src/lib.rs");
+        let src = concat!(
+            include_str!("../../../qymcad-ui-state/src/contexts.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/corners.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/dims.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/edits.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/fields.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/fonts.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/geom.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/gizmos.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/handles.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/hotkeys.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/jobs.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/joints.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/navigation.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/painting.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/rebuild.rs"),
+            "\n",
+            concat!(
+                include_str!("../../../qymcad-ui-state/src/records/commands.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/frame.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/gizmos.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/pieces.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/scene.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records/tools.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/records.rs")
+            ),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/scene.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/section.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/selection.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/settings.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/sketch_diag.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/sketch_edit.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/text.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/tool_steps.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/tree.rs"),
+            "\n",
+            include_str!("../../../qymcad-ui-state/src/lib.rs")
+        );
         let mut built = 0usize;
         let mut told = 0usize;
         for (n, line) in src.lines().enumerate() {

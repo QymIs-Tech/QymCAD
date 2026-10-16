@@ -105,7 +105,7 @@ mod tests {
         crate::gui::sketching::project_clicked_edge(&mut app.sketch_ctx(), si, rect, egui::pos2(880.0, 690.0)); // deliberately past the part
 
         assert!(app.project.sketches[si].projections.is_empty(), "a miss means nothing is created");
-        assert_eq!(app.status, crate::i18n::tr("sk-miss-click-edge"), "the reason must be said");
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("sk-miss-click-edge")), "the reason must be said");
     }
 
     /// DRIVEN GEOMETRY IS NOT DRAGGED BY THE MOUSE — its position is set by the part.

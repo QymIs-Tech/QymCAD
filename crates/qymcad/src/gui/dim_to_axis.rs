@@ -185,17 +185,15 @@ mod tests {
         assert_eq!(at(gy), (0.0, 1.0), "the guide of the Y axis was dragged: the axis is no longer vertical");
     }
 
-    /// A SHAPE HELD BY ITS CONSTRAINTS DOES NOT PRETEND TO HAVE MOVED.
+    /// A SHAPE MOVED OFF THE ORIGIN DOES NOT PRETEND: the move tool lifts the coincidence of the centre with the origin
+    /// and the circle stands where it was taken, its drawing and its constraints agreeing.
     ///
-    /// Reported behaviour: "I took the move tool, moved the circle far away, and the coincidence with the
-    /// origin stayed - and stayed GREEN. Reopen the project and the circle is back at the centre; draw
-    /// anything and it jumps back too."
-    ///
-    /// The move shifted the points and never asked the solver. The screen then showed a shape standing
-    /// where nothing allows it to stand, and the lie held until the next edit - at which point the jump
-    /// back looked like a defect of its own.
+    /// Reported behaviour: "I took the move tool, moved the circle far away, and the coincidence with the origin
+    /// stayed, and stayed GREEN. Reopen the project and the circle is back at the centre." The move shifted the points
+    /// and never asked the solver, and the screen showed a shape where nothing allowed it to stand. The move takes
+    /// what goes off what stays, the origin among it (`lift_ties_to_what_stays`): nothing is left to pull it back.
     #[test]
-    fn a_constrained_circle_does_not_pretend_to_have_moved() {
+    fn a_circle_moved_off_the_origin_leaves_its_coincidence_with_it() {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
@@ -220,9 +218,10 @@ mod tests {
         app.project.solve_sketch(si);
 
         let p = app.project.sketches[si].points.iter().find(|p| p.id == centre).expect("the centre is still there");
+        let tied = app.project.sketches[si].constraints.iter().any(|c| matches!(*c, qymcad_core::model::Constraint::Coincident { a, b } if (a, b) == (centre, origin) || (a, b) == (origin, centre)));
         assert!(
-            p.x.abs() < 1e-6 && p.y.abs() < 1e-6,
-            "a circle held at the origin by a coincidence ended up at ({}, {}): the drawing shows it somewhere its constraints forbid, and the next edit will snap it back",
+            (p.x - 40.0).abs() < 1e-6 && (p.y - 30.0).abs() < 1e-6 && !tied,
+            "a circle moved by (40, 30) off the origin stands at ({}, {}), its coincidence with the origin kept: {tied}",
             p.x,
             p.y
         );

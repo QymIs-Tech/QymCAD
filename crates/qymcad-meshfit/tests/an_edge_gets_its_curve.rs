@@ -4,9 +4,10 @@
 
 use qymcad_kernel::Shape;
 use qymcad_meshfit::{boundaries, curves, prepare, regions, weld_tolerance, Boundaries, Curve, Edge, Region, Surface, Tolerance};
+use qymcad_kernel::specimen::Specimen as _;
 
 fn curves_of(shape: &Shape, deflection: f64) -> (Boundaries, Vec<Curve>) {
-    let qymcad_core::geom::Built { mesh, .. } = shape.tessellate(deflection).into_iter().next().expect("a body");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(shape, deflection).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
@@ -28,7 +29,7 @@ fn off_line(q: [f64; 3], point: [f64; 3], dir: [f64; 3]) -> f64 {
 
 #[test]
 fn a_cube_edge_runs_along_a_straight_line() {
-    let cube = Shape::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
     let (b, found) = curves_of(&cube, 0.1);
     assert_eq!(found.len(), 12, "curves of the cube");
     for (e, c) in found.iter().enumerate() {
@@ -43,7 +44,7 @@ fn a_cube_edge_runs_along_a_straight_line() {
 
 #[test]
 fn a_washer_edge_is_a_circle() {
-    let washer = Shape::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 10.0, 0.0, 10.0], 0, 360.0).expect("a washer");
+    let washer = qymcad_kernel::specimen::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 10.0, 0.0, 10.0], 0, 360.0).expect("a washer");
     let (_, found) = curves_of(&washer, 0.01);
     assert_eq!(found.len(), 4, "curves of the washer");
     let mut radii = Vec::new();
@@ -61,7 +62,7 @@ fn a_washer_edge_is_a_circle() {
 /// along a circle of the rounding's radius.
 #[test]
 fn a_rounded_bar_edge_is_a_tangent_line_or_a_circle() {
-    let bar = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").fillet_all(2.0).expect("filleted");
+    let bar = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").rounded(2.0).expect("filleted");
     for deflection in [0.1, 0.02] {
         let (b, found) = curves_of(&bar, deflection);
         let lines: Vec<usize> = (0..found.len()).filter(|&e| matches!(found[e], Curve::Line { .. })).collect();

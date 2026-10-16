@@ -81,13 +81,12 @@ mod tests {
         let basis = app.viewing.cam.basis();
         let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(top).0;
 
-        // TRAP GUARD: there is a body under this cursor, and the picker returns the datum plane.
+        // A BODY UNDER THE CURSOR IS TAKEN BEFORE A PLANE: the picker of planes gives its face, not the base plane whose
+        // square stands over it from this far - the trap this check was written against is gone at its root.
         let hit_body = crate::gui::pick::pick_body_at(&app.painting(), viewport(), at).and_then(|mi| app.project.mesh_id(mi));
         assert_eq!(hit_body, Some(body), "setup: there must be a part under the cursor, and there is {hit_body:?}");
-        assert!(
-            matches!(crate::gui::pick::pick_sketch_plane_at(&app.painting(), viewport(), at), Some(SketchPlane::World(_))),
-            "GUARD: there is no trap — the datum plane does not intercept this click, so there is nothing to check"
-        );
+        let plane = crate::gui::pick::pick_sketch_plane_at(&app.painting(), viewport(), at);
+        assert!(matches!(plane, Some(SketchPlane::Face(b, _)) if b == body), "a part under the cursor and the picker of planes gives {plane:?}, not its face");
 
         // AND NOW BY HAND: take the joint and click the part.
         app.workbench = super::super::Workbench::Assembly;

@@ -13,17 +13,11 @@ use std::time::{Duration, Instant};
 
 /// AT THE LEVEL OF THE PROBES OF TIME: anywhere else the probe says so and passes over.
 fn passed_over(name: &str) -> bool {
-    let timed = std::env::var("QYMCAD_TIER").as_deref() == Ok("time");
+    let timed = qymcad_core::time_budget::at_the_level_of_time();
     if !timed {
         eprintln!("PASSED OVER: {name} is a probe of time, run at the time level (QYMCAD_TIER=time)");
     }
     !timed
-}
-
-/// A BUDGET ON THIS MACHINE: the budget times `QYMCAD_TIME_SCALE` (1 when unset), which CI sets to 2.
-fn scaled(budget: Duration) -> Duration {
-    let k = std::env::var("QYMCAD_TIME_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).filter(|k| *k >= 1.0).unwrap_or(1.0);
-    budget.mul_f64(k)
 }
 
 /// The time of `work`, the best of three: a check of a budget is a check of the work, not of what else the machine did.
@@ -50,7 +44,7 @@ fn separate_shapes_are_solved_each_alone() {
             let _ = p.clone().solve_sketch(0);
         });
         eprintln!("{kind:?} x300, solve: {t:?}");
-        assert!(t < scaled(Duration::from_millis(500)), "300 separate {kind:?} took {t:?} to solve, budget 500 ms");
+        assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(500)), "300 separate {kind:?} took {t:?} to solve, budget 500 ms");
     }
 }
 
@@ -70,7 +64,7 @@ fn a_drag_frame_solves_its_own_shape_alone() {
         let _ = solver::solve_full_iter(&mut s.points, &mut Vec::new(), &constraints, drag, 40);
     });
     eprintln!("Lines x10000, the solve of a drag frame: {t:?}");
-    assert!(t < scaled(Duration::from_millis(16)), "the solve of a drag frame among 10 000 lines took {t:?}, budget 16 ms");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(16)), "the solve of a drag frame among 10 000 lines took {t:?}, budget 16 ms");
 }
 
 #[test]
@@ -85,7 +79,7 @@ fn an_array_of_rectangles_is_solved_as_one_sparse_part() {
     let t = best_of_three(|| residual = p.clone().solve_sketch(0));
     assert!(residual < 1e-6, "the array is not solved: residual {residual:e}");
     eprintln!("Array x300, solve: {t:?}");
-    assert!(t < scaled(Duration::from_millis(2_000)), "an array of 300 rectangles took {t:?} to solve, budget 2 s");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(2_000)), "an array of 300 rectangles took {t:?} to solve, budget 2 s");
 }
 
 #[test]
@@ -102,13 +96,13 @@ fn the_diagnostics_of_separate_shapes_are_counted_each_alone() {
         let _ = (p.sketch_dof(0), p.sketch_free_points(0), p.sketch_conflicts(0));
     });
     eprintln!("Lines x10000, degrees of freedom, free points, conflicts: {t:?}");
-    assert!(t < scaled(Duration::from_secs(1)), "the diagnostics of 10 000 lines took {t:?}, budget 1 s");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(1)), "the diagnostics of 10 000 lines took {t:?}, budget 1 s");
     let started = Instant::now();
     let redundant = p.sketch_redundant_constraints(0);
     let t = started.elapsed();
     eprintln!("Lines x10000, redundant: {t:?}");
     assert_eq!(redundant.len(), 20_000, "each Horizontal of a line laid twice is redundant");
-    assert!(t < scaled(Duration::from_secs(1)), "the redundant constraints of 10 000 lines took {t:?}, budget 1 s");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(1)), "the redundant constraints of 10 000 lines took {t:?}, budget 1 s");
 }
 
 #[test]
@@ -122,7 +116,7 @@ fn the_contours_of_separate_shapes_are_built_without_a_pass_of_all_pairs() {
         let mut p = build(kind, 10_000);
         let t = best_of_three(|| p.regen_sketch(0));
         eprintln!("{kind:?} x10000, contours: {t:?}");
-        assert!(t < scaled(Duration::from_secs(1)), "the contours of 10 000 {kind:?} took {t:?}, budget 1 s");
+        assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(1)), "the contours of 10 000 {kind:?} took {t:?}, budget 1 s");
     }
 }
 
@@ -139,7 +133,7 @@ fn a_drag_frame_among_separate_shapes_stays_in_its_frame() {
         let _ = p.solve_sketch_drag_fast(0, Some((q.id, q.x + 1.0, q.y + 1.0)));
     });
     eprintln!("Lines x10000, drag frame: {t:?}");
-    assert!(t < scaled(Duration::from_millis(100)), "a drag frame among 10 000 lines took {t:?}, budget 100 ms in a test build");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(100)), "a drag frame among 10 000 lines took {t:?}, budget 100 ms in a test build");
 }
 
 #[test]
@@ -156,7 +150,7 @@ fn a_constraint_laid_among_separate_shapes_is_judged_in_its_own() {
     let t = best_of_three(|| laid = p.clone().add_constraint_if_independent(0, qymcad_core::model::Constraint::Vertical { a, b }));
     eprintln!("Lines x10000, a constraint laid: {t:?}");
     assert!(laid, "the Vertical constrains something and is laid");
-    assert!(t < scaled(Duration::from_millis(500)), "a constraint laid among 10 000 lines took {t:?}, budget 500 ms in a test build");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(500)), "a constraint laid among 10 000 lines took {t:?}, budget 500 ms in a test build");
 }
 
 #[test]
@@ -172,7 +166,7 @@ fn separate_circles_and_tangents_are_solved_each_alone() {
             let _ = p.clone().solve_sketch(0);
         });
         eprintln!("{kind:?} x10000, solve: {t:?}");
-        assert!(t < scaled(Duration::from_secs(2)), "10 000 {kind:?} took {t:?} to solve, budget 2 s in a test build");
+        assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(2)), "10 000 {kind:?} took {t:?} to solve, budget 2 s in a test build");
     }
 }
 
@@ -195,7 +189,7 @@ fn the_diagnostics_of_one_big_part_are_counted_sparse() {
     // the first its place along the row too
     assert_eq!(dof, (2 * 1_000 + 1, 0), "the degrees of freedom of the array");
     assert!(free.iter().any(|f| *f), "an array that is free to move has free points");
-    assert!(t < scaled(Duration::from_secs(2)), "the diagnostics of an array of 1 000 rectangles took {t:?}, budget 2 s in a test build");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(2)), "the diagnostics of an array of 1 000 rectangles took {t:?}, budget 2 s in a test build");
 }
 
 #[test]
@@ -225,7 +219,7 @@ fn a_drawing_of_forty_thousand_segments_comes_in_whole() {
     let own = s.points.len() - s.system_ids().len();
     assert_eq!(own, 4 * n, "every rectangle is four points, its corners shared by its sides");
     assert_eq!(s.entities.len(), 4 * n);
-    assert!(t < scaled(Duration::from_secs(3)), "40 000 segments took {t:?} to come in, budget 3 s in a test build");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(3)), "40 000 segments took {t:?} to come in, budget 3 s in a test build");
 }
 
 #[test]
@@ -246,7 +240,7 @@ fn rectangles_drawn_by_their_corners_are_solved_without_a_pass_of_all_pairs() {
         let _ = p.clone().solve_sketch(si);
     });
     eprintln!("2 000 rectangles drawn by their corners, solve: {t:?}");
-    assert!(t < scaled(Duration::from_millis(200)), "2 000 rectangles drawn by their corners took {t:?} to solve, budget 200 ms in a test build");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(200)), "2 000 rectangles drawn by their corners took {t:?} to solve, budget 200 ms in a test build");
 }
 
 #[test]
@@ -273,7 +267,7 @@ fn a_drag_frame_after_the_first_works_on_its_own_part() {
         .min()
         .unwrap_or_default();
     eprintln!("Rectangles x{n}, a drag frame after the first: {t:?}");
-    assert!(t < scaled(budget), "a drag frame after the first among {n} rectangles took {t:?}, budget {budget:?}");
+    assert!(t < qymcad_core::time_budget::scaled(budget), "a drag frame after the first among {n} rectangles took {t:?}, budget {budget:?}");
 }
 
 #[test]
@@ -297,7 +291,7 @@ fn a_pattern_across_a_pattern_lays_its_copies_with_one_rebuild() {
     let t = started.elapsed();
     eprintln!("a pattern of 100 lines across 100 others: {t:?}, {} loops", p.sketches[si].contour_ids.len());
     assert!(p.sketches[si].contour_ids.len() > 9_000, "the grid has its cells: {} loops", p.sketches[si].contour_ids.len());
-    assert!(t < scaled(Duration::from_millis(500)), "a pattern of 100 lines across 100 others took {t:?}, budget 0.5 s in a test build");
+    assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(500)), "a pattern of 100 lines across 100 others took {t:?}, budget 0.5 s in a test build");
 }
 
 #[test]

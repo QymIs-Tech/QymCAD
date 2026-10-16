@@ -70,11 +70,11 @@ pub(super) fn regions_round(ch: &Change) -> Vec<(Contour, Vec<Id>)> {
         // the sides a region running out of the window was found at: bottom, right, top, left
         let mut grow = [false; 4];
         let mut grew = false;
-        let faces = arrangement_faces(&pts, &ents);
-        // A PIECE OF THE DRAWING SEEN WHOLE IN THE WINDOW, clear of its sides, is walked round on its outside and not
-        // made a region: a moved curve on that walk may close a region with what lies past the window. The window takes
-        // the piece in, and the next laying reaches further along it - the half disc whose diameter was drawn last came
-        // in a few segments a step
+        let faces = arrangement_faces(&pts, &ents, &[]); // a sketch with splines is never laid round (`regen_sketch`)
+                                                         // A PIECE OF THE DRAWING SEEN WHOLE IN THE WINDOW, clear of its sides, is walked round on its outside and not
+                                                         // made a region: a moved curve on that walk may close a region with what lies past the window. The window takes
+                                                         // the piece in, and the next laying reaches further along it - the half disc whose diameter was drawn last came
+                                                         // in a few segments a step
         for walk in &faces.outer {
             let b = contour_box(walk);
             if !inside(&b, &w) && borders_a_moved_curve(walk, &moved, &free_end) {

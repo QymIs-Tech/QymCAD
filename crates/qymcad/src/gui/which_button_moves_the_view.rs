@@ -65,6 +65,20 @@ mod tests {
         qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at([f.centroid.x, f.centroid.y, f.centroid.z]).0
     }
 
+    /// THE POINT OF THE MODEL SEEN IN THE MIDDLE OF THE VIEW, as the view stands now.
+    fn seen_in_the_middle(app: &App) -> [f64; 3] {
+        let rect = app.viewing.view_rect;
+        crate::gui::look_at_point::point_under(&app.painting(), rect, rect.center())
+    }
+
+    /// WHETHER THE VIEW MOVED SIDEWAYS: the point seen in the middle before has left the middle. The centre of the view
+    /// may slide along the line of sight to what is seen there, and nothing on screen shows that.
+    fn middle_left(app: &App, seen: [f64; 3]) -> bool {
+        let rect = app.viewing.view_rect;
+        let basis = app.viewing.cam.basis();
+        qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }.at(seen).0.distance(rect.center()) > 0.5
+    }
+
     /// Drag across the canvas with `button`, through real frames, and answer how far the view turned.
     fn yaw_after_a_drag(nav: MouseNav, button: egui::PointerButton) -> f64 {
         let (mut app, ctx) = a_part_in_view(nav);
@@ -115,7 +129,7 @@ mod tests {
                 continue;
             }
             let (mut app, ctx) = a_part_in_view(nav);
-            let (yaw, target) = (app.viewing.cam.yaw, app.viewing.cam.target);
+            let (yaw, seen) = (app.viewing.cam.yaw, seen_in_the_middle(&app));
             let from = on_the_body(&app);
             let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(from)]), |c| app.viewport(c));
             for b in chord {
@@ -128,8 +142,8 @@ mod tests {
                 let _ = ctx.run_ui(frame(vec![press(egui::pos2(from.x + 72.0, from.y), *b, false)]), |c| app.viewport(c));
             }
             let turned = (app.viewing.cam.yaw - yaw).abs();
-            if turned < 1e-6 || app.viewing.cam.target != target {
-                wrong.push(format!("{nav:?}: turned {turned:.4}, target {:?} -> {:?}", target, app.viewing.cam.target));
+            if turned < 1e-6 || middle_left(&app, seen) {
+                wrong.push(format!("{nav:?}: turned {turned:.4}, the middle of the view moved {}", middle_left(&app, seen)));
             }
         }
         assert!(wrong.is_empty(), "the chord of rotation did not turn the model (or moved it too): {wrong:?}");
@@ -280,10 +294,10 @@ mod tests {
                 for g in gestures {
                     let (mut app, ctx) = a_part_in_view(nav);
                     let from = on_the_body(&app);
-                    let (yaw, target, scale) = (app.viewing.cam.yaw, app.viewing.cam.target, app.viewing.cam.scale);
+                    let (yaw, seen, scale) = (app.viewing.cam.yaw, seen_in_the_middle(&app), app.viewing.cam.scale);
                     let by = if what == "zoom" { egui::vec2(0.0, -72.0) } else { egui::vec2(72.0, 0.0) };
                     make(&mut app, &ctx, from, g, by);
-                    let (turned, moved, scaled) = (app.viewing.cam.yaw != yaw, app.viewing.cam.target != target, app.viewing.cam.scale != scale);
+                    let (turned, moved, scaled) = (app.viewing.cam.yaw != yaw, middle_left(&app, seen), app.viewing.cam.scale != scale);
                     let right = match what {
                         "turn" => turned && !moved && !scaled,
                         "move" => moved && !turned && !scaled,
@@ -457,17 +471,24 @@ mod tests {
     }
 
     /// THE MIDDLE OF THE VIEW STAYS THE CENTRE OF A TURN BY DEFAULT: the program's own way, whatever is under the pointer.
+    /// What holds is the point of the model seen in the middle - the centre of the view may slide along the line of sight
+    /// to it, which changes nothing on screen.
     #[test]
     fn by_default_the_view_turns_about_its_middle() {
         let (mut app, ctx) = a_part_in_view(MouseNav::QymCad);
         assert_eq!(app.set.orbit_about, qymcad_ui_state::OrbitAbout::ViewCentre, "the factory setting turns about the middle of the view");
-        let target0 = app.viewing.cam.target;
         let yaw0 = app.viewing.cam.yaw;
+        let rect = app.viewing.view_rect;
+        let middle = crate::gui::look_at_point::point_under(&app.painting(), rect, rect.center());
+        let spot = |app: &App| {
+            let basis = app.viewing.cam.basis();
+            qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }.at(middle).0
+        };
         let from = on_the_body(&app) + egui::vec2(-45.0, 6.0);
-        let mut moved = 0.0f64;
-        turn_along(&mut app, &ctx, from, &[egui::vec2(10.0, 4.0); 8], |app| moved = moved.max((0..3).map(|k| (app.viewing.cam.target[k] - target0[k]).abs()).fold(0.0, f64::max)));
+        let mut moved = 0.0f32;
+        turn_along(&mut app, &ctx, from, &[egui::vec2(10.0, 4.0); 8], |app| moved = moved.max(spot(app).distance(rect.center())));
         assert!((app.viewing.cam.yaw - yaw0).abs() > 0.1, "setup: the drag did not turn the view");
-        assert!(moved == 0.0, "turning about the middle of the view moved the centre by {moved}");
+        assert!(moved < 0.5, "turning about the middle of the view moved the point seen there by {moved} points");
     }
 
     /// THE POINT OF THE MODEL UNDER THE POINTER IS WHERE THE POINTER IS: put back on the screen, it lands on the spot
@@ -631,7 +652,7 @@ mod tests {
         for hold in [false, true] {
             let (mut app, ctx) = a_part_in_view(MouseNav::Gesture);
             let from = on_the_body(&app);
-            let (yaw, target) = (app.viewing.cam.yaw, app.viewing.cam.target);
+            let (yaw, seen) = (app.viewing.cam.yaw, seen_in_the_middle(&app));
             let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(from)]), |c| app.viewport(c));
             let _ = ctx.run_ui(frame(vec![press(from, egui::PointerButton::Primary, true)]), |c| app.viewport(c));
             if hold {
@@ -643,7 +664,7 @@ mod tests {
                 let _ = ctx.run_ui(frame(vec![egui::Event::PointerMoved(from + egui::vec2(12.0 * k as f32, 0.0))]), |c| app.viewport(c));
             }
             let _ = ctx.run_ui(frame(vec![press(from + egui::vec2(72.0, 0.0), egui::PointerButton::Primary, false)]), |c| app.viewport(c));
-            let (turned, moved) = (app.viewing.cam.yaw != yaw, app.viewing.cam.target != target);
+            let (turned, moved) = (app.viewing.cam.yaw != yaw, middle_left(&app, seen));
             let right = if hold { moved && !turned } else { turned && !moved };
             if !right {
                 wrong.push(format!("held {hold}: turned {turned}, moved {moved}"));

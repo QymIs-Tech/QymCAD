@@ -76,7 +76,7 @@ fn deleting_a_component_leaves_no_ghost() {
 fn deleting_a_plane_leaves_no_ghost() {
     let mut p = Project::default();
     p.new_document();
-    let pl = p.add_plane(WorkPlane { id: 0, name: "z5".into(), origin: [0.0, 0.0, 5.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "z5".into(), origin: [0.0, 0.0, 5.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     let si = p.new_sketch("on the plane");
     let sid = p.sketches[si].id;
     p.sketches[si].plane = SketchPlane::Datum(pl);

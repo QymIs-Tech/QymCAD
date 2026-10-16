@@ -61,6 +61,30 @@ pub(super) mod tests {
         assert_eq!(app.side.carr.mode, 0, "after applying, the command closes");
     }
 
+    /// A GRID PAST THE LIMIT IS REFUSED WITH THE LIMIT IN WORDS: 101 by 100 is 10,100 instances, past
+    /// `MAX_PATTERN_INSTANCES`, and each count is within the 512 its field takes. Walked as a person walks it, in real
+    /// frames: the part picked in the tree, the button, the counts typed into the bar, the second direction ticked on,
+    /// Enter. Without the limit the zero the count read as was taken for "a pattern of one instance".
+    #[test]
+    fn a_grid_past_the_limit_is_refused_with_its_numbers() {
+        let mut app = App::default();
+        let comp = assembly_with_part(&mut app);
+        let name = app.project.components.iter().find(|c| c.id == comp).map(|c| qymcad_i18n::name(&c.name)).expect("the part");
+        let mut hand = super::super::hand::Hand::new(&mut app);
+        assert!(hand.press_word(&name, egui::pos2(0.0, 0.0)), "setup: the part {name:?} is picked in the tree");
+        assert!(hand.press_hint(&qymcad_i18n::tr("tb-comp-lin-array-hint")), "the button of a linear component array");
+        assert_eq!(hand.app.side.carr.src, comp, "the command took another source; the status line: {}", hand.app.status);
+        assert!(hand.type_after_word(&qymcad_i18n::tr("cmd-copies"), "101"), "the field of the copies");
+        assert!(hand.press_word(&qymcad_i18n::tr("cmd-dir2"), egui::pos2(0.0, 0.0)), "the tick of the second direction, pressed on its word");
+        assert!(hand.type_after_word(&qymcad_i18n::tr("cmd-dir2"), "100"), "the field of the second direction");
+        hand.set("cstep", 30.0).set("cstep2", 30.0); // the steps: the fields at the geometry
+        hand.key(egui::Key::Enter); // the typing in the field ends
+        hand.key(egui::Key::Enter); // the command applies
+        assert!(hand.app.project.comp_pattern_of(comp).is_none(), "a grid past the limit was made; the status line: {}", hand.app.status);
+        let limit = qymcad_core::feature::MAX_PATTERN_INSTANCES.to_string();
+        assert!(hand.app.status.words.contains("10100") && hand.app.status.words.contains(&limit), "the refusal does not name the grid and the limit: {}", hand.app.status);
+    }
+
     /// With no part selected the command does not start and says why.
     #[test]
     fn without_a_part_the_command_refuses() {
@@ -69,7 +93,7 @@ pub(super) mod tests {
         app.chosen.sel = Sel::None;
         app.start_comp_array(1);
         assert_eq!(app.side.carr.mode, 0, "the command must not open without a source");
-        assert_eq!(app.status, crate::i18n::tr("msg-pick-part-first"), "the reason must be said out loud");
+        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-pick-part-first")), "the reason must be said out loud");
     }
 
     /// Esc cancels without a trace.
@@ -115,7 +139,24 @@ pub(super) mod tests {
         // carries it out - so a single needle would guard only one end of a road that has two.
         assert!(crate::gui::panels_source::PANELS.contains("TreeAsk::EditCompArray(pid)"), "the tree must offer the editing of an array");
         assert!(
-            crate::gui::render_source::has(include_str!("../gui.rs"), "TreeAsk::EditCompArray(pid) => self.start_comp_array_edit(pid)"),
+            crate::gui::render_source::has(
+                concat!(
+                    include_str!("file_doors.rs"),
+                    "\n",
+                    include_str!("gizmo_math.rs"),
+                    "\n",
+                    include_str!("look.rs"),
+                    "\n",
+                    include_str!("panel_bits.rs"),
+                    "\n",
+                    include_str!("startup.rs"),
+                    "\n",
+                    include_str!("view_anim.rs"),
+                    "\n",
+                    include_str!("../gui.rs")
+                ),
+                "TreeAsk::EditCompArray(pid) => self.start_comp_array_edit(pid)"
+            ),
             "the request must be carried out - a request nobody performs is a dead menu item"
         );
         app.start_comp_array_edit(pid);
@@ -158,7 +199,21 @@ pub(super) mod tests {
     #[test]
     fn the_instance_is_visible_in_the_tree() {
         assert!(crate::gui::render_source::has(crate::gui::panels_source::PANELS, "FeatureKind::PartInstance { src_comp, .. } =>"), "the row in the tree");
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(crate::gui::render_source::has(gui, "FK::PartInstance { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-instance").is_empty() && crate::i18n::tr("feat-name-instance") != "feat-name-instance", "the default name of the feature must have a translation");
     }
@@ -172,7 +227,21 @@ pub(super) mod tests {
     #[test]
     fn a_part_copy_does_not_wear_the_assembly_icon() {
         let panels = crate::gui::panels_source::PANELS;
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         let sub_assembly_icon = {
             // "the assembly icon" is not a letter in the code but THE ONE ON THE NEW-SUBASSEMBLY BUTTON:
             // it is asked of the button, otherwise the check would drift from the interface at the very

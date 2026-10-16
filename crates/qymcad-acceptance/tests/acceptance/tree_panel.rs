@@ -178,3 +178,34 @@ probe! {
         assert!(sketch_name(&mut s) == "Contour", "F2 was pressed on {was:?} and \"Contour\" typed, and the sketch is called {:?}", sketch_name(&mut s));
     }
 }
+
+/// The brightest channel sum of the picture inside `r` - how light a word is drawn.
+fn brightest(pic: &qymcad::Picture, r: Rect) -> u32 {
+    let mut best = 0;
+    for y in r.min.y as usize..r.max.y as usize {
+        for x in r.min.x as usize..r.max.x as usize {
+            let c = pic.colour_at(qymcad::pos2(x as f32, y as f32));
+            best = best.max(c.iter().map(|v| *v as u32).sum());
+        }
+    }
+    best
+}
+
+probe! {
+    /// THE HEADING OF THE COMPONENTS IS AS LIGHT AS THE OTHER HEADINGS: in an assembly with a part, the word of the
+    /// branch of the components is drawn no darker than Origin above it. Reported behaviour: the heading stood greyer
+    /// than the rest of the tree.
+    fn the_heading_of_the_components_is_as_light_as_the_others() {
+        let mut s = Session::start();
+        build::a_part_in_the_assembly(&mut s);
+        let (origin, comps) = (s.word("tree-origin"), s.word("tree-components"));
+        let canvas = s.canvas();
+        let in_tree = |w: &str, r: &Rect, want: &str| w.ends_with(want) && r.max.x < canvas.min.x && r.min.y > canvas.min.y;
+        let words = s.words_at();
+        let o = words.iter().find(|(w, r)| in_tree(w, r, &origin)).map(|(_, r)| *r).expect("the Origin row");
+        let c = words.iter().find(|(w, r)| in_tree(w, r, &comps)).map(|(_, r)| *r).expect("the Components heading");
+        let pic = s.snapshot();
+        let (lo, lc) = (brightest(&pic, o), brightest(&pic, c));
+        assert!(lc + 15 >= lo, "the heading of the components is drawn at {lc}, Origin at {lo}");
+    }
+}

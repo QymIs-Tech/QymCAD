@@ -12,7 +12,27 @@ mod tests {
         // THE SOURCES MUST NOT OVERLAP, because this check COUNTS. `PANELS` already carries the sketch
         // crate (the buttons live there), so listing `SKETCH` beside it counted the one definition twice
         // and reported a copy that does not exist.
-        let files = [("gui.rs", include_str!("../gui.rs")), ("panels.rs", crate::gui::panels_source::PANELS)];
+        let files = [
+            (
+                "gui.rs",
+                concat!(
+                    include_str!("file_doors.rs"),
+                    "\n",
+                    include_str!("gizmo_math.rs"),
+                    "\n",
+                    include_str!("look.rs"),
+                    "\n",
+                    include_str!("panel_bits.rs"),
+                    "\n",
+                    include_str!("startup.rs"),
+                    "\n",
+                    include_str!("view_anim.rs"),
+                    "\n",
+                    include_str!("../gui.rs")
+                ),
+            ),
+            ("panels.rs", crate::gui::panels_source::PANELS),
+        ];
         // look for the CALL that assembles the line rather than for the phrase itself: the phrase
         // moved into the language catalogue, and holding on to it would mean checking text instead of
         // substance again

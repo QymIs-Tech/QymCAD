@@ -2,7 +2,11 @@
 error-thicken-added-nothing = The plate went into the body and added nothing — give the thickness above zero
 error-draft-angle-zero = A draft of 0 degrees tilts nothing — give an angle other than zero
 error-torus-through-itself = The tube is as thick as the ring or thicker — such a torus passes through itself; make the tube radius smaller than the ring radius
+error-primitive-size-not-above-zero = A size of the primitive is zero or below, and there is no body of nothing; give every size above zero
+error-offset-past-radius = A round face moved towards its axis by its radius ({ $r } mm) or more closes on the axis and turns inside out; take a distance smaller than { $r } mm, or move it the other way
 error-array-of-one = A pattern of one copy is the body alone — give two copies or more
+error-pattern-too-large = A pattern of { $asked } instances is past the limit of { $limit } — lower the counts
+error-too-many-starts = { $starts } starts is too many — at most { $limit }
 ### { $name } placeholders carry data from the core — keep them, they are not decoration.
 
 ## Operation failed in the geometry kernel.
@@ -168,6 +172,7 @@ error-thread-longer-than-face = A thread { $length } mm long is longer than the 
 error-thread-depth-too-deep = Thread depth { $depth } mm is at or beyond the radius { $radius } mm: for Ø{ $dia } the pitch { $pitch } is too coarse
 error-thread-not-its-size = A thread of Ø{ $nominal } does not fit a face of Ø{ $face } — choose the size of the face, or the face of the size
 warn-edges-dropped = { $dropped } of the { $asked } edges could not be taken and are left sharp; the rest are done — double-click the node to pick other edges or another size
+warn-import-kept-as-it-came = The body brought in from the file did not pass the checks and could not be repaired, so it is kept exactly as the file holds it; an operation on it may refuse — open the file in the program that made it and export it again, or check its tolerance
 error-thread-removed-nothing = The thread removed nothing ({ $before } -> { $after } mm³) — check the chosen face, pitch and length
 error-thread-failed = The thread did not build (check pitch, length and diameter)
 error-auger-rim-not-found = The shaft rim (a circular edge) was not found
@@ -206,6 +211,7 @@ error-expr-unexpected-token = Unexpected token { $what }
 error-expr-unexpected-end = the expression ends too early: a number or a name was expected
 error-expr-trailing-input = Trailing input at «{ $what }»
 error-expr-not-a-number = The result is not a number (division by zero?)
+error-expr-too-deep = The formula nests deeper than { $limit } levels — parentheses, functions, signs or powers inside one another
 
 ## A message from the kernel itself — passed through untranslated: it is diagnostics, not prose.
 
@@ -311,6 +317,8 @@ io-stl-too-many-triangles = STL: too many triangles
 io-stl-write-failed = STL: writing failed: { $v }
 io-stl-not-finite-line = STL: the value on line { $v } is not a finite number ({ $w })
 io-stl-not-finite-triangle = STL: a coordinate of triangle { $v } (byte { $w }) is not a finite number ({ $x })
+io-body-corner-not-finite = Body { $v }: corner { $w } is not a finite number ({ $x }); the file is not opened
+io-body-face-not-finite = Body { $v }: face { $w } is not a finite number ({ $x }); the file is not opened
 
 io-svg-empty-sketch = SVG: the sketch is empty
 io-svg-too-deep = SVG: the drawing is nested deeper than { $v } levels and is not read

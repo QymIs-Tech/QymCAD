@@ -4,7 +4,6 @@
 //! repair of small faces over it for nothing: measured on a 178 032-triangle mesh, 50 s of every operation, with not one
 //! face taken out.
 use qymcad_core::geom::{Mesh, Point3};
-use qymcad_kernel::Shape;
 
 /// A closed ball of radius `r` as a mesh of `n` x `m` bands.
 fn ball(r: f64, n: usize, m: usize) -> Mesh {
@@ -36,7 +35,7 @@ fn ball(r: f64, n: usize, m: usize) -> Mesh {
 #[test]
 fn the_faces_of_a_fine_mesh_are_not_taken_for_cracks() {
     // a ball of 0.2 mm in 40 x 20 bands: faces of 2e-4 mm^2 and more, under the crack's area, none of them narrow
-    let body = Shape::from_mesh(&ball(0.2, 40, 20)).expect("a body of the mesh");
+    let body = qymcad_kernel::specimen::from_mesh(&ball(0.2, 40, 20)).expect("a body of the mesh");
     assert!(!body.is_sheet(), "setup: the ball did not close into a solid");
     let cracks = body.sliver_faces();
     assert_eq!(cracks, 0, "{cracks} small triangles of a mesh were taken for cracks - each operation on such a body would copy it and repair it for nothing");
@@ -48,10 +47,10 @@ fn the_faces_of_a_fine_mesh_are_not_taken_for_cracks() {
 /// anew. And a flat box meshed once is not meshed again at another deflection.
 #[test]
 fn a_body_of_a_mesh_keeps_its_own_triangles() {
-    let body = Shape::from_mesh(&ball(0.2, 40, 20)).expect("a body of the mesh");
+    let body = qymcad_kernel::specimen::from_mesh(&ball(0.2, 40, 20)).expect("a body of the mesh");
     let meshed = qymcad_kernel::remeshed_faces(&body, 0.001);
     assert_eq!(meshed, 0, "the tessellation meshed {meshed} flat faces of a body made of a mesh anew");
-    let block = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 5.0, 0.0, 5.0], 3.0).expect("a block");
+    let block = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 5.0, 0.0, 5.0], 3.0).expect("a block");
     let first = qymcad_kernel::remeshed_faces(&block, 0.1);
     let again = qymcad_kernel::remeshed_faces(&block, 0.01);
     assert_eq!((first, again), (6, 0), "a flat box is meshed once and keeps its triangles at another deflection");
@@ -66,7 +65,7 @@ fn a_body_of_a_mesh_is_sound_as_it_is_made() {
     // the same ball wound the other way round: a mesh may come in wound inwards, all of it
     let inward = Mesh { verts: out.verts.clone(), tris: out.tris.iter().map(|t| [t[0], t[2], t[1]]).collect(), ..Default::default() };
     for (name, mesh) in [("wound outwards", out), ("wound inwards", inward)] {
-        let body = Shape::from_mesh(&mesh).expect("a body of the mesh");
+        let body = qymcad_kernel::specimen::from_mesh(&mesh).expect("a body of the mesh");
         assert!(body.volume() > 0.0, "{name}: the body holds {} - it is inside out", body.volume());
         assert!(body.is_valid(), "{name}: the kernel's check refuses a body made of a closed clean mesh - every operation over it would repair it");
     }
@@ -98,7 +97,7 @@ fn a_large_body_of_a_mesh_with_a_face_flat_to_its_precision_is_sound() {
         [6, 7, 8],
         [7, 4, 8], // the top, around its lifted middle
     ];
-    let body = Shape::from_mesh(&Mesh { verts, tris, ..Default::default() }).expect("a body of the mesh");
+    let body = qymcad_kernel::specimen::from_mesh(&Mesh { verts, tris, ..Default::default() }).expect("a body of the mesh");
     assert!(body.volume() > 0.0, "setup: the cube is inside out");
     let top = body.face_kinds().map(|k| k.iter().sum::<u32>()).unwrap_or(0);
     assert_eq!(top, 6, "setup: the top of four triangles within the precision is to be one flat face");

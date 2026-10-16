@@ -139,7 +139,12 @@ fn the_program_opens_no_door_but_its_session() {
     let open: Vec<&str> = root_code.lines().map(str::trim).filter(|l| l.starts_with("pub ") && !allowed.iter().any(|a| l.starts_with(a))).collect();
     assert!(open.is_empty(), "the program's library opens a door beside its session:\n{}", open.join("\n"));
     // and the session hands out nothing of the inside: no application, no window, no context
-    let session = code_of(&std::fs::read_to_string(program.join("gui/session.rs")).expect("the session reads"));
+    // the session and its modules: its methods stand in `gui/session/` as well
+    let mut whole = std::fs::read_to_string(program.join("gui/session.rs")).expect("the session reads");
+    for e in std::fs::read_dir(program.join("gui/session")).expect("the modules of the session read").flatten() {
+        whole.push_str(&std::fs::read_to_string(e.path()).expect("a module of the session reads"));
+    }
+    let session = code_of(&whole);
     let leaks: Vec<&str> = session.lines().filter(|l| l.trim_start().starts_with("pub fn") && ["App", "Window", "Context"].iter().any(|w| has_word(l, w))).collect();
     assert!(leaks.is_empty(), "the session hands the inside of the program out:\n{}", leaks.join("\n"));
 }

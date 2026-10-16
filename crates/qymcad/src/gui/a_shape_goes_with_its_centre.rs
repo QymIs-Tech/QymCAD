@@ -71,10 +71,10 @@ mod tests {
         let mut sins = Vec::new();
         for (what, tool, mode, clicks) in [
             // away from the axes and its centre on a node of the grid: a drag led to within a few pixels of an axis or of
-            // a node snaps onto it, and the drag would not be (12, 6)
-            ("an arc by three points", 4, Some("opt-rect-3pt"), &[(0.0, 20.0), (20.0, 20.0), (10.0, 30.0)][..]),
-            ("a slot", 7, None, &[(0.0, 0.0), (30.0, 0.0), (30.0, 5.0)][..]),
-            ("an ellipse", 8, None, &[(0.0, 0.0), (20.0, 0.0), (0.0, 10.0)][..]),
+            // a node snaps onto it, and the drag would not be (12, 6); a point put on an axis is held there
+            ("an arc by three points", 4, Some("opt-rect-3pt"), &[(10.0, 20.0), (30.0, 20.0), (20.0, 30.0)][..]),
+            ("a slot", 7, None, &[(10.0, 10.0), (40.0, 10.0), (40.0, 15.0)][..]),
+            ("an ellipse", 8, None, &[(10.0, 10.0), (30.0, 10.0), (10.0, 20.0)][..]),
         ] {
             let (mut app, si) = drawn(tool, mode, clicks);
             let centre = centre_of(&app, si);

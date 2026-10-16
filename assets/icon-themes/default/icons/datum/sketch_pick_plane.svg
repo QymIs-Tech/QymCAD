@@ -1,0 +1,24 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / sketch_pick_plane">
+<circle id="Ellipse 2" cx="3" cy="3" r="3" transform="matrix(-1 0 0 1 31 1)" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<circle id="Ellipse 9" cx="3" cy="3" r="3" transform="matrix(-1 0 0 1 7 25)" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<g id="Group 6">
+<circle id="Ellipse 10" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 29.5 26.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 11" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 21.5 26.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 12" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 13.5 26.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 13" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 13.5 18.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 15" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 29.5 18.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 16" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 29.5 10.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 17" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 21.5 10.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 18" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 13.5 10.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 19" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 5.5 10.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 20" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 5.5 18.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 21" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 5.5 2.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 22" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 13.5 2.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<circle id="Ellipse 23" cx="1.5" cy="1.5" r="1.5" transform="matrix(-1 0 0 1 21.5 2.5)" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+</g>
+<path id="Subtract" d="M24.0605 3.30957C13.4089 4.99568 4.99712 13.4081 3.31055 24.0596C3.53454 24.0207 3.76487 24 4 24C4.45946 24 4.9006 24.0781 5.31152 24.2207C6.91109 14.5458 14.5466 6.90966 24.2217 5.31055C24.0792 4.89978 24 4.45925 24 4C24 3.76448 24.0215 3.53392 24.0605 3.30957Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path id="Union" d="M20 16C20.5523 16 21 16.4477 21 17V19H23C23.5523 19 24 19.4477 24 20C24 20.5523 23.5523 21 23 21H21V23C21 23.5523 20.5523 24 20 24C19.4477 24 19 23.5523 19 23V21H17C16.4477 21 16 20.5523 16 20C16 19.4477 16.4477 19 17 19H19V17C19 16.4477 19.4477 16 20 16Z" stroke-width="2" stroke-linecap="round" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Vector 18" d="M20 17V20M20 20V23M20 20H17M20 20H23" stroke-width="2" stroke-linecap="round" stroke="var(--icon-accent, #18F2F2FF)"/>
+</g>
+</svg>

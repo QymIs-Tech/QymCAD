@@ -251,7 +251,7 @@ pub(crate) fn report_window(
             if !has_doc {
                 ui.label(egui::RichText::new(crate::i18n::tr("report-doc-unsaved")).weak().small());
             } else if draft.attach_doc {
-                ui.colored_label(scheme.pal.warning(), format!("{} {}", ph::WARNING, crate::i18n::tr("report-doc-public")));
+                qymcad_ui_state::say(ui, &scheme.pal, &qymcad_ui_state::Notice::warning(crate::i18n::tr("report-doc-public")), qymcad_ui_state::NoticeSize::Line);
             }
 
             ui.add_space(10.0);

@@ -257,3 +257,29 @@ probe! {
         assert!(node.error.is_none(), "w is back and the extrusion still says {:?}", node.error);
     }
 }
+
+probe! {
+    /// A STAIRCASE RESIZED BY ITS PARAMETERS KEEPS EVERY ROUNDING IN THE PART (a private sample): three steps 10 high,
+    /// the first chamfered 10 x 10, the second rounded R10, the third chamfered 10 x 30 - each of their faces eaten to
+    /// nothing - roundings of R2 after them, the last on the arc of the R10 on the side, its depth the parameter `h`.
+    /// Reported behaviour: `h` written 60, the window rebuilt for minutes and left sheets and holes over the screen: the
+    /// last rounding landed a body of 4.2e5 mm^3 reaching 14 m out of a part of 6.4e4 mm^3, built in 53 s.
+    fn a_staircase_resized_by_its_parameters_keeps_every_rounding_in_the_part() {
+        let Some(path) = qymcad_acceptance::private_sample("test_bridge_resize_body.qcad") else { return };
+        let mut s = Session::start();
+        build::open_project(&mut s, &path);
+        let started = std::time::Instant::now();
+        set_parameter(&mut s, "h", "60");
+        let doc = s.document();
+        let took = started.elapsed().as_secs_f64();
+        assert!((parameter(&mut s, "h").value - 60.0).abs() < 1e-9, "setup: h was written as 60");
+        // the steps stand in a block 50 across, 60 deep, 30 high
+        let block = 50.0 * 60.0 * 30.0;
+        for b in doc.bodies.iter().filter(|b| !b.consumed && !b.sheet) {
+            assert!(b.volume > 0.0 && b.volume < block, "the part {:?} is {} mm^3, beyond the block of {block} mm^3 its steps stand in", b.name, b.volume);
+            let out = b.face_centres.iter().find(|c| c[0] < -50.001 || c[0] > 0.001 || c[1] < -0.001 || c[1] > 60.001 || c[2] < -0.001 || c[2] > 30.001);
+            assert!(out.is_none(), "the part {:?} has a face standing at {:?}, out of the block 50 x 60 x 30 its steps stand in", b.name, out);
+        }
+        assert!(took < 30.0, "the rebuild after h was written took {took:.0} s");
+    }
+}

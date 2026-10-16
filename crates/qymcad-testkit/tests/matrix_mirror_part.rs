@@ -7,6 +7,7 @@
 //! transform.
 
 use qymcad_core::model::Project;
+use qymcad_kernel::specimen::Specimen as _;
 
 fn probe_box(s: &qymcad_kernel::Shape, wt: [f64; 12], x0: f64, x1: f64) -> f64 {
     let outer = qymcad_core::geom::Contour::closed(vec![
@@ -16,13 +17,13 @@ fn probe_box(s: &qymcad_kernel::Shape, wt: [f64; 12], x0: f64, x1: f64) -> f64 {
         qymcad_core::geom::Point2::new(x0, 25.0),
     ]);
     let prof = qymcad_core::geom::encode_profile(&outer, &[]);
-    let bx = qymcad_kernel::Shape::extrude_profile(&prof, 40.0).unwrap();
+    let bx = qymcad_kernel::specimen::extrude_profile(&prof, 40.0).unwrap();
     let mut pl = qymcad_core::feature::PLACE_IDENTITY;
     pl[11] = -5.0;
-    let bx = bx.transformed(&pl).unwrap();
+    let bx = qymcad_kernel::specimen::placed(&bx, &pl).unwrap();
     // the body is in LOCAL space — bring it into the world for the probe
-    let sw = s.transformed(&wt).unwrap();
-    sw.boolean(&bx, 2).map(|c| c.volume()).unwrap_or(0.0)
+    let sw = qymcad_kernel::specimen::placed(s, &wt).unwrap();
+    sw.combined(&bx, 2).map(|c| c.volume()).unwrap_or(0.0)
 }
 
 fn mk_arm(p: &mut Project) -> (u64, u64) {

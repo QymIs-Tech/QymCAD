@@ -153,24 +153,28 @@ mod loud_only_when_earned {
 mod quiet_is_visible {
     use super::super::App;
 
+    /// A quiet rebuild in flight LONGER THAN THE LIMIT a sign waits for: a shorter one is to show nothing at all.
     #[test]
     fn a_quiet_rebuild_shows_the_veil_and_blocks_nothing() {
+        use crate::gui::tests::a_quick_rebuild_does_not_blink::tests::{signs_painted, Sign};
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
-        let first = app.project.timeline.iter().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the node of the body");
-        let _ = first;
+        let mut h = super::super::hand::Hand::new(&mut app);
+        h.frame(Vec::new());
         // A REBUILD THAT IS STILL RUNNING: a real one on a little cube finishes inside the frame.
         let (_tx, rx) = std::sync::mpsc::channel();
-        let ctx = egui::Context::default();
-        super::super::install_fonts(&ctx);
-        app.waiting.splash_until = None;
-        app.regen.busy = Some(super::super::Busy { started: std::time::Instant::now(), label: "rebuild".into(), rx, kind: super::super::BgKind::Regen, pulse: None, quiet: true });
-        let mut swallowed = true;
-        let _ = ctx.run_ui(Default::default(), |c| swallowed = app.tick_async(c.ctx()));
-        assert!(!swallowed, "a quiet rebuild has no right to eat the frame");
-        assert!(app.tools.dim.spinner, "a quiet rebuild must leave a sign on the canvas: otherwise a person takes what is shown for the truth");
-        assert!(app.tools.dim.overlay.is_none(), "a quiet rebuild has no right to raise a window — nobody is holding a person");
+        let started = std::time::Instant::now() - qymcad_ui_state::REBUILD_SIGN_AFTER - std::time::Duration::from_millis(100);
+        h.app.regen.busy = Some(super::super::Busy { started, label: "rebuild".into(), rx, kind: super::super::BgKind::Regen, pulse: None, quiet: true });
+        h.frame(Vec::new());
+        let file = crate::i18n::tr("menu-file");
+        assert!(h.words_drawn().iter().any(|w| w.0 == file), "a quiet rebuild has no right to eat the frame");
+        let painted = signs_painted(&h);
+        assert!(
+            painted.contains(&Sign::Veil) && painted.contains(&Sign::Spinner),
+            "a quiet rebuild must leave a sign on the canvas: otherwise a person takes what is shown for the truth; painted {painted:?}"
+        );
+        assert!(!painted.contains(&Sign::Dimming) && !painted.contains(&Sign::Card), "a quiet rebuild has no right to raise a window — nobody is holding a person; painted {painted:?}");
     }
 }
 

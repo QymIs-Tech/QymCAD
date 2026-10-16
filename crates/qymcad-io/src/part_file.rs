@@ -107,6 +107,8 @@ pub fn load_part_bytes(bytes: &[u8]) -> Result<LoadedPart, String> {
             Ok(fs) => ron::from_str::<Vec<MeshFace>>(&fs).unwrap_or_default(),
             Err(_) => Vec::new(),
         };
+        // a part from the library brings its bodies into a document as a project does: the same check
+        crate::project_file::finite_body(i, &project.bodies[i].mesh, &f)?;
         faces.push(f);
     }
 

@@ -4,6 +4,7 @@
 //! references with it.
 //! The item asks for the new part's name beside the cursor, the name of the part it came from with "piece" put
 //! after it; Enter makes the part, Esc lets it go.
+use qymcad_ui_state::Notice;
 use egui::{Pos2, Rect, Response};
 use qymcad_core::model::{Id, Project};
 
@@ -98,7 +99,7 @@ pub(crate) fn from_search(ctx: &egui::Context, pc: &mut qymcad_ui_state::PartCtx
         }
         None => {
             ctx.data_mut(|d| d.insert_temp(waiting_id(), true));
-            *pc.status = crate::i18n::tr("piece-part-pick");
+            *pc.status = Notice::info(crate::i18n::tr("piece-part-pick"));
         }
     }
 }

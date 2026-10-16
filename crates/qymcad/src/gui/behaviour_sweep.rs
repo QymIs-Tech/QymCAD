@@ -128,9 +128,9 @@ mod tests {
         let mut mute: Vec<String> = Vec::new();
         for c in COMMANDS {
             let mut app = stage(c.workbench);
-            app.status.clear();
+            app.status.words.clear();
             app.run_command(c.code, &egui::Context::default());
-            if !started(&app, c.launch) && app.status.trim().is_empty() {
+            if !started(&app, c.launch) && app.status.words.trim().is_empty() {
                 mute.push(format!("{} ({})", c.code, c.workbench));
             }
         }

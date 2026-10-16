@@ -105,7 +105,21 @@ mod tests {
         let panels = crate::gui::panels_source::PANELS;
         assert!(panels.contains("BarAsk::FeatCmd(26)"), "the button in the panel");
         assert!(crate::gui::render_source::has(panels, "FeatureKind::RemoveFace { ref faces, .. } =>"), "the row in the feature tree");
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(crate::gui::render_source::has(gui, "FK::RemoveFace { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-remove-face").is_empty() && crate::i18n::tr("feat-name-remove-face") != "feat-name-remove-face", "the default feature name must have a translation");
         let render = crate::gui::render_source::RENDER;

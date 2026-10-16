@@ -14,10 +14,14 @@ The source of truth is the code and a run of it, not a description of it.
   impersonally ("Select a contour"). No shouting in capitals. The table is in `i18n/README.md`.
 * Arrows only as ASCII `->`. A raw Unicode symbol is drawn as a box.
 * Icons in egui only from `ph::*`. Unicode is fine in Markdown.
+* A message carries its tone (`qymcad_ui_state::Notice`: information, warning, refusal, error) and is drawn by
+  `qymcad_ui_state::voice` (`say`, `tone_mark`, `tone_colour`); no place picks the colour or the icon of a warning
+  or an error itself.
 * Help says what to press, what happens, and what to do if it did not work. No internal words ("persistent",
   "kernel"), no defending decisions, no development history.
 
-Guards: `comment_ratchet.rs`, `i18n/tests.rs`, `i18n/ratchet.rs`, `gui/font_coverage.rs`, `gui/help_voice.rs`.
+Guards: `comment_ratchet.rs`, `i18n/tests.rs`, `i18n/ratchet.rs`, `gui/font_coverage.rs`, `gui/help_voice.rs`,
+`one_voice_guard.rs`.
 
 ## Tests
 
@@ -63,6 +67,10 @@ Guards: `comment_ratchet.rs`, `i18n/tests.rs`, `i18n/ratchet.rs`, `gui/font_cove
   check whether a path from the interface was forgotten. `#[allow]` only with the reason named beside it.
 * OCCT is not thread-safe: low-level booleans under the lock, probes on a copy (`BRepBuilderAPI_Copy`), not
   through `SetNonDestructive`.
+* A source file holds at most 1500 lines. Past that it is split into modules by what it holds: the parent
+  keeps what ties them, each module starts with `use super::*;`, the code moves as it is in a commit of its
+  own, and a change of the moved code is another commit. The few files listed in `file_size_ratchet.rs`
+  may only shrink; their mark goes down in the commit that shrinks them.
 
 **Nothing is added to `App` — no fields, no methods, no logic.** Not for a new feature, not for a bug fix,
 not "one line". New code is a free function in the crate whose task it is, taking a narrow context
@@ -92,8 +100,9 @@ Mandatory, for every line written, test code included.
   `#[allow(clippy::...)]`, and no tuple or alias to get a type under a threshold - that is the same remark
   hidden.
 
-Guards: `wide_signature_ratchet.rs` (the width of signatures and the aliases of tuples), the gate steps "the
-layout is rustfmt's" and "clippy has nothing to say".
+Guards: `wide_signature_ratchet.rs` (the width of signatures and the aliases of tuples), `named_groups_ratchet.rs`
+(runs of one type, tuples and `bool` parameters, per file, only going down), `file_size_ratchet.rs` (the length
+of a file), the gate steps "the layout is rustfmt's" and "clippy has nothing to say".
 
 ## Workbenches, modules, resources
 

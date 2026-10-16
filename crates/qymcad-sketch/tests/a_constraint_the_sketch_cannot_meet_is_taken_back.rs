@@ -3,6 +3,7 @@
 //! Reported behaviour: parallel put on two lines an angle of 45 deg holds apart went into the sketch beside the
 //! angle; the sketch stayed unsolved (residual 0.79) and nothing was marked. A dimension that does not fit is rolled
 //! back and said; a constraint is the other half of the same question.
+use qymcad_ui_state::Notice;
 use qymcad_core::model::{Constraint, Project};
 
 #[test]
@@ -19,13 +20,13 @@ fn parallel_against_an_angle_of_45_is_taken_back() {
     let before: Vec<(f64, f64)> = p.sketches[si].points.iter().map(|x| (x.x, x.y)).collect();
     let mut regen = qymcad_ui_state::Rebuilding::default();
     let mut sel_sk = qymcad_ui_state::SketchSelection { items: vec![(1, l1), (1, l2)], ..Default::default() };
-    let mut status = String::new();
+    let mut status = Notice::default();
     qymcad_sketch::try_constraint_inner(&mut p, &mut regen, qymcad_ui_state::Sel::Sketch(si), &mut sel_sk, &mut status, 3);
 
     assert!(!p.sketches[si].constraints.iter().any(|c| matches!(c, Constraint::Parallel { .. })), "parallel stayed beside the angle it contradicts");
     let after: Vec<(f64, f64)> = p.sketches[si].points.iter().map(|x| (x.x, x.y)).collect();
     assert!(before.iter().zip(&after).all(|(a, b)| (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6), "the points did not return: {before:?} became {after:?}");
-    assert!(status.starts_with(&qymcad_i18n::tr1("sk-constraint-conflict", "r", "").split(" (").next().unwrap_or_default().to_string()), "the refusal is not said: {status:?}");
+    assert!(status.words.starts_with(&qymcad_i18n::tr1("sk-constraint-conflict", "r", "").split(" (").next().unwrap_or_default().to_string()), "the refusal is not said: {status:?}");
 }
 
 /// EQUAL ON TWO CIRCLES THAT EACH CARRY THEIR RADIUS gives them one radius: the second circle's radius becomes a
@@ -46,7 +47,7 @@ fn equal_on_two_dimensioned_circles_makes_the_second_radius_a_reference() {
     p.solve_sketch(si);
     let mut regen = qymcad_ui_state::Rebuilding::default();
     let mut sel_sk = qymcad_ui_state::SketchSelection { items: vec![(1, e1), (1, e2)], ..Default::default() };
-    let mut status = String::new();
+    let mut status = Notice::default();
     qymcad_sketch::try_constraint_inner(&mut p, &mut regen, qymcad_ui_state::Sel::Sketch(si), &mut sel_sk, &mut status, 5);
     let cs = &p.sketches[si].constraints;
     assert!(cs.iter().any(|c| matches!(c, Constraint::EqualRadius { .. })), "equal was not put on the circles: {status:?}");

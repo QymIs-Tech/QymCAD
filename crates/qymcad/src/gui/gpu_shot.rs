@@ -47,18 +47,7 @@ pub(crate) mod eyes {
         // come from `draw_3d_gpu`'s own arithmetic, so what is drawn here is what is drawn there.
         let basis = pn.cam.basis();
         let key = qymcad_ui_state::gpu_scene_key(pn);
-        let (inv_d, z_near, z_far, _) = qymcad_ui_state::proj_params(pn, rect, key);
-        let gt = pn.scheme.pal.ghost_target;
-        let shade = crate::viewport_gpu::ShadeRaw {
-            light: {
-                let l = qymcad_ui_state::scene_light();
-                [l[0] as f32, l[1] as f32, l[2] as f32]
-            },
-            floor: pn.scheme.pal.shade_floor_body,
-            ghost_alpha: pn.set.ghost_alpha as f32 / 255.0,
-            ghost_target: [gt[0] as f32 / 255.0, gt[1] as f32 / 255.0, gt[2] as f32 / 255.0],
-        };
-        let cam = crate::viewport_gpu::CamRaw::new(&basis, pn.cam.scale, pn.cam.target, rect.size(), inv_d as f32, crate::viewport_gpu::ZRange { near: z_near as f32, far: z_far as f32 }, shade);
+        let cam = crate::gui::render::frame_uniform(pn, rect, &basis, 1.0);
         let size_px = [rect.width().round().max(1.0) as u32, rect.height().round().max(1.0) as u32];
         let scene = crate::gui::render_scene::gpu_scene(pn);
         let paint = crate::viewport_gpu::MeshPaint::new(cam, size_px, Some(scene.pieces), scene.looks, key);

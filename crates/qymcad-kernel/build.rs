@@ -49,6 +49,15 @@ fn main() {
         .file("src/occt_faces.cpp")
         .file("src/occt_io.cpp")
         .warnings(false);
+    // A FAULT INSIDE OCCT COMES BACK AS AN EXCEPTION (`QYM_SIGNALS` in every `try` of the bridge). Elsewhere than MSVC
+    // a signal jumps to the nearest `OCC_CATCH_SIGNALS`, which exists only under `OCC_CONVERT_SIGNALS` - the macro the
+    // OCCT of those systems is built with (its `Standard_ErrorHandler::Callback` is exported only then), so the bridge
+    // takes it too; MSVC translates a fault into an exception itself when the code is compiled with `/EHa`.
+    if msvc {
+        build.flag("/EHa");
+    } else {
+        build.define("OCC_CONVERT_SIGNALS", None);
+    }
     if msvc {
         // `windows.h` declares `min` and `max` as MACROS, and the OCCT headers use `std::min`/`std::max` -
         // they do not compile together until the macros are switched off. `WIN32_LEAN_AND_MEAN` keeps the

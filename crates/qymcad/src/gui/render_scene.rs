@@ -51,7 +51,7 @@ pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qym
     let center = [(mn[0] + mx[0]) / 2.0, (mn[1] + mx[1]) / 2.0, (mn[2] + mx[2]) / 2.0];
     let ext = (mx[0] - mn[0]).max(mx[1] - mn[1]).max(mx[2] - mn[2]).max(1e-3);
     let (right, up, fwd) = Cam3::default().basis(); // a fixed isometric view, independent of the current camera
-    let light = qymcad_ui_state::scene_light();
+    let lights = qymcad_ui_state::scene_lights(&(right, up, fwd));
     let s = (TS as f64 * 0.42) / ext; // the scale that fits it into the frame
     let hc = TS as f64 / 2.0;
     let proj = |p: [f64; 3]| -> (f64, f64, f64) {
@@ -82,7 +82,7 @@ pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qym
             if v_dot(n, fwd) >= 0.0 {
                 continue; // the bodies are oriented outwards
             }
-            let col = qymcad_pick::shade_tri(&dc.scheme.pal, dc.set.ghost_alpha, false, false, base, n, light);
+            let col = qymcad_pick::shade_tri(&dc.scheme.pal, dc.set.ghost_alpha, false, false, base, n, &lights);
             let (ax, ay, az) = proj(a);
             let (bx, by, bz) = proj(b);
             let (cx, cy, cz) = proj(cc);

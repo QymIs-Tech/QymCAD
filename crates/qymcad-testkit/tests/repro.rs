@@ -1,5 +1,6 @@
 //! Reproducing defects against a real project. It loads the project, rebuilds it with the real kernel and
 //! checks particular defects, so that they are fixed on the facts rather than by guesswork.
+use qymcad_kernel::specimen::Specimen as _;
 mod common;
 
 // a body before its chamfer: the topology and the limit of that chamfer
@@ -30,8 +31,8 @@ fn bug4_chamfer_and_edge_topology() {
         })
     };
     let e = vertical_at(29.0, 16.0).expect("the vertical edge at x = 29, y = 16");
-    assert!(s.chamfer_edges(3.99, &[e], &[], &[], &[]).is_some(), "a chamfer of 3.99 on this edge builds");
-    assert!(s.chamfer_edges(4.0, &[e], &[], &[], &[]).is_none(), "the raw kernel fails at 4.0, which equals the length of the face; the ladder in the kernel compensates");
+    assert!(s.chamfered(3.99, &[e]).is_some(), "a chamfer of 3.99 on this edge builds");
+    assert!(s.chamfered(4.0, &[e]).is_none(), "the raw kernel fails at 4.0, which equals the length of the face; the ladder in the kernel compensates");
     // on the line at x = 12, y = 40 there are doubled and overlapping edges, one spanning z 5 to 14 over
     // another spanning z 9 to 14, plus a degenerate one
     let (polys, ids, _) = s.edges_full();

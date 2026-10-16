@@ -31,13 +31,13 @@ fn only_outer_selected_is_a_tube() {
 
 #[test]
 fn both_selected_make_solid_disc() {
-    let (mut p, sid, outer, inner) = scene();
+    let (p, sid, outer, inner) = scene();
     for (label, profiles, fill) in [("both in profiles", vec![outer, inner], vec![]), ("an old file with the inner one in fill", vec![outer], vec![inner])] {
         let faces = p.profile_faces(sid, &profiles, &fill);
         assert_eq!(faces.len(), 2, "{label}: two regions, the ring and the inner disc: {faces:?}");
         assert!(faces.contains(&(outer, vec![inner])), "{label}: the region of the outer one is the ring");
         assert!(faces.contains(&(inner, vec![])), "{label}: the region of the inner one is a solid disc");
-        let encoded = p.encode_profiles_fill(0, sid, &profiles, &fill).expect("the encoding");
+        let encoded = p.encode_profiles_sourced(sid, &profiles, &fill).expect("the encoding").profiles;
         assert_eq!(encoded.len(), 2, "{label}: two faces reach the kernel, and the fusion gives a solid disc");
     }
 }

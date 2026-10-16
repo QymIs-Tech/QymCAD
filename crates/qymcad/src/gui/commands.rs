@@ -8,6 +8,7 @@ pub(crate) use qymcad_ui_state::{comp_array_kind};
 #[allow(unused_imports)] // the checks reach it through this module, which is the address they know
 pub(crate) use qymcad_ui_state::try_modify;
 pub(crate) use qymcad_part::*;
+use qymcad_ui_state::Notice;
 use super::*;
 
 impl App {
@@ -55,7 +56,7 @@ impl App {
         self.tools.picking = Picking::ReplaceSketch(si);
         self.viewing.mode_3d = true; // planes and faces are picked in 3D
         self.chosen.sel = Sel::Sketch(si);
-        self.status = crate::i18n::tr("msg-move-sketch");
+        self.status = Notice::info(crate::i18n::tr("msg-move-sketch"));
     }
 
     /// Derive the workbench from the active context (rather than from a tab chosen by hand) and
@@ -93,7 +94,7 @@ impl App {
             JobResult::DrawingRead { path, curves, note } => {
                 self.arm_sketch_import(curves, &path);
                 if !note.is_empty() {
-                    self.status = format!("{} {note}", self.status);
+                    self.status = Notice::warning(format!("{} {note}", self.status));
                 }
             }
             JobResult::MeshImported { path, format, pieces } => crate::gui::import_scale::land_mesh(&mut self.win_ctx(&mut Vec::new()), path, format, pieces),
@@ -104,20 +105,20 @@ impl App {
                 let (pending_save, pending_auto) = (self.disk.io.saved_key.take(), self.disk.io.autosave_key.take());
                 let failed = error.is_some(); // the answer is needed below, while `error` goes into the message
                 self.status = match (error, autosave) {
-                    (Some(e), true) => format!("{} {}", ph::WARNING, crate::i18n::tr1("io-autosave-failed", "error", &e)),
-                    (Some(e), false) => crate::i18n::tr1("io-save-error", "error", &e),
+                    (Some(e), true) => Notice::error(crate::i18n::tr1("io-autosave-failed", "error", &e)),
+                    (Some(e), false) => Notice::error(crate::i18n::tr1("io-save-error", "error", &e)),
                     (None, true) => {
                         if let Some(k) = pending_auto {
                             self.disk.edits.autosave_key = k;
                         }
-                        format!("{} {}", ph::CHECK, crate::i18n::tr1("io-autosaved", "time", &clock_hh_mm()))
+                        Notice::info(format!("{} {}", ph::CHECK, crate::i18n::tr1("io-autosaved", "time", &clock_hh_mm())))
                     }
                     (None, false) => {
                         if let Some(k) = pending_save {
                             self.disk.edits.saved_key = k;
                         }
                         let _ = std::fs::remove_file(qymcad_ui_state::autosave_path(&self.disk.project_path)); // the autosave is no longer needed
-                        crate::i18n::tr1("io-project-saved", "path", &path)
+                        Notice::info(crate::i18n::tr1("io-project-saved", "path", &path))
                     }
                 };
                 // THE NAVIGATION THAT WAS WAITING FOR THE WRITE HAPPENS HERE. The answer was "save", and
@@ -150,9 +151,9 @@ impl App {
                 }
                 if regen {
                     qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the planner does the counting - a file with no geometry now has something to rebuild from
-                    self.status = crate::i18n::tr1("io-loaded-brep-rebuilt", "n", &n.to_string());
+                    self.status = Notice::info(crate::i18n::tr1("io-loaded-brep-rebuilt", "n", &n.to_string()));
                 } else if n > 0 {
-                    self.status = crate::i18n::tr1("io-brep-restored-n", "n", &n.to_string());
+                    self.status = Notice::info(crate::i18n::tr1("io-brep-restored-n", "n", &n.to_string()));
                     // none raised: nothing to tell
                 }
                 qymcad_ui_state::invalidate(&mut self.regen);
@@ -167,7 +168,7 @@ impl App {
                 }
                 self.status = status;
             }
-            JobResult::Failed(e) => self.status = e,
+            JobResult::Failed(e) => self.status = Notice::error(e),
         }
     }
 
@@ -231,19 +232,19 @@ impl App {
         self.side.datum.axis_pts.clear();
         match code {
             20 => {
-                self.tools.cmd.params = vec![CmdParam::new("f-offset", "dist", 10.0, -100000.0, 100000.0)];
-                self.status = crate::i18n::tr("msg-plane-pick");
+                self.tools.cmd.params = qymcad_part::datum_plane_fields();
+                self.status = Notice::info(crate::i18n::tr("msg-plane-pick"));
             }
             21 => {
                 self.side.datum.pt_mode = 0;
                 self.side.datum.pt_vert = None;
                 self.tools.cmd.params = vec![CmdParam::new("X", "x", 0.0, -1e7, 1e7), CmdParam::new("Y", "y", 0.0, -1e7, 1e7), CmdParam::new("Z", "z", 0.0, -1e7, 1e7)];
-                self.status = crate::i18n::tr("msg-point-cmd");
+                self.status = Notice::info(crate::i18n::tr("msg-point-cmd"));
             }
             22 => {
                 refresh_axis_edges(&mut self.part_ctx()); // the straight edges of ALL visible bodies, for picking an axis
                 self.tools.cmd.params.clear();
-                self.status = crate::i18n::tr("msg-axis-pick");
+                self.status = Notice::info(crate::i18n::tr("msg-axis-pick"));
             }
             _ => {}
         }
@@ -260,11 +261,11 @@ impl App {
             _ => qymcad_ui_state::selected_body(&self.project, &self.chosen.sel).and_then(|b| self.project.body_owner(b)),
         };
         let Some(src) = src.filter(|c| *c != self.project.root) else {
-            self.status = crate::i18n::tr("msg-pick-part-first");
+            self.status = Notice::info(crate::i18n::tr("msg-pick-part-first"));
             return;
         };
         if self.project.active_body(src).is_none() {
-            self.status = crate::i18n::tr("msg-part-no-body");
+            self.status = Notice::refusal(crate::i18n::tr("msg-part-no-body"));
             return;
         }
         self.cancel_all_tools(); // exclusivity: the array drops the previous tool
@@ -273,7 +274,7 @@ impl App {
         (self.params.arr.full, self.params.arr.two, self.params.arr.three, self.params.arr.axis) = (true, false, false, 0); // a full turn, one direction, the assembly's axis
         self.viewing.mode_3d = true;
         self.tools.cmd.params = if mode == 2 { vec![] } else { vec![CmdParam::new("f-pitch", "cstep", 30.0, 0.01, 100000.0)] };
-        self.status = if mode == 2 { crate::i18n::tr("msg-comp-circ-array") } else { crate::i18n::tr("msg-comp-lin-array") };
+        self.status = Notice::info(if mode == 2 { crate::i18n::tr("msg-comp-circ-array") } else { crate::i18n::tr("msg-comp-lin-array") });
     }
 
     /// Reopen an EXISTING component array for editing (a double click in the tree).
@@ -335,7 +336,7 @@ impl App {
                             if is_src {
                                 self.project.delete_component(cid); // the source was the target, so it goes too
                             }
-                            self.status = if is_src { crate::i18n::tr("msg-part-and-array-deleted") } else { crate::i18n::tr("msg-comp-array-deleted") };
+                            self.status = Notice::info(if is_src { crate::i18n::tr("msg-part-and-array-deleted") } else { crate::i18n::tr("msg-comp-array-deleted") });
                         }
                         None => {
                             self.project.delete_component(cid);
@@ -348,7 +349,7 @@ impl App {
             }
             _ => {}
         }
-        self.status = crate::i18n::tr("msg-deleted");
+        self.status = Notice::info(crate::i18n::tr("msg-deleted"));
     }
 }
 

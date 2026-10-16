@@ -15,7 +15,7 @@
 //! it.
 #[cfg(test)]
 mod tests {
-    use super::super::{App, BgKind, Busy, JobResult, Sel};
+    use super::super::{App, BgKind, JobResult, Sel};
     use qymcad_core::feature::SketchPlane;
     use qymcad_core::model::Constraint;
 
@@ -102,8 +102,8 @@ mod tests {
         if app.regen.busy.is_none() && app.disk.edits.open.is_none() {
             qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         }
-        if let Some(Busy { rx, kind: BgKind::Regen, .. }) = app.regen.busy.take() {
-            match rx.recv_timeout(std::time::Duration::from_secs(120)).expect("the rebuild thread reported back") {
+        if let Some(busy) = app.regen.busy.take().filter(|b| b.kind == BgKind::Regen) {
+            match busy.rx.recv_timeout(std::time::Duration::from_secs(120)).expect("the rebuild thread reported back") {
                 JobResult::Regenerated { stamp, project, shapes, built, errors, cancelled } => app.finish_regen_checked(stamp, *project, shapes, built, errors, cancelled),
                 other => app.apply_job_result(other),
             }

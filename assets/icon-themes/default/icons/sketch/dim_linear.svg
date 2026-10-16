@@ -1,0 +1,13 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="constraint / dim_linear" clip-path="url(#clip0_1_502)">
+<path id="Union" d="M8.41406 30L7 31.4141L0.585938 25L2 23.5859L8.41406 30ZM26 13H24V9.41406L9.41406 24H13V26H6V19H8V22.5859L22.5859 8H19V6H26V13ZM31.4141 7L30 8.41406L23.5859 2L25 0.585938L31.4141 7Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-secondary, #333333FF)"/>
+<path id="Subtract" d="M26 13H24V9.41406L9.41406 24H13V26H6V19H8V22.5859L22.5859 8H19V6H26V13Z" fill="var(--icon-constraint-primary, #F26118FF)"/>
+<path id="Vector 7" d="M25 2L30 7" stroke-width="2" stroke-linecap="square" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Vector 8" d="M2 25L7 30" stroke-width="2" stroke-linecap="square" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+</g>
+<defs>
+<clipPath id="clip0_1_502">
+<rect width="32" height="32" fill="#FFFFFF"/>
+</clipPath>
+</defs>
+</svg>

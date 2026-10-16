@@ -50,7 +50,25 @@ mod tests {
         // (datums, sketch) lives in `gui.rs`. A guard looking at one place missed the datums entirely —
         // three commands with no article, and F1 on them would answer with a section instead of the
         // matter at hand.
-        let joined = format!("{}\n{}", crate::gui::panels_source::PANELS, include_str!("../gui.rs"));
+        let joined = format!(
+            "{}\n{}",
+            crate::gui::panels_source::PANELS,
+            concat!(
+                include_str!("file_doors.rs"),
+                "\n",
+                include_str!("gizmo_math.rs"),
+                "\n",
+                include_str!("look.rs"),
+                "\n",
+                include_str!("panel_bits.rs"),
+                "\n",
+                include_str!("startup.rs"),
+                "\n",
+                include_str!("view_anim.rs"),
+                "\n",
+                include_str!("../gui.rs")
+            )
+        );
         let src: &str = &joined;
         let mut part = Vec::new();
         let mut sketch = Vec::new();
@@ -194,7 +212,25 @@ mod tests {
     /// (`help_map::NOT_A_TOOL`).
     #[test]
     fn every_toolbar_button_has_an_article_or_a_stated_reason() {
-        let joined = format!("{}\n{}", crate::gui::panels_source::PANELS, include_str!("../gui.rs"));
+        let joined = format!(
+            "{}\n{}",
+            crate::gui::panels_source::PANELS,
+            concat!(
+                include_str!("file_doors.rs"),
+                "\n",
+                include_str!("gizmo_math.rs"),
+                "\n",
+                include_str!("look.rs"),
+                "\n",
+                include_str!("panel_bits.rs"),
+                "\n",
+                include_str!("startup.rs"),
+                "\n",
+                include_str!("view_anim.rs"),
+                "\n",
+                include_str!("../gui.rs")
+            )
+        );
         let mut hints: Vec<String> = Vec::new();
         let mut rest: &str = &joined;
         while let Some(i) = rest.find("tr(\"tb-") {

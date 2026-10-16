@@ -57,7 +57,7 @@ mod tests {
         let job = crate::gui::io_jobs::ExportJob { format, tree: crate::gui::io_jobs::export_tree_of(&app.project, format, target, &plan.brep), bodies: plan.brep.clone(), note: plan.note(true) };
         exported_to_a_panic(&mut app, &ctx, "part.step", move |app, path| crate::gui::io_jobs::write_exact_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &job));
         let said = crate::i18n::tr2("io-export-failed", "format", crate::gui::exact_entry(format).name(), "why", "an export made to fail by a test");
-        if held(&app) != before || !app.status.contains(&said) {
+        if held(&app) != before || !app.status.words.contains(&said) {
             failures.push(format!("STEP: live B-rep {:?} against {before:?} before; the status {:?}, not {said:?}", held(&app), app.status));
         }
 
@@ -69,7 +69,7 @@ mod tests {
             crate::gui::io_jobs::write_mesh_to(qymcad_ui_state::editing_of!(app), &mut app.live, &path, &job)
         });
         let said = crate::i18n::tr2("io-export-failed", "format", crate::gui::mesh_entry(mesh).name(), "why", "an export made to fail by a test");
-        if held(&app) != before || !app.status.contains(&said) {
+        if held(&app) != before || !app.status.words.contains(&said) {
             failures.push(format!("STL: live B-rep {:?} against {before:?} before; the status {:?}, not {said:?}", held(&app), app.status));
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));

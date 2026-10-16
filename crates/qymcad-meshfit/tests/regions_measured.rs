@@ -1,16 +1,16 @@
 //! How the angle between neighbouring triangles runs on a real CAD mesh, face by face. Ignored: it measures and
 //! does not judge - the answer decides how regions are grown.
 
-use qymcad_kernel::Shape;
 use qymcad_meshfit::{prepare, weld_tolerance};
+use qymcad_kernel::specimen::Specimen as _;
 
 #[test]
 #[ignore = "a measurement"]
 fn angles_across_and_inside_the_faces_of_a_filleted_bar() {
     for defl in [0.1, 0.01] {
         // a shape of its own for each: the kernel keeps the first tessellation of a shape and hands it back
-        let bar = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").fillet_all(2.0).expect("filleted");
-        let bodies = bar.tessellate(defl);
+        let bar = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").rounded(2.0).expect("filleted");
+        let bodies = qymcad_kernel::specimen::mesh(&bar, defl);
         let qymcad_core::geom::Built { mesh, faces } = &bodies[0];
         let mut face_of = vec![u32::MAX; mesh.tris.len()];
         for (k, f) in faces.iter().enumerate() {
@@ -46,8 +46,8 @@ fn angles_across_and_inside_the_faces_of_a_filleted_bar() {
 #[ignore = "a measurement"]
 fn regions_of_a_filleted_bar_against_its_faces() {
     for defl in [0.1, 0.01] {
-        let bar = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").fillet_all(2.0).expect("filleted");
-        let qymcad_core::geom::Built { mesh, faces } = bar.tessellate(defl).into_iter().next().expect("a body");
+        let bar = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").rounded(2.0).expect("filleted");
+        let qymcad_core::geom::Built { mesh, faces } = qymcad_kernel::specimen::mesh(&bar, defl).into_iter().next().expect("a body");
         let mut face_of = vec![u32::MAX; mesh.tris.len()];
         for (k, f) in faces.iter().enumerate() {
             for &t in &f.triangles {

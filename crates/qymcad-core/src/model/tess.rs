@@ -574,20 +574,20 @@ pub(super) fn meeting_boxes(boxes: &[[f64; 4]]) -> Vec<BoxPair> {
     pairs
 }
 
-/// The planar arrangement of a sketch: every entity — lines, arcs and circles — is intersected with every
+/// The planar arrangement of a sketch: every entity — lines, arcs, circles and splines — is intersected with every
 /// other, the curves are cut at the intersection points, and the minimal faces, that is the closed regions, are
 /// assembled. This is what turns the strip between two circles, cut by a line, into a selectable closed region.
-/// Returns the faces as contours, carrying exact `ProfEdge` edges for the B-rep. Narrow in scope: lines, arcs
-/// and circles, but not ellipses.
-pub(super) fn arrangement_regions(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<Contour> {
-    arrangement_regions_prov(points, entities).into_iter().map(|(c, _)| c).collect()
+/// Returns the faces as contours, carrying exact `ProfEdge` edges for the B-rep; a spline as the segments of its
+/// tessellation. Ellipses are not cut: each is a region of its own.
+pub(super) fn arrangement_regions(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Vec<Contour> {
+    arrangement_regions_prov(points, entities, splines).into_iter().map(|(c, _)| c).collect()
 }
 
 /// As `arrangement_regions`, but each region carries its provenance: the sorted set of entity ids its boundary
 /// is stitched from. This is what keeps the identity of a contour stable across edits, so that loops which
 /// swapped places do not take over each other's ids.
-pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<(Contour, Vec<Id>)> {
-    arrangement_faces(points, entities).inner
+pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Vec<(Contour, Vec<Id>)> {
+    arrangement_faces(points, entities, splines).inner
 }
 
 /// THE FACES OF AN ARRANGEMENT AND THE WALKS AROUND ITS PIECES: the regions of `arrangement_regions_prov`, and the walks
@@ -599,7 +599,7 @@ pub(super) struct Faces {
     pub outer: Vec<Contour>,
 }
 
-pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity]) -> Faces {
+pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Faces {
     use std::f64::consts::{PI, TAU};
     let at: std::collections::HashMap<Id, (f64, f64)> = points.iter().map(|p| (p.id, (p.x, p.y))).collect();
     let pt = |id: Id| at.get(&id).copied();
@@ -639,6 +639,25 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
                 if let (Some(pc), Some(pma), Some(pmi)) = (pt(c), pt(ma), pt(mi)) {
                     out_ellipse.push((ellipse_contour(crate::geom::Point2::new(pc.0, pc.1), crate::geom::Point2::new(pma.0, pma.1), crate::geom::Point2::new(pmi.0, pmi.1)), vec![e.id]));
                 }
+            }
+        }
+    }
+    // A SPLINE ENTERS AS THE SEGMENTS OF ITS TESSELLATION, so it is cut by the lines and arcs and by itself, and a region
+    // closed partly by it, or by it crossing itself, is a face like any other. The kernel takes a spline as that same
+    // polyline (`ProfEdge` has no spline), so the face loses nothing the whole loop had. A spline has no id of its own:
+    // its pieces carry the id of its first node, an id no entity has, which keeps the provenance of its regions
+    // stable while the curve is edited.
+    for sp in splines.iter().filter(|sp| !sp.construction) {
+        let cps: Vec<Point2> = sp.points.iter().filter_map(|id| pt(*id)).map(|(x, y)| Point2::new(x, y)).collect();
+        let Some(&first) = sp.points.first().filter(|_| cps.len() >= 2) else { continue };
+        let line = tessellate_spline_hermite(&cps, &sp.tangents, sp.closed);
+        let n = line.points.len();
+        let spans = if sp.closed { n } else { n.saturating_sub(1) };
+        for k in 0..spans {
+            let (a, b) = (line.points[k], line.points[(k + 1) % n]);
+            if a.dist(b) > 1e-9 {
+                curves.push(ArrCurve::Line { a: (a.x, a.y), b: (b.x, b.y) });
+                curve_eid.push(first);
             }
         }
     }
@@ -1110,7 +1129,7 @@ mod tests {
         ];
         let before: Vec<SketchEntity> = all.iter().filter(|e| e.id != 138).cloned().collect();
         let faces = |ents: &[SketchEntity]| -> Vec<Vec<u64>> {
-            super::arrangement_regions_prov(&pts, ents)
+            super::arrangement_regions_prov(&pts, ents, &[])
                 .into_iter()
                 .map(|r| {
                     let mut ids = r.1;

@@ -94,6 +94,18 @@ pub fn every_crate_src() -> Vec<std::path::PathBuf> {
     v
 }
 
+/// Whether a file under `src/` is a module of checks: `tests.rs`, `*_tests.rs`, or any file in a folder of them.
+///
+/// A module of checks grown past its size is split into a folder of the same name (`tests.rs` ->
+/// `tests/*.rs`, `command_flow_tests.rs` -> `command_flow_tests/*.rs`). Judged by the file name alone, the
+/// 44 checks of the import door moved into `import_door/tests/` were read as working code, and two
+/// guards of the words went red on the strings the checks compare against.
+pub fn is_test_module(path: &std::path::Path) -> bool {
+    let n = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let in_a_folder_of_checks = path.components().skip_while(|c| c.as_os_str() != "src").filter_map(|c| c.as_os_str().to_str()).any(|c| c == "tests" || c.ends_with("_tests"));
+    n == "tests.rs" || n.ends_with("_tests.rs") || in_a_folder_of_checks
+}
+
 pub fn is_working_code(path: &std::path::Path) -> bool {
     let n = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     // `src/` ONLY: the integration tests in `tests/` describe behaviour and are read by whoever
@@ -101,9 +113,8 @@ pub fn is_working_code(path: &std::path::Path) -> bool {
     let in_src = path.components().any(|c| c.as_os_str() == "src");
     in_src
         && path.extension().is_some_and(|x| x == "rs")
-        && n != "tests.rs"
+        && !is_test_module(path)
         && n != "ratchet.rs"
-        && !n.ends_with("_tests.rs")
         && !n.ends_with("_flow.rs")
         && !n.ends_with("_memory.rs")
         && ![
@@ -148,6 +159,24 @@ pub fn working_part(text: &str) -> &str {
 
 #[cfg(test)]
 pub mod tests {
+    #[test]
+    fn a_folder_of_checks_is_checks_and_working_code_is_not() {
+        use std::path::Path;
+        for checks in [
+            "crates/qymcad/src/gui/import_door/tests.rs",
+            "crates/qymcad/src/gui/import_door/tests/solids.rs",
+            "crates/qymcad/src/gui/tests/command_flow_tests/shaft.rs",
+            "crates/qymcad/src/gui/i18n_use_tests.rs",
+        ] {
+            assert!(super::is_test_module(Path::new(checks)), "{checks} is a module of checks");
+            assert!(!super::is_working_code(Path::new(checks)), "{checks} is not working code");
+        }
+        for working in ["crates/qymcad-ui-state/src/records/tools.rs", "crates/qymcad-part/src/bars/feat_bar.rs"] {
+            assert!(!super::is_test_module(Path::new(working)), "{working} is not a module of checks");
+            assert!(super::is_working_code(Path::new(working)), "{working} is working code");
+        }
+    }
+
     /// How many Russian literals are left in the working code of the WHOLE WORKSPACE.
     ///
     /// THE PATH OF THE MARK: 2085 -> 385 (a fix to the counting: the file was cut at the first

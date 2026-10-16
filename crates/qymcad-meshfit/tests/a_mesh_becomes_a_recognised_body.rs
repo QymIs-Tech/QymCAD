@@ -4,10 +4,11 @@
 use qymcad_kernel::recognise::recognise as solid;
 use qymcad_kernel::{last_kernel_refusal, Shape};
 use qymcad_meshfit::{boundaries, curves, prepare, regions, weld_tolerance, Curve, Tolerance};
+use qymcad_kernel::specimen::Specimen as _;
 
 /// The body recognised on the tessellation of `shape`: its volume, how many faces were built, how many it has.
 fn recognised(name: &str, shape: &Shape, deflection: f64) -> (f64, usize, usize, bool) {
-    let qymcad_core::geom::Built { mesh, .. } = shape.tessellate(deflection).into_iter().next().expect("a body");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(shape, deflection).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
@@ -15,13 +16,13 @@ fn recognised(name: &str, shape: &Shape, deflection: f64) -> (f64, usize, usize,
     let c = curves(&b, &found, &tol);
     let made = solid(&p, &found, &b, &c, &tol).unwrap_or_else(|| panic!("{name}: no body - {:?}", last_kernel_refusal()));
     let (body, built) = (made.shape, made.areas.iter().flatten().count());
-    let faces = body.tessellate(deflection).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
+    let faces = qymcad_kernel::specimen::mesh(&body, deflection).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
     (body.volume(), built, faces, body.is_sheet())
 }
 
 #[test]
 fn a_cube_mesh_becomes_the_cube() {
-    let cube = Shape::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
     let (volume, built, faces, sheet) = recognised("cube", &cube, 0.1);
     assert_eq!((built, faces), (6, 6), "faces built and faces of the body");
     assert!(!sheet, "the cube came back a sheet, not a solid");
@@ -30,13 +31,13 @@ fn a_cube_mesh_becomes_the_cube() {
 
 #[test]
 fn a_washer_mesh_becomes_the_washer() {
-    let washer = Shape::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 10.0, 0.0, 10.0], 0, 360.0).expect("a washer");
+    let washer = qymcad_kernel::specimen::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 10.0, 0.0, 10.0], 0, 360.0).expect("a washer");
     let want = washer.volume();
     let (volume, built, faces, sheet) = recognised("washer", &washer, 0.01);
     assert_eq!((built, faces), (4, 4), "faces built and faces of the body");
     // EACH FACE TOOK ITS OWN RING, not the disc with the hole added: the flat rings took 392.7 mm^2 for 235.6 while the
     // point they were checked against stood in their hole
-    let qymcad_core::geom::Built { mesh, .. } = washer.tessellate(0.01).into_iter().next().expect("a body");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&washer, 0.01).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
@@ -60,7 +61,7 @@ fn a_washer_mesh_becomes_the_washer() {
 
 #[test]
 fn a_rounded_bar_mesh_becomes_the_bar() {
-    let bar = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").fillet_all(2.0).expect("filleted");
+    let bar = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").rounded(2.0).expect("filleted");
     let want = bar.volume();
     for deflection in [0.1, 0.02] {
         let (volume, built, faces, sheet) = recognised(&format!("rounded bar at {deflection}"), &bar, deflection);
@@ -77,7 +78,7 @@ fn a_torus_mesh_becomes_the_torus() {
     // a circle of 5 about (0, 20) in the XY plane, y the distance from the axis, turned about X
     let (a, b, center) = (Point2::new(5.0, 20.0), Point2::new(-5.0, 20.0), Point2::new(0.0, 20.0));
     let ring = [ProfEdge::Arc { a, b, center, ccw: true }, ProfEdge::Arc { a: b, b: a, center, ccw: true }];
-    let torus = Shape::revolve_profile(&encode_loops(&[&ring]), 0, 360.0).expect("a torus");
+    let torus = qymcad_kernel::specimen::revolve_profile(&encode_loops(&[&ring]), 0, 360.0).expect("a torus");
     let want = torus.volume();
     let (volume, built, faces, sheet) = recognised("torus", &torus, 0.01);
     assert_eq!((built, faces), (1, 1), "faces built and faces of the torus");
@@ -118,9 +119,9 @@ fn a_short_arc_known_by_its_ends_alone_stays_short() {
     use qymcad_core::geom::{encode_loops, Point2, ProfEdge};
     let (o, x, y) = (Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 10.0));
     let slice = [ProfEdge::Line { a: o, b: x }, ProfEdge::Arc { a: x, b: y, center: o, ccw: true }, ProfEdge::Line { a: y, b: o }];
-    let quarter = Shape::extrude_profile(&encode_loops(&[&slice]), 10.0).expect("a quarter of a cylinder");
+    let quarter = qymcad_kernel::specimen::extrude_profile(&encode_loops(&[&slice]), 10.0).expect("a quarter of a cylinder");
     let want = quarter.volume();
-    let qymcad_core::geom::Built { mesh, .. } = quarter.tessellate(0.01).into_iter().next().expect("a body");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&quarter, 0.01).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
@@ -152,8 +153,8 @@ fn a_short_arc_known_by_its_ends_alone_stays_short() {
 /// cube, not a shell with a hole in it.
 #[test]
 fn a_region_left_as_mesh_is_sewn_in_as_its_triangles() {
-    let cube = Shape::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
-    let qymcad_core::geom::Built { mesh, .. } = cube.tessellate(0.1).into_iter().next().expect("a body");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&cube, 0.1).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let mut found = regions(&p, &tol);
@@ -176,8 +177,8 @@ fn a_region_left_as_mesh_is_sewn_in_as_its_triangles() {
 #[test]
 fn a_seam_beside_a_region_left_as_mesh_closes() {
     use qymcad_meshfit::Surface;
-    let cube = Shape::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
-    let qymcad_core::geom::Built { mesh, .. } = cube.tessellate(0.1).into_iter().next().expect("a body");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&cube, 0.1).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let mut found = regions(&p, &tol);
@@ -230,7 +231,7 @@ fn gridded_cube(grid: usize, side: f64, dent: f64) -> qymcad_core::geom::Mesh {
 /// a scan or of a coarse export, larger than the tolerance a mesh from a CAD gets. `radial` names what the radius is
 /// taken from - all three axes for a sphere, the two across Z for a cylinder. Returns the mesh and the volume it holds.
 fn noisy(shape: &Shape, amp: f64, radial: [f64; 3]) -> (qymcad_core::geom::Mesh, f64) {
-    let qymcad_core::geom::Built { mut mesh, .. } = shape.tessellate(0.05).into_iter().next().expect("a mesh");
+    let qymcad_core::geom::Built { mut mesh, .. } = qymcad_kernel::specimen::mesh(shape, 0.05).into_iter().next().expect("a mesh");
     for v in &mut mesh.verts {
         // THE NOISE OF A CORNER COMES FROM WHERE IT STANDS, not from its number: the kernel hands a corner shared by two
         // faces twice, and moved by two numbers the copies part - the mesh itself torn along the rim of a cylinder
@@ -261,8 +262,8 @@ fn noisy(shape: &Shape, amp: f64, radial: [f64; 3]) -> (qymcad_core::geom::Mesh,
 /// the body may lie between the mesh less 0.5 % and the exact body of the kernel plus 0.5 %.
 #[test]
 fn a_noisy_mesh_becomes_a_body_of_its_own_volume() {
-    let cylinder = Shape::cylinder(10.0, 20.0).expect("a cylinder");
-    let sphere = Shape::sphere(10.0).expect("a sphere");
+    let cylinder = qymcad_kernel::specimen::cylinder(10.0, 20.0).expect("a cylinder");
+    let sphere = qymcad_kernel::specimen::sphere(10.0).expect("a sphere");
     let mut wrong = Vec::new();
     for (name, shape, amp, radial) in [("cylinder", &cylinder, 0.001, [1.0, 1.0, 0.0]), ("cylinder", &cylinder, 0.02, [1.0, 1.0, 0.0]), ("sphere", &sphere, 0.02, [1.0, 1.0, 1.0])] {
         let (mesh, held) = noisy(shape, amp, radial);
@@ -286,7 +287,7 @@ fn a_noisy_mesh_becomes_a_body_of_its_own_volume() {
 #[test]
 #[ignore = "a measure"]
 fn noisy_meshes_are_measured() {
-    for (name, shape) in [("sphere", Shape::sphere(10.0).expect("a sphere")), ("cylinder", Shape::cylinder(10.0, 20.0).expect("a cylinder"))] {
+    for (name, shape) in [("sphere", qymcad_kernel::specimen::sphere(10.0).expect("a sphere")), ("cylinder", qymcad_kernel::specimen::cylinder(10.0, 20.0).expect("a cylinder"))] {
         for amp in [0.0, 0.001, 0.005, 0.02, 0.05] {
             let (mesh, held) = noisy(&shape, amp, if name == "sphere" { [1.0, 1.0, 1.0] } else { [1.0, 1.0, 0.0] });
             let p = prepare(&mesh, weld_tolerance(&mesh));
@@ -314,14 +315,14 @@ fn noisy_meshes_are_measured() {
 /// top is an ellipse of half-axes 10 / cos 30 = 11.547 and 10. The recognised body holds the kernel's volume.
 #[test]
 fn a_slanted_cut_of_a_cylinder_is_an_ellipse() {
-    let post = Shape::cylinder(10.0, 30.0).expect("a cylinder");
+    let post = qymcad_kernel::specimen::cylinder(10.0, 30.0).expect("a cylinder");
     let (s, c) = (30f64.to_radians().sin(), 30f64.to_radians().cos());
-    let block = Shape::extrude(&[-50.0, -50.0, 50.0, -50.0, 50.0, 50.0, -50.0, 50.0], 100.0).expect("a block");
+    let block = qymcad_kernel::specimen::extrude(&[-50.0, -50.0, 50.0, -50.0, 50.0, 50.0, -50.0, 50.0], 100.0).expect("a block");
     let up = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 15.0];
     let turn = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, s * 15.0, 0.0, s, c, 15.0 - c * 15.0];
-    let knife = block.transformed(&up).and_then(|b| b.transformed(&turn)).expect("the knife");
-    let cut = post.boolean(&knife, 0).expect("the slanted post");
-    let qymcad_core::geom::Built { mesh, .. } = cut.tessellate(0.01).into_iter().next().expect("a mesh");
+    let knife = qymcad_kernel::specimen::placed(&block, &up).and_then(|b| qymcad_kernel::specimen::placed(&b, &turn)).expect("the knife");
+    let cut = post.combined(&knife, 0).expect("the slanted post");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&cut, 0.01).into_iter().next().expect("a mesh");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
@@ -354,7 +355,7 @@ fn a_slanted_cut_of_a_cylinder_is_an_ellipse() {
 /// mesh's volume.
 #[test]
 fn a_noisy_mesh_at_a_wider_tolerance_falls_into_its_faces() {
-    let cylinder = Shape::cylinder(10.0, 20.0).expect("a cylinder");
+    let cylinder = qymcad_kernel::specimen::cylinder(10.0, 20.0).expect("a cylinder");
     let (mesh, held) = noisy(&cylinder, 0.02, [1.0, 1.0, 0.0]);
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let mut tol = Tolerance::for_mesh(&p);
@@ -384,8 +385,8 @@ fn a_noisy_mesh_at_a_wider_tolerance_falls_into_its_faces() {
 /// as spheres. It is one cone of half-angle 45 deg, and the body is the washer's five faces and its volume.
 #[test]
 fn a_narrow_conical_band_is_a_cone() {
-    let washer = Shape::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 9.5, 3.5, 10.0, 0.0, 10.0], 0, 360.0).expect("a chamfered washer");
-    let qymcad_core::geom::Built { mesh, .. } = washer.tessellate(0.01).into_iter().next().expect("a mesh");
+    let washer = qymcad_kernel::specimen::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 9.5, 3.5, 10.0, 0.0, 10.0], 0, 360.0).expect("a chamfered washer");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&washer, 0.01).into_iter().next().expect("a mesh");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
@@ -447,14 +448,14 @@ fn a_free_form_wall_is_one_face() {
         offsets.push(data.len());
         places.extend_from_slice(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, z]);
     }
-    let loft = Shape::loft_sections(&data, &offsets, &places, qymcad_core::feature::LoftWalls::Smooth, qymcad_core::feature::LoftBody::Solid).expect("the loft");
-    let qymcad_core::geom::Built { mesh, faces: kernel_faces } = loft.tessellate(0.01).into_iter().next().expect("a mesh");
+    let loft = qymcad_kernel::specimen::loft(&data, &offsets, &places, qymcad_core::feature::LoftWalls::Smooth, qymcad_core::feature::LoftBody::Solid).expect("the loft");
+    let qymcad_core::geom::Built { mesh, faces: kernel_faces } = qymcad_kernel::specimen::mesh(&loft, 0.01).into_iter().next().expect("a mesh");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
     let b = boundaries(&p, &found);
     let made = solid(&p, &found, &b, &curves(&b, &found, &tol), &tol).expect("a body");
-    let faces = made.shape.tessellate(0.01).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
+    let faces = qymcad_kernel::specimen::mesh(&made.shape, 0.01).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
     assert!(
         faces == kernel_faces.len() && !made.shape.is_sheet() && (made.shape.volume() - loft.volume()).abs() < 0.005 * loft.volume(),
         "the loft of {} faces came back as {faces} faces from {} regions ({} left as mesh), {}, holding {} against {}",
@@ -474,7 +475,7 @@ fn a_free_form_wall_is_one_face() {
 fn a_thread_is_measured() {
     for defl in [0.05, 0.02] {
         let cut = thread_on_a_rod(25.0, 0.0, 20.0);
-        let qymcad_core::geom::Built { mesh, faces: kfaces } = cut.tessellate(defl).into_iter().next().expect("a mesh");
+        let qymcad_core::geom::Built { mesh, faces: kfaces } = qymcad_kernel::specimen::mesh(&cut, defl).into_iter().next().expect("a mesh");
         let t = std::time::Instant::now();
         let p = prepare(&mesh, weld_tolerance(&mesh));
         let tol = Tolerance::for_mesh(&p);
@@ -485,9 +486,9 @@ fn a_thread_is_measured() {
         }
         let b = boundaries(&p, &found);
         let made = solid(&p, &found, &b, &curves(&b, &found, &tol), &tol);
-        let (faces, sheet, v) = made
-            .as_ref()
-            .map_or((0, true, 0.0), |m| (m.shape.tessellate(defl).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0), m.shape.is_sheet(), m.shape.volume()));
+        let (faces, sheet, v) = made.as_ref().map_or((0, true, 0.0), |m| {
+            (qymcad_kernel::specimen::mesh(&m.shape, defl).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0), m.shape.is_sheet(), m.shape.volume())
+        });
         println!(
             "THREAD defl {defl}: {} triangles, kernel faces {}, {} regions {kinds:?}; body {faces} faces, {}, volume {v:.3} against {:.3}, free {:?}, {:.1} s",
             mesh.tris.len(),
@@ -512,9 +513,9 @@ fn thread_of(standard: qymcad_core::thread::ThreadStandard, pitch: f64, rod: f64
     use qymcad_core::thread::{encode_edges, ThreadSpec};
     let spec = ThreadSpec { standard, nominal_d: 10.0, pitch, ..Default::default() };
     let g = spec.geometry();
-    Shape::cylinder(g.stock_d * 0.5, rod)
+    qymcad_kernel::specimen::cylinder(g.stock_d * 0.5, rod)
         .expect("the rod")
-        .helical_profile(qymcad_kernel::HelicalCut {
+        .grooved(qymcad_kernel::HelicalCut {
             axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, from], dir: [0.0, 0.0, 1.0] },
             radius: g.stock_d * 0.5,
             profile: &encode_edges(&g.groove),
@@ -542,13 +543,13 @@ fn thread_of(standard: qymcad_core::thread::ThreadStandard, pitch: f64, rod: f64
 fn a_thread_comes_back_in_a_few_smooth_faces() {
     for (rod, from) in [(10.0, 0.0), (12.0, 3.0)] {
         let cut = thread_on_a_rod(rod, from, 6.0);
-        let qymcad_core::geom::Built { mesh, .. } = cut.tessellate(0.05).into_iter().next().expect("a mesh");
+        let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&cut, 0.05).into_iter().next().expect("a mesh");
         let p = prepare(&mesh, weld_tolerance(&mesh));
         let tol = Tolerance::for_mesh(&p);
         let found = regions(&p, &tol);
         let b = boundaries(&p, &found);
         let made = solid(&p, &found, &b, &curves(&b, &found, &tol), &tol).expect("a body");
-        let faces = made.shape.tessellate(0.05).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
+        let faces = qymcad_kernel::specimen::mesh(&made.shape, 0.05).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
         let helices = found.iter().filter(|r| matches!(r.surface, Some(qymcad_meshfit::Surface::Helix { .. }))).count();
         assert!(
             !made.shape.is_sheet() && (made.shape.volume() - cut.volume()).abs() < 0.005 * cut.volume() && faces < 150,
@@ -613,7 +614,7 @@ fn a_spring_of_round_wire_comes_back_a_tube() {
     let found = regions(&p, &tol);
     let b = boundaries(&p, &found);
     let made = solid(&p, &found, &b, &curves(&b, &found, &tol), &tol).expect("a body");
-    let faces = made.shape.tessellate(0.02).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
+    let faces = qymcad_kernel::specimen::mesh(&made.shape, 0.02).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
     assert!(
         !made.shape.is_sheet() && (made.shape.volume() - exact).abs() < 0.005 * exact && faces < 10,
         "the spring came back {} of {faces} faces ({} regions of {} triangles), holding {} against {exact}",
@@ -631,9 +632,9 @@ fn a_spring_of_round_wire_comes_back_a_tube() {
 fn an_auger_comes_back_in_a_few_smooth_faces() {
     use qymcad_core::thread::{encode_edges, AugerSpec};
     let a = AugerSpec { shaft_d: 10.0, outer_d: 30.0, pitch: 20.0, thickness: 3.0, edge_r: 0.8, ..Default::default() };
-    let auger = Shape::cylinder(a.shaft_d * 0.5, 50.0)
+    let auger = qymcad_kernel::specimen::cylinder(a.shaft_d * 0.5, 50.0)
         .expect("the shaft")
-        .helical_profile(qymcad_kernel::HelicalCut {
+        .grooved(qymcad_kernel::HelicalCut {
             axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 5.0], dir: [0.0, 0.0, 1.0] },
             radius: a.shaft_d * 0.5,
             profile: &encode_edges(&a.flight_profile()),
@@ -649,13 +650,13 @@ fn an_auger_comes_back_in_a_few_smooth_faces() {
             crest_relief: 0.0,
         })
         .expect("the auger");
-    let qymcad_core::geom::Built { mesh, faces: kernel_faces } = auger.tessellate(0.05).into_iter().next().expect("a mesh");
+    let qymcad_core::geom::Built { mesh, faces: kernel_faces } = qymcad_kernel::specimen::mesh(&auger, 0.05).into_iter().next().expect("a mesh");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
     let b = boundaries(&p, &found);
     let made = solid(&p, &found, &b, &curves(&b, &found, &tol), &tol).expect("a body");
-    let faces = made.shape.tessellate(0.05).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
+    let faces = qymcad_kernel::specimen::mesh(&made.shape, 0.05).into_iter().next().map(|qymcad_core::geom::Built { faces: f, .. }| f.len()).unwrap_or(0);
     assert!(
         !made.shape.is_sheet() && (made.shape.volume() - auger.volume()).abs() < 0.005 * auger.volume() && faces < 2 * kernel_faces.len(),
         "the auger of {} faces came back {} of {faces} faces ({} regions of {} triangles), holding {} against {}",

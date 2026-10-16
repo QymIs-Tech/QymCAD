@@ -8,8 +8,8 @@ fn the_name_table_survives_a_save_and_reload() {
     use qymcad_core::names::{GeoName, Role};
     let mut p = qymcad_core::model::Project::default();
     p.new_document();
-    let wall = p.intern_name(42, Role::Wall, 7);
-    let cap = p.intern_name(42, Role::CapStart, 0);
+    let wall = p.names.intern_face(GeoName::new(42, Role::Wall, 7));
+    let cap = p.names.intern_face(GeoName::new(42, Role::CapStart, 0));
     assert_ne!(wall, cap, "different names give different descriptors");
 
     let ron = qymcad_core::model::to_ron(&p).expect("serialisation");
@@ -17,6 +17,6 @@ fn the_name_table_survives_a_save_and_reload() {
     assert_eq!(back.names.get(wall), Some(GeoName::new(42, Role::Wall, 7)), "the name reads back under the same descriptor");
     assert_eq!(back.names.get(cap).map(|n| n.role), Some(Role::CapStart));
     // and interning the same name again returns the same descriptor, the reverse index having been rebuilt
-    assert_eq!(back.intern_name(42, Role::Wall, 7), wall, "no second descriptor is issued for the same name");
+    assert_eq!(back.names.intern_face(GeoName::new(42, Role::Wall, 7)), wall, "no second descriptor is issued for the same name");
     assert_eq!(back.names.len(), p.names.len(), "the table did not grow for no reason");
 }

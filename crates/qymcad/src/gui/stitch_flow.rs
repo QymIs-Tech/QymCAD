@@ -88,7 +88,7 @@ mod tests {
         let side = app.project.bodies[bi].faces.iter().find(|f| f.normal[2].abs() < 0.1).map(|f| [f.centroid.x, f.centroid.y, f.centroid.z]).expect("a side face");
         app.pick_face_3d(rect(), qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis }.at(side).0);
         assert!(app.params.stitch_parts.is_empty(), "there is nothing to stitch a solid with — it must not get into the selection");
-        assert_eq!(app.status, crate::i18n::tr("msg-stitch-only-sheets"), "the reason must be said rather than silence");
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-stitch-only-sheets")), "the reason must be said rather than silence");
     }
 
     /// THE WHOLE PATH TO THE TIMELINE: two sheets -> Enter -> one surface, the pieces consumed.

@@ -5,9 +5,10 @@
 use qymcad_core::geom::{Mesh, Point3};
 use qymcad_kernel::Shape;
 use qymcad_meshfit::{boundaries, prepare, regions, weld_tolerance, Boundaries, Prepared, Region, Surface, Tolerance};
+use qymcad_kernel::specimen::Specimen as _;
 
 fn edges_of(shape: &Shape, deflection: f64) -> (Boundaries, Vec<Region>, Tolerance, Prepared) {
-    let qymcad_core::geom::Built { mesh, .. } = shape.tessellate(deflection).into_iter().next().expect("a body");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(shape, deflection).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);
@@ -77,7 +78,7 @@ fn well_formed(name: &str, b: &Boundaries, found: &[Region], tol: &Tolerance) {
 
 #[test]
 fn a_cube_has_eight_corners_and_twelve_edges() {
-    let cube = Shape::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0], 100.0).expect("a cube");
     let (b, found, tol, p) = edges_of(&cube, 0.1);
     assert_eq!(found.len(), 6, "faces of the cube");
     for f in 0..found.len() {
@@ -109,7 +110,7 @@ fn a_cube_has_eight_corners_and_twelve_edges() {
 #[test]
 fn a_washer_has_four_round_edges_and_no_corner() {
     // the profile in the XY plane, y the radius, turned about X: flat sides at x = 0 and 4, walls of radius 5 and 10
-    let washer = Shape::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 10.0, 0.0, 10.0], 0, 360.0).expect("a washer");
+    let washer = qymcad_kernel::specimen::revolve(&[0.0, 5.0, 4.0, 5.0, 4.0, 10.0, 0.0, 10.0], 0, 360.0).expect("a washer");
     let (b, found, tol, p) = edges_of(&washer, 0.01);
     assert_eq!(found.len(), 4, "faces of the washer");
     // a flat side turns anticlockwise about its outer edge and clockwise about its hole
@@ -139,7 +140,7 @@ fn a_washer_has_four_round_edges_and_no_corner() {
 
 #[test]
 fn a_rounded_bar_has_its_corners_where_the_roundings_meet() {
-    let bar = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").fillet_all(2.0).expect("filleted");
+    let bar = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").rounded(2.0).expect("filleted");
     for deflection in [0.1, 0.02] {
         let (b, found, tol, _) = edges_of(&bar, deflection);
         assert_eq!(found.len(), 26, "faces of the rounded bar at {deflection}");

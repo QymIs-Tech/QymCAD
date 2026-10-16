@@ -298,7 +298,7 @@ impl Project {
             // the edges of a face are taken from the live topology rather than from a remembered list: a
             // fillet or a cut changes the composition of the outline, and a remembered list would fall behind
             // the part
-            ProjSource::Face(f) => kernel.edge_face_pairs(body).into_iter().filter(|(_, a, b)| *a == f || *b == f).map(|(e, _, _)| e).collect(),
+            ProjSource::Face(f) => kernel.edge_face_pairs(body).into_iter().filter(|p| p.faces.contains(&f)).map(|p| p.edge).collect(),
         };
         if want.is_empty() {
             return Source::Gone;

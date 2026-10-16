@@ -3,6 +3,9 @@
 //! dragged - each frame timed.
 //!
 //! Reported behaviour (#95): a sketch of a few hundred lines hangs the program.
+//!
+//! The budgets of time hold at the level of the probes of time alone (`qymcad_core::time_budget`); what the hand did -
+//! the line, its Horizontal, the dimension, the points drawn apart - is held at every level.
 #[cfg(test)]
 pub(crate) mod tests {
     use super::super::hand::Hand;
@@ -107,7 +110,7 @@ pub(crate) mod tests {
         // looked up their points from a table, 0.27 s before the keys of the status were mixed quickly, 0.21 s before
         // the panel and the glyphs stopped gathering the points of every entity, 0.12 s after
         if release {
-            assert!(t_hover < Duration::from_millis(200), "two frames with the pointer over 70 000 segments took {t_hover:?}, budget 200 ms in a release build");
+            assert!(qymcad_core::time_budget::within(t_hover, Duration::from_millis(200)), "two frames with the pointer over 70 000 segments took {t_hover:?}, budget 200 ms in a release build");
         }
         // brought near a corner, a few hundred points in sight: drawn and numbered again
         hand.look2d((30.0, 30.0)).frame(Vec::new());
@@ -120,7 +123,7 @@ pub(crate) mod tests {
         let t_away = timed(|| {
             hand.hover2d(35.0, 33.0);
         });
-        assert!(t_away < Duration::from_secs(1), "the pointer away from the corners took {t_away:?} for its two frames, budget 1 s in a test build");
+        assert!(qymcad_core::time_budget::within(t_away, Duration::from_secs(1)), "the pointer away from the corners took {t_away:?} for its two frames, budget 1 s in a test build");
         eprintln!("import {t_import:?}, place {t_place:?}, frame {t_frame:?}, hover {t_hover:?}, drag {t_drag:?}, away {t_away:?}; {} entities", hand.app.project.sketches[si].entities.len());
     }
 
@@ -155,7 +158,7 @@ pub(crate) mod tests {
         eprintln!("1 200 segments: a line drawn {t_line:?}, a dimension laid {t_dim:?}");
         // whole gestures of the hand, each several frames, in a test build; the solve and the diagnostics of the whole
         // sketch for every step took 3 s a constraint on 1 000 lines in a release build before the parts
-        assert!(t_line < Duration::from_secs(3), "a line drawn among 1 200 segments took {t_line:?}");
-        assert!(t_dim < Duration::from_secs(3), "a dimension laid among 1 200 segments took {t_dim:?}");
+        assert!(qymcad_core::time_budget::within(t_line, Duration::from_secs(3)), "a line drawn among 1 200 segments took {t_line:?}");
+        assert!(qymcad_core::time_budget::within(t_dim, Duration::from_secs(3)), "a dimension laid among 1 200 segments took {t_dim:?}");
     }
 }

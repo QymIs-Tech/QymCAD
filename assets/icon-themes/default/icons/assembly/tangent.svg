@@ -1,0 +1,10 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="assembly / tangent">
+<g id="Ellipse 67">
+<path d="M22 7C22 9.20914 18.4183 11 14 11C9.58172 11 6 9.20914 6 7C6 4.79086 9.58172 3 14 3C18.4183 3 22 4.79086 22 7Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M14 29C18.4183 29 22 27.2091 22 25V7C22 9.20914 18.4183 11 14 11C9.58172 11 6 9.20914 6 7V25C6 27.2091 9.58172 29 14 29Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M22 7V25C22 27.2091 18.4183 29 14 29C9.58172 29 6 27.2091 6 25V7M22 7C22 9.20914 18.4183 11 14 11C9.58172 11 6 9.20914 6 7M22 7C22 4.79086 18.4183 3 14 3C9.58172 3 6 4.79086 6 7" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<path id="Polygon 16" d="M26.9904 23.5V5.5L14 13L14 31L26.9904 23.5Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

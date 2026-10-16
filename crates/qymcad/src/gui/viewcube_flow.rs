@@ -317,7 +317,21 @@ mod tests {
     /// caption and turned the letters into mush at a small size.
     #[test]
     fn the_build_ships_a_real_bold_font() {
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(gui.contains("LiberationSans-Bold.ttf"), "the bold font must be baked into the binary");
         assert!(gui.contains("egui::FontFamily::Name(BOLD_FONT"), "and be registered as a family of its own");
         // the licence must lie beside it: the OFL requires distributing it together with the font

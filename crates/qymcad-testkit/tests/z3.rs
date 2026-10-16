@@ -11,6 +11,6 @@ fn combine_src0_makes_valid_new_body() {
     let errs: Vec<_> = report.errors.iter().filter(|(id, _)| *id == body).collect();
     assert!(errs.is_empty(), "a new body, with no source, built without error: {errs:?}");
     let s = shapes.get(&body).expect("the body with no source was built");
-    eprintln!("a combine with no source: valid={}, solids={}, V={:.1}", s.is_valid(), s.tessellate(0.5).len(), s.volume());
+    eprintln!("a combine with no source: valid={}, solids={}, V={:.1}", s.is_valid(), qymcad_kernel::specimen::mesh(s, 0.5).len(), s.volume());
     assert!(s.is_valid() && s.volume() > 1.0, "a valid, non-empty new body");
 }

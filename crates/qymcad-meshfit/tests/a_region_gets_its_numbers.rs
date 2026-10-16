@@ -4,9 +4,10 @@
 
 use qymcad_kernel::Shape;
 use qymcad_meshfit::{prepare, regions, weld_tolerance, Region, Surface, Tolerance};
+use qymcad_kernel::specimen::Specimen as _;
 
 fn regions_of(shape: &Shape, deflection: f64) -> Vec<Region> {
-    let qymcad_core::geom::Built { mesh, .. } = shape.tessellate(deflection).into_iter().next().expect("a body");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(shape, deflection).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     regions(&p, &Tolerance::for_mesh(&p))
 }
@@ -28,7 +29,7 @@ fn surfaces(found: &[Region]) -> Vec<Surface> {
 
 #[test]
 fn a_cylinder_gets_its_radius_and_its_axis() {
-    let found = surfaces(&regions_of(&Shape::cylinder(10.0, 30.0).expect("a cylinder"), 0.05));
+    let found = surfaces(&regions_of(&qymcad_kernel::specimen::cylinder(10.0, 30.0).expect("a cylinder"), 0.05));
     let cyl: Vec<([f64; 3], [f64; 3], f64)> = found
         .iter()
         .filter_map(|s| match *s {
@@ -45,7 +46,7 @@ fn a_cylinder_gets_its_radius_and_its_axis() {
 
 #[test]
 fn a_sphere_gets_its_centre_and_radius() {
-    let found = surfaces(&regions_of(&Shape::sphere(15.0).expect("a sphere"), 0.05));
+    let found = surfaces(&regions_of(&qymcad_kernel::specimen::sphere(15.0).expect("a sphere"), 0.05));
     let Some(Surface::Sphere { center, radius }) = found.first().cloned() else { panic!("no sphere: {found:?}") };
     assert!((radius - 15.0).abs() < 0.01, "radius {radius}, not 15");
     assert!(center.iter().all(|c| c.abs() < 0.01), "centre {center:?}, not the origin");
@@ -54,7 +55,7 @@ fn a_sphere_gets_its_centre_and_radius() {
 /// Every rounding of the bar has radius 2, every corner sphere radius 2, every plane faces along an axis.
 #[test]
 fn a_rounded_bar_gets_every_radius() {
-    let bar = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").fillet_all(2.0).expect("filleted");
+    let bar = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").rounded(2.0).expect("filleted");
     for s in surfaces(&regions_of(&bar, 0.1)) {
         match s {
             Surface::Cylinder { radius, .. } | Surface::Sphere { radius, .. } => assert!((radius - 2.0).abs() < 0.01, "a rounding of radius {radius}, not 2"),
@@ -67,7 +68,7 @@ fn a_rounded_bar_gets_every_radius() {
 /// A cone from radius 10 at z = 0 to radius 4 at z = 20: its half-angle is atan(6 / 20), its apex at z = 100 / 3.
 #[test]
 fn a_cone_gets_its_apex_and_its_angle() {
-    let found = surfaces(&regions_of(&Shape::cone(10.0, 4.0, 20.0).expect("a cone"), 0.05));
+    let found = surfaces(&regions_of(&qymcad_kernel::specimen::cone(10.0, 4.0, 20.0).expect("a cone"), 0.05));
     let cones: Vec<([f64; 3], [f64; 3], f64)> = found
         .iter()
         .filter_map(|s| match *s {
@@ -87,7 +88,7 @@ fn a_cone_gets_its_apex_and_its_angle() {
 /// A torus of major radius 20 and minor radius 5 in the XY plane about the origin.
 #[test]
 fn a_torus_gets_both_radii() {
-    let found = surfaces(&regions_of(&Shape::torus(20.0, 5.0).expect("a torus"), 0.05));
+    let found = surfaces(&regions_of(&qymcad_kernel::specimen::torus(20.0, 5.0).expect("a torus"), 0.05));
     assert_eq!(found.len(), 1, "surfaces {found:?}");
     let Surface::Torus { center, axis, major, minor } = found[0] else { panic!("no torus: {found:?}") };
     assert!((major - 20.0).abs() < 0.01 && (minor - 5.0).abs() < 0.01, "radii {major} and {minor}, not 20 and 5");

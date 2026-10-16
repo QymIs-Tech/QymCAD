@@ -176,6 +176,6 @@ pub(in crate::gui) mod tests {
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), ja);
         assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 0, "a hinge has no travel — there was nothing to take");
         let want = crate::i18n::tr("j-relation-need-travel");
-        assert_eq!(app.status, want, "the refusal must be named in words, and the status line holds: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(want), "the refusal must be named in words, and the status line holds: {}", app.status);
     }
 }

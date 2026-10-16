@@ -95,8 +95,8 @@ fn a_nan_corner_inside_a_face_goes_with_its_triangles() {
 /// merging read past the end of the regions.
 #[test]
 fn a_nan_corner_on_a_sphere_goes_with_its_triangles() {
-    let ball = qymcad_kernel::Shape::sphere(10.0).expect("a sphere");
-    let qymcad_core::geom::Built { mut mesh, .. } = ball.tessellate(0.1).into_iter().next().expect("a mesh");
+    let ball = qymcad_kernel::specimen::sphere(10.0).expect("a sphere");
+    let qymcad_core::geom::Built { mut mesh, .. } = qymcad_kernel::specimen::mesh(&ball, 0.1).into_iter().next().expect("a mesh");
     // a corner off the seams and the poles: one whose place no other corner of the mesh repeats
     let once = |k: usize| mesh.verts.iter().filter(|q| q.x == mesh.verts[k].x && q.y == mesh.verts[k].y && q.z == mesh.verts[k].z).count() == 1;
     let k = (0..mesh.verts.len()).find(|&k| mesh.verts[k].z.abs() < 5.0 && once(k)).expect("a corner of the band");

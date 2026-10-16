@@ -114,7 +114,27 @@ mod tests {
         // THE SEARCH ASKS, and the application carries it out through `run_command`. Both halves are checked:
         // a request that nothing performs would leave the search silent, and that is exactly as bad.
         assert!(src.contains("WinAsk::RunCommand(code)"), "the search launches commands past the shared door");
-        assert!(crate::gui::render_source::has(include_str!("../gui.rs"), "WinAsk::RunCommand(code) => self.run_command(code, ctx)"), "nothing carries out the search's request");
+        assert!(
+            crate::gui::render_source::has(
+                concat!(
+                    include_str!("file_doors.rs"),
+                    "\n",
+                    include_str!("gizmo_math.rs"),
+                    "\n",
+                    include_str!("look.rs"),
+                    "\n",
+                    include_str!("panel_bits.rs"),
+                    "\n",
+                    include_str!("startup.rs"),
+                    "\n",
+                    include_str!("view_anim.rs"),
+                    "\n",
+                    include_str!("../gui.rs")
+                ),
+                "WinAsk::RunCommand(code) => self.run_command(code, ctx)"
+            ),
+            "nothing carries out the search's request"
+        );
         for own in ["start_feat_cmd(", "set_sk_tool(", "start_prim_cmd("] {
             assert!(!src.contains(own), "the search introduced a launch path of its own: {own}");
         }

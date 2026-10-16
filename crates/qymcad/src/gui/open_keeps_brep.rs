@@ -40,7 +40,7 @@ mod tests {
 
         let qymcad_io::LoadedProject { project, breps } = qymcad_io::load_project_with_brep(&path).expect("the file reads");
         assert!(!breps.is_empty(), "the bundle holds NO live bodies — opening will pay for a full rebuild again");
-        let shapes: Vec<_> = breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|s| (id, s))).collect();
+        let shapes: Vec<_> = breps.into_iter().filter_map(|(id, b)| qymcad_kernel::specimen::read(&b).map(|s| (id, s))).collect();
         let got: Vec<_> = {
             let mut v: Vec<_> = shapes.iter().map(|(id, _)| *id).collect();
             v.sort_unstable();

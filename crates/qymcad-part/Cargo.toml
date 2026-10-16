@@ -22,5 +22,8 @@ qymcad-render = { path = "../qymcad-render" }
 qymcad-i18n = { path = "../qymcad-i18n" }
 qymcad-scheme = { path = "../qymcad-scheme" }
 
+[dev-dependencies]
+egui_extras = { version = "0.35", features = ["svg"] }
+
 [lints]
 workspace = true

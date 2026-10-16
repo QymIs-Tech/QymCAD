@@ -232,7 +232,21 @@ fn the_settings_window_offers_the_catalogue() {
 /// THE LANGUAGE IS APPLIED AT STARTUP and survives a restart.
 #[test]
 fn the_language_setting_survives_a_restart_and_is_applied() {
-    let gui = include_str!("../gui.rs");
+    let gui = concat!(
+        include_str!("file_doors.rs"),
+        "\n",
+        include_str!("gizmo_math.rs"),
+        "\n",
+        include_str!("look.rs"),
+        "\n",
+        include_str!("panel_bits.rs"),
+        "\n",
+        include_str!("startup.rs"),
+        "\n",
+        include_str!("view_anim.rs"),
+        "\n",
+        include_str!("../gui.rs")
+    );
     // THROUGH THE SHARED HANDLE: the settings take effect by one path (`adopt_settings`), and the startup
     // goes by it too. Checking for a literal call at startup here would mean forbidding that handle to
     // exist.
@@ -258,7 +272,79 @@ fn the_language_setting_survives_a_restart_and_is_applied() {
     );
     // THE SETTINGS RECORD LIVES IN `state.rs` NOW, not beside the application. The rule is unchanged - the
     // language is a field of the settings, and so travels with them into the file - only the address is.
-    assert!(crate::gui::render_source::has(include_str!("../../../qymcad-ui-state/src/lib.rs"), "language: String"), "the language must live in the settings (and so be saved)");
+    assert!(
+        crate::gui::render_source::has(
+            concat!(
+                include_str!("../../../qymcad-ui-state/src/contexts.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/corners.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/dims.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/edits.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/fields.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/fonts.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/geom.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/gizmos.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/handles.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/hotkeys.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/jobs.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/joints.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/navigation.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/painting.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/rebuild.rs"),
+                "\n",
+                concat!(
+                    include_str!("../../../qymcad-ui-state/src/records/commands.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/frame.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/gizmos.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/pieces.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/scene.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records/tools.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-ui-state/src/records.rs")
+                ),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/scene.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/section.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/selection.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/settings.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/sketch_diag.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/sketch_edit.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/text.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/tool_steps.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/tree.rs"),
+                "\n",
+                include_str!("../../../qymcad-ui-state/src/lib.rs")
+            ),
+            "language: String"
+        ),
+        "the language must live in the settings (and so be saved)"
+    );
 
     // an empty setting means "nothing was chosen", so the system decides rather than a silent English
     let mut app = crate::gui::App::default();
@@ -363,6 +449,7 @@ fn every_core_error_has_words_in_every_language() {
         X::UnexpectedToken("]".into()),
         X::TrailingInput("xx".into()),
         X::NotANumber,
+        X::TooDeep { limit: 256 },
     ] {
         samples.push(E::Expr(x));
     }
@@ -582,7 +669,8 @@ fn no_code_branches_on_the_text_of_the_status_line() {
                 stack.push(p);
                 continue;
             }
-            if p.extension().is_none_or(|x| x != "rs") {
+            // the checks are let be: inline after `#[cfg(test)]`, or a file of checks of their own (`tests.rs`)
+            if !qymcad_i18n::ratchet::is_working_code(&p) {
                 continue;
             }
             let text = std::fs::read_to_string(&p).expect("the file reads");
@@ -704,10 +792,10 @@ fn every_code_the_libraries_emit_has_words_in_every_language() {
 /// codes (`tb-`, `wb-`, `tool-`, `sk-`, `jt-` and twenty more) were emitted by libraries that nothing
 /// watched. Whole families of interface words could have been missing in a language with every check
 /// green.
-const WATCHED_PREFIXES: [&str; 53] = [
-    "name-", "recognise-", "rebind-", "joint-", "thread-", "material-", "conn-", "f-", "feat-", "m3-", "cad-", "io-", "post-", "verify-", "error-", "act-", "anchor-", "bool-", "cmd-", "con-", "dof-",
-    "ent-", "expand-", "font-", "g-", "giz-", "hint-", "in-", "j-", "jt-", "mp-", "msg-", "node-", "opt-", "par-", "piece-", "pk-", "pp-", "scheme-", "sec-", "sk-", "sketch-", "status-", "tb-",
-    "tool-", "tree-", "unit-", "vp-", "wb-", "hotkey-", "menu-", "win-", "props-",
+const WATCHED_PREFIXES: [&str; 55] = [
+    "fault-", "jp-", "name-", "recognise-", "rebind-", "joint-", "thread-", "material-", "conn-", "f-", "feat-", "m3-", "cad-", "io-", "post-", "verify-", "error-", "act-", "anchor-", "bool-",
+    "cmd-", "con-", "dof-", "ent-", "expand-", "font-", "g-", "giz-", "hint-", "in-", "j-", "jt-", "mp-", "msg-", "node-", "opt-", "par-", "piece-", "pk-", "pp-", "scheme-", "sec-", "sk-", "sketch-",
+    "status-", "tb-", "tool-", "tree-", "unit-", "vp-", "wb-", "hotkey-", "menu-", "win-", "props-",
 ];
 
 /// THE LIST OF PREFIXES MUST SAY WHAT IT CANNOT SEE.
@@ -901,8 +989,7 @@ fn a_key_handed_to_anything_at_all_still_needs_words() {
                 stack.push(p);
                 continue;
             }
-            let n = p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            if p.extension().is_none_or(|x| x != "rs") || n == "tests.rs" || n.ends_with("_tests.rs") {
+            if p.extension().is_none_or(|x| x != "rs") || qymcad_i18n::ratchet::is_test_module(&p) {
                 continue;
             }
             let text = std::fs::read_to_string(&p).expect("the file reads");

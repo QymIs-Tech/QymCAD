@@ -25,6 +25,7 @@
 //! close to it) or the circular edge itself, which the kernel resolves to the centre with the axis of
 //! the circle anyway.
 pub(crate) use qymcad_pick::{infer_axis_anchor, infer_mate_anchor};
+use qymcad_ui_state::Notice;
 use super::App;
 use egui::{Pos2, Rect};
 use qymcad_core::feature::AnchorRef;
@@ -60,13 +61,13 @@ impl App {
         if self.side.joint.anchor_mode == 3 {
             match crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi)) {
                 Some(body) => qymcad_assembly::joint_pick_origin_click(&mut self.joint_ctx(), body),
-                None => self.status = crate::i18n::tr("j-body-miss"),
+                None => self.status = Notice::refusal(crate::i18n::tr("j-body-miss")),
             }
             return;
         }
         match self.infer_mate_anchor(rect, pos) {
             Some((body, anchor)) => qymcad_assembly::joint_pick_anchor_at(&mut self.joint_ctx(), body, anchor),
-            None => self.status = crate::i18n::tr("vp-miss-face-cancel"),
+            None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-face-cancel")),
         }
     }
 
@@ -74,7 +75,7 @@ impl App {
     pub(super) fn joint_repick_inferred_click(&mut self, rect: Rect, pos: Pos2) {
         match self.infer_mate_anchor(rect, pos) {
             Some((body, anchor)) => qymcad_assembly::joint_edit_repick_apply(&mut self.joint_ctx(), body, anchor),
-            None => self.status = crate::i18n::tr("vp-miss-face-cancel"),
+            None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-face-cancel")),
         }
     }
 }

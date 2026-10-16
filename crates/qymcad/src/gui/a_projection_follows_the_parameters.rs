@@ -74,8 +74,7 @@ mod tests {
         hand.frame(Vec::new());
         let mut asks = Vec::new();
         crate::gui::panels_windows::apply_param_edit(&mut hand.app.win_ctx(&mut asks));
-        assert!(asks.iter().any(|a| matches!(a, qymcad_ui_state::WinAsk::RegenerateAll)), "GUARD: the parameters ask for a rebuild");
-        qymcad_ui_state::regenerate_all(&mut hand.app.rebuild_ctx());
+        assert!(hand.app.regen.wanted || hand.app.regen.busy.is_some(), "GUARD: the parameters changed and no rebuild is asked for");
         hand.close_window();
     }
 

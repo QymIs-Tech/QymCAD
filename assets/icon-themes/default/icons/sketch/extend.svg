@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="extend">
+<path id="Union" d="M29 29H27V3H29V29ZM25.4141 16L21 20.4141L19.5859 19L21.5859 17H7.87402C7.95629 16.6804 8 16.3453 8 16C8 15.6547 7.95629 15.3196 7.87402 15H21.5859L19.5859 13L21 11.5859L25.4141 16ZM4 13C5.65685 13 7 14.3431 7 16C7 17.6569 5.65685 19 4 19C2.34315 19 1 17.6569 1 16C1 14.3431 2.34315 13 4 13Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Subtract" d="M25.4141 16L21 20.4141L19.5859 19L21.5859 17H7.87402C7.95629 16.6804 8 16.3453 8 16C8 15.6547 7.95629 15.3196 7.87402 15H21.5859L19.5859 13L21 11.5859L25.4141 16Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path id="Vector 2" d="M28 28L28 4" stroke-width="2" stroke-linecap="square" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+<circle id="Ellipse 5" cx="4" cy="16" r="3" fill="var(--icon-neutral, #BCBCBCFF)"/>
+</g>
+</svg>

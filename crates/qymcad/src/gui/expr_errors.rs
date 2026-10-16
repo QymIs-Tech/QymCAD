@@ -41,6 +41,7 @@ mod tests {
                 ExprError::NotANumber,
                 ExprError::UnexpectedEnd,
                 ExprError::UnknownName("w".into()),
+                ExprError::TooDeep { limit: 256 },
             ] {
                 let msg = crate::gui::error_words::expr_error_text(&e);
                 assert!(!msg.trim().is_empty(), "{code}: {e:?} — an empty message");

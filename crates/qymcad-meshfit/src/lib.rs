@@ -15,6 +15,14 @@ pub use curve::{curves, Curve};
 pub use prep::{chord_deflection, prepare, weld_tolerance, Prepared, NO_NEIGHBOUR};
 pub use regions::{free_form_of, regions, regions_until, Region, Surface, Tolerance};
 
+/// THE FACES OF A RAW MESH - a piece of an STL, OBJ or PLY with no B-rep: its flat groups of triangles, turned no more than
+/// 8 deg from one another. The one rule for them: a piece is given its faces here when it comes in or has none, and a
+/// move or a scale of it in the document carries them along (`MeshFace::transformed`, `MeshFace::scaled`). A face of a
+/// raw mesh has no name (`id` 0): a reference to it does not outlive an edit.
+pub fn raw_faces(mesh: &qymcad_core::geom::Mesh) -> Vec<qymcad_core::geom::MeshFace> {
+    mesh.detect_faces(8.0)
+}
+
 /// WHAT A MESH IS FOUND TO BE, triangle by triangle, for a person to see before a body is built: the kind of surface the
 /// region of each triangle lies on - 0 plane, 1 cylinder, 2 cone, 3 sphere, 4 torus, 5 none, 6 a free form, 7 a helix or a coil - and how many regions of
 /// each kind there are. `tol` multiplies the distance tolerance the mesh itself gives; `sharp_deg` is the sharp edge.

@@ -2,6 +2,7 @@
 //! large — an honest error, not garbage); shell. Real OCCT kernel, exact volumes, failures accumulate.
 
 use qymcad_core::model::Project;
+use qymcad_kernel::specimen::Specimen as _;
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -381,14 +382,14 @@ fn matrix_revolve_direction_and_symmetry() {
             qymcad_core::geom::Point2::new(-25.0, 30.0),
         ]);
         let prof = qymcad_core::geom::encode_profile(&outer, &[]);
-        let bx = qymcad_kernel::Shape::extrude_profile(&prof, 26.0).unwrap();
+        let bx = qymcad_kernel::specimen::extrude_profile(&prof, 26.0).unwrap();
         let mut place = qymcad_core::feature::PLACE_IDENTITY;
         // the profile lies in XY and is extruded along +Z, so it is shifted to z=2..28 on the
         // required side; the solid of revolution lives in coordinates (x, sketch y -> the Y axis, z)
         // and the probe is built in those same world axes
         place[11] = if sign > 0.0 { 2.0 } else { -28.0 };
-        let bx = bx.transformed(&place).unwrap();
-        s.boolean(&bx, 2).map(|c| c.volume()).unwrap_or(0.0)
+        let bx = qymcad_kernel::specimen::placed(&bx, &place).unwrap();
+        s.combined(&bx, 2).map(|c| c.volume()).unwrap_or(0.0)
     };
     use qymcad_core::feature::Reach;
     for (label, reach, want_neg, want_pos) in [("default (-Z)", Reach::Forward, true, false), ("flipped (+Z)", Reach::Backward, false, true), ("both ways", Reach::BothWays, true, true)] {

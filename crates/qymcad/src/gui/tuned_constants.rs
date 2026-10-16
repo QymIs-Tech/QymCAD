@@ -16,7 +16,21 @@ mod tests {
     /// NOT ONE OF THESE NUMBERS IS STILL A CONSTANT IN THE CODE.
     #[test]
     fn the_tuned_numbers_are_no_longer_constants() {
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         let input = include_str!("input.rs");
         for (name, src, where_) in [("UNDO_CAP", gui, "gui.rs"), ("GHOST_ALPHA", gui, "gui.rs"), ("PERSP_FOV_HALF_TAN", gui, "gui.rs"), ("PERIOD", input, "input.rs")] {
             let code: String = qymcad_i18n::ratchet::working_part(src).lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
@@ -54,7 +68,21 @@ mod tests {
         }
         crate::viewport_gpu::set_msaa(4);
 
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         // the setting goes through the step of a safe start, which may take it down to one sample (`safe_graphics`)
         assert!(gui.contains("crate::viewport_gpu::set_msaa(crate::safe_graphics::samples(app.set.msaa));"), "the antialiasing setting does not reach the renderer at startup");
         let panels = crate::gui::panels_source::PANELS;
@@ -137,9 +165,9 @@ mod tests {
         let pal = crate::palette::dark();
         let base = [160, 160, 160];
         let n = [0.0, 0.0, 1.0];
-        let light = [0.0, 0.0, 1.0];
-        let faint = crate::gui::shade_tri_for_test(&pal, 40, false, true, base, n, light).a();
-        let solid = crate::gui::shade_tri_for_test(&pal, 240, false, true, base, n, light).a();
+        let lights = qymcad_ui_state::scene_lights(&([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]));
+        let faint = crate::gui::shade_tri_for_test(&pal, 40, false, true, base, n, &lights).a();
+        let solid = crate::gui::shade_tri_for_test(&pal, 240, false, true, base, n, &lights).a();
         assert_eq!(faint, 40, "the ghost did not take the transparency from the setting: {faint}");
         assert_eq!(solid, 240, "the ghost did not take the transparency from the setting: {solid}");
     }

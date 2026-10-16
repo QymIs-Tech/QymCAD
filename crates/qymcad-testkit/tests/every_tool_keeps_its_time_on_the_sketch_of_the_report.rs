@@ -45,7 +45,7 @@ fn every_tool_keeps_its_time_on_the_sketch_of_the_report() {
         let took = timed(|| (tool.work)(&mut p, &targets));
         let counted = timed(|| checks(&p));
         eprintln!("the sketch of the report - {:<40} {took:>12.3?}, the checks after it {counted:>12.3?}", tool.name);
-        if took > tool_budget || counted > check_budget {
+        if !qymcad_core::time_budget::within(took, tool_budget) || !qymcad_core::time_budget::within(counted, check_budget) {
             failures.push(format!("{}: {took:.3?} (budget {tool_budget:?}), the checks after it {counted:.3?} (budget {check_budget:?})", tool.name));
         }
         // what it left behind, and the loops of a rebuild from all the curves

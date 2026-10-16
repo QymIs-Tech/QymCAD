@@ -1,6 +1,7 @@
 //! JOINTS - picking them, solving them, their glyphs and their panel.
 
 pub(crate) use qymcad_assembly::*;
+use qymcad_ui_state::Notice;
 use super::*;
 
 impl App {
@@ -131,7 +132,7 @@ impl App {
         // happens about a cylindrical face) and cost dearly - aiming at a face produced an edge.
         self.side.joint.anchor_mode = 0;
         let what = crate::i18n::tr("j-place-lower");
-        self.status = crate::i18n::tr2("jt-pick-a-then-b", "kind", &crate::i18n::tr(self.side.joint.new_kind.label()), "what", &what);
+        self.status = Notice::info(crate::i18n::tr2("jt-pick-a-then-b", "kind", &crate::i18n::tr(self.side.joint.new_kind.label()), "what", &what));
     }
 
     /// THE TEST FACADES. A test must walk the same path a person does - through the command and its picks

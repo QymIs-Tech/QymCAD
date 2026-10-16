@@ -125,7 +125,7 @@ fn a_mirror_whose_plane_was_deleted_says_so() {
     let mut p = Project::default();
     p.new_document();
     let body = brick(&mut p, "Base", 10.0, 0.0, 30.0, 20.0, 10.0);
-    let pl = p.add_plane(WorkPlane { id: 0, name: "x50".into(), origin: [50.0, 0.0, 0.0], normal: [1.0, 0.0, 0.0], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "x50".into(), origin: [50.0, 0.0, 0.0], normal: [1.0, 0.0, 0.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     let m = p.add_mirror(body, 2, true, pl);
     qymcad_testkit::regenerate(&mut p);
     let span = |p: &Project, b: Id| -> (f64, f64) {

@@ -73,7 +73,10 @@ mod tests {
 
         let errs: Vec<String> = app.project.regen_errors.values().map(|e| format!("{e:?}")).collect();
         assert!(errs.is_empty(), "leaving an untouched sketch coloured the feature red: {}", errs.join("; "));
-        assert!(!app.live.shapes.is_empty(), "the live bodies were built — otherwise there would have been nothing to rebuild from");
+        // NOTHING WAS TOUCHED, SO NOTHING IS REBUILT: the bodies stand as the file holds them, and no live B-rep is raised
+        // for a rebuild that has no reason to happen. The path that does rebuild - and so needs the live bodies first -
+        // is the edit below.
+        assert!(app.live.shapes.is_empty() && !app.regen.wanted && app.regen.busy.is_none(), "leaving an untouched sketch rebuilt the bodies on it");
         let _ = std::fs::remove_file(&path);
     }
 

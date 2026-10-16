@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="mirror">
+<path id="Union" d="M17 31H15V28.5996H17V31ZM17 25.7998H15V23H17V25.7998ZM13 7V9H5V23H13V25H3V7H13ZM29 25H19V23H27V9H19V7H29V25ZM17 20.2002H15V17.4004H17V20.2002ZM17 14.5996H15V11.7998H17V14.5996ZM17 9H15V6.2002H17V9ZM17 3.40039H15V1H17V3.40039Z" fill="var(--icon-sketch-secondary, #333333FF)" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Vector 2" d="M15 30V31H17V30H16H15ZM17 2V1H15V2H16H17ZM16 2H15V3.4H16H17V2H16ZM16 6.2H15V9H16H17V6.2H16ZM16 11.8H15V14.6H16H17V11.8H16ZM16 17.4H15V20.2H16H17V17.4H16ZM16 23H15V25.8H16H17V23H16ZM16 28.6H15V30H16H17V28.6H16Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<path id="Rectangle 5" d="M19 8H28V24H19" stroke-width="2" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Rectangle 6" d="M13 8H4V24H13" stroke-width="2" stroke="var(--icon-dimmed, #7C7C7CFF)"/>
+</g>
+</svg>

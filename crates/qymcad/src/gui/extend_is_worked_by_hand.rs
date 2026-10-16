@@ -93,7 +93,7 @@ mod tests {
             hand.hover2d(5.0, 1.0);
             hand.key(egui::Key::Enter);
             if ends_x(&hand, line) != want {
-                failures.push(format!("lines across at {across:?}: the line runs {:?}, wanted {want:?}", ends_x(&hand, line)));
+                failures.push(format!("lines across at {across:?}: the line runs {:?}, wanted {want:?}; the constraints {:?}", ends_x(&hand, line), hand.app.project.sketches[0].constraints));
             }
         }
         assert!(failures.is_empty(), "both sides:\n{}", failures.join("\n"));

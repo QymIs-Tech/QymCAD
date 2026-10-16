@@ -164,7 +164,7 @@ mod tests {
             let k_ = app.project.geom_quality.deflection_k();
             let mut meshed = 0usize;
             for shape in app.live.shapes.values() {
-                meshed += shape.tessellate_auto(k_).len();
+                meshed += qymcad_kernel::specimen::mesh_auto(shape, k_).len();
             }
             s.mesh = t.elapsed().as_secs_f64() * 1000.0;
             assert!(meshed > 0, "setup: there is no live B-rep to mesh, so the share cannot be measured");

@@ -10,252 +10,13 @@
 //! and that is how it must be checked.
 #[cfg(test)]
 mod tests {
-    use super::super::hand::Hand;
-    use super::super::App;
-
-    /// THE SINGLE "EVERYTHING ADDS UP" CHECK - run after every action rather than as a separate test.
-    fn check_all(app: &mut App, step: &str, problems: &mut Vec<String>) {
-        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
-        // 1. THE GEOMETRY: not a single red node.
-        // WHAT COUNTS AS RED IS WHAT THE PROGRAM COULD NOT EXPLAIN. A named refusal is a conversation: "the
-        // chamfer is larger than the wall", "the fillet has nothing to round". Such a node is legitimate
-        // during work - it is seen and reworked. A nameless `OpFailed` is another matter: that is the program
-        // staying silent, and it remains a finding at every step.
-        let unexplained: std::collections::HashMap<u64, String> =
-            app.project.regen_errors.iter().filter(|(_, e)| matches!(e, qymcad_core::errors::CoreError::OpFailed(_))).map(|(id, e)| (*id, format!("{e:?}"))).collect();
-        if !unexplained.is_empty() {
-            problems.push(format!("[{step}] red nodes WITH NO EXPLANATION: {unexplained:?}"));
-        }
-        // 1b. THE STRUCTURE OF THE DOCUMENT. A file was opened and showed a part that contained both nested
-        // parts and its own build features. No CAD has such a structure, and there was no check for it -
-        // which is how it reached a file. A part either CONTAINS a makeup or IS BUILT.
-        for c in &app.project.components {
-            if !matches!(c.kind, qymcad_core::feature::ComponentKind::Part) {
-                continue;
-            }
-            let nm = crate::i18n::name(&c.name);
-            let inside: Vec<String> = app.project.components.iter().filter(|x| x.parent == Some(c.id)).map(|x| crate::i18n::name(&x.name)).collect();
-            if !inside.is_empty() {
-                problems.push(format!("[{step}] part \"{nm}\" contains other components: {}", inside.join(", ")));
-            }
-        }
-        // 1c. A NODE WITH NO PART. A build feature must belong to a part: there is nowhere to show it in the
-        // tree, and it can be neither found nor deleted. It is caught at the step where it appeared rather
-        // than at the end of the run.
-        for n in &app.project.timeline {
-            // IT EITHER BUILT OR EXPLAINED ITSELF - THERE IS NO THIRD OPTION.
-            //
-            // A node that declares a body must either produce it or leave an error. Silence is the worst
-            // outcome: the row is in the tree, nothing is on screen, and there is nothing to take hold of.
-            // Found by a full rebuild of AN UNCHANGED timeline: a fillet that built the first time
-            // disappeared on the second pass without a single word.
-            // ...AND ONLY WHERE THAT IS EXPECTED. Under a rollback of the history a node is legitimately
-            // unbuilt and has no reason attached - that is not silence but "we have not reached it yet". The
-            // silence of a node whose INPUT is unbuilt is legitimate in the same way: the reason was already
-            // given further up the chain.
-            // ...AND ONE MORE BOUNDARY, crossed once and rewarded with a false alarm: an input may carry A
-            // MESH FROM A PREVIOUS BUILD yet fail to build now - then the reason is named ON IT, and the
-            // silence of the consumer is legitimate. The judgement must go by whether the producer of the
-            // input explained itself, not by whether a mesh exists.
-            let inputs_built = n.kind.inputs().iter().all(|i| {
-                let producer = app.project.timeline.iter().find(|x| x.kind.bodies().contains(i));
-                match producer {
-                    Some(p) => app.project.mesh_index(*i).is_some() && !app.project.regen_errors.contains_key(&p.id),
-                    None => true,
-                }
-            });
-            if !n.suppressed && app.project.rollback.is_none() && inputs_built {
-                for b in n.kind.bodies() {
-                    let built = app.project.mesh_index(b).is_some();
-                    let explained = app.project.regen_errors.contains_key(&n.id);
-                    if !built && !explained {
-                        problems.push(format!("[{step}] node {} \"{}\" did not build body {b} and NAMED NO REASON - the row is in the tree, the screen is empty", n.id, n.name));
-                    }
-                }
-            }
-            // THE PARENT MUST EXIST rather than merely be filled in. The old check caught only `None` and
-            // missed the worst case: a reference to A DELETED part. There is nowhere to show such a node in
-            // the tree (its branch is gone), it can be neither found nor deleted, and a rebuild will honestly
-            // keep counting it.
-            let parent_alive = n.parent.is_some_and(|p| app.project.components.iter().any(|c| c.id == p));
-            if !parent_alive {
-                problems.push(format!("[{step}] node {} \"{}\" sits in the timeline with no live part (parent = {:?}) - there is nowhere to show it in the tree", n.id, n.name, n.parent));
-            }
-        }
-        // 1d. THERE MUST BE NO BODIES IN THE ROOT. A body lives in A PART; in the root assembly it has
-        // nowhere to come from, and opening the tree shows a bare "Body 36" with no part around it.
-        {
-            let root = app.project.root;
-            // by the body's owner, not the node's parent: a pattern of components stands in the assembly and builds
-            // bodies that belong to its copies
-            let orphan: Vec<u64> = app.project.timeline.iter().flat_map(|n| n.kind.bodies().into_iter().filter(move |b| n.owner_of(*b) == Some(root))).collect();
-            // BY THE SAME SIGN THE TREE USES. In the root it shows THE MESHES that no timeline node produces
-            // - the previous check looked for "bodies with no owner" and did not see those.
-            let produced: std::collections::HashSet<u64> = app.project.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
-            let in_root_tree: Vec<u64> = app.project.bodies.iter().map(|b| b.id).filter(|b| !produced.contains(b)).collect();
-            if !in_root_tree.is_empty() {
-                problems.push(format!("[{step}] bodies {in_root_tree:?} are shown IN THE ROOT of the tree - no node produces them"));
-            }
-            let ownerless: Vec<u64> = app
-                .project
-                .bodies
-                .iter()
-                .filter(|b| {
-                    let o = app.project.body_owner(b.id);
-                    o.is_none() || o == Some(root)
-                })
-                .map(|b| b.id)
-                .collect();
-            if !orphan.is_empty() || !ownerless.is_empty() {
-                problems.push(format!("[{step}] bodies with no part: in the root {orphan:?}, with no owner {ownerless:?} - a body must live in A PART, otherwise it hangs by itself in the tree"));
-            }
-        }
-        // 1e. THE NAMES OF PARTS DO NOT REPEAT. Two parts with one name are indistinguishable in the tree:
-        // one gets picked and another gets edited. The instances of an array are legitimately called
-        // "Housing (2)", "(3)" - those are DIFFERENT names and they are fine; what is at issue is exact
-        // matches.
-        {
-            let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-            for c in app.project.components.iter().filter(|c| c.id != app.project.root) {
-                *seen.entry(crate::i18n::name(&c.name)).or_default() += 1;
-            }
-            let dups: Vec<String> = seen.into_iter().filter(|(_, n)| *n > 1).map(|(k, n)| format!("\"{k}\" x{n}")).collect();
-            if !dups.is_empty() {
-                problems.push(format!("[{step}] parts with IDENTICAL names: {} - they cannot be told apart in the tree", dups.join(", ")));
-            }
-        }
-        // 1f. THE REMAINING SECTIONS OF THE TREE, SEEN BY EYE. Opening a document shows everything at once,
-        // and an oddity in any section reads as a fault, however correctly everything is computed.
-        {
-            // A joint with no part: one whose connector points nowhere hangs in the tree as an orphan.
-            let live: std::collections::HashSet<u64> = app.project.components.iter().map(|c| c.id).collect();
-            let dangling: Vec<u64> = app
-                .project
-                .joints
-                .iter()
-                .filter(|j| {
-                    let owner = |c: u64| app.project.connectors.iter().find(|k| k.id == c).map(|k| k.owner);
-                    !owner(j.a).is_some_and(|o| live.contains(&o)) || !owner(j.b).is_some_and(|o| live.contains(&o))
-                })
-                .map(|j| j.id)
-                .collect();
-            if !dangling.is_empty() {
-                problems.push(format!("[{step}] joints {dangling:?} point at parts that do not exist"));
-            }
-
-            // An abandoned sketch: it belongs to no part, and there is nowhere to show it in the tree.
-            let orphan_sk: Vec<u64> = app.project.sketches.iter().filter(|sk| app.project.sketch_owner(sk.id).is_none_or(|o| !live.contains(&o))).map(|sk| sk.id).collect();
-            if !orphan_sk.is_empty() {
-                problems.push(format!("[{step}] sketches {orphan_sk:?} belong to no part"));
-            }
-        }
-        // 1g. WHAT A PERSON SEES ON OPENING A FINISHED FILE. A hidden body in someone else's document looks
-        // like a loss: the part is in the tree and not on screen. A part with not a single body is an empty
-        // row with nothing behind it. A node with no name is the same thing in the timeline.
-        {
-            // A HIDDEN BODY DURING WORK IS NORMAL: that is how a neighbouring part is reached. The check for
-            // ones left hidden stands at the end, on A FINISHED document.
-            // AN EMPTY PART DURING WORK IS NORMAL (the program keeps one from the very start, and building
-            // into it is about to begin). It becomes rubbish only in A FINISHED file, so the check stands at
-            // the end of the scenario rather than at every step.
-            let nameless: Vec<u64> = app.project.timeline.iter().filter(|n| n.name.trim().is_empty()).map(|n| n.id).collect();
-            if !nameless.is_empty() {
-                problems.push(format!("[{step}] nodes with no name: {nameless:?}"));
-            }
-        }
-        // 2. THE TREE ON THE LEFT: every feature has a row, and that row is words rather than a catalogue key
-        for ti in 0..app.project.timeline.len() {
-            if matches!(app.project.timeline[ti].kind, qymcad_core::feature::FeatureKind::Sketch { .. }) {
-                continue; // sketches live in a branch of their own
-            }
-            // THE DATUMS LIVE IN THEIR OWN BRANCH of the tree: their row comes not from the timeline but from
-            // the plane, the axis or the point itself - and that is where to look, otherwise an honest node
-            // appears lost.
-            use qymcad_core::feature::FeatureKind as FKd;
-            let row = match app.project.timeline[ti].kind {
-                FKd::Plane { plane } => app.project.planes.iter().find(|p| p.id == plane).map(|p| format!("· {}", crate::i18n::name(&p.name))).unwrap_or_default(),
-                FKd::DatumAxis { axis } => app.project.datum_axes.iter().find(|a| a.id == axis).map(|a| format!("· {}", crate::i18n::name(&a.name))).unwrap_or_default(),
-                FKd::DatumPoint { point } => app.project.datum_points.iter().find(|q| q.id == point).map(|q| format!("· {}", crate::i18n::name(&q.name))).unwrap_or_default(),
-                _ => crate::gui::panels_tree::feature_row_label(&app.project, ti),
-            };
-            let words = row.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
-            if words.trim().is_empty() {
-                problems.push(format!("[{step}] node {} ({}) has no row in the tree", app.project.timeline[ti].id, crate::gui::feat_default_name(&app.project.timeline[ti].kind)));
-            } else if !words.contains(' ') && words.contains('-') && words.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit()) {
-                problems.push(format!("[{step}] node {} shows A KEY \"{words}\"", app.project.timeline[ti].id));
-            }
-        }
-        // 3. THE BODIES: "a part is ONE body" is a rule ABOUT A PART, not about the document. An assembly has
-        //    as many bodies as it has parts, and counting them together would declare every assembly broken.
-        let mut per_part: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
-        for (mi, b) in app.project.bodies.iter().enumerate() {
-            if !qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi) || b.sheet {
-                continue;
-            }
-            if let Some(owner) = app.project.body_owner(b.id) {
-                *per_part.entry(owner).or_default() += 1;
-            }
-        }
-        for (owner, n) in per_part {
-            if n > 1 {
-                let name = app.project.components.iter().find(|c| c.id == owner).map(|c| crate::i18n::name(&c.name)).unwrap_or_default();
-                let who: Vec<String> = app
-                    .project
-                    .bodies
-                    .iter()
-                    .enumerate()
-                    .filter(|(mi, b)| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), *mi) && !b.sheet && app.project.body_owner(b.id) == Some(owner))
-                    .map(|(_, b)| {
-                        let node = app.project.timeline.iter().find(|n| n.kind.bodies().contains(&b.id));
-                        let red = node.is_some_and(|n| app.project.regen_errors.contains_key(&n.id));
-                        format!("{}({}{})", b.id, node.map(|n| n.name.clone()).unwrap_or_else(|| "no node".into()), if red { ", red" } else { "" })
-                    })
-                    .collect();
-                // A CUT IS A LEGITIMATE EXCEPTION. The "split a body" tool exists precisely so that one body
-                // becomes several, and a cut through the body leaves its pieces bodies of the part the same way;
-                // after them, several bodies in a part are not a fault but work that was done deliberately. Without
-                // this proviso the check would forbid the tools themselves.
-                let was_split =
-                    app.project.timeline.iter().any(|nd| nd.parent == Some(owner) && (matches!(nd.kind, qymcad_core::feature::FeatureKind::SplitBody { .. }) || nd.kind.cut_pieces().len() > 1));
-                if !was_split {
-                    problems.push(format!("[{step}] part \"{name}\" has {n} visible bodies instead of one: {}", who.join(", ")));
-                }
-            }
-        }
-        for (mi, b) in app.project.bodies.iter().enumerate() {
-            if qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi) && b.mesh.tris.is_empty() {
-                problems.push(format!("[{step}] body {} is visible, but there is nothing to draw", b.id));
-            }
-        }
-        // 4. THE STATUS: the program shows no key where a message belongs
-        let st = app.status.trim();
-        if !st.is_empty() && !st.contains(' ') && st.contains('-') && st.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit()) {
-            problems.push(format!("[{step}] the status line holds A KEY \"{st}\""));
-        }
-    }
-
-    /// Save and reopen - and check everything there as well.
-    fn save_and_reopen(app: &mut App, step: &str, problems: &mut Vec<String>) -> App {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
-        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
-        app.save_project();
-        app.drain_bg_for_test();
-        match qymcad_io::load_project(&path) {
-            Ok(project) => {
-                let mut fresh = App::default();
-                fresh.finish_project_load(path, project, Vec::new());
-                qymcad_ui_state::rebuild_if_dirty(&mut fresh.rebuild_ctx());
-                let mut p2 = Vec::new();
-                check_all(&mut fresh, &format!("{step} -> after opening"), &mut p2);
-                problems.extend(p2);
-                fresh
-            }
-            Err(e) => {
-                problems.push(format!("[{step}] the saved file does not open: {e}"));
-                App::default()
-            }
-        }
-    }
+    use super::super::{hand::Hand, App};
+    mod check_all;
+    mod save_and_reopen;
+    mod the_faults;
+    mod the_view;
+    use check_all::check_all;
+    use save_and_reopen::save_and_reopen;
 
     /// APPLY A TOOL TO THE CURRENT BODY OF A PART - one recipe per tool, for any part.
     ///
@@ -672,7 +433,7 @@ mod tests {
         // NO height at all - not "the plane was chosen badly" but the shape being what it is. A person backs
         // off at that point and does it another way; demanding a node from a tool the core refused in words
         // means demanding the impossible.
-        let named_refusal = app.status == crate::i18n::tr("msg-plane-cuts-nothing");
+        let named_refusal = app.status == qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-plane-cuts-nothing"));
         if !made && named_refusal {
             return false; // the refusal was named - the step did not happen, but the document is not broken
         }
@@ -839,20 +600,35 @@ mod tests {
             }
         };
 
+        // --- A DATUM PLANE OFF THE SIDE OF THE HOUSING, TILTED: offset 10 and tilted 30 deg about its X, it is made so and
+        // stays so through the save below ---
+        let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
+        let side = app.project.regen_faces[&body].iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned().expect("the side face");
+        let planes = app.project.planes.len();
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([30.0, 20.0, 12.0], 8.0).tool(20).click([side.centroid.x, side.centroid.y, side.centroid.z]).set("dist", 10.0).set("tilt_x", 30.0).enter();
+        // the face looks along -Y: tilted 30 deg, the plane's normal leans 30 deg off it
+        let tilted = |app: &App| app.project.planes.last().map(|p| (-p.normal[1]).acos().to_degrees());
+        if app.project.planes.len() != planes + 1 || tilted(&app).is_none_or(|deg| (deg - 30.0).abs() > 1e-6) {
+            problems.push(format!("[a tilted datum plane] {} planes made, the last leans {:?} deg off the side face", app.project.planes.len() - planes, tilted(&app)));
+        }
+        check_all(&mut app, "a tilted datum plane off the side of the housing", &mut problems);
+
         // --- SAVE AND REOPEN ---
         let mut app = save_and_reopen(&mut app, "the housing is finished", &mut problems);
+        if tilted(&app).is_none_or(|deg| (deg - 30.0).abs() > 1e-6) {
+            problems.push(format!("[a tilted datum plane] after opening it leans {:?} deg off the side face", tilted(&app)));
+        }
 
         // --- EDITING A DIMENSION IN THE MIDDLE OF THE HISTORY ---
         if let Some(ti) = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })) {
             let nid = app.project.timeline[ti].id;
             app.tree_action(1, ti, nid, None, None);
-            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
-                p.val = 35.0;
-                p.txt = "35".into();
-            }
+            Hand::new(&mut app).set("height", 35.0);
             app.apply_feat_cmd();
             check_all(&mut app, "the height of the housing was changed to 35", &mut problems);
         }
+        the_faults::a_broken_node_is_counted_and_led_to(&mut app, &mut problems);
         // the projection of the side followed the height, and the line drawn from its corner with it
         if let Some((sid, corner, at)) = projected {
             match app.project.sketch_index(sid) {
@@ -1360,6 +1136,40 @@ mod tests {
             problems.push(format!("[riser] the top replaced by the sheet 5 above: the solid is {solid:?} mm^3, 40 x 30 x 15 = 18000; status {}", app.status));
         }
 
+        // --- A STEP AND A CHAMFER REACHING EXACTLY TO IT: a plate 30 x 20 x 6 and a rib 4 wide on it, 10 tall; the outer
+        // top edge of the rib chamfered 4 - its leg on the top of the rib ends exactly on the edge of the step. OCCT
+        // degenerates exactly there (a chamfer of 4 on an edge 4 from a step was refused while 3.99999 built), and a
+        // person drawing to a dimension lands there on purpose.
+        app.exit_context();
+        let stepped = app.project.add_part("Step");
+        app.enter_component(stepped);
+        let si9 = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        let mut hand = Hand::new(&mut app);
+        hand.sk_tool(2).click2d(0.0, 0.0).click2d(30.0, 20.0);
+        app.finish_sketch_edit();
+        app.chosen.sel = super::super::Sel::Sketch(si9);
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([15.0, 10.0, 3.0], 8.0).tool(1).op(0).set("height", 6.0).enter();
+        let si10 = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        let mut hand = Hand::new(&mut app);
+        hand.sk_tool(2).click2d(0.0, 0.0).click2d(4.0, 20.0);
+        app.finish_sketch_edit();
+        app.chosen.sel = super::super::Sel::Sketch(si10);
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([15.0, 10.0, 5.0], 8.0).tool(1).op(1).set("height", 10.0).enter();
+        check_all(&mut app, "a rib 4 wide raised on the plate", &mut problems);
+        let b = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body of the step");
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, b);
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([2.0, 10.0, 10.0], 8.0).tool(5).click([0.0, 10.0, 10.0]).set("dist", 4.0).enter();
+        check_all(&mut app, "the top edge of the rib chamfered exactly to the step", &mut problems);
+        let consumed = app.project.consumed_bodies();
+        let solid = app.project.component_bodies(stepped).into_iter().filter(|b| !consumed.contains(b)).filter_map(|b| app.project.bodies.iter().find(|x| x.id == b)).map(|b| b.mesh.volume()).next();
+        // 30 x 20 x 6 + 4 x 20 x 4 less the chamfer, half of 4 x 4 along 20: 3600 + 320 - 160
+        if solid.is_none_or(|v| (v - 3760.0).abs() > 1.0) {
+            problems.push(format!("[step] the chamfer of 4 exactly to the step: the solid is {solid:?} mm^3, 3760 expected; status {}", app.status));
+        }
+
         // --- PARTS WITH THE SAME SET OF TOOLS IN A DIFFERENT ORDER ---
         //
         // Exactly what was asked for: whichever part is entered, all of the operations are there while the
@@ -1576,7 +1386,7 @@ mod tests {
                     problems.push(format!("sketch: before the \"{name}\" constraint {pair:?} were clicked and {:?} is selected", hand.app.tools.sel_sk.items));
                 }
                 hand.constraint(code);
-                if app.project.sketches[si].constraints.len() == before && app.status.trim().is_empty() {
+                if app.project.sketches[si].constraints.len() == before && app.status.words.trim().is_empty() {
                     problems.push(format!("sketch: the \"{name}\" constraint did not take and SAID NOTHING about why"));
                 }
                 check_all(&mut app, &format!("sketch: the {name} constraint"), &mut problems);
@@ -1608,7 +1418,7 @@ mod tests {
                 let before = count(&app);
                 crate::gui::fillet_all_corners(&app.project, &mut app.tools.corner, &mut app.tools.picking, app.chosen.sel, &app.tools.sel_sk, &mut app.status, &app.tool_prefs);
                 app.project.regen_sketch(si);
-                if count(&app) == before && app.status.trim().is_empty() {
+                if count(&app) == before && app.status.words.trim().is_empty() {
                     problems.push("sketch: \"round every corner\" silently did nothing".into());
                 }
                 check_all(&mut app, "sketch: rounding every corner", &mut problems);
@@ -1645,7 +1455,7 @@ mod tests {
                     let lines: Vec<u64> = app.project.sketches[si].entities.iter().rev().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).take(3).map(|e| e.id).collect();
                     let (lines0, arcs0) = before(&app);
                     let named: Vec<(u8, u64)> = lines.iter().map(|&id| (1u8, id)).collect();
-                    app.status.clear(); // so that what is said afterwards is said about THIS action
+                    app.status.words.clear(); // so that what is said afterwards is said about THIS action
                     let mut hand = Hand::new(&mut app);
                     if lines.len() < 3 || !hand.sk_corner_set(key, &named, 3.0) {
                         problems.push(format!("sketch: {tool} found no place to click on the lines of the contour"));
@@ -1676,7 +1486,7 @@ mod tests {
                     qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, op);
                     let mut hand = Hand::new(&mut app);
                     hand.click2d(x, y);
-                    if count(&app) == before && app.status.trim().is_empty() {
+                    if count(&app) == before && app.status.words.trim().is_empty() {
                         problems.push(format!("sketch: \"{name}\" silently did nothing"));
                     }
                     check_all(&mut app, &format!("sketch: {name}"), &mut problems);
@@ -1750,18 +1560,18 @@ mod tests {
                     let Some(source) = ends_of(&app, eid) else { continue };
                     let before = shape_of(&app);
                     let (ids_before, worst_before): (Vec<u64>, f64) = (app.project.sketches[si].entities.iter().map(|e| e.id).collect(), worst(&app));
-                    app.status.clear(); // so that what is said afterwards is said about THIS action
+                    app.status.words.clear(); // so that what is said afterwards is said about THIS action
                     let mut hand = Hand::new(&mut app);
                     if mode == 3 {
                         hand.sk_rotate(on, on, 30.0);
                     } else {
                         hand.sk_move(mode, on, on, (on.0 + shift.0, on.1 + shift.1));
                     }
-                    if shape_of(&app) == before && app.status.trim().is_empty() {
+                    if shape_of(&app) == before && app.status.words.trim().is_empty() {
                         problems.push(format!("sketch: \"{name}\" silently did nothing"));
                     }
                     // WHERE IT LANDED, or the word that it was held.
-                    let held = app.status.contains(&crate::i18n::tr("sk-move-held")) || app.status.contains(&crate::i18n::tr("sk-turn-held"));
+                    let held = app.status.words.contains(&crate::i18n::tr("sk-move-held")) || app.status.words.contains(&crate::i18n::tr("sk-turn-held"));
                     let (m0, sk) = (mid(source), &app.project.sketches[si]);
                     match mode {
                         1 => match ends_of(&app, eid) {
@@ -1972,6 +1782,25 @@ mod tests {
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
                 check_all(&mut app, "sketch: the mirror adds with Shift and reflects about a point", &mut problems);
 
+                // THE SNAP SHOWN IS THE TIE LAID: a level line on a place of its own, then a circle whose centre is clicked
+                // on the line, off its middle. The centre is held on the line, not only put there.
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(1).look2d((520.0, -40.0)).click2d(500.0, -40.0).double_click2d(540.0, -40.0);
+                    hand.key(egui::Key::Escape).sk_tool(3).look2d((520.0, -40.0)).click2d(510.0, -40.0).click2d(514.0, -40.0).key(egui::Key::Escape);
+                    hand.sk_tool(0);
+                    let sk = &app.project.sketches[si];
+                    let centre = sk.entities.iter().rev().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
+                        _ => None,
+                    });
+                    let held = centre.is_some_and(|c| sk.constraints.iter().any(|k| matches!(k, qymcad_core::model::Constraint::PointOnLine { p, .. } if *p == c)));
+                    if !held {
+                        problems.push(format!("sketch: a circle centred on a line is not held on it (centre {centre:?}); status: {}", app.status));
+                    }
+                }
+                check_all(&mut app, "sketch: a circle centred on a line is held on it", &mut problems);
+
                 // A RECTANGLE IS ONE SHAPE: drawn on a place of its own, picked by one side with Rotate and turned 30 deg
                 // about its centre, it turns as a whole and stays square.
                 {
@@ -2028,9 +1857,10 @@ mod tests {
             }
 
             // DIMENSIONS: linear, angular, radial. A dimension is not a caption but A CONSTRAINT: it must take
-            // away a degree of freedom, otherwise the sketch stays rubbery while it looks set.
+            // away a degree of freedom, otherwise the sketch stays rubbery while it looks set. The angle has a free
+            // point among its three: the points on the X axis are held on it, and an angle of them alone is a reference.
             {
-                let dims: [Drawing; 3] = [drawing(1, "linear", &[(30.0, 0.0), (50.0, 15.0)]), drawing(3, "radial", &[(70.0, 10.0)]), drawing(2, "angular", &[(0.0, 0.0), (20.0, 0.0), (30.0, 0.0)])];
+                let dims: [Drawing; 3] = [drawing(1, "linear", &[(30.0, 0.0), (50.0, 15.0)]), drawing(3, "radial", &[(70.0, 10.0)]), drawing(2, "angular", &[(0.0, 0.0), (30.0, 0.0), (50.0, 15.0)])];
                 for Drawing { tool: kind, name, clicks: picks } in dims {
                     // ONLY DIMENSION CONSTRAINTS ARE COUNTED. Any constraint used to count, and the fixed ones
                     // from the neighbouring block got into the tally - the check blamed a dimension for
@@ -2048,11 +1878,17 @@ mod tests {
                     let after = dims_now(&app);
                     // A DIMENSION MUST EITHER TAKE OR SAY WHY NOT. A silent "nothing happened" is the worst
                     // outcome: the dimension is believed to be set while it is not there.
-                    if after == before && app.status.trim().is_empty() {
+                    if after == before && app.status.words.trim().is_empty() {
                         problems.push(format!("sketch: the {name} dimension was not created and SAID NOTHING about why"));
                     }
                     if after > before && app.project.sketch_dof(si) >= dof_before {
-                        problems.push(format!("sketch: the {name} dimension took, but took away no degree of freedom"));
+                        let laid: Vec<&Constraint> = app.project.sketches[si]
+                            .constraints
+                            .iter()
+                            .filter(|c| matches!(c, Constraint::Distance { .. } | Constraint::Diameter { .. } | Constraint::Angle { .. }))
+                            .skip(before)
+                            .collect();
+                        problems.push(format!("sketch: the {name} dimension took, but took away no degree of freedom: {laid:?}, freedom {dof_before:?} -> {:?}", app.project.sketch_dof(si)));
                     }
                     check_all(&mut app, &format!("sketch: the {name} dimension"), &mut problems);
                 }
@@ -3258,6 +3094,7 @@ mod tests {
             eprintln!("ASSEMBLY: the slider travelled {went:.3} mm, the driven wheel {:.3} deg", moved_b.abs());
         }
 
+        the_view::framed_wheeled_to_a_hole_and_turned(&mut app, &mut problems);
         // ── THE FINAL DOCUMENT TO LOOK AT: it stays in target ───────────────────────────
         let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
         crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, out.clone());

@@ -7,8 +7,9 @@
 //! change on screen with the answer; Enter keeps them as one step of undo, Esc rolls the edit back and nothing is
 //! imported.
 
+use qymcad_ui_state::Notice;
 use super::ph;
-use qymcad_core::geom::{Built, Mesh, MeshFace, Point3};
+use qymcad_core::geom::{Built, Mesh};
 use qymcad_core::model::Id;
 use qymcad_io::FileUnit;
 use qymcad_ui_state::{ImportScale, MeshFormat, WinCtx};
@@ -21,18 +22,12 @@ const LARGEST_MM: f64 = 10_000.0;
 /// The factors offered as buttons, beside the field for any other.
 const FACTORS: [f64; 7] = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0];
 
-/// A uniform scale about the origin as a 3x4 row-major matrix, the form the kernel takes a placement in.
-pub(crate) fn scale_matrix(f: f64) -> [f64; 12] {
-    [f, 0.0, 0.0, 0.0, 0.0, f, 0.0, 0.0, 0.0, 0.0, f, 0.0]
-}
-
 /// Lay in the meshes read from `path`, then ask about their scale or keep them as they are.
 pub(crate) fn land_mesh(wc: &mut WinCtx, path: String, format: MeshFormat, pieces: Vec<qymcad_ui_state::MeshPiece>) {
     keep_pending(wc);
     *wc.dxf_path = Some(path.clone()); // the next file chooser opens where this file was
     let said = super::io_jobs::mesh_added(format, &pieces);
     let span = span_of(pieces.iter().map(|p| &p.mesh));
-    let read: Vec<Built> = pieces.iter().map(|p| Built { mesh: p.mesh.clone(), faces: p.faces.clone() }).collect();
     let first = wc.project.bodies.len();
     qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr1("io-import-mesh", "format", super::mesh_entry(format).name())); // an EDIT of the document: bodies are added to the current one
     let source = super::embed_source(wc.project, &path).unwrap_or(0);
@@ -79,8 +74,8 @@ pub(crate) fn land_mesh(wc: &mut WinCtx, path: String, format: MeshFormat, piece
     qymcad_ui_state::invalidate(wc.regen);
     wc.view.initialized = false;
     wc.cam.init = false;
-    *wc.status = said;
-    let meshes = (first..wc.project.bodies.len()).filter_map(|i| wc.project.mesh_id(i)).zip(read).map(|(id, Built { mesh: m, faces: f })| (id, m, f)).collect();
+    *wc.status = Notice::info(said);
+    let meshes = (first..wc.project.bodies.len()).filter_map(|i| wc.project.mesh_id(i)).collect();
     let unitless = matches!(format, MeshFormat::Stl | MeshFormat::Obj | MeshFormat::Ply);
     let ask =
         ImportScale { file: super::file_name(&path), format: super::mesh_entry(format).name().to_string(), unitless, factor: 1.0, applied: 1.0, span, meshes, solids: Vec::new(), places, again: None };
@@ -151,7 +146,7 @@ pub(crate) fn land_exact(
         wc.live.faces.insert(bid, fs.clone()); // a face cache keyed by body Id, for quick access
         wc.project.set_body_faces(bid, fs);
         if let Some(s) = shapes.next() {
-            if let Some(copy) = s.transformed(&scale_matrix(1.0)) {
+            if let Some(copy) = qymcad_kernel::imports::scaled(&s, 1.0) {
                 read.push((bid, copy)); // the shape as read, which every factor is taken from
             }
             wc.live.shapes.insert(bid, s);
@@ -179,7 +174,7 @@ pub(crate) fn land_exact(
     qymcad_ui_state::invalidate(wc.regen);
     wc.view.initialized = false;
     wc.cam.init = false;
-    *wc.status = super::io_jobs::exact_imported(format, nbodies, tris);
+    *wc.status = Notice::info(super::io_jobs::exact_imported(format, nbodies, tris));
     // the size as it stands in the world: a body alone is in its part's coordinates
     let span = world_span(wc.project, &ids);
     let ask = ImportScale { file: super::file_name(&path), format: named.to_string(), unitless: false, factor: 1.0, applied: 1.0, span, meshes: Vec::new(), solids: read, places, again: None };
@@ -226,25 +221,23 @@ fn ask_or_keep(wc: &mut WinCtx, mut ask: ImportScale) {
             apply(wc, &mut ask);
         }
     }
+    wc.edits.open_kind = qymcad_ui_state::OpenEdit::Asking; // Ctrl+Z now takes the import back, as Cancel does
     wc.win.import_scale = Some(ask);
 }
 
-/// Put every body that came in at `ask.factor` from the file's own numbers: a mesh from its copy as read, a solid
-/// from its shape as read, with the factor kept by its import node.
+/// Put every body that came in at `ask.factor` from the file's own numbers: a mesh scaled by the document from the factor
+/// it stands at, a solid from its shape as read, with the factor kept by its import node.
 fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
     let f = ask.factor;
-    for (id, mesh, faces) in &ask.meshes {
-        wc.project.set_import_scale(*id, f); // the mesh piece keeps the factor its mesh stands at
-        let Some(i) = wc.project.bodies.iter().position(|b| b.id == *id) else { continue };
-        let mut m = mesh.clone();
-        m.scale(0.0, 0.0, 0.0, f);
-        let fs = scaled_faces(faces, f);
-        wc.project.bodies[i].mesh = m;
-        wc.live.faces.insert(*id, fs.clone());
-        wc.project.set_body_faces(*id, fs);
+    for id in &ask.meshes {
+        // the document scales the piece, its mesh and faces together, from the factor it stood at
+        wc.project.set_import_scale(*id, f);
+        if let Some(i) = wc.project.mesh_index(*id) {
+            wc.live.faces.insert(*id, wc.project.bodies[i].faces.clone());
+        }
     }
     for (id, shape) in &ask.solids {
-        if let Some(s) = shape.transformed(&scale_matrix(f)) {
+        if let Some(s) = qymcad_kernel::imports::scaled(shape, f) {
             wc.live.shapes.insert(*id, s);
         }
         wc.project.set_import_scale(*id, f);
@@ -268,11 +261,6 @@ fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
     ask.applied = f;
 }
 
-/// Faces at factor `f` about the origin: a centroid moves with it, an area grows as its square.
-fn scaled_faces(faces: &[MeshFace], f: f64) -> Vec<MeshFace> {
-    faces.iter().map(|x| MeshFace { centroid: Point3::new(x.centroid.x * f, x.centroid.y * f, x.centroid.z * f), area: x.area * f * f, ..x.clone() }).collect()
-}
-
 /// ASKED AGAIN FROM ITS NODE: the units and scale of an import already in the document, opened by a double click on
 /// its node as any feature is edited. Everything that came in from the same file is asked about together, at the
 /// factor it stands at now, and what was read is what stands now divided by that factor. Enter keeps the new factor
@@ -293,15 +281,12 @@ pub(crate) fn rescale(wc: &mut WinCtx, nid: Id) {
     let (mut meshes, mut solids) = (Vec::new(), Vec::new());
     for &(b, piece) in &nodes {
         if piece {
-            let Some(i) = wc.project.mesh_index(b) else { continue };
-            let mut m = wc.project.bodies[i].mesh.clone();
-            m.scale(0.0, 0.0, 0.0, back);
-            meshes.push((b, m, scaled_faces(&wc.project.bodies[i].faces, back)));
+            meshes.push(b);
         } else {
             // a solid's factor is taken from its live shape; one still being read back from its file after opening
             // has none yet
-            let Some(s) = wc.live.shapes.get(&b).and_then(|s| s.transformed(&scale_matrix(back))) else {
-                *wc.status = crate::i18n::tr("import-scale-wait");
+            let Some(s) = wc.live.shapes.get(&b).and_then(|s| qymcad_kernel::imports::scaled(s, back)) else {
+                *wc.status = Notice::refusal(crate::i18n::tr("import-scale-wait"));
                 return;
             };
             solids.push((b, s));
@@ -328,13 +313,15 @@ pub(crate) fn rescale(wc: &mut WinCtx, nid: Id) {
     let format = qymcad_io::Format::of_path(&file).map(|f| f.name()).unwrap_or_default().to_string();
     qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr("import-scale-title"));
     wc.win.import_scale = Some(ImportScale { file, format, unitless: matches!(ext.as_str(), "stl" | "obj" | "ply"), factor: was, applied: was, span, meshes, solids, places, again: Some(was) });
+    wc.edits.open_kind = qymcad_ui_state::OpenEdit::Asking;
 }
 
 /// The window: what the file is drawn in, by what factor to take it, and how big it lands.
 pub(crate) fn import_scale_window(wc: &mut WinCtx, ctx: &egui::Context) {
     let Some(mut ask) = wc.win.import_scale.take() else { return };
     let mut keep = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-    let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    // Esc, or Ctrl+Z asked while the window waited (`step_through_history`)
+    let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape)) || wc.edits.open_kind == qymcad_ui_state::OpenEdit::AskingDropped;
     egui::Window::new(format!("{} {}", ph::RULER, crate::i18n::tr("import-scale-title"))).id(egui::Id::new("win_import_scale"))
         .collapsible(false)
         .resizable(false)
@@ -387,14 +374,14 @@ pub(crate) fn import_scale_window(wc: &mut WinCtx, ctx: &egui::Context) {
         // is put back at the factor it stood at
         if let Some(was) = ask.again {
             for (id, shape) in &ask.solids {
-                if let Some(s) = shape.transformed(&scale_matrix(was)) {
+                if let Some(s) = qymcad_kernel::imports::scaled(shape, was) {
                     wc.live.shapes.insert(*id, s);
                 }
             }
         }
         qymcad_ui_state::invalidate(wc.regen);
         wc.cam.init = false;
-        *wc.status = crate::i18n::tr(if ask.again.is_some() { "import-scale-kept" } else { "import-scale-cancelled" });
+        *wc.status = Notice::info(crate::i18n::tr(if ask.again.is_some() { "import-scale-kept" } else { "import-scale-cancelled" }));
         return;
     }
     if (ask.factor - ask.applied).abs() > 1e-12 && ask.factor > 0.0 {

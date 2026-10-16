@@ -86,7 +86,21 @@ mod tests {
     /// be by eye.
     #[test]
     fn startup_and_import_use_the_same_door() {
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(
             crate::gui::render_source::has(gui, "adopt_settings(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, v, ctx)"),
             "startup stopped adopting the settings through the common handle"

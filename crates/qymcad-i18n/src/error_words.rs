@@ -27,6 +27,14 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
         E::EdgesNotFound { asked } => args.set("asked", *asked as i64),
         E::ThreadPitchTooSmall { pitch } => args.set("pitch", fmt2(*pitch)),
         E::ThreadTooManyTurns { turns } => args.set("turns", fmt0(*turns)),
+        E::PatternTooLarge { asked, limit } => {
+            args.set("asked", asked.to_string());
+            args.set("limit", *limit as i64);
+        }
+        E::TooManyStarts { starts, limit } => {
+            args.set("starts", *starts as i64);
+            args.set("limit", *limit as i64);
+        }
         E::ThreadLongerThanFace { length, face } => {
             args.set("length", fmt1(*length));
             args.set("face", fmt1(*face));
@@ -86,6 +94,7 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
             args.set("r", format!("{limit:.2}"));
         }
         E::DraftFailed { angle } => args.set("angle", fmt2(*angle)),
+        E::OffsetPastRadius { radius } => args.set("r", fmt2(*radius)),
         E::JointUnsatisfied { residual } => args.set("residual", fmt2(*residual)),
         E::CrossComponentInput { input } | E::SketchOnForeignFace { input } => args.set("input", *input as i64),
         E::SketchFaceRefLost { sketch, body } => {
@@ -99,6 +108,7 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
         // `name` translates known keys only.
         E::Kernel(msg) => args.set("message", crate::name(msg)),
         E::Expr(X::UnknownChar(w) | X::UnknownFn(w) | X::UnknownName(w) | X::NeedsOneArg(w) | X::NeedsTwoArgs(w) | X::UnexpectedToken(w) | X::TrailingInput(w)) => args.set("what", w.clone()),
+        E::Expr(X::TooDeep { limit }) => args.set("limit", *limit as i64),
         _ => {}
     }
     crate::tr_args(&e.key(), Some(&args))

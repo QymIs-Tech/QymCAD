@@ -143,9 +143,12 @@ mod tests {
             for _ in 0..3 {
                 frame(&mut app, Vec::new()); // the panels settle and the viewport learns its rectangle
             }
-            let before = app.viewing.cam.target;
-            // the cursor sits well off the middle of the window, then the wheel turns under it
-            let spot = app.viewing.view_rect.center() + egui::vec2(app.viewing.view_rect.width() * 0.3, -app.viewing.view_rect.height() * 0.3);
+            // the cursor sits well off the middle of the window, then the wheel turns under it; what must hold still is
+            // the point of the model under the cursor, or the one in the middle of the view
+            let view = app.viewing.view_rect;
+            let spot = view.center() + egui::vec2(view.width() * 0.3, -view.height() * 0.3);
+            let held_at = if expect_move { spot } else { view.center() };
+            let held = crate::gui::look_at_point::point_under(&app.painting(), view, held_at);
             frame(&mut app, vec![egui::Event::PointerMoved(spot)]);
             frame(
                 &mut app,
@@ -154,9 +157,10 @@ mod tests {
                     egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, 120.0), phase: egui::TouchPhase::Move, modifiers: Default::default() },
                 ],
             );
-            let travelled = (0..3).map(|a| (app.viewing.cam.target[a] - before[a]).abs()).fold(0.0f64, f64::max);
-            if (travelled > 1e-6) != expect_move {
-                moved.push(format!("{at:?}: the camera travelled {travelled:.4} mm, expected {}", if expect_move { "it to follow the cursor" } else { "it to stay" }));
+            let basis = app.viewing.cam.basis();
+            let landed = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: view, basis: &basis }.at(held).0;
+            if landed.distance(held_at) > 0.5 {
+                moved.push(format!("{at:?}: the point held at {held_at:?} went to {landed:?}"));
             }
         }
         assert!(moved.is_empty(), "the wheel over the viewport does not honour the setting:\n{}", moved.join("\n"));

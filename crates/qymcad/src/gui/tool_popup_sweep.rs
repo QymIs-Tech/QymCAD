@@ -154,7 +154,7 @@ mod tests {
             app.viewing.cam.target = [10.0, 10.0, 5.0];
             app.start_feat_cmd(kind);
             arm(&mut app, kind, mi, body);
-            if app.face_arrow_geometry().is_none() {
+            if qymcad_ui_state::face_arrow_geometry(&app.painting()).is_none() {
                 missing.push(kind);
             }
         }

@@ -5,14 +5,14 @@
 //! and no live body, so nothing exact could be built on it and it fell out of a STEP export.
 use qymcad_core::feature::PLACE_IDENTITY;
 use qymcad_core::model::Project;
-use qymcad_kernel::{import_iges, write_iges, LengthUnit, Shape};
+use qymcad_kernel::{import_iges, write_iges, LengthUnit};
 
 #[test]
 fn an_iges_part_gets_its_live_body_back() {
     let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/iges-reopen"));
     std::fs::create_dir_all(&dir).expect("a folder for the check");
     let path = dir.join("cube.igs");
-    let cube = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
     write_iges(&[(&cube, PLACE_IDENTITY)], &path.to_string_lossy(), LengthUnit::Millimetre).expect("the IGES is written");
 
     let mut p = Project::default();

@@ -6,13 +6,16 @@
 use std::process::ExitCode;
 
 pub use gui::session::{
-    pos2, vec2, Chooser, Datum, Document, FaceKinds, Feature, Gizmo, Inspection, JointInfo, Key, Kept, Kind, Machine, Modifiers, Parameter, Part, Picture, PointerButton, Pos2, Rect, Session,
-    SketchInfo, SketchPick, Solid, Vec2, Widget,
+    pos2, vec2, Badge, Chooser, Datum, Document, FaceKinds, Feature, Gizmo, Inspection, JointInfo, Key, Kept, Kind, Machine, Modifiers, Parameter, Part, Picture, PointerButton, Pos2, Rect, Session,
+    SketchInfo, SketchPick, SnapGlyph, Solid, Vec2, Widget,
 };
 
 /// START THE PROGRAM: open the window and run it until it closes; a start that fails is told to the person.
 pub fn run() -> ExitCode {
-    match gui::launch() {
+    let launched = gui::launch();
+    // the program ends only after the threads it left working in OCCT (`qymcad_kernel::worker`)
+    qymcad_kernel::wait_for_workers();
+    match launched {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("failed to start QymCAD: {e}");
@@ -32,7 +35,11 @@ pub fn run() -> ExitCode {
 mod comment_ratchet;
 #[cfg(test)]
 mod dependency_ratchet;
+mod file_size_ratchet;
 mod god_object_ratchet;
+mod named_groups_ratchet;
+#[cfg(test)]
+mod one_voice_guard;
 // The macOS bundling script, run here with the mac-only tools stubbed out. Unix only: it is a shell script.
 #[cfg(all(test, unix))]
 mod packaging_macos;

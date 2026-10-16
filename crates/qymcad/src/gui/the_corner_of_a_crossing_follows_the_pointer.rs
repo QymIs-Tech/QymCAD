@@ -32,7 +32,7 @@ mod tests {
                 (m.x - centre.x) * q.0 as f32 > 0.0 && (centre.y - m.y) * q.1 as f32 > 0.0
             })
         };
-        let fields = |hand: &Hand| hand.app.tools.corner.at.is_some() && hand.app.status != crate::i18n::tr("sk-corner-click-to-fix");
+        let fields = |hand: &Hand| hand.app.tools.corner.at.is_some() && hand.app.status != qymcad_ui_state::Notice::info(crate::i18n::tr("sk-corner-click-to-fix"));
         let mut failures = Vec::new();
         for q in [(1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
             hand.hover2d(o.0 + 2.0 * q.0, o.1 + 2.0 * q.1);

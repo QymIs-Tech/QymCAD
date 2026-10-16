@@ -1,0 +1,23 @@
+(
+    package_type: IconTheme,
+    id: "default",
+    name: "Default",
+    version: "1.0.0",
+    author: "braindefender",
+    license: "AGPL-3.0-or-later",
+    description: "Default QymCAD icon set designed from scratch, inspired by modern mobile CAD ergonomics.",
+    translations: {
+        "kk": (
+            name: "Әдепкі",
+            description: "Заманауи мобильдік CAD эргономикасынан шабыттанып, нөлден жасалған QymCAD әдепкі таңбашалар жиынтығы.",
+        ),
+        "ru": (
+            name: "По умолчанию",
+            description: "Стандартный набор иконок QymCAD, созданный с нуля с ориентацией на эргономику современных мобильных CAD-систем.",
+        ),
+        "uk": (
+            name: "Типова",
+            description: "Типовий набір іконок QymCAD, створений з нуля з натхненням від ергономіки сучасних мобільних CAD-систем.",
+        ),
+    },
+)

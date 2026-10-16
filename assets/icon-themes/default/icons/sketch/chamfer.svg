@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="chamfer">
+<path id="Union" d="M27 4C27.5523 4 28 4.44772 28 5C28 5.55228 27.5523 6 27 6H17.4141L6 17.4141V27C6 27.5523 5.55228 28 5 28C4.44772 28 4 27.5523 4 27V17.4141C4.00004 16.8837 4.2109 16.375 4.58594 16L16 4.58594C16.375 4.2109 16.8837 4.00004 17.4141 4H27Z" fill="var(--icon-dimmed, #7C7C7CFF)" stroke-width="2" stroke-linecap="round" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Rectangle 11" d="M27 5H17.4142C17.149 5 16.8946 5.10536 16.7071 5.29289L5.29289 16.7071C5.10536 16.8946 5 17.149 5 17.4142V27" stroke-width="2" stroke-linecap="round" stroke="var(--icon-dimmed, #7C7C7CFF)"/>
+<path id="Rectangle 10" d="M5 17L17 5" stroke-width="2" stroke-linecap="round" stroke="var(--icon-accent, #18F2F2FF)"/>
+</g>
+</svg>

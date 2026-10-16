@@ -23,6 +23,7 @@ qymcad-io.workspace = true
 # glow stays (the default) as a compiled-in fallback; wgpu is the main path for the GPU viewport, chosen at runtime
 eframe = { version = "0.35", features = ["persistence", "wgpu"] }
 egui = "0.35"
+egui_extras = { version = "0.35", features = ["svg", "image", "webp"] }
 qymcad-shell = { path = "../qymcad-shell" }
 qymcad-i18n = { path = "../qymcad-i18n" }
 qymcad-scheme = { path = "../qymcad-scheme" }
@@ -58,6 +59,9 @@ ab_glyph = "0.2.32"
 # ONLY FOR THE CHECK that the viewport shader parses: a broken shader shows itself when the window opens,
 # which is too late and only on a machine with a GPU.
 naga = { version = "29", features = ["wgsl-in"] }
+
+[dev-dependencies]
+qymcad-kernel = { workspace = true, features = ["specimens"] } # the probes build the bodies they write and import
 
 # The icon is embedded into the .exe only when building FOR Windows (host = windows under CI). On Linux
 # and macOS the dependency is not pulled in at all, and build.rs cuts its windows block out through

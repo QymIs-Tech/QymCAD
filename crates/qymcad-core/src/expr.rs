@@ -15,7 +15,7 @@ use crate::errors::ExprError;
 /// name, since the constant gives way to it in any case but its own.
 pub fn eval(src: &str, vars: &HashMap<String, f64>) -> Result<f64, ExprError> {
     let toks = tokenize(src)?;
-    let mut p = Parser { toks: &toks, pos: 0, vars };
+    let mut p = Parser { toks: &toks, pos: 0, vars, depth: 0 };
     let v = p.expr()?;
     if p.pos != p.toks.len() {
         return Err(ExprError::TrailingInput(p.peek_str()));
@@ -106,13 +106,37 @@ fn tokenize(s: &str) -> Result<Vec<Tok>, ExprError> {
     Ok(out)
 }
 
+/// THE DEEPEST A FORMULA MAY NEST - parentheses, function calls, signs and powers inside one another, counted
+/// together, so `-(` is two levels. The parser goes down one call per level (`nest`), and nothing stopped it:
+/// measured (release build), a formula of 4,375 nested parentheses (8,751 characters) ran a 2 MiB thread's stack
+/// out, and 17,628 the 8 MiB main thread on Linux, and the program died - on the interface thread, as the parameters
+/// window, an undo or a sketch solve evaluated a formula stored in a document. Formulas people write nest a few
+/// levels; this leaves room for generated ones, and a formula at the limit is read on a 256 KiB thread in a debug
+/// build - a quarter of the 1 MiB main thread Windows gives, the rest left to the drawing it is evaluated in.
+pub const MAX_FORMULA_DEPTH: usize = 256;
+
 struct Parser<'a> {
     toks: &'a [Tok],
     pos: usize,
     vars: &'a HashMap<String, f64>,
+    /// how many levels the parse is inside, see `MAX_FORMULA_DEPTH`
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
+    /// One level deeper: every way the parser calls itself again goes through here, so the depth is counted the
+    /// same for all of them, and a formula past `MAX_FORMULA_DEPTH` is refused rather than allowed to run the stack
+    /// out.
+    fn nest<T>(&mut self, go: impl FnOnce(&mut Self) -> Result<T, ExprError>) -> Result<T, ExprError> {
+        if self.depth >= MAX_FORMULA_DEPTH {
+            return Err(ExprError::TooDeep { limit: MAX_FORMULA_DEPTH });
+        }
+        self.depth += 1;
+        let out = go(self);
+        self.depth -= 1;
+        out
+    }
+
     fn peek(&self) -> Option<&Tok> {
         self.toks.get(self.pos)
     }
@@ -174,7 +198,7 @@ impl<'a> Parser<'a> {
         let b = self.unary()?;
         if matches!(self.peek(), Some(Tok::Caret)) {
             self.bump();
-            let e = self.power()?;
+            let e = self.nest(|p| p.power())?;
             return Ok(b.powf(e));
         }
         Ok(b)
@@ -185,11 +209,11 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some(Tok::Minus) => {
                 self.bump();
-                Ok(-self.unary()?)
+                Ok(-self.nest(|p| p.unary())?)
             }
             Some(Tok::Plus) => {
                 self.bump();
-                self.unary()
+                self.nest(|p| p.unary())
             }
             _ => self.atom(),
         }
@@ -200,7 +224,7 @@ impl<'a> Parser<'a> {
         match self.bump() {
             Some(Tok::Num(n)) => Ok(n),
             Some(Tok::LParen) => {
-                let v = self.expr()?;
+                let v = self.nest(|p| p.expr())?;
                 if !matches!(self.bump(), Some(Tok::RParen)) {
                     return Err(ExprError::ExpectedParen);
                 }
@@ -211,10 +235,10 @@ impl<'a> Parser<'a> {
                     self.bump(); // (
                     let mut args = Vec::new();
                     if !matches!(self.peek(), Some(Tok::RParen)) {
-                        args.push(self.expr()?);
+                        args.push(self.nest(|p| p.expr())?);
                         while matches!(self.peek(), Some(Tok::Comma)) {
                             self.bump();
-                            args.push(self.expr()?);
+                            args.push(self.nest(|p| p.expr())?);
                         }
                     }
                     if !matches!(self.bump(), Some(Tok::RParen)) {
@@ -347,6 +371,11 @@ fn occurrences(expr: &str, name: &str) -> Vec<usize> {
         let right_ok = j >= bytes.len() || !ident(bytes[j]);
         if left_ok && right_ok {
             out.push(i);
+            // The next place begins after this one. Places that overlap - `a+a` twice in `a+a+a`, a name only a
+            // project file can hold - would have a rename cut the text backwards, from the end of one to the start
+            // of the next. A name of letters, digits and `_` cannot overlap itself, so for those nothing changes.
+            from = j;
+            continue;
         }
         // The step advances by a whole character rather than by a byte. `from = i + 1` in the middle of a
         // multi-byte letter crashes the parse; the same fault lived in the earlier `mentions` and surfaced only

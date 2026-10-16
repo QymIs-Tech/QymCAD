@@ -237,7 +237,7 @@ fn row_status(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, action: &str)
         let old = qymcad_ui_state::key_label(&qymcad_ui_state::hotkey_key(wc.set, &clash.action));
         let holder = what_of(clash.holder);
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(ph::WARNING).color(wc.scheme.pal.warning()));
+            qymcad_ui_state::tone_mark(ui, &wc.scheme.pal, qymcad_ui_state::Tone::Warning);
             ui.add(egui::Label::new(crate::i18n::tr2("hotkeys-taken", "key", &qymcad_ui_state::key_label(&clash.chord), "what", &holder)).wrap());
         });
         // THE CHOICES ON A LINE OF THEIR OWN, under the question: beside it they wrapped wherever the text happened to end
@@ -265,7 +265,8 @@ fn row_status(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, action: &str)
         } else {
             let font = egui::TextStyle::Body.resolve(ui.style());
             let mut line = egui::text::LayoutJob::default();
-            line.append(ph::WARNING_OCTAGON, 0.0, egui::TextFormat::simple(font.clone(), wc.scheme.pal.error()));
+            let refused = qymcad_ui_state::Tone::Refusal;
+            line.append(qymcad_ui_state::tone_icon(refused).unwrap_or_default(), 0.0, egui::TextFormat::simple(font.clone(), qymcad_ui_state::tone_colour(&wc.scheme.pal, refused)));
             line.append(&wc.hotkeys.note, ui.spacing().item_spacing.x, egui::TextFormat::simple(font, ui.visuals().text_color()));
             ui.add(egui::Label::new(line).wrap());
         }
@@ -312,7 +313,7 @@ fn key_cell(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, r: &HotkeyRow, 
     } else if cur.is_empty() {
         egui::RichText::new(crate::i18n::tr("hotkeys-unbound")).italics().weak()
     } else if refused.is_some() {
-        egui::RichText::new(&cur).monospace().strong().strikethrough().color(wc.scheme.pal.error_mild())
+        egui::RichText::new(&cur).monospace().strong().strikethrough().color(qymcad_ui_state::tone_colour(&wc.scheme.pal, qymcad_ui_state::Tone::Refusal))
     } else if changed {
         // A CHANGED KEY LOOKS CHANGED: whoever comes back to the window in a month sees at once what is theirs
         egui::RichText::new(&cur).monospace().strong().color(wc.scheme.pal.ui_accent())
@@ -549,7 +550,21 @@ mod tests {
     ];
 
     fn handler_sources() -> [(&'static str, &'static str, &'static str, bool); 4] {
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         let sketching = crate::gui::sketch_source::SKETCH;
         [
             (HANDLERS[0].0, HANDLERS[0].1, gui, HANDLERS[0].2),
@@ -650,7 +665,25 @@ mod tests {
     fn the_window_is_reachable_from_the_menu() {
         let panels = crate::gui::panels_source::PANELS;
         assert!(panels.contains(".win.open(WinKind::Hotkeys);"), "the window must open from the Help menu");
-        assert!(include_str!("../gui.rs").contains("self.hotkeys_window(ctx);"), "the window must be drawn in the frame");
+        assert!(
+            concat!(
+                include_str!("file_doors.rs"),
+                "\n",
+                include_str!("gizmo_math.rs"),
+                "\n",
+                include_str!("look.rs"),
+                "\n",
+                include_str!("panel_bits.rs"),
+                "\n",
+                include_str!("startup.rs"),
+                "\n",
+                include_str!("view_anim.rs"),
+                "\n",
+                include_str!("../gui.rs")
+            )
+            .contains("self.hotkeys_window(ctx);"),
+            "the window must be drawn in the frame"
+        );
     }
 }
 

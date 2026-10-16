@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="constraint / equal">
+<path id="Union" d="M28 21H4V19H28V21ZM28 13H4V11H28V13Z" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-secondary, #333333FF)"/>
+<path id="Vector 1" d="M5 12H27" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-primary, #F26118FF)"/>
+<path id="Vector 2" d="M5 20H27" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-primary, #F26118FF)"/>
+</g>
+</svg>

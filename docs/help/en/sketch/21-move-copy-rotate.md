@@ -26,6 +26,7 @@ change together with the original, use an **Array** (linear or circular), not co
 
 ## Mind the constraints
 
-The selection may be tied to what stayed behind. Moving an entity that dimensions and constraints hold
-will be undone by the solver — it puts the entity where the constraints say. Remove what is in the way
-first, then move; or set the position with a dimension rather than with the mouse.
+**Move** and **Rotate** remove the constraints that tie the selection to what stays behind — the origin,
+the axes, the other entities; the constraints within the selection stay. Dimensions stay too: an entity a
+dimension holds to what stayed is put back by the solver. Remove that dimension first, then move; or set the
+position with the dimension rather than with the mouse. Dragging with the mouse keeps every constraint.

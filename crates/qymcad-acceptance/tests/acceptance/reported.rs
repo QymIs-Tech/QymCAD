@@ -399,3 +399,47 @@ probe! {
         assert!(now == sketches + 1, "the drawing was brought in again and the document holds {now} sketches, it held {sketches}; the program says {:?}", s.status());
     }
 }
+
+probe! {
+    /// A CHAMFER EXACTLY AS WIDE AS THE FACE IT RUNS ACROSS BUILDS, by each of its modes. Reported behaviour: a step
+    /// stood 4 from the edge, the chamfer of that edge took 3.99999 and refused 4.
+    ///
+    /// The block 40 x 30 x 10 has a step cut across its top 5 deep from y = 4 back, so the top face left in front of
+    /// it is 4 wide; the chamfer of its front edge with a leg of 4 reaches the edge of the step exactly and eats that
+    /// face whole: 12000 - 40 * 26 * 5 = 6800 of the stepped block, less 4 * 4 / 2 * 40 = 320 for the chamfer.
+    fn a_chamfer_exactly_to_a_step_builds() {
+        let mut problems: Vec<String> = Vec::new();
+        for mode in ["cmd-symmetric", "cmd-two-distances", "cmd-leg-angle"] {
+            let mut s = Session::start();
+            build::block(&mut s);
+            qymcad_acceptance::bodies::on_top(&mut s, |s| build::draw(s, "tb-rect-hint", &[(-2.0, 4.0), (42.0, 32.0)]), Some("cmd-cut"), "5");
+            let hint = s.word("tb-chamfer-body-hint");
+            s.press_hint(&hint);
+            let edge = s.edge_at([20.0, 0.0, 10.0]);
+            s.click(edge);
+            qymcad_acceptance::bodies::bar(&mut s, mode);
+            let leg = s.word("f-leg");
+            s.fill(&leg, "4");
+            // by two legs a person types both; by a leg and an angle the angle of the mode stays
+            if mode == "cmd-two-distances" {
+                let second = s.word("cmd-leg2");
+                s.fill(&second, "4");
+            }
+            s.key(Key::Enter);
+            let doc = s.document();
+            let Some(chamfer) = doc.features.iter().rev().find(|f| f.kind == "Chamfer") else {
+                problems.push(format!("{mode}: no chamfer in the timeline; the program says {:?}", s.status()));
+                continue;
+            };
+            if let Some(e) = &chamfer.error {
+                problems.push(format!("{mode}: the chamfer of 4 is red - {e}"));
+                continue;
+            }
+            let volumes: Vec<f64> = doc.bodies.iter().filter(|b| !b.consumed).map(|b| b.volume).collect();
+            if !(volumes.len() == 1 && (volumes[0] - 6480.0).abs() < 1.0) {
+                problems.push(format!("{mode}: the part holds {volumes:?}, not one body of 6480"));
+            }
+        }
+        assert!(problems.is_empty(), "\nA CHAMFER OF 4 TO A STEP 4 AWAY ({}):\n{}", problems.len(), problems.join("\n"));
+    }
+}

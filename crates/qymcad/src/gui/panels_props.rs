@@ -4,6 +4,7 @@
 //! the cancel and the formulas are. This side answers "what is this", "what does it stand on", "who depends
 //! on it" and "is it all right".
 
+use qymcad_ui_state::Notice;
 use super::*;
 
 /// The name of a component, for a row of the panel. It used to be a closure taking `&Self` - the whole
@@ -106,7 +107,7 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
                             let res = qymcad_core::offset::boolean_contours(&ed.project.contours[i], &ed.project.contours[oi], op);
                             let cnt = res.len();
                             ed.project.add_contours(res);
-                            *ed.status = crate::i18n::tr1("cp-bool-result", "n", &cnt.to_string());
+                            *ed.status = Notice::info(crate::i18n::tr1("cp-bool-result", "n", &cnt.to_string()));
                             qymcad_ui_state::invalidate(ed.regen);
                         }
                     }
@@ -182,7 +183,7 @@ pub(crate) fn joints_panel(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui
     ui.label(egui::RichText::new(crate::i18n::tr("jp-title")).strong());
     // a warning about a CONFLICT among the assembly mates (the solver did not converge, so the parts were left where they were).
     if pr.project.mates_conflict {
-        ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("jp-conflict"))).color(pr.scheme.pal.error()).small());
+        qymcad_ui_state::say(ui, &pr.scheme.pal, &qymcad_ui_state::Notice::error(crate::i18n::tr("jp-conflict")), qymcad_ui_state::NoticeSize::Small);
     }
     let ctx = qymcad_ui_state::current_ctx_id(pr.active_path, pr.project);
     let children = pr.project.component_children(ctx);
@@ -329,10 +330,11 @@ pub(crate) fn joints_panel(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui
             // move, and there is no explanation.
             match e.state {
                 MateState::Faulty(why) => {
-                    ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr(why))).color(pr.scheme.pal.error_mild()).small()).on_hover_text(crate::i18n::tr(&format!("{why}-hint")));
+                    qymcad_ui_state::say(ui, &pr.scheme.pal, &qymcad_ui_state::Notice::error(crate::i18n::tr(why)), qymcad_ui_state::NoticeSize::Small)
+                        .on_hover_text(crate::i18n::tr(&format!("{why}-hint")));
                 }
                 MateState::Violated => {
-                    ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("jp-dof-conflict"))).color(pr.scheme.pal.error()).small());
+                    qymcad_ui_state::say(ui, &pr.scheme.pal, &qymcad_ui_state::Notice::error(crate::i18n::tr("jp-dof-conflict")), qymcad_ui_state::NoticeSize::Small);
                 }
                 MateState::Ok => {}
             }
@@ -476,7 +478,7 @@ pub(crate) fn joints_panel(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui
         // RIGHT BESIDE a red conflict warning. The program said "trouble" and "all in order" at the same time -
         // the worst answer of all.
         if pr.project.mates_violated.contains(&j.id) {
-            ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("jp-dof-conflict"))).color(pr.scheme.pal.error()).small());
+            qymcad_ui_state::say(ui, &pr.scheme.pal, &qymcad_ui_state::Notice::error(crate::i18n::tr("jp-dof-conflict")), qymcad_ui_state::NoticeSize::Small);
         } else {
             let d = pr.project.component_dof(ob);
             let (lbl, col) = if d == 0 { (&crate::i18n::tr("jp-defined"), pr.scheme.pal.ok()) } else { (&crate::i18n::tr("jp-underdefined"), pr.scheme.pal.underdefined()) };
@@ -638,7 +640,7 @@ pub(crate) fn plane_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui,
     if start_pick_face {
         pr.picking.set_plane_face(Some(pid)); // reassign this plane's face
         *pr.mode_3d = true;
-        *pr.status = crate::i18n::tr("pp-pick-face-hint");
+        *pr.status = Notice::info(crate::i18n::tr("pp-pick-face-hint"));
     }
     ui.separator();
     // a sketch straight on this plane (drawn in its own frame)
@@ -685,7 +687,7 @@ pub(crate) fn feature_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::U
     if let Some(err) = pr.project.regen_errors.get(&fid) {
         ui.separator();
         let text = crate::gui::error_words::error_text(err);
-        ui.label(egui::RichText::new(format!("{} {text}", ph::WARNING)).color(pr.scheme.pal.error_mild()).small());
+        qymcad_ui_state::say(ui, &pr.scheme.pal, &qymcad_ui_state::Notice::error(text), qymcad_ui_state::NoticeSize::Small);
     }
     if pr.project.rollback.is_some_and(|r| r <= ti) {
         ui.label(egui::RichText::new(crate::i18n::tr("fp-below-rollback")).weak().small());
@@ -897,7 +899,7 @@ pub(crate) fn component_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui:
             qymcad_ui_state::begin_edit(pr.edits, pr.project, crate::i18n::tr("cmdname-break-ref")); // THE BOUNDARY OF AN OPERATION
             let frozen = pr.project.break_external_ref(rid);
             qymcad_ui_state::mark_dirty_for_rebuild(&mut pr.rebuild()); // the document is marked; the scheduler does the computing
-            *pr.status = crate::i18n::tr1("comp-ref-broken", "n", &frozen.to_string());
+            *pr.status = Notice::warning(crate::i18n::tr1("comp-ref-broken", "n", &frozen.to_string()));
             qymcad_ui_state::commit_edit(&mut pr.rebuild());
         }
     }

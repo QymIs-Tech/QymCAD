@@ -4,36 +4,47 @@
 pub(crate) use qymcad_ui_state::ensure_brep;
 #[allow(unused_imports)] // used by the checks through this module, which is the address they know
 pub(crate) use qymcad_ui_state::regenerate_now;
+use qymcad_ui_state::Notice;
 use super::*;
+use qymcad_kernel::worker;
 use crate::gui::export_folder::{export_folder, project_folder, remember_export};
 use crate::gui::file_ask::Question;
 
 /// The rebuild writes `line` on the status line and remembers it as its own.
-fn rebuild_says(regen: &mut qymcad_ui_state::Rebuilding, status: &mut String, line: String) {
+fn rebuild_says(regen: &mut qymcad_ui_state::Rebuilding, status: &mut qymcad_ui_state::Notice, line: qymcad_ui_state::Notice) {
     regen.line = line.clone();
     *status = line;
 }
 
 /// A quiet rebuild shows its progress on the status line - over what the operation that asked for it said, which is
 /// kept to be put back.
-fn rebuild_says_it_started(regen: &mut qymcad_ui_state::Rebuilding, status: &mut String, quiet: bool, label: &str) {
+fn rebuild_says_it_started(regen: &mut qymcad_ui_state::Rebuilding, status: &mut qymcad_ui_state::Notice, quiet: bool, label: &str) {
     if quiet {
-        regen.over = if *status == regen.line { String::new() } else { std::mem::take(status) };
-        rebuild_says(regen, status, label.to_string());
+        regen.over = if *status == regen.line { Notice::info(String::new()) } else { std::mem::take(status) };
+        rebuild_says(regen, status, Notice::info(label));
     }
 }
 
-/// The end of a rebuild: an error is always said. Success replaces only the rebuild's own line - with the words of
-/// the operation it covered, or "Done" - and leaves alone anything written since by someone else.
-/// Reported behaviour: grounding named the part, the rebuild it asked for ended and the line read "Done".
-fn rebuild_says_it_ended(regen: &mut qymcad_ui_state::Rebuilding, status: &mut String, error: Option<&qymcad_core::errors::CoreError>) {
+/// The end of a rebuild: an error is always said, in red, naming the first node of the timeline that did not build and
+/// how many did not (`rebuild_left`). Otherwise only the rebuild's own line is replaced - by the nodes that built in
+/// part, in yellow, or by the words of the operation it covered, or "Done" - and anything written since by someone else
+/// is left alone. Reported behaviour: grounding named the part, the rebuild it asked for ended and the line read
+/// "Done". Reported behaviour: a parameter left a cut and every node after it red, and the line said so in the plain
+/// colour of "Done".
+fn rebuild_says_it_ended(regen: &mut qymcad_ui_state::Rebuilding, status: &mut qymcad_ui_state::Notice, project: &Project, error: Option<&qymcad_core::errors::CoreError>) {
     regen.computed_depth = regen.computing_depth; // the rebuild ran to its end: the document it was asked for is computed
     let over = std::mem::take(&mut regen.over);
-    match error {
-        Some(e) => rebuild_says(regen, status, crate::i18n::tr1("io-rebuild-error", "error", &crate::gui::error_words::error_text(e))),
+    let left = qymcad_ui_state::rebuild_left(project);
+    // an error the timeline does not hold (a failure of the pass itself) is said in the words it came with
+    let failed = left
+        .clone()
+        .filter(|n| n.tone == qymcad_ui_state::Tone::Error)
+        .or_else(|| error.map(|e| Notice::error(crate::i18n::tr1("io-rebuild-error", "error", &crate::gui::error_words::error_text(e)))));
+    match failed {
+        Some(said) => rebuild_says(regen, status, said),
         None if status.is_empty() || *status == regen.line => {
-            let line = if over.is_empty() { format!("{} {}", ph::CHECK, crate::i18n::tr("io-ready")) } else { over };
-            rebuild_says(regen, status, line);
+            let done = if over.is_empty() { Notice::info(format!("{} {}", ph::CHECK, crate::i18n::tr("io-ready"))) } else { over };
+            rebuild_says(regen, status, left.unwrap_or(done));
         }
         None => {}
     }
@@ -62,10 +73,10 @@ impl App {
             match bg.rx.recv_timeout(budget) {
                 Ok(res) => self.apply_job_result(res),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    self.status = format!("{} {}", ph::WARNING, crate::i18n::tr1("io-not-waited", "what", &bg.label));
+                    self.status = Notice::warning(crate::i18n::tr1("io-not-waited", "what", &bg.label));
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    self.status = format!("{} {}", ph::WARNING, crate::i18n::tr1("io-bg-broken", "what", &bg.label));
+                    self.status = Notice::error(crate::i18n::tr1("io-bg-broken", "what", &bg.label));
                 }
             }
         }
@@ -82,7 +93,7 @@ impl App {
     pub(super) fn spawn_import_shapes(&mut self, regen: bool) {
         let project = self.project.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        worker(move || {
             let shapes = restore_import_shapes_for(&project);
             let _ = tx.send(JobResult::ImportShapes { shapes, regen });
         });
@@ -170,10 +181,10 @@ impl App {
             })()
             .unwrap_or(false);
             if newer {
-                self.status = format!("{} {}", ph::WARNING, crate::i18n::tr1("io-autosave-found", "path", &auto));
+                self.status = Notice::warning(crate::i18n::tr1("io-autosave-found", "path", &auto));
             }
         }
-        self.status = crate::i18n::tr("io-project-loaded");
+        self.status = Notice::info(crate::i18n::tr("io-project-loaded"));
     }
 
     /// Save (Ctrl+S): if the project has been saved before, write there silently; otherwise Save As.
@@ -203,23 +214,13 @@ impl App {
 
     /// Finish editing a sketch.
     pub(super) fn finish_sketch_edit(&mut self) {
-        let edited = self.sketch_ses.editing;
+        let closed = self.sketch_ses;
         self.sketch_ses.editing = None;
         self.tools.cmd.ref_body = None; // highlighting the faces of a neighbour belongs to the creation session only
         self.tools.sel_sk.clear(); // the selection and whatever was waiting for it
         qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_of!(self)); // leaving a sketch drops all of its modes in one transition
-                                                                                 // associativity: editing a sketch rebuilds the bodies built on it
-        if let Some(sid) = edited {
-            // ...and there is NOTHING TO REBUILD THEM ON while no live B-rep exists. A project from a
-            // bundle shows the geometry FROM THE FILE and has no `Shape` (the lazy B-rep): one sketch node
-            // gets marked dirty, the feature on it asks for its source body - and is told the source body
-            // was not built. This was hit on the very first opening; "Rebuild all" cured it and it never
-            // came back. `ensure_brep` builds EXACTLY the missing nodes rather than the whole project.
-            ensure_brep(&mut self.rebuild_ctx());
-            self.project.mark_sketch_dirty(sid);
-            qymcad_ui_state::regenerate_all(&mut self.rebuild_ctx());
-        }
-        // restore the viewpoint and mode from before entering the sketch (pop one level off the stack)
+        qymcad_ui_state::rebuild_after_sketch(&mut self.rebuild_ctx(), closed); // associativity: the bodies on it follow a changed sketch
+                                                                                // restore the viewpoint and mode from before entering the sketch (pop one level off the stack)
         if let Some((cam, view, mode_3d)) = self.viewing.nav_stash.pop() {
             self.viewing.cam = cam;
             self.viewing.cam.init = true; // do not refit - keep the same framing
@@ -227,7 +228,7 @@ impl App {
             self.viewing.mode_3d = mode_3d;
         }
         self.sync_workbench(); // the workbench follows the active context (part or assembly)
-        self.status = crate::i18n::tr("io-sketch-done");
+        self.status = Notice::info(crate::i18n::tr("io-sketch-done"));
     }
 
     /// SORTING the target bodies by [`ExportKind`] - ONE routine for both STEP and STL, so that two exports
@@ -273,7 +274,7 @@ impl App {
         let note = plan.note(false);
         let bodies = plan.stl_bodies();
         if bodies.is_empty() {
-            self.status = crate::i18n::tr1("io-mesh-no-bodies", "format", crate::gui::mesh_entry(format).name());
+            self.status = Notice::refusal(crate::i18n::tr1("io-mesh-no-bodies", "format", crate::gui::mesh_entry(format).name()));
             return;
         }
         let dialog = mesh_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target), export_folder(&self.disk));
@@ -288,7 +289,7 @@ impl App {
     pub(super) fn export_sketch(&mut self, si: usize, dxf: bool) {
         let edges = crate::gui::sketching::sketch_export_edges(&self.project, si);
         if edges.is_empty() {
-            self.status = crate::i18n::tr("io-export-empty-sketch");
+            self.status = Notice::refusal(crate::i18n::tr("io-export-empty-sketch"));
             return;
         }
         let drawing = Drawing::of(dxf);
@@ -318,7 +319,7 @@ impl App {
         let (tx, rx) = std::sync::mpsc::channel();
         let pulse = std::sync::Arc::new(qymcad_ui_state::RegenPulse { stamp, ..Default::default() });
         let watch = pulse.clone();
-        std::thread::spawn(move || rebuild_in_worker(proj, shapes, quality_k, watch, stamp, tx));
+        worker(move || rebuild_in_worker(proj, shapes, quality_k, watch, stamp, tx));
         // WHAT EXACTLY IS BEING REBUILT IS ASKED IN ADVANCE, and how to announce it depends on the answer.
         //
         // Reported: a cut in a single part pops up a modal window and makes you wait. A modal window over a
@@ -380,7 +381,7 @@ impl App {
         }
         if regen_doc_stamp(&self.project) != stamp {
             adopt_shapes(&mut self.live, shapes); // the live B-rep had travelled to the thread - take it back
-            rebuild_says(&mut self.regen, &mut self.status, crate::i18n::tr("io-doc-changed"));
+            rebuild_says(&mut self.regen, &mut self.status, Notice::info(crate::i18n::tr("io-doc-changed")));
             qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx());
             return;
         }
@@ -409,7 +410,7 @@ impl App {
         for (body, faces) in built {
             qymcad_ui_state::set_body_faces(&mut self.live, &mut self.project, body, faces);
         }
-        rebuild_says_it_ended(&mut self.regen, &mut self.status, errors.first().map(|(_, e)| e));
+        rebuild_says_it_ended(&mut self.regen, &mut self.status, &self.project, errors.first().map(|(_, e)| e));
         qymcad_ui_state::settle_baseline(&mut self.disk.edits, &self.project);
         // if this rebuild was the preparation of a live B-rep, then it HAS NOW HAPPENED, and the outcome is
         // drawn from its result (after invalidate: that is what moves the geometry revision).
@@ -483,7 +484,7 @@ impl App {
                 self.apply_job_result(res);
             }
             if lost {
-                self.status = crate::i18n::tr("io-bg-interrupted");
+                self.status = Notice::warning(crate::i18n::tr("io-bg-interrupted"));
             }
             if !self.regen.bg.is_empty() {
                 ctx.request_repaint_after(std::time::Duration::from_millis(200));
@@ -498,25 +499,13 @@ impl App {
                     return false;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    let label = busy.label.clone();
                     // A REBUILD does not hide the interface. Collapsing the window to a black screen with a
                     // spinner - the way startup does - is frightening: the model is gone and it is unclear
-                    // what is happening. Everything is drawn as usual, a dimming and a spinner go on top, and
-                    // input is muted: edits made during a rebuild would land on a stale copy of the project.
-                    if busy.kind == BgKind::Regen && busy.quiet {
-                        self.tools.dim.spinner = true; // the only sign: the body on screen is out of date
-                                                       // A PINPOINT EDIT GETS NO WINDOW. The thread is computing, the document on screen is
-                                                       // intact, and work can go on: an edit made while it computes will not be lost - the
-                                                       // stale result is rejected by the imprint check (`finish_regen_checked`) and the
-                                                       // rebuild repeats.
-                        ctx.request_repaint();
-                        return false;
-                    }
+                    // what is happening. Everything is drawn as usual, and its sign and the barrier of a loud
+                    // one go on top (`draw_rebuild_sign`). A pinpoint edit gets no barrier: an edit made while it
+                    // computes is not lost - the stale result is rejected by the imprint check
+                    // (`finish_regen_checked`) and the rebuild repeats.
                     if busy.kind == BgKind::Regen {
-                        // INPUT IS MUTED BY THE BARRIER IN THE OVERLAY ITSELF rather than by clearing events
-                        // here: that was too late - egui collects the input state at the start of a pass.
-                        self.tools.dim.overlay_progress = busy.pulse.as_ref().map(|p| p.progress());
-                        self.tools.dim.overlay = Some(label);
                         ctx.request_repaint();
                         return false;
                     }
@@ -529,7 +518,7 @@ impl App {
                     // it sticks forever: until a restart, operations that need a live B-rep would silently
                     // answer that the body was not built. The wait is cleared - a new attempt is allowed.
                     self.live.wait = None;
-                    self.status = crate::i18n::tr("io-op-interrupted");
+                    self.status = Notice::warning(crate::i18n::tr("io-op-interrupted"));
                     return false;
                 }
             }
@@ -548,6 +537,11 @@ fn rebuild_in_worker(
     stamp: u64,
     tx: std::sync::mpsc::Sender<JobResult>,
 ) {
+    // held before the kernel is taken: the checks beside this one go on using it
+    #[cfg(test)]
+    if let Some(ms) = proj.meta.comment.strip_prefix(REBUILD_HOLDS_FOR_TEST).and_then(|ms| ms.parse().ok()) {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
     let _gate = qymcad_kernel::kernel_gate();
     let kernel = OcctKernel { shapes: std::cell::RefCell::new(shapes), quality_k, stop: watch.stop.clone(), ..Default::default() };
     // A PANIC IN THE REBUILD DOES NOT TAKE THE LIVE B-rep WITH IT. The cache came into this thread whole and
@@ -583,8 +577,8 @@ fn panic_line(payload: &(dyn std::any::Any + Send)) -> String {
 
 /// AN EXPORT THAT PANICKED, said on the status line: the format and what the panic said. The bodies it took into its
 /// thread are back in the cache by then (`JobResult::Exported`), so the model is as it was.
-fn export_failed(format: &str, payload: &(dyn std::any::Any + Send)) -> String {
-    format!("{} {}", egui_phosphor::regular::WARNING, crate::i18n::tr2("io-export-failed", "format", format, "why", &panic_line(payload)))
+fn export_failed(format: &str, payload: &(dyn std::any::Any + Send)) -> Notice {
+    Notice::error(crate::i18n::tr2("io-export-failed", "format", format, "why", &panic_line(payload)))
 }
 
 /// A REBUILD THAT PANICKED, met as a cancelled one is (`finish_regen_checked`) where the document is concerned,
@@ -605,15 +599,14 @@ pub(crate) fn finish_regen_failed(rc: &mut qymcad_ui_state::RebuildCtx, stamp: u
     rc.live.wait = None;
     // what a quiet start put aside to bring back at the end: this rebuild has no end to bring it back at, and left
     // here it would come back after some later rebuild, in place of that one's words
-    rc.regen.over.clear();
+    rc.regen.over.words.clear();
     if regen_doc_stamp(rc.project) != stamp {
         // the document moved on under the rebuild: the new one is computed, as for a stale result. Every failure
         // ends in a pause, an edit taken back or (this one) a rebuild of the new document - never a loop.
-        rebuild_says(rc.regen, rc.status, crate::i18n::tr("io-doc-changed"));
+        rebuild_says(rc.regen, rc.status, Notice::info(crate::i18n::tr("io-doc-changed")));
         qymcad_ui_state::mark_dirty_for_rebuild(rc);
         return None;
     }
-    let warn = egui_phosphor::regular::WARNING;
     // `rebuild_cancelled` writes a line about a cancel; it is replaced, on purpose, by one about the failure
     match qymcad_ui_state::rebuild_cancelled(rc) {
         Some(path) => {
@@ -622,12 +615,12 @@ pub(crate) fn finish_regen_failed(rc: &mut qymcad_ui_state::RebuildCtx, stamp: u
             // starts a rebuild of the document it restored, and a quiet one puts these words aside and back when
             // it ends. Written as the rebuild's line, they were replaced by "Done" before anyone read that the
             // edit was gone.
-            *rc.status = format!("{warn} {}", crate::i18n::trn("io-rebuild-failed-undone", &[("why", &why), ("what", &what)]));
+            *rc.status = Notice::error(crate::i18n::trn("io-rebuild-failed-undone", &[("why", &why), ("what", &what)]));
             Some(path)
         }
         // the rebuild's own line, so a later quiet rebuild that succeeds says so instead of bringing this one back
         None => {
-            rebuild_says(rc.regen, rc.status, format!("{warn} {}", crate::i18n::tr1("io-rebuild-failed", "why", &why)));
+            rebuild_says(rc.regen, rc.status, Notice::error(crate::i18n::tr1("io-rebuild-failed", "why", &why)));
             None
         }
     }
@@ -663,10 +656,8 @@ pub(crate) fn spawn_project_load(regen: &mut super::Rebuilding, path: String) {
                                            // model is already on screen.
                                            // LIVE BODIES ARE PARSED RIGHT HERE, IN THE THREAD: on the UI thread this would be a
                                            // freeze of exactly the kind we are getting away from.
-                let shapes = {
-                    let _gate = qymcad_kernel::kernel_gate();
-                    breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|s| (id, s))).collect()
-                };
+                let saved = breps.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
+                let shapes = qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)).collect();
                 JobResult::ProjectLoaded { path, project: Box::new(project), shapes }
             }
             Err(e) => JobResult::Failed(crate::i18n::tr1("io-open-error", "error", &crate::i18n::name(&e.to_string()))),
@@ -705,6 +696,11 @@ pub(crate) fn adopt_shapes(live: &mut super::LiveGeom, shapes: Vec<(Id, qymcad_k
 /// panic.
 #[cfg(test)]
 pub(crate) const REBUILD_PANICS_FOR_TEST: &str = "a test asks this rebuild to panic";
+
+/// THE TEST-ONLY SWITCH OF A SLOW REBUILD: a rebuild of a document whose comment is this followed by a number of
+/// milliseconds waits that long in the worker before it starts, as a rebuild of a heavy document does.
+#[cfg(test)]
+pub(crate) const REBUILD_HOLDS_FOR_TEST: &str = "a test holds this rebuild for ms: ";
 
 /// THE TEST-ONLY SWITCH OF AN EXPORT: a file whose name holds this is written by a worker that panics, inside the caught
 /// region. A mark in the path rather than a flag of the process, so exports side by side cannot take each other's panic.
@@ -797,7 +793,7 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
     // have been started behind it; claiming the slot over that one would drop its channel and the
     // rebuild would never land. Said out loud rather than written over.
     if ed.regen.busy.is_some() {
-        *ed.status = crate::i18n::tr("io-export-busy");
+        *ed.status = Notice::refusal(crate::i18n::tr("io-export-busy"));
         return;
     }
     let mut moved: Vec<(Id, qymcad_kernel::Shape, [f64; 12])> = Vec::new();
@@ -819,14 +815,14 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
         }
     }
     if moved.is_empty() && raw.is_empty() {
-        *ed.status = crate::i18n::tr1("io-mesh-no-bodies", "format", name); // everything that was to be written is gone from the document
+        *ed.status = Notice::refusal(crate::i18n::tr1("io-mesh-no-bodies", "format", name)); // everything that was to be written is gone from the document
         return;
     }
     let note = job.note.clone();
     let tree = job.tree.clone();
     let p = path.to_string_lossy().into_owned();
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
+    worker(move || {
         // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT, as a rebuild's does not (`rebuild_in_worker`): the
         // bodies came into this thread from the cache and go back only in the result, so the work that may panic is
         // caught and the shapes are sent home whatever came of it. Unwind-safe as asserted: after a panic only `moved`
@@ -840,7 +836,7 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
             let mut own: Vec<Placed> = Vec::new();
             let mut failed = 0usize; // a body whose tessellation failed is NOT dropped silently but reported
             for (id, s, m) in &moved {
-                if let Some(qymcad_core::geom::Built { mesh, faces }) = s.tessellate_merged(deflection) {
+                if let Some(qymcad_core::geom::Built { mesh, faces }) = qymcad_kernel::ask::export_mesh(s, deflection) {
                     let tri = tri_colours(&tree, *id, &mesh, &faces);
                     own.push(Placed { own: qymcad_core::model::ExportMesh { body: *id, mesh, tri_colors: tri }, place: *m });
                 } else {
@@ -871,10 +867,12 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
                 }
             };
             match written {
-                Ok(()) if failed > 0 => format!("(!) {}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &n.to_string()), ("path", &p), ("failed", &failed.to_string())]), note),
-                Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
-                Ok(()) => done(),
-                Err(e) => crate::i18n::name(&e),
+                Ok(()) if failed > 0 => {
+                    Notice::warning(format!("{}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &n.to_string()), ("path", &p), ("failed", &failed.to_string())]), note))
+                }
+                Ok(()) if !note.is_empty() => Notice::warning(format!("{}{}", done(), note)),
+                Ok(()) => Notice::info(done()),
+                Err(e) => Notice::error(crate::i18n::name(&e)),
             }
         }))
         .unwrap_or_else(|panic| export_failed(name, panic.as_ref()));
@@ -897,7 +895,7 @@ pub(super) fn exact_imported(format: qymcad_kernel::ExactFormat, bodies: usize, 
 /// THE CARD OF A BACKGROUND JOB THAT IS NOT A REBUILD. An import says how long it has gone and can be left: the
 /// reading goes on in its thread and is thrown away when it ends, and the window is given back now. Returns
 /// whether the card is still up.
-fn busy_card(regen: &mut Rebuilding, live: &mut LiveGeom, status: &mut String, logo: &Option<egui::TextureHandle>, scheme: &qymcad_ui_state::SchemeUi, ctx: &egui::Context) -> bool {
+fn busy_card(regen: &mut Rebuilding, live: &mut LiveGeom, status: &mut qymcad_ui_state::Notice, logo: &Option<egui::TextureHandle>, scheme: &qymcad_ui_state::SchemeUi, ctx: &egui::Context) -> bool {
     let Some(busy) = &regen.busy else { return false };
     let label = busy.label.clone();
     if busy.kind != BgKind::ImportShapes {
@@ -908,7 +906,7 @@ fn busy_card(regen: &mut Rebuilding, live: &mut LiveGeom, status: &mut String, l
     if crate::gui::render::draw_import_card(logo, scheme, ctx, &label, busy.started.elapsed(), &crate::i18n::tr("io-cancel-import")) {
         regen.busy = None;
         live.wait = None; // nothing will arrive for the wait to be waiting on
-        *status = crate::i18n::tr("in-import-cancelled");
+        *status = Notice::info(crate::i18n::tr("in-import-cancelled"));
         return false;
     }
     ctx.request_repaint(); // the clock on the card moves on
@@ -923,12 +921,12 @@ pub(super) fn stem_of(path: &str) -> String {
 
 /// WHAT THE STATUS SAYS WHEN NOTHING CAN GO INTO AN EXACT FILE: bodies that are there but carry no B-rep are
 /// told apart from there being no bodies at all.
-fn nothing_exact_to_write(format: qymcad_kernel::ExactFormat, plan: &ExportPlan) -> String {
+fn nothing_exact_to_write(format: qymcad_kernel::ExactFormat, plan: &ExportPlan) -> Notice {
     let name = crate::gui::exact_entry(format).name();
     if plan.mesh_only.len() + plan.stale.len() > 0 {
-        format!("{} {}{}", ph::WARNING, crate::i18n::tr1("io-exact-no-brep", "format", name), plan.note(true))
+        Notice::warning(format!("{}{}", crate::i18n::tr1("io-exact-no-brep", "format", name), plan.note(true)))
     } else {
-        crate::i18n::tr1("io-exact-no-bodies", "format", name)
+        Notice::refusal(crate::i18n::tr1("io-exact-no-bodies", "format", name))
     }
 }
 
@@ -980,15 +978,15 @@ fn drawing_dialog(project: &Project, si: usize, drawing: Drawing, folder: Option
 }
 
 /// Write `edges` to `path` as `drawing` and answer what the status says about it.
-fn write_drawing(edges: &[qymcad_core::geom::ProfEdge], path: &std::path::Path, drawing: Drawing) -> String {
+fn write_drawing(edges: &[qymcad_core::geom::ProfEdge], path: &std::path::Path, drawing: Drawing) -> Notice {
     let p = path.to_string_lossy();
     let res = match drawing {
         Drawing::Dxf => qymcad_io::export_dxf(edges, &p),
         Drawing::Svg => qymcad_io::export_svg(edges, &p),
     };
     match res {
-        Ok(()) => format!("{} -> {}", drawing.name(), path.display()),
-        Err(e) => crate::i18n::name(&e),
+        Ok(()) => Notice::info(format!("{} -> {}", drawing.name(), path.display())),
+        Err(e) => Notice::error(crate::i18n::name(&e)),
     }
 }
 
@@ -1024,14 +1022,14 @@ fn tree_to_write(project: &Project, target: ExportTarget, bodies: &[Id]) -> Vec<
     tree
 }
 
-pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut String, path: &std::path::Path, job: &ExportJob) {
+pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut qymcad_ui_state::Notice, path: &std::path::Path, job: &ExportJob) {
     let (bodies, note, format) = (&job.bodies, job.note.as_str(), job.format);
     let name = crate::gui::exact_entry(format).name();
     // THE MODAL SLOT HOLDS ONE JOB. Frames go on running while the chooser is open, so a rebuild may
     // have been started behind it; claiming the slot over that one would drop its channel and the
     // rebuild would never land. Said out loud rather than written over.
     if regen.busy.is_some() {
-        *status = crate::i18n::tr("io-export-busy");
+        *status = Notice::refusal(crate::i18n::tr("io-export-busy"));
         return;
     }
     let p = path.to_string_lossy().into_owned();
@@ -1046,14 +1044,14 @@ pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: 
         }
     }
     if moved.is_empty() {
-        *status = crate::i18n::tr1("io-exact-no-bodies", "format", name); // everything that was to be written is gone from the document
+        *status = Notice::refusal(crate::i18n::tr1("io-exact-no-bodies", "format", name)); // everything that was to be written is gone from the document
         return;
     }
     let n = moved.len();
     let note = note.to_string();
     let tree = job.tree.clone();
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
+    worker(move || {
         // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT: caught as in `write_mesh_to`, the shapes sent home
         // whatever came of the write.
         let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1072,9 +1070,9 @@ pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: 
             drop(by_id);
             drop(pairs);
             match written {
-                Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
-                Ok(()) => done(),
-                Err(e) => crate::i18n::name(&e),
+                Ok(()) if !note.is_empty() => Notice::warning(format!("{}{}", done(), note)),
+                Ok(()) => Notice::info(done()),
+                Err(e) => Notice::error(crate::i18n::name(&e)),
             }
         }))
         .unwrap_or_else(|panic| export_failed(name, panic.as_ref()));
@@ -1092,7 +1090,7 @@ pub(crate) fn export_base_name(project: &Project, project_path: &Option<String>,
     }
 }
 
-pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut String, path: String, autosave: bool) {
+pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut qymcad_ui_state::Notice, path: String, autosave: bool) {
     // two writes of one file at once are a tmp+rename race. While the first is running, the LAST
     // request is remembered and started when the first reports back (see the JobResult::Saved handler).
     if regen.bg.iter().any(|b| b.kind == BgKind::Save) {
@@ -1132,7 +1130,7 @@ pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Proj
         pulse: None,
         quiet: false,
     });
-    *status = if autosave { crate::i18n::tr("io-autosaving") } else { crate::i18n::tr1("io-saving-path", "path", &path) };
+    *status = Notice::info(if autosave { crate::i18n::tr("io-autosaving") } else { crate::i18n::tr1("io-saving-path", "path", &path) });
 }
 
 /// "SAVE AS A PART OF THE LIBRARY": the name, the description, the tags, the category and the preview.
@@ -1210,9 +1208,9 @@ pub(crate) fn save_part_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
         });
     if do_save {
         match crate::gui::commit_save_part(wc.parts, wc.project, wc.tex_graveyard) {
-            Ok(p) => *wc.status = crate::i18n::tr1("io-part-saved", "path", &p),
+            Ok(p) => *wc.status = Notice::info(crate::i18n::tr1("io-part-saved", "path", &p)),
             Err(e) => {
-                *wc.status = crate::i18n::tr1("io-part-save-failed", "error", &e.to_string());
+                *wc.status = Notice::error(crate::i18n::tr1("io-part-save-failed", "error", &e.to_string()));
                 return; // the dialog stays open so it can be corrected
             }
         }

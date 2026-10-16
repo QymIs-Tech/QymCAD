@@ -23,6 +23,10 @@ pub const EDGE: u32 = 0x6000_0000;
 /// A vertex name. This tag includes `NAMED` too, so the structural check stays the same for faces, edges and
 /// vertices, while `TAG` tells all three apart.
 pub const VERTEX: u32 = 0x5000_0000;
+/// A ROLE AWAITING ITS NAME: the number the bridge hands the faces an operation makes, between building them and
+/// landing the result, where the table gives each its descriptor. Neither a name (no `NAMED` bit) nor a positional
+/// number (those stay small).
+pub const ROLE: u32 = 0x1000_0000;
 const TAG: u32 = 0x7000_0000;
 
 /// The role of a face in the recipe of the operation that produced it.
@@ -92,6 +96,38 @@ pub enum Role {
     /// and `split` the instance number. Without this every copy carried the names of the original, and a
     /// reference to a face of the second copy silently resolved to the first.
     Instance,
+    /// A face named by where it lies, when its history is silent and no named face is beside it: a face of a body
+    /// brought in from a file or made of a mesh. `src` is the key of its place (`place_key`).
+    Placed,
+}
+
+/// WHAT THE NAMING OF THE BRIDGE ASKS OF THE TABLE OF THE DOCUMENT: whether a descriptor is one of its names, which
+/// name it is, and the descriptor of a name - given, on the thread of the document and in the order of its tree, by
+/// the table alone. The rules that decide the names live in the bridge; the table keeps them.
+pub trait NameMint {
+    fn knows(&self, desc: u32) -> bool;
+    fn face(&self, desc: u32) -> Option<GeoName>;
+    fn edge(&self, desc: u32) -> Option<EdgeName>;
+    fn intern_face(&mut self, name: GeoName) -> u32;
+    fn intern_edge(&mut self, name: EdgeName) -> u32;
+}
+
+impl NameMint for NameTable {
+    fn knows(&self, desc: u32) -> bool {
+        NameTable::knows(self, desc)
+    }
+    fn face(&self, desc: u32) -> Option<GeoName> {
+        self.get(desc)
+    }
+    fn edge(&self, desc: u32) -> Option<EdgeName> {
+        NameTable::edge(self, desc)
+    }
+    fn intern_face(&mut self, name: GeoName) -> u32 {
+        NameTable::intern_face(self, name)
+    }
+    fn intern_edge(&mut self, name: EdgeName) -> u32 {
+        NameTable::intern_edge(self, name)
+    }
 }
 
 impl Role {
@@ -121,6 +157,7 @@ impl Role {
             Role::ThickenWall => "thicken_wall",
             Role::Instance => "instance",
             Role::Seam => "seam",
+            Role::Placed => "placed",
         }
     }
 }
@@ -171,7 +208,7 @@ impl EdgeName {
 /// intersections meet. Taking all of them would change the name as soon as a fourth edge appeared nearby, that
 /// is, lose the reference at exactly the moment the part is being edited. The three smallest descriptors are
 /// taken instead: the set is deterministic, independent of traversal order, and any missing slots are zero.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VertexName {
     /// descriptors of the edges of the vertex, sorted, with the tail zeroed
     pub edges: [u32; 3],
@@ -424,6 +461,13 @@ impl NameTable {
         let whole = |d: u32| -> u32 { self.absorbed_face(d).unwrap_or(d) };
         let (a, b) = (whole(e.faces[0]), whole(e.faces[1]));
         Some(([a.min(b), a.max(b)], e.index))
+    }
+
+    /// IS THIS A NAME OF THIS DOCUMENT: a structural descriptor the table holds. The mark alone says a descriptor was
+    /// minted as a name, not by whom: one minted against another table points past this one, or at a name of some
+    /// other face of it.
+    pub fn knows(&self, desc: u32) -> bool {
+        self.get(desc).is_some() || self.edge(desc).is_some() || self.vertex(desc).is_some()
     }
 
     /// Is this descriptor a structural name rather than a positional number?

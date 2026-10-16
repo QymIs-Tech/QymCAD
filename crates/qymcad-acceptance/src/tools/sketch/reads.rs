@@ -1,0 +1,86 @@
+//! The tools that read the drawing: measure and select.
+
+use super::*;
+
+/// MEASURE: two clicks on the ends of the bottom side of the rectangle - 40 apart, and the status line says so; the
+/// sketch is untouched.
+pub static MEASURE: Tool = Tool {
+    id: "sketch.measure",
+    flow: Flow::Drawing(&[(0.0, 0.0), (40.0, 0.0)], Finish::LastClick),
+    title: "tool-measure",
+    entries: &[Entry::Button("tb-measure-hint")],
+    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    fixture: Fixture::RectangleInSketch,
+    picks: &[],
+    pick_trial: &[],
+    wrong_picks: &[],
+    words: &[],
+    fields: &[],
+    modes: &[],
+    result: Outcome::Says { text: "40" },
+    node: "Sketch",
+    undo: "tool-measure",
+    undo_steps: 0,
+    stays: true,
+    upstream: None,
+    dependency: None,
+    contexts: &[Context::SecondPart],
+    refusal: None,
+    budget: (10, 2000),
+    help: "general/11-measure",
+    not_applicable: &[
+        (2, "the measure has no mode: two clicks are the whole of it"),
+        (3, "the two clicks put the points measured between; they take nothing"),
+        (4, "a click on empty sheet is a point like any other: there is no wrong click to refuse"),
+        (5, "the measure takes no value"),
+        (6, "the measure takes no value to refuse"),
+        (11, "a measure changes nothing: it lays no step of undo"),
+        (12, "a measure changes nothing: saving and opening carries nothing of it"),
+        DRAWS[2],
+        DRAWS[3],
+        DRAWS[4],
+        DRAWS[5],
+    ],
+};
+
+/// SELECT: the arrow taken back from the line tool, and the bottom side of the rectangle clicked - that one side is
+/// selected, nothing drawn.
+pub static SELECT: Tool = Tool {
+    id: "sketch.select",
+    flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
+    title: "tool-select",
+    entries: &[Entry::Button("tb-select-hint"), Entry::Key(Modifiers::NONE, Key::S)],
+    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    fixture: Fixture::RectangleInSketch,
+    picks: &[],
+    pick_trial: &[],
+    wrong_picks: &[],
+    words: &[],
+    fields: &[],
+    modes: &[],
+    result: Outcome::Picked { count: 1 },
+    node: "",
+    undo: "tb-select-hint",
+    undo_steps: 0,
+    stays: true,
+    upstream: None,
+    dependency: None,
+    contexts: &[Context::SecondPart],
+    refusal: None,
+    budget: (10, 2000),
+    // the help writes of no selecting in a sketch: there is no article to name
+    help: "sketch/24-select",
+    not_applicable: &[
+        (2, "the arrow has no bar of options: it is the hand with no tool in it"),
+        (4, "a click on empty space with the arrow clears the selection, as in the professional systems: it is not a wrong pick"),
+        (5, "the arrow has no field"),
+        (6, "the arrow has no field to refuse a value in"),
+        (7, "a click selects at once: there is nothing to show before it"),
+        (11, "a selection is not the document: it lays no step of undo"),
+        (12, "a selection is not the document: saving and opening does not carry it"),
+        (13, DRAWS[2].1),
+        (14, DRAWS[3].1),
+        (15, DRAWS[4].1),
+        (17, DRAWS[5].1),
+    ],
+};

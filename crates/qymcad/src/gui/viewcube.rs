@@ -17,6 +17,7 @@
 //! - a **corner** is a polygon of the vertices around a corner.
 //!
 //! That way the set of zones cannot diverge from the picture: THE SAME THING is drawn and picked.
+use qymcad_ui_state::Notice;
 use super::App;
 use egui::{Pos2, Rect, Stroke};
 
@@ -191,7 +192,7 @@ impl App {
         let Some(turn) = click(&self.cube_ctx(), rect, pos) else { return false };
         crate::gui::animate_view_to(self.viewing.cam, &mut self.viewing.mode_3d, &mut self.viewing.view_anim, turn.yaw, turn.pitch);
         if let Some(key) = turn.say {
-            self.status = crate::i18n::tr(key);
+            self.status = Notice::info(crate::i18n::tr(key));
         }
         true
     }

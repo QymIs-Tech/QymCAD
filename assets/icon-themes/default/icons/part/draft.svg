@@ -1,0 +1,11 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / draft">
+<g id="Polygon 10">
+<path d="M28.9904 8.5L16 1L9.5048 4.75L22.4952 12.25L28.9904 8.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28.9904 23.5V8.5L22.4952 12.25L16 31L28.9904 23.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M22.4952 12.25L9.5048 4.75L3.00961 23.5L16 31L22.4952 12.25Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M9.5048 4.75L3.00961 23.5L16 31L28.9904 23.5V8.5L16 1L9.5048 4.75ZM28.9904 8.5L22.4952 12.25M16 31L22.4952 12.25M22.4952 12.25L9.5048 4.75" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<path id="Polygon 11" d="M22.36 12.6402C22.4385 12.4137 22.3452 12.1634 22.1376 12.0435L10.0291 5.0527C9.75713 4.89568 9.40943 5.02531 9.30664 5.32205L3.14478 23.1098C3.06632 23.3363 3.15965 23.5866 3.36724 23.7065L15.4757 30.6973C15.7477 30.8543 16.0954 30.7247 16.1982 30.4279L22.36 12.6402Z" fill="var(--icon-part-secondary, #F2AA18FF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

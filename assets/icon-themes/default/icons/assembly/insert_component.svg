@@ -1,0 +1,10 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="assembly / insert_component">
+<g id="Polygon 16">
+<path d="M16 1L28.9904 8.5V23.5L16 31L3.00961 23.5V8.5L16 1Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M3.00961 8.5V23.5L16 31L28.9904 23.5V8.5L16 1L3.00961 8.5ZM28.9904 8.5L22.4952 12.25M16 31V23.5M3.00961 8.5L9.5048 12.25" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+<path id="Vector 6" d="M11 15.5L15.9646 20.4646C15.9842 20.4842 16.0158 20.4842 16.0354 20.4646L21 15.5" stroke-width="2" stroke-linecap="round" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Vector 7" d="M16 10.5L16 19.5" stroke-width="2" stroke-linecap="round" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

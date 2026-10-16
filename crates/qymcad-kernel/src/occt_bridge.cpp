@@ -1,3 +1,6 @@
+#ifndef _WIN32
+#include <signal.h>
+#endif
 #include <algorithm>
 #include <Geom_Line.hxx>
 #include <Geom_BSplineCurve.hxx>
@@ -64,6 +67,7 @@ static void add_face(const TopoDS_Face& face, QymBody& b, uint32_t fid) {
     // the sphere's own and two sides of its seam 12.75 deg apart. OCCT turns the normal with the orientation of the face
     // and takes another way at a pole, where the surface has none of its own.
     try {
+        QYM_SIGNALS;
         BRepLib_ToolTriangulatedShape::ComputeNormals(face, t);
     } catch (...) {
         // no normals: the face is shaded by its triangles, as before
@@ -94,6 +98,7 @@ static void add_face(const TopoDS_Face& face, QymBody& b, uint32_t fid) {
         // The EXACT anchor: a point on the surface plus a normal from THE ANALYTIC form (for a plane, the plane itself)
         double anc[7] = {0, 0, 0, 0, 0, 0, 0};
         try {
+            QYM_SIGNALS;
             BRepAdaptor_Surface as(face, Standard_False);
             double u = (as.FirstUParameter() + as.LastUParameter()) * 0.5;
             double v = (as.FirstVParameter() + as.LastVParameter()) * 0.5;
@@ -184,6 +189,7 @@ QymDoc* doc_from_shape(const TopoDS_Shape& shape, double defl, const TopTools_Da
         // imported frame) meshed at 0.01 mm and not at 0.05 or 0.2 - the same step again gave the same hole.
         for (double finer : {1.0, 0.25, 0.0625, 0.015625}) {
             try {
+                QYM_SIGNALS;
                 IMeshTools_Parameters prm;
                 prm.Deflection = defl * finer;
                 prm.Angle = 0.3;
@@ -218,13 +224,6 @@ QymDoc* doc_from_shape(const TopoDS_Shape& shape, double defl) {
 }
 
 // --- PERSISTENT NAMES for sub-shapes: both FACES and EDGES -----------------------------------
-// Seed ids onto the sub-shapes of type `ty` (FACE or EDGE) in TopExp order (1..n) — stable for a recipe.
-void seed_ids(const TopoDS_Shape& s, TopAbs_ShapeEnum ty, TopTools_DataMapOfShapeInteger& ids) {
-    int id = 1;
-    for (TopExp_Explorer ex(s, ty); ex.More(); ex.Next()) {
-        if (!ids.IsBound(ex.Current())) ids.Bind(ex.Current(), id++);
-    }
-}
 // A STRUCTURAL NAME is marked by this bit (a descriptor from the document's name table, see names.rs).
 // Anything without the mark is a POSITIONAL number, which the kernel hands to whatever origin is not
 // derived yet.
@@ -235,7 +234,7 @@ void seed_ids(const TopoDS_Shape& s, TopAbs_ShapeEnum ty, TopTools_DataMapOfShap
 int next_local(const TopTools_DataMapOfShapeInteger& m) {
     int mx = 0;
     for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(m); it.More(); it.Next())
-        if ((it.Value() & QYM_NAMED) == 0 && it.Value() > mx) mx = it.Value();
+        if (!qym_recipe(it.Value()) && it.Value() > mx) mx = it.Value();
     return mx + 1;
 }
 // Carry the ids of type `ty` from ONE OPERAND `a` onto the result through the operation's history
@@ -250,19 +249,48 @@ int next_local(const TopTools_DataMapOfShapeInteger& m) {
 struct TakenNames {
     std::unordered_set<int> taken;
     std::map<int, TopoDS_Shape> owner;
+    /// Where a name that yielded in a merge is written, "losing name -> winning name"; null where nobody keeps it.
+    std::vector<std::pair<unsigned, unsigned>>* absorbed = nullptr;
+    /// Who keeps an image two elements became.
+    QymMerge merge = QymMerge::First;
 };
+
+// TWO ELEMENTS BECAME ONE IN A MERGE - coplanar faces glued into a monolith, the two long sides of a strip taken out - and
+// the one image is already bound: THE WINNER IS CHOSEN BY NAME, NOT BY THE ORDER OF THE WALK (`QymMerge::ByName`). A name beats a positional number,
+// and among names the smaller descriptor wins: a descriptor is an index into the document's table of names, it lives
+// in the file and depends on neither the walk nor the session, so one merge always has one winner. Measured on a real
+// part with the order deciding: one edit gave the win now to the smaller name, now to the larger, and six walls lost
+// their name to the draw; 7 names of 13 were lost to positional numbers in one push of a face. The loser is not lost:
+// written to `absorbed`, a reference to it goes on finding the face it became. Answers whether `id` took the image.
+static bool merge_names(TopTools_DataMapOfShapeInteger& out, const TopoDS_Shape& image, int id, TakenNames& record) {
+    const int have = out.Find(image);
+    if (have == id) return false;
+    const bool have_named = qym_recipe(have), id_named = qym_recipe(id);
+    auto note = [&](int loser, int winner) {
+        if (record.absorbed && qym_recipe(loser) && qym_recipe(winner)) record.absorbed->emplace_back((unsigned)loser, (unsigned)winner);
+    };
+    if (!id_named || (have_named && (unsigned)id > (unsigned)have)) {
+        note(id, have);
+        return false;
+    }
+    note(have, id);
+    out.Bind(image, id);
+    record.taken.insert(id);
+    if (!record.owner.count(id)) record.owner[id] = image;
+    return true;
+}
 
 // `carry_ids` with the record kept by the caller, so a caller making several calls into one `out` builds it once
 // instead of each call walking the whole of `out` again (each `out.Bind` below updates the record beside it). See
 // `qym_shape_fuse_many`, where that walk made the union of a pattern grow with the square of its copies.
-static void carry_ids_with(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& aid, TopTools_DataMapOfShapeInteger& out, int& next, bool named_only, TopTools_DataMapOfShapeInteger* splits_of, TopTools_DataMapOfShapeInteger* splits_idx, const std::map<int,int>* gen_names, TakenNames& record) {
+static void carry_ids_with(QymHistory& algo, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& aid, TopTools_DataMapOfShapeInteger& out, int& next, bool named_only, TopTools_DataMapOfShapeInteger* splits_of, TopTools_DataMapOfShapeInteger* splits_idx, const std::map<int,int>* gen_names, TakenNames& record) {
     auto& taken = record.taken;
     auto& owner = record.owner;
     for (TopExp_Explorer ex(a, ty); ex.More(); ex.Next()) {
         const TopoDS_Shape& f = ex.Current();
         if (!aid.IsBound(f)) continue;
         int id = aid.Find(f);
-        if (named_only && (id & QYM_NAMED) == 0) continue;
+        if (named_only && !qym_recipe(id)) continue;
         if (!out.IsBound(f)) {
             // A FACE THAT SURVIVED UNCHANGED must be distinguishable too. A thread tool arrives as pieces
             // of the helical groove that share ONE name between them: the cut leaves their surfaces in the
@@ -286,7 +314,14 @@ static void carry_ids_with(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a
         const TopTools_ListOfShape& mod = algo.Modified(f);
         int piece = 0;
         for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next()) {
-            if (out.IsBound(it.Value())) continue;
+            if (out.IsBound(it.Value())) {
+                if (record.merge == QymMerge::ByName) {
+                    if (merge_names(out, it.Value(), id, record) && piece == 0) ++piece; // the name went on the merged image
+                } else if (record.absorbed && qym_recipe(id) && qym_recipe(out.Find(it.Value())) && out.Find(it.Value()) != id) {
+                    record.absorbed->emplace_back((unsigned)id, (unsigned)out.Find(it.Value())); // the first keeps it, this one yielded
+                }
+                continue;
+            }
             // AN IMAGE REPLACES ITS OWN SOURCE, so the first piece takes its id without asking whether it
             // is taken: it is taken by exactly that source, which is no longer in the result. Taking
             // SOMEBODY ELSE'S number is not allowed — and that is what the thread did: sixteen pieces of
@@ -344,7 +379,136 @@ void carry_ids(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a, TopAbs_Sha
         record.taken.insert(it.Value());
         if (!record.owner.count(it.Value())) record.owner[it.Value()] = it.Key();
     }
-    carry_ids_with(algo, a, ty, aid, out, next, named_only, splits_of, splits_idx, gen_names, record);
+    QymBuilderHistory history(algo);
+    carry_ids_with(history, a, ty, aid, out, next, named_only, splits_of, splits_idx, gen_names, record);
+}
+
+// `carry_ids` through any history: the record of a repair, the history of the low-level algorithms.
+void carry_ids(QymHistory& history, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& aid, TopTools_DataMapOfShapeInteger& out, int& next, TopTools_DataMapOfShapeInteger* splits_of, TopTools_DataMapOfShapeInteger* splits_idx) {
+    TakenNames record;
+    for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(out); it.More(); it.Next()) {
+        record.taken.insert(it.Value());
+        if (!record.owner.count(it.Value())) record.owner[it.Value()] = it.Key();
+    }
+    carry_ids_with(history, a, ty, aid, out, next, false, splits_of, splits_idx, nullptr, record);
+}
+
+void carry_binding(QymHistory& history, const TopTools_ListOfShape& before, TopAbs_ShapeEnum ty, TopTools_DataMapOfShapeInteger& bound) {
+    TopTools_DataMapOfShapeInteger moved;
+    TopTools_MapOfShape seen;
+    for (TopTools_ListIteratorOfListOfShape sh(before); sh.More(); sh.Next()) {
+        for (TopExp_Explorer ex(sh.Value(), ty); ex.More(); ex.Next()) {
+            const TopoDS_Shape& e = ex.Current();
+            if (!bound.IsBound(e) || !seen.Add(e)) continue;
+            const int value = bound.Find(e);
+            const TopTools_ListOfShape& mod = history.Modified(e);
+            if (mod.IsEmpty()) {
+                if (!history.Removed(e) && !moved.IsBound(e)) moved.Bind(e, value);
+            } else {
+                for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next())
+                    if (!moved.IsBound(it.Value())) moved.Bind(it.Value(), value);
+            }
+        }
+    }
+    bound = moved;
+}
+
+// THE FACE BESIDE EACH FREE EDGE OF A SHEET, carried to the edges of the result made from it: a piece of an edge keeps
+// the face its whole stood against, an edge left as it was keeps its own.
+static void carry_beside(QymHistory& history, const QymShape& source, const TopoDS_Shape& res, TopTools_DataMapOfShapeInteger& out) {
+    if (source.ebeside.IsEmpty()) return;
+    TopTools_IndexedMapOfShape kept;
+    TopExp::MapShapes(res, TopAbs_EDGE, kept);
+    for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(source.ebeside); it.More(); it.Next()) {
+        const TopTools_ListOfShape& pieces = history.Modified(it.Key());
+        if (pieces.IsEmpty() && kept.Contains(it.Key()) && !out.IsBound(it.Key())) out.Bind(it.Key(), it.Value());
+        for (TopTools_ListIteratorOfListOfShape pc(pieces); pc.More(); pc.Next())
+            if (kept.Contains(pc.Value()) && !out.IsBound(pc.Value())) out.Bind(pc.Value(), it.Value());
+    }
+}
+
+// THE NUMBERS START PAST EVERY NUMBER ALREADY GIVEN: a recipe may bind a positional number of its source - a thickened
+// face is still itself - and a number handed out again would put two elements under one name.
+static void after_the_recipe(const QymShape& q, QymCounters& next) {
+    next.faces = std::max(next.faces, next_local(q.fids));
+    next.edges = std::max(next.edges, next_local(q.eids));
+}
+
+void qym_signals_here() {
+    // once for the process: a fault, a bad float and an illegal instruction jump to the nearest `OCC_CATCH_SIGNALS`. The
+    // signals a person sends - an interrupt, a hang-up, a quit, a termination - keep the handlers they had: they stop
+    // the program, they are no failure of an operation.
+    static const bool process = [] {
+#ifndef _WIN32
+        const int kept[] = {SIGINT, SIGHUP, SIGQUIT, SIGTERM};
+        struct sigaction before[4];
+        for (int i = 0; i < 4; ++i) sigaction(kept[i], nullptr, &before[i]);
+#endif
+        OSD::SetSignal(OSD_SignalMode_Set, Standard_False);
+#ifndef _WIN32
+        for (int i = 0; i < 4; ++i) sigaction(kept[i], &before[i], nullptr);
+#endif
+        return true;
+    }();
+    (void)process;
+    // and once for every thread: on Windows the translation of a fault into an exception is set per thread
+    thread_local bool here = false;
+    if (!here) {
+        OSD::SetThreadLocalSignal(OSD_SignalMode_Set, Standard_False);
+        here = true;
+    }
+}
+
+QymShape* qym_result(QymHistory& history, const TopoDS_Shape& res, const QymResultSpec& spec) {
+    if (res.IsNull() || spec.operands.empty()) return nullptr;
+    auto q = std::make_unique<QymShape>();
+    q->shape = res;
+    // the counter of positional numbers is kept by the body the operation works on: the structural names of the
+    // others do not enter it, and their positional ones are not carried at all
+    const QymShape* base = spec.operands.front().body;
+    int nf = next_local(base->fids), ne = next_local(base->eids);
+    TakenNames faces, edges;
+    faces.absorbed = &q->absorbed;
+    edges.absorbed = &q->absorbed;
+    faces.merge = spec.merge;
+    edges.merge = spec.merge;
+    for (const QymOperand& o : spec.operands) {
+        const bool recipe_only = o.carry == QymCarry::RecipeOnly;
+        carry_ids_with(history, o.body->shape, TopAbs_FACE, o.body->fids, q->fids, nf, recipe_only, &q->fsplit_of, &q->fsplit_idx, spec.generated, faces);
+        carry_ids_with(history, o.body->shape, TopAbs_EDGE, o.body->eids, q->eids, ne, recipe_only, nullptr, nullptr, nullptr, edges);
+        carry_beside(history, *o.body, res, q->ebeside);
+    }
+    QymCounters next{nf, ne};
+    if (spec.recipe) spec.recipe(*q, next);
+    after_the_recipe(*q, next);
+    fill_unnamed(q->shape, TopAbs_FACE, q->fids, next.faces);
+    fill_unnamed(q->shape, TopAbs_EDGE, q->eids, next.edges);
+    // the names of what stands in the result and nothing else: a search by name finds no element that is gone
+    keep_standing(q->shape, TopAbs_FACE, q->fids);
+    keep_standing(q->shape, TopAbs_EDGE, q->eids);
+    keep_standing(q->shape, TopAbs_FACE, q->fsplit_of);
+    keep_standing(q->shape, TopAbs_FACE, q->fsplit_idx);
+    if (spec.unify) q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed); // THE MONOLITH: merge the boolean's seam
+    return q.release();
+}
+
+QymShape* qym_born(const TopoDS_Shape& s, const QymRecipe& recipe) {
+    if (s.IsNull()) return nullptr;
+    auto q = std::make_unique<QymShape>();
+    q->shape = s;
+    QymCounters next{1, 1};
+    if (recipe) recipe(*q, next);
+    after_the_recipe(*q, next);
+    fill_unnamed(q->shape, TopAbs_FACE, q->fids, next.faces);
+    fill_unnamed(q->shape, TopAbs_EDGE, q->eids, next.edges);
+    return q.release();
+}
+
+void keep_standing(const TopoDS_Shape& res, TopAbs_ShapeEnum ty, TopTools_DataMapOfShapeInteger& ids) {
+    TopTools_DataMapOfShapeInteger kept;
+    for (TopExp_Explorer ex(res, ty); ex.More(); ex.Next())
+        if (ids.IsBound(ex.Current()) && !kept.IsBound(ex.Current())) kept.Bind(ex.Current(), ids.Find(ex.Current()));
+    ids = kept;
 }
 
 // Everything left unnamed after the transfer (the operation's new geometry) gets a POSITIONAL number.
@@ -366,12 +530,6 @@ gp_Vec face_normal_vec(const TopoDS_Face& f) {
     gp_Dir n = pr.Normal();
     if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
     return gp_Vec(n);
-}
-
-void propagate_ids(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& aid, const TopoDS_Shape& res, TopTools_DataMapOfShapeInteger& out, TopTools_DataMapOfShapeInteger* splits_of, TopTools_DataMapOfShapeInteger* splits_idx, const std::map<int,int>* gen_names) {
-    int next = next_local(aid);
-    carry_ids(algo, a, ty, aid, out, next, false, splits_of, splits_idx, gen_names);
-    fill_unnamed(res, ty, out, next);
 }
 
 // --- A FACE IS ONE CONNECTED PIECE OF SURFACE --------------------------------------------------
@@ -486,14 +644,6 @@ static bool face_is_pinched(const TopoDS_Face& f, double tol) {
     return false;
 }
 
-// Carry the names of type `ty` from shape `a` onto its COPY `b`: the copy is walked in the same order as
-// the original — that is a property of a copy, not a coincidence.
-static void twin_map(const TopoDS_Shape& a, const TopoDS_Shape& b, TopAbs_ShapeEnum ty,
-                     const TopTools_DataMapOfShapeInteger& src, TopTools_DataMapOfShapeInteger& dst) {
-    TopExp_Explorer x(a, ty), y(b, ty);
-    for (; x.More() && y.More(); x.Next(), y.Next())
-        if (src.IsBound(x.Current()) && !dst.IsBound(y.Current())) dst.Bind(y.Current(), src.Find(x.Current()));
-}
 
 // THE 2D CURVE OF A PIECE ON THE NEIGHBOURING FACE — EXACTLY, NOT BY PROJECTION.
 //
@@ -528,6 +678,7 @@ static Handle(Geom2d_Curve) pcurve_of_piece(const TopoDS_Edge& src, const TopoDS
     BRep_Tool::Range(part, p0, p1);
     if (p1 - p0 < Precision::PConfusion()) return Handle(Geom2d_Curve)();
     try {
+        QYM_SIGNALS;
         Handle(Geom2d_TrimmedCurve) cut = new Geom2d_TrimmedCurve(pc, std::min(ta, tb), std::max(ta, tb));
         Handle(Geom2d_BSplineCurve) bs = Geom2dConvert::CurveToBSplineCurve(cut);
         if (bs.IsNull()) return Handle(Geom2d_Curve)();
@@ -562,21 +713,15 @@ int heal_pinched_faces(TopoDS_Shape& shape,
     BRepBuilderAPI_Copy cp(shape);
     TopoDS_Shape work = cp.Shape();
     if (work.IsNull()) return 0;
-    TopTools_DataMapOfShapeInteger wfids, weids, wsof, wsidx;
-    twin_map(shape, work, TopAbs_FACE, fids, wfids);
-    twin_map(shape, work, TopAbs_EDGE, eids, weids);
-    twin_map(shape, work, TopAbs_FACE, fsplit_of, wsof);
-    twin_map(shape, work, TopAbs_FACE, fsplit_idx, wsidx);
 
     TopTools_IndexedMapOfShape faces;
     TopExp::MapShapes(work, TopAbs_FACE, faces);
     // Who else holds this edge: a cut edge has a second face, and that face needs the same pieces.
     TopTools_IndexedDataMapOfShapeListOfShape owners;
     TopExp::MapShapesAndAncestors(work, TopAbs_EDGE, TopAbs_FACE, owners);
-    BRepTools_ReShape rs;
+    Handle(BRepTools_ReShape) rs = new BRepTools_ReShape();
     BRep_Builder bb;
-    TopTools_DataMapOfShapeInteger new_f, new_e, new_split_of, new_split_idx;
-    int nf = next_local(wfids), ne = next_local(weids), healed = 0;
+    int healed = 0;
 
     for (int i = 1; i <= faces.Extent(); ++i) {
         const TopoDS_Face& f = TopoDS::Face(faces(i));
@@ -688,38 +833,21 @@ int heal_pinched_faces(TopoDS_Shape& shape,
             TopoDS_Wire w;
             bb.MakeWire(w);
             for (const TopoDS_Shape& q : ordered) bb.Add(w, q);
-            rs.Replace(src.Oriented(TopAbs_FORWARD), w);
-            if (!weids.IsBound(src)) continue;
-            int id = weids.Find(src), piece = 0;
-            for (TopTools_ListIteratorOfListOfShape k(im); k.More(); k.Next()) {
-                if (new_e.IsBound(k.Value())) continue; // already named (two coincident edges gave one image)
-                new_e.Bind(k.Value(), piece == 0 ? id : ne++);
-                ++piece;
-            }
+            rs->Replace(src.Oriented(TopAbs_FORWARD), w);
         }
 
         TopoDS_Compound pieces;
         bb.MakeCompound(pieces);
-        const int fid = wfids.IsBound(f) ? wfids.Find(f) : 0;
-        int piece = 0;
         for (TopTools_ListIteratorOfListOfShape it(bf.Areas()); it.More(); it.Next()) {
             TopoDS_Shape a = it.Value();
             if (f.Orientation() == TopAbs_REVERSED) a.Reverse(); // the piece faces the same way the source did
             bb.Add(pieces, a);
-            if (fid && !new_f.IsBound(a)) {
-                new_f.Bind(a, piece == 0 ? fid : nf++);
-                if (piece > 0) {
-                    new_split_of.Bind(a, fid);
-                    new_split_idx.Bind(a, piece);
-                }
-            }
-            ++piece;
         }
-        rs.Replace(f, pieces);
+        rs->Replace(f, pieces);
         ++healed;
     }
     if (!healed) return 0; // the copy is discarded: the part is exactly what the operation built
-    TopoDS_Shape out = rs.Apply(work);
+    TopoDS_Shape out = rs->Apply(work);
     if (out.IsNull()) return 0;
     // BRING THE PARAMETRISATION TOGETHER BEFORE MEASURING. The carried 2D curves have to agree with the
     // 3D ones — otherwise a wrong-branch miss on a cylinder is invisible to both the check and the area: it
@@ -743,62 +871,39 @@ int heal_pinched_faces(TopoDS_Shape& shape,
     // and if the body is invalid afterwards the part stays as it was: a face lying in two places is better
     // than a corpse.
     if (!BRepCheck_Analyzer(out).IsValid()) return 0;
-    // THE NAMES MOVE ONTO THE IMAGES. Rebuilding the contours creates new shapes even where a face was not
-    // split: the neighbour had an edge replaced, so the neighbour itself is now a different shape.
-    auto move_map = [&](TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& src, TopTools_DataMapOfShapeInteger& dst) {
-        for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(src); it.More(); it.Next()) {
-            TopoDS_Shape im = rs.Apply(it.Key());
-            if (im.IsNull() || im.ShapeType() != ty || dst.IsBound(im)) continue;
-            dst.Bind(im, it.Value());
+    // THE NAMES THROUGH THE DOOR OF THE RESULT: the copy, then what the repair put in place of each face and edge -
+    // rebuilding the contours makes new shapes even of a neighbour that was not split, its edge replaced. A face cut in
+    // pieces keeps its name on the first and records the others as its pieces; an edge cut at a touch the same.
+    const QymShape before{shape, fids, eids, fsplit_of, fsplit_idx, {}, {}};
+    QymBuilderHistory copied(cp);
+    QymRepairHistory reshaped(rs, QymRepairAsk::Apply);
+    QymChainHistory history(copied, reshaped);
+    QymResultSpec spec{{QymOperand{&before, QymCarry::Everything, "pinched"}}};
+    // the pieces the operation before this repair recorded stay recorded on what they became: the names of the pieces
+    // are given after the whole operation, this repair included
+    spec.recipe = [&](QymShape& q, QymCounters&) {
+        for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(fsplit_of); it.More(); it.Next()) {
+            TopTools_ListOfShape images;
+            for (TopTools_ListIteratorOfListOfShape m(history.Modified(it.Key())); m.More(); m.Next()) images.Append(m.Value());
+            if (images.IsEmpty() && !history.Removed(it.Key())) images.Append(it.Key());
+            for (TopTools_ListIteratorOfListOfShape m(images); m.More(); m.Next()) {
+                if (q.fsplit_of.IsBound(m.Value())) continue;
+                q.fsplit_of.Bind(m.Value(), it.Value());
+                if (fsplit_idx.IsBound(it.Key())) q.fsplit_idx.Bind(m.Value(), fsplit_idx.Find(it.Key()));
+            }
         }
     };
-    move_map(TopAbs_FACE, wfids, new_f);
-    move_map(TopAbs_EDGE, weids, new_e);
+    std::unique_ptr<QymShape> named(qym_result(history, out, spec));
+    if (!named) return 0;
     // AN EMPTY MAP STAYS EMPTY: a primitive and an import have no names at all, and inventing them here is not allowed.
-    if (!wfids.IsEmpty()) fill_unnamed(out, TopAbs_FACE, new_f, nf);
-    if (!weids.IsEmpty()) fill_unnamed(out, TopAbs_EDGE, new_e, ne);
-    for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(wsof); it.More(); it.Next()) {
-        TopoDS_Shape im = rs.Apply(it.Key());
-        if (im.IsNull() || im.ShapeType() != TopAbs_FACE || new_split_of.IsBound(im)) continue;
-        new_split_of.Bind(im, it.Value());
-        if (wsidx.IsBound(it.Key())) new_split_idx.Bind(im, wsidx.Find(it.Key()));
-    }
-    shape = out;
-    fids = new_f;
-    eids = new_e;
-    fsplit_of = new_split_of;
-    fsplit_idx = new_split_idx;
+    if (fids.IsEmpty()) named->fids.Clear();
+    if (eids.IsEmpty()) named->eids.Clear();
+    shape = named->shape;
+    fids = named->fids;
+    eids = named->eids;
+    fsplit_of = named->fsplit_of;
+    fsplit_idx = named->fsplit_idx;
     return healed;
-}
-
-// THE WINNER OF A MERGE IS CHOSEN BY NAME, NOT BY TRAVERSAL ORDER.
-//
-// Merging coplanar faces is legitimate (the monolith), but DIFFERENT names collapse into one face and one
-// of them has to yield. Whatever came later in the traversal used to yield — that is, the sub-shape
-// numbering made the choice. Measured on a real part: one and the same edit gave the win now to the
-// smaller name, now to the larger; six walls lost their name not because they had gone, but because the
-// draw fell differently.
-//
-// The rule: a name beats a positional number, and among names THE SMALLER DESCRIPTOR wins. A descriptor is
-// an index into the document's name table; it lives in the file and depends on neither the traversal nor
-// the session, so one and the same merge always has the same winner.
-// `absorbed` holds pairs of "losing name -> winning name". The loser is NOT LOST: the model layer
-// remembers the absorption, and a reference to the former name goes on finding the same (now shared) face.
-// Otherwise a fillet disappears exactly where two walls honestly became one.
-static void bind_winner(TopTools_DataMapOfShapeInteger& out, const TopoDS_Shape& sh, int id,
-                        std::vector<std::pair<unsigned, unsigned>>* absorbed) {
-    if (!out.IsBound(sh)) { out.Bind(sh, id); return; }
-    const int have = out.Find(sh);
-    if (have == id) return;
-    const bool have_named = (have & QYM_NAMED) != 0, id_named = (id & QYM_NAMED) != 0;
-    auto note = [&](int loser, int winner) {
-        if (absorbed && (loser & QYM_NAMED) && (winner & QYM_NAMED)) absorbed->emplace_back((unsigned)loser, (unsigned)winner);
-    };
-    if (id_named && !have_named) { out.Bind(sh, id); return; }          // a name beats a number
-    if (id_named && have_named) {
-        if ((unsigned)id < (unsigned)have) { note(have, id); out.Bind(sh, id); } // among names, the smaller one
-        else note(id, have);
-    }
 }
 
 // A MONOLITH: after a boolean, merge COPLANAR faces and COLLINEAR edges
@@ -813,6 +918,7 @@ TopoDS_Shape unify_monolithic(const TopoDS_Shape& in,
                                      const TopTools_MapOfShape* keep) {
     if (in.IsNull()) return in;
     try {
+        QYM_SIGNALS;
         ShapeUpgrade_UnifySameDomain uni(in, Standard_True, Standard_True, Standard_False);
         if (keep) uni.KeepShapes(*keep); // what the caller needs to stay: the vertices a body had before its seam was moved
         // THE MERGING TOLERANCE: real models carry about 1e-5 of noise (snapping to the tessellation,
@@ -823,39 +929,16 @@ TopoDS_Shape unify_monolithic(const TopoDS_Shape& in,
         uni.Build();
         TopoDS_Shape res = uni.Shape();
         if (res.IsNull()) return in;
-        Handle(BRepTools_History) hist = uni.History();
+        QymToolsHistory hist(uni.History());
+        // the names through the history of the merging by the one carrying of the bridge: a merge takes the winner by
+        // name (`merge_names`), the loser of a face recorded as yielded to it
         auto remap = [&](TopAbs_ShapeEnum ty, TopTools_DataMapOfShapeInteger& ids) {
             TopTools_DataMapOfShapeInteger out;
             int next = next_local(ids);
-            // IN A MERGE A NAME BEATS A NUMBER — and that is not a matter of style.
-            //
-            // The monolith glues coplanar pieces into one face. The glued result used to take the id of
-            // whichever piece came first in the traversal — and the traversal does not know which is a name
-            // and which a positional number. On a real part 7 names out of 13 were lost this way in a single
-            // face push: the walls became nameless, and a thickening standing on them lost its face at the
-            // very next edit.
-            //
-            // Hence two passes: the STRUCTURAL pieces hand out names first, the positional ones second. If
-            // even one piece of the glue was named, the name survives the merge.
-            for (int pass = 0; pass < 2; ++pass) {
-                for (TopExp_Explorer ex(in, ty); ex.More(); ex.Next()) {
-                    const TopoDS_Shape& s = ex.Current();
-                    if (!ids.IsBound(s)) continue;
-                    int id = ids.Find(s);
-                    const bool named = (id & QYM_NAMED) != 0;
-                    if ((pass == 0) != named) continue; // the first pass takes only names, the second only numbers
-                    bool has_mod = false;
-                    if (!hist.IsNull()) {
-                        const TopTools_ListOfShape& mod = hist->Modified(s);
-                        for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next()) {
-                            has_mod = true;
-                            bind_winner(out, it.Value(), id, ty == TopAbs_FACE ? absorbed : nullptr);
-                        }
-                    }
-                    bool removed = !hist.IsNull() && hist->IsRemoved(s);
-                    if (!has_mod && !removed) bind_winner(out, s, id, ty == TopAbs_FACE ? absorbed : nullptr); // untouched: the same shape is in `res`
-                }
-            }
+            TakenNames record;
+            record.absorbed = ty == TopAbs_FACE ? absorbed : nullptr;
+            record.merge = QymMerge::ByName;
+            carry_ids_with(hist, in, ty, ids, out, next, false, nullptr, nullptr, nullptr, record);
             for (TopExp_Explorer ex(res, ty); ex.More(); ex.Next())
                 if (!out.IsBound(ex.Current())) out.Bind(ex.Current(), next++); // new sub-shapes get a fresh id
             ids = out;
@@ -871,6 +954,7 @@ TopoDS_Shape unify_monolithic(const TopoDS_Shape& in,
 
 extern "C" QymDoc* qym_occt_step_read(const char* path, double defl) {
     try {
+        QYM_SIGNALS;
         std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
         STEPControl_Reader reader;
         if (reader.ReadFile(path) != IFSelect_RetDone) return nullptr;
@@ -959,6 +1043,7 @@ static TopoDS_Shape iges_shape(const char* path) {
 
 extern "C" QymDoc* qym_occt_iges_read(const char* path, double defl) {
     try {
+        QYM_SIGNALS;
         TopoDS_Shape shape = iges_shape(path);
         if (shape.IsNull()) return nullptr;
         return doc_from_shape(shape, defl);
@@ -1055,7 +1140,7 @@ static bool solid_colour(const Handle(IGESData_IGESEntity)& e, float rgb[3]) {
 }
 
 // The faces of `solid` whose colour in the file differs from the body's `rgb` (every coloured face when the body has
-// none), by the face's persistent id: the number `seeded` gives it - 1..n in the order the explorer meets the faces, a
+// none), by the face's persistent id: the number `qym_born` gives it - 1..n in the order the explorer meets the faces, a
 // face met twice counted once. A face of the file is found in the body through what the reading made of it.
 static void iges_face_colours(IGESControl_Reader& reader, const Handle(IGESData_IGESEntity)& e, const TopoDS_Shape& solid, const float rgb[3], bool has_rgb, std::vector<std::pair<int, std::array<float, 3>>>& out) {
     Handle(IGESSolid_ManifoldSolid) m = Handle(IGESSolid_ManifoldSolid)::DownCast(e);
@@ -1077,7 +1162,7 @@ static void iges_face_colours(IGESControl_Reader& reader, const Handle(IGESData_
 // SURFACES SEWN INTO THE BODIES THEY CLOSE, each face in the colour of the surface it came from: sewing gives a face
 // anew, and its history (`Modified`) says which surface it was. A closed shell becomes a solid, an open one stays a
 // shell; each is a node under `parent`, named `name` (numbered when the set sews into several), its colour the one
-// most of its faces have, and the faces of another colour faces of a colour of their own - by the id `seeded` gives
+// most of its faces have, and the faces of another colour faces of a colour of their own - by the id `qym_born` gives
 // them, as `iges_face_colours` counts. 0.01 mm: the gap a writer's own tolerance leaves between surfaces, as in
 // `iges_shape`.
 static void iges_sewn(IGESControl_Reader& reader, const std::vector<Handle(IGESData_IGESEntity)>& members, int64_t parent, const std::string& name, QymTree& tree, std::vector<TopoDS_Shape>& solids) {
@@ -1379,6 +1464,7 @@ bool iges_tree(const char* path, QymTree& tree, std::vector<TopoDS_Shape>& solid
 
 extern "C" QymShapeList* qym_iges_solids(const char* path) {
     try {
+        QYM_SIGNALS;
         // the same reading the import makes, so solid k is the body the document knows as k
         {
             QymTree tree;
@@ -1402,6 +1488,7 @@ extern "C" QymShapeList* qym_iges_solids(const char* path) {
 // trimmed surfaces, the writer's default and the kind every IGES reader handles. 0 means success.
 extern "C" int qym_iges_write(const QymShape** shapes, const double* mats, size_t n, const char* path, const char* unit) {
     try {
+        QYM_SIGNALS;
         std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
         IGESControl_Controller::Init();
         IGESControl_Writer writer(unit, 0);
@@ -1476,7 +1563,7 @@ static bool colour_of(const Handle(XCAFDoc_ColorTool)& ct, const TopoDS_Shape& s
     return false;
 }
 
-// The colours the file gives single faces of `solid`, by the face's persistent id: the number `seeded` gives the face
+// The colours the file gives single faces of `solid`, by the face's persistent id: the number `qym_born` gives the face
 // when the body is wrapped - 1..n in the order the explorer meets the faces, a face met twice counted once.
 static void face_colours(const Handle(XCAFDoc_ColorTool)& ct, const TopoDS_Shape& solid, std::vector<std::pair<int, std::array<float, 3>>>& out) {
     TopTools_MapOfShape seen;
@@ -1598,58 +1685,64 @@ bool step_tree(const char* path, QymTree& tree, std::vector<TopoDS_Shape>& solid
 extern "C" int qym_step_write_tree(size_t n, const int64_t* parents, const char* const* names, const double* places, const QymShape* const* shapes, const int64_t* same_as, const float* rgb, const int* has_rgb, const size_t* face_starts, const uint32_t* face_ids, const float* face_rgb, const char* path) {
     if (n == 0 || !parents || !names || !places || !shapes || !same_as || !rgb || !has_rgb || !face_starts || !path) return 4;
     std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
-    Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
-    Handle(TDocStd_Document) doc;
     try {
-        Interface_Static::SetCVal("write.step.unit", "MM");
-        app->NewDocument("MDTV-XCAF", doc);
-        Handle(XCAFDoc_ShapeTool) st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
-        Handle(XCAFDoc_ColorTool) ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
-        std::vector<TDF_Label> product(n);
-        for (size_t i = 0; i < n; ++i) {
-            if (same_as[i] >= 0 && (size_t)same_as[i] < i) {
-                product[i] = product[same_as[i]];
-                continue;
-            }
-            if (shapes[i] && !shapes[i]->shape.IsNull()) {
-                product[i] = st->AddShape(shapes[i]->shape, Standard_False);
-                if (has_rgb[i]) ct->SetColor(product[i], Quantity_Color(rgb[3 * i], rgb[3 * i + 1], rgb[3 * i + 2], Quantity_TOC_sRGB), XCAFDoc_ColorSurf);
-                // FACES OF A COLOUR OF THEIR OWN: found by their persistent id in the live body, coloured as its sub-shapes
-                if (face_starts[i + 1] > face_starts[i]) {
-                    std::map<int, TopoDS_Shape> by_id;
-                    for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(shapes[i]->fids); it.More(); it.Next()) by_id[it.Value()] = it.Key();
-                    for (size_t k = face_starts[i]; k < face_starts[i + 1]; ++k) {
-                        const auto f = by_id.find((int)face_ids[k]);
-                        if (f == by_id.end()) continue;
-                        const TDF_Label sub = st->AddSubShape(product[i], f->second);
-                        if (!sub.IsNull()) ct->SetColor(sub, Quantity_Color(face_rgb[3 * k], face_rgb[3 * k + 1], face_rgb[3 * k + 2], Quantity_TOC_sRGB), XCAFDoc_ColorSurf);
-                    }
+        QYM_SIGNALS;
+        Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
+        Handle(TDocStd_Document) doc;
+        try {
+            QYM_SIGNALS;
+            Interface_Static::SetCVal("write.step.unit", "MM");
+            app->NewDocument("MDTV-XCAF", doc);
+            Handle(XCAFDoc_ShapeTool) st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+            Handle(XCAFDoc_ColorTool) ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+            std::vector<TDF_Label> product(n);
+            for (size_t i = 0; i < n; ++i) {
+                if (same_as[i] >= 0 && (size_t)same_as[i] < i) {
+                    product[i] = product[same_as[i]];
+                    continue;
                 }
-            } else {
-                product[i] = st->NewShape();
+                if (shapes[i] && !shapes[i]->shape.IsNull()) {
+                    product[i] = st->AddShape(shapes[i]->shape, Standard_False);
+                    if (has_rgb[i]) ct->SetColor(product[i], Quantity_Color(rgb[3 * i], rgb[3 * i + 1], rgb[3 * i + 2], Quantity_TOC_sRGB), XCAFDoc_ColorSurf);
+                    // FACES OF A COLOUR OF THEIR OWN: found by their persistent id in the live body, coloured as its sub-shapes
+                    if (face_starts[i + 1] > face_starts[i]) {
+                        std::map<int, TopoDS_Shape> by_id;
+                        for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(shapes[i]->fids); it.More(); it.Next()) by_id[it.Value()] = it.Key();
+                        for (size_t k = face_starts[i]; k < face_starts[i + 1]; ++k) {
+                            const auto f = by_id.find((int)face_ids[k]);
+                            if (f == by_id.end()) continue;
+                            const TDF_Label sub = st->AddSubShape(product[i], f->second);
+                            if (!sub.IsNull()) ct->SetColor(sub, Quantity_Color(face_rgb[3 * k], face_rgb[3 * k + 1], face_rgb[3 * k + 2], Quantity_TOC_sRGB), XCAFDoc_ColorSurf);
+                        }
+                    }
+                } else {
+                    product[i] = st->NewShape();
+                }
+                TDataStd_Name::Set(product[i], TCollection_ExtendedString(names[i], Standard_True));
             }
-            TDataStd_Name::Set(product[i], TCollection_ExtendedString(names[i], Standard_True));
+            for (size_t i = 0; i < n; ++i) {
+                if (parents[i] < 0 || (size_t)parents[i] >= i) continue;
+                const double* m = places + 12 * i;
+                gp_Trsf t;
+                t.SetValues(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
+                const TDF_Label occurrence = st->AddComponent(product[parents[i]], product[i], TopLoc_Location(t));
+                TDataStd_Name::Set(occurrence, TCollection_ExtendedString(names[i], Standard_True));
+            }
+            st->UpdateAssemblies();
+            STEPCAFControl_Writer writer;
+            writer.SetNameMode(Standard_True);
+            writer.SetColorMode(Standard_True);
+            int rc = 2;
+            if (writer.Transfer(doc, STEPControl_AsIs)) rc = writer.Write(path) == IFSelect_RetDone ? 0 : 1;
+            app->Close(doc);
+            return rc;
+        } catch (...) {
+            // the document is closed whatever the writer threw, then the throw goes on to be told
+            if (!doc.IsNull()) app->Close(doc);
+            throw;
         }
-        for (size_t i = 0; i < n; ++i) {
-            if (parents[i] < 0 || (size_t)parents[i] >= i) continue;
-            const double* m = places + 12 * i;
-            gp_Trsf t;
-            t.SetValues(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
-            const TDF_Label occurrence = st->AddComponent(product[parents[i]], product[i], TopLoc_Location(t));
-            TDataStd_Name::Set(occurrence, TCollection_ExtendedString(names[i], Standard_True));
-        }
-        st->UpdateAssemblies();
-        STEPCAFControl_Writer writer;
-        writer.SetNameMode(Standard_True);
-        writer.SetColorMode(Standard_True);
-        int rc = 2;
-        if (writer.Transfer(doc, STEPControl_AsIs)) rc = writer.Write(path) == IFSelect_RetDone ? 0 : 1;
-        app->Close(doc);
-        return rc;
-    } catch (...) {
-        if (!doc.IsNull()) app->Close(doc);
-        return 3;
-    }
+    } QYM_WHY_CATCH("step/write")
+    return 3;
 }
 
 // An exact file read into bodies and solids, and - for STEP - the tree they stand in (`tree_out` may be null).
@@ -1659,6 +1752,7 @@ extern "C" int qym_exact_read_tree(int format, const char* path, double defl, Qy
     *solids_out = nullptr;
     if (tree_out) *tree_out = nullptr;
     try {
+        QYM_SIGNALS;
         QymShapeList* lst = new QymShapeList();
         TopoDS_Shape shape;
         QymTree* iges = format == 1 ? new QymTree() : nullptr;
@@ -1744,6 +1838,7 @@ extern "C" void qym_tree_free(QymTree* t) { delete t; }
 static QymShape* shape_from_mesh_sewn(const double* verts, size_t nv, const uint32_t* tris, size_t nt) {
     if (!verts || !tris || nv < 3 || nt < 1) return nullptr;
     try {
+        QYM_SIGNALS;
         std::vector<gp_Pnt> p(nv);
         Bnd_Box box;
         for (size_t i = 0; i < nv; ++i) {
@@ -1793,7 +1888,7 @@ static QymShape* shape_from_mesh_sewn(const double* verts, size_t nv, const uint
             only = it.Value();
             ++n;
         }
-        return seeded(n == 1 ? only : res);
+        return qym_born(n == 1 ? only : res);
     } catch (...) {
         return nullptr;
     }
@@ -1809,6 +1904,7 @@ static QymShape* shape_from_mesh_sewn(const double* verts, size_t nv, const uint
 TopoDS_Shape mesh_shells(const double* verts, size_t nv, const uint32_t* tris, size_t nt, bool solids, bool border_runs, size_t* dropped) {
     if (!verts || !tris || nv < 3 || nt < 1) return TopoDS_Shape();
     try {
+        QYM_SIGNALS;
         Bnd_Box box;
         for (size_t i = 0; i < nv; ++i) box.Add(gp_Pnt(verts[3 * i], verts[3 * i + 1], verts[3 * i + 2]));
         const double diag = box.IsVoid() ? 1.0 : std::sqrt(box.SquareExtent());
@@ -2092,13 +2188,18 @@ TopoDS_Shape mesh_shells(const double* verts, size_t nv, const uint32_t* tris, s
 }
 
 extern "C" QymShape* qym_shape_from_mesh(const double* verts, size_t nv, const uint32_t* tris, size_t nt) {
-    if (!verts || !tris || nv < 3 || nt < 1) return nullptr;
-    TopoDS_Shape made = mesh_shells(verts, nv, tris, nt, true, true, nullptr);
-    return made.IsNull() ? shape_from_mesh_sewn(verts, nv, tris, nt) : seeded(made);
+    try {
+        QYM_SIGNALS;
+        if (!verts || !tris || nv < 3 || nt < 1) return nullptr;
+        TopoDS_Shape made = mesh_shells(verts, nv, tris, nt, true, true, nullptr);
+        return made.IsNull() ? shape_from_mesh_sewn(verts, nv, tris, nt) : qym_born(made);
+    } QYM_WHY_CATCH("shape_from_mesh")
+    return nullptr;
 }
 
 extern "C" QymDoc* qym_occt_box_doc(double dx, double dy, double dz, double defl) {
     try {
+        QYM_SIGNALS;
         TopoDS_Shape shape = BRepPrimAPI_MakeBox(dx, dy, dz).Shape();
         return doc_from_shape(shape, defl);
     } catch (...) {
@@ -2109,6 +2210,7 @@ extern "C" QymDoc* qym_occt_box_doc(double dx, double dy, double dz, double defl
 // Extrude a closed 2D profile (xy at Z=0) to the height `height` along +Z, giving a body.
 extern "C" QymDoc* qym_occt_extrude(const double* xy, size_t n, double height, double defl) {
     try {
+        QYM_SIGNALS;
         if (n < 3) return nullptr;
         BRepBuilderAPI_MakePolygon poly;
         for (size_t i = 0; i < n; ++i) {
@@ -2129,6 +2231,7 @@ extern "C" QymDoc* qym_occt_extrude(const double* xy, size_t n, double height, d
 // Revolve a closed profile (xy at Z=0) about an axis (0 = X, 1 = Y) through an angle, giving a body.
 extern "C" QymDoc* qym_occt_revolve(const double* xy, size_t n, int axis, double angle_deg, double defl) {
     try {
+        QYM_SIGNALS;
         if (n < 3) return nullptr;
         BRepBuilderAPI_MakePolygon poly;
         for (size_t i = 0; i < n; ++i) {
@@ -2175,30 +2278,60 @@ static std::vector<int> wire_src(const double* p) {
     return out;
 }
 
+// THE WELD OF A PROFILE: ends of neighbouring edges nearer than this are one point - the same micrometre the model welds
+// the points of a sketch at (`model/tess.rs`). A profile from elsewhere (a DXF, a font, a file read) may miss closing by
+// less: built as it is, the loop stays open by that much and the face comes out short of it (4000 mm^3 read 3999.9967
+// for a gap of 1e-4).
+static const double QYM_PROFILE_WELD = 1e-3;
+
+// ONE EDGE OF AN ENCODED PROFILE, as read: what it is, its ends, its centre, its way round, and its origin.
+struct QymProfileEdge {
+    double kind, ax, ay, bx, by, cx, cy, ccw;
+    int src;
+};
+
 static TopoDS_Wire build_exact_wire_src(const double*& p, TopTools_DataMapOfShapeInteger* esrc) {
     size_t nedges = (size_t)(*p++);
+    std::vector<QymProfileEdge> read;
+    read.reserve(nedges);
+    for (size_t i = 0; i < nedges; ++i) {
+        QymProfileEdge g{p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], (int)p[8]};
+        p += 9;
+        // A SEGMENT OF NO LENGTH IS NO EDGE: a glyph of a TTF closes by returning to its first point, and OCCT throws
+        // building an edge between two equal points - the whole profile was refused
+        if (g.kind == 0.0 && std::hypot(g.bx - g.ax, g.by - g.ay) < 1e-9) continue;
+        read.push_back(g);
+    }
+    // the ends of neighbouring edges welded, the last to the first included: each edge ends where the next one starts,
+    // so the loop closes on the point it began at. A circle is a loop of its own and has no ends.
+    for (size_t i = 0; i < read.size(); ++i) {
+        const QymProfileEdge next = read[(i + 1) % read.size()];
+        QymProfileEdge& cur = read[i];
+        if (next.kind == 2.0 || cur.kind == 2.0) continue;
+        if (std::hypot(next.ax - cur.bx, next.ay - cur.by) < QYM_PROFILE_WELD) {
+            cur.bx = next.ax;
+            cur.by = next.ay;
+        }
+    }
     BRepBuilderAPI_MakeWire mkw;
     std::vector<int> srcs; // the origins, in the order the edges are added
-    srcs.reserve(nedges);
-    for (size_t i = 0; i < nedges; ++i) {
-        double kind = p[0], ax = p[1], ay = p[2], bx = p[3], by = p[4], cx = p[5], cy = p[6], ccw = p[7];
-        int src = (int)p[8]; // the edge's ORIGIN — the Id of the sketch entity (0 = unknown)
-        p += 9;
+    srcs.reserve(read.size());
+    for (const QymProfileEdge& g : read) {
         TopoDS_Edge e;
-        if (kind == 2.0) { // a full circle
-            gp_Circ circ(gp_Ax2(gp_Pnt(cx, cy, 0.0), gp_Dir(0.0, 0.0, 1.0)), ax);
+        if (g.kind == 2.0) { // a full circle
+            gp_Circ circ(gp_Ax2(gp_Pnt(g.cx, g.cy, 0.0), gp_Dir(0.0, 0.0, 1.0)), g.ax);
             e = BRepBuilderAPI_MakeEdge(circ).Edge();
-        } else if (kind == 1.0) { // an arc from a to b about the centre c
-            double r = std::hypot(ax - cx, ay - cy);
-            gp_Dir n(0.0, 0.0, ccw > 0.5 ? 1.0 : -1.0);
-            gp_Circ circ(gp_Ax2(gp_Pnt(cx, cy, 0.0), n), r);
-            e = BRepBuilderAPI_MakeEdge(circ, gp_Pnt(ax, ay, 0.0), gp_Pnt(bx, by, 0.0)).Edge();
+        } else if (g.kind == 1.0) { // an arc from a to b about the centre c
+            double r = std::hypot(g.ax - g.cx, g.ay - g.cy);
+            gp_Dir n(0.0, 0.0, g.ccw > 0.5 ? 1.0 : -1.0);
+            gp_Circ circ(gp_Ax2(gp_Pnt(g.cx, g.cy, 0.0), n), r);
+            e = BRepBuilderAPI_MakeEdge(circ, gp_Pnt(g.ax, g.ay, 0.0), gp_Pnt(g.bx, g.by, 0.0)).Edge();
         } else { // a segment
-            e = BRepBuilderAPI_MakeEdge(gp_Pnt(ax, ay, 0.0), gp_Pnt(bx, by, 0.0)).Edge();
+            e = BRepBuilderAPI_MakeEdge(gp_Pnt(g.ax, g.ay, 0.0), gp_Pnt(g.bx, g.by, 0.0)).Edge();
         }
         if (!e.IsNull()) {
             mkw.Add(e);
-            srcs.push_back(src);
+            srcs.push_back(g.src); // the edge's ORIGIN - the Id of the sketch entity (0 = unknown)
         }
     }
     if (!mkw.IsDone()) return TopoDS_Wire();
@@ -2288,6 +2421,7 @@ extern "C" QymDoc* qym_occt_extrude_bool(const double* base_xy, size_t nb, doubl
                               const double* tool_xy, size_t nt, double tool_h,
                               int op, double defl) {
     try {
+        QYM_SIGNALS;
         if (nb < 3 || nt < 3) return nullptr;
         TopoDS_Shape base = extrude_shape(base_xy, nb, base_h);
         TopoDS_Shape tool = extrude_shape(tool_xy, nt, tool_h);
@@ -2322,6 +2456,7 @@ extern "C" void qym_set_parallel(int on) { g_parallel.store(on != 0); }
 /// all draw from it, so this is the ceiling for the lot, not for one of them.
 extern "C" void qym_set_threads(int n) {
     try {
+        QYM_SIGNALS;
         int want = n > 0 ? n : std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1);
         OSD_ThreadPool::DefaultPool()->Init(want);
     } catch (...) {
@@ -2340,6 +2475,7 @@ extern "C" size_t qym_doc_face_count(const QymDoc* d) { return d ? d->faces_tota
 extern "C" QymShape* qym_shape_sew(const QymShape* s, double tol) {
     if (!s) return nullptr;
     try {
+        QYM_SIGNALS;
         BRepBuilderAPI_Sewing sew(tol, Standard_True, Standard_True, Standard_True);
         for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) sew.Add(ex.Current());
         sew.Perform();
@@ -2351,31 +2487,26 @@ extern "C" QymShape* qym_shape_sew(const QymShape* s, double tol) {
             solid = fix.SolidFromShell(TopoDS::Shell(ex.Current()));
             break;
         }
-        QymShape* out = new QymShape();
-        out->shape = solid.IsNull() ? res : solid;
-        out->fids = s->fids;
-        out->eids = s->eids;
-        return out;
+        // the names go through what the sewing made of each face and edge; closing the shell into a solid keeps them
+        QymSewingHistory history(sew);
+        return qym_result(history, solid.IsNull() ? res : solid, QymResultSpec{{QymOperand{s, QymCarry::Everything, "sew"}}});
     } catch (...) {
         return nullptr;
     }
 }
 
-// THE SHELL PUT RIGHT: orientation of the faces, then of the shell itself. The ids of the faces are carried
-// over where the fix left the face alone; a face the fix replaced loses its name, which is why this is not run
-// over a body that already builds correctly.
+// THE SHELL PUT RIGHT: orientation of the faces, then of the shell itself. The names go through the record of the fix:
+// a face it replaced passes its name to what replaced it.
 extern "C" QymShape* qym_shape_fix_shell(const QymShape* s) {
     if (!s) return nullptr;
     try {
+        QYM_SIGNALS;
         ShapeFix_Shape fix(s->shape);
         fix.Perform();
         TopoDS_Shape res = fix.Shape();
         if (res.IsNull()) return nullptr;
-        QymShape* out = new QymShape();
-        out->shape = res;
-        out->fids = s->fids;
-        out->eids = s->eids;
-        return out;
+        QymRepairHistory history(fix.Context(), QymRepairAsk::Apply);
+        return qym_result(history, res, QymResultSpec{{QymOperand{s, QymCarry::Everything, "fix shell"}}});
     } catch (...) {
         return nullptr;
     }
@@ -2443,10 +2574,10 @@ void classify_unnamed(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& src, c
     if (!std::getenv("QYM_CLASSIFY")) return;
     int same = 0, mod = 0, gen = 0, edge = 0, vert = 0, none = 0, lost = 0;
     auto named_src = [&](const TopoDS_Shape& f) {
-        return src_ids && src_ids->IsBound(f) && (src_ids->Find(f) & QYM_NAMED);
+        return src_ids && src_ids->IsBound(f) && qym_recipe(src_ids->Find(f));
     };
     for (TopExp_Explorer ex(q->shape, TopAbs_FACE); ex.More(); ex.Next()) {
-        if (q->fids.IsBound(ex.Current()) && (q->fids.Find(ex.Current()) & QYM_NAMED)) continue;
+        if (q->fids.IsBound(ex.Current()) && qym_recipe(q->fids.Find(ex.Current()))) continue;
         bool is_same = false, is_mod = false, is_gen = false, src_was_named = false;
         for (TopExp_Explorer s2(src, TopAbs_FACE); s2.More(); s2.Next()) {
             if (s2.Current().IsSame(ex.Current())) { is_same = true; src_was_named = named_src(s2.Current()); break; }
@@ -2480,7 +2611,7 @@ void classify_unnamed(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& src, c
 
 // --- THE TOPOLOGICAL NAMES OF A PRISM (a name from THE ORIGIN, not from the traversal order) ------
 //
-// `seed_ids` hands out ids in TopExp order: the walls, then the caps. Let the profile gain one more edge
+// Numbers go in TopExp order: the walls, then the caps. Let the profile gain one more edge
 // (a rectangle became L-shaped) and there are more walls — so THE CAPS CHANGE NUMBER. And the top face is
 // usually where the sketches, holes and chamfers sit: the reference silently moves onto a neighbouring
 // face. Measured on a bare case: there were 6 faces (bottom 5, top 6), then 8 — bottom 7, top 8.
@@ -2528,12 +2659,22 @@ static void caps_for(unsigned key, const unsigned* caps, size_t ncaps, unsigned&
 // base class BRepPrimAPI_MakeSweep): the caps take the names handed in, and a side face takes the name of
 // its own profile edge. One mechanism for all such operations: the name is derived from the recipe rather
 // than from the traversal order.
+/// The names given to the two caps of a sweep; 0 where the profile came from no sketch.
+struct SweepCaps {
+    unsigned bottom;
+    unsigned top;
+};
+static void name_sweep(BRepPrimAPI_MakeSweep& mk, const TopoDS_Face& profile, const TopTools_DataMapOfShapeInteger* esrc, SweepCaps caps, QymShape& q, QymCounters& next);
+
 static QymShape* seeded_sweep(BRepPrimAPI_MakeSweep& mk, const TopoDS_Face& profile, const TopTools_DataMapOfShapeInteger* esrc, unsigned cap0, unsigned cap1) {
-    TopoDS_Shape res = mk.Shape();
-    if (res.IsNull()) return nullptr;
-    QymShape* q = new QymShape{res, {}, {}, {}, {}};
+    return qym_born(mk.Shape(), [&](QymShape& q, QymCounters& next) { name_sweep(mk, profile, esrc, SweepCaps{cap0, cap1}, q, next); });
+}
+
+// THE NAMES A SWEEP OF A PROFILE GIVES ITSELF: the caps, and each wall after its profile edge.
+static void name_sweep(BRepPrimAPI_MakeSweep& mk, const TopoDS_Face& profile, const TopTools_DataMapOfShapeInteger* esrc, SweepCaps caps, QymShape& q, QymCounters& next) {
+    const unsigned cap0 = caps.bottom, cap1 = caps.top;
     auto bind_face = [&](const TopoDS_Shape& sh, int id) {
-        if (!sh.IsNull() && sh.ShapeType() == TopAbs_FACE && !q->fids.IsBound(sh)) q->fids.Bind(sh, id);
+        if (!sh.IsNull() && sh.ShapeType() == TopAbs_FACE && !q.fids.IsBound(sh)) q.fids.Bind(sh, id);
     };
     // THE CAP NAMES COME FROM ABOVE (descriptors from the document's name table). The kernel used to call
     // them 1 and 2 — the same on EVERY body — so in a boolean the tool's cap matched the base's cap by
@@ -2554,17 +2695,13 @@ static QymShape* seeded_sweep(BRepPrimAPI_MakeSweep& mk, const TopoDS_Face& prof
         for (TopTools_ListIteratorOfListOfShape it(gen); it.More(); it.Next()) bind_face(it.Value(), name);
     }
     // anything left unnamed for whatever reason (degenerate cases) gets fresh numbers AFTER the walls
-    int next = 10 + k + 1;
-    for (TopExp_Explorer ex(res, TopAbs_FACE); ex.More(); ex.Next())
-        if (!q->fids.IsBound(ex.Current())) q->fids.Bind(ex.Current(), next++);
-    classify_unnamed(mk, profile, q, "sweep or revolve");
+    next.faces = 10 + k + 1;
+    classify_unnamed(mk, profile, &q, "sweep or revolve");
     // EDGES keep the old scheme (traversal order, plus transfer through the operations' history and repair
     // by geometric snapshots). Names built from a pair of faces were tried, and on a real document that
     // broke 19 chamfers: some features have no edge snapshots (the file predates the mechanism), and the
     // reference is found neither by name nor by snapshot. Changing the EDGE naming scheme needs a migration
-    // of its own and is done separately from the faces.
-    seed_ids(res, TopAbs_EDGE, q->eids);
-    return q;
+    // of its own and is done separately from the faces. The door numbers them in traversal order.
 }
 
 // The former name for an extrusion — the same mechanism.
@@ -2578,8 +2715,7 @@ static QymShape* seeded_prism(BRepPrimAPI_MakePrism& mk, const TopoDS_Face& prof
 // with its parameters, so positional numbers did not drift here; but they were not UNIQUE, and a primitive
 // used as a boolean tool lost its names entirely.
 static QymShape* seeded_primitive(const TopoDS_Shape& sh, unsigned cap0, unsigned cap1, unsigned side) {
-    if (sh.IsNull()) return nullptr;
-    QymShape* q = new QymShape{sh, {}, {}, {}, {}};
+    return qym_born(sh, [&](QymShape& q, QymCounters&) {
     std::vector<std::pair<double, TopoDS_Shape>> planar; // (the centre's z, the face)
     std::vector<TopoDS_Shape> curved;
     for (TopExp_Explorer ex(sh, TopAbs_FACE); ex.More(); ex.Next()) {
@@ -2592,37 +2728,20 @@ static QymShape* seeded_primitive(const TopoDS_Shape& sh, unsigned cap0, unsigne
     }
     std::sort(planar.begin(), planar.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
     auto bind = [&](const TopoDS_Shape& f, unsigned name) {
-        if (name != 0 && !q->fids.IsBound(f)) q->fids.Bind(f, (int)name);
+        if (name != 0 && !q.fids.IsBound(f)) q.fids.Bind(f, (int)name);
     };
     if (!planar.empty()) bind(planar.front().second, cap0);
     if (planar.size() > 1) bind(planar.back().second, cap1);
     for (const auto& f : curved) bind(f, side);
-    int next = next_local(q->fids);
-    fill_unnamed(sh, TopAbs_FACE, q->fids, next);
-    seed_ids(sh, TopAbs_EDGE, q->eids);
-    return q;
+    });
 }
 
-// A new BASE body: seed ids onto the faces and edges (1..n in TopExp order) — stable for one recipe.
-QymShape* seeded(const TopoDS_Shape& s) {
-    if (s.IsNull()) return nullptr;
-    QymShape* q = new QymShape{s, {}, {}, {}, {}};
-    seed_ids(s, TopAbs_FACE, q->fids);
-    seed_ids(s, TopAbs_EDGE, q->eids);
-    return q;
-}
-// Carry the ids one-to-one in sub-shape order for type `ty` (the operation preserves topology: a transform or a mirror).
-void copy_ids_by_order(const TopoDS_Shape& src, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& sid, const TopoDS_Shape& dst, TopTools_DataMapOfShapeInteger& out) {
-    TopExp_Explorer es(src, ty), ed(dst, ty);
-    for (; es.More() && ed.More(); es.Next(), ed.Next()) {
-        if (sid.IsBound(es.Current())) out.Bind(ed.Current(), sid.Find(es.Current()));
-    }
-}
 
 extern "C" QymShape* qym_shape_extrude(const double* xy, size_t n, double h) {
     if (n < 3) return nullptr;
     try {
-        return seeded(extrude_shape(xy, n, h));
+        QYM_SIGNALS;
+        return qym_born(extrude_shape(xy, n, h));
     } catch (...) {
         return nullptr;
     }
@@ -2630,7 +2749,8 @@ extern "C" QymShape* qym_shape_extrude(const double* xy, size_t n, double h) {
 extern "C" QymShape* qym_shape_revolve(const double* xy, size_t n, int axis, double angle_deg) {
     if (n < 3) return nullptr;
     try {
-        return seeded(revolve_shape(xy, n, axis, angle_deg));
+        QYM_SIGNALS;
+        return qym_born(revolve_shape(xy, n, axis, angle_deg));
     } catch (...) {
         return nullptr;
     }
@@ -2638,6 +2758,7 @@ extern "C" QymShape* qym_shape_revolve(const double* xy, size_t n, int axis, dou
 // Extrude an EXACT profile (see `build_exact_face`) to the height h along +Z, giving a body with exact faces.
 extern "C" QymShape* qym_shape_extrude_profile(const double* data, size_t n, double h, unsigned cap0, unsigned cap1) {
     try {
+        QYM_SIGNALS;
         TopTools_DataMapOfShapeInteger esrc;
         TopoDS_Face f = build_exact_face_src(data, n, &esrc);
         if (f.IsNull()) return nullptr;
@@ -2655,6 +2776,7 @@ extern "C" QymShape* qym_shape_extrude_profile(const double* data, size_t n, dou
 // boundaries within `data`.
 extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const size_t* offsets, size_t nprof, double h, const unsigned* caps, size_t ncaps) {
     try {
+        QYM_SIGNALS;
         if (nprof == 0) return nullptr;
         TopoDS_Shape merged;
         TopTools_DataMapOfShapeInteger esrc; // the origin of a profile edge gives the side face's name
@@ -2684,17 +2806,10 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
                 // (10 + its ordinal) and its region's caps 1 and 2. Regions meeting only at points are islands
                 // of one body, so each island past the first wore the same fallback names: measured, 18 faces
                 // under 12 names and 36 edges under 15.
-                TopTools_DataMapOfShapeInteger moved;
-                for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(esrc); it.More(); it.Next()) {
-                    const TopTools_ListOfShape& mod = fuse.Modified(it.Key());
-                    if (mod.IsEmpty()) {
-                        if (!fuse.IsDeleted(it.Key()) && !moved.IsBound(it.Key())) moved.Bind(it.Key(), it.Value());
-                    } else {
-                        for (TopTools_ListIteratorOfListOfShape m(mod); m.More(); m.Next())
-                            if (!moved.IsBound(m.Value())) moved.Bind(m.Value(), it.Value());
-                    }
-                }
-                esrc = moved;
+                TopTools_ListOfShape before(args);
+                for (TopTools_ListIteratorOfListOfShape it(tools); it.More(); it.Next()) before.Append(it.Value());
+                QymBuilderHistory history(fuse);
+                carry_binding(history, before, TopAbs_EDGE, esrc);
             }
         }
         // Merge the coplanar faces and collinear edges of the plane, so the contact disappears from the topology (the monolith).
@@ -2704,25 +2819,15 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
         // and fillets began seeing two edges instead of one (on a real part four chamfers stopped being
         // taken). So it is called as before, and the binding is CARRIED THROUGH ITS HISTORY.
         try {
+            QYM_SIGNALS;
             ShapeUpgrade_UnifySameDomain uni(merged, Standard_True, Standard_True, Standard_False);
             uni.Build();
             if (!uni.Shape().IsNull()) {
-                Handle(BRepTools_History) hist = uni.History();
-                if (!hist.IsNull()) {
-                    TopTools_DataMapOfShapeInteger moved;
-                    for (TopExp_Explorer ex(merged, TopAbs_EDGE); ex.More(); ex.Next()) {
-                        const TopoDS_Shape& e = ex.Current();
-                        if (!esrc.IsBound(e)) continue;
-                        const int src = esrc.Find(e);
-                        const TopTools_ListOfShape& mod = hist->Modified(e);
-                        if (mod.IsEmpty()) {
-                            if (!hist->IsRemoved(e) && !moved.IsBound(e)) moved.Bind(e, src);
-                        } else {
-                            for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next())
-                                if (!moved.IsBound(it.Value())) moved.Bind(it.Value(), src);
-                        }
-                    }
-                    esrc = moved;
+                if (!uni.History().IsNull()) {
+                    QymToolsHistory history(uni.History());
+                    TopTools_ListOfShape before;
+                    before.Append(merged);
+                    carry_binding(history, before, TopAbs_EDGE, esrc);
                 }
                 merged = uni.Shape();
             }
@@ -2765,7 +2870,8 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
         BRep_Builder bb;
         TopoDS_Compound comp;
         bb.MakeCompound(comp);
-        QymShape* q = new QymShape{TopoDS_Shape(), {}, {}, {}, {}};
+        QymShape kept{};
+        QymShape* q = &kept;
         std::unordered_set<int> used_f, used_e;
         for (size_t i = 0; i < profiles.size(); ++i) {
             unsigned c0 = 0, c1 = 0;
@@ -2789,12 +2895,11 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
                 if (!q->eids.IsBound(it.Key()) && used_e.insert(it.Value()).second) q->eids.Bind(it.Key(), it.Value());
             delete one;
         }
-        q->shape = comp;
-        int nf = next_local(q->fids);
-        fill_unnamed(comp, TopAbs_FACE, q->fids, nf);
-        int ne = next_local(q->eids);
-        fill_unnamed(comp, TopAbs_EDGE, q->eids, ne);
-        return q;
+        // each island named by its own recipe; a number one island already holds is numbered across the compound
+        return qym_born(comp, [&](QymShape& made, QymCounters&) {
+            made.fids = kept.fids;
+            made.eids = kept.eids;
+        });
     } catch (...) {
         return nullptr;
     }
@@ -2804,6 +2909,7 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
 // A cylinder: axis Z, base at z=0, centred at the origin. Exact, with 3 faces.
 extern "C" QymShape* qym_shape_cylinder(double r, double h, unsigned cap0, unsigned cap1, unsigned side) {
     try {
+        QYM_SIGNALS;
         return seeded_primitive(BRepPrimAPI_MakeCylinder(r, h).Shape(), cap0, cap1, side);
     } catch (...) {
         return nullptr;
@@ -2812,6 +2918,7 @@ extern "C" QymShape* qym_shape_cylinder(double r, double h, unsigned cap0, unsig
 // A sphere centred at the origin. Exact, with 1 face.
 extern "C" QymShape* qym_shape_sphere(double r, unsigned cap0, unsigned cap1, unsigned side) {
     try {
+        QYM_SIGNALS;
         return seeded_primitive(BRepPrimAPI_MakeSphere(r).Shape(), cap0, cap1, side);
     } catch (...) {
         return nullptr;
@@ -2820,6 +2927,7 @@ extern "C" QymShape* qym_shape_sphere(double r, unsigned cap0, unsigned cap1, un
 // A cone: base r1 at z=0, top r2 at z=h, axis Z.
 extern "C" QymShape* qym_shape_cone(double r1, double r2, double h, unsigned cap0, unsigned cap1, unsigned side) {
     try {
+        QYM_SIGNALS;
         return seeded_primitive(BRepPrimAPI_MakeCone(r1, r2, h).Shape(), cap0, cap1, side);
     } catch (...) {
         return nullptr;
@@ -2828,6 +2936,7 @@ extern "C" QymShape* qym_shape_cone(double r1, double r2, double h, unsigned cap
 // A torus in the XY plane, axis Z, centred at the origin.
 extern "C" QymShape* qym_shape_torus(double major, double minor, unsigned cap0, unsigned cap1, unsigned side) {
     try {
+        QYM_SIGNALS;
         return seeded_primitive(BRepPrimAPI_MakeTorus(major, minor).Shape(), cap0, cap1, side);
     } catch (...) {
         return nullptr;
@@ -2837,12 +2946,13 @@ extern "C" QymShape* qym_shape_torus(double major, double minor, unsigned cap0, 
 // Revolve an EXACT profile about an axis (0 = X, 1 = Y) through an angle, giving a body.
 extern "C" QymShape* qym_shape_revolve_profile(const double* data, size_t n, int axis, double angle_deg) {
     try {
+        QYM_SIGNALS;
         TopoDS_Face f = build_exact_face(data, n);
         if (f.IsNull()) return nullptr;
         gp_Dir dir = (axis == 0) ? gp_Dir(1.0, 0.0, 0.0) : gp_Dir(0.0, 1.0, 0.0);
         gp_Ax1 ax(gp_Pnt(0.0, 0.0, 0.0), dir);
         double ang = (std::abs(angle_deg) < 1e-6 ? 360.0 : angle_deg) * 3.14159265358979323846 / 180.0;
-        return seeded(BRepPrimAPI_MakeRevol(f, ax, ang).Shape());
+        return qym_born(BRepPrimAPI_MakeRevol(f, ax, ang).Shape());
     } catch (...) {
         return nullptr;
     }
@@ -2852,6 +2962,7 @@ extern "C" QymShape* qym_shape_revolve_profile(const double* data, size_t n, int
 // it in here.
 extern "C" QymShape* qym_shape_revolve_profile_axis(const double* data, size_t n, const double* origin, const double* dir, double angle_deg, unsigned cap0, unsigned cap1) {
     try {
+        QYM_SIGNALS;
         TopTools_DataMapOfShapeInteger esrc;
         TopoDS_Face f = build_exact_face_src(data, n, &esrc);
         if (f.IsNull() || !origin || !dir) return nullptr;
@@ -2885,6 +2996,7 @@ extern "C" QymShape* qym_shape_sweep(const double* prof, size_t np, const double
                           unsigned cap0, unsigned cap1) {
     (void)prof_tf; // the profile's orientation is computed from the path (it turns automatically)
     try {
+        QYM_SIGNALS;
         TopTools_DataMapOfShapeInteger esrc; // a profile edge gives the name of the face it will sweep out
         TopoDS_Face f = build_exact_face_src(prof, np, &esrc);
         if (f.IsNull()) return why("sweep/profile", "the profile did not close into a face"), nullptr;
@@ -2945,6 +3057,7 @@ extern "C" QymShape* qym_shape_loft(const double* data, size_t ndata, const size
                          const double* places, int ruled, int solid, unsigned cap0, unsigned cap1) {
     (void)ndata;
     try {
+        QYM_SIGNALS;
         if (nsec < 2) return why("loft/asked", "a loft needs two sections or more"), nullptr;
         if (!data || !offsets || !places) return why("loft/asked", "the sections, their offsets or their placements are missing"), nullptr;
         BRepOffsetAPI_ThruSections gen(solid ? Standard_True : Standard_False, ruled ? Standard_True : Standard_False, 1.0e-6);
@@ -2960,20 +3073,22 @@ extern "C" QymShape* qym_shape_loft(const double* data, size_t ndata, const size
                 snprintf(msg, sizeof(msg), "section %zu of %zu did not join into a closed loop", i + 1, nsec);
                 return why("loft/section", msg), nullptr;
             }
-            TopoDS_Shape placed = apply_place(w, places + i * 12);
+            const double* m = places + i * 12;
+            gp_Trsf where;
+            where.SetValues(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
+            BRepBuilderAPI_Transform placing(w, where, Standard_True);
+            const TopoDS_Shape placed = placing.Shape();
             if (placed.IsNull() || placed.ShapeType() != TopAbs_WIRE) {
                 char msg[96];
                 snprintf(msg, sizeof(msg), "section %zu of %zu was lost when placed into the world", i + 1, nsec);
                 return why("loft/section", msg), nullptr;
             }
             if (i == 0) {
-                // the placement RECREATES the edges, so the binding is carried across by matching traversal
-                // order (for one and the same wire that order is deterministic).
-                TopTools_DataMapOfShapeInteger moved;
-                TopExp_Explorer eo(w, TopAbs_EDGE), ep(placed, TopAbs_EDGE);
-                for (; eo.More() && ep.More(); eo.Next(), ep.Next())
-                    if (esrc.IsBound(eo.Current()) && !moved.IsBound(ep.Current())) moved.Bind(ep.Current(), esrc.Find(eo.Current()));
-                esrc = moved;
+                // the placement RECREATES the edges: the binding goes to what the placement made of each
+                QymBuilderHistory placed_by(placing);
+                TopTools_ListOfShape edges;
+                for (TopExp_Explorer eo(w, TopAbs_EDGE); eo.More(); eo.Next()) edges.Append(eo.Current());
+                carry_binding(placed_by, edges, TopAbs_EDGE, esrc);
                 first_placed = TopoDS::Wire(placed);
             }
             gen.AddWire(TopoDS::Wire(placed));
@@ -2982,20 +3097,17 @@ extern "C" QymShape* qym_shape_loft(const double* data, size_t ndata, const size
         if (!gen.IsDone()) return why("loft/build", "the kernel could not run a surface through these sections"), nullptr;
         TopoDS_Shape res = gen.Shape();
         if (res.IsNull()) return why("loft/build", "the kernel reported success and returned nothing"), nullptr;
-        QymShape* q = new QymShape{res, {}, {}, {}, {}};
-        auto bind_face = [&](const TopoDS_Shape& sh, int id) {
-            if (!sh.IsNull() && sh.ShapeType() == TopAbs_FACE && !q->fids.IsBound(sh)) q->fids.Bind(sh, id);
-        };
-        if (cap0 != 0) bind_face(gen.FirstShape(), (int)cap0);
-        if (cap1 != 0) bind_face(gen.LastShape(), (int)cap1);
-        for (TopExp_Explorer ex(first_placed, TopAbs_EDGE); ex.More(); ex.Next()) {
-            if (!esrc.IsBound(ex.Current())) continue;
-            bind_face(gen.GeneratedFace(ex.Current()), esrc.Find(ex.Current()));
-        }
-        int next = next_local(q->fids);
-        fill_unnamed(res, TopAbs_FACE, q->fids, next);
-        seed_ids(res, TopAbs_EDGE, q->eids);
-        return q;
+        return qym_born(res, [&](QymShape& q, QymCounters&) {
+            auto bind_face = [&](const TopoDS_Shape& sh, int id) {
+                if (!sh.IsNull() && sh.ShapeType() == TopAbs_FACE && !q.fids.IsBound(sh)) q.fids.Bind(sh, id);
+            };
+            if (cap0 != 0) bind_face(gen.FirstShape(), (int)cap0);
+            if (cap1 != 0) bind_face(gen.LastShape(), (int)cap1);
+            for (TopExp_Explorer ex(first_placed, TopAbs_EDGE); ex.More(); ex.Next()) {
+                if (!esrc.IsBound(ex.Current())) continue;
+                bind_face(gen.GeneratedFace(ex.Current()), esrc.Find(ex.Current()));
+            }
+        });
     } QYM_WHY_CATCH("loft")
     return nullptr;
 }
@@ -3012,6 +3124,7 @@ extern "C" QymShape* qym_shape_loft(const double* data, size_t ndata, const size
 // a probe has to return what it got, not a refusal.
 extern "C" QymShape* qym_shape_bezier_shell(const double* pts, size_t patches, double tol, int make_solid, unsigned* free_edges) {
     try {
+        QYM_SIGNALS;
         if (free_edges) *free_edges = 0;
         if (!pts || patches == 0) return nullptr;
         BRepBuilderAPI_Sewing sew(tol > 0.0 ? tol : 1.0e-6);
@@ -3047,11 +3160,7 @@ extern "C" QymShape* qym_shape_bezier_shell(const double* pts, size_t patches, d
                 }
             }
         }
-        QymShape* out = new QymShape();
-        out->shape = shape;
-        seed_ids(out->shape, TopAbs_FACE, out->fids);
-        seed_ids(out->shape, TopAbs_EDGE, out->eids);
-        return out;
+        return qym_born(shape);
     } catch (...) {
         return nullptr;
     }
@@ -3065,40 +3174,50 @@ extern "C" QymShape* qym_shape_bezier_shell(const double* pts, size_t patches, d
 // measurement caught this in a live scenario: the body came out with 26 faces instead of 56, and pushing a
 // face stopped building.
 extern "C" void qym_shape_clear_face_splits(QymShape* s) {
-    if (!s) return;
-    s->fsplit_of.Clear();
-    s->fsplit_idx.Clear();
+    try {
+        QYM_SIGNALS;
+        if (!s) return;
+        s->fsplit_of.Clear();
+        s->fsplit_idx.Clear();
+    } QYM_WHY_CATCH("shape_clear_face_splits")
 }
 
 extern "C" size_t qym_shape_face_splits(const QymShape* s, unsigned* out, size_t cap) {
-    if (!s) return 0;
-    size_t n = 0;
-    for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
-        const TopoDS_Shape& f = ex.Current();
-        if (!s->fsplit_of.IsBound(f) || !s->fids.IsBound(f)) continue;
-        if (out && (n + 1) * 3 <= cap) {
-            out[n * 3 + 0] = (unsigned)s->fids.Find(f);
-            out[n * 3 + 1] = (unsigned)s->fsplit_of.Find(f);
-            out[n * 3 + 2] = (unsigned)(s->fsplit_idx.IsBound(f) ? s->fsplit_idx.Find(f) : 1);
+    try {
+        QYM_SIGNALS;
+        if (!s) return 0;
+        size_t n = 0;
+        for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            const TopoDS_Shape& f = ex.Current();
+            if (!s->fsplit_of.IsBound(f) || !s->fids.IsBound(f)) continue;
+            if (out && (n + 1) * 3 <= cap) {
+                out[n * 3 + 0] = (unsigned)s->fids.Find(f);
+                out[n * 3 + 1] = (unsigned)s->fsplit_of.Find(f);
+                out[n * 3 + 2] = (unsigned)(s->fsplit_idx.IsBound(f) ? s->fsplit_idx.Find(f) : 1);
+            }
+            ++n;
         }
-        ++n;
-    }
-    return n;
+        return n;
+    } QYM_WHY_CATCH("shape_face_splits")
+    return 0;
 }
 
 // Rewrite face names, given pairs of "was -> became".
 extern "C" void qym_shape_rename_faces(QymShape* s, const unsigned* from, const unsigned* to, size_t n) {
-    if (!s || !from || !to || n == 0) return;
-    std::unordered_map<unsigned, unsigned> ren;
-    for (size_t i = 0; i < n; ++i) ren[from[i]] = to[i];
-    TopTools_DataMapOfShapeInteger out;
-    for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
-        if (!s->fids.IsBound(ex.Current())) continue;
-        unsigned id = (unsigned)s->fids.Find(ex.Current());
-        auto f = ren.find(id);
-        out.Bind(ex.Current(), (int)(f == ren.end() ? id : f->second));
-    }
-    s->fids = out;
+    try {
+        QYM_SIGNALS;
+        if (!s || !from || !to || n == 0) return;
+        std::unordered_map<unsigned, unsigned> ren;
+        for (size_t i = 0; i < n; ++i) ren[from[i]] = to[i];
+        TopTools_DataMapOfShapeInteger out;
+        for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            if (!s->fids.IsBound(ex.Current())) continue;
+            unsigned id = (unsigned)s->fids.Find(ex.Current());
+            auto f = ren.find(id);
+            out.Bind(ex.Current(), (int)(f == ren.end() ? id : f->second));
+        }
+        s->fids = out;
+    } QYM_WHY_CATCH("shape_rename_faces")
 }
 
 // AN EDGE'S NAME IS DERIVED FROM THE PAIR OF ITS FACES. The kernel only REPORTS the pairs: [the edge's id,
@@ -3117,78 +3236,144 @@ extern "C" void qym_shape_rename_faces(QymShape* s, const unsigned* from, const 
 // and none of it depends on numbering. The two SMALLEST such names are returned (0 when there are none), in
 // rows of [the edge's id, name 1, name 2].
 extern "C" size_t qym_shape_edge_end_faces(const QymShape* s, unsigned* out, size_t cap) {
-    if (!s) return 0;
-    TopTools_IndexedDataMapOfShapeListOfShape e2f, v2f, e2v;
-    TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, e2f);
-    TopExp::MapShapesAndAncestors(s->shape, TopAbs_VERTEX, TopAbs_FACE, v2f);
-    size_t n = 0;
-    for (int i = 1; i <= e2f.Extent(); ++i) {
-        const TopoDS_Shape& e = e2f.FindKey(i);
-        if (!s->eids.IsBound(e)) continue;
-        const TopTools_ListOfShape& own = e2f.FindFromIndex(i);
-        std::set<int> mine;
-        for (TopTools_ListIteratorOfListOfShape it(own); it.More(); it.Next())
-            if (s->fids.IsBound(it.Value())) mine.insert(s->fids.Find(it.Value()));
-        std::set<unsigned> around;
-        for (TopExp_Explorer vx(e, TopAbs_VERTEX); vx.More(); vx.Next()) {
-            const int vi = v2f.FindIndex(vx.Current());
-            if (vi < 1) continue;
-            for (TopTools_ListIteratorOfListOfShape it(v2f.FindFromIndex(vi)); it.More(); it.Next()) {
-                if (!s->fids.IsBound(it.Value())) continue;
-                const int id = s->fids.Find(it.Value());
-                if ((id & QYM_NAMED) == 0 || mine.count(id)) continue;   // positional ones do not count: they drift themselves
-                around.insert((unsigned)id);
+    try {
+        QYM_SIGNALS;
+        if (!s) return 0;
+        TopTools_IndexedDataMapOfShapeListOfShape e2f, v2f, e2v;
+        TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, e2f);
+        TopExp::MapShapesAndAncestors(s->shape, TopAbs_VERTEX, TopAbs_FACE, v2f);
+        size_t n = 0;
+        for (int i = 1; i <= e2f.Extent(); ++i) {
+            const TopoDS_Shape& e = e2f.FindKey(i);
+            if (!s->eids.IsBound(e)) continue;
+            const TopTools_ListOfShape& own = e2f.FindFromIndex(i);
+            std::set<int> mine;
+            for (TopTools_ListIteratorOfListOfShape it(own); it.More(); it.Next())
+                if (s->fids.IsBound(it.Value())) mine.insert(s->fids.Find(it.Value()));
+            std::set<unsigned> around;
+            for (TopExp_Explorer vx(e, TopAbs_VERTEX); vx.More(); vx.Next()) {
+                const int vi = v2f.FindIndex(vx.Current());
+                if (vi < 1) continue;
+                for (TopTools_ListIteratorOfListOfShape it(v2f.FindFromIndex(vi)); it.More(); it.Next()) {
+                    if (!s->fids.IsBound(it.Value())) continue;
+                    const int id = s->fids.Find(it.Value());
+                    if (!qym_recipe(id) || mine.count(id)) continue;   // positional ones do not count: they drift themselves
+                    around.insert((unsigned)id);
+                }
             }
+            if ((n + 1) * 3 <= cap && out) {
+                out[n * 3 + 0] = (unsigned)s->eids.Find(e);
+                auto it = around.begin();
+                out[n * 3 + 1] = it == around.end() ? 0u : *it++;
+                out[n * 3 + 2] = it == around.end() ? 0u : *it;
+            }
+            ++n;
         }
-        if ((n + 1) * 3 <= cap && out) {
-            out[n * 3 + 0] = (unsigned)s->eids.Find(e);
-            auto it = around.begin();
-            out[n * 3 + 1] = it == around.end() ? 0u : *it++;
-            out[n * 3 + 2] = it == around.end() ? 0u : *it;
-        }
-        ++n;
-    }
-    return n;
+        return n;
+    } QYM_WHY_CATCH("shape_edge_end_faces")
+    return 0;
 }
 
 extern "C" size_t qym_shape_edge_face_pairs(const QymShape* s, unsigned* out, size_t cap) {
-    if (!s) return 0;
-    TopTools_IndexedDataMapOfShapeListOfShape m;
-    TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, m);
-    size_t n = 0;
-    for (int i = 1; i <= m.Extent(); ++i) {
-        const TopoDS_Shape& e = m.FindKey(i);
-        const TopTools_ListOfShape& fs = m.FindFromIndex(i);
-        if (fs.Extent() != 2 || !s->eids.IsBound(e)) continue;
-        TopTools_ListIteratorOfListOfShape it(fs);
-        const TopoDS_Shape& f1 = it.Value();
-        it.Next();
-        const TopoDS_Shape& f2 = it.Value();
-        if (!s->fids.IsBound(f1) || !s->fids.IsBound(f2)) continue;
-        if (out && (n + 1) * 3 <= cap) {
-            out[n * 3 + 0] = (unsigned)s->eids.Find(e);
-            out[n * 3 + 1] = (unsigned)s->fids.Find(f1);
-            out[n * 3 + 2] = (unsigned)s->fids.Find(f2);
+    try {
+        QYM_SIGNALS;
+        if (!s) return 0;
+        TopTools_IndexedDataMapOfShapeListOfShape m;
+        TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, m);
+        size_t n = 0;
+        for (int i = 1; i <= m.Extent(); ++i) {
+            const TopoDS_Shape& e = m.FindKey(i);
+            const TopTools_ListOfShape& fs = m.FindFromIndex(i);
+            if (!s->eids.IsBound(e)) continue;
+            // a free edge of a sheet pairs its one face with the face that stood beside it in the body it came from
+            const bool free_edge = fs.Extent() == 1 && s->ebeside.IsBound(e);
+            // AN EDGE LYING INSIDE ONE FACE - internal to it, the face on both of its sides - pairs the face with
+            // itself, as a seam does. An auger flight welded flush with the end of its shaft leaves one in the end
+            // face (0.5 mm, from r = 4.5 to 5): it has one face above it, no pair, and it stayed on a positional
+            // number while every other edge of the body had a name.
+            bool inside_one = false;
+            if (fs.Extent() == 1 && !free_edge) {
+                for (TopExp_Explorer ex(fs.First(), TopAbs_EDGE); ex.More() && !inside_one; ex.Next())
+                    inside_one = ex.Current().IsSame(e) && (ex.Current().Orientation() == TopAbs_INTERNAL || ex.Current().Orientation() == TopAbs_EXTERNAL);
+            }
+            if (fs.Extent() != 2 && !free_edge && !inside_one) continue;
+            TopTools_ListIteratorOfListOfShape it(fs);
+            const TopoDS_Shape& f1 = it.Value();
+            if (!s->fids.IsBound(f1)) continue;
+            int second = 0;
+            if (free_edge) {
+                second = s->ebeside.Find(e);
+            } else if (inside_one) {
+                second = s->fids.Find(f1);
+            } else {
+                it.Next();
+                if (!s->fids.IsBound(it.Value())) continue;
+                second = s->fids.Find(it.Value());
+            }
+            if (out && (n + 1) * 3 <= cap) {
+                out[n * 3 + 0] = (unsigned)s->eids.Find(e);
+                out[n * 3 + 1] = (unsigned)s->fids.Find(f1);
+                out[n * 3 + 2] = (unsigned)second;
+            }
+            ++n;
         }
-        ++n;
-    }
-    return n;
+        return n;
+    } QYM_WHY_CATCH("shape_edge_face_pairs")
+    return 0;
+}
+
+// WHERE EACH NAMED FACE LIES: the point of its surface at the middle of its parametric bounds and the normal there,
+// six numbers a face after its id. From the B-rep, not from the triangles: the centre of a curved face taken from its
+// mesh moves with the deflection, and a name made from it would move when the quality of the drawing is changed. Not
+// the centre of mass either: integrated exactly over a fitted wall it took 1.4 s of an 11.6 s node for 162 faces,
+// and a body brought in from a file asks it of every face. Calling with null outputs returns the count.
+extern "C" size_t qym_shape_face_places(const QymShape* s, unsigned* ids, double* out, size_t cap) {
+    try {
+        QYM_SIGNALS;
+        if (!s || s->shape.IsNull()) return 0;
+        size_t n = 0;
+        TopTools_MapOfShape seen;
+        for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            if (!seen.Add(ex.Current()) || !s->fids.IsBound(ex.Current())) continue;
+            if (ids && out && n < cap) {
+                const TopoDS_Face& f = TopoDS::Face(ex.Current());
+                double u0, u1, v0, v1;
+                BRepTools::UVBounds(f, u0, u1, v0, v1);
+                BRepAdaptor_Surface a(f);
+                gp_Pnt c;
+                gp_Vec du, dv;
+                a.D1(0.5 * (u0 + u1), 0.5 * (v0 + v1), c, du, dv);
+                gp_Vec nrm = du.Crossed(dv);
+                if (nrm.Magnitude() > 1e-12) nrm.Normalize();
+                if (f.Orientation() == TopAbs_REVERSED) nrm.Reverse();
+                ids[n] = (unsigned)s->fids.Find(f);
+                const double six[6] = {c.X(), c.Y(), c.Z(), nrm.X(), nrm.Y(), nrm.Z()};
+                std::copy(six, six + 6, out + 6 * n);
+            }
+            ++n;
+        }
+        return n;
+    } QYM_WHY_CATCH("shape_face_places")
+    return 0;
 }
 
 // Rewrite edge names, given pairs of "was -> became". Called right after the body is assembled, before
 // anything refers to its edges.
 extern "C" void qym_shape_rename_edges(QymShape* s, const unsigned* from, const unsigned* to, size_t n) {
-    if (!s || !from || !to || n == 0) return;
-    std::unordered_map<unsigned, unsigned> ren;
-    for (size_t i = 0; i < n; ++i) ren[from[i]] = to[i];
-    TopTools_DataMapOfShapeInteger out;
-    for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
-        if (!s->eids.IsBound(ex.Current())) continue;
-        unsigned id = (unsigned)s->eids.Find(ex.Current());
-        auto f = ren.find(id);
-        out.Bind(ex.Current(), (int)(f == ren.end() ? id : f->second));
-    }
-    s->eids = out;
+    try {
+        QYM_SIGNALS;
+        if (!s || !from || !to || n == 0) return;
+        std::unordered_map<unsigned, unsigned> ren;
+        for (size_t i = 0; i < n; ++i) ren[from[i]] = to[i];
+        TopTools_DataMapOfShapeInteger out;
+        for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+            if (!s->eids.IsBound(ex.Current())) continue;
+            unsigned id = (unsigned)s->eids.Find(ex.Current());
+            auto f = ren.find(id);
+            out.Bind(ex.Current(), (int)(f == ren.end() ? id : f->second));
+        }
+        s->eids = out;
+    } QYM_WHY_CATCH("shape_rename_edges")
 }
 
 // --- ONE UNION INSTEAD OF A CHAIN OF PAIRWISE ONES ---------------------------------------------
@@ -3200,6 +3385,7 @@ extern "C" void qym_shape_rename_edges(QymShape* s, const unsigned* from, const 
 // edges, rather than afresh at every step.
 extern "C" QymShape* qym_shape_fuse_many(const QymShape* const* parts, int n) {
     try {
+        QYM_SIGNALS;
         if (!parts || n <= 0 || !parts[0]) return nullptr;
         TopTools_ListOfShape args, tools;
         args.Append(parts[0]->shape);
@@ -3210,29 +3396,23 @@ extern "C" QymShape* qym_shape_fuse_many(const QymShape* const* parts, int n) {
         BRepAlgoAPI_Fuse algo;
         if (!qym_boolean_many(algo, args, tools)) return nullptr;
         const TopoDS_Shape res = algo.Shape();
-        QymShape* q = new QymShape{res, {}, {}, {}, {}};
-        // The counter is kept by THE FIRST argument, exactly as in a pairwise boolean.
-        int nf = next_local(parts[0]->fids);
-        int ne = next_local(parts[0]->eids);
+        // The counter is kept by THE FIRST argument, exactly as in a pairwise boolean; the others give the names their
+        // recipes made.
         // ONE RECORD OF THE NAMES TAKEN FOR THE WHOLE UNION, faces and edges apart, kept up to date as each argument is
         // carried in. `carry_ids` rebuilt it from all of the result at every call - twice per argument - so the names
         // of a pattern took time growing with the square of its copies: measured on a grid of 5 mm boxes, 1,000 copies
-        // rebuilt in 16.0-16.9 s and 2,000 in 50.8-59.6 s, against 3.4-3.5 s and 6.7-6.8 s with the record kept here
+        // rebuilt in 16.0-16.9 s and 2,000 in 50.8-59.6 s, against 3.4-3.5 s and 6.7-6.8 s with one record for the whole union, as the door keeps it
         // (back to back, a loaded machine). The names do not change: the record holds what each call rebuilt. It could
         // differ only in which of two elements bound under one number counts as its owner, and the owner is asked only
         // of a source not yet in the result - a pattern's copies are fresh shapes, and a source already bound is
         // passed over before the question.
-        TakenNames faces, edges;
-        carry_ids_with(algo, parts[0]->shape, TopAbs_FACE, parts[0]->fids, q->fids, nf, false, &q->fsplit_of, &q->fsplit_idx, nullptr, faces);
-        carry_ids_with(algo, parts[0]->shape, TopAbs_EDGE, parts[0]->eids, q->eids, ne, false, nullptr, nullptr, nullptr, edges);
-        for (int i = 1; i < n; ++i) {
-            carry_ids_with(algo, parts[i]->shape, TopAbs_FACE, parts[i]->fids, q->fids, nf, true, &q->fsplit_of, &q->fsplit_idx, nullptr, faces);
-            carry_ids_with(algo, parts[i]->shape, TopAbs_EDGE, parts[i]->eids, q->eids, ne, true, nullptr, nullptr, nullptr, edges);
-        }
-        fill_unnamed(res, TopAbs_FACE, q->fids, nf);
-        fill_unnamed(res, TopAbs_EDGE, q->eids, ne);
-        q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed);
-        return q;
+        // one record of the names taken serves the whole union in the door, faces and edges apart
+        QymResultSpec spec;
+        spec.operands.push_back(QymOperand{parts[0], QymCarry::Everything, "fuse/first"});
+        for (int i = 1; i < n; ++i) spec.operands.push_back(QymOperand{parts[i], QymCarry::RecipeOnly, "fuse/copy"});
+        spec.unify = true;
+        QymBuilderHistory history(algo);
+        return qym_result(history, res, spec);
     } catch (...) {
         return nullptr;
     }
@@ -3240,6 +3420,7 @@ extern "C" QymShape* qym_shape_fuse_many(const QymShape* const* parts, int n) {
 
 extern "C" QymShape* qym_shape_boolean(const QymShape* a, const QymShape* b, int op) {
     try {
+        QYM_SIGNALS;
         if (!a || !b) return why("boolean/asked", a ? "there is no tool body" : "there is no base body"), nullptr;
         // TWO NAME SPACES MERGE rather than being renumbered. Only the BASE's names used to be carried
         // through the history, and everything arriving from the tool got fresh positional numbers — so the
@@ -3250,23 +3431,10 @@ extern "C" QymShape* qym_shape_boolean(const QymShape* a, const QymShape* b, int
         // out empty" send whoever is fixing it to different places.
         auto finish_bool = [&](BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& res, const char* what) -> QymShape* {
             if (res.IsNull()) return why("boolean/result", what), nullptr;
-            QymShape* q = new QymShape{res, {}, {}, {}, {}};
-            // The counter of positional numbers is kept by THE BASE: the tool's structural names do not
-            // enter it (they carry their own mark), and the tool's positional ones are not carried at all.
-            // Taking the maximum over both operands would shift the numbering of new edges — and the
-            // references of chamfers and fillets still live by it (their names move onto the recipe in a
-            // separate pass).
-            int nf = next_local(a->fids);
-            int ne = next_local(a->eids);
-            carry_ids(algo, a->shape, TopAbs_FACE, a->fids, q->fids, nf, false, &q->fsplit_of, &q->fsplit_idx);
-            carry_ids(algo, b->shape, TopAbs_FACE, b->fids, q->fids, nf, true, &q->fsplit_of, &q->fsplit_idx);
-            carry_ids(algo, a->shape, TopAbs_EDGE, a->eids, q->eids, ne);
-            carry_ids(algo, b->shape, TopAbs_EDGE, b->eids, q->eids, ne, true);
+            QymBuilderHistory history(algo);
+            QymShape* q = qym_result(history, res, {{{a, QymCarry::Everything, "boolean/base"}, {b, QymCarry::RecipeOnly, "boolean/tool"}}, nullptr, true});
             classify_unnamed(algo, a->shape, q, "boolean/base", &a->fids);
             classify_unnamed(algo, b->shape, q, "boolean/tool", &b->fids);
-            fill_unnamed(res, TopAbs_FACE, q->fids, nf);
-            fill_unnamed(res, TopAbs_EDGE, q->eids, ne);
-            q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed); // THE MONOLITH: merge the boolean's seam
             return q;
         };
         if (op == 0) {

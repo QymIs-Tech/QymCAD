@@ -7,6 +7,7 @@
 
 pub(crate) use qymcad_pick::*;
 pub(crate) use qymcad_ui_state::{shown_bodies, PickCtx}; // the visible bodies live beside their cache, in ui-state
+use qymcad_ui_state::Notice;
 use super::*;
 
 impl App {
@@ -46,11 +47,11 @@ impl App {
         let key = format!("at{desc}");
         if let Some(i) = self.tools.cmd.params.iter().position(|p| p.key == key) {
             self.tools.cmd.params.remove(i);
-            self.status = crate::i18n::tr("pk-vertex-radius-off");
+            self.status = Notice::info(crate::i18n::tr("pk-vertex-radius-off"));
         } else {
             let base = qymcad_ui_state::cmd_val(&self.tools.cmd, "radius");
             self.tools.cmd.params.push(qymcad_ui_state::CmdParam::new("f-radius-at-vertex", &key, base, 0.0, 1000.0).at(p));
-            self.status = crate::i18n::tr("pk-vertex-radius-on");
+            self.status = Notice::info(crate::i18n::tr("pk-vertex-radius-on"));
         }
         true
     }
@@ -68,7 +69,7 @@ impl App {
         // A SINGLE EDGE BREAKS THE DESCRIPTION: "every edge of the face except this one" is not something
         // we express, and leaving the description as it stands would be a lie.
         self.tools.gsel.described = None;
-        self.status = crate::i18n::tr1("pk-edges-selected", "n", &self.tools.gsel.edges.len().to_string());
+        self.status = Notice::info(crate::i18n::tr1("pk-edges-selected", "n", &self.tools.gsel.edges.len().to_string()));
         true
     }
 
@@ -89,7 +90,7 @@ impl App {
             }
             // the same face was clicked — there is no junction with itself, so the wait goes on
             self.tools.gsel.between_first = Some(first);
-            self.status = crate::i18n::tr("expand-between-pick-second");
+            self.status = Notice::info(crate::i18n::tr("expand-between-pick-second"));
             return true;
         }
         let eids = match self.live.shapes.get(&body) {
@@ -121,14 +122,14 @@ impl App {
             self.tools.gsel.last_face = Some((fid, body)); // the expand-the-selection menu will ask about it
             self.tools.gsel.last_edge = None; // a face was asked about, not an edge
         }
-        self.status = crate::i18n::trn(
+        self.status = Notice::info(crate::i18n::trn(
             "pk-face-edges",
             &[
                 ("n", &eids.len().to_string()),
                 ("what", &if all_sel { crate::i18n::tr("pk-removed") } else { crate::i18n::tr("pk-added") }),
                 ("total", &self.tools.gsel.edges.len().to_string()),
             ],
-        );
+        ));
         true
     }
 
@@ -147,7 +148,7 @@ impl App {
     /// normal relative to the axis).
     pub(super) fn pick_thread_target(&mut self, rect: Rect, pos: Pos2) {
         let Some(AxisHit::Face(body, fid)) = pick_axis_at(&self.painting(), rect, pos) else {
-            self.status = crate::i18n::tr("pk-miss-cylinder");
+            self.status = Notice::refusal(crate::i18n::tr("pk-miss-cylinder"));
             return;
         };
         // the edges of this face -> the circular rims among the `regen_edges` of the body. A cylinder has
@@ -168,7 +169,7 @@ impl App {
         let face_r = face_tris.as_ref().and_then(|(mi, tris)| candidates.first().and_then(|e| qymcad_core::geom::cyl_face_radius(&self.project.bodies[*mi].mesh, tris, e.center, e.axis)));
         if let Some((_, spread)) = face_r {
             if spread > 0.08 {
-                self.status = crate::i18n::tr("pk-not-a-cylinder");
+                self.status = Notice::refusal(crate::i18n::tr("pk-not-a-cylinder"));
                 return;
             }
         }
@@ -182,7 +183,7 @@ impl App {
             })
             .map(|e| (e.id, e.center, e.axis, e.radius));
         let Some((eid, center, mut axis, radius)) = circ else {
-            self.status = crate::i18n::tr("pk-no-round-rim");
+            self.status = Notice::refusal(crate::i18n::tr("pk-no-round-rim"));
             return;
         };
         if qymcad_part::thread_let_go(&mut self.part_ctx(), body, eid) {
@@ -210,14 +211,14 @@ impl App {
         if self.tools.cmd.edit.is_none() {
             crate::gui::commands::seed_thread_params(&mut self.part_ctx()); // sized to the cylinder picked
         }
-        self.status = crate::i18n::trn(
+        self.status = Notice::info(crate::i18n::trn(
             "pk-thread-target",
             &[
                 ("what", &if self.params.thread.internal { crate::i18n::tr("pk-hole") } else { crate::i18n::tr("pk-cylinder") }),
                 ("d", &crate::i18n::num(radius * 2.0, 1)),
                 ("next", &if self.params.thread.auger { crate::i18n::tr("pk-set-flight") } else { crate::i18n::tr("pk-pick-standard") }),
             ],
-        );
+        ));
     }
 
     pub(super) fn pick_face_3d(&mut self, rect: Rect, screen: Pos2) {
@@ -360,15 +361,15 @@ impl App {
                     if is_sheet && self.side.trim.keep.is_none() {
                         if let (Some(id), Some((_, _, at))) = (clicked, pick_face_ray(&self.painting(), rect, screen)) {
                             self.side.trim.keep = Some((id, at));
-                            self.status = crate::i18n::tr("msg-trim-pick-tool");
+                            self.status = Notice::info(crate::i18n::tr("msg-trim-pick-tool"));
                         }
                     } else if let Some(id) = clicked {
                         if self.side.trim.keep.map(|(b, _)| b) == Some(id) {
                             (self.side.trim.keep, self.chosen.sel) = (None, Sel::None); // a repeated click on the same sheet starts afresh, unlit
-                            self.status = crate::i18n::tr("msg-trim");
+                            self.status = Notice::info(crate::i18n::tr("msg-trim"));
                         } else {
                             self.side.trim.tool = if self.side.trim.tool == Some(id) { None } else { Some(id) };
-                            self.status = crate::i18n::tr(if self.side.trim.tool.is_some() { "msg-trim-tool-picked" } else { "msg-trim-pick-tool" });
+                            self.status = Notice::info(crate::i18n::tr(if self.side.trim.tool.is_some() { "msg-trim-tool-picked" } else { "msg-trim-pick-tool" }));
                         }
                     }
                 }
@@ -385,7 +386,7 @@ impl App {
                     let is_sheet = self.project.bodies.get(mi).is_some_and(|b| b.sheet);
                     if is_sheet {
                         self.params.repl_surface = if self.params.repl_surface == clicked { None } else { clicked };
-                        self.status = crate::i18n::tr(if self.params.repl_surface.is_some() { "msg-surface-picked" } else { "msg-surface-unpicked" });
+                        self.status = Notice::info(crate::i18n::tr(if self.params.repl_surface.is_some() { "msg-surface-picked" } else { "msg-surface-unpicked" }));
                     } else if let Some(id) = fi.and_then(|fi| self.project.bodies.get(mi).and_then(|b| b.faces.get(fi))).map(|f| f.id) {
                         if self.tools.gsel.faces_body != clicked {
                             self.tools.gsel.faces.clear();

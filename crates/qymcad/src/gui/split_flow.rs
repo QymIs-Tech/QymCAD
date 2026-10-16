@@ -106,7 +106,7 @@ mod tests {
         }
         app.apply_feat_cmd();
         assert_eq!(app.project.timeline.len(), before, "no feature must be created if the plane does not cut");
-        assert_eq!(app.status, crate::i18n::tr("msg-plane-cuts-nothing"), "the reason must be said out loud");
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-plane-cuts-nothing")), "the reason must be said out loud");
     }
 
     /// The tool has a preview: the cutting plane itself and the line of the section across the body.
@@ -136,7 +136,21 @@ mod tests {
     #[test]
     fn the_feature_is_visible_in_the_tree_and_editable() {
         assert!(crate::gui::render_source::has(crate::gui::panels_source::PANELS, "FeatureKind::SplitBody { ref bodies, offset, .. } =>"), "the row in the tree");
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(crate::gui::render_source::has(gui, "FK::SplitBody { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-split-body").is_empty() && crate::i18n::tr("feat-name-split-body") != "feat-name-split-body", "the default name of the feature must have a translation");
         let cmds = crate::gui::sketch_source::PART;
@@ -232,7 +246,21 @@ mod tests {
         let panels = crate::gui::panels_source::PANELS;
         assert!(panels.contains("BarAsk::FeatCmd(29)"), "without a button the tool does not exist for a person");
         assert!(crate::gui::render_source::has(panels, "FeatureKind::SplitFace { offset, .. } =>"), "the row in the tree");
-        let _gui = include_str!("../gui.rs");
+        let _gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(!crate::i18n::tr("feat-name-split-face").is_empty() && crate::i18n::tr("feat-name-split-face") != "feat-name-split-face", "the default name of the feature must have a translation");
         assert!(crate::gui::render_source::has(crate::gui::sketch_source::PART, "FeatureKind::SplitFace { plane, datum, offset, face, .. } => {"), "reopening for editing");
     }

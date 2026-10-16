@@ -70,7 +70,7 @@ fn every_tool_takes_a_few_rebuilds_of_a_big_sketch() {
             (tool.work)(&mut p, &targets);
             let t = started.elapsed();
             eprintln!("{:<45} {:<48} {t:>12.3?}  (a rebuild {rebuild:.3?})", big.name, tool.name);
-            if t > budget {
+            if !qymcad_core::time_budget::within(t, budget) {
                 failures.push(format!(
                     "{} - {}: {t:.3?}, {:.0} rebuilds of the sketch ({rebuild:.3?} each), budget {budget:.3?}",
                     big.name,

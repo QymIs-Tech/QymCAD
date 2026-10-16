@@ -3,11 +3,12 @@
 
 use qymcad_kernel::Shape;
 use qymcad_meshfit::{prepare, regions, weld_tolerance, Surface, Tolerance};
+use qymcad_kernel::specimen::Specimen as _;
 
 /// Splits the tessellation of `shape` and checks it against the faces: as many regions as faces, each within one
 /// face. Returns how many planes, cylinders and spheres were found.
 fn split_as_faces(name: &str, shape: &Shape, deflection: f64) -> [usize; 3] {
-    let bodies = shape.tessellate(deflection);
+    let bodies = qymcad_kernel::specimen::mesh(shape, deflection);
     let qymcad_core::geom::Built { mesh, faces } = bodies.into_iter().next().expect("a body");
     let mut face_of = vec![u32::MAX; mesh.tris.len()];
     for (k, f) in faces.iter().enumerate() {
@@ -60,7 +61,7 @@ fn split_as_faces(name: &str, shape: &Shape, deflection: f64) -> [usize; 3] {
 }
 
 fn bar() -> Shape {
-    Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").fillet_all(2.0).expect("filleted")
+    qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 20.0, 0.0, 20.0], 10.0).expect("a bar").rounded(2.0).expect("filleted")
 }
 
 /// A BAR WITH EVERY EDGE ROUNDED: six planes, twelve cylinders along the edges, eight spheres at the corners - and
@@ -75,13 +76,13 @@ fn a_rounded_bar_splits_into_its_twenty_six_faces() {
 
 #[test]
 fn a_cylinder_splits_into_two_caps_and_a_wall() {
-    let kinds = split_as_faces("cylinder", &Shape::cylinder(10.0, 30.0).expect("a cylinder"), 0.05);
+    let kinds = split_as_faces("cylinder", &qymcad_kernel::specimen::cylinder(10.0, 30.0).expect("a cylinder"), 0.05);
     assert_eq!(kinds, [2, 1, 0], "cylinder: planes, cylinders, spheres");
 }
 
 #[test]
 fn a_sphere_is_one_region() {
-    let kinds = split_as_faces("sphere", &Shape::sphere(15.0).expect("a sphere"), 0.05);
+    let kinds = split_as_faces("sphere", &qymcad_kernel::specimen::sphere(15.0).expect("a sphere"), 0.05);
     assert_eq!(kinds, [0, 0, 1], "sphere: planes, cylinders, spheres");
 }
 
@@ -109,7 +110,7 @@ fn a_thread_drawn_as_rings_splits_into_its_faces() {
     }
     x += root;
     xy.extend([x, r0, x, 0.0]);
-    let thread = Shape::revolve(&xy, 0, 360.0).expect("the thread");
+    let thread = qymcad_kernel::specimen::revolve(&xy, 0, 360.0).expect("the thread");
     for deflection in [0.005, 0.001] {
         let kinds = split_as_faces(&format!("thread at {deflection}"), &thread, deflection);
         assert_eq!(kinds, [2, 2 * n + 1, 0], "thread at {deflection}: planes, cylinders, spheres - a flank is a cone, not a sphere");
@@ -121,11 +122,11 @@ fn a_thread_drawn_as_rings_splits_into_its_faces() {
 /// under it is meshed as long thin strips running up to that curve. The wall is one cylinder of 10.
 #[test]
 fn a_wall_cut_by_a_boolean_is_one_region() {
-    let post = Shape::cylinder(10.0, 30.0).expect("a cylinder");
+    let post = qymcad_kernel::specimen::cylinder(10.0, 30.0).expect("a cylinder");
     let up = [1.0, 0.0, 0.0, 0.1, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 30.0];
-    let knob = Shape::sphere(10.5).expect("a sphere").transformed(&up).expect("the sphere on the top");
-    let both = Shape::fuse_many(&[&post, &knob]).expect("the knob on the post");
-    let qymcad_core::geom::Built { mesh, .. } = both.tessellate(0.02).into_iter().next().expect("a body");
+    let knob = qymcad_kernel::specimen::placed(&qymcad_kernel::specimen::sphere(10.5).expect("a sphere"), &up).expect("the sphere on the top");
+    let both = qymcad_kernel::specimen::fuse(&[&post, &knob]).expect("the knob on the post");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&both, 0.02).into_iter().next().expect("a body");
     let p = prepare(&mesh, weld_tolerance(&mesh));
     let tol = Tolerance::for_mesh(&p);
     let found = regions(&p, &tol);

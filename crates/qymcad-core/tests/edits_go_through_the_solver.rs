@@ -39,13 +39,14 @@ fn line(p: &Project, si: usize) -> ((u64, f64, f64), (u64, f64, f64)) {
 /// A COINCIDENCE WITH SOMETHING THAT IS NOT MOVING HOLDS.
 ///
 /// This is the reported case itself: a shape tied to a point outside the selection was carried away, the tie
-/// stayed drawn and stayed green, and the next edit put the shape back.
+/// stayed drawn and stayed green, and the next edit put the shape back. The move lifts the ties of what goes to what
+/// stays: the shape goes where it was taken, and no tie is left drawn that does not hold.
 ///
 /// `Constraint::Fixed` would not show it: it pins a point to where it IS, not to a remembered place, so a
 /// move takes the anchor along and the constraint is satisfied by the new position. That case is held by
 /// `an_editing_tool_leaves_a_pinned_point_where_it_is`, not here.
 #[test]
-fn moving_a_shape_cannot_break_a_coincidence_with_a_point_left_behind() {
+fn moving_a_shape_lifts_its_coincidence_with_a_point_left_behind() {
     let (mut p, si) = new_sketch();
     let moved = p.add_line_entity(si, 10.0, 0.0, 30.0, 0.0, qymcad_core::feature::Purpose::Real);
     // A second line standing apart, so its end is a point of its own rather than a shared node.
@@ -72,8 +73,8 @@ fn moving_a_shape_cannot_break_a_coincidence_with_a_point_left_behind() {
         (q.x, q.y)
     };
     let (u, v) = (at(ma), at(sa));
-    eprintln!("the tied ends came to rest at {u:?} and {v:?}");
-    assert!((u.0 - v.0).hypot(u.1 - v.1) < 1e-6, "the move tore a coincidence apart: {u:?} against {v:?}");
+    let tied = p.sketches[si].constraints.iter().any(|c| matches!(*c, Constraint::Coincident { a, b } if (a, b) == (ma, sa)));
+    assert!(!tied && (u.0 - 15.0).hypot(u.1 - 3.0) < 1e-6, "the moved end stands at {u:?}, the end left behind at {v:?}, the coincidence kept: {tied}");
 }
 
 #[test]
@@ -112,9 +113,9 @@ fn scaling_a_dimensioned_line_leaves_the_dimension_true() {
 /// the solver. The rule is one, so it is held in one place.
 ///
 /// The setup is the same for every row: two lines end in the same spot with points of their OWN, tied by a
-/// coincidence. The tool is used on the first line; whatever it does to it, the tie has to survive - either
-/// the drawing follows, or the tool is refused. What must never happen is a tie that is drawn, is counted as
-/// satisfied and is not true.
+/// coincidence. The tool is used on the first line; whatever it does to it, the tie either holds - the drawing
+/// follows, or the tool is refused - or is lifted, as Move and Rotate lift the ties of what goes to what stays. What
+/// must never happen is a tie that is drawn, is counted as satisfied and is not true.
 #[test]
 fn no_editing_tool_leaves_a_constraint_unsatisfied() {
     // moved line (10,0)-(30,0), standing line (30,0)-(50,0), the two inner ends tied
@@ -179,7 +180,8 @@ fn no_editing_tool_leaves_a_constraint_unsatisfied() {
         let at = |id: u64| p.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
         // A point may legitimately disappear (a break replaces the line with two halves); a tie whose end is gone
         // is not a broken tie.
-        if let (Some(u), Some(v)) = (at(mb), at(sa)) {
+        let kept = p.sketches[si].constraints.iter().any(|c| matches!(*c, Constraint::Coincident { a, b } if (a, b) == (mb, sa)));
+        if let (Some(u), Some(v), true) = (at(mb), at(sa), kept) {
             let gap = (u.0 - v.0).hypot(u.1 - v.1);
             if gap > 1e-6 {
                 sins.push(format!("{name}: the tie was torn - {u:?} against {v:?}, a gap of {gap:.3} mm"));

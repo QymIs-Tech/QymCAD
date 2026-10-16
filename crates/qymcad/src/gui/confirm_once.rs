@@ -30,7 +30,28 @@ mod tests {
     /// hotkey. The guard looks at every place at once and therefore finds what nobody remembered.
     #[test]
     fn no_delete_button_bypasses_the_question() {
-        let files: [(&str, &str); 3] = [("panels.rs", crate::gui::panels_source::PANELS), ("gui.rs", include_str!("../gui.rs")), ("sketching.rs", crate::gui::sketch_source::SKETCH)];
+        let files: [(&str, &str); 3] = [
+            ("panels.rs", crate::gui::panels_source::PANELS),
+            (
+                "gui.rs",
+                concat!(
+                    include_str!("file_doors.rs"),
+                    "\n",
+                    include_str!("gizmo_math.rs"),
+                    "\n",
+                    include_str!("look.rs"),
+                    "\n",
+                    include_str!("panel_bits.rs"),
+                    "\n",
+                    include_str!("startup.rs"),
+                    "\n",
+                    include_str!("view_anim.rs"),
+                    "\n",
+                    include_str!("../gui.rs")
+                ),
+            ),
+            ("sketching.rs", crate::gui::sketch_source::SKETCH),
+        ];
         // the destroyers of the document: from the interface they may only be called through `execute_delete`
         let killers = [
             "delete_feature(",

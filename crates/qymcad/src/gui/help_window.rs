@@ -3,6 +3,7 @@
 //! The rendering is ours rather than a crate's, and that is visible here: every kind of text takes its
 //! colour from THE SCHEME. Someone else's renderer would bring a palette of its own and drift apart from
 //! the light theme exactly as the canvas of the viewport once did.
+use qymcad_ui_state::Notice;
 use super::App;
 use qymcad_ui_state::EditTool;
 use crate::help::{Block, Span};
@@ -135,7 +136,7 @@ pub(crate) struct HelpCtx<'a> {
     pub win: &'a mut qymcad_ui_state::HelpWin,
     pub pal: &'a crate::palette::Palette,
     /// The status line - the one place the program speaks in passing.
-    pub say: &'a mut String,
+    pub say: &'a mut qymcad_ui_state::Notice,
 }
 
 /// Go to an article, remembering where we came from.
@@ -144,7 +145,7 @@ pub(crate) struct HelpCtx<'a> {
 /// THE FORK IS HERE AND NOT AT EVERY CALLER. The help is opened by F1, by the menu, by the "?" buttons of
 /// the commands and by the start screen; have each of them ask about the setting and one is bound to forget,
 /// and it will forget silently.
-pub(crate) fn open(set: &super::Settings, win: &mut qymcad_ui_state::HelpWin, pal: &crate::palette::Palette, say: &mut String, article: &str) {
+pub(crate) fn open(set: &super::Settings, win: &mut qymcad_ui_state::HelpWin, pal: &crate::palette::Palette, say: &mut qymcad_ui_state::Notice, article: &str) {
     if let HelpTarget::Site(url) = help_target(set, article) {
         let mut ctx = HelpCtx { win, pal, say };
         browse(&mut ctx, &url);
@@ -171,16 +172,16 @@ pub(crate) fn browse(ctx: &mut HelpCtx, url: &str) {
     // is checked in full through `help_target`, and only the launch is left here, with nothing in it
     // to check.
     if cfg!(test) {
-        *ctx.say = crate::i18n::tr1("help-opened-in-browser", "url", url);
+        *ctx.say = Notice::info(crate::i18n::tr1("help-opened-in-browser", "url", url));
         return;
     }
     let (cmd, args) = super::browse_command(egui::os::OperatingSystem::from_target_os(), url);
     match crate::system::start(cmd, &args) {
-        Ok(_) => *ctx.say = crate::i18n::tr1("help-opened-in-browser", "url", url),
+        Ok(_) => *ctx.say = Notice::info(crate::i18n::tr1("help-opened-in-browser", "url", url)),
         // IT DID NOT WORK — THE ADDRESS IS SHOWN. There may be no browser at all (a bare server, a
         // stripped-down environment), and then the only useful thing is the link itself, to be
         // carried off by hand.
-        Err(e) => *ctx.say = format!("{} {}", crate::i18n::tr1("help-browser-failed", "url", url), e),
+        Err(e) => *ctx.say = Notice::error(format!("{} {}", crate::i18n::tr1("help-browser-failed", "url", url), e)),
     }
 }
 
@@ -283,7 +284,7 @@ pub(crate) fn window(ctx: &mut HelpCtx, ui_ctx: &egui::Context) {
                         // THERE IS NO ARTICLE — IT IS SAID IN WORDS. An empty window is read as a
                         // breakage of the program rather than as "this article is not written yet".
                         None => {
-                            ui.label(egui::RichText::new(crate::i18n::tr1("help-missing", "what", &article)).color(ctx.pal.error_mild()));
+                            qymcad_ui_state::say(ui, ctx.pal, &qymcad_ui_state::Notice::refusal(crate::i18n::tr1("help-missing", "what", &article)), qymcad_ui_state::NoticeSize::Line);
                         }
                     });
                 });
@@ -385,7 +386,7 @@ pub(crate) fn markdown(pal: &crate::palette::Palette, ui: &mut egui::Ui, md: &st
                     // the program; a guard would not let that through, but an article may also arrive
                     // from outside.
                     None => {
-                        ui.label(egui::RichText::new(format!("[{}]", path)).weak().small().color(pal.error_mild()));
+                        ui.label(egui::RichText::new(format!("[{}]", path)).weak().small().color(qymcad_ui_state::tone_colour(pal, qymcad_ui_state::Tone::Refusal)));
                     }
                 }
                 if !alt.is_empty() {

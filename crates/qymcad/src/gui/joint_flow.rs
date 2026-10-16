@@ -273,7 +273,19 @@ pub(in crate::gui) mod tests {
         use qymcad_core::feature::JointKind;
         let kinds = [JointKind::Rigid, JointKind::Revolute, JointKind::Slider, JointKind::Cylindrical, JointKind::Planar, JointKind::Ball, JointKind::PinSlot];
         // ALL seven are offered in the creation bar
-        let src = include_str!("../../../qymcad-assembly/src/lib.rs");
+        let src = concat!(
+            include_str!("../../../qymcad-assembly/src/bars.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/gizmo.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/picks.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/popup.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/slots.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/lib.rs")
+        );
         let a = src.find("joint_bar_kind").expect("the kind combo of the creation bar is in place");
         let b = src[a..].find("});").map(|i| a + i).unwrap_or(src.len());
         for k in kinds {
@@ -457,7 +469,7 @@ pub(in crate::gui) mod tests {
             "the tool took an anchor while there is no geometry: the joint will stand by the world axes and the part will go the wrong way"
         );
         assert!(qymcad_assembly::joint_pick_active_for_test(&mut app.joint_ctx()), "the tool was dropped instead of waiting for the geometry");
-        assert_eq!(app.status, crate::i18n::tr("j-geometry-on-its-way"), "nobody was told WHAT to wait for: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("j-geometry-on-its-way")), "nobody was told WHAT to wait for: {}", app.status);
 
         // "AND THAT THE ANCHOR IS TAKEN AFTERWARDS" IS NOT CHECKED HERE. A deferred preparation is
         // concluded by the result arriving from the background thread (`brep_wait` is cleared by
@@ -516,7 +528,7 @@ pub(in crate::gui) mod tests {
         app.start_joint_pick();
         qymcad_assembly::joint_pick_edge_click_for_test(&mut app.joint_ctx(), body, 1);
         assert!(qymcad_assembly::joint_pick_first_anchor_for_test(&mut app.joint_ctx()).is_none(), "an edge anchor was taken where there are no edges at all");
-        assert_eq!(app.status, crate::i18n::tr("j-geometry-missing"), "one moment is promised where there is nothing to wait for: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-geometry-missing")), "one moment is promised where there is nothing to wait for: {}", app.status);
     }
 
     /// THE SECOND PICK AS A PERSON MAKES IT: press "point at the axis", click an edge, and the slider

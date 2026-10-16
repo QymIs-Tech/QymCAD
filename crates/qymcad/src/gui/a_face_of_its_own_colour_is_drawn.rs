@@ -30,8 +30,8 @@ mod tests {
         app
     }
 
-    /// THE DOCUMENT HOLDS THE FACE'S COLOUR where the painters look for it: face 6 of the first plate's body, which is
-    /// its top face in the faces the rebuild gave the body.
+    /// THE DOCUMENT HOLDS THE FACE'S COLOUR where the painters look for it: the top face of the first plate's body,
+    /// under the name the rebuild gave it - face 6 of the file, named by where it lies.
     fn the_plate(app: &App) -> u64 {
         let plate = app
             .project
@@ -40,9 +40,8 @@ mod tests {
             .find(|c| app.project.component_bodies(c.id).len() == 1 && app.project.mesh_index(app.project.component_bodies(c.id)[0]).is_some_and(|i| app.project.mesh_color(i) == [204, 26, 26]))
             .map(|c| app.project.component_bodies(c.id)[0])
             .expect("a red plate");
-        assert_eq!(app.project.face_color(plate, 6), Some(GREEN), "the document does not hold the top face's colour");
-        let top = app.project.regen_faces.get(&plate).and_then(|fs| fs.iter().find(|f| f.id == 6)).map(|f| f.centroid.z);
-        assert_eq!(top, Some(5.0), "face 6 of the rebuilt plate is not its top face");
+        let top = app.project.regen_faces.get(&plate).and_then(|fs| fs.iter().find(|f| f.normal[2] > 0.99 && (f.centroid.z - 5.0).abs() < 1e-6)).map(|f| f.id).expect("the top face of the plate");
+        assert_eq!(app.project.face_color(plate, top), Some(GREEN), "the document does not hold the top face's colour");
         plate
     }
 

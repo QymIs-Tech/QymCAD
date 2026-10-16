@@ -2,7 +2,11 @@
 error-thicken-added-nothing = Пластина дененің ішіне кіріп, ештеңе қоспады — қалыңдықты нөлден жоғары беріңіз
 error-draft-angle-zero = 0 градус еңіс ештеңені еңкейтпейді — нөлден өзгеше бұрыш беріңіз
 error-torus-through-itself = Түтік сақинамен бірдей не одан қалың — мұндай тор өзін-өзі қиып өтеді; түтік радиусын сақина радиусынан кіші етіңіз
+error-primitive-size-not-above-zero = Примитивтің өлшемі нөлге тең не одан кіші — ештеңеден дене болмайды; әр өлшемді нөлден үлкен етіп беріңіз
+error-offset-past-radius = Өз осіне қарай радиусқа ({ $r } мм) не одан көп ығыстырылған дөңгелек бет осьте түйісіп, теріс айналады; { $r } мм-ден кіші қашықтық беріңіз не басқа жаққа ығыстырыңыз
 error-array-of-one = Бір көшірмеден тұратын массив — тек дененің өзі; екі не одан көп көшірме беріңіз
+error-pattern-too-large = { $asked } данадан тұратын массив { $limit } шегінен асады — санын азайтыңыз
+error-too-many-starts = { $starts } кіріс тым көп — ең көбі { $limit }
 ### { $name } placeholders carry data from the core — keep them, they are not decoration.
 
 ## Operation failed in the geometry kernel.
@@ -168,6 +172,7 @@ error-thread-longer-than-face = Ұзындығы { $length } мм бұранда
 error-thread-depth-too-deep = { $depth } мм бұранда тереңдігі { $radius } мм радиусқа тең не одан асады: Ø{ $dia } үшін { $pitch } қадам тым ірі
 error-thread-not-its-size = Ø{ $nominal } бұранда Ø{ $face } бетке сәйкес келмейді — өлшемді бетке қарай не бетті өлшемге қарай таңдаңыз
 warn-edges-dropped = { $asked } қырдың { $dropped } алынбады және өткір қалды; қалғаны жасалды — басқа қырларды не басқа өлшемді таңдау үшін түйінді екі рет шертіңіз
+warn-import-kept-as-it-came = Файлдан келген дене тексеруден өтпеді және түзелмеді, сондықтан файлда қалай сақталса, солай қалдырылды; оған жасалатын амал бас тартуы мүмкін — файлды жасаған бағдарламада ашып, қайта шығарыңыз не оның рұқсатын тексеріңіз
 error-thread-removed-nothing = Бұранда ештеңе алмады ({ $before } -> { $after } мм³) — таңдалған бетті, қадамды және ұзындықты тексеріңіз
 error-thread-failed = Бұранда құрылмады (қадамды, ұзындықты және диаметрді тексеріңіз)
 error-auger-rim-not-found = Білік жиегі (дөңгелек қыр) табылмады
@@ -206,6 +211,7 @@ error-expr-unexpected-token = Күтілмеген таңба { $what }
 error-expr-unexpected-end = өрнек тым ерте аяқталады: сан не атау күтілді
 error-expr-trailing-input = «{ $what }» жанында артық енгізу
 error-expr-not-a-number = Нәтиже сан емес (нөлге бөлу ме?)
+error-expr-too-deep = Формула { $limit } деңгейден тереңірек салынған — жақшалар, функциялар, таңбалар немесе дәрежелер бір-бірінің ішінде
 
 ## A message from the kernel itself — passed through untranslated: it is diagnostics, not prose.
 

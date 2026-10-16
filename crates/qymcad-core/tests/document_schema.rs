@@ -33,7 +33,27 @@ fn fields_of(src: &str, decl: &str) -> Vec<String> {
 
 #[test]
 fn every_document_field_is_either_in_the_file_or_named_here() {
-    let model = include_str!("../src/model.rs");
+    let model = concat!(
+        include_str!("../src/model/bodies.rs"),
+        "\n",
+        include_str!("../src/model/components.rs"),
+        "\n",
+        include_str!("../src/model/curves.rs"),
+        "\n",
+        include_str!("../src/model/features.rs"),
+        "\n",
+        include_str!("../src/model/keys.rs"),
+        "\n",
+        include_str!("../src/model/params.rs"),
+        "\n",
+        include_str!("../src/model/refs.rs"),
+        "\n",
+        include_str!("../src/model/sketch_ops.rs"),
+        "\n",
+        include_str!("../src/model/sketch_types.rs"),
+        "\n",
+        include_str!("../src/model.rs")
+    );
     let schema = include_str!("../src/doc_file.rs");
     let in_model = fields_of(model, "pub struct Project {");
     let in_file = fields_of(schema, "pub(crate) struct DocumentFile {");

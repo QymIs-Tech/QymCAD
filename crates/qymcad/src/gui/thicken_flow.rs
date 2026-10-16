@@ -145,7 +145,7 @@ mod tests {
         }
         app.apply_feat_cmd();
         assert_eq!(app.project.timeline.len(), before, "no feature must be created at a thickness of zero");
-        assert_eq!(app.status, crate::i18n::tr("msg-zero-thickness"), "the reason must be said out loud");
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-zero-thickness")), "the reason must be said out loud");
     }
 
     /// The tool shows what is selected and where the material will go.
@@ -163,7 +163,21 @@ mod tests {
     #[test]
     fn the_feature_is_in_the_tree_and_editable() {
         assert!(crate::gui::render_source::has(crate::gui::panels_source::PANELS, "FeatureKind::Thicken { thickness, .. } =>"), "the row in the tree");
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(crate::gui::render_source::has(gui, "FK::Thicken { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-thicken").is_empty() && crate::i18n::tr("feat-name-thicken") != "feat-name-thicken", "the default name of the feature must have a translation");
         let cmds = crate::gui::sketch_source::PART;
@@ -223,14 +237,21 @@ mod tests {
         app.viewing.cam.target = [10.0, 10.0, 5.0];
         let basis = app.viewing.cam.basis();
 
-        let (_, tip, _) = app.face_arrow_geometry().expect("the selected face must have a handle");
+        let (_, tip, _) = qymcad_ui_state::face_arrow_geometry(&app.painting()).expect("the selected face must have a handle");
         let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }.at(tip).0;
-        assert!(app.face_arrow_hit(rect, at, &basis), "a cursor at the tip of the arrow must grab it");
-        assert!(!app.face_arrow_hit(rect, at + egui::vec2(200.0, 200.0), &basis), "far from the arrow there must be no grab");
+        assert!(
+            qymcad_ui_state::handle_at(&app.painting(), &qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }, at).is_some(),
+            "a cursor at the tip of the arrow must grab it"
+        );
+        assert!(
+            qymcad_ui_state::handle_at(&app.painting(), &qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }, at + egui::vec2(200.0, 200.0)).is_none(),
+            "far from the arrow there must be no grab"
+        );
 
         let before = qymcad_ui_state::cmd_val(&app.tools.cmd, "thickness");
-        app.dragged.face_arrow_drag = Some(before);
-        app.face_arrow_drag_to(egui::vec2(0.0, -40.0), rect, &basis);
+        let hs = qymcad_ui_state::handles(&app.painting());
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis };
+        qymcad_ui_state::drag_handle(&mut app.tools.cmd, &mut app.regen, &hs, Some(qymcad_ui_state::Handle::Arrow("thickness")), &scr, qymcad_ui_state::PointerStep { at, by: egui::vec2(0.0, -40.0) });
         let after = qymcad_ui_state::cmd_val(&app.tools.cmd, "thickness");
         assert!((after - before).abs() > 0.1, "dragging the handle must change THE THICKNESS: it was {before:.2}, it became {after:.2}");
         assert!(

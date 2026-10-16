@@ -157,6 +157,24 @@ pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[(m
     save_project_with_brep(project, path, breps)
 }
 
+/// A BODY READ FROM A FILE HOLDS NUMBERS, or the file is refused with the place of the first that is not one, as the
+/// importers refuse it where they read it. RON writes and reads an f64 NaN as `NaN` and infinity as `inf`, so a damaged
+/// or crafted project or part brought such a number in past every importer: a mesh's bounds came out wrong, its volume
+/// NaN and the STL it exported was refused by the program's own reader; a face's centroid or normal is what picking
+/// and snapping read, and the faces are taken as they are stored. `body` counts from 0 and is named from 1 - a stored
+/// body name is a key of its own; a corner and a face are named from 1, with the first of their values that is not a
+/// number.
+pub(crate) fn finite_body(body: usize, mesh: &qymcad_core::geom::Mesh, faces: &[MeshFace]) -> Result<(), String> {
+    let first = |vs: &[f64]| vs.iter().copied().find(|v| !v.is_finite());
+    if let Some((k, v)) = mesh.verts.iter().enumerate().find_map(|(k, q)| first(&[q.x, q.y, q.z]).map(|v| (k, v))) {
+        return Err(crate::not_finite("io-body-corner-not-finite", &[&(body + 1), &(k + 1), &v]));
+    }
+    if let Some((k, v)) = faces.iter().enumerate().find_map(|(k, f)| first(&[f.normal[0], f.normal[1], f.normal[2], f.centroid.x, f.centroid.y, f.centroid.z, f.area]).map(|v| (k, v))) {
+        return Err(crate::not_finite("io-body-face-not-finite", &[&(body + 1), &(k + 1), &v]));
+    }
+    Ok(())
+}
+
 /// Load a `.qcad` bundle. Returns the project and the cache of part faces, parallel to `project.meshes`; an
 /// empty vector for a mesh means the bundle held no faces for it.
 pub fn load_project(path: &str) -> Result<Project, String> {
@@ -201,6 +219,7 @@ pub fn load_project_with_brep(path: &str) -> Result<LoadedProject, String> {
             Ok(fs) => ron::from_str::<Vec<MeshFace>>(&fs).unwrap_or_default(),
             Err(_) => Vec::new(),
         };
+        finite_body(i, &project.bodies[i].mesh, &project.bodies[i].faces)?;
     }
 
     // load the embedded originals of imports

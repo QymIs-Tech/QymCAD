@@ -62,7 +62,7 @@ mod tests {
         qymcad_assembly::joint_pick_anchor_click_for_test(&mut app.joint_ctx(), sub, anchor);
 
         assert_eq!(app.project.connectors.len(), before, "an anchor on a moving part was created after all: after such an anchor the assembly will never settle");
-        assert_eq!(app.status, crate::i18n::tr("j-anchor-on-moving-part-refused"), "the person was not told why the pick was not accepted: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-anchor-on-moving-part-refused")), "the person was not told why the pick was not accepted: {}", app.status);
     }
 
     /// AND AN ORDINARY PICK IS ACCEPTED. Otherwise the refusal would turn into "nothing is allowed".

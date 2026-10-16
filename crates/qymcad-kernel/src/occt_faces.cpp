@@ -211,13 +211,17 @@ double ahead(double a, double b) {
 static thread_local std::unordered_map<std::string, std::pair<TopoDS_Face, double>>* face_cache = nullptr;
 
 extern "C" void qym_faces_cache(int on) {
-    delete face_cache;
-    face_cache = on ? new std::unordered_map<std::string, std::pair<TopoDS_Face, double>>() : nullptr;
+    try {
+        QYM_SIGNALS;
+        delete face_cache;
+        face_cache = on ? new std::unordered_map<std::string, std::pair<TopoDS_Face, double>>() : nullptr;
+    } QYM_WHY_CATCH("faces_cache")
 }
 
 // Does a loop of `face` cross itself on the face?
 static bool crosses_itself(const TopoDS_Face& face) {
     try {
+        QYM_SIGNALS;
         for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
             BRepCheck_Wire loop(TopoDS::Wire(wx.Current()));
             loop.InContext(face);
@@ -241,18 +245,19 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
     if (out_free) *out_free = 0;
     if (out_dropped) *out_dropped = 0;
     for (size_t f = 0; out_area && f < nf; ++f) out_area[f] = -1.0;
-    // how much of its surface a face took, into `out_area`: a face that took a wrong piece shows it here first
-    auto measured = [&](size_t f, const TopoDS_Face& face) {
-        if (!out_area) return;
-        GProp_GProps props;
-        // to a thousandth: the default integration of a B-spline face was 5 to 20 % off on a smooth handle, and a
-        // millionth took 8 s of every 10 s round of building
-        BRepGProp::SurfaceProperties(face, props, 1.0e-3);
-        out_area[f] = props.Mass();
-    };
     if ((ns == 0 || nf == 0) && nloose == 0) return why("faces/asked", "there is no face to build"), nullptr;
     if (ns > nf) return why("faces/asked", "more surfaces than faces to take a point amid each from"), nullptr;
     try {
+        QYM_SIGNALS;
+        // how much of its surface a face took, into `out_area`: a face that took a wrong piece shows it here first
+        auto measured = [&](size_t f, const TopoDS_Face& face) {
+            if (!out_area) return;
+            GProp_GProps props;
+            // to a thousandth: the default integration of a B-spline face was 5 to 20 % off on a smooth handle, and a
+            // millionth took 8 s of every 10 s round of building
+            BRepGProp::SurfaceProperties(face, props, 1.0e-3);
+            out_area[f] = props.Mass();
+        };
         const double step = std::max(tol, 1.0e-7);
         std::vector<Handle(Geom_Surface)> S(ns);
         for (size_t i = 0; i < ns; ++i) S[i] = surface(skind[i], sparam + NUMBERS * i, pnt(finside + 3 * i));
@@ -447,6 +452,7 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
             struct Loop { std::vector<Laid> edges; gp_Pnt2d start, end; TopoDS_Vertex first; };
             std::vector<Loop> loops;
             try {
+                QYM_SIGNALS;
                 for (size_t l = floops[f]; l < floops[f + 1]; ++l) {
                     Loop loop;
                     bool first = true;
@@ -646,6 +652,7 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
                 if (!whole) continue;
                 for (size_t k = fpstart[f]; k < fpstart[f + 1]; ++k) fill.Add(pnt(fpts + 3 * k));
                 try {
+                    QYM_SIGNALS;
                     fill.Build();
                 } catch (...) {
                     continue;
@@ -687,6 +694,7 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
                 TopoDS_Face face;
                 bool whole = true;
                 try {
+                QYM_SIGNALS;
                 B.MakeFace(face, S[si], step);
                 for (size_t l = floops[f]; l < floops[f + 1] && whole; ++l) {
                     TopoDS_Wire w;
@@ -911,7 +919,7 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
             TopoDS_Compound took;
             B.MakeCompound(took);
             for (const TopoDS_Face& face : faces) B.Add(took, face);
-            return seeded(took);
+            return qym_born(took);
         }
         // THE BODY WITHOUT SEWING. Every edge between two faces is one edge already, made once above; the regions left
         // as mesh go in as their triangles on the same corners and the same sides: an edge beside such a region is cut
@@ -1044,7 +1052,7 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
                 BRepLib::UpdateTolerances(shell, Standard_False);
                 ShapeFix_Solid fs;
                 TopoDS_Solid solid = fs.SolidFromShell(shell);
-                if (!solid.IsNull()) return seeded(solid);
+                if (!solid.IsNull()) return qym_born(solid);
             }
             if (lost == 0) {
                 direct = shell;
@@ -1138,11 +1146,11 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
             if (shell.Closed()) {
                 ShapeFix_Solid fs;
                 TopoDS_Solid solid = fs.SolidFromShell(shell);
-                if (!solid.IsNull()) return seeded(solid);
+                if (!solid.IsNull()) return qym_born(solid);
             }
-            return seeded(sewn);
+            return qym_born(sewn);
         }
-        return seeded(n == 1 ? only : TopoDS_Shape(bodies));
+        return qym_born(n == 1 ? only : TopoDS_Shape(bodies));
     } QYM_WHY_CATCH("faces")
     return nullptr;
 }

@@ -97,7 +97,7 @@ mod tests {
         // and `open_help` OBEYS THAT DECISION: the window did not open, and the status line holds the address
         app.open_help("part/08-hole");
         assert!(!app.win.help.open, "it is set to open in the browser and the own window opened anyway");
-        assert!(app.status.contains("part/08-hole"), "it opened in the browser and the person was not told what went where: \"{}\"", app.status);
+        assert!(app.status.words.contains("part/08-hole"), "it opened in the browser and the person was not told what went where: \"{}\"", app.status);
     }
 
     /// THE "OPEN ON THE SITE" BUTTON IS IN THE WINDOW AND KNOWS THE ADDRESS OF THE CURRENT ARTICLE.

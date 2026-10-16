@@ -1,0 +1,19 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="copy">
+<path id="Union" d="M28 20H20V28H4V12H12V4H28V20Z" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<g id="Rectangle 11">
+<path d="M12 4H28V20H12V4Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<mask id="stroke0_1_478" fill="#FFFFFF">
+<path d="M12 4H28V20H12V4Z"/>
+</mask>
+<path d="M12 4H28V20H12V4Z" stroke-width="4" stroke="var(--icon-neutral, #BCBCBCFF)" mask="url(#stroke0_1_478)"/>
+</g>
+<g id="Rectangle 12">
+<path d="M4 12H20V28H4V12Z" fill="var(--icon-dimmed, #7C7C7CFF)"/>
+<mask id="stroke1_1_478" fill="#FFFFFF">
+<path d="M4 12H20V28H4V12Z"/>
+</mask>
+<path d="M4 12H20V28H4V12Z" stroke-width="4" stroke="var(--icon-accent, #18F2F2FF)" mask="url(#stroke1_1_478)"/>
+</g>
+</g>
+</svg>

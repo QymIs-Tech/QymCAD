@@ -26,7 +26,28 @@ mod tests {
     /// layout by hand, and a month later half the kinds have a form of their own again.
     #[test]
     fn every_properties_card_starts_with_the_shared_header() {
-        let files: [(&str, &str); 3] = [("panels.rs", crate::gui::panels_source::PANELS), ("gui.rs", include_str!("../gui.rs")), ("sketching.rs", crate::gui::sketch_source::SKETCH)];
+        let files: [(&str, &str); 3] = [
+            ("panels.rs", crate::gui::panels_source::PANELS),
+            (
+                "gui.rs",
+                concat!(
+                    include_str!("file_doors.rs"),
+                    "\n",
+                    include_str!("gizmo_math.rs"),
+                    "\n",
+                    include_str!("look.rs"),
+                    "\n",
+                    include_str!("panel_bits.rs"),
+                    "\n",
+                    include_str!("startup.rs"),
+                    "\n",
+                    include_str!("view_anim.rs"),
+                    "\n",
+                    include_str!("../gui.rs")
+                ),
+            ),
+            ("sketching.rs", crate::gui::sketch_source::SKETCH),
+        ];
         // the CAD kinds of selection; the CAM cards (machine, tool, setup, operation) are not included
         // here — that module has fallen behind and will be rewritten
         let cards = ["feature_props", "mesh_props", "face_props", "contour_props", "sketch_props", "plane_props", "datum_point_props", "datum_axis_props", "component_props"];

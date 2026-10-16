@@ -113,7 +113,7 @@ mod tests {
                 hand.app.status
             ));
         }
-        if hand.app.status != crate::i18n::tr("sk-offset-side") {
+        if hand.app.status != qymcad_ui_state::Notice::info(crate::i18n::tr("sk-offset-side")) {
             failures.push(format!("after the box the status does not say what to do next: {}", hand.app.status));
         }
         // the pointer by the start, to the right, Enter: the copy by the distance of the bar, 3, starts square to it there

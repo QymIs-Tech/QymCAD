@@ -57,7 +57,7 @@ fn matrix_loft() {
         p.regen_sketch(s1);
         let c1 = p.sketches[s1].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).unwrap();
         // the upper section on a datum plane at z = 10, centred on the same origin
-        let pl = p.add_plane(WorkPlane { id: 0, name: "z10".into(), origin: [0.0, 0.0, 10.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+        let pl = p.add_plane(WorkPlane { id: 0, name: "z10".into(), origin: [0.0, 0.0, 10.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
         let s2 = p.new_sketch("top");
         let sid2 = p.sketches[s2].id;
         p.sketches[s2].plane = SketchPlane::Datum(pl);

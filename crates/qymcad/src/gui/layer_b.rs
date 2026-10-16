@@ -27,7 +27,25 @@ mod tests {
         // THE TOOLBAR IS NOT ONE FILE: the shared creation bar lives in `gui.rs` (that is where the
         // datum buttons are) while the workbench ones are in `panels.rs`. Checking one file would
         // declare missing what actually exists.
-        let panels = [crate::gui::panels_source::PANELS, include_str!("../gui.rs")].concat();
+        let panels = [
+            crate::gui::panels_source::PANELS,
+            concat!(
+                include_str!("file_doors.rs"),
+                "\n",
+                include_str!("gizmo_math.rs"),
+                "\n",
+                include_str!("look.rs"),
+                "\n",
+                include_str!("panel_bits.rs"),
+                "\n",
+                include_str!("startup.rs"),
+                "\n",
+                include_str!("view_anim.rs"),
+                "\n",
+                include_str!("../gui.rs")
+            ),
+        ]
+        .concat();
         let missing: Vec<&str> = feat_kinds().into_iter().filter(|(_, k)| !panels.contains(&format!("BarAsk::FeatCmd({k})"))).map(|(code, _)| code).collect();
         assert!(missing.is_empty(), "the toolbar has no buttons for these commands: {}", missing.join(", "));
     }

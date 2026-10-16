@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / boolean_bodies">
+<path id="Polygon 14" d="M20.5263 8.5L11 3L1.47372 8.5V19.5L11 25L12.0223 24.4098C11.3677 23.0796 11 21.5827 11 20C11 14.6359 15.2234 10.2583 20.5263 10.011V8.5Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+<circle id="Ellipse 30" cx="21" cy="20" r="10" fill="var(--icon-dimmed, #7C7C7CFF)" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

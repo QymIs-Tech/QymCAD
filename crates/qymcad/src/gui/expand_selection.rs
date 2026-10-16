@@ -14,6 +14,7 @@
 //! project has already paid for that: both the command catalogue and the settings table were fixed in
 //! exactly that way.
 
+use qymcad_ui_state::Notice;
 use qymcad_core::refs::{Axis, Query};
 
 /// What is being expanded: the selected face or the selected edge. Their sets of meaningful items
@@ -223,7 +224,7 @@ impl super::App {
         if key == "expand-between" {
             if let Query::Id(f) = q {
                 self.tools.gsel.between_first = Some(f);
-                self.status = crate::i18n::tr("expand-between-pick-second");
+                self.status = Notice::info(crate::i18n::tr("expand-between-pick-second"));
                 return;
             }
         }
@@ -244,7 +245,7 @@ impl super::App {
         }
         let n = if q.yields_edges() { self.tools.gsel.edges.len() } else { self.tools.gsel.faces.len() };
         self.tools.gsel.described = Some(q);
-        self.status = crate::i18n::trn("expand-applied", &[("what", &crate::i18n::tr(key)), ("n", &n.to_string())]);
+        self.status = Notice::info(crate::i18n::trn("expand-applied", &[("what", &crate::i18n::tr(key)), ("n", &n.to_string())]));
     }
 }
 

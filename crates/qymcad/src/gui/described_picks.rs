@@ -128,8 +128,8 @@ mod tests {
         }
         // a radius at one of the corners, as a vertex table
         let corner = app.project.vertex_spots(body).into_iter().next().expect("the body has a corner");
-        let desc = app.project.names.intern_vertex(qymcad_core::names::VertexName::new(corner.1));
-        app.tools.cmd.params.push(qymcad_ui_state::CmdParam::new("f-radius-at-vertex", &format!("at{desc}"), 5.0, 0.0, 1000.0).at(corner.0));
+        let desc = app.project.names.intern_vertex(corner.name);
+        app.tools.cmd.params.push(qymcad_ui_state::CmdParam::new("f-radius-at-vertex", &format!("at{desc}"), 5.0, 0.0, 1000.0).at(corner.at));
         app.apply_feat_cmd();
 
         let (edges, table) = app

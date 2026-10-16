@@ -46,7 +46,7 @@ mod tests {
         assert!(hand.press_hint(&qymcad_i18n::tr("tb-chamfer-sketch-hint")), "no sketch chamfer button");
         assert!(hand.press_word(&qymcad_i18n::tr(mode), egui::pos2(400.0, 0.0)), "no {mode} on the bar");
         hand.click2d(click.0, click.1).type_text(first).key(egui::Key::Tab).type_text(second).key(egui::Key::Enter);
-        (legs(&app, si, corner), app.status.clone())
+        (legs(&app, si, corner), app.status.clone().words)
     }
 
     /// The captions of the chamfer's fields, on the bar and at the corner, say what each field holds in the mode chosen.

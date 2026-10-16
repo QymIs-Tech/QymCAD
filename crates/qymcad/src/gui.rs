@@ -14,474 +14,9 @@ use qymcad_core::geom::{MeshFace, Point2};
 
 use qymcad_core::model::{Id, Project};
 
-/// THE APPLICATION'S NAME for eframe. It is also the key of the directory eframe puts the settings file into, so
-/// it lives as one constant: were those two places to diverge, the settings window would show the path of a
-/// directory that does not exist.
-pub(crate) const APP_ID: &str = "qymcad";
-
-/// THE NAME A PERSON READS, as against the identifier above that a machine stores things under. The
-/// window bar, the task bar and the About window all say this one.
-pub(crate) const APP_NAME: &str = "QymCAD";
-
-/// The window icon, decoded from the 256x256 PNG built into the binary.
-///
-/// The same image the splash screen shows. A window with no icon of its own is given the framework's,
-/// and a program that wears someone else's face in the task bar looks like a stray tool rather than the
-/// one that was installed.
-fn app_icon() -> egui::IconData {
-    const ICON: &[u8] = include_bytes!("../../../assets/icons/linux/256x256.png");
-    match image::load_from_memory(ICON) {
-        Ok(img) => {
-            let rgba = img.to_rgba8();
-            let (w, h) = rgba.dimensions();
-            egui::IconData { rgba: rgba.into_raw(), width: w, height: h }
-        }
-        // An icon is worth nothing next to starting at all: a window without one still works.
-        Err(_) => egui::IconData::default(),
-    }
-}
-
-/// THE CURRENT TIME IN ISO-8601 (UTC, to the second).
-///
-/// By its own arithmetic, without a date crate: exactly one string is needed in the whole project, and a
-/// dependency for it would have to be carried, updated and explained. The format chosen is machine-readable and
-/// sortable - whoever wants to show it to a person may, but what is stored must be unambiguous.
-pub(crate) fn now_iso8601() -> String {
-    iso8601_from_unix(unix_secs())
-}
-
-/// SECONDS SINCE THE EPOCH, in one place.
-///
-/// The same incantation stood in four files - the name of a crash file, the name of a report directory,
-/// the stamp of a document and the autosave clock - each spelling out its own fall back to zero.
-pub(crate) fn unix_secs() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-}
-
-/// CONVERTING unix SECONDS INTO ISO-8601. Separate from "what time is it", because only this part is testable:
-/// the current time has nothing to be compared against in a test, while a known stamp has.
-pub(crate) fn iso8601_from_unix(secs: u64) -> String {
-    // THE LAYOUT IS BUILT HERE, THE CALENDAR IS NOT. Leap years, the rule of centuries and the length of
-    // February are a solved problem; the layout is four numbers and two separators and is held by the table
-    // of known stamps beside it. Only the hard half was handed over.
-    let t = time::OffsetDateTime::from_unix_timestamp(secs as i64).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", t.year(), u8::from(t.month()), t.day(), t.hour(), t.minute(), t.second())
-}
-
-/// The folder a person's own files are in - what the "open the settings folder" button opens.
-pub(crate) fn settings_dir() -> Option<std::path::PathBuf> {
-    qymcad_paths::data_root()
-}
-
-/// WHAT OPENS A FOLDER - as a separate PURE function rather than a line inside a click handler.
-///
-/// Every system has its own file manager, and there is no other way to check this: a real process must not be
-/// started in a test, and "it works on my machine" proves nothing about the other two. The function answers WHAT
-/// will be launched; a test compares that answer for all three systems, and the click simply carries it out.
-pub(crate) fn reveal_command(os: egui::os::OperatingSystem, dir: &std::path::Path) -> (&'static str, Vec<String>) {
-    open_command(os, dir.to_string_lossy().into_owned())
-}
-
-/// WHAT OPENS AN ADDRESS IN A BROWSER. The same way as for a folder, and that is no coincidence: on all three
-/// systems "open this with whatever is proper" is one and the same command, which works it out for itself.
-pub(crate) fn browse_command(os: egui::os::OperatingSystem, url: &str) -> (&'static str, Vec<String>) {
-    open_command(os, url.to_string())
-}
-
-fn open_command(os: egui::os::OperatingSystem, arg: String) -> (&'static str, Vec<String>) {
-    use egui::os::OperatingSystem as OS;
-    match os {
-        OS::Windows => ("explorer", vec![arg]),
-        OS::Mac => ("open", vec![arg]),
-        // Linux, BSD and everything else: `xdg-open` is the shared way across desktop environments
-        _ => ("xdg-open", vec![arg]),
-    }
-}
-
-/// WHAT EVERY START OF THE PROGRAM SAYS TO THE PROCESS FIRST, once: the window's and a session's alike.
-pub(crate) fn prepare_the_process() {
-    // EVERY SAVED FILE SAYS WHAT WROTE IT. The core is a library and has no build of its own to name, so
-    // the application tells it once here, before anything can save.
-    qymcad_core::model::set_producer(crate::build_info::report_block().lines().next().unwrap_or_default());
-    // THE BREADCRUMB SINK. Opening an edit records what a person just did; the crate of records does not
-    // know what a crash report is, so the application plugs its trail in here, once.
-    qymcad_ui_state::set_step_recorder(crate::crash::note_step);
-}
-
-/// THE PROGRAM AS IT COMES UP, before the first frame: fonts, the settings a previous run kept in `storage`,
-/// what to open with, the view. One function for the window and for a session driven from outside, so a
-/// session starts exactly the program a person starts; the window adds only the card that draws.
-pub(crate) fn start_the_program(ctx: &egui::Context, storage: Option<&dyn eframe::Storage>) -> App {
-    // the Phosphor icon font (without it the icon glyphs render as empty boxes)
-    install_fonts(ctx);
-
-    let mut app = App::default();
-    // A CRASH FILE NOBODY IS TOLD ABOUT IS THE SAME AS NO CRASH FILE. EVERY unseen report from
-    // earlier runs is picked up here, and one window answers for all of them: taking only the
-    // newest meant the next start found the next one and showed the window again.
-    app.disk.crash_report = crate::crash::unseen_reports();
-    // restore the previous session's settings (the view preferences)
-    if let Some(storage) = storage {
-        // THE SETTINGS COME AS ONE RECORD: loaded and assigned. There is no separate "apply" step, and
-        // there is nowhere to lose a setting along the way - except the theme, which egui does not remember itself.
-        let stored = eframe::get_value::<Settings>(storage, "settings");
-        let first_start = stored.is_none(); // nothing kept from an earlier run: the program opens for the first time
-        if let Some(v) = stored {
-            adopt_settings(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, v, ctx);
-        } else {
-            let factory = app.set.clone(); // the factory defaults: the language from the locale, the theme, the scale
-            adopt_settings(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, factory, ctx);
-        }
-        // the previous session's project is reopened LAZILY: the splash with the logo is shown first (the
-        // opening frames), and only then does the loading start, so a heavy STEP reparse does not hold an
-        // empty window.
-        // WHAT TO OPEN WITH is decided by `qymcad_ui_state::opening`, out of the settings, rather
-        // than here. The decision used to be "always reopen the last project" with nothing to say
-        // otherwise, and it lived in this closure - which no check can run, so it was a decision
-        // nobody measured.
-        let last = eframe::get_value::<Option<String>>(storage, "last_project").flatten();
-        match qymcad_ui_state::opening(&app.set, last.as_deref()) {
-            qymcad_ui_state::Opening::LastProject(path) => {
-                app.disk.io.startup = Some(path); // loaded asynchronously on the first frame (the splash with the spinner)
-            }
-            qymcad_ui_state::Opening::Empty { start_screen } => {
-                // AN EMPTY DOCUMENT IS EMPTY: the root and nothing else. `App::default` hands out a
-                // document with a part in it, which is right for a check that needs somewhere to
-                // draw and wrong for the first minute of a person - reported as "a person opens the
-                // CAD and sees an empty part".
-                // A FIRST START MEETS A PERSON WITH A CUBE: a part of a sketch and its extrusion, to step into and see
-                // how the work goes here (decided 25.09). Later an empty document is empty - a fresh one, not the
-                // default's part left standing under a root made active.
-                app.project = Project::default();
-                if first_start {
-                    app.project.cube_sample();
-                } else {
-                    app.project.new_empty_document();
-                }
-                // the keys of "saved" and "committed" were taken of the document `App::default` made; the empty one
-                // is another document, and without taking them again a fresh start called itself unsaved
-                app.disk.edits.committed_key = doc_key(&app.project);
-                app.disk.edits.saved_key = edit_key(&app.draw_ctx());
-                app.win.show_start(start_screen);
-            }
-        }
-    }
-    // The start is ALWAYS isometric: 3D mode with an isometric camera (init=false means it frames itself to
-    // the contents on the first frame while keeping the orientation). Independent of the previous session.
-    app.viewing.mode_3d = true;
-    app.viewing.cam = Cam3::default();
-    app
-}
-
-pub fn launch() -> eframe::Result<()> {
-    prepare_the_process();
-    // AND THE CRASH STOPS DISAPPEARING. Installed before anything can panic: an autosave can fire in the very
-    // first seconds of a session.
-    crate::crash::install();
-    // THE JOURNAL OF THIS RUN, and a report of the one before when it stopped without closing
-    let previous = crate::crash::begin_journal();
-    // A START AFTER A START THAT DIED DRAWING TAKES A STEP DOWN (`safe_graphics`)
-    let step = crate::safe_graphics::take(previous.journal.as_deref());
-
-    let mut options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 800.0])
-            // WITHOUT THESE THE WINDOW BORROWS SOMEBODY ELSE'S FACE: the framework's own icon and the
-            // storage identifier `qymcad` as a title. Both are what a person sees first, in a task bar
-            // beside three other windows, and neither said anything about this program or its document.
-            .with_title(APP_NAME)
-            .with_icon(app_icon()),
-        // the GPU viewport: egui on wgpu gives access to wgpu_render_state for the bodies' 3D paint callback.
-        // glow stays compiled in as a fallback (the renderer is switched here).
-        renderer: eframe::Renderer::Wgpu,
-        // WHERE THE SETTINGS ARE KEPT IS OUR DECISION, not the framework's. Left to itself it derives a
-        // folder from the application id and keeps a person's settings apart from their schemes, templates,
-        // parts and crash reports - measured on Windows as `AppData\Roaming\qymcad\data` beside
-        // `AppData\Roaming\qymis\qymcad\data`, and on macOS as `qymcad` beside `tech.qymis.qymcad`.
-        persistence_path: qymcad_paths::settings_file(),
-        ..Default::default()
-    };
-    choose_the_adapter_ourselves(&mut options);
-    options.wgpu_options.on_surface_status = crate::crash::journaled_surface_status(options.wgpu_options.on_surface_status.clone());
-    let started = eframe::run_native(
-        APP_ID,
-        options,
-        Box::new(|cc| {
-            let mut app = start_the_program(&cc.egui_ctx, cc.storage);
-            // the GPU viewport: when the wgpu backend is active, the bodies pass's GPU resources are installed.
-            // Otherwise (on the glow fallback) the CPU raster remains.
-            if let Some(rs) = &cc.wgpu_render_state {
-                // ANTIALIASING COMES BEFORE THE PIPELINES ARE CREATED: they bake the sample count into themselves,
-                // so the setting takes effect on a restart (which is what the window says).
-                crate::viewport_gpu::set_msaa(crate::safe_graphics::samples(app.set.msaa));
-                app.gpu_ok = crate::viewport_gpu::install(rs);
-                crate::crash::watch_the_device(&rs.device);
-                // WHICH ADAPTER IS DRAWING - half the complaints about a viewport are answered by this line
-                // and by nothing else, and it cannot be guessed from a screenshot.
-                let i = rs.adapter.get_info();
-                crate::diagnostics::note_gpu(format!("wgpu {:?}, {} ({:?}), driver {} {}", i.backend, i.name, i.device_type, i.driver, i.driver_info));
-            } else {
-                // The glow fallback: no adapter to ask, but WHICH PATH is drawing is itself the answer to
-                // "the viewport is slow" and "the viewport is black".
-                crate::diagnostics::note_gpu("glow (the CPU fallback path)".into());
-            }
-            // DRAWING ON THE PROCESSOR IS SAID OUT LOUD, once, in the status line. Everything works and
-            // nothing is broken - but turning a model feels like wading, and a person owed no explanation
-            // reports it as a fault in the program rather than as a graphics driver they have not installed.
-            if let Some(name) = crate::diagnostics::drawing_on_the_processor() {
-                app.status = crate::i18n::tr1("gpu-on-the-processor", "name", &name);
-            }
-            // A STEP DOWN IS SAID, with why: otherwise the person sees a rougher picture and no reason for it
-            if let Some(key) = crate::safe_graphics::said(step) {
-                app.status = crate::i18n::tr(key);
-            }
-            Ok(Box::new(app))
-        }),
-    );
-    // A START THAT NEVER HAPPENED USED TO LEAVE NOTHING BEHIND. The framework hands this back as an
-    // ordinary error rather than a panic, so the crash hook never saw it, and the message went to standard
-    // error - which a windowed build on Windows has nowhere to print to. What a person saw was a window
-    // that blinked and closed, and the crash folder was empty.
-    if let Err(e) = &started {
-        let path = crate::crash::note_failed_start(&e.to_string());
-        crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
-    }
-    crate::crash::end_journal();
-    started
-}
-
-/// WHICH CARD DRAWS, DECIDED HERE AND WRITTEN DOWN.
-///
-/// Left to itself the framework asks for an adapter and, finding none, fails with an error nobody sees.
-/// Two things are wanted instead, and both need the list of adapters in hand: every one of them recorded
-/// (a report from a machine that would not start is otherwise a blank page), and the ONE ON THE PROCESSOR
-/// accepted rather than refused when it is all there is.
-///
-/// Reported behaviour: on Windows 11 with an old card and no driver installed the program would not start;
-/// there was no crash file and no falling back to drawing on the processor either. On the same version a
-/// virtual machine and a modern card both started without trouble.
-///
-/// Software rendering is slow, and on a big assembly it is very slow - but it is a program that runs and
-/// says why it is slow, against one that closes without a word.
-fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
-    use eframe::wgpu;
-    // THE FRAMEWORK'S OWN SETTINGS ARE KEPT and only two of them changed. Building the record from scratch
-    // would drop the display handle it fills in for us, which some systems will not open a window without.
-    let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup else { return };
-    // THE BACKENDS ARE LEFT AS THEY COME: the framework already asks for the primary ones plus GL, and on
-    // a desktop there is nothing else to add. What changes here is WHICH of the adapters they enumerate is
-    // taken, and that the list is written down either way.
-    setup.native_adapter_selector = Some(std::sync::Arc::new(|adapters: &[wgpu::Adapter], surface: Option<&wgpu::Surface<'_>>| {
-        let seen: Vec<String> = adapters.iter().map(describe_adapter).collect();
-        crate::diagnostics::note_adapters(&seen);
-        // a card that cannot draw into THIS window is no use, whatever else it can do
-        // THE ADAPTERS THAT CAN DRAW INTO THIS WINDOW, best first, and the first of them that really draws: a card can
-        // open, take every command and draw a transparent picture (`viewport_gpu::draws`)
-        let mut fit: Vec<&wgpu::Adapter> = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).collect();
-        let wanted = crate::safe_graphics::wanted_adapter();
-        fit.sort_by_key(|a| std::cmp::Reverse(rank_adapter(a, wanted.as_deref())));
-        let choice = crate::safe_graphics::first_that_draws(fit.len(), |i, samples| self_test(fit[i], samples));
-        crate::safe_graphics::take_choice(choice);
-        let best = fit.get(choice.index).copied();
-        match best {
-            Some(a) => {
-                let info = a.get_info();
-                crate::diagnostics::note_gpu(format!("wgpu {:?}, {} ({:?}), driver {} {}", info.backend, info.name, info.device_type, info.driver, info.driver_info));
-                // A CPU ADAPTER IS A WORKING PROGRAM, and the person is told rather than left to wonder
-                // why turning a model feels like wading.
-                if info.device_type == wgpu::DeviceType::Cpu {
-                    crate::diagnostics::note_drawing_on_the_processor(&info.name);
-                }
-                Ok(a.clone())
-            }
-            // THE MESSAGE IS THE REPORT. This string is what reaches the file and the message box, so it
-            // says what was looked for and what was found rather than "no suitable adapter".
-            None => Err({
-                crate::diagnostics::note_no_adapter();
-                format!(
-                    "no graphics adapter this window can draw on. Offered {}: {}",
-                    adapters.len(),
-                    if seen.is_empty() { "none at all - the machine has no working graphics driver".to_string() } else { seen.join("; ") }
-                )
-            }),
-        }
-    }));
-}
-
-/// THE SELF-TEST OF ONE ADAPTER with `samples` a pixel, its answer written into the journal.
-fn self_test(adapter: &eframe::wgpu::Adapter, samples: u32) -> bool {
-    let began = std::time::Instant::now();
-    let drew = pollster::block_on(adapter.request_device(&eframe::wgpu::DeviceDescriptor::default())).is_ok_and(|(device, queue)| crate::viewport_gpu::draws(&device, &queue, samples));
-    crate::crash::journal(&format!("self-test: {} with {samples} sample(s): {} in {} ms", describe_adapter(adapter), if drew { "drew" } else { "drew nothing" }, began.elapsed().as_millis()));
-    drew
-}
-
-/// One adapter in one line, for the report.
-fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
-    let i = a.get_info();
-    format!("{:?}/{:?} {} (driver {} {})", i.backend, i.device_type, i.name, i.driver, i.driver_info)
-}
-
-/// HOW GOOD AN ADAPTER IS, highest first. A real card beats a shared one, a shared one beats a virtual one,
-/// and everything beats the processor - which is taken only when nothing else answers; the step of a start after a
-/// start that died moves the backend and, at the last, the processor (`safe_graphics::rank`).
-fn rank_adapter(a: &eframe::wgpu::Adapter, wanted: Option<&str>) -> u16 {
-    let i = a.get_info();
-    let offered = crate::safe_graphics::Offered { kind: i.device_type, backend: i.backend, wanted: wanted == Some(describe_adapter(a).as_str()) };
-    crate::safe_graphics::rank(crate::safe_graphics::step(), offered, crate::safe_graphics::avoided().as_deref())
-}
-
-/// The ranking itself, apart from any adapter: a machine with no graphics is exactly the machine a test
-/// cannot be run on, so the order is checked here instead.
-///
-/// NOTHING SCORES ZERO. The processor is the worst choice and the one that must still be TAKEN when it is
-/// the only one - refusing it is the program that would not start.
-pub(crate) fn rank_device_type(t: eframe::wgpu::DeviceType) -> u8 {
-    use eframe::wgpu::DeviceType;
-    match t {
-        DeviceType::DiscreteGpu => 5,
-        DeviceType::IntegratedGpu => 4,
-        DeviceType::VirtualGpu => 3,
-        DeviceType::Other => 2,
-        DeviceType::Cpu => 1,
-    }
-}
-
-/// The parse of the export's target bodies by [`qymcad_core::model::ExportKind`] - ONE parse for both formats.
-/// STEP writes only `brep`; STL writes EVERYTHING that is on the screen (`brep` by tessellation plus the
-/// `mesh_only` and `stale` meshes). The difference must not be kept quiet: [`ExportPlan::note`] gives it in words,
-/// meaning the same thing in both statuses.
-#[derive(Default)]
-struct ExportPlan {
-    /// A live B-rep - the exact geometry.
-    brep: Vec<Id>,
-    /// An STL import: there never was a B-rep.
-    mesh_only: Vec<Id>,
-    /// A failed rebuild: the last good geometry is on the screen and there is no B-rep.
-    stale: Vec<Id>,
-}
-
-impl ExportPlan {
-    /// The bodies for STL: everything visible (a B-rep is re-tessellated, the rest go as their stored mesh).
-    fn stl_bodies(&self) -> Vec<Id> {
-        self.brep.iter().chain(&self.mesh_only).chain(&self.stale).copied().collect()
-    }
-    /// An honest note appended to the status: what exactly is missing and why. Empty means everything went out
-    /// intact. `step=true` gives the wording for STEP (those bodies did NOT reach the file), otherwise for STL
-    /// (they did, but as a mesh).
-    fn note(&self, step: bool) -> String {
-        let (m, s) = (self.mesh_only.len(), self.stale.len());
-        if m + s == 0 {
-            return String::new();
-        }
-        let mut what = Vec::new();
-        if m > 0 {
-            what.push(crate::i18n::tr1("note-mesh-bodies", "n", &m.to_string()));
-        }
-        if s > 0 {
-            what.push(crate::i18n::tr1("note-failed-bodies", "n", &s.to_string()));
-        }
-        let what = what.join(", ");
-        if step {
-            crate::i18n::tr1("note-not-exported", "what", &what)
-        } else {
-            crate::i18n::tr1("note-as-mesh", "what", &what)
-        }
-    }
-}
-
-/// Restore the B-rep shapes of the imported STEP solids from the embedded sources (`sources/`): parse each
-/// source's embedded STEP once and lay its solids out across the bodies.
-/// A free function rather than a method: it is called from a worker thread while a project loads, without
-/// `&mut App`. The imported bodies are stripped on saving as outputs of the timeline; their geometry lives in the
-/// original file.
-fn restore_import_shapes_for(project: &Project) -> Vec<(Id, qymcad_kernel::Shape)> {
-    use qymcad_core::feature::FeatureKind;
-    use std::collections::HashMap;
-    let imports: Vec<(Id, Id, u32, f64)> = project
-        .timeline
-        .iter()
-        .filter_map(|n| match n.kind {
-            FeatureKind::Import { body, source, solid, scale } => Some((body, source, solid, scale)),
-            _ => None,
-        })
-        .collect();
-    let mut out = Vec::new();
-    if imports.is_empty() {
-        return out;
-    }
-    // group by source, so that each STEP is unpacked only once
-    let mut by_src: HashMap<Id, Vec<(Id, u32, f64)>> = HashMap::new();
-    for (body, src, solid, scale) in imports {
-        by_src.entry(src).or_default().push((body, solid, scale));
-    }
-    for (src, items) in by_src {
-        let Some(sf) = project.sources.iter().find(|s| s.id == src) else { continue };
-        if sf.data.is_empty() {
-            continue;
-        }
-        let ext = if sf.ext.is_empty() { "step" } else { sf.ext.as_str() };
-        let tmp = std::env::temp_dir().join(format!("qym_import_{src}.{ext}"));
-        if std::fs::write(&tmp, &sf.data).is_err() {
-            continue;
-        }
-        // the Option wrapper: a shape is moved (it is not Clone), and each solid is taken by index exactly once
-        // read by what the source is: an IGES source read as STEP gave nothing, and the part opened with no live body
-        let format = qymcad_kernel::ExactFormat::of_extension(ext);
-        let mut shapes: Vec<Option<qymcad_kernel::Shape>> = qymcad_kernel::exact_solids(format, tmp.to_string_lossy().as_ref()).unwrap_or_default().into_iter().map(Some).collect();
-        let _ = std::fs::remove_file(&tmp);
-        for (body, solid, scale) in items {
-            if let Some(s) = shapes.get_mut(solid as usize).and_then(|o| o.take()) {
-                // at the factor given when the file came in: a file can name the wrong unit
-                let s = if (scale - 1.0).abs() > 1e-12 { s.transformed(&crate::gui::import_scale::scale_matrix(scale)).unwrap_or(s) } else { s };
-                out.push((body, s));
-            }
-        }
-    }
-    out
-}
-
-/// Toggle the parts library window; on the first opening it builds the catalogue tree.
-pub(crate) fn toggle_parts_library(parts: &mut PartsLibrary, win: &mut Windows) {
-    win.toggle(WinKind::PartsLibrary);
-    if win.is(WinKind::PartsLibrary) && parts.tree.is_none() {
-        parts.tree = Some(crate::parts_library::load_library_tree());
-    }
-}
-
 pub(crate) use qymcad_i18n::error_words;
 pub(crate) use qymcad_ui_state::settings_sections;
 pub(crate) use qymcad_ui_state::*;
-
-/// THE DOCUMENT ON DISK: where it came from, what is unsaved, and what is being written or read.
-///
-/// Ten fields of `App` about ONE subject - the file. They were spread through a hundred, so "is there
-/// anything unsaved" and "where does Save write" were questions one answered by remembering which field
-/// held what.
-pub(crate) struct OnDisk {
-    /// The path of the open document; `None` for one that has never been saved.
-    pub(crate) project_path: Option<String>,
-    /// The last DXF a drawing was imported from - the next import opens there.
-    pub(crate) dxf_path: Option<String>,
-    /// The folder the last export was written to - the next export opens there.
-    pub(crate) export_folder: Option<export_folder::ExportFolder>,
-    /// Reading and writing: the background jobs and what they came back with.
-    pub(crate) io: DocIo,
-    /// What has changed since the last save, and when the last autosave was.
-    pub(crate) edits: Edits,
-    /// A file chooser that is open, and what to do with the answer.
-    pub(crate) file_ask: Option<file_ask::FileAsk>,
-    /// A mesh export waiting for its deflection.
-    pub(crate) mesh_export: Option<(qymcad_ui_state::MeshFormat, ExportTarget)>,
-    /// A crash report left by an earlier run, to be shown once.
-    pub(crate) crash_report: Vec<std::path::PathBuf>,
-    /// What the person is writing into "report a problem".
-    pub(crate) report: crate::gui::report_problem::ReportDraft,
-    /// The title as it stands in the window bar - kept so it is not set on every frame.
-    pub(crate) title_shown: String,
-    /// Somewhere to go once the unsaved-work question has been answered.
-    pub(crate) pending_nav: Option<Nav>,
-}
 
 impl Default for OnDisk {
     /// THE TITLE STARTS AS THE PROGRAM'S NAME, not empty: an empty title bar at launch reads as a window
@@ -567,7 +102,7 @@ pub(crate) struct App {
     /// and got in the way of saving them whole; it is not a setting.
     snap_hint: Option<(Point2, u8)>,
 
-    status: String,
+    status: qymcad_ui_state::Notice,
     /// The cursor's coordinates in the part's frame (for the status line), in the 2D view.
     cursor: Option<Point2>,
     /// what the command points at by a click - an enumeration (see Picking)
@@ -628,74 +163,6 @@ pub(crate) struct DocIo {
     pub startup: Option<String>,
 }
 
-// `Hover` deliberately has NO shared reset: three places clear THEIR OWN kind of hover ("no constraint
-// under the cursor here"), and the passes run every frame, so the mutual exclusion holds by itself. A
-// shared reset would be wrong here — it would clear the hover a neighbouring pass had just computed.
-
-pub(crate) fn install_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    // the Phosphor icon font (otherwise icons render as "tofu" boxes)
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-    // A BOLD FACE. The egui set has none at all — only the ordinary proportional and monospace ones.
-    // Labels drawn OVER geometry (the X/Y/Z axes, dimensions) get lost in a thin font.
-    // Liberation Sans Bold: OFL (the licence sits next to the file), Latin plus Cyrillic.
-    fonts.font_data.insert(BOLD_FONT.to_string(), std::sync::Arc::new(egui::FontData::from_static(include_bytes!("../../../assets/fonts/LiberationSans-Bold.ttf"))));
-    fonts.families.insert(egui::FontFamily::Name(BOLD_FONT.into()), vec![BOLD_FONT.to_string()]);
-    mac_key_symbols(&mut fonts);
-    ctx.set_fonts(fonts);
-    // THE HINT SIZE, set here because this is the one place that already decides how text is drawn - and
-    // because a size set in two places drifts.
-    //
-    // Reported behaviour: "the hint fonts are small at scale 1 and at 1.2 alike ... make them a bit larger
-    // everywhere, and make them scale with the setting too." Measured: a hint was 10 points against 15 for
-    // ordinary text, two thirds of it. The interface scale is a zoom factor, so it multiplies BOTH by the
-    // same amount - the hint does grow on screen, but its share of the text around it never changes, and
-    // that is what makes it unreadable at every scale.
-    //
-    // IN POINTS, not pixels. The scale turns points into pixels, so a size given here follows it; a size in
-    // pixels would be readable at one scale and wrong at every other.
-    // BOTH THEMES: egui keeps a style per theme, and setting one leaves the hints tiny for whoever
-    // switches to the other.
-    ctx.all_styles_mut(|st| {
-        if let Some(f) = st.text_styles.get_mut(&egui::TextStyle::Small) {
-            f.size = 11.0; // against a body of 12.5: 0.88 instead of 0.72
-        }
-    });
-}
-
-/// ⌃ ⌘ ⇧ ⌥ FOR THE KEYS OF A MAC, where people read keys as symbols and `Ctrl+W` names the wrong key.
-///
-/// The fonts the program carries cannot draw them: ⌥ and ⌃ are in none of them, and ⇧ only in the monospace one, so
-/// the symbols alone would be boxes. Every Mac has Apple Symbols, and it is taken from the system rather than
-/// carried - it is drawn on a Mac only. Second in each family, right after the main face: the emoji fonts
-/// further down have a ⌘ of a different look. Without the file the keys are written in words (`Shift+Cmd+W`).
-fn mac_key_symbols(fonts: &mut egui::FontDefinitions) {
-    if !cfg!(target_os = "macos") {
-        return;
-    }
-    let Ok(bytes) = std::fs::read("/System/Library/Fonts/Apple Symbols.ttf") else {
-        qymcad_ui_state::set_key_style(qymcad_ui_state::KeyStyle::MacWords);
-        return;
-    };
-    const NAME: &str = "mac-key-symbols";
-    fonts.font_data.insert(NAME.to_string(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
-    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        let list = fonts.families.entry(family).or_default();
-        list.insert(list.len().min(1), NAME.to_string());
-    }
-    qymcad_ui_state::set_key_style(qymcad_ui_state::KeyStyle::MacSymbols);
-}
-
-/// The name of the BOLD font family. One place: family names spelled out separately drift apart and
-/// give a silent fallback to the default font — the text still draws, only not bold, and that is
-/// invisible to the eye in the code.
-pub(crate) const BOLD_FONT: &str = "qym-bold";
-
-/// The bold font at a given size.
-pub(crate) fn bold(size: f32) -> egui::FontId {
-    egui::FontId::new(size, egui::FontFamily::Name(BOLD_FONT.into()))
-}
-
 /// HOW LONG A WRITE MUST RUN BEFORE THE WAITING CARD IS SHOWN AT ALL.
 ///
 /// A small document is written faster than an eye can catch, and a card flashing for one frame reads as a
@@ -714,6 +181,7 @@ impl App {
         let file_ask_open = self.asking_for_a_file();
         WinCtx {
             cache: &mut self.cache,
+            sketch_ses: &self.sketch_ses,
             deferred: &mut self.deferred,
             edits: &mut self.disk.edits,
             gpu_ok: &mut self.gpu_ok,
@@ -763,8 +231,8 @@ impl App {
                 WinAsk::ExportSettings => self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name("qym-cad-settings.ron").add_filter("qym-cad settings", &["ron"]), |app, p| {
                     let path = p.to_string_lossy().into_owned();
                     app.scheme.note = match crate::gui::export_settings_to(&app.set, &path) {
-                        Ok(()) => crate::i18n::tr1("settings-profile-saved", "path", &path),
-                        Err(e) => format!("{} {}", ph::WARNING, crate::i18n::tr1("settings-profile-failed", "error", &e)),
+                        Ok(()) => Notice::info(crate::i18n::tr1("settings-profile-saved", "path", &path)),
+                        Err(e) => Notice::error(crate::i18n::tr1("settings-profile-failed", "error", &e)),
                     };
                 }),
                 WinAsk::ImportSettings => {
@@ -772,16 +240,15 @@ impl App {
                     self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("qym-cad settings", &["ron"]), move |app, p| {
                         let path = p.to_string_lossy().into_owned();
                         app.scheme.note = match app.import_settings_from(&path, &ctx) {
-                            Ok(()) => crate::i18n::tr("settings-profile-loaded"),
+                            Ok(()) => Notice::info(crate::i18n::tr("settings-profile-loaded")),
                             // A BROKEN FILE DOES NOT TOUCH THE CURRENT SETTINGS: it is said that it did not
                             // work, and what was there stays.
-                            Err(e) => format!("{} {}", ph::WARNING, crate::i18n::tr1("settings-profile-failed", "error", &e)),
+                            Err(e) => Notice::error(crate::i18n::tr1("settings-profile-failed", "error", &e)),
                         };
                     });
                 }
                 WinAsk::ExportMesh(format, target, defl) => self.export_mesh(format, target, defl),
                 WinAsk::Delete(sel, dependents) => self.execute_delete(sel, dependents),
-                WinAsk::RegenerateAll => qymcad_ui_state::regenerate_all(&mut self.rebuild_ctx()),
                 // THE ONE DOOR a button uses. The search must not have a launch path of its own: a second one
                 // sooner or later starts doing something other than the button, and nothing says so.
                 WinAsk::RunCommand(code) => self.run_command(code, ctx),
@@ -984,14 +451,6 @@ impl App {
     }
 
     /// Is the cursor on the face arrow? The threshold matches the body gizmo's, in pixels along the segment.
-    pub(super) fn face_arrow_hit(&self, rect: Rect, pos: Pos2, basis: &([f64; 3], [f64; 3], [f64; 3])) -> bool {
-        face_arrow_hit(&self.painting(), rect, pos, basis)
-    }
-
-    pub(super) fn face_arrow_geometry(&self) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
-        face_arrow_geometry(&self.painting())
-    }
-
     /// The gizmo mode of the selected component: grounded gives None; driven by a joint that has a freedom
     /// gives Joint(jid); otherwise (free, or a seed with no freedoms of its own) gives Free, the plain 6-DOF one.
     fn comp_gizmo_mode(&self, comp: Id) -> CompGizmoMode {
@@ -1022,7 +481,7 @@ impl App {
             draft: self.params.draft,
             chamfer: self.params.chamfer,
             edges: &self.edges,
-            face_arrow_drag: self.dragged.face_arrow_drag,
+            handle_drag: self.dragged.handle_drag,
             feat: self.feat,
             gpu_ok: self.gpu_ok,
             gsel: &self.tools.gsel,
@@ -1188,6 +647,7 @@ impl App {
             cam: &self.viewing.cam,
             scheme: &self.scheme,
             set: &self.set,
+            sketch_ses: &self.sketch_ses,
         }
     }
 }
@@ -1229,7 +689,7 @@ impl Default for App {
             logo_tex: None,
             hotkeys: qymcad_ui_state::HotkeyCapture::default(),
             bar_exprs: std::collections::HashMap::new(),
-            status: crate::i18n::tr("g-start-hint"),
+            status: Notice::info(crate::i18n::tr("g-start-hint")),
             cursor: None,
             // THE "ANGLE" FIELD IS EMPTY AT START-UP. It used to hold 90 deg, and that silently became a
             // REQUIREMENT: `joint_pick_anchor_click` writes a non-zero angle into `drive[0]` of the joint
@@ -1269,7 +729,7 @@ impl App {
     /// inside one). The original file is embedded (for re-importing and for comparison). Esc cancels.
     fn arm_sketch_import(&mut self, curves: Vec<qymcad_core::geom::ProfEdge>, path: &str) {
         if curves.is_empty() {
-            self.status = crate::i18n::tr("g-import-empty");
+            self.status = Notice::refusal(crate::i18n::tr("g-import-empty"));
             return;
         }
         let n = curves.len();
@@ -1279,7 +739,7 @@ impl App {
         self.chosen.sel = Sel::None;
         self.tools.pending_import.curves = Some((curves, src, file_name(path)));
         self.disk.dxf_path = Some(path.to_string());
-        self.status = crate::i18n::tr1("g-import-place", "n", &n.to_string());
+        self.status = Notice::info(crate::i18n::tr1("g-import-place", "n", &n.to_string()));
     }
 
     /// Place the waiting import on the chosen plane: build an editable sketch in the active context and
@@ -1292,7 +752,7 @@ impl App {
         invalidate(&mut self.regen);
         self.viewing.view.initialized = false;
         self.enter_sketch_edit(si);
-        self.status = crate::i18n::tr1("g-sketch-imported", "n", &ents.to_string());
+        self.status = Notice::info(crate::i18n::tr1("g-sketch-imported", "n", &ents.to_string()));
     }
 
     /// A new empty document (geometry and operations are reset; the global tool and machine libraries
@@ -1314,9 +774,9 @@ impl App {
                 self.disk.project_path = None;
                 self.set.recent.retain(|p| p != path); // a template is not a "recent file"
                 self.disk.edits.saved_key = edit_key(&self.draw_ctx()); // a blank slate: no edits have been made yet
-                self.status = crate::i18n::tr1("tpl-new-from", "name", &std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+                self.status = Notice::info(crate::i18n::tr1("tpl-new-from", "name", &std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()));
             }
-            Err(e) => self.status = format!("{} {}", ph::WARNING, crate::i18n::tr1("tpl-open-failed", "error", &e.to_string())),
+            Err(e) => self.status = Notice::error(crate::i18n::tr1("tpl-open-failed", "error", &e.to_string())),
         }
     }
 
@@ -1332,7 +792,7 @@ impl App {
         self.viewing.view.initialized = false;
         self.viewing.cam.init = false;
         self.disk.edits.fresh(); // a clean start: no steps of the document before, the baseline taken on the next frame
-        self.status = crate::i18n::tr("g-new-project");
+        self.status = Notice::info(crate::i18n::tr("g-new-project"));
     }
 
     /// A NEW ASSEMBLY DOCUMENT: the root without an empty part, with the root active.
@@ -1349,7 +809,7 @@ impl App {
         }
         self.project.set_active_component(Some(root));
         self.disk.edits.saved_key = edit_key(&self.draw_ctx()); // a clean start — there are no edits
-        self.status = crate::i18n::tr("g-new-assembly");
+        self.status = Notice::info(crate::i18n::tr("g-new-assembly"));
     }
 
     /// Request navigation that could lose edits: with unsaved work it asks first, otherwise it goes ahead.
@@ -1400,7 +860,7 @@ impl App {
         if let Some(s) = self.project.sketches.get(si) {
             // remember the viewpoint and mode, to bring them back on leaving the sketch (the drill-in stack)
             self.viewing.nav_stash.push((self.viewing.cam, self.viewing.view, self.viewing.mode_3d));
-            self.sketch_ses.editing = Some(s.id);
+            qymcad_ui_state::open_sketch_session(&mut self.sketch_ses, &self.project, s.id);
             self.workbench = Workbench::Sketch;
             self.viewing.mode_3d = false;
             self.chosen.sel = Sel::Sketch(si);
@@ -1408,7 +868,7 @@ impl App {
             self.tools.pending_import.draw_pts = None;
             self.tools.armed = qymcad_ui_state::Armed::None;
             self.viewing.view.initialized = false; // fit the view to the sketch
-            self.status = sketch_entry_status(&self.project, s);
+            self.status = Notice::info(sketch_entry_status(&self.project, s));
         }
     }
 
@@ -1420,18 +880,18 @@ impl App {
         qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), t);
         self.viewing.mode_3d = false;
         self.status = match self.tools.armed.draw_kind() {
-            1 => crate::i18n::tr("g-line-hint"),
-            2 => crate::i18n::tr("g-rect-hint"),
-            3 => crate::i18n::tr("g-circle-hint"),
-            4 => crate::i18n::tr("g-arc-cse"),
-            5 => crate::i18n::tr("g-point-hint"),
-            6 => crate::i18n::tr("g-polygon-hint"),
-            7 => crate::i18n::tr("g-slot-hint"),
-            8 => crate::i18n::tr("g-ellipse-hint"),
-            9 => crate::i18n::tr("g-spline-hint"),
-            10 => crate::i18n::tr("g-circle-3pt"),
-            11 => crate::i18n::tr("g-text-hint"),
-            _ => crate::i18n::tr("g-select"),
+            1 => Notice::info(crate::i18n::tr("g-line-hint")),
+            2 => Notice::info(crate::i18n::tr("g-rect-hint")),
+            3 => Notice::info(crate::i18n::tr("g-circle-hint")),
+            4 => Notice::info(crate::i18n::tr("g-arc-cse")),
+            5 => Notice::info(crate::i18n::tr("g-point-hint")),
+            6 => Notice::info(crate::i18n::tr("g-polygon-hint")),
+            7 => Notice::info(crate::i18n::tr("g-slot-hint")),
+            8 => Notice::info(crate::i18n::tr("g-ellipse-hint")),
+            9 => Notice::info(crate::i18n::tr("g-spline-hint")),
+            10 => Notice::info(crate::i18n::tr("g-circle-3pt")),
+            11 => Notice::info(crate::i18n::tr("g-text-hint")),
+            _ => Notice::info(crate::i18n::tr("g-select")),
         };
     }
 
@@ -1468,7 +928,7 @@ impl App {
         self.viewing.view.initialized = false;
         self.viewing.cam.init = false;
         self.sync_workbench();
-        self.status = crate::gui::look_at_point::context_is(&self.project, &self.active_path);
+        self.status = Notice::info(crate::gui::look_at_point::context_is(&self.project, &self.active_path));
     }
 
     /// Go one level up (drill out): restore the camera.
@@ -1551,16 +1011,16 @@ impl App {
             let src = self.project.sketches.get(si).and_then(|s| s.patterns.get(pi)).map(|p| p.source.clone()).unwrap_or_default();
             let kind = current_pattern_kind(&self.tools.armed, self.tools.pat, &self.project, self.sk_pat, si, &src);
             self.project.update_pattern(si, pi, kind);
-            self.status = crate::i18n::tr("g-array-updated");
+            self.status = Notice::info(crate::i18n::tr("g-array-updated"));
         } else {
             let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
             if eids.is_empty() {
-                self.status = crate::i18n::tr("g-select-for-array");
+                self.status = Notice::info(crate::i18n::tr("g-select-for-array"));
                 return;
             }
             let kind = current_pattern_kind(&self.tools.armed, self.tools.pat, &self.project, self.sk_pat, si, &eids);
             self.project.add_pattern(si, &eids, kind);
-            self.status = crate::i18n::tr("g-array-created");
+            self.status = Notice::info(crate::i18n::tr("g-array-created"));
         }
         self.tools.armed = qymcad_ui_state::Armed::None;
         self.tools.pat.edit = None;
@@ -1577,7 +1037,7 @@ impl App {
                 // A REFUSAL COSTS NOTHING. Nothing is selected, so there is no copy to make - and the tool
                 // stays in hand: taking a half-drawn shape away over a mis-press would punish the person for
                 // pressing the wrong key.
-                self.status = crate::i18n::tr("g-pick-for-copy");
+                self.status = Notice::info(crate::i18n::tr("g-pick-for-copy"));
                 return;
             }
             // THE TOOL GOES DOWN BEFORE THE COPY IS ARMED.
@@ -1589,7 +1049,7 @@ impl App {
             // it.
             exit_draw_tools(&mut qymcad_ui_state::tools_of!(self));
             self.side.clip.arm_copy(eids, cut);
-            self.status = if cut { crate::i18n::tr("g-cut-base-point") } else { crate::i18n::tr("g-copy-base-point") };
+            self.status = Notice::info(if cut { crate::i18n::tr("g-cut-base-point") } else { crate::i18n::tr("g-copy-base-point") });
             return;
         }
         // outside a sketch, Ctrl+C acts on THE TREE (a part, a subassembly, a sketch node).
@@ -1623,7 +1083,7 @@ impl App {
             _ => self.project.active_ctx(),
         };
         if self.project.component_is_part(target) {
-            self.status = crate::i18n::tr("g-paste-needs-assembly");
+            self.status = Notice::refusal(crate::i18n::tr("g-paste-needs-assembly"));
             return;
         }
         // Only the ROOTS of the selection: if the set holds both a subassembly and one of its
@@ -1654,9 +1114,9 @@ impl App {
             qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the scheduler does the computing
         }
         self.status = if fail == 0 {
-            crate::i18n::tr2("g-paste-result", "what", &if cut { crate::i18n::tr("g-body-moved") } else { crate::i18n::tr("g-copied") }, "n", &ok.to_string())
+            Notice::info(crate::i18n::tr2("g-paste-result", "what", &if cut { crate::i18n::tr("g-body-moved") } else { crate::i18n::tr("g-copied") }, "n", &ok.to_string()))
         } else {
-            crate::i18n::tr2("g-paste-partial", "ok", &ok.to_string(), "fail", &fail.to_string())
+            Notice::warning(crate::i18n::tr2("g-paste-partial", "ok", &ok.to_string(), "fail", &fail.to_string()))
         };
     }
 
@@ -1875,7 +1335,7 @@ impl qymcad_shell::Fills for App {
     fn fill(&mut self, key: &'static str, ui: &mut egui::Ui) {
         // WHAT THE BARS ASKED FOR IS DONE AFTER THE DRAWING. A button that acted mid-frame would start a
         // command while the bar of that command was still being laid out.
-        let mut bar_asks = Vec::new();
+        let (mut bar_asks, mut win_asks) = (Vec::new(), Vec::new());
         match key {
             "menubar" => crate::gui::panels_bars::menu_bar(&mut self.bar_ctx(&mut bar_asks), ui),
             "toolbar" => crate::gui::panels_bars::toolbar(&mut self.bar_ctx(&mut bar_asks), ui),
@@ -1907,8 +1367,10 @@ impl qymcad_shell::Fills for App {
                     scheme: &self.scheme,
                     set: &mut self.set,
                     sketch_ses: &self.sketch_ses,
-                    status: &self.status,
+                    line: qymcad_ui_state::StatusLine { said: &mut self.status, rebuild: &mut self.regen.line },
                     win: &mut self.win,
+                    par_search: &mut self.par_search,
+                    ask: &mut win_asks,
                 },
                 ui,
             ),
@@ -1918,10 +1380,8 @@ impl qymcad_shell::Fills for App {
             "viewport" => self.viewport(ui),
             _ => {}
         }
-        if !bar_asks.is_empty() {
-            let ctx = ui.ctx().clone();
-            self.do_bar_asks(bar_asks, &ctx);
-        }
+        self.do_bar_asks(bar_asks, &ui.ctx().clone());
+        self.do_win_asks(win_asks, &ui.ctx().clone()); // a click on a fault in the status line goes where a window's link goes
     }
 
     fn bar_frame(&self) -> egui::Frame {
@@ -1977,21 +1437,8 @@ impl App {
                 self.save_project();
             }
         }
-        // the indicator of a background rebuild sits over the ordinary interface, with dimming
-        if let Some(label) = self.tools.dim.overlay.take() {
-            let progress = self.tools.dim.overlay_progress.take();
-            // A LIVE VIEWPORT during a rebuild: the rectangle is taken from the PREVIOUS frame — the
-            // overlay is drawn before the viewport itself, and the window size does not jump between frames.
-            let live = if self.regen.regen_running() { self.viewing.view_rect } else { egui::Rect::NOTHING };
-            if crate::gui::render::draw_dim_overlay_with(&self.scheme, ctx, &label, progress, live) {
-                cancel_regen(&self.regen, &mut self.status);
-            }
-        }
-        // A SILENT REBUILD gets only a spinner on the canvas. No window, no dimming, no barrier: nobody is
-        // kept from working, and nobody is left guessing whether what is on screen is still current.
-        if std::mem::take(&mut self.tools.dim.spinner) {
-            crate::gui::render::draw_quiet_spinner(&self.scheme, self.viewing.view_rect, ctx);
-        }
+        // the sign of a background rebuild; the canvas is the PREVIOUS frame's, drawn before the viewport itself
+        rebuild_sign::draw_rebuild_sign(&self.regen, &self.scheme, self.viewing.view_rect, ctx, &mut self.status);
         self.sync_workbench(); // the workbench and the active context are derived from `active_path` (drill in and out)
         self.chosen.hover.joint = None; // the hovered joint is rebuilt every frame (by the panel and by 3D below)
         self.keep_selection_on_edited_sketch(); // the selection follows the sketch being edited — in one phase
@@ -2058,7 +1505,7 @@ impl App {
         } // "save as a part of the library"
         {
             let mut asks = Vec::new();
-            crate::gui::panels_windows::params_window(&mut self.win_ctx(&mut asks), ctx);
+            crate::gui::panels_windows::doc_windows(&mut self.win_ctx(&mut asks), ctx);
             self.do_win_asks(asks, ctx);
         }
         {
@@ -2088,7 +1535,7 @@ impl App {
         let loaded = match loaded {
             Ok(l) => l,
             Err(e) => {
-                self.status = crate::i18n::tr1("lib-load-error", "error", &e.to_string());
+                self.status = Notice::error(crate::i18n::tr1("lib-load-error", "error", &e.to_string()));
                 return;
             }
         };
@@ -2097,10 +1544,10 @@ impl App {
             Some(_) => {
                 qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the scheduler does the computing
                 invalidate(&mut self.regen);
-                self.status = crate::i18n::tr1("lib-part-inserted", "name", &loaded.manifest.name);
+                self.status = Notice::info(crate::i18n::tr1("lib-part-inserted", "name", &loaded.manifest.name));
             }
             None => {
-                self.status = crate::i18n::tr("lib-no-assembly");
+                self.status = Notice::refusal(crate::i18n::tr("lib-no-assembly"));
             }
         }
     }
@@ -2121,7 +1568,7 @@ impl App {
             preview,
             tex: None,
         });
-        self.status = crate::i18n::tr("lib-save-hint");
+        self.status = Notice::info(crate::i18n::tr("lib-save-hint"));
     }
 
     // ============ The splash screen and the progress of background work ============
@@ -2171,7 +1618,7 @@ impl App {
         // fever of endless flickering.
         self.spawn_import_shapes(false); // quietly, in the background: the model on screen is intact, only the geometry is awaited
         self.regen.import_asked = true;
-        self.status = crate::i18n::tr("io-rebuilding-all");
+        self.status = Notice::info(crate::i18n::tr("io-rebuilding-all"));
     }
 
     /// Turn the plane pick for a new sketch on or off (the Sketch button and the K shortcut). It cancels
@@ -2184,7 +1631,7 @@ impl App {
         if self.tools.picking.is_sketch_plane() {
             self.viewing.mode_3d = true; // planes and faces are picked in 3D
             self.chosen.sel = Sel::None;
-            self.status = crate::i18n::tr("g-sketch-pick-plane");
+            self.status = Notice::info(crate::i18n::tr("g-sketch-pick-plane"));
         }
     }
 
@@ -2272,36 +1719,14 @@ impl App {
                 self.params.rev.axis_datum = id;
                 self.params.rev.axis_line = 0; // the axis was set in 3D, so the sketch's axis line no longer applies
                 self.params.rev.pick_axis = false;
-                self.status = format!("{} {}", ph::CHECK, crate::i18n::tr1("g-rev-axis", "what", &crate::i18n::tr(what)));
+                self.status = Notice::info(format!("{} {}", ph::CHECK, crate::i18n::tr1("g-rev-axis", "what", &crate::i18n::tr(what))));
                 true
             }
             None => {
-                self.status = crate::i18n::tr("g-rev-axis-miss");
+                self.status = Notice::refusal(crate::i18n::tr("g-rev-axis-miss"));
                 false
             }
         }
-    }
-
-    /// Dragging the face arrow: the offset grows along the face's NORMAL, just as it does for a body gizmo's axis.
-    pub(super) fn face_arrow_drag_to(&mut self, d: egui::Vec2, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) {
-        let Some((o, _, n)) = self.face_arrow_geometry() else { return };
-        let l = 60.0 / self.viewing.cam.scale as f64;
-        let scr = qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect, basis };
-        let s0 = scr.at(o).0;
-        let s1 = scr.at([o[0] + n[0] * l, o[1] + n[1] * l, o[2] + n[2] * l]).0;
-        let pd = s1 - s0;
-        let denom = (pd.x * pd.x + pd.y * pd.y) as f64;
-        if denom < 1e-6 {
-            return;
-        }
-        let Some(key) = face_arrow_key(&self.tools.armed) else { return };
-        let inc = (d.x * pd.x + d.y * pd.y) as f64 * l / denom;
-        let cur = qymcad_ui_state::cmd_val(&self.tools.cmd, key) + inc;
-        if let Some(p) = self.tools.cmd.params.iter_mut().find(|p| p.key == key) {
-            p.val = cur;
-            p.txt = format!("{:.2}", cur); // the field and the arrow are one value, not two independent ones
-        }
-        invalidate(&mut self.regen);
     }
 
     /// Finish a body gizmo drag: apply the accumulated transform as a PARAMETRIC Move feature.
@@ -2407,7 +1832,7 @@ impl App {
                 self.side.joint.new_kind = qymcad_core::feature::JointKind::Rigid;
                 self.side.joint.pick_faces = true;
                 self.side.joint.pick_first = None;
-                self.status = crate::i18n::tr("g-rigid-joint-hint");
+                self.status = Notice::info(crate::i18n::tr("g-rigid-joint-hint"));
             }
             _ => {}
         }
@@ -2439,11 +1864,11 @@ impl App {
         if self.side.section.plane.is_some() || self.side.section.pick {
             self.side.section.put_away();
             invalidate(&mut self.regen);
-            self.status = crate::i18n::tr("tb-section-off");
+            self.status = Notice::info(crate::i18n::tr("tb-section-off"));
         } else {
             self.cancel_all_tools();
             self.side.section.pick = true;
-            self.status = crate::i18n::tr("tb-section-pick");
+            self.status = Notice::info(crate::i18n::tr("tb-section-pick"));
         }
     }
 
@@ -2460,7 +1885,7 @@ impl App {
             self.chosen.sel = Sel::Plane(pi);
         }
         self.regen_after_datum_change();
-        self.status = crate::i18n::tr("plane-from-face-hint");
+        self.status = Notice::info(crate::i18n::tr("plane-from-face-hint"));
     }
 
     // `viewport` was 1509 lines and looked like a monolith, but it was in fact TWO unrelated viewports in
@@ -2571,199 +1996,9 @@ impl App {
     }
 }
 
-// ---------- helpers ----------
-
-/// WHETHER TWO PLACEMENTS ARE ROTATED THE SAME WAY (the translation may be anything).
-///
-/// The scene buffer needs this: if a part has only moved, the vertices already built need the difference
-/// added to them; if it was also rotated, the world normals became different, and both the colour and the
-/// back-face culling are computed from them, so the block is assembled again. The translation columns (3,
-/// 7, 11) say nothing about rotation, so they are skipped.
-///
-/// THE THRESHOLD COMES FROM MEASUREMENT, NOT FROM TASTE. Exact equality never happens here: the solver
-/// derives the placements afresh every frame, and even on a PURE slider travel the rotating part still
-/// breathes. Measured on a real assembly: 13.8 mm of translation per frame with a rotation discrepancy of
-/// 1e-12 to 9e-10. With a threshold of 1e-12 the fast path was taken NOT ONCE (63 blocks out of 63 were
-/// assembled again), that is, the fix was written and did not work.
-///
-/// 1e-7 is 6e-6 of a degree. On a part with a radius of a metre, a vertex moves 1e-4 mm from an
-/// unrecognised turn of that size, which neither the eye nor an export will see. A real rotation (driving
-/// a loop) goes in hundredths of a radian — five orders of magnitude away from the noise, and it honestly
-/// rebuilds the block.
-fn same_rotation12(a: &[f64; 12], b: &[f64; 12]) -> bool {
-    (0..12).filter(|k| !matches!(k, 3 | 7 | 11)).all(|k| (a[k] - b[k]).abs() < 1e-7)
-}
-
-fn drag(ui: &mut egui::Ui, label: &str, v: &mut f64, speed: f64, range: std::ops::RangeInclusive<f64>) -> bool {
-    ui.label(label);
-    let changed = ui.add(egui::DragValue::new(v).speed(speed).range(range)).changed();
-    ui.end_row();
-    changed
-}
-
-/// The section's new offset while the gizmo is dragged — a DELTA from (`off0`, `p0`), the offset and the
-/// screen cursor AT THE MOMENT THE GIZMO WAS GRABBED (the anchor). The offset used to be recomputed
-/// ABSOLUTELY every frame, by reprojecting the CURRENT cursor relative to o0 (the world point at offset 0)
-/// — but at the moment of the grab the cursor sits at the GIZMO ARROW'S TIP (`cp + n * diag * 0.35`, which
-/// already includes both the current offset and the arrow's length) rather than at o0, so the very first
-/// frame of the drag added the arrow's length to the offset in one jump. Reported behaviour: the plane
-/// resets every time the gizmo is grabbed. A delta from the anchor gives 0 on the first frame (cur == p0)
-/// and grows strictly in proportion to the mouse afterwards. `s0` and `s1` are the screen projections of o0
-/// and o0 + normal (they set the direction and the pixels-per-millimetre scale along the normal); `None` is
-/// the degenerate case where the normal points straight at the camera and its screen projection collapses
-/// to a point.
-fn section_drag_delta_offset(off0: f64, p0: Pos2, s0: Pos2, s1: Pos2, cur: Pos2) -> Option<f64> {
-    let pd = s1 - s0;
-    let den = (pd.x * pd.x + pd.y * pd.y) as f64;
-    if den <= 1e-6 {
-        return None;
-    }
-    let dt = ((cur.x - p0.x) * pd.x + (cur.y - p0.y) * pd.y) as f64 / den;
-    Some(off0 + dt)
-}
-
-/// "hh:mm" for the autosave line, on the wall clock of the person at the screen.
-///
-/// Reported behaviour: at 14:28 in UTC+3 the line read "Auto-saved (11:27)" - the hour of UTC. The zone comes
-/// from chrono's `Local`, which reads the zone database itself; the local offset of `time` gives no answer on
-/// Linux once a second thread runs, and the window always runs several.
-fn clock_hh_mm() -> String {
-    hh_mm_in(unix_secs(), &chrono::Local)
-}
-
-/// "hh:mm" of an instant in a given zone - the part a test can pin, since the current time and the zone of
-/// the machine running the test are not known in advance.
-pub(crate) fn hh_mm_in<Z: chrono::TimeZone>(secs: u64, zone: &Z) -> String
-where
-    Z::Offset: std::fmt::Display,
-{
-    let at = chrono::DateTime::from_timestamp(secs as i64, 0).unwrap_or_default();
-    at.with_timezone(zone).format("%H:%M").to_string()
-}
-
-pub(super) fn tree_drop_intent(rect: egui::Rect, pointer_y: f32) -> TreeDrop {
-    let h = rect.height().max(1.0);
-    let t = ((pointer_y - rect.top()) / h).clamp(0.0, 1.0);
-    if t < 0.25 {
-        TreeDrop::Before
-    } else if t > 0.75 {
-        TreeDrop::After
-    } else {
-        TreeDrop::Onto
-    }
-}
-
-/// The height limit of the parameter list: beyond it the list SCROLLS rather than growing the window off
-/// the edge of the screen.
-pub(super) const PARAM_ROWS_MAX_H: f32 = 420.0;
-
-/// What drawing the parameter rows returned. The width and the height are REAL, taken from the frame: a
-/// test uses them to check that the fields stretch and that a long list scrolls rather than growing without
-/// end.
-#[derive(Default)]
-pub(super) struct ParamRowsOut {
-    pub dirty: bool,
-    pub remove: Option<usize>,
-    pub name_w: f32,
-    /// The height of the scrolling VIEWPORT — this is what the limit caps.
-    pub height: f32,
-    /// The height of the CONTENT. It grows with the number of rows, and shows that the list really is long
-    /// and that the viewport scrolls it rather than showing it whole.
-    pub content_h: f32,
-    /// The expressions that did not evaluate, as (the parameter's name, the reason in words). They are shown
-    /// BELOW the table, across its whole width: the value column is too narrow for a sentence, and a reason
-    /// that has to be hunted for by hovering is a reason nobody reads.
-    pub errors: Vec<(String, String)>,
-}
-
-/// THE FIELD WIDTHS IN THE PARAMETERS WINDOW ARE ELASTIC, NOT FIXED.
-///
-/// They used to be 90 points for the name and 120 for the formula, and the window could be stretched as far
-/// as one liked while the fields stayed as they were. A long variable name was IMPOSSIBLE to type: the text
-/// crept past the edge and one typed blind. Now both fields share the window's width, and the former
-/// numbers became the lower bound — a narrow window does not collapse them to nothing.
-///
-/// The proportions are chosen so that the formula is wider than the name (expressions like `w*2+3` live in
-/// it), and so that the third column with the value and the button still has room.
-pub(super) fn param_field_widths(avail: f32) -> (f32, f32) {
-    const NAME_MIN: f32 = 90.0;
-    const EXPR_MIN: f32 = 120.0;
-    const NAME_SHARE: f32 = 0.30;
-    const EXPR_SHARE: f32 = 0.38;
-    ((avail * NAME_SHARE).max(NAME_MIN), (avail * EXPR_SHARE).max(EXPR_MIN))
-}
-
-fn normal_label(n: [f64; 3]) -> &'static str {
-    if n[2] > 0.85 {
-        "normal-top"
-    } else if n[2] < -0.85 {
-        "normal-bottom"
-    } else if n[2].abs() < 0.25 {
-        "normal-side"
-    } else {
-        "normal-tilted"
-    }
-}
-
-/// The GUI tests live in a file of their own (`gui/tests.rs`) rather than at the end of this one.
-/// The file name out of a path (used as the name of a sketch or a source).
-pub(crate) fn file_name(path: &str) -> String {
-    std::path::Path::new(path).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
-}
-
 #[cfg(test)]
-pub(crate) fn shade_tri_for_test(pal: &crate::palette::Palette, ghost_alpha: u8, hot: bool, ghost: bool, base: [u8; 3], n: [f64; 3], light: [f64; 3]) -> Color32 {
-    qymcad_pick::shade_tri(pal, ghost_alpha, hot, ghost, base, n, light)
-}
-
-/// Draw a category node of the tree, recursively. `path` holds the indices from the root of the level
-/// (mutated by push and pop).
-pub(crate) fn parts_tree_node(ui: &mut egui::Ui, node: &crate::parts_library::CatNode, tier: bool, path: &mut Vec<usize>, sel: &mut Option<(bool, Vec<usize>)>) {
-    let is_sel = matches!(sel, Some((t, p)) if *t == tier && p == path);
-    let title = format!("{}  {} ({})", ph::FOLDER_OPEN, node.title, node.total_parts());
-    if node.subcats.is_empty() {
-        if ui.selectable_label(is_sel, title).clicked() {
-            *sel = Some((tier, path.clone()));
-        }
-    } else {
-        let id = ui.make_persistent_id(("parts_cat", tier, &*path));
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, path.is_empty())
-            .show_header(ui, |ui| {
-                if ui.selectable_label(is_sel, title).clicked() {
-                    *sel = Some((tier, path.clone()));
-                }
-            })
-            .body(|ui| {
-                for (i, c) in node.subcats.iter().enumerate() {
-                    path.push(i);
-                    parts_tree_node(ui, c, tier, path, sel);
-                    path.pop();
-                }
-            });
-    }
-}
-
-/// The category node at a path of indices from the root of the level.
-pub(crate) fn cat_at<'a>(root: &'a crate::parts_library::CatNode, path: &[usize]) -> Option<&'a crate::parts_library::CatNode> {
-    let mut n = root;
-    for &i in path {
-        n = n.subcats.get(i)?;
-    }
-    Some(n)
-}
-
-/// Gather every part of the subtree whose name or tags contain `query` (in lower case).
-pub(crate) fn collect_matching<'a>(node: &'a crate::parts_library::CatNode, query: &str, out: &mut Vec<&'a crate::parts_library::PartEntry>) {
-    for p in &node.parts {
-        let name_hit = p.name.to_lowercase().contains(query);
-        let tag_hit = p.manifest.as_ref().map(|m| m.tags.iter().any(|t| t.to_lowercase().contains(query))).unwrap_or(false);
-        if name_hit || tag_hit {
-            out.push(p);
-        }
-    }
-    for c in &node.subcats {
-        collect_matching(c, query, out);
-    }
+pub(crate) fn shade_tri_for_test(pal: &crate::palette::Palette, ghost_alpha: u8, hot: bool, ghost: bool, base: [u8; 3], n: [f64; 3], lights: &qymcad_ui_state::SceneLights) -> Color32 {
+    qymcad_pick::shade_tri(pal, ghost_alpha, hot, ghost, base, n, lights)
 }
 
 /// A PNG out of a `ColorImage` (RGBA8) — for the `thumb.png` inside a `.qpart`. Uses `image` with its png feature.
@@ -2779,203 +2014,6 @@ pub(crate) fn color_image_to_png(img: &egui::ColorImage) -> Option<Vec<u8>> {
     Some(png)
 }
 
-/// The icon of a feature in the tree (by its kind) — shared with the labels of `tree_feature_row` (which shows a custom name).
-pub(crate) fn feat_icon(kind: &qymcad_core::feature::FeatureKind) -> &'static str {
-    use qymcad_core::feature::FeatureKind as FK;
-    match kind {
-        FK::Cylinder { .. } => ph::CYLINDER,
-        FK::Sphere { .. } | FK::Torus { .. } | FK::Fillet { .. } | FK::Hole { .. } => ph::CIRCLE,
-        FK::Combine { op, .. } => [ph::SCISSORS, ph::CUBE, ph::INTERSECT][(*op as usize).min(2)],
-        FK::BodyBoolean { .. } => ph::INTERSECT,
-        FK::PushFace { .. } => ph::ARROWS_OUT_LINE_VERTICAL,
-        FK::RemoveFace { .. } => ph::ERASER,
-        FK::SplitBody { .. } => ph::SQUARE_SPLIT_HORIZONTAL,
-        FK::PartInstance { .. } => ph::CUBE_TRANSPARENT, // NOT the assembly icon: there is nothing to enter here (see panels.rs)
-        FK::Thicken { .. } => ph::STACK_SIMPLE,
-        FK::SplitFace { .. } => ph::GRID_FOUR,
-        FK::Chamfer { .. } => ph::TRIANGLE,
-        FK::Prism { .. } => ph::HEXAGON,
-        FK::Shell { .. } => ph::BOUNDING_BOX,
-        FK::LinearArray { .. } | FK::ComponentPattern { kind: qymcad_core::model::CompPatternKind::Linear { .. }, .. } => ph::DOTS_THREE_OUTLINE,
-        FK::CircularArray { .. } | FK::ComponentPattern { kind: qymcad_core::model::CompPatternKind::Circular { .. }, .. } => ph::ARROWS_CLOCKWISE,
-        FK::Mirror { .. } => ph::FLIP_HORIZONTAL,
-        FK::Move { .. } => ph::ARROWS_OUT_CARDINAL,
-        FK::Thread { .. } => ph::SPIRAL,
-        FK::Import { .. } | FK::MeshPiece { .. } => ph::FILE_ARROW_DOWN,
-        _ => ph::CUBE,
-    }
-}
-
-/// A feature's default name (as the `add_*` methods set it) — used to tell a RENAMED feature from a
-/// default one, so that the tree shows the name given by hand.
-/// A FEATURE'S DEFAULT NAME IS A CATALOGUE KEY, the same one the core puts in through `add_*`.
-///
-/// The core writes a KEY into the node rather than a word: the default name is read by a person, and
-/// the core knows no languages. The same key is needed here to compare "has the feature been
-/// renamed" — what gets compared is KEYS, so a change of language does not affect that decision.
-pub(crate) fn feat_default_name(kind: &qymcad_core::feature::FeatureKind) -> String {
-    use qymcad_core::feature::FeatureKind as FK;
-    match kind {
-        // THE SURFACE FEATURES. Without these lines a node counted as RENAMED (its name did not match
-        // the "default"), and the tree showed the raw catalogue key instead of a word. Caught by a scenario.
-        FK::FaceCopy { .. } => "feat-name-face-copy".into(),
-        FK::OffsetSurface { .. } => "feat-name-offset-surface".into(),
-        FK::SurfaceReplace { .. } => "feat-name-surface-replace".into(),
-        FK::Patch { .. } => "feat-name-patch".into(),
-        FK::Stitch { .. } => "feat-name-stitch".into(),
-        FK::MeshSolid { .. } => "feat-name-mesh-solid".into(),
-        FK::MeshRecognised { .. } => "feat-name-mesh-recognised".into(),
-        FK::Trim { .. } => "feat-name-trim".into(),
-        FK::Extrude { .. } => "feat-name-extrude".into(),
-        FK::Revolve { .. } => "feat-name-revolve".into(),
-        FK::Sweep { .. } => "feat-name-sweep".into(),
-        FK::PushFace { .. } => "feat-name-push-face".into(),
-        FK::RemoveFace { .. } => "feat-name-remove-face".into(),
-        FK::SplitBody { .. } => "feat-name-split-body".into(),
-        FK::PartInstance { .. } => "feat-name-instance".into(),
-        // A MIRRORED PART WITH NO NAME. It had a row in the tree but no default name — so the node
-        // looked nameless everywhere the name is taken from the timeline (properties, search, reports).
-        FK::MirrorPart { .. } => "feat-mirror-part".into(),
-        FK::Thicken { .. } => "feat-name-thicken".into(),
-        FK::SplitFace { .. } => "feat-name-split-face".into(),
-        FK::Loft { .. } => "feat-name-loft".into(),
-        FK::Draft { .. } => "feat-name-draft".into(),
-        FK::Box3 { .. } => "feat-name-box".into(),
-        FK::Cylinder { .. } => "feat-name-cylinder".into(),
-        FK::Sphere { .. } => "feat-name-sphere".into(),
-        FK::Cone { .. } => "feat-name-cone".into(),
-        FK::Torus { .. } => "feat-name-torus".into(),
-        FK::Prism { .. } => "feat-name-prism".into(),
-        FK::Combine { op, .. } => ["feat-name-combine-cut", "feat-name-combine-boss", "feat-name-combine-intersect"][(*op as usize).min(2)].into(),
-        FK::Fillet { .. } => "feat-name-fillet".into(),
-        FK::Chamfer { .. } => "feat-name-chamfer".into(),
-        FK::Shell { .. } => "feat-name-shell".into(),
-        FK::LinearArray { .. } => "feat-name-linear-array".into(),
-        FK::CircularArray { .. } => "feat-name-circular-array".into(),
-        FK::ComponentPattern { kind: qymcad_core::model::CompPatternKind::Linear { .. }, .. } => "feat-name-comp-linear-array".into(),
-        FK::ComponentPattern { kind: qymcad_core::model::CompPatternKind::Circular { .. }, .. } => "feat-name-comp-circular-array".into(),
-        FK::Mirror { .. } => "feat-name-mirror".into(),
-        FK::Hole { sketch, .. } => {
-            if *sketch != 0 {
-                "feat-name-holes-sketch".into()
-            } else {
-                "feat-name-hole".into()
-            }
-        }
-        FK::Thread { .. } => "feat-name-thread".into(),
-        FK::Auger { .. } => "feat-name-auger".into(),
-        FK::Move { .. } => "feat-name-move".into(),
-        FK::BodyBoolean { op, .. } => ["feat-name-body-cut", "feat-name-body-union", "feat-name-body-intersect"][(*op as usize).min(2)].into(),
-        FK::Import { .. } => "name-import".into(),
-        FK::MeshPiece { .. } => "name-mesh-piece".into(),
-        _ => String::new(),
-    }
-}
-
-/// Embed the original of an imported file into the document and return its Id.
-pub(crate) fn embed_source(project: &mut qymcad_core::model::Project, path: &str) -> Option<Id> {
-    match std::fs::read(path) {
-        Ok(bytes) => Some(project.add_source(file_name(path), bytes)),
-        Err(_) => None,
-    }
-}
-
-fn snapshot(project: &qymcad_core::model::Project) -> Snapshot {
-    // THE BYTES OF THE EMBEDDED SOURCES DO NOT GO INTO A SNAPSHOT. They never change (they are the
-    // original of a file imported once), and they weigh tens of megabytes: on a real assembly 89 MB
-    // times 40 undo steps is gigabytes of memory and about 90 MB of memcpy for EVERY committed edit.
-    // Restoring puts them back from the live document by id (see `restore`).
-    let mut project = project.clone_without_source_data();
-    project.regen_faces.clear(); // derived: the snapshot holds the faces itself (`faces`)
-    project.regen_edges.clear();
-    Snapshot { project }
-}
-
-/// The target assembly for an insertion: the active assembly; if a Part is active, its parent; otherwise the root.
-pub(crate) fn parts_insert_target(project: &mut qymcad_core::model::Project) -> qymcad_core::model::Id {
-    let root = project.ensure_root();
-    let ctx = project.current_ctx();
-    if ctx != 0 && !project.component_is_part(ctx) {
-        return ctx;
-    }
-    project.components.iter().find(|c| c.id == ctx).and_then(|c| c.parent).unwrap_or(root)
-}
-
-/// WHAT WILL GO WITH IT — by name, for the question asked before deleting.
-///
-/// Deletion in the timeline cascades: with a fillet goes everything built on it. This used to be
-/// reported by one general line saying "together with its dependants" — true, but no answer to the
-/// question "what am I about to lose". The list comes from the same `Project::dependents_of` as the
-/// lineage in the properties card: two places must not answer one question differently.
-pub(crate) fn delete_cascade_names(project: &qymcad_core::model::Project, sel: Sel) -> Vec<String> {
-    let subject = match sel {
-        Sel::Feature(ti) => project.timeline.get(ti).map(|n| n.id),
-        Sel::Mesh(mi) => project.mesh_id(mi),
-        Sel::Sketch(si) => project.sketches.get(si).map(|s| s.id),
-        Sel::Plane(i) => project.planes.get(i).map(|p| p.id),
-        Sel::DatumPoint(i) => project.datum_points.get(i).map(|d| d.id),
-        Sel::DatumAxis(i) => project.datum_axes.get(i).map(|d| d.id),
-        _ => None,
-    };
-    let Some(id) = subject else { return Vec::new() };
-    project.dependents_of(id).into_iter().filter_map(|nid| project.timeline.iter().find(|n| n.id == nid)).map(|n| crate::i18n::name(&n.name)).collect()
-}
-
-pub(crate) fn sel_delete_label(project: &qymcad_core::model::Project, sel: Sel) -> String {
-    match sel {
-        Sel::Feature(_) => crate::i18n::tr("del-feature"),
-        Sel::Mesh(mi) => crate::i18n::tr1("del-body-named", "name", &crate::i18n::name(&project.mesh_name(mi))),
-        Sel::Sketch(si) => project.sketches.get(si).map(|s| crate::i18n::tr1("del-sketch-named", "name", &crate::i18n::name(&s.name))).unwrap_or_else(|| crate::i18n::tr("del-sketch")),
-        Sel::Plane(i) => project.planes.get(i).map(|p| crate::i18n::tr1("del-plane-named", "name", &crate::i18n::name(&p.name))).unwrap_or_else(|| crate::i18n::tr("del-plane")),
-        Sel::DatumPoint(i) => project.datum_points.get(i).map(|d| crate::i18n::tr1("del-point-named", "name", &crate::i18n::name(&d.name))).unwrap_or_else(|| crate::i18n::tr("del-point")),
-        Sel::DatumAxis(i) => project.datum_axes.get(i).map(|d| crate::i18n::tr1("del-axis-named", "name", &crate::i18n::name(&d.name))).unwrap_or_else(|| crate::i18n::tr("del-axis")),
-        Sel::Joint(_) => crate::i18n::tr("del-joint"),
-        Sel::Component(ci) => project.components.get(ci).map(|c| crate::i18n::tr1("del-part-named", "name", &crate::i18n::name(&c.name))).unwrap_or_else(|| crate::i18n::tr("del-part")),
-        _ => crate::i18n::tr("del-item"),
-    }
-}
-
-/// The entry of a mesh format in the table of formats: its name and extensions live there, once.
-pub(crate) fn mesh_entry(format: qymcad_ui_state::MeshFormat) -> qymcad_io::Format {
-    match format {
-        qymcad_ui_state::MeshFormat::Stl => qymcad_io::Format::Stl,
-        qymcad_ui_state::MeshFormat::Obj => qymcad_io::Format::Obj,
-        qymcad_ui_state::MeshFormat::Ply => qymcad_io::Format::Ply,
-        qymcad_ui_state::MeshFormat::Glb => qymcad_io::Format::Gltf,
-        qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::Format::ThreeMf,
-        qymcad_ui_state::MeshFormat::Amf => qymcad_io::Format::Amf,
-    }
-}
-
-pub(super) fn open_mesh(regen: &mut Rebuilding, path: String, format: qymcad_ui_state::MeshFormat) {
-    // parsing the mesh and detecting its faces run in a worker thread; the UI spins a spinner and the window does not freeze
-    let name = mesh_entry(format).name();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let p = path.clone();
-    std::thread::spawn(move || {
-        let read = match format {
-            qymcad_ui_state::MeshFormat::Stl => qymcad_io::import_stl_named(&p),
-            qymcad_ui_state::MeshFormat::Obj => qymcad_io::import_obj(&p),
-            qymcad_ui_state::MeshFormat::Ply => qymcad_io::import_ply_coloured(&p).map(|n| vec![n]),
-            qymcad_ui_state::MeshFormat::Glb => qymcad_io::import_gltf(&p),
-            qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::import_3mf(&p),
-            qymcad_ui_state::MeshFormat::Amf => qymcad_io::import_amf(&p),
-        };
-        let res = match read {
-            Ok(meshes) => {
-                let pieces = meshes.into_iter().map(|n| {
-                    let faces = n.mesh.detect_faces(8.0);
-                    qymcad_ui_state::MeshPiece { name: n.name, mesh: n.mesh, faces, color: n.color, place: n.place, tri_colors: n.tri_colors, within: n.within }
-                });
-                JobResult::MeshImported { path: p, format, pieces: pieces.collect() }
-            }
-            Err(e) => JobResult::Failed(crate::i18n::tr2("g-mesh-error", "format", name, "error", &crate::i18n::name(&e))),
-        };
-        let _ = tx.send(res);
-    });
-    regen.busy = Some(Busy { started: std::time::Instant::now(), label: crate::i18n::tr1("g-import-mesh", "format", name), rx, kind: BgKind::ImportShapes, pulse: None, quiet: false });
-}
-
 /// VISIBILITY HAS CHANGED — DROP THE CACHE OF "WHAT WE SHOW".
 ///
 /// Reported behaviour: a part is hidden, it is gone from 3D, and yet its edges and faces hang in the
@@ -2989,256 +2027,8 @@ pub(super) fn visibility_changed(regen: &mut Rebuilding) {
     regen.geom_rev = regen.geom_rev.wrapping_add(1);
 }
 
-/// WRITE THE SETTINGS TO A FILE — to carry them to another machine, to share them, to attach them to
-/// a bug report.
-///
-/// The format is the same RON as in storage: a separate "export format" would have to be maintained
-/// as a second one, and it would drift from the first at the very first new setting.
-pub(crate) fn export_settings_to(set: &Settings, path: &str) -> Result<(), String> {
-    let text = ron::ser::to_string_pretty(&set, ron::ser::PrettyConfig::default()).map_err(|e| e.to_string())?;
-    std::fs::write(path, text).map_err(|e| e.to_string())
-}
-
-/// APPLY THE THEME TO `egui`. The one setting for which sitting in the record is not enough: the
-/// library does not remember its palette between runs, so it has to be assigned explicitly — at
-/// start-up and on every change. The theme used to be assigned ONLY on a click and stored nowhere:
-/// pick the light one, restart, and it is dark again.
-/// APPLY THE LANGUAGE. An empty setting means "never chosen", and then the system locale decides.
-/// The resolution lives in `i18n`, and this only passes it on: two places deciding "which language"
-/// would drift apart at the very first edit.
-pub(crate) fn apply_language(set: &Settings) {
-    let code = if set.language.is_empty() { crate::i18n::system_default() } else { set.language.clone() };
-    crate::i18n::set_language(&code);
-    // THE HELP LANGUAGE TRAVELS WITH THE INTERFACE LANGUAGE — otherwise "same as the interface" would
-    // lie after a switch: the help would stay on the previous one until its own setting was touched.
-    crate::help::set_lang(&set.help_lang);
-}
-
-/// Put a path at the top of the recent list: no duplicates, trimmed to length.
-///
-/// The freshest one goes first: the list is read from the top, and "the last thing worked on" must
-/// be right under the cursor.
-pub(crate) fn remember_recent(set: &mut Settings, path: String) {
-    if path.trim().is_empty() {
-        return;
-    }
-    set.recent.retain(|p| p != &path);
-    set.recent.insert(0, path);
-    let n = set.recent_limit.max(1);
-    set.recent.truncate(n);
-}
-
-/// Drop a path from the recent list — the file would not open (renamed, moved away, the drive
-/// unmounted).
-///
-/// A dead row must not be left there silently: it would be clicked again and again, while the list
-/// exists so that one lands on the file at the first attempt.
-pub(crate) fn forget_recent(set: &mut Settings, path: &str) {
-    set.recent.retain(|p| p != path);
-}
-
 fn workbench_code(workbench: &Workbench) -> &'static str {
     workbench.code()
-}
-
-/// Test facades for the language setting: a test must take the same path as the settings window.
-#[cfg(test)]
-pub(crate) fn settings_language_is_empty(set: &Settings) -> bool {
-    set.language.is_empty()
-}
-
-/// The look of the egui panels according to the current scheme. Kept apart from [`Self::apply_theme`],
-/// because that one REBUILDS the scheme from the list — which, while a custom scheme is being edited
-/// live, would wipe out the unsaved work.
-pub(super) fn sync_visuals(scheme: &SchemeUi, ctx: &egui::Context) {
-    qymcad_ui_state::put_look(ctx, &scheme.pal); // both of egui's looks: the system's theme must not swap it out
-                                                 // THE INTERFACE SCALE IS NOT APPLIED HERE. It has nothing to do with the theme, and the coupling
-                                                 // was a hidden one: because of it "adopt the settings" worked even without its own call to the
-                                                 // scale, and the guard stayed silent about that. The scale is applied by those whose business it
-                                                 // is: `adopt_settings` and the slider in the window.
-}
-
-/// APPLY THE INTERFACE SCALE TO `egui`.
-///
-/// A method of its own, called from BOTH places where the appearance is applied (`apply_theme` at
-/// start-up and on a change of scheme, `sync_visuals` while a custom scheme is edited live). Exactly
-/// the lesson the theme taught: it was called on a click and applied nowhere at start-up, so the
-/// choice silently rolled back.
-///
-/// The bounds are strict: with a zero or negative factor `egui` draws an interface one can neither
-/// leave nor use to put the setting back.
-pub(crate) fn apply_ui_scale(set: &Settings, ctx: &egui::Context) {
-    ctx.set_zoom_factor(set.ui_scale.clamp(0.5, 3.0));
-}
-
-/// The thumbnail texture of a part for the library grid (`thumb.png` is loaded lazily from the
-/// `.qpart`, decoded, turned into a GPU texture, and cached by source). None means there is no preview
-/// (an older part with no thumbnail), and the grid shows a placeholder icon. The cache is cleared when
-/// the catalogue is rebuilt or something is saved.
-pub(super) fn parts_thumb_texture(parts: &mut PartsLibrary, ctx: &egui::Context, src: &crate::parts_library::PartSource) -> Option<egui::TextureHandle> {
-    use crate::parts_library::PartSource;
-    let key = match src {
-        PartSource::Embedded(s) => format!("e:{s}"),
-        PartSource::User(p) => format!("u:{}", p.to_string_lossy()),
-    };
-    if let Some(cached) = parts.thumbs.get(&key) {
-        return cached.clone();
-    }
-    let png = match src {
-        PartSource::User(p) => qymcad_io::load_part_thumb(&p.to_string_lossy()),
-        PartSource::Embedded(rel) => crate::parts_library::embedded_bytes(rel).and_then(qymcad_io::load_part_thumb_bytes),
-    };
-    let tex = png.and_then(|bytes| image::load_from_memory(&bytes).ok()).map(|img| {
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        let color = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
-        ctx.load_texture(format!("part_thumb_{key}"), color, egui::TextureOptions::LINEAR)
-    });
-    parts.thumbs.insert(key, tex.clone());
-    tex
-}
-
-/// What a drawing read from IGES adds to the status: that a library's cells are what is shown, and what was not
-/// drawn at all.
-fn drawing_note(d: &qymcad_io::IgesDrawing) -> String {
-    let mut out = Vec::new();
-    if d.definitions_only {
-        out.push(format!("(!) {}", crate::i18n::tr("io-iges-definitions-only")));
-    }
-    if !d.skipped.is_empty() {
-        let n: usize = d.skipped.iter().map(|(_, n)| n).sum();
-        let kinds = d.skipped.iter().map(|(t, n)| format!("{t} x{n}")).collect::<Vec<_>>().join(", ");
-        out.push(format!("(!) {}", crate::i18n::tr2("io-iges-skipped", "n", &n.to_string(), "kinds", &kinds)));
-    }
-    out.join(" ")
-}
-
-/// The entry of an exact format in the table of formats: its name and extensions live there, once.
-pub(crate) fn exact_entry(format: qymcad_kernel::ExactFormat) -> qymcad_io::Format {
-    match format {
-        qymcad_kernel::ExactFormat::Step => qymcad_io::Format::Step,
-        qymcad_kernel::ExactFormat::Iges => qymcad_io::Format::Iges,
-    }
-}
-
-pub(super) fn open_exact(regen: &mut Rebuilding, path: String, format: qymcad_kernel::ExactFormat) {
-    // the heavy work (parsing, tessellation, the live solids) runs in a worker thread; the UI shows an
-    // "importing" spinner and does not freeze (large assemblies carry fat imports).
-    let name = exact_entry(format).name();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let p = path.clone();
-    std::thread::spawn(move || {
-        // ONE READING for both the bodies shown and the live solids: reading the file twice cost the whole wait twice
-        let res = match qymcad_kernel::read_exact_tree(format, &p, 0.5) {
-            Ok(qymcad_kernel::ExactTree { bodies, shapes, nodes }) if !bodies.is_empty() => JobResult::ExactImported { path: p, format, bodies, shapes, nodes },
-            // A FILE THAT IS NOT THERE IS SAID SO, before an IGES is tried as a drawing: the drawing reader would speak
-            // of the same absence in words of its own
-            Err(e) if e.starts_with("cad-file-not-found#") => JobResult::Failed(crate::i18n::trn("io-exact-load-error", &[("format", name), ("error", &crate::i18n::name(&e))])),
-            // AN IGES WITH NO SURFACES IS A DRAWING, and it goes into a sketch the way DXF does. Reported behaviour:
-            // a chip library cell (curves and subfigures, not a single face) did not open at all.
-            _ if format == qymcad_kernel::ExactFormat::Iges => match qymcad_io::read_iges_drawing(&p) {
-                Ok(d) => JobResult::DrawingRead { note: drawing_note(&d), path: p, curves: d.curves },
-                Err(e) => JobResult::Failed(crate::i18n::name(&e)),
-            },
-            Ok(_) => JobResult::Failed(crate::i18n::tr1("io-exact-no-solids", "format", name)),
-            // the kernel answers with a code, and the person reads words: the code went to the status line as it was
-            Err(e) => JobResult::Failed(crate::i18n::trn("io-exact-load-error", &[("format", name), ("error", &crate::i18n::name(&e))])),
-        };
-        let _ = tx.send(res);
-    });
-    regen.busy = Some(Busy { started: std::time::Instant::now(), label: crate::i18n::tr1("io-exact-importing", "format", name), rx, kind: BgKind::ImportShapes, pulse: None, quiet: false });
-}
-
-/// AN SVG IS READ ON A WORKER THREAD, as the meshes and the exact formats are: the window does not wait on a large
-/// drawing, and a panic in the reading ends that thread with a message instead of the program. A stack overflow is not
-/// a panic - it ends the process from any thread - and what stops it is `qymcad_io::SVG_MAX_DEPTH`, which refuses a
-/// drawing nested past 1024 before the parse. The thread gets the 8 MB stack the main thread has, so a legal drawing
-/// keeps the margin it had there: the XML parser recurses once per level, and a 2 MB thread ran out at 3,466 nested
-/// groups, the main thread at 13,866.
-pub(super) fn open_svg(regen: &mut Rebuilding, path: String) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let p = path.clone();
-    std::thread::Builder::new()
-        .stack_size(8 << 20)
-        .spawn(move || {
-            let res = match qymcad_io::import_svg(&p) {
-                Ok(d) => JobResult::DrawingRead { note: not_read_note(&d.skipped), path: p, curves: d.curves },
-                Err(e) => JobResult::Failed(crate::i18n::tr1("pk-svg-error", "error", &crate::i18n::name(&e))),
-            };
-            let _ = tx.send(res);
-        })
-        .expect("a thread for the SVG import");
-    regen.busy = Some(Busy {
-        started: std::time::Instant::now(),
-        label: crate::i18n::tr1("io-exact-importing", "format", qymcad_io::Format::Svg.name()),
-        rx,
-        kind: BgKind::ImportShapes,
-        pulse: None,
-        quiet: false,
-    });
-}
-
-/// What a drawing read in the background held and was not read, in the words the import door uses for one read in
-/// place ("· Not read: TEXT 1"), or nothing.
-fn not_read_note(skipped: &[(String, usize)]) -> String {
-    if skipped.is_empty() {
-        return String::new();
-    }
-    let list = skipped.iter().map(|(kind, n)| format!("{kind} {n}")).collect::<Vec<_>>().join(", ");
-    format!("· {}", crate::i18n::tr1("import-not-read", "list", &list))
-}
-
-/// Load the logo lazily (a 256x256 PNG embedded in the binary) into a texture for the splash screen.
-pub(super) fn ensure_logo(logo_tex: &mut Option<egui::TextureHandle>, ctx: &egui::Context) {
-    if logo_tex.is_some() {
-        return;
-    }
-    const LOGO: &[u8] = include_bytes!("../../../assets/icons/linux/256x256.png");
-    if let Ok(img) = image::load_from_memory(LOGO) {
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        let color = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
-        *logo_tex = Some(ctx.load_texture("app-logo", color, egui::TextureOptions::LINEAR));
-    }
-}
-
-/// The datum's visibility tick in the tree (a stable Id against `datum_hidden`). Shared by planes, points and axes.
-pub(super) fn datum_vis_checkbox(datum: &mut DatumCommand, ui: &mut egui::Ui, id: Id) {
-    let mut vis = !datum.hidden.contains(&id);
-    if ui.add(egui::Checkbox::without_text(&mut vis)).on_hover_text(crate::i18n::tr("datum-vis-hint")).changed() {
-        if vis {
-            datum.hidden.remove(&id);
-        } else {
-            datum.hidden.insert(id);
-        }
-    }
-}
-
-/// The title of a tree node: the selected one is highlighted. A method rather than a free function:
-/// the selection colour belongs to the scheme, and a function without `&self` cannot ask the scheme —
-/// exactly the fault that kept the tool bar from being recoloured by the theme.
-pub(super) fn sel_title(scheme: &SchemeUi, text: String, selected: bool) -> egui::RichText {
-    let rt = egui::RichText::new(text);
-    if selected {
-        rt.color(scheme.pal.tree_selected()).strong()
-    } else {
-        rt
-    }
-}
-
-/// The local position (in the body's frame) of the vertex at an end of the persistent edge `edge`
-/// (`end`: false is the start, true is the end). An initial snapshot for an associative datum point;
-/// regeneration refines it through the kernel.
-pub(super) fn vertex_local_pos(live: &LiveGeom, body: Id, edge: u32, end: bool) -> Option<[f64; 3]> {
-    let shape = live.shapes.get(&body)?;
-    let (polys, ids) = shape.edges_with_ids();
-    for (poly, id) in polys.iter().zip(ids) {
-        if id == edge && poly.len() >= 2 {
-            let v = if end { poly[poly.len() - 1] } else { poly[0] };
-            return Some([v[0] as f64, v[1] as f64, v[2] as f64]);
-        }
-    }
-    None
 }
 
 /// Did the document change outside an operation? (The boundary guard; pulled out so that a test can
@@ -3252,485 +2042,7 @@ fn doc_changed_outside_edit(edits: &Edits, project: &Project) -> bool {
 /// A facade: the rebuild overlay WITH A LIVE CANVAS — by the same call the frame makes.
 #[cfg(test)]
 pub(crate) fn draw_regen_overlay_over(dc: &qymcad_ui_state::DrawCtx, ctx: &egui::Context, live: egui::Rect) -> bool {
-    crate::gui::render::draw_dim_overlay_with(dc.scheme, ctx, &crate::i18n::tr("io-rebuilding"), Some((1, 2)), live)
-}
-
-// --- Exporting 3D (STEP, STL) and sketches (SVG, DXF) ------------------------------------
-/// The VISIBLE bodies of the target: for the whole document, every live body; for a component, the
-/// bodies of its subtree (itself plus its descendants). "Visible" means the body's own tick
-/// (`mesh_visible[idx]`) AND the owner's hierarchical visibility (`component_chain_visible` up to the
-/// root) — a hidden part or subassembly does not reach the export.
-pub(crate) fn visible_export_bodies(dc: &qymcad_ui_state::DrawCtx, target: ExportTarget) -> Vec<Id> {
-    let subtree: Option<std::collections::HashSet<Id>> = match target {
-        ExportTarget::Project => None,
-        ExportTarget::Component(cid) => {
-            let mut s: std::collections::HashSet<Id> = dc.project.descendants(cid).into_iter().collect();
-            s.insert(cid);
-            Some(s)
-        }
-    };
-    // CRITICAL: the CONSUMED bodies are excluded (the bases eaten by cuts, booleans and modifiers). In
-    // 3D they are hidden by a separate filter, `consumed_bodies`, not by `mesh_visible`, so the export
-    // used to pull them in TOGETHER with the final body — the bases covered the cuts, and the STEP or
-    // STL came out as a solid blank with nothing cut away.
-    let consumed = dc.project.consumed_bodies();
-    dc.project
-        .bodies
-        .iter()
-        .map(|b| b.id)
-        .enumerate()
-        .filter(|&(mi, _)| dc.project.bodies.get(mi).is_none_or(|b| b.visible))
-        .filter(|&(_, b)| !consumed.contains(&b))
-        .filter(|&(_, b)| dc.project.body_owner(b).is_none_or(|o| component_chain_visible(dc.project, o, None)))
-        .filter(|&(_, b)| match &subtree {
-            None => true,
-            Some(s) => dc.project.body_owner(b).is_some_and(|o| s.contains(&o)),
-        })
-        .map(|(_, b)| b)
-        .collect()
-}
-
-/// The axis of a gizmo with origin `o` and length `l` under the cursor — shared code for the COMPONENT
-/// gizmo (Assembly) and the BODY gizmo (Part). The axes are the world X, Y and Z from `o`.
-/// A CLICK (not a drag) on an arrow or a ring of the gizmo of what is chosen - a part's in an assembly, a body's in a
-/// part: (what it stands on, axis 0/1/2, is it a rotation?). `None` when the click missed every handle.
-pub(crate) fn gizmo_click_hit(pn: &qymcad_ui_state::Painting, rect: Rect, pos: Pos2, basis: &([f64; 3], [f64; 3], [f64; 3])) -> Option<(qymcad_ui_state::GizmoOf, u8, bool)> {
-    use qymcad_ui_state::GizmoOf;
-    let dc = qymcad_ui_state::DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path };
-    let (on, (o, l)) = match qymcad_ui_state::gizmo_component(pn.active_path, pn.project, pn.sel, pn.workbench).filter(|&c| matches!(qymcad_pick::comp_gizmo_mode(pn, c), CompGizmoMode::Free)) {
-        Some(comp) => (GizmoOf::Part(comp), gizmo_geometry(pn.cam, pn.comp_giz, pn.project, comp)),
-        None => {
-            let (_, mi) = body_gizmo_target(pn.body_view(), pn.sel)?;
-            (GizmoOf::Body(mi), body_gizmo_geometry(pn.body_giz, pn.cam, pn.project, pn.set, mi))
-        }
-    };
-    if let Some(ax) = gizmo_axis_hit_at(&dc, o, l, rect, basis, pos) {
-        return Some((on, ax, false));
-    }
-    gizmo_ring_hit_at(&dc, o, l, rect, basis, pos).map(|ax| (on, ax, true))
-}
-
-pub(crate) fn gizmo_axis_hit_at(dc: &qymcad_ui_state::DrawCtx, o: [f64; 3], l: f64, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), pp: Pos2) -> Option<u8> {
-    let scr = qymcad_ui_state::Screen { cam: dc.cam, set: dc.set, rect, basis };
-    let s0 = scr.at(o).0;
-    let mut best: Option<(f32, u8)> = None;
-    for ax in 0..3u8 {
-        let mut tip = o;
-        tip[ax as usize] += l;
-        let s1 = scr.at(tip).0;
-        let d = screen_dist_seg(pp, s0, s1);
-        if d <= 13.0 && best.is_none_or(|(bd, _)| d < bd) {
-            best = Some((d, ax));
-        }
-    }
-    best.map(|(_, a)| a)
-}
-
-/// The rotation ring of a gizmo with origin `o` and radius `l` under the cursor — shared code for the
-/// Assembly and the Part.
-pub(crate) fn gizmo_ring_hit_at(dc: &qymcad_ui_state::DrawCtx, o: [f64; 3], l: f64, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), pp: Pos2) -> Option<u8> {
-    let mut best: Option<(f32, u8)> = None;
-    for ax in 0..3u8 {
-        let (u, v) = ring_axes(ax);
-        let mut prev: Option<Pos2> = None;
-        let mut dmin = f32::MAX;
-        for k in 0..=48 {
-            let a = k as f64 / 48.0 * std::f64::consts::TAU;
-            let p = [o[0] + l * (u[0] * a.cos() + v[0] * a.sin()), o[1] + l * (u[1] * a.cos() + v[1] * a.sin()), o[2] + l * (u[2] * a.cos() + v[2] * a.sin())];
-            let s = qymcad_ui_state::Screen { cam: dc.cam, set: dc.set, rect, basis }.at(p).0;
-            if let Some(pr) = prev {
-                dmin = dmin.min(screen_dist_seg(pp, pr, s));
-            }
-            prev = Some(s);
-        }
-        if dmin <= 10.0 && best.is_none_or(|(bd, _)| dmin < bd) {
-            best = Some((dmin, ax));
-        }
-    }
-    best.map(|(_, a)| a)
-}
-
-pub(crate) fn fit3d(cam: &mut Cam3, project: &Project, rect: Rect) {
-    let mut mn = [f64::INFINITY; 3];
-    let mut mx = [f64::NEG_INFINITY; 3];
-    // A POINT THAT IS NOT A NUMBER DOES NOT MOVE THE BOUNDS, and that is why the bounds are widened by
-    // COMPARISON rather than by `min`/`max`: every comparison against a NaN is false, so one bad vertex - an
-    // import gone wrong, a degenerate face - is simply not measured. Held by a check of its own, because
-    // written the obvious way it would poison both bounds, the finite test below would refuse the whole
-    // fit, `cam.init` would stay false, and the viewport would open on nothing every frame for ever.
-    let mut acc = |p: [f64; 3]| {
-        for a in 0..3 {
-            if p[a] < mn[a] {
-                mn[a] = p[a];
-            }
-            if p[a] > mx[a] {
-                mx[a] = p[a];
-            }
-        }
-    };
-    // THE BODIES IN WORLD SPACE, and only the ones that are actually drawn.
-    //
-    // Reported behaviour: "sometimes on starting the program, if there is a finished project already, the
-    // camera flies terribly far away, or an empty 3D viewport opens."
-    //
-    // A body's mesh lives in the coordinates of the component that owns it; where that component stands
-    // comes from `body_world_transform`, and this measurement never asked for it. In an assembly whose
-    // parts are placed apart the camera was aimed at the local zero of the meshes while the parts were
-    // drawn elsewhere: measured on two parts 200 mm apart, none of the far part's bounding box was on
-    // screen at all. Consumed and hidden bodies are left out for the same reason - they are not on screen,
-    // and framing the view around them aims it at nothing.
-    let consumed = project.consumed_bodies();
-    for b in project.bodies.iter().filter(|b| b.visible && !consumed.contains(&b.id)) {
-        let wt = project.body_world_transform(b.id);
-        for v in &b.mesh.verts {
-            acc(qymcad_core::feature::apply12(&wt, [v.x, v.y, v.z]));
-        }
-    }
-    // THE SKETCHES, LIFTED ONTO THEIR OWN PLANES. `project.contours` holds flat 2D coordinates of a sketch
-    // on its own plane, and they were fed in as world X and Y with z = 0 - so a sketch on the front plane,
-    // or one belonging to a part standing away from the origin, dragged the measurement to a place where
-    // nothing is drawn.
-    for (si, s) in project.sketches.iter().enumerate() {
-        let Some(fr) = project.sketch_frame(si) else { continue };
-        let wt = project.sketch_owner(s.id).map(|c| project.world_transform(c)).unwrap_or(qymcad_core::feature::PLACE_IDENTITY);
-        for cid in &s.contour_ids {
-            let Some(ci) = project.contour_index(*cid) else { continue };
-            for p in &project.contours[ci].points {
-                let w = fr.lift(*p);
-                acc(qymcad_core::feature::apply12(&wt, [w.x, w.y, w.z]));
-            }
-        }
-    }
-    if !mn[0].is_finite() {
-        return;
-    }
-    cam.target = [(mn[0] + mx[0]) / 2.0, (mn[1] + mx[1]) / 2.0, (mn[2] + mx[2]) / 2.0];
-    // a model under 1 mm is framed at its own size; only a scene with no extent at all, a single point, takes 1 mm
-    let raw = (mx[0] - mn[0]).max(mx[1] - mn[1]).max(mx[2] - mn[2]);
-    let ext = (if raw > 1e-9 { raw } else { 1.0 }) as f32;
-    cam.scale = (rect.width().min(rect.height()) / ext) * 0.55;
-    cam.fit = cam.scale;
-    cam.init = true;
-}
-
-/// ONE STEP OF THE SWEEP: move the degree of freedom and re-solve the assembly.
-///
-/// It travels there and back rather than round in a circle: a travel or an angle with limits has no
-/// circle to it, and jumping from one end to the other would read as a jerk rather than as a mechanism
-/// moving.
-pub(crate) fn step_joint_anim(joint_anim: &mut Option<JointAnim>, project: &mut Project, dt: f64) {
-    let Some(a) = joint_anim.as_mut() else { return };
-    let step = dt / 2.0; // a full pass in one direction takes two seconds
-    if a.forward {
-        a.t += step;
-        if a.t >= 1.0 {
-            a.t = 1.0;
-            a.forward = false;
-        }
-    } else {
-        a.t -= step;
-        if a.t <= 0.0 {
-            a.t = 0.0;
-            a.forward = true;
-        }
-    }
-    let (joint, slot, v) = (a.joint, a.slot, a.from + (a.to - a.from) * a.t);
-    project.set_joint_drive(joint, slot, Some(v));
-    project.solve_joints();
-}
-
-/// Advance the turning animation. Called every frame; while it runs it asks for a repaint.
-pub(crate) fn tick_view_anim(cam: &mut Cam3, view_anim: &mut Option<ViewTurn>, ctx: &egui::Context) {
-    let Some(ViewTurn { from, to, since: t0, roll, target }) = view_anim else { return };
-    const DUR: f32 = 0.22;
-    let t = (t0.elapsed().as_secs_f32() / DUR).clamp(0.0, 1.0);
-    // easing in and out: a linear turn looks mechanical
-    let e = (t * t * (3.0 - 2.0 * t)) as f64;
-    cam.yaw = from.0 + (to.0 - from.0) * e;
-    cam.pitch = from.1 + (to.1 - from.1) * e;
-    cam.roll = roll.0 + (roll.1 - roll.0) * e;
-    if let Some((a, b)) = *target {
-        cam.target = [a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e, a[2] + (b[2] - a[2]) * e];
-    }
-    if t >= 1.0 {
-        // on arrival at a standard view refit the scale and the target, as the instant jump used to; a look at a point
-        // keeps both
-        if target.is_none() {
-            cam.init = false;
-        }
-        *view_anim = None;
-    } else {
-        ctx.request_repaint();
-    }
-}
-
-/// The faces of the ViewCube: (normal, four screen points, depth) in the corner of the viewport.
-/// TURN THE VIEW SMOOTHLY to the given angles (about 220 ms). An instant jump reads as something having
-/// broken: the eye has nothing to hold on to, and on a complex assembly the part has to be found again.
-pub(crate) fn animate_view_to(cam: Cam3, mode_3d: &mut bool, view_anim: &mut Option<ViewTurn>, yaw: f64, pitch: f64) {
-    *mode_3d = true;
-    // THE SHORTEST WAY ROUND IN YAW: without normalisation a turn from -170 deg to +170 deg would go
-    // all the way round — 340 deg instead of 20.
-    let mut from_yaw = cam.yaw;
-    while yaw - from_yaw > std::f64::consts::PI {
-        from_yaw += std::f64::consts::TAU;
-    }
-    while yaw - from_yaw < -std::f64::consts::PI {
-        from_yaw -= std::f64::consts::TAU;
-    }
-    *view_anim = Some(ViewTurn { from: (from_yaw, cam.pitch), to: (yaw, pitch), since: std::time::Instant::now(), roll: (cam.roll, 0.0), target: None });
-}
-
-/// MOVE THE CENTRE OF THE VIEW SMOOTHLY to `to`, the way and the scale kept: a look at a point, as the programs of the
-/// layouts that have it move it rather than jump.
-pub(crate) fn animate_look_to(cam: Cam3, view_anim: &mut Option<ViewTurn>, to: [f64; 3]) {
-    *view_anim = Some(ViewTurn { from: (cam.yaw, cam.pitch), to: (cam.yaw, cam.pitch), since: std::time::Instant::now(), roll: (cam.roll, cam.roll), target: Some((cam.target, to)) });
-}
-
-/// The properties of a datum POINT: its name, its coordinates and a delete button. Parametric
-/// definitions live elsewhere.
-pub(crate) fn datum_point_props(datum: &mut DatumCommand, deferred: &mut DeferredUi, project: &mut Project, ui: &mut egui::Ui, i: usize) {
-    let lin = crate::gui::props_card::lineage_of(project, Some(project.datum_points[i].id));
-    if let Some(n) = props_header(ui, ph::DOT, "datum-point-title", NameSlot::Editable(project.datum_points[i].name.clone()), &lin) {
-        project.datum_points[i].name = n;
-    }
-    let mut changed = false;
-    {
-        let d = &mut project.datum_points[i];
-        ui.label(crate::i18n::tr("datum-point-coords"));
-        egui::Grid::new(("dpt", i)).num_columns(2).spacing([6.0, 3.0]).show(ui, |ui| {
-            changed |= drag(ui, "X", &mut d.at[0], 1.0, -100000.0..=100000.0);
-            changed |= drag(ui, "Y", &mut d.at[1], 1.0, -100000.0..=100000.0);
-            changed |= drag(ui, "Z", &mut d.at[2], 1.0, -100000.0..=100000.0);
-        });
-    }
-    if changed {
-        datum.regen_pending = true; // the point moved, so an axis through two points and the bodies need rebuilding (debounced)
-    }
-    ui.separator();
-    if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("datum-point-delete"))).clicked() {
-        ask_delete(deferred, Sel::DatumPoint(i));
-    }
-}
-
-pub(crate) fn face_props(project: &mut Project, ui: &mut egui::Ui, mi: usize, fi: usize, for_cmd: bool) {
-    // INFORMATION ABOUT THE FACE, and nothing else. A face is selected by a click with nothing in hand and under
-    // a command that collects faces (`for_cmd`, said in the last line); the older buttons (sketch, plane,
-    // contour, projection, Z0) are gone — a sketch on a face is made with the Sketch tool on the toolbar (a
-    // click on the face), and a datum by the datum command.
-    let Some(face) = project.bodies.get(mi).and_then(|b| b.faces.get(fi)) else { return };
-    let n = face.normal;
-    // THE LINEAGE IS TAKEN FROM THE BODY: a face has no Id of its own in the document, but "what made
-    // the thing this face lies on" is exactly the question the face's properties are opened for.
-    let lin = crate::gui::props_card::lineage_of(project, project.mesh_id(mi));
-    props_header(ui, ph::SQUARE_HALF, "face-props-title", NameSlot::None, &lin);
-    ui.label(crate::i18n::tr1("face-area", "v", &format!("{:.1}", face.area)));
-    ui.label(crate::i18n::trn(
-        "face-normal",
-        &[("n", &format!("[{}, {}, {}]", crate::i18n::num(n[0], 2), crate::i18n::num(n[1], 2), crate::i18n::num(n[2], 2))), ("side", &crate::i18n::tr(normal_label(n)))],
-    ));
-    ui.label(crate::i18n::tr1("face-center", "v", &format!("{:.1}, {:.1}, {:.1}", face.centroid.x, face.centroid.y, face.centroid.z)));
-    if for_cmd {
-        ui.label(egui::RichText::new(crate::i18n::tr("face-picked-for-cmd")).weak().small());
-    }
-}
-
-/// The world (origin, dir) of the axis object caught by a click pick (an edge, a cylindrical face or a
-/// datum axis) — WITHOUT creating anything. One resolver for both the preview and the creation (of a
-/// pattern and of a datum axis).
-pub(crate) fn axis_ref_world(active_path: &[Id], edges: &EdgeCache, live: &LiveGeom, project: &Project, hit: AxisHit) -> Option<([f64; 3], [f64; 3])> {
-    use qymcad_core::feature::{apply12, is_identity12};
-    let ctx = current_ctx_id(active_path, project);
-    match hit {
-        AxisHit::Datum(id) => project.datum_axes.iter().find(|d| d.id == id).map(|d| (d.origin(), d.dir())),
-        AxisHit::Edge(i) => {
-            let (body, _id, poly) = edges.axes.get(i)?;
-            if poly.len() < 2 {
-                return None;
-            }
-            let wt = project.body_display_transform(*body, ctx);
-            let w = |p: &[f32; 3]| -> [f64; 3] {
-                let v = [p[0] as f64, p[1] as f64, p[2] as f64];
-                if is_identity12(&wt) {
-                    v
-                } else {
-                    apply12(&wt, v)
-                }
-            };
-            let a = w(&poly[0]);
-            let b = w(poly.last().unwrap());
-            let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-            let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            (l > 1e-9).then(|| (a, [d[0] / l, d[1] / l, d[2] / l]))
-        }
-        AxisHit::Face(body, fid) => {
-            let (lo, ld) = live.shapes.get(&body)?.face_axis(fid)?;
-            let wt = project.body_display_transform(body, ctx);
-            let o = if is_identity12(&wt) { lo } else { apply12(&wt, lo) };
-            let z = if is_identity12(&wt) { [0.0; 3] } else { apply12(&wt, [0.0, 0.0, 0.0]) };
-            let d = if is_identity12(&wt) { ld } else { [apply12(&wt, ld)[0] - z[0], apply12(&wt, ld)[1] - z[1], apply12(&wt, ld)[2] - z[2]] };
-            let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            (l > 1e-9).then(|| (o, [d[0] / l, d[1] / l, d[2] / l]))
-        }
-    }
-}
-
-pub(crate) fn mesh_props(deferred: &mut DeferredUi, project: &mut Project, regen: &mut Rebuilding, ui: &mut egui::Ui, i: usize) {
-    // The name in the header is READABLE rather than a catalogue key, and only a name that was touched
-    // gets written back; otherwise merely opening the properties would freeze the automatic name in the
-    // current language (that is what `NameSlot::Editable` takes care of).
-    let lin = crate::gui::props_card::lineage_of(project, project.mesh_id(i));
-    if let Some(n) = props_header(ui, ph::CUBE, "mesh-props-title", NameSlot::Editable(project.mesh_name(i)), &lin) {
-        project.set_mesh_name(i, n);
-    }
-    // the part's colour (so an assembly reads clearly)
-    ui.horizontal(|ui| {
-        ui.label(crate::i18n::tr("mesh-colour"));
-        let mut rgb = project.mesh_color(i);
-        if ui.color_edit_button_srgb(&mut rgb).changed() {
-            project.set_mesh_color(i, rgb);
-            regen.geom_rev = regen.geom_rev.wrapping_add(1); // redraw the 3D view
-        }
-        if ui.small_button(crate::i18n::tr("mesh-colour-reset")).on_hover_text(crate::i18n::tr("mesh-colour-reset-hint")).clicked() {
-            project.reset_mesh_color(i); // drop the manual colour, back to the palette keyed by the lineage root
-            regen.geom_rev = regen.geom_rev.wrapping_add(1);
-        }
-    });
-    // INFORMATION, and only what is relevant. A body's size and position change PARAMETRICALLY, through
-    // features in the timeline; moving and rotating go through the three-axis gizmo in 3D; booleans and
-    // patterns are commands on the toolbar, and they are features too.
-    ui.separator();
-    if let Some(b) = project.bodies[i].mesh.bounds() {
-        ui.label(crate::i18n::tr1("mesh-size", "v", &format!("{:.1} × {:.1} × {:.1}", b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z)));
-        ui.label(egui::RichText::new(crate::i18n::tr1("mesh-tris-n", "n", &project.bodies[i].mesh.tris.len().to_string())).weak().small());
-    } else {
-        ui.label(egui::RichText::new(crate::i18n::tr("mesh-empty")).weak());
-    }
-    ui.separator();
-    if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("mesh-delete"))).clicked() {
-        ask_delete(deferred, Sel::Mesh(i));
-    }
-}
-
-/// Enter the joint EDITING mode (a double click on its glyph): the top parameter bar plus the popup of
-/// anchors A and B. The competing picking and creating modes are cleared and the joint is selected, so
-/// its degree-of-freedom gizmo is visible.
-pub(crate) fn enter_joint_edit(joint: &mut JointCommand, sel: &mut Sel, status: &mut String, jid: Id) {
-    joint.edit = Some(jid);
-    joint.edit_repick = None;
-    joint.pick_faces = false;
-    joint.pick_first = None;
-    joint.ground_pick = false;
-    *sel = Sel::Joint(jid);
-    *status = crate::i18n::tr("g-joint-edit-hint");
-}
-
-/// Write a `.qpart` out of the open dialogue — `subproject_of(component)` plus `save_part`. Returns the path.
-pub(crate) fn commit_save_part(parts: &mut PartsLibrary, project: &mut Project, tex_graveyard: &mut Vec<egui::TextureHandle>) -> Result<String, String> {
-    let d = parts.save.as_ref().ok_or(&crate::i18n::tr("lib-no-dialog"))?;
-    let name = d.name.trim().to_string();
-    if name.is_empty() {
-        return Err(crate::i18n::tr("lib-need-name"));
-    }
-    let root = crate::parts_library::user_parts_dir().ok_or(&crate::i18n::tr("lib-no-user-dir"))?;
-    let cat = d.category.trim().trim_matches('/').trim();
-    let dir = if cat.is_empty() { root } else { root.join(cat) };
-    std::fs::create_dir_all(&dir).map_err(|e| crate::i18n::tr1("lib-category-error", "error", &e.to_string()))?;
-    let stem = crate::parts_library::sanitize_part_stem(&name);
-    let path = dir.join(format!("{stem}.qpart"));
-    let sub = project.subproject_of(d.component).ok_or(&crate::i18n::tr("lib-no-root"))?;
-    let tags: Vec<String> = d.tags.split([',', ';', '\n']).flat_map(|s| s.split_whitespace()).map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
-    let png = d.preview.as_ref().and_then(color_image_to_png);
-    let manifest = qymcad_core::part::PartManifest { schema_version: qymcad_core::part::PART_SCHEMA, name, description: d.description.trim().to_string(), tags, author: String::new() };
-    qymcad_io::save_part(&sub, &manifest, &[], png.as_deref(), &path.to_string_lossy())?;
-    // the catalogue is re-read, so the new part appears in the "My parts" tree at once
-    parts.tree = Some(crate::parts_library::load_library_tree());
-    // the old thumbnails go to the graveyard (freed later); textures must NOT be dropped in the current frame
-    tex_graveyard.extend(parts.thumbs.drain().filter_map(|(_, v)| v));
-    Ok(path.to_string_lossy().to_string())
-}
-
-/// Commit an undo step once the edit has settled (the pointer is released, nothing is being typed).
-/// A drag is coalesced into one step (committed only when it ends).
-pub(crate) fn maybe_commit(edits: &mut Edits, place: &mut Placing, project: &Project, set: &Settings, ctx: &egui::Context) {
-    // A dimension flying after the cursor (`placing_dim`), and typing the dimensions of a rectangle,
-    // polygon or ellipse, are edits NOT YET finished: the offset or the value changes every frame, and
-    // committing is not allowed (otherwise undo would step through the intermediate states instead of
-    // removing the dimension or the shape as a whole). These states are cleared by any new action of
-    // the tool, so they do not get stuck.
-    let placing = place.dim.is_some() || place.active();
-    // a history begun afresh (a new document) takes its baseline on the next frame: nothing is a step before it
-    let busy = ctx.egui_is_using_pointer() || ctx.egui_wants_keyboard_input() || placing || edits.open.is_some() || !edits.ready;
-    if busy {
-        return;
-    }
-    let k = doc_key(project);
-    if k == edits.committed_key {
-        return;
-    }
-    // THE BOUNDARY HAS BECOME THE ONLY PATH. A per-frame safety net used to stand here, and it was
-    // the reason undo knew no names, depended on the state of the mouse and did not exist outside a
-    // window. Now the step is created by the operation, and this place only WATCHES: if the document
-    // changed outside `App::edit`, some place is editing it around the boundary. The edit is not
-    // lost, but the place has to be found and moved onto the boundary rather than swept under a
-    // snapshot.
-    // THE GUARD DOES NOT BRING THE APPLICATION DOWN. A `debug_assert!(false)` used to stand here, and
-    // that was a mistake: every UI path not yet moved onto `App::edit` turned into a panic of the
-    // debug build — entering a subassembly, turning the gizmo. A tool that breaks someone's work in
-    // order to tell a developer about their own debt is unacceptable. Now the place is RECORDED (once
-    // per call site), the edit is kept by a snapshot, work carries on, and the list of offenders is
-    // visible in the log and moved over one at a time.
-    #[cfg(debug_assertions)]
-    {
-        let bt = std::backtrace::Backtrace::force_capture().to_string();
-        let site: String = bt.lines().filter(|l| l.contains("qymcad::gui")).nth(2).unwrap_or("undo-unknown").trim().to_string();
-        if edits.debt.insert(site.clone()) {
-            eprintln!("[operation boundary] the document was changed outside App::edit: {site}");
-        }
-    }
-    let snap = snapshot(project);
-    let cur = std::mem::replace(&mut edits.baseline, snap);
-    edits.undo.push(Step { name: crate::i18n::tr("undo-edit"), snap: cur });
-    if edits.undo.len() > set.undo_cap.max(1) {
-        edits.undo.remove(0);
-    }
-    edits.redo.clear();
-    edits.committed_key = k;
-}
-
-/// Re-read the schemes from disk (at start-up and after a custom one is edited).
-pub(crate) fn reload_schemes(scheme: &mut SchemeUi, status: &mut String) {
-    let (all, errs) = crate::palette::all();
-    scheme.all = all;
-    if !errs.is_empty() {
-        *status = crate::i18n::tr1("scheme-load-failed", "error", &errs.join("; "));
-    }
-}
-
-/// THE DOCUMENT PATH HAS BECOME THE CURRENT ONE — AND WENT STRAIGHT INTO THE RECENT LIST.
-///
-/// One point for both events, deliberately: "opened" or "saved as" and "remember it" are one action,
-/// and spread across the call sites, forgetting the second would only be a matter of time. A guard
-/// (`recent_files.rs`) keeps a direct assignment to `project_path` out of the working code.
-pub(crate) fn set_project_path(project_path: &mut Option<String>, set: &mut Settings, path: String) {
-    *project_path = Some(path.clone());
-    remember_recent(set, path);
-    // A crash hook cannot reach the document, so it keeps the PATHS instead and the next start
-    // offers them back. Told here, at the one point where the path can change.
-    crate::crash::note_document(project_path.as_deref(), Some(&autosave_path(project_path)));
-}
-
-/// OPEN A RECENT FILE. If it is gone, say so and DROP it from the list.
-///
-/// A dead row must not be left there silently: the list exists so that one lands on the file at the
-/// first attempt, and a row where nothing happens on a click reads as a broken program.
-pub(crate) fn open_recent(regen: &mut Rebuilding, set: &mut Settings, status: &mut String, path: String) {
-    if !std::path::Path::new(&path).exists() {
-        *status = crate::i18n::tr1("recent-missing", "path", &path);
-        forget_recent(set, &path);
-        return;
-    }
-    crate::gui::io_jobs::spawn_project_load(regen, path);
+    crate::gui::render::draw_dim_overlay_with(dc.scheme, ctx, &crate::i18n::tr("io-rebuilding"), Some(qymcad_ui_state::NodeCount { done: 1, total: 2 }), live)
 }
 
 /// Whether a multiple selection of components is active: the set holds more than one node AND the
@@ -3746,10 +2058,10 @@ pub(crate) fn is_multi(project: &Project, sel: Sel, tree_sel: &TreeSelection) ->
 /// There is nothing to kill it with in the middle of an OCCT boolean, and no reason to — a COPY is
 /// what is being computed, and the document on screen is intact. `finish_regen_checked` sums it up
 /// when the result arrives marked as cancelled.
-pub(crate) fn cancel_regen(regen: &Rebuilding, status: &mut String) {
+pub(crate) fn cancel_regen(regen: &Rebuilding, status: &mut qymcad_ui_state::Notice) {
     if let Some(p) = regen.busy.as_ref().and_then(|b| b.pulse.as_ref()) {
         p.ask_stop();
-        *status = crate::i18n::tr("io-rebuild-cancelling");
+        *status = Notice::info(crate::i18n::tr("io-rebuild-cancelling"));
     }
 }
 
@@ -3763,20 +2075,6 @@ pub(crate) fn set_component_visible(project: &mut Project, regen: &mut Rebuildin
     visibility_changed(regen);
 }
 
-/// WHAT THE STATUS LINE SAYS ON ENTERING A SKETCH: its name - or, for a sketch on a face of another part's body,
-/// whose face it stands on and that editing that part drives this one. Said here, where the sketch is entered: said at
-/// the placement it was overwritten a moment later by the name of the sketch.
-pub(crate) fn sketch_entry_status(project: &Project, s: &qymcad_core::model::Sketch) -> String {
-    if let qymcad_core::feature::SketchPlane::Face(body, _) = s.plane {
-        let (owner, of_sketch) = (project.body_owner(body), project.sketch_owner(s.id));
-        if owner.is_some() && owner != of_sketch {
-            let src = owner.and_then(|o| project.components.iter().find(|c| c.id == o)).map(|c| crate::i18n::name(&c.name)).unwrap_or_else(|| crate::i18n::tr("g-neighbour"));
-            return crate::i18n::tr1("g-sketch-on-foreign-face", "name", &src);
-        }
-    }
-    crate::i18n::tr1("g-editing-sketch", "name", &crate::i18n::name(&s.name))
-}
-
 /// Resolve the PLACEMENT plane (a shared step for a new sketch AND for an import).
 /// A sketch on a face of ANOTHER component's body is a LIVE external reference (top-down): an
 /// `ExternalRef` is registered and `Face(body, key)` is kept, so the sketch's frame resolves into the
@@ -3785,7 +2083,7 @@ pub(crate) fn sketch_entry_status(project: &Project, s: &qymcad_core::model::Ske
 /// snapshot of the face into a fixed datum — the part stayed free, but the top-down associativity was
 /// lost silently. To break the link (freezing the geometry as a snapshot), use the part's properties
 /// and its external references.
-pub(crate) fn resolve_placement_plane(cmd: &mut FeatCommand, project: &mut Project, status: &mut String, plane: qymcad_core::feature::SketchPlane) -> qymcad_core::feature::SketchPlane {
+pub(crate) fn resolve_placement_plane(cmd: &mut FeatCommand, project: &mut Project, status: &mut Notice, plane: qymcad_core::feature::SketchPlane) -> qymcad_core::feature::SketchPlane {
     cmd.ref_body = None; // reset on every new placement
     if let qymcad_core::feature::SketchPlane::Face(body, key) = plane {
         let consumer = project.active_ctx();
@@ -3794,72 +2092,10 @@ pub(crate) fn resolve_placement_plane(cmd: &mut FeatCommand, project: &mut Proje
                                                                 // the source is remembered for the session: to highlight its edges and snap to them
             cmd.ref_body = Some(body);
             let src = project.body_owner(body).and_then(|o| project.components.iter().find(|c| c.id == o)).map(|c| crate::i18n::name(&c.name)).unwrap_or_else(|| crate::i18n::tr("g-neighbour"));
-            *status = crate::i18n::tr1("g-sketch-on-foreign-face", "name", &src);
+            *status = Notice::info(crate::i18n::tr1("g-sketch-on-foreign-face", "name", &src));
         }
     }
     plane
-}
-
-/// Save the CURRENT document as a template.
-pub(crate) fn save_as_template(project: &Project, status: &mut String, title: &str) {
-    match crate::templates::save(project, title) {
-        Ok(path) => *status = crate::i18n::tr1("tpl-saved", "path", &path),
-        Err(e) => *status = format!("{} {}", ph::WARNING, crate::i18n::tr1("tpl-save-failed", "error", &e)),
-    }
-}
-
-/// Advance the degree-of-freedom sweep. Called every frame; while it runs it asks for a repaint.
-pub(crate) fn tick_joint_anim(joint_anim: &mut Option<JointAnim>, project: &mut Project, ctx: &egui::Context) {
-    if joint_anim.is_none() {
-        return;
-    }
-    // THE TIME COMES FROM THE FRAME rather than from counting frames: on a slow machine a frame count
-    // would stretch the travel, and "two seconds" would turn into who knows how many.
-    let dt = ctx.input(|i| i.stable_dt).clamp(0.0, 0.1) as f64;
-    step_joint_anim(joint_anim, project, dt);
-    ctx.request_repaint();
-}
-
-/// Dragging a body gizmo's ring: accumulate the turn, in degrees, into the gizmo's own drag record.
-///
-/// WHICH BODY AND WHICH RING are read from the gizmo, not passed in. They used to be two more arguments,
-/// filled at the call site out of the very same two fields - a second path by which they could disagree.
-pub(crate) fn body_gizmo_ring_drag(body_giz: &mut BodyGizmo, scr: &Screen, project: &Project, regen: &mut Rebuilding, cursor: Pos2, d: egui::Vec2) {
-    let (Some((mi, _, _)), Some(ax)) = (body_giz.drag, body_giz.ring) else { return };
-    let (o, _) = body_gizmo_geometry(body_giz, *scr.cam, project, scr.set, mi);
-    let center = scr.at(o).0;
-    let radial = cursor - center;
-    let r2 = (radial.x * radial.x + radial.y * radial.y) as f64;
-    if r2 < 4.0 {
-        return;
-    }
-    let ccw = -(radial.x * d.y - radial.y * d.x) as f64 / r2;
-    let sign = ring_drag_sign(scr.basis.2[ax as usize]);
-    if let Some(drag) = &mut body_giz.drag {
-        drag.2 += ccw.to_degrees() * sign;
-    }
-    invalidate(regen);
-}
-
-/// Dragging a body gizmo's axis: accumulate the world shift along the grabbed axis into the gizmo's own
-/// drag record. Which body and which axis are read from the gizmo, as above.
-pub(crate) fn body_gizmo_axis_drag(body_giz: &mut BodyGizmo, scr: &Screen, project: &Project, regen: &mut Rebuilding, d: egui::Vec2) {
-    let (Some((mi, _, _)), Some(ax)) = (body_giz.drag, body_giz.axis) else { return };
-    let (o, l) = body_gizmo_geometry(body_giz, *scr.cam, project, scr.set, mi);
-    let mut tip = o;
-    tip[ax as usize] += l;
-    let s0 = scr.at(o).0;
-    let s1 = scr.at(tip).0;
-    let pd = s1 - s0;
-    let denom = (pd.x * pd.x + pd.y * pd.y) as f64;
-    if denom < 1e-6 {
-        return;
-    }
-    let inc = (d.x * pd.x + d.y * pd.y) as f64 * l / denom;
-    if let Some(drag) = &mut body_giz.drag {
-        drag.2 += inc;
-    }
-    invalidate(regen);
 }
 
 /// Create a pattern's datum AXIS from the straight edge `axis_edges[i]` — ASSOCIATIVELY, so it travels with the edge.
@@ -3873,24 +2109,6 @@ pub(crate) fn axis_from_edge(active_path: &[Id], edges: &EdgeCache, live: &LiveG
 pub(crate) fn axis_from_face(active_path: &[Id], edges: &EdgeCache, live: &LiveGeom, project: &mut Project, body: Id, face_id: u32) -> Option<Id> {
     axis_ref_world(active_path, edges, live, project, AxisHit::Face(body, face_id))?; // check that there is an axis at all
     Some(project.add_axis_from_face(body, face_id))
-}
-
-/// ADOPT A WHOLE SET OF SETTINGS — the only path by which they take effect.
-///
-/// The record alone is not enough: the theme, the language and the interface scale live not only in
-/// it but also in `egui`'s state, which is not remembered between runs. While this was done as a
-/// list of calls at start-up, the second path (importing a profile) would have had to repeat that
-/// same list — and would have drifted from it at the very first new setting, silently at that: the
-/// record is right while the screen shows the old thing.
-pub(crate) fn adopt_settings(regen: &mut Rebuilding, scheme: &mut SchemeUi, set: &mut Settings, status: &mut String, s: Settings, ctx: &egui::Context) {
-    *set = s;
-    // CUSTOM SCHEMES COME FROM DISK BEFORE THE THEME IS APPLIED: otherwise the chosen custom scheme
-    // will not be found in the list and will silently fall back to the dark one.
-    reload_schemes(scheme, status);
-    apply_theme(scheme, set, ctx);
-    apply_language(set);
-    apply_ui_scale(set, ctx);
-    invalidate(regen); // the colours and the scale are part of the picture caches' keys
 }
 
 /// Recompute the pairs of bodies that INTERPENETRATE (interference) — lazily, while idle. Bodies of
@@ -3913,7 +2131,7 @@ fn mirror_part_door(app: &mut App, comp: Option<Id>) {
     }
     // with no part picked before the button the tool is in hand all the same and waits for a click on one
     (app.params.mirror.part, app.params.mirror.waiting) = (comp, comp.is_none());
-    app.status = crate::i18n::tr(if comp.is_some() { "tb-mirror-pick-plane" } else { "tb-mirror-pick-part" });
+    app.status = Notice::info(crate::i18n::tr(if comp.is_some() { "tb-mirror-pick-plane" } else { "tb-mirror-pick-part" }));
 }
 
 pub(crate) fn refresh_interference(bv: qymcad_ui_state::BodyView, drag: qymcad_ui_state::SceneDrag, interference: &mut Interference, live: &LiveGeom, set: &Settings, workbench: Workbench) {
@@ -3931,36 +2149,23 @@ pub(crate) fn refresh_interference(bv: qymcad_ui_state::BodyView, drag: qymcad_u
     if interference.rev == bv.regen.geom_rev {
         return;
     }
-    interference.rev = bv.regen.geom_rev;
     let ctx = current_ctx_id(bv.active_path, bv.project);
-    // the visible bodies that have an owning component become shapes in the context's frame (transformed once)
-    let mut placed: Vec<(Id, Id, qymcad_kernel::Shape)> = Vec::new();
-    for mi in 0..bv.project.bodies.len() {
-        if !body_shown(bv, mi) {
-            continue;
-        }
-        let Some(body) = bv.project.mesh_id(mi) else { continue };
-        let Some(owner) = bv.project.body_owner(body) else { continue };
-        let wt = bv.project.body_display_transform(body, ctx);
-        if let Some(ws) = live.shapes.get(&body).and_then(|s| s.transformed(&wt)) {
-            placed.push((body, owner, ws));
-        }
-    }
-    let mut pairs = Vec::new();
-    for i in 0..placed.len() {
-        for j in (i + 1)..placed.len() {
-            if placed[i].1 == placed[j].1 {
-                continue; // bodies of the same part: their overlap is normal, not interference
-            }
-            // A PAIR THE KERNEL CANNOT MEASURE IS FLAGGED TOO. "Could not measure" is not "they are
-            // clear of each other", and treating it as the second is how a part ends up sitting inside
-            // another one with nothing said about it.
-            if placed[i].2.interference_volume(&placed[j].2).is_none_or(|v| v > 1e-3) {
-                pairs.push((placed[i].0, placed[j].0));
-            }
-        }
-    }
-    interference.pairs = pairs;
+    // the visible bodies that have an owning component, each where it stands in the context; the bridge asks the clash
+    let placed: Vec<qymcad_kernel::ask::PlacedBody<'_>> = (0..bv.project.bodies.len())
+        .filter(|&mi| body_shown(bv, mi))
+        .filter_map(|mi| bv.project.mesh_id(mi))
+        .filter_map(|body| {
+            let part = bv.project.body_owner(body)?;
+            let shape = live.shapes.get(&body)?;
+            Some(qymcad_kernel::ask::PlacedBody { body, part, shape, place: bv.project.body_display_transform(body, ctx) })
+        })
+        .collect();
+    // while this window rebuilds, the pairs as they were, asked again on a later frame; otherwise the kernel is waited for,
+    // whoever holds it being quick
+    let wait = if bv.regen.busy.is_some() { qymcad_kernel::ask::Wait::IfFree } else { qymcad_kernel::ask::Wait::Always };
+    let Some(clashes) = qymcad_kernel::ask::clashes(&placed, wait) else { return };
+    interference.pairs = clashes.into_iter().map(|c| (c.a, c.b)).collect();
+    interference.rev = bv.regen.geom_rev;
 }
 
 #[cfg(test)]
@@ -3983,6 +2188,7 @@ mod described_picks;
 mod a_face_pick_reopens_with_its_face;
 /// A fillet with a radius at a corner reopens with that corner: `gui/a_variable_fillet_reopens_with_its_corners.rs`.
 mod a_variable_fillet_reopens_with_its_corners;
+mod a_fillet_with_its_edges_lost_waits_for_edges;
 mod expand_selection;
 mod sketch_sweep;
 mod input;
@@ -4174,6 +2380,8 @@ mod long_values;
 mod modal_barrier;
 mod open_keeps_brep;
 mod regen_live_view;
+mod the_program_ends_during_a_rebuild;
+mod the_program_ends_during_a_trial;
 mod recognise_then_delete;
 mod extrude_arrow_mouse;
 mod angle_dim_drag;
@@ -4234,6 +2442,7 @@ mod array_axis;
 
 /// Drawing the scene and the overlays lives in `gui/render.rs`.
 mod render;
+mod rebuild_sign;
 
 /// The Part commands (starting them, their parameters, applying them) live in `gui/commands.rs`.
 mod command_search;
@@ -4258,6 +2467,7 @@ mod viewport_3d;
 mod panels_props;
 mod panels_tree;
 mod panels_windows;
+pub(crate) mod icon_themes;
 
 /// The single expression field and its list of drivers. One for the whole project, so that a dimension's
 /// field, a feature's field and a table cell all behave the same way.
@@ -4270,7 +2480,7 @@ mod frame_select;
 mod piece_part;
 mod look_at_point;
 mod orbit_about;
-pub(crate) use qymcad_ui_state::{props_header, NameSlot};
+pub(crate) use qymcad_ui_state::{props_header, NameSlot, Notice};
 
 /// The sketcher (geometry, dimensions, constraints) lives in `gui/sketching.rs`.
 mod sketching;
@@ -4293,6 +2503,7 @@ mod import_scale;
 mod format_samples_look;
 mod import_door;
 mod an_iges_import_survives_reopening;
+mod an_import_keeps_its_names_on_opening;
 mod a_step_assembly_lands_as_its_tree;
 mod a_component_stepped_into_is_not_lit;
 mod a_broken_part_is_no_ghost_elsewhere;
@@ -4310,10 +2521,15 @@ mod deaf_while_the_system_asks;
 mod a_machine_with_no_graphics;
 mod the_card_holds_its_words;
 
-/// Is the cursor on the face arrow? The threshold matches the body gizmo's, in pixels along the segment.
-pub(crate) fn face_arrow_hit(pn: &qymcad_ui_state::Painting, rect: Rect, pos: Pos2, basis: &([f64; 3], [f64; 3], [f64; 3])) -> bool {
-    let Some((o, tip, _)) = face_arrow_geometry(pn) else { return false };
-    let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis };
-    let (a, b) = (scr.at(o).0, scr.at(tip).0);
-    screen_dist_seg(pos, a, b) <= 9.0
-}
+mod startup;
+pub use startup::*;
+mod file_doors;
+pub(crate) use file_doors::*;
+mod look;
+pub(crate) use look::*;
+mod gizmo_math;
+pub(crate) use gizmo_math::*;
+mod view_anim;
+pub(crate) use view_anim::*;
+mod panel_bits;
+pub(crate) use panel_bits::*;

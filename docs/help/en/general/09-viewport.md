@@ -22,6 +22,10 @@ The default layout is **QymCAD**:
   part. The middle and right buttons over a part move the view, as everywhere.
 * The **wheel** zooms in and out towards the cursor: the point under it stays in place. In the settings,
   in the **Zooming with the wheel** row, you can choose "from the middle of the view".
+* The view **turns about the point of the model in the middle of the view**, whatever distance it was zoomed
+  from. Over empty space it is a point at the depth of the part seen nearest. In the settings, in the **Turning the
+  view about** row, you can choose the point under the cursor. If a part has left the view, press the "home" button
+  of the cube.
 * While a command is open the view zooms **about the centre of the part**, so the command's fields do
   not slide away from under the hand. Pick "as usual" in the **While a command is open** row of the settings to turn that off.
 

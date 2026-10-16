@@ -73,19 +73,7 @@ impl App {
 pub(crate) fn draw_3d_gpu(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) {
     let ppp = painter.ctx().pixels_per_point();
     let key = qymcad_ui_state::gpu_scene_key(pn);
-    let (inv_d, z_near, z_far, _) = proj_params(pn, rect, key);
-    let gt = pn.scheme.pal.ghost_target;
-    let shade = crate::viewport_gpu::ShadeRaw {
-        // the same light the raster uses, so the two pictures agree
-        light: {
-            let l = qymcad_ui_state::scene_light();
-            [l[0] as f32, l[1] as f32, l[2] as f32]
-        },
-        floor: pn.scheme.pal.shade_floor_body,
-        ghost_alpha: pn.set.ghost_alpha as f32 / 255.0,
-        ghost_target: [gt[0] as f32 / 255.0, gt[1] as f32 / 255.0, gt[2] as f32 / 255.0],
-    };
-    let cam = crate::viewport_gpu::CamRaw::new(basis, pn.cam.scale, pn.cam.target, rect.size(), inv_d as f32, crate::viewport_gpu::ZRange { near: z_near as f32, far: z_far as f32 }, shade);
+    let cam = frame_uniform(pn, rect, basis, ppp);
     let size_px = [(rect.width() * ppp).round().max(1.0) as u32, (rect.height() * ppp).round().max(1.0) as u32];
     // THE GEOMETRY IS REBUILT RARELY, THE LOOK EVERY FRAME. Moving the pointer over the model, stepping into
     // a subassembly, changing a colour - none of that touches a vertex now; it rewrites a table of two numbers
@@ -111,69 +99,29 @@ pub(crate) fn draw_3d_gpu(pn: &qymcad_ui_state::Painting, painter: &egui::Painte
     painter.add(eframe::egui_wgpu::Callback::new_paint_callback(rect, crate::viewport_gpu::MeshPaint::new(cam, size_px, pieces, looks, key)));
 }
 
+/// THE CAMERA OF A FRAME AS THE CARD TAKES IT: the projection, the depth, the lights and the shading. One place, so
+/// the window and a check that takes the picture off the card draw with the same numbers.
+pub(crate) fn frame_uniform(pn: &qymcad_ui_state::Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), ppp: f32) -> crate::viewport_gpu::CamRaw {
+    let proj = proj_params(pn, rect, qymcad_ui_state::gpu_scene_key(pn));
+    let gt = pn.scheme.pal.ghost_target;
+    let shade = crate::viewport_gpu::ShadeRaw {
+        // the same lights the raster uses, so the two pictures agree
+        lights: qymcad_ui_state::scene_lights(basis),
+        floor: pn.scheme.pal.shade_floor_body,
+        ghost_alpha: pn.set.ghost_alpha as f32 / 255.0,
+        ghost_target: [gt[0] as f32 / 255.0, gt[1] as f32 / 255.0, gt[2] as f32 / 255.0],
+    };
+    crate::viewport_gpu::CamRaw::new(basis, pn.cam.scale, pn.cam.target, rect.size(), &proj, shade).with_floor(&qymcad_ui_state::floor_look(pn, rect), ppp)
+}
+
 pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let basis = pn.cam.basis();
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };
     let p3 = |p: [f64; 3]| scr.at(p).0;
 
-    // THE FLOOR GRID at Z=0 is the bearing in the 3D view (NOT the machine table: that one sits under
-    // cam_mode). A minor line every `step`, a major one every 5; drawn UNDER the geometry (before the
-    // raster mesh), plus the coloured global axes. The grid is CENTRED on the look-at point (cam.target)
-    // rather than on the world origin, and the number of lines is computed from the screen size. Otherwise
-    // on large projects (a machine over 1 m, coordinates far from the origin) the machine ended up at the
-    // faded edge of the grid or beyond it, and looked like it was hanging in the air.
-    {
-        // an adaptive step for the zoom: the on-screen interval of a line is at least ~9px (as in the sketch grid), a major line every 5
-        let sc = pn.cam.scale as f64;
-        let mut step = 10.0_f64;
-        while step * sc < 9.0 {
-            step *= 5.0;
-        }
-        // A smooth LOD: near the switching threshold (step x 5) the minor lines become ~9px and crowd
-        // together, then vanish abruptly when the step jumps. The minor lines are faded as the interval
-        // approaches the threshold (9 -> 18px: 0 -> 1) while the major ones (every 5) stay solid, so the
-        // scale changes without a jerk.
-        let px = step * sc; // the on-screen interval of a minor line, in [9, 45)
-        let minor_lod = (((px - 9.0) / 9.0).clamp(0.0, 1.0)) as f32;
-        // the grid centre is the look-at point projected onto the Z=0 floor and snapped to the step (the lines stay put while panning)
-        let cx = (pn.cam.target[0] / step).round() * step;
-        let cy = (pn.cam.target[1] / step).round() * step;
-        // the number of lines each way: cover half the screen diagonal (orbiting tilts the floor) plus a
-        // margin, with a ceiling so that drawing does not blow up when zoomed far out
-        let reach_px = (rect.width().hypot(rect.height()) * 0.5) as f64;
-        let n = (((reach_px / (step * sc)).ceil() as i32) + 2).clamp(8, 160);
-        let lim = step * n as f64;
-        for i in -n..=n {
-            let tx = cx + i as f64 * step;
-            let ty = cy + i as f64 * step;
-            // a fade towards the edges of the grid (a soft vignette, so the lines do not break off hard)
-            let fade = (1.0 - (i.abs() as f32 / n as f32).powi(2)).clamp(0.0, 1.0);
-            // a major line goes by an absolute coordinate that is a multiple of 5 * step (so the fives stay put while panning)
-            let major_x = ((tx / step).round() as i64).rem_euclid(5) == 0;
-            let major_y = ((ty / step).round() as i64).rem_euclid(5) == 0;
-            let stroke = |major: bool| {
-                let (base, a) = if major { (pn.scheme.pal.grid(), 230.0) } else { (pn.scheme.pal.grid_minor(), 170.0) };
-                // the minor lines fade further by the LOD near the step's switching threshold
-                let lod = if major { 1.0 } else { minor_lod };
-                Stroke::new(1.0, qymcad_scheme::a(base, (a * fade * lod) as u8))
-            };
-            // a line along Y (at x=tx) and one along X (at y=ty), stretched over the grid's reach around
-            // the centre. The grey line at zero is not drawn - a coloured axis runs there instead (green Y
-            // at x=0, red X at y=0).
-            if tx.abs() > step * 0.5 {
-                painter.line_segment([p3([tx, cy - lim, 0.0]), p3([tx, cy + lim, 0.0])], stroke(major_x));
-            }
-            if ty.abs() > step * 0.5 {
-                painter.line_segment([p3([cx - lim, ty, 0.0]), p3([cx + lim, ty, 0.0])], stroke(major_y));
-            }
-        }
-        // the coloured global axes: X red, Y green (on the floor), Z blue upwards; stretched across the
-        // grid's current reach around the look-at point (visible for as long as the origin is in view).
-        painter.line_segment([p3([cx - lim, 0.0, 0.0]), p3([cx + lim, 0.0, 0.0])], Stroke::new(1.6, pn.scheme.pal.grid_axis_x()));
-        painter.line_segment([p3([0.0, cy - lim, 0.0]), p3([0.0, cy + lim, 0.0])], Stroke::new(1.6, pn.scheme.pal.grid_axis_y()));
-        painter.line_segment([p3([0.0, 0.0, 0.0]), p3([0.0, 0.0, step * 4.0])], Stroke::new(1.8, pn.scheme.pal.grid_axis_z()));
-    }
-
+    // THE FLOOR at Z=0 - the grid and the world axes - is drawn with the bodies, by the card or by the raster, with
+    // depth: a part standing on it hides it behind, and it runs to the horizon (`qymcad_ui_state::floor_pixel`). It is
+    // the bearing in the 3D view, NOT the machine table: that one sits under cam_mode.
     // the mesh: either the GPU pass (wgpu, a depth buffer) or the CPU fallback (software rasterisation
     // with a Z buffer - an exact per-pixel order, with none of the painter's-algorithm artefacts on
     // coplanar faces).

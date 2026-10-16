@@ -1,0 +1,15 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="arc" clip-path="url(#clip0_54_49)">
+<circle id="Ellipse 10" cx="4" cy="28" r="3" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-sketch-secondary, #333333FF)" stroke-width="2"/>
+<circle id="Ellipse 11" cx="4" cy="28" r="3" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path id="Union" d="M28 25C29.6569 25 31 26.3431 31 28C31 29.6569 29.6569 31 28 31C26.3431 31 25 29.6569 25 28C25 26.3431 26.3431 25 28 25ZM7.93945 3.30957C18.5911 4.99568 27.0029 13.4081 28.6895 24.0596C28.4655 24.0207 28.2351 24 28 24C27.5405 24 27.0994 24.0781 26.6885 24.2207C25.0889 14.5458 17.4534 6.90966 7.77832 5.31055C7.92078 4.89978 8 4.45925 8 4C8 3.76448 7.9785 3.53392 7.93945 3.30957ZM4 1C5.65685 1 7 2.34315 7 4C7 5.65685 5.65685 7 4 7C2.34315 7 1 5.65685 1 4C1 2.34315 2.34315 1 4 1Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke-width="2" stroke="var(--icon-sketch-secondary, #333333FF)"/>
+<path id="Subtract" d="M7.93945 3.30957C18.5911 4.99568 27.0029 13.4081 28.6895 24.0596C28.4655 24.0207 28.2351 24 28 24C27.5405 24 27.0994 24.0781 26.6885 24.2207C25.0889 14.5458 17.4534 6.90966 7.77832 5.31055C7.92078 4.89978 8 4.45925 8 4C8 3.76448 7.9785 3.53392 7.93945 3.30957Z" fill="var(--icon-accent, #18F2F2FF)"/>
+<circle id="Ellipse 2" cx="4" cy="4" r="3" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<circle id="Ellipse 9" cx="28" cy="28" r="3" fill="var(--icon-neutral, #BCBCBCFF)"/>
+</g>
+<defs>
+<clipPath id="clip0_54_49">
+<rect width="32" height="32" fill="#FFFFFF"/>
+</clipPath>
+</defs>
+</svg>

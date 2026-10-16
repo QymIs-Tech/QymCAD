@@ -58,13 +58,14 @@ mod tests {
     const RESTS_WITHIN: u64 = 8;
 
     /// Frames for up to `secs` seconds until the program is at rest: no job in the background, no rebuild running,
-    /// nothing asked to be rebuilt. Answers whether it came to rest.
+    /// nothing asked to be rebuilt, no sign of a rebuild on screen - a sign stays its time after its rebuild lands.
+    /// Answers whether it came to rest.
     fn comes_to_rest(h: &mut Hand, secs: u64) -> bool {
         let until = std::time::Instant::now() + std::time::Duration::from_secs(secs);
         let mut quiet = 0;
         while std::time::Instant::now() < until {
             h.frame(Vec::new());
-            let busy = h.app.regen.busy.is_some() || !h.app.regen.bg.is_empty() || h.app.regen.wanted;
+            let busy = h.app.regen.busy.is_some() || !h.app.regen.bg.is_empty() || h.app.regen.wanted || !crate::gui::tests::a_quick_rebuild_does_not_blink::tests::signs_painted(h).is_empty();
             quiet = if busy { 0 } else { quiet + 1 };
             if quiet >= 10 {
                 return true;
@@ -78,7 +79,7 @@ mod tests {
     fn what_still_turns(h: &mut Hand) -> Vec<String> {
         h.frame(Vec::new());
         let mut out = Vec::new();
-        if h.app.tools.dim.spinner || h.app.regen.busy.is_some() {
+        if !crate::gui::tests::a_quick_rebuild_does_not_blink::tests::signs_painted(h).is_empty() || h.app.regen.busy.is_some() {
             out.push(format!("the spinner of a rebuild: {}", h.app.status));
         }
         if h.app.tools.armed.cmd_kind() == 35 && h.app.params.recognise.src.is_some() && h.app.params.recognise.ready(|_| ()).is_none() {
@@ -155,11 +156,16 @@ mod tests {
         h.enter().frame(Vec::new());
         assert!(h.app.regen.busy.is_some(), "setup: the recognition was not running: {}", h.app.status);
         let cancel = crate::i18n::tr("io-rebuild-cancel");
+        // the card goes up once the rebuild has run `REBUILD_SIGN_AFTER`; Cancel is pressed when it is there
+        let waiting = std::time::Instant::now();
+        while !h.shows(&cancel) && waiting.elapsed() < std::time::Duration::from_secs(5) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
         assert!(h.press_word(&cancel, egui::pos2(700.0, 450.0)), "setup: the rebuild window shows no Cancel");
         assert!(comes_to_rest(&mut h, RESTS_WITHIN), "Cancel was pressed and the recognition went on for more than {RESTS_WITHIN} s: {}", h.app.status);
         let body = h.app.project.timeline.iter().skip(nodes.saturating_sub(1)).any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::MeshRecognised { .. }) && !n.dirty);
         assert!(!body, "the recognition was cancelled and its node stands built all the same");
         assert!(h.app.project.regen_errors.is_empty(), "Cancel left the node red, as if it had failed: {:?}", h.app.project.regen_errors);
-        assert!(h.app.status.contains(&crate::i18n::tr("io-rebuild-cancelled")), "Cancel was pressed and the program does not say the rebuild was cancelled: {}", h.app.status);
+        assert!(h.app.status.words.contains(&crate::i18n::tr("io-rebuild-cancelled")), "Cancel was pressed and the program does not say the rebuild was cancelled: {}", h.app.status);
     }
 }

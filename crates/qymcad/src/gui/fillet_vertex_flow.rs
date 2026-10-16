@@ -49,7 +49,7 @@ mod tests {
     fn clicking_a_corner_gives_it_its_own_radius_field() {
         let (mut app, body) = plate_in_fillet();
         let r = rect();
-        let corner = app.project.vertex_spots(body).into_iter().find(|(p, _)| p[2] > 11.0 && p[0] < 1.0 && p[1] < 1.0).map(|(p, _)| p).expect("the top corner at (0,0)");
+        let corner = app.project.vertex_spots(body).into_iter().find(|v| v.at[2] > 11.0 && v.at[0] < 1.0 && v.at[1] < 1.0).map(|v| v.at).expect("the top corner at (0,0)");
         let basis = app.viewing.cam.basis();
         let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: r, basis: &basis }.at(corner).0;
 
@@ -70,7 +70,7 @@ mod tests {
     fn the_corner_radius_reaches_the_timeline() {
         let (mut app, body) = plate_in_fillet();
         let r = rect();
-        let corner = app.project.vertex_spots(body).into_iter().find(|(p, _)| p[2] > 11.0 && p[0] < 1.0 && p[1] < 1.0).map(|(p, _)| p).expect("the top corner");
+        let corner = app.project.vertex_spots(body).into_iter().find(|v| v.at[2] > 11.0 && v.at[0] < 1.0 && v.at[1] < 1.0).map(|v| v.at).expect("the top corner");
         let basis = app.viewing.cam.basis();
         app.pick_fillet_vertex(r, qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: r, basis: &basis }.at(corner).0);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key.starts_with("at")) {

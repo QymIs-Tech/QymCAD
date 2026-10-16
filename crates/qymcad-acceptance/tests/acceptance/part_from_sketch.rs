@@ -231,13 +231,9 @@ probe! {
         s.press_hint(&datum);
         let middle = s.in_space([0.0, 0.0, 0.0]);
         s.click(middle);
-        let field = s
-            .widgets()
-            .into_iter()
-            .filter(|w| w.kind == qymcad::Kind::TextField)
-            .min_by(|a, b| a.rect.center().distance(middle).total_cmp(&b.rect.center().distance(middle)))
-            .unwrap_or_else(|| panic!("the datum plane asks for no offset; on screen: {:?}", s.words()));
-        s.click(field.rect.center()).chord(qymcad::Modifiers::COMMAND, Key::A).type_text("30").key(Key::Enter);
+        // the offset typed into its own field, by its caption: the plane has its tilts and its turn beside it
+        let offset = s.word("f-offset");
+        s.fill(&offset, "30").key(Key::Enter);
         let pencil = s.word("g-sketch-pick-hint");
         s.press_hint(&pencil);
         let on_datum = s.in_space([0.0, 0.0, 30.0]);

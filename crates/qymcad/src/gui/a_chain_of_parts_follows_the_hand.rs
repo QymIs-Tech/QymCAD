@@ -134,7 +134,7 @@ mod tests {
         let led_to = origin_of(&app, comp_b);
 
         app.drain_busy_for_test(); // the result has arrived — this is where it used to be thrown away
-        assert!(!app.status.contains(&crate::i18n::tr("io-doc-changed")), "the result of the rebuild was thrown away because a part was being dragged: \"{}\"", app.status);
+        assert!(!app.status.words.contains(&crate::i18n::tr("io-doc-changed")), "the result of the rebuild was thrown away because a part was being dragged: \"{}\"", app.status);
         let after = origin_of(&app, comp_b);
         let jump = ((after[0] - led_to[0]).powi(2) + (after[1] - led_to[1]).powi(2) + (after[2] - led_to[2]).powi(2)).sqrt();
         assert!(jump < 1e-3, "the rebuild arrived and threw the part {jump:.3} mm back: {led_to:?} -> {after:?}");

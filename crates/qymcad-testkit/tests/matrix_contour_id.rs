@@ -3,6 +3,7 @@
 //! entities of the loop.
 
 use qymcad_core::model::Project;
+use qymcad_kernel::specimen::Specimen as _;
 
 /// Two squares, A over 0..20 and B over 40..60, with A extruded. The edit moves A onto the former place of B,
 /// 40..60, and B further on to 80..100. The feature has to follow A, so the column now stands over x in
@@ -54,8 +55,8 @@ fn feature_follows_its_loop_when_loops_swap_places() {
         qymcad_core::geom::Point2::new(40.0, 20.0),
     ]);
     let prof = qymcad_core::geom::encode_profile(&outer, &[]);
-    let probe = qymcad_kernel::Shape::extrude_profile(&prof, 10.0).expect("the probe");
-    let inter = s.boolean(&probe, 2).map(|x| x.volume()).unwrap_or(0.0);
+    let probe = qymcad_kernel::specimen::extrude_profile(&prof, 10.0).expect("the probe");
+    let inter = s.combined(&probe, 2).map(|x| x.volume()).unwrap_or(0.0);
     assert!(
         (inter - 4000.0).abs() < 40.0,
         "the feature did not follow its own loop A: in the zone of the new A there is {inter:.0} of 4000 of material, the body being {:.0}, so the id of the contour was substituted by another loop",

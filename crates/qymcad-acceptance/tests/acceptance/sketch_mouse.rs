@@ -1,6 +1,6 @@
 //! THE MOUSE IN A SKETCH: what a click takes, what a box takes, what a drag carries, what a double click opens, what
 //! the cursor snaps to, and what Esc gives back.
-use qymcad::{Key, Modifiers, PointerButton, Session, SketchPick};
+use qymcad::{Key, Modifiers, Picture, PointerButton, Session, SketchPick};
 use qymcad_acceptance::build;
 use qymcad_acceptance::probe;
 
@@ -264,5 +264,114 @@ probe! {
         let from = s.on_sketch(3.0, 15.0);
         s.drag(from, from + qymcad::vec2(80.0, 40.0), PointerButton::Middle, Modifiers::default());
         assert!(places(&mut s) == before, "dragging the sheet moved the drawing: {before:?} became {:?}", places(&mut s));
+    }
+}
+
+probe! {
+    /// THE HANDLES OF A SPLINE SHOW WHILE IT IS PICKED, and the one under the pointer and the one held say so. A spline
+    /// drawn through (0, 0), (20, 24) and (40, 0): its middle node's handle ends at (40, 24), the automatic tangent there
+    /// being half the step between its neighbours. Not picked - no handle there; a click on the curve - the handle drawn;
+    /// the pointer over it - lit; pressed and pulled up - drawn in another colour and the curve bends after it; let go -
+    /// the new shape kept.
+    fn a_spline_shows_its_handles_only_while_picked_and_the_one_under_the_pointer_is_lit() {
+        let mut s = build::empty_sketch();
+        let spline = s.word("tb-spline-hint");
+        s.press_hint(&spline);
+        s.click_on_sketch(0.0, 0.0).click_on_sketch(20.0, 24.0);
+        let end = s.on_sketch(40.0, 0.0);
+        s.double_click(end);
+        s.key(Key::Escape);
+        let arrow = s.word("tb-select-hint");
+        s.press_hint(&arrow);
+        // where a place of the sketch is seen now: the view is read again at every step, not carried over
+        let seen = |s: &mut Session, x: f64, y: f64| s.seen_on_sketch(x, y).unwrap_or_else(|| panic!("({x}, {y}) of the sketch is off the canvas"));
+        // the colour is read a little off the pointer, clear of its cross
+        let near = |p: qymcad::Pos2| p + qymcad::vec2(2.0, 2.0);
+        // the wheel takes the view back until the spline and the place the handle is pulled to are seen together
+        for _ in 0..12 {
+            if s.seen_on_sketch(0.0, 0.0).is_some() && s.seen_on_sketch(40.0, 64.0).is_some() {
+                break;
+            }
+            let middle = s.canvas().center();
+            s.wheel(middle, qymcad::vec2(0.0, -120.0), Modifiers::NONE);
+        }
+        s.on_sketch(20.0, 32.0);
+        let corner = s.canvas().min;
+        let idle = s.snapshot();
+        let sheet = idle.colour_at(corner + qymcad::vec2(12.0, 12.0));
+        let handle = seen(&mut s, 40.0, 24.0);
+        assert!(Picture::apart(idle.colour_at(near(handle)), sheet) < 8, "a spline not picked shows a handle: {:?} against the sheet {sheet:?}", idle.colour_at(near(handle)));
+
+        // a point of the curve between the first two nodes: the Hermite span at its middle
+        let curve = seen(&mut s, 8.75, 13.5);
+        s.click(curve);
+        assert_eq!(picked(&mut s), 1, "a click on the curve of the spline picked {} things", picked(&mut s));
+        s.move_to(corner + qymcad::vec2(30.0, 30.0));
+        let handle = seen(&mut s, 40.0, 24.0);
+        let shown = s.snapshot().colour_at(near(handle));
+        assert!(Picture::apart(shown, sheet) >= 20, "the spline is picked and its handle is not drawn: {shown:?} against the sheet {sheet:?}");
+
+        let handle = seen(&mut s, 40.0, 24.0);
+        s.move_to(handle);
+        let lit = s.snapshot().colour_at(near(seen(&mut s, 40.0, 24.0)));
+        assert!(Picture::apart(lit, shown) >= 20, "the handle under the pointer is not lit: {lit:?}, as it was away from it {shown:?}");
+
+        s.press(PointerButton::Primary);
+        let pulled = seen(&mut s, 40.0, 64.0);
+        let handle = seen(&mut s, 40.0, 24.0);
+        s.move_to(handle + (pulled - handle) * 0.5);
+        s.move_to(pulled);
+        let held = s.snapshot().colour_at(near(seen(&mut s, 40.0, 64.0)));
+        s.release(PointerButton::Primary);
+        assert!(Picture::apart(held, lit) >= 20 && Picture::apart(held, sheet) >= 20, "the handle held is not drawn in a colour of its own: {held:?}, lit {lit:?}, sheet {sheet:?}");
+        // the tangent at the middle node went from (20, 0) to (20, 40): the middle of the first span drops 5 mm
+        assert!(s.sketch_under(8.75, 13.5).is_none(), "the curve did not bend after the handle: it still passes (8.75, 13.5)");
+        assert!(matches!(s.sketch_under(8.75, 8.5), Some(SketchPick::Spline { .. })), "the curve let go of does not pass (8.75, 8.5) where its new tangent puts it");
+    }
+}
+
+probe! {
+    /// A SPLINE PICKED BY ITS CURVE IS DELETED BY DELETE, with its nodes, as a line goes with its ends.
+    fn a_spline_picked_by_its_curve_is_deleted_whole() {
+        let mut s = build::empty_sketch();
+        let spline = s.word("tb-spline-hint");
+        s.press_hint(&spline);
+        s.click_on_sketch(0.0, 0.0).click_on_sketch(20.0, 24.0);
+        let end = s.on_sketch(40.0, 0.0);
+        s.double_click(end);
+        s.key(Key::Escape);
+        let arrow = s.word("tb-select-hint");
+        s.press_hint(&arrow);
+        s.click_on_sketch(8.75, 13.5);
+        assert_eq!(picked(&mut s), 1, "a click on the curve of the spline picked {} things", picked(&mut s));
+        s.key(Key::Delete);
+        let sk = &s.document().sketches[0];
+        assert!(sk.splines == 0 && sk.places.is_empty(), "Delete left {} splines and the points {:?}", sk.splines, sk.places);
+    }
+}
+
+probe! {
+    /// A SPLINE CLOSED ON ITS FIRST NODE IS A LOOP: nodes clicked at (0, 0), (40, 0) and (20, 30), then the first one
+    /// again - one spline of three nodes, no node lying on another, its closing span drawn from (20, 30) back to (0, 0);
+    /// a node dragged away, the loop stays closed. Reported behaviour: a spline brought back to its start ended there, two
+    /// nodes one over the other with two handles, and fell apart when dragged.
+    fn a_spline_clicked_back_on_its_first_node_closes() {
+        let mut s = build::empty_sketch();
+        let spline = s.word("tb-spline-hint");
+        s.press_hint(&spline);
+        s.click_on_sketch(0.0, 0.0).click_on_sketch(40.0, 0.0).click_on_sketch(20.0, 30.0).click_on_sketch(0.0, 0.0);
+        s.key(Key::Escape);
+        let arrow = s.word("tb-select-hint");
+        s.press_hint(&arrow);
+        let sk = &s.document().sketches[0];
+        assert!(sk.splines == 1 && sk.places.len() == 3, "the spline closed on its first node holds {} splines and the points {:?}", sk.splines, sk.places);
+        // the middle of the closing span, from (20, 30) to (0, 0), the tangents of the loop half the step between the
+        // neighbours, (-20, 0) and (10, -15): (10, 15) + (-20, 0) / 8 - (10, -15) / 8 = (6.25, 16.875)
+        assert!(matches!(s.sketch_under(6.25, 16.875), Some(SketchPick::Spline { .. })), "no closing span runs from (20, 30) back to (0, 0)");
+        s.drag_on_sketch((40.0, 0.0), (50.0, -10.0));
+        let sk = &s.document().sketches[0];
+        assert!(sk.splines == 1 && sk.places.len() == 3, "the loop dragged by a node holds {} splines and the points {:?}", sk.splines, sk.places);
+        // with the node at (50, -10) the tangents are (-25, 5) and (15, -20): the middle comes to (5, 18.125)
+        assert!(matches!(s.sketch_under(5.0, 18.125), Some(SketchPick::Spline { .. })), "the loop dragged by a node is no longer closed");
     }
 }

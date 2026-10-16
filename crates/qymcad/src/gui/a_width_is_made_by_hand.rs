@@ -124,7 +124,7 @@ mod tests {
 
         assert!(app.project.mate_constraints.is_empty(), "the width was assembled from two supports — there is no tab");
         assert!(app.side.joint.width_pick.is_some(), "the tool was dropped instead of letting the tab be pointed at");
-        assert_eq!(app.status, crate::i18n::tr("j-width-need-three"), "the person was not told what is missing: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-width-need-three")), "the person was not told what is missing: {}", app.status);
     }
 
     /// THE WALLS MUST FACE THE SAME WAY: otherwise "in the middle" means nothing.
@@ -141,7 +141,7 @@ mod tests {
         qymcad_assembly::width_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[0], key(&top));
         qymcad_assembly::width_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[0], key(&side));
         assert_eq!(app.side.joint.width_pick.as_ref().map_or(0, |v| v.len()), 1, "the second wall faces the other way — it must not be taken");
-        assert_eq!(app.status, crate::i18n::tr("j-width-walls-differ"), "the person was not told why the support was not taken: {}", app.status);
+        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-width-walls-differ")), "the person was not told why the support was not taken: {}", app.status);
         let _ = AnchorRef::Origin;
     }
 }

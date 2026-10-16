@@ -1,0 +1,10 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / box">
+<g id="Polygon 16">
+<path d="M3.00961 23.5L16 31V16L3.00961 8.5V23.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28.9904 8.5L16 1L3.00961 8.5L16 16L28.9904 8.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28.9904 23.5V8.5L16 16V31L28.9904 23.5Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M3.00961 8.5V23.5L16 31L28.9904 23.5V8.5L16 1L3.00961 8.5ZM28.9904 8.5L16 16M16 31V16M3.00961 8.5L16 16" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</g>
+</svg>

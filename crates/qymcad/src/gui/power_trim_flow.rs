@@ -75,7 +75,7 @@ mod tests {
         assert_ne!(before, after, "the drag must trim something; status: {}", app.status);
         // THE MAIN POINT: SEVERAL were cut. One is an ordinary click, and the tool was not reworked for that.
         assert!(cut >= 3, "one movement across THREE verticals must cut three spans, and it cut {cut}");
-        assert_eq!(app.status, crate::i18n::tr1("sk-trimmed-n", "n", &app.side.trim.done.len().to_string()), "the person must be told how many were cut");
+        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr1("sk-trimmed-n", "n", &app.side.trim.done.len().to_string())), "the person must be told how many were cut");
     }
 
     /// ONE SPAN IS CUT ONCE: cursor jitter in place does not go on to cut neighbouring pieces.

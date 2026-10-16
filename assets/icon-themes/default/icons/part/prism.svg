@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / prism">
+<g id="Polygon 17">
+<path d="M28 6L22 11.1962L10 11.1962L4 6L10 0.803847L22 0.803848L28 6Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28 26L22 31.1962L10 31.1962L4 26L4 6L10 11.1962L22 11.1962L28 6L28 26Z" fill="var(--icon-neutral, #BCBCBCFF)"/>
+<path d="M28 6L22 11.1962M10 31.1962L4 26L4 6L10 0.803847L22 0.803848L28 6L28 26L22 31.1962L10 31.1962ZM22 11.1962L10 11.1962M22 11.1962L22 31.1962M10 11.1962L4 6M10 11.1962L10 31.1962" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</g>
+</svg>

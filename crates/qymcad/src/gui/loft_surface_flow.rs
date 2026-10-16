@@ -25,7 +25,15 @@ mod tests {
             let plane = if z == 0.0 {
                 qymcad_core::feature::SketchPlane::default()
             } else {
-                let pl = app.project.add_plane(qymcad_core::model::WorkPlane { id: 0, name: format!("z{z}"), origin: [0.0, 0.0, z], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+                let pl = app.project.add_plane(qymcad_core::model::WorkPlane {
+                    id: 0,
+                    name: format!("z{z}"),
+                    origin: [0.0, 0.0, z],
+                    normal: [0.0, 0.0, 1.0],
+                    rot_deg: 0.0,
+                    tilt: Default::default(),
+                    def: Default::default(),
+                });
                 qymcad_core::feature::SketchPlane::Datum(pl)
             };
             let si = app.create_sketch_on(plane);

@@ -6,6 +6,7 @@ pub(crate) use qymcad_ui_state::{sketch_closed_contours, sketch_diag};
 #[allow(unused_imports)] // the checks reach these through this module, which is the address they know
 pub(crate) use qymcad_pick::{constraint_glyphs, sketch_ref_edges_2d};
 pub(crate) use qymcad_sketch::*;
+use qymcad_ui_state::Notice;
 use super::*;
 use qymcad_ui_state::EditTool;
 
@@ -22,7 +23,7 @@ impl App {
             "sketch.select" => {
                 self.tools.armed = qymcad_ui_state::Armed::None;
                 self.tools.tool.pts.clear();
-                self.status = crate::i18n::tr("sk-select");
+                self.status = Notice::info(crate::i18n::tr("sk-select"));
             }
             "sketch.dim" => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, &self.project, self.chosen.sel, self.sketch_ses, &mut self.status, 1),
             "sketch.corner-fillet" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, 4),
@@ -112,7 +113,7 @@ impl App {
                             // the centre from the record (it can be re-picked)
                         }
                     }
-                    self.status = crate::i18n::tr("sk-array-edit-hint");
+                    self.status = Notice::info(crate::i18n::tr("sk-array-edit-hint"));
                 } else if let Some(ti) = qymcad_ui_state::text_at(&self.project, &self.viewing.view, rect, pos, si) {
                     qymcad_ui_state::begin_text_edit(&self.project, &mut qymcad_ui_state::tools_of!(self), &mut self.tool_prefs, si, ti);
                 } else if let Some(ni) = qymcad_ui_state::note_at(&self.project, &self.viewing.view, rect, pos, si) {
@@ -353,5 +354,5 @@ pub(crate) fn set_sketch_plane(sk: &mut qymcad_ui_state::SketchCtx, si: usize, p
     qymcad_ui_state::mark_dirty_for_rebuild(&mut sk.rebuild()); // the document is marked; the scheduler does the computing
     sk.picking.clear();
     sk.view.initialized = false;
-    *sk.status = crate::i18n::tr("g-sketch-moved");
+    *sk.status = Notice::info(crate::i18n::tr("g-sketch-moved"));
 }

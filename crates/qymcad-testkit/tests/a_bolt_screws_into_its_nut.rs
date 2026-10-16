@@ -23,7 +23,7 @@ trait SharedMetal {
 }
 impl SharedMetal for qymcad_kernel::Shape {
     fn shared_metal(&self, other: &qymcad_kernel::Shape) -> f64 {
-        self.interference_volume(other).expect("the kernel measured the shared metal")
+        qymcad_kernel::specimen::common_volume(self, other).expect("the kernel measured the shared metal")
     }
 }
 
@@ -96,7 +96,7 @@ fn nut_of(spec: ThreadSpec, len: f64, lead: f64) -> qymcad_kernel::Shape {
 fn screwed(s: &qymcad_kernel::Shape, turn: f64, pitch: f64, base: f64) -> qymcad_kernel::Shape {
     let (c, si) = (turn.cos(), turn.sin());
     let dz = base + pitch * turn / (2.0 * std::f64::consts::PI);
-    s.transformed(&[c, -si, 0.0, 0.0, si, c, 0.0, 0.0, 0.0, 0.0, 1.0, dz]).expect("the screw motion")
+    qymcad_kernel::specimen::placed(s, &[c, -si, 0.0, 0.0, si, c, 0.0, 0.0, 0.0, 0.0, 1.0, dz]).expect("the screw motion")
 }
 
 /// HOW MUCH METAL THE TWO SHARE at the worst point of screwing in one full turn.
@@ -352,7 +352,7 @@ fn which_way_the_nut_turns() {
                 let turn = 2.0 * std::f64::consts::PI * (i as f64) / 12.0;
                 let dz = -len * 0.5 + sign * pitch * turn / (2.0 * std::f64::consts::PI);
                 let (c, si) = (turn.cos(), turn.sin());
-                let moved = n.transformed(&[c, -si, 0.0, 0.0, si, c, 0.0, 0.0, 0.0, 0.0, 1.0, dz]).expect("the screw motion");
+                let moved = qymcad_kernel::specimen::placed(&n, &[c, -si, 0.0, 0.0, si, c, 0.0, 0.0, 0.0, 0.0, 1.0, dz]).expect("the screw motion");
                 let v = b.shared_metal(&moved);
                 if v > worst {
                     worst = v;
@@ -528,7 +528,7 @@ fn a_nut_starts_on_the_first_turn() {
             let turn = 2.0 * std::f64::consts::PI * (i as f64) / 12.0;
             let (c, si) = (turn.cos(), turn.sin());
             let dz = base + pitch * 0.5;
-            let moved = n.transformed(&[c, -si, 0.0, 0.0, si, c, 0.0, 0.0, 0.0, 0.0, 1.0, dz]).expect("the misphased nut");
+            let moved = qymcad_kernel::specimen::placed(&n, &[c, -si, 0.0, 0.0, si, c, 0.0, 0.0, 0.0, 0.0, 1.0, dz]).expect("the misphased nut");
             b.shared_metal(&moved)
         })
         .collect();
