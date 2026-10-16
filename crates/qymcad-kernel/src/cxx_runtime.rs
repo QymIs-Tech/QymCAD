@@ -14,6 +14,7 @@ pub fn cxx_runtime(target_os: &str, target_env: &str) -> Option<&'static str> {
     match (target_os, target_env) {
         (_, "msvc") => None,
         ("macos" | "ios", _) => Some("c++"),
+        ("freebsd", _) => Some("c++"),
         _ => Some("stdc++"),
     }
 }
