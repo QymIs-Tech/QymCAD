@@ -554,6 +554,9 @@ pub(crate) fn remap_constraint_point(c: &mut Constraint, from: Id, to: Id) {
 /// Fresh ids from `map` cannot collide with the old ones, so remapping in sequence is safe.
 pub(crate) fn remap_constraint_via(c: &Constraint, map: &std::collections::HashMap<Id, Id>) -> Constraint {
     let mut nc = c.clone();
+    if let Some(dimension) = nc.dimension_id_mut() {
+        *dimension = DimensionId::default();
+    }
     for old in constraint_point_ids(c) {
         if let Some(&new) = map.get(&old) {
             remap_constraint_point(&mut nc, old, new);

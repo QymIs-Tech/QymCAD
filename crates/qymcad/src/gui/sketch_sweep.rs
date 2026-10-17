@@ -216,7 +216,7 @@ mod tests {
 
     /// A linear dimension between two points.
     fn dim(app: &mut App, si: usize, a: Id, b: Id, d: f64) {
-        app.project.sketches[si].constraints.push(Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        app.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     }
 
     /// WHAT MUST BE TRUE ALWAYS — on any scene, before and after the drag.

@@ -91,11 +91,11 @@ fn build_dimensioned_rect(p: &mut Project, si: usize) -> (Vec<u64>, u64, u64) {
     let c00 = p.sketches[si].points.iter().find(|q| q.x == 0.0 && q.y == 0.0).unwrap().id;
     let c10 = p.sketches[si].points.iter().find(|q| q.x == 10.0 && q.y == 0.0).unwrap().id;
     // a dimension on the bottom edge
-    p.sketches[si].constraints.push(Constraint::Distance { a: c00, b: c10, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: c00, b: c10, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     // the anchor and the dimension to the X axis must not be copied
     p.sketches[si].constraints.push(Constraint::Fixed { p: c00 });
     let (o, xax) = p.ensure_axis(si, 0);
-    p.sketches[si].constraints.push(Constraint::DistancePL { p: c00, a: o, b: xax, d: 0.0, off: 0.0, expr: String::new(), driven: false, at: None });
+    p.sketches[si].constraints.push(Constraint::DistancePL { dimension: Default::default(), p: c00, a: o, b: xax, d: 0.0, off: 0.0, expr: String::new(), driven: false, at: None });
     (eids, c00, c10)
 }
 
@@ -267,7 +267,7 @@ fn conflicting_edge_distance_is_flagged() {
     p.ensure_diameter(si, c[0], true);
     p.ensure_diameter(si, c[1], true);
     // an edge-to-edge dimension with a deliberately impossible value
-    p.sketches[si].constraints.push(Constraint::EdgeDistance { c1: c[0], c2: c[1], d: 999.0, m1: -1, m2: -1, off: 0.0, expr: String::new(), driven: false, at: None });
+    p.sketches[si].constraints.push(Constraint::EdgeDistance { dimension: Default::default(), c1: c[0], c2: c[1], d: 999.0, m1: -1, m2: -1, off: 0.0, expr: String::new(), driven: false, at: None });
     let ci = p.sketches[si].constraints.len() - 1;
     p.solve_sketch(si);
     let conflicts = p.sketch_conflicts(si);
@@ -350,7 +350,7 @@ fn near_degenerate_start_still_converges() {
     let c = mk(&mut p, 0.0, 1e-3);
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
-    let dist = |a, b, d| Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
+    let dist = |a, b, d| Constraint::Distance { dimension: Default::default(), a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
     s.constraints.push(dist(a, b, 3.0));
     s.constraints.push(dist(b, c, 4.0));
     s.constraints.push(dist(c, a, 5.0));

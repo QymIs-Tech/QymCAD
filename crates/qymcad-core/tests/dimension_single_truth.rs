@@ -23,7 +23,7 @@ fn sketch_with_dim() -> (Project, usize, usize) {
         let s = &p.sketches[si];
         (s.points[0].id, s.points[1].id)
     };
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 10.0, off: 0.0, expr: "L".into(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 10.0, off: 0.0, expr: "L".into(), driven: false, axis: 0, at: None });
     let ci = p.sketches[si].constraints.len() - 1;
     (p, si, ci)
 }

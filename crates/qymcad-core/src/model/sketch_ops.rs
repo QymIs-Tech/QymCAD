@@ -318,9 +318,10 @@ impl Project {
         // THE CHORD STANDS OUTSIDE THE SHAPE, on the side of the arc away from its centre: written as the arc ran, it
         // stood inside the shape on one corner out of two
         let [ca, cb] = sketch::ends_facing([end_a, end_b], sketch::Side::AwayFrom(crate::geom::Point2::new(cx, cy)));
+        let dimension = self.sketches[si].constraints[ci].dimension_id().unwrap_or_default();
         self.sketches[si].constraints[ci] = match size.by {
-            FilletBy::Chord => Constraint::Distance { a: ca, b: cb, d: size.value, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
-            _ => Constraint::ArcLength { c: centre, a, b, ccw, len: size.value, off: 0.0, expr: String::new(), driven: false },
+            FilletBy::Chord => Constraint::Distance { dimension, a: ca, b: cb, d: size.value, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+            _ => Constraint::ArcLength { dimension, c: centre, a, b, ccw, len: size.value, off: 0.0, expr: String::new(), driven: false },
         };
         self.solve_sketch(si);
     }

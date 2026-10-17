@@ -70,7 +70,7 @@ fn time(kind: Kind, n: usize, op: Op) -> Duration {
         Op::AddDimension => {
             if let Some(SketchPoint { id: a, .. }) = a_point(&p, si) {
                 let b = p.sketches[si].points.iter().rev().find(|q| q.id != a).map(|q| q.id).unwrap_or(a);
-                let _ = p.add_constraint_if_independent(si, Constraint::Distance { a, b, d: 50.0, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
+                let _ = p.add_constraint_if_independent(si, Constraint::Distance { dimension: Default::default(), a, b, d: 50.0, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
             }
         }
         Op::Delete => {

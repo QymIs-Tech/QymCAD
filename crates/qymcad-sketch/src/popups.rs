@@ -903,26 +903,12 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
     } else {
         qymcad_i18n::tr("sk-dim")
     };
-    // A DRIVER BELONGS TO ANY DIMENSION, NOT ONLY TO A LINEAR ONE.
-    //
-    // This used to read "only `Constraint::Distance`", and the name field appeared solely on a distance
-    // between two points. The question came up plainly: why does a drive field exist in some places and
-    // not in others? There was no explainable logic behind it: the driver name WAS STORED as a pair of
-    // points, so an angle, a diameter, a distance to a line, an arc length or a tangent gap simply had
-    // nothing to be named by. Now a driver is identified by a set of entities, and any dimension can be
-    // named.
-    let dim_refs: Option<Vec<Id>> = sk.project.sketches[si].constraints.get(ci).and_then(Project::dim_refs);
-    let sid = sk.project.sketches[si].id;
-    let cur_name: String = dim_refs
-        .as_ref()
-        .map(|r| {
-            let t = qymcad_core::model::DimTarget::Sketch { sketch: sid, refs: Project::dim_key_pub(r) };
-            qymcad_i18n::name(&sk.project.name_of_target(&t))
-        })
-        .unwrap_or_default();
+    // The name belongs to this constraint record; other dimensions may share its geometry.
+    let dimension = sk.project.sketches[si].constraints.get(ci).and_then(Constraint::dimension_id);
+    let selection = SketchDimensionSelection { sketch: sk.project.sketches[si].id, index: ci };
+    let cur_name: String = sk.project.sketch_dimension_target(selection).map(|target| qymcad_i18n::name(&sk.project.name_of_target(&target))).unwrap_or_default();
     // THE TEXT LIVES IN THE BUFFER OF THE FIELD ITSELF WHILE IT IS BEING TYPED. The model is touched
     // once, on Enter.
-    let key_refs = dim_refs.clone().unwrap_or_default();
     // WHAT WAS ASKED FOR: a new driver name. It is applied AFTER the drawing - during it the document is
     // lent to the field (which reads the project), and there is no reason to change the model mid-frame.
     let mut name_commit: Option<String> = None;
@@ -974,10 +960,10 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
                 }
                 ui.label(egui::RichText::new(qymcad_i18n::tr("sk-enter-apply-expr")).weak().small());
             }
-            if dim_refs.is_some() {
+            if dimension.is_some() {
                 // WHETHER THE NAME WILL DO. An empty one is legitimate: the dimension simply stops being a
                 // driver.
-                let ok = |nm: &str| nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !sk.project.driver_name_taken(nm, sid, &key_refs));
+                let ok = |nm: &str| nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !sk.project.sketch_dimension_name_taken(nm, selection));
                 ui.horizontal(|ui| {
                     // THE CAPTION IS TRANSLATABLE. A raw "driver:" used to stand here - the only string of
                     // the popup that went around the language catalogue.
@@ -997,7 +983,7 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
                         // across the whole project by hand. A name with no owner is unusable in itself, and
                         // the line and its hint say why - the hint said "taken" over `tau`, which nobody holds.
                         // the owner is somebody else: a dimension keeps its own name in the field
-                        let owner = sk.project.name_owner(&nm).filter(|_| sk.project.driver_name_taken(&nm, sid, &key_refs));
+                        let owner = sk.project.name_owner(&nm).filter(|_| sk.project.sketch_dimension_name_taken(&nm, selection));
                         name_hint = if owner.is_some() { qymcad_i18n::tr("sk-driver-name-taken-hint") } else { qymcad_i18n::error_words::ident_refusal_text(&nm) };
                         name_refusal = Some(match owner {
                             Some(o) => {
@@ -1145,7 +1131,7 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
     // This was the main trouble that got reported: the name was written into the model on EVERY letter,
     // and `mark_param_dependents_dirty()` was called right after, marking EVERY node carrying dimensions
     // dirty - that is, the whole project was rebuilt per letter. Now the edit arrives once.
-    if let (Some(refs), Some(nm)) = (dim_refs.clone(), name_commit) {
+    if let Some(nm) = name_commit {
         let mut ed = qymcad_ui_state::edit_over(sk.rebuild(), qymcad_i18n::tr("sk-driver-step"));
         let old = cur_name.trim().to_string();
         if !old.is_empty() && !nm.is_empty() {
@@ -1153,7 +1139,7 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
             // that no longer exists, and the model breaks silently.
             let _ = ed.project().rename_driver(&old, &nm);
         } else {
-            ed.project().add_named_dim(nm.clone(), sid, refs);
+            ed.project().name_sketch_dimension(nm.clone(), selection);
         }
         drop(ed);
         // ONLY WHAT DEPENDS ON THIS NAME is marked, not the whole timeline of every body; it is rebuilt when the sketch

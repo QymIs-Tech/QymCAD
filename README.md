@@ -101,6 +101,21 @@ python3 convert_qcad.py part.qcad    # converts in place, keeping part.qcad.bak 
 
 The script brings a document forward from any earlier version in one pass and is idempotent.
 
+Named sketch dimensions now bind to a constraint's `DimensionId` (`dimension: (42)`), not to its
+participant `refs`. Unique matches are converted automatically. Without `--interactive`, an ambiguous
+match stops conversion; the diagnostic identifies the name, sketch and matching constraints. To choose
+from a numbered console list of kinds, axes and stored values:
+
+```bash
+python3 convert_qcad.py --interactive part.qcad
+```
+
+Enter the option number. Empty input or `q`, EOF and Ctrl+C cancel the entire conversion, even after
+earlier choices. No document or backup is written until every target is resolved. Missing targets,
+a missing allocator and duplicate stored identities cannot be resolved by choosing and stop conversion.
+An old target cannot distinguish X/Y dimensions on the same points or recover an overwritten name.
+Feature parameter targets are unchanged. This is a separate conversion, not compatibility in the app.
+
 ## Building from source
 
 Linux — `just pkg-linux`, Docker required. Windows — MSVC with the kernel built from source. macOS — the

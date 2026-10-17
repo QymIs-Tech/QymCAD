@@ -169,7 +169,17 @@ fn a_rectangle_grows_from_where_it_was_drawn() {
         let kept = if way == 1 { r.centre } else { r.corners[0] };
         let before = xy(&p, si, kept);
         let w = shape(&p, si).width;
-        p.sketches[si].constraints.push(Constraint::Distance { a: r.corners[0], b: r.corners[1], d: w, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        p.sketches[si].constraints.push(Constraint::Distance {
+            dimension: Default::default(),
+            a: r.corners[0],
+            b: r.corners[1],
+            d: w,
+            off: 0.0,
+            expr: String::new(),
+            driven: false,
+            axis: 0,
+            at: None,
+        });
         p.solve_sketch(si);
         let ci = p.sketches[si].constraints.len() - 1;
         if let Constraint::Distance { d, .. } = &mut p.sketches[si].constraints[ci] {
@@ -247,7 +257,7 @@ fn an_angle_dimension_on_a_side_turns_the_rectangle() {
     };
     p.sketches[si].constraints.extend([Constraint::Fixed { p: line.0 }, Constraint::Fixed { p: line.1 }]);
     let r = p.sketches[si].rects[0].clone();
-    let dim = Constraint::AngleLines { a: line.0, b: line.1, c: r.corners[0], d: r.corners[1], deg: 20.0, expr: String::new(), driven: false, off: 0.0, at: None };
+    let dim = Constraint::AngleLines { dimension: Default::default(), a: line.0, b: line.1, c: r.corners[0], d: r.corners[1], deg: 20.0, expr: String::new(), driven: false, off: 0.0, at: None };
     p.give_rect_turn_to(si, &dim);
     p.sketches[si].constraints.push(dim);
     p.solve_sketch(si);

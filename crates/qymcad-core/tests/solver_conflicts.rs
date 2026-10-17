@@ -25,8 +25,8 @@ fn two_contradicting_dimensions_are_both_named() {
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
     s.constraints.push(Constraint::Horizontal { a, b });
-    s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    s.constraints.push(Constraint::Distance { a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }); // contradicts the previous one
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }); // contradicts the previous one
     p.solve_sketch(si);
 
     let bad = p.sketch_conflicts(si);
@@ -44,7 +44,7 @@ fn a_consistent_sketch_reports_no_conflicts() {
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
     s.constraints.push(Constraint::Horizontal { a, b });
-    s.constraints.push(Constraint::Distance { a, b, d: 42.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 42.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
 
     assert!(p.sketch_conflicts(si).is_empty(), "there are no conflicts: {:?}", p.sketch_conflicts(si));
@@ -63,8 +63,8 @@ fn a_driven_dimension_never_conflicts() {
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
     s.constraints.push(Constraint::Horizontal { a, b });
-    s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    s.constraints.push(Constraint::Distance { a, b, d: 999.0, off: 0.0, expr: String::new(), driven: true, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 999.0, off: 0.0, expr: String::new(), driven: true, axis: 0, at: None });
     p.solve_sketch(si);
     assert!(p.sketch_conflicts(si).is_empty(), "a driven dimension does not conflict: {:?}", p.sketch_conflicts(si));
 }
@@ -80,8 +80,8 @@ fn per_constraint_residuals_point_at_the_broken_one() {
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
     s.constraints.push(Constraint::Horizontal { a, b });
-    s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    s.constraints.push(Constraint::Distance { a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
 
     let r = p.sketch_residuals(si);
@@ -105,7 +105,7 @@ fn geometric_constraints_conflict_too() {
         let (a, b) = (p.sketches[si].points[0].id, p.sketches[si].points[1].id);
         let s = &mut p.sketches[si];
         s.constraints.push(Constraint::Fixed { p: a });
-        s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
         s.constraints.push(Constraint::Horizontal { a, b });
         s.constraints.push(Constraint::Vertical { a, b });
         p.solve_sketch(si);
@@ -151,8 +151,8 @@ fn arc_intrinsics_are_part_of_the_analyzed_system() {
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Fixed { p: c });
     // the radius of an arc is the distance from centre to endpoint; it is given twice, incompatibly
-    s.constraints.push(Constraint::Distance { a: c, b: a, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    s.constraints.push(Constraint::Distance { a: c, b: a, d: 25.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a: c, b: a, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a: c, b: a, d: 25.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
 
     let bad = p.sketch_conflicts(si);
@@ -171,8 +171,8 @@ fn making_a_conflicting_dimension_driven_resolves_the_conflict() {
     let s = &mut p.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
     s.constraints.push(Constraint::Horizontal { a, b });
-    s.constraints.push(Constraint::Distance { a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    s.constraints.push(Constraint::Distance { a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    s.constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 50.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     assert!(!p.sketch_conflicts(si).is_empty(), "there is a conflict before the edit");
 

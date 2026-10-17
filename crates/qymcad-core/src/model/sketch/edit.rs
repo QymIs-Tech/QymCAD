@@ -37,7 +37,7 @@ impl Project {
         let (Some(p0), Some(p1), Some(p2)) = (at(r.corners[0]), at(r.corners[1]), at(r.corners[2])) else { return false };
         let (w, h) = ((p1.0 - p0.0).hypot(p1.1 - p0.1), (p2.0 - p1.0).hypot(p2.1 - p1.1));
         let off = 0.2 * w.min(h);
-        let dim = |a: Id, b: Id, d: f64| Constraint::Distance { a, b, d, off, expr: String::new(), driven: false, axis: 0, at: None };
+        let dim = |a: Id, b: Id, d: f64| Constraint::Distance { dimension: Default::default(), a, b, d, off, expr: String::new(), driven: false, axis: 0, at: None };
         s.constraints.push(dim(r.corners[0], r.corners[1], w));
         s.constraints.push(dim(r.corners[1], r.corners[2], h));
         true

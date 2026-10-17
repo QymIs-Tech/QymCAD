@@ -77,8 +77,20 @@ mod tests {
             let sid = app.project.add_line_sketch(format!("Profile {i}"), vec![Point2::new(0.0, 0.0), Point2::new(40.0, 0.0), Point2::new(40.0, 20.0), Point2::new(0.0, 20.0)], true);
             let si = app.project.sketch_index(sid).unwrap();
             let pts: Vec<Id> = app.project.sketches[si].points.iter().take(2).map(|q| q.id).collect();
-            app.project.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-            assert!(app.project.add_named_dim(format!("dlina_proema_{i}"), sid, pts));
+            app.project.sketches[si].constraints.push(Constraint::Distance {
+                dimension: Default::default(),
+                a: pts[0],
+                b: pts[1],
+                d: 40.0,
+                off: 0.0,
+                expr: String::new(),
+                driven: false,
+                axis: 0,
+                at: None,
+            });
+            assert!(app
+                .project
+                .name_sketch_dimension(format!("dlina_proema_{i}"), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: app.project.sketches[si].constraints.len() - 1 }));
         }
         let ctx = egui::Context::default();
         let mut out = super::super::ParamRowsOut::default();

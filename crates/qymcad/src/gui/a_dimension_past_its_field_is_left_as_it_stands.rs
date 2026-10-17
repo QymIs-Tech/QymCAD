@@ -26,7 +26,7 @@ mod tests {
         let (a, b) = line.expect("the line drawn");
         // a dimension of 0.005 mm on the line, the sketch solved to it: past the low end of the field
         let ci = hand.app.project.sketches[si].constraints.len();
-        hand.app.project.sketches[si].constraints.push(Constraint::Distance { a, b, d: 0.005, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
+        hand.app.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 0.005, off: 2.0, expr: String::new(), driven: false, axis: 0, at: None });
         hand.app.project.solve_sketch(si);
         hand.frame(Vec::new());
         let key = hand.app.project.rebuild_key();

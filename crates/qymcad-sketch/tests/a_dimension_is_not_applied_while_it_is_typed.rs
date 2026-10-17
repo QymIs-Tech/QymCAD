@@ -42,7 +42,7 @@ fn a_rectangle_with_a_width_dimension() -> (Project, usize, usize) {
     let mut ids: Vec<(u64, f64, f64)> = p.sketches[si].points.iter().map(|q| (q.id, q.x, q.y)).collect();
     ids.sort_by(|a, b| a.2.total_cmp(&b.2).then(a.1.total_cmp(&b.1)));
     let (a, b) = (ids[0].0, ids[1].0);
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 100.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 100.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     let ci = p.sketches[si].constraints.len() - 1;
     p.solve_sketch(si);
     (p, si, ci)
@@ -95,7 +95,7 @@ fn the_angle_between_lines_is_an_opening() {
     p.add_line_entity(si, 0.0, 0.0, 30.0, 30.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(si);
     let q: Vec<u64> = p.sketches[si].points.iter().map(|x| x.id).collect();
-    p.sketches[si].constraints.push(Constraint::AngleLines { a: q[0], b: q[1], c: q[0], d: q[2], deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
+    p.sketches[si].constraints.push(Constraint::AngleLines { dimension: Default::default(), a: q[0], b: q[1], c: q[0], d: q[2], deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None });
     let ci = p.sketches[si].constraints.len() - 1;
     for bad in [-30.0, 0.0, 180.0, 1791.0] {
         assert_eq!(qymcad_sketch::set_dim_value(&mut p, si, ci, bad), Err("sk-angle-range"), "{bad} deg between two lines was taken");

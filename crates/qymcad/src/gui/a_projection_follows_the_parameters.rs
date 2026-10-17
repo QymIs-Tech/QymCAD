@@ -112,7 +112,9 @@ mod tests {
                 .expect("an outline corner");
             let n = s.points.iter().find(|q| q.id == near).map(|q| (q.x, q.y)).expect("it");
             for (axis, d) in [(1u8, (at.0 - n.0).abs()), (2u8, (at.1 - n.1).abs())] {
-                hand.app.project.add_constraint_if_independent(si2, Constraint::Distance { a: near, b: c, d, off: 3.0, expr: String::new(), driven: false, axis, at: None });
+                hand.app
+                    .project
+                    .add_constraint_if_independent(si2, Constraint::Distance { dimension: Default::default(), a: near, b: c, d, off: 3.0, expr: String::new(), driven: false, axis, at: None });
             }
         }
         hand.app.project.solve_sketch(si2);

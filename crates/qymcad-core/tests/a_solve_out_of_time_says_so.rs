@@ -104,8 +104,10 @@ fn a_contradicted_sketch_of_every_kind_is_solved_within_its_time() {
             .constraints
             .iter()
             .filter_map(|c| match *c {
-                Constraint::Horizontal { a, b } => Some(Constraint::Distance { a, b, d: 5.0, off: 2.0, expr: String::new(), driven: false, axis: 2, at: None }),
-                Constraint::Distance { a, b, d, axis, .. } => Some(Constraint::Distance { a, b, d: d + 5.0, off: 2.0, expr: String::new(), driven: false, axis, at: None }),
+                Constraint::Horizontal { a, b } => Some(Constraint::Distance { dimension: Default::default(), a, b, d: 5.0, off: 2.0, expr: String::new(), driven: false, axis: 2, at: None }),
+                Constraint::Distance { a, b, d, axis, .. } => {
+                    Some(Constraint::Distance { dimension: Default::default(), a, b, d: d + 5.0, off: 2.0, expr: String::new(), driven: false, axis, at: None })
+                }
                 _ => None,
             })
             .collect();

@@ -17,7 +17,7 @@ fn line_with_dim(k: f64, d: f64, driven: bool) -> (Project, usize, u64, u64) {
         qymcad_core::model::EntityKind::Line { a, b } => (a, b),
         _ => unreachable!(),
     };
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d, off: 0.0, expr: String::new(), driven, axis: 0, at: None });
     (p, si, a, b)
 }
 
@@ -27,7 +27,7 @@ fn contradicting_dimensions_conflict_at_any_scale() {
     let mut bad = Vec::new();
     for k in [0.001, 1.0, 1000.0] {
         let (mut p, si, a, b) = line_with_dim(k, 10.0 * k, false);
-        p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 12.0 * k, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 12.0 * k, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
         p.solve_sketch(si);
         let c = p.sketch_conflicts(si);
         if c.len() < 2 {

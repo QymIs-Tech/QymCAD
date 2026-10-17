@@ -35,7 +35,7 @@ fn rectangle(hold: Hold) -> (Project, usize) {
         Hold::DimensionsToTheOrigin => {
             let origin = p.ensure_frame(si);
             for (axis, d) in [(1, 50.0), (2, 40.0)] {
-                p.sketches[si].constraints.push(Constraint::Distance { a: origin, b: centre, d, off: 5.0, expr: String::new(), driven: false, axis, at: None });
+                p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: origin, b: centre, d, off: 5.0, expr: String::new(), driven: false, axis, at: None });
             }
         }
         Hold::Free => {}

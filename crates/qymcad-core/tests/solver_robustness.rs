@@ -20,8 +20,8 @@ fn the_sketch_solver_never_returns_garbage() {
         let mut points = before.clone();
         let cons = vec![
             Constraint::Fixed { p: 1 },
-            Constraint::Distance { a: 1, b: 2, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
-            Constraint::Distance { a: 2, b: 3, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+            Constraint::Distance { dimension: Default::default(), a: 1, b: 2, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+            Constraint::Distance { dimension: Default::default(), a: 2, b: 3, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
             Constraint::Vertical { a: 1, b: 2 },
         ];
         let res = solver::solve(&mut points, &cons);

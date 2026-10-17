@@ -17,8 +17,8 @@ fn an_angle_on_a_side_turns_the_dimensions_of_the_rectangle() {
     let r = p.sketches[si].rects[0].clone();
     let [c0, c1, c2, _] = r.corners;
     // the width below the bottom side and the height right of the right one, horizontal and vertical
-    p.sketches[si].constraints.push(Constraint::Distance { a: c0, b: c1, d: 40.0, off: 8.0, expr: String::new(), driven: false, axis: 1, at: None });
-    p.sketches[si].constraints.push(Constraint::Distance { a: c1, b: c2, d: 30.0, off: 8.0, expr: String::new(), driven: false, axis: 2, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: c0, b: c1, d: 40.0, off: 8.0, expr: String::new(), driven: false, axis: 1, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: c1, b: c2, d: 30.0, off: 8.0, expr: String::new(), driven: false, axis: 2, at: None });
     p.solve_sketch(si);
     // a fixed line from (10, 10) at -20 deg, the angle measured between it and the bottom side
     let a = p.add_line_entity(si, 10.0, 10.0, 40.0, 10.0 - 30.0 * 20f64.to_radians().tan(), Purpose::Real);
@@ -27,7 +27,7 @@ fn an_angle_on_a_side_turns_the_dimensions_of_the_rectangle() {
         _ => panic!("a line"),
     };
     p.sketches[si].constraints.extend([Constraint::Fixed { p: line.0 }, Constraint::Fixed { p: line.1 }]);
-    let angle = Constraint::AngleLines { a: line.0, b: line.1, c: c0, d: c1, deg: 20.0, expr: String::new(), driven: false, off: 0.0, at: None };
+    let angle = Constraint::AngleLines { dimension: Default::default(), a: line.0, b: line.1, c: c0, d: c1, deg: 20.0, expr: String::new(), driven: false, off: 0.0, at: None };
     p.give_rect_turn_to(si, &angle);
     p.sketches[si].constraints.push(angle);
     let ci = p.sketches[si].constraints.len() - 1;

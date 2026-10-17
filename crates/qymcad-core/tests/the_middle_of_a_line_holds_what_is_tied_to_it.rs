@@ -22,7 +22,7 @@ fn tied() -> (Project, usize, u64, u64, u64, usize) {
     p.sketches[si].points.push(SketchPoint { id: mid, x: 20.0, y: 0.0 });
     p.sketches[si].constraints.push(Constraint::Midpoint { p: mid, a, b });
     p.sketches[si].constraints.push(Constraint::Vertical { a: mid, b: c });
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 40.0, off: 5.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 40.0, off: 5.0, expr: String::new(), driven: false, axis: 0, at: None });
     let len = p.sketches[si].constraints.len() - 1;
     p.solve_sketch(si);
     (p, si, line, mid, c, len)

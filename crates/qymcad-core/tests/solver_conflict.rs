@@ -16,8 +16,8 @@ fn conflict_tilts_vertical_line() {
         Constraint::Fixed { p: 1 },
         Constraint::Fixed { p: 3 },
         Constraint::Vertical { a: 1, b: 2 },
-        Constraint::Distance { a: 1, b: 2, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
-        Constraint::Distance { a: 2, b: 3, d: 0.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }, // the conflict: B coincides with C
+        Constraint::Distance { dimension: Default::default(), a: 1, b: 2, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+        Constraint::Distance { dimension: Default::default(), a: 2, b: 3, d: 0.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }, // the conflict: B coincides with C
     ];
     let res = solver::solve(&mut points, &cons);
     let b = points.iter().find(|p| p.id == 2).unwrap();
@@ -34,7 +34,7 @@ fn consistent_change_low_residual() {
     let cons = vec![
         Constraint::Fixed { p: 1 },
         Constraint::Vertical { a: 1, b: 2 },
-        Constraint::Distance { a: 1, b: 2, d: 15.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+        Constraint::Distance { dimension: Default::default(), a: 1, b: 2, d: 15.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
     ];
     let res = solver::solve(&mut points, &cons);
     eprintln!("consistent change: residual={res:.2e}, rollback threshold 1e-2");

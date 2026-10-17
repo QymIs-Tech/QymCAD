@@ -13,7 +13,7 @@ fn sketch_with_a_dimension(p: &mut Project, name: &str, len: f64) -> (usize, Id,
     let sid = p.add_line_sketch(name, vec![Point2::new(0.0, 0.0), Point2::new(len, 0.0), Point2::new(len, 10.0), Point2::new(0.0, 10.0)], true);
     let si = p.sketch_index(sid).unwrap();
     let pts: Vec<Id> = p.sketches[si].points.iter().map(|q| q.id).collect();
-    p.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: len, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: pts[0], b: pts[1], d: len, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     (si, sid, pts)
 }
 
@@ -33,8 +33,8 @@ fn dim_of(p: &Project, si: usize) -> f64 {
 #[test]
 fn a_named_dimension_is_visible_from_another_dimension() {
     let mut p = Project::default();
-    let (a_si, a_sid, a_pts) = sketch_with_a_dimension(&mut p, "Base", 20.0);
-    assert!(p.add_named_dim("w".into(), a_sid, vec![a_pts[0], a_pts[1]]), "setup: the dimension took the name");
+    let (a_si, a_sid, _) = sketch_with_a_dimension(&mut p, "Base", 20.0);
+    assert!(p.name_sketch_dimension("w".into(), qymcad_core::model::SketchDimensionSelection { sketch: a_sid, index: p.sketches[a_si].constraints.len() - 1 }), "setup: the dimension took the name");
 
     let (b_si, _, _) = sketch_with_a_dimension(&mut p, "Other", 5.0);
     match &mut p.sketches[b_si].constraints[0] {
@@ -52,8 +52,8 @@ fn a_named_dimension_is_visible_from_another_dimension() {
 #[test]
 fn editing_the_driver_moves_the_dependent_dimension() {
     let mut p = Project::default();
-    let (a_si, a_sid, a_pts) = sketch_with_a_dimension(&mut p, "Base", 20.0);
-    assert!(p.add_named_dim("w".into(), a_sid, vec![a_pts[0], a_pts[1]]), "setup: the dimension took the name");
+    let (a_si, a_sid, _) = sketch_with_a_dimension(&mut p, "Base", 20.0);
+    assert!(p.name_sketch_dimension("w".into(), qymcad_core::model::SketchDimensionSelection { sketch: a_sid, index: p.sketches[a_si].constraints.len() - 1 }), "setup: the dimension took the name");
 
     let (b_si, _, _) = sketch_with_a_dimension(&mut p, "Other", 5.0);
     match &mut p.sketches[b_si].constraints[0] {
@@ -78,8 +78,8 @@ fn editing_the_driver_moves_the_dependent_dimension() {
 fn a_parameter_and_a_driver_mix_in_one_formula() {
     let mut p = Project::default();
     p.parameters.push(qymcad_core::model::Param { name: "k".into(), expr: "3".into(), value: 3.0 });
-    let (_, a_sid, a_pts) = sketch_with_a_dimension(&mut p, "Base", 20.0);
-    assert!(p.add_named_dim("w".into(), a_sid, vec![a_pts[0], a_pts[1]]), "setup: the dimension took the name");
+    let (a_si, a_sid, _) = sketch_with_a_dimension(&mut p, "Base", 20.0);
+    assert!(p.name_sketch_dimension("w".into(), qymcad_core::model::SketchDimensionSelection { sketch: a_sid, index: p.sketches[a_si].constraints.len() - 1 }), "setup: the dimension took the name");
 
     let (b_si, _, _) = sketch_with_a_dimension(&mut p, "Other", 5.0);
     match &mut p.sketches[b_si].constraints[0] {
@@ -98,8 +98,8 @@ fn a_parameter_and_a_driver_mix_in_one_formula() {
 #[test]
 fn a_parameter_may_be_written_through_a_driver() {
     let mut p = Project::default();
-    let (_, a_sid, a_pts) = sketch_with_a_dimension(&mut p, "Base", 20.0);
-    assert!(p.add_named_dim("w".into(), a_sid, vec![a_pts[0], a_pts[1]]), "setup: the dimension took the name");
+    let (a_si, a_sid, _) = sketch_with_a_dimension(&mut p, "Base", 20.0);
+    assert!(p.name_sketch_dimension("w".into(), qymcad_core::model::SketchDimensionSelection { sketch: a_sid, index: p.sketches[a_si].constraints.len() - 1 }), "setup: the dimension took the name");
     p.parameters.push(qymcad_core::model::Param { name: "half".into(), expr: "w/2".into(), value: 0.0 });
 
     p.eval_parameters();

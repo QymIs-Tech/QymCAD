@@ -29,7 +29,7 @@ fn an_offset_circle_is_concentric_and_follows_the_source() {
         Some(EntityKind::Circle { center, .. }) => center,
         _ => panic!("the circle"),
     };
-    p.sketches[si].constraints.push(Constraint::Diameter { c: centre, d: 20.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: centre, d: 20.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
     p.regen_sketch(si);
     assert_eq!(p.offset_entities(si, &[c], 3.0), 1, "one copy");
     p.solve_sketch(si);

@@ -1937,10 +1937,10 @@ mod tests {
                 if pts.len() == 2 {
                     let cons_before = app.project.sketches[si].constraints.len();
                     let (_, red_before) = app.project.sketch_dof(si);
-                    app.project.sketches[si].constraints.push(Constraint::Fixed { p: pts[0] });
-                    app.project.sketches[si].constraints.push(Constraint::Fixed { p: pts[1] });
-                    let d = 25.0;
-                    app.project.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+                    let constraints = &mut app.project.sketches[si].constraints;
+                    constraints.push(Constraint::Fixed { p: pts[0] });
+                    constraints.push(Constraint::Fixed { p: pts[1] });
+                    constraints.push(Constraint::Distance { dimension: Default::default(), a: pts[0], b: pts[1], d: 25.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
                     app.project.solve_sketch(si);
                     app.project.regen_sketch(si);
                     let (_, red_after) = app.project.sketch_dof(si);

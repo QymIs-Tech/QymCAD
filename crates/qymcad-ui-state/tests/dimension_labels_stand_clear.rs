@@ -89,12 +89,13 @@ fn the_label_says_what_the_settings_ask_for() {
     p.add_line_entity(si, 0.0, 0.0, 110.0, 0.0, qymcad_core::feature::Purpose::Real);
     let (a, b) = (p.sketches[si].points[0].id, p.sketches[si].points[1].id);
     p.parameters.push(qymcad_core::model::Param { name: "w".into(), expr: "50".into(), value: 50.0 });
-    let c = Constraint::Distance { a, b, d: 110.0, off: 0.0, expr: "2*w+10".into(), driven: false, axis: 1, at: None };
-    p.sketches[si].constraints.push(c.clone());
+    let c = Constraint::Distance { dimension: Default::default(), a, b, d: 110.0, off: 0.0, expr: "2*w+10".into(), driven: false, axis: 1, at: None };
+    p.sketches[si].constraints.push(c);
     let sketch = p.sketches[si].id;
-    assert!(p.name_dim("len".into(), qymcad_core::model::DimTarget::Sketch { sketch, refs: Project::dim_key_pub(&[a, b]) }), "setup: the dimension could not be named");
+    assert!(p.name_sketch_dimension("len".into(), qymcad_core::model::SketchDimensionSelection { sketch, index: p.sketches[si].constraints.len() - 1 }), "setup: the dimension could not be named");
+    let c = p.sketches[si].constraints.last().unwrap();
     let mut set = qymcad_ui_state::Settings::default();
-    let says = |set: &qymcad_ui_state::Settings| qymcad_ui_state::dim_caption(&p, si, &c, set).expect("a dimension has a label");
+    let says = |set: &qymcad_ui_state::Settings| qymcad_ui_state::dim_caption(&p, si, c, set).expect("a dimension has a label");
     assert_eq!(says(&set), "110.0", "with both switches off the label is the value alone");
     set.dim_show_name = true;
     assert_eq!(says(&set), "len = 110.0");
@@ -103,7 +104,7 @@ fn the_label_says_what_the_settings_ask_for() {
     set.dim_show_name = false;
     assert_eq!(says(&set), "2*w+10 = 110.0");
     // a number typed into the field is no formula: it would only repeat the value
-    let plain = Constraint::Distance { a, b, d: 110.0, off: 0.0, expr: "110".into(), driven: false, axis: 1, at: None };
+    let plain = Constraint::Distance { dimension: Default::default(), a, b, d: 110.0, off: 0.0, expr: "110".into(), driven: false, axis: 1, at: None };
     assert_eq!(qymcad_ui_state::dim_caption(&p, si, &plain, &set).as_deref(), Some("110.0"));
 }
 
@@ -117,8 +118,8 @@ fn sheet_with_lengths(off_h: f64, off_v: f64) -> (qymcad_core::model::Project, u
     p.add_line_entity(si, 0.0, 0.0, 0.0, 30.0, qymcad_core::feature::Purpose::Real);
     let pt = |p: &Project, x: f64, y: f64| p.sketches[si].points.iter().find(|q| (q.x - x).abs() < 1e-9 && (q.y - y).abs() < 1e-9).map(|q| q.id).expect("a point");
     let (o, e, t) = (pt(&p, 0.0, 0.0), pt(&p, 40.0, 0.0), pt(&p, 0.0, 30.0));
-    p.sketches[si].constraints.push(Constraint::Distance { a: o, b: e, d: 40.0, off: off_h, expr: String::new(), driven: true, axis: 1, at: None });
-    p.sketches[si].constraints.push(Constraint::Distance { a: o, b: t, d: 30.0, off: off_v, expr: String::new(), driven: true, axis: 2, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: o, b: e, d: 40.0, off: off_h, expr: String::new(), driven: true, axis: 1, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: o, b: t, d: 30.0, off: off_v, expr: String::new(), driven: true, axis: 2, at: None });
     let sh = qymcad_ui_state::Sheet { view: qymcad_ui_state::View2d::default(), rect: Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)) };
     (p, si, sh)
 }

@@ -10,7 +10,7 @@
 mod tests {
     use super::super::{App, InlineEdit, Sel};
     use qymcad_core::geom::Point2;
-    use qymcad_core::model::{Constraint, Id};
+    use qymcad_core::model::{Constraint, Id, SketchDimensionSelection};
 
     /// A sketch with a rectangle and one distance dimension. Returns (si, ci).
     fn sketch_with_dim(app: &mut App) -> (usize, usize) {
@@ -18,7 +18,17 @@ mod tests {
         let si = app.project.sketch_index(sid).unwrap();
         app.project.add_sketch_node(sid, "Profile");
         let pts: Vec<Id> = app.project.sketches[si].points.iter().map(|q| q.id).collect();
-        app.project.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        app.project.sketches[si].constraints.push(Constraint::Distance {
+            dimension: Default::default(),
+            a: pts[0],
+            b: pts[1],
+            d: 40.0,
+            off: 0.0,
+            expr: String::new(),
+            driven: false,
+            axis: 0,
+            at: None,
+        });
         let ci = app.project.sketches[si].constraints.len() - 1;
         app.chosen.sel = Sel::Sketch(si);
         app.tools.inline = InlineEdit::Dim(ci);
@@ -234,10 +244,9 @@ mod tests {
         // The first sketch already owns the name "len".
         let comp = app.project.add_component("Housing");
         app.project.set_active_component(Some(comp));
-        let (si0, _) = sketch_with_dim(&mut app);
+        let (si0, ci0) = sketch_with_dim(&mut app);
         let sid0 = app.project.sketches[si0].id;
-        let pts: Vec<Id> = app.project.sketches[si0].points.iter().take(2).map(|q| q.id).collect();
-        assert!(app.project.add_named_dim("len".into(), sid0, pts));
+        assert!(app.project.name_sketch_dimension("len".into(), SketchDimensionSelection { sketch: sid0, index: ci0 }));
 
         // The second sketch — that is where the typing happens.
         let (si, ci) = sketch_with_dim(&mut app);

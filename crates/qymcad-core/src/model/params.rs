@@ -37,6 +37,12 @@ impl Project {
     /// which a formula reads as the constant) is refused here as well, as a rename refuses it.
     pub fn name_dim(&mut self, name: String, target: DimTarget) -> bool {
         let nm = name.trim().to_string();
+        if let DimTarget::Sketch { sketch, dimension } = &target {
+            let Some(si) = self.sketch_index(*sketch) else { return false };
+            if self.sketch_dimension_index(si, *dimension).is_none() {
+                return false;
+            }
+        }
         if !nm.is_empty() && (crate::drivers::check_ident(&nm).is_err() || self.driver_name_taken_by(&nm, &target)) {
             return false;
         }
@@ -48,9 +54,53 @@ impl Project {
         true
     }
 
-    /// Name a sketch dimension. A wrapper over [`Project::name_dim`] that reads better at the call site.
-    pub fn add_named_dim(&mut self, name: String, sketch: Id, refs: Vec<Id>) -> bool {
-        self.name_dim(name, DimTarget::Sketch { sketch, refs: Self::dim_key(&refs) })
+    /// Bind the selected dimension record, allocating its identity only after a valid nonempty name.
+    pub fn name_sketch_dimension(&mut self, name: String, selection: SketchDimensionSelection) -> bool {
+        let nm = name.trim().to_string();
+        let Some(si) = self.sketch_index(selection.sketch) else { return false };
+        let Some(mut dimension) = self.sketches[si].constraints.get(selection.index).and_then(Constraint::dimension_id) else { return false };
+        if dimension.0 != 0 && self.sketch_dimension_index(si, dimension) != Some(selection.index) {
+            return false;
+        }
+        if nm.is_empty() {
+            if dimension.0 != 0 {
+                self.named_dims.retain(|n| n.target != DimTarget::Sketch { sketch: selection.sketch, dimension });
+            }
+            return false;
+        }
+        if crate::drivers::check_ident(&nm).is_err() || self.sketch_dimension_name_taken(&nm, selection) {
+            return false;
+        }
+        if dimension.0 == 0 {
+            let Some(next) = self.next_id.checked_add(1).map(DimensionId) else { return false };
+            if self.sketches[si].constraints.iter().any(|c| c.dimension_id() == Some(next))
+                || self.named_dims.iter().any(|n| n.target == DimTarget::Sketch { sketch: selection.sketch, dimension: next })
+            {
+                return false;
+            }
+            dimension = DimensionId(self.alloc_id());
+            if let Some(id) = self.sketches[si].constraints[selection.index].dimension_id_mut() {
+                *id = dimension;
+            }
+        }
+        self.name_dim(nm, DimTarget::Sketch { sketch: selection.sketch, dimension })
+    }
+
+    /// Target of the selected bound dimension. Missing, unbound or duplicate identities do not resolve.
+    pub fn sketch_dimension_target(&self, selection: SketchDimensionSelection) -> Option<DimTarget> {
+        let si = self.sketch_index(selection.sketch)?;
+        let dimension = self.sketches[si].constraints.get(selection.index)?.dimension_id()?;
+        (self.sketch_dimension_index(si, dimension)? == selection.index).then_some(DimTarget::Sketch { sketch: selection.sketch, dimension })
+    }
+
+    /// A positive dimension identity must identify exactly one record, never the first of several.
+    pub(super) fn sketch_dimension_index(&self, si: usize, dimension: DimensionId) -> Option<usize> {
+        if dimension.0 == 0 {
+            return None;
+        }
+        let mut matches = self.sketches.get(si)?.constraints.iter().enumerate().filter(|(_, c)| c.dimension_id() == Some(dimension));
+        let (index, _) = matches.next()?;
+        matches.next().is_none().then_some(index)
     }
 
     /// Name a feature parameter (`height`, `radius`, `thickness` and so on).
@@ -69,43 +119,19 @@ impl Project {
         self.parameters.iter().any(|p| p.name == nm) || self.named_dims.iter().any(|n| n.name == nm && n.target != *target)
     }
 
-    /// The same for a sketch dimension, addressed by entities the way the popup addresses it.
-    pub fn driver_name_taken(&self, name: &str, sketch: Id, refs: &[Id]) -> bool {
-        self.driver_name_taken_by(name, &DimTarget::Sketch { sketch, refs: Self::dim_key(refs) })
+    /// Validate the selected record without allocating an identity or changing the document.
+    pub fn sketch_dimension_name_taken(&self, name: &str, selection: SketchDimensionSelection) -> bool {
+        let nm = name.trim();
+        if nm.is_empty() {
+            return false;
+        }
+        let target = self.sketch_dimension_target(selection);
+        self.parameters.iter().any(|p| p.name == nm) || self.named_dims.iter().any(|n| n.name == nm && target.as_ref() != Some(&n.target))
     }
 
     /// The name given to this dimension or parameter. Empty means it is not a driver.
     pub fn name_of_target(&self, target: &DimTarget) -> String {
         self.named_dims.iter().find(|n| n.target == *target).map(|n| n.name.clone()).unwrap_or_default()
-    }
-
-    /// The same key, exposed: the interface needs it to build a dimension target and ask the model for its
-    /// name without repeating the comparison rule.
-    pub fn dim_key_pub(refs: &[Id]) -> Vec<Id> {
-        Self::dim_key(refs)
-    }
-
-    /// Dimension key: the same entities in a stable order. A dimension is identified by the set, not by
-    /// the order, or "distance A to B" and "distance B to A" would count as different dimensions.
-    pub(crate) fn dim_key(refs: &[Id]) -> Vec<Id> {
-        let mut v = refs.to_vec();
-        v.sort_unstable();
-        v
-    }
-
-    /// Entities a dimensional constraint is re-identified by. `None` means the constraint is not a
-    /// dimension: it cannot become a driver and must not offer a name field.
-    pub fn dim_refs(c: &Constraint) -> Option<Vec<Id>> {
-        Some(match c {
-            Constraint::Distance { a, b, .. } => vec![*a, *b],
-            Constraint::Angle { a, b, c: c3, .. } => vec![*a, *b, *c3],
-            Constraint::AngleLines { a, b, c: c3, d, .. } => vec![*a, *b, *c3, *d],
-            Constraint::Diameter { c: c1, .. } => vec![*c1],
-            Constraint::DistancePL { p, a, b, .. } => vec![*p, *a, *b],
-            Constraint::EdgeDistance { c1, c2, .. } => vec![*c1, *c2],
-            Constraint::ArcLength { c: c1, a, b, .. } => vec![*c1, *a, *b],
-            _ => return None,
-        })
     }
 
     /// Value of a dimensional constraint (length, angle, diameter). `None` when it is not a dimension.
@@ -128,12 +154,9 @@ impl Project {
     /// edit.
     pub fn set_dim_target_value(&mut self, target: &DimTarget, v: f64) -> bool {
         match target {
-            DimTarget::Sketch { sketch, refs } => {
+            DimTarget::Sketch { sketch, dimension } => {
                 let Some(si) = self.sketch_index(*sketch) else { return false };
-                let want: std::collections::BTreeSet<Id> = refs.iter().copied().collect();
-                let Some(ci) = self.sketches[si].constraints.iter().position(|c| Self::dim_refs(c).is_some_and(|r| r.into_iter().collect::<std::collections::BTreeSet<Id>>() == want)) else {
-                    return false;
-                };
+                let Some(ci) = self.sketch_dimension_index(si, *dimension) else { return false };
                 // An entered value overrides the expression: a typed number has to stay, instead of losing
                 // to the previous formula on the next evaluation.
                 match self.sketches[si].constraints.get_mut(ci) {

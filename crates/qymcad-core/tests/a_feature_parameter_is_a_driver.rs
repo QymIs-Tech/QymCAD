@@ -143,12 +143,15 @@ fn sketch_and_feature_names_share_one_scope() {
     let sid = p.sketches[0].id;
     let si = p.sketch_index(sid).unwrap();
     let pts: Vec<Id> = p.sketches[si].points.iter().take(2).map(|q| q.id).collect();
-    p.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    assert!(p.add_named_dim("len".into(), sid, pts.clone()));
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: pts[0], b: pts[1], d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    assert!(p.name_sketch_dimension("len".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: p.sketches[si].constraints.len() - 1 }));
 
     assert!(!p.add_named_feat_dim("len".into(), node, "height"), "the name of a sketch dimension has to count as taken for a feature as well");
     assert!(p.add_named_feat_dim("vysota".into(), node, "height"));
-    assert!(!p.add_named_dim("vysota".into(), sid, pts), "the name of a feature parameter has to count as taken for a sketch as well");
+    assert!(
+        !p.name_sketch_dimension("vysota".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: p.sketches[si].constraints.len() - 1 }),
+        "the name of a feature parameter has to count as taken for a sketch as well"
+    );
 
     // And the owner is named, so the interface has something to say beyond a bare "taken".
     let owner = p.name_owner("vysota").expect("the owner is found");

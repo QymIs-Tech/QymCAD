@@ -24,8 +24,8 @@ fn part_with_driver(p: &mut Project, part: &str, sketch_name: &str, driver: &str
     let si = p.sketch_index(sid).unwrap();
     p.add_sketch_node(sid, sketch_name);
     let pts: Vec<Id> = p.sketches[si].points.iter().map(|q| q.id).collect();
-    p.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: len, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    assert!(p.add_named_dim(driver.into(), sid, vec![pts[0], pts[1]]), "the dimension is named as a driver");
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: pts[0], b: pts[1], d: len, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    assert!(p.name_sketch_dimension(driver.into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: p.sketches[si].constraints.len() - 1 }), "the dimension is named as a driver");
     (comp, sid)
 }
 
@@ -58,7 +58,7 @@ fn a_global_parameter_has_no_path_and_says_so() {
 
 /// Namesakes are distinguishable, and older documents still contain them.
 ///
-/// A second namesake can no longer be created — `add_named_dim` refuses — but a document saved before that
+/// A second namesake can no longer be created — `name_sketch_dimension` refuses — but a document saved before that
 /// restriction may well hold one. Opening such a file and showing two identical rows is exactly the complaint
 /// this work addresses, so the path has to tell them apart here too. The state is assembled directly, since the
 /// ordinary route no longer produces it.
@@ -112,8 +112,8 @@ fn a_nested_part_shows_the_whole_chain() {
     let si = p.sketch_index(sid).unwrap();
     p.add_sketch_node(sid, "Outline");
     let pts: Vec<Id> = p.sketches[si].points.iter().map(|q| q.id).collect();
-    p.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    assert!(p.add_named_dim("shirina".into(), sid, vec![pts[0], pts[1]]));
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: pts[0], b: pts[1], d: 30.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    assert!(p.name_sketch_dimension("shirina".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: p.sketches[si].constraints.len() - 1 }));
 
     let d = p.drivers().into_iter().find(|d| d.name == "shirina").expect("the driver is in the list");
     assert_eq!(d.path, "Unit.Cover.Outline", "the chain has to lead from the subassembly down to the sketch");
@@ -163,8 +163,8 @@ fn a_sketch_without_a_timeline_node_still_shows_its_name() {
     let sid = p.add_line_sketch("Orphan", vec![Point2::new(0.0, 0.0), Point2::new(12.0, 0.0), Point2::new(12.0, 5.0), Point2::new(0.0, 5.0)], true);
     let si = p.sketch_index(sid).unwrap();
     let pts: Vec<Id> = p.sketches[si].points.iter().map(|q| q.id).collect();
-    p.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 12.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-    assert!(p.add_named_dim("bez_uzla".into(), sid, vec![pts[0], pts[1]]));
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a: pts[0], b: pts[1], d: 12.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    assert!(p.name_sketch_dimension("bez_uzla".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: p.sketches[si].constraints.len() - 1 }));
 
     let d = p.drivers().into_iter().find(|d| d.name == "bez_uzla").expect("the driver is in the list");
     assert_eq!(d.path, "Orphan", "a sketch without a node still has its own name as a path");

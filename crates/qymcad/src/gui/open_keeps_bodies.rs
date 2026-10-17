@@ -42,9 +42,12 @@ mod tests {
             let right = s.points.iter().max_by(|p, q| p.x.total_cmp(&q.x)).expect("the points of the rectangle").id;
             (left, right)
         };
-        app.project.sketches[si].constraints.push(Constraint::Distance { a, b, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        app.project.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
         let sid = app.project.sketches[si].id;
-        assert!(app.project.add_named_dim("len".into(), sid, vec![a, b]), "setup: the dimension is named");
+        assert!(
+            app.project.name_sketch_dimension("len".into(), qymcad_core::model::SketchDimensionSelection { sketch: sid, index: app.project.sketches[si].constraints.len() - 1 }),
+            "setup: the dimension is named"
+        );
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
 

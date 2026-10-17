@@ -19,7 +19,7 @@ fn line(p: &mut Project, si: usize, ax: f64, ay: f64, bx: f64, by: f64) -> (u64,
 }
 
 fn dist(d: f64, axis: u8, a: u64, b: u64) -> Constraint {
-    Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis, at: None }
+    Constraint::Distance { dimension: Default::default(), a, b, d, off: 0.0, expr: String::new(), driven: false, axis, at: None }
 }
 
 #[test]

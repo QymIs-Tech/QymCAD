@@ -412,7 +412,7 @@ crates/qymcad-sketch/src/corners.rs 1 2 4
 crates/qymcad-sketch/src/dims.rs 6 3 0
 crates/qymcad-sketch/src/drag.rs 5 2 1
 crates/qymcad-sketch/src/lib.rs 2 20 2
-crates/qymcad-sketch/src/menu.rs 0 3 0
+crates/qymcad-sketch/src/menu.rs 0 2 0
 crates/qymcad-sketch/src/offset.rs 0 1 0
 crates/qymcad-sketch/src/snap.rs 0 13 0
 crates/qymcad-sketch/src/ties.rs 1 5 0

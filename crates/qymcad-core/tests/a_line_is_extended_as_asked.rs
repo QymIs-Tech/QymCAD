@@ -80,7 +80,7 @@ fn an_end_joined_to_other_geometry_is_not_extended() {
             let id = p.alloc_id();
             p.sketches[si].entities.push(qymcad_core::model::SketchEntity { id, kind: EntityKind::Line { a: b, b: free }, construction: false });
         } else {
-            p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 10.0, off: 3.0, expr: String::new(), driven: false, axis: 0, at: None });
+            p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 10.0, off: 3.0, expr: String::new(), driven: false, axis: 0, at: None });
         }
         let places = |p: &Project| p.sketches[si].points.iter().map(|q| (q.id, q.x.to_bits(), q.y.to_bits())).collect::<Vec<_>>();
         let before = places(&p);

@@ -22,7 +22,7 @@ fn rect_sketch(scale: f64) -> (Project, usize) {
         }
     };
     p.sketches[si].constraints.push(Constraint::Fixed { p: a });
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 30.0 * scale, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 30.0 * scale, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     p.solve_sketch(si);
     (p, si)
 }

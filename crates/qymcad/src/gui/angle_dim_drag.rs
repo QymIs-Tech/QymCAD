@@ -22,9 +22,20 @@ mod tests {
         app.project.add_line_entity(si, l2.0, l2.1, l2.2, l2.3, real);
         let pt = |app: &App, x: f64, y: f64| app.project.sketches[si].points.iter().find(|p| (p.x - x).abs() < 1e-6 && (p.y - y).abs() < 1e-6).map(|p| p.id).expect("a point of the lines");
         let c = if shared {
-            Constraint::Angle { a: pt(&app, 40.0, 0.0), b: pt(&app, 0.0, 0.0), c: pt(&app, 30.0, 30.0), deg: 45.0, expr: String::new(), driven: false, off: 0.0, at: None }
+            Constraint::Angle {
+                dimension: Default::default(),
+                a: pt(&app, 40.0, 0.0),
+                b: pt(&app, 0.0, 0.0),
+                c: pt(&app, 30.0, 30.0),
+                deg: 45.0,
+                expr: String::new(),
+                driven: false,
+                off: 0.0,
+                at: None,
+            }
         } else {
             Constraint::AngleLines {
+                dimension: Default::default(),
                 a: pt(&app, 10.0, 0.0),
                 b: pt(&app, 50.0, 0.0),
                 c: pt(&app, 10.0, 20.0),

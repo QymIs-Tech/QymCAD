@@ -90,7 +90,7 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
     }
     // a tangent (edge-to-edge) dimension: two references are picked, at least one of
     // them a circle or an arc
-    let edge_refs: Vec<(Id, i8)> = sk
+    let edge_refs: Vec<EdgeDimensionEnd> = sk
         .project
         .sketches
         .get(si)
@@ -101,11 +101,11 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
                 .filter_map(|&(k, id)| {
                     if k == 1 {
                         s.entities.iter().find(|e| e.id == id).and_then(|e| match e.kind {
-                            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some((center, -1i8)),
+                            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some(EdgeDimensionEnd { center, mode: -1 }),
                             _ => None,
                         })
                     } else if k == 0 {
-                        Some((id, 0i8))
+                        Some(EdgeDimensionEnd { center: id, mode: 0 })
                     } else {
                         None
                     }
@@ -113,12 +113,9 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
                 .collect()
         })
         .unwrap_or_default();
-    let can_edge = edge_refs.len() == 2 && edge_refs.iter().any(|(_, m)| *m != 0);
+    let can_edge = edge_refs.len() == 2 && edge_refs.iter().any(|end| end.mode != 0);
     if ui.add_enabled(can_edge, egui::Button::new(qymcad_i18n::tr("sk-tangent-dim"))).on_hover_text(qymcad_i18n::tr("sk-gap-hint")).clicked() {
-        let ((c1, m1), (c2, m2)) = (edge_refs[0], edge_refs[1]);
-        let d = sk.project.measure_edge_distance(si, c1, m1, c2, m2);
-        let ci = sk.project.sketches[si].constraints.len();
-        sk.project.sketches[si].constraints.push(qymcad_core::model::Constraint::EdgeDistance { c1, c2, d, m1, m2, off: 0.0, expr: String::new(), driven: false, at: None });
+        let ci = sk.project.add_edge_dimension(si, [edge_refs[0], edge_refs[1]]);
         qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);
         sk.gsel.constraint = Some(ci);
         qymcad_ui_state::invalidate(&mut *sk.regen);

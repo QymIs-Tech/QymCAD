@@ -389,7 +389,7 @@ impl Project {
             let NamedDim { name: _, target: _ } = d;
             d.name.hash(&mut h);
             match &d.target {
-                DimTarget::Sketch { sketch, refs } => (0u8, sketch, refs).hash(&mut h),
+                DimTarget::Sketch { sketch, dimension } => (0u8, sketch, dimension).hash(&mut h),
                 DimTarget::Feature { node, key } => (1u8, node, key).hash(&mut h),
             }
         }

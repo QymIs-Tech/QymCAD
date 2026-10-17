@@ -75,7 +75,7 @@ fn rectangles_drawn_by_the_tool_drag_through_the_session_as_alone() {
     p.add_rect_from_centre(si, qymcad_core::geom::Point2::new(200.0, 0.0), qymcad_core::geom::Point2::new(210.0, 6.0), qymcad_core::feature::Purpose::Real);
     // a reference dimension across the first rectangle
     let (a, b) = (p.sketches[si].rects[0].corners[0], p.sketches[si].rects[0].corners[2]);
-    p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 1.0, off: 2.0, expr: String::new(), driven: true, axis: 0, at: None });
+    p.sketches[si].constraints.push(Constraint::Distance { dimension: Default::default(), a, b, d: 1.0, off: 2.0, expr: String::new(), driven: true, axis: 0, at: None });
     p.solve_sketch(si);
     let mut failures = Vec::new();
     let corner = p.sketches[si].rects[0].corners[2];

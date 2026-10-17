@@ -159,7 +159,7 @@ fn every_kind_of_fault_has_its_row_and_its_road() {
     s.constraints.extend([
         qymcad_core::model::Constraint::Fixed { p: a },
         qymcad_core::model::Constraint::Fixed { p: b },
-        qymcad_core::model::Constraint::Distance { a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+        qymcad_core::model::Constraint::Distance { dimension: Default::default(), a, b, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
     ]);
     app.finish_sketch_edit();
     crate::gui::joint_flow::tests::add_part_at(&mut app, 60.0);
@@ -298,7 +298,9 @@ fn a_driver_without_its_dimension_is_said_and_led_to_the_table() {
     let mut app = crate::gui::screen_keys::tests::plate();
     let sid = app.project.sketches[0].id;
     // the driver names a dimension of the sketch the sketch no longer holds
-    app.project.named_dims.push(qymcad_core::model::NamedDim { name: "T_out".into(), target: qymcad_core::model::DimTarget::Sketch { sketch: sid, refs: vec![0x6000_7777] } });
+    app.project
+        .named_dims
+        .push(qymcad_core::model::NamedDim { name: "T_out".into(), target: qymcad_core::model::DimTarget::Sketch { sketch: sid, dimension: qymcad_core::model::DimensionId(0x6000_7777) } });
     let pal = app.scheme.pal.clone();
     let mut hand = Hand::new(&mut app);
     hand.settle();
@@ -367,11 +369,12 @@ fn a_dimension_named_like_a_constant_is_counted_said_and_led_to() {
         let name = if case == "a sketch dimension" { "tau" } else { "pi" };
         let target = match case {
             "a sketch dimension" => {
+                let dimension = qymcad_core::model::DimensionId(saved.project.alloc_id());
                 let s = &mut saved.project.sketches[0];
                 let left = s.points.iter().min_by(|p, q| p.x.total_cmp(&q.x)).expect("the points of the plate").id;
                 let right = s.points.iter().max_by(|p, q| p.x.total_cmp(&q.x)).expect("the points of the plate").id;
-                s.constraints.push(qymcad_core::model::Constraint::Distance { a: left, b: right, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-                qymcad_core::model::DimTarget::Sketch { sketch, refs: qymcad_core::model::Project::dim_key_pub(&[left, right]) }
+                s.constraints.push(qymcad_core::model::Constraint::Distance { dimension, a: left, b: right, d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+                qymcad_core::model::DimTarget::Sketch { sketch, dimension }
             }
             _ => {
                 let node = saved.project.timeline.iter().find(|n| n.kind.body().is_some()).expect("the extrusion of the plate").id;

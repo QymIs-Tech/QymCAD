@@ -132,7 +132,7 @@ fn entity_circle_regen_keeps_contour_id() {
     assert!((r0 - 5.0).abs() < 0.2, "the starting radius is ~5, got {r0}");
 
     // a Ø24 dimension means r = 12, and the solver rebuilds the contour
-    p.sketches[si].constraints.push(Constraint::Diameter { c: center, d: 24.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
+    p.sketches[si].constraints.push(Constraint::Diameter { dimension: Default::default(), c: center, d: 24.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });
     p.solve_sketch(si);
 
     let r1 = p.contours[p.contour_index(cid).unwrap()].as_circle().unwrap().1;
