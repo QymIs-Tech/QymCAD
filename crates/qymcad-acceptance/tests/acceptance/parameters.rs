@@ -138,6 +138,21 @@ probe! {
 }
 
 probe! {
+    /// THE NAME OF A CONSTANT IS REFUSED IN WORDS: a formula reads `e` as the constant, so a parameter `e` would sit
+    /// in the table and nothing could reach it.
+    fn the_name_of_a_constant_is_refused() {
+        let mut s = Session::start();
+        build::into_the_first_part(&mut s);
+        let said = add_and_see(&mut s, "e", "5");
+        let constant = s.word("par-name-constant");
+        // THE TAIL AFTER THE NAME, not the head: the head ("The name ...") is the same as that of a name with a bad letter.
+        let tail = constant.rsplit('}').next().unwrap_or(&constant).trim().to_string();
+        assert!(said.iter().any(|t| t.contains(&tail)), "a parameter called \"e\" was added and nothing says the name is a constant: {said:?}");
+        assert!(!s.document().parameters.iter().any(|p| p.name == "e"), "the document took a parameter called \"e\": {:?}", s.document().parameters);
+    }
+}
+
+probe! {
     /// A FORMULA THAT CANNOT BE COUNTED HAS NO VALUE AND THE TABLE SAYS SO: an unknown name, and a circle of two
     /// parameters that live off each other.
     fn a_formula_that_cannot_be_counted_says_so() {
@@ -268,10 +283,12 @@ probe! {
         let Some(path) = qymcad_acceptance::private_sample("test_bridge_resize_body.qcad") else { return };
         let mut s = Session::start();
         build::open_project(&mut s, &path);
-        let started = std::time::Instant::now();
+        // the work of the program, not the share of the machine it was given (`time_budget::Cost`)
+        let meter = qymcad::time_budget::Meter::start(qymcad::time_budget::Doer::Process);
         set_parameter(&mut s, "h", "60");
         let doc = s.document();
-        let took = started.elapsed().as_secs_f64();
+        let took = meter.cost();
+        qymcad::time_budget::tell("the rebuild after h was written", took);
         assert!((parameter(&mut s, "h").value - 60.0).abs() < 1e-9, "setup: h was written as 60");
         // the steps stand in a block 50 across, 60 deep, 30 high
         let block = 50.0 * 60.0 * 30.0;
@@ -280,6 +297,7 @@ probe! {
             let out = b.face_centres.iter().find(|c| c[0] < -50.001 || c[0] > 0.001 || c[1] < -0.001 || c[1] > 60.001 || c[2] < -0.001 || c[2] > 30.001);
             assert!(out.is_none(), "the part {:?} has a face standing at {:?}, out of the block 50 x 60 x 30 its steps stand in", b.name, out);
         }
-        assert!(took < 30.0, "the rebuild after h was written took {took:.0} s");
+        let budget = std::time::Duration::from_secs(30);
+        assert!(took.work < budget, "{}", qymcad::time_budget::over("the rebuild after h was written", took, budget));
     }
 }

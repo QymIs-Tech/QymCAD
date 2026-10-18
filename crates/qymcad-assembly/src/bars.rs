@@ -93,7 +93,7 @@ pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
                 let t = qymcad_i18n::tr("j-place-lower");
                 ui.label(egui::RichText::new(qymcad_i18n::tr2("jt-click-new", "what", &t, "side", if is_b { "B" } else { "A" })).color(jc.scheme.pal.hint()));
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if !creating {
                     if ui.button(qymcad_i18n::tr("j-done-esc")).clicked() {
                         done = true;
@@ -163,6 +163,11 @@ pub fn joint_edit_leave(jc: &mut qymcad_ui_state::JointCtx) {
     }
 }
 
+/// THE ONE PLACE OF THE BARS OF A PICK (tangency, width, group, ground, connector, relation): one stands at a time,
+/// where the last one stood, and under a name of each egui took the bar giving way to another for a widget that changed
+/// its id and marked it with a red frame.
+const BAR_OF_A_PICK: &str = "the bar of a pick in an assembly";
+
 pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
     // The panel lives inside a `Ui` now; the context is still wanted for windows,
     // input and viewport commands, and it comes from the same place.
@@ -173,7 +178,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
     if let Some(sel) = jc.joint.tangent_pick.clone() {
         let made = sel.len() >= 2;
         let (mut cancel, mut apply) = (false, false);
-        egui::Panel::top("tangent_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
+        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::CIRCLE_HALF_TILT, qymcad_i18n::tr("j-tangent-made"))).strong());
                 ui.separator();
@@ -185,7 +190,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
                     qymcad_i18n::tr("j-tangent-second")
                 };
                 ui.label(egui::RichText::new(hint).color(jc.scheme.pal.hint()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                qymcad_ui_state::end_of_bar(ui, |ui| {
                     if made {
                         if ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked() {
                             cancel = true;
@@ -219,12 +224,12 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
     // the width tool bar - how many anchors are shown, a "make it" button and a way out.
     if let Some(sel) = jc.joint.width_pick.clone() {
         let (mut make, mut cancel) = (false, false);
-        egui::Panel::top("width_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
+        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::ARROWS_OUT_LINE_HORIZONTAL, qymcad_i18n::tr("j-width-made"))).strong());
                 ui.separator();
                 ui.label(egui::RichText::new(qymcad_i18n::tr1("j-width-picked", "n", &sel.len().to_string())).color(jc.scheme.pal.hint()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                qymcad_ui_state::end_of_bar(ui, |ui| {
                     if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
                         cancel = true;
                     }
@@ -252,12 +257,12 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
     // as every other tool: the hint on top, Enter confirms, Esc cancels.
     if let Some(sel) = jc.joint.group_pick.clone() {
         let (mut make, mut cancel) = (false, false);
-        egui::Panel::top("group_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
+        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::SELECTION_ALL, qymcad_i18n::tr("j-group-made"))).strong());
                 ui.separator();
                 ui.label(egui::RichText::new(qymcad_i18n::tr1("j-group-picked", "n", &sel.len().to_string())).color(jc.scheme.pal.hint()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                qymcad_ui_state::end_of_bar(ui, |ui| {
                     if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
                         cancel = true;
                     }
@@ -284,7 +289,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
     // the grounding tool bar - a hint and a way out
     if jc.joint.ground_pick {
         let mut cancel = false;
-        egui::Panel::top("ground_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
+        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::ANCHOR, qymcad_i18n::tr("jt-ground-btn"))).strong());
                 ui.separator();
@@ -295,7 +300,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
                     ui.separator();
                     ui.label(qymcad_i18n::tr1("j-grounded-list", "names", &grounded.join(", ")));
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                qymcad_ui_state::end_of_bar(ui, |ui| {
                     if ui.button(qymcad_i18n::tr("j-done-esc")).clicked() {
                         cancel = true;
                     }
@@ -313,7 +318,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
     // THE ANCHOR TOOL BAR: the kind of anchor and a hint about where to click.
     if jc.joint.conn_pick {
         let mut cancel = false;
-        egui::Panel::top("conn_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
+        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::CROSSHAIR, qymcad_i18n::tr("j-conn-new"))).strong());
                 ui.separator();
@@ -321,7 +326,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
                 ui.label(egui::RichText::new(qymcad_i18n::tr("j-anchor-inferred")).weak()).on_hover_text(qymcad_i18n::tr("j-anchor-inferred-hint"));
                 ui.separator();
                 ui.label(egui::RichText::new(qymcad_i18n::tr("j-conn-pick")).color(jc.scheme.pal.hint()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                qymcad_ui_state::end_of_bar(ui, |ui| {
                     if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
                         cancel = true;
                     }
@@ -343,7 +348,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         let pick = jc.joint.relation_pick.clone().unwrap_or_default();
         let need = relation_picks_needed(pick.kind);
         let have = if need == 1 { pick.picks.len() / 2 } else { pick.picks.len() };
-        egui::Panel::top("relation_tool_bar").frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
+        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(format!("{} {}", ph::GEAR_SIX, qymcad_i18n::tr("j-relation-btn"))).strong());
                 ui.separator();
@@ -370,7 +375,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
                 ui.checkbox(&mut rev, qymcad_i18n::tr("j-relation-reverse"));
                 ui.separator();
                 ui.label(egui::RichText::new(qymcad_i18n::tr2("j-relation-picked", "n", &have.to_string(), "need", &need.to_string())).color(jc.scheme.pal.hint()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                qymcad_ui_state::end_of_bar(ui, |ui| {
                     if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
                         cancel = true;
                     }
@@ -478,7 +483,7 @@ pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
             ui.checkbox(&mut jc.joint.new_as_built, qymcad_i18n::tr("j-as-built")).on_hover_text(qymcad_i18n::tr("jt-as-built-hint"));
             ui.separator();
             ui.label(egui::RichText::new(hint).color(jc.scheme.pal.hint()));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
                     cancel = true;
                 }

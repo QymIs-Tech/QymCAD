@@ -11,6 +11,10 @@ mod tests {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
+    /// HOW LONG EIGHT PROGRAMS STARTED TOGETHER MAY TAKE TO END: the bound of a program that hangs, not of a slow machine.
+    /// Each ends in a second or two alone, and eight started side by side under the load of other work take longer.
+    const ENDS_WITHIN: Duration = Duration::from_secs(120);
+
     /// Set for the children the probe below starts: only then does `a_rebuild_is_left_running_as_the_program_ends`
     /// do its part.
     const CHILD: &str = "QYMCAD_END_DURING_A_REBUILD";
@@ -33,7 +37,7 @@ mod tests {
         app.spawn_regen();
     }
 
-    /// EVERY PROCESS IS GONE within 30 s, and it ended well: the child above, 40 times, 8 side by side - where the end
+    /// EVERY PROCESS IS GONE within `ENDS_WITHIN`, and it ended well: the child above, 40 times, 8 side by side - where the end
     /// falls in the rebuild is chance (2 of 20 hung one at a time), and the load of the others makes it fall inside
     /// the work of the pool more often.
     #[test]
@@ -54,7 +58,7 @@ mod tests {
                         }
                         break;
                     }
-                    if began.elapsed() > Duration::from_secs(30) {
+                    if began.elapsed() > ENDS_WITHIN {
                         let _ = child.kill();
                         let _ = child.wait();
                         hung += 1;
@@ -64,6 +68,6 @@ mod tests {
                 }
             }
         }
-        assert!(hung == 0 && failed.is_empty(), "of 40 programs ended during a rebuild, {hung} were still there 30 s later and {} ended badly: {failed:?}", failed.len());
+        assert!(hung == 0 && failed.is_empty(), "of 40 programs ended during a rebuild, {hung} were still there {ENDS_WITHIN:?} later and {} ended badly: {failed:?}", failed.len());
     }
 }

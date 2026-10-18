@@ -136,7 +136,7 @@ impl App {
         }
         crate::gui::refresh_interference(qymcad_ui_state::body_view_of!(self), qymcad_ui_state::scene_drag_of!(self), &mut self.interference, &self.live, &self.set, self.workbench); // recompute the intersections on the 3D path, where the assembly lives
         self.draw_3d(painter, rect);
-        self.draw_viewcube(painter, rect);
+        crate::gui::viewcube::draw(&self.cube_ctx(), painter, rect);
         // the on-screen length field of the active command at the arrow tip (like the sketch dimensions)
         crate::gui::commands::feat_cmd_popup(&mut self.part_ctx(), ctx, rect);
         // the angle or offset of the SELECTED mate as an expression popup AT THE GEOMETRY (by its glyph), not only in the panel
@@ -407,6 +407,10 @@ impl App {
             return;
         }
         let Some(pos) = resp.interact_pointer_pos() else { return };
+        // the cube first, clear of the bars over the view: a control over the view turns it whatever is in hand
+        if self.viewcube_click(qymcad_shell::clear_of_overs(&resp.ctx, rect), pos) {
+            return;
+        }
         self.viewport_3d_click_at(pos, rect, basis3);
         qymcad_part::whole_body_on_double_click(&mut self.part_ctx(), resp.double_clicked());
         // the second click of two takes the body
@@ -439,10 +443,6 @@ impl App {
                 else if self.tools.picking.sketch_for().is_some() {
                     let hit = crate::gui::pick::sketch_at_3d(&self.painting(), rect, pos);
                     qymcad_part::name_the_sketch(&mut self.part_ctx(), hit);
-                }
-                // a click on the ViewCube snaps the view
-                // the ViewCube has 26 zones (faces, edges, corners) + a home button; the turn is smooth
-                else if self.viewcube_click(rect, pos) {
                 } else if self.side.joint.axis_pick.is_some() {
                     // THE SECOND PICK: a person points at what the anchor's secondary axis runs along.
                     // ONE door is asked, and it takes only what is under the cursor.

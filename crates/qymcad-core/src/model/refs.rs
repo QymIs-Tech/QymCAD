@@ -2,6 +2,28 @@
 
 use super::*;
 
+/// A SKETCH ON A FACE WHOSE NAME IS GONE and the face it is to stand on now: found by the name (a merge, a piece's
+/// whole, the same recipe) or by place, which marks it for the person.
+pub(crate) struct SketchFaceFix {
+    pub sketch: Id,
+    pub body: Id,
+    pub face: u32,
+    pub by_place: bool,
+    pub what: String,
+}
+
+/// A FACE FOUND FOR A REFERENCE whose name is not on its body, and whether it was by place.
+pub(crate) struct FaceFind {
+    pub face: u32,
+    pub by_place: bool,
+}
+
+/// HOW CLOSE AN ELEMENT FOUND BY PLACE STANDS TO WHERE A REFERENCE SAW IT: a micrometre, the tolerance a node deleted
+/// below translates its references with. The place is the last step, after the name, its recorded merge and its
+/// structure, and only the element standing exactly there is taken: within 2% of the body (at least 0.5 mm) the
+/// neighbour an edit moved into the place was taken, and nothing said so.
+const PLACE_EXACT: f64 = 1e-6;
+
 impl Project {
     /// Repair lost face references in one pass before the build, instead of guessing inside every resolve.
     ///
@@ -18,38 +40,92 @@ impl Project {
 
     pub(crate) fn rebind_lost_face_refs(&mut self, report: &mut crate::feature::RegenReport) {
         use crate::feature::{Rebind, SketchPlane};
-        // Candidate by fingerprint among the faces of the body: co-directed normal, nearest centre.
-        let candidate = |faces: &[crate::geom::MeshFace], key: &crate::feature::FaceKey| -> Option<u32> {
-            let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-            let d2 = |c: &crate::geom::Point3| (c.x - key.centroid[0]).powi(2) + (c.y - key.centroid[1]).powi(2) + (c.z - key.centroid[2]).powi(2);
-            faces.iter().filter(|f| f.id != 0 && dot(f.normal, key.normal) > 0.9).min_by(|a, b| d2(&a.centroid).partial_cmp(&d2(&b.centroid)).unwrap_or(std::cmp::Ordering::Equal)).map(|f| f.id)
-        };
-        let known = |me: &Self, body: Id, id: u32| -> bool { id != 0 && me.regen_faces.get(&body).is_some_and(|fs| fs.iter().any(|f| f.id == id)) };
         // Holes are deliberately not handled here: their reference became a query, which needs no matching
         // — it either finds the face by recipe or refuses with a named reason.
         //
-        // Sketches placed on a face of a body:
-        let mut sfixes: Vec<(Id, Id, u32, String)> = Vec::new();
+        // Sketches placed on a face of a body, whose face is not on it by its name: the name first - the record of a
+        // merge the face yielded in, a piece returned to its whole, the one face of the same recipe - and the place
+        // last, marked for the person. Asked by place alone, a sketch on a wall merged into its neighbour was taken
+        // over by place, though the record said where the wall went.
+        let mut fixes: Vec<SketchFaceFix> = Vec::new();
         for s in &self.sketches {
-            if let SketchPlane::Face(body, ref key) = s.plane {
-                if !known(self, body, key.id) {
-                    if let Some(fs) = self.regen_faces.get(&body) {
-                        if let Some(newid) = candidate(fs, key) {
-                            sfixes.push((s.id, body, newid, format!("rebind-sketch-face#{}: {} -> {newid}", s.name, key.id)));
-                        }
-                    }
+            let SketchPlane::Face(body, ref key) = s.plane else { continue };
+            let Some(fs) = self.regen_faces.get(&body) else { continue };
+            let live: Vec<u32> = fs.iter().map(|f| f.id).collect();
+            if key.id == 0 || live.contains(&key.id) {
+                continue;
+            }
+            let Some(found) = self.find_face(fs, key.id, Some(key)) else { continue };
+            let what = format!("rebind-sketch-face#{}: {} -> {}", s.name, key.id, found.face);
+            fixes.push(SketchFaceFix { sketch: s.id, body, face: found.face, by_place: found.by_place, what });
+        }
+        for fix in fixes {
+            if let Some(s) = self.sketches.iter_mut().find(|s| s.id == fix.sketch) {
+                if let SketchPlane::Face(_, key) = &mut s.plane {
+                    key.id = fix.face;
                 }
             }
-        }
-        for (sid, body, newid, what) in sfixes {
-            if let Some(s) = self.sketches.iter_mut().find(|s| s.id == sid) {
-                if let SketchPlane::Face(b, key) = &mut s.plane {
-                    let _ = b;
-                    key.id = newid;
-                }
+            if fix.by_place {
+                report.rebinds.push(Rebind { node: fix.sketch, body: fix.body, what: fix.what });
+                self.note_found_by_place(fix.sketch);
             }
-            report.rebinds.push(Rebind { node: sid, body, what });
         }
+    }
+
+    /// WHERE THE FACE A REFERENCE HOLDS AS `id` STANDS NOW among `faces`, its name not on them: by the name first - the
+    /// record of a merge it yielded in, a piece returned to its whole, the one face of the same recipe - and by place
+    /// last, the one face standing exactly where the reference saw it (`seen`, to `PLACE_EXACT`), facing the same way.
+    /// The nearest face facing roughly the same way (within 25 deg) was taken before, however far, and a sketch went
+    /// onto a face an edit had moved into the place, saying nothing.
+    pub(crate) fn find_face(&self, faces: &[crate::geom::MeshFace], id: u32, seen: Option<&crate::feature::FaceKey>) -> Option<FaceFind> {
+        let live: Vec<u32> = faces.iter().map(|f| f.id).collect();
+        if let Some(face) = self.names.absorbed_target_among(id, &live).or_else(|| self.names.same_recipe(id, &live)) {
+            return Some(FaceFind { face, by_place: false });
+        }
+        let key = seen?;
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let off = |c: &crate::geom::Point3| ((c.x - key.centroid[0]).powi(2) + (c.y - key.centroid[1]).powi(2) + (c.z - key.centroid[2]).powi(2)).sqrt();
+        let there: Vec<u32> = faces.iter().filter(|f| f.id != 0 && dot(f.normal, key.normal) > 1.0 - PLACE_EXACT && off(&f.centroid) < PLACE_EXACT).map(|f| f.id).collect();
+        match there.as_slice() {
+            [one] => Some(FaceFind { face: *one, by_place: true }),
+            _ => None,
+        }
+    }
+
+    /// Say that a reference of step `node` was found by place: the rebuild marks the step when it ends.
+    pub(crate) fn note_found_by_place(&self, node: Id) {
+        if let Ok(mut now) = self.placed_now.lock() {
+            now.insert(node);
+        }
+    }
+
+    /// THE STEPS FOUND BY PLACE IN THIS REBUILD JOIN THOSE AWAITING THE PERSON, and each of those standing in the
+    /// timeline built, with nothing else to say, is yellow with the words (`CoreError::RefFoundByPlace`).
+    pub(crate) fn mark_found_by_place(&mut self) {
+        let now: Vec<Id> = self.placed_now.lock().map(|mut s| std::mem::take(&mut *s).into_iter().collect()).unwrap_or_default();
+        self.placed_refs.extend(now);
+        let live: std::collections::HashSet<Id> = self.timeline.iter().map(|n| n.id).collect();
+        self.placed_refs.retain(|n| live.contains(n));
+        for n in &self.placed_refs {
+            if !self.regen_errors.contains_key(n) && !self.regen_warnings.contains_key(n) {
+                self.regen_warnings.insert(*n, crate::errors::CoreError::RefFoundByPlace);
+            }
+        }
+    }
+
+    /// WHAT STEP `node` WARNS OF: what its last rebuild left it saying, or - in a document opened and not yet rebuilt -
+    /// that a reference of it was found by place and awaits the person.
+    pub fn node_warning(&self, node: Id) -> Option<crate::errors::CoreError> {
+        self.regen_warnings.get(&node).cloned().or_else(|| self.placed_refs.contains(&node).then_some(crate::errors::CoreError::RefFoundByPlace))
+    }
+
+    /// THE PERSON ACCEPTS what was found by place for step `node`: the mark goes, the reference stays as it was found.
+    /// Answers whether there was a mark.
+    pub fn accept_found_by_place(&mut self, node: Id) -> bool {
+        if matches!(self.regen_warnings.get(&node), Some(crate::errors::CoreError::RefFoundByPlace)) {
+            self.regen_warnings.remove(&node);
+        }
+        self.placed_refs.remove(&node)
     }
 
     /// Every face of a body as reference resolution sees it: the pool a query is evaluated against.
@@ -238,12 +314,13 @@ impl Project {
         }
     }
 
-    /// Resolve a face reference: by name first, then by a recorded merge, and only then by snapshot.
+    /// Resolve a face reference: by its name, the record of a merge it yielded in, a piece returned to its whole, the one
+    /// face of the same recipe, and last by place - only the one face standing exactly where the reference saw it, the
+    /// step marked for the person (`find_face`). The order and its reasons: `crates/qymcad-kernel/NAMING.md`, "How a
+    /// reference finds its element".
     ///
-    /// The rules match those for edges, for the same reason: a name is an address and a positional number
-    /// is not. A number is trusted only while the snapshot agrees with it — as soon as some faces gain
-    /// names, the numbering of the rest shifts and a number stored in the file starts pointing at a
-    /// different face, silently. The snapshot fallback is used only on an unambiguous match.
+    /// A positional number is trusted only while the snapshot agrees with it: as soon as some faces gain names, the
+    /// numbering of the rest shifts and a number stored in the file starts pointing at a different face, silently.
     pub fn resolve_face_id(&self, fid: Id, src: Id, stored: u32) -> Option<u32> {
         let fs = self.regen_faces.get(&src)?;
         if fs.is_empty() {
@@ -264,18 +341,21 @@ impl Project {
                 return Some(stored);
             }
         }
-        if let Some(t) = self.names.absorbed_target(stored) {
-            if live(t).is_some() {
-                return Some(t);
-            }
+        let ids: Vec<u32> = fs.iter().map(|f| f.id).collect();
+        if let Some(t) = self.names.absorbed_target_among(stored, &ids) {
+            return Some(t);
+        }
+        // Then the structure of the name: the one live piece of the same wall.
+        if let Some(t) = self.names.same_recipe(stored, &ids) {
+            return Some(t);
         }
         // The only face of the body: there is nothing to confuse it with, so this is proof rather than
         // similarity.
         if fs.len() == 1 {
             return Some(fs[0].id);
         }
+        // THE PLACE, LAST, ONLY WHERE IT IS EXACT: one face standing where the reference saw it, to `PLACE_EXACT`.
         let (c, n) = snap?;
-        let tol = self.face_snap_tol(fs);
         let mut scored: Vec<(f64, u32)> = fs
             .iter()
             .map(|f| {
@@ -287,9 +367,10 @@ impl Project {
         scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         let best = *scored.first()?;
         let second = scored.get(1).map(|x| x.0).unwrap_or(f64::MAX);
-        let hit = best.0 < tol && (second - best.0) > tol * 0.6;
+        let hit = best.0 < PLACE_EXACT && second >= PLACE_EXACT;
         if hit {
             self.snap_rebinds.fetch_add(1, std::sync::atomic::Ordering::Relaxed); // The fallback fired.
+            self.note_found_by_place(fid);
             if std::env::var("QYM_SNAP_DEBUG").is_ok() {
                 eprintln!("face fallback: feature {fid}, reference {stored} = {} -> {} = {}", self.names.describe(stored), best.1, self.names.describe(best.1));
             }
@@ -325,10 +406,11 @@ impl Project {
 
     /// Resolve the stored edge ids of feature `fid` against the current edges of body `src`.
     ///
-    /// A valid id passes through as is. A stale one (absent from `regen_edges[src]` because the topology
-    /// changed) is repaired from the snapshot: the nearest edge by midpoint and direction, but only on an
-    /// unambiguous match — the best candidate has to be clearly closer than the second and within
-    /// tolerance. Otherwise the edge drops out. Returns the current ids for the kernel.
+    /// A valid id passes through as is. A stale one (absent from `regen_edges[src]` because the topology changed) is
+    /// found by the record of the name it yielded to, the canonical pair of its faces, the structure of its name, and
+    /// last by place - only the one edge with its middle exactly where the reference saw it, the step marked for the
+    /// person; otherwise it drops out, and the node says so. The order and its reasons: `crates/qymcad-kernel/NAMING.md`,
+    /// "How a reference finds its element". Returns the current ids for the kernel.
     pub fn resolve_edge_ids(&self, fid: Id, src: Id, stored: &[u32]) -> Vec<u32> {
         self.resolve_edge_ids_in(self.regen_edges.get(&src).map(|v| v.as_slice()).unwrap_or(&[]), fid, stored)
     }
@@ -336,10 +418,8 @@ impl Project {
     /// Like `resolve_edge_ids`, but against an explicit list of current edges: regenerate has fresh ones
     /// from the kernel, while `regen_edges` may be empty or stale in the middle of a pass.
     ///
-    /// The repair metric is the distance from the old midpoint to the candidate segment, not midpoint to
-    /// midpoint. A merged collinear edge (produced by seam stitching) contains the old midpoint, giving an
-    /// unambiguous match, whereas midpoint-to-midpoint drifts by half the merge length and the edge drops
-    /// out.
+    /// The place is the middle of the edge and its direction, both as the reference saw them. An edge merged with a
+    /// collinear neighbour is found through the record of the merge before the place is asked.
     pub fn resolve_edge_ids_in(&self, es: &[crate::geom::MeshEdge], fid: Id, stored: &[u32]) -> Vec<u32> {
         if es.is_empty() {
             return stored.to_vec();
@@ -361,8 +441,9 @@ impl Project {
         // pulled in edges the fillet cannot build on, so the whole feature failed. At 0.02 all 36 are found
         // and nothing breaks.
         //
-        // The unambiguity requirement stays and grows with the tolerance: a fillet on the wrong edge is
-        // worse than a lost one, so the second candidate has to be clearly worse than the first.
+        // That yardstick now only witnesses a positional number; the search by place itself, after the name, its
+        // recorded merge, its canonical pair and its structure, takes an edge standing exactly where the reference
+        // saw it (`PLACE_EXACT`) and nothing nearby: a fillet on the wrong edge is worse than a lost one.
         let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
         for e in es {
             for k in 0..3 {
@@ -372,7 +453,7 @@ impl Project {
         }
         let diag = ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt();
         let tol = (diag * 0.02).max(0.5);
-        let gap = (tol * 0.6).max(0.3);
+        let live_ids: Vec<u32> = es.iter().map(|e| e.id).collect();
         let mut out = Vec::with_capacity(stored.len());
         for &eid in stored {
             // A positional number is trusted only while the snapshot agrees with it.
@@ -412,13 +493,11 @@ impl Project {
             // edge of the same body. The kernel reported which name yielded to which, so this is not a
             // search for something similar but a translation of a recorded fact: old pair to new pair. The
             // geometric fallback stays after it, and only for what has no translation.
-            if let Some(t) = self.names.absorbed_target(eid) {
-                if es.iter().any(|e| e.id == t) {
-                    if !out.contains(&t) {
-                        out.push(t);
-                    }
-                    continue;
+            if let Some(t) = self.names.absorbed_target_among(eid, &live_ids) {
+                if !out.contains(&t) {
+                    out.push(t);
                 }
+                continue;
             }
             // An edge between a piece and its neighbour is the same edge. Once an operation starts cutting
             // a face, the edge is named by the pair "piece plus neighbour" while the reference remembers
@@ -442,30 +521,31 @@ impl Project {
                     continue;
                 }
             }
+            // Then the structure of the name: the one edge between faces of the same recipe as its pair.
+            let ids: Vec<u32> = es.iter().map(|e| e.id).collect();
+            if let Some(t) = self.names.same_recipe(eid, &ids) {
+                if !out.contains(&t) {
+                    out.push(t);
+                }
+                continue;
+            }
             if let Some(&ElemSnapshot { at: mid, dir, .. }) = snaps.and_then(|v| v.iter().find(|s| s.id == eid)) {
-                let seg_dist = |e: &crate::geom::MeshEdge| -> f64 {
-                    let (a, b) = (e.a, e.b);
-                    let v = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-                    let l2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-                    if l2 < 1e-18 {
-                        return ((e.mid[0] - mid[0]).powi(2) + (e.mid[1] - mid[1]).powi(2) + (e.mid[2] - mid[2]).powi(2)).sqrt();
-                    }
-                    let t = (((mid[0] - a[0]) * v[0] + (mid[1] - a[1]) * v[1] + (mid[2] - a[2]) * v[2]) / l2).clamp(0.0, 1.0);
-                    let p = [a[0] + v[0] * t, a[1] + v[1] * t, a[2] + v[2] * t];
-                    ((p[0] - mid[0]).powi(2) + (p[1] - mid[1]).powi(2) + (p[2] - mid[2]).powi(2)).sqrt()
-                };
+                // the middle where the reference saw it: an edge on the same line that only runs through that point is
+                // another edge (measured: the boundary of a rounding beside the edge, along the same line)
+                let off = |e: &crate::geom::MeshEdge| ((e.mid[0] - mid[0]).powi(2) + (e.mid[1] - mid[1]).powi(2) + (e.mid[2] - mid[2]).powi(2)).sqrt();
                 let mut scored: Vec<(f64, u32)> = es
                     .iter()
                     .map(|e| {
                         let dot = (e.dir[0] * dir[0] + e.dir[1] * dir[1] + e.dir[2] * dir[2]).abs().min(1.0);
-                        (seg_dist(e) + (1.0 - dot) * 10.0, e.id)
+                        (off(e) + (1.0 - dot) * 10.0, e.id)
                     })
                     .collect();
                 scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
                 if let Some(&(best, bid)) = scored.first() {
                     let second = scored.get(1).map(|x| x.0).unwrap_or(f64::MAX);
-                    if best < tol && (second - best) > gap && !out.contains(&bid) {
+                    if best < PLACE_EXACT && second >= PLACE_EXACT && !out.contains(&bid) {
                         self.snap_rebinds.fetch_add(1, std::sync::atomic::Ordering::Relaxed); // The fallback fired.
+                        self.note_found_by_place(fid);
                         if std::env::var("QYM_SNAP_DEBUG").is_ok() {
                             eprintln!("edge fallback: feature {fid}, reference {} = {} -> {bid} = {}", eid, self.names.describe(eid), self.names.describe(bid));
                         }
@@ -475,5 +555,95 @@ impl Project {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::names::{GeoName, Role};
+
+    /// A face of `body` named `id`, standing at `x` on the X axis and facing up.
+    fn face(id: u32, x: f64) -> crate::geom::MeshFace {
+        crate::geom::MeshFace { triangles: Vec::new(), normal: [0.0, 0.0, 1.0], centroid: crate::geom::Point3 { x, y: 0.0, z: 0.0 }, area: 1.0, id }
+    }
+
+    /// A REFERENCE FOUND BY PLACE ONLY WHERE THE PLACE IS EXACT: its name gone, a face standing exactly where the
+    /// reference saw it is taken and counted; a face an edit moved 0.3 mm off that place is not - within 2% of the body
+    /// (at least 0.5 mm) it was, silently, though it is the neighbour that came there.
+    #[test]
+    fn a_face_is_found_by_place_only_standing_exactly_there() {
+        let mut p = Project::default();
+        let (src, node) = (1, 2);
+        let gone = p.names.intern_face(GeoName::new(9, Role::Wall, 5));
+        let near = p.names.intern_face(GeoName::new(9, Role::CapEnd, 0));
+        let far = p.names.intern_face(GeoName::new(9, Role::CapStart, 0));
+        p.face_refs.insert(node, vec![ElemSnapshot { id: gone, at: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }]);
+        p.regen_faces.insert(src, vec![face(near, 0.3), face(far, 10.0)]);
+        assert_eq!(p.resolve_face_id(node, src, gone), None, "a face 0.3 mm off the place was taken for the lost one");
+        p.regen_faces.insert(src, vec![face(near, 0.0), face(far, 10.0)]);
+        let before = p.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(p.resolve_face_id(node, src, gone), Some(near), "the face standing exactly where the reference saw it was not taken");
+        assert_eq!(p.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed), before + 1, "a face found by place is not counted");
+    }
+
+    /// AN EDGE FOUND BY PLACE STANDS WHERE THE REFERENCE SAW ITS MIDDLE: an edge on the same line that only runs through
+    /// that point - the boundary of a rounding beside it - is another edge and is not taken.
+    #[test]
+    fn an_edge_on_the_same_line_through_the_old_middle_is_not_the_lost_edge() {
+        let mut p = Project::default();
+        let node = 2;
+        let pair = [7, 8].map(|k| p.names.intern_face(GeoName::new(9, Role::Wall, k)));
+        let gone = p.names.intern_edge(crate::names::EdgeName::new(pair[0], pair[1], 0));
+        let other = p.names.intern_edge(crate::names::EdgeName::new(pair[0], pair[1] + 5, 0));
+        let edge = |id: u32, a: f64, b: f64| crate::geom::MeshEdge { id, mid: [(a + b) / 2.0, 0.0, 0.0], dir: [1.0, 0.0, 0.0], a: [a, 0.0, 0.0], b: [b, 0.0, 0.0], ..Default::default() };
+        p.edge_refs.insert(node, vec![ElemSnapshot { id: gone, at: [5.0, 0.0, 0.0], dir: [1.0, 0.0, 0.0] }]);
+        let longer = [edge(other, 0.0, 30.0)];
+        assert!(p.resolve_edge_ids_in(&longer, node, &[gone]).is_empty(), "an edge on the same line through the old middle was taken for the lost one");
+        let there = [edge(other, 2.0, 8.0)];
+        assert_eq!(p.resolve_edge_ids_in(&there, node, &[gone]), vec![other], "the edge with its middle where the reference saw it was not taken");
+    }
+
+    /// A REFERENCE TO A PIECE FOLLOWS ITS WHOLE AND THEN THE NAME THE WHOLE'S EDGE YIELDED TO. A rounding picked "piece 1
+    /// of a round wall beside itself"; the edge once wearing "the wall beside itself" lies, after a cut, between the wall
+    /// and the wall of the cut, and is named after them, the old name recorded as yielded. Read through its pair alone,
+    /// the reference took the seam of the wall - the one other edge between the wall and itself - and the rounding lost
+    /// its surface without a word (measured on a sample: 33 faces of a body in the file, 32 rebuilt).
+    #[test]
+    fn a_reference_to_a_piece_follows_the_name_its_whole_yielded() {
+        let mut p = Project::default();
+        let node = 2;
+        let round = p.names.intern_face(GeoName::new(5, Role::Wall, 96));
+        let piece = p.names.intern_face(GeoName { split: 1, ..GeoName::new(5, Role::Wall, 96) });
+        let cut = p.names.intern_face(GeoName::new(6, Role::Wall, 157));
+        let picked = p.names.intern_edge(crate::names::EdgeName::new(piece, piece, 0));
+        let carried = p.names.intern_edge(crate::names::EdgeName::new(round, round, 0));
+        let beside_cut = p.names.intern_edge(crate::names::EdgeName::new(round, cut, 0));
+        let seam = p.names.intern_edge(crate::names::EdgeName::new(round, round, 1));
+        p.names.absorb(carried, beside_cut);
+        let edge = |id: u32, x: f64| crate::geom::MeshEdge { id, mid: [x, 0.0, 0.0], dir: [0.0, 0.0, 1.0], ..Default::default() };
+        let live = [edge(beside_cut, 0.0), edge(seam, 10.0)];
+        assert_eq!(p.resolve_edge_ids_in(&live, node, &[picked]), vec![beside_cut], "the reference to a piece took another edge of its pair");
+    }
+
+    /// A PIECE RETURNS TO ITS WHOLE ONLY WHILE THE FACE IS WHOLE AGAIN. A rounding picked the edge of piece 1 of a wall;
+    /// the pieces were numbered anew, and the edge of the whole - the piece beside it - was taken for it without a word.
+    /// With another piece of the wall alive the reference is found where it stood, and the step is marked.
+    #[test]
+    fn a_piece_beside_the_whole_is_not_the_whole() {
+        let mut p = Project::default();
+        let node = 2;
+        let wall = GeoName::new(206, Role::Wall, 167);
+        let whole = p.names.intern_face(wall);
+        let [old_piece, new_piece] = [1, 7].map(|split| p.names.intern_face(GeoName { split, ..wall }));
+        let floor = p.names.intern_face(GeoName::new(35, Role::Wall, 30));
+        let picked = p.names.intern_edge(crate::names::EdgeName::new(floor, old_piece, 0));
+        let of_whole = p.names.intern_edge(crate::names::EdgeName::new(floor, whole, 0));
+        let of_piece = p.names.intern_edge(crate::names::EdgeName::new(floor, new_piece, 0));
+        let edge = |id: u32, x: f64| crate::geom::MeshEdge { id, mid: [x, 0.0, 0.0], dir: [0.0, 0.0, 1.0], ..Default::default() };
+        p.edge_refs.insert(node, vec![ElemSnapshot { id: picked, at: [10.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0] }]);
+        let live = [edge(of_whole, 0.0), edge(of_piece, 10.0)];
+        assert_eq!(p.resolve_edge_ids_in(&live, node, &[picked]), vec![of_piece], "the edge of a piece went to the edge of the piece beside it");
+        assert!(p.placed_now.lock().is_ok_and(|s| s.contains(&node)), "the edge found where it stood is not marked");
     }
 }

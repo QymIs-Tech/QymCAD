@@ -22,6 +22,21 @@ impl Session {
         self.win.run(&mut self.app, self.held, events, false);
     }
 
+    /// THE POINT OF THE VIEW NEAREST TO `near` THAT NOTHING LIES OVER - no box of fields at the geometry, no window: a
+    /// person drags the view where the view is seen, not on a box standing over it, which takes the drag.
+    fn bare_view_near(&self, near: Pos2) -> Pos2 {
+        let canvas = self.app.viewing.view_rect.shrink2(self.app.viewing.view_rect.size() * 0.1);
+        let bare = |p: Pos2| canvas.contains(p) && self.win.ctx.layer_id_at(p).is_none_or(|l| l.order == egui::Order::Background);
+        let rings = (0..12).flat_map(|r| (0..16).map(move |k| (r, k)));
+        rings
+            .map(|(r, k)| {
+                let turn = k as f32 / 16.0 * std::f32::consts::TAU;
+                near + egui::vec2(turn.cos(), turn.sin()) * (r as f32 * 30.0)
+            })
+            .find(|p| bare(*p))
+            .unwrap_or(near)
+    }
+
     /// BRING WHAT `at` POINTS TO INTO THE MIDDLE PART OF THE CANVAS, as a person does: what is far off the canvas
     /// is first brought nearer by turning the wheel over the middle of it, and then the view is dragged with
     /// `buttons` and `modifiers` held, a part of the canvas at a time. A wheel turn or a drag that took the place
@@ -45,7 +60,8 @@ impl Session {
                 continue;
             }
             let step = ((centre - before) * drag_sign).clamp(-canvas.size() * 0.35, canvas.size() * 0.35);
-            self.drag_holding(centre, centre + step, buttons, modifiers);
+            let from = self.bare_view_near(centre);
+            self.drag_holding(from, from + step, buttons, modifiers);
             self.settle();
             if at(self).distance(centre) >= before.distance(centre) {
                 drag_sign = -drag_sign;
@@ -91,25 +107,26 @@ impl Session {
     /// Does `hint` come up with the pointer resting over `at`? Only a hint that was not on screen before counts:
     /// the same words written elsewhere say nothing about this button.
     pub(crate) fn hint_comes_up(&mut self, at: Pos2, hint: &str) -> bool {
-        let already = self.win.drawn.iter().any(|(t, _)| t == hint);
-        self.rest_over(at);
-        !already && self.win.drawn.iter().any(|(t, _)| t == hint)
+        // COUNTED, not looked for: the name of a command in a "More" list may be the very words of its hint, and the
+        // hint coming up then writes them a second time
+        let before = self.win.drawn.iter().filter(|(t, _)| t == hint).count();
+        self.rest_over(at).most_of(hint) > before
     }
 
     /// THE POINTER COMES OVER `at` AND RESTS until a hint would be up.
     ///
     /// THREE FRAMES AFTER A SECOND OF REST, measured: the hint of the button left behind closes a frame after the
     /// pointer leaves it, egui opens no second hint while one is open, and a hint that opens is laid out unseen in
-    /// its first frame and drawn in the next. The words of all three frames count.
-    pub(crate) fn rest_over(&mut self, at: Pos2) {
+    /// its first frame and drawn in the next. The words of the three frames are given frame by frame.
+    pub(crate) fn rest_over(&mut self, at: Pos2) -> Rested {
         self.go(at);
         self.win.clock += 1.0;
-        let mut seen: Vec<(String, Rect)> = Vec::new();
+        let mut frames = Vec::new();
         for _ in 0..3 {
             self.frame(Vec::new());
-            seen.extend(self.win.drawn.iter().cloned());
+            frames.push(self.win.drawn.iter().map(|(t, _)| t.clone()).collect());
         }
-        self.win.drawn = seen;
+        Rested { frames }
     }
 
     /// The pointer comes to `at`, in a frame.
@@ -178,5 +195,31 @@ impl Session {
             still.push(format!("the screen is still moving (a frame asked again in {:?})", self.win.repaint));
         }
         still
+    }
+}
+
+/// THE WORDS OF THE FRAMES A POINTER RESTED THROUGH, frame by frame.
+pub(crate) struct Rested {
+    frames: Vec<Vec<String>>,
+}
+
+impl Rested {
+    /// The most times one frame wrote `text`.
+    fn most_of(&self, text: &str) -> usize {
+        self.frames.iter().map(|f| f.iter().filter(|t| *t == text).count()).max().unwrap_or(0)
+    }
+
+    /// THE WORDS THAT ROSE while the pointer rested: written in some frame more times than in `before`.
+    pub(crate) fn risen_over(&self, before: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for f in &self.frames {
+            for t in f {
+                let was = before.iter().filter(|b| *b == t).count();
+                if !out.contains(t) && f.iter().filter(|x| *x == t).count() > was {
+                    out.push(t.clone());
+                }
+            }
+        }
+        out
     }
 }

@@ -98,6 +98,10 @@ fn undo_snapshot_does_not_carry_embedded_source_bytes() {
 /// There can be SEVERAL background tasks. There used to be a single slot: Ctrl+S during the restoration of the
 /// imports' B-rep overwrote its receiver - the thread finished computing and sent the shapes into a closed
 /// channel, and the import's B-rep did not appear until a restart (while the ready flag was already set).
+///
+/// Both are waited for to land, as the frames of the window take them. Waited for the way the program quits
+/// (`wait_bg`), the restoration was given 300 ms - a quit does not wait for what can be fetched again - and it took
+/// longer in a run of the whole crate under a load of 45 on 20 threads: red there, green alone.
 #[test]
 fn save_during_import_restore_does_not_lose_shapes() {
     use qymcad_core::feature::FeatureKind;
@@ -129,7 +133,7 @@ fn save_during_import_restore_does_not_lose_shapes() {
     app.spawn_import_shapes(false);
     app.save_project();
     assert_eq!(app.regen.bg.len(), 2, "two background tasks live at once (the second used to overwrite the first)");
-    app.wait_bg();
+    app.drain_bg_for_test();
 
     assert!(app.live.shapes.contains_key(&body), "the import's B-rep was restored rather than lost in a closed channel");
     assert!(std::path::Path::new(&proj_path).exists(), "the project was written: {}", app.status);

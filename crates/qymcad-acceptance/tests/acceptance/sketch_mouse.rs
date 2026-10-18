@@ -144,12 +144,22 @@ probe! {
         let arrow = s.word("tb-select-hint");
         s.press_hint(&arrow);
         assert!(s.document().sketches[0].texts == 1, "the text was not written: {:?}", s.document().sketches[0].texts);
-        let at = s.on_sketch(10.0, 10.0);
+        // ON THE LETTERS, where a person aims, not on the corner the text is anchored by: the sheet is fitted to the
+        // text, and at that zoom the corner stands a few points outside the box of the glyphs a double click opens by
+        let at = s.on_sketch(11.0, 11.0);
+        // THE BOX AT THE TEXT, on the sheet: the bar of the text tool above holds the same words in a field of its own, and
+        // the first field holding them was that one - the check wrote into the bar and read the bar back
+        let in_box = |s: &mut Session, words: &str| {
+            let canvas = s.canvas();
+            s.widgets().into_iter().find(|w| w.kind == qymcad::Kind::TextField && w.value == words && canvas.contains(w.rect.center()))
+        };
         s.double_click(at);
-        let field = s.widgets().into_iter().find(|w| w.kind == qymcad::Kind::TextField && w.value == "Alpha").unwrap_or_else(|| panic!("the double click opened no box holding the text; the fields are {:?}", s.widgets()));
+        let field = in_box(&mut s, "Alpha").unwrap_or_else(|| panic!("the double click opened no box holding the text; the fields are {:?}", s.widgets()));
         s.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text("Beta").key(Key::Enter);
+        // the text opened again the same way: its box holds what was written
+        s.double_click(at);
         let held = s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField).map(|w| w.value).collect::<Vec<_>>();
-        assert!(held.iter().any(|v| v == "Beta"), "the text was not changed: the fields hold {held:?}");
+        assert!(in_box(&mut s, "Beta").is_some(), "the text was not changed: opened again, the fields hold {held:?}");
     }
 }
 

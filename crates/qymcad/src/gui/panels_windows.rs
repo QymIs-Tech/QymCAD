@@ -11,6 +11,8 @@ mod schemes;
 pub(crate) use schemes::*;
 mod settings;
 pub(crate) use settings::*;
+mod layout_settings;
+pub(crate) use layout_settings::*;
 mod params;
 pub(crate) use params::*;
 mod faults;

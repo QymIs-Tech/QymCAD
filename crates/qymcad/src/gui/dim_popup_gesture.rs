@@ -253,6 +253,55 @@ mod tests {
         assert_eq!(app.project.named_dims.len(), 1, "a taken name was applied after all — the project holds two \"len\": {:?}", app.project.named_dims);
     }
 
+    /// THE NAME OF A CONSTANT IS REFUSED IN THE POPUP, WITH ITS REASON: a formula would read `tau` as the constant
+    /// and never reach the dimension.
+    #[test]
+    fn the_name_of_a_constant_is_refused_in_the_popup() {
+        let mut app = App::default();
+        app.project.new_document();
+        let (si, ci) = sketch_with_dim(&mut app);
+        let mut p = Popup::new();
+        p.enter_driver_field(&mut app, si, ci);
+        p.type_text("tau").frame(&mut app, si, ci);
+
+        let said = crate::i18n::tr1("par-name-constant", "name", "tau");
+        assert!(p.shows(&said), "it is not said the name is a constant: expected \"{said}\", in the frame {:?}", p.drawn);
+        p.key(egui::Key::Enter).frame(&mut app, si, ci);
+        assert!(app.project.named_dims.is_empty(), "the name of a constant was applied: {:?}", app.project.named_dims);
+    }
+
+    /// THE HINT OVER A REFUSED NAME GIVES THE SAME REASON AS THE LINE. Reported behaviour: `tau` typed as the name of a
+    /// dimension, which nobody holds, and the hint over the refusal said another dimension already used the name.
+    #[test]
+    fn the_hint_over_the_name_of_a_constant_says_the_same_reason() {
+        let (mut app, _ctx) = crate::gui::import_door::tests::running();
+        let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        app.enter_sketch_edit(si);
+        let mut hand = super::super::hand::Hand::new(&mut app);
+        // a circle with its diameter typed, reopened by a double click on the number of the diameter on the sheet, not on
+        // the row of the list of constraints
+        hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        hand.type_text("20").key(egui::Key::Enter);
+        hand.key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_select();
+        let diameter = hand.words_drawn().iter().map(|(t, _)| t.clone()).find(|t| t.strip_prefix('\u{d8}').is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit())));
+        assert!(diameter.is_some_and(|d| hand.double_click_word(&d)), "no diameter on screen to reopen: {:?}", hand.words_drawn());
+        assert!(hand.type_after_word(&crate::i18n::tr("sk-driver-label"), "tau"), "the popup of the dimension has no field for its name");
+
+        let line = crate::i18n::tr1("par-name-constant", "name", "tau");
+        hand.frame(Vec::new());
+        let at = hand.words_drawn().iter().find(|(t, _)| t.contains(&line)).map(|(_, r)| r.center());
+        let at = at.unwrap_or_else(|| panic!("the popup does not say the name is a constant: {:?}", hand.words_drawn()));
+        // TWO RESTS AT MOST: measured, the first rest right after typing into the field raises no hint, the second does
+        let mut hint = hand.hint_at(at);
+        if hint.is_empty() {
+            hint = hand.hint_at(at);
+        }
+        let taken = crate::i18n::tr("sk-driver-name-taken-hint");
+        assert!(!hint.contains(&taken), "the hint over `tau` says the name is taken, and nobody holds it: {hint:?}");
+        assert!(hint.iter().any(|t| t.contains(&line)), "the hint does not give the reason of the line: {hint:?}");
+    }
+
     /// AN OPEN SKETCH HOLDS THE REBUILD. A dimension named in its popup and given another value - an extrusion of another
     /// sketch counted from that name - asks for no rebuild while the sketch is open; closing the sketch asks for it.
     /// Reported behaviour: naming a driver rebuilt under the sign of a rebuild while the sketch was still being drawn in.

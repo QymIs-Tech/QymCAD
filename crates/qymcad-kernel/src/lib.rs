@@ -20,6 +20,6 @@ mod shape;
 #[cfg(any(test, feature = "specimens"))]
 pub mod specimen;
 pub use recognise::{recognise, Recognised};
-pub use kernel::{kernel_gate, OcctKernel};
+pub use kernel::{gate_now, kernel_gate, GateNow, Holder, KernelHeld, OcctKernel};
 pub use workers::{wait_for_workers, worker};
 pub use shape::*;

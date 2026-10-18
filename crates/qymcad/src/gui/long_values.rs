@@ -30,7 +30,7 @@ mod tests {
         // two frames: the first lays out, the second shows the SETTLED width
         let _ = ctx.run_ui(input.clone(), |c| draw_left(app, c));
         let _ = ctx.run_ui(input, |c| draw_left(app, c));
-        egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.outer_rect.width()).unwrap_or(0.0)
+        qymcad_shell::laid_out(&ctx, "tree").map(|r| r.width()).unwrap_or(0.0)
     }
 
     fn part_with_a_body() -> (App, u64) {

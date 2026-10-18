@@ -727,6 +727,7 @@ impl Project {
         // of the node. Taken for one, it left the node red; with one node in the plan, the stop between nodes was
         // never even asked, and Cancel cancelled nothing.
         report.cancelled |= watch.stopped();
+        self.mark_found_by_place();
         report
     }
 }

@@ -1,7 +1,7 @@
-//! EVERY BLEND NAMES ITS SURFACE AFTER ITS EDGE: a fillet of one radius, a fillet with radii at its vertices, a chamfer
-//! by one leg, by two legs, by a leg and an angle. Where the size changes along an edge, or the two legs differ,
-//! nothing changes of where the face comes from; a reference to it - a sketch on the bevel, a mate on the round - holds
-//! the name of the edge it was made from, through an edit above.
+//! EVERY BLEND NAMES ITS SURFACE AFTER ITS EDGE, as the node picked it - its place in the pick: a fillet of one radius,
+//! a fillet with radii at its vertices, a chamfer by one leg, by two legs, by a leg and an angle. Where the size changes
+//! along an edge, or the two legs differ, nothing changes of where the face comes from; a reference to it - a sketch on
+//! the bevel, a mate on the round - holds through an edit above that renames the edge.
 use qymcad_core::feature::ChamferMode;
 use qymcad_core::model::{ChamferShape, Project};
 use qymcad_core::names::Role;
@@ -60,8 +60,8 @@ fn the_surface_of_a_blend_is_named_after_its_edge() {
             continue;
         };
         match p.names.get(face) {
-            Some(n) if n.role == Role::Blend && n.src == e as u64 => {}
-            other => fails.push(format!("{}: the surface is named {other:?}, after edge {e} as a blend expected", way.name)),
+            Some(n) if n.role == Role::Blend && n.src == 1 => {}
+            other => fails.push(format!("{}: the surface is named {other:?}, not after the first pick, edge {e}", way.name)),
         }
     }
     assert!(fails.is_empty(), "a blend does not name its surface after its edge:\n{}", fails.join("\n"));

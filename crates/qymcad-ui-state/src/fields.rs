@@ -60,13 +60,27 @@ pub fn dim_expr_field_in(rc: &mut RebuildCtx, ui: &mut egui::Ui, id: Id, key: &s
         // The name of the parent is appended to the key, and the two places stop arguing.
         let fid = if place.is_empty() { egui::Id::new(("featdim", id, key)) } else { egui::Id::new(("featdim", id, key, place)) };
         let o = expr_field(ui, rc.project, fid, &model, 120.0, &qymcad_i18n::tr("sk-expr-placeholder"));
-        if o.committed && o.text != model {
+        // WRITTEN THROUGH THE ONE DOOR OF A FEATURE'S NUMBER, a plain number standing as the number itself. What the door
+        // refuses - a formula coming back to the name of this very number - is asked before the step opens, so a
+        // refusal leaves no step of undo, and said on the status line.
+        let at = qymcad_core::model::FeatNumber { node: id, key };
+        let refused = if o.committed && o.text != model { rc.project.check_feat_text(&at, &o.text).err() } else { None };
+        if let Some(e) = &refused {
+            *rc.status = Notice::refusal(qymcad_i18n::error_words::expr_error_text(e));
+        } else if o.committed && o.text != model {
             // ONE EDIT, ONE UNDO STEP. The edit used to go into the model on losing focus, past
             // `App::edit`, and Ctrl+Z never saw it.
             begin_edit(rc.edits, rc.project, qymcad_i18n::tr("par-edit-step"));
-            rc.project.set_feat_dim(id, key, o.text.clone());
-            commit_edit(rc);
-            mark_dirty_for_rebuild(rc); // the document is marked; the planner does the counting
+            match rc.project.write_feat_formula(&at, &o.text, qymcad_core::model::PlainNumber::Stands) {
+                Ok(()) => {
+                    commit_edit(rc);
+                    mark_dirty_for_rebuild(rc); // the document is marked; the planner does the counting
+                }
+                Err(e) => {
+                    abort_edit(rc);
+                    *rc.status = Notice::refusal(qymcad_i18n::error_words::expr_error_text(&e));
+                }
+            }
         }
         // WHAT CAME OUT OF WHAT WAS TYPED, IN WORDS, RIGHT HERE.
         //
@@ -89,12 +103,16 @@ pub fn dim_expr_field_in(rc: &mut RebuildCtx, ui: &mut egui::Ui, id: Id, key: &s
         // the ready answer is what gets used further on.
         ui.label(qymcad_i18n::tr("sk-driver-label")).on_hover_text(qymcad_i18n::tr("sk-driver-name-hint"));
         let nid = if place.is_empty() { egui::Id::new(("featdrv", id, key)) } else { egui::Id::new(("featdrv", id, key, place)) };
+        // a name that would close a circle of formulas will not do either, and the line says the chain
+        let fits = |project: &qymcad_core::model::Project, nm: &str| {
+            nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !project.driver_name_taken_by(nm, &target) && project.naming_closes_circle(&target, nm).is_none())
+        };
         let rn = {
-            let ok = |nm: &str| nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !rc.project.driver_name_taken_by(nm, &target));
+            let ok = |nm: &str| fits(rc.project, nm);
             name_field(ui, rc.project, nid, &cur_name, 100.0, &qymcad_i18n::tr("sk-name-placeholder"), &ok)
         };
         let nm = rn.text.trim().to_string();
-        let name_ok = nm.is_empty() || (qymcad_core::drivers::check_ident(&nm).is_ok() && !rc.project.driver_name_taken_by(&nm, &target));
+        let name_ok = fits(rc.project, &nm);
         if rn.committed && nm != cur_name.trim() {
             begin_edit(rc.edits, rc.project, qymcad_i18n::tr("sk-driver-step"));
             let old = cur_name.trim().to_string();
@@ -110,12 +128,22 @@ pub fn dim_expr_field_in(rc: &mut RebuildCtx, ui: &mut egui::Ui, id: Id, key: &s
             mark_dirty_for_rebuild(rc);
         }
         if !nm.is_empty() && !name_ok {
-            let who = rc.project.name_owner(&nm).map(|o| if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { o.path });
+            // THE OWNER IS SOMEBODY ELSE: the number keeps its own name in the field, and a name of its own that will not
+            // do (`pi` from a document on disk) is unfit, not taken. The path is said in words, as the tree says it.
+            let other = rc.project.driver_name_taken_by(&nm, &target);
+            let who = rc.project.name_owner(&nm).filter(|_| other).map(|o| if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { crate::path_in_words(&o.path) });
+            // THE HINT GIVES THE SAME REASON AS THE LINE: "taken" only when somebody holds the name. Reported
+            // behaviour: over `pi`, which nobody holds, the hint said another dimension already used the name.
+            let unfit = match rc.project.naming_closes_circle(&target, &nm) {
+                Some(chain) => qymcad_i18n::error_words::expr_error_text(&qymcad_core::errors::ExprError::LeansOnItself(chain)),
+                None => qymcad_i18n::error_words::ident_refusal_text(&nm),
+            };
+            let hint = if who.is_some() { qymcad_i18n::tr("sk-driver-name-taken-hint") } else { unfit.clone() };
             let msg = match who {
                 Some(w) => qymcad_i18n::tr2("par-name-taken", "name", &nm, "where", &w),
-                None => qymcad_i18n::tr("sk-driver-name-bad"),
+                None => unfit,
             };
-            crate::say(ui, &rc.scheme.pal, &crate::Notice::warning(msg), crate::NoticeSize::Small).on_hover_text(qymcad_i18n::tr("sk-driver-name-taken-hint"));
+            crate::say(ui, &rc.scheme.pal, &crate::Notice::warning(msg), crate::NoticeSize::Small).on_hover_text(hint);
         }
         let shown = o.text;
         if !shown.trim().is_empty() {
@@ -271,7 +299,11 @@ pub fn field(ui: &mut egui::Ui, project: &Project, id: egui::Id, model: &str, w:
         st.open = false;
         // THE LIST OPENS ON TYPING AND NOT ON FOCUS. The former one climbed onto the screen at a single
         // click in the field and covered the geometry, though nothing had been asked yet.
-        st.open = with_list && !current_token(&buf, caret).2.is_empty();
+        //
+        // AND NOT ON A NUMBER: a name does not begin with a digit, so a word that does has no name to be finished into.
+        // Measured: `a_len*2` typed and Enter pressed - the `2` opened the list (it looks in the paths too, and a path
+        // holds a 2), Enter put the first name in its place and `a_len*a_len` went in.
+        st.open = with_list && begins_a_name(current_token(&buf, caret).2);
     }
     if open_list && with_list {
         st.open = true;
@@ -317,7 +349,7 @@ pub fn field(ui: &mut egui::Ui, project: &Project, id: egui::Id, model: &str, w:
                                     // THE PATH ANSWERS "WHICH OF THE NAMESAKES". On an ambiguous one
                                     // it is highlighted too: a bare name in a formula will take who
                                     // knows which.
-                                    let mut t = egui::RichText::new(&d.path).small();
+                                    let mut t = egui::RichText::new(crate::path_in_words(&d.path)).small();
                                     t = if d.ambiguous { t.color(crate::tone_colour_in(ui, crate::Tone::Warning)) } else { t.weak() };
                                     ui.label(t);
                                 }
@@ -470,6 +502,12 @@ pub fn current_token(text: &str, caret: usize) -> (usize, usize, &str) {
     let start = text[..caret].rfind(|c: char| !is_word(c)).map(|i| i + c_len(text, i)).unwrap_or(0);
     let end = caret + text[caret..].find(|c: char| !is_word(c)).unwrap_or(text.len() - caret);
     (start, end, &text[start..end])
+}
+
+/// Whether the word under the caret can be the start of a name: begun with a letter or `_`, the start
+/// `drivers::check_ident` takes.
+fn begins_a_name(word: &str) -> bool {
+    word.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_')
 }
 
 /// Put a driver's name in place of the word under the caret. Returns the new text and the byte offset

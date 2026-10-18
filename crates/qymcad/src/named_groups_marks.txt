@@ -136,13 +136,13 @@ crates/qymcad-core/src/model/hash_ser.rs 0 0 1
 crates/qymcad-core/src/model/keys.rs 2 3 1
 crates/qymcad-core/src/model/params.rs 0 4 0
 crates/qymcad-core/src/model/projection.rs 1 7 0
-crates/qymcad-core/src/model/refs.rs 7 5 0
+crates/qymcad-core/src/model/refs.rs 7 4 0
 crates/qymcad-core/src/model/regen.rs 1 0 1
 crates/qymcad-core/src/model/regen/apply.rs 6 0 0
 crates/qymcad-core/src/model/regen/prep_bodies.rs 3 8 0
 crates/qymcad-core/src/model/regen/prep_ops.rs 11 5 4
 crates/qymcad-core/src/model/regen/prep_profiles.rs 1 1 0
-crates/qymcad-core/src/model/regen/refs.rs 2 5 1
+crates/qymcad-core/src/model/regen/refs.rs 2 4 1
 crates/qymcad-core/src/model/regen/run.rs 0 2 0
 crates/qymcad-core/src/model/round.rs 5 5 0
 crates/qymcad-core/src/model/sketch.rs 10 8 0
@@ -153,7 +153,7 @@ crates/qymcad-core/src/model/sketch/entities.rs 29 9 3
 crates/qymcad-core/src/model/sketch/offset.rs 0 3 0
 crates/qymcad-core/src/model/sketch/profiles.rs 9 5 0
 crates/qymcad-core/src/model/sketch/solve.rs 1 5 1
-crates/qymcad-core/src/model/sketch/trim.rs 13 7 0
+crates/qymcad-core/src/model/sketch/trim.rs 13 6 0
 crates/qymcad-core/src/model/sketch_ops.rs 7 4 0
 crates/qymcad-core/src/model/sketch_types.rs 0 2 0
 crates/qymcad-core/src/model/tess.rs 9 30 2
@@ -380,7 +380,7 @@ crates/qymcad-part/src/apply/update.rs 0 5 0
 crates/qymcad-part/src/bars.rs 0 2 0
 crates/qymcad-part/src/bars/feat_bar.rs 0 5 0
 crates/qymcad-part/src/bars/toolbar.rs 0 1 0
-crates/qymcad-part/src/params.rs 2 3 1
+crates/qymcad-part/src/params.rs 2 1 1
 crates/qymcad-part/src/picks.rs 2 2 2
 crates/qymcad-part/src/popups.rs 2 2 1
 crates/qymcad-part/src/reopen.rs 0 1 0
@@ -405,7 +405,7 @@ crates/qymcad-scheme/src/labels.rs 0 1 0
 crates/qymcad-scheme/src/lib.rs 3 3 0
 crates/qymcad-scheme/src/store.rs 0 1 0
 crates/qymcad-scheme/src/tests.rs 1 7 0
-crates/qymcad-shell/src/lib.rs 0 2 1
+crates/qymcad-shell/src/lib.rs 0 0 1
 crates/qymcad-sketch/src/clicks.rs 0 3 1
 crates/qymcad-sketch/src/constraints.rs 0 1 0
 crates/qymcad-sketch/src/corners.rs 1 2 4
@@ -544,7 +544,7 @@ crates/qymcad-ui-state/src/records/tools.rs 0 7 0
 crates/qymcad-ui-state/src/scene.rs 4 2 0
 crates/qymcad-ui-state/src/section.rs 1 0 0
 crates/qymcad-ui-state/src/selection.rs 2 6 0
-crates/qymcad-ui-state/src/settings.rs 0 2 0
+crates/qymcad-ui-state/src/settings.rs 0 1 0
 crates/qymcad-ui-state/src/settings_sections.rs 1 0 0
 crates/qymcad-ui-state/src/sketch_edit.rs 4 9 0
 crates/qymcad-ui-state/src/text.rs 1 0 0
@@ -620,7 +620,6 @@ crates/qymcad/src/gui/audit.rs 1 12 0
 crates/qymcad/src/gui/bar_menu.rs 0 2 0
 crates/qymcad/src/gui/blend_preview_on_sample.rs 1 0 0
 crates/qymcad/src/gui/card_matches_raster.rs 0 2 0
-crates/qymcad/src/gui/catalog_flow.rs 0 6 0
 crates/qymcad/src/gui/changing_an_anchor_does_not_spin_the_part.rs 1 1 0
 crates/qymcad/src/gui/clipped_text_sweep.rs 0 3 0
 crates/qymcad/src/gui/command_search.rs 0 2 0
@@ -662,11 +661,13 @@ crates/qymcad/src/gui/ghost_highlight.rs 1 0 2
 crates/qymcad/src/gui/gizmo_math.rs 2 3 1
 crates/qymcad/src/gui/gizmo_mouse.rs 0 1 1
 crates/qymcad/src/gui/grab_tests.rs 0 1 0
-crates/qymcad/src/gui/hand.rs 14 12 1
+crates/qymcad/src/gui/hand.rs 14 11 1
+crates/qymcad/src/gui/hand/sketch_text.rs 0 1 0
 crates/qymcad/src/gui/help_flow.rs 0 2 0
 crates/qymcad/src/gui/help_general.rs 1 0 0
-crates/qymcad/src/gui/help_images.rs 7 12 0
-crates/qymcad/src/gui/help_map_flow.rs 0 4 0
+crates/qymcad/src/gui/help_images.rs 6 11 0
+crates/qymcad/src/gui/help_images/tests/sketch_shots.rs 1 1 0
+crates/qymcad/src/gui/help_map_flow.rs 0 3 0
 crates/qymcad/src/gui/help_raster.rs 1 1 0
 crates/qymcad/src/gui/help_window.rs 0 0 1
 crates/qymcad/src/gui/hidden_is_not_pickable.rs 0 2 0
@@ -713,7 +714,7 @@ crates/qymcad/src/gui/panels_tree/rows.rs 0 15 0
 crates/qymcad/src/gui/panels_windows/dialogs.rs 0 2 0
 crates/qymcad/src/gui/panels_windows/params.rs 0 2 0
 crates/qymcad/src/gui/panels_windows/schemes.rs 0 2 0
-crates/qymcad/src/gui/panels_windows/settings.rs 0 3 0
+crates/qymcad/src/gui/panels_windows/settings.rs 0 2 0
 crates/qymcad/src/gui/param_error_readable.rs 0 2 0
 crates/qymcad/src/gui/param_fields_stretch.rs 1 0 0
 crates/qymcad/src/gui/patch_flow.rs 0 1 0
@@ -741,7 +742,7 @@ crates/qymcad/src/gui/scheme_flow.rs 0 1 0
 crates/qymcad/src/gui/screen_keys.rs 0 1 0
 crates/qymcad/src/gui/session.rs 2 1 0
 crates/qymcad/src/gui/session/finding.rs 4 2 0
-crates/qymcad/src/gui/session/frames.rs 1 1 2
+crates/qymcad/src/gui/session/frames.rs 1 0 2
 crates/qymcad/src/gui/session/keys.rs 0 1 0
 crates/qymcad/src/gui/session/pointer.rs 2 0 0
 crates/qymcad/src/gui/session/reading.rs 0 3 0

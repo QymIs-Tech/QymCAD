@@ -5,11 +5,15 @@
 //! measure the machine as much as the program, and beside the other checks of a crate they read the load. At any other
 //! level each passes over. A budget in milliseconds is scaled by `QYMCAD_TIME_SCALE`, as the probes of time of the
 //! acceptance set are. Measured: a budget of 150 ms read 165 ms on a runner of the CI among the checks of every crate.
+//!
+//! A step is timed by its work (`time_budget::Cost`): the wall less the share its threads stood ready with no processor
+//! free, so the machine busy with other work beside the level of time does not read as a slow program.
 mod sketch_kinds;
 
 use qymcad_core::solver;
 use sketch_kinds::{build, Kind};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use qymcad_core::time_budget::{Doer, Meter};
 
 /// AT THE LEVEL OF THE PROBES OF TIME: anywhere else the probe says so and passes over.
 fn passed_over(name: &str) -> bool {
@@ -24,9 +28,9 @@ fn passed_over(name: &str) -> bool {
 fn best_of_three(mut work: impl FnMut()) -> Duration {
     (0..3)
         .map(|_| {
-            let started = Instant::now();
+            let started = Meter::start(Doer::Process);
             work();
-            started.elapsed()
+            started.cost().work
         })
         .min()
         .unwrap_or_default()
@@ -97,9 +101,9 @@ fn the_diagnostics_of_separate_shapes_are_counted_each_alone() {
     });
     eprintln!("Lines x10000, degrees of freedom, free points, conflicts: {t:?}");
     assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(1)), "the diagnostics of 10 000 lines took {t:?}, budget 1 s");
-    let started = Instant::now();
+    let started = Meter::start(Doer::Process);
     let redundant = p.sketch_redundant_constraints(0);
-    let t = started.elapsed();
+    let t = started.cost().work;
     eprintln!("Lines x10000, redundant: {t:?}");
     assert_eq!(redundant.len(), 20_000, "each Horizontal of a line laid twice is redundant");
     assert!(t < qymcad_core::time_budget::scaled(Duration::from_secs(1)), "the redundant constraints of 10 000 lines took {t:?}, budget 1 s");
@@ -178,11 +182,11 @@ fn the_diagnostics_of_one_big_part_are_counted_sparse() {
     // 1 000 rectangles tied into one part of 8 000 unknowns; measured in a release build with the dense count: the
     // degrees of freedom 16 s, the free points 18 s, the redundant constraints 16 s, the conflicts 1 s (12 s on 3 000)
     let p = build(Kind::Array, 1_000);
-    let started = Instant::now();
+    let started = Meter::start(Doer::Process);
     let dof = p.sketch_dof(0);
     let free = p.sketch_free_points(0);
     let conflicts = p.sketch_conflicts(0);
-    let t = started.elapsed();
+    let t = started.cost().work;
     eprintln!("Array x1000, degrees of freedom, free points and conflicts: {t:?}");
     assert!(conflicts.is_empty(), "an array that can be solved has no conflicts: {conflicts:?}");
     // each rectangle keeps its height and its place up and down free (the spacing is dimensioned along the row only),
@@ -211,9 +215,9 @@ fn a_drawing_of_forty_thousand_segments_comes_in_whole() {
         .collect();
     let mut p = qymcad_core::model::Project::default();
     p.new_document();
-    let started = Instant::now();
+    let started = Meter::start(Doer::Process);
     let si = p.import_sketch("drawing", curves, None, Default::default());
-    let t = started.elapsed();
+    let t = started.cost().work;
     eprintln!("40 000 segments imported: {t:?}");
     let s = &p.sketches[si];
     let own = s.points.len() - s.system_ids().len();
@@ -260,9 +264,9 @@ fn a_drag_frame_after_the_first_works_on_its_own_part() {
     let _ = p.solve_sketch_drag_fast(0, Some((q.id, q.x + 0.5, q.y + 0.5))); // the first frame finds the part
     let t = (1..=5)
         .map(|k| {
-            let started = Instant::now();
+            let started = Meter::start(Doer::Process);
             let _ = p.solve_sketch_drag_fast(0, Some((q.id, q.x + k as f64, q.y + k as f64)));
-            started.elapsed()
+            started.cost().work
         })
         .min()
         .unwrap_or_default();
@@ -286,9 +290,9 @@ fn a_pattern_across_a_pattern_lays_its_copies_with_one_rebuild() {
     let h = p.add_line_entity(si, 0.0, -10.0, 2000.0, -10.0, qymcad_core::feature::Purpose::Real);
     let v = p.add_line_entity(si, -10.0, 0.0, -10.0, 2000.0, qymcad_core::feature::Purpose::Real);
     p.add_pattern(si, &[h], PatternKind::Linear { dx: 0.0, dy: 20.0, count: 100, dx2: 0.0, dy2: 0.0, count2: 0 });
-    let started = Instant::now();
+    let started = Meter::start(Doer::Process);
     p.add_pattern(si, &[v], PatternKind::Linear { dx: 20.0, dy: 0.0, count: 100, dx2: 0.0, dy2: 0.0, count2: 0 });
-    let t = started.elapsed();
+    let t = started.cost().work;
     eprintln!("a pattern of 100 lines across 100 others: {t:?}, {} loops", p.sketches[si].contour_ids.len());
     assert!(p.sketches[si].contour_ids.len() > 9_000, "the grid has its cells: {} loops", p.sketches[si].contour_ids.len());
     assert!(t < qymcad_core::time_budget::scaled(Duration::from_millis(500)), "a pattern of 100 lines across 100 others took {t:?}, budget 0.5 s in a test build");
@@ -312,13 +316,13 @@ fn the_checks_after_an_edit_count_the_part_it_touched() {
         if let Some(pt) = p.sketches[0].points.get_mut(k) {
             pt.x += 0.5;
         }
-        let started = Instant::now();
+        let started = Meter::start(Doer::Process);
         let _ = (p.sketch_checks(0), p.sketch_conflicts(0));
-        took = took.min(started.elapsed());
+        took = took.min(started.cost().work);
         let copy = p.clone();
-        let started = Instant::now();
+        let started = Meter::start(Doer::Process);
         let _ = (copy.sketch_checks(0), copy.sketch_conflicts(0));
-        measure = measure.min(started.elapsed());
+        measure = measure.min(started.cost().work);
     }
     eprintln!("the checks of 17 500 rectangles after one moved: {took:?}; every part counted again: {measure:?}");
     // measured in a release build: 92 ms with the parts remembered, 225 ms with every part counted again, 0.41 of it. A
@@ -329,9 +333,9 @@ fn the_checks_after_an_edit_count_the_part_it_touched() {
 /// The time of one solve of a copy of `p`, its sketch 0.
 fn solved_in(p: &qymcad_core::model::Project) -> std::time::Duration {
     let mut q = p.clone();
-    let started = std::time::Instant::now();
+    let started = Meter::start(Doer::Process);
     q.solve_sketch(0);
-    started.elapsed()
+    started.cost().work
 }
 
 #[test]

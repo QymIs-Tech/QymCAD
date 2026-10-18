@@ -46,11 +46,48 @@ impl Session {
         }
     }
 
-    /// WHERE THE SIDE PANEL `id` STANDS, as the last frame laid it out: its outer rectangle, the divider at its edge.
-    /// `None` when no such panel was drawn.
+    /// WHERE THE PANEL `id` STANDS, as the last frame laid it out: a panel of the window by its key, or a side panel of
+    /// a window by its id - its outer rectangle, the divider at its edge. `None` when no such panel was drawn.
     pub fn panel(&mut self, id: &str) -> Option<Rect> {
         self.settle();
-        egui::PanelState::load(&self.win.ctx, egui::Id::new(id)).map(|p| p.outer_rect)
+        qymcad_shell::laid_out(&self.win.ctx, id).or_else(|| egui::PanelState::load(&self.win.ctx, egui::Id::new(id)).map(|p| p.outer_rect))
+    }
+
+    /// THE WORDS A WINDOW OF THE PROGRAM SHOWS: the runs of words the last frame drew clipped to `area` - the content of a
+    /// window, and not what lies under it.
+    pub fn words_within(&mut self, area: Rect) -> Vec<WordAt> {
+        fn collect(s: &egui::Shape, out: &mut Vec<WordAt>) {
+            match s {
+                egui::Shape::Text(t) => out.push(WordAt { text: t.galley.text().to_string(), rect: Rect::from_min_size(t.pos, t.galley.size()) }),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| collect(x, out)),
+                _ => {}
+            }
+        }
+        self.settle();
+        let mut out = Vec::new();
+        for cs in self.win.shapes.iter().filter(|cs| area.expand(1.0).contains_rect(cs.clip_rect)) {
+            collect(&cs.shape, &mut out);
+        }
+        out.retain(|w| !w.text.trim().is_empty());
+        out
+    }
+
+    /// EGUI'S COMPLAINTS OF ONE ID TAKEN BY TWO WIDGETS, painted in any frame since they were last asked for: they flash
+    /// in the frames of a change, so the screen at rest does not show them.
+    pub fn id_clashes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.win.clashes)
+    }
+
+    /// THE BUTTONS OF THE BARS OF TOOLS the last frame drew, and the rows of an open "More" list: where each stands.
+    pub fn bar_buttons(&mut self) -> Vec<Rect> {
+        self.settle();
+        qymcad_shell::noted_buttons(&self.win.ctx)
+    }
+
+    /// THE "MORE" BUTTONS OF THE BARS the last frame drew.
+    pub fn more_buttons(&mut self) -> Vec<Rect> {
+        self.settle();
+        qymcad_shell::noted_more(&self.win.ctx)
     }
 
     /// WHAT THE LAST FRAME PAINTED that a person reads as content: every run of words, and every filled background of
@@ -131,10 +168,51 @@ impl Session {
         if let Some(at) = self.look_for_hint(hint) {
             return Some(at);
         }
+        // A COMMAND IN "MORE": a person opens the list at the end of the bar and looks there; the list is left open
+        // on the row found, for the press that follows
+        if let Some(at) = self.hint_in_more(hint) {
+            return Some(at);
+        }
         // AN ICON BUTTON OUTSIDE THE TOOL PLATES - the cross beside a line of the properties: a person rests the
         // pointer over the small buttons in turn, as over the plates
         let small = self.small_buttons();
         small.into_iter().find(|&at| self.hint_comes_up(at, hint))
+    }
+
+    /// THE ROW OF A "MORE" LIST WITH THE HINT `hint`: each "More" of the bars opened in turn and its rows rested over;
+    /// a list without the row is closed again by its button.
+    fn hint_in_more(&mut self, hint: &str) -> Option<Pos2> {
+        for more in self.win.mores.clone() {
+            let bar: Vec<Pos2> = self.win.plates.clone();
+            self.click(more);
+            let rows: Vec<Pos2> = self.win.plates.iter().copied().filter(|p| !bar.contains(p)).collect();
+            // the pointer rests where nothing is, or the hint of "More" stays up over the first row and egui opens no
+            // second one
+            let aside = self.canvas();
+            self.rest_over(pos2(aside.max.x - 8.0, 10.0));
+            if let Some(at) = rows.into_iter().find(|&at| self.hint_comes_up(at, hint)) {
+                return Some(at);
+            }
+            self.click(more);
+        }
+        None
+    }
+
+    /// THE HINTS OF THE ROWS OF EVERY "MORE" LIST, each list opened by its button and closed again.
+    fn hints_in_more(&mut self) -> Vec<String> {
+        let mut hints = Vec::new();
+        for more in self.win.mores.clone() {
+            let bar: Vec<Pos2> = self.win.plates.clone();
+            self.click(more);
+            let rows: Vec<Pos2> = self.win.plates.iter().copied().filter(|p| !bar.contains(p)).collect();
+            let aside = self.canvas();
+            self.rest_over(pos2(aside.max.x - 8.0, 10.0));
+            for at in rows {
+                hints.push(self.hint_at(at).join(" "));
+            }
+            self.click(more);
+        }
+        hints
     }
 
     /// Look for the button with the hint `hint` from where the panel stands now, scrolling downwards.
@@ -187,7 +265,8 @@ impl Session {
     }
 
     /// THE HINT OF EVERY TOOL BUTTON OF THE WINDOW, read as a person reads them: the pointer rests over each button in
-    /// turn, and a panel longer than the window is scrolled with the wheel. A button without a hint is given as empty.
+    /// turn, a panel longer than the window is scrolled with the wheel, and a "More" list is opened and read. A button
+    /// without a hint is given as empty.
     pub fn button_hints(&mut self) -> Vec<String> {
         self.settle();
         // a panel left scrolled down by what was done before hides its first buttons: back to the top first, as
@@ -214,15 +293,21 @@ impl Session {
                     hints.push(words);
                 }
             }
-            let Some(over) = self.win.plates.first().copied() else { return hints };
+            let Some(over) = self.win.plates.first().copied() else { break };
             let before = self.win.plates.clone();
             self.wheel(over, vec2(0.0, -200.0), Modifiers::default());
             self.settle();
             scrolled += 1;
             if self.win.plates == before || scrolled > 10 {
-                return hints;
+                break;
             }
         }
+        for words in self.hints_in_more() {
+            if !hints.contains(&words) {
+                hints.push(words);
+            }
+        }
+        hints
     }
 
     /// THE HINT OF WHAT IS UNDER `at`, read as it comes up after the pointer rests there; `None` when nothing
@@ -230,12 +315,13 @@ impl Session {
     pub fn hint_at(&mut self, at: Pos2) -> Vec<String> {
         self.settle();
         let before: Vec<String> = self.win.drawn.iter().map(|(t, _)| t.clone()).collect();
-        self.rest_over(at);
-        // the frames of the rest each draw the hint once: its words count once
+        // COUNTED, not looked for: the name of a command in a "More" list may be the very words of its hint, and the
+        // hint coming up then writes them a second time
+        let rested = self.rest_over(at);
         let mut came: Vec<String> = Vec::new();
-        for (t, _) in &self.win.drawn {
-            if !t.is_empty() && !before.contains(t) && !came.contains(t) {
-                came.push(t.clone());
+        for t in rested.risen_over(&before) {
+            if !t.is_empty() && !came.contains(&t) {
+                came.push(t);
             }
         }
         came

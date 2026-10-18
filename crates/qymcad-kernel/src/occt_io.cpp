@@ -352,6 +352,41 @@ static QymShape* off_seams_first(const QymShape* s, const uint32_t* idx, size_t 
 static QymShape* off_seams(const QymShape* s, const uint32_t* idx, size_t n, const std::function<QymShape*(const QymShape*)>& op);
 static std::vector<uint32_t> every_edge(const QymShape* s);
 
+// ONE BLEND AT A TIME in the process. Two chamfers of OCCT on two threads, each on a body of its own, clash: on the case
+// of the examples the chamfer 11963 came out invalid in 3 of 40 rebuilds, every time while a chamfer of 2 of another part
+// was being built on a neighbouring thread, and in none of 20 rebuilds on one thread. Recursive: a blend that moves the
+// seams off its edges asks itself again.
+static std::recursive_mutex& blend_lock() {
+    static std::recursive_mutex m;
+    return m;
+}
+
+// A BODY OF ITS OWN FOR A BLEND: a copy of `s` with every record of its names carried to the copy's elements. The chamfer
+// and the fillet of OCCT raise the tolerances of the edges and vertices of the body they are given (measured on the
+// case of the examples: a chamfer of 3, the sum of the tolerances of its body 0.0720624 -> 0.0744600), and those edges
+// and vertices are shared with the bodies before it and beside it in the cache. Written on one thread of the rebuild
+// while a neighbouring branch blended on another, the chamfer 11963 of the case came out invalid in 3 of 40 rebuilds,
+// and in none of 20 on one thread. The names are asked of what the body holds: the copy answers only of its own.
+static QymShape own_copy(const QymShape& s) {
+    BRepBuilderAPI_Copy copier(s.shape);
+    QymShape out{copier.Shape(), {}, {}, {}, {}, s.absorbed, {}};
+    auto carry = [&](TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& from, TopTools_DataMapOfShapeInteger& to) {
+        TopTools_IndexedMapOfShape own;
+        TopExp::MapShapes(s.shape, ty, own);
+        for (int i = 1; i <= own.Extent(); ++i) {
+            if (!from.IsBound(own(i))) continue;
+            for (TopTools_ListIteratorOfListOfShape c(copier.Modified(own(i))); c.More(); c.Next()) to.Bind(c.Value(), from.Find(own(i)));
+        }
+    };
+    carry(TopAbs_FACE, s.fids, out.fids);
+    carry(TopAbs_EDGE, s.eids, out.eids);
+    carry(TopAbs_FACE, s.fsplit_of, out.fsplit_of);
+    carry(TopAbs_FACE, s.fsplit_idx, out.fsplit_idx);
+    carry(TopAbs_EDGE, s.ebeside, out.ebeside);
+    return out;
+}
+
+
 extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
     if (!s) return why("fillet/asked", "there is no body to round"), nullptr;
     if (r <= 0.0) return why("fillet/asked", "the radius is zero"), nullptr;
@@ -359,6 +394,9 @@ extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
         QYM_SIGNALS;
         const std::vector<uint32_t> every = every_edge(s);
         if (along_a_seam(s, every.data(), every.size())) return off_seams_first(s, every.data(), every.size(), [&](const QymShape* m) { return qym_shape_fillet_all(m, r); });
+        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
+        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
+        s = &own;
         BRepFilletAPI_MakeFillet mk(s->shape);
         TopTools_IndexedMapOfShape edges;
         TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
@@ -388,6 +426,9 @@ extern "C" QymShape* qym_shape_chamfer_all(const QymShape* s, double d) {
         QYM_SIGNALS;
         const std::vector<uint32_t> every = every_edge(s);
         if (along_a_seam(s, every.data(), every.size())) return off_seams_first(s, every.data(), every.size(), [&](const QymShape* m) { return qym_shape_chamfer_all(m, d); });
+        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
+        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
+        s = &own;
         BRepFilletAPI_MakeChamfer mk(s->shape);
         TopTools_IndexedMapOfShape edges;
         TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
@@ -1024,34 +1065,34 @@ static void name_blend_faces(BRepBuilderAPI_MakeShape& mk, const QymShape* s, Qy
             }
         }
         // CORNER PATCHES: where several filleted edges meet, the kernel generates a face from the VERTEX
-        // rather than from an edge, and it used to be left unnamed, dragging the whole solid back into the
-        // positional scheme. A vertex is identified by its edges: the SMALLEST name among that vertex's
-        // filleted edges is taken (just as an edge is identified by the pair of its faces).
+        // rather than from an edge. A vertex has no recipe but the edges asked that meet at it: the patch takes the
+        // number of the end of the edge of the lowest place among them (`corners` holds two numbers an edge, its start
+        // and its end as it runs). Named after the edge alone, the patches at the two ends of one edge shared its name
+        // and the second became "piece 1" of the first, by the order the vertices were walked in (measured on the
+        // corners of a cube: `a_corner_patch_is_named_after_its_vertex`).
         if (corners) {
-            // ONE PATCH NAME MEANS ONE FACE. A corner patch's name is chosen as the SMALLEST among the
-            // vertex's edges, and one edge has two vertices, so both of them chose the same name and two
-            // different patches came out under a shared name (measured). The piece counter carries on between
-            // vertices: the second one gets a fresh number and a "piece k" record.
             std::map<unsigned, int> corner_piece;
             TopTools_IndexedDataMapOfShapeListOfShape v2e;
             TopExp::MapShapesAndAncestors(s->shape, TopAbs_VERTEX, TopAbs_EDGE, v2e);
             for (int vi = 1; vi <= v2e.Extent(); ++vi) {
                 const TopoDS_Shape& v = v2e.FindKey(vi);
-                // the smallest name among this vertex's SELECTED edges
-                unsigned best = 0;
-                size_t best_k = 0;
+                // the lowest place among this vertex's edges asked - the places run as `idx` does - and its end here
+                size_t lowest = n;
+                TopoDS_Shape lowest_edge;
                 for (TopTools_ListIteratorOfListOfShape it(v2e.FindFromIndex(vi)); it.More(); it.Next()) {
                     if (!s->eids.IsBound(it.Value())) continue;
                     uint32_t eid = static_cast<uint32_t>(s->eids.Find(it.Value()));
-                    for (size_t k = 0; k < n; ++k) {
-                        if (idx[k] != eid || corners[k] == 0) continue;
-                        if (best == 0 || corners[k] < best) {
-                            best = corners[k];
-                            best_k = k;
+                    for (size_t k = 0; k < lowest; ++k) {
+                        if (idx[k] == eid && corners[2 * k] != 0) {
+                            lowest = k;
+                            lowest_edge = it.Value();
+                            break;
                         }
                     }
                 }
-                (void)best_k;
+                if (lowest == n) continue;
+                const bool at_start = TopExp::FirstVertex(TopoDS::Edge(lowest_edge), Standard_False).IsSame(v);
+                const unsigned best = corners[2 * lowest + (at_start ? 0 : 1)];
                 if (best == 0) continue;
                 const TopTools_ListOfShape& gen = mk.Generated(v);
                 int& piece_state = corner_piece[best];
@@ -1189,8 +1230,9 @@ extern "C" int qym_shape_drop_slivers(QymShape* s, double width) {
         // of each element. Carried by where things lay to 1e-6, the faces the strips were cut from lost their names -
         // the end walls of a staircase whose chamfer stepped back moved 2e-7 at a corner, and every blend after it
         // renamed them, lighting both ends of the part in the preview of the next tool. The two long sides of a strip
-        // become one edge: the first keeps its name, the other is recorded as yielded to it, so a reference to either
-        // still finds the edge.
+        // become one edge, its name chosen by rank as in every merge (`merge_names`); both sides were named after the
+        // strip, and the edge is named again after the faces it now runs between (`naming::edges`), each old name
+        // recorded as yielded to the new one.
         QymBuilderHistory copied(copier);
         QymRepairHistory fixed(fix->Context(), QymRepairAsk::Apply);
         QymChainHistory history(copied, fixed);
@@ -1387,7 +1429,10 @@ static bool move_seams_off(QymShape* q, const uint32_t* idx, size_t n) {
     ShapeUpgrade_ShapeDivideClosed div(q->shape);
     div.SetNbSplitPoints(1);
     if (!div.Perform()) return false;
-    QymRepairHistory divided(div.GetContext(), QymRepairAsk::Value);
+    // asked of what the cutting rebuilt, not only of what it replaced: an edge of a cut face is rebuilt with the face
+    // around it and recorded under its parts. Asked by `Value`, the upright edge under the seam of a cylinder had no
+    // image and its rounding was refused (the record of the cut then needed the place of each element to carry names)
+    QymRepairHistory divided(div.GetContext(), QymRepairAsk::Apply);
     QymShape cut{div.Result(), {}, {}, {}, {}};
     // EVERY PIECE of such a face laid on the same round surface turned half a turn: glued back, the pieces make the one
     // face again, its seam now opposite, and nothing goes straight on from the end of the edge any more. All of them, not
@@ -1421,16 +1466,14 @@ static bool move_seams_off(QymShape* q, const uint32_t* idx, size_t n) {
     if (!mod.IsDone()) return false;
     TopoDS_Shape remade = mod.ModifiedShape(cut.shape);
     for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(turn->face_to); it.More(); it.Next()) exact_isos(TopoDS::Face(mod.ModifiedShape(it.Key())));
-    // THE NAMES FROM THE BODY AS IT WAS, by the one carrying of the bridge: the turning moves nothing, so an element lying
-    // exactly where one lay is its image; the rest - the pieces of a cut face - go by what the cutting and the turning made
-    // of them, a face cut in pieces keeping its name on the first
+    // THE NAMES FROM THE BODY AS IT WAS, by the one carrying of the bridge, through what the cutting and the turning made
+    // of each element - its history, not its place; a face cut in pieces keeps its name on the first
     {
         QymModifierHistory turned(mod);
         QymChainHistory made(divided, turned);
-        QymSamePlaceHistory history(remade, made);
         int nf = next_local(q->fids), ne = next_local(q->eids);
-        carry_ids(history, q->shape, TopAbs_FACE, q->fids, cut.fids, nf);
-        carry_ids(history, q->shape, TopAbs_EDGE, q->eids, cut.eids, ne);
+        carry_ids(made, q->shape, TopAbs_FACE, q->fids, cut.fids, nf);
+        carry_ids(made, q->shape, TopAbs_EDGE, q->eids, cut.eids, ne);
         keep_standing(remade, TopAbs_FACE, cut.fids);
         keep_standing(remade, TopAbs_EDGE, cut.eids);
     }
@@ -1523,6 +1566,9 @@ extern "C" QymShape* qym_shape_fillet_edges(const QymShape* s, double r, const u
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_fillet_edges(m, r, idx, n, names, corners, all_names, n_all); });
+        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
+        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
+        s = &own;
         BRepFilletAPI_MakeFillet mk(s->shape);
         if (add_fillet_edges_by_id(mk, s, r, idx, n) == 0) return why_no_named_edges("fillet/edges", s, n), nullptr;
         mk.Build();
@@ -1577,6 +1623,9 @@ extern "C" QymShape* qym_shape_fillet_at_vertices(const QymShape* s, double r_de
             }
             return out > 0.0 ? out : r_default;
         };
+        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
+        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
+        s = &own;
         BRepFilletAPI_MakeFillet mk(s->shape);
         int added = 0;
         for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
@@ -1619,6 +1668,9 @@ extern "C" QymShape* qym_shape_fillet_var(const QymShape* s, double r1, double r
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_fillet_var(m, r1, r2, idx, n); });
+        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
+        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
+        s = &own;
         BRepFilletAPI_MakeFillet mk(s->shape);
         int added = 0;
         for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
@@ -1647,6 +1699,9 @@ extern "C" QymShape* qym_shape_chamfer_edges(const QymShape* s, double d, const 
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_chamfer_edges(m, d, idx, n, names, corners, all_names, n_all); });
+        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
+        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
+        s = &own;
         BRepFilletAPI_MakeChamfer mk(s->shape);
         if (add_chamfer_edges_by_id(mk, s, d, idx, n) == 0) return why_no_named_edges("chamfer/edges", s, n), nullptr;
         mk.Build();
@@ -1682,6 +1737,9 @@ extern "C" QymShape* qym_shape_chamfer_edges_asym(const QymShape* s, double a, d
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_chamfer_edges_asym(m, a, b, mode, flip, ref_face, idx, n, names, corners, all_names, n_all); });
+        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
+        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
+        s = &own;
         BRepFilletAPI_MakeChamfer mk(s->shape);
         TopTools_IndexedDataMapOfShapeListOfShape efMap;
         TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, efMap);

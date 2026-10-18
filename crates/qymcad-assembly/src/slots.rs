@@ -114,13 +114,16 @@ pub fn joint_slot_drag(ui: &mut egui::Ui, jj: &mut qymcad_core::feature::Joint, 
 
 /// THE FORMULAS TYPED INTO THE SLOT FIELDS OF JOINT `jid` (`joint_slot_drag`) kept as the slots' expressions, the
 /// same ones the `f=` fields edit: an empty text takes the formula off, and one already standing is not written again.
-pub fn keep_slot_exprs(project: &mut Project, jid: Id, exprs: Vec<(usize, String)>) {
+/// Written through the one door of a feature's number (`Project::write_feat_formula`), a plain number standing as the
+/// number; the first refusal is handed back.
+pub fn keep_slot_exprs(project: &mut Project, jid: Id, exprs: Vec<(usize, String)>) -> Result<(), qymcad_core::errors::ExprError> {
     for (slot, text) in exprs {
         let key = ["angle", "offset", "offset2"][slot.min(2)];
         if project.feat_dim(jid, key).unwrap_or("") != text {
-            project.set_feat_dim(jid, key, text);
+            project.write_feat_formula(&qymcad_core::model::FeatNumber { node: jid, key }, &text, qymcad_core::model::PlainNumber::Stands)?;
         }
     }
+    Ok(())
 }
 
 /// HOW MANY JOINTS A KIND EXPECTS: two for all of them except the screw, which makes do with one.

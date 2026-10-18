@@ -43,8 +43,9 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
     enum Act {
         Rename(usize, String),
         SetExpr(usize, String),
-        /// A driving dimension's value (or a feature's parameter) is edited straight from the table.
-        SetDriver(usize, f64),
+        /// A driving dimension's value (or a feature's parameter) is edited straight from the table: the text as typed,
+        /// a formula kept as a formula.
+        SetDriver(usize, String),
         DropDriver(usize),
         /// Go to whatever was named: the dimension's sketch, or the feature.
         GoTo(usize),
@@ -80,7 +81,10 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                 // into the model on every letter, and every formula referring to it broke on the very first one.
                 let own = names[i].clone();
                 let taken = |nm: &str| nm != own && wc.project.name_owner(nm).is_some();
-                let ok = |nm: &str| qymcad_core::drivers::check_ident(nm).is_ok() && !taken(nm);
+                // A NAME THAT WOULD CLOSE A CIRCLE is refused as a taken one is: a formula reads it while nobody holds it,
+                // and this row's own formula reads that one back
+                let circle = |nm: &str| if nm == own { None } else { wc.project.rename_closes_circle(&qymcad_core::model::Renamed { old: &own, new: nm }) };
+                let ok = |nm: &str| qymcad_core::drivers::check_ident(nm).is_ok() && !taken(nm) && circle(nm).is_none();
                 let id = egui::Id::new(("par_name", i));
                 let r = super::expr_field::name_field(ui, &*wc.project, id, &names[i], w_name, "w", &ok);
                 name_w = name_w.max(r.resp.rect.width());
@@ -96,10 +100,13 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                         Some(o) if nm != own => {
                             // A GLOBAL PARAMETER HAS NO PATH, and giving it a "where this dimension sits" would be
                             // a lie: it is not a dimension and it sits nowhere.
-                            let where_ = if o.path.is_empty() { crate::i18n::tr("par-owner-project") } else { o.path.clone() };
+                            let where_ = if o.path.is_empty() { crate::i18n::tr("par-owner-project") } else { qymcad_ui_state::path_in_words(&o.path) };
                             crate::i18n::tr2("par-name-taken", "name", &nm, "where", &where_)
                         }
-                        _ => crate::i18n::tr1("par-name-bad", "name", &nm),
+                        _ => match circle(&nm) {
+                            Some(chain) => crate::gui::error_words::expr_error_text(&qymcad_core::errors::ExprError::LeansOnItself(chain)),
+                            None => crate::gui::error_words::ident_refusal_text(&nm),
+                        },
                     });
                 }
 
@@ -111,7 +118,7 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
 
                 // THE VALUE IS COMPUTED FROM WHAT IS IN THE FIELD RIGHT NOW rather than from what was recorded: the
                 // answer is visible while typing, and it costs the document nothing.
-                match wc.project.eval_expr(&r.text) {
+                match wc.project.check_param_text(i, &r.text) {
                     Ok(v) => {
                         ui.label(format!("{v:.3}"));
                     }
@@ -172,12 +179,13 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                 match val {
                     Some(v) => {
                         let id = egui::Id::new(("drv_val", k));
-                        let shown = qymcad_core::expr::fmt_num(v);
+                        // THE FORMULA WHEN THERE IS ONE, the number otherwise - what was typed, as the popup of the
+                        // dimension shows it; on Enter the text goes in as typed. Reported behaviour: a formula typed
+                        // here became a constant - `a_len/4` with `a_len` = 40 stayed 10 when `a_len` went to 60.
+                        let shown = wc.project.named_dims.get(k).and_then(|n| wc.project.dim_target_expr(&n.target)).unwrap_or_else(|| qymcad_core::expr::fmt_num(v));
                         let r = super::expr_field::expr_field(ui, &*wc.project, id, &shown, w_expr, &crate::i18n::tr("par-example"));
-                        if r.committed && r.text.trim() != shown {
-                            if let Ok(nv) = wc.project.eval_expr(&r.text) {
-                                acts.push(Act::SetDriver(k, nv));
-                            }
+                        if r.committed && r.text.trim() != shown.trim() {
+                            acts.push(Act::SetDriver(k, r.text.trim().to_string()));
                         }
                         ui.label(format!("{v:.3}"));
                     }
@@ -204,8 +212,9 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
         });
     });
     wc.tree.drv_path_rects = paths;
+    // A REFUSAL, NOT A WARNING: Enter does not apply the name, which is what the tone of a refusal says.
     if let Some(msg) = &refusal {
-        qymcad_ui_state::say(ui, &wc.scheme.pal, &qymcad_ui_state::Notice::warning(msg.clone()), qymcad_ui_state::NoticeSize::Small);
+        qymcad_ui_state::say(ui, &wc.scheme.pal, &qymcad_ui_state::Notice::refusal(msg.clone()), qymcad_ui_state::NoticeSize::Small);
     }
     for a in acts {
         match a {
@@ -223,11 +232,21 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                     drop(ed);
                     done
                 };
-                if done.is_err() {
-                    *wc.status = Notice::refusal(crate::i18n::tr1("par-name-bad", "name", &nm));
+                match done {
+                    Err(qymcad_core::drivers::RenameError::LeansOnItself(chain)) => {
+                        *wc.status = Notice::refusal(crate::gui::error_words::expr_error_text(&qymcad_core::errors::ExprError::LeansOnItself(chain)))
+                    }
+                    Err(_) => *wc.status = Notice::refusal(crate::gui::error_words::ident_refusal_text(&nm)),
+                    Ok(_) => {}
                 }
             }
             Act::SetExpr(i, e) => {
+                // A FORMULA THAT CLOSES A CIRCLE IS REFUSED before it reaches the document, with its chain: taken, `a = b+1`
+                // with `b = a+1` left both without a value. Any other formula with no value is kept and said beside its row.
+                if let Err(why @ qymcad_core::errors::ExprError::LeansOnItself(_)) = wc.project.check_param_text(i, &e) {
+                    *wc.status = Notice::refusal(crate::gui::error_words::expr_error_text(&why));
+                    continue;
+                }
                 if fresh_row(wc, i) {
                     wc.project.parameters[i].expr = e; // the first value of a row just added is part of adding it
                     qymcad_ui_state::fold_into_last_step(wc.edits, wc.project);
@@ -238,10 +257,16 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                 }
                 *dirty = true;
             }
-            Act::SetDriver(k, v) => {
+            Act::SetDriver(k, text) => {
                 let Some(target) = wc.project.named_dims.get(k).map(|n| n.target.clone()) else { continue };
+                // A TEXT THAT IS NOT TAKEN IS REFUSED BEFORE THE STEP OPENS, so it leaves no empty step of undo: a formula
+                // with no value now, or one that comes back to this very name and would drift on every evaluation.
+                if let Err(e) = wc.project.check_dim_target_text(&target, &text) {
+                    *wc.status = Notice::refusal(crate::gui::error_words::expr_error_text(&e));
+                    continue;
+                }
                 let mut ed = qymcad_ui_state::edit_over(wc.rebuild(), crate::i18n::tr("par-edit-step"));
-                let done = ed.project().set_dim_target_value(&target, v);
+                let done = ed.project().set_dim_target_text(&target, &text).unwrap_or(false);
                 // THE SKETCH IS RESOLVED EXACTLY ONCE - here, on commit - AND THE BODIES STANDING ON IT ARE
                 // MARKED FOR REBUILD.
                 //
@@ -269,7 +294,7 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                 // undo each other: the jump landed nowhere. The road is the one a fault in the window of
                 // faults takes, so the two windows cannot come to lead to different places.
                 if let Some(g) = qymcad_ui_state::fault_goes_to(wc.project, &qymcad_ui_state::FaultPlace::Driver(k)) {
-                    wc.ask.push(qymcad_ui_state::WinAsk::GoTo { owner: g.owner, sel: g.sel });
+                    wc.ask.push(qymcad_ui_state::WinAsk::GoTo { owner: g.owner, sel: g.sel, said: None });
                 }
             }
             Act::DropDriver(k) => {
@@ -369,3 +394,9 @@ pub(crate) fn apply_param_edit(wc: &mut qymcad_ui_state::WinCtx) {
     qymcad_ui_state::fold_into_last_step(wc.edits, wc.project);
     qymcad_ui_state::rebuild_if_dirty(&mut wc.rebuild()); // the bodies rebuild associatively from the new parameters
 }
+
+#[cfg(test)]
+mod tests;
+/// The popup of a sketch dimension and the fields of a feature's number refuse a formula leaning on itself as the table does.
+#[cfg(test)]
+mod leans_on_itself;

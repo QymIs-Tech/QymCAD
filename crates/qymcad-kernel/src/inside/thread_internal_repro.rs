@@ -56,7 +56,9 @@ fn internal_thread_must_cut_into_the_wall_not_into_the_void() {
 #[test]
 fn long_internal_thread_is_valid_and_not_glacial() {
     let g = user_spec().geometry();
-    let t = std::time::Instant::now();
+    // the work of the kernel, not the share of the machine it was given (`time_budget::Cost`): its booleans run on
+    // threads of their own
+    let meter = qymcad_core::time_budget::Meter::start(qymcad_core::time_budget::Doer::Process);
     let cut = tube()
         .helical_profile(crate::HelicalCut {
             axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 5.0], dir: [0.0, 0.0, 1.0] },
@@ -74,10 +76,11 @@ fn long_internal_thread_is_valid_and_not_glacial() {
             crest_relief: 0.0,
         })
         .expect("the 100 mm thread was built");
-    let dt = t.elapsed();
-    eprintln!("[perf] internal ACME Ø30 P5 over 100 mm, twenty turns: {dt:?}, V={:.1} mm³", cut.volume());
+    let built = meter.cost();
+    eprintln!("[perf] internal ACME Ø30 P5 over 100 mm, twenty turns: {built}, V={:.1} mm³", cut.volume());
     assert!(cut.is_valid(), "a long thread gives a valid body");
-    assert!(dt < std::time::Duration::from_secs(40), "building a long thread became expensive: {dt:?}");
+    let budget = std::time::Duration::from_secs(40);
+    assert!(built.work < budget, "{}", qymcad_core::time_budget::over("building a long internal thread", built, budget));
 }
 
 /// A thread is uniform along its length: 100 mm has to remove exactly twice as much as 50 mm on the same body.

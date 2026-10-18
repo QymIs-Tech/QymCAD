@@ -569,34 +569,26 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             }
         }
         Sec::Layout => {
-            // WHERE THE PANELS STAND. The list is the shell's own: this code names no panel and no
-            // workbench, it walks what was registered. A place added by anyone appears here by itself.
-            let shell = crate::gui::shell(&*wc.set);
+            // WHERE THE PANELS STAND, as a diagram of the window: the shell's own places, so this code names no
+            // panel and no workbench, and a place added by anyone appears here by itself
             if show("settings-layout-place") {
                 ui.label(crate::i18n::tr("settings-layout-place"));
-                let mut moves: Vec<(String, qymcad_shell::Slot)> = Vec::new();
-                for key in shell.keys() {
-                    let now = shell.slot_of(key).unwrap_or(qymcad_shell::Slot::Centre);
-                    ui.horizontal(|ui| {
-                        ui.label(crate::i18n::tr(&format!("panel-{key}")));
-                        for slot in qymcad_shell::Slot::ORDER {
-                            if ui.selectable_label(now == slot, crate::i18n::tr(slot.key())).clicked() && now != slot {
-                                moves.push((key.to_string(), slot));
-                            }
-                        }
-                    });
-                }
-                for (k, slot) in moves {
-                    let mut sh = crate::gui::shell(&*wc.set);
-                    sh.move_to(&k, slot);
-                    wc.set.layout = sh.saved();
-                }
+                super::layout_diagram(&mut *wc.set, ui);
             }
+            super::bar_look(&mut *wc.set, ui, &show);
             if show("settings-layout-reset") && ui.button(crate::i18n::tr("settings-layout-reset")).clicked() {
                 let mut sh = crate::gui::shell(&*wc.set);
                 sh.reset();
                 wc.set.layout = sh.saved();
+                wc.set.bar = qymcad_ui_state::BarSetting::default();
             }
+        }
+    }
+    // THE BUTTONS OF THE BAR of the section's workbench, whichever workbench it is
+    if let Some(bench) = sec.bench() {
+        if show("settings-bar-buttons") {
+            ui.separator();
+            super::bar_buttons(&mut *wc.set, ui, bench);
         }
     }
 }

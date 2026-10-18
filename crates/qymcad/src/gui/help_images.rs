@@ -297,76 +297,6 @@ mod tests {
         })
     }
 
-    /// A SKETCH AT A SCALE SET IN ADVANCE - for the animations.
-    ///
-    /// Fitting the frame to the bounds does not do here: after a trim the geometry gets smaller and the
-    /// frame closes in - to the eye it looks as if the line did not shorten but came nearer.
-    fn shot_sketch_fixed(app: &mut App, si: usize, scale: f32) -> ColorImage {
-        app.viewing.mode_3d = false;
-        app.project.regen_sketch(si);
-        app.viewing.view.scale = scale;
-        app.viewing.view.center = super::super::Vec2::new(0.0, 0.0);
-        app.viewing.view.initialized = true;
-        let bg = app.scheme.pal.viewport_bg();
-        let a = &*app;
-        super::super::help_raster::shot_ui([640, 400], bg, |ui| {
-            let ctx = &ui.ctx().clone();
-            ctx.set_visuals(if a.scheme.pal.light { egui::Visuals::light() } else { egui::Visuals::dark() });
-            egui::CentralPanel::default().show(ui, |ui| {
-                let painter = ui.painter().clone();
-                let r = ui.available_rect_before_wrap();
-                painter.rect_filled(r, 0.0, bg);
-                a.draw_contours(&painter, r);
-                a.draw_sketch_constraints(&painter, r, si);
-                a.draw_sketch_dims(&painter, r, si);
-            });
-        })
-    }
-
-    /// An empty sketch in a part of its own - the basis of the scenes in the sketch section.
-    fn empty_sketch() -> (App, usize) {
-        let mut app = in_one_part();
-        let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
-        (app, si)
-    }
-
-    /// A SHOT OF A SKETCH: the geometry, the constraint glyphs and the dimension captions - by the same
-    /// code that draws the sketcher on screen (`draw_contours` plus `draw_sketch_constraints` plus
-    /// `draw_sketch_dims`).
-    ///
-    /// The background is OPAQUE, unlike the pictures of bodies: the canvas of the sketcher is part of the
-    /// picture, and without it the page would carry bare lines in a colour meant for a dark canvas.
-    fn shot_sketch(app: &mut App, si: usize, w: usize, h: usize) -> ColorImage {
-        app.viewing.mode_3d = false;
-        app.project.regen_sketch(si);
-        qymcad_ui_state::fit(&app.project, &mut app.viewing.view, Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(w as f32, h as f32)));
-        let bg = app.scheme.pal.viewport_bg();
-        let a = &*app;
-        super::super::help_raster::shot_ui([w, h], bg, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                let painter = ui.painter().clone();
-                let r = ui.available_rect_before_wrap();
-                painter.rect_filled(r, 0.0, bg);
-                a.draw_contours(&painter, r);
-                a.draw_sketch_constraints(&painter, r, si);
-                a.draw_sketch_dims(&painter, r, si);
-            });
-        })
-    }
-
-    /// One frame of a sketch animation (sketches fit their own camera - the scenes are all the same size).
-    fn sketch_frame(app: &mut App, si: usize, dir: &str, i: usize) {
-        std::fs::create_dir_all(img_dir().join(dir)).expect("the frame directory");
-        let img = shot_sketch(app, si, 640, 400);
-        save(&format!("{dir}/{i:02}.png"), &img);
-    }
-
-    /// A single picture of a sketch.
-    fn sketch_still(app: &mut App, si: usize, name: &str) {
-        let img = shot_sketch(app, si, 640, 400);
-        save(&format!("{name}.png"), &img);
-    }
-
     /// REDRAW THE PICTURES OF THE HELP. Run by hand - a test must not write into the repository on every
     /// run: it would then not be checking anything but changing it.
     ///
@@ -985,7 +915,7 @@ mod tests {
                     };
                     {
                         let mut asks = Vec::new();
-                        crate::gui::panels_bars::wb_toolbar(&mut a.bar_ctx(&mut asks), ui);
+                        crate::gui::panels_bars::wb_toolbar(&mut a.bar_ctx(&mut asks), ui, None);
                         let c = ui.ctx().clone();
                         a.do_bar_asks(asks, &c);
                     };
@@ -1187,7 +1117,7 @@ mod tests {
                     };
                     {
                         let mut asks = Vec::new();
-                        crate::gui::panels_bars::wb_toolbar(&mut a.bar_ctx(&mut asks), ui);
+                        crate::gui::panels_bars::wb_toolbar(&mut a.bar_ctx(&mut asks), ui, None);
                         let c = ui.ctx().clone();
                         a.do_bar_asks(asks, &c);
                     };
@@ -1772,136 +1702,12 @@ mod tests {
             save("help-window.png", &img);
         }
 
+        layout::pictures();
         eprintln!("the pictures were written to {}", img_dir().display());
     }
 
-    /// EVERY PICTURE MENTIONED IN AN ARTICLE EXISTS.
-    ///
-    /// A broken picture looks like a fault in the program rather than like a forgotten file. And there is no
-    /// other way to notice it than by opening that very article in that very language.
-    #[test]
-    fn every_image_in_the_articles_exists() {
-        let mut missing = Vec::new();
-        for l in crate::help::languages() {
-            for a in crate::help::articles(&l) {
-                let md = crate::help::article(&a).expect("the article");
-                for line in md.lines() {
-                    let t = line.trim();
-                    let Some(rest) = t.strip_prefix("![") else { continue };
-                    let Some((_, p)) = rest.split_once("](") else { continue };
-                    let Some(path) = p.strip_suffix(')') else { continue };
-                    let ok = if path.ends_with('/') { !crate::help::frames(path).is_empty() } else { crate::help::image(path).is_some() };
-                    if !ok {
-                        missing.push(format!("{l}/{a} -> {path}"));
-                    }
-                }
-            }
-        }
-        assert!(missing.is_empty(), "an article refers to a picture that does not exist ({}):\n{}", missing.len(), missing.join("\n"));
-    }
-
-    /// AND EVERY PICTURE IS A REAL PNG OF A SENSIBLE SIZE.
-    ///
-    /// "The file exists" is half a check: a truncated write, an empty file, an accidentally committed
-    /// placeholder all pass straight through it, while the window shows an empty space.
-    #[test]
-    fn every_image_decodes_and_is_big_enough() {
-        let mut all: Vec<String> = Vec::new();
-        collect_paths(&mut all);
-        assert!(all.len() > 10, "suspiciously few pictures in the help: {}", all.len());
-        for p in all {
-            let bytes = crate::help::image(&p).unwrap_or_else(|| panic!("no file {p}"));
-            let img = image::load_from_memory(bytes).unwrap_or_else(|e| panic!("{p} does not read as a picture: {e}"));
-            let (w, h) = (image::GenericImageView::dimensions(&img).0, image::GenericImageView::dimensions(&img).1);
-            // BY AREA AND BY EACH SIDE rather than "no narrower than 320". The rule was written for scenes
-            // with a body - those are wide; a shot of a side panel is tall and narrow (300x420), and the old
-            // measure rejected it although everything in it can be made out perfectly well.
-            assert!(w >= 240 && h >= 200 && w * h >= 96_000, "picture {p} is too small ({w}x{h}) - it cannot be made out in an article");
-        }
-    }
-
-    /// Every picture path (the frames of an animation are expanded by name).
-    fn collect_paths(out: &mut Vec<String>) {
-        for l in crate::help::languages() {
-            for a in crate::help::articles(&l) {
-                let md = crate::help::article(&a).expect("the article");
-                for line in md.lines() {
-                    let t = line.trim();
-                    let Some(rest) = t.strip_prefix("![") else { continue };
-                    let Some((_, p)) = rest.split_once("](") else { continue };
-                    let Some(path) = p.strip_suffix(')') else { continue };
-                    if path.ends_with('/') {
-                        out.extend(crate::help::frames(path));
-                    } else {
-                        out.push(path.to_string());
-                    }
-                }
-            }
-        }
-        out.sort();
-        out.dedup();
-    }
-
-    /// AND THERE IS SOMETHING IN THE PICTURE: it is not one colour and not one flat blot.
-    ///
-    /// Exactly the fault that was caught by eye and only by chance: the rasteriser stopped assembling the
-    /// viewport texture, and the body was drawn SOLID WHITE. The file was in place, the size was right, the
-    /// PNG decoded - every earlier guard stayed green. The colours are counted: a real scene has hundreds of
-    /// them (light, antialiasing, shadows), a flat blot has a handful.
-    #[test]
-    fn every_image_actually_shows_something() {
-        let mut all: Vec<String> = Vec::new();
-        collect_paths(&mut all);
-        for p in all {
-            let bytes = crate::help::image(&p).unwrap_or_else(|| panic!("no file {p}"));
-            let img = image::load_from_memory(bytes).expect("the picture decodes").to_rgb8();
-            let total = img.pixels().len();
-            let mut seen: std::collections::HashMap<[u8; 3], usize> = std::collections::HashMap::new();
-            for px in img.pixels() {
-                *seen.entry(px.0).or_default() += 1;
-            }
-            let top = seen.values().copied().max().unwrap_or(total);
-            // THE THRESHOLDS ON FILL ARE DELIBERATELY WEAK, and that is not laziness. The pictures differ
-            // enormously: a scene with a body has hundreds of colours, while a frame of two lines in a sketch
-            // has six, and 99 % of the area is background. A strict threshold would reject correct pictures,
-            // and a guard that complains about the correct gets switched off altogether. 24 colours and 97 %
-            // were tried - the array of posts and the line extension fell out.
-            assert!(seen.len() >= 3, "{p}: only {} colours - the picture is empty", seen.len());
-            assert!(top * 1000 / total <= 998, "{p}: {} per mille of the area is one colour - there is nothing in the picture", top * 1000 / total);
-            // PURE WHITE NEVER OCCURS HERE: the scheme is dark and the background of the scenes is
-            // transparent. A lot of white is exactly the case where the rasteriser lost the texture and
-            // filled the body with it.
-            let white = seen.get(&[255, 255, 255]).copied().unwrap_or(0);
-            assert!(white * 100 / total <= 15, "{p}: {}% pure white - the texture seems to have been lost", white * 100 / total);
-        }
-    }
-
-    /// A PICTURE REACHES THE SCREEN while its markup does not.
-    ///
-    /// The parser can be mended and then left unwired from the drawing; the window would then show either
-    /// emptiness or a raw `![...](...)` - and both read as a fault in the program.
-    #[test]
-    fn the_window_draws_an_image_and_its_caption() {
-        // THE LANGUAGE IS PINNED. The frame is drawn in the current language while the caption is taken
-        // from the article - and between those two steps a neighbouring test managed to switch the language:
-        // one language on screen, a word of another in the expectation. The test went red not from a fault
-        // but from another run alongside it.
-        let prev = crate::i18n::language();
-        crate::i18n::set_language("ru");
-        crate::help::set_lang("ru");
-        let mut app = App::default();
-        app.open_help("part/08-hole");
-        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.help_window(c));
-        assert!(!texts.iter().any(|t| t.contains("![") || t.contains("img/")), "the markup of a picture reached the screen raw: {:?}", texts.iter().filter(|t| t.contains("img/")).collect::<Vec<_>>());
-        // THE CAPTION IS TAKEN FROM THE ARTICLE ITSELF rather than written out as a word: the language of the
-        // help is shared across the run and neighbouring tests switch it - a string nailed down in one
-        // language would go red every other time.
-        let md = crate::help::article("part/08-hole").expect("the article");
-        let caption = md.lines().find_map(|l| l.trim().strip_prefix("![").and_then(|r| r.split_once("](")).map(|(c, _)| c.to_string())).expect("the caption of the picture in the article");
-        let word = caption.split_whitespace().max_by_key(|w| w.chars().count()).expect("a word of the caption");
-        let found = texts.iter().any(|t| t.contains(word));
-        crate::i18n::set_language(&prev);
-        crate::help::set_lang("");
-        assert!(found, "there is no caption under the picture (looked for \"{word}\"): {texts:?}");
-    }
+    mod guards;
+    mod layout;
+    mod sketch_shots;
+    use sketch_shots::*;
 }

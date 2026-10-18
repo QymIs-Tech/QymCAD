@@ -1,164 +1,53 @@
-//! THE COMMAND CATALOGUE AND THE PANEL DO NOT DRIFT APART.
+//! THE COMMAND CATALOGUE AND THE HELP DO NOT DRIFT APART.
 //!
-//! The catalogue is what the search needs, but a list inside the search would fall behind the panel
-//! at the very first new feature. That has already happened twice and both times was fixed the same
-//! way: one rule and a guard that holds the link in BOTH directions. The same here — a button in the
-//! panel must have a row in the catalogue, a row in the catalogue must have a button.
-//!
-//! The same means that holds the help together (`help_map_flow`): the table does not draw the
-//! buttons, but the build goes red the moment they diverge.
+//! The bars used to write their buttons one by one in the code, and this guard held them to the rows of the
+//! catalogue by reading the source in both directions. The bars are drawn from the rows now, so a button without a
+//! row cannot be written. What is left to hold: every command the help knows has a row, every row has an article and
+//! a name a person reads, and launching by code leads into the command the button starts.
 #[cfg(test)]
 mod tests {
-    use crate::command_catalog::{Launch, COMMANDS};
+    use crate::command_catalog::{all, Launch, Named};
 
-    /// The tool number out of a call, wherever it now sits in the argument list.
-    ///
-    /// It used to be the first thing after the bracket, so the guard read up to the first `)` and
-    /// parsed that. Once the panels stopped being methods the calls gained their fields in front -
-    /// `set_sk_tool(&mut cmd, .., 3)` - and every tool went unseen at once, which read as "suspiciously
-    /// few tools" rather than as a broken needle. The number is the LAST argument; find the matching
-    /// bracket and take it.
-    fn trailing_number(tail: &str) -> Option<u8> {
-        let (mut depth, mut end) = (0i32, None);
-        for (i, ch) in tail.char_indices() {
-            match ch {
-                '(' | '[' | '<' => depth += 1,
-                ')' if depth == 0 => {
-                    end = Some(i);
-                    break;
-                }
-                ')' | ']' | '>' => depth -= 1,
-                _ => {}
-            }
-        }
-        let last = tail[..end?].rsplit(',').next()?.trim();
-        // an editing tool is named, not numbered: `EditTool::Mirror` reads as the button's number of the mirror
-        last.parse::<u8>().ok().or_else(|| {
-            let name = last.rsplit("::").next()?;
-            qymcad_ui_state::EditTool::ALL.iter().find(|t| format!("{t:?}") == name).map(|t| t.code())
-        })
-    }
-
-    /// The tools wired to a button, each as the kind of launch and its number: the part and primitive commands, and
-    /// the sketch tools, dimensions, clicks and modifications.
-    struct Wired {
-        feats: Vec<(&'static str, u8)>,
-        sketch: Vec<(String, u8)>,
-    }
-
-    /// The tool numbers that really exist in the interface.
-    ///
-    /// TWO FILES: the workbench panel lives in `panels.rs`, the common creation panel (datums, sketch)
-    /// in `gui.rs`. The help guard was already caught out by this once, missing the datums entirely.
-    fn tools_in_ui() -> Wired {
-        let joined = format!(
-            "{}\n{}",
-            crate::gui::panels_source::PANELS,
-            concat!(
-                include_str!("file_doors.rs"),
-                "\n",
-                include_str!("gizmo_math.rs"),
-                "\n",
-                include_str!("look.rs"),
-                "\n",
-                include_str!("panel_bits.rs"),
-                "\n",
-                include_str!("startup.rs"),
-                "\n",
-                include_str!("view_anim.rs"),
-                "\n",
-                include_str!("../gui.rs")
-            )
-        );
-        let src: &str = &joined;
-        let mut feats: Vec<(&'static str, u8)> = Vec::new();
-        let mut sk: Vec<(String, u8)> = Vec::new();
-        // A BUTTON NAMES ITS REQUEST. The bars used to call the command straight from the panel; they now
-        // put a named request in the frame's list, so the wiring reads `BarAsk::FeatCmd(7)` where it read
-        // `start_feat_cmd(7)`. Both spellings are looked for: the request is what a bar writes, the call is
-        // what the frame writes, and a tool is wired if EITHER is there.
-        for (pat, tag) in [("start_feat_cmd(", "feat"), ("BarAsk::FeatCmd(", "feat"), ("start_prim_cmd(", "prim"), ("BarAsk::PrimCmd(", "prim")] {
-            let mut rest = src;
-            while let Some(i) = rest.find(pat) {
-                let tail = &rest[i + pat.len()..];
-                rest = tail;
-                if let Some(n) = trailing_number(tail) {
-                    {
-                        let key = (tag, n);
-                        if !feats.contains(&key) {
-                            feats.push(key);
-                        }
-                    }
-                }
-            }
-        }
-        for (pat, handle) in [
-            ("set_sk_tool(", "sk"),
-            ("BarAsk::SketchTool(", "sk"),
-            ("set_dim_tool(", "dim"),
-            ("set_click_op(", "click"),
-            ("start_corner_tool(", "click"),
-            ("modify_button(", "mod"),
-        ] {
-            let mut rest = src;
-            while let Some(i) = rest.find(pat) {
-                let tail = &rest[i + pat.len()..];
-                rest = tail;
-                if let Some(n) = trailing_number(tail) {
-                    {
-                        let key = (handle.to_string(), n);
-                        if !sk.contains(&key) {
-                            sk.push(key);
-                        }
-                    }
-                }
-            }
-        }
-        Wired { feats, sketch: sk }
-    }
-
-    /// EVERY BUTTON HAS A CATALOGUE ROW. Otherwise the search will not find it, and a person will be
-    /// certain the command does not exist.
+    /// EVERY COMMAND THE HELP KNOWS HAS A ROW, so a button on its bar and a line in the search. The tables of the
+    /// help name the commands by their kind and number; a number without a row is a command a person cannot reach.
     #[test]
-    fn every_tool_in_the_ui_is_in_the_catalog() {
-        let Wired { feats, sketch: sk } = tools_in_ui();
-        assert!(feats.len() > 20 && sk.len() > 15, "suspiciously few tools were found: {} and {}", feats.len(), sk.len());
-        for (tag, n) in &feats {
-            let found = COMMANDS.iter().any(|c| match (tag, c.launch) {
-                (&"feat", Launch::Feat(m)) => m == *n,
-                (&"prim", Launch::Prim(m)) => m == *n,
+    fn every_command_the_help_knows_is_in_the_catalogue() {
+        let mut missing = Vec::new();
+        for (kind, _) in qymcad_help::map::PART {
+            if !all().any(|c| matches!(c.launch, Launch::Feat(k) | Launch::Prim(k) if k == *kind)) {
+                missing.push(format!("the part kind {kind}"));
+            }
+        }
+        for (handle, n, _) in qymcad_help::map::SKETCH {
+            let found = all().any(|c| match c.launch {
+                Launch::SkTool(m) => *handle == "sk" && m == *n,
+                Launch::Dim(m) => *handle == "dim" && m == *n,
+                Launch::ClickOp(m) => *handle == "click" && m == *n,
+                Launch::Modify(t) => *handle == "mod" && t.code() == *n,
                 _ => false,
             });
-            assert!(found, "{tag}({n}) is in the panel and not in the command catalogue — the search will not find it");
+            if !found {
+                missing.push(format!("the sketch tool {handle} {n}"));
+            }
         }
-        for (h, n) in &sk {
-            let found = COMMANDS.iter().any(|c| match (h.as_str(), c.launch) {
-                ("sk", Launch::SkTool(m)) => m == *n,
-                ("dim", Launch::Dim(m)) => m == *n,
-                ("click", Launch::ClickOp(m)) => m == *n,
-                ("mod", Launch::Modify(m)) => m.code() == *n,
-                _ => false,
-            });
-            assert!(found, "{h}({n}) is in the panel and not in the catalogue");
-        }
+        assert!(missing.is_empty(), "the help knows these commands and the catalogue has no row for them: {missing:?}");
     }
 
-    /// AND THE OTHER WAY ROUND: the catalogue promises nothing the program does not have.
+    /// EVERY ROW HAS AN ARTICLE: F1 on its button and the help of the search lead somewhere.
     #[test]
-    fn the_catalog_promises_nothing_that_does_not_exist() {
-        let Wired { feats, sketch: sk } = tools_in_ui();
-        for c in COMMANDS {
-            let ok = match c.launch {
-                Launch::Feat(n) => feats.contains(&("feat", n)),
-                Launch::Prim(n) => feats.contains(&("prim", n)),
-                Launch::SkTool(n) => sk.contains(&("sk".to_string(), n)),
-                Launch::Dim(n) => sk.contains(&("dim".to_string(), n)),
-                Launch::ClickOp(n) => sk.contains(&("click".to_string(), n)),
-                Launch::Modify(tool) => sk.contains(&("mod".to_string(), tool.code())),
-                Launch::Action(_) => true, // assembly actions have launches of their own and need no numbers
-            };
-            assert!(ok, "the catalogue promises \"{}\" and there is no button for it in the interface", c.code);
-        }
+    fn every_command_has_an_article() {
+        let orphans: Vec<&str> = all().filter(|c| c.help_article().is_none()).map(|c| c.code).collect();
+        assert!(orphans.is_empty(), "these commands have no help article: {orphans:?}");
+    }
+
+    /// CODES DO NOT REPEAT: a key, a setting of the bar and the search name a command by its code.
+    #[test]
+    fn codes_do_not_repeat() {
+        let mut codes: Vec<&str> = all().map(|c| c.code).collect();
+        let n = codes.len();
+        codes.sort();
+        codes.dedup();
+        assert_eq!(codes.len(), n, "two rows of the catalogue share a code");
     }
 
     /// EVERY COMMAND HAS A NAME IN BOTH LANGUAGES, and it is not a code.
@@ -171,7 +60,7 @@ mod tests {
         for code in ["ru", "en"] {
             crate::i18n::set_language(code);
             crate::help::set_lang(code);
-            for c in COMMANDS {
+            for c in all() {
                 let n = c.name();
                 assert!(!n.trim().is_empty(), "{code}: the command \"{}\" has no name", c.code);
                 assert_ne!(n, c.code, "{code}: the name of command \"{}\" is its own code, so there is neither an article nor a key of its own", c.code);
@@ -192,7 +81,7 @@ mod tests {
         crate::i18n::set_language("ru");
         crate::help::set_lang("ru");
         for wb in ["sketch", "part", "assembly"] {
-            let names: Vec<String> = COMMANDS.iter().filter(|c| c.workbench == wb).map(|c| c.name()).collect();
+            let names: Vec<String> = all().filter(|c| c.home() == wb).map(|c| c.name()).collect();
             let mut uniq = names.clone();
             uniq.sort();
             uniq.dedup();

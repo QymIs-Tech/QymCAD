@@ -276,6 +276,8 @@ pub(in crate::gui) mod tests {
         let src = concat!(
             include_str!("../../../qymcad-assembly/src/bars.rs"),
             "\n",
+            include_str!("../../../qymcad-assembly/src/commands.rs"),
+            "\n",
             include_str!("../../../qymcad-assembly/src/gizmo.rs"),
             "\n",
             include_str!("../../../qymcad-assembly/src/picks.rs"),

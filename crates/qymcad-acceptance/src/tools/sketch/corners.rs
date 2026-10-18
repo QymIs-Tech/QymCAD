@@ -298,7 +298,7 @@ pub static FILLET_ALL: Tool = Tool {
     id: "sketch.fillet-all",
     flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "tool-fillet",
-    entries: &[Entry::Button("tb-fillet-all-hint")],
+    entries: &[Entry::Button("tb-fillet-all-hint"), Entry::Search("cmdname-fillet-all")],
     other: (Entry::Button("tb-line-hint"), "tool-line"),
     fixture: Fixture::RectangleInSketch,
     picks: &[],

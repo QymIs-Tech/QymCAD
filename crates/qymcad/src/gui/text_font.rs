@@ -190,6 +190,8 @@ mod tests {
                 "\n",
                 include_str!("../../../qymcad-part/src/bars/toolbar.rs"),
                 "\n",
+                include_str!("../../../qymcad-part/src/bars/commands.rs"),
+                "\n",
                 include_str!("../../../qymcad-part/src/bars.rs")
             ),
             "\n",

@@ -279,17 +279,13 @@ fn a_mirror_node_stands_below_the_body_it_copies() {
     assert!(seen.is_some(), "the mirror sees no body of the source above itself, so it copies what does not exist at its point in the timeline");
 }
 
-/// A moved sketch does not cost a fillet its edges.
-///
-/// Taken from a real document: editing the coordinates of a rectangle in a sketch left a fillet, picked by hand over
-/// edges further down the timeline, unable to find them. The cutouts stayed sharp and the edges had to be picked
-/// again. Measured on that file, healing returned 28 of the 36 picked edges.
-///
-/// The cause was the measure: a replacement was accepted only while the edge stayed within 0.5 mm of its former
-/// place. An edit moves geometry by an amount comparable to the part, not to half a millimetre. The tolerance is now
-/// derived from the bounding box of the body, and the same file returns 34 of 36.
+/// AN EDGE THAT MOVED AND LOST ITS NAME IS NOT GUESSED BY PLACE. A reference holds an edge by its name, and an edit
+/// that moves the edge keeps the name. A reference whose name is nowhere - a number from an old file - finds by place
+/// only the edge standing exactly where it saw its middle: an edge moved by 1.5 mm is said lost (the node tells it),
+/// not taken because it stands near, and an edge at the other end of the part is never taken. Within 2% of the body a
+/// moved neighbour was taken for the lost edge and nothing said so.
 #[test]
-fn a_moved_sketch_does_not_cost_the_fillet_its_edges() {
+fn an_edge_that_moved_and_lost_its_name_is_not_guessed_by_place() {
     let mut p = Project::default();
     // A snapshot of an edge: id, midpoint and direction, which is what the reference is healed by.
     let edge = |id: u32, mid: [f64; 3]| qymcad_core::geom::MeshEdge {
@@ -305,14 +301,16 @@ fn a_moved_sketch_does_not_cost_the_fillet_its_edges() {
         ends: Default::default(),
     };
     let fid: Id = 100;
-    // A part roughly 40 mm across; the edges used to sit here.
+    // A part roughly 40 mm across; the edges used to sit here, under numbers no name holds.
     p.edge_refs.insert(fid, vec![ElemSnapshot { id: 7, at: [0.0, 0.0, 0.0], dir: [1.0, 0.0, 0.0] }, ElemSnapshot { id: 8, at: [40.0, 0.0, 0.0], dir: [1.0, 0.0, 0.0] }]);
-    // After the sketch edit the names changed and the edges themselves moved by one and a half millimetres.
-    let now = vec![edge(70, [1.5, 0.0, 0.0]), edge(80, [41.5, 0.0, 0.0])];
-    let healed = p.resolve_edge_ids_in(&now, fid, &[7, 8]);
-    assert_eq!(healed.len(), 2, "healing lost the edges that moved with the edit: it returned {healed:?}, leaving unfilleted cutouts and no error to explain them");
-
-    // ...and it does not grab an unrelated edge. An edge at the other end of the part is no replacement for one that vanished.
+    // the edges moved by one and a half millimetres: near, not there
+    let moved = vec![edge(70, [1.5, 0.0, 0.0]), edge(80, [41.5, 0.0, 0.0])];
+    let healed = p.resolve_edge_ids_in(&moved, fid, &[7, 8]);
+    assert!(healed.is_empty(), "edges moved by 1.5 mm were taken by place for the lost ones: {healed:?}");
+    // standing exactly where the reference saw them, they are found
+    let there = vec![edge(70, [0.0, 0.0, 0.0]), edge(80, [40.0, 0.0, 0.0])];
+    assert_eq!(p.resolve_edge_ids_in(&there, fid, &[7, 8]), vec![70, 80], "the edges standing where the reference saw them were not found");
+    // ...and an edge at the other end of the part is never a replacement for one that vanished
     let far = vec![edge(90, [200.0, 0.0, 0.0])];
     let wrong = p.resolve_edge_ids_in(&far, fid, &[7]);
     assert!(wrong.is_empty(), "healing grabbed the distant edge {wrong:?}: a fillet landing in the wrong place is worse than a lost one");

@@ -268,6 +268,7 @@ impl Project {
             return None;
         }
         let loops: Vec<Id> = faces.iter().flat_map(|(outer, holes)| std::iter::once(*outer).chain(holes.iter().copied())).collect();
+        let regions: Vec<Id> = faces.iter().map(|(outer, _)| *outer).collect();
         let pieces = self.piece_sources(&loops);
         let slot_of = |src: Id, e: &crate::geom::ProfEdge| -> u32 { pieces.slot.get(&PieceKey { src, key: crate::geom::piece_of(e).0 }).copied().unwrap_or(0) };
         let encoded: Option<Vec<Vec<f64>>> = faces
@@ -278,7 +279,7 @@ impl Project {
                 Some(crate::geom::encode_profile_named(outer, &holes, &slot_of))
             })
             .collect();
-        Some(crate::feature::SourcedProfiles { profiles: encoded?, sources: pieces.sources })
+        Some(crate::feature::SourcedProfiles { profiles: encoded?, sources: pieces.sources, regions })
     }
     /// Encode the path of a sweep: one sketch contour, open or closed, as `[1.0, loop_block]` with exact lines
     /// and arcs (`build_exact_wire`). A `path` of zero takes the first contour with at least two points,

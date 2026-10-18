@@ -63,16 +63,15 @@ fn example(name: &str) -> String {
     format!("{}/../../examples/{name}", env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Frames until the background read has landed, with a ceiling.
+/// Frames until the background read has landed (`session::waiting::until`).
 pub(crate) fn settle(app: &mut App, ctx: &egui::Context) {
-    for _ in 0..600 {
+    crate::gui::session::waiting::until("the background read to land", || {
         if app.regen.busy.is_none() {
-            return;
+            return true;
         }
         frame(app, ctx, Vec::new());
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-    panic!("still reading after half a minute");
+        false
+    });
 }
 
 /// One line in IGES, in the fixed columns IGES is written in: a drawing, not a single surface in it.

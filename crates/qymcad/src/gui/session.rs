@@ -59,6 +59,18 @@ impl Machine {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Kept(BTreeMap<String, String>);
 
+impl Kept {
+    /// THE TEXT KEPT UNDER `key`, as it stands in the file the framework writes.
+    pub fn record(&self, key: &str) -> Option<&str> {
+        self.0.get(key).map(String::as_str)
+    }
+
+    /// WRITE THE TEXT UNDER `key` - the file edited between two runs, as a person may edit it.
+    pub fn set_record(&mut self, key: &str, text: String) {
+        self.0.insert(key.to_string(), text);
+    }
+}
+
 impl eframe::Storage for Kept {
     fn get_string(&self, key: &str) -> Option<String> {
         self.0.get(key).cloned()
@@ -322,6 +334,20 @@ pub struct JointInfo {
     pub violated: bool,
 }
 
+/// A RUN OF WORDS ON SCREEN and where it stands.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WordAt {
+    pub text: String,
+    pub rect: Rect,
+}
+
+/// THE ONE ARGUMENT OF A LINE OF THE CATALOGUE: its name and what it is filled with.
+#[derive(Clone, Copy, Debug)]
+pub struct Arg<'a> {
+    pub name: &'a str,
+    pub value: &'a str,
+}
+
 /// A PICTURE OF THE WINDOW, a pixel to a point, as rows of RGBA bytes from the top left.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Picture {
@@ -467,3 +493,7 @@ mod finding;
 mod space;
 mod reading;
 mod frames;
+/// A check waiting for an event of the window, not for a count of frames.
+pub(crate) mod waiting;
+/// The measure of the probes of time: what a piece of work cost, not the clock on the wall (`time_budget::Cost`).
+pub use qymcad_core::time_budget;

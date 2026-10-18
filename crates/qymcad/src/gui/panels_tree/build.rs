@@ -14,46 +14,50 @@ pub(crate) fn tree_panel(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
         // ONE build tree (the history in order, grouped by component)
         build_tree(tc, ui);
 
-        // the embedded originals of the imports (dxf/svg/stl)
-        if !tc.project.sources.is_empty() {
-            ui.separator();
-            egui::CollapsingHeader::new(format!("{} {}", ph::FILE, crate::i18n::tr1("tree-import-sources", "n", &tc.project.sources.len().to_string()))).id_salt("sources").show(ui, |ui| {
-                let (mut del, mut again): (Option<usize>, Option<usize>) = (None, None);
-                for si in 0..tc.project.sources.len() {
-                    let s = &tc.project.sources[si];
-                    ui.horizontal(|ui| {
-                        // the right button on the row opens what can be done with the file, as on any row of the tree
-                        ui.add(
-                            egui::Label::new(crate::i18n::tr2("tree-source-size", "name", &crate::i18n::name(&s.name), "kb", &crate::i18n::num(s.data.len() as f64 / 1024.0, 1)))
-                                .sense(egui::Sense::click()),
-                        )
-                        .context_menu(|ui| {
-                            if ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("tree-source-again"))).clicked() {
+        // WHAT FOLLOWS THE TREE UNDER IDS OF ITS OWN: the tree draws as many widgets as it holds, and the line under it,
+        // counted after them, took another id with every node made or gone - egui marked it with a red frame
+        qymcad_shell::keyed(ui, "under the tree", |ui| {
+            // the embedded originals of the imports (dxf/svg/stl)
+            if !tc.project.sources.is_empty() {
+                ui.separator();
+                egui::CollapsingHeader::new(format!("{} {}", ph::FILE, crate::i18n::tr1("tree-import-sources", "n", &tc.project.sources.len().to_string()))).id_salt("sources").show(ui, |ui| {
+                    let (mut del, mut again): (Option<usize>, Option<usize>) = (None, None);
+                    for si in 0..tc.project.sources.len() {
+                        let s = &tc.project.sources[si];
+                        ui.horizontal(|ui| {
+                            // the right button on the row opens what can be done with the file, as on any row of the tree
+                            ui.add(
+                                egui::Label::new(crate::i18n::tr2("tree-source-size", "name", &crate::i18n::name(&s.name), "kb", &crate::i18n::num(s.data.len() as f64 / 1024.0, 1)))
+                                    .sense(egui::Sense::click()),
+                            )
+                            .context_menu(|ui| {
+                                if ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, crate::i18n::tr("tree-source-again"))).clicked() {
+                                    again = Some(si);
+                                    ui.close();
+                                }
+                                if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("tree-source-delete"))).clicked() {
+                                    del = Some(si);
+                                    ui.close();
+                                }
+                            });
+                            if ui.small_button(ph::ARROW_CLOCKWISE).on_hover_text(crate::i18n::tr("tree-source-again")).clicked() {
                                 again = Some(si);
-                                ui.close();
                             }
-                            if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("tree-source-delete"))).clicked() {
+                            if ui.small_button(ph::TRASH).clicked() {
                                 del = Some(si);
-                                ui.close();
                             }
                         });
-                        if ui.small_button(ph::ARROW_CLOCKWISE).on_hover_text(crate::i18n::tr("tree-source-again")).clicked() {
-                            again = Some(si);
-                        }
-                        if ui.small_button(ph::TRASH).clicked() {
-                            del = Some(si);
-                        }
-                    });
-                }
-                if let Some(i) = again {
-                    bring_in_again(tc, i);
-                }
-                if let Some(i) = del {
-                    tc.project.sources.remove(i);
-                }
-            });
-        }
-        ui.separator();
+                    }
+                    if let Some(i) = again {
+                        bring_in_again(tc, i);
+                    }
+                    if let Some(i) = del {
+                        tc.project.sources.remove(i);
+                    }
+                });
+            }
+            ui.separator();
+        });
     });
 }
 
@@ -146,31 +150,39 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
     // The mates appear only in an Assembly or a subassembly. ONLY the active assembly's joints are shown:
     // the joints of nested subassemblies are hidden so that they do not get in the way (filtered by
     // joint_home == the active context).
-    if matches!(tc.workbench, Workbench::Assembly) {
-        // THE SHARED contours toggle belongs here only. Inside a Part a sketch's visibility is governed by
-        // its own checkbox in the tree, and a second, shared one would be superfluous there.
-        ui.checkbox(&mut tc.set.show_contours, format!("{}  {}", ph::POLYGON, crate::i18n::tr("tree-contours-toggle"))).on_hover_text(crate::i18n::tr("tree-contours-hint"));
-        ui.checkbox(&mut tc.set.show_joints, crate::i18n::tr("tree-show-joints")).on_hover_text(crate::i18n::tr("tree-joints-hint"));
-        if ui.checkbox(&mut tc.set.show_interference, crate::i18n::tr("tree-interference")).on_hover_text(crate::i18n::tr("tree-interference-hint")).changed() {
-            tc.interference.rev = u64::MAX; // force a recompute when it is toggled
+    // UNDER AN ID OF ITS OWN, in a part and in an assembly alike: the switches and the line of the interference come and go,
+    // and what follows them took ids counted after them - the line over the folders took another id each time
+    qymcad_shell::keyed(ui, "the switches of the assembly in the tree", |ui| {
+        if matches!(tc.workbench, Workbench::Assembly) {
+            // THE SHARED contours toggle belongs here only. Inside a Part a sketch's visibility is governed by
+            // its own checkbox in the tree, and a second, shared one would be superfluous there.
+            ui.checkbox(&mut tc.set.show_contours, format!("{}  {}", ph::POLYGON, crate::i18n::tr("tree-contours-toggle"))).on_hover_text(crate::i18n::tr("tree-contours-hint"));
+            ui.checkbox(&mut tc.set.show_joints, crate::i18n::tr("tree-show-joints")).on_hover_text(crate::i18n::tr("tree-joints-hint"));
+            if ui.checkbox(&mut tc.set.show_interference, crate::i18n::tr("tree-interference")).on_hover_text(crate::i18n::tr("tree-interference-hint")).changed() {
+                tc.interference.rev = u64::MAX; // force a recompute when it is toggled
+            }
+            if tc.set.show_interference && !tc.interference.pairs.is_empty() {
+                qymcad_ui_state::say(
+                    ui,
+                    &tc.scheme.pal,
+                    &qymcad_ui_state::Notice::error(crate::i18n::tr1("tree-interference-n", "n", &tc.interference.pairs.len().to_string())),
+                    qymcad_ui_state::NoticeSize::Line,
+                );
+            }
         }
-        if tc.set.show_interference && !tc.interference.pairs.is_empty() {
-            qymcad_ui_state::say(
-                ui,
-                &tc.scheme.pal,
-                &qymcad_ui_state::Notice::error(crate::i18n::tr1("tree-interference-n", "n", &tc.interference.pairs.len().to_string())),
-                qymcad_ui_state::NoticeSize::Line,
-            );
-        }
-    }
+    });
     ui.separator();
     // THE CONTEXTUAL tree: the folders of the current context. The breadcrumbs live in the top panel.
     use qymcad_core::feature::{ComponentKind, FeatureKind as FK};
     let ctx = qymcad_ui_state::current_ctx_id(tc.active_path, &*tc.project);
     let ctx_nodes: Vec<(Id, FK)> = tc.project.timeline.iter().filter(|n| n.parent == Some(ctx)).map(|n| (n.id, n.kind.clone())).collect();
 
+    // THE FOLDERS ARE KNOWN BY THEIR PLACE IN THE TREE, not by the component shown: going into another component lays its
+    // folders where the folders of the last one stood, and under names of the component egui took them for widgets that
+    // changed their ids and marked each with a red frame. A folder shut stays shut in every component.
+    //
     // The origin: the reference base planes (each component has a frame of its own)
-    egui::CollapsingHeader::new(format!("{} {}", ph::SELECTION_ALL, crate::i18n::tr("tree-origin-node"))).id_salt(("origin", ctx)).default_open(false).show(ui, |ui| {
+    egui::CollapsingHeader::new(format!("{} {}", ph::SELECTION_ALL, crate::i18n::tr("tree-origin-node"))).id_salt("origin").default_open(false).show(ui, |ui| {
         use qymcad_core::feature::BasePlane;
         // a component's base planes are selectable DATUMS: a click creates a sketch on that plane
         let mut new_on: Option<BasePlane> = None;
@@ -204,14 +216,11 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
             .filter(|&mi| !tc.project.bodies[mi].sheet && tree_text_matches(&*tc.tree, &crate::i18n::name(&tc.project.mesh_name(mi))))
             .collect();
         if !rows.is_empty() {
-            egui::CollapsingHeader::new(format!("{} {}", ph::CUBE, crate::i18n::tr1("tree-part-bodies", "n", &rows.len().to_string()))).id_salt(("part-bodies", ctx)).default_open(true).show(
-                ui,
-                |ui| {
-                    for mi in rows {
-                        tree_body_row(tc, ui, mi);
-                    }
-                },
-            );
+            egui::CollapsingHeader::new(format!("{} {}", ph::CUBE, crate::i18n::tr1("tree-part-bodies", "n", &rows.len().to_string()))).id_salt("part-bodies").default_open(true).show(ui, |ui| {
+                for (place, mi) in rows.into_iter().enumerate() {
+                    qymcad_shell::keyed(ui, ("a row of the tree", "bodies", place), |ui| tree_body_row(tc, ui, mi));
+                }
+            });
         }
     }
 
@@ -224,9 +233,9 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
         .filter(|id| tc.project.sketch_index(*id).is_some_and(|si| tree_text_matches(&*tc.tree, &crate::i18n::name(&tc.project.sketches[si].name))))
         .collect();
     if !sketches.is_empty() {
-        egui::CollapsingHeader::new(format!("{} {}", ph::POLYGON, crate::i18n::tr("tree-sketches"))).id_salt(("sketches", ctx)).default_open(true).show(ui, |ui| {
-            for sid in sketches {
-                tree_sketch_row(tc, ui, sid);
+        egui::CollapsingHeader::new(format!("{} {}", ph::POLYGON, crate::i18n::tr("tree-sketches"))).id_salt("sketches").default_open(true).show(ui, |ui| {
+            for (place, sid) in sketches.into_iter().enumerate() {
+                qymcad_shell::keyed(ui, ("a row of the tree", "sketches", place), |ui| tree_sketch_row(tc, ui, sid));
             }
         });
     }
@@ -239,9 +248,9 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
         .cloned()
         .collect();
     if !datums.is_empty() {
-        egui::CollapsingHeader::new(format!("{} {}", ph::SELECTION_PLUS, crate::i18n::tr("tree-datums"))).id_salt(("datums", ctx)).default_open(true).show(ui, |ui| {
-            for (id, k) in datums {
-                tree_datum_row(tc, ui, id, &k);
+        egui::CollapsingHeader::new(format!("{} {}", ph::SELECTION_PLUS, crate::i18n::tr("tree-datums"))).id_salt("datums").default_open(true).show(ui, |ui| {
+            for (place, (id, k)) in datums.into_iter().enumerate() {
+                qymcad_shell::keyed(ui, ("a row of the tree", "datums", place), |ui| tree_datum_row(tc, ui, id, &k));
             }
         });
     }
@@ -261,7 +270,7 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
         Vec::new()
     };
     if !feat_tis.is_empty() || !imported.is_empty() {
-        egui::CollapsingHeader::new(format!("{} {}", ph::CUBE, crate::i18n::tr("tree-bodies"))).id_salt(("bodies", ctx)).default_open(true).show(ui, |ui| {
+        egui::CollapsingHeader::new(format!("{} {}", ph::CUBE, crate::i18n::tr("tree-bodies"))).id_salt("bodies").default_open(true).show(ui, |ui| {
             // The rollback bar: it is dragged up and down the feature list. Everything BELOW the line is
             // suppressed (it does not build), everything above it is active. active_k is the number of active
             // features (those above the line).
@@ -279,12 +288,15 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
             // there is nobody left to draw its row in this frame.
             let feat_ids: Vec<qymcad_core::model::Id> = feat_tis.iter().map(|&ti| tc.project.timeline[ti].id).collect();
             let searching = !tc.tree.search.trim().is_empty();
+            // A ROW IS KNOWN BY ITS PLACE IN ITS FOLDER: rows of a different make stand one after another, and a row gone
+            // renumbered every widget after it - egui marked the rows with red frames
+            let mut place = 0;
             for (idx, &id) in feat_ids.iter().enumerate() {
                 if idx == active_k && !searching {
                     // THE ROLLBACK BAR IS NOT DRAWN WHILE SEARCHING: half the rows are hidden, and a line
                     // meaning "everything below is suppressed" would land in the middle of a filtered list,
                     // where it separates nothing and only lies.
-                    rollback_bar(tc, ui, &feat_tis, active_k);
+                    qymcad_shell::keyed(ui, "the bar of the rollback", |ui| rollback_bar(tc, ui, &feat_tis, active_k));
                 }
                 let Some(ti) = tc.project.timeline_index(id) else { continue };
                 if shown.contains(&id) {
@@ -296,13 +308,16 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
                 for s in tc.project.feature_op_span(id) {
                     shown.insert(s);
                 }
-                tree_feature_row(tc, ui, ti);
+                qymcad_shell::keyed(ui, ("a row of the tree", "construction", place), |ui| tree_feature_row(tc, ui, ti));
+                place += 1;
             }
             if active_k >= feat_tis.len() && !feat_tis.is_empty() {
-                rollback_bar(tc, ui, &feat_tis, active_k); // everything is active, so the line sits at the very bottom
+                // everything is active, so the line sits at the very bottom
+                qymcad_shell::keyed(ui, "the bar of the rollback", |ui| rollback_bar(tc, ui, &feat_tis, active_k));
             }
-            for mi in imported {
-                tree_body_row(tc, ui, mi); // the imported bodies (STL and the like, with no source feature)
+            for (place, mi) in imported.into_iter().enumerate() {
+                // the imported bodies (STL and the like, with no source feature)
+                qymcad_shell::keyed(ui, ("a row of the tree", "imported", place), |ui| tree_body_row(tc, ui, mi));
             }
         });
     }
@@ -357,7 +372,7 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
         let mut all_checked = shown_count == listed_count;
         let mixed = shown_count != 0 && !all_checked;
 
-        let state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui.make_persistent_id(("comps", ctx)), true);
+        let state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui.make_persistent_id("comps"), true);
 
         let mut header = state.show_header(ui, |ui| {
             // the hover fill goes under the words, so its place in the paint order is kept before they are drawn
@@ -397,188 +412,191 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
         }
 
         header.body(|ui| {
-            for row in rows {
-                let (ci, cid, name, indented) = match row {
-                    TreeCompRow::Pattern(ti) => {
-                        tree_feature_row(tc, ui, ti);
-                        continue;
-                    }
-                    TreeCompRow::Comp(ci, cid, name, indented) => (ci, cid, name, indented),
-                };
-                let is_asm = tc.project.component_kind(cid) == Some(ComponentKind::Assembly);
-                // A CLONE SAYS SO: its own icon, and the word beside the name - an icon alone reads as a part
-                let origin = tc.project.instance_origin(cid);
-                let icon = if is_asm {
-                    ph::STACK
-                } else if origin != cid {
-                    ph::CUBE_TRANSPARENT
-                } else {
-                    ph::CUBE
-                };
-                ui.horizontal(|ui| {
-                    if indented {
-                        ui.add_space(ui.spacing().indent); // a copy of the pattern above
-                    }
-                    let mut vis = tc.project.components.iter().find(|c| c.id == cid).map(|c| c.visible).unwrap_or(true);
-                    if ui.add(egui::Checkbox::without_text(&mut vis)).on_hover_text(crate::i18n::tr("tree-component-visible-hint")).changed() {
-                        crate::gui::set_component_visible(&mut *tc.project, &mut *tc.regen, cid, vis);
-                    }
-                    if rename_node_active(tc, ui, RenameNode::Component(cid)) {
-                        return; // inline renaming: a field instead of the label
-                    }
-                    let in_multi = crate::gui::is_multi(&*tc.project, *tc.sel, &*tc.tree_sel) && tc.tree_sel.multi.contains(&cid);
-                    // THE ROW: A CLICK SELECTS, A DOUBLE CLICK ENTERS, PRESS AND DRAG MOVES IT.
-                    //
-                    // This used to be `dnd_drag_source`, and it took the press for itself: a click stopped
-                    // selecting and a double click stopped entering the part. Reported behaviour: a selection
-                    // could not be made by a click at all, the row was immediately grabbed for dragging, and
-                    // no other program works that way. Quite so. The dragging is assembled by hand on top of
-                    // an ordinary row: `click_and_drag` leaves the click and the double click in place, and
-                    // dragging only begins once the cursor has moved with the button held.
-                    //
-                    // THE GRABBED ROW TRAVELS WITH THE CURSOR - that same row, not a text in a popup.
-                    // Reported behaviour: while holding, there was no sign at all that an item had been picked
-                    // up and was being moved; and a popup with a text instead of the row was rejected
-                    // separately. What is wanted is THE ITEM ITSELF travelling under the cursor. An overlay
-                    // area paints the same row at the cursor while the original row keeps click and double-click.
-                    let carried = tc.tree.drag.is_some_and(|src| src == cid || (tc.tree_sel.multi.contains(&src) && tc.tree_sel.multi.contains(&cid)));
-                    let picked = *tc.sel == Sel::Component(ci) || in_multi;
-                    let row = |ui: &mut egui::Ui| ui.selectable_label(picked, format!("{icon} {name}")).interact(egui::Sense::click_and_drag()).on_hover_text(crate::i18n::tr("tree-component-hint"));
-                    let resp = row(ui);
-                    if carried {
-                        if let Some(at) = ui.ctx().pointer_interact_pos() {
-                            let position = at - egui::vec2(0.0, resp.rect.height() / 2.0);
-                            egui::Area::new(ui.id().with(("carry", cid))).order(egui::Order::Tooltip).fixed_pos(position).interactable(false).fade_in(false).show(ui.ctx(), |ui| {
-                                let _ = ui.selectable_label(picked, format!("{icon} {name}"));
-                            });
+            for (place, row) in rows.into_iter().enumerate() {
+                qymcad_shell::keyed(ui, ("a row of the tree", "components", place), |ui| {
+                    let (ci, cid, name, indented) = match row {
+                        TreeCompRow::Pattern(ti) => {
+                            tree_feature_row(tc, ui, ti);
+                            return;
                         }
-                    }
-                    if origin != cid {
-                        let of = tc.project.components.iter().find(|c| c.id == origin).map(|c| crate::i18n::name(&c.name)).unwrap_or_default();
-                        ui.weak(crate::i18n::tr("tree-clone-mark")).on_hover_text(crate::i18n::tr1("tree-clone-hint", "name", &of));
-                    }
-                    if resp.double_clicked() {
-                        tc.ask.push(qymcad_ui_state::TreeAsk::EnterComponent(cid));
-                    } else if resp.clicked() {
-                        let click = qymcad_ui_state::TreeClick::of(&ui.input(|i| i.modifiers));
-                        tree_select_component(&*tc.project, &mut *tc.sel, &mut *tc.tree_sel, ci, cid, click);
-                    }
-                    if resp.drag_started() {
-                        tc.tree.drag = Some(cid);
-                    }
-                    // A HIT IS COMPUTED FROM THE CURSOR'S COORDINATE, NOT FROM `hovered()`.
-                    //
-                    // While a row is being dragged, egui gives the hover to IT - the neighbouring rows never
-                    // get `hovered()` at all. That is why none of it worked: neither the highlight nor the drop.
-                    // The row rectangles are gathered here and the decision is taken after the walk.
-                    rows_geom.push((cid, resp.rect));
-                    let mut act: Option<u8> = None; // 1 copy, 2 cut, 3 paste, 6 rename, 7 save as a part, 8 delete
-                    let mut export: Option<crate::gui::export_menu::ExportChoice> = None;
-                    let multi_n = if in_multi { tc.tree_sel.multi.len() } else { 0 };
-                    resp.context_menu(|ui| {
-                        // EDITING A COMPONENT PATTERN starts here, as editing a feature in the timeline does.
-                        // The edit function had been written and covered by a test but was NOT CONNECTED to the
-                        // interface: the test called it directly and nobody else could reach it. It surfaced
-                        // through the compiler's "never used" warning - exactly the case where such a warning
-                        // must not be silenced.
-                        if let Some(pid) = tc.project.comp_pattern_of(cid).map(|p| p.id) {
-                            if ui.button(format!("{} {}", ph::DOTS_THREE_OUTLINE, crate::i18n::tr("act-edit-array"))).clicked() {
-                                tc.ask.push(qymcad_ui_state::TreeAsk::EditCompArray(pid));
+                        TreeCompRow::Comp(ci, cid, name, indented) => (ci, cid, name, indented),
+                    };
+                    let is_asm = tc.project.component_kind(cid) == Some(ComponentKind::Assembly);
+                    // A CLONE SAYS SO: its own icon, and the word beside the name - an icon alone reads as a part
+                    let origin = tc.project.instance_origin(cid);
+                    let icon = if is_asm {
+                        ph::STACK
+                    } else if origin != cid {
+                        ph::CUBE_TRANSPARENT
+                    } else {
+                        ph::CUBE
+                    };
+                    ui.horizontal(|ui| {
+                        if indented {
+                            ui.add_space(ui.spacing().indent); // a copy of the pattern above
+                        }
+                        let mut vis = tc.project.components.iter().find(|c| c.id == cid).map(|c| c.visible).unwrap_or(true);
+                        if ui.add(egui::Checkbox::without_text(&mut vis)).on_hover_text(crate::i18n::tr("tree-component-visible-hint")).changed() {
+                            crate::gui::set_component_visible(&mut *tc.project, &mut *tc.regen, cid, vis);
+                        }
+                        if rename_node_active(tc, ui, RenameNode::Component(cid)) {
+                            return; // inline renaming: a field instead of the label
+                        }
+                        let in_multi = crate::gui::is_multi(&*tc.project, *tc.sel, &*tc.tree_sel) && tc.tree_sel.multi.contains(&cid);
+                        // THE ROW: A CLICK SELECTS, A DOUBLE CLICK ENTERS, PRESS AND DRAG MOVES IT.
+                        //
+                        // This used to be `dnd_drag_source`, and it took the press for itself: a click stopped
+                        // selecting and a double click stopped entering the part. Reported behaviour: a selection
+                        // could not be made by a click at all, the row was immediately grabbed for dragging, and
+                        // no other program works that way. Quite so. The dragging is assembled by hand on top of
+                        // an ordinary row: `click_and_drag` leaves the click and the double click in place, and
+                        // dragging only begins once the cursor has moved with the button held.
+                        //
+                        // THE GRABBED ROW TRAVELS WITH THE CURSOR - that same row, not a text in a popup.
+                        // Reported behaviour: while holding, there was no sign at all that an item had been picked
+                        // up and was being moved; and a popup with a text instead of the row was rejected
+                        // separately. What is wanted is THE ITEM ITSELF travelling under the cursor. An overlay
+                        // area paints the same row at the cursor while the original row keeps click and double-click.
+                        let carried = tc.tree.drag.is_some_and(|src| src == cid || (tc.tree_sel.multi.contains(&src) && tc.tree_sel.multi.contains(&cid)));
+                        let picked = *tc.sel == Sel::Component(ci) || in_multi;
+                        let row =
+                            |ui: &mut egui::Ui| ui.selectable_label(picked, format!("{icon} {name}")).interact(egui::Sense::click_and_drag()).on_hover_text(crate::i18n::tr("tree-component-hint"));
+                        let resp = row(ui);
+                        if carried {
+                            if let Some(at) = ui.ctx().pointer_interact_pos() {
+                                let position = at - egui::vec2(0.0, resp.rect.height() / 2.0);
+                                egui::Area::new(ui.id().with(("carry", cid))).order(egui::Order::Tooltip).fixed_pos(position).interactable(false).fade_in(false).show(ui.ctx(), |ui| {
+                                    let _ = ui.selectable_label(picked, format!("{icon} {name}"));
+                                });
+                            }
+                        }
+                        if origin != cid {
+                            let of = tc.project.components.iter().find(|c| c.id == origin).map(|c| crate::i18n::name(&c.name)).unwrap_or_default();
+                            ui.weak(crate::i18n::tr("tree-clone-mark")).on_hover_text(crate::i18n::tr1("tree-clone-hint", "name", &of));
+                        }
+                        if resp.double_clicked() {
+                            tc.ask.push(qymcad_ui_state::TreeAsk::EnterComponent(cid));
+                        } else if resp.clicked() {
+                            let click = qymcad_ui_state::TreeClick::of(&ui.input(|i| i.modifiers));
+                            tree_select_component(&*tc.project, &mut *tc.sel, &mut *tc.tree_sel, ci, cid, click);
+                        }
+                        if resp.drag_started() {
+                            tc.tree.drag = Some(cid);
+                        }
+                        // A HIT IS COMPUTED FROM THE CURSOR'S COORDINATE, NOT FROM `hovered()`.
+                        //
+                        // While a row is being dragged, egui gives the hover to IT - the neighbouring rows never
+                        // get `hovered()` at all. That is why none of it worked: neither the highlight nor the drop.
+                        // The row rectangles are gathered here and the decision is taken after the walk.
+                        rows_geom.push((cid, resp.rect));
+                        let mut act: Option<u8> = None; // 1 copy, 2 cut, 3 paste, 6 rename, 7 save as a part, 8 delete
+                        let mut export: Option<crate::gui::export_menu::ExportChoice> = None;
+                        let multi_n = if in_multi { tc.tree_sel.multi.len() } else { 0 };
+                        resp.context_menu(|ui| {
+                            // EDITING A COMPONENT PATTERN starts here, as editing a feature in the timeline does.
+                            // The edit function had been written and covered by a test but was NOT CONNECTED to the
+                            // interface: the test called it directly and nobody else could reach it. It surfaced
+                            // through the compiler's "never used" warning - exactly the case where such a warning
+                            // must not be silenced.
+                            if let Some(pid) = tc.project.comp_pattern_of(cid).map(|p| p.id) {
+                                if ui.button(format!("{} {}", ph::DOTS_THREE_OUTLINE, crate::i18n::tr("act-edit-array"))).clicked() {
+                                    tc.ask.push(qymcad_ui_state::TreeAsk::EditCompArray(pid));
+                                    ui.close();
+                                }
+                                ui.separator();
+                            }
+                            // THE ROOT IS NOT RENAMED: its name is a catalogue key rather than the document's text
+                            // (see `Project::migrate_root`). Offering the edit and silently reverting it on the next
+                            // load would be worse than not offering it at all.
+                            if cid != tc.project.root && ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
+                                act = Some(6);
                                 ui.close();
                             }
                             ui.separator();
-                        }
-                        // THE ROOT IS NOT RENAMED: its name is a catalogue key rather than the document's text
-                        // (see `Project::migrate_root`). Offering the edit and silently reverting it on the next
-                        // load would be worse than not offering it at all.
-                        if cid != tc.project.root && ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
-                            act = Some(6);
-                            ui.close();
-                        }
-                        ui.separator();
-                        let (cl, xl) = if multi_n > 1 {
-                            (
-                                format!("{} {}", ph::COPY, crate::i18n::tr1("act-copy-selected", "n", &multi_n.to_string())),
-                                format!("{} {}", ph::SCISSORS, crate::i18n::tr1("act-cut-selected", "n", &multi_n.to_string())),
-                            )
-                        } else {
-                            (format!("{} {}", ph::COPY, crate::i18n::tr("act-copy-ctrl-c")), format!("{} {}", ph::SCISSORS, crate::i18n::tr("act-cut-ctrl-x")))
-                        };
-                        if ui.button(cl).clicked() {
-                            act = Some(1);
-                            ui.close();
-                        }
-                        if ui.button(xl).clicked() {
-                            act = Some(2);
-                            ui.close();
-                        }
-                        if (tc.clip.tree.is_some() || tc.clip.tree_multi.is_some()) && ui.button(format!("{} {}", ph::CLIPBOARD, crate::i18n::tr("act-paste-here"))).clicked() {
-                            act = Some(3);
-                            ui.close();
-                        }
-                        if !is_asm && ui.button(format!("{} {}", ph::CUBE_TRANSPARENT, crate::i18n::tr("act-clone-part"))).on_hover_text(crate::i18n::tr("act-clone-part-hint")).clicked() {
-                            act = Some(9);
-                            ui.close();
-                        }
-                        ui.separator();
-                        if let Some(choice) = crate::gui::export_menu::export_submenu(ui, crate::gui::export_menu::ExportFrom::Component) {
-                            export = Some(choice);
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui.button(format!("{} {}", ph::PACKAGE, crate::i18n::tr("act-save-as-part"))).on_hover_text(crate::i18n::tr("tree-save-as-part-hint")).clicked() {
-                            act = Some(7);
-                            ui.close();
-                        }
-                        // THE WAY OUT, BY THE SAME QUESTION AS EVERYWHERE ELSE. Reported behaviour: the menu
-                        // offers Cut and Copy and no Delete, so the one destructive action of the three had
-                        // to be reached another way - select the row, find the Del key. The item goes
-                        // through `ask_delete`, not through the kernel: a second route to one action must
-                        // decide nothing of its own. The root is left out, as with renaming: it cannot be
-                        // deleted, and an item that does nothing is worse than none.
-                        if cid != tc.project.root {
-                            ui.separator();
-                            if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("act-delete-part"))).clicked() {
-                                act = Some(8);
+                            let (cl, xl) = if multi_n > 1 {
+                                (
+                                    format!("{} {}", ph::COPY, crate::i18n::tr1("act-copy-selected", "n", &multi_n.to_string())),
+                                    format!("{} {}", ph::SCISSORS, crate::i18n::tr1("act-cut-selected", "n", &multi_n.to_string())),
+                                )
+                            } else {
+                                (format!("{} {}", ph::COPY, crate::i18n::tr("act-copy-ctrl-c")), format!("{} {}", ph::SCISSORS, crate::i18n::tr("act-cut-ctrl-x")))
+                            };
+                            if ui.button(cl).clicked() {
+                                act = Some(1);
                                 ui.close();
                             }
+                            if ui.button(xl).clicked() {
+                                act = Some(2);
+                                ui.close();
+                            }
+                            if (tc.clip.tree.is_some() || tc.clip.tree_multi.is_some()) && ui.button(format!("{} {}", ph::CLIPBOARD, crate::i18n::tr("act-paste-here"))).clicked() {
+                                act = Some(3);
+                                ui.close();
+                            }
+                            if !is_asm && ui.button(format!("{} {}", ph::CUBE_TRANSPARENT, crate::i18n::tr("act-clone-part"))).on_hover_text(crate::i18n::tr("act-clone-part-hint")).clicked() {
+                                act = Some(9);
+                                ui.close();
+                            }
+                            ui.separator();
+                            if let Some(choice) = crate::gui::export_menu::export_submenu(ui, crate::gui::export_menu::ExportFrom::Component) {
+                                export = Some(choice);
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button(format!("{} {}", ph::PACKAGE, crate::i18n::tr("act-save-as-part"))).on_hover_text(crate::i18n::tr("tree-save-as-part-hint")).clicked() {
+                                act = Some(7);
+                                ui.close();
+                            }
+                            // THE WAY OUT, BY THE SAME QUESTION AS EVERYWHERE ELSE. Reported behaviour: the menu
+                            // offers Cut and Copy and no Delete, so the one destructive action of the three had
+                            // to be reached another way - select the row, find the Del key. The item goes
+                            // through `ask_delete`, not through the kernel: a second route to one action must
+                            // decide nothing of its own. The root is left out, as with renaming: it cannot be
+                            // deleted, and an item that does nothing is worse than none.
+                            if cid != tc.project.root {
+                                ui.separator();
+                                if ui.button(format!("{} {}", ph::TRASH, crate::i18n::tr("act-delete-part"))).clicked() {
+                                    act = Some(8);
+                                    ui.close();
+                                }
+                            }
+                        });
+                        match export {
+                            Some(crate::gui::export_menu::ExportChoice::Exact(f)) => tc.ask.push(qymcad_ui_state::TreeAsk::ExportExact(f, cid)),
+                            Some(crate::gui::export_menu::ExportChoice::Mesh(f)) => *tc.mesh_export = Some((f, ExportTarget::Component(cid))),
+                            None => {}
+                        }
+                        match act {
+                            Some(1) => {
+                                *tc.sel = Sel::Component(ci);
+                                tc.ask.push(qymcad_ui_state::TreeAsk::Clipboard { cut: false });
+                            }
+                            Some(2) => {
+                                *tc.sel = Sel::Component(ci);
+                                tc.ask.push(qymcad_ui_state::TreeAsk::Clipboard { cut: true });
+                            }
+                            Some(3) => {
+                                *tc.sel = Sel::Component(ci);
+                                tc.ask.push(qymcad_ui_state::TreeAsk::Paste);
+                            }
+                            Some(6) => qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::Component(cid), name.clone()),
+                            Some(7) => tc.ask.push(qymcad_ui_state::TreeAsk::SavePart(cid)),
+                            Some(9) => {
+                                // a clone beside its original, in the same assembly, as one step of undo
+                                let parent = tc.project.components.iter().find(|c| c.id == cid).and_then(|c| c.parent).unwrap_or(tc.project.root);
+                                let made = qymcad_ui_state::edit_over(tc.rebuild(), crate::i18n::tr("act-clone-part")).project().clone_part(cid, parent);
+                                if let Some(ci) = made.and_then(|cl| tc.project.components.iter().position(|c| c.id == cl)) {
+                                    *tc.sel = Sel::Component(ci);
+                                    tc.ask.push(qymcad_ui_state::TreeAsk::Resync);
+                                }
+                            }
+                            Some(8) => {
+                                *tc.sel = Sel::Component(ci);
+                                qymcad_ui_state::ask_delete(&mut *tc.deferred, Sel::Component(ci));
+                            }
+                            _ => {}
                         }
                     });
-                    match export {
-                        Some(crate::gui::export_menu::ExportChoice::Exact(f)) => tc.ask.push(qymcad_ui_state::TreeAsk::ExportExact(f, cid)),
-                        Some(crate::gui::export_menu::ExportChoice::Mesh(f)) => *tc.mesh_export = Some((f, ExportTarget::Component(cid))),
-                        None => {}
-                    }
-                    match act {
-                        Some(1) => {
-                            *tc.sel = Sel::Component(ci);
-                            tc.ask.push(qymcad_ui_state::TreeAsk::Clipboard { cut: false });
-                        }
-                        Some(2) => {
-                            *tc.sel = Sel::Component(ci);
-                            tc.ask.push(qymcad_ui_state::TreeAsk::Clipboard { cut: true });
-                        }
-                        Some(3) => {
-                            *tc.sel = Sel::Component(ci);
-                            tc.ask.push(qymcad_ui_state::TreeAsk::Paste);
-                        }
-                        Some(6) => qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::Component(cid), name.clone()),
-                        Some(7) => tc.ask.push(qymcad_ui_state::TreeAsk::SavePart(cid)),
-                        Some(9) => {
-                            // a clone beside its original, in the same assembly, as one step of undo
-                            let parent = tc.project.components.iter().find(|c| c.id == cid).and_then(|c| c.parent).unwrap_or(tc.project.root);
-                            let made = qymcad_ui_state::edit_over(tc.rebuild(), crate::i18n::tr("act-clone-part")).project().clone_part(cid, parent);
-                            if let Some(ci) = made.and_then(|cl| tc.project.components.iter().position(|c| c.id == cl)) {
-                                *tc.sel = Sel::Component(ci);
-                                tc.ask.push(qymcad_ui_state::TreeAsk::Resync);
-                            }
-                        }
-                        Some(8) => {
-                            *tc.sel = Sel::Component(ci);
-                            qymcad_ui_state::ask_delete(&mut *tc.deferred, Sel::Component(ci));
-                        }
-                        _ => {}
-                    }
                 });
             }
         });

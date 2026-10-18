@@ -32,7 +32,7 @@ pub fn bool_tool_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                 None => qymcad_i18n::tr1("cmd-bool-a-is", "name", &a_name),
             };
             ui.label(egui::RichText::new(said).color(pc.scheme.pal.hint()));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if ui.button(qymcad_i18n::tr("f-cancel-esc")).clicked() {
                     cancel = true;
                 }
@@ -67,7 +67,7 @@ pub fn bool_tool_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
             changed |= ui.selectable_value(&mut op, 0u8, qymcad_i18n::tr("f-cut-ab")).changed();
             changed |= ui.selectable_value(&mut op, 1u8, qymcad_i18n::tr("f-union")).changed();
             changed |= ui.selectable_value(&mut op, 2u8, qymcad_i18n::tr("f-intersect")).changed();
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if ui.button(qymcad_i18n::tr("f-done")).clicked() {
                     done = true;
                 }
@@ -127,7 +127,7 @@ pub fn section_bar(pb: &mut PlaneBarCtx, ui: &mut egui::Ui) {
                 ui.separator();
                 ui.label(egui::RichText::new(pb.status.words.as_str()).strong());
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked() {
                     off = true;
                 }
@@ -153,7 +153,7 @@ pub fn section_bar(pb: &mut PlaneBarCtx, ui: &mut egui::Ui) {
             ui.label(egui::RichText::new(qymcad_i18n::tr(name)).strong());
             ui.separator();
             ui.label(egui::RichText::new(qymcad_i18n::tr("g-pick-sketch-for")).weak());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked() {
                     cancel = true;
                 }
@@ -180,7 +180,7 @@ pub fn section_bar(pb: &mut PlaneBarCtx, ui: &mut egui::Ui) {
             ui.label(egui::RichText::new(format!("{} {}", ph::PENCIL_SIMPLE, qymcad_i18n::tr("status-new-sketch"))).strong());
             ui.separator();
             ui.label(egui::RichText::new(qymcad_i18n::tr("g-sketch-pick-plane")).weak());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked() {
                     cancel = true;
                 }
@@ -202,7 +202,7 @@ pub fn section_bar(pb: &mut PlaneBarCtx, ui: &mut egui::Ui) {
             ui.label(egui::RichText::new(format!("{} {}", ph::FLIP_HORIZONTAL, qymcad_i18n::tr("mp-title"))).strong());
             ui.separator();
             ui.label(egui::RichText::new(qymcad_i18n::tr("tb-mirror-pick-part")).weak());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 cancel = ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked();
             });
         });
@@ -226,7 +226,7 @@ pub fn section_bar(pb: &mut PlaneBarCtx, ui: &mut egui::Ui) {
             ui.separator();
             let said = if taken { qymcad_i18n::tr1("mp-plane-taken-of", "name", &name) } else { qymcad_i18n::tr1("mp-pick", "name", &name) };
             ui.label(egui::RichText::new(said).weak());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 if ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked() {
                     cancel = true;
                 }
@@ -535,5 +535,7 @@ mod feat_bar;
 pub use feat_bar::*;
 mod toolbar;
 pub use toolbar::*;
+mod commands;
+pub use commands::*;
 mod options;
 pub use options::*;

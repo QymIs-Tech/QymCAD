@@ -82,12 +82,17 @@ pub(crate) fn kernel_refusal(tool: &Tool) {
 pub(crate) fn budget(tool: &Tool) {
     let mut s = ready(tool);
     let _ = s.worst_frame();
-    let began = Instant::now();
+    // the work of the program, not the share of the machine it was given (`time_budget::Cost`): the probe is alone in
+    // its process, and a frame is charged its own work (`Session::worst_frame`)
+    let meter = qymcad::time_budget::Meter::start(qymcad::time_budget::Doer::Process);
     finish_all(&mut s, tool);
     let _ = s.document();
-    let (took, frame) = (began.elapsed(), s.worst_frame());
+    let took = meter.cost();
+    let frame = s.worst_frame();
+    qymcad::time_budget::tell(&format!("{}: applying", tool.id), took);
     let (apply_budget, frame_budget) = (Duration::from_secs(tool.budget.0), Duration::from_millis(tool.budget.1));
-    assert!(took <= apply_budget && frame <= frame_budget, "{}: applying took {took:?} of {apply_budget:?}, the longest frame {frame:?} of {frame_budget:?}", tool.id);
+    assert!(took.work <= apply_budget, "{}", qymcad::time_budget::over(&format!("{}: applying", tool.id), took, apply_budget));
+    assert!(frame <= frame_budget, "{}: the longest frame took {frame:?} of work, {} {frame_budget:?}", tool.id, qymcad::time_budget::SAID_OVER_BUDGET);
 }
 
 /// 19. F1 WITH THE TOOL IN HAND OPENS ITS ARTICLE.

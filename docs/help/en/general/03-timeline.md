@@ -31,6 +31,23 @@ Its row turns red and the reason is said in words: “the source body
 was not built”, “the cutting plane was deleted”, “the radius is too large for these edges”. Fix the
 named reason instead of rebuilding everything.
 
+## When a feature turns yellow: found by position
+
+A feature holds its faces and edges by name. When a change above leaves a name nowhere, the feature
+looks for the face or edge standing exactly where it stood. Then its row turns yellow, and its
+properties say “a reference of this step was found by its position, not by its name”. Look at the
+result: if the right face or edge is taken, press **Accept** in the properties and the mark goes; if
+not, open the feature with a double-click and pick it again. The mark stays in the file until one
+or the other is done. Changed your mind after Accept — Ctrl+Z brings the mark back.
+
+## When a fillet or chamfer turns yellow: built a hair short
+
+A fillet or chamfer whose size eats a face whole — a radius as high as the step it rounds — is built
+exactly where its edges are straight between flat faces. Elsewhere it is built a hair short of the
+size, by no more than 0.001%, and its row turns yellow with the words “built a hair short of its
+size”. The part is usable as it is. If the exact size matters, make it slightly smaller or larger
+than the face it eats, and the mark goes.
+
 ## Deleting a line
 
 Select the line and press Delete. The window shows what is built on it. Only the line itself goes:

@@ -76,8 +76,10 @@ mod tests {
     /// The button is in the Part panel.
     #[test]
     fn the_tool_has_a_button() {
-        let src = crate::gui::panels_source::PANELS;
-        assert!(src.contains("BarAsk::FeatCmd(25)"), "without a button the operation does not exist for a person, however much of it there is in the kernel");
+        assert!(
+            crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(25), "part"),
+            "without a button the operation does not exist for a person, however much of it there is in the kernel"
+        );
     }
 
     /// The feature IS VISIBLE IN THE BUILD TREE.

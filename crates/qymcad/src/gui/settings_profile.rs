@@ -34,7 +34,7 @@ mod tests {
         crate::gui::export_settings_to(&author.set, &path).expect("the profile writes");
 
         let mut other = App::default();
-        other.import_settings_from(&path, &ctx).expect("the profile reads");
+        crate::gui::import_settings_from(&mut other.regen, &mut other.scheme, &mut other.set, &mut other.status, &path, &ctx).expect("the profile reads");
         assert_eq!(other.set.language, "en", "the language did not carry over");
         assert_eq!(other.set.undo_cap, 7, "the undo depth did not carry over");
         assert_eq!(qymcad_ui_state::hotkey_key(&other.set, "part.extrude"), "W", "the rebound key did not carry over");
@@ -55,7 +55,7 @@ mod tests {
 
         let mut app = App::default();
         app.set.undo_cap = 11;
-        let err = app.import_settings_from(&path, &ctx).expect_err("a broken file must be rejected");
+        let err = crate::gui::import_settings_from(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, &path, &ctx).expect_err("a broken file must be rejected");
         assert!(!err.is_empty(), "a refusal must explain the reason");
         assert_eq!(app.set.undo_cap, 11, "a broken file overwrote the current settings");
         let _ = std::fs::remove_file(&path);
@@ -76,7 +76,7 @@ mod tests {
 
         let mut app = App::default();
         app.set.undo_cap = 99;
-        app.import_settings_from(&path, &ctx).expect("a profile missing one field must read");
+        crate::gui::import_settings_from(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, &path, &ctx).expect("a profile missing one field must read");
         assert_eq!(app.set.undo_cap, Settings::default().undo_cap, "a missing field must take the factory value");
         let _ = std::fs::remove_file(&path);
     }
@@ -88,27 +88,24 @@ mod tests {
     fn startup_and_import_use_the_same_door() {
         let gui = concat!(
             include_str!("file_doors.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("gizmo_math.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("look.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("panel_bits.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("startup.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("view_anim.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("../gui.rs")
         );
         assert!(
             crate::gui::render_source::has(gui, "adopt_settings(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, v, ctx)"),
             "startup stopped adopting the settings through the common handle"
         );
-        assert!(
-            crate::gui::render_source::has(gui, "adopt_settings(&mut self.regen, &mut self.scheme, &mut self.set, &mut self.status, s, ctx)"),
-            "import stopped adopting the settings through the common handle"
-        );
+        assert!(crate::gui::render_source::has(gui, "adopt_settings(regen, scheme, set, status, s, ctx)"), "import stopped adopting the settings through the common handle");
         // and nothing assigns the record past it
         let code: String = qymcad_i18n::ratchet::working_part(gui).lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
         // EVERY SHAPE THE ASSIGNMENT CAN TAKE. Inside the handle the record is now reached through a

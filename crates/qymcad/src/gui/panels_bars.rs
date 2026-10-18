@@ -6,6 +6,10 @@
 pub(crate) use qymcad_part::*;
 use super::*;
 
+// the bar of the tools of a workbench, drawn from the catalogue
+mod tool_bar;
+pub(crate) use tool_bar::{wb_toolbar, BAR_MARGIN};
+
 impl App {
     /// The command bar of the Part workbench, through its own doorway.
     pub(crate) fn feat_command_bar(&mut self, ui: &mut egui::Ui) {
@@ -168,6 +172,8 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 bc.cam.init = false;
                 ui.close();
             }
+            // THE PANELS: a tick for each one a person may hide; hidden, it takes no room
+            ui.menu_button(format!("{}  {}", ph::SIDEBAR, qymcad_i18n::tr("menu-panels")), |ui| crate::gui::panels_windows::panels_menu(&mut *bc.set, ui));
             ui.separator();
             ui.label(qymcad_i18n::tr("settings-scheme"));
             // THE SCHEMES COME FROM THE LIVE LIST (the built-in ones and the user's), and the label from
@@ -320,38 +326,47 @@ pub(crate) fn status_bar(sc: &mut qymcad_ui_state::StatusCtx, ui: &mut egui::Ui)
     ui.horizontal(|ui| {
         // a warning yellow with its icon, an error red with its: the line is where a person looks after an action
         let faults = qymcad_ui_state::document_faults(cache, project);
-        let said = qymcad_ui_state::notice_text(&scheme.pal, status, qymcad_ui_state::NoticeSize::Line);
-        let fault_said = matches!(status.tone, qymcad_ui_state::Tone::Warning | qymcad_ui_state::Tone::Error) && !faults.is_empty();
-        // the words of a fault lead where the badges lead: it is the line a person reads first
-        let words_clicked = if fault_said {
-            ui.add(egui::Label::new(said).sense(egui::Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
-        } else {
-            ui.label(said);
-            false
-        };
-        let badge_clicked = fault_badges(ui, &scheme.pal, &faults);
-        let lead = words_clicked || badge_clicked;
-        if lead {
-            if let Some(said) = qymcad_ui_state::lead_to_faults(&faults, project, win, par_search, ask) {
-                *line.rebuild = said.clone();
-                *status = said;
-            }
-        }
-        update_note(scheme, win, ui);
-        if let Some(sid) = sketch_ses.editing {
-            if let Some(si) = project.sketches.iter().position(|s| s.id == sid) {
-                let (line, col) = crate::gui::sketching::sketch_dof_line(cache, project, scheme, si);
-                ui.separator();
-                ui.label(egui::RichText::new(line).color(col));
-            }
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(crate::i18n::tr("bar-units-mm"));
-            ui.separator();
-            match cursor {
-                Some(c) => ui.monospace(format!("X {:.2}  Y {:.2}", c.x, c.y)),
-                None => ui.monospace("X —  Y —"),
+        // WHAT COMES AND GOES ON THE LINE, each part in a scope of its own that is there whether it shows anything or not:
+        // egui numbers what follows by what came before, and the readout of the pointer, renumbered on entering a sketch,
+        // was marked with egui's red frame of a widget that changed its id
+        qymcad_shell::keyed(ui, ("the status line", "said"), |ui| {
+            let said = qymcad_ui_state::notice_text(&scheme.pal, status, qymcad_ui_state::NoticeSize::Line);
+            let fault_said = matches!(status.tone, qymcad_ui_state::Tone::Warning | qymcad_ui_state::Tone::Error) && !faults.is_empty();
+            // the words of a fault lead where the badges lead: it is the line a person reads first
+            let words_clicked = if fault_said {
+                ui.add(egui::Label::new(said).sense(egui::Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+            } else {
+                ui.label(said);
+                false
             };
+            let badge_clicked = fault_badges(ui, &scheme.pal, &faults);
+            let lead = words_clicked || badge_clicked;
+            if lead {
+                if let Some(said) = qymcad_ui_state::lead_to_faults(&faults, project, win, par_search, ask) {
+                    *line.rebuild = said.clone();
+                    *status = said;
+                }
+            }
+        });
+        qymcad_shell::keyed(ui, ("the status line", "update"), |ui| update_note(scheme, win, ui));
+        qymcad_shell::keyed(ui, ("the status line", "sketch"), |ui| {
+            if let Some(sid) = sketch_ses.editing {
+                if let Some(si) = project.sketches.iter().position(|s| s.id == sid) {
+                    let (line, col) = crate::gui::sketching::sketch_dof_line(cache, project, scheme, si);
+                    ui.separator();
+                    ui.label(egui::RichText::new(line).color(col));
+                }
+            }
+        });
+        qymcad_shell::keyed(ui, ("the status line", "readout"), |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(crate::i18n::tr("bar-units-mm"));
+                ui.separator();
+                match cursor {
+                    Some(c) => ui.monospace(format!("X {:.2}  Y {:.2}", c.x, c.y)),
+                    None => ui.monospace("X —  Y —"),
+                };
+            });
         });
     });
 }

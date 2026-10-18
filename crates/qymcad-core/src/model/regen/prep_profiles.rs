@@ -68,7 +68,7 @@ impl Project {
                     &sourced.profiles,
                     crate::feature::ToolSpan { start: 0.0, length: total, ends: crate::feature::ToolEnds::Kept },
                     pl,
-                    crate::feature::Sides { feature, sources: &sourced.sources },
+                    crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions },
                 )
             }),
         }
@@ -127,7 +127,7 @@ impl Project {
                 let place = with_start(ax_o, ax_d, pl);
                 let inputs = if src != 0 { vec![src] } else { Vec::new() };
                 crate::feature::KernelJob::new(inputs, move |k| {
-                    k.revolve_region_multi(BodyOp { src, op, body }, &sourced.profiles, about, angle, place, crate::feature::Sides { feature, sources: &sourced.sources })
+                    k.revolve_region_multi(BodyOp { src, op, body }, &sourced.profiles, about, angle, place, crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions })
                 })
             })(),
         }
@@ -148,7 +148,7 @@ impl Project {
             (Some(sourced), Some(pth)) => {
                 let inputs = if src != 0 { vec![src] } else { Vec::new() };
                 crate::feature::KernelJob::new(inputs, move |k| {
-                    k.sweep_multi(BodyOp { src, op, body }, &sourced.profiles, prof_pl, &pth, path_pl, crate::feature::Sides { feature, sources: &sourced.sources })
+                    k.sweep_multi(BodyOp { src, op, body }, &sourced.profiles, prof_pl, &pth, path_pl, crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions })
                 })
             }
             (None, _) => crate::feature::KernelJob::refused(crate::errors::CoreError::SweepProfileMissing),
@@ -176,7 +176,7 @@ impl Project {
             Some(sourced) => {
                 let inputs = if src != 0 { vec![src] } else { Vec::new() };
                 crate::feature::KernelJob::new(inputs, move |k| {
-                    k.combine_region_multi(BodyOp { src, op, body }, &sourced.profiles, tool, pl, crate::feature::Sides { feature, sources: &sourced.sources })
+                    k.combine_region_multi(BodyOp { src, op, body }, &sourced.profiles, tool, pl, crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions })
                 })
             }
         }

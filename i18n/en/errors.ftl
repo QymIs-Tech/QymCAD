@@ -172,7 +172,9 @@ error-thread-longer-than-face = A thread { $length } mm long is longer than the 
 error-thread-depth-too-deep = Thread depth { $depth } mm is at or beyond the radius { $radius } mm: for Ø{ $dia } the pitch { $pitch } is too coarse
 error-thread-not-its-size = A thread of Ø{ $nominal } does not fit a face of Ø{ $face } — choose the size of the face, or the face of the size
 warn-edges-dropped = { $dropped } of the { $asked } edges could not be taken and are left sharp; the rest are done — double-click the node to pick other edges or another size
+warn-ref-found-by-place = A reference of this step was found by its position, not by its name — check that the right face or edge is taken, then press Accept in the properties, or pick it again
 warn-import-kept-as-it-came = The body brought in from the file did not pass the checks and could not be repaired, so it is kept exactly as the file holds it; an operation on it may refuse — open the file in the program that made it and export it again, or check its tolerance
+warn-built-stepped-back = Built a hair short of its size, by no more than 0.001%: at exactly this size a face disappears whole — if the exact size matters, make it slightly smaller or larger than that face
 error-thread-removed-nothing = The thread removed nothing ({ $before } -> { $after } mm³) — check the chosen face, pitch and length
 error-thread-failed = The thread did not build (check pitch, length and diameter)
 error-auger-rim-not-found = The shaft rim (a circular edge) was not found
@@ -212,6 +214,8 @@ error-expr-unexpected-end = the expression ends too early: a number or a name wa
 error-expr-trailing-input = Trailing input at «{ $what }»
 error-expr-not-a-number = The result is not a number (division by zero?)
 error-expr-too-deep = The formula nests deeper than { $limit } levels — parentheses, functions, signs or powers inside one another
+error-expr-leans-on-itself = The formula comes back to its own name: { $what } — write it through other names
+error-expr-name-without-value = { $what } has no value — its own line says why
 
 ## A message from the kernel itself — passed through untranslated: it is diagnostics, not prose.
 

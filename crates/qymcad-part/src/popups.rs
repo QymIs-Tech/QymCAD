@@ -256,7 +256,8 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
     for (i, p) in params.iter_mut().enumerate() {
         let Some(w) = p.at else { continue };
         let at = qymcad_ui_state::clamp_popup(qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis }.at(w).0, rect);
-        egui::Area::new(egui::Id::new(("feat_cmd_at", i))).fixed_pos(at + egui::vec2(8.0, -8.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+        egui::Area::new(egui::Id::new(("feat_cmd_at", i))).fixed_pos(at + egui::vec2(8.0, -8.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+            qymcad_ui_state::at_geometry_ui(ui);
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(qymcad_i18n::tr(p.label_key()));
@@ -278,7 +279,8 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
         .filter(|_| matches!(pc.armed.cmd_kind(), 20..=22))
         .and_then(|h| clear_of_the_handles(h, size, rect))
         .unwrap_or_else(|| qymcad_ui_state::clamp_popup(anchor, rect) + egui::vec2(10.0, -10.0));
-    egui::Area::new(egui::Id::new("feat_cmd_popup")).fixed_pos(at).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("feat_cmd_popup")).fixed_pos(at).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             // WHAT EXACTLY IS WRONG AND IN WHICH FIELD. There used to be only a flag saying whether all
             // was well, and the bottom of the popup printed that a dimension expression could not be
@@ -392,7 +394,8 @@ pub fn body_num_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
     let label = if rot { qymcad_i18n::tr1("cmd-rotation-axis", "axis", axn) } else { qymcad_i18n::tr1("cmd-offset-axis", "axis", axn) };
     let preview = pc.project.eval_expr(&pc.body_giz.num_buf); // the preview lags by one frame - the buffer changes inside the field
     let mut apply = false;
-    egui::Area::new(egui::Id::new("body_num")).fixed_pos(at + egui::vec2(12.0, -12.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("body_num")).fixed_pos(at + egui::vec2(12.0, -12.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(label).small());
@@ -487,7 +490,8 @@ pub(crate) fn comp_array_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Co
     let basis = pc.cam.basis();
     let at = qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis }.at([m[3], m[7], m[11]]).0;
     let mut apply = false;
-    egui::Area::new(egui::Id::new("comp_array_popup")).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(12.0, -12.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("comp_array_popup")).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(12.0, -12.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 apply = comp_array_fields(pc, ui, "popup");

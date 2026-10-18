@@ -228,6 +228,12 @@ pub trait Kernel {
         None
     }
 
+    /// Whether the last blend of `body` was built a hair short of its size - refused at it, built stepped back - taken
+    /// once.
+    fn take_stepped_back(&self, _body: Id) -> bool {
+        false
+    }
+
     /// The solids body `body` is made of, in the kernel's order: the centre of mass and the volume of each. The default
     /// is none, since the mock builds one solid a body and has nothing to tell apart.
     fn body_solids(&self, _body: Id) -> Vec<([f64; 3], f64)> {

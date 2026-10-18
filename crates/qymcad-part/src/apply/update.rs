@@ -12,6 +12,7 @@ pub fn update_datum_feat(
     datum: &qymcad_ui_state::DatumCommand,
     edges: &qymcad_ui_state::EdgeCache,
     project: &mut Project,
+    status: &mut qymcad_ui_state::Notice,
     fid: Id,
 ) -> Option<Id> {
     use qymcad_core::feature::SketchPlane;
@@ -30,7 +31,10 @@ pub fn update_datum_feat(
                 },
             }
             turn_datum_plane(cmd, project, fid);
-            store_cmd_exprs(cmd, project, fid); // the offset, the tilts and the turn stay parametric
+            if let Err(e) = store_cmd_exprs(cmd, project, fid) {
+                // the offset, the tilts and the turn stay parametric
+                return say_formula_refused(status, &e);
+            }
             Some(fid)
         }
         21 => {
@@ -48,7 +52,10 @@ pub fn update_datum_feat(
             let at = [qymcad_ui_state::cmd_val(cmd, "x"), qymcad_ui_state::cmd_val(cmd, "y"), qymcad_ui_state::cmd_val(cmd, "z")];
             project.datum_points[pi].at = at;
             project.datum_points[pi].def = PointDef::Manual; // back to hand-typed coordinates
-            store_cmd_exprs(cmd, project, fid); // x, y and z stay parametric
+            if let Err(e) = store_cmd_exprs(cmd, project, fid) {
+                // x, y and z stay parametric
+                return say_formula_refused(status, &e);
+            }
             Some(fid)
         }
         22 => {
@@ -96,7 +103,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     // THE DATUMS edit `project.planes`, `points` and `axes` plus the feature dims rather than
     // `node.kind`, so they take a separate path
     if matches!(pc.armed.cmd_kind(), 20..=22) {
-        return update_datum_feat(pc.armed, pc.cmd, pc.datum, pc.edges, pc.project, fid);
+        return update_datum_feat(pc.armed, pc.cmd, pc.datum, pc.edges, pc.project, pc.status, fid);
     }
     // take everything out of the command state in advance, to avoid borrowing self twice
     let (h, ang, r, dist, th, dia, dep) = (
@@ -514,34 +521,46 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
         *pc.status = Notice::warning(qymcad_i18n::tr2("cmd-split-count-changed", "got", &got.to_string(), "had", &had.to_string()));
         return None;
     }
-    store_cmd_exprs(pc.cmd, pc.project, fid); // store or clear the dimension expressions (the logical step, step2 and angle included)
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, fid) {
+        return formula_refused(pc, &e);
+    } // store or clear the dimension expressions (the logical step, step2 and angle included)
     if matches!(pc.armed.cmd_kind(), 17 | 18) {
-        store_bar_counts(pc.bar_exprs, pc.project, fid); // the counts typed in the bar, as the steps are
+        if let Err(e) = store_bar_counts(pc.bar_exprs, pc.project, fid) {
+            return formula_refused(pc, &e);
+        } // the counts typed in the bar, as the steps are
     }
     // the array: the step expressions go onto the components of the vector (the regen reads those), and the
     // angle is cleared for a full circle
     match pc.armed.cmd_kind() {
         17 => {
-            qymcad_ui_state::store_arr_component(pc.project, fid, ["dx", "dy", "dz"], a_dir, a_step_txt.clone());
+            if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx", "dy", "dz"], a_dir, a_step_txt.clone()) {
+                return formula_refused(pc, &e);
+            }
             if a_two {
-                qymcad_ui_state::store_arr_component(pc.project, fid, ["dx2", "dy2", "dz2"], a_dir2, a_step2_txt.clone());
+                if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx2", "dy2", "dz2"], a_dir2, a_step2_txt.clone()) {
+                    return formula_refused(pc, &e);
+                }
             } else {
                 for k in ["dx2", "dy2", "dz2"] {
-                    pc.project.set_feat_dim(fid, k, String::new());
+                    pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: k });
                 }
             }
             if a_two && a_three {
-                qymcad_ui_state::store_arr_component(pc.project, fid, ["dx3", "dy3", "dz3"], a_dir3, a_step3_txt.clone());
+                if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx3", "dy3", "dz3"], a_dir3, a_step3_txt.clone()) {
+                    return formula_refused(pc, &e);
+                }
             } else {
                 for k in ["dx3", "dy3", "dz3"] {
-                    pc.project.set_feat_dim(fid, k, String::new());
+                    pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: k });
                 }
             }
         }
         18 if a_full => {
-            pc.project.set_feat_dim(fid, "angle", String::new());
+            pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: "angle" });
         }
         _ => {}
     }
+    // the step opened and applied again is the person's word on what it takes: a mark of a reference found by place goes
+    pc.project.accept_found_by_place(fid);
     Some(fid)
 }

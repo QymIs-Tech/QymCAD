@@ -450,6 +450,8 @@ fn every_core_error_has_words_in_every_language() {
         X::TrailingInput("xx".into()),
         X::NotANumber,
         X::TooDeep { limit: 256 },
+        X::LeansOnItself("b_len -> a_len -> b_len".into()),
+        X::NameWithoutValue("a_len".into()),
     ] {
         samples.push(E::Expr(x));
     }
@@ -674,7 +676,7 @@ fn no_code_branches_on_the_text_of_the_status_line() {
                 continue;
             }
             let text = std::fs::read_to_string(&p).expect("the file reads");
-            let code = text.split("#[cfg(test)]").next().unwrap_or(&text);
+            let code = &qymcad_i18n::ratchet::working_part(&text);
             for (i, line) in code.lines().enumerate() {
                 if line.trim_start().starts_with("//") {
                     continue;
@@ -699,7 +701,7 @@ fn no_code_branches_on_the_text_of_the_status_line() {
 fn the_expression_parser_returns_codes_not_words() {
     let src = include_str!("../../../qymcad-core/src/expr.rs");
     assert!(src.contains("ExprError"), "the expression parser must return codes");
-    let code = src.split("#[cfg(test)]").next().unwrap_or(src);
+    let code = &qymcad_i18n::ratchet::working_part(src);
     let cyr: Vec<&str> = code.lines().filter(|l| !l.trim_start().starts_with("//")).filter(|l| l.contains('"') && l.chars().any(|c| ('а'..='я').contains(&c) || ('А'..='Я').contains(&c))).collect();
     assert!(cyr.is_empty(), "words have crept back into the expression parser:\n{}", cyr.join("\n"));
 

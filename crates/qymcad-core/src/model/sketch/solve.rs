@@ -13,24 +13,18 @@ impl Project {
     /// Value of whatever was named: a sketch dimension or a feature parameter.
     ///
     /// For a feature parameter the value is taken the way the rebuild takes it: an expression in `feat_dims` is
-    /// evaluated, otherwise the stored number from the node itself is used. Evaluation goes against the global
-    /// parameters rather than the whole scope, or a driver evaluating itself would recurse forever through
-    /// `param_map`.
+    /// evaluated in the whole scope of the document (`param_map`), otherwise the stored number from the node itself is
+    /// used. `param_map` reads a feature's named number without coming back here, so a driver does not evaluate itself.
     pub fn dim_target_value(&self, target: &crate::model::DimTarget) -> Option<f64> {
         match target {
             crate::model::DimTarget::Sketch { sketch, refs } => {
                 let si = self.sketch_index(*sketch)?;
-                let want: std::collections::BTreeSet<crate::model::Id> = refs.iter().copied().collect();
-                self.sketches[si].constraints.iter().find_map(|c| {
-                    let r: std::collections::BTreeSet<crate::model::Id> = Project::dim_refs(c)?.into_iter().collect();
-                    (r == want).then(|| Project::dim_value_of(c)).flatten()
-                })
+                Project::dim_value_of(self.sketches[si].constraints.get(self.dim_index(si, refs)?)?)
             }
             crate::model::DimTarget::Feature { node, key } => {
                 if let Some(e) = self.feat_dim(*node, key) {
                     if !e.trim().is_empty() {
-                        let vars: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.clone(), p.value)).collect();
-                        return crate::expr::eval(e, &vars).ok();
+                        return crate::expr::eval(e, &self.param_map()).ok();
                     }
                 }
                 self.timeline.iter().find(|n| n.id == *node)?.kind.dim(key)

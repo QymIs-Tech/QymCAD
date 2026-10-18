@@ -161,6 +161,13 @@ pub const TOOLBAR: &[(&str, &str)] = &[
     // the assembly buttons: grounding and connectors are in the mates article, the contents in the
     // components one
     ("tb-ground-hint", "assembly/02-joints"),
+    // the mates without a joint are in the article about mates, the relation of two of them in its own
+    ("j-group-tip", "assembly/02-joints"),
+    ("j-width-tip", "assembly/02-joints"),
+    ("j-tangent-tip", "assembly/02-joints"),
+    ("j-relation-tip", "assembly/07-relations"),
+    // a new sketch starts on the page of the sketch: where its plane is picked and what follows
+    ("g-sketch-pick-hint", "sketch/index"),
     ("tb-new-part-hint", "assembly/01-components"),
     ("tb-new-subassembly-hint", "assembly/01-components"),
     ("tb-mirror-part-hint", "assembly/04-arrays"),

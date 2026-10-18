@@ -136,23 +136,26 @@ pub struct GoTo {
 /// behaviour: the warning badge led into a sketch of the part, and nothing on screen said what was wrong.
 ///
 /// Returns what to say on the status line: what is wrong and where, in the tone of the fault - arriving somewhere
-/// without the words is arriving without knowing why.
+/// without the words is arriving without knowing why. The step into a part writes its context on the line a frame
+/// later, so the words go along with the request too and are said once the step is made. Reported behaviour: a click
+/// on the one fault of another part left "Context: Part 1" on the line.
 pub fn lead_to(fault: &Fault, project: &Project, win: &mut Windows, par_search: &mut String, ask: &mut Vec<WinAsk>) -> Notice {
     let to_table = match &fault.place {
         FaultPlace::Parameter(name) => Some(name.clone()),
         FaultPlace::Driver(k) => Some(project.named_dims.get(*k).map(|d| d.name.clone()).unwrap_or_default()),
         _ => None,
     };
+    let words = if fault.path.is_empty() { fault.words.clone() } else { qymcad_i18n::tr2("fault-said", "where", &fault.path, "what", &fault.words) };
+    let said = Notice { tone: fault.tone, words };
     match (to_table, fault_goes_to(project, &fault.place)) {
         (Some(name), _) => {
             *par_search = name;
             win.open(WinKind::Params);
         }
-        (None, Some(g)) => ask.push(WinAsk::GoTo { owner: g.owner, sel: g.sel }),
+        (None, Some(g)) => ask.push(WinAsk::GoTo { owner: g.owner, sel: g.sel, said: Some(said.clone()) }),
         (None, None) => {}
     }
-    let words = if fault.path.is_empty() { fault.words.clone() } else { qymcad_i18n::tr2("fault-said", "where", &fault.path, "what", &fault.words) };
-    Notice { tone: fault.tone, words }
+    said
 }
 
 /// A CLICK ON THE COUNTER OR ON THE WORDS OF A FAULT: with one fault it goes straight there, with more the window of
@@ -286,13 +289,32 @@ fn mate_faults(project: &Project) -> Vec<Fault> {
     out
 }
 
-/// THE PARAMETERS whose formula gives no value, and the drivers whose dimension is gone.
+/// THE PARAMETERS whose formula gives no value or whose name a formula reads as a constant, and the drivers whose
+/// dimension is gone.
 fn parameter_faults(project: &Project) -> Vec<Fault> {
     let mut out = Vec::new();
-    for p in project.parameters.iter().filter(|p| !p.expr.trim().is_empty()) {
-        if let Err(e) = project.eval_expr(&p.expr) {
+    for (i, p) in project.parameters.iter().enumerate().filter(|(_, p)| !p.expr.trim().is_empty()) {
+        // asked as the table asks it, so a parameter in a circle is a fault with its chain, not a stale number
+        if let Err(e) = project.check_param_text(i, &p.expr) {
             out.push(Fault { tone: Tone::Error, words: qymcad_i18n::error_words::expr_error_text(&e), path: p.name.clone(), place: FaultPlace::Parameter(p.name.clone()), owner: None });
         }
+    }
+    // A PARAMETER NAMED `e`, `pi` OR `tau`: naming refuses such a name, but a document read from disk may hold one. A
+    // formula reads the constant there, so the parameter has a value in the table and no formula reaches it.
+    for p in project.parameters.iter().filter(|p| qymcad_core::expr::is_constant(&p.name)) {
+        out.push(Fault { tone: Tone::Warning, words: qymcad_i18n::tr("par-name-is-constant"), path: p.name.clone(), place: FaultPlace::Parameter(p.name.clone()), owner: None });
+    }
+    // A DIMENSION OF A SKETCH OR A NUMBER OF A FEATURE NAMED SO, the same; a click leads to where it stands - its sketch,
+    // its node - as a click on a parameter leads to its row.
+    for d in project.named_dims.iter().filter(|d| qymcad_core::expr::is_constant(&d.name)) {
+        let place = match &d.target {
+            qymcad_core::model::DimTarget::Sketch { sketch, .. } => FaultPlace::Sketch(*sketch),
+            qymcad_core::model::DimTarget::Feature { node, .. } => FaultPlace::Node(*node),
+        };
+        let at = project.driver_path(&d.target);
+        let path = if at.is_empty() { d.name.clone() } else { format!("{}.{}", path_in_words(&at), d.name) };
+        let owner = fault_goes_to(project, &place).and_then(|g| g.owner);
+        out.push(Fault { tone: Tone::Warning, words: qymcad_i18n::tr("par-name-is-constant"), path, place, owner });
     }
     for (k, d) in project.named_dims.iter().enumerate() {
         if project.named_dim_value(d).is_none() {

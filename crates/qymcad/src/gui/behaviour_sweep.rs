@@ -7,13 +7,13 @@
 //!
 //! WHY OVER THE CATALOGUE RATHER THAN A LIST OF FAVOURITE COMMANDS. `audit.rs` already runs live
 //! scenarios, but invented ones — which means it checks what somebody suspected. Here EVERY command
-//! from `COMMANDS` is checked, including the ones nobody would have remembered; a new command enters
+//! of the catalogue is checked, including the ones nobody would have remembered; a new command enters
 //! the run on the day it is written into the catalogue, not on the day its author remembered to add a
 //! test.
 #[cfg(test)]
 mod tests {
     use super::super::{App, Sel};
-    use crate::command_catalog::{Launch, COMMANDS};
+    use crate::command_catalog::{all, Command, Launch};
 
     /// A part with a body inside an assembly: the context a person actually works in.
     fn part_app() -> App {
@@ -68,48 +68,35 @@ mod tests {
         }
     }
 
-    /// WHAT "THE COMMAND STARTED" MEANS — by the same state a person sees it by.
-    fn started(app: &App, launch: Launch) -> bool {
-        match launch {
-            Launch::Feat(_) | Launch::Prim(_) => app.tools.armed.commanding(),
-            Launch::SkTool(n) => app.tools.armed.draw_kind() == n,
-            Launch::Dim(n) => app.tools.armed.dim_kind() == n,
-            Launch::ClickOp(n) => app.tools.armed.click_op() == n,
-            Launch::Modify(_) => true, // editing the selection fires at once and starts no mode
-            Launch::Action("joint") => app.side.joint.pick_faces,
-            Launch::Action("ground") => app.side.joint.ground_pick,
-            Launch::Action(_) => true,
-        }
+    /// WHAT "THE COMMAND STARTED" MEANS - by the same state a person sees it by: its button lit.
+    fn lit(app: &mut App, launch: Launch) -> bool {
+        let mut asks = Vec::new();
+        let bc = app.bar_ctx(&mut asks);
+        qymcad_ui_state::catalogue::pressed(launch, &bc)
     }
 
-    /// WHAT STAYED SWITCHED ON. An empty list means the program came back to selection mode.
-    fn tail(app: &App) -> Vec<&'static str> {
-        let mut t = Vec::new();
-        if app.tools.armed.commanding() {
-            t.push("a feature command");
-        }
-        if app.tools.armed.draw_kind() != 0 {
-            t.push("a drawing tool");
-        }
-        if app.tools.armed.click_op() != 0 {
-            t.push("a click operation");
-        }
-        if app.tools.armed.modify().is_some() {
-            t.push("editing the selection");
-        }
-        if app.tools.armed.dim_kind() != 0 {
-            t.push("a dimension");
-        }
-        if app.side.joint.pick_faces || app.side.joint.ground_pick {
-            t.push("assembling a mate");
-        }
-        if app.tools.armed.measuring() {
-            t.push("measuring");
-        }
-        if app.tools.armed.pat_op() != 0 {
-            t.push("a pattern");
-        }
-        t
+    /// A COMMAND THAT ACTS AT ONCE and starts no mode: editing the selection, the switch of construction lines, a
+    /// new part or subassembly, a body made a part. Its button is not lit after it, by design.
+    fn acts_at_once(launch: Launch) -> bool {
+        matches!(launch, Launch::Modify(_) | Launch::Construction | Launch::NewPart | Launch::NewSubassembly | Launch::PieceToPart)
+    }
+
+    /// A COMMAND ITS OWN BAR PUTS DOWN ON Esc, in the frame: the mirrored copy of a part reads the key on its bar, and the
+    /// ladder of Esc a bare check calls has no rung for it.
+    fn put_down_by_its_bar(launch: Launch) -> bool {
+        launch == Launch::MirrorPart
+    }
+
+    /// THE COMMANDS SWEPT. The component from a file is left out: its press opens the system's file chooser, which a
+    /// session answers (`assembly_components`) and a bare frame here cannot.
+    fn swept() -> impl Iterator<Item = &'static Command> {
+        all().filter(|c| c.launch != Launch::InsertComponent)
+    }
+
+    /// WHAT STAYED SWITCHED ON: the commands whose buttons are lit. The arrow of a sketch is lit when nothing else is,
+    /// and the construction switch is a setting of what is drawn rather than a tool, so neither is counted.
+    fn tail(app: &mut App) -> Vec<&'static str> {
+        all().filter(|c| !matches!(c.launch, Launch::SketchSelect | Launch::Construction)).filter(|c| lit(app, c.launch)).map(|c| c.code).collect()
     }
 
     /// EVERY COMMAND EITHER STARTS OR SAYS WHY NOT.
@@ -126,12 +113,12 @@ mod tests {
     #[test]
     fn every_command_either_starts_or_says_why_not() {
         let mut mute: Vec<String> = Vec::new();
-        for c in COMMANDS {
-            let mut app = stage(c.workbench);
+        for c in swept() {
+            let mut app = stage(c.home());
             app.status.words.clear();
             app.run_command(c.code, &egui::Context::default());
-            if !started(&app, c.launch) && app.status.words.trim().is_empty() {
-                mute.push(format!("{} ({})", c.code, c.workbench));
+            if !acts_at_once(c.launch) && !lit(&mut app, c.launch) && app.status.words.trim().is_empty() {
+                mute.push(format!("{} ({})", c.code, c.home()));
             }
         }
         assert!(mute.is_empty(), "the command did not switch on AND stayed silent — a person does not know whether they were heard ({}):\n{}", mute.len(), mute.join("\n"));
@@ -145,11 +132,11 @@ mod tests {
     #[test]
     fn escape_switches_off_whatever_was_started() {
         let mut stuck: Vec<String> = Vec::new();
-        for c in COMMANDS {
-            let mut app = stage(c.workbench);
+        for c in swept().filter(|c| !put_down_by_its_bar(c.launch)) {
+            let mut app = stage(c.home());
             app.run_command(c.code, &egui::Context::default());
             app.on_escape();
-            let t = tail(&app);
+            let t = tail(&mut app);
             if !t.is_empty() {
                 stuck.push(format!("{}: {} is left after Esc", c.code, t.join(", ")));
             }
@@ -165,13 +152,13 @@ mod tests {
     #[test]
     fn a_command_dropped_by_escape_leaves_the_document_alone() {
         let mut dirty: Vec<String> = Vec::new();
-        for c in COMMANDS {
-            // EDITING THE SELECTION IS NOT INCLUDED HERE: delete, mirror and offset fire straight on
-            // the press — they have nothing to cancel on Esc, and changing the document is their job.
-            if matches!(c.launch, Launch::Modify(_)) {
+        for c in swept() {
+            // WHAT ACTS AT ONCE IS NOT INCLUDED HERE: delete, mirror and offset, a new part - they fire straight on the
+            // press, have nothing to cancel on Esc, and changing the document is their job.
+            if acts_at_once(c.launch) {
                 continue;
             }
-            let mut app = stage(c.workbench);
+            let mut app = stage(c.home());
             let before = qymcad_ui_state::edit_key(&app.draw_ctx());
             app.run_command(c.code, &egui::Context::default());
             app.on_escape();

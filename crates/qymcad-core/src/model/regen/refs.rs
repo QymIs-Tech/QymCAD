@@ -1,6 +1,7 @@
 //! THE REFERENCES OF A REBUILD: faces of sketches lost and rebound, points and axes resolved.
 
 use super::*;
+use crate::model::refs::SketchFaceFix;
 
 impl Project {
     /// Whether sketch `sketch` sits on a face that the current rebuild of its body no longer has.
@@ -31,11 +32,6 @@ impl Project {
     pub(crate) fn rebind_refs_to_body(&mut self, body: Id, before: &[crate::geom::MeshFace], report: &mut crate::feature::RegenReport) {
         use crate::feature::{FeatureKind, Rebind, SketchPlane};
         let Some(faces) = self.regen_faces.get(&body).cloned() else { return };
-        let candidate = |key: &crate::feature::FaceKey| -> Option<u32> {
-            let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-            let d2 = |c: &crate::geom::Point3| (c.x - key.centroid[0]).powi(2) + (c.y - key.centroid[1]).powi(2) + (c.z - key.centroid[2]).powi(2);
-            faces.iter().filter(|f| f.id != 0 && dot(f.normal, key.normal) > 0.9).min_by(|a, b| d2(&a.centroid).partial_cmp(&d2(&b.centroid)).unwrap_or(std::cmp::Ordering::Equal)).map(|f| f.id)
-        };
         let known = |id: u32| id != 0 && faces.iter().any(|f| f.id == id);
         // A matching number is not the same face, references carrying a fingerprint (a sketch on a face, a
         // hole) included. Accepting "the name is alive" is not enough: when the naming scheme changes, the
@@ -75,27 +71,31 @@ impl Project {
             known(key.id) && key_matches(key)
         };
 
-        // Sketches placed on a face of this body.
-        let mut sfix: Vec<(Id, u32, String)> = Vec::new();
+        // Sketches placed on a face of this body: the face by its name, and by place only exactly and marked
+        // (`find_face`).
+        let mut sfix: Vec<SketchFaceFix> = Vec::new();
         for sk in &self.sketches {
             if let SketchPlane::Face(b, ref key) = sk.plane {
                 if b == body && !ref_ok(key) {
                     // An empty repair is not an event. The candidate may equal the previous number, meaning
                     // the reference was correct all along and was merely re-checked; reporting that as a repair
                     // sends the reader to inspect something that did not change.
-                    if let Some(newid) = candidate(key).filter(|&n| n != key.id) {
-                        sfix.push((sk.id, newid, format!("rebind-sketch-face#{} -> {newid}", key.id)));
+                    if let Some(found) = self.find_face(&faces, key.id, Some(key)).filter(|f| f.face != key.id) {
+                        sfix.push(SketchFaceFix { sketch: sk.id, body, face: found.face, by_place: found.by_place, what: format!("rebind-sketch-face#{} -> {}", key.id, found.face) });
                     }
                 }
             }
         }
-        for (sid, newid, what) in sfix {
-            if let Some(sk) = self.sketches.iter_mut().find(|s| s.id == sid) {
+        for fix in sfix {
+            if let Some(sk) = self.sketches.iter_mut().find(|s| s.id == fix.sketch) {
                 if let SketchPlane::Face(_, key) = &mut sk.plane {
-                    key.id = newid;
+                    key.id = fix.face;
                 }
             }
-            report.rebinds.push(Rebind { node: sid, body, what });
+            if fix.by_place {
+                report.rebinds.push(Rebind { node: fix.sketch, body, what: fix.what });
+                self.note_found_by_place(fix.sketch);
+            }
         }
         // Holes are deliberately not handled here: their reference became a query, which either finds the face
         // by recipe or refuses honestly. Matching "the nearest co-directed face" on its behalf is exactly the
@@ -127,9 +127,9 @@ impl Project {
             } else if known(old_id) && (before.is_empty() || same_face(old_id)) {
                 return None; // The name is alive and points at the same face: nothing to do.
             }
-            let was = before.iter().find(|f| f.id == old_id)?;
-            let key = crate::feature::FaceKey { index: 0, centroid: [was.centroid.x, was.centroid.y, was.centroid.z], normal: was.normal, id: 0 };
-            candidate(&key).filter(|&ni| ni != old_id)
+            let was = before.iter().find(|f| f.id == old_id);
+            let key = was.map(|was| crate::feature::FaceKey { index: 0, centroid: [was.centroid.x, was.centroid.y, was.centroid.z], normal: was.normal, id: 0 });
+            self.find_face(&faces, old_id, key.as_ref()).map(|f| f.face).filter(|&ni| ni != old_id)
         };
         // A NAMED RECORD, not a three-place tuple: the list is filled in one loop and read in another, and
         // between the two `.0`, `.1`, `.2` say nothing about which is the node and which the mapping.

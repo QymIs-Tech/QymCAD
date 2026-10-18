@@ -157,6 +157,19 @@ pub(crate) fn export_settings_to(set: &Settings, path: &str) -> Result<(), Strin
     std::fs::write(path, text).map_err(|e| e.to_string())
 }
 
+/// READ THE SETTINGS FROM A FILE and adopt them.
+///
+/// Missing fields fall back to the factory ones (`serde(default)` on the record): a profile taken
+/// from a different version of the program must still read, not be rejected wholesale — otherwise it
+/// cannot be shared. A broken file does NOT touch the current settings: the change arrives whole or
+/// not at all.
+pub(crate) fn import_settings_from(regen: &mut Rebuilding, scheme: &mut SchemeUi, set: &mut Settings, status: &mut Notice, path: &str, ctx: &egui::Context) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let s: Settings = ron::from_str(&text).map_err(|e| e.to_string())?;
+    adopt_settings(regen, scheme, set, status, s, ctx);
+    Ok(())
+}
+
 /// Put a path at the top of the recent list: no duplicates, trimmed to length.
 ///
 /// The freshest one goes first: the list is read from the top, and "the last thing worked on" must

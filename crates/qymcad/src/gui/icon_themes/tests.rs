@@ -220,11 +220,11 @@ fn selected_bundled_default_redraw_stays_responsive() {
     let _ = draw(&mut app, vec![click(true)]);
     let _ = draw(&mut app, vec![click(false)]);
     assert_eq!(app.win.icon_manager.selected_pack_id, DEFAULT_THEME_ID);
-    let start = std::time::Instant::now();
+    let start = qymcad_core::time_budget::Meter::start(qymcad_core::time_budget::Doer::Process);
     for _ in 0..8 {
         let _ = draw(&mut app, vec![]);
     }
-    let elapsed = start.elapsed();
+    let elapsed = start.cost().work;
     eprintln!("selected bundled default: eight redraws took {elapsed:?}");
     assert!(qymcad_core::time_budget::within(elapsed, std::time::Duration::from_millis(180)), "eight redraws of the selected bundled theme took {elapsed:?}");
     fn find_gallery_tab(shape: &egui::epaint::Shape, title: &str) -> Option<egui::Pos2> {
@@ -241,11 +241,11 @@ fn selected_bundled_default_redraw_stays_responsive() {
     let _ = draw(&mut app, vec![egui::Event::PointerMoved(gallery)]);
     let _ = draw(&mut app, vec![gallery_click(true)]);
     let _ = draw(&mut app, vec![gallery_click(false)]);
-    let start = std::time::Instant::now();
+    let start = qymcad_core::time_budget::Meter::start(qymcad_core::time_budget::Doer::Process);
     for _ in 0..8 {
         let _ = draw(&mut app, vec![]);
     }
-    let gallery_elapsed = start.elapsed();
+    let gallery_elapsed = start.cost().work;
     eprintln!("selected bundled default gallery: eight redraws took {gallery_elapsed:?}");
     assert!(qymcad_core::time_budget::within(gallery_elapsed, std::time::Duration::from_millis(180)), "eight gallery redraws of the selected bundled theme took {gallery_elapsed:?}");
     assert!(app.set.active_icon_packs.is_empty(), "selection must not activate the theme");
@@ -575,13 +575,15 @@ fn selecting_packaged_archive_keeps_redraw_responsive() {
     assert!(output.shapes.iter().all(|shape| find_label(&shape.shape, &package_label).is_none()), "archive must not offer packaging");
     assert!(output.shapes.iter().all(|shape| find_label(&shape.shape, &clean_label).is_none()), "archive must not offer SVG cleaning");
 
-    let start = std::time::Instant::now();
-    for _ in 0..3 {
-        let _ = draw(&mut app, vec![]);
-    }
-    let elapsed = start.elapsed();
-    eprintln!("selected packaged archive: three redraws took {elapsed:?}");
-    assert!(elapsed < std::time::Duration::from_millis(450), "three redraws after selecting the bundle took {elapsed:?}");
+    // the work of the frames, not the share of the machine they were given (`time_budget::Cost`)
+    let drawn = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Process, || {
+        for _ in 0..3 {
+            let _ = draw(&mut app, vec![]);
+        }
+    });
+    eprintln!("selected packaged archive: three redraws: {}", drawn.cost);
+    let budget = std::time::Duration::from_millis(450);
+    assert!(drawn.cost.work < budget, "{}", qymcad_core::time_budget::over("three redraws after selecting the bundle", drawn.cost, budget));
 
     let output = draw(&mut app, vec![]);
     let gallery_label = crate::i18n::tr("icontheme-mgr-tab-gallery");
@@ -591,13 +593,15 @@ fn selecting_packaged_archive_keeps_redraw_responsive() {
     let _ = draw(&mut app, vec![tab_click(true)]);
     let _ = draw(&mut app, vec![tab_click(false)]);
     assert_eq!(app.win.icon_manager.active_tab, IconManagerTab::Gallery, "the gallery tab did not open");
-    let start = std::time::Instant::now();
-    for _ in 0..3 {
-        let _ = draw(&mut app, vec![]);
-    }
-    let elapsed = start.elapsed();
-    eprintln!("packaged archive gallery: three redraws took {elapsed:?}");
-    assert!(elapsed < std::time::Duration::from_millis(450), "three gallery redraws took {elapsed:?}");
+    // the work of the frames, not the share of the machine they were given (`time_budget::Cost`)
+    let drawn = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Process, || {
+        for _ in 0..3 {
+            let _ = draw(&mut app, vec![]);
+        }
+    });
+    eprintln!("packaged archive gallery: three redraws: {}", drawn.cost);
+    let budget = std::time::Duration::from_millis(450);
+    assert!(drawn.cost.work < budget, "{}", qymcad_core::time_budget::over("three gallery redraws", drawn.cost, budget));
     assert_eq!(app.set.active_icon_packs, active_before, "selection must not activate the bundle");
 }
 

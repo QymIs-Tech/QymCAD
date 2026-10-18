@@ -33,15 +33,8 @@ mod tests {
     /// The button exists, and it switches on exactly this tool.
     #[test]
     fn the_tool_has_a_button() {
-        // THE ARGUMENTS ARE NOT QUOTED. The needle used to spell out all fifteen of them, so it broke the
-        // moment the panel started reaching the fields through a context. What is guarded is that a button
-        // in the panels switches the click operation to SIX - the projection.
-        let panels = crate::gui::panels_source::PANELS;
-        let wired = panels.match_indices("set_click_op(").any(|(i, _)| {
-            let tail = &panels[i..];
-            tail.find(");").is_some_and(|e| tail[..e].trim_end().ends_with(", 6"))
-        });
-        assert!(wired, "without a button the operation does not exist for a person");
+        // a button of the sketch's bar switches the click operation to SIX - the projection
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::ClickOp(6), "sketch"), "without a button the operation does not exist for a person");
         assert!(crate::gui::sketch_source::SKETCH.contains(".armed.click_op() == 6 {"), "a click in a sketch must lead to the projection");
     }
 

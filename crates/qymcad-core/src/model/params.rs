@@ -11,11 +11,31 @@ impl Project {
         let mut m: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.clone(), p.value)).collect();
         // Named driving dimensions (the skeleton sketch of an assembly): a name resolves to a dimension
         // value, which parts then consume through expressions.
-        for nd in &self.named_dims {
-            if !nd.name.is_empty() {
-                if let Some(v) = self.named_dim_value(nd) {
+        for nd in self.named_dims.iter().filter(|nd| !nd.name.is_empty() && matches!(nd.target, DimTarget::Sketch { .. })) {
+            if let Some(v) = self.named_dim_value(nd) {
+                m.insert(nd.name.clone(), v);
+            }
+        }
+        // A FEATURE'S NAMED NUMBER IS READ IN THE SAME SCOPE AS THE REBUILD READS IT: its formula may name a sketch
+        // dimension or another feature's number, not only a global parameter. Evaluated against the global parameters
+        // alone, `depth = a_len/4` gave no value, and the table said the dimension was gone while the body stood 10 deep.
+        // Up to eight passes, so a number written through another feature's number settles whichever order they stand in.
+        let features: Vec<&NamedDim> = self.named_dims.iter().filter(|nd| !nd.name.is_empty() && matches!(nd.target, DimTarget::Feature { .. })).collect();
+        for _ in 0..8 {
+            let mut changed = false;
+            for nd in &features {
+                let DimTarget::Feature { node, key } = &nd.target else { continue };
+                let v = match self.feat_dim(*node, key).filter(|e| !e.trim().is_empty()) {
+                    Some(e) => crate::expr::eval(e, &m).ok(),
+                    None => self.timeline.iter().find(|n| n.id == *node).and_then(|n| n.kind.dim(key)),
+                };
+                if let Some(v) = v {
+                    changed |= m.get(&nd.name).is_none_or(|o| (o - v).abs() > 1e-12);
                     m.insert(nd.name.clone(), v);
                 }
+            }
+            if !changed {
+                break;
             }
         }
         m
@@ -33,10 +53,12 @@ impl Project {
     /// showing up as two identical rows in the parameter list. Both halves of the fix apply — the name
     /// cannot be taken twice, and the path to the owning sketch is shown next to it.
     ///
-    /// Global parameters are checked too: they share the same scope.
+    /// Global parameters are checked too: they share the same scope. A name unfit for a formula (`2w`, or `e`,
+    /// which a formula reads as the constant) is refused here as well, as a rename refuses it.
+    /// A name that would close a circle of formulas is refused too ([`Project::naming_closes_circle`]).
     pub fn name_dim(&mut self, name: String, target: DimTarget) -> bool {
         let nm = name.trim().to_string();
-        if !nm.is_empty() && self.driver_name_taken_by(&nm, &target) {
+        if !nm.is_empty() && (crate::drivers::check_ident(&nm).is_err() || self.driver_name_taken_by(&nm, &target) || self.naming_closes_circle(&target, &nm).is_some()) {
             return false;
         }
         self.named_dims.retain(|n| n.target != target);
@@ -129,10 +151,7 @@ impl Project {
         match target {
             DimTarget::Sketch { sketch, refs } => {
                 let Some(si) = self.sketch_index(*sketch) else { return false };
-                let want: std::collections::BTreeSet<Id> = refs.iter().copied().collect();
-                let Some(ci) = self.sketches[si].constraints.iter().position(|c| Self::dim_refs(c).is_some_and(|r| r.into_iter().collect::<std::collections::BTreeSet<Id>>() == want)) else {
-                    return false;
-                };
+                let Some(ci) = self.dim_index(si, refs) else { return false };
                 // An entered value overrides the expression: a typed number has to stay, instead of losing
                 // to the previous formula on the next evaluation.
                 match self.sketches[si].constraints.get_mut(ci) {
@@ -168,6 +187,67 @@ impl Project {
                 true
             }
         }
+    }
+
+    /// The index of the dimensional constraint of sketch `si` addressed by `refs`, in either order of its entities.
+    pub(crate) fn dim_index(&self, si: usize, refs: &[Id]) -> Option<usize> {
+        let want: std::collections::BTreeSet<Id> = refs.iter().copied().collect();
+        self.sketches.get(si)?.constraints.iter().position(|c| Self::dim_refs(c).is_some_and(|r| r.into_iter().collect::<std::collections::BTreeSet<Id>>() == want))
+    }
+
+    /// THE FORMULA OF WHATEVER WAS NAMED, as it was typed: the expression of a sketch dimension or of a feature's number.
+    /// `None` when it holds a plain number - the table of parameters then shows the number.
+    pub fn dim_target_expr(&self, target: &DimTarget) -> Option<String> {
+        let e = match target {
+            DimTarget::Sketch { sketch, refs } => {
+                let si = self.sketch_index(*sketch)?;
+                self.sketches[si].constraints.get(self.dim_index(si, refs)?)?.expr()?.to_string()
+            }
+            DimTarget::Feature { node, key } => self.feat_dim(*node, key)?.to_string(),
+        };
+        (!e.trim().is_empty()).then_some(e)
+    }
+
+    /// SET WHATEVER WAS NAMED FROM THE TEXT TYPED FOR IT IN THE TABLE OF PARAMETERS. A plain number makes it a constant
+    /// ([`Project::set_dim_target_value`]); a formula is kept as typed with the number it gives now beside it, so it
+    /// follows the names it reads on every evaluation, as a formula typed at the dimension itself does.
+    ///
+    /// Reported behaviour: the table evaluated what was typed and kept the number - with the width named `a_len` = 40,
+    /// `a_len/4` typed for the height became the constant 10, and the width changed to 60 left the height at 10.
+    ///
+    /// Refused with the document untouched: a formula that gives no number now, and one that comes back to the name of
+    /// this very target through the names it reads, which would drift on every evaluation instead of standing. Answers
+    /// whether anything was written: `Ok(false)` when the target is gone.
+    ///
+    /// The sketch is not re-solved here, as in [`Project::set_dim_target_value`].
+    pub fn set_dim_target_text(&mut self, target: &DimTarget, text: &str) -> Result<bool, crate::errors::ExprError> {
+        let t = text.trim();
+        if let Ok(v) = t.parse::<f64>() {
+            return Ok(self.set_dim_target_value(target, v));
+        }
+        let v = self.check_dim_target_text(target, t)?;
+        if !self.set_dim_target_value(target, v) {
+            return Ok(false);
+        }
+        match target {
+            DimTarget::Sketch { sketch, refs } => {
+                let si = self.sketch_index(*sketch);
+                let ci = si.and_then(|si| self.dim_index(si, refs));
+                if let Some(e) = si.zip(ci).and_then(|(si, ci)| self.sketches[si].constraints.get_mut(ci)).and_then(Constraint::expr_mut) {
+                    *e = t.to_string();
+                }
+            }
+            DimTarget::Feature { node, key } => self.set_feat_dim(*node, key, t.to_string()),
+        }
+        Ok(true)
+    }
+
+    /// WHAT [`Project::set_dim_target_text`] WOULD REFUSE, asked before an undo step is opened for it: the number the text
+    /// gives now, or why it is not taken ([`Project::check_formula`] under the name of `target`). A refusal leaves no step
+    /// behind.
+    pub fn check_dim_target_text(&self, target: &DimTarget, text: &str) -> Result<f64, crate::errors::ExprError> {
+        let name = self.name_of_target(target);
+        self.check_formula(&super::NamedFormula { name: &name, text: text.trim() })
     }
 
     /// Remove a driver name.
@@ -244,39 +324,14 @@ impl Project {
     pub fn eval_parameters(&mut self) -> Vec<(String, crate::errors::ExprError)> {
         use crate::expr::eval;
         let mut errs = Vec::new();
-        // THE SCOPE HOLDS BOTH KINDS OF NAME. A global parameter `w = 50` and a named dimension are the same
-        // thing seen from a formula: a name that resolves to a number. Seeding from `self.parameters` alone
-        // left every driver out of scope, so a dimension written as `w*2` could not be evaluated at all and
-        // silently kept its previous value - which is exactly the reported behaviour, that drivers do not
-        // work inside other dimensions.
+        // THE SCOPE HOLDS BOTH KINDS OF NAME. A global parameter `w = 50` and a named dimension are the same thing seen
+        // from a formula: a name that resolves to a number, so a dimension written as `w*2` reads a parameter and a
+        // parameter written as `len/2` reads a dimension.
         //
-        // `param_map` is the one place that answers "what names does this document have", and it is used here
-        // so that the scope of a rebuild and the scope of the completion list cannot drift apart.
-        let mut vars = self.param_map();
-        for p in &self.parameters {
-            if !p.name.is_empty() {
-                vars.insert(p.name.clone(), p.value); // seed with the previous value
-            }
-        }
-        // Fixed point over the dependencies (up to eight passes).
-        for _ in 0..8 {
-            let mut changed = false;
-            for p in &self.parameters {
-                if p.name.is_empty() || p.expr.trim().is_empty() {
-                    continue;
-                }
-                if let Ok(v) = eval(&p.expr, &vars) {
-                    let key = p.name.clone();
-                    if vars.get(&key).is_none_or(|o| (o - v).abs() > 1e-12) {
-                        changed = true;
-                    }
-                    vars.insert(key, v);
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
+        // THE VALUES ARE WORKED OUT FROM THE FORMULAS ALONE, in the order they read each other (`work_out_names`). They
+        // used to start from the values before and go round up to eight times: `a = b+1` with `b = a+1` grew on every
+        // evaluation (28 / 29, 60 / 61, 76 / 77), and an undo, evaluating once more, kept the grown numbers.
+        let worked = self.work_out_names();
         for p in &mut self.parameters {
             if p.name.is_empty() {
                 errs.push((String::new(), crate::errors::ExprError::UnknownFn(String::new())));
@@ -285,11 +340,16 @@ impl Project {
             if p.expr.trim().is_empty() {
                 continue;
             }
-            match eval(&p.expr, &vars) {
-                Ok(v) => p.value = v,
-                Err(e) => errs.push((p.name.clone(), e)),
+            match worked.faults.get(&p.name) {
+                Some(e) => errs.push((p.name.clone(), e.clone())),
+                None => {
+                    if let Some(v) = worked.values.get(&p.name) {
+                        p.value = *v;
+                    }
+                }
             }
         }
+        let vars = worked.values;
         // Apply the expressions to dimensional constraints.
         for s in &mut self.sketches {
             for c in &mut s.constraints {

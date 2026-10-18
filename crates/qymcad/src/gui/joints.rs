@@ -104,19 +104,13 @@ impl App {
     /// A second launch path would be worse than having no search at all: it would start doing what the
     /// button does not, and the divergence would surface for whoever uses the program rather than in a test.
     pub(crate) fn run_command(&mut self, code: &str, frame: &egui::Context) {
-        use crate::command_catalog::Launch;
         let Some(cmd) = crate::command_catalog::by_code(code) else { return };
+        let mut asks = Vec::new();
         match cmd.launch {
-            Launch::Feat(n) => self.start_feat_cmd(n),
-            Launch::Prim(n) => self.start_prim_cmd(n),
-            Launch::SkTool(n) => self.set_sk_tool(n),
-            Launch::Dim(n) => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, &self.project, self.chosen.sel, self.sketch_ses, &mut self.status, n),
-            Launch::ClickOp(n) => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, n),
-            Launch::Modify(n) => qymcad_ui_state::modify_button(qymcad_ui_state::editing_of!(self), &mut qymcad_ui_state::tools_of!(self), self.sk_pat, &self.tool_prefs, n),
-            Launch::Action("joint") => self.start_joint_pick(),
-            Launch::Action("ground") => self.start_ground_pick(),
-            Launch::Action(a) => crate::gui::piece_part::from_search(frame, &mut self.part_ctx(), a),
+            crate::command_catalog::Launch::PieceToPart => crate::gui::piece_part::from_search(frame, &mut self.part_ctx(), "piece"),
+            _ => crate::command_catalog::press(cmd, &mut self.bar_ctx(&mut asks)),
         }
+        self.do_bar_asks(asks, frame);
     }
 
     /// START PICKING A JOINT. One door for every way in: the workbench button, the button in the

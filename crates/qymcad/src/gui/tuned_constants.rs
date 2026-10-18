@@ -18,17 +18,17 @@ mod tests {
     fn the_tuned_numbers_are_no_longer_constants() {
         let gui = concat!(
             include_str!("file_doors.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("gizmo_math.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("look.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("panel_bits.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("startup.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("view_anim.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("../gui.rs")
         );
         let input = include_str!("input.rs");
@@ -70,17 +70,17 @@ mod tests {
 
         let gui = concat!(
             include_str!("file_doors.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("gizmo_math.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("look.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("panel_bits.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("startup.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("view_anim.rs"),
-            "\n",
+            crate::gui::panels_source::file_break!(),
             include_str!("../gui.rs")
         );
         // the setting goes through the step of a safe start, which may take it down to one sample (`safe_graphics`)

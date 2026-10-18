@@ -4,13 +4,17 @@
 //! The budgets of time hold at the level of the probes of time alone (`qymcad_core::time_budget`); what the thread is -
 //! its crest, the weight of its angle - is held at every level. Measured among the 157 probes of the bridge run
 //! together: 1.5 s and 2 s budgets read over them, while alone both probes took 3.1 s together.
+//!
+//! A step is timed by its work (`time_budget::Cost`): the wall less the share its threads stood ready with no processor
+//! free, so the machine busy with other work beside the level of time does not read as a slow program.
 use crate::Shape;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use qymcad_core::time_budget::{Doer, Meter};
 
 #[test]
 fn runout_fast_and_crest_stays_at_radius() {
     let cyl = Shape::cylinder(15.0, 40.0).unwrap();
-    let t = Instant::now();
+    let t = Meter::start(Doer::Process);
     let thr = cyl
         .thread(crate::ThreadCut {
             axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 40.0], dir: [0.0, 0.0, -1.0] },
@@ -29,7 +33,7 @@ fn runout_fast_and_crest_stays_at_radius() {
             lead_out: 1.5,
         })
         .unwrap();
-    let took = t.elapsed();
+    let took = t.cost().work;
     let dt = took.as_secs_f64();
     let b = thr.tessellate(0.05);
     let mut tip_max = 0.0f64;
@@ -51,7 +55,7 @@ fn angle_high_builds_fast_and_varies() {
     let v0 = cyl.volume();
     let mut rem = vec![];
     for ang in [30.0f64, 60.0, 90.0, 120.0] {
-        let t = Instant::now();
+        let t = Meter::start(Doer::Process);
         let r = cyl
             .thread(crate::ThreadCut {
                 axis: qymcad_core::feature::AxisLine { origin: [0.0, 0.0, 20.0], dir: [0.0, 0.0, -1.0] },
@@ -70,7 +74,7 @@ fn angle_high_builds_fast_and_varies() {
                 lead_out: 0.0,
             })
             .unwrap_or_else(|| panic!("the angle {ang} did not build"));
-        assert!(qymcad_core::time_budget::within(t.elapsed(), Duration::from_secs(2)), "the angle {ang} deg builds quickly");
+        assert!(qymcad_core::time_budget::within(t.cost().work, Duration::from_secs(2)), "the angle {ang} deg builds quickly");
         rem.push(v0 - r.volume());
     }
     assert!(rem[0] > rem[3] + 20.0, "the angle matters: 30° gives {:.1}, far above 120° at {:.1}", rem[0], rem[3]);

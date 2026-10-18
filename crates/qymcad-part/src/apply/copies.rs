@@ -27,7 +27,10 @@ pub fn apply_datum_cmd(
                 }
             };
             turn_datum_plane(cmd, project, id);
-            store_cmd_exprs(cmd, project, id); // the offset, the tilts and the turn stay parametric in all three cases
+            if let Err(e) = store_cmd_exprs(cmd, project, id) {
+                // the offset, the tilts and the turn stay parametric in all three cases
+                return say_formula_refused(status, &e);
+            }
             Some(id)
         }
         21 => {
@@ -42,7 +45,10 @@ pub fn apply_datum_cmd(
             }
             let at = [qymcad_ui_state::cmd_val(cmd, "x"), qymcad_ui_state::cmd_val(cmd, "y"), qymcad_ui_state::cmd_val(cmd, "z")];
             let id = project.add_point_at(at);
-            store_cmd_exprs(cmd, project, id); // x, y and z stay parametric
+            if let Err(e) = store_cmd_exprs(cmd, project, id) {
+                // x, y and z stay parametric
+                return say_formula_refused(status, &e);
+            }
             Some(id)
         }
         22 => {
@@ -99,11 +105,15 @@ pub fn apply_array_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
     if pc.armed.cmd_kind() == 18 {
         let angle = if pc.arr.full { 360.0 } else { qymcad_ui_state::cmd_val(pc.cmd, "angle") };
         let body = pc.project.add_circular_array_axis(src, pc.arr.count.max(1), angle, pc.arr.axis);
-        store_bar_counts(pc.bar_exprs, pc.project, body);
+        if let Err(e) = store_bar_counts(pc.bar_exprs, pc.project, body) {
+            return formula_refused(pc, &e);
+        }
         if pc.arr.full {
-            pc.project.set_feat_dim(body, "angle", String::new());
+            pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: body, key: "angle" });
         } else {
-            store_cmd_exprs(pc.cmd, pc.project, body); // the `angle` key stays parametric (the regen reads the feature dims)
+            if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+                return formula_refused(pc, &e);
+            } // the `angle` key stays parametric (the regen reads the feature dims)
         }
         Some(body)
     } else {
@@ -123,20 +133,30 @@ pub fn apply_array_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         let body = pc
             .project
             .add_linear_array_grid3(src, [ArrayAxis { d: [dx, dy, dz], count: pc.arr.count.max(1) }, ArrayAxis { d: [dx2, dy2, dz2], count: c2 }, ArrayAxis { d: [dx3, dy3, dz3], count: c3 }]);
-        store_cmd_exprs(pc.cmd, pc.project, body); // the logical `step`, `step2` and `step3` so that reopening returns the TEXT of the expression
-        store_bar_counts(pc.bar_exprs, pc.project, body);
+        if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+            return formula_refused(pc, &e);
+        } // the logical `step`, `step2` and `step3` so that reopening returns the TEXT of the expression
+        if let Err(e) = store_bar_counts(pc.bar_exprs, pc.project, body) {
+            return formula_refused(pc, &e);
+        }
         // THE TEXTS ARE TAKEN FIRST, and the document is written afterwards. Reading the command and
         // writing the document in one expression borrows the application twice at once; taken apart,
         // the order of the two is also said out loud instead of being left to the compiler.
         let (d1, d2, d3) = (pc.arr.dir, pc.arr.dir2, pc.arr.dir3);
         let (t1, t2, t3) = (cmd_txt(pc.cmd, "step"), cmd_txt(pc.cmd, "step2"), cmd_txt(pc.cmd, "step3"));
         let (two, three) = (pc.arr.two, pc.arr.three);
-        qymcad_ui_state::store_arr_component(pc.project, body, ["dx", "dy", "dz"], d1, t1);
+        if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, body, ["dx", "dy", "dz"], d1, t1) {
+            return formula_refused(pc, &e);
+        }
         if two {
-            qymcad_ui_state::store_arr_component(pc.project, body, ["dx2", "dy2", "dz2"], d2, t2);
+            if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, body, ["dx2", "dy2", "dz2"], d2, t2) {
+                return formula_refused(pc, &e);
+            }
         }
         if two && three {
-            qymcad_ui_state::store_arr_component(pc.project, body, ["dx3", "dy3", "dz3"], d3, t3);
+            if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, body, ["dx3", "dy3", "dz3"], d3, t3) {
+                return formula_refused(pc, &e);
+            }
         }
         Some(body)
     }

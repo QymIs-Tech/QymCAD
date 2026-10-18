@@ -2,7 +2,7 @@
 //! sketch of 70 000 lines cost a little of a frame, a point moved changes where the sketch stands and not its shape, a
 //! constraint laid changes its shape.
 use qymcad_core::model::{Constraint, EntityKind, Project, SketchEntity, SketchPoint};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// A sketch of `n` separate lines, laid straight into its records.
 fn lines(n: usize) -> Project {
@@ -33,16 +33,14 @@ fn the_keys_of_seventy_thousand_lines_cost_a_little_of_a_frame() {
     }
     let p = lines(70_000);
     let si = p.sketches.len() - 1;
+    // the work of the keys, not the share of the machine it was given (`time_budget::Cost`), the best of three
     let t = (0..3)
-        .map(|_| {
-            let started = Instant::now();
-            let _ = (qymcad_ui_state::sketch_shape_key(&p, si), qymcad_ui_state::sketch_place_key(&p, si));
-            started.elapsed()
-        })
-        .min()
+        .map(|_| qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || (qymcad_ui_state::sketch_shape_key(&p, si), qymcad_ui_state::sketch_place_key(&p, si))).cost)
+        .min_by_key(|c| c.work)
         .unwrap_or_default();
-    eprintln!("the keys of 70 000 lines: {t:?}");
-    assert!(t < Duration::from_millis(3), "the keys of 70 000 lines took {t:?}, budget 3 ms in a release build");
+    eprintln!("the keys of 70 000 lines: {t}");
+    let budget = Duration::from_millis(3);
+    assert!(t.work < budget, "{} in a release build", qymcad_core::time_budget::over("the keys of 70 000 lines", t, budget));
 }
 
 #[test]

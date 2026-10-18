@@ -14,104 +14,28 @@
 #[cfg(test)]
 mod tests {
 
-    /// The tool number out of a call, wherever it now sits in the argument list.
-    ///
-    /// It used to be the first thing after the bracket, so the guard read up to the first `)` and
-    /// parsed that. Once the panels stopped being methods the calls gained their fields in front -
-    /// `set_sk_tool(&mut cmd, .., 3)` - and every tool went unseen at once, which read as "suspiciously
-    /// few tools" rather than as a broken needle. The number is the LAST argument; find the matching
-    /// bracket and take it.
-    fn trailing_number(tail: &str) -> Option<u8> {
-        let (mut depth, mut end) = (0i32, None);
-        for (i, ch) in tail.char_indices() {
-            match ch {
-                '(' | '[' | '<' => depth += 1,
-                ')' if depth == 0 => {
-                    end = Some(i);
-                    break;
-                }
-                ')' | ']' | '>' => depth -= 1,
+    use crate::{help, help_map};
+
+    /// THE NUMBERS OF THE TOOLS ON THE BARS of the workbenches: the part commands, and the sketch tools by their handle.
+    /// The bars are drawn from the rows of the catalogue, so the rows are the buttons.
+    fn tools_in_panels() -> (Vec<u8>, Vec<(String, u8)>) {
+        use crate::command_catalog::{all, Launch};
+        let mut part: Vec<u8> = Vec::new();
+        let mut sketch: Vec<(String, u8)> = Vec::new();
+        for c in all().filter(|c| c.shelf == qymcad_ui_state::catalogue::Shelf::Bar) {
+            match c.launch {
+                Launch::Feat(n) | Launch::Prim(n) => part.push(n),
+                Launch::SkTool(n) => sketch.push(("sk".to_string(), n)),
+                Launch::Dim(n) => sketch.push(("dim".to_string(), n)),
+                Launch::ClickOp(n) => sketch.push(("click".to_string(), n)),
+                Launch::Modify(t) => sketch.push(("mod".to_string(), t.code())),
                 _ => {}
             }
         }
-        let last = tail[..end?].rsplit(',').next()?.trim();
-        // an editing tool is named, not numbered: `EditTool::Mirror` reads as the button's number of the mirror
-        last.parse::<u8>().ok().or_else(|| {
-            let name = last.rsplit("::").next()?;
-            qymcad_ui_state::EditTool::ALL.iter().find(|t| format!("{t:?}") == name).map(|t| t.code())
-        })
-    }
-
-    use crate::{help, help_map};
-
-    /// The numbers of the tools actually wired into the panels of the workbench.
-    fn tools_in_panels() -> (Vec<u8>, Vec<(String, u8)>) {
-        // TWO FILES, not one: the workbench panel lives in `panels.rs`, while the shared creation panel
-        // (datums, sketch) lives in `gui.rs`. A guard looking at one place missed the datums entirely —
-        // three commands with no article, and F1 on them would answer with a section instead of the
-        // matter at hand.
-        let joined = format!(
-            "{}\n{}",
-            crate::gui::panels_source::PANELS,
-            concat!(
-                include_str!("file_doors.rs"),
-                "\n",
-                include_str!("gizmo_math.rs"),
-                "\n",
-                include_str!("look.rs"),
-                "\n",
-                include_str!("panel_bits.rs"),
-                "\n",
-                include_str!("startup.rs"),
-                "\n",
-                include_str!("view_anim.rs"),
-                "\n",
-                include_str!("../gui.rs")
-            )
-        );
-        let src: &str = &joined;
-        let mut part = Vec::new();
-        let mut sketch = Vec::new();
-        // A BUTTON NAMES ITS REQUEST: the bars put `BarAsk::FeatCmd(7)` in the frame's list where they used
-        // to call `start_feat_cmd(7)`. Both spellings count - the tool is wired either way.
-        for (pat, _) in [("start_feat_cmd(", 0), ("BarAsk::FeatCmd(", 0), ("start_prim_cmd(", 0), ("BarAsk::PrimCmd(", 0)] {
-            let mut rest = src;
-            while let Some(i) = rest.find(pat) {
-                let tail = &rest[i..];
-                rest = &tail[pat.len()..];
-                if let Some(t) = tail.strip_prefix(pat) {
-                    if let Some(n) = trailing_number(t) {
-                        if !part.contains(&n) {
-                            part.push(n);
-                        }
-                    }
-                }
-            }
-        }
-        for (pat, handle) in [
-            ("set_sk_tool(", "sk"),
-            ("BarAsk::SketchTool(", "sk"),
-            ("set_dim_tool(", "dim"),
-            ("set_click_op(", "click"),
-            ("start_corner_tool(", "click"),
-            ("modify_button(", "mod"),
-        ] {
-            let mut rest = src;
-            while let Some(i) = rest.find(pat) {
-                let t = &rest[i + pat.len()..];
-                rest = t;
-                if let Some(n) = trailing_number(t) {
-                    {
-                        let key = (handle.to_string(), n);
-                        if !sketch.contains(&key) {
-                            sketch.push(key);
-                        }
-                    }
-                }
-            }
-        }
         part.sort();
+        part.dedup();
         sketch.sort();
+        sketch.dedup();
         (part, sketch)
     }
 
@@ -207,79 +131,24 @@ mod tests {
     /// array in the sketch, measurement, the library and the auger. All six lay EXACTLY beyond the
     /// boundary of what was being checked.
     ///
-    /// The contract is simple: every `tb-...` hint from a panel has either an article
-    /// (`help_map::TOOLBAR`) or a reason stated out loud for why it is not a tool
-    /// (`help_map::NOT_A_TOOL`).
+    /// The contract is simple: every button of a bar - a row of the catalogue - that starts no numbered command has an
+    /// article by the hint of its button (`help_map::TOOLBAR`), and the article is written.
     #[test]
     fn every_toolbar_button_has_an_article_or_a_stated_reason() {
-        let joined = format!(
-            "{}\n{}",
-            crate::gui::panels_source::PANELS,
-            concat!(
-                include_str!("file_doors.rs"),
-                "\n",
-                include_str!("gizmo_math.rs"),
-                "\n",
-                include_str!("look.rs"),
-                "\n",
-                include_str!("panel_bits.rs"),
-                "\n",
-                include_str!("startup.rs"),
-                "\n",
-                include_str!("view_anim.rs"),
-                "\n",
-                include_str!("../gui.rs")
-            )
-        );
-        let mut hints: Vec<String> = Vec::new();
-        let mut rest: &str = &joined;
-        while let Some(i) = rest.find("tr(\"tb-") {
-            let t = &rest[i + 4..];
-            rest = t;
-            let Some(end) = t.find('"') else { break };
-            let key = t[..end].to_string();
-            if !hints.contains(&key) {
-                hints.push(key);
-            }
-        }
-        assert!(hints.len() > 60, "suspiciously few toolbar hints were found: {}", hints.len());
-        // the wiring of the corner tools is `start_corner_tool(4/5)` rather than `set_click_op(4/5)`: the button takes
-        // the tool AND offers the corner the chosen lines already name, in one call. A button is numbered by either
-        // spelling, as it was for the fillet and the chamfer before the pair of them was bound together.
-        let launchers = [
-            "start_feat_cmd(",
-            "BarAsk::FeatCmd(",
-            "start_prim_cmd(",
-            "BarAsk::PrimCmd(",
-            "set_sk_tool(",
-            "BarAsk::SketchTool(",
-            "set_dim_tool(",
-            "set_click_op(",
-            "start_corner_tool(",
-            "modify_button(",
-        ];
+        use crate::command_catalog::{all, Launch};
         let mut bad: Vec<String> = Vec::new();
-        for h in &hints {
+        for c in all().filter(|c| c.shelf == qymcad_ui_state::catalogue::Shelf::Bar) {
             // the button of a numbered command: its article comes from PART/SKETCH and is checked above
-            let numbered = joined.match_indices(&format!("tr(\"{h}\")")).any(|(i, _)| {
-                // THE EDGE OF THE WINDOW IS BY CHARACTER, NOT BY BYTE: the panels carry non-ASCII
-                // text, and a slice in the middle of a letter crashes the check instead of finding
-                // trouble.
-                let end = joined[i..].char_indices().map(|(o, _)| i + o).take_while(|o| *o - i <= 320).last().unwrap_or(i);
-                let win = &joined[i..end];
-                launchers.iter().any(|p| win.contains(p))
-            });
-            if numbered {
+            if matches!(c.launch, Launch::Feat(_) | Launch::Prim(_) | Launch::SkTool(_) | Launch::Dim(_) | Launch::ClickOp(_) | Launch::Modify(_) | Launch::Joint) {
                 continue;
             }
-            match crate::help_map::toolbar_article(h) {
+            match crate::help_map::toolbar_article(c.hint_key) {
                 Some(a) => {
                     if crate::help::article(a).is_none() {
-                        bad.push(format!("{h}: the article \"{a}\" is promised and it is not there"));
+                        bad.push(format!("{}: the article \"{a}\" is promised and it is not there", c.hint_key));
                     }
                 }
-                None if crate::help_map::NOT_A_TOOL.contains(&h.as_str()) => {}
-                None => bad.push(format!("{h}: the button is there and the article is not — F1 on it will answer with a section instead of the matter at hand")),
+                None => bad.push(format!("{}: the button is there and the article is not - F1 on it will answer with a section instead of the matter at hand", c.hint_key)),
             }
         }
         assert!(bad.is_empty(), "toolbar buttons with no help ({}):\n{}", bad.len(), bad.join("\n"));

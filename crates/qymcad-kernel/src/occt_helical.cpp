@@ -1028,36 +1028,34 @@ extern "C" QymShape* qym_shape_stitch(const QymShape* const* parts, size_t n, do
 // (`BRepOffsetAPI_MakeFilling`). An open boundary is not a refusal by construction: the kernel will stretch a
 // surface over an open chain too, and that is meaningful (a piece of a dome over three edges). The result is
 // judged by the common `finish` barrier, not by guesswork here.
-// THE FACE BESIDE EACH EDGE OF A PATCH. The filling makes its edges anew and keeps no history of them, so an edge of the
-// patch is matched to the boundary edge of the body it lies along, by place: the middle of the patch edge on that edge,
-// to 1e-4 mm. The face beside it is the largest named face of the body at the boundary edge - the face the shape is
-// continued from, the one a tangent patch takes for its support - a choice that does not move from rebuild to rebuild.
-static void note_beside_boundary(const QymShape* s, const std::vector<TopoDS_Edge>& boundary, const TopoDS_Shape& patch, TopTools_DataMapOfShapeInteger& ebeside) {
+// THE FACE BESIDE EACH EDGE OF A PATCH, by the history of the filling: what it made of each boundary edge of the body
+// (`made_of`), or the boundary edge itself where the patch is a plane spanned on a closed edge. The face
+// beside it is the largest named face of the body at the boundary edge - the face the shape is continued from, the one
+// a tangent patch takes for its support - a choice that does not move from rebuild to rebuild.
+static void note_beside_boundary(const QymShape* s, const std::vector<TopoDS_Edge>& boundary, const TopoDS_Shape& patch, const std::function<TopTools_ListOfShape(const TopoDS_Edge&)>& made_of, TopTools_DataMapOfShapeInteger& ebeside) {
     TopTools_IndexedDataMapOfShapeListOfShape e2f;
     TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, e2f);
-    for (TopExp_Explorer ex(patch, TopAbs_EDGE); ex.More(); ex.Next()) {
-        BRepAdaptor_Curve c(TopoDS::Edge(ex.Current()));
-        const gp_Pnt mid = c.Value(0.5 * (c.FirstParameter() + c.LastParameter()));
-        const TopoDS_Vertex at = BRepBuilderAPI_MakeVertex(mid);
-        for (const TopoDS_Edge& b : boundary) {
-            BRepExtrema_DistShapeShape d(at, b);
-            if (!d.IsDone() || d.Value() > 1e-4) continue;
-            const int i = e2f.FindIndex(b);
-            if (i < 1) break;
-            double best = -1.0;
-            int name = 0;
-            for (TopTools_ListIteratorOfListOfShape it(e2f.FindFromIndex(i)); it.More(); it.Next()) {
-                if (!s->fids.IsBound(it.Value())) continue;
-                GProp_GProps g;
-                BRepGProp::SurfaceProperties(it.Value(), g);
-                if (g.Mass() > best) {
-                    best = g.Mass();
-                    name = s->fids.Find(it.Value());
-                }
+    TopTools_IndexedMapOfShape kept;
+    TopExp::MapShapes(patch, TopAbs_EDGE, kept);
+    for (const TopoDS_Edge& b : boundary) {
+        const int i = e2f.FindIndex(b);
+        if (i < 1) continue;
+        double best = -1.0;
+        int name = 0;
+        for (TopTools_ListIteratorOfListOfShape it(e2f.FindFromIndex(i)); it.More(); it.Next()) {
+            if (!s->fids.IsBound(it.Value())) continue;
+            GProp_GProps g;
+            BRepGProp::SurfaceProperties(it.Value(), g);
+            if (g.Mass() > best) {
+                best = g.Mass();
+                name = s->fids.Find(it.Value());
             }
-            if (name != 0) ebeside.Bind(ex.Current(), name);
-            break;
         }
+        if (name == 0) continue;
+        TopTools_ListOfShape images = made_of(b);
+        if (images.IsEmpty() && kept.Contains(b)) images.Append(b);
+        for (TopTools_ListIteratorOfListOfShape it(images); it.More(); it.Next())
+            if (kept.Contains(it.Value()) && !ebeside.IsBound(it.Value())) ebeside.Bind(it.Value(), name);
     }
 }
 
@@ -1120,7 +1118,11 @@ extern "C" QymShape* qym_shape_patch(const QymShape* s, const uint32_t* idx, siz
         }
         TopoDS_Shape face;
         mf.Build();
-        if (mf.IsDone()) face = mf.Shape();
+        bool filled = false;
+        if (mf.IsDone()) {
+            face = mf.Shape();
+            filled = !face.IsNull();
+        }
         // a closed flat edge the filling will not take is spanned by the plane it lies in: the disc over a circle
         if (face.IsNull() && ring) {
             BRepBuilderAPI_MakeFace mk(BRepBuilderAPI_MakeWire(last).Wire(), Standard_True);
@@ -1133,7 +1135,9 @@ extern "C" QymShape* qym_shape_patch(const QymShape* s, const uint32_t* idx, siz
         // thickening, a face replacement) inherited that number instead of a name.
         return qym_born(face, [&](QymShape& q, QymCounters&) {
             if (name != 0) q.fids.Bind(q.shape, (int)name);
-            note_beside_boundary(s, boundary, q.shape, q.ebeside);
+            QymBuilderHistory filling(mf);
+            const auto made_of = [&](const TopoDS_Edge& b) { return filled ? filling.Generated(b) : TopTools_ListOfShape(); };
+            note_beside_boundary(s, boundary, q.shape, made_of, q.ebeside);
         });
     } QYM_WHY_CATCH("patch")
     return nullptr;
@@ -1228,21 +1232,42 @@ static bool went_the_distance(const TopoDS_Face& f0, const TopoDS_Face& f1, doub
     return nrm1.Magnitude() > 1e-12 && nrm1.Dot(nrm) > 0.0 && p1.Distance(want) <= 1e-3 * std::max(1.0, std::abs(dist));
 }
 
-// THE FACE OF THE OFFSET EACH TAKEN FACE BECAME, its twin in the offset of the shell they make (`QymTwinHistory`: the
-// simple offset keeps the topology one for one and answers no history), each checked to have gone the distance: named
-// after the face it came from into `fids`. False when a face has no twin or did not go the distance.
-static bool name_moved(const TopoDS_Shape& shell, const TopoDS_Shape& out, const std::vector<std::pair<TopoDS_Shape, uint32_t>>& taken, double dist, TopTools_DataMapOfShapeInteger& fids) {
-    QymTwinHistory history(shell, out);
+// THE FACE OF THE OFFSET EACH TAKEN FACE BECAME, by the history of the offset, as it stands in the result `out` - the
+// modifier hands the image of a reversed face forward, and its normal then points against the one it came from - each
+// checked to have gone the distance: named after the face it came from into `fids`. False when a face has no image or
+// did not go the distance.
+static bool name_moved(QymHistory& history, const TopoDS_Shape& out, const std::vector<std::pair<TopoDS_Shape, uint32_t>>& taken, double dist, TopTools_DataMapOfShapeInteger& fids) {
     std::vector<TopoDS_Face> moved;
     for (const auto& t : taken) {
         const TopTools_ListOfShape& images = history.Modified(t.first);
         if (images.Extent() != 1) return false;
-        if (!went_the_distance(TopoDS::Face(t.first), TopoDS::Face(images.First()), dist)) return false;
-        moved.push_back(TopoDS::Face(images.First()));
+        TopoDS_Face standing;
+        for (TopExp_Explorer ex(out, TopAbs_FACE); ex.More() && standing.IsNull(); ex.Next())
+            if (ex.Current().IsSame(images.First())) standing = TopoDS::Face(ex.Current());
+        if (standing.IsNull() || !went_the_distance(TopoDS::Face(t.first), standing, dist)) return false;
+        moved.push_back(standing);
     }
     for (size_t k = 0; k < moved.size(); ++k) fids.Bind(moved[k], static_cast<int>(taken[k].second));
     return true;
 }
+
+// A SIMPLE OFFSET BUILT BY ITS OWN MODIFIER: the modification `BRepOffset_SimpleOffset` run by a `BRepTools_Modifier` kept
+// here, so the image of every face and edge of the shell is asked of it (`QymModifierHistory`). The algorithm
+// `BRepOffset_MakeSimpleOffset` runs the same modifier inside and answers no image (measured: `Modified` null for every
+// face of the top of a block lifted 5), and its faces were paired by their order - the n-th after for the n-th before.
+// A degenerated edge stays degenerated, as the algorithm keeps it.
+struct SimpleOffset {
+    BRepTools_Modifier mod;
+    TopoDS_Shape result;
+    SimpleOffset(const TopoDS_Shape& shell, double dist) : mod(shell) {
+        mod.Perform(new BRepOffset_SimpleOffset(shell, dist, Precision::Confusion()));
+        if (!mod.IsDone()) return;
+        result = mod.ModifiedShape(shell);
+        BRep_Builder bb;
+        for (TopExp_Explorer ex(shell, TopAbs_EDGE); ex.More(); ex.Next())
+            if (BRep_Tool::Degenerated(TopoDS::Edge(ex.Current()))) bb.Degenerated(TopoDS::Edge(mod.ModifiedShape(ex.Current())), Standard_True);
+    }
+};
 
 // AN OFFSET SHEET: the faces `idx` of the shape taken out and moved `dist` along their normals - outward for the faces of
 // a solid, a negative distance going in, zero a copy in place. Every face of the sheet is named `names[k]` after the one
@@ -1277,20 +1302,20 @@ extern "C" QymShape* qym_shape_offset_faces(const QymShape* s, const uint32_t* i
         QymShape named{};
         QymShape* q = &named;
         TopoDS_Shape out;
-        // what made the sheet of each taken face: its offset, one for all of them or one of its own
-        // what each taken face was offset as - the shell of them all, or a shell of its own - and what came of it
-        std::vector<std::pair<TopoDS_Shape, TopoDS_Shape>> offset_of(taken.size());
-        BRepOffset_MakeSimpleOffset together;
+        // what made the sheet of each taken face: the offset of them all, or one of its own; none for a copy in place
+        std::vector<SimpleOffset*> offset_of(taken.size(), nullptr);
+        std::vector<std::unique_ptr<SimpleOffset>> alone_offsets;
+        std::unique_ptr<SimpleOffset> together;
         if (std::abs(dist) < 1e-9) {
             out = shell;
             for (const auto& t : taken) q->fids.Bind(t.first, static_cast<int>(t.second));
         } else {
-            together.Initialize(shell, dist);
-            together.Perform();
+            together = std::make_unique<SimpleOffset>(shell, dist);
             // the faces together hold only when the sheet they make is sound: at a sharp edge they part, the shell tears
-            if (together.IsDone() && !together.GetResultShape().IsNull() && BRepCheck_Analyzer(together.GetResultShape()).IsValid() && name_moved(shell, together.GetResultShape(), taken, dist, q->fids)) {
-                out = together.GetResultShape();
-                for (auto& o : offset_of) o = {shell, out};
+            QymModifierHistory together_made(together->mod);
+            if (!together->result.IsNull() && BRepCheck_Analyzer(together->result).IsValid() && name_moved(together_made, together->result, taken, dist, q->fids)) {
+                out = together->result;
+                for (auto& o : offset_of) o = together.get();
             } else {
                 q->fids.Clear();
                 TopoDS_Compound c;
@@ -1300,13 +1325,14 @@ extern "C" QymShape* qym_shape_offset_faces(const QymShape* s, const uint32_t* i
                     TopoDS_Shell alone; // the simple offset takes a shell, not a bare face
                     bb.MakeShell(alone);
                     bb.Add(alone, t.first);
-                    BRepOffset_MakeSimpleOffset one(alone, dist);
-                    one.Perform();
-                    if (!one.IsDone() || one.GetResultShape().IsNull()) return nullptr;
+                    alone_offsets.push_back(std::make_unique<SimpleOffset>(alone, dist));
+                    SimpleOffset& one = *alone_offsets.back();
+                    if (one.result.IsNull()) return nullptr;
                     std::vector<std::pair<TopoDS_Shape, uint32_t>> single{t};
-                    if (!name_moved(alone, one.GetResultShape(), single, dist, q->fids)) return nullptr;
-                    offset_of[k] = {alone, one.GetResultShape()};
-                    for (TopExp_Explorer ex(one.GetResultShape(), TopAbs_FACE); ex.More(); ex.Next()) bb.Add(c, ex.Current());
+                    QymModifierHistory one_made(one.mod);
+                    if (!name_moved(one_made, one.result, single, dist, q->fids)) return nullptr;
+                    offset_of[k] = &one;
+                    for (TopExp_Explorer ex(one.result, TopAbs_FACE); ex.More(); ex.Next()) bb.Add(c, ex.Current());
                 }
                 out = c;
             }
@@ -1317,11 +1343,11 @@ extern "C" QymShape* qym_shape_offset_faces(const QymShape* s, const uint32_t* i
         // the face across each edge of a taken face, carried by what took it: the copy, then its offset
         for (size_t k = 0; k < sources.size(); ++k) {
             QymBuilderHistory copied(*copies[k]);
-            if (offset_of[k].first.IsNull()) {
+            if (!offset_of[k]) {
                 note_beside(s, sources[k], copied, q->ebeside);
                 continue;
             }
-            QymTwinHistory offset(offset_of[k].first, offset_of[k].second);
+            QymModifierHistory offset(offset_of[k]->mod);
             QymChainHistory both(copied, offset);
             note_beside(s, sources[k], both, q->ebeside);
         }

@@ -7,6 +7,17 @@
 //!
 //! The hand can do exactly what a person can: press a tool button, click a point in the scene, press
 //! Enter or Esc. It has nothing else — and that is its main property.
+
+#[cfg(test)]
+mod sketch_text;
+
+/// A CARRY ON THE SCREEN: where the button goes down and where the hand holds it, the button still down.
+#[cfg(test)]
+pub(super) struct Carry {
+    pub from: egui::Pos2,
+    pub to: egui::Pos2,
+}
+
 /// A DRAG ON THE SKETCH: from where to where, in the sketch's own coordinates, by which button and with which keys held.
 #[cfg(test)]
 pub(super) struct Drag2d {
@@ -38,6 +49,34 @@ pub(super) struct PaintedWords {
     pub text: String,
     pub rect: egui::Rect,
     pub colour: egui::Color32,
+}
+
+/// THE RUNS OF WORDS `shapes` PAINT, with their place and colour - for a frame the hand did not run itself as well.
+#[cfg(test)]
+pub(super) fn painted_in(shapes: &[egui::epaint::ClippedShape]) -> Vec<PaintedWords> {
+    fn collect(s: &egui::Shape, out: &mut Vec<PaintedWords>) {
+        match s {
+            egui::Shape::Text(t) => {
+                let section = t.galley.job.sections.first().map(|s| s.format.color).filter(|c| *c != egui::Color32::PLACEHOLDER);
+                let colour = t.override_text_color.or(section).unwrap_or(t.fallback_color);
+                out.push(PaintedWords { text: t.galley.text().to_string(), rect: egui::Rect::from_min_size(t.pos, t.galley.size()), colour });
+            }
+            egui::Shape::Vec(v) => v.iter().for_each(|x| collect(x, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for cs in shapes {
+        collect(&cs.shape, &mut out);
+    }
+    out
+}
+
+#[cfg(test)]
+/// A FILLED GROUND OF THE SCREEN and its colour.
+pub(super) struct Ground {
+    pub rect: egui::Rect,
+    pub fill: egui::Color32,
 }
 
 #[cfg(test)]
@@ -94,15 +133,16 @@ impl<'a> Hand<'a> {
     }
 
     fn run(&mut self, modifiers: egui::Modifiers, events: Vec<egui::Event>) -> &mut Self {
-        let started = std::time::Instant::now();
+        let meter = qymcad_core::time_budget::Meter::start(qymcad_core::time_budget::Doer::Thread);
         self.win.run(self.app, modifiers, events, false);
-        self.worst = self.worst.max(started.elapsed());
+        self.worst = self.worst.max(meter.cost().work);
         self
     }
 
-    /// THE LONGEST FRAME SINCE THIS WAS LAST ASKED: the window standing still under a step of the hand. The time of a
-    /// whole gesture holds the hand's own looking - over the hint of every button, four frames each - which a person
-    /// who knows the panel does not do; the longest frame is what the person waits.
+    /// THE LONGEST FRAME SINCE THIS WAS LAST ASKED, by its work (`time_budget::Cost`): the window standing still under a
+    /// step of the hand, not the machine busy with others. The time of a whole gesture holds the hand's own looking -
+    /// over the hint of every button, four frames each - which a person who knows the panel does not do; the longest
+    /// frame is what the person waits.
     pub fn worst_frame(&mut self) -> std::time::Duration {
         std::mem::take(&mut self.worst)
     }
@@ -145,7 +185,35 @@ impl<'a> Hand<'a> {
             return Some(at);
         }
         self.panel_to_its_top();
-        self.hint_down_the_panel(hint)
+        if let Some(at) = self.hint_down_the_panel(hint) {
+            return Some(at);
+        }
+        self.hint_in_more(hint)
+    }
+
+    /// THE ROW OF A "MORE" LIST WITH THE HINT `hint`: each "More" of the bars opened in turn and its rows rested over; a
+    /// list without the row is closed again by its button, the one with it left open for the press that follows.
+    fn hint_in_more(&mut self, hint: &str) -> Option<egui::Pos2> {
+        for more in self.win.mores.clone() {
+            let bar = self.win.plates.clone();
+            self.press_screen(more);
+            // A LIST LAID OUT IN ITS FIRST FRAME STANDS ELSEWHERE IN THE NEXT: it is placed before its size is known,
+            // then set against its button. Measured: the rows of the first frame stood 300 points above the list. And the
+            // pointer is taken off "More" to rest where nothing is, or the hint of "More" stays up over the first row and
+            // egui opens no second one.
+            let aside = egui::pos2(self.win.screen.x - 8.0, 10.0);
+            self.frame(vec![egui::Event::PointerMoved(aside)]);
+            self.win.clock += 1.0;
+            for _ in 0..3 {
+                self.frame(Vec::new());
+            }
+            let rows: Vec<egui::Pos2> = self.win.plates.iter().copied().filter(|p| !bar.contains(p)).collect();
+            if let Some(at) = rows.into_iter().find(|&at| self.hint_comes_up(at, hint)) {
+                return Some(at);
+            }
+            self.press_screen(more);
+        }
+        None
     }
 
     /// A REBUILD UNDER WAY REFUSES INPUT: its card lies over the window, nothing under it is pressed and no hint comes up.
@@ -153,11 +221,13 @@ impl<'a> Hand<'a> {
     /// Measured in a run of the whole crate, the kernel held by the checks beside it: the card stood over the window
     /// for the whole search of a button, 70 buttons rested over and none answered.
     fn rebuild_gone(&mut self) {
-        let waiting = std::time::Instant::now();
-        while self.app.regen.busy.is_some() && waiting.elapsed() < std::time::Duration::from_secs(60) {
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        crate::gui::session::waiting::until("the card of the rebuild to go before a button is looked for", || {
+            if self.app.regen.busy.is_none() {
+                return true;
+            }
             self.frame(Vec::new());
-        }
+            false
+        });
     }
 
     /// The button of `hint` looked for down the panel, a notch of the wheel at a time; it is remembered where found.
@@ -208,15 +278,27 @@ impl<'a> Hand<'a> {
     /// leaves it, and egui opens no second hint while one is open; a hint that opens is laid out unseen in its
     /// first frame and drawn in the next.
     fn hint_comes_up(&mut self, at: egui::Pos2, hint: &str) -> bool {
-        let already = self.win.drawn.iter().any(|(t, _)| t == hint);
+        self.hint_at(at).iter().any(|t| t == hint)
+    }
+
+    /// THE HINT THAT COMES UP with the pointer resting over `at`: the words a frame of the rest draws more times than the
+    /// frame before it did - a hint that repeats a line on screen is drawn a second time.
+    pub fn hint_at(&mut self, at: egui::Pos2) -> Vec<String> {
+        let before: Vec<String> = self.win.drawn.iter().map(|(t, _)| t.clone()).collect();
         self.frame(vec![egui::Event::PointerMoved(at)]);
         self.win.clock += 1.0;
-        let mut came = false;
+        let mut came: Vec<String> = Vec::new();
         for _ in 0..3 {
             self.frame(Vec::new());
-            came |= self.win.drawn.iter().any(|(t, _)| t == hint);
+            let now: Vec<&String> = self.win.drawn.iter().map(|(t, _)| t).collect();
+            for t in &now {
+                let more = now.iter().filter(|d| **d == *t).count() > before.iter().filter(|b| *b == *t).count();
+                if !t.is_empty() && more && !came.contains(*t) {
+                    came.push(t.to_string());
+                }
+            }
         }
-        !already && came
+        came
     }
 
     /// A press and a release of the left button at a point of the screen, each in a frame of its own.
@@ -326,23 +408,8 @@ impl<'a> Hand<'a> {
     /// EVERY RUN OF WORDS THE NEXT FRAME PAINTS, with its place and its colour: a warning is told from information by
     /// the colour on screen, which is what a person sees, not by the field behind it.
     pub fn painted_words(&mut self) -> Vec<PaintedWords> {
-        fn collect(s: &egui::Shape, out: &mut Vec<PaintedWords>) {
-            match s {
-                egui::Shape::Text(t) => {
-                    let section = t.galley.job.sections.first().map(|s| s.format.color).filter(|c| *c != egui::Color32::PLACEHOLDER);
-                    let colour = t.override_text_color.or(section).unwrap_or(t.fallback_color);
-                    out.push(PaintedWords { text: t.galley.text().to_string(), rect: egui::Rect::from_min_size(t.pos, t.galley.size()), colour });
-                }
-                egui::Shape::Vec(v) => v.iter().for_each(|x| collect(x, out)),
-                _ => {}
-            }
-        }
         self.frame(Vec::new());
-        let mut out = Vec::new();
-        for cs in &self.win.shapes {
-            collect(&cs.shape, &mut out);
-        }
-        out
+        painted_in(&self.win.shapes)
     }
 
     /// THE STATUS LINE AS THE NEXT FRAME PAINTS IT: the runs of words along the bottom of the window.
@@ -358,18 +425,57 @@ impl<'a> Hand<'a> {
         self.status_painted().into_iter().find(|w| w.text.strip_prefix(icon).is_some_and(|n| n.trim().parse::<usize>().is_ok()))
     }
 
-    /// FRAMES UNTIL THE REBUILD A GESTURE STARTED HAS ENDED, a minute at most: a person waits for the card to go
+    /// FRAMES UNTIL THE REBUILD A GESTURE STARTED HAS ENDED (`session::waiting::until`): a person waits for the card to go
     /// before reading the line.
     pub fn settle(&mut self) -> &mut Self {
         self.frame(Vec::new()); // the frame that notices the document changed and starts its rebuild
-        for _ in 0..1200 {
+        self.rebuild_landed("the rebuild a gesture started to land");
+        self.frame(Vec::new())
+    }
+
+    /// Frames until no rebuild runs and none is asked for.
+    fn rebuild_landed(&mut self, what: &str) {
+        crate::gui::session::waiting::until(what, || {
             if self.app.regen.busy.is_none() && !self.app.regen.wanted {
-                break;
+                return true;
             }
             self.run(egui::Modifiers::default(), Vec::new());
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            false
+        });
+    }
+
+    /// WHERE THE PANEL `key` STANDS, the next frame drawn; `None` when that frame does not draw it.
+    pub fn laid_out(&mut self, key: &str) -> Option<egui::Rect> {
+        self.frame(Vec::new());
+        qymcad_shell::laid_out(&self.win.ctx, key)
+    }
+
+    /// THE GROUND `word` IS WRITTEN ON in the last frame, the place of it nearest to `near`: the smallest filled rectangle
+    /// holding the words, and its colour.
+    pub fn ground_of(&self, word: &str, near: egui::Pos2) -> Option<Ground> {
+        fn grounds(s: &egui::Shape, out: &mut Vec<Ground>) {
+            match s {
+                egui::Shape::Rect(r) if r.fill.a() > 0 => out.push(Ground { rect: r.rect, fill: r.fill }),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| grounds(x, out)),
+                _ => {}
+            }
         }
-        self.frame(Vec::new())
+        let text = self.win.drawn.iter().filter(|(t, _)| t == word).map(|(_, r)| *r).min_by(|a, b| a.center().distance(near).total_cmp(&b.center().distance(near)))?;
+        let mut all = Vec::new();
+        for cs in &self.win.shapes {
+            grounds(&cs.shape, &mut all);
+        }
+        all.into_iter().filter(|g| g.rect.expand(0.5).contains_rect(text)).min_by(|a, b| a.rect.area().total_cmp(&b.rect.area()))
+    }
+
+    /// The size of the window, in points.
+    pub fn screen(&self) -> egui::Vec2 {
+        self.win.screen
+    }
+
+    /// THE BUTTONS OF THE BARS OF TOOLS the last frame drew.
+    pub fn bar_buttons(&self) -> Vec<egui::Rect> {
+        qymcad_shell::noted_buttons(&self.win.ctx)
     }
 
     /// WHERE `word` IS WRITTEN, the next frame drawn - the place written first, when it is written in several.
@@ -405,14 +511,16 @@ impl<'a> Hand<'a> {
     /// kernel working while the process exits.
     pub fn trial_says(&mut self) -> Option<String> {
         let ctx = egui::Context::default();
-        for _ in 0..6000 {
-            match qymcad_part::trial_refusal(&mut self.app.part_ctx(), &ctx) {
-                qymcad_part::Trial::Checking => std::thread::sleep(std::time::Duration::from_millis(10)),
-                qymcad_part::Trial::Refused(_, words) => return Some(words),
-                qymcad_part::Trial::Clear => return None,
+        let mut said = None;
+        crate::gui::session::waiting::until("the trial build of the command to answer", || match qymcad_part::trial_refusal(&mut self.app.part_ctx(), &ctx) {
+            qymcad_part::Trial::Checking => false,
+            qymcad_part::Trial::Refused(_, words) => {
+                said = Some(words);
+                true
             }
-        }
-        panic!("the trial build of the command never answered");
+            qymcad_part::Trial::Clear => true,
+        });
+        said
     }
 
     /// DOUBLE-CLICK WHERE `word` IS WRITTEN - a row of the tree reopens its feature or enters its part this way. The
@@ -652,13 +760,7 @@ impl<'a> Hand<'a> {
     /// a rebuild asked for afterwards has to happen where it is asked. Measured on the end-to-end run with the
     /// mark left on: 101 problems further down, every one a body of a later step that never got built.
     pub fn close_window(&mut self) -> &mut Self {
-        for _ in 0..1200 {
-            if self.app.regen.busy.is_none() && !self.app.regen.wanted {
-                break;
-            }
-            self.run(egui::Modifiers::default(), Vec::new());
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
+        self.rebuild_landed("the rebuild the frames of the hand started to land before the window closes");
         self.app.drain_bg_for_test();
         self.app.regen.ui_running = false;
         self
@@ -1073,152 +1175,6 @@ impl<'a> Hand<'a> {
         }
     }
 
-    /// CHOOSE A FONT FROM A FILE: the list of fonts is opened by the button of the top bar that names the font of
-    /// the text tool, the file chooser behind "From a file..." answers with `path`, and the list is closed with
-    /// Esc, as a person closes it having got the font.
-    ///
-    /// The button "From a file..." itself is not pressed. It puts up the file chooser of the system, and a check
-    /// must not put a window on somebody's screen. What the chooser answers arrives through `arm_file_ask`, and
-    /// the hand gives the path there - as the checks of importing do - to the same answer the button leads to.
-    pub fn pick_font_file(&mut self, path: &str) -> &mut Self {
-        if !self.app.font_cache.picker.open {
-            if self.app.tools.armed.draw_kind() != 11 {
-                self.sk_tool(11);
-            }
-            let named = qymcad_ui_state::font_label(&self.app.tool_prefs.font, "opt-font");
-            assert!(self.press_word(&named, egui::Pos2::new(700.0, 0.0)), "the top bar named no font {named:?} to open the list with");
-        }
-        let (tx, rx) = std::sync::mpsc::channel();
-        self.app.arm_file_ask(rx, crate::gui::pick::font_answer);
-        tx.send(Some(std::path::PathBuf::from(path))).expect("the chooser's channel is open");
-        self.frame(Vec::new());
-        self.key(egui::Key::Escape);
-        self.close_window()
-    }
-
-    /// OPEN THE LIST OF FONTS, search for `query` in it, and click the first face it shows. Returns whether
-    /// anything was chosen.
-    ///
-    /// All of it in whole frames. A list that is not open yet is opened by the button of the top bar that names
-    /// the font of the text tool - with the text tool taken first, since the bar shows that button only then.
-    /// The search field is clicked where its hint is written and the query typed into it.
-    pub fn pick_font_from_list(&mut self, query: &str) -> bool {
-        self.app.viewing.mode_3d = false;
-        if !self.app.font_cache.picker.open {
-            if self.app.tools.armed.draw_kind() != 11 {
-                self.sk_tool(11); // not twice: the button of a tool in hand puts the tool down
-            }
-            let named = qymcad_ui_state::font_label(&self.app.tool_prefs.font, "opt-font");
-            if !self.press_word(&named, egui::Pos2::ZERO) {
-                return false; // the bar named no font: there is nothing to open the list with
-            }
-        }
-        // THE LIST ARRIVES FROM A THREAD, so the hand waits for it exactly as a person waits for "Looking for
-        // fonts..." to turn into the list. Measured: the walk takes about half a second on a machine with 232
-        // faces, longer with a cold file cache.
-        let waiting = std::time::Instant::now();
-        while self.app.font_cache.picker.faces.is_empty() && waiting.elapsed() < std::time::Duration::from_secs(30) {
-            self.frame(Vec::new());
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        if !self.press_word(&qymcad_i18n::tr("font-search"), egui::Pos2::ZERO) {
-            return false; // no search field in sight: the window did not open
-        }
-        self.type_text(query);
-        // WHERE THE ROWS ARE: under the button "from a file", the count and the separator. The hand works down
-        // the list a row at a time until a click lands on one, which is what a person does after a miss; the
-        // rows are 26 px apart. It never presses the button itself, which opens the file dialog of the system.
-        self.frame(Vec::new());
-        let Some(below) = self.win.drawn.iter().find(|(t, _)| *t == qymcad_i18n::tr("font-from-file")).map(|(_, r)| r).copied() else { return false };
-        let first = egui::pos2(below.left(), below.bottom() + 26.0 + 13.0);
-        for step in 0..12 {
-            let at = first + egui::vec2(0.0, 26.0 * step as f32);
-            self.frame(vec![egui::Event::PointerMoved(at)]);
-            for pressed in [true, false] {
-                self.frame(vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() }]);
-            }
-            if !self.app.font_cache.picker.open {
-                self.close_window();
-                return true; // the window closed: a face was taken
-            }
-        }
-        self.close_window();
-        false
-    }
-
-    /// TYPE THE TEXT AND ITS HEIGHT into the top bar, with the text tool taken by its button first - unless it
-    /// is in hand already, where its button would put it down. The click that follows places the text.
-    ///
-    /// Each field is clicked just right of the word that names it, its text is selected with Ctrl+A and typed
-    /// over. Tab leaves the height, so the next click on the canvas is not a click out of a field.
-    pub fn sk_text(&mut self, text: &str, height: f64) -> &mut Self {
-        if self.app.tools.armed.draw_kind() != 11 {
-            self.sk_tool(11);
-        }
-        self.frame(Vec::new());
-        let word =
-            |hand: &Self, w: &str, near: egui::Pos2| hand.win.drawn.iter().filter(|(t, _)| t == w).map(|(_, r)| *r).min_by(|a, b| a.center().distance(near).total_cmp(&b.center().distance(near)));
-        let named = word(self, &qymcad_i18n::tr("tool-text"), egui::Pos2::new(700.0, 0.0)).expect("the top bar of the text tool names no string field");
-        for (field, typed) in [
-            (named, text.to_string()),
-            (word(self, &qymcad_i18n::tr("opt-height-short"), named.center()).expect("the top bar of the text tool names no height"), format!("{height}")),
-        ] {
-            self.press_screen(egui::pos2(field.right() + 24.0, field.center().y));
-            self.chord(egui::Modifiers::COMMAND, egui::Key::A);
-            self.type_text(&typed);
-        }
-        self.key(egui::Key::Tab);
-        self.close_window()
-    }
-
-    /// CHANGE THE FONT OF THE LABEL LYING AT `at`: open its editor, press the font it is written in, and take
-    /// the first face of the list that matches `query`.
-    ///
-    /// Returns whether a face was taken. The list serves the tool and the label alike, and what is chosen
-    /// must land on the label - that is what this drives. The editor names the font on a button, and the top
-    /// bar names the font of the text tool on another: the one pressed is the one next to the label.
-    pub fn sk_change_label_font(&mut self, at: (f64, f64), query: &str) -> bool {
-        if !self.sk_open_text_edit(at) {
-            return false;
-        }
-        let Some(si) = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses) else { return false };
-        let Some(ti) = self.app.tools.inline.text() else { return false };
-        let font = self.app.project.sketches[si].texts[ti].font.clone();
-        let named = qymcad_ui_state::font_label(&font, "sk-text-font-unknown-short");
-        if !self.press_word(&named, self.screen2d(at)) {
-            return false;
-        }
-        self.pick_font_from_list(query)
-    }
-
-    /// OPEN THE EDITOR OF THE LABEL LYING AT `at` - a double click on it, and nothing more. Answers whether an
-    /// editor opened.
-    ///
-    /// Separate from applying the edit, because the tool is taken up when the editor opens and put down when
-    /// the edit is applied: the two states are checked apart.
-    pub fn sk_open_text_edit(&mut self, at: (f64, f64)) -> bool {
-        self.double_click2d(at.0, at.1);
-        self.app.tools.inline.text().is_some()
-    }
-
-    /// EDIT THE TEXT LYING AT `at` and apply the change: the double click, the string typed, Tab on to the
-    /// height, the height typed, Shift+Tab back to the string and Enter - as a person does it from the keyboard.
-    ///
-    /// Each field selects its text as it takes the focus, so typing replaces what was there; the height is
-    /// taken as its field lets the focus go.
-    pub fn sk_edit_text(&mut self, at: (f64, f64), text: &str, height: f64) -> &mut Self {
-        if !self.sk_open_text_edit(at) {
-            return self;
-        }
-        self.frame(Vec::new()); // the string field takes the focus
-        self.type_text(text);
-        self.key(egui::Key::Tab);
-        self.type_text(&format!("{height}"));
-        self.chord(egui::Modifiers::SHIFT, egui::Key::Tab);
-        self.key(egui::Key::Enter);
-        self.close_window()
-    }
-
     /// PRESS A CONSTRAINT BUTTON of the panel, found by its hint: 0 coincidence, 1 horizontal, 2 vertical,
     /// 3 parallel, 4 perpendicular, 5 equal, 6 fix, 7 collinear, 8 concentric, 9 tangent, 10 symmetry,
     /// 11 midpoint.
@@ -1329,15 +1285,64 @@ impl<'a> Hand<'a> {
     /// steps of 3 px and releases, in whole frames. What is taken is what lies under `from` - the title of a
     /// window, a handle, or the canvas.
     pub fn drag_screen(&mut self, from: egui::Pos2, to: egui::Pos2) -> &mut Self {
+        self.carry(Carry { from, to }).let_go(to)
+    }
+
+    /// CARRY WITH THE MOUSE from `from` to `to` and hold there, the button still down: the frames show what is
+    /// carried under the pointer. `drag_screen` is this and the release.
+    pub fn carry(&mut self, carry: Carry) -> &mut Self {
+        let Carry { from, to } = carry;
         self.win.clock += 1.0;
         self.frame(vec![egui::Event::PointerMoved(from)]);
-        let press = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-        self.frame(vec![press(from, true)]);
+        self.frame(vec![Self::primary_down(from)]);
         let steps = ((to - from).length() / 3.0).ceil().max(1.0) as usize;
         for k in 1..=steps {
             self.frame(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / steps as f32))]);
         }
-        self.frame(vec![press(to, false)])
+        self
+    }
+
+    /// Let the primary button go at `at`, after `carry`.
+    pub fn let_go(&mut self, at: egui::Pos2) -> &mut Self {
+        self.frame(vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }])
+    }
+
+    /// The primary button going down at `pos`.
+    fn primary_down(pos: egui::Pos2) -> egui::Event {
+        egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }
+    }
+
+    /// A PICTURE OF THE WINDOW as the last frame drew it, a pixel to a point - the size the letters of the frame were
+    /// drawn for - cut to `area`: the pictures of the help that show a gesture are taken from the frames it made.
+    pub fn picture(&self, area: egui::Rect) -> egui::ColorImage {
+        let area = area.intersect(egui::Rect::from_min_size(egui::Pos2::ZERO, self.win.screen));
+        let size = [self.win.screen.x as usize, self.win.screen.y as usize];
+        let prims = self.win.ctx.tessellate(self.win.shapes.clone(), 1.0);
+        let whole = super::help_raster::paint(&prims, &self.win.textures, size, egui::Color32::BLACK, 1.0);
+        let [x0, y0] = [area.min.x as usize, area.min.y as usize];
+        let [w, h] = [area.width() as usize, area.height() as usize];
+        let pixels = (y0..y0 + h).flat_map(|y| (x0..x0 + w).map(move |x| y * size[0] + x)).map(|i| whole.pixels[i]).collect();
+        egui::ColorImage::new([w, h], pixels)
+    }
+
+    /// WHERE THE AREA `id` STANDS, as the last frame laid it out: a window or a box of fields at the geometry.
+    pub fn area_rect(&self, id: egui::Id) -> Option<egui::Rect> {
+        self.win.ctx.memory(|m| m.area_rect(id))
+    }
+
+    /// IS ANY TEXT OF A LABEL SELECTED after the last frame: what a drag across words leaves selected.
+    pub fn text_selected(&self) -> bool {
+        self.win.ctx.plugin_opt::<egui::text_selection::LabelSelectionState>().is_some_and(|h| h.lock().has_selection())
+    }
+
+    /// THE LAYER ON TOP AT `at` in the last frame: what a click there reaches first.
+    pub fn top_layer_at(&self, at: egui::Pos2) -> Option<egui::LayerId> {
+        self.win.ctx.layer_id_at(at)
+    }
+
+    /// Where the window `id` stands, as the last frame laid it out.
+    pub fn window_at(&self, id: &str) -> Option<egui::Rect> {
+        self.win.ctx.memory(|m| m.area_rect(egui::Id::new(id)))
     }
 
     /// A DRAG OF THE VIEW as a person makes it: the hand comes over `from`, presses `button` with `modifiers` held, leads

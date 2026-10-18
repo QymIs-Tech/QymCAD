@@ -179,11 +179,6 @@ impl App {
         CubeCtx { basis: self.viewing.cam.basis(), size_step: self.set.viewcube_size, pal: &self.scheme.pal, labels: &self.cache.label_tex }
     }
 
-    /// Draw the cube, the axis triad and the home button.
-    pub(crate) fn draw_viewcube(&self, painter: &egui::Painter, rect: Rect) {
-        draw(&self.cube_ctx(), painter, rect);
-    }
-
     /// A CLICK ON THE CUBE, AND THE TURN IT ASKED FOR, APPLIED.
     ///
     /// The cube says which way was pointed at; turning the view and speaking in the status line stay here,
@@ -361,6 +356,8 @@ pub(crate) fn home_rect(cube: &CubeCtx, rect: Rect) -> Rect {
 /// DRAWING THE CUBE: the zones from the far ones to the near, the captions on the faces, the
 /// highlight under the cursor, the triad of axes and the home button.
 pub(crate) fn draw(cube: &CubeCtx, painter: &egui::Painter, rect: Rect) {
+    // the corner of the view not under a bar laid over it: the click takes the same (`viewport_3d_click`)
+    let rect = qymcad_shell::clear_of_overs(painter.ctx(), rect);
     let hover = painter.ctx().pointer_hover_pos().and_then(|p| zone_at(cube, rect, p));
     let (_, _, fwd) = cube.basis;
     let zs = zones();

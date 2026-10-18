@@ -210,17 +210,11 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1200.0, 800.0));
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
 
-        let mut released = false;
-        for _ in 0..400 {
+        crate::gui::session::waiting::until("the startup loading to finish and let the program go", || {
             let mut eaten = true;
             let _ = ctx.run_ui(input.clone(), |c| eaten = app.tick_async(c.ctx()));
-            if !eaten {
-                released = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        assert!(released, "the startup loading did not finish — the spinner turns for ever and the program cannot be used");
+            !eaten
+        });
         assert!(!app.project.timeline.is_empty(), "the project must turn out loaded, and the timeline is empty");
         let _ = std::fs::remove_file(&path);
     }

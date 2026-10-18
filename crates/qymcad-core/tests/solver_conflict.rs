@@ -80,10 +80,14 @@ fn a_broken_input_ends_quickly_instead_of_hanging_forever() {
     for bad in [f64::NAN, f64::INFINITY, -f64::INFINITY] {
         let mut p = Problem::new(vec![Body::grounded(Isometry3::identity()), Body::new(Isometry3::from_parts(Translation3::new(bad, bad, bad), UnitQuaternion::identity()))]);
         p.add(Constraint::PointCoincident { a: Anchor::origin(0), b: Anchor::origin(1) });
-        let t = std::time::Instant::now();
-        let (poses, rep) = qymcad_core::asm::iterate::solve(&p);
-        let took = t.elapsed().as_secs_f64();
-        assert!(took < 1.0, "the solve has to terminate, and on input {bad} it took {took:.1} s, which is a frozen application");
+        let solved = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || qymcad_core::asm::iterate::solve(&p));
+        let (poses, rep) = solved.out;
+        let budget = std::time::Duration::from_secs(1);
+        assert!(
+            solved.cost.work < budget,
+            "{} - the solve has to terminate, or the application freezes",
+            qymcad_core::time_budget::over(&format!("the solve of an assembly on input {bad}"), solved.cost, budget)
+        );
         assert!(rep.recovered_from_garbage, "the solver has to report that the input placements were rubbish");
         assert!(poses.iter().all(|t| t.translation.vector.iter().all(|v| v.is_finite())), "no non-numbers may leave the solver: {poses:?}");
     }

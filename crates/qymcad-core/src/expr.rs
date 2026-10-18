@@ -279,6 +279,12 @@ fn tok_text(t: &Tok) -> String {
     }
 }
 
+/// Whether a formula reads `name` as a constant rather than as a parameter. Only the exact lowercase spelling:
+/// a parameter `E` or `Pi` is found under its own name before the case is folded.
+pub fn is_constant(name: &str) -> bool {
+    constant(name.trim()).is_some()
+}
+
 fn constant(name: &str) -> Option<f64> {
     match name {
         "pi" => Some(std::f64::consts::PI),

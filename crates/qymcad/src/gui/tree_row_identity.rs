@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn the_tree_loop_resolves_each_row_by_id() {
         let src = crate::gui::panels_source::PANELS;
-        let code = src.split("#[cfg(test)]").next().expect("the working part");
+        let code = &qymcad_i18n::ratchet::working_part(src);
         // Collecting the Ids BEFORE the loop is legitimate — the timeline is still intact there.
         // Look at the BODY of the loop: a number taken in advance can already point elsewhere.
         assert!(code.contains("let feat_ids:"), "the walk over the bodies must collect feature Ids, not only their numbers");

@@ -20,11 +20,13 @@ mod tests {
 
     fn per_frame_ms(app: &App, rect: egui::Rect, pos: egui::Pos2) -> f64 {
         let _ = crate::gui::pick::pick_edge_any(&app.painting(), rect, pos); // the first pick fills the cache; every frame runs the ones after it
-        let t = std::time::Instant::now();
-        for _ in 0..30 {
-            let _ = crate::gui::pick::pick_edge_any(&app.painting(), rect, pos);
-        }
-        t.elapsed().as_secs_f64() * 1000.0 / 30.0
+                                                                             // the work of the picks, not the share of the machine they were given (`time_budget::Cost`)
+        let picked = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || {
+            for _ in 0..30 {
+                let _ = crate::gui::pick::pick_edge_any(&app.painting(), rect, pos);
+            }
+        });
+        picked.cost.work.as_secs_f64() * 1000.0 / 30.0
     }
 
     /// An assembly of many PARTS: picking an edge must fit into a frame, not into seconds.
@@ -119,11 +121,13 @@ mod tests {
         app.finish_sketch_edit();
         let warm = crate::gui::sketching::sketch_ref_edges_2d(&app.cache, &app.tools.cmd, &app.live, &app.project, &app.regen, si); // warm up the cache
         assert!(!warm.is_empty(), "the face edges must project — otherwise the measurement measures an empty result");
-        let t = std::time::Instant::now();
-        for _ in 0..60 {
-            let _ = crate::gui::sketching::sketch_ref_edges_2d(&app.cache, &app.tools.cmd, &app.live, &app.project, &app.regen, si);
-        }
-        let per_frame = t.elapsed().as_secs_f64() * 1000.0 / 60.0;
+        // the work of the projections, not the share of the machine they were given (`time_budget::Cost`)
+        let projected = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || {
+            for _ in 0..60 {
+                let _ = crate::gui::sketching::sketch_ref_edges_2d(&app.cache, &app.tools.cmd, &app.live, &app.project, &app.regen, si);
+            }
+        });
+        let per_frame = projected.cost.work.as_secs_f64() * 1000.0 / 60.0;
         eprintln!("[face edges under a sketch] {per_frame:.3} ms per frame");
         assert!(per_frame < 2.0, "the projection of the face edges runs every frame of a sketch edit: {per_frame:.2} ms — no kernel work may be put here");
     }

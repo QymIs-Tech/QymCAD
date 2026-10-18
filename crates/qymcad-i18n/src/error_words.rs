@@ -107,7 +107,17 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
         // catalogue key. Foreign text (the error number of OCCT itself) passes through as it stands —
         // `name` translates known keys only.
         E::Kernel(msg) => args.set("message", crate::name(msg)),
-        E::Expr(X::UnknownChar(w) | X::UnknownFn(w) | X::UnknownName(w) | X::NeedsOneArg(w) | X::NeedsTwoArgs(w) | X::UnexpectedToken(w) | X::TrailingInput(w)) => args.set("what", w.clone()),
+        E::Expr(
+            X::UnknownChar(w)
+            | X::UnknownFn(w)
+            | X::UnknownName(w)
+            | X::NeedsOneArg(w)
+            | X::NeedsTwoArgs(w)
+            | X::UnexpectedToken(w)
+            | X::TrailingInput(w)
+            | X::LeansOnItself(w)
+            | X::NameWithoutValue(w),
+        ) => args.set("what", w.clone()),
         E::Expr(X::TooDeep { limit }) => args.set("limit", *limit as i64),
         _ => {}
     }
@@ -125,6 +135,20 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
 /// translated). It was lost at the last step — in the interface.
 pub fn expr_error_text(e: &qymcad_core::errors::ExprError) -> String {
     error_text(&qymcad_core::errors::CoreError::Expr(e.clone()))
+}
+
+/// A NAME A FORMULA WILL NOT TAKE -> WORDS.
+///
+/// One line for the three fields that give a name: the parameters table, the name of a sketch dimension and the
+/// name of a feature's number. The name of a constant gets a reason of its own: "letters, digits and _" says
+/// nothing about `e`, which is all of those, and the person would look for a typo that is not there.
+pub fn ident_refusal_text(name: &str) -> String {
+    use qymcad_core::drivers::{check_ident, IdentError};
+    let key = match check_ident(name) {
+        Err(IdentError::Constant) => "par-name-constant",
+        _ => "par-name-bad",
+    };
+    crate::tr1(key, "name", name.trim())
 }
 
 /// NUMBERS IN MESSAGES ARE FORMATTED HERE rather than handed to fluent: it has typography of its own

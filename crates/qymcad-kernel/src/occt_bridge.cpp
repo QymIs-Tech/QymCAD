@@ -251,25 +251,28 @@ struct TakenNames {
     std::map<int, TopoDS_Shape> owner;
     /// Where a name that yielded in a merge is written, "losing name -> winning name"; null where nobody keeps it.
     std::vector<std::pair<unsigned, unsigned>>* absorbed = nullptr;
-    /// Who keeps an image two elements became.
-    QymMerge merge = QymMerge::First;
 };
 
 // TWO ELEMENTS BECAME ONE IN A MERGE - coplanar faces glued into a monolith, the two long sides of a strip taken out - and
-// the one image is already bound: THE WINNER IS CHOSEN BY NAME, NOT BY THE ORDER OF THE WALK (`QymMerge::ByName`). A name beats a positional number,
-// and among names the smaller descriptor wins: a descriptor is an index into the document's table of names, it lives
-// in the file and depends on neither the walk nor the session, so one merge always has one winner. Measured on a real
-// part with the order deciding: one edit gave the win now to the smaller name, now to the larger, and six walls lost
-// their name to the draw; 7 names of 13 were lost to positional numbers in one push of a face. The loser is not lost:
-// written to `absorbed`, a reference to it goes on finding the face it became. Answers whether `id` took the image.
-static bool merge_names(TopTools_DataMapOfShapeInteger& out, const TopoDS_Shape& image, int id, TakenNames& record) {
+// the one image is already bound: the winner is chosen by the rule of every merge (`takes_the_name`), not by the order
+// of the walk. The loser is not lost: written to `absorbed`, a reference to it goes on finding the face it became.
+// Answers whether `id` took the image.
+static bool takes_the_name(int challenger, int holder);
+
+static bool merge_names(TopTools_DataMapOfShapeInteger& out, const TopoDS_Shape& image, const TopoDS_Shape& source, int id, TakenNames& record) {
     const int have = out.Find(image);
     if (have == id) return false;
-    const bool have_named = qym_recipe(have), id_named = qym_recipe(id);
+    // A NAME ANOTHER ELEMENT ALREADY WEARS is not in the draw: its source also went on elsewhere - its first piece, or
+    // itself unchanged - and one name is one element. Measured: without this, a pattern of a shelled revolve wore 119
+    // names on 135 edges, and a box of a sample gave one edge the same vertex at both ends on a second rebuild. The
+    // source itself is no other element: it is bound under its name before its images are asked, and it is what the
+    // merged image replaces (a wall of a block merged with a wall of a boss lost the draw to the boss without this).
+    auto worn = record.owner.find(id);
+    if (worn != record.owner.end() && !worn->second.IsSame(image) && !worn->second.IsSame(source) && out.IsBound(worn->second) && out.Find(worn->second) == id) return false;
     auto note = [&](int loser, int winner) {
         if (record.absorbed && qym_recipe(loser) && qym_recipe(winner)) record.absorbed->emplace_back((unsigned)loser, (unsigned)winner);
     };
-    if (!id_named || (have_named && (unsigned)id > (unsigned)have)) {
+    if (!takes_the_name(id, have)) {
         note(id, have);
         return false;
     }
@@ -315,11 +318,7 @@ static void carry_ids_with(QymHistory& algo, const TopoDS_Shape& a, TopAbs_Shape
         int piece = 0;
         for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next()) {
             if (out.IsBound(it.Value())) {
-                if (record.merge == QymMerge::ByName) {
-                    if (merge_names(out, it.Value(), id, record) && piece == 0) ++piece; // the name went on the merged image
-                } else if (record.absorbed && qym_recipe(id) && qym_recipe(out.Find(it.Value())) && out.Find(it.Value()) != id) {
-                    record.absorbed->emplace_back((unsigned)id, (unsigned)out.Find(it.Value())); // the first keeps it, this one yielded
-                }
+                if (merge_names(out, it.Value(), f, id, record) && piece == 0) ++piece; // the name went on the merged image
                 continue;
             }
             // AN IMAGE REPLACES ITS OWN SOURCE, so the first piece takes its id without asking whether it
@@ -393,6 +392,20 @@ void carry_ids(QymHistory& history, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, 
     carry_ids_with(history, a, ty, aid, out, next, false, splits_of, splits_idx, nullptr, record);
 }
 
+// THE ONE RULE OF EVERY MERGE: whether `challenger` takes an image `holder` wears. A name of the document beats a role
+// the operation hands out now, a role beats a positional number, and of one rank the smaller value wins - in a merge of
+// names (`merge_names`) and in a merge of the bindings a profile carries to its walls (`carry_binding`) alike. The rule:
+// `crates/qymcad-kernel/NAMING.md`, "How the bridge names a result", step 3. Measured: with a role counted as the
+// smaller name (0x1000_0000 below every name of the document), the wall of a boss merged with a wall of the base took
+// its name, and every reference to that wall went to the boss; with the order of the walk deciding between names of
+// one rank, one edit gave the win now to the smaller name, now to the larger, and six walls of a real part lost their
+// name to the draw. A descriptor is an index into the table of the document, in the file, and depends on neither.
+static bool takes_the_name(int challenger, int holder) {
+    auto rank = [](int d) { return (d & QYM_NAMED) ? 2 : (d & QYM_ROLE) ? 1 : 0; };
+    if (rank(challenger) != rank(holder)) return rank(challenger) > rank(holder);
+    return (unsigned)challenger < (unsigned)holder;
+}
+
 void carry_binding(QymHistory& history, const TopTools_ListOfShape& before, TopAbs_ShapeEnum ty, TopTools_DataMapOfShapeInteger& bound) {
     TopTools_DataMapOfShapeInteger moved;
     TopTools_MapOfShape seen;
@@ -401,12 +414,16 @@ void carry_binding(QymHistory& history, const TopTools_ListOfShape& before, TopA
             const TopoDS_Shape& e = ex.Current();
             if (!bound.IsBound(e) || !seen.Add(e)) continue;
             const int value = bound.Find(e);
+            // an image two elements share goes by the rule of every merge
+            auto give = [&](const TopoDS_Shape& to) {
+                if (!moved.IsBound(to)) moved.Bind(to, value);
+                else if (takes_the_name(value, moved.Find(to))) moved.ChangeFind(to) = value;
+            };
             const TopTools_ListOfShape& mod = history.Modified(e);
             if (mod.IsEmpty()) {
-                if (!history.Removed(e) && !moved.IsBound(e)) moved.Bind(e, value);
+                if (!history.Removed(e)) give(e);
             } else {
-                for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next())
-                    if (!moved.IsBound(it.Value())) moved.Bind(it.Value(), value);
+                for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next()) give(it.Value());
             }
         }
     }
@@ -470,8 +487,6 @@ QymShape* qym_result(QymHistory& history, const TopoDS_Shape& res, const QymResu
     TakenNames faces, edges;
     faces.absorbed = &q->absorbed;
     edges.absorbed = &q->absorbed;
-    faces.merge = spec.merge;
-    edges.merge = spec.merge;
     for (const QymOperand& o : spec.operands) {
         const bool recipe_only = o.carry == QymCarry::RecipeOnly;
         carry_ids_with(history, o.body->shape, TopAbs_FACE, o.body->fids, q->fids, nf, recipe_only, &q->fsplit_of, &q->fsplit_idx, spec.generated, faces);
@@ -937,7 +952,6 @@ TopoDS_Shape unify_monolithic(const TopoDS_Shape& in,
             int next = next_local(ids);
             TakenNames record;
             record.absorbed = ty == TopAbs_FACE ? absorbed : nullptr;
-            record.merge = QymMerge::ByName;
             carry_ids_with(hist, in, ty, ids, out, next, false, nullptr, nullptr, nullptr, record);
             for (TopExp_Explorer ex(res, ty); ex.More(); ex.Next())
                 if (!out.IsBound(ex.Current())) out.Bind(ex.Current(), next++); // new sub-shapes get a fresh id

@@ -99,16 +99,19 @@ fn the_last_rounding_lands_inside_its_source_or_says_why_at_once() {
     let mut p = Project::default();
     let bodies = the_staircase(&mut p).unwrap_or_else(|e| panic!("{e}"));
     let (src, last) = (bodies[bodies.len() - 2], bodies[bodies.len() - 1]);
-    let t = std::time::Instant::now();
+    // the work of the rebuild, not the share of the machine it was given (`time_budget::Cost`): its booleans run on
+    // threads of their own
+    let meter = qymcad_core::time_budget::Meter::start(qymcad_core::time_budget::Doer::Process);
     let _ = qymcad_testkit::regenerate(&mut p);
-    let took = t.elapsed().as_secs_f64();
+    let took = meter.cost();
     if !p.regen_errors.contains_key(&last) {
         let bounds = |b: u64| p.mesh_index(b).and_then(|i| p.bodies[i].mesh.bounds()).map(|x| [x.min.x, x.min.y, x.min.z, x.max.x, x.max.y, x.max.z]).expect("a mesh");
         let (a, b) = (bounds(src), bounds(last));
         let out = (0..3).map(|i| (a[i] - b[i]).max(b[i + 3] - a[i + 3])).fold(0.0f64, f64::max);
         assert!(out <= 2.0 + 1e-3, "the last rounding of R2 landed a body {out:.1} mm past its source: {b:?} from {a:?}");
     }
-    assert!(took < 10.0, "the staircase rebuilt in {took:.1} s");
+    let budget = std::time::Duration::from_secs(10);
+    assert!(took.work < budget, "{}", qymcad_core::time_budget::over("the rebuild of the staircase", took, budget));
 }
 
 #[test]

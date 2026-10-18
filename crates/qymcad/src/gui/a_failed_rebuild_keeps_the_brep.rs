@@ -7,6 +7,14 @@ mod tests {
     use super::super::import_door::tests::{frame, running};
     use crate::gui::io_jobs::REBUILD_PANICS_FOR_TEST;
 
+    /// Frames until the rebuild in the background has landed (`session::waiting::until`).
+    fn settle(app: &mut crate::gui::App, ctx: &egui::Context) {
+        crate::gui::session::waiting::until("the rebuild in the background to land", || {
+            frame(app, ctx, Vec::new());
+            app.regen.busy.is_none() && !app.regen.wanted
+        });
+    }
+
     /// A rebuild made to panic, driven through the window as a person's would be: the bodies keep their live B-rep,
     /// the window is free again, and the status says the rebuild failed and why.
     #[test]
@@ -14,16 +22,6 @@ mod tests {
         let (mut app, ctx) = running();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         // the part is built the way the window builds it: in the background, landing a few frames later
-        let settle = |app: &mut crate::gui::App, ctx: &egui::Context| {
-            for _ in 0..600 {
-                frame(app, ctx, Vec::new());
-                if app.regen.busy.is_none() && !app.regen.wanted {
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            panic!("the window is still rebuilding after half a minute; the status says: {}", app.status);
-        };
         settle(&mut app, &ctx);
         let held = |app: &crate::gui::App| {
             let mut ids: Vec<_> = app.live.shapes.keys().copied().collect();
@@ -53,16 +51,6 @@ mod tests {
     fn a_rebuild_that_panics_for_the_last_edit_takes_the_edit_back() {
         let (mut app, ctx) = running();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
-        let settle = |app: &mut crate::gui::App, ctx: &egui::Context| {
-            for _ in 0..600 {
-                frame(app, ctx, Vec::new());
-                if app.regen.busy.is_none() && !app.regen.wanted {
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            panic!("the window is still rebuilding after half a minute; the status says: {}", app.status);
-        };
         // a rebuild of everything, to its end: what is computed is the document as it stands
         qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
         settle(&mut app, &ctx);

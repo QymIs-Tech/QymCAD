@@ -134,3 +134,5 @@ pub fn coverage_gaps(rows: &[&str], uncovered: &[Uncovered]) -> Vec<String> {
     }
     gaps
 }
+
+pub mod real_documents;

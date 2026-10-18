@@ -14,7 +14,8 @@ pub fn note_editor(annot: &mut AnnotEdit, inline: &mut InlineEdit, project: &mut
         return;
     };
     let (mut apply, mut close) = (false, false);
-    egui::Area::new(egui::Id::new(("noteedit", si, ni))).fixed_pos(clamp_popup(at, rect) + egui::vec2(0.0, -28.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new(("noteedit", si, ni))).fixed_pos(clamp_popup(at, rect) + egui::vec2(0.0, -28.0)).order(crate::AT_GEOMETRY).show(ctx, |ui| {
+        crate::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let r = ui.add(egui::TextEdit::singleline(&mut annot.note_buf).desired_width(160.0));
@@ -138,7 +139,8 @@ pub fn text_obj_editor(ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx
     };
     let at = (Sheet { view: *ed.view, rect }).at(Point2::new(bx, maxy));
     let (mut apply, mut close) = (false, false);
-    egui::Area::new(egui::Id::new(("textedit", si, ti))).fixed_pos(clamp_popup(at, rect) + egui::vec2(0.0, -34.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new(("textedit", si, ti))).fixed_pos(clamp_popup(at, rect) + egui::vec2(0.0, -34.0)).order(crate::AT_GEOMETRY).show(ctx, |ui| {
+        crate::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let want_focus = tc.annot.text_focus;

@@ -9,7 +9,11 @@ mod tests {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
-    /// EVERY PROCESS IS GONE within 30 s, and it ended well: the check that draws the popups of every tool of the part
+    /// HOW LONG EIGHT PROGRAMS STARTED TOGETHER MAY TAKE TO END: the bound of a program that hangs, not of a slow machine.
+    /// Each ends in a second or two alone, and eight started side by side under the load of other work take longer.
+    const ENDS_WITHIN: Duration = Duration::from_secs(120);
+
+    /// EVERY PROCESS IS GONE within `ENDS_WITHIN`, and it ended well: the check that draws the popups of every tool of the part
     /// - each starting its trial - run 40 times as a program of its own, 8 side by side.
     #[test]
     fn the_program_ends_while_a_trial_of_a_command_runs() {
@@ -29,7 +33,7 @@ mod tests {
                         }
                         break;
                     }
-                    if began.elapsed() > Duration::from_secs(30) {
+                    if began.elapsed() > ENDS_WITHIN {
                         let _ = child.kill();
                         let _ = child.wait();
                         hung += 1;
@@ -39,6 +43,6 @@ mod tests {
                 }
             }
         }
-        assert!(hung == 0 && failed.is_empty(), "of 40 programs ended during the trials of the popups, {hung} were still there 30 s later and {} ended badly: {failed:?}", failed.len());
+        assert!(hung == 0 && failed.is_empty(), "of 40 programs ended during the trials of the popups, {hung} were still there {ENDS_WITHIN:?} later and {} ended badly: {failed:?}", failed.len());
     }
 }

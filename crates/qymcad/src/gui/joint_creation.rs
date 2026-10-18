@@ -110,6 +110,8 @@ mod tests {
         let bar = concat!(
             include_str!("../../../qymcad-assembly/src/bars.rs"),
             "\n",
+            include_str!("../../../qymcad-assembly/src/commands.rs"),
+            "\n",
             include_str!("../../../qymcad-assembly/src/gizmo.rs"),
             "\n",
             include_str!("../../../qymcad-assembly/src/picks.rs"),

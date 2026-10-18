@@ -236,31 +236,54 @@ pub(in crate::gui) mod tests {
     }
 
     /// A LOUD REBUILD MUTES THE PANELS FROM ITS FIRST FRAME, its sign not yet painted: a click on the File menu while it
-    /// runs opens nothing. Held 200 ms in the worker, under the limit.
+    /// runs opens nothing.
+    ///
+    /// The rebuild is kept in flight by the kernel, held by a thread of the check until the click is over, and is dated
+    /// an hour ahead as soon as it starts: its sign is drawn at the top of a frame, before the keys of the frame start a
+    /// rebuild, so it is not due on any frame of the click however slowly the machine draws them. Held 200 ms in the
+    /// worker and timed by the wall, the click landed 256-435 ms into the rebuild under a load of 40-184 on 20 threads,
+    /// past the 300 ms of the sign, and the check was red.
     #[test]
     fn a_loud_rebuild_mutes_the_panels_before_its_sign_is_up() {
-        let mut app = parts(1, Some(200));
+        let mut app = parts(1, None);
         let mut h = Hand::new(&mut app);
         reopen_the_first_extrusion(&mut h);
         let file = crate::i18n::tr("menu-file");
         let new_project = crate::i18n::tr("file-new");
         let at = h.written_at(&file).unwrap_or_else(|| panic!("the menu bar has no {file:?}")).center();
+        let (held, holding) = std::sync::mpsc::channel();
+        let (go, let_go) = std::sync::mpsc::channel::<()>();
+        let kernel = std::thread::Builder::new()
+            .name("a check holding the kernel".into())
+            .spawn(move || {
+                let _kernel = qymcad_kernel::kernel_gate();
+                held.send(()).expect("the check waits for the kernel to be held");
+                let _ = let_go.recv_timeout(Duration::from_secs(300));
+            })
+            .expect("a thread");
+        holding.recv().expect("the kernel is held");
+        let loud = |b: &&mut crate::gui::Busy| b.kind == crate::gui::BgKind::Regen && !b.quiet;
         for events in enter() {
             h.frame(events);
+            if let Some(b) = h.app.regen.busy.as_mut().filter(loud) {
+                b.started = Instant::now() + Duration::from_secs(3600);
+            }
         }
+        assert!(h.app.regen.busy.as_mut().filter(loud).is_some(), "setup: Enter asked for a loud rebuild in the background");
         h.frame(vec![egui::Event::PointerMoved(at)]);
-        let started = h.app.regen.busy.as_ref().filter(|b| b.kind == crate::gui::BgKind::Regen && !b.quiet).map(|b| b.started).expect("setup: Enter asked for a loud rebuild in the background");
         let mut painted = signs_painted(&h);
         let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         h.frame(vec![button(true)]);
         painted.extend(signs_painted(&h));
         h.frame(vec![button(false)]);
         painted.extend(signs_painted(&h));
-        let clicked = started.elapsed();
-        assert!(h.app.regen.busy.is_some() && clicked < REBUILD_SIGN_AFTER, "setup: the click is to land while the rebuild runs and before its sign is due, and it landed at {clicked:?}");
-        assert!(painted.is_empty(), "the sign was painted {clicked:?} into the rebuild: {painted:?}");
+        assert!(h.app.regen.busy.is_some(), "setup: the click is to land while the rebuild runs, and the rebuild landed before it");
+        assert!(painted.is_empty(), "the sign of a rebuild dated an hour ahead was painted: {painted:?}");
         h.frame(Vec::new());
-        assert!(!h.shows(&new_project), "the File menu opened under a loud rebuild - an edit from there lands on a stale copy of the document");
+        let opened = h.shows(&new_project);
+        go.send(()).expect("the kernel is let go");
+        kernel.join().expect("the thread holding the kernel ends");
+        assert!(!opened, "the File menu opened under a loud rebuild - an edit from there lands on a stale copy of the document");
 
         // THE SAME CLICK ONCE THE REBUILD HAS LANDED opens the menu, or the one above proves nothing
         h.close_window();

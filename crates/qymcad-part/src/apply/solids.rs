@@ -58,7 +58,9 @@ pub fn apply_hole_cmd(cmd: &qymcad_ui_state::FeatCommand, hole: qymcad_ui_state:
             qymcad_core::model::HoleTool { kind: hole.kind, diameter: qymcad_ui_state::cmd_val(cmd, "diameter"), depth: qymcad_ui_state::cmd_val(cmd, "depth"), dia2, depth2 },
             hole.flip,
         );
-        store_cmd_exprs(cmd, project, body);
+        if let Err(e) = store_cmd_exprs(cmd, project, body) {
+            return say_formula_refused(status, &e);
+        }
         return Some(body);
     }
     let qymcad_ui_state::Sel::Face(mi, fi) = sel else {
@@ -76,7 +78,9 @@ pub fn apply_hole_cmd(cmd: &qymcad_ui_state::FeatCommand, hole: qymcad_ui_state:
         at,
         qymcad_core::model::HoleTool { kind: hole.kind, diameter: qymcad_ui_state::cmd_val(cmd, "diameter"), depth: qymcad_ui_state::cmd_val(cmd, "depth"), dia2, depth2 },
     );
-    store_cmd_exprs(cmd, project, body);
+    if let Err(e) = store_cmd_exprs(cmd, project, body) {
+        return say_formula_refused(status, &e);
+    }
     Some(body)
 }
 
@@ -104,7 +108,9 @@ pub fn apply_thread_cmd(cmd: &qymcad_ui_state::FeatCommand, project: &mut Projec
     } else {
         project.add_thread(src, thread.edge, thread_spec(cmd, thread), qymcad_ui_state::cmd_val(cmd, "length"), qymcad_ui_state::cmd_val(cmd, "lead_in"), qymcad_ui_state::cmd_val(cmd, "lead_out"))
     };
-    store_cmd_exprs(cmd, project, body);
+    if let Err(e) = store_cmd_exprs(cmd, project, body) {
+        return say_formula_refused(status, &e);
+    }
     Some(body)
 }
 
@@ -196,7 +202,9 @@ pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Option<Id> 
             }
         }
     };
-    store_cmd_exprs(pc.cmd, pc.project, last); // radius, radius2, dist and d2 stay parametric
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, last) {
+        return formula_refused(pc, &e);
+    } // radius, radius2, dist and d2 stay parametric
     Some(last)
 }
 
@@ -259,7 +267,9 @@ pub fn apply_thicken_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let body = pc.project.add_thicken(src, fid, t);
-    store_cmd_exprs(pc.cmd, pc.project, body); // the thickness stays parametric
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+        return formula_refused(pc, &e);
+    } // the thickness stays parametric
     Some(body)
 }
 
@@ -282,7 +292,9 @@ pub fn apply_shell_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let body = pc.project.add_shell_mode(src, qymcad_ui_state::cmd_val(pc.cmd, "thickness"), faces, pc.opts.shell_side);
-    store_cmd_exprs(pc.cmd, pc.project, body);
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+        return formula_refused(pc, &e);
+    }
     Some(body)
 }
 
@@ -307,7 +319,9 @@ pub fn apply_draft_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let body = pc.project.add_draft(src, faces, pc.draft.neutral, qymcad_ui_state::cmd_val(pc.cmd, "angle"), pc.draft.flip);
-    store_cmd_exprs(pc.cmd, pc.project, body); // the angle stays parametric
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+        return formula_refused(pc, &e);
+    } // the angle stays parametric
     Some(body)
 }
 
@@ -401,7 +415,9 @@ pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Option<Id
             pc.project.add_combine_multi_op(part, sid, targets.clone(), qymcad_core::model::CombineSpan { height: h, down, extent: qymcad_core::feature::Extent { through, reach }, fill: &fill }, occt)
         };
         if last != 0 {
-            store_cmd_exprs(pc.cmd, pc.project, last); // the dimensions (the height) go onto the node of the operation
+            if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, last) {
+                return formula_refused(pc, &e);
+            } // the dimensions (the height) go onto the node of the operation
         } else {
             qymcad_ui_state::cmd_fail(pc.cmd_failed, pc.status, qymcad_i18n::tr("cmd-op-failed"));
         }
@@ -429,7 +445,9 @@ pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Option<Id
             rev_op,
         );
         if body != 0 {
-            store_cmd_exprs(pc.cmd, pc.project, body);
+            if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+                return formula_refused(pc, &e);
+            }
             // a new body (nothing to boolean) is merged into the single body of the part, as with an extrude
             last = if rev_src == 0 { pc.project.finish_base_body(body, 1) } else { body };
         }
@@ -471,7 +489,9 @@ pub fn apply_push_face_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let body = pc.project.add_push_face(src, key, dist);
-    store_cmd_exprs(pc.cmd, pc.project, body); // the offset stays parametric
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+        return formula_refused(pc, &e);
+    } // the offset stays parametric
     Some(body)
 }
 
@@ -513,7 +533,9 @@ pub fn apply_prim_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         15 => pc.project.add_prism(v("r"), pc.prim.n.max(3), v("h")),
         _ => return None,
     };
-    store_cmd_exprs(&cmd, pc.project, body);
+    if let Err(e) = store_cmd_exprs(&cmd, pc.project, body) {
+        return formula_refused(pc, &e);
+    }
     // placement: an oriented move of the primitive into the picked frame (the base sits on the surface)
     let placed = match pc.prim.frame {
         Some(m) if !qymcad_ui_state::is_identity12(&m) => pc.project.add_move(body, m),

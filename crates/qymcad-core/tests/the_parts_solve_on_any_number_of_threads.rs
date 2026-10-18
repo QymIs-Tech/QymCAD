@@ -4,7 +4,7 @@ mod sketch_kinds;
 
 use qymcad_core::solver;
 use sketch_kinds::{build, Kind};
-use std::time::Instant;
+use qymcad_core::time_budget::{cost_of, Doer};
 
 /// The checks of this file set the number of threads one after another, never side by side: run together, one set a
 /// single thread in the middle of the other's measure.
@@ -40,16 +40,17 @@ fn many_separate_shapes_are_solved_on_the_threads_of_the_setting() {
         return;
     }
     // 30 000 tangent lines with circles, on one thread and on the setting's, each the best of two: told against each
-    // other rather than against a clock, so a machine busy with other checks slows both. Measured idle in a test
-    // build: 3.3 s on one thread, 1.2 s on 19.
+    // other rather than against a clock. Each is its work (`time_budget::Cost`): the wall less the share its threads
+    // stood ready with no processor - timed by the wall, the threads of a machine busy with other work have no free
+    // processor to run on, and the many read as slow as the one. Measured idle in a test build: 3.3 s on one thread,
+    // 1.2 s on 19.
     let p = build(Kind::Tangents, 30_000);
     let timed = |threads: usize| {
         solver::set_threads(threads);
         (0..2)
             .map(|_| {
-                let started = Instant::now();
-                let _ = p.clone().solve_sketch(0);
-                started.elapsed()
+                let mut copy = p.clone();
+                cost_of(Doer::Process, || copy.solve_sketch(0)).cost.work
             })
             .min()
             .unwrap_or_default()

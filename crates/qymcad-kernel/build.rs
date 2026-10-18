@@ -48,6 +48,7 @@ fn main() {
         .file("src/occt_helical.cpp")
         .file("src/occt_faces.cpp")
         .file("src/occt_io.cpp")
+        .file("src/occt_limits.cpp")
         .warnings(false);
     // A FAULT INSIDE OCCT COMES BACK AS AN EXCEPTION (`QYM_SIGNALS` in every `try` of the bridge). Elsewhere than MSVC
     // a signal jumps to the nearest `OCC_CATCH_SIGNALS`, which exists only under `OCC_CONVERT_SIGNALS` - the macro the
@@ -82,7 +83,7 @@ fn main() {
     }
     // `src/cxx_runtime.rs` is on this list because it is `include!`d rather than imported: cargo does not
     // see through the macro, and without the line an edit there would not rebuild the script.
-    for f in ["src/occt_bridge.cpp", "src/occt_helical.cpp", "src/occt_faces.cpp", "src/occt_io.cpp", "src/occt_common.hpp", "src/cxx_runtime.rs"] {
+    for f in ["src/occt_bridge.cpp", "src/occt_helical.cpp", "src/occt_faces.cpp", "src/occt_io.cpp", "src/occt_limits.cpp", "src/occt_common.hpp", "src/cxx_runtime.rs"] {
         println!("cargo:rerun-if-changed={f}");
     }
     println!("cargo:rerun-if-env-changed=OCCT_INCLUDE_DIR");

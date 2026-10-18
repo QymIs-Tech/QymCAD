@@ -1,6 +1,6 @@
 //! THE STEPS OF THE CONTRACT, the same for every tool: each point takes a description and checks it through the
 //! window. A point that does not hold fails with what a person would have seen.
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use qymcad::{pos2, Document, Key, Modifiers, Pos2, Session, Solid};
 

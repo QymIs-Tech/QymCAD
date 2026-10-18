@@ -156,7 +156,8 @@ mod tests {
         // of a multibyte letter, then the window came out shorter than the code and "lost" a double-click
         // handler nobody had touched.
         let a = src.find("tree-components").expect("the component tree is in place");
-        let end = src[a..].find("\nfn ops_tree").map(|i| a + i).unwrap_or(src.len());
+        // and no further than the next file read in: a drag source of another panel is not the tree's
+        let end = [src[a..].find("\nfn ops_tree"), src[a..].find("\n//! ")].into_iter().flatten().min().map(|i| a + i).unwrap_or(src.len());
         let body = &src[a..end];
         // THE CALL is searched for, not the word: a comment nearby explains why it was removed, and the
         // check used to trip over the mention.

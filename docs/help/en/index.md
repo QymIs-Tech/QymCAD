@@ -40,6 +40,7 @@ bottom says what is happening, how many degrees of freedom the sketch has and wh
 ## Where to look next
 
 - [The program window](general/01-window) — what lives where.
+- [The layout of the panels](general/15-layout) — where the panels stand, how to move and hide them, the buttons of the bar.
 - [Parameters and formulas](general/05-parameters) — one number for the whole part.
 - [The history timeline and rollback](general/03-timeline) — why a model is a recipe, not a picture.
 - [Keyboard shortcuts](general/10-hotkeys) — the full reference and how to reassign them.

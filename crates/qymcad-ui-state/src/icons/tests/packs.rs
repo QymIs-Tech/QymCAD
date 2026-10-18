@@ -237,11 +237,11 @@ fn missing_directory_icons_do_not_block_coverage() {
     };
     std::fs::write(temp_dir.join("manifest.ron"), manifest.to_ron().expect("serialize manifest")).expect("write manifest");
     let pack = IconPack::from_directory(&temp_dir).expect("load directory pack");
-    let start = std::time::Instant::now();
-    let coverage = pack.coverage();
-    let elapsed = start.elapsed();
-    assert_eq!(coverage, CoverageCount { present: 0, total: ALL_ICONS.len() });
-    assert!(elapsed < std::time::Duration::from_millis(300), "checking 106 absent SVG files blocked the frame for {elapsed:?}");
+    // the work of the frame, not the share of the machine it was given (`time_budget::Cost`)
+    let counted = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || pack.coverage());
+    assert_eq!(counted.out, CoverageCount { present: 0, total: ALL_ICONS.len() });
+    let budget = std::time::Duration::from_millis(300);
+    assert!(counted.cost.work < budget, "{}", qymcad_core::time_budget::over("checking 106 absent SVG files in a frame", counted.cost, budget));
     let _ = std::fs::remove_dir_all(temp_dir);
 }
 

@@ -208,6 +208,13 @@ pub enum ExprError {
     /// another. The parser goes down one call per level, and a stored formula nested a few thousand deep ran the
     /// stack out and ended the program (`expr::MAX_FORMULA_DEPTH`).
     TooDeep { limit: usize },
+    /// The formula of a name comes back to that name through the names it reads: `b = a/2` typed while `a` is written
+    /// as `b*2`, or `b = b + 1`. Every evaluation would take the last value and give a new one, so the number drifts on
+    /// each rebuild instead of standing. Holds the chain, the name first and last: `b -> a -> b`.
+    LeansOnItself(String),
+    /// The formula reads a name that has no value to give: one whose own formula comes back to itself, or reads such a
+    /// name in turn. Holds that name.
+    NameWithoutValue(String),
 }
 
 /// A kernel error: a fact rather than a phrase, with the words supplied by the application.
@@ -277,8 +284,14 @@ pub enum CoreError {
     ThreadNotItsSize { face: f64, nominal: f64 },
     /// A WARNING, not a failure: the blend was built, but `dropped` of the `asked` edges could not be taken.
     EdgesDropped { asked: usize, dropped: usize },
+    /// A WARNING, not a failure: a reference of the step was found by place, not by name, and the person has not yet
+    /// said the right element was taken.
+    RefFoundByPlace,
     /// A body brought in from a file failed the checks of the door and could not be repaired: it is kept as it came.
     ImportKeptAsItCame,
+    /// A WARNING, not a failure: a blend was built a hair short of its size (by 1e-5 of it at most) - at the size asked
+    /// a face vanishes whole, and the edges are not of a kind its exact construction takes.
+    BuiltSteppedBack,
     /// A shell cannot be built on this body: offsetting the faces fails inside the kernel, which raises an
     /// internal error. This is neither the user's fault nor a lost reference but a limit of the algorithm.
     ShellNotBuiltHere,
@@ -469,7 +482,9 @@ impl CoreError {
             TooManyStarts { .. } => "error-too-many-starts".into(),
             ThreadNotItsSize { .. } => "error-thread-not-its-size".into(),
             EdgesDropped { .. } => "warn-edges-dropped".into(),
+            RefFoundByPlace => "warn-ref-found-by-place".into(),
             ImportKeptAsItCame => "warn-import-kept-as-it-came".into(),
+            BuiltSteppedBack => "warn-built-stepped-back".into(),
             PushFaceOnSheet => "error-push-face-on-sheet".into(),
             NeedsSolidNotSheet => "error-needs-solid-not-sheet".into(),
             DraftFailed { .. } => "error-draft-failed".into(),
@@ -542,6 +557,8 @@ impl ExprError {
             TrailingInput(_) => "error-expr-trailing-input",
             NotANumber => "error-expr-not-a-number",
             TooDeep { .. } => "error-expr-too-deep",
+            LeansOnItself(_) => "error-expr-leans-on-itself",
+            NameWithoutValue(_) => "error-expr-name-without-value",
         }
     }
 }
@@ -592,7 +609,9 @@ impl std::fmt::Display for CoreError {
             TooManyStarts { starts, limit } => write!(f, "{starts} starts is too many (at most {limit})"),
             ThreadNotItsSize { face, nominal } => write!(f, "a thread of {nominal:.2} does not fit a face of {face:.2}"),
             EdgesDropped { asked, dropped } => write!(f, "{dropped} of the {asked} edges could not be taken"),
+            RefFoundByPlace => write!(f, "a reference was found by place, not by name"),
             ImportKeptAsItCame => write!(f, "the body brought in failed the checks and is kept as it came"),
+            BuiltSteppedBack => write!(f, "built a hair short of its size"),
             PushFaceOnSheet => write!(f, "push face on a sheet"),
             NeedsSolidNotSheet => write!(f, "solid tool on a sheet"),
             DraftFailed { angle } => write!(f, "draft {angle:.1} failed"),
@@ -620,6 +639,8 @@ impl std::fmt::Display for ExprError {
             ExpectedParenAfterArgs => write!(f, "expected ')' after arguments"),
             NotANumber => write!(f, "result is not a number"),
             TooDeep { limit } => write!(f, "the formula nests deeper than {limit} levels"),
+            LeansOnItself(chain) => write!(f, "the formula comes back to its own name: {chain}"),
+            NameWithoutValue(n) => write!(f, "{n} has no value"),
         }
     }
 }

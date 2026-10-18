@@ -530,7 +530,7 @@ pub(crate) fn tree_feature_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui:
     // A KERNEL ERROR IS A CODE; the text in the reader's language is assembled here (see i18n::error_text)
     let node_err = tc.project.feature_op_span(nid).iter().find_map(|id| tc.project.regen_errors.get(id)).map(crate::gui::error_words::error_text);
     // BUILT, BUT NOT ALL OF IT: a rounding that could not take some edges did the rest - yellow, with the words
-    let node_warn = if node_err.is_none() { tc.project.regen_warnings.get(&nid).map(crate::gui::error_words::error_text) } else { None };
+    let node_warn = if node_err.is_none() { tc.project.node_warning(nid).as_ref().map(crate::gui::error_words::error_text) } else { None };
     ui.horizontal(|ui| {
         // A feature is suppressed either by THE ROLLBACK LINE (the tail of the list) or individually from the
         // right-button menu. The suppress checkbox was removed: it confused, because in a linear chain it hid

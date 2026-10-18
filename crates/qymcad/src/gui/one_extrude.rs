@@ -11,13 +11,8 @@ mod tests {
     /// The workbench toolbar offers exactly one extrude button.
     #[test]
     fn the_toolbar_offers_one_extrude_button() {
-        let src = crate::gui::panels_source::PANELS;
-        let a = src.find("fn wb_toolbar").expect("the workbench toolbar is there");
-        // the boundary is the function's OWN closing brace at column zero, not the next `fn` written a
-        // particular way: the bars were methods once and are free functions now
-        let b = src[a..].find("\n}\n").map(|i| a + i).unwrap_or(src.len());
-        // a button NAMES its request; the count of them is what matters, not the spelling of the call
-        let n = src[a..b].matches("BarAsk::FeatCmd(1)").count();
+        // the bar is drawn from the rows: the count of rows starting the extrusion is the count of its buttons
+        let n = crate::command_catalog::of_bench("part").into_iter().filter(|c| c.launch == crate::command_catalog::Launch::Feat(1)).count();
         assert_eq!(
             n, 1,
             "extrude must be ONE button (the operation is chosen in the bar), and {n} buttons \

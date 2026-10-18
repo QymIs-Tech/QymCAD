@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn no_command_leaves_its_boolean_outside_the_node() {
         let src = crate::gui::sketch_source::PART;
-        let code = src.split("#[cfg(test)]").next().expect("the working part");
+        let code = &qymcad_i18n::ratchet::working_part(src);
         for bad in ["finish_base_body(body, 0)", "finish_base_body(body, 2)", "finish_base_body(body, fb_op)", "finish_base_body(last, fb_op)"] {
             assert!(
                 !code.contains(bad),

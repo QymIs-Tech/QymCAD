@@ -99,9 +99,18 @@ pub fn apply_feat_cmd(pc: &mut qymcad_ui_state::PartCtx) {
     // NOTHING TO APPLY YET: Enter is refused in words, the command's own ask repeated, and the document untouched -
     // unless the command names what is missing itself (the axis, the faces, the patch's edges, the trimmed sheet)
     // A FIELD THAT CANNOT BE TAKEN refuses Enter as it closes the Apply button: Enter comes from the keyboard, past it
-    if let Some((label, msg)) = pc.cmd.params.iter().find_map(|p| field_value(p, &pc.project.param_map()).err().map(|m| (qymcad_i18n::tr(p.label_key()), m))) {
+    let vars = pc.project.param_map();
+    let refused = |p: &qymcad_ui_state::CmdParam| field_value(p, &vars).err().or_else(|| field_refused_by_document(p, pc.project, pc.cmd.edit));
+    if let Some((label, msg)) = pc.cmd.params.iter().find_map(|p| refused(p).map(|m| (qymcad_i18n::tr(p.label_key()), m))) {
         *pc.status = Notice::refusal(format!("{label}: {msg}"));
         return;
+    }
+    // THE COUNTS TYPED IN THE BAR of an array are numbers of its node as well, asked of the same door
+    if matches!(pc.armed.cmd_kind(), 17 | 18) {
+        if let Some(msg) = bar_counts_refused(pc.bar_exprs, pc.project, pc.cmd.edit) {
+            *pc.status = Notice::refusal(format!("{}: {msg}", qymcad_i18n::tr("cmd-copies")));
+            return;
+        }
     }
     if !cmd_ready(pc) && !matches!(pc.armed.cmd_kind(), 22 | 25 | 26 | 28 | 30 | 32 | 34) {
         *pc.status = Notice::refusal(qymcad_i18n::tr1("cmd-not-ready", "ask", &cmd_hint(&*pc.armed, &*pc.gsel, &*pc.trim)));

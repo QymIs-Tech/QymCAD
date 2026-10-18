@@ -2,6 +2,7 @@
 //! called - and nothing of what the door does for every operation.
 
 use crate::door::{Bodies, Operation, Retreat, Roles, Sizing, StepBack};
+use crate::{BlendLimit, NamedEdges};
 use crate::kernel::{refused, OcctKernel};
 use qymcad_core::errors::{CoreError, FilletEdgeIssue, Op};
 use qymcad_core::feature::{BlendRoles, DroppedEdges};
@@ -19,18 +20,28 @@ pub struct BlendAsk<'a> {
     pub roles: BlendRoles,
 }
 
-/// AN EDGE TO BLEND and the number its surface is handed under.
+/// AN EDGE TO BLEND and the numbers its surface and the corner patches at its two ends are handed under.
 #[derive(Clone, Copy)]
 struct EdgeRole {
     edge: u32,
     surface: u32,
+    corners: EdgeCorners,
 }
 
-/// THE NUMBERS THE FACES OF A BLEND ARE HANDED UNDER, as the C++ side reads them: a surface per edge, a corner patch per
-/// edge, and for every edge of the body the surface the blend makes if it continues across it.
+/// THE NUMBERS OF THE CORNER PATCHES AT THE TWO ENDS OF AN EDGE: at its start and at its end, as the edge runs. A patch
+/// takes the number of the end of the edge of the lowest place in the pick among those meeting at its vertex.
+#[derive(Clone, Copy, Default)]
+struct EdgeCorners {
+    start: u32,
+    end: u32,
+}
+
+/// THE NUMBERS THE FACES OF A BLEND ARE HANDED UNDER, as the C++ side reads them: a surface per edge, the corner
+/// patches at the two ends of each edge, and for every edge of the body the surface the blend makes if it continues
+/// across it.
 struct BlendNumbers {
     surfaces: Vec<u32>,
-    corners: Vec<u32>,
+    corners: Vec<EdgeCorners>,
     all: Vec<u32>,
 }
 
@@ -43,18 +54,44 @@ impl BlendNumbers {
         }
         edges.iter().map(|e| asked.iter().find(|a| a.edge == *e).map_or(0, |a| a.surface)).collect()
     }
+
+    /// The numbers of the corner patches at the two ends of each of `edges`, start and end, taken from those of the edges
+    /// asked as the surfaces are: given whole to a part of the edges, a patch took the number of another edge.
+    fn corners_of(&self, asked: &[EdgeRole], edges: &[u32]) -> Vec<u32> {
+        if self.corners.is_empty() {
+            return Vec::new();
+        }
+        edges.iter().flat_map(|e| asked.iter().find(|a| a.edge == *e).map_or([0, 0], |a| [a.corners.start, a.corners.end])).collect()
+    }
+
+    /// The edges asked, each with its numbers.
+    fn asked(&self, edges: &[u32]) -> Vec<EdgeRole> {
+        edges.iter().enumerate().map(|(k, edge)| EdgeRole { edge: *edge, surface: self.surfaces.get(k).copied().unwrap_or(0), corners: self.corners.get(k).copied().unwrap_or_default() }).collect()
+    }
 }
 
 /// THE ROLES OF A BLEND. The surface of a fillet or a chamfer is named after the edge it rounds, the patch closing a
-/// corner after the edge too, there being no other source in the recipe. The surface continues across tangent
-/// neighbours, which the recipe also names after their edges (measured: otherwise 2 to 4 nameless faces an operation)
-/// - but only an edge that can be told apart: while two edges of a body share one number, naming their surfaces alike
-///   makes a reference lead to two faces (measured: a mirror gave 7 such pairs of 20 edges).
+/// corner after the edge too, there being no other source in the recipe. An edge the node picked by hand is named by
+/// its place in the pick (`PickedEdge::place`): the name of the edge changes when a face of its pair does - a wall above
+/// merged into another - and the surface, which did not move, went with it (measured: eight faces of a chamfer on the
+/// case of the examples renamed by a dimension +10% above). Two picks finding one edge - two edges an edit above merged
+/// into one - name its surface after the pick holding the edge by its name (measured on the filter of the examples: a
+/// dimension -10% merged a wall into another, the pick of the edge it bounded was translated onto the edge of pick 30, and
+/// the surface of pick 30, which did not move, took the name of pick 1). An edge a description gave (every edge of a
+/// face) is named after its own name. The surface continues across tangent neighbours, which the recipe also names after their edges
+/// (measured: otherwise 2 to 4 nameless faces an operation) - but only an edge that can be told apart: while two edges of
+/// a body share one number, naming their surfaces alike makes a reference lead to two faces (measured: a mirror gave 7
+/// such pairs of 20 edges).
 fn blend_roles(roles: BlendRoles, edges: &[u32], body_edges: &[u32], given: &mut Roles) -> BlendNumbers {
-    let BlendRoles::Named { feature } = roles else { return BlendNumbers { surfaces: Vec::new(), corners: Vec::new(), all: Vec::new() } };
-    let surfaces = edges.iter().map(|e| given.give(GeoName::new(feature, Role::Blend, *e as Id))).collect();
-    let corners = edges.iter().map(|e| given.give(GeoName::new(feature, Role::Corner, *e as Id))).collect();
-    let once = |e: &u32| NameTable::is_named(*e) && body_edges.iter().filter(|x| *x == e).count() == 1;
+    let BlendRoles::Named { feature, picked } = roles else { return BlendNumbers { surfaces: Vec::new(), corners: Vec::new(), all: Vec::new() } };
+    // the pick holding the edge by its name before one translated onto it, then the lower place
+    let source = |e: u32| picked.iter().filter(|p| p.live == e).min_by_key(|p| (p.by, p.place)).map_or(e as Id, |p| p.place as Id);
+    let surfaces = edges.iter().map(|e| given.give(GeoName::new(feature, Role::Blend, source(*e)))).collect();
+    // a corner after the end of its edge, `2 x place + end`: the vertex has no recipe but the picks meeting at it. Offered,
+    // not given - a patch stands only where blends meet - so the table holds only those a face takes
+    let mut corner = |e: u32, end: Id| given.spare(GeoName::new(feature, Role::Corner, 2 * source(e) + end));
+    let corners = edges.iter().map(|e| EdgeCorners { start: corner(*e, 0), end: corner(*e, 1) }).collect();
+    let once = |e: &u32| NameTable::is_named(*e) && body_edges.iter().filter(|x| *x == e).count() == 1 && !picked.iter().any(|p| p.live == *e);
     let mut all = Vec::new();
     for e in body_edges.iter().filter(|e| once(e)) {
         all.push(*e);
@@ -106,18 +143,22 @@ impl OcctKernel {
         let BlendAsk { body, src, size: radius, edges, roles } = ask;
         self.dropped.borrow_mut().remove(&body);
         let Prepared { sharp, numbers, given } = self.prepare(src, edges, roles)?;
-        let asked: Vec<EdgeRole> = sharp.edges.iter().zip(numbers.surfaces.iter().chain(std::iter::repeat(&0))).map(|(edge, surface)| EdgeRole { edge: *edge, surface: *surface }).collect();
+        let asked: Vec<EdgeRole> = numbers.asked(&sharp.edges);
         let edges = &sharp.edges;
         let whole = |b: &Bodies, f: f64| -> Result<crate::Shape, CoreError> {
             let s = b.get(src)?;
             let r = if edges.is_empty() {
                 s.fillet_all(radius * f)
             } else {
-                s.fillet_edges_named(radius * f, edges, &numbers.surfaces_of(&asked, edges), &numbers.corners, &numbers.all)
+                s.fillet_edges_named(radius * f, edges, &numbers.surfaces_of(&asked, edges), &numbers.corners_of(&asked, edges), &numbers.all)
             };
             r.ok_or(CoreError::OpFailed(Op::Fillet))
         };
-        let first = self.run(Operation { kind: Op::Fillet, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: radius }), roles: given.clone(), work: whole });
+        let surfaces = numbers.surfaces_of(&asked, edges);
+        let exact = |b: &Bodies| {
+            (!edges.is_empty()).then(|| b.get(src).ok()?.blend_limit(BlendLimit { kind: 0, a: radius, b: 0.0, flip: 0, ref_face: 0 }, NamedEdges { edges, surfaces: &surfaces })).flatten()
+        };
+        let first = self.run(Operation { kind: Op::Fillet, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: radius }), roles: given.clone(), work: whole, limit: Some(&exact) });
         if first.is_ok() && sharp.unknown > 0 {
             self.dropped.borrow_mut().insert(body, sharp.left_out(sharp.edges.len()));
         }
@@ -125,7 +166,7 @@ impl OcctKernel {
             Err(CoreError::OpFailed(Op::Fillet)) if edges.is_empty() => Err(refused(Op::Fillet)),
             Err(CoreError::OpFailed(Op::Fillet)) => {
                 let part = |b: &Bodies, _: f64| self.fillet_what_takes(b, FilletPart { body, src, radius, sharp: &sharp, numbers: &numbers, asked: &asked });
-                self.run(Operation { kind: Op::Fillet, body, sizing: Sizing::Unsized, roles: given, work: part })
+                self.run(Operation { kind: Op::Fillet, body, sizing: Sizing::Unsized, roles: given, work: part, limit: None })
             }
             other => other,
         }
@@ -138,7 +179,7 @@ impl OcctKernel {
         let FilletPart { body, src, radius, sharp, numbers, asked } = part;
         let s = b.get(src)?;
         let edges = &sharp.edges;
-        let one = |base: &crate::Shape, e: u32, r: f64| base.fillet_edges_named(r, &[e], &numbers.surfaces_of(asked, &[e]), &numbers.corners, &numbers.all);
+        let one = |base: &crate::Shape, e: u32, r: f64| base.fillet_edges_named(r, &[e], &numbers.surfaces_of(asked, &[e]), &numbers.corners_of(asked, &[e]), &numbers.all);
         let mut bad: Vec<FilletEdgeIssue> = Vec::new();
         for &e in edges {
             if one(s, e, radius).is_some() {
@@ -154,7 +195,7 @@ impl OcctKernel {
         }
         let good: Vec<u32> = edges.iter().copied().filter(|e| bad.iter().all(|x| x.edge != *e)).collect();
         let mut taken = good.len();
-        let mut r = if good.is_empty() { None } else { s.fillet_edges_named(radius, &good, &numbers.surfaces_of(asked, &good), &numbers.corners, &numbers.all) };
+        let mut r = if good.is_empty() { None } else { s.fillet_edges_named(radius, &good, &numbers.surfaces_of(asked, &good), &numbers.corners_of(asked, &good), &numbers.all) };
         if r.is_none() && good.len() > 1 {
             let mut acc: Option<crate::Shape> = None;
             let mut done = 0usize;
@@ -183,16 +224,17 @@ impl OcctKernel {
         let BlendAsk { body, src, size: radius, edges, roles } = ask;
         self.dropped.borrow_mut().remove(&body);
         let Prepared { sharp, numbers, given } = self.prepare(src, edges, roles)?;
-        let asked: Vec<EdgeRole> = sharp.edges.iter().zip(numbers.surfaces.iter().chain(std::iter::repeat(&0))).map(|(edge, surface)| EdgeRole { edge: *edge, surface: *surface }).collect();
+        let asked: Vec<EdgeRole> = numbers.asked(&sharp.edges);
         let edges = &sharp.edges;
         let surfaces = numbers.surfaces_of(&asked, edges);
+        let corners = numbers.corners_of(&asked, edges);
         let work = |b: &Bodies, f: f64| {
             let scaled: Vec<qymcad_core::feature::RadiusAt> = verts.iter().map(|v| qymcad_core::feature::RadiusAt { at: v.at, radius: v.radius * f }).collect();
-            let names = crate::BlendNames { surfaces: &surfaces, corners: &numbers.corners, all: &numbers.all };
+            let names = crate::BlendNames { surfaces: &surfaces, corners: &corners, all: &numbers.all };
             b.get(src)?.fillet_at_vertices(radius * f, edges, &scaled, names).ok_or(CoreError::OpFailed(Op::FilletVar))
         };
         let largest = verts.iter().map(|v| v.radius).fold(radius, f64::max);
-        let done = self.run(Operation { kind: Op::FilletVar, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: largest }), roles: given, work });
+        let done = self.run(Operation { kind: Op::FilletVar, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: largest }), roles: given, work, limit: None });
         if done.is_ok() && sharp.unknown > 0 {
             self.dropped.borrow_mut().insert(body, sharp.left_out(sharp.edges.len()));
         }
@@ -203,14 +245,21 @@ impl OcctKernel {
     pub(crate) fn chamfer_op(&self, ask: BlendAsk<'_>) -> Result<Built, CoreError> {
         let BlendAsk { body, src, size: dist, edges, roles } = ask;
         let Prepared { sharp, numbers, given } = self.prepare(src, edges, roles)?;
-        let asked: Vec<EdgeRole> = sharp.edges.iter().zip(numbers.surfaces.iter().chain(std::iter::repeat(&0))).map(|(edge, surface)| EdgeRole { edge: *edge, surface: *surface }).collect();
+        let asked: Vec<EdgeRole> = numbers.asked(&sharp.edges);
         let edges = &sharp.edges;
         let work = |b: &Bodies, f: f64| {
             let s = b.get(src)?;
-            let r = if edges.is_empty() { s.chamfer_all(dist * f) } else { s.chamfer_edges(dist * f, edges, &numbers.surfaces_of(&asked, edges), &numbers.corners, &numbers.all) };
+            let r = if edges.is_empty() {
+                s.chamfer_all(dist * f)
+            } else {
+                s.chamfer_edges(dist * f, edges, &numbers.surfaces_of(&asked, edges), &numbers.corners_of(&asked, edges), &numbers.all)
+            };
             r.ok_or(CoreError::ChamferTooBig { dist })
         };
-        let done = self.run(Operation { kind: Op::Chamfer, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: dist }), roles: given, work });
+        let surfaces = numbers.surfaces_of(&asked, edges);
+        let exact =
+            |b: &Bodies| (!edges.is_empty()).then(|| b.get(src).ok()?.blend_limit(BlendLimit { kind: 1, a: dist, b: dist, flip: 0, ref_face: 0 }, NamedEdges { edges, surfaces: &surfaces })).flatten();
+        let done = self.run(Operation { kind: Op::Chamfer, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: dist }), roles: given, work, limit: Some(&exact) });
         if done.is_ok() && sharp.unknown > 0 {
             self.dropped.borrow_mut().insert(body, sharp.left_out(sharp.edges.len()));
         }
@@ -228,18 +277,22 @@ impl OcctKernel {
         let BlendAsk { body, src, size: d1, edges, roles } = ask;
         self.dropped.borrow_mut().remove(&body);
         let Prepared { sharp, numbers, given } = self.prepare(src, edges, roles)?;
-        let asked: Vec<EdgeRole> = sharp.edges.iter().zip(numbers.surfaces.iter().chain(std::iter::repeat(&0))).map(|(edge, surface)| EdgeRole { edge: *edge, surface: *surface }).collect();
+        let asked: Vec<EdgeRole> = numbers.asked(&sharp.edges);
         let edges = &sharp.edges;
         let surfaces = numbers.surfaces_of(&asked, edges);
+        let corners = numbers.corners_of(&asked, edges);
         let mode = if mode == ChamferMode::DistAngle { 2 } else { 1 };
         // an angle does not step back with the size; a second leg does
         let second = |f: f64| if mode == 2 { d2 } else { d2 * f };
         let work = |b: &Bodies, f: f64| {
-            let names = crate::BlendNames { surfaces: &surfaces, corners: &numbers.corners, all: &numbers.all };
+            let names = crate::BlendNames { surfaces: &surfaces, corners: &corners, all: &numbers.all };
             b.get(src)?.chamfer_edges_asym(crate::AsymChamfer { a: d1 * f, b: second(f), mode, flip, ref_face }, edges, names).ok_or(CoreError::OpFailed(Op::ChamferAsym))
         };
         let largest = if mode == 2 { d1.max(d1 * d2.to_radians().tan().abs()) } else { d1.max(d2) };
-        let done = self.run(Operation { kind: Op::ChamferAsym, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: largest }), roles: given, work });
+        // two legs only: a leg and an angle make the second leg of the angle between the faces, which the prism does not
+        let exact =
+            |b: &Bodies| (mode == 1).then(|| b.get(src).ok()?.blend_limit(BlendLimit { kind: 1, a: d1, b: d2, flip: flip as i32, ref_face }, NamedEdges { edges, surfaces: &surfaces })).flatten();
+        let done = self.run(Operation { kind: Op::ChamferAsym, body, sizing: Sizing::Sized(StepBack { retreat: Retreat::Blend, size: largest }), roles: given, work, limit: Some(&exact) });
         if done.is_ok() && sharp.unknown > 0 {
             self.dropped.borrow_mut().insert(body, sharp.left_out(sharp.edges.len()));
         }
@@ -259,7 +312,16 @@ impl OcctKernel {
     fn prepare(&self, src: Id, edges: &[u32], roles: BlendRoles) -> Result<Prepared, CoreError> {
         let shapes = self.shapes.borrow();
         let s = shapes.get(&src).ok_or(CoreError::SourceBodyNotBuilt)?;
-        let sharp = sharp(s, edges)?;
+        let mut sharp = sharp(s, edges)?;
+        // THE EDGES IN THE ORDER OF THEIR PICKS: a patch at a corner where blended edges meet is claimed by the first of
+        // them, so the pick holding its edge by its name goes before one translated onto an edge, and the lower place
+        // before the higher. In the order they came, a translation that put the first pick onto another edge gave a
+        // corner that did not move to another pick (measured on the filter of the examples: "corner after pick 4" became
+        // "corner after pick 30"). An edge no pick holds keeps its place after them.
+        if let BlendRoles::Named { picked, .. } = &roles {
+            let rank = |e: &u32| picked.iter().filter(|p| p.live == *e).map(|p| (p.by, p.place)).min();
+            sharp.edges.sort_by_key(|e| (rank(e).is_none(), rank(e)));
+        }
         let mut given = Roles::default();
         let numbers = blend_roles(roles, &sharp.edges, &s.edges_with_ids().1, &mut given);
         Ok(Prepared { sharp, numbers, given })

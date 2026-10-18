@@ -840,7 +840,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
             }
             // a value the geometry refuses closes this Apply as it closes the popup's (`trial`)
             let refused = trial_refusal(pc, ui.ctx()) != Trial::Clear;
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            qymcad_ui_state::end_of_bar(ui, |ui| {
                 // the button is disabled while a dimension's expression is invalid (nothing stale is applied)
                 if confirm_button(
                     &pc.scheme.pal,

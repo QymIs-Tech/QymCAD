@@ -162,6 +162,25 @@ mod tests {
         assert!(p.shows("w"), "the typed name vanished from the field: {:?}", p.drawn);
     }
 
+    /// THE NAME OF A CONSTANT IS REFUSED IN FEATURE PROPERTIES, WITH ITS REASON: a formula would read `pi` as the
+    /// constant and never reach the height.
+    #[test]
+    fn the_name_of_a_constant_is_refused_in_feature_properties() {
+        let mut app = App::default();
+        app.project.new_document();
+        let (ti, node) = part_with_extrude(&mut app);
+
+        let mut p = Props::new();
+        p.enter_driver_field(&mut app, ti, node, "height");
+        p.type_text("pi").frame(&mut app, ti);
+        p.key(egui::Key::Enter).frame(&mut app, ti);
+        p.settle(&mut app, ti);
+
+        assert!(app.project.named_dims.is_empty(), "the name of a constant was applied: {:?}", app.project.named_dims);
+        let said = crate::i18n::tr1("par-name-constant", "name", "pi");
+        assert!(p.shows(&said), "it is not said the name is a constant: expected \"{said}\", in the frame {:?}", p.drawn);
+    }
+
     /// TYPING AN EXPRESSION ON A FEATURE TOUCHES NOTHING; COMMITTING IS ONE STEP.
     ///
     /// The neighbouring check guards the NAME field, and this one the EXPRESSION field: a different

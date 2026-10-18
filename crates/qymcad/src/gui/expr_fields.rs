@@ -122,4 +122,108 @@ mod tests {
              decided whether it is a number or a formula). Places with a bare parse: {n}"
         );
     }
+
+    /// A PLATE'S SKETCH WITH THE EXTRUSION IN HAND, the hand at the window: its box of fields stands by the geometry.
+    fn extrusion_in_hand(app: &mut App) -> super::super::hand::Hand<'_> {
+        let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        app.project.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
+        app.project.regen_sketch(si);
+        app.finish_sketch_edit();
+        app.chosen.sel = super::super::Sel::Sketch(si);
+        let mut hand = super::super::hand::Hand::new(app);
+        hand.tool(1);
+        hand.frame(Vec::new());
+        hand.frame(Vec::new());
+        hand
+    }
+
+    /// Where the box of fields of the command in hand stands: the one beside the arrow or the one of the rest.
+    fn the_box(hand: &super::super::hand::Hand) -> egui::Rect {
+        let at_arrow = (0..4).find_map(|i| hand.area_rect(egui::Id::new(("feat_cmd_at", i))));
+        at_arrow.or_else(|| hand.area_rect(egui::Id::new("feat_cmd_popup"))).expect("the box of fields of the extrusion is drawn")
+    }
+
+    /// A window opened from the menu: the heading of the menu, the item in it, the id of the window.
+    struct Opened {
+        menu: &'static str,
+        item: &'static str,
+        id: &'static str,
+    }
+
+    /// A WINDOW OPENED OVER THE BOX OF FIELDS AT THE GEOMETRY COVERS IT: the settings, the library of parts, the help and
+    /// the keys, each opened from the menu, one over another, and dragged by its title over the box of the extrusion in
+    /// hand, stand on top there. Reported behaviour: the box of a radius over the settings.
+    #[test]
+    fn a_window_over_the_box_at_the_geometry_covers_it() {
+        let tr = crate::i18n::tr;
+        let mut app = App::default();
+        let mut hand = extrusion_in_hand(&mut app);
+        let origin = egui::pos2(0.0, 0.0);
+        let windows = [
+            Opened { menu: "menu-windows", item: "win-settings", id: "win_settings" },
+            Opened { menu: "menu-windows", item: "win-parts-library", id: "win_parts_library" },
+            Opened { menu: "menu-help", item: "help-title", id: "win_help" },
+            Opened { menu: "menu-help", item: "help-hotkeys", id: "win_hotkeys" },
+        ];
+        let mut under = Vec::new();
+        for Opened { menu, item, id } in windows {
+            hand.press_word(&tr(menu), origin);
+            // the item under the heading of the menu: "Help" names both
+            let heading = hand.written_at(&tr(menu)).map_or(origin, |r| r.center());
+            hand.press_word(&tr(item), heading + egui::vec2(20.0, 40.0));
+            hand.frame(Vec::new());
+            let window = hand.area_rect(egui::Id::new(id)).unwrap_or_else(|| panic!("{item}: the window did not open"));
+            let target = the_box(&hand).center();
+            // the window carried by its title bar, its middle onto the box
+            let title = egui::pos2(window.center().x, window.min.y + 10.0);
+            hand.drag_screen(title, title + (target - window.center()));
+            hand.frame(Vec::new());
+            let top = hand.top_layer_at(target);
+            if top.map(|l| l.id) != Some(egui::Id::new(id)) {
+                under.push(format!("{item}: on top at the box is {top:?}"));
+            }
+        }
+        assert!(under.is_empty(), "the box of fields at the geometry stands over a window:\n{}", under.join("\n"));
+    }
+
+    /// THE NAMES OF THE FIELDS IN A BOX AT THE GEOMETRY ARE NOT TEXT TO SELECT: a drag across the name of a field of the
+    /// extrusion in hand leaves nothing selected.
+    #[test]
+    fn the_names_in_a_box_at_the_geometry_are_not_selected() {
+        let mut app = App::default();
+        let mut hand = extrusion_in_hand(&mut app);
+        let the_box = the_box(&hand);
+        let name = hand
+            .words_drawn()
+            .iter()
+            .find(|(t, r)| the_box.contains_rect(*r) && t.chars().any(char::is_alphabetic) && t.parse::<f64>().is_err())
+            .map(|(_, r)| *r)
+            .expect("a name of a field stands in the box");
+        hand.drag_screen(name.left_center() + egui::vec2(1.0, 0.0), name.right_center() - egui::vec2(1.0, 0.0));
+        hand.frame(Vec::new());
+        assert!(!hand.text_selected(), "a drag across the name of a field at {name:?} selected its text");
+    }
+
+    /// NO BOX OF FIELDS OF A WORKBENCH IS LAID OVER THE WINDOWS: each takes the layer `AT_GEOMETRY`, the layer of the
+    /// windows; one written on the layer above them covers any window dragged over the view.
+    #[test]
+    fn no_box_of_a_workbench_is_laid_over_the_windows() {
+        let root = qymcad_i18n::ratchet::crates_root();
+        let mut over = Vec::new();
+        for krate in ["qymcad-part", "qymcad-sketch", "qymcad-assembly"] {
+            let mut stack = vec![root.join(krate).join("src")];
+            while let Some(dir) = stack.pop() {
+                for e in std::fs::read_dir(&dir).expect("the sources read").flatten() {
+                    let p = e.path();
+                    if p.is_dir() {
+                        stack.push(p);
+                    } else if p.extension().is_some_and(|x| x == "rs") {
+                        let text = std::fs::read_to_string(&p).unwrap_or_default();
+                        over.extend(text.lines().enumerate().filter(|(_, l)| l.contains("Order::Foreground")).map(|(i, _)| format!("{}:{}", p.display(), i + 1)));
+                    }
+                }
+            }
+        }
+        assert!(over.is_empty(), "a box of fields is laid over the windows:\n{}", over.join("\n"));
+    }
 }

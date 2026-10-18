@@ -202,16 +202,9 @@ impl Session {
     /// WHAT IS IN HAND, as the bars of options across the top say it: the words written in every bar a tool or a
     /// command has put up. Empty when nothing is.
     pub fn in_hand(&mut self) -> Vec<String> {
-        use qymcad_shell::Fills;
         self.settle();
-        let shell = super::super::shell(&self.app.set);
-        let bars: Vec<Rect> = shell
-            .keys()
-            .into_iter()
-            .filter(|k| shell.slot_of(k) == Some(qymcad_shell::Slot::Top) && *k != "toolbar" && self.app.live(k))
-            .filter_map(|k| egui::containers::panel::PanelState::load(&self.win.ctx, egui::Id::new(k)).map(|s| s.outer_rect))
-            .collect();
-        self.win.drawn.iter().filter(|(t, r)| !t.is_empty() && bars.iter().any(|b| b.contains(r.center()))).map(|(t, _)| t.clone()).collect()
+        let Some(bar) = qymcad_shell::laid_out(&self.win.ctx, "command_bar") else { return Vec::new() };
+        self.win.drawn.iter().filter(|(t, r)| !t.is_empty() && bar.contains(r.center())).map(|(t, _)| t.clone()).collect()
     }
 
     /// EVERY WORD ON SCREEN AND WHERE IT STANDS, once the screen is at rest.
@@ -252,7 +245,8 @@ impl Session {
         }
     }
 
-    /// THE LONGEST A FRAME TOOK SINCE THE LAST STEP WAS WATCHED, in wall time; asking starts the count again.
+    /// THE LONGEST A FRAME TOOK SINCE THE LAST STEP WAS WATCHED, by its work (`Window::worst_frame`); asking starts the
+    /// count again.
     pub fn step_frame(&mut self) -> Duration {
         std::mem::take(&mut self.win.worst_step_frame)
     }
@@ -362,7 +356,8 @@ impl Session {
         waiting
     }
 
-    /// THE LONGEST A FRAME TOOK since this was last asked, in wall time; asking starts the count again.
+    /// THE LONGEST A FRAME TOOK since this was last asked, by its work (`Window::worst_frame`); asking starts the count
+    /// again.
     pub fn worst_frame(&mut self) -> Duration {
         std::mem::take(&mut self.win.worst_frame)
     }
@@ -377,6 +372,20 @@ impl Session {
     pub fn word(&self, key: &str) -> String {
         self.speak();
         crate::i18n::tr(key)
+    }
+
+    /// THE NAME OF THE COMMAND `code` as the program shows it: in the search, in "More", in the list of a bar's
+    /// buttons. Empty for a code the catalogue does not have.
+    pub fn command_name(&self, code: &str) -> String {
+        use crate::command_catalog::Named;
+        self.speak();
+        crate::command_catalog::by_code(code).map(|c| c.name()).unwrap_or_default()
+    }
+
+    /// The words for the catalogue entry `key` with its one argument filled, as the program writes them.
+    pub fn word_with(&self, key: &str, arg: Arg) -> String {
+        self.speak();
+        crate::i18n::tr1(key, arg.name, arg.value)
     }
 
     /// THE CODE OF THE LANGUAGE the program speaks (`en`, `ru`).

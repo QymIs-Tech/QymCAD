@@ -6,9 +6,13 @@
 //! Reported behaviour (#95): in such a grid every drag and every edit waited. The loops of what moved were made again
 //! with every curve whose box met one of theirs, and so on - in a connected grid that is every curve: 0.7 s a frame
 //! in a release build.
+//!
+//! A step is timed by its work (`time_budget::Cost`): the wall less the share its threads stood ready with no processor
+//! free, so the machine busy with other work beside the level of time does not read as a slow program.
 use qymcad_core::feature::Purpose;
 use qymcad_core::model::{EntityKind, PatternKind, Project};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use qymcad_core::time_budget::{Doer, Meter};
 
 /// The grid of the report, `n` lines each way.
 fn grid(n: u32) -> Project {
@@ -145,9 +149,9 @@ fn a_frame_of_a_drag_in_a_grid_of_200_takes_a_frame() {
     let l = line(&p, Way::Across, 100);
     let mut frames = Vec::new();
     for step in [1.0, 2.0, 3.0, 4.0, 5.0] {
-        let started = Instant::now();
+        let started = Meter::start(Doer::Process);
         let _ = p.solve_sketch_drag_fast(0, Some((l.end, l.x, l.y + step)));
-        frames.push(started.elapsed());
+        frames.push(started.cost().work);
     }
     eprintln!("a line of a grid of 200 by 200 dragged: frames {frames:?}");
     // measured: 0.7 s a frame while every curve of the grid was taken with the line, 31 ms with the cells round it alone
@@ -163,15 +167,22 @@ fn an_edit_of_a_grid_of_200_takes_a_frame() {
     let mut edits = Vec::new();
     for k in [100, 101, 102] {
         let id = line(&p, Way::Across, k).id;
-        let started = Instant::now();
+        let started = Meter::start(Doer::Process);
         p.move_entities(0, &[id], 0.0, 3.0);
-        edits.push(started.elapsed());
+        edits.push(started.cost().work);
     }
-    let started = Instant::now();
+    let started = Meter::start(Doer::Process);
     p.regen_sketch_whole(0);
-    let whole = started.elapsed();
+    let whole = started.cost().work;
     eprintln!("a line of a grid of 200 by 200 moved: {edits:?}, the grid rebuilt whole {whole:?}");
     // measured in a release build: 0.27 s with the whole grid rebuilt for every edit, 37 ms with the cells round the line
     let budget = Duration::from_millis(60);
     assert!(edits.iter().all(|t| qymcad_core::time_budget::within(*t, budget)), "a line of a grid of 200 by 200 moved in {edits:?}, budget {budget:?}");
+    // TOLD AGAINST THE WHOLE GRID REBUILT, at every level: an edit rebuilds the cells round its line - in a test build
+    // 69-87 ms of the whole grid's 0.58-0.64 s, three runs - and with the whole grid rebuilt for every edit it is all of it
+    let worst = edits.iter().copied().max().unwrap_or_default();
+    assert!(
+        worst.as_secs_f64() < 0.5 * whole.as_secs_f64(),
+        "a line of a grid of 200 by 200 moved in {edits:?}, half the whole grid rebuilt ({whole:?}) or more: the edit rebuilds more than the cells round its line"
+    );
 }

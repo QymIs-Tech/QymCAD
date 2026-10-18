@@ -242,11 +242,11 @@ mod tests {
         let a = Anchor::from_axes(0, Vector3::zeros(), Vector3::z(), Vector3::x()).unwrap();
         let b = Anchor::from_axes(1, Vector3::zeros(), Vector3::z(), Vector3::x()).unwrap();
         let p = crate::asm::joint::problem_from(bodies, &[Joint::new(a, b, JointKind::Rigid)]);
-        let t = std::time::Instant::now();
-        let (poses, rep) = solve_assembly(&p);
-        let ms = t.elapsed().as_millis();
+        let solved = crate::time_budget::cost_of(crate::time_budget::Doer::Thread, || solve_assembly(&p));
+        let (poses, rep) = solved.out;
         assert!(rep.converged, "must converge: {:.3e}", rep.residual);
-        assert!(ms < 200, "802 bodies with one constraint must solve instantly, but took {ms} ms");
+        let budget = std::time::Duration::from_millis(200);
+        assert!(solved.cost.work < budget, "{} - 802 bodies with one constraint must solve instantly", crate::time_budget::over("the solve of 802 bodies with one constraint", solved.cost, budget));
         assert!((poses[500].translation.vector - Vector3::new(498.0, 0.0, 0.0)).norm() < 1e-12, "a body outside the problem must stay put");
     }
 

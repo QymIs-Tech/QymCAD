@@ -7,7 +7,8 @@
 //! turn and counting the part again: 9 s a count.
 use qymcad_core::feature::Purpose;
 use qymcad_core::model::{Constraint, EntityKind, Project};
-use std::time::{Duration, Instant};
+use qymcad_core::time_budget::{cost_of, over, Doer};
+use std::time::Duration;
 
 #[test]
 fn the_redundant_of_a_ladder_of_500_rungs_are_found_in_time() {
@@ -35,14 +36,13 @@ fn the_redundant_of_a_ladder_of_500_rungs_are_found_in_time() {
     let twice = p.sketches[si].constraints.len();
     p.sketches[si].constraints.push(Constraint::PointOnLine { p: foot, a: low.0, b: low.1 });
     p.solve_sketch(si);
-    let started = Instant::now();
-    let redundant = p.sketch_redundant_constraints(si);
-    let took = started.elapsed();
-    eprintln!("the redundant of a ladder of {n} rungs: {redundant:?} in {took:?}");
+    let counted = cost_of(Doer::Process, || p.sketch_redundant_constraints(si));
+    let redundant = counted.out;
+    eprintln!("the redundant of a ladder of {n} rungs: {redundant:?} in {}", counted.cost);
     let first = p.sketches[si].constraints.iter().position(|c| matches!(c, Constraint::PointOnLine { p: q, .. } if *q == foot)).expect("the first foot on its rail");
     assert_eq!(redundant, vec![first, twice], "the foot laid twice on its rail is the one redundancy");
     // measured: 12.4 s with every constraint of the part counted without it in turn (25 ms a count), 0.5 s with the two
     // of the dependency alone - most of it the sums of rows followed through the elimination
     let budget = Duration::from_millis(1500);
-    assert!(took < budget, "the redundant of a ladder of {n} rungs counted in {took:?}, budget {budget:?}");
+    assert!(counted.cost.work < budget, "{}", over(&format!("counting the redundant of a ladder of {n} rungs"), counted.cost, budget));
 }

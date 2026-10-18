@@ -213,7 +213,7 @@ fn a_mesh_is_recognised_by_its_tool() {
     let at = spot(&texts, "bytool").unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     double_click_at(&mut app, &ctx, at); // into the part, as a person goes in
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(35)"), "without a button in the bar the tool does not exist for a person");
+    assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(35), "part"), "without a button in the bar the tool does not exist for a person");
     let steps = app.disk.edits.undo.len();
     app.start_feat_cmd(35);
     let _ = frame(&mut app, &ctx, Vec::new());
@@ -257,14 +257,10 @@ fn the_recognise_tool_counts_what_it_found_before_enter() {
     let _ = frame(&mut app, &ctx, click(on));
     let want = crate::i18n::tr1("recognise-planes", "n", "6");
     let mut seen = Vec::new();
-    for _ in 0..400 {
+    crate::gui::session::waiting::until("the bar to count the planes of the cube", || {
         seen = frame(&mut app, &ctx, Vec::new());
-        if spot(&seen, &want).is_some() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert!(spot(&seen, &want).is_some(), "the bar does not count the planes found: {:?}", names(&seen));
+        spot(&seen, &want).is_some()
+    });
     let unfound = crate::i18n::tr1("recognise-none", "n", "0");
     assert!(seen.iter().all(|(t, _)| !t.starts_with(&unfound[..unfound.len() - 1])), "the cube shows unrecognised regions: {:?}", names(&seen));
     assert_eq!(app.disk.edits.undo.len(), steps, "counting before Enter changed the document");
@@ -307,13 +303,10 @@ fn what_the_recognise_tool_found_is_looked_at() {
         app.viewing.mode_3d,
         app.status
     );
-    for _ in 0..2000 {
+    crate::gui::session::waiting::until("the count of the recognition", || {
         let _ = frame(&mut app, &ctx, Vec::new());
-        if app.params.recognise.ready(|_| ()).is_some() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+        app.params.recognise.ready(|_| ()).is_some()
+    });
     let counts = app.params.recognise.ready(|f| f.counts).expect("the count came in");
     let _ = frame(&mut app, &ctx, Vec::new());
     // THE WHOLE WINDOW: the colouring is drawn over the scene by the window's own painter, which a shot through the

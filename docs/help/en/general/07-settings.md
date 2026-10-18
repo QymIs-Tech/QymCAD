@@ -11,10 +11,10 @@ The settings window is split into sections; above them is a search that finds a 
 - **Viewport** — engine, projection, shading, view cube, mouse navigation, wheel zoom, pointing
   precision, ghost transparency, field of view, antialiasing.
 - **Sketch** — snapping, grid step, rotation step, auto constraints; what a dimension label says (name, formula), how its text lies
-  and its size — with the Smaller and Larger buttons.
-- **Part** — the default extrusion height and offset.
-- **Assembly** — showing sketch outlines, joint glyphs and the interference check.
-- **Layout** — where the panels stand: the tree, properties, the tool bars, the status line.
+  and its size — with the Smaller and Larger buttons; the buttons of the bar of the sketch.
+- **Part** — the default extrusion height and offset; the buttons of the bar of the part.
+- **Assembly** — showing sketch outlines, joint glyphs and the interference check; the buttons of the bar of the assembly.
+- **Layout** — the diagram of the window: where the panels stand and which are hidden; the size, lines and opacity of the bar of tools.
 
 Every section has **“Reset section”**: it restores the factory values in that section only, leaving
 the rest alone.
@@ -63,8 +63,10 @@ antialiasing** takes effect the next time the program starts.
 
 ## The panel layout
 
-In the **Layout** section every panel picks its place: menu, top, left, right, bottom or the middle.
-Click the one you want and the panel moves on the next frame.
+The **Layout** section shows a diagram of the window: drag a panel to an edge or onto another panel, press the eye on
+a panel to hide it, and the window changes at once. There too are the size of the buttons of the bar of tools, its
+lines, where its buttons stand and its opacity. The buttons of each workbench's bar are arranged in its own section:
+**Sketch**, **Part**, **Assembly**. More in [The layout of the panels](general/15-layout).
 
 Only what you moved is remembered; everything else is taken as it comes, so a panel added in a later
 version turns up in its own place instead of going missing.

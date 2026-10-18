@@ -329,6 +329,17 @@ pub struct Project {
     /// happens.
     #[serde(skip)]
     pub snap_rebinds: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// THE STEPS WHOSE REFERENCE WAS FOUND BY PLACE, not by name, and that the person has not yet accepted or picked
+    /// again. Found by place, a reference is rewritten to the name it found and holds by name from the next rebuild on;
+    /// the mark stays until the person says the right element was taken (`accept_found_by_place`) or picks it anew, so
+    /// a guess is never silent, in this session or the next.
+    #[serde(default)]
+    pub placed_refs: std::collections::BTreeSet<Id>,
+    /// The steps the rebuild in progress has found a reference of by place: resolution only reads the document, and
+    /// this is where it says which; the rebuild moves them into `placed_refs` when it ends. Shared between clones for the
+    /// reason `snap_rebinds` is.
+    #[serde(skip)]
+    pub placed_now: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<Id>>>,
     /// Faces of bodies from the B-rep of the last rebuild (`body id -> faces`). Derived from the kernel
     /// and not saved (regenerate restores it). Needed to resolve face references by persistent id, so that
     /// a sketch on a face keeps holding the same face across rebuilds.
@@ -1423,6 +1434,8 @@ mod curves;
 pub use curves::*;
 mod sketch_ops;
 mod params;
+mod formulas;
+pub use formulas::{FeatNumber, FeatText, NamedFormula, PlainNumber, Renamed};
 mod bodies;
 mod refs;
 mod features;

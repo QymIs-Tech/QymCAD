@@ -73,6 +73,7 @@ fn every_document_field_is_either_in_the_file_or_named_here() {
         ("dof", "derived: the degrees of freedom are computed by the solver"),
         ("solver_note", "derived: a message from the solver"),
         ("snap_rebinds", "derived: a counter of geometric fallback hits, living in memory"),
+        ("placed_now", "derived: the steps the rebuild in progress found a reference of by place, moved into placed_refs as it ends"),
         ("drag_pull", "the pull of a drag: it lives only while a part is being dragged and has no business in a file"),
         ("held_rebuilds", "the rebuilds a batch of changes holds back until its end: it lives only inside one operation"),
     ];

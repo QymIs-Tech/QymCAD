@@ -150,7 +150,13 @@ pub fn apart(path: &str, budget: Duration, memory: u64, env: &[(&str, String)]) 
         Ended::PastMemory(held) => Err(format!("{path} ran past its memory of {memory} MB - it held {held} MB - and was stopped; it said:\n{said}")),
         Ended::Finished(s) if !s.success() => Err(format!("{path} failed:\n{said}")),
         Ended::Finished(_) if !said.contains("1 passed") => Err(format!("{path} ran no check in its own process - the name finds nothing:\n{said}")),
-        Ended::Finished(_) => Ok(()),
+        Ended::Finished(_) => {
+            // the measures of a probe of time, green as well as red: what is left of a budget is read from them
+            for line in said.lines().filter(|l| l.starts_with(qymcad::time_budget::MEASURED)) {
+                eprintln!("{path}: {line}");
+            }
+            Ok(())
+        }
     }
 }
 

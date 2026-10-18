@@ -10,14 +10,10 @@ mod tests {
 
     /// The window rebuilds in the background; this waits for it to land.
     fn settle(app: &mut App, ctx: &egui::Context) {
-        for _ in 0..600 {
+        crate::gui::session::waiting::until("the window to finish its work", || {
             frame(app, ctx, Vec::new());
-            if app.regen.busy.is_none() && !app.regen.wanted {
-                return;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-        panic!("the window is still busy after half a minute; the status says: {}", app.status);
+            app.regen.busy.is_none() && !app.regen.wanted
+        });
     }
 
     fn held(app: &App) -> Vec<qymcad_core::model::Id> {

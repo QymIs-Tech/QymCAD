@@ -11,6 +11,8 @@
 //! across sessions. A tag in the high bits separates a structural name from the positional number the kernel
 //! hands out for geometry whose origin is not derived yet — those operations are moved onto recipes one at a
 //! time.
+//!
+//! The names are given by the bridge alone (`qymcad-kernel`); the rules: `crates/qymcad-kernel/NAMING.md`.
 
 use crate::model::Id;
 use serde::{Deserialize, Serialize};
@@ -50,9 +52,9 @@ pub enum Role {
     Hole,
     /// A fillet or chamfer surface produced by an edge.
     Blend,
-    /// A corner patch of a fillet: the face produced by a vertex where several fillets meet. `src` is the
-    /// smallest of the names of the filleted edges at that vertex — a vertex is identified by its edges, the
-    /// way an edge is identified by its faces.
+    /// A corner patch of a fillet: the face produced by a vertex where several fillets meet. `src` is `2 x place +
+    /// end` of the edge of the lowest place in the pick among those meeting at the vertex - `end` 0 at the start of the
+    /// edge as it runs, 1 at its end; an edge a description gave stands by its name in place of a place.
     Corner,
     /// The inner wall of a shell.
     ShellWall,
@@ -432,14 +434,52 @@ impl NameTable {
     /// a new one from, since nothing carries it.
     pub fn absorbed_target(&self, desc: u32) -> Option<u32> {
         if let Some(e) = self.edge(desc) {
+            // An edge that yielded its own name - in a merge, or as a name that told another pair than the one the
+            // edge runs between - is recorded under its name, and the record says where it went before its faces are
+            // asked; the name its faces translate to may have yielded the same way. Measured on a sample: a reference to
+            // "piece 1 of a wall beside itself" went through its whole to the edge once wearing "the wall beside
+            // itself", now named after the wall a cut put beside it, and without the second record it took the seam of
+            // the wall, the one other edge of that pair: the rounding lost its surface without a word.
+            if let Some(&t) = self.absorbed.get(&desc) {
+                return Some(t);
+            }
             let a = self.absorbed_face(e.faces[0]).unwrap_or(e.faces[0]);
             let b = self.absorbed_face(e.faces[1]).unwrap_or(e.faces[1]);
             if a == e.faces[0] && b == e.faces[1] {
                 return None; // neither face was absorbed, so there is nothing to translate
             }
-            return self.eindex.get(&EdgeName::new(a, b, e.index)).copied();
+            let t = *self.eindex.get(&EdgeName::new(a, b, e.index))?;
+            return Some(self.absorbed.get(&t).copied().unwrap_or(t));
         }
         self.absorbed_face(desc)
+    }
+
+    /// WHERE A FORMER NAME LEADS AMONG THE LIVE ELEMENTS `live` (faces, or edges): `absorbed_target`, kept only when it
+    /// is one of them - and a piece returned to its whole only while the face is whole again. With another piece of the
+    /// same whole alive, the whole is a neighbour of the piece, not the piece: an edge of piece 1 read as the edge of
+    /// the whole is the edge of the piece beside it (measured on a sample: 20 picked edges of a rounding moved onto the
+    /// pieces beside theirs once the pieces were renumbered, and the rounding changed its shape without a word). The
+    /// reference then goes on to the steps after the record, which take nothing between two pieces.
+    pub fn absorbed_target_among(&self, desc: u32, live: &[u32]) -> Option<u32> {
+        let t = self.absorbed_target(desc).filter(|t| live.contains(t))?;
+        if self.absorbed.contains_key(&desc) {
+            return Some(t); // a recorded merge, not a guess from the structure
+        }
+        let faces: Vec<u32> = match self.edge(desc) {
+            Some(e) => e.faces.to_vec(),
+            None => vec![desc],
+        };
+        let whole_of = |n: GeoName| (n.feature, n.role, n.src);
+        let pieces: Vec<_> = faces.iter().filter(|f| !self.absorbed.contains_key(f)).filter_map(|f| self.get(*f)).filter(|n| n.split != 0).map(whole_of).collect();
+        if pieces.is_empty() {
+            return Some(t);
+        }
+        let live_faces = live.iter().flat_map(|d| match self.edge(*d) {
+            Some(e) => e.faces.to_vec(),
+            None => vec![*d],
+        });
+        let split_still = live_faces.filter_map(|f| self.get(f)).any(|n| n.split != 0 && pieces.contains(&whole_of(n)));
+        (!split_still).then_some(t)
     }
 
     /// The canonical form of an edge name: the pair of face names reduced to their wholes, plus the index
@@ -461,6 +501,29 @@ impl NameTable {
         let whole = |d: u32| -> u32 { self.absorbed_face(d).unwrap_or(d) };
         let (a, b) = (whole(e.faces[0]), whole(e.faces[1]));
         Some(([a.min(b), a.max(b)], e.index))
+    }
+
+    /// THE ONE LIVE ELEMENT OF THE SAME RECIPE among `live`: a face named by the same node, role and source as `desc` -
+    /// another piece of it - or an edge between two such faces, the other way round included. A translation by the
+    /// structure of the name, not a search by place: taken only when exactly one element answers, since two pieces of
+    /// one wall are two places, and a guess between them is worse than a reference said lost.
+    pub fn same_recipe(&self, desc: u32, live: &[u32]) -> Option<u32> {
+        let like = |a: GeoName, b: GeoName| a.feature == b.feature && a.role == b.role && a.src == b.src;
+        let hits: Vec<u32> = if let Some(e) = self.edge(desc) {
+            let (Some(a), Some(b)) = (self.get(e.faces[0]), self.get(e.faces[1])) else { return None };
+            let pair = |x: EdgeName| match (self.get(x.faces[0]), self.get(x.faces[1])) {
+                (Some(p), Some(q)) => (like(p, a) && like(q, b)) || (like(p, b) && like(q, a)),
+                _ => false,
+            };
+            live.iter().copied().filter(|d| *d != desc && self.edge(*d).is_some_and(pair)).collect()
+        } else {
+            let g = self.get(desc)?;
+            live.iter().copied().filter(|d| *d != desc && self.get(*d).is_some_and(|n| like(n, g))).collect()
+        };
+        match hits.as_slice() {
+            [one] => Some(*one),
+            _ => None,
+        }
     }
 
     /// IS THIS A NAME OF THIS DOCUMENT: a structural descriptor the table holds. The mark alone says a descriptor was

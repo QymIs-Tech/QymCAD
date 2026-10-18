@@ -11,7 +11,8 @@ pub(crate) mod tests {
     use super::super::hand::Hand;
     use crate::gui::import_door::tests::{answer, running};
     use qymcad_ui_state::Want;
-    use std::time::{Duration, Instant};
+    use qymcad_core::time_budget::{Doer, Meter};
+    use std::time::Duration;
 
     /// A DXF of `n` separate rectangles of four LINE entities each, 10 by 6 mm, on a grid 20 mm apart.
     pub(crate) fn rectangles_dxf(n: usize) -> std::path::PathBuf {
@@ -70,9 +71,9 @@ pub(crate) mod tests {
 
     /// The time of `work`.
     fn timed(work: impl FnOnce()) -> Duration {
-        let started = Instant::now();
+        let started = Meter::start(Doer::Process);
         work();
-        started.elapsed()
+        started.cost().work
     }
 
     #[test]

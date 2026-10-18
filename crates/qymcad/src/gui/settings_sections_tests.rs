@@ -65,7 +65,19 @@ mod tests {
         Settings {
             // MOVED AWAY FROM WHERE IT WAS REGISTERED. An empty list is the factory value, so leaving it
             // empty would compare the default with itself and pass whatever the reset did.
-            layout: vec![("tree".to_string(), qymcad_shell::Slot::Right)],
+            layout: {
+                let mut moved = std::collections::BTreeMap::new();
+                moved.insert("tree".to_string(), qymcad_shell::PanelPlace { edge: qymcad_shell::Edge::Right, ..Default::default() });
+                moved
+            },
+            bar: qymcad_ui_state::BarSetting { size: 26.0, lines: qymcad_shell::BarLines::One, align: qymcad_shell::BarAlign::Centre, opacity: 60, captions: qymcad_shell::Captions::Shown },
+            bar_sets: {
+                let mut sets = std::collections::BTreeMap::new();
+                sets.insert("sketch".to_string(), qymcad_ui_state::BarSet { order: vec!["sketch.circle".into(), "sketch.line".into()], in_more: vec!["sketch.spline".into()] });
+                sets.insert("part".to_string(), qymcad_ui_state::BarSet { order: Vec::new(), in_more: vec!["part.thread".into()] });
+                sets.insert("assembly".to_string(), qymcad_ui_state::BarSet { order: vec!["assembly.joint".into()], in_more: Vec::new() });
+                sets
+            },
             language: "en".into(),
             scheme: "light".into(),
             viewcube_size: 2,
@@ -207,7 +219,7 @@ mod tests {
     #[test]
     fn the_row_table_and_the_window_agree() {
         let src = crate::gui::panels_source::PANELS;
-        let code = src.split("#[cfg(test)]").next().expect("the working part");
+        let code = &qymcad_i18n::ratchet::working_part(src);
         let body = {
             let a = code.find("fn settings_section_body").expect("the body of the section is in place");
             &code[a..]
@@ -238,7 +250,7 @@ mod tests {
     #[test]
     fn the_fake_units_label_is_gone() {
         let src = crate::gui::panels_source::PANELS;
-        let code = src.split("#[cfg(test)]").next().expect("the working part");
+        let code = &qymcad_i18n::ratchet::working_part(src);
         assert!(!code.contains("settings-units-mm"), "the label about millimetre units is back in the settings window while there is still no choice of units");
     }
 }

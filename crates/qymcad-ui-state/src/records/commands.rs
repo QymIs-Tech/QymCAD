@@ -507,7 +507,9 @@ pub fn opening(set: &Settings, last: Option<&str>) -> Opening {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            layout: Vec::new(),
+            layout: Default::default(),
+            bar: BarSetting::default(),
+            bar_sets: Default::default(),
             language: String::new(),
             scheme: "dark".into(),
             viewcube_size: 1,

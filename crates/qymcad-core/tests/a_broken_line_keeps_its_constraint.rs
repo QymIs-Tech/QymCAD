@@ -34,3 +34,21 @@ fn a_broken_horizontal_line_is_two_horizontal_lines() {
         assert!(held, "the half {x}-{y} is not horizontal: {:?}", p.sketches[si].constraints);
     }
 }
+
+/// A LINE BROKEN IN TWO IS THE LINE IT WAS AND A LINE ADDED: the half from its start keeps its id, so what was built
+/// from the line goes on naming it.
+#[test]
+fn the_first_half_of_a_broken_line_is_the_line_it_was() {
+    let mut p = Project::default();
+    p.new_document();
+    let si = p.new_sketch("S");
+    let l = p.add_line_entity(si, -20.0, 0.0, 20.0, 0.0, Purpose::Real);
+    p.regen_sketch(si);
+    assert!(p.break_line(si, l, 5.0, 0.0), "the line broke");
+    let start = |p: &Project, id: u64| match p.sketches[si].entities.iter().find(|e| e.id == id).map(|e| e.kind) {
+        Some(EntityKind::Line { a, .. }) => p.point_xy(si, a),
+        _ => None,
+    };
+    assert!(start(&p, l).is_some_and(|q| (q.0 + 20.0).abs() < 1e-9), "the half from the start of the line is not the line it was");
+    assert_eq!(p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count(), 2, "two halves");
+}

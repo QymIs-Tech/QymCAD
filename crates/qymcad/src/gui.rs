@@ -221,11 +221,14 @@ impl App {
                 WinAsk::Nav(n) => self.do_nav(n, ctx),
                 WinAsk::NavGuarded(n) => self.request_nav(n, ctx),
                 WinAsk::Save => self.save_project(),
-                WinAsk::GoTo { owner, sel } => {
+                WinAsk::GoTo { owner, sel, said } => {
                     if let Some(o) = owner {
                         self.enter_component(o);
                     }
                     self.chosen.sel = sel;
+                    if let Some(n) = said {
+                        self.status = n;
+                    }
                 }
                 WinAsk::InsertPart(src) => self.insert_part_from(src),
                 WinAsk::ExportSettings => self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name("qym-cad-settings.ron").add_filter("qym-cad settings", &["ron"]), |app, p| {
@@ -239,7 +242,7 @@ impl App {
                     let ctx = ctx.clone();
                     self.ask_open_file(rfd::AsyncFileDialog::new().add_filter("qym-cad settings", &["ron"]), move |app, p| {
                         let path = p.to_string_lossy().into_owned();
-                        app.scheme.note = match app.import_settings_from(&path, &ctx) {
+                        app.scheme.note = match crate::gui::import_settings_from(&mut app.regen, &mut app.scheme, &mut app.set, &mut app.status, &path, &ctx) {
                             Ok(()) => Notice::info(crate::i18n::tr("settings-profile-loaded")),
                             // A BROKEN FILE DOES NOT TOUCH THE CURRENT SETTINGS: it is said that it did not
                             // work, and what was there stays.
@@ -978,19 +981,6 @@ impl App {
         }
     }
 
-    /// READ THE SETTINGS FROM A FILE and adopt them.
-    ///
-    /// Missing fields fall back to the factory ones (`serde(default)` on the record): a profile taken
-    /// from a different version of the program must still read, not be rejected wholesale — otherwise it
-    /// cannot be shared. A broken file does NOT touch the current settings: the change arrives whole or
-    /// not at all.
-    pub(crate) fn import_settings_from(&mut self, path: &str, ctx: &egui::Context) -> Result<(), String> {
-        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let s: Settings = ron::from_str(&text).map_err(|e| e.to_string())?;
-        adopt_settings(&mut self.regen, &mut self.scheme, &mut self.set, &mut self.status, s, ctx);
-        Ok(())
-    }
-
     /// After a DATUM is edited (its coordinates or its definition): datums are resolved unconditionally
     /// during regeneration, but their consumers (bodies on sketches that sit on a datum plane, axes
     /// through points) have to be rebuilt, otherwise they stay where they were.
@@ -1271,121 +1261,6 @@ impl App {
 
     fn redo(&mut self) {
         self.active_path = qymcad_ui_state::step_through_history(&mut self.rebuild_ctx(), true).unwrap_or_else(|| self.active_path.clone());
-    }
-}
-
-/// WHERE THE PANELS GO. The sizes and the framing that used to be written inside each panel are said here
-/// instead - they describe the container, not what is drawn in it.
-///
-/// Built afresh each frame rather than kept in a field: it is a dozen pushes, and a stored layout is a
-/// second copy of this list that would drift from it. What the person MOVED does live on, in the settings,
-/// and is laid over the registration.
-///
-/// FREE, not a method: it reads the settings and nothing else, and `App` is large enough already.
-pub(crate) fn shell(set: &Settings) -> qymcad_shell::Shell {
-    use qymcad_shell::{Place, Slot};
-    let mut s = qymcad_shell::Shell::default();
-    s.put(Place::new("menubar", Slot::Menu));
-    s.put(Place::new("toolbar", Slot::Top));
-    s.put(Place::new("section_bar", Slot::Top).framed());
-    s.put(Place::new("comp_array_bar", Slot::Top).framed());
-    s.put(Place::new("feat_cmd_bar", Slot::Top).framed());
-    s.put(Place::new("sk_tool_opts", Slot::Top).framed());
-    s.put(Place::new("bool_tool_bar", Slot::Top).framed());
-    s.put(Place::new("joint_tool_bar", Slot::Top).framed());
-    s.put(Place::new("joint_edit_bar", Slot::Top).framed());
-    s.put(Place::new("status", Slot::Bottom));
-    s.put(Place::new("wbtools", Slot::Left).sized(108.0, false).bare());
-    s.put(Place::new("tree", Slot::Left).sized(260.0, true));
-    s.put(Place::new("props", Slot::Right).sized(290.0, true));
-    s.put(Place::new("viewport", Slot::Centre));
-    s.restore(set.layout.clone());
-    s
-}
-
-impl qymcad_shell::Fills for App {
-    /// IS THE PLACE WANTED THIS FRAME. Each of these used to be a `return` at the top of the panel - which
-    /// worked only while the panel opened its own container. Now the container is opened first, and an empty
-    /// one still eats a strip of the window, so the question is asked before opening rather than inside.
-    fn live(&self, key: &'static str) -> bool {
-        match key {
-            "section_bar" => {
-                self.side.section.plane.is_some()
-                    || self.side.section.pick
-                    || self.params.mirror.in_hand()
-                    || self.tools.picking.is_sketch_plane()
-                    || self.tools.picking.sketch_for().is_some()
-                    || self.side.m3.on
-            }
-            "comp_array_bar" => self.side.carr.mode != 0,
-            "feat_cmd_bar" => self.tools.armed.commanding(),
-            "sk_tool_opts" => edit_si(&self.project, &self.sketch_ses).is_some(),
-            "bool_tool_bar" => self.params.boolean.pick.is_some() || self.params.boolean.edit.is_some(),
-            // THE ASSEMBLY BARS: each is one of several by what is being picked, and the shell now owns
-            // their places. The conditions used to live at the top of each bar as an early return - which
-            // meant the place existed even when nothing was drawn in it.
-            "joint_tool_bar" => matches!(self.workbench, Workbench::Assembly) && self.viewing.mode_3d && qymcad_assembly::joint_picking(&self.side.joint),
-            "joint_edit_bar" => self.side.joint.edit.is_some() && matches!(self.workbench, Workbench::Assembly) && self.viewing.mode_3d,
-            // while a sketch is being edited the tree on the left is not needed - only the tools
-            "tree" => edit_si(&self.project, &self.sketch_ses).is_none(),
-            _ => true,
-        }
-    }
-
-    fn fill(&mut self, key: &'static str, ui: &mut egui::Ui) {
-        // WHAT THE BARS ASKED FOR IS DONE AFTER THE DRAWING. A button that acted mid-frame would start a
-        // command while the bar of that command was still being laid out.
-        let (mut bar_asks, mut win_asks) = (Vec::new(), Vec::new());
-        match key {
-            "menubar" => crate::gui::panels_bars::menu_bar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "toolbar" => crate::gui::panels_bars::toolbar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "section_bar" => crate::gui::panels_bars::section_bar(
-                &mut qymcad_part::PlaneBarCtx {
-                    regen: &mut self.regen,
-                    section: &mut self.side.section,
-                    mirror: &mut self.params.mirror,
-                    picking: &mut self.tools.picking,
-                    project: &mut self.project,
-                    edits: &mut self.disk.edits,
-                    active_path: &self.active_path,
-                    status: &mut self.status,
-                    m3: &mut self.side.m3,
-                },
-                ui,
-            ),
-            "comp_array_bar" => crate::gui::panels_bars::comp_array_bar(&mut self.part_ctx(), ui),
-            "feat_cmd_bar" => self.feat_command_bar(ui),
-            "sk_tool_opts" => crate::gui::panels_bars::tool_options_bar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "bool_tool_bar" => crate::gui::commands::bool_tool_bar(&mut self.part_ctx(), ui),
-            "joint_tool_bar" => qymcad_assembly::joint_tool_bar(&mut self.joint_ctx(), ui),
-            "joint_edit_bar" => qymcad_assembly::joint_edit_bar(&mut self.joint_ctx(), ui),
-            "status" => crate::gui::panels_bars::status_bar(
-                &mut qymcad_ui_state::StatusCtx {
-                    cache: &self.cache,
-                    cursor: self.cursor,
-                    project: &self.project,
-                    scheme: &self.scheme,
-                    set: &mut self.set,
-                    sketch_ses: &self.sketch_ses,
-                    line: qymcad_ui_state::StatusLine { said: &mut self.status, rebuild: &mut self.regen.line },
-                    win: &mut self.win,
-                    par_search: &mut self.par_search,
-                    ask: &mut win_asks,
-                },
-                ui,
-            ),
-            "wbtools" => crate::gui::panels_bars::wb_toolbar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "tree" => self.tree_panel(ui),
-            "props" => self.properties_panel(ui),
-            "viewport" => self.viewport(ui),
-            _ => {}
-        }
-        self.do_bar_asks(bar_asks, &ui.ctx().clone());
-        self.do_win_asks(win_asks, &ui.ctx().clone()); // a click on a fault in the status line goes where a window's link goes
-    }
-
-    fn bar_frame(&self) -> egui::Frame {
-        qymcad_ui_state::tool_bar_frame(&self.scheme)
     }
 }
 
@@ -2459,6 +2334,9 @@ mod assembly_tools;
 
 /// The panels (the tree, the properties) live in `gui/panels.rs`.
 mod panels_bars;
+// where the panels go, and what fills them
+mod panel_places;
+pub(crate) use panel_places::shell;
 pub(crate) mod panels_source;
 pub(crate) mod render_source;
 pub(crate) mod sketch_source;

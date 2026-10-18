@@ -95,16 +95,25 @@ impl Session {
             // a button held is a gesture not over, the screen meant to move under it; a closed window has no frames
             return self;
         }
-        let began = Instant::now();
         let mut quiet_frames = 0;
-        while quiet_frames < 2 {
+        let mut still = Vec::new();
+        let budget = self.budget;
+        // two quiet frames in a row end the wait; only a frame with something still running counts against the budget
+        let rested = crate::gui::session::waiting::waited(budget, || loop {
             self.frame(Vec::new());
-            let still = self.still_running();
-            quiet_frames = if still.is_empty() { quiet_frames + 1 } else { 0 };
+            still = self.still_running();
             if !still.is_empty() {
-                assert!(began.elapsed() < self.budget, "the program did not come to rest in {:?}: {}", self.budget, still.join("; "));
+                quiet_frames = 0;
                 std::thread::sleep(self.win.repaint.min(Duration::from_millis(16)));
+                return false;
             }
+            quiet_frames += 1;
+            if quiet_frames >= 2 {
+                return true;
+            }
+        });
+        if let Err(late) = rested {
+            panic!("the program did not come to rest in {budget:?}, it {}: {}; {late}", qymcad_core::time_budget::SAID_NOT_IN_TIME, still.join("; "));
         }
         self
     }
@@ -117,12 +126,17 @@ impl Session {
     /// # Panics
     /// When `deadline` passes first, naming what was waited for.
     pub fn wait_for(&mut self, what: &str, deadline: Duration, mut happened: impl FnMut(&mut Self) -> bool) -> &mut Self {
-        let began = Instant::now();
-        while !happened(self) {
-            assert!(began.elapsed() < deadline, "waited {deadline:?} for {what}, and it did not happen");
+        let came = crate::gui::session::waiting::waited(deadline, || {
+            if happened(self) {
+                return true;
+            }
             assert!(!self.win.closed, "the window closed while waiting for {what}");
             std::thread::sleep(Duration::from_millis(16));
             self.frame(Vec::new());
+            false
+        });
+        if let Err(late) = came {
+            panic!("{what} {}, {deadline:?} given: {late}", qymcad_core::time_budget::SAID_NOT_IN_TIME);
         }
         self.settle()
     }

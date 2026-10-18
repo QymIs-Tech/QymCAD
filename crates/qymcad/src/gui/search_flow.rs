@@ -9,6 +9,7 @@
 //! whole point of those checks is that a Russian substring finds the command.
 #[cfg(test)]
 mod tests {
+    use crate::command_catalog::Named;
     use qymcad_ui_state::WinKind;
     use super::super::App;
 

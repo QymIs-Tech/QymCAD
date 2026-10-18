@@ -5,7 +5,13 @@
 //!
 //! The private samples (`samples/`, not published) close the letter as a cross-check: what they show must already be
 //! caught by the checks built on files anyone has.
-use std::time::{Duration, Instant};
+//!
+//! A budget holds what the program spent, not the share of the machine it was given: a probe is alone in its process,
+//! so the processor time of the process is the work of the program - its threads of rebuilding and reading included -
+//! and the time it waited for a processor is the machine's (`time_budget::Cost`). Timed by the wall, the rebuild of the
+//! case sample read 30.4 s under a load of 35-42 on 20 threads, against 12.4-13.8 s alone.
+//! Every measure is printed, green or red.
+use std::time::Duration;
 
 use qymcad::Session;
 use qymcad_acceptance::{build, probe};
@@ -16,35 +22,43 @@ const REBUILD: Duration = Duration::from_secs(30);
 /// How long bringing in a mesh of two hundred thousand triangles may take.
 const MESH: Duration = Duration::from_secs(30);
 
-/// A BUDGET ON THIS MACHINE: the budget times `QYMCAD_TIME_SCALE` (1 when unset). The budgets are set for the
-/// developer's machine; a CI runner of four cores rebuilt a sample project of 3 MB in 39.4 s against the 26.4 s of the
-/// whole probe here, so CI runs these probes alone and at twice the budget - a run twice as slow as it should be still goes
-/// red there, and the budgets here stay as they are.
-fn scaled(budget: Duration) -> Duration {
-    let k = std::env::var("QYMCAD_TIME_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).filter(|k| *k >= 1.0).unwrap_or(1.0);
-    budget.mul_f64(k)
+// A BUDGET ON THIS MACHINE is the budget times `QYMCAD_TIME_SCALE` (1 when unset, `time_budget::scaled`). The budgets
+// are set for the developer's machine; a CI runner of four cores rebuilt a sample project of 3 MB in 39.4 s against
+// the 26.4 s of the whole probe here, so CI runs these probes alone and at twice the budget - a run twice as slow as it
+// should be still goes red there, and the budgets here stay as they are.
+use qymcad::time_budget::{holds, over, scaled, tell, Cost, Doer, Meter};
+
+/// The meter of a step of a probe: the process is the probe's own.
+fn meter() -> Meter {
+    Meter::start(Doer::Process)
+}
+
+/// What the step since `meter` started cost, printed as a measure.
+fn spent(what: &str, meter: &Meter) -> Cost {
+    let cost = meter.cost();
+    tell(what, cost);
+    cost
 }
 
 /// Open `path`, time it, rebuild everything, time that: the problems, in words.
 fn open_and_rebuild(path: &str) -> Vec<String> {
     let mut s = Session::start();
     s.budget(Duration::from_secs(600));
-    let t = Instant::now();
+    let m = meter();
     build::open_project(&mut s, path);
     let doc = s.document();
-    let opened = t.elapsed();
-    let t = Instant::now();
+    let opened = spent("opening", &m);
+    let m = meter();
     let (edit, rebuild) = (s.word("menu-edit"), s.word("menu-rebuild"));
     s.menu(&[&edit, &rebuild]);
     let _ = s.document();
-    let rebuilt = t.elapsed();
+    let rebuilt = spent("rebuilding everything", &m);
     let mut problems = Vec::new();
-    let (open, rebuild) = (scaled(OPEN), scaled(REBUILD));
-    if opened > open {
-        problems.push(format!("opening took {opened:?}, over {open:?} ({} nodes, {} faces)", doc.features.len(), doc.bodies.iter().map(|b| b.faces).sum::<usize>()));
+    if !holds(opened, OPEN) {
+        problems.push(format!("{} ({} nodes, {} faces)", over("opening", opened, scaled(OPEN)), doc.features.len(), doc.bodies.iter().map(|b| b.faces).sum::<usize>()));
     }
-    if rebuilt > rebuild {
-        problems.push(format!("rebuilding everything took {rebuilt:?}, over {rebuild:?}"));
+    if !holds(rebuilt, REBUILD) {
+        problems.push(over("rebuilding everything", rebuilt, scaled(REBUILD)));
     }
     problems
 }
@@ -115,15 +129,15 @@ probe! {
         s.budget(Duration::from_secs(600));
         build::into_the_first_part(&mut s);
         let _ = s.worst_frame();
-        let t = Instant::now();
+        let m = meter();
         build::import(&mut s, &path);
         let doc = s.document();
-        let took = t.elapsed();
+        let took = spent("bringing in 200000 triangles", &m);
         let frame = s.worst_frame();
         let volume: f64 = doc.bodies.iter().filter(|b| !b.consumed).map(|b| b.volume).sum();
         let sphere = 4.0 / 3.0 * std::f64::consts::PI * 125000.0;
         assert!((volume - sphere).abs() < sphere * 1e-3, "the mesh of the sphere holds {volume}, not {sphere}");
-        assert!(took <= scaled(MESH), "bringing in 200000 triangles took {took:?}, over {:?}", scaled(MESH));
+        assert!(holds(took, MESH), "{}", over("bringing in 200000 triangles", took, scaled(MESH)));
         assert!(frame <= scaled(qymcad_acceptance::oracles::STEP_FRAME_BUDGET), "a frame after the mesh came in took {frame:?}");
     }
 }
@@ -149,13 +163,13 @@ probe! {
         s.budget(Duration::from_secs(1200));
         build::into_the_first_part(&mut s);
         let _ = s.worst_frame();
-        let t = Instant::now();
+        let m = meter();
         build::import(&mut s, &grip);
         let doc = s.document();
-        let took = t.elapsed();
+        let took = spent("bringing in the grip", &m);
         let frame = s.worst_frame();
         assert!(doc.bodies.iter().any(|b| !b.consumed), "the grip brought in nothing; the program says {:?}", s.status());
-        assert!(took <= scaled(MESH), "bringing in the grip took {took:?}, over {:?}", scaled(MESH));
+        assert!(holds(took, MESH), "{}", over("bringing in the grip", took, scaled(MESH)));
         assert!(frame <= scaled(qymcad_acceptance::oracles::STEP_FRAME_BUDGET), "a frame after the grip came in took {frame:?}");
     }
 }

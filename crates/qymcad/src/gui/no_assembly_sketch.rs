@@ -42,13 +42,9 @@ mod tests {
     /// The sketch button exists only in the Part toolbar.
     #[test]
     fn the_sketch_button_lives_only_in_the_part_toolbar() {
-        let src = crate::gui::panels_source::PANELS;
-        let a = src.find("Workbench::Assembly =>").expect("the assembly workbench is there");
-        let b = src[a..].find("Workbench::Cam").map(|i| a + i).unwrap_or(src.len());
-        assert!(!src[a..b].contains("create_panel_sketch_button"), "the Assembly toolbar must have no sketch button: a sketch is inert there");
-        let p = src.find("Workbench::Part =>").expect("the part workbench is there");
-        let q = src[p..].find("Workbench::Assembly =>").map(|i| p + i).unwrap_or(src.len());
-        assert!(src[p..q].contains("create_panel_sketch_button"), "the Part toolbar must have the sketch button");
+        use crate::command_catalog::{has_button, Launch};
+        assert!(!has_button(Launch::SketchPick, "assembly"), "the Assembly toolbar must have no sketch button: a sketch is inert there");
+        assert!(has_button(Launch::SketchPick, "part"), "the Part toolbar must have the sketch button");
     }
 
     /// THE PENCIL PRESSED AGAIN IS PUT DOWN, as every tool button puts its tool down.

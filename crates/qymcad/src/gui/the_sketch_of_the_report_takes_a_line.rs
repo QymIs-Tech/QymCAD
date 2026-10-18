@@ -9,13 +9,14 @@
 mod tests {
     use super::super::hand::Hand;
     use crate::gui::import_door::tests::running;
-    use std::time::{Duration, Instant};
+    use qymcad_core::time_budget::{Doer, Meter};
+    use std::time::Duration;
 
     /// The time of `work`.
     fn timed(work: impl FnOnce()) -> Duration {
-        let started = Instant::now();
+        let started = Meter::start(Doer::Process);
         work();
-        started.elapsed()
+        started.cost().work
     }
 
     /// A step of the hand and its time.
@@ -53,12 +54,14 @@ mod tests {
         app.arm_file_ask(rx, |app, p| crate::gui::io_jobs::spawn_project_load(&mut app.regen, p.to_string_lossy().into_owned()));
         tx.send(Some(std::path::PathBuf::from(path))).expect("the chooser's channel is open");
         let mut hand = Hand::new(app);
-        let opening = Instant::now();
         hand.frame(Vec::new());
-        while (hand.app.regen.busy.is_some() || hand.app.project.sketches.is_empty()) && opening.elapsed() < Duration::from_secs(300) {
-            std::thread::sleep(Duration::from_millis(20));
+        crate::gui::session::waiting::until_within("the sample of the report to open", Duration::from_secs(300), || {
+            if hand.app.regen.busy.is_none() && !hand.app.project.sketches.is_empty() {
+                return true;
+            }
             hand.frame(Vec::new());
-        }
+            false
+        });
     }
 
     #[test]
@@ -170,12 +173,14 @@ mod tests {
         let name = hand.app.project.sketches[0].name.clone();
         assert!(hand.double_click_word("Part 1") && hand.double_click_word(&name), "no way into the sketch through the tree");
         // a rebuild under way refuses input: the hand waits for it to end, as a person waits for the spinner to go
-        let waiting = Instant::now();
         hand.frame(Vec::new());
-        while hand.app.regen.busy.is_some() && waiting.elapsed() < Duration::from_secs(120) {
-            std::thread::sleep(Duration::from_millis(20));
+        crate::gui::session::waiting::until("the rebuild before the sketch is entered", || {
+            if hand.app.regen.busy.is_none() {
+                return true;
+            }
             hand.frame(Vec::new());
-        }
+            false
+        });
         let x0 = hand.app.project.sketches[0].points.iter().map(|q| q.x).fold(0.0_f64, f64::max) + 50.0;
         // the hand knows where the buttons it will press stand, as a person knows the panel: found while timed, the
         // looking over the hint of every button took 6 s of a step of 0.5 s

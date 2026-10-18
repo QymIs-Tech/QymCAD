@@ -6,18 +6,22 @@
 //! sketch of one big part tied by points on lines, and the line was the only tool tried on it. The sketch has no corner
 //! where two lines end at one point: the fillets and chamfers of corners, the offset and the extension find nothing to
 //! work on in it and are timed idle.
+//!
+//! A step is timed by its work (`time_budget::Cost`): the wall less the share its threads stood ready with no processor
+//! free, so the machine busy with other work beside the level of time does not read as a slow program.
 #[path = "../../qymcad-core/tests/sketch_tools/mod.rs"]
 mod sketch_tools;
 
 use qymcad_core::model::Project;
 use sketch_tools::{lay_targets, loops, shows, tools};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use qymcad_core::time_budget::{Doer, Meter};
 
 /// The time of `work`.
 fn timed(work: impl FnOnce()) -> Duration {
-    let started = Instant::now();
+    let started = Meter::start(Doer::Process);
     work();
-    started.elapsed()
+    started.cost().work
 }
 
 /// The checks the window counts again when the sketch changed (`sketch_diag`).

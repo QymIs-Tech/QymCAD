@@ -155,7 +155,7 @@ BATCH_S = 5.0
 # THE HEAVIEST MATRICES OF THE TESTKIT GO TO THE RELEASE: a bolt and its nut screwed through a whole turn (5 checks, 100 -
 # 400 s each among the others of the pool) and the names held through an edit above (3 checks, 145 - 240 s). They are
 # run before a release (`RELEASE_MATRICES`), not at every change; the pool of every crate leaves their programs out.
-RELEASE_ONLY = ["a_bolt_screws_into_its_nut", "matrix_names_survive_an_edit"]
+RELEASE_ONLY = ["a_bolt_screws_into_its_nut", "matrix_names_survive_an_edit", "an_edit_undone_on_the_case_gives_the_same_names"]
 RELEASE_MATRICES = (
     "the heaviest matrices of the testkit",
     ["cargo", "test", "-p", "qymcad-testkit", "--no-fail-fast"] + [a for t in RELEASE_ONLY for a in ("--test", t)],
@@ -503,6 +503,85 @@ def pick_threads(machine, asked):
     return Pick(min(by_cpus, by_memory), why)
 
 
+# WHAT A RED OF TIME SAYS, written by the probes (`qymcad_core::time_budget::SAID_OVER_BUDGET`, `SAID_NOT_IN_TIME`): a work
+# over its budget, a wait for an event that did not come. Such a red on a machine busier than its threads may be the
+# machine's, not the program's, and is named so - reruns of three probes one at a time on a branch and on the main line
+# were the price of not knowing which.
+SAID_OF_TIME = ("over its budget of time", "did not happen in time")
+# how often the load of the machine is read while a step runs
+LOAD_EVERY_S = 5.0
+
+
+class LoadWatch:
+    """THE LOAD OF THE MACHINE WHILE A STEP RUNS: the load of the last minute read every `LOAD_EVERY_S`, its mean and
+    its peak."""
+
+    def __init__(self):
+        import threading
+
+        self.seen = []
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self.watch, daemon=True)
+        self.thread.start()
+
+    def watch(self):
+        while True:
+            load = read_load()
+            if load is not None:
+                self.seen.append(load)
+            if self.done.wait(LOAD_EVERY_S):
+                return
+
+    def stop(self):
+        """Stop reading; answer the load seen, None when nothing was read."""
+        self.done.set()
+        self.thread.join()
+        return Load(sum(self.seen) / len(self.seen), max(self.seen)) if self.seen else None
+
+
+class Load:
+    """The load of the machine over a step: its mean and its peak."""
+
+    def __init__(self, mean, peak):
+        self.mean, self.peak = mean, peak
+
+
+def read_load(text=None):
+    """The load of the last minute, from the text of /proc/loadavg (read when not given); None where there is none."""
+    if text is None:
+        try:
+            with open("/proc/loadavg", encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            return None
+    try:
+        return float(text.split()[0])
+    except (IndexError, ValueError):
+        return None
+
+
+def reds_of_time(red, said):
+    """THE REDS OF TIME among `red`, each with the line it said its time in: {name: line}. The words of a red check
+    stand in a block of its own that libtest heads `---- <name> stdout ----` (the runner of the acceptance set repeats
+    the probe's words under its line)."""
+    found = {}
+    lines = said.splitlines()
+    for name in red:
+        head = f"---- {name} "
+        for i, line in enumerate(lines):
+            if not line.startswith(head):
+                continue
+            for body in lines[i + 1 :]:
+                if body.startswith("---- ") or body == "failures:":
+                    break
+                if any(s in body for s in SAID_OF_TIME):
+                    found[name] = body.strip()
+                    break
+            if name in found:
+                break
+    return found
+
+
 def read_mb(text, key):
     """The value of `key` in the text of /proc/meminfo, in megabytes; None when it is not there."""
     for line in text.splitlines():
@@ -598,6 +677,26 @@ def self_test():
         [[x.name for x in j.checks] for j in jobs_of([a, b, c, d, e], known)],
         [["c"], ["b"], ["a"], ["d", "e"]],
     )
+    expect("the load of /proc/loadavg", read_load("47.67 40.24 28.74 23/3125 3816593\n"), 47.67)
+    expect("a load not to be read", read_load(""), None)
+    said = "\n".join([
+        "test a ... FAILED",
+        "test b ... FAILED",
+        "",
+        "failures:",
+        "",
+        "---- a stdout ----",
+        "thread 'a' panicked at x.rs:1:1:",
+        "the rebuild over its budget of time: 31 s of work, budget 30 s",
+        "---- b stdout ----",
+        "thread 'b' panicked at y.rs:2:2:",
+        "a face is missing",
+        "",
+        "failures:",
+        "    a",
+        "    b",
+    ])
+    expect("the reds of time among the red, with their measure", reds_of_time(["a", "b"], said), {"a": "the rebuild over its budget of time: 31 s of work, budget 30 s"})
     for w in wrong:
         print(f"  wrong: {w}")
     print("the gate's reckoning: " + ("right" if not wrong else f"{len(wrong)} wrong"))
@@ -657,7 +756,9 @@ def main():
             os.makedirs(os.path.dirname(times), exist_ok=True)
             open(times, "w", encoding="utf-8").close()
             env = {**env, TIMES_VAR: times}
+        watch = LoadWatch()
         seconds, passed, red, broken, said = run_step(name, cmd, env)
+        load = watch.stop()
         # THE WHOLE OF WHAT A STEP SAID is kept: a red chain comes back shrunk and written out as a probe, and that is
         # in the words, not in the report
         log = os.path.join(ROOT, "target", f"gate-{args.level}-" + re.sub(r"[^a-z]+", "-", name.lower()).strip("-") + ".log")
@@ -665,7 +766,15 @@ def main():
         with open(log, "w", encoding="utf-8") as f:
             f.write(said)
         state = "did not run" if broken else (f"{len(red)} red" if red else "green")
-        print(f"{name}: {len(passed)} passed, {state} ({seconds:.0f} s); its words in {os.path.relpath(log, ROOT)}")
+        threads = os.cpu_count() or 1
+        busy = f", the machine under a load of {load.mean:.1f} (at most {load.peak:.1f}) on {threads} threads" if load else ""
+        print(f"{name}: {len(passed)} passed, {state} ({seconds:.0f} s{busy}); its words in {os.path.relpath(log, ROOT)}")
+        for probe, line in reds_of_time(red, said).items():
+            # a red of time with the machine past its threads may be the machine's: said so, the measure beside it
+            if load and load.mean > threads:
+                print(f"    red of time with the machine busy, a load of {load.mean:.0f} on {threads} threads: {probe}: {line}")
+            else:
+                print(f"    red of time with the machine not past its threads: {probe}: {line}")
         if broken:
             broken_steps.append(name)
             print("\n".join("    " + l for l in said.splitlines()[-15:]))

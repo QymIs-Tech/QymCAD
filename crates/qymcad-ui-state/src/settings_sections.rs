@@ -50,6 +50,17 @@ impl SettingsSection {
         }
     }
 
+    /// THE WORKBENCH WHOSE BAR OF TOOLS IS SET UP IN THIS SECTION, by its code; none for a section of no workbench.
+    pub fn bench(self) -> Option<&'static str> {
+        use SettingsSection::*;
+        match self {
+            Sketch => Some("sketch"),
+            Part => Some("part"),
+            Assembly => Some("assembly"),
+            General | Appearance | Viewport | Layout => None,
+        }
+    }
+
     /// THE ROW LABELS OF A SECTION — what search looks through. A guard cross-checks them against the window source.
     pub fn row_keys(self) -> &'static [&'static str] {
         use SettingsSection::*;
@@ -93,10 +104,19 @@ impl SettingsSection {
                 "settings-dim-formula",
                 "settings-dim-font",
                 "settings-dim-text",
+                "settings-bar-buttons",
             ],
-            Part => &["settings-default-extrude", "settings-default-offset"],
-            Assembly => &["settings-show-contours", "settings-show-joints", "settings-show-interference"],
-            Layout => &["settings-layout-place", "settings-layout-reset"],
+            Part => &["settings-default-extrude", "settings-default-offset", "settings-bar-buttons"],
+            Assembly => &["settings-show-contours", "settings-show-joints", "settings-show-interference", "settings-bar-buttons"],
+            Layout => &[
+                "settings-layout-place",
+                "settings-bar-size",
+                "settings-bar-lines",
+                "settings-bar-align",
+                "settings-bar-opacity",
+                "settings-bar-group-names",
+                "settings-layout-reset",
+            ],
         }
     }
 
@@ -173,7 +193,14 @@ impl SettingsSection {
                 s.show_joints = d.show_joints;
                 s.show_interference = d.show_interference;
             }
-            Layout => s.layout = d.layout,
+            Layout => {
+                s.layout = d.layout;
+                s.bar = d.bar;
+            }
+        }
+        // the buttons of the bar of the section's workbench go back to the catalogue's order, all on the bar
+        if let Some(bench) = self.bench() {
+            s.bar_sets.remove(bench);
         }
     }
 }

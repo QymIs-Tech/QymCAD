@@ -6,13 +6,17 @@
 //! Reported behaviour (#95): a line and one across it, each patterned 200 times, and every operation waited 30 s - the
 //! pattern rebuilt the sketch for each of its copies. The measure of the solve and the checks had not looked at the
 //! tools that change a sketch.
+//!
+//! A step is timed by its work (`time_budget::Cost`): the wall less the share its threads stood ready with no processor
+//! free, so the machine busy with other work beside the level of time does not read as a slow program.
 mod sketch_kinds;
 mod sketch_tools;
 
 use qymcad_core::model::{PatternKind, Project};
 use sketch_kinds::{build, Kind};
 use sketch_tools::{lay_targets, loops, shows, tools};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use qymcad_core::time_budget::{Doer, Meter};
 
 /// A big sketch of one kind, the sketch being the first of the project.
 struct Big {
@@ -57,18 +61,18 @@ fn every_tool_takes_a_few_rebuilds_of_a_big_sketch() {
         let rebuild = (0..3)
             .map(|_| {
                 let mut p = base.clone();
-                let started = Instant::now();
+                let started = Meter::start(Doer::Process);
                 p.regen_sketch_whole(0);
-                started.elapsed()
+                started.cost().work
             })
             .min()
             .unwrap_or_default();
         let budget = rebuild * 5 + Duration::from_millis(200);
         for tool in tools() {
             let mut p = base.clone();
-            let started = Instant::now();
+            let started = Meter::start(Doer::Process);
             (tool.work)(&mut p, &targets);
-            let t = started.elapsed();
+            let t = started.cost().work;
             eprintln!("{:<45} {:<48} {t:>12.3?}  (a rebuild {rebuild:.3?})", big.name, tool.name);
             if !qymcad_core::time_budget::within(t, budget) {
                 failures.push(format!(

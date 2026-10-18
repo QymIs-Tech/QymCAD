@@ -125,7 +125,7 @@ mod tests {
     /// plane.
     #[test]
     fn the_tool_has_a_button_and_a_pick() {
-        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(27)"), "without a button the operation does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(27), "part"), "without a button the operation does not exist for a person");
         // WHITESPACE-BLIND. The condition is spread over several lines now, and a needle written as one
         // line can never match it however right the code is.
         use crate::gui::render_source::dense;
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn splitting_faces_has_its_own_button_and_row() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(panels.contains("BarAsk::FeatCmd(29)"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(29), "part"), "without a button the tool does not exist for a person");
         assert!(crate::gui::render_source::has(panels, "FeatureKind::SplitFace { offset, .. } =>"), "the row in the tree");
         let _gui = concat!(
             include_str!("file_doors.rs"),

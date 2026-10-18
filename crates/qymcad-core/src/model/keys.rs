@@ -165,6 +165,7 @@ impl Project {
             feat_dims: _,
             bodies: _,
             rollback: _,
+            placed_refs: _,
             // OUT: written by the program, not by an edit - the rebuild interns the names, recomputes the contours,
             // records the bodies a deletion killed, snapshots referenced faces and edges; the solver lists the
             // violated mates. Counting them would make opening a document and touching nothing ask to save.
@@ -184,6 +185,7 @@ impl Project {
             mates_conflict: _,
             drag_pull: _,
             snap_rebinds: _,
+            placed_now: _,
             held_rebuilds: _, // OUT: the rebuilds a tool holds back while it lays many elements, not written
         } = self;
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -205,6 +207,8 @@ impl Project {
             feed(&self.part_colors, &mut h);
             feed(&self.face_colors, &mut h);
             feed(&self.tri_colors, &mut h);
+            // a reference found by place and accepted is saved, and builds nothing
+            feed(&self.placed_refs, &mut h);
         }
         // THE GEOMETRY THE FILE KEEPS, by its size - what a body's mesh holds, not its points. The bodies are written by
         // the program and stay out of what is rebuilt, but the file stores them: a rebuild that brought new meshes

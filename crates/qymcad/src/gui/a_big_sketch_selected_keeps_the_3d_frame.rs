@@ -9,7 +9,7 @@ mod tests {
     use super::super::Sel;
     use crate::gui::import_door::tests::running;
     use qymcad_core::feature::SketchPlane;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[test]
     fn a_frame_of_the_3d_view_with_a_big_sketch_selected_is_quick() {
@@ -20,12 +20,14 @@ mod tests {
         let mut hand = Hand::new(&mut app);
         hand.app.enter_sketch_edit(si);
         // a rebuild under way refuses input: the hand waits for it to end, as a person waits for the spinner to go
-        let waiting = Instant::now();
         hand.frame(Vec::new());
-        while hand.app.regen.busy.is_some() && waiting.elapsed() < Duration::from_secs(60) {
-            std::thread::sleep(Duration::from_millis(20));
+        crate::gui::session::waiting::until("the rebuild before the sketch is drawn in", || {
+            if hand.app.regen.busy.is_none() {
+                return true;
+            }
             hand.frame(Vec::new());
-        }
+            false
+        });
         hand.sk_tool(1).click2d(0.0, -10.0).click2d(len, -10.0).key(egui::Key::Escape).key(egui::Key::Escape);
         hand.sk_tool(1).click2d(-10.0, 0.0).click2d(-10.0, len).key(egui::Key::Escape).key(egui::Key::Escape);
         for (middle, step) in [((len / 2.0, -10.0), ["0", "20"]), ((-10.0, len / 2.0), ["20", "0"])] {
@@ -43,12 +45,11 @@ mod tests {
         assert!(hand.app.sketch_ses.editing.is_none() && hand.app.viewing.mode_3d, "Ctrl+Enter did not leave the sketch for the 3D view");
         assert!(matches!(hand.app.chosen.sel, Sel::Sketch(s) if s == si), "the sketch left is not selected");
         hand.frame(Vec::new());
-        let started = Instant::now();
-        hand.frame(Vec::new());
-        let frame = started.elapsed();
-        eprintln!("a frame of the 3D view with a sketch of {loops} loops selected: {frame:?}");
+        // the work of the frame, not the share of the machine it was given (`time_budget::Cost`)
+        let frame = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || hand.frame(Vec::new()).worst_frame()).cost;
+        eprintln!("a frame of the 3D view with a sketch of {loops} loops selected: {frame}");
         // measured: 4.3 s a frame on 26 335 loops in a test build, the loops looked for along a list
         let budget = if cfg!(debug_assertions) { Duration::from_millis(800) } else { Duration::from_millis(150) };
-        assert!(frame < budget, "a frame of the 3D view with a sketch of {loops} loops selected took {frame:?}, budget {budget:?}");
+        assert!(frame.work < budget, "{}", qymcad_core::time_budget::over(&format!("a frame of the 3D view with a sketch of {loops} loops selected"), frame, budget));
     }
 }

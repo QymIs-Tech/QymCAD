@@ -55,7 +55,8 @@ pub(crate) fn menu(pn: &qymcad_ui_state::Painting, resp: &Response, rect: Rect) 
     let a = asking.as_mut()?;
     let mut done = None;
     let mut gone = false;
-    egui::Area::new(ask_id).order(egui::Order::Foreground).fixed_pos(a.pos).show(&resp.ctx, |ui| {
+    egui::Area::new(ask_id).order(qymcad_ui_state::AT_GEOMETRY).fixed_pos(a.pos).show(&resp.ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             // the caption beside the field, on its line, as every field of the program stands
             let field = ui

@@ -28,7 +28,7 @@ mod tests {
     /// The button is there.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(28)"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(28), "part"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH: the button -> a click on a face -> the thickness -> Enter -> the part has grown

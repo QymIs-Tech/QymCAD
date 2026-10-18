@@ -210,6 +210,14 @@ impl Shape {
         };
         self.blended(got, reach)
     }
+    /// THE LIMITING CASE OF A BLEND, BUILT EXACTLY: the prisms the blend `how` takes off the edges `idx` - each a straight
+    /// line between planar faces meeting convexly, no two sharing a vertex - cut from the body, their surfaces numbered as
+    /// `on` says. `None` where the edges are not such.
+    pub(crate) fn blend_limit(&self, how: BlendLimit, on: NamedEdges<'_>) -> Option<Shape> {
+        let NamedEdges { edges, surfaces } = on;
+        let got = unsafe { Self::wrap_valid(qym_shape_blend_limit(self.ptr, &how, edges.as_ptr(), edges.len(), Self::opt_ptr(surfaces))) };
+        self.blended(got, how.a.max(how.b))
+    }
     /// A shell: remove the faces with the persistent ids `face_ids`, stable across a rebuild, and build walls
     /// by the signed `offset` — negative inward, which is the default, positive outward.
     ///

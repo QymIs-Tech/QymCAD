@@ -140,3 +140,4 @@ contract!(menu_export_project, qymcad_acceptance::tools::menus::EXPORT_PROJECT);
 contract!(menu_recent, qymcad_acceptance::tools::menus::RECENT);
 contract!(menu_recent_clear, qymcad_acceptance::tools::menus::RECENT_CLEAR);
 contract!(menu_fit_view, qymcad_acceptance::tools::menus::FIT_VIEW);
+contract!(menu_panels, qymcad_acceptance::tools::menus::PANELS);

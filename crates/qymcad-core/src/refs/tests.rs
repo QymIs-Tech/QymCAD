@@ -318,3 +318,26 @@ fn the_tolerance_decides_what_counts_as_smooth() {
     let got0 = crate::refs::resolve(&Query::TangentChain { seed: Box::new(Query::Id(1)), tol_deg: 0.1 }, &pool, &names, &[]);
     assert_eq!(got0, vec![1], "at a tolerance of a tenth of a degree even half a degree is a kink");
 }
+
+/// A NAME LOST, ITS STRUCTURE FOUND: a reference to a wall whose name is not on the body any more - its pieces were
+/// numbered anew by an edit above - finds the one live piece of the same wall, by the node, the role and the source of
+/// the name; with two pieces live it finds neither, as a guess between two places is worse than a reference said lost.
+#[test]
+fn a_lost_name_finds_the_one_piece_of_the_same_wall() {
+    let mut names = NameTable::default();
+    let wall = |split: u16| GeoName { feature: 7, role: Role::Wall, src: 101, split };
+    let was = names.intern_face(wall(0));
+    let cap = names.intern_face(GeoName::new(7, Role::CapEnd, 0));
+    let piece = names.intern_face(wall(2));
+    let at = |desc: u32| Candidate { desc, centroid: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0], area: 1.0, edge: None };
+    let one = vec![at(cap), at(piece)];
+    assert_eq!(resolve_f(&Query::Id(was), &one, &names), vec![piece], "the one live piece of the wall is not found");
+    let other = names.intern_face(wall(3));
+    let two = vec![at(cap), at(piece), at(other)];
+    assert!(resolve_f(&Query::Id(was), &two, &names).is_empty(), "one of two pieces of the wall was taken by a guess");
+    // an edge between the wall and the cap, the wall now another piece
+    let edge_was = names.intern_edge(EdgeName::new(was, cap, 0));
+    let edge_now = names.intern_edge(EdgeName::new(cap, piece, 0));
+    let edges = vec![at(edge_now)];
+    assert_eq!(resolve(&Query::Id(edge_was), &edges, &names, &one), vec![edge_now], "the edge between the same faces by recipe is not found");
+}

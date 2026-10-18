@@ -40,3 +40,11 @@ alone.
 
 A double click on a timeline row reopens the same command with the same fields. Change and
 apply — it rebuilds, and so does everything that depends on it.
+
+## The buttons of the bar
+
+Which buttons stand on the bar of this workbench and in what order is set in **Windows -> Settings -> Part**: press the
+heading **Buttons of the bar**, drag a row up or down to move its button, press **In "More"** to take it off the bar.
+**Restore the standard buttons** brings the usual set back. More in [The layout of the panels](general/15-layout).
+
+![The buttons of the bar of the part in its section of the settings.](img/bar-buttons-part.png)

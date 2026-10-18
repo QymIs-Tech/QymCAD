@@ -162,7 +162,7 @@ mod tests {
         super::super::install_fonts(&ctx);
         let width = |app: &mut App| -> f32 {
             let _ = ctx.run_ui(input.clone(), |c| draw_left(app, c));
-            egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.outer_rect.width()).unwrap_or(0.0)
+            qymcad_shell::laid_out(&ctx, "tree").map(|r| r.width()).unwrap_or(0.0)
         };
 
         let base = width(&mut app);
@@ -207,7 +207,7 @@ mod tests {
         let _ = ctx.run_ui(input, |c| draw_left(&mut app, c));
 
         let field = ctx.read_response(egui::Id::new("tree_search_field")).expect("the search field must be in the frame");
-        let panel = egui::panel::PanelState::load(&ctx, egui::Id::new("tree")).map(|p| p.outer_rect.width()).unwrap_or(0.0);
+        let panel = qymcad_shell::laid_out(&ctx, "tree").map(|r| r.width()).unwrap_or(0.0);
         assert!(field.rect.width() >= 80.0, "a search field {} px wide cannot be hit with a cursor — there will be nowhere to type", field.rect.width());
         assert!(field.rect.width() <= panel, "the field is wider than the panel ({} > {panel}) — the panel will start drifting", field.rect.width());
         assert!(field.sense.senses_click(), "the search field must accept a click, otherwise there is no getting into it");

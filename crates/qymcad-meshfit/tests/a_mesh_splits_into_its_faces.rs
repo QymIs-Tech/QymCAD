@@ -148,3 +148,23 @@ fn a_wall_cut_by_a_boolean_is_one_region() {
         tol.distance
     );
 }
+
+/// A STOP ASKED ON THE WAY ENDS THE SPLIT AT ONCE: the split asks before every seed, and the first yes is the last
+/// question. Growing the regions is most of a recognition - 11 s of 14 s on a ball of 160 000 triangles in a debug
+/// build - and a part deleted or Cancel pressed under it leaves nobody to wait for the rest.
+#[test]
+fn a_stop_asked_on_the_way_ends_the_split_at_once() {
+    let bodies = qymcad_kernel::specimen::mesh(&bar(), 0.1);
+    let qymcad_core::geom::Built { mesh, .. } = bodies.into_iter().next().expect("a body");
+    let p = prepare(&mesh, weld_tolerance(&mesh));
+    let tol = Tolerance::for_mesh(&p);
+    let asked = std::cell::Cell::new(0);
+    let at_the_third = || {
+        asked.set(asked.get() + 1);
+        asked.get() >= 3
+    };
+    assert!(qymcad_meshfit::regions_until(&p, &tol, &at_the_third).is_none(), "the split told to stop came back with regions");
+    assert_eq!(asked.get(), 3, "the split went on asking after it was told to stop");
+    let whole = qymcad_meshfit::regions_until(&p, &tol, &|| false).map(|r| r.len());
+    assert_eq!(whole, Some(26), "the split never told to stop is the whole split");
+}

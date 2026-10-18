@@ -40,14 +40,19 @@ impl Drop for Done {
 }
 
 /// RUN `work` ON A THREAD OF ITS OWN that the calling thread waits for when it ends - every thread that works in OCCT
-/// is started by this.
+/// is started by this. The thread is named after the one that started it, so the holder of the kernel (`gate_now`) is
+/// told by name: a check's own rebuild, or one of a check beside it.
 pub fn worker<F: FnOnce() + Send + 'static>(work: F) -> std::thread::JoinHandle<()> {
     let live = STARTED.with(|s| s.live.clone());
     live.fetch_add(1, Ordering::SeqCst);
-    std::thread::spawn(move || {
-        let _done = Done(live);
-        work();
-    })
+    let name = format!("a worker of {}", std::thread::current().name().unwrap_or("a thread with no name"));
+    std::thread::Builder::new()
+        .name(name)
+        .spawn(move || {
+            let _done = Done(live);
+            work();
+        })
+        .expect("the system starts a thread")
 }
 
 /// WAIT FOR THE WORKERS THIS THREAD STARTED, at most `WAIT`: the end of the program calls it, its thread's own end being

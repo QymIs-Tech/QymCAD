@@ -41,9 +41,11 @@ probe! {
         if let Some(button) = s.find(&dont_save, pos2(0.0, 0.0)) {
             s.click(button.center());
         }
-        s.answer_file(SAMPLE);
+        // a document of an old version made for the probe: the example stays free to be saved by any build
+        let old_document = Session::old_document_of(SAMPLE).expect("the old document is written");
+        s.answer_file(&old_document);
         let old = s.document().bodies.iter().all(|b| b.lit_by_the_surface == 0);
-        assert!(old, "setup: the sample was saved with the surface's normals - it no longer stands for an old document");
+        assert!(old, "setup: the old document the probe wrote holds the surface's normals");
         let title = s.title();
         assert!(!title.ends_with('*'), "a project just opened calls itself unsaved: {title:?}");
 
@@ -54,6 +56,7 @@ probe! {
         let title = s.title();
         assert!(title.ends_with('*'), "the bodies were rebuilt with new meshes and the title does not say the project changed: {title:?}");
         assert!(s.quit().is_err(), "the bodies were rebuilt with new meshes and closing asks nothing - they would be lost");
+        let _ = std::fs::remove_file(&old_document);
     }
 }
 

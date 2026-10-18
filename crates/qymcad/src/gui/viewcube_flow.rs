@@ -386,7 +386,7 @@ mod tests {
                 egui::CentralPanel::default().show(ui, |ui| {
                     let painter = ui.painter().clone();
                     // the same call a real frame makes
-                    app.draw_viewcube(&painter, rect());
+                    super::super::viewcube::draw(&app.cube_ctx(), &painter, rect());
                 });
             });
         }
@@ -406,7 +406,7 @@ mod tests {
             let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
                     let painter = ui.painter().clone();
-                    app.draw_viewcube(&painter, rect());
+                    super::super::viewcube::draw(&app.cube_ctx(), &painter, rect());
                 });
             });
         }
@@ -443,6 +443,51 @@ mod tests {
             // NOT UPSIDE DOWN: "up" of the text runs up (the screen Y decreases)
             assert!(up.y < 0.0, "{name}: the caption is UPSIDE DOWN — \"up\" of the text went down ({up:?})");
             assert!(up.y.abs() > up.x.abs() * 3.0, "{name}: \"up\" of the text is tipped sideways ({up:?})");
+        }
+    }
+
+    /// WHERE THE CUBE IS DRAWN in the last frame: the box round its faces, told by the colour of their edges.
+    fn cube_drawn(hand: &super::super::hand::Hand, edge: egui::Color32) -> Option<egui::Rect> {
+        fn walk(s: &egui::Shape, edge: egui::Color32, out: &mut Option<egui::Rect>) {
+            match s {
+                egui::Shape::Path(p) if p.closed && p.stroke.color == egui::epaint::ColorMode::Solid(edge) => {
+                    let r = egui::Rect::from_points(&p.points);
+                    *out = Some(out.map_or(r, |o| o.union(r)));
+                }
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, edge, out)),
+                _ => {}
+            }
+        }
+        let mut out = None;
+        hand.shapes_drawn().iter().for_each(|cs| walk(&cs.shape, edge, &mut out));
+        out
+    }
+
+    /// THE CUBE STANDS CLEAR OF A BAR LAID OVER THE VIEW, at each of its three sizes: the bar of tools at the top seen
+    /// through lies over the top of the view, and the cube goes down under it; a click on the middle of the cube still
+    /// turns the view. Reported behaviour: the cube behind the translucent bar of buttons.
+    #[test]
+    fn the_cube_stands_clear_of_a_bar_over_the_view() {
+        use qymcad_shell::{Edge, Over, PanelPlace, Seen};
+        for size in [0u8, 1, 2] {
+            let mut app = ready();
+            app.set.viewcube_size = size;
+            app.set.bar.opacity = 60;
+            app.set.layout.insert("wbtools".into(), PanelPlace { edge: Edge::Top, strip: 0, order: 0, across: None, along: None, seen: Seen::Shown, over: Over::Over });
+            let edge = app.scheme.pal.viewcube_edge();
+            let mut hand = super::super::hand::Hand::new(&mut app);
+            hand.frame(Vec::new());
+            hand.frame(Vec::new());
+            let bar = hand.laid_out("wbtools").expect("the bar of tools is laid out");
+            let cube = cube_drawn(&hand, edge).unwrap_or_else(|| panic!("size {size}: the cube is not drawn"));
+            assert!(!cube.intersects(bar), "size {size}: the cube {cube:?} stands under the bar {bar:?}");
+            let before = (hand.app.viewing.cam.yaw, hand.app.viewing.cam.pitch);
+            hand.click_screen(cube.center());
+            for _ in 0..40 {
+                hand.frame(Vec::new());
+            }
+            let after = (hand.app.viewing.cam.yaw, hand.app.viewing.cam.pitch);
+            assert!(before != after, "size {size}: a click on the middle of the cube {cube:?} did not turn the view");
         }
     }
 }

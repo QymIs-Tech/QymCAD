@@ -6,7 +6,14 @@ mod sketch_kinds;
 use qymcad_core::model::{Constraint, EntityKind, SketchPoint};
 use qymcad_core::solver::Budget;
 use sketch_kinds::{build, Kind, KINDS};
-use std::time::{Duration, Instant};
+use qymcad_core::time_budget::{cost_of, over, Doer};
+use std::time::Duration;
+
+/// THE TIME OF A SOLVE, and a margin for its last step: a solve keeps to 10 s of the wall by itself, looking at the clock
+/// between its steps, so the work a probe holds it to - the wall less the share the machine gave others - is that and
+/// the step it was in. The work of a solve is held, not the wall: under load the solve stops at its own 10 s with less
+/// done, and the wall of its last step stretches with the load.
+const SOLVE: Duration = Duration::from_secs(11);
 
 #[test]
 fn the_parts_a_solve_had_no_time_for_are_counted_and_solved_next() {
@@ -59,11 +66,10 @@ fn a_degenerate_sketch_is_solved_without_a_panic_and_keeps_its_other_shapes() {
     for kind in KINDS {
         let mut p = degenerate(kind, 300);
         let nan_id = p.sketches[0].points[0].id;
-        let started = Instant::now();
-        let residual = p.solve_sketch(0);
-        let t = started.elapsed();
-        if t > Duration::from_secs(10) {
-            failures.push(format!("{kind:?}: {t:?}, past the 10 s of a solve"));
+        let solved = cost_of(Doer::Process, || p.solve_sketch(0));
+        let residual = solved.out;
+        if solved.cost.work >= SOLVE {
+            failures.push(over(&format!("{kind:?}: a degenerate sketch of 300 shapes"), solved.cost, SOLVE));
         }
         if !residual.is_infinite() {
             failures.push(format!("{kind:?}: a point at no number gave the residual {residual:e}, not the infinite of a part put back"));
@@ -110,10 +116,9 @@ fn a_contradicted_sketch_of_every_kind_is_solved_within_its_time() {
             })
             .collect();
         s.constraints.extend(against);
-        let started = Instant::now();
-        let residual = p.solve_sketch(0);
-        let t = started.elapsed();
+        let solved = cost_of(Doer::Process, || p.solve_sketch(0));
+        let residual = solved.out;
         assert!(residual.is_finite(), "{kind:?}: a contradicted sketch gave the residual {residual}");
-        assert!(t < Duration::from_secs(10), "{kind:?}: a contradicted sketch of 300 shapes took {t:?}, past the 10 s of a solve");
+        assert!(solved.cost.work < SOLVE, "{}", over(&format!("{kind:?}: a contradicted sketch of 300 shapes"), solved.cost, SOLVE));
     }
 }

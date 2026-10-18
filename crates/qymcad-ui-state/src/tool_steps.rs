@@ -182,18 +182,18 @@ pub fn op_plane_pick(plane: u8, datum: Id, face: Option<(Id, qymcad_core::featur
 }
 
 /// Store the pattern step's expression on the ACTIVE component of the vector (regeneration follows
-/// that one) and clear the others. A plain number clears the expression, and then the feature's stored
-/// number applies.
-pub fn store_arr_component(project: &mut qymcad_core::model::Project, body: Id, keys: [&str; 3], dir: u8, txt: String) {
-    let t = txt.trim().to_string();
-    let expr = !t.is_empty() && t.parse::<f64>().is_err();
+/// that one) and clear the others, through the one door of a feature's number (`Project::write_feat_formula`): a plain
+/// number clears the expression, and then the feature's stored number applies. A refusal is handed back.
+pub fn store_arr_component(project: &mut qymcad_core::model::Project, body: Id, keys: [&str; 3], dir: u8, txt: String) -> Result<(), qymcad_core::errors::ExprError> {
     for (i, k) in keys.iter().enumerate() {
-        if i as u8 == dir && expr {
-            project.set_feat_dim(body, k, t.clone());
+        let at = qymcad_core::model::FeatNumber { node: body, key: k };
+        if i as u8 == dir {
+            project.write_feat_formula(&at, &txt, qymcad_core::model::PlainNumber::ClearsFormula)?;
         } else {
-            project.set_feat_dim(body, k, String::new());
+            project.clear_feat_formula(&at);
         }
     }
+    Ok(())
 }
 
 /// The autosave path sits next to the document (`name.autosave.qcad`); an unnamed document goes to temp.

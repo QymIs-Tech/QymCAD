@@ -193,12 +193,32 @@ pub struct RevolveAbout {
     pub line: Option<AxisLine>,
 }
 
-/// WHETHER THE FACES A BLEND MAKES ARE NAMED, and after which node: the rule of the names - a surface after its edge, a
-/// corner patch after the edge too - is the bridge's; the model says only which node the blend is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// WHETHER THE FACES A BLEND MAKES ARE NAMED, after which node, and how the node picked its edges. The rule of the names
+/// (a surface after its edge, a corner patch after the edge too) is the bridge's; the model says which node the blend is
+/// and which place in its pick each edge holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BlendRoles {
-    Named { feature: Id },
+    Named { feature: Id, picked: Vec<PickedEdge> },
     Unnamed,
+}
+
+/// AN EDGE AS THE NODE PICKED IT: the edge of the body the blend rounds now, its place in the pick of the node, from 1,
+/// and how the pick found it. The place is what the person gave; the name of the edge changes when a face of its pair
+/// does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PickedEdge {
+    pub live: u32,
+    pub place: u16,
+    pub by: PickedBy,
+}
+
+/// HOW A PICK FOUND ITS EDGE: by the name it holds, or through a translation - the record of a merge, the structure of
+/// the name, the place. Two picks finding one edge - two edges merged into one by an edit above - give its surface the
+/// name of the pick that holds the edge by its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PickedBy {
+    Name,
+    Translation,
 }
 
 /// A BODY BROUGHT IN, AS THE DOOR LANDED IT: its mesh and faces, and why it was kept as it came when the door could not
@@ -413,6 +433,9 @@ pub struct SideSource {
 pub struct Sides<'a> {
     pub feature: Id,
     pub sources: &'a [SideSource],
+    /// The sketch contour each profile is drawn from, in the order of the profiles: what the caps of a region are
+    /// named after. Empty where the profiles come from no sketch.
+    pub regions: &'a [Id],
 }
 
 /// PROFILES WITH THE SOURCES OF THEIR SIDES, as the model encodes them for a profile operation.
@@ -420,6 +443,8 @@ pub struct Sides<'a> {
 pub struct SourcedProfiles {
     pub profiles: Vec<Vec<f64>>,
     pub sources: Vec<SideSource>,
+    /// The sketch contour each profile is drawn from - the one the person picked - in the order of `profiles`.
+    pub regions: Vec<Id>,
 }
 
 /// WHERE A FACE LIES: the point of its surface at the middle of its parametric bounds and the normal there. What a face

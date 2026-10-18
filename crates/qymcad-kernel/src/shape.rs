@@ -127,6 +127,7 @@ extern "C" {
         all_names: *const u32,
         n_all: usize,
     ) -> *mut QymShape;
+    fn qym_shape_blend_limit(s: *const QymShape, how: *const BlendLimit, idx: *const u32, n: usize, names: *const u32) -> *mut QymShape;
     fn qym_shape_shell(s: *const QymShape, t: c_double, idx: *const u32, n: usize, gfrom: *const u32, gto: *const u32, gn: usize) -> *mut QymShape;
     fn qym_shape_remove_faces(s: *const QymShape, ids: *const u32, n: usize, out_reason: *mut i32) -> *mut QymShape;
     fn qym_shape_push_face(s: *const QymShape, fid: u32, dist: c_double) -> *mut QymShape;
@@ -369,6 +370,26 @@ pub(crate) struct AsymChamfer {
     pub mode: i32,
     pub flip: bool,
     pub ref_face: u32,
+}
+
+/// A BLEND BUILT AS THE PRISMS IT TAKES OFF, as the C++ side reads it (`qym_shape_blend_limit`): a fillet (`kind` 0) of
+/// radius `a`, or a chamfer (`kind` 1) of legs `a` on the first face and `b` on the second, the first face chosen as
+/// the asymmetric chamfer chooses it.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BlendLimit {
+    pub kind: i32,
+    pub a: f64,
+    pub b: f64,
+    pub flip: i32,
+    pub ref_face: u32,
+}
+
+/// THE EDGES A BLEND TAKES and the number each one's surface is handed under, in the same order.
+#[derive(Clone, Copy)]
+pub(crate) struct NamedEdges<'a> {
+    pub edges: &'a [u32],
+    pub surfaces: &'a [u32],
 }
 
 /// A VERTEX OF A SHAPE: where it stands and the edges meeting at it, the three smallest ids (zero where fewer meet).

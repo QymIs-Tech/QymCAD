@@ -53,26 +53,27 @@ mod tests {
         (app, part)
     }
 
-    /// How long the program may stay busy once the mesh or its part is gone: the preparation of the mesh (2.6 s) is not
-    /// broken off, the growing of regions (11 s) is.
-    const RESTS_WITHIN: u64 = 8;
-
-    /// Frames for up to `secs` seconds until the program is at rest: no job in the background, no rebuild running,
-    /// nothing asked to be rebuilt, no sign of a rebuild on screen - a sign stays its time after its rebuild lands.
-    /// Answers whether it came to rest.
-    fn comes_to_rest(h: &mut Hand, secs: u64) -> bool {
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    /// Frames until the program is at rest (`session::waiting::until`): no job in the background, no rebuild running,
+    /// nothing asked to be rebuilt, no sign of a rebuild on screen for ten frames in a row - a sign stays its time after
+    /// its rebuild lands.
+    fn comes_to_rest(h: &mut Hand, what: &str) {
         let mut quiet = 0;
-        while std::time::Instant::now() < until {
+        crate::gui::session::waiting::until(what, || {
             h.frame(Vec::new());
             let busy = h.app.regen.busy.is_some() || !h.app.regen.bg.is_empty() || h.app.regen.wanted || !crate::gui::tests::a_quick_rebuild_does_not_blink::tests::signs_painted(h).is_empty();
             quiet = if busy { 0 } else { quiet + 1 };
-            if quiet >= 10 {
-                return true;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        false
+            quiet >= 10
+        });
+    }
+
+    /// THE STOP OF THE REBUILD RUNNING NOW, taken before what is done to it: it is read after the rebuild has gone.
+    fn stop_of_the_rebuild(h: &Hand) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        h.app.regen.busy.as_ref().and_then(|b| b.pulse.as_ref()).map(|p| p.stop.clone()).unwrap_or_else(|| panic!("setup: no rebuild is running: {}", h.app.status))
+    }
+
+    /// The rebuild whose stop is `stop` has been asked to stop.
+    fn asked(stop: &std::sync::atomic::AtomicBool) -> bool {
+        stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// What the canvas says while the program is at rest: the spinner of a quiet rebuild, or the bar still counting.
@@ -100,12 +101,15 @@ mod tests {
         qymcad_ui_state::ask_delete(&mut h.app.deferred, Sel::Component(ci));
         h.app.execute_deferred_delete_for_test();
         assert!(h.app.project.components.iter().all(|c| c.id != part), "setup: the part was not deleted");
-        assert!(comes_to_rest(&mut h, 20), "the program has not come to rest 20 s after the part was deleted: {}", h.app.status);
+        comes_to_rest(&mut h, "the program to come to rest after the part was deleted");
         let turning = what_still_turns(&mut h);
         assert!(turning.is_empty(), "the part is deleted and something still turns: {turning:?}");
     }
 
-    /// THE PART DELETED WHILE ITS MESH IS BEING RECOGNISED: the rebuild ends, and nothing turns afterwards.
+    /// THE PART DELETED WHILE ITS MESH IS BEING RECOGNISED: the rebuild is asked to stop at once, it ends, and nothing
+    /// turns afterwards. That the recognition hears the stop in the middle of growing its regions is the split's own
+    /// check (`a_stop_asked_on_the_way_ends_the_split_at_once`); held to 8 s of the wall here, the rest went red on a
+    /// runner of the CI that needed longer for the preparation, which is not broken off.
     #[test]
     fn deleting_the_part_while_the_mesh_is_recognised_leaves_nothing_turning() {
         let (mut app, part) = a_ball_brought_in("recognised");
@@ -114,12 +118,13 @@ mod tests {
         h.click([0.0, 0.0, 40.0]).frame(Vec::new());
         assert!(h.app.params.recognise.src.is_some(), "setup: the click on the ball was not taken: {}", h.app.status);
         h.enter().frame(Vec::new());
-        let running = h.app.regen.busy.is_some();
+        let stop = stop_of_the_rebuild(&h);
         let ci = h.app.project.components.iter().position(|c| c.id == part).expect("the part");
         qymcad_ui_state::ask_delete(&mut h.app.deferred, Sel::Component(ci));
         h.app.execute_deferred_delete_for_test();
-        assert!(running, "setup: the recognition was not running when the part was deleted: {}", h.app.status);
-        assert!(comes_to_rest(&mut h, RESTS_WITHIN), "the program was still busy {RESTS_WITHIN} s after the part was deleted - it goes on recognising a mesh that is gone: {}", h.app.status);
+        h.frame(Vec::new());
+        assert!(asked(&stop), "the part is deleted and the rebuild recognising its mesh was not asked to stop - it goes on over nothing: {}", h.app.status);
+        comes_to_rest(&mut h, "the program to come to rest after the part was deleted");
         let turning = what_still_turns(&mut h);
         assert!(turning.is_empty(), "the part is deleted and something still turns: {turning:?}");
     }
@@ -133,11 +138,13 @@ mod tests {
         h.click([0.0, 0.0, 40.0]).frame(Vec::new());
         let src = h.app.params.recognise.src.expect("setup: the click on the ball was not taken");
         h.enter().frame(Vec::new());
-        assert!(h.app.regen.busy.is_some(), "setup: the recognition was not running when the mesh was deleted: {}", h.app.status);
+        let stop = stop_of_the_rebuild(&h);
         let mi = h.app.project.mesh_index(src).expect("the mesh");
         qymcad_ui_state::ask_delete(&mut h.app.deferred, Sel::Mesh(mi));
         h.app.execute_deferred_delete_for_test();
-        assert!(comes_to_rest(&mut h, RESTS_WITHIN), "the program was still busy {RESTS_WITHIN} s after the mesh was deleted - it goes on recognising a mesh that is gone: {}", h.app.status);
+        h.frame(Vec::new());
+        assert!(asked(&stop), "the mesh is deleted and the rebuild recognising it was not asked to stop - it goes on over nothing: {}", h.app.status);
+        comes_to_rest(&mut h, "the program to come to rest after the mesh was deleted");
         let turning = what_still_turns(&mut h);
         assert!(turning.is_empty(), "the mesh is deleted and something still turns: {turning:?}");
     }
@@ -154,15 +161,13 @@ mod tests {
         assert!(h.app.params.recognise.src.is_some(), "setup: the click on the ball was not taken: {}", h.app.status);
         let nodes = h.app.project.timeline.len();
         h.enter().frame(Vec::new());
-        assert!(h.app.regen.busy.is_some(), "setup: the recognition was not running: {}", h.app.status);
+        let stop = stop_of_the_rebuild(&h);
         let cancel = crate::i18n::tr("io-rebuild-cancel");
         // the card goes up once the rebuild has run `REBUILD_SIGN_AFTER`; Cancel is pressed when it is there
-        let waiting = std::time::Instant::now();
-        while !h.shows(&cancel) && waiting.elapsed() < std::time::Duration::from_secs(5) {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+        crate::gui::session::waiting::until("the card of the recognition with its Cancel", || h.shows(&cancel));
         assert!(h.press_word(&cancel, egui::pos2(700.0, 450.0)), "setup: the rebuild window shows no Cancel");
-        assert!(comes_to_rest(&mut h, RESTS_WITHIN), "Cancel was pressed and the recognition went on for more than {RESTS_WITHIN} s: {}", h.app.status);
+        assert!(asked(&stop), "Cancel was pressed and the recognition was not asked to stop: {}", h.app.status);
+        comes_to_rest(&mut h, "the recognition to stop after Cancel");
         let body = h.app.project.timeline.iter().skip(nodes.saturating_sub(1)).any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::MeshRecognised { .. }) && !n.dirty);
         assert!(!body, "the recognition was cancelled and its node stands built all the same");
         assert!(h.app.project.regen_errors.is_empty(), "Cancel left the node red, as if it had failed: {:?}", h.app.project.regen_errors);

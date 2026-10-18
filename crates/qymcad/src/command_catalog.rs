@@ -1,10 +1,10 @@
-//! THE COMMAND CATALOGUE — one source for the search, the panel, the keys and the help.
+//! THE COMMAND CATALOGUE - one source for the bars, their "More" lists, the search, the keys and the help.
 //!
 //! WHY A CATALOGUE AND NOT A LIST INSIDE THE SEARCH. A search that knows its own list will drift from
 //! the panel at the very first new feature — exactly as the canvas drifted from the list of joints and
-//! the help from the datums. Both times it was fixed the same way: one rule, and a guard that holds
-//! the link. The same here: a row of the catalogue must have a button in the panel, and a button must
-//! have a row in the catalogue.
+//! the help from the datums. The bar itself used to be such a second list: its buttons were written one by
+//! one in the code, and a guard read the source to hold them to the rows. Now the rows are given by the
+//! workbenches and the bar is drawn from them: a button IS a row, and there is nothing left to hold together.
 //!
 //! THE NAME OF A COMMAND IS TAKEN FROM THE TITLE OF ITS HELP ARTICLE. That is not a shortcut but a
 //! consequence: every tool already has an article (the `help_map_flow` guard requires it), its title
@@ -14,127 +14,53 @@
 //! The exception is commands that share ONE article between several (the six primitives): those need
 //! a name of their own, otherwise the search shows six identical rows reading "Primitives".
 
-/// WHAT LAUNCHES A COMMAND. Exactly the same calls the panel button makes: the search has no right to
-/// introduce a launch path of its own — otherwise it starts doing what the button does not.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Launch {
-    /// A command of the feature timeline (`start_feat_cmd`).
-    Feat(u8),
-    /// A primitive (`start_prim_cmd`).
-    Prim(u8),
-    /// A sketch drawing tool (`set_sk_tool`).
-    SkTool(u8),
-    /// A sketch dimension (`set_dim_tool`).
-    Dim(u8),
-    /// A click operation of a sketch: trim, extend, project (`set_click_op`).
-    ClickOp(u8),
-    /// Editing the selection in a sketch: delete, mirror, offset (`modify_button`).
-    Modify(qymcad_ui_state::EditTool),
-    /// An assembly or view action with a launch of its own (mate, ground, measure).
-    Action(&'static str),
-}
+pub use qymcad_ui_state::catalogue::{Command, Launch};
 
-/// One command of the catalogue.
-pub struct Command {
-    /// A stable code: `area.name`, as with the hotkeys. With a dot rather than a hyphen — the
-    /// localisation guard catches ANY literal shaped like a catalogue key, and the code is never shown
-    /// on screen.
-    pub code: &'static str,
-    /// The workbench the command lives in: `sketch` / `part` / `assembly`.
-    pub workbench: &'static str,
-    /// What launches it.
-    pub launch: Launch,
-    /// A name OF ITS OWN (a key of the language catalogue) — only where one article is shared by
-    /// several commands. Empty means the name comes from the title of the help article.
-    pub name_key: &'static str,
+/// EVERY COMMAND: the rows each workbench gives, in the order of their bars - the sketch, the part, the assembly.
+pub fn all() -> impl Iterator<Item = &'static Command> {
+    qymcad_part::SKETCH_COMMANDS.iter().chain(qymcad_part::PART_COMMANDS).chain(qymcad_assembly::COMMANDS)
 }
-
-/// EVERY COMMAND. The order is that of the workbench panel: from "draw" to "fix".
-pub const COMMANDS: &[Command] = &[
-    // ── Sketch ──────────────────────────────────────────────────────────────────────────────
-    Command { code: "sketch.line", workbench: "sketch", launch: Launch::SkTool(1), name_key: "" },
-    Command { code: "sketch.rect", workbench: "sketch", launch: Launch::SkTool(2), name_key: "" },
-    Command { code: "sketch.circle", workbench: "sketch", launch: Launch::SkTool(3), name_key: "" },
-    Command { code: "sketch.circle3", workbench: "sketch", launch: Launch::SkTool(10), name_key: "cmdname-circle-3pt" },
-    Command { code: "sketch.arc", workbench: "sketch", launch: Launch::SkTool(4), name_key: "" },
-    Command { code: "sketch.point", workbench: "sketch", launch: Launch::SkTool(5), name_key: "" },
-    Command { code: "sketch.polygon", workbench: "sketch", launch: Launch::SkTool(6), name_key: "" },
-    Command { code: "sketch.slot", workbench: "sketch", launch: Launch::SkTool(7), name_key: "" },
-    Command { code: "sketch.ellipse", workbench: "sketch", launch: Launch::SkTool(8), name_key: "" },
-    Command { code: "sketch.spline", workbench: "sketch", launch: Launch::SkTool(9), name_key: "" },
-    Command { code: "sketch.text", workbench: "sketch", launch: Launch::SkTool(11), name_key: "" },
-    Command { code: "sketch.dim", workbench: "sketch", launch: Launch::Dim(1), name_key: "" },
-    Command { code: "sketch.dim-angle", workbench: "sketch", launch: Launch::Dim(2), name_key: "cmdname-dim-angle" },
-    Command { code: "sketch.dim-radius", workbench: "sketch", launch: Launch::Dim(3), name_key: "cmdname-dim-radius" },
-    Command { code: "sketch.trim", workbench: "sketch", launch: Launch::ClickOp(1), name_key: "" },
-    Command { code: "sketch.extend", workbench: "sketch", launch: Launch::ClickOp(2), name_key: "" },
-    Command { code: "sketch.break", workbench: "sketch", launch: Launch::ClickOp(3), name_key: "" },
-    // the projection is the tool of button 6 - of edges and of a body alike, one tool with one row; the corner the fillet
-    // of button 4 (5 is its chamfer)
-    Command { code: "sketch.project", workbench: "sketch", launch: Launch::ClickOp(6), name_key: "" },
-    Command { code: "sketch.corner", workbench: "sketch", launch: Launch::ClickOp(4), name_key: "" },
-    Command { code: "sketch.corner-chamfer", workbench: "sketch", launch: Launch::ClickOp(5), name_key: "cmdname-corner-chamfer" },
-    Command { code: "sketch.delete", workbench: "sketch", launch: Launch::Modify(qymcad_ui_state::EditTool::Delete), name_key: "" },
-    Command { code: "sketch.mirror", workbench: "sketch", launch: Launch::Modify(qymcad_ui_state::EditTool::Mirror), name_key: "" },
-    Command { code: "sketch.offset", workbench: "sketch", launch: Launch::Modify(qymcad_ui_state::EditTool::Offset), name_key: "" },
-    // ── Part ────────────────────────────────────────────────────────────────────────────────
-    Command { code: "part.extrude", workbench: "part", launch: Launch::Feat(1), name_key: "" },
-    Command { code: "part.revolve", workbench: "part", launch: Launch::Feat(3), name_key: "" },
-    Command { code: "part.sweep", workbench: "part", launch: Launch::Feat(8), name_key: "" },
-    Command { code: "part.loft", workbench: "part", launch: Launch::Feat(9), name_key: "" },
-    Command { code: "part.fillet", workbench: "part", launch: Launch::Feat(4), name_key: "" },
-    Command { code: "part.chamfer", workbench: "part", launch: Launch::Feat(5), name_key: "" },
-    Command { code: "part.shell", workbench: "part", launch: Launch::Feat(6), name_key: "" },
-    Command { code: "part.hole", workbench: "part", launch: Launch::Feat(7), name_key: "" },
-    Command { code: "part.draft", workbench: "part", launch: Launch::Feat(23), name_key: "" },
-    Command { code: "part.thread", workbench: "part", launch: Launch::Feat(24), name_key: "" },
-    Command { code: "part.push-face", workbench: "part", launch: Launch::Feat(25), name_key: "" },
-    Command { code: "part.remove-face", workbench: "part", launch: Launch::Feat(26), name_key: "" },
-    Command { code: "part.split-body", workbench: "part", launch: Launch::Feat(27), name_key: "" },
-    Command { code: "part.split-face", workbench: "part", launch: Launch::Feat(29), name_key: "" },
-    Command { code: "part.thicken", workbench: "part", launch: Launch::Feat(28), name_key: "" },
-    // the bridge from the parametric side into the design layer — the name comes from the article
-    // title, as with the neighbours
-    Command { code: "part.face-copy", workbench: "part", launch: Launch::Feat(30), name_key: "" },
-    Command { code: "part.offset-surface", workbench: "part", launch: Launch::Feat(36), name_key: "" },
-    Command { code: "part.surface-replace", workbench: "part", launch: Launch::Feat(31), name_key: "" },
-    Command { code: "part.patch", workbench: "part", launch: Launch::Feat(32), name_key: "" },
-    Command { code: "part.stitch", workbench: "part", launch: Launch::Feat(33), name_key: "" },
-    Command { code: "part.trim", workbench: "part", launch: Launch::Feat(34), name_key: "" },
-    Command { code: "part.recognise", workbench: "part", launch: Launch::Feat(35), name_key: "" },
-    Command { code: "part.mirror", workbench: "part", launch: Launch::Feat(16), name_key: "" },
-    Command { code: "part.array-linear", workbench: "part", launch: Launch::Feat(17), name_key: "" },
-    Command { code: "part.array-circular", workbench: "part", launch: Launch::Feat(18), name_key: "" },
-    Command { code: "part.datum-plane", workbench: "part", launch: Launch::Feat(20), name_key: "cmdname-datum-plane" },
-    Command { code: "part.datum-axis", workbench: "part", launch: Launch::Feat(22), name_key: "cmdname-datum-axis" },
-    Command { code: "part.datum-point", workbench: "part", launch: Launch::Feat(21), name_key: "cmdname-datum-point" },
-    // THE SIX PRIMITIVES — a caption of its own for each: they share ONE article, and without names
-    // the search would show six identical rows reading "Primitives".
-    Command { code: "part.box", workbench: "part", launch: Launch::Prim(10), name_key: "cmdname-box" },
-    Command { code: "part.cylinder", workbench: "part", launch: Launch::Prim(11), name_key: "cmdname-cylinder" },
-    Command { code: "part.sphere", workbench: "part", launch: Launch::Prim(12), name_key: "cmdname-sphere" },
-    Command { code: "part.cone", workbench: "part", launch: Launch::Prim(13), name_key: "cmdname-cone" },
-    Command { code: "part.torus", workbench: "part", launch: Launch::Prim(14), name_key: "cmdname-torus" },
-    Command { code: "part.prism", workbench: "part", launch: Launch::Prim(15), name_key: "cmdname-prism" },
-    // ── Assembly ────────────────────────────────────────────────────────────────────────────
-    Command { code: "assembly.joint", workbench: "assembly", launch: Launch::Action("joint"), name_key: "" },
-    Command { code: "assembly.ground", workbench: "assembly", launch: Launch::Action("ground"), name_key: "cmdname-ground" },
-    // one of the several bodies a part shows made a part of its own; the right button on it does the same
-    Command { code: "part.piece-to-part", workbench: "part", launch: Launch::Action("piece"), name_key: "act-piece-to-part" },
-];
 
 /// A command by its code.
 pub fn by_code(code: &str) -> Option<&'static Command> {
-    COMMANDS.iter().find(|c| c.code == code)
+    all().find(|c| c.code == code)
 }
 
-impl Command {
+/// THE COMMANDS ON THE BAR OF `bench`, in their order.
+pub fn of_bench(bench: &str) -> Vec<&'static Command> {
+    all().filter(|c| c.on(bench)).collect()
+}
+
+/// PRESS A COMMAND, through the workbench it belongs to: its button, its row of "More" and the search come here
+/// alike.
+pub fn press(cmd: &Command, bc: &mut qymcad_ui_state::BarCtx) {
+    if cmd.home() == "assembly" {
+        qymcad_assembly::press(cmd.launch, bc);
+    } else {
+        qymcad_part::press(cmd.launch, bc);
+    }
+}
+
+/// WHAT A PERSON CALLS A COMMAND, and where its help is.
+pub trait Named {
     /// THE NAME FOR A PERSON: its own if one is set, otherwise the title of the help article.
     ///
     /// The title comes from the article itself, so it is translated and written in the same words a
     /// person has already read. If there is no article the code is returned: an empty row in the
     /// search is worse than an ugly one.
-    pub fn name(&self) -> String {
+    fn name(&self) -> String;
+    /// THE NAME IN A PARTICULAR LANGUAGE — for searching in the other language.
+    ///
+    /// The first edition searched the second language only for commands with a key OF THEIR OWN, while
+    /// for the rest the name comes from the article title — and `fillet` was not found in English. The
+    /// hole was visible on a snapshot exactly: a two-letter prefix found one row instead of three.
+    fn name_in(&self, lang: &str) -> String;
+    /// The help article of this command: through the same table F1 uses, or the one of its button's hint.
+    fn help_article(&self) -> Option<&'static str>;
+}
+
+impl Named for Command {
+    fn name(&self) -> String {
         if !self.name_key.is_empty() {
             return crate::i18n::tr(self.name_key);
         }
@@ -144,92 +70,48 @@ impl Command {
         }
     }
 
-    /// THE NAME IN A PARTICULAR LANGUAGE — for searching in the other language.
-    ///
-    /// The first edition searched the second language only for commands with a key OF THEIR OWN, while
-    /// for the rest the name comes from the article title — and `fillet` was not found in English. The
-    /// hole was visible on a snapshot exactly: a two-letter prefix found one row instead of three.
-    pub fn name_in(&self, lang: &str) -> String {
+    fn name_in(&self, lang: &str) -> String {
         if !self.name_key.is_empty() {
             return crate::i18n::tr_in(lang, self.name_key).unwrap_or_default();
         }
         self.help_article().and_then(|a| crate::help::title_in(lang, a)).unwrap_or_default()
     }
 
-    /// The help article of this command — through the same table F1 uses.
-    pub fn help_article(&self) -> Option<&'static str> {
-        match self.launch {
+    fn help_article(&self) -> Option<&'static str> {
+        let by_launch = match self.launch {
             Launch::Feat(n) | Launch::Prim(n) => crate::help_map::part_article(n),
             Launch::SkTool(n) => crate::help_map::sketch_article("sk", n),
             Launch::Dim(n) => crate::help_map::sketch_article("dim", n),
             Launch::ClickOp(n) => crate::help_map::sketch_article("click", n),
             Launch::Modify(tool) => crate::help_map::sketch_article("mod", tool.code()),
-            Launch::Action("joint") => crate::help_map::assembly_article("asm.joint"),
-            Launch::Action("piece") => Some("part/13-split-body"),
-            Launch::Action(_) => None,
-        }
+            Launch::Joint => crate::help_map::assembly_article("asm.joint"),
+            Launch::PieceToPart => Some("part/13-split-body"),
+            _ => None,
+        };
+        by_launch.or_else(|| crate::help_map::toolbar_article(self.hint_key))
     }
+}
+
+/// IS THERE A BUTTON FOR `launch` on the bar of `bench`: a row of the catalogue on its shelf.
+#[cfg(test)]
+pub(crate) fn has_button(launch: Launch, bench: &str) -> bool {
+    all().any(|c| c.launch == launch && c.on(bench))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{by_code, Launch};
 
-    /// The kind a button of the Part panel lights for, read off the panel's source: the number in
-    /// `tr("<hint>"), bc.armed.cmd_kind() == N`.
-    fn kind_of_button(hint: &str) -> Option<u8> {
-        let src = concat!(
-            concat!(
-                include_str!("../../qymcad-part/src/apply/copies.rs"),
-                "\n",
-                include_str!("../../qymcad-part/src/apply/faces.rs"),
-                "\n",
-                include_str!("../../qymcad-part/src/apply/solids.rs"),
-                "\n",
-                include_str!("../../qymcad-part/src/apply/update.rs"),
-                "\n",
-                include_str!("../../qymcad-part/src/apply.rs")
-            ),
-            "\n",
-            concat!(
-                include_str!("../../qymcad-part/src/bars/feat_bar.rs"),
-                "\n",
-                include_str!("../../qymcad-part/src/bars/options.rs"),
-                "\n",
-                include_str!("../../qymcad-part/src/bars/toolbar.rs"),
-                "\n",
-                include_str!("../../qymcad-part/src/bars.rs")
-            ),
-            "\n",
-            include_str!("../../qymcad-part/src/params.rs"),
-            "\n",
-            include_str!("../../qymcad-part/src/picks.rs"),
-            "\n",
-            include_str!("../../qymcad-part/src/popups.rs"),
-            "\n",
-            include_str!("../../qymcad-part/src/reopen.rs"),
-            "\n",
-            include_str!("../../qymcad-part/src/start.rs"),
-            "\n",
-            include_str!("../../qymcad-part/src/topology.rs"),
-            "\n",
-            include_str!("../../qymcad-part/src/lib.rs")
-        );
-        let at = src.find(&format!("tr(\"{hint}\"), bc.armed.cmd_kind() == "))?;
-        let rest = &src[at..];
-        let n = rest.split("cmd_kind() == ").nth(1)?;
-        n.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()
-    }
-
-    /// A COMMAND FOUND BY NAME OPENS THE TOOL OF THAT NAME: the catalog launches the kind the panel's own button
-    /// takes. Reported behaviour: Ctrl+K "Datum axis" opened the point (the bar "Point", the fields X, Y, Z) and
-    /// "Datum point" the axis - the catalog had 21 for the axis and 22 for the point, the window the other way.
+    /// A COMMAND FOUND BY NAME OPENS THE TOOL OF THAT NAME: the row of the datum axis starts the axis and shows the
+    /// hint of the axis. Reported behaviour: Ctrl+K "Datum axis" opened the point (the bar "Point", the fields X, Y, Z)
+    /// and "Datum point" the axis - the catalogue had 21 for the axis and 22 for the point, the window the other way.
+    /// Now the button is the row, and the row is checked against the kinds the bar of the command is built for.
     #[test]
     fn a_command_found_by_name_launches_the_kind_of_its_own_button() {
-        for (code, hint) in [("part.datum-axis", "g-datum-axis-hint"), ("part.datum-point", "g-datum-point-hint")] {
-            let button = kind_of_button(hint).unwrap_or_else(|| panic!("the button {hint} was not found in the Part panel"));
-            let launch = by_code(code).map(|c| c.launch);
-            assert!(matches!(launch, Some(Launch::Feat(k)) if k == button), "{code} launches {launch:?}, its button takes kind {button}");
+        for (code, kind, hint) in [("part.datum-axis", 22, "g-datum-axis-hint"), ("part.datum-point", 21, "g-datum-point-hint")] {
+            let c = by_code(code).unwrap_or_else(|| panic!("{code} is not in the catalogue"));
+            assert_eq!(c.launch, Launch::Feat(kind), "{code} launches {:?}", c.launch);
+            assert_eq!(c.hint_key, hint, "{code} shows the hint of another button");
         }
     }
 }

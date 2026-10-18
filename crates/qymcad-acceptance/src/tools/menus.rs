@@ -399,14 +399,14 @@ pub static PARAMETERS: Tool = Tool {
     not_applicable: SHOWS,
 };
 
-/// An item of a menu that opens a submenu: what it shows is the first item of it.
+/// An item of a menu that opens a submenu: what it shows is the first item of it, and the article that tells of it.
 macro_rules! opens {
-    ($name:ident, $id:literal, $item:literal, $first:literal) => {
+    ($name:ident, $id:literal, $menu:literal, $item:literal, $first:literal, $help:literal) => {
         pub static $name: Tool = Tool {
             id: $id,
             flow: Flow::Action,
             title: $item,
-            entries: &[Entry::Menu(&["menu-file", $item])],
+            entries: &[Entry::Menu(&[$menu, $item])],
             other: (Entry::Button("tb-mirror-body-hint"), "cmd-mirror"),
             fixture: Fixture::Block,
             picks: &[],
@@ -425,7 +425,7 @@ macro_rules! opens {
             contexts: &[],
             refusal: None,
             budget: (10, 2000),
-            help: "general/08-documents",
+            help: $help,
             not_applicable: SUBMENU,
         };
     };
@@ -451,8 +451,10 @@ const SUBMENU: &[(u8, &str)] = &[
     (19, "a menu item is not held, so F1 has no tool in hand to open an article of"),
 ];
 
-opens!(EXPORT_PROJECT, "menu.export-project", "file-export", "STL\u{2026}");
-opens!(RECENT, "menu.recent", "file-recent", "file-recent-clear");
+opens!(EXPORT_PROJECT, "menu.export-project", "menu-file", "file-export", "STL\u{2026}", "general/08-documents");
+opens!(RECENT, "menu.recent", "menu-file", "file-recent", "file-recent-clear", "general/08-documents");
+// View -> Panels: the panels a person may hide, the tree first; what a tick does is `bar_settings`' matter
+opens!(PANELS, "menu.panels", "menu-view", "menu-panels", "panel-tree", "general/15-layout");
 
 /// RECENT_CLEAR: File -> Recent -> Clear the list, on a start with no recent projects: the item stands disabled beside
 /// the words that the list is empty, and pressing it changes nothing - the block stays as it was.

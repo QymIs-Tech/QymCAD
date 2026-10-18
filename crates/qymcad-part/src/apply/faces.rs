@@ -23,7 +23,10 @@ pub fn apply_stitch_cmd(cmd: &qymcad_ui_state::FeatCommand, project: &mut Projec
         return None;
     }
     let body = project.add_stitch(stitch_parts.to_vec(), qymcad_ui_state::cmd_val(cmd, "tol"));
-    store_cmd_exprs(cmd, project, body); // the tolerance stays parametric, like every number of a feature
+    if let Err(e) = store_cmd_exprs(cmd, project, body) {
+        // the tolerance stays parametric, like every number of a feature
+        return say_formula_refused(status, &e);
+    }
     Some(body)
 }
 
@@ -44,7 +47,9 @@ pub fn apply_offset_surface_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id>
     let picks: Vec<u32> = pc.gsel.faces.iter().copied().collect();
     let q = pc.gsel.recorded(&picks);
     let body = pc.project.add_offset_surface(src, q, qymcad_ui_state::cmd_val(pc.cmd, "dist"));
-    store_cmd_exprs(pc.cmd, pc.project, body);
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+        return formula_refused(pc, &e);
+    }
     Some(body)
 }
 
@@ -124,7 +129,9 @@ pub fn apply_split_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
     if let Some((b, k)) = face {
         pc.project.set_op_face(first, b, k);
     }
-    store_cmd_exprs(pc.cmd, pc.project, first); // the offset stays parametric
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, first) {
+        return formula_refused(pc, &e);
+    } // the offset stays parametric
     *pc.status = Notice::info(qymcad_i18n::tr1("cmd-split-done", "n", &pieces.to_string()));
     Some(first)
 }
@@ -178,7 +185,9 @@ pub fn apply_split_face_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
     if let Some((b, k)) = face {
         pc.project.set_op_face(body, b, k);
     }
-    store_cmd_exprs(pc.cmd, pc.project, body);
+    if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
+        return formula_refused(pc, &e);
+    }
     *pc.status = Notice::info(qymcad_i18n::tr("msg-faces-split"));
     Some(body)
 }

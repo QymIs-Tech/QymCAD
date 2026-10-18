@@ -178,14 +178,13 @@ fn a_solid_and_a_mesh_are_read_in_the_background() {
         assert!(app.regen.busy.is_some(), "{path}: nothing started reading; the status says: {}", app.status);
         // AND IT LANDS. Waited for rather than left running: a reader still at work in OCCT when the checks
         // end meets the process tearing its statics down, and that crashed a run that had passed.
-        for _ in 0..600 {
+        crate::gui::session::waiting::until(&format!("{path} to be read"), || {
             if app.regen.busy.is_none() {
-                break;
+                return true;
             }
             frame(&mut app, &ctx, Vec::new());
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-        assert!(app.regen.busy.is_none(), "{path}: still reading after half a minute");
+            false
+        });
         assert!(app.project.bodies.len() > before, "{path}: nothing came into the document; the status says: {}", app.status);
         assert!(app.status.words.contains(says), "{path}: the status does not name the format it read: {}", app.status);
     }

@@ -60,7 +60,8 @@ pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect
     let vars = jc.project.param_map();
     let mut exprs = Vec::new();
     let at = popup_place(ctx, jid, jc.joint_anim.as_ref(), qymcad_ui_state::clamp_popup(mid, rect) + egui::vec2(12.0, -12.0));
-    egui::Area::new(egui::Id::new("joint_edit_popup")).fixed_pos(at).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new("joint_edit_popup")).fixed_pos(at).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.set_max_width(260.0);
             ui.horizontal(|ui| {
@@ -195,7 +196,9 @@ pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect
             }
         });
     });
-    keep_slot_exprs(jc.project, jid, exprs);
+    if let Err(e) = keep_slot_exprs(jc.project, jid, exprs) {
+        *jc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::error_words::expr_error_text(&e));
+    }
     joint_values_step(ctx, jc.edits, jc.project, before, changed);
     if changed {
         qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting

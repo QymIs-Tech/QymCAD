@@ -23,9 +23,9 @@ pub(super) mod tests {
     /// The buttons are there — both of them.
     #[test]
     fn the_tools_have_buttons() {
-        let src = crate::gui::panels_source::PANELS;
-        assert!(src.contains("BarAsk::CompArray(1)"), "a linear component array without a button does not exist");
-        assert!(src.contains("BarAsk::CompArray(2)"), "a circular component array without a button does not exist");
+        use crate::command_catalog::{has_button, Launch};
+        assert!(has_button(Launch::CompArray(1), "assembly"), "a linear component array without a button does not exist");
+        assert!(has_button(Launch::CompArray(2), "assembly"), "a circular component array without a button does not exist");
     }
 
     /// THE WHOLE PATH: pick a part -> the button -> the count and the step -> Enter -> the copies stand.

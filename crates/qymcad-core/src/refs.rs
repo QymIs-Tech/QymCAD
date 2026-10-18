@@ -337,10 +337,12 @@ pub fn resolve(query: &Query, pool: &[Candidate], names: &NameTable, face_pool: 
             // into one and makes one name yield. A name that yielded is not lost: the kernel reported which
             // name it yielded to, and the reference follows. This is a translation of the name by a recorded
             // merge, not a search for something similar in the geometry.
-            match names.absorbed_target(*d) {
-                Some(t) => pool.iter().filter(|c| c.desc == t).map(|c| c.desc).collect(),
-                None => Vec::new(),
+            let live: Vec<u32> = pool.iter().map(|c| c.desc).collect();
+            if let Some(t) = names.absorbed_target_among(*d, &live) {
+                return vec![t];
             }
+            // Then the structure of the name: the one live piece of the same wall, the one edge between such faces.
+            names.same_recipe(*d, &live).into_iter().collect()
         }
         Query::OfFeature { feature, role } => pool
             .iter()

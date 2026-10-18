@@ -6,28 +6,24 @@
 //! `intern_vertex` - stands only in a function of the list below; code under `#[cfg(test)]` and in `tests/` is let be.
 //! A new place goes on the list on purpose, with its row in `every_operation_names_what_it_makes`.
 
-/// THE PLACES THAT MINT NAMES, by file and function.
+/// THE PLACES THAT MINT NAMES, by file and function, each with why it may: the door of the bridge and what the bridge
+/// names where the history of an operation is silent - the rules of `crates/qymcad-kernel/NAMING.md` - and the table.
 const PLACES: [Place; 8] = [
-    // the roles an operation of the bridge gave, named when its result lands
-    Place { file: "qymcad-kernel/src/naming.rs", function: "land_roles" },
-    // the one rule for what the history is silent about: the pieces of a split face, the seams by their neighbours,
-    // then the place; the edges by the pair of their faces
-    Place { file: "qymcad-kernel/src/naming.rs", function: "pieces" },
-    Place { file: "qymcad-kernel/src/naming.rs", function: "seams" },
-    Place { file: "qymcad-kernel/src/naming.rs", function: "placed" },
-    Place { file: "qymcad-kernel/src/naming.rs", function: "edges" },
-    // a vertex the bridge named (`MeshEdge::ends`), taken into the table when it is first referenced
-    Place { file: "qymcad-core/src/model/refs.rs", function: "vertex_pool" },
-    // a part copied into another document takes its names into that document's table
-    Place { file: "qymcad-core/src/model/timeline/clone.rs", function: "clone_subtree_into" },
-    // the table itself
-    Place { file: "qymcad-core/src/names.rs", function: "*" },
+    Place { file: "qymcad-kernel/src/naming.rs", function: "land_roles", why: "the roles an operation of the bridge gave, named when its result lands" },
+    Place { file: "qymcad-kernel/src/naming.rs", function: "pieces", why: "a piece of a split face, told by what cut it and what stands beside it" },
+    Place { file: "qymcad-kernel/src/naming.rs", function: "seams", why: "a face the history was silent about, named after a named neighbour" },
+    Place { file: "qymcad-kernel/src/naming.rs", function: "placed", why: "a face with no history and no named neighbour - a body brought in from a file or made of a mesh - by where it lies" },
+    Place { file: "qymcad-kernel/src/naming.rs", function: "edges", why: "an edge, after the pair of faces it runs between" },
+    Place { file: "qymcad-core/src/model/refs.rs", function: "vertex_pool", why: "a vertex the bridge named (`MeshEdge::ends`), taken into the table when first referenced" },
+    Place { file: "qymcad-core/src/model/timeline/clone.rs", function: "clone_subtree_into", why: "a part copied into another document takes the names it has into that document's table" },
+    Place { file: "qymcad-core/src/names.rs", function: "*", why: "the table of names itself" },
 ];
 
-/// A place allowed to mint names: a file of the tree and a function of it (`*` - all of the file).
+/// A place allowed to mint names: a file of the tree, a function of it (`*` - all of the file), and why it may.
 struct Place {
     file: &'static str,
     function: &'static str,
+    why: &'static str,
 }
 
 /// A call that mints a name, met in the sources.
@@ -114,6 +110,7 @@ fn names_are_minted_in_the_places_that_name_by_recipe() {
     // 37 such calls on 12.10.2026; 11 on 13.10, once the roles of every operation moved to the bridge and the model
     // minted no face names of its own; a parse that found none would pass all
     assert!(seen >= 9, "the walk found {seen} calls that mint a name, fewer than the tree has - it is reading them wrong");
+    assert!(PLACES.iter().all(|p| !p.why.is_empty()), "a place on the list says not why it may mint");
     assert!(caught.is_empty(), "a name is minted outside the places that name by recipe:\n{}", caught.join("\n"));
 }
 

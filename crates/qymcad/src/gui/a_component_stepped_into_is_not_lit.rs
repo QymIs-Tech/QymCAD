@@ -36,15 +36,11 @@ pub(crate) mod tests {
     /// frames, and a check that clicked through it failed there and passed on its own.
     pub(crate) fn calm(app: &mut App, ctx: &egui::Context) {
         let mut calm = 0;
-        for _ in 0..1200 {
+        crate::gui::session::waiting::until("five frames in a row with nothing busy", || {
             let _ = frame(app, ctx, Vec::new());
             calm = if app.regen.busy.is_none() { calm + 1 } else { 0 };
-            if calm >= 5 {
-                return;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-        panic!("still busy after a minute");
+            calm >= 5
+        });
     }
 
     /// `path` in through the door, with the program calm after it.

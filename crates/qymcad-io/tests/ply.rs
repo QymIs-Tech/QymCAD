@@ -132,9 +132,10 @@ fn a_ply_of_many_colours_reads_in_time() {
         text += &format!("3 {} {} {} {} {} {}\n", 3 * k, 3 * k + 1, 3 * k + 2, k % 256, (k / 256) % 256, k / 65536);
     }
     let p = file("many-colours.ply", Some(text.as_bytes()));
-    let start = std::time::Instant::now();
-    let back = import_ply_coloured(&p).expect("the PLY reads");
-    let took = start.elapsed();
+    // the work of the reading, not the share of the machine it was given (`time_budget::Cost`)
+    let read = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || import_ply_coloured(&p).expect("the PLY reads"));
+    let back = read.out;
     assert_eq!(back.tri_colors.len(), n as usize, "the faces' colours were not all read");
-    assert!(took.as_secs_f64() < 3.0, "60 000 faces of their own colours took {took:?} to read");
+    let budget = std::time::Duration::from_secs(3);
+    assert!(read.cost.work < budget, "{}", qymcad_core::time_budget::over("reading 60 000 faces of their own colours", read.cost, budget));
 }

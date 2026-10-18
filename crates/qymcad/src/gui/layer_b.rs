@@ -7,12 +7,12 @@
 #[cfg(test)]
 mod tests {
 
-    use crate::command_catalog::{Launch, COMMANDS};
+    use crate::command_catalog::{all, Launch};
+    use qymcad_ui_state::catalogue::Shelf;
 
     /// The timeline feature commands from the catalogue.
     fn feat_kinds() -> Vec<(&'static str, u8)> {
-        COMMANDS
-            .iter()
+        all()
             .filter_map(|c| match c.launch {
                 Launch::Feat(k) => Some((c.code, k)),
                 _ => None,
@@ -20,33 +20,12 @@ mod tests {
             .collect()
     }
 
-    /// EVERY COMMAND IN THE CATALOGUE HAS A BUTTON. A command without a button exists only for
-    /// search: a person looking for it with their eyes in the toolbar will not find it.
+    /// EVERY COMMAND OF THE TIMELINE HAS A BUTTON. A command without a button exists only for the search: a person
+    /// looking for it with their eyes on the bar will not find it. The bar is drawn from the rows, so a button is a row
+    /// on the shelf of the bar of a workbench.
     #[test]
     fn every_command_has_a_button() {
-        // THE TOOLBAR IS NOT ONE FILE: the shared creation bar lives in `gui.rs` (that is where the
-        // datum buttons are) while the workbench ones are in `panels.rs`. Checking one file would
-        // declare missing what actually exists.
-        let panels = [
-            crate::gui::panels_source::PANELS,
-            concat!(
-                include_str!("file_doors.rs"),
-                "\n",
-                include_str!("gizmo_math.rs"),
-                "\n",
-                include_str!("look.rs"),
-                "\n",
-                include_str!("panel_bits.rs"),
-                "\n",
-                include_str!("startup.rs"),
-                "\n",
-                include_str!("view_anim.rs"),
-                "\n",
-                include_str!("../gui.rs")
-            ),
-        ]
-        .concat();
-        let missing: Vec<&str> = feat_kinds().into_iter().filter(|(_, k)| !panels.contains(&format!("BarAsk::FeatCmd({k})"))).map(|(code, _)| code).collect();
+        let missing: Vec<&str> = all().filter(|c| matches!(c.launch, Launch::Feat(_)) && (c.shelf != Shelf::Bar || c.benches.is_empty())).map(|c| c.code).collect();
         assert!(missing.is_empty(), "the toolbar has no buttons for these commands: {}", missing.join(", "));
     }
 

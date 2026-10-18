@@ -124,6 +124,10 @@ pub(crate) struct DocumentFile {
     pub node_errors: Map<Id, crate::errors::CoreError>,
     #[serde(default)]
     pub node_warnings: Map<Id, crate::errors::CoreError>,
+    /// The steps whose reference was found by place and that the person has not yet accepted (`Project::placed_refs`):
+    /// the mark is the person's to take away, and a session ending does not take it.
+    #[serde(default)]
+    pub placed_refs: std::collections::BTreeSet<Id>,
 }
 
 impl DocumentFile {
@@ -172,6 +176,7 @@ impl DocumentFile {
             rollback: p.rollback,
             node_errors: p.regen_errors.iter().map(|(k, v)| (*k, v.clone())).collect(),
             node_warnings: p.regen_warnings.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            placed_refs: p.placed_refs.clone(),
         }
     }
 
@@ -212,6 +217,7 @@ impl DocumentFile {
             rollback: self.rollback,
             regen_errors: self.node_errors.into_iter().collect(),
             regen_warnings: self.node_warnings.into_iter().collect(),
+            placed_refs: self.placed_refs,
             ..Project::default()
         }
     }

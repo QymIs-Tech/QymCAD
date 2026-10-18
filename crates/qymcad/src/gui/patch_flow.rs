@@ -53,7 +53,7 @@ mod tests {
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(32)"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(32), "part"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH: the button, clicks on edges with the real pick, Enter, the surface in the timeline.

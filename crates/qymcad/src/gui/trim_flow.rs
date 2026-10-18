@@ -51,7 +51,7 @@ mod tests {
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::gui::panels_source::PANELS.contains("BarAsk::FeatCmd(34)"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(34), "part"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH TO THE TIMELINE: what is cut + where to keep + what cuts -> a node with that

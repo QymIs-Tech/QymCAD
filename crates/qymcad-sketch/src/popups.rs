@@ -85,7 +85,8 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
     let area = egui::Id::new(("cornerinput", si, pid));
     let size = ctx.memory(|m| m.area_rect(area)).map_or(CORNER_BOX_GUESS, |r| r.size());
     let at = corner_box_place(cc, rect, si, standing.first().copied(), chamfer, size).unwrap_or_else(|| qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0));
-    egui::Area::new(area).fixed_pos(at).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(area).fixed_pos(at).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 // "R of every corner" is the field of FILLET ALL, and of nothing else: it is the one that rounds a
@@ -273,7 +274,8 @@ pub fn ellipse_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Conte
             let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
             let (mut chg, mut close, mut got_focus) = (false, false, false);
             let mut buf = [std::mem::take(&mut pl.place.buf[0]), std::mem::take(&mut pl.place.buf[1])];
-            egui::Area::new(egui::Id::new(("ellinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+            egui::Area::new(egui::Id::new(("ellinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+                qymcad_ui_state::at_geometry_ui(ui);
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(qymcad_i18n::tr("sk-width-short"));
@@ -359,8 +361,9 @@ pub fn rect_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context,
         let mut buf = [std::mem::take(&mut pl.place.buf[0]), std::mem::take(&mut pl.place.buf[1])];
         egui::Area::new(egui::Id::new(("rectinput", si)))
             .fixed_pos(qymcad_ui_state::clamp_popup((qymcad_ui_state::Sheet { view: *pl.view, rect }).at(at), rect) + egui::vec2(10.0, -10.0))
-            .order(egui::Order::Foreground)
+            .order(qymcad_ui_state::AT_GEOMETRY)
             .show(ctx, |ui| {
+                qymcad_ui_state::at_geometry_ui(ui);
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(qymcad_i18n::tr("sk-width-short"));
@@ -435,7 +438,8 @@ pub fn poly_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context,
             let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
             let (mut chg, mut close, mut got_focus) = (false, false, false);
             let mut buf = [std::mem::take(&mut pl.place.buf[0]), std::mem::take(&mut pl.place.buf[1])];
-            egui::Area::new(egui::Id::new(("polyinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+            egui::Area::new(egui::Id::new(("polyinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+                qymcad_ui_state::at_geometry_ui(ui);
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(qymcad_i18n::tr("sk-radius"));
@@ -539,8 +543,9 @@ pub fn rect_dims_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context, 
     let mut buf = std::mem::take(&mut pl.place.buf);
     egui::Area::new(egui::Id::new(("rectdims", si)))
         .fixed_pos(qymcad_ui_state::clamp_popup((qymcad_ui_state::Sheet { view: *pl.view, rect }).at(corner), rect) + egui::vec2(10.0, -10.0))
-        .order(egui::Order::Foreground)
+        .order(qymcad_ui_state::AT_GEOMETRY)
         .show(ctx, |ui| {
+            qymcad_ui_state::at_geometry_ui(ui);
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(qymcad_i18n::tr("sk-width-short"));
@@ -641,7 +646,8 @@ pub fn sketch_rotate_popup(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Cont
     // AN ANGLE THAT CANNOT BE TAKEN is refused where it is typed: the reason on the mark beside the field, the tool
     // and what was typed staying. It used to be applied as 0 or taken away with the popup.
     let checked = angle_of(sk.project, &buf);
-    egui::Area::new(egui::Id::new(("rotinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(12.0, -12.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new(("rotinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(12.0, -12.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(format!("{} {}", ph::ARROWS_CLOCKWISE, qymcad_i18n::tr("sk-angle-deg")));
@@ -759,7 +765,8 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
                 sk.dim.typed = false;
             }
             let mut buf_changed = false;
-            egui::Area::new(egui::Id::new(("circedit", si, eid))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(8.0, -10.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+            egui::Area::new(egui::Id::new(("circedit", si, eid))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(8.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+                qymcad_ui_state::at_geometry_ui(ui);
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(if is_arc { qymcad_i18n::tr("sk-radius") } else { qymcad_i18n::tr("sk-diameter") });
@@ -882,7 +889,20 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
     if want_focus {
         buf = if cur_expr.trim().is_empty() { qymcad_core::expr::fmt_num(cur_val) } else { cur_expr.clone() };
     }
-    let eval_res = if buf.trim().is_empty() { None } else { Some(sk.project.eval_expr(&buf)) };
+    // A FORMULA THAT COMES BACK TO THE NAME OF THIS VERY DIMENSION has no value to take, as the table of parameters says
+    // (`check_dim_target_text`): taken, `dia + 1` written for `dia` added one on every solve - measured 20 -> 24 over the
+    // solves of one edit and two more. It is judged where every other formula with no value is, so the reason stands under
+    // the field while typing and Enter is refused with it.
+    let own =
+        sk.project.sketches[si].constraints.get(ci).and_then(Project::dim_refs).map(|r| qymcad_core::model::DimTarget::Sketch { sketch: sk.project.sketches[si].id, refs: Project::dim_key_pub(&r) });
+    let eval_res = if buf.trim().is_empty() {
+        None
+    } else {
+        Some(match &own {
+            Some(target) => sk.project.check_dim_target_text(target, &buf),
+            None => sk.project.eval_expr(&buf),
+        })
+    };
     let (mut toggle_driven, mut toggle_diam) = (false, false);
     let mut name_taken = false;
     let is_edge = matches!(sk.project.sketches[si].constraints.get(ci), Some(Constraint::EdgeDistance { .. }));
@@ -919,8 +939,11 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
     // WHAT WAS ASKED FOR: a new driver name. It is applied AFTER the drawing - during it the document is
     // lent to the field (which reads the project), and there is no reason to change the model mid-frame.
     let mut name_commit: Option<String> = None;
-    let mut name_owner: Option<String> = None;
-    egui::Area::new(egui::Id::new(("dimedit", si, ci))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(8.0, -10.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    let mut name_refusal: Option<String> = None;
+    // the hint over the refusal, with the same reason as the line
+    let mut name_hint = String::new();
+    egui::Area::new(egui::Id::new(("dimedit", si, ci))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(8.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(label);
@@ -967,7 +990,9 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
             if dim_refs.is_some() {
                 // WHETHER THE NAME WILL DO. An empty one is legitimate: the dimension simply stops being a
                 // driver.
-                let ok = |nm: &str| nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !sk.project.driver_name_taken(nm, sid, &key_refs));
+                // a name that would close a circle of formulas will not do either, and the line says the chain
+                let circle = |nm: &str| own.as_ref().and_then(|t| sk.project.naming_closes_circle(t, nm));
+                let ok = |nm: &str| nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !sk.project.driver_name_taken(nm, sid, &key_refs) && circle(nm).is_none());
                 ui.horizontal(|ui| {
                     // THE CAPTION IS TRANSLATABLE. A raw "driver:" used to stand here - the only string of
                     // the popup that went around the language catalogue.
@@ -983,17 +1008,26 @@ pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect
                     // popup simply refuses to apply and says why.
                     name_taken = !nm.is_empty() && !ok(&nm);
                     if name_taken {
-                        name_owner = sk.project.name_owner(&nm).map(|o| if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { o.path });
+                        // WHOSE NAME IT IS, not merely "taken": otherwise the namesake has to be hunted for
+                        // across the whole project by hand. A name with no owner is unusable in itself, and
+                        // the line and its hint say why - the hint said "taken" over `tau`, which nobody holds.
+                        // the owner is somebody else: a dimension keeps its own name in the field
+                        let owner = sk.project.name_owner(&nm).filter(|_| sk.project.driver_name_taken(&nm, sid, &key_refs));
+                        let unfit = match circle(&nm) {
+                            Some(chain) => qymcad_i18n::error_words::expr_error_text(&qymcad_core::errors::ExprError::LeansOnItself(chain)),
+                            None => qymcad_i18n::error_words::ident_refusal_text(&nm),
+                        };
+                        name_hint = if owner.is_some() { qymcad_i18n::tr("sk-driver-name-taken-hint") } else { unfit.clone() };
+                        name_refusal = Some(match owner {
+                            Some(o) => {
+                                qymcad_i18n::tr2("par-name-taken", "name", "", "where", &if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { qymcad_ui_state::path_in_words(&o.path) })
+                            }
+                            None => unfit,
+                        });
                     }
                 });
-                if name_taken {
-                    // WHOSE NAME IT IS, not merely "taken": otherwise the namesake has to be hunted for
-                    // across the whole project by hand. A name with no owner is simply unusable in itself.
-                    let msg = match &name_owner {
-                        Some(w) => qymcad_i18n::tr2("par-name-taken", "name", "", "where", w),
-                        None => qymcad_i18n::tr("sk-driver-name-bad"),
-                    };
-                    qymcad_ui_state::say(ui, &sk.scheme.pal, &qymcad_ui_state::Notice::warning(msg), qymcad_ui_state::NoticeSize::Small).on_hover_text(qymcad_i18n::tr("sk-driver-name-taken-hint"));
+                if let Some(msg) = name_refusal.take() {
+                    qymcad_ui_state::say(ui, &sk.scheme.pal, &qymcad_ui_state::Notice::warning(msg), qymcad_ui_state::NoticeSize::Small).on_hover_text(&name_hint);
                 }
             }
         });

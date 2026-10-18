@@ -30,5 +30,6 @@ fn a_smooth_edge_left_out_takes_its_name_with_it() {
         .get(&second)
         .map(|fs| fs.iter().filter_map(|f| p.names.get(f.id)).filter(|g| g.feature == second && format!("{:?}", g.role) == "Blend").map(|g| g.src).collect())
         .unwrap_or_default();
-    assert_eq!(blends, vec![other as u64], "the blend of the second rounding is named after edges {blends:?}, its own edge is {other:#x} and the tangent one left out {tangent:#x}");
+    // picked second, after the tangent edge left out
+    assert_eq!(blends, vec![2], "the blend of the second rounding is named after picks {blends:?}; its own edge {other:#x} is the second pick, the tangent one left out {tangent:#x} the first");
 }

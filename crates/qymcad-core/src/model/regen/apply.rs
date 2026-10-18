@@ -2,6 +2,13 @@
 
 use super::*;
 
+/// A BLEND AND THE BODY IT WORKS ON: the node, and its source body.
+#[derive(Clone, Copy)]
+pub(crate) struct BlendOn {
+    pub node: Id,
+    pub src: Id,
+}
+
 impl Project {
     pub(crate) fn live_fillet_edges(&mut self, node_id: Id, src: Id, r: &crate::refs::Ref, emap: &EdgeRenames, kernel: &dyn crate::feature::Kernel) -> Vec<u32> {
         // The two paths are told apart by the kind of query rather than by whether it contains numbers.
@@ -30,6 +37,34 @@ impl Project {
             return live;
         }
         live.into_iter().filter(|e| known.contains(e)).collect()
+    }
+
+    /// THE EDGES AS THE NODE PICKED THEM: for each picked edge the edge of the body it resolves to now, with its place in
+    /// the pick - what the faces of the blend are named after. Asked one by one; the counts and marks of a find by place
+    /// are left as they were, the resolution of the whole list making them once.
+    pub(crate) fn picked_edges(&mut self, on: BlendOn, edges: &crate::refs::Ref, emap: &EdgeRenames, kernel: &dyn crate::feature::Kernel) -> Vec<crate::feature::PickedEdge> {
+        let BlendOn { node: node_id, src } = on;
+        let picks = edges.query.picked_descs();
+        if picks.is_empty() {
+            return Vec::new();
+        }
+        let cur = kernel.edges(src);
+        let translated = self.translate_edge_refs(node_id, src, &picks, emap, &cur);
+        let keep = self.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed);
+        let marked = self.placed_now.lock().map(|s| s.clone()).unwrap_or_default();
+        let mut out = Vec::new();
+        for (k, d) in translated.iter().enumerate() {
+            let one = if cur.is_empty() { self.resolve_edge_ids(node_id, src, &[*d]) } else { self.resolve_edge_ids_in(&cur, node_id, &[*d]) };
+            if let Some(live) = one.first() {
+                let by = if *live == *d { crate::feature::PickedBy::Name } else { crate::feature::PickedBy::Translation };
+                out.push(crate::feature::PickedEdge { live: *live, place: (k + 1).min(u16::MAX as usize) as u16, by });
+            }
+        }
+        self.snap_rebinds.store(keep, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut now) = self.placed_now.lock() {
+            *now = marked;
+        }
+        out
     }
 
     /// HOW MANY OF THE PICKED EDGES FIND NOTHING, each asked on its own: an edge merged with its neighbour finds the
@@ -253,6 +288,10 @@ impl Project {
                         _ => (0, 0),
                     };
                     self.regen_warnings.insert(node_id, crate::errors::CoreError::EdgesDropped { asked: asked.max(asked0), dropped: dropped + lost0 });
+                }
+                // built a hair short of its size: said where nothing else is
+                if kernel.take_stepped_back(body) && !self.regen_warnings.contains_key(&node_id) {
+                    self.regen_warnings.insert(node_id, crate::errors::CoreError::BuiltSteppedBack);
                 }
                 true
             }

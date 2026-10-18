@@ -42,6 +42,8 @@ mod tests {
                 ExprError::UnexpectedEnd,
                 ExprError::UnknownName("w".into()),
                 ExprError::TooDeep { limit: 256 },
+                ExprError::LeansOnItself("b_len -> a_len -> b_len".into()),
+                ExprError::NameWithoutValue("a_len".into()),
             ] {
                 let msg = crate::gui::error_words::expr_error_text(&e);
                 assert!(!msg.trim().is_empty(), "{code}: {e:?} — an empty message");

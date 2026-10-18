@@ -12,11 +12,13 @@
 mod tests {
     use super::super::{hand::Hand, App};
     mod check_all;
+    mod drawing;
     mod save_and_reopen;
     mod the_faults;
+    mod the_layout;
     mod the_view;
     use check_all::check_all;
-    use save_and_reopen::save_and_reopen;
+    use drawing::{drawing, Drawing};
 
     /// APPLY A TOOL TO THE CURRENT BODY OF A PART - one recipe per tool, for any part.
     ///
@@ -458,17 +460,6 @@ mod tests {
         made
     }
 
-    /// A sketch tool by its number, its name in a report, and the clicks it is used with.
-    struct Drawing {
-        tool: u8,
-        name: &'static str,
-        clicks: &'static [(f64, f64)],
-    }
-
-    fn drawing(tool: u8, name: &'static str, clicks: &'static [(f64, f64)]) -> Drawing {
-        Drawing { tool, name, clicks }
-    }
-
     /// SOMEONE WITH A 3D PRINTER MAKES A BOX WITH A LID: the housing, a sketch on a face, holes, fillets, a
     /// shell, a second part, an assembly, a save, and a dimension edited in the middle of it.
     #[test]
@@ -490,7 +481,7 @@ mod tests {
         app.chosen.sel = super::super::Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 20.0, 10.0], 8.0).tool(1).set("height", 25.0).enter();
-        check_all(&mut app, "the housing was extruded", &mut problems);
+        the_layout::set_by_hand(&mut app, &mut problems); // the extrusion checked, then the layout set by hand
 
         // --- FILLETS ON THE VERTICAL EDGES ---
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
@@ -615,7 +606,7 @@ mod tests {
         check_all(&mut app, "a tilted datum plane off the side of the housing", &mut problems);
 
         // --- SAVE AND REOPEN ---
-        let mut app = save_and_reopen(&mut app, "the housing is finished", &mut problems);
+        let mut app = save_and_reopen::save_and_reopen(&mut app, "the housing is finished", &mut problems);
         if tilted(&app).is_none_or(|deg| (deg - 30.0).abs() > 1e-6) {
             problems.push(format!("[a tilted datum plane] after opening it leans {:?} deg off the side face", tilted(&app)));
         }
@@ -1001,7 +992,7 @@ mod tests {
         }
 
         // --- SAVE, REOPEN AND GO ON WORKING IN THE REOPENED DOCUMENT ---
-        let mut app = save_and_reopen(&mut app, "housing + lid + joint", &mut problems);
+        let mut app = save_and_reopen::save_and_reopen(&mut app, "housing + lid + joint", &mut problems);
         let comps: Vec<u64> = app.project.components.iter().filter(|c| c.id != app.project.root).map(|c| c.id).collect();
         if let Some(&first) = comps.first() {
             app.enter_component(first);
@@ -2282,7 +2273,7 @@ mod tests {
             let names_before: Vec<String> = app.project.components.iter().map(|c| c.name.clone()).collect();
             let area_before: f64 = app.project.regen_faces.values().flatten().map(|f| f.area).sum();
 
-            let app2 = save_and_reopen(&mut app, "the save round after every operation", &mut problems);
+            let app2 = save_and_reopen::save_and_reopen(&mut app, "the save round after every operation", &mut problems);
 
             if app2.project.timeline.len() != nodes_before {
                 problems.push(format!("after the save round there are {} nodes instead of {nodes_before}", app2.project.timeline.len()));

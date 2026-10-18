@@ -7,7 +7,7 @@
 //! the names: each copy's names are its own. The case the record decides is in qymcad-kernel,
 //! `a_union_gives_every_face_a_name_of_its_own`.)
 use qymcad_core::model::{ArrayAxis, Project};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// The copies of a grid pattern, along x and along y.
 #[derive(Clone, Copy)]
@@ -28,12 +28,13 @@ fn pattern_of_boxes(grid: Grid) -> (Project, u64) {
     (p, body)
 }
 
-/// How long one rebuild of a pattern of boxes on `grid` takes.
+/// How long one rebuild of a pattern of boxes on `grid` takes: its work (`time_budget::Cost`), the wall less the share
+/// the threads of the kernel stood ready with no processor free.
 fn rebuild_time(grid: Grid) -> Duration {
     let (mut p, _) = pattern_of_boxes(grid);
-    let t = Instant::now();
-    let (report, _) = qymcad_testkit::regenerate(&mut p);
-    let took = t.elapsed();
+    let rebuilt = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Process, || qymcad_testkit::regenerate(&mut p));
+    let (report, _) = rebuilt.out;
+    let took = rebuilt.cost.work;
     assert!(report.errors.is_empty(), "the pattern did not build: {:?}", report.errors);
     took
 }

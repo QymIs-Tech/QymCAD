@@ -99,9 +99,8 @@ mod tests {
     /// Frames until the program rests, each read for the rebuild in flight and the bodies on screen.
     fn watch_to_rest(h: &mut Hand, bodies: &[Id], row: &str) -> Watched {
         let mut w = Watched { loud: Vec::new(), clashes: Vec::new(), empty_frames: 0, frames: 0, row_tops: Vec::new() };
-        let began = std::time::Instant::now();
         let mut rest = 0;
-        while rest < 10 && began.elapsed() < std::time::Duration::from_secs(120) {
+        crate::gui::session::waiting::until("the program to rest after the bar moved", || {
             h.frame(Vec::new());
             w.frames += 1;
             w.clashes.extend(id_clashes(h));
@@ -118,8 +117,8 @@ mod tests {
                 None if !h.app.regen.wanted => rest += 1,
                 None => {}
             }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+            rest >= 10
+        });
         w.loud.dedup();
         w.clashes.sort();
         w.clashes.dedup();

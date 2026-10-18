@@ -10,6 +10,7 @@
 //! SEARCH HAS NO LIST OF COMMANDS OF ITS OWN. It reads `command_catalog`, and a guard keeps the
 //! catalogue and the toolbar together. A search with its own list would fall behind the toolbar on
 //! the very first new feature — that has already happened to the help and to joint diagnostics.
+use crate::command_catalog::Named;
 use super::App;
 use egui_phosphor::regular as ph;
 use crate::gui::WinKind;
@@ -48,14 +49,14 @@ pub(crate) fn command_search_hits(workbench: qymcad_ui_state::Workbench, query: 
     let wb = crate::gui::workbench_code(&workbench);
     let mut mine: Vec<(usize, &'static crate::command_catalog::Command)> = Vec::new();
     let mut other: Vec<(usize, &'static crate::command_catalog::Command)> = Vec::new();
-    for c in crate::command_catalog::COMMANDS {
+    for c in crate::command_catalog::all() {
         let hit = crate::i18n::search::find_in_names(&q, &c.name(), |lang| c.name_in(lang));
         // and by code: `part.fillet` is found by "fillet" even without a name
         let hit = hit.or_else(|| c.code.to_lowercase().find(&q));
         let Some(at) = hit else { continue };
         // a match AT THE START of a name is more precise than one in the middle, so it ranks higher
         let rank = at;
-        if c.workbench == wb {
+        if c.benches.contains(&wb) {
             mine.push((rank, c));
         } else {
             other.push((rank, c));
@@ -109,7 +110,7 @@ pub(crate) fn command_search_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui
                 ui.label(egui::RichText::new(crate::i18n::tr1("cs-nothing", "q", &wc.win.cmd_search_query)).weak().small());
             }
             for (i, c) in hits.iter().enumerate() {
-                let mine = c.workbench == wb_code;
+                let mine = c.benches.contains(&wb_code);
                 let key = qymcad_ui_state::key_label(&qymcad_ui_state::hotkey_key(wc.set, c.code));
                 ui.horizontal(|ui| {
                     let mut text = egui::RichText::new(c.name());
@@ -126,7 +127,7 @@ pub(crate) fn command_search_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui
                         // ANOTHER WORKBENCH - SAY SO. Otherwise the command "works wrong": a
                         // person will not understand why the workbench changed.
                         if !mine {
-                            ui.label(egui::RichText::new(crate::i18n::tr(&format!("wb-{}", c.workbench))).weak().small());
+                            ui.label(egui::RichText::new(crate::i18n::tr(&format!("wb-{}", c.home()))).weak().small());
                         }
                     });
                 });

@@ -47,3 +47,11 @@ the first thing worth looking at before release.
 One part's sketch can stand on another part's face — then an explicit **external reference** appears
 between them. That is how a bracket's dimensions come from the housing instead of being retyped into
 it. The reference shows in the properties of the part and can be broken — [more](assembly/06-external-refs).
+
+## The buttons of the bar
+
+Which buttons stand on the bar of this workbench and in what order is set in **Windows -> Settings -> Assembly**: press the
+heading **Buttons of the bar**, drag a row up or down to move its button, press **In "More"** to take it off the bar.
+**Restore the standard buttons** brings the usual set back. More in [The layout of the panels](general/15-layout).
+
+![The buttons of the bar of the assembly in its section of the settings.](img/bar-buttons-assembly.png)

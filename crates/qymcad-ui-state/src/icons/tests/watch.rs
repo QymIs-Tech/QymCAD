@@ -339,8 +339,9 @@ fn background_watcher_thread_updates_egui_loader_on_icon_edit() {
     std::fs::write(icons_dir.join("line.svg"), svg2).unwrap();
 
     // The watcher polls every 250 ms. A fixed sleep of 350 ms failed 3 runs of 3 when the checks that hammer the
-    // active stack from threads ran beside it: the poll came late. The revision is awaited up to 5 s instead.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    // active stack from threads ran beside it: the poll came late. The revision is awaited instead, up to 30 s - the
+    // bound of a watcher that never polls, not of a busy machine.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while get_icon_revision(&ctx) == rev1 && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }

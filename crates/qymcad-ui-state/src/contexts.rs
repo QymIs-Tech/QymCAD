@@ -1079,10 +1079,12 @@ pub enum WinAsk {
     /// Save the document.
     Save,
     /// Jump to a sketch or a feature: step into its component (if any) and select it. ONE request,
-    /// because stepping in clears the selection.
+    /// because stepping in clears the selection - and writes the context on the status line, so the words
+    /// of a fault led to travel with it and are said after the step.
     GoTo {
         owner: Option<Id>,
         sel: Sel,
+        said: Option<Notice>,
     },
     /// Bring a part of the library into the document.
     InsertPart(PartSource),

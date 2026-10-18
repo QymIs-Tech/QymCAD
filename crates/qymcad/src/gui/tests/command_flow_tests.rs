@@ -88,3 +88,4 @@ mod edits;
 mod saving;
 mod buttons;
 mod picks;
+mod found_by_place;

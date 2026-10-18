@@ -39,3 +39,11 @@ lights up, **Del** deletes it.
 
 Key **X** toggles construction mode: such lines are dashed, stay out of the body's profile and serve as supports —
 centrelines, diagonals, circles for patterns.
+
+## The buttons of the bar
+
+Which buttons stand on the bar of this workbench and in what order is set in **Windows -> Settings -> Sketch**: press the
+heading **Buttons of the bar**, drag a row up or down to move its button, press **In "More"** to take it off the bar.
+**Restore the standard buttons** brings the usual set back. More in [The layout of the panels](general/15-layout).
+
+![The buttons of the bar of the sketch in its section of the settings.](img/bar-buttons-sketch.png)

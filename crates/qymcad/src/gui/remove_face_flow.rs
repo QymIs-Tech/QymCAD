@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn the_tool_is_visible_everywhere_it_should_be() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(panels.contains("BarAsk::FeatCmd(26)"), "the button in the panel");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(26), "part"), "the button in the panel");
         assert!(crate::gui::render_source::has(panels, "FeatureKind::RemoveFace { ref faces, .. } =>"), "the row in the feature tree");
         let gui = concat!(
             include_str!("file_doors.rs"),

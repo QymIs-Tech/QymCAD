@@ -99,7 +99,8 @@ pub fn offset_box(oc: OffsetCtx, view: &qymcad_ui_state::View2d, si: usize, ctx:
         Ok(v) if !v.is_finite() || v.abs() <= 1e-6 => Some(qymcad_i18n::tr("cmd-value-zero")),
         Ok(_) => None,
     };
-    egui::Area::new(egui::Id::new(("offsetbox", si))).fixed_pos(pos).order(egui::Order::Foreground).show(ctx, |ui| {
+    egui::Area::new(egui::Id::new(("offsetbox", si))).fixed_pos(pos).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
+        qymcad_ui_state::at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(qymcad_i18n::tr("opt-distance"));

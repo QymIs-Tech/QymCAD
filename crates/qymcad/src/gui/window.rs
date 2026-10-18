@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use super::App;
 
+mod id_clash;
+
 /// The window: its context and clock, and what its last frame drew and asked for.
 pub(crate) struct Window {
     /// THE CONTEXT the mouse and the keys go into, kept for the whole life of the window. egui tells a click from
@@ -22,9 +24,15 @@ pub(crate) struct Window {
     pub(crate) shapes: Vec<egui::epaint::ClippedShape>,
     /// Every texture the frames loaded and have not freed, as pictures.
     pub(crate) textures: std::collections::HashMap<egui::TextureId, super::help_raster::Tex>,
-    /// THE PLATES OF THE TOOL BUTTONS the last frame drew and did not clip away: an icon button and a symbol
-    /// button are both a 40x34 plate, and neither carries a word - what it does is in its hint.
+    /// THE PLATES OF THE TOOL BUTTONS the last frame drew: the buttons of the bars and the rows of an open "More"
+    /// list, as the bars wrote them down. None of them carries a word a person could press it by - what it does is in
+    /// its hint.
     pub(crate) plates: Vec<egui::Pos2>,
+    /// The "More" buttons of the bars the last frame drew.
+    pub(crate) mores: Vec<egui::Pos2>,
+    /// EGUI'S COMPLAINTS OF ONE ID TAKEN TWICE, from every frame since they were last read: they flash in the frames of a
+    /// change and are gone once the screen is at rest.
+    pub(crate) clashes: Vec<String>,
     /// What the frames put on the clipboard, oldest first.
     pub(crate) copied: Vec<String>,
     /// The pages the frames asked the system to open, oldest first.
@@ -39,7 +47,9 @@ pub(crate) struct Window {
     pub(crate) repaint: Duration,
     /// The shape of the pointer the last frame asked for.
     pub(crate) cursor: egui::CursorIcon,
-    /// THE LONGEST A FRAME HAS TAKEN since it was last asked, in wall time.
+    /// THE LONGEST A FRAME HAS TAKEN since it was last asked: its work (`time_budget::Cost`), the wall clock less the
+    /// time the thread stood ready with no processor free. Measured by the wall, frames read 14-21 s under a load of 69
+    /// on 20 threads, against the 3 s every step of a probe allows.
     pub(crate) worst_frame: Duration,
     /// The same, since the last step of a check was watched.
     pub(crate) worst_step_frame: Duration,
@@ -97,6 +107,8 @@ impl Window {
             shapes: Vec::new(),
             textures: std::collections::HashMap::new(),
             plates: Vec::new(),
+            mores: Vec::new(),
+            clashes: Vec::new(),
             copied: Vec::new(),
             urls: Vec::new(),
             title: None,
@@ -130,16 +142,37 @@ impl Window {
         if close {
             raw.viewports.entry(egui::ViewportId::ROOT).or_default().events.push(egui::ViewportEvent::Close);
         }
-        let began = std::time::Instant::now();
+        let meter = qymcad_core::time_budget::Meter::start(qymcad_core::time_budget::Doer::Thread);
         let out = self.ctx.run_ui(raw, |ui| app.draw_frame(ui));
-        self.worst_frame = self.worst_frame.max(began.elapsed());
-        self.worst_step_frame = self.worst_step_frame.max(began.elapsed());
+        let took = meter.cost().work;
+        self.worst_frame = self.worst_frame.max(took);
+        self.worst_step_frame = self.worst_step_frame.max(took);
         self.drawn.clear();
-        self.plates.clear();
         for shape in &out.shapes {
             words(&shape.shape, &mut self.drawn);
-            plates(&shape.shape, shape.clip_rect, &mut self.plates);
         }
+        self.plates = qymcad_shell::noted_buttons(&self.ctx).into_iter().map(|r| r.center()).collect();
+        self.mores = qymcad_shell::noted_more(&self.ctx).into_iter().map(|r| r.center()).collect();
+        for (t, _) in &self.drawn {
+            if (t.starts_with("First use of") || t.starts_with("Second use of") || t.starts_with("Double use of")) && !self.clashes.contains(t) {
+                self.clashes.push(t.clone());
+            }
+        }
+        // each red frame named with the words written where it stands, so that a check failing on it says which widget
+        for at in id_clash::red_frames(&out.shapes) {
+            let words: Vec<&str> = self.drawn.iter().filter(|(t, w)| !t.is_empty() && w.intersects(at)).map(|(t, _)| t.as_str()).collect();
+            // and the widgets of the last frame a screen reader was told of there, by their kind and caption
+            let widgets: Vec<String> = self.widgets.iter().filter(|w| w.rect.intersects(at)).map(|w| format!("{:?} {:?}", w.kind, w.label)).collect();
+            let said = format!("a widget took another id at {at:?} {words:?} {widgets:?}");
+            if !self.clashes.contains(&said) {
+                self.clashes.push(said);
+            }
+        }
+        // NOT ONE WIDGET UNDER ANOTHER'S ID, in any frame any check draws: egui paints its complaint over the window - two
+        // widgets of a frame under one id, or a widget that took another id at its place - and a person sees red frames
+        // that no number of a check would notice. Reported behaviour: red frames on a change of workbench, on a rebuild,
+        // on a panel carried on the diagram of the layout.
+        assert!(self.clashes.is_empty(), "egui marked widgets under one id: {}", self.clashes.join("; "));
         // NOT ONE KEY OF THE CATALOGUE ON THE SCREEN INSTEAD OF A WORD, in any frame any check draws: a key the
         // catalogue lacks is drawn as it is, and nothing else would notice it
         let leaked: Vec<String> = self.drawn.iter().flat_map(|(t, _)| super::key_leak::leaks(t).into_iter().map(move |k| format!("{k:?} in {t:?}"))).collect();
@@ -238,11 +271,54 @@ fn words(s: &egui::epaint::Shape, out: &mut Vec<(String, egui::Rect)>) {
     }
 }
 
-/// The centres of the 40x34 tool plates of a shape that its clip leaves visible.
-fn plates(s: &egui::epaint::Shape, clip: egui::Rect, out: &mut Vec<egui::Pos2>) {
-    match s {
-        egui::epaint::Shape::Rect(r) if (r.rect.width() - 40.0).abs() < 0.5 && (r.rect.height() - 34.0).abs() < 0.5 && clip.contains(r.rect.center()) => out.push(r.rect.center()),
-        egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| plates(s, clip, out)),
-        _ => {}
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    /// A FRAME IS CHARGED ITS WORK, NOT THE MACHINE'S: frames of an empty window drawn while four threads a processor
+    /// spin beside them, each frame's charge read on its own. The frames are a part of the loop that draws them, so
+    /// their charges add up to no more than the work of the loop - the share of the wall the machine gave the spinners
+    /// left out - and a frame stretched by the load does not read as a stalled window. Measured on 20 threads, three
+    /// runs: 393-1304 frames, 0.79-0.84 s on the wall, charged 0.05-0.13 s of the loop's 0.11-0.34 s of work; charged
+    /// by the wall, two runs, 0.18-0.28 s of the loop's 0.07-0.19 s.
+    #[test]
+    fn a_frame_is_charged_its_work_not_the_load() {
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let mut app = crate::gui::App::default();
+        let mut win = super::Window::new(egui::vec2(1280.0, 800.0));
+        for _ in 0..3 {
+            win.run(&mut app, egui::Modifiers::default(), Vec::new(), false);
+        }
+        let until = Instant::now() + Duration::from_millis(900);
+        let crowd: Vec<_> = (0..4 * threads)
+            .map(|_| {
+                std::thread::spawn(move || {
+                    let mut n = 0u64;
+                    while Instant::now() < until {
+                        n = n.wrapping_add(1);
+                    }
+                    n
+                })
+            })
+            .collect();
+        let meter = qymcad_core::time_budget::Meter::start(qymcad_core::time_budget::Doer::Thread);
+        let (mut wall, mut charged) = (Duration::ZERO, Duration::ZERO);
+        let mut frames = 0;
+        while Instant::now() + Duration::from_millis(100) < until {
+            let _ = std::mem::take(&mut win.worst_frame);
+            let began = Instant::now();
+            win.run(&mut app, egui::Modifiers::default(), Vec::new(), false);
+            wall += began.elapsed();
+            charged += win.worst_frame;
+            frames += 1;
+        }
+        let cost = meter.cost();
+        crowd.into_iter().for_each(|t| drop(t.join()));
+        eprintln!("{frames} frames among {} spinning threads: {wall:?} on the wall, charged {charged:?}; all of them {cost}", 4 * threads);
+        if cost.waited.is_zero() {
+            eprintln!("PASSED OVER: this system gives no counters of a thread's time; a frame is charged the wall clock");
+            return;
+        }
+        assert!(charged <= cost.work + Duration::from_millis(5), "{frames} frames of {wall:?} on the wall were charged {charged:?}, more than the loop that drew them did: {cost}");
     }
 }

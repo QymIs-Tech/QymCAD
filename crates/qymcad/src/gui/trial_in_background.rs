@@ -11,14 +11,11 @@ mod tests {
         Hand::new(app).set("radius", radius);
         let first = qymcad_part::trial_refusal(&mut app.part_ctx(), ctx);
         let mut last = first.clone();
-        // up to a minute: the worker waits for the kernel's lock, which the other checks of a full run hold in turn
-        for _ in 0..6000 {
+        // the worker waits for the kernel's lock, which the other checks of a full run hold in turn
+        crate::gui::session::waiting::until("the trial of the fillet to answer", || {
             last = qymcad_part::trial_refusal(&mut app.part_ctx(), ctx);
-            if last != Trial::Checking {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+            last != Trial::Checking
+        });
         (first, last)
     }
 

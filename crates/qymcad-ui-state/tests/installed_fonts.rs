@@ -93,10 +93,14 @@ fn one_font_lying_in_two_places_is_shown_once() {
 #[test]
 fn opening_the_list_does_not_freeze_the_window() {
     let mut picker = qymcad_ui_state::FontPicker::default();
-    let started = std::time::Instant::now();
-    picker.start_scan();
-    let took = started.elapsed();
-    assert!(took < std::time::Duration::from_millis(50), "starting the walk took {took:?} - it is being done in the frame, and the whole walk is around half a second");
+    // the work of the frame, not the share of the machine it was given (`time_budget::Cost`)
+    let started = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || picker.start_scan()).cost;
+    let budget = std::time::Duration::from_millis(50);
+    assert!(
+        started.work < budget,
+        "{} - the walk is being done in the frame, and the whole walk is around half a second",
+        qymcad_core::time_budget::over("starting the walk of the fonts", started, budget)
+    );
     assert!(picker.scanning() || !picker.faces.is_empty(), "the walk was neither started nor already done");
 
     let waiting = std::time::Instant::now();

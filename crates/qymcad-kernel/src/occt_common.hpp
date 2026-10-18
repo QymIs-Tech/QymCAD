@@ -85,6 +85,7 @@
 #include <BRepTools_ReShape.hxx>
 #include <BRepTools_Modification.hxx>
 #include <BRepOffset_MakeSimpleOffset.hxx>
+#include <BRepOffset_SimpleOffset.hxx>
 #include <BRepTools_Modifier.hxx>
 #include <ShapeFix_ShapeTolerance.hxx>
 #include <ShapeFix_FixSmallFace.hxx>
@@ -297,10 +298,9 @@ struct QymShape {
     TopoDS_Shape shape;
     TopTools_DataMapOfShapeInteger fids; // the persistent ids of FACES
     TopTools_DataMapOfShapeInteger eids; // the persistent ids of EDGES
-    // A FACE SPLIT: the operation cut one face into several pieces. The first keeps the source's name and
-    // the kernel gives the rest a positional number — but what should name them is their ORIGIN: "piece k
-    // of face N". The name is assembled on the Rust side (it is the one that knows the naming scheme), so
-    // all that is recorded here is: face -> the source's name, and face -> the piece number.
+    // A FACE SPLIT: the operation cut one face into several pieces. What they are called is told on the Rust side by
+    // what cut each and what stands beside it (`naming::pieces`, `crates/qymcad-kernel/NAMING.md`, step 4); all that is
+    // recorded here is the face -> the source's name, and the face -> its place among the pieces as the history gave it.
     TopTools_DataMapOfShapeInteger fsplit_of;
     TopTools_DataMapOfShapeInteger fsplit_idx;
     // The ABSORPTION of names when coplanar faces merge: "the former name -> the shared face's name".
@@ -457,8 +457,10 @@ struct QymRepairHistory : QymHistory {
 };
 
 /// A BINDING CARRIED THROUGH A HISTORY: every element of type `ty` of the shapes `before`, bound to a value, hands it
-/// to its images, or keeps it when the algorithm left it as it was; a removed element hands it to none. The walk goes
-/// in the order of the shapes, so when two elements become one the first of them wins every time.
+/// to its images, or keeps it when the algorithm left it as it was; a removed element hands it to none. When two
+/// elements become one the rule of every merge decides (`takes_the_name`), whatever the order of the walk: the pieces of an arc glued back into one
+/// circle keep the value of the first piece by the recipe. With the first of the walk winning, a circle cut in four
+/// took the value of whichever piece the walk met first, and the caps of its region were looked up under it in vain.
 void carry_binding(QymHistory& history, const TopTools_ListOfShape& before, TopAbs_ShapeEnum ty, TopTools_DataMapOfShapeInteger& bound);
 
 /// HOW THE NAMES OF AN OPERAND ARE CARRIED. The first operand of an operation - the body it works on - gives all its
@@ -506,85 +508,6 @@ struct QymModifierHistory : QymHistory {
     BRepTools_Modifier& mod;
     TopTools_ListOfShape images;
     TopTools_ListOfShape none;
-};
-
-/// A CHANGE THAT KEEPS THE TOPOLOGY ONE FOR ONE AND ANSWERS NO HISTORY: the simple offset of a sheet - a modifier of the
-/// geometry, every face and edge moved and none added or lost, whose `Modified` gives nothing (measured: null for every
-/// face of a block's top lifted 5, both through `BRepOffsetAPI_MakeOffsetShape` and `BRepOffset_MakeSimpleOffset`). The
-/// n-th element of a type in `after` is the image of the n-th in `before`; nothing is answered when the counts differ.
-/// A caller holds it only after checking the images: each face of an offset gone the distance.
-struct QymTwinHistory : QymHistory {
-    QymTwinHistory(const TopoDS_Shape& before, const TopoDS_Shape& after) {
-        for (TopAbs_ShapeEnum ty : {TopAbs_FACE, TopAbs_EDGE}) {
-            TopTools_IndexedMapOfShape a, b;
-            TopExp::MapShapes(before, ty, a);
-            TopExp::MapShapes(after, ty, b);
-            if (a.Extent() != b.Extent()) continue;
-            for (int i = 1; i <= a.Extent(); ++i) twin.Bind(a(i), b(i));
-        }
-    }
-    const TopTools_ListOfShape& Modified(const TopoDS_Shape& s) override {
-        images.Clear();
-        if (twin.IsBound(s) && !twin.Find(s).IsSame(s)) images.Append(twin.Find(s));
-        return images;
-    }
-    const TopTools_ListOfShape& Generated(const TopoDS_Shape&) override { return none; }
-    bool Removed(const TopoDS_Shape&) override { return false; }
-    TopTools_DataMapOfShapeShape twin;
-    TopTools_ListOfShape images;
-    TopTools_ListOfShape none;
-};
-
-/// WHERE AN OPERATION MOVES NOTHING, THE PLACE IS ITS HISTORY: an element of `after` lying exactly where one of `before`
-/// lay - the same centre and the same length or area, to 1e-6 - is its image; for the rest `rest` answers. For a change
-/// that keeps every element where it was and only re-describes some: the seam of a round face turned half a turn, whose
-/// cutting and gluing rebuild the seam edge and its neighbours without saying what became of them.
-struct QymSamePlaceHistory : QymHistory {
-    QymSamePlaceHistory(const TopoDS_Shape& after, QymHistory& r) : rest(r) {
-        for (TopAbs_ShapeEnum ty : {TopAbs_FACE, TopAbs_EDGE}) {
-            TopTools_IndexedMapOfShape all;
-            TopExp::MapShapes(after, ty, all);
-            for (int i = 1; i <= all.Extent(); ++i) placed.push_back({ty, Key(all(i)), all(i)});
-        }
-    }
-    struct Spot {
-        TopAbs_ShapeEnum ty;
-        std::array<double, 4> key;
-        TopoDS_Shape shape;
-    };
-    static std::array<double, 4> Key(const TopoDS_Shape& s) {
-        GProp_GProps g;
-        if (s.ShapeType() == TopAbs_EDGE) BRepGProp::LinearProperties(s, g); else BRepGProp::SurfaceProperties(s, g);
-        const gp_Pnt c = g.CentreOfMass();
-        return {c.X(), c.Y(), c.Z(), g.Mass()};
-    }
-    /// The element of `after` lying where `s` lies; null when none does.
-    TopoDS_Shape There(const TopoDS_Shape& s) {
-        if (s.ShapeType() != TopAbs_FACE && s.ShapeType() != TopAbs_EDGE) return {};
-        const auto k = Key(s);
-        for (const Spot& p : placed) {
-            if (p.ty != s.ShapeType()) continue;
-            bool same = true;
-            for (int j = 0; j < 4 && same; ++j) same = std::abs(p.key[j] - k[j]) < 1e-6;
-            if (same) return p.shape;
-        }
-        return {};
-    }
-    const TopTools_ListOfShape& Modified(const TopoDS_Shape& s) override {
-        images.Clear();
-        const TopoDS_Shape now = There(s);
-        if (now.IsNull()) {
-            for (TopTools_ListIteratorOfListOfShape it(rest.Modified(s)); it.More(); it.Next()) images.Append(it.Value());
-        } else if (!now.IsSame(s)) {
-            images.Append(now);
-        }
-        return images;
-    }
-    const TopTools_ListOfShape& Generated(const TopoDS_Shape& s) override { return rest.Generated(s); }
-    bool Removed(const TopoDS_Shape& s) override { return There(s).IsNull() && rest.Removed(s); }
-    QymHistory& rest;
-    std::vector<Spot> placed;
-    TopTools_ListOfShape images;
 };
 
 /// The record of a sewing (`BRepBuilderAPI_Sewing`): a face or an edge it replaced has that one image, one it left as
@@ -651,13 +574,6 @@ struct QymChainHistory : QymHistory {
     TopTools_ListOfShape made;
 };
 
-/// WHO KEEPS AN IMAGE TWO ELEMENTS BECAME; the other is recorded as yielded to it either way, so a reference to it still
-/// finds the element. `First`: the first carried, as an operation hands its elements on - two edges of a base and a tool
-/// lying together in a boolean, the base's first; the two long sides of a strip taken out, the first side. `ByName`: in
-/// the monolith, coplanar faces glued - a name beats a positional number and the smaller name wins. Measured: the name
-/// rule over every operation, the strips included, made a rounding of R2 on a sample leave two of its four corners out.
-enum class QymMerge { First, ByName };
-
 /// WHAT THE RESULT OF AN OPERATION IS MADE OF.
 struct QymResultSpec {
     std::vector<QymOperand> operands;
@@ -668,11 +584,11 @@ struct QymResultSpec {
     bool unify = false;
     /// What the recipe names itself, between the names carried and the numbers handed out; empty when nothing.
     QymRecipe recipe = {};
-    /// Who keeps an image two elements became.
-    QymMerge merge = QymMerge::First;
 };
 
 /// THE RESULT OF AN OPERATION WITH ITS NAMES, built from `res` by `history` as `spec` says. Null when `res` is null.
+/// The one door every result lands through; the steps and the rules of each: `crates/qymcad-kernel/NAMING.md`, "How the
+/// bridge names a result".
 QymShape* qym_result(QymHistory& history, const TopoDS_Shape& res, const QymResultSpec& spec);
 
 int next_local(const TopTools_DataMapOfShapeInteger& m);

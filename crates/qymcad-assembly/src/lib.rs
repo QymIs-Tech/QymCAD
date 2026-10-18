@@ -19,3 +19,5 @@ mod bars;
 pub use bars::*;
 mod popup;
 pub use popup::*;
+mod commands;
+pub use commands::*;

@@ -132,7 +132,24 @@ pub fn is_working_code(path: &std::path::Path) -> bool {
         .contains(&n.as_str())
 }
 
-pub fn working_part(text: &str) -> &str {
+/// THE MARK BETWEEN TWO FILES OF A GLUE that a check reads as one text (`concat!` of `include_str!`): a line no source
+/// holds. The application writes it with `file_break!()`, and a check holds the two the same.
+pub const FILE_BREAK: &str = "\n// ---- the next file of the glue ----\n";
+
+/// THE WORKING PART OF A FILE, or of a glue of files: what stands in each file before its module of checks. A glue is
+/// taken file by file at [`FILE_BREAK`], so a file that ends with its checks hides nothing that comes after it.
+///
+/// Measured: the checks over the glue of the panels saw 92 % of its text when it was cut at the first module of checks,
+/// stopping at `layout_settings.rs`, and 86 % once `panels_windows/params.rs` held a module of checks of its own.
+pub fn working_part(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains(FILE_BREAK) {
+        return std::borrow::Cow::Borrowed(working_part_of_a_file(text));
+    }
+    std::borrow::Cow::Owned(text.split(FILE_BREAK).map(working_part_of_a_file).collect::<Vec<_>>().join("\n"))
+}
+
+/// The working part of one file: everything before its `#[cfg(test)]` module.
+fn working_part_of_a_file(text: &str) -> &str {
     for nl in ["\n", "\r\n"] {
         let attr = format!("#[cfg(test)]{nl}");
         let mut from = 0usize;

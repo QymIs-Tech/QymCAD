@@ -11,6 +11,8 @@
 //! The rules are functions of the facts of a body and of the table of the document (`NameMint`), and give the renames
 //! as values; the table is the document's, and it gives the descriptors on the thread of the document, in the order of
 //! its tree - so the same document gives the same names on every rebuild.
+//!
+//! The rules as a whole, with the contract that the bridge alone names: `crates/qymcad-kernel/NAMING.md`.
 
 use qymcad_core::feature::{EdgeEnds, EdgeFaces, FacePlace, FaceSplit, NamedAfter, Rename, SilentNaming};
 use qymcad_core::model::Id;
@@ -32,7 +34,8 @@ pub(crate) fn silent(kernel: &crate::OcctKernel, ask: SilentNaming<'_>) -> Named
     // THE ROLES FIRST: the faces the operation made under numbers awaiting their names take them from the table now,
     // and a piece of such a face is told after the name its whole took
     let roles = kernel.roles.borrow_mut().remove(&body).unwrap_or_default();
-    let landed = land_roles(&roles, names);
+    let held: HashSet<u32> = live.iter().copied().chain(shape.absorbed_names().into_iter().flat_map(|a| [a.loser, a.winner])).chain(shape.face_splits().into_iter().map(|s| s.origin)).collect();
+    let landed = land_roles(&roles, &held, names);
     land(shape, &landed, &mut live);
     let named_as: HashMap<u32, u32> = landed.iter().map(|r| (r.was, r.now)).collect();
     // the names faces merged into one yielded, in the names the roles took: a wall of a tool merged with a face of the
@@ -44,7 +47,7 @@ pub(crate) fn silent(kernel: &crate::OcctKernel, ask: SilentNaming<'_>) -> Named
         // the record is single-use: cleared before any name is given, so no early return leaves it alive for the next
         // operation to fold into its own group (measured: 26 faces instead of 56, a face pull no longer building)
         shape.clear_face_splits();
-        let renames = pieces(&splits, &shape.edge_face_pairs(), &live, names);
+        let renames = pieces(&splits, &shape.edge_face_pairs(), &live, feature, names);
         land(shape, &renames, &mut live);
     }
     // in waves: a face in a corner has orphans for neighbours, and the faces the first wave names anchor the second
@@ -66,6 +69,9 @@ pub(crate) fn silent(kernel: &crate::OcctKernel, ask: SilentNaming<'_>) -> Named
     let pairs = shape.edge_face_pairs();
     if !pairs.is_empty() {
         let renames = edges(&pairs, &shape.edge_end_faces(), &shape.edges_with_ids().1, names);
+        // a name that told another pair yielded to the name of the pair: a reference to it, or to a piece of its pair,
+        // follows the record in every later rebuild, not only in this one
+        named.absorbed.extend(renames.iter().filter(|r| names.edge(r.was).is_some()).map(|r| qymcad_core::feature::Absorbed { loser: r.was, winner: r.now }));
         shape.rename_edges(&renames);
         named.edges = renames;
     }
@@ -85,25 +91,19 @@ fn land(shape: &crate::Shape, renames: &[Rename], live: &mut [u32]) {
     }
 }
 
-/// THE ROLES AN OPERATION GAVE, named by the table: the number each was handed under becomes its descriptor - the
-/// named ones first, then those named after the lowest of others (a cap after the walls of its region).
-pub(crate) fn land_roles(roles: &crate::door::Roles, names: &mut dyn NameMint) -> Vec<Rename> {
+/// THE ROLES AN OPERATION GAVE, named by the table: the number each was handed under becomes its descriptor. A name
+/// offered to a face the result may not hold (`RoleRecipe::Spare`) is written only when the result holds its number
+/// (`held`): the caps every wall of several regions offers would otherwise fill the table with names no face wears.
+pub(crate) fn land_roles(roles: &crate::door::Roles, held: &HashSet<u32>, names: &mut dyn NameMint) -> Vec<Rename> {
     use crate::door::RoleRecipe;
-    let mut given: HashMap<u32, u32> = HashMap::new();
     let mut renames: Vec<Rename> = Vec::new();
     for r in &roles.given {
-        if let RoleRecipe::Named(name) = r.recipe {
-            let now = names.intern_face(name);
-            given.insert(r.number, now);
-            renames.push(Rename { was: r.number, now });
-        }
-    }
-    for r in &roles.given {
-        if let RoleRecipe::AfterLowest(after) = &r.recipe {
-            let lowest = after.of.iter().filter_map(|n| given.get(n)).min().copied().unwrap_or(0);
-            let now = names.intern_face(GeoName { feature: after.feature, role: after.role, src: lowest as Id, split: 0 });
-            renames.push(Rename { was: r.number, now });
-        }
+        let name = match r.recipe {
+            RoleRecipe::Named(name) => name,
+            RoleRecipe::Spare(name) if held.contains(&r.number) => name,
+            RoleRecipe::Spare(_) => continue,
+        };
+        renames.push(Rename { was: r.number, now: names.intern_face(name) });
     }
     renames
 }
@@ -138,10 +138,13 @@ fn neighbours(pairs: &[EdgeFaces]) -> HashMap<u32, Vec<u32>> {
 }
 
 /// THE PIECES OF A SPLIT FACE, after the face they were cut from. Which piece keeps the name of the whole is told by the
-/// recipe, not by the order of the history, which shifts with any edit above: by the named faces beside it (measured:
-/// with the order, 16 of 36 fillet references landed on the wrong edges). The number of a face is the last separator,
-/// where the recipe is silent.
-pub(crate) fn pieces(splits: &[FaceSplit], pairs: &[EdgeFaces], live: &[u32], names: &mut dyn NameMint) -> Vec<Rename> {
+/// recipe, not by the order of the history, which shifts with any edit above: by what cut it - the faces beside it the
+/// node itself made, the walls of the tool of a cut, the blends of a rounding - and then by the other named faces beside
+/// it, each list in the order of the recipe (`InRecipe`), not of the table. Measured with every neighbour by its
+/// descriptor: an edit above took a rounding of an older node away from one of two pieces of a wall, and the piece that
+/// did not move gave its name to the other (16 of 36 fillet references once landed on the wrong edges with the order of
+/// the history). The number of a face is the last separator, where the recipe is silent.
+pub(crate) fn pieces(splits: &[FaceSplit], pairs: &[EdgeFaces], live: &[u32], feature: Id, names: &mut dyn NameMint) -> Vec<Rename> {
     let nb = neighbours(pairs);
     let live: HashSet<u32> = live.iter().copied().collect();
     // in the order of the originals, not of a hash: a step back takes the names it gave away and a step forward gives
@@ -157,11 +160,22 @@ pub(crate) fn pieces(splits: &[FaceSplit], pairs: &[EdgeFaces], live: &[u32], na
             members.push(origin); // the piece holding the name of the whole takes part in the split too
         }
         let own: HashSet<u32> = members.iter().copied().collect();
-        let key = |f: u32| -> Vec<u32> {
-            let mut v: Vec<u32> = nb.get(&f).map(|ns| ns.iter().copied().filter(|n| names.knows(*n) && !own.contains(n)).collect()).unwrap_or_default();
-            v.sort_unstable();
-            v.dedup();
-            v
+        let key = |f: u32| -> PieceKey {
+            let mut key = PieceKey::default();
+            for n in nb.get(&f).into_iter().flatten().filter(|n| !own.contains(n)) {
+                let Some(g) = names.face(*n) else { continue };
+                let at = InRecipe { feature: g.feature, role: g.role as u8, src: g.src, split: g.split };
+                if g.feature == feature {
+                    key.cut_by.push(at)
+                } else {
+                    key.beside.push(at)
+                }
+            }
+            for list in [&mut key.cut_by, &mut key.beside] {
+                list.sort_unstable();
+                list.dedup();
+            }
+            key
         };
         members.sort_by(|a, b| key(*a).cmp(&key(*b)).then(a.cmp(b)));
         for (k, f) in members.iter().enumerate() {
@@ -184,6 +198,22 @@ pub(crate) fn pieces(splits: &[FaceSplit], pairs: &[EdgeFaces], live: &[u32], na
         }
     }
     renames
+}
+
+/// WHAT TELLS A PIECE OF A SPLIT FACE: the faces the node made beside it, then the other named faces beside it.
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+struct PieceKey {
+    cut_by: Vec<InRecipe>,
+    beside: Vec<InRecipe>,
+}
+
+/// A NAME IN THE ORDER OF ITS RECIPE: the node, the role, the source, the piece - not the place the table holds it at.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct InRecipe {
+    feature: Id,
+    role: u8,
+    src: Id,
+    split: u16,
 }
 
 /// ONE WAVE OF SEAMS: an orphan with a named neighbour is named after the smallest of them, its number among the orphans
@@ -262,15 +292,27 @@ fn place_key(place: &FacePlace) -> Id {
 /// a slot between the same walls, the cap at one and the floor at the other - and the number of an edge is the last
 /// separator. The number within a pair is the first one free on the body: a newcomer of a pair given the number a
 /// neighbour wears made two edges one address (measured: 8 of 24 edges of a shelled pocket).
+///
+/// AN EDGE NAMED BESIDE A FACE GONE FROM THE BODY is named again by the pair it runs between. A strip taken out between a
+/// rounding and a wall makes its two long sides one edge, and whichever of the two names it kept, that name says "beside
+/// the strip". The renaming goes to the document with the others, the old name recorded as yielded to the new one.
+/// Measured on a sample: with the smaller name kept, the rounding above the strip lost two of its four edges. A name of
+/// another pair whose faces are all in the body - a piece for its whole, a wall a cut put along a seam - stays: a
+/// reference to it is read through its pair (`NameTable::canonical_edge`), and renaming those too left 28 edges of a
+/// rounding of a sample unfound after an edit.
 pub(crate) fn edges(pairs: &[EdgeFaces], ends: &[EdgeEnds], body_edges: &[u32], names: &mut dyn NameMint) -> Vec<Rename> {
     // the names worn on the whole body, not only by the edges with a pair: a seam and a degenerate edge have none, and
     // their names stayed free to be handed out twice
     let mut worn: HashSet<u32> = body_edges.iter().chain(pairs.iter().map(|p| &p.edge)).copied().filter(|e| names.knows(*e)).collect();
     let mut by_pair: BTreeMap<[u32; 2], Vec<u32>> = BTreeMap::new();
+    let faces: HashSet<u32> = pairs.iter().flat_map(|p| p.faces).collect();
     for p in pairs {
         let [a, b] = p.faces;
-        // already named through the history; or nowhere to take a name from
-        if names.knows(p.edge) || !names.knows(a) || !names.knows(b) {
+        // nowhere to take a name from; or named through the history, and the name tells no face gone from the body
+        if !names.knows(a) || !names.knows(b) {
+            continue;
+        }
+        if names.knows(p.edge) && names.edge(p.edge).is_none_or(|n| n.faces.iter().all(|f| faces.contains(f))) {
             continue;
         }
         by_pair.entry([a.min(b), a.max(b)]).or_default().push(p.edge);
@@ -333,6 +375,18 @@ mod tests {
         let first = name_of(7, 8, &mut table);
         let swapped = name_of(8, 7, &mut table);
         assert_eq!(first, swapped, "the upper and the lower edge of one pair swapped names with their numbers");
+    }
+
+    /// AN EDGE WHOSE NAME TELLS ANOTHER PAIR is named after the pair it runs between: the two long sides of a strip taken
+    /// out become one edge between a rounding and a wall, and the name it kept says "beside the strip", a face gone.
+    #[test]
+    fn an_edge_named_beside_a_face_gone_takes_the_name_of_its_pair() {
+        let mut table = NameTable::default();
+        let [strip, wall, blend] = [GeoName::new(5, Role::Wall, 1), GeoName::new(5, Role::Wall, 2), GeoName::new(6, Role::Blend, 1)].map(|n| table.intern_face(n));
+        let kept = table.intern_edge(EdgeName::new(strip, wall, 0));
+        let renames = edges(&[EdgeFaces { edge: kept, faces: [blend, wall] }], &[], &[kept], &mut table);
+        let now = renames.iter().find(|r| r.was == kept).and_then(|r| table.edge(r.now));
+        assert_eq!(now, Some(EdgeName::new(blend, wall, 0)), "the edge kept a name beside a face it does not touch");
     }
 
     /// A face with no history and no named neighbour is named by where it lies, and the same place at twice the scale

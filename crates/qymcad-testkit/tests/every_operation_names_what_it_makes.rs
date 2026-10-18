@@ -485,6 +485,38 @@ fn every_operation_names_every_face_and_edge_it_makes() {
     assert!(fails.is_empty(), "\nELEMENTS ON POSITIONAL NUMBERS ({}):\n{}", fails.len(), fails.join("\n"));
 }
 
+/// THE BODIES WITH NO HISTORY, whose faces with no named neighbour are named by where they lie (`Role::Placed`): a body
+/// brought in from a file and a body made of a mesh have no recipe for their faces. Any other operation names by its
+/// history and its recipe.
+const NAMED_BY_PLACE: [qymcad_testkit::Uncovered; 3] = [
+    qymcad_testkit::Uncovered { kind: "Import", why: "a body brought in from a file comes with no recipe for its faces" },
+    qymcad_testkit::Uncovered { kind: "MeshSolid", why: "a solid made of a mesh has faces of triangles and no recipe for them" },
+    qymcad_testkit::Uncovered { kind: "MeshRecognised", why: "the faces recognised in a mesh have no recipe of the operations that made it" },
+];
+
+/// NO OPERATION NAMES WHAT IT MAKES BY PLACE but the bodies with no history: a name by place is the last resort of the
+/// rule for what the history is silent about, and an operation that reaches it lost its history somewhere.
+#[test]
+fn no_operation_names_by_place_but_a_body_with_no_history() {
+    let mut fails: Vec<String> = Vec::new();
+    for row in &ROWS {
+        let mut p = Project::default();
+        p.new_document();
+        let node = (row.build)(&mut p);
+        let raised = qymcad_testkit::restore_import_shapes(&p);
+        let (report, _) = qymcad_testkit::regenerate_with_shapes(&mut p, raised);
+        if report.errors.iter().any(|(id, _)| *id == node) {
+            continue; // told by the check above
+        }
+        let placed = p.regen_faces.get(&node).into_iter().flatten().filter(|f| p.names.get(f.id).is_some_and(|n| n.role == qymcad_core::names::Role::Placed)).count();
+        let allowed = NAMED_BY_PLACE.iter().any(|u| u.kind == row.kind);
+        if placed > 0 && !allowed {
+            fails.push(format!("{}: {placed} faces named by where they lie", row.name));
+        }
+    }
+    assert!(fails.is_empty(), "\nFACES NAMED BY PLACE ({}):\n{}", fails.len(), fails.join("\n"));
+}
+
 /// THE NODES THAT BUILD NO BODY OF THEIR OWN BY AN OPERATION: nothing for this matrix to look at.
 const NOT_HERE: [qymcad_testkit::Uncovered; 7] = [
     qymcad_testkit::Uncovered { kind: "Sketch", why: "a sketch builds no body" },

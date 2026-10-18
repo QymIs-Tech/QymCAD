@@ -8,8 +8,9 @@ Every numeric field in the program takes an **expression**, not just a number: `
 ## Global parameters
 
 Press **ƒx Parameters** in the bar above — the window of the document's parameters opens: a name, an expression, a
-value. **Add a parameter** makes a row; a name is letters, digits and "_", not starting with a digit. A parameter can
-refer to another one: `d = w/2`.
+value. **Add a parameter** makes a row; a name is letters, digits and "_", not starting with a digit. The names `pi`,
+`tau` and `e` belong to the constants a formula knows, so a parameter cannot take them; `Pi` or `e1` will do. A
+parameter can refer to another one: `d = w/2`.
 
 That name then works in any field: in a sketch dimension, in an extrusion height, in a fillet radius, in an array
 spacing, in a joint angle. A field offers to finish a name you are typing from a list — **Enter** takes it.
