@@ -197,3 +197,85 @@ fn an_unneeded_object_does_not_refuse_the_drawing() {
     let got = import_dxf(&p).expect("the drawing is read, not refused for its styles");
     assert_eq!(got.curves.len(), 1, "the line of the drawing did not come in: {:?}", got.curves);
 }
+
+/// A file of `tests/data`.
+fn data(name: &str) -> String {
+    format!("{}/tests/data/{name}", env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Whether every end of `curves` meets exactly one other end: the curves make closed contours.
+fn closed(curves: &[qymcad_core::geom::ProfEdge]) -> bool {
+    let ends: Vec<qymcad_core::geom::Point2> = curves.iter().filter_map(|c| c.ends()).flatten().collect();
+    ends.iter().all(|p| ends.iter().filter(|q| q.dist(*p) < 1e-9).count() == 2)
+}
+
+fn near(p: Option<qymcad_core::geom::Point2>, (x, y): (f64, f64)) -> bool {
+    p.is_some_and(|p| (p.x - x).abs() < 1e-9 && (p.y - y).abs() < 1e-9)
+}
+
+/// AN ENTITY IS READ IN ITS OWN PLANE: the centre of an ARC or a CIRCLE, the vertices of a polyline and the place of an
+/// INSERT are given in the entity's object coordinate system, whose X axis the arbitrary axis algorithm takes from the
+/// extrusion direction (210/220/230) - for (0,0,-1) it is -X of the drawing, and a turn counter-clockwise in it runs
+/// clockwise on the drawing. `slot_ocs.dxf`: a 40 x 20 slot whose right arc is written that way, centre (-40,10), 90 to
+/// 270 deg. Reported behaviour: the arc came in about (-40,10), the slot open in four contours. `slot_plain.dxf` is the
+/// same slot with the arc written in the drawing's own axes.
+#[test]
+fn an_entity_is_read_in_its_own_plane() {
+    use dxf::entities::{Arc, Circle, Ellipse, Entity, EntityType, Insert, Line, LwPolyline};
+    use dxf::{Block, LwPolylineVertex, Point, Vector};
+    use qymcad_core::geom::ProfEdge;
+    let got = import_dxf(&data("slot_ocs.dxf")).expect("read").curves;
+    let right = got.iter().find(|c| matches!(c, ProfEdge::Arc { center, .. } if center.x.abs() > 20.0));
+    assert!(
+        matches!(right, Some(ProfEdge::Arc { center, .. }) if near(Some(*center), (40.0, 10.0)))
+            && near(right.and_then(|c| c.ends()).map(|e| e[0]), (40.0, 20.0))
+            && near(right.and_then(|c| c.ends()).map(|e| e[1]), (40.0, 0.0)),
+        "the right arc is not the one about (40,10) from (40,20) to (40,0): {right:?}"
+    );
+    assert!(matches!(right, Some(ProfEdge::Arc { ccw: false, .. })), "the right arc does not run clockwise, through (50,10): {right:?}");
+    assert!(closed(&got), "the slot is not closed: {got:?}");
+    assert!(closed(&import_dxf(&data("slot_plain.dxf")).expect("read").curves), "the control slot is not closed");
+
+    // a circle, a polyline with a bulge and an insert, each written with the extrusion (0,0,-1)
+    let down = Vector::new(0.0, 0.0, -1.0);
+    let mut d = dxf::Drawing::new();
+    d.header.version = dxf::enums::AcadVersion::R2013; // the lightweight polyline came with R14; the default writes R12
+    d.add_entity(Entity::new(EntityType::Circle(Circle { center: Point::new(-40.0, 10.0, 0.0), radius: 5.0, normal: down.clone(), ..Default::default() })));
+    let mut poly = LwPolyline { extrusion_direction: down.clone(), ..Default::default() };
+    poly.vertices = vec![LwPolylineVertex { x: 0.0, y: 50.0, bulge: 1.0, ..Default::default() }, LwPolylineVertex { x: -10.0, y: 50.0, ..Default::default() }];
+    d.add_entity(Entity::new(EntityType::LwPolyline(poly)));
+    let mut block = Block { name: "B".into(), ..Default::default() };
+    block.entities.push(Entity::new(EntityType::Line(Line::new(Point::new(0.0, 0.0, 0.0), Point::new(10.0, 0.0, 0.0)))));
+    d.add_block(block);
+    d.add_entity(Entity::new(EntityType::Insert(Insert { name: "B".into(), location: Point::new(-100.0, 0.0, 0.0), extrusion_direction: down.clone(), ..Default::default() })));
+    d.add_entity(Entity::new(EntityType::Ellipse(Ellipse {
+        center: Point::new(50.0, -50.0, 0.0),
+        major_axis: Vector::new(20.0, 0.0, 0.0),
+        minor_axis_ratio: 0.5,
+        start_parameter: 0.0,
+        end_parameter: std::f64::consts::FRAC_PI_2,
+        normal: down.clone(),
+    })));
+    let p = written("ocs.dxf");
+    d.save_file(&p).expect("written");
+    let got = import_dxf(&p).expect("read").curves;
+    assert!(got.iter().any(|c| matches!(c, ProfEdge::Circle { center, r } if near(Some(*center), (40.0, 10.0)) && (r - 5.0).abs() < 1e-9)), "the circle is not about (40,10): {got:?}");
+    let bulge = got.iter().find(|c| matches!(c, ProfEdge::Arc { .. }));
+    assert!(
+        matches!(bulge, Some(ProfEdge::Arc { a, b, center, ccw: false }) if near(Some(*a), (0.0, 50.0)) && near(Some(*b), (10.0, 50.0)) && near(Some(*center), (5.0, 50.0))),
+        "the bulge does not run clockwise about (5,50) from (0,50) over (5,55) to (10,50): {bulge:?}"
+    );
+    // the ellipse's centre and major axis are the drawing's; its minor axis is (0,0,-1) x (20,0,0) / 2 = (0,-10)
+    let ellipse = got.iter().find(|c| matches!(c, ProfEdge::Oval { .. }));
+    assert!(near(ellipse.and_then(|c| c.curve_at(1.0)), (50.0, -60.0)), "the quarter ellipse does not end at (50,-60): {ellipse:?}");
+    assert!(got.iter().any(|c| matches!(c, ProfEdge::Line { a, b } if near(Some(*a), (100.0, 0.0)) && near(Some(*b), (90.0, 0.0)))), "the block's line is not at (100,0)-(90,0): {got:?}");
+
+    // an arc standing across the drawing plane is not drawn flat: it is named as not read
+    let mut d = dxf::Drawing::new();
+    d.add_entity(Entity::new(EntityType::Arc(Arc { center: Point::new(0.0, 0.0, 7.0), radius: 5.0, start_angle: 0.0, end_angle: 180.0, normal: Vector::new(1.0, 0.0, 0.0), ..Default::default() })));
+    let p = written("across.dxf");
+    d.save_file(&p).expect("written");
+    let got = import_dxf(&p).expect("read");
+    assert!(got.curves.is_empty(), "an arc across the drawing plane was drawn: {:?}", got.curves);
+    assert_eq!(got.skipped, vec![("ARC".to_string(), 1)], "the arc across the plane is not named");
+}

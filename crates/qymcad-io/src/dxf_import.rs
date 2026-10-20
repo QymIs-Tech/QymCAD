@@ -106,6 +106,27 @@ impl Place {
         }
     }
 
+    /// THE PLANE AN ENTITY IS DRAWN IN, from its extrusion direction (210/220/230) and its elevation: the centre of an ARC
+    /// or a CIRCLE, the vertices of a polyline and the place of an INSERT are given in this object coordinate system. Its X
+    /// axis comes by the arbitrary axis algorithm - for an extrusion within 1/64 of Z, the world's Y crossed with it -
+    /// and its Y axis is the extrusion crossed with X; for (0,0,-1), which mirrored arcs are written with, X is the
+    /// drawing's -X, and a turn counter-clockwise in the plane runs clockwise on the drawing. Reported behaviour: such an
+    /// arc came in mirrored about Y, and its slot open. `None` for a plane not parallel to the drawing's, which a sketch
+    /// cannot hold without drawing it flat; an extrusion that is not a number gives a place of no number, which leaves the
+    /// entity out as invalid.
+    fn ocs(normal: &dxf::Vector, elevation: f64) -> Option<Place> {
+        let len = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+        if normal.x.hypot(normal.y) > 1e-9 * len {
+            return None;
+        }
+        let n = [normal.x / len, normal.y / len, normal.z / len];
+        // X = (0,1,0) x N, Y = N x X
+        let k = n[2].hypot(n[0]);
+        let x = [n[2] / k, 0.0, -n[0] / k];
+        let y = [n[1] * x[2], n[2] * x[0] - n[0] * x[2], -n[1] * x[0]];
+        Some(Place { a: x[0], b: y[0], c: x[1], d: y[1], tx: n[0] * elevation, ty: n[1] * elevation })
+    }
+
     /// The scale when this place keeps circles circles - the same stretch both ways, square axes - and whether it mirrors.
     fn uniform(&self) -> Option<(f64, bool)> {
         let (sx, sy) = ((self.a * self.a + self.c * self.c).sqrt(), (self.b * self.b + self.d * self.d).sqrt());
@@ -136,6 +157,23 @@ fn kind(specific: &EntityType) -> String {
 fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, curves: &mut Vec<ProfEdge>, left: &mut Left) {
     for entity in entities {
         let first = curves.len();
+        // the plane the entity is given in: its own for those written in their object coordinate system, the drawing's
+        // for a LINE, a SPLINE, a 3D polyline and an ELLIPSE, whose points are the drawing's; one not parallel to the
+        // drawing's is not read
+        let plane = match &entity.specific {
+            EntityType::Circle(c) => Place::ocs(&c.normal, c.center.z),
+            EntityType::Arc(a) => Place::ocs(&a.normal, a.center.z),
+            EntityType::LwPolyline(p) => Place::ocs(&p.extrusion_direction, entity.common.elevation),
+            EntityType::Polyline(p) if !p.is_3d_polyline() => Place::ocs(&p.normal, p.location.z),
+            EntityType::Insert(ins) => Place::ocs(&ins.extrusion_direction, ins.location.z),
+            EntityType::Ellipse(e) => Place::ocs(&e.normal, 0.0).map(|_| Place::IDENTITY),
+            _ => Some(Place::IDENTITY),
+        };
+        let Some(plane) = plane else {
+            *left.skipped.entry(kind(&entity.specific)).or_default() += 1;
+            continue;
+        };
+        let place = &place.then(&plane);
         match &entity.specific {
             EntityType::Line(line) => {
                 curves.push(ProfEdge::Line { a: place.at(line.p1.x, line.p1.y), b: place.at(line.p2.x, line.p2.y) });
@@ -168,10 +206,12 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                 placed_polyline(&verts, p.is_closed(), place, curves);
             }
             EntityType::Ellipse(e) => {
-                // the minor axis is the normal turned across the major one, shortened by the ratio
-                let (mx, my) = (e.major_axis.x, e.major_axis.y);
-                let turn = if e.normal.z < 0.0 { -1.0 } else { 1.0 };
-                let (nx, ny) = (-my * turn * e.minor_axis_ratio, mx * turn * e.minor_axis_ratio);
+                // the minor axis is the extrusion crossed with the major one, shortened by the ratio
+                let n = &e.normal;
+                let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
+                let (mx, my, mz) = (e.major_axis.x, e.major_axis.y, e.major_axis.z);
+                let k = e.minor_axis_ratio / len;
+                let (nx, ny) = ((n.y * mz - n.z * my) * k, (n.z * mx - n.x * mz) * k);
                 let (from, to) = (e.start_parameter, e.end_parameter);
                 let to = if to <= from { to + std::f64::consts::TAU } else { to };
                 let at = |t: f64| place.at(e.center.x + mx * t.cos() + nx * t.sin(), e.center.y + my * t.cos() + ny * t.sin());
@@ -206,7 +246,8 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                     continue;
                 };
                 // the insert's own numbers: what it places is checked entity by entity, under their own kinds
-                let own = [ins.location.x, ins.location.y, ins.x_scale_factor, ins.y_scale_factor, ins.rotation, ins.column_spacing, ins.row_spacing];
+                let n = &ins.extrusion_direction;
+                let own = [ins.location.x, ins.location.y, ins.location.z, ins.x_scale_factor, ins.y_scale_factor, ins.rotation, ins.column_spacing, ins.row_spacing, n.x, n.y, n.z];
                 if !own.iter().all(|v| v.is_finite()) {
                     *left.invalid.entry("INSERT".into()).or_default() += 1;
                     continue;
