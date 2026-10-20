@@ -170,6 +170,39 @@ fn notes_are_counted_and_a_file_of_nothing_is_refused() {
     assert_eq!(read("rubbish.igs", "not an IGES file\n").err().as_deref(), Some("io-iges-not-iges"));
 }
 
+/// A file of `tests/data`, read as the window reads an IGES with no surfaces.
+fn data(name: &str) -> qymcad_io::IgesDrawing {
+    read_iges_drawing(&format!("{}/tests/data/{name}", env!("CARGO_MANIFEST_DIR"))).expect("the drawing reads")
+}
+
+/// The lines of a drawing, ordered by their start, each rounded to 1e-9 so that a turn's -0 and 6e-17 read as 0.
+fn sorted_lines(d: &qymcad_io::IgesDrawing) -> Vec<[f64; 4]> {
+    let mut got: Vec<[f64; 4]> = lines(&d.curves).into_iter().map(|l| l.map(|v| (v * 1e9).round() / 1e9 + 0.0)).collect();
+    got.sort_by(|a, b| a.partial_cmp(b).expect("numbers"));
+    got
+}
+
+/// A NETWORK SUBFIGURE INSTANCE (420) IS MOVED BY ITS PARAMETERS 2-4 AND SCALED BY 5-7 (IGES 5.3, 4.140), as a singular
+/// one (408) is by 2-4 and 5. `net420.igs`: the line (0,0)-(10,0) of a 320 placed at (100,50) twice its size, beside an
+/// independent line (100,40)-(120,40). Reported behaviour: the instance came in from (2,2) to (1002,2) - scaled by
+/// (100,50) and moved by (2,2). `sub408.igs` is the same placement by a 408.
+#[test]
+fn a_network_instance_is_moved_by_its_translation_and_scaled_by_its_scale() {
+    let want = vec![[100.0, 40.0, 120.0, 40.0], [100.0, 50.0, 120.0, 50.0]];
+    assert_eq!(sorted_lines(&data("net420.igs")), want, "the 420 instance");
+    assert_eq!(sorted_lines(&data("sub408.igs")), want, "the 408 instance of the same placement");
+    // only XS given: YS and ZS are XS, not 1
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(110, 0, PART, 0, "0.,0.,0.,10.,10.,0.".into()),          // DE 1: the member, a diagonal
+            E(320, 0, "00000200", 0, "0,4HCELL,1,1,0,1HC,0,0".into()), // DE 3: the definition
+            E(420, 0, TOP, 0, "3,100.,50.,0.,2.".into()),              // DE 5: at (100,50), XS 2
+        ],
+    );
+    assert_eq!(sorted_lines(&read("net420-xs.igs", &text).expect("reads")), vec![[100.0, 50.0, 120.0, 70.0]], "a 420 with only XS given");
+}
+
 /// THE REPORTED FILE: a chip library cell, defined and placed nowhere. `QYM_IGES` names it.
 #[test]
 #[ignore = "a file on this machine"]

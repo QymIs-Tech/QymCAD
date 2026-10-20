@@ -314,8 +314,11 @@ impl File {
                 self.entity(int(&e.params[1]).max(0) as usize, &at, pen, depth + 1);
             }
             420 => {
-                let sc = |k: usize| if e.params.get(k).is_some_and(|x| !x.trim().is_empty()) { v(k) } else { 1.0 };
-                let at = mul(&m, &place(v(5), v(6), v(7), [sc(2), sc(3), sc(4)]));
+                // DE, the translation X, Y, Z, then the scales XS (1 when not given), YS and ZS (XS when not given)
+                let given = |k: usize| e.params.get(k).is_some_and(|x| !x.trim().is_empty());
+                let xs = if given(5) { v(5) } else { 1.0 };
+                let s = [xs, if given(6) { v(6) } else { xs }, if given(7) { v(7) } else { xs }];
+                let at = mul(&m, &place(v(2), v(3), v(4), s));
                 self.entity(int(&e.params[1]).max(0) as usize, &at, pen, depth + 1);
             }
             412 => {
