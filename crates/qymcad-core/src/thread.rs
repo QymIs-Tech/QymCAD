@@ -156,50 +156,130 @@ pub struct ThreadGeom {
     pub groove: Vec<ProfEdge>,
 }
 
-/// The standard coarse pitch of a metric thread (ISO 261) for a nominal diameter.
-pub fn metric_coarse_pitch(d: f64) -> f64 {
-    const TABLE: &[(f64, f64)] = &[
-        (1.0, 0.25),
-        (1.2, 0.25),
-        (1.6, 0.35),
-        (2.0, 0.4),
-        (2.5, 0.45),
-        (3.0, 0.5),
-        (4.0, 0.7),
-        (5.0, 0.8),
-        (6.0, 1.0),
-        (8.0, 1.25),
-        (10.0, 1.5),
-        (12.0, 1.75),
-        (16.0, 2.0),
-        (20.0, 2.5),
-        (24.0, 3.0),
-        (30.0, 3.5),
-        (36.0, 4.0),
-        (42.0, 4.5),
-        (48.0, 5.0),
-        (56.0, 5.5),
-        (64.0, 6.0),
-    ];
-    let mut best = TABLE[0];
-    for &(dd, p) in TABLE {
-        if d + 1e-9 >= dd {
-            best = (dd, p);
-        }
-    }
-    best.1
+/// A nominal diameter of a standard and the pitch the standard gives it.
+struct StandardSize {
+    d: f64,
+    pitch: f64,
 }
 
-/// The standard pitch of a trapezoidal Tr thread (ISO 2901, coarse series).
+/// ISO 261: every nominal diameter that has a coarse pitch, of all three choices. A table of the first choice alone
+/// gave a second-choice size the pitch of its smaller neighbour: M14 was cut at 1.75 instead of 2.
+const ISO_261_COARSE: &[StandardSize] = &[
+    StandardSize { d: 1.0, pitch: 0.25 },
+    StandardSize { d: 1.1, pitch: 0.25 },
+    StandardSize { d: 1.2, pitch: 0.25 },
+    StandardSize { d: 1.4, pitch: 0.3 },
+    StandardSize { d: 1.6, pitch: 0.35 },
+    StandardSize { d: 1.8, pitch: 0.35 },
+    StandardSize { d: 2.0, pitch: 0.4 },
+    StandardSize { d: 2.2, pitch: 0.45 },
+    StandardSize { d: 2.5, pitch: 0.45 },
+    StandardSize { d: 3.0, pitch: 0.5 },
+    StandardSize { d: 3.5, pitch: 0.6 },
+    StandardSize { d: 4.0, pitch: 0.7 },
+    StandardSize { d: 4.5, pitch: 0.75 },
+    StandardSize { d: 5.0, pitch: 0.8 },
+    StandardSize { d: 6.0, pitch: 1.0 },
+    StandardSize { d: 7.0, pitch: 1.0 },
+    StandardSize { d: 8.0, pitch: 1.25 },
+    StandardSize { d: 9.0, pitch: 1.25 },
+    StandardSize { d: 10.0, pitch: 1.5 },
+    StandardSize { d: 11.0, pitch: 1.5 },
+    StandardSize { d: 12.0, pitch: 1.75 },
+    StandardSize { d: 14.0, pitch: 2.0 },
+    StandardSize { d: 16.0, pitch: 2.0 },
+    StandardSize { d: 18.0, pitch: 2.5 },
+    StandardSize { d: 20.0, pitch: 2.5 },
+    StandardSize { d: 22.0, pitch: 2.5 },
+    StandardSize { d: 24.0, pitch: 3.0 },
+    StandardSize { d: 27.0, pitch: 3.0 },
+    StandardSize { d: 30.0, pitch: 3.5 },
+    StandardSize { d: 33.0, pitch: 3.5 },
+    StandardSize { d: 36.0, pitch: 4.0 },
+    StandardSize { d: 39.0, pitch: 4.0 },
+    StandardSize { d: 42.0, pitch: 4.5 },
+    StandardSize { d: 45.0, pitch: 4.5 },
+    StandardSize { d: 48.0, pitch: 5.0 },
+    StandardSize { d: 52.0, pitch: 5.0 },
+    StandardSize { d: 56.0, pitch: 5.5 },
+    StandardSize { d: 60.0, pitch: 5.5 },
+    StandardSize { d: 64.0, pitch: 6.0 },
+    StandardSize { d: 68.0, pitch: 6.0 },
+];
+
+/// ISO 2904 Table 1: every nominal diameter of a trapezoidal thread and its preferred pitch, of all choices.
+const ISO_2904_PREFERRED: &[StandardSize] = &[
+    StandardSize { d: 8.0, pitch: 1.5 },
+    StandardSize { d: 9.0, pitch: 2.0 },
+    StandardSize { d: 10.0, pitch: 2.0 },
+    StandardSize { d: 11.0, pitch: 2.0 },
+    StandardSize { d: 12.0, pitch: 3.0 },
+    StandardSize { d: 14.0, pitch: 3.0 },
+    StandardSize { d: 16.0, pitch: 4.0 },
+    StandardSize { d: 18.0, pitch: 4.0 },
+    StandardSize { d: 20.0, pitch: 4.0 },
+    StandardSize { d: 22.0, pitch: 5.0 },
+    StandardSize { d: 24.0, pitch: 5.0 },
+    StandardSize { d: 26.0, pitch: 5.0 },
+    StandardSize { d: 28.0, pitch: 5.0 },
+    StandardSize { d: 30.0, pitch: 6.0 },
+    StandardSize { d: 32.0, pitch: 6.0 },
+    StandardSize { d: 34.0, pitch: 6.0 },
+    StandardSize { d: 36.0, pitch: 6.0 },
+    StandardSize { d: 38.0, pitch: 7.0 },
+    StandardSize { d: 40.0, pitch: 7.0 },
+    StandardSize { d: 42.0, pitch: 7.0 },
+    StandardSize { d: 44.0, pitch: 7.0 },
+    StandardSize { d: 46.0, pitch: 8.0 },
+    StandardSize { d: 48.0, pitch: 8.0 },
+    StandardSize { d: 50.0, pitch: 8.0 },
+    StandardSize { d: 52.0, pitch: 8.0 },
+    StandardSize { d: 55.0, pitch: 9.0 },
+    StandardSize { d: 60.0, pitch: 9.0 },
+    StandardSize { d: 65.0, pitch: 10.0 },
+    StandardSize { d: 70.0, pitch: 10.0 },
+    StandardSize { d: 75.0, pitch: 10.0 },
+    StandardSize { d: 80.0, pitch: 10.0 },
+    StandardSize { d: 85.0, pitch: 12.0 },
+    StandardSize { d: 90.0, pitch: 12.0 },
+    StandardSize { d: 95.0, pitch: 12.0 },
+    StandardSize { d: 100.0, pitch: 12.0 },
+    StandardSize { d: 110.0, pitch: 12.0 },
+    StandardSize { d: 120.0, pitch: 14.0 },
+    StandardSize { d: 130.0, pitch: 14.0 },
+    StandardSize { d: 140.0, pitch: 14.0 },
+    StandardSize { d: 150.0, pitch: 16.0 },
+    StandardSize { d: 160.0, pitch: 16.0 },
+    StandardSize { d: 170.0, pitch: 16.0 },
+    StandardSize { d: 180.0, pitch: 18.0 },
+    StandardSize { d: 190.0, pitch: 18.0 },
+    StandardSize { d: 200.0, pitch: 18.0 },
+    StandardSize { d: 210.0, pitch: 20.0 },
+    StandardSize { d: 220.0, pitch: 20.0 },
+    StandardSize { d: 230.0, pitch: 20.0 },
+    StandardSize { d: 240.0, pitch: 22.0 },
+    StandardSize { d: 250.0, pitch: 22.0 },
+    StandardSize { d: 260.0, pitch: 22.0 },
+    StandardSize { d: 270.0, pitch: 24.0 },
+    StandardSize { d: 280.0, pitch: 24.0 },
+    StandardSize { d: 290.0, pitch: 24.0 },
+    StandardSize { d: 300.0, pitch: 24.0 },
+];
+
+/// The pitch of the largest tabulated size not above `d`: a tabulated size gets its own, a size between two gets
+/// the smaller one's, a size below the table the first one's.
+fn tabulated_pitch(table: &[StandardSize], d: f64) -> f64 {
+    table.iter().take_while(|s| d + 1e-9 >= s.d).last().unwrap_or(&table[0]).pitch
+}
+
+/// The standard coarse pitch of a metric thread (ISO 261) for a nominal diameter.
+pub fn metric_coarse_pitch(d: f64) -> f64 {
+    tabulated_pitch(ISO_261_COARSE, d)
+}
+
+/// The standard pitch of a trapezoidal Tr thread (ISO 2904, the preferred pitch of each size).
 pub fn tr_coarse_pitch(d: f64) -> f64 {
-    const TABLE: &[(f64, f64)] = &[(8.0, 1.5), (10.0, 2.0), (12.0, 3.0), (16.0, 4.0), (20.0, 4.0), (24.0, 5.0), (28.0, 5.0), (32.0, 6.0), (40.0, 7.0), (48.0, 8.0), (60.0, 9.0), (80.0, 10.0)];
-    let mut best = TABLE[0];
-    for &(dd, p) in TABLE {
-        if d + 1e-9 >= dd {
-            best = (dd, p);
-        }
-    }
-    best.1
+    tabulated_pitch(ISO_2904_PREFERRED, d)
 }
 
 /// ISO 2901: the axial clearance `ac` of a trapezoidal thread as a function of the pitch.
