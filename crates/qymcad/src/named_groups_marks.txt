@@ -283,7 +283,7 @@ crates/qymcad-i18n/tests/font_coverage.rs 0 1 0
 crates/qymcad-io/src/amf.rs 1 2 0
 crates/qymcad-io/src/dxf_import.rs 5 6 2
 crates/qymcad-io/src/gltf.rs 1 2 0
-crates/qymcad-io/src/iges_drawing.rs 6 2 0
+crates/qymcad-io/src/iges_drawing.rs 5 2 0
 crates/qymcad-io/src/lib.rs 0 3 0
 crates/qymcad-io/src/obj.rs 3 2 0
 crates/qymcad-io/src/part_file.rs 0 1 0

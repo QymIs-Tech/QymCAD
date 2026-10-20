@@ -73,8 +73,10 @@ fn apply(m: &M, p: [f64; 3]) -> [f64; 3] {
     [0, 1, 2].map(|i| m[i * 4] * p[0] + m[i * 4 + 1] * p[1] + m[i * 4 + 2] * p[2] + m[i * 4 + 3])
 }
 
-fn place(x: f64, y: f64, z: f64, s: [f64; 3]) -> M {
-    [s[0], 0.0, 0.0, x, 0.0, s[1], 0.0, y, 0.0, 0.0, s[2], z]
+/// Where a subfigure instance (408, 420, or one position of a 412) puts what it places: its X, Y, Z and its scales.
+struct Instance {
+    at: [f64; 3],
+    scale: [f64; 3],
 }
 
 /// Split a parameter record into fields. A Hollerith string (`5HPADIN`) is one field whatever it holds, since
@@ -223,6 +225,17 @@ impl File {
         mul(&self.own_matrix(e.matrix, depth + 1), &mine)
     }
 
+    /// The transform of instance `de` under `parent`: its scales first, then its own matrix, then its X, Y, Z, which
+    /// its own matrix does not move (IGES 5.3, 3.6.2). The matrix carries the turn of a placed symbol; applied after
+    /// the X, Y, Z it swung the position about the origin as well - a quarter turn took (100,0) to (0,100).
+    fn instance(&self, de: usize, parent: &M, inst: &Instance) -> M {
+        let [x, y, z] = inst.at;
+        let [sx, sy, sz] = inst.scale;
+        let shift = [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z];
+        let scale = [sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, sz, 0.0];
+        mul(parent, &mul(&shift, &mul(&self.own_matrix(de, 0), &scale)))
+    }
+
     fn draw(&self) -> IgesDrawing {
         let mut out = Pen { to_mm: self.to_mm, curves: Vec::new(), skipped: HashMap::new() };
         // what is drawn at the top: independent, visible, not an annotation
@@ -275,6 +288,7 @@ impl File {
         }
         let m = mul(parent, &self.own_matrix(de, 0));
         let v = |k: usize| e.params.get(k).map(|s| num(s)).unwrap_or(0.0);
+        let or = |k: usize, default: f64| if e.params.get(k).is_some_and(|x| !x.trim().is_empty()) { v(k) } else { default };
         let before = pen.curves.len();
         match e.typ {
             110 => pen.line(&m, [v(1), v(2), v(3)], [v(4), v(5), v(6)]),
@@ -309,21 +323,20 @@ impl File {
                 }
             }
             408 => {
-                let s = if e.params.get(5).is_some_and(|x| !x.trim().is_empty()) { v(5) } else { 1.0 };
-                let at = mul(&m, &place(v(2), v(3), v(4), [s, s, s]));
+                // DE, X, Y, Z, the scale S (1 when not given)
+                let s = or(5, 1.0);
+                let at = self.instance(de, parent, &Instance { at: [v(2), v(3), v(4)], scale: [s, s, s] });
                 self.entity(int(&e.params[1]).max(0) as usize, &at, pen, depth + 1);
             }
             420 => {
-                // DE, the translation X, Y, Z, then the scales XS (1 when not given), YS and ZS (XS when not given)
-                let given = |k: usize| e.params.get(k).is_some_and(|x| !x.trim().is_empty());
-                let xs = if given(5) { v(5) } else { 1.0 };
-                let s = [xs, if given(6) { v(6) } else { xs }, if given(7) { v(7) } else { xs }];
-                let at = mul(&m, &place(v(2), v(3), v(4), s));
+                // DE, X, Y, Z, the scales XS (1 when not given), YS and ZS (XS when not given)
+                let xs = or(5, 1.0);
+                let at = self.instance(de, parent, &Instance { at: [v(2), v(3), v(4)], scale: [xs, or(6, xs), or(7, xs)] });
                 self.entity(int(&e.params[1]).max(0) as usize, &at, pen, depth + 1);
             }
             412 => {
                 // base, scale, lower-left corner, columns, rows, column and row spacing, rotation
-                let s = if e.params.get(2).is_some_and(|x| !x.trim().is_empty()) { v(2) } else { 1.0 };
+                let s = or(2, 1.0);
                 let (cols, rows) = (v(6).max(1.0) as usize, v(7).max(1.0) as usize);
                 let (dc, dr, a) = (v(8), v(9), v(10));
                 let base = int(&e.params[1]).max(0) as usize;
@@ -339,7 +352,7 @@ impl File {
                         }
                         let (lx, ly) = (c as f64 * dc, r as f64 * dr);
                         let (x, y) = (v(3) + lx * a.cos() - ly * a.sin(), v(4) + lx * a.sin() + ly * a.cos());
-                        self.entity(base, &mul(&m, &place(x, y, v(5), [s, s, s])), pen, depth + 1);
+                        self.entity(base, &self.instance(de, parent, &Instance { at: [x, y, v(5)], scale: [s, s, s] }), pen, depth + 1);
                     }
                 }
             }

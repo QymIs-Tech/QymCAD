@@ -226,6 +226,36 @@ fn a_rectangular_array_draws_what_its_do_dont_list_says() {
     assert_eq!(array("0"), vec![[100.0, 0.0, 104.0, 0.0], [100.0, 20.0, 104.0, 20.0], [110.0, 0.0, 114.0, 0.0], [110.0, 20.0, 114.0, 20.0]], "an empty list: all");
 }
 
+/// AN INSTANCE'S OWN MATRIX TURNS WHAT IT PLACES, NOT WHERE IT STANDS: scale, then the instance's own 124, then its
+/// X, Y, Z, which that matrix does not move (IGES 5.3, 3.6.2) - for a 408, a 420 and the corner of a 412 alike.
+/// `rot408.igs`: the line (0,0)-(10,0) placed at (100,0) by a 408 whose own matrix is a quarter turn, over a reference
+/// line (90,-5)-(110,-5). Reported behaviour: the quarter turn swung the position too, and the line came in at
+/// (0,100)-(0,110).
+#[test]
+fn an_instance_is_turned_by_its_own_matrix_where_it_stands() {
+    assert_eq!(sorted_lines(&data("rot408.igs")), vec![[90.0, -5.0, 110.0, -5.0], [100.0, 0.0, 100.0, 10.0]], "the 408");
+    const QUARTER: &str = "0.,-1.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.";
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(124, 0, "00010000", 0, QUARTER.into()),                  // DE 1: a quarter turn
+            E(110, 0, PART, 0, "0.,0.,0.,10.,0.,0.".into()),           // DE 3: the member
+            E(320, 0, "00000200", 0, "0,4HCELL,1,3,0,1HC,0,0".into()), // DE 5: the definition
+            E(420, 0, TOP, 1, "5,100.,0.,0.,1.".into()),               // DE 7: at (100,0), turned by DE 1
+        ],
+    );
+    assert_eq!(sorted_lines(&read("rot420.igs", &text).expect("reads")), vec![[100.0, 0.0, 100.0, 10.0]], "the 420");
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(124, 0, "00010000", 0, QUARTER.into()),                    // DE 1: a quarter turn
+            E(110, 0, "00010000", 0, "0.,0.,0.,4.,0.,0.".into()),        // DE 3: the base
+            E(412, 0, TOP, 1, "3,1.,100.,0.,0.,2,1,10.,0.,0.,0".into()), // DE 5: two columns from (100,0), turned by DE 1
+        ],
+    );
+    assert_eq!(sorted_lines(&read("rot412.igs", &text).expect("reads")), vec![[100.0, 0.0, 100.0, 4.0], [110.0, 0.0, 110.0, 4.0]], "the 412");
+}
+
 /// THE REPORTED FILE: a chip library cell, defined and placed nowhere. `QYM_IGES` names it.
 #[test]
 #[ignore = "a file on this machine"]
