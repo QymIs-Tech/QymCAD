@@ -150,3 +150,6 @@ mod a_crossing_of_any_curve_is_snapped_to;
 
 #[cfg(test)]
 mod a_whole_ellipse_is_cut_as_any_curve;
+
+#[cfg(test)]
+mod a_blend_built_short_advises_what_builds;
