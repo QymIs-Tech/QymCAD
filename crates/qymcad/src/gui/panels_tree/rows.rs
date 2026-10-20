@@ -167,11 +167,17 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::CircularArray { count, angle, .. } => {
             format!("{} {}", ph::ARROWS_CLOCKWISE, crate::i18n::trn("feat-circular-array", &[("n", &count.to_string()), ("angle", &fmt_num(at("angle", angle)))]))
         }
-        FeatureKind::Mirror { plane, datum, .. } => format!(
-            "{} {}",
-            ph::FLIP_HORIZONTAL,
-            crate::i18n::tr1("feat-mirror", "plane", &if datum != 0 { crate::i18n::tr("ref-datum") } else { ["XY", "XZ", "YZ"][(plane as usize).min(2)].to_string() })
-        ),
+        FeatureKind::Mirror { plane, datum, face, .. } => {
+            // THE FACE FIRST: a mirror across a face of a body keeps `plane` at its default 0, which read as XY
+            let across = if face.is_some() {
+                crate::i18n::tr("ref-face")
+            } else if datum != 0 {
+                crate::i18n::tr("ref-datum")
+            } else {
+                ["XY", "XZ", "YZ"][(plane as usize).min(2)].to_string()
+            };
+            format!("{} {}", ph::FLIP_HORIZONTAL, crate::i18n::tr1("feat-mirror", "plane", &across))
+        }
         FeatureKind::Hole { diameter, depth, sketch, .. } => {
             if sketch != 0 {
                 let n = project.sketch_isolated_points(sketch).len();

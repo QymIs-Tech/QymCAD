@@ -607,6 +607,7 @@ thread-internal = іш
 all-of-them = барлығы
 action-cut = қиып алу
 ref-datum = датум
+ref-face = бет
 action-copy = көшіру
 settings-grid-step = { "тор қадамы " }
 

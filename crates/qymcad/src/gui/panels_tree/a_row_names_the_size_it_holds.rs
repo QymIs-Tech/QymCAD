@@ -1,8 +1,9 @@
-//! A ROW OF THE TREE NAMES THE SIZE THE FEATURE HOLDS, on the path of the reports: a cylinder made by its button, a
-//! thread of the standard pitch put on it by a click on its wall, and the words the tree then shows.
+//! A ROW OF THE TREE NAMES WHAT THE FEATURE HOLDS, on the paths of the reports: a cylinder made by its button, a thread
+//! of the standard pitch put on it by a click on its wall; a box mirrored across a face of its own; and the words the
+//! tree then shows.
 //!
 //! Reported behaviour: a cylinder of 14 threaded with the standard pitch was listed as "Thread M14x1.75" - the pitch of
-//! M12, which no M14 nut takes.
+//! M12, which no M14 nut takes; a mirror across a side face was listed as "Mirror [XY]".
 #[cfg(test)]
 mod tests {
     use crate::gui::hand::Hand;
@@ -58,5 +59,27 @@ mod tests {
             }
         }
         assert!(bad.is_empty(), "the tree does not show {bad:?}; it shows {named:?}");
+    }
+
+    /// A box mirrored across a side face of its own is named by the face, not by a plane of the origin. Reported
+    /// behaviour: the row read "Mirror [XY]" - mirroring across XY would have put the copy under the table.
+    #[test]
+    fn a_mirror_across_a_face_is_named_by_the_face() {
+        let mut app = App { project: qymcad_core::model::Project::default(), ..Default::default() };
+        app.project.new_document();
+        let part = app.project.add_part("Part");
+        app.enter_component(part);
+        let mut hand = Hand::new(&mut app);
+        assert!(hand.press_hint(&crate::i18n::tr("tb-box-hint")), "GUARD: the panel has the button of the box");
+        hand.enter().settle();
+        // the side of the box facing +X, which the eye sees: the box of 20 stands about the origin
+        hand.look_at([0.0, 0.0, 10.0], 10.0).tool(16).click([10.0, 4.0, 13.0]).enter().settle();
+        let mirror = hand.app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Mirror { face: Some(_), .. }));
+        let Some(ti) = mirror else { panic!("GUARD: a click on the side face and Enter mirror the box across it; status: {}", hand.app.status) };
+        let label = crate::gui::panels_tree::feature_row_label(&hand.app.project, ti);
+        let want = crate::i18n::tr1("feat-mirror", "plane", &crate::i18n::tr("ref-face"));
+        assert!(label.ends_with(&want), "the mirror across a face is named {label:?}, not {want:?}");
+        hand.frame(Vec::new());
+        assert!(hand.words_drawn().iter().any(|(t, _)| t.ends_with(&want)), "the tree does not show {want:?}");
     }
 }

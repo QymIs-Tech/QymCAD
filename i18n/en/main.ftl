@@ -609,6 +609,7 @@ thread-internal = int
 all-of-them = all
 action-cut = cut
 ref-datum = datum
+ref-face = face
 action-copy = copy
 settings-grid-step = { "grid step " }
 

@@ -609,6 +609,7 @@ thread-internal = внутр
 all-of-them = все
 action-cut = вырезать
 ref-datum = датум
+ref-face = грань
 action-copy = копировать
 settings-grid-step = { "шаг сетки " }
 

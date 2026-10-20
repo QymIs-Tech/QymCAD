@@ -608,6 +608,7 @@ thread-internal = внутр
 all-of-them = всі
 action-cut = вирізати
 ref-datum = датум
+ref-face = грань
 action-copy = копіювати
 settings-grid-step = { "крок сітки " }
 # --- НАЗВИ ФІЧ У ДЕРЕВІ ---
