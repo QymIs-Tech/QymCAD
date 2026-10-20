@@ -203,6 +203,29 @@ fn a_network_instance_is_moved_by_its_translation_and_scaled_by_its_scale() {
     assert_eq!(sorted_lines(&read("net420-xs.igs", &text).expect("reads")), vec![[100.0, 50.0, 120.0, 70.0]], "a 420 with only XS given");
 }
 
+/// A RECTANGULAR ARRAY (412) DRAWS WHAT ITS DO/DON'T LIST SAYS (IGES 5.3, 4.136): parameter 11 the count of the list,
+/// 12 the flag (0 DO, 1 DON'T), 13 on the positions, counted from the lower left up each column, then up the next.
+/// `arr412.igs`: the line (0,0)-(4,0) in three columns 10 apart from (100,0), DON'T position 2. Reported behaviour: all
+/// three copies came in, the middle one at (110,0)-(114,0) too.
+#[test]
+fn a_rectangular_array_draws_what_its_do_dont_list_says() {
+    assert_eq!(sorted_lines(&data("arr412.igs")), vec![[100.0, 0.0, 104.0, 0.0], [120.0, 0.0, 124.0, 0.0]], "DON'T position 2 of three");
+    let array = |list: &str| {
+        let text = iges(
+            (2, "MM"),
+            &[
+                E(110, 0, "00010000", 0, "0.,0.,0.,4.,0.,0.".into()),                // DE 1: the base
+                E(412, 0, TOP, 0, format!("1,1.,100.,0.,0.,2,2,10.,20.,0.,{list}")), // DE 3: two columns of two rows
+            ],
+        );
+        sorted_lines(&read("arr412-list.igs", &text).expect("reads"))
+    };
+    // positions 1 (100,0), 2 (100,20), 3 (110,0), 4 (110,20): up the first column, then up the second
+    assert_eq!(array("1,0,2"), vec![[100.0, 20.0, 104.0, 20.0]], "DO position 2: only the upper one of the first column");
+    assert_eq!(array("2,1,1,4"), vec![[100.0, 20.0, 104.0, 20.0], [110.0, 0.0, 114.0, 0.0]], "DON'T positions 1 and 4");
+    assert_eq!(array("0"), vec![[100.0, 0.0, 104.0, 0.0], [100.0, 20.0, 104.0, 20.0], [110.0, 0.0, 114.0, 0.0], [110.0, 20.0, 114.0, 20.0]], "an empty list: all");
+}
+
 /// THE REPORTED FILE: a chip library cell, defined and placed nowhere. `QYM_IGES` names it.
 #[test]
 #[ignore = "a file on this machine"]

@@ -327,8 +327,16 @@ impl File {
                 let (cols, rows) = (v(6).max(1.0) as usize, v(7).max(1.0) as usize);
                 let (dc, dr, a) = (v(8), v(9), v(10));
                 let base = int(&e.params[1]).max(0) as usize;
+                // 11 the count of the DO/DON'T list (0: every position), 12 DO (0) or DON'T (1), 13 on the positions,
+                // numbered from 1 at the lower left up each column, then up the next (IGES 5.3, 4.136)
+                let at = |k: usize| e.params.get(k).map(|s| int(s)).unwrap_or(0);
+                let listed: HashSet<i64> = (0..(at(11).max(0) as usize).min(e.params.len())).map(|k| at(13 + k)).collect();
+                let dont = at(12) != 0;
                 for r in 0..rows {
                     for c in 0..cols {
+                        if !listed.is_empty() && listed.contains(&((c * rows + r + 1) as i64)) == dont {
+                            continue;
+                        }
                         let (lx, ly) = (c as f64 * dc, r as f64 * dr);
                         let (x, y) = (v(3) + lx * a.cos() - ly * a.sin(), v(4) + lx * a.sin() + ly * a.cos());
                         self.entity(base, &mul(&m, &place(x, y, v(5), [s, s, s])), pen, depth + 1);
