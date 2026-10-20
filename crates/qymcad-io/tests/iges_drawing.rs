@@ -278,6 +278,31 @@ fn a_member_of_a_group_is_drawn() {
     assert!(!d.definitions_only, "grouped lines are not a library");
 }
 
+/// A SPLINE WHOSE COUNTS MAKE NO CURVE IS LEFT OUT AND NAMED, the rest of the drawing comes in. A B-spline (126) is
+/// read by its upper index K, its degree M, K + M + 2 knots, K + 1 weights and points and its range V0 < V1 (IGES 5.3,
+/// 4.23); a broken file gives fewer. Found: K = 0 under M = 3 panicked in the reading ("slice index starts at 4 but
+/// ends at 1"), and a list too short for its K or an empty range was dropped with no word.
+#[test]
+fn a_spline_whose_counts_make_no_curve_is_left_out_and_named() {
+    let cases = [
+        E(126, 0, TOP, 0, "0,3,0,0,1,0,0.,0.,0.,1.,1.,1.,0.,0.,0.,0.,1.".into()),           // K below M
+        E(126, 0, TOP, 0, "1000,1,0,0,1,0,0.,0.,1.,1.".into()),                             // K past the list
+        E(126, 0, TOP, 0, "1,1,0,0,1,0,0.,0.,1.,1.,1.,1.,0.,0.,0.,10.,0.,0.,1.,1.".into()), // V0 = V1
+    ];
+    let mut failures = Vec::new();
+    for (k, bad) in cases.into_iter().enumerate() {
+        let text = iges((2, "MM"), &[E(110, 0, TOP, 0, "0.,0.,0.,10.,0.,0.".into()), bad]);
+        let got = std::panic::catch_unwind(|| read(&format!("spline-counts-{k}.igs"), &text));
+        match got {
+            Ok(Ok(d)) if sorted_lines(&d) == vec![[0.0, 0.0, 10.0, 0.0]] && d.curves.len() == 1 && d.invalid == vec![qymcad_io::IgesCount { typ: 126, count: 1 }] => {}
+            Ok(Ok(d)) => failures.push(format!("case {k}: curves {:?}, invalid {:?}", d.curves, d.invalid)),
+            Ok(Err(e)) => failures.push(format!("case {k}: refused {e}")),
+            Err(_) => failures.push(format!("case {k}: the reading panicked")),
+        }
+    }
+    assert!(failures.is_empty(), "a spline that makes no curve was not left out by name:\n{}", failures.join("\n"));
+}
+
 /// THE REPORTED FILE: a chip library cell, defined and placed nowhere. `QYM_IGES` names it.
 #[test]
 #[ignore = "a file on this machine"]

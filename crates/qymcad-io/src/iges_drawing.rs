@@ -425,8 +425,9 @@ struct Pen {
     invalid: BTreeMap<u32, usize>,
 }
 
-/// A curve whose numbers, placed, are not finite: it is left out and named.
-struct NotANumber;
+/// A curve its numbers do not make - its counts or its range do not fit, or placed, its numbers are not finite: it is
+/// left out and named.
+struct NoCurve;
 
 impl Pen {
     fn at(&self, m: &M, p: [f64; 3]) -> Point2 {
@@ -487,20 +488,25 @@ impl Pen {
     /// A rational B-spline curve (entity 126), placed and approximated by the cubic B-spline of the sketch within
     /// 0.001 mm (`BSpline::approximate`), its knots begun at the file's: laid out as 16 segments a span, a curve of the
     /// drawing was a run of lines a person could not drag, and a body had a face for each.
-    fn spline(&mut self, m: &M, p: &[String]) -> Result<(), NotANumber> {
+    fn spline(&mut self, m: &M, p: &[String]) -> Result<(), NoCurve> {
         let at = |k: usize| p.get(k).map(|s| num(s)).unwrap_or(0.0);
         let (k, deg) = (at(1) as usize, at(2) as usize);
+        // THE COUNTS COME FROM THE FILE: the upper index K, the degree M, then K + M + 2 knots, K + 1 weights, K + 1
+        // points and the range V0, V1 (IGES 5.3, 4.23). K below M panicked in the slicing of the knots ("slice index
+        // starts at 4 but ends at 1"), and a K past the list, or an empty range, dropped the curve with no word. They are
+        // checked before anything is taken by them; a K or an M past the length of the list cannot overflow the sums.
+        // V1 stands at 14 + 5K + M: after the type, the six numbers of the head, the knots, the weights, the points, V0
+        if k < deg || k >= p.len() || 14 + 5 * k + deg >= p.len() {
+            return Err(NoCurve);
+        }
         let nk = k + deg + 2;
         let knots: Vec<f64> = (0..nk).map(|i| at(7 + i)).collect();
         let w: Vec<f64> = (0..=k).map(|i| at(7 + nk + i)).collect();
         let cp: Vec<[f64; 3]> = (0..=k).map(|i| [at(8 + nk + k + 3 * i), at(9 + nk + k + 3 * i), at(10 + nk + k + 3 * i)]).collect();
         let (v0, v1) = (at(8 + nk + k + 3 * (k + 1)), at(9 + nk + k + 3 * (k + 1)));
-        if knots.len() != nk || v1 <= v0 {
-            return Ok(());
-        }
-        // placed past the range of a number, the control points make no curve to approximate
-        if cp.iter().any(|q| apply(m, *q).iter().any(|v| !(v * self.to_mm).is_finite())) {
-            return Err(NotANumber);
+        // an empty range, or control points placed past the range of a number, make no curve to approximate
+        if v1 <= v0 || cp.iter().any(|q| apply(m, *q).iter().any(|v| !(v * self.to_mm).is_finite())) {
+            return Err(NoCurve);
         }
         let eval = |t: f64| -> [f64; 3] {
             // de Boor on homogeneous points
