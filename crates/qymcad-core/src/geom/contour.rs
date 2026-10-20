@@ -40,6 +40,19 @@ impl ProfEdge {
         }
     }
 
+    /// WHETHER EVERY NUMBER OF THE EDGE IS FINITE. A drawing's text parses `nan`, `inf` and `1e400` as numbers, and a
+    /// finite one can still overflow under the place of a block; a reader leaves such an edge out and names it.
+    pub fn is_finite(&self) -> bool {
+        let at = |p: &Point2| p.x.is_finite() && p.y.is_finite();
+        match self {
+            ProfEdge::Line { a, b } => at(a) && at(b),
+            ProfEdge::Arc { a, b, center, .. } => at(a) && at(b) && at(center),
+            ProfEdge::Circle { center, r } => at(center) && r.is_finite(),
+            ProfEdge::Oval { centre, major, minor, from, sweep } => at(centre) && at(major) && at(minor) && from.is_finite() && sweep.is_finite(),
+            ProfEdge::Spline(b) => b.poles.iter().all(at) && b.knots.iter().all(|k| k.is_finite()),
+        }
+    }
+
     /// THE TWO ENDS OF THE EDGE, its start first; `None` for a circle or a whole ellipse, which have none.
     pub fn ends(&self) -> Option<[Point2; 2]> {
         match *self {

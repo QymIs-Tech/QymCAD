@@ -193,17 +193,21 @@ pub(crate) fn forget_recent(set: &mut Settings, path: &str) {
     set.recent.retain(|p| p != path);
 }
 
-/// What a drawing read from IGES adds to the status: that a library's cells are what is shown, and what was not
-/// drawn at all. Each is a warning; the line that carries them takes that tone.
+/// What a drawing read from IGES adds to the status: that a library's cells are what is shown, what was not drawn at
+/// all, and what was left out for a number that is not a number. Each is a warning; the line that carries them takes
+/// that tone.
 pub(crate) fn drawing_note(d: &qymcad_io::IgesDrawing) -> String {
+    let kinds = |counts: &[qymcad_io::IgesCount]| counts.iter().map(|c| format!("{} x{}", c.typ, c.count)).collect::<Vec<_>>().join(", ");
     let mut out = Vec::new();
     if d.definitions_only {
         out.push(crate::i18n::tr("io-iges-definitions-only"));
     }
     if !d.skipped.is_empty() {
-        let n: usize = d.skipped.iter().map(|(_, n)| n).sum();
-        let kinds = d.skipped.iter().map(|(t, n)| format!("{t} x{n}")).collect::<Vec<_>>().join(", ");
-        out.push(crate::i18n::tr2("io-iges-skipped", "n", &n.to_string(), "kinds", &kinds));
+        let n: usize = d.skipped.iter().map(|c| c.count).sum();
+        out.push(crate::i18n::tr2("io-iges-skipped", "n", &n.to_string(), "kinds", &kinds(&d.skipped)));
+    }
+    if !d.invalid.is_empty() {
+        out.push(crate::i18n::tr1("import-invalid", "list", &kinds(&d.invalid)));
     }
     out.join(" ")
 }

@@ -206,6 +206,25 @@ fn an_iges_drawing_comes_in_as_a_sketch() {
     assert_eq!(waiting, 1, "the drawing's one line did not come in; the status says: {}", app.status);
 }
 
+/// AN IGES DRAWING SAYS WHAT IT LEFT OUT FOR A NUMBER THAT IS NOT A NUMBER: a line at x = NaN beside a sound one, through
+/// "Import" - the sound line waits for its plane, and the status line names the line left out, as a DXF names its own.
+///
+/// Reported behaviour: such a line came into the sketch as a NaN point, or was dropped, and nothing was said.
+#[test]
+fn an_iges_drawing_says_what_it_held_invalid() {
+    let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let p = dir.join("not-a-number.igs");
+    std::fs::write(&p, iges_lines(&["0.,0.,0.,10.,0.,0.", "NaN,0.,0.,5.,5.,0."])).expect("written");
+    let (mut app, ctx) = running();
+    answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
+    settle(&mut app, &ctx);
+    let waiting = app.tools.pending_import.curves.as_ref().map(|(c, _, _)| c.len()).unwrap_or(0);
+    assert_eq!(waiting, 1, "the sound line did not come in alone; the status says: {}", app.status);
+    let said = crate::i18n::tr1("import-invalid", "list", "110 x1");
+    assert!(app.status.words.contains(&said), "the door does not name the line left out: {:?}", app.status);
+}
+
 /// A FILE THE KERNEL CANNOT READ IS ANSWERED IN WORDS, not with the kernel's code.
 #[test]
 fn a_file_the_kernel_cannot_read_is_answered_in_words() {

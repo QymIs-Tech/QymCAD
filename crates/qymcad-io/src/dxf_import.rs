@@ -126,9 +126,16 @@ struct Left {
     redrawn: Counts,
 }
 
+/// The kind of an entity as the file names it: `LINE`, `LWPOLYLINE`.
+fn kind(specific: &EntityType) -> String {
+    let name = format!("{specific:?}");
+    name.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("?").to_uppercase()
+}
+
 /// Read `entities` placed by `place` into `curves`, counting into `left` what did not come in as the file has it.
 fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, curves: &mut Vec<ProfEdge>, left: &mut Left) {
     for entity in entities {
+        let first = curves.len();
         match &entity.specific {
             EntityType::Line(line) => {
                 curves.push(ProfEdge::Line { a: place.at(line.p1.x, line.p1.y), b: place.at(line.p2.x, line.p2.y) });
@@ -198,6 +205,12 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                     *left.skipped.entry("INSERT".into()).or_default() += 1;
                     continue;
                 };
+                // the insert's own numbers: what it places is checked entity by entity, under their own kinds
+                let own = [ins.location.x, ins.location.y, ins.x_scale_factor, ins.y_scale_factor, ins.rotation, ins.column_spacing, ins.row_spacing];
+                if !own.iter().all(|v| v.is_finite()) {
+                    *left.invalid.entry("INSERT".into()).or_default() += 1;
+                    continue;
+                }
                 let inner: Vec<&Entity> = block.entities.iter().collect();
                 let (sin, cos) = ins.rotation.to_radians().sin_cos();
                 for row in 0..ins.row_count.max(1) {
@@ -217,11 +230,14 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                     }
                 }
             }
-            other => {
-                let name = format!("{other:?}");
-                let kind = name.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("?").to_uppercase();
-                *left.skipped.entry(kind).or_default() += 1;
-            }
+            other => *left.skipped.entry(kind(other)).or_default() += 1,
+        }
+        // A NUMBER THAT IS NOT A NUMBER LEAVES ITS ENTITY OUT, NAMED: the reader parses `nan`, `inf` and `1e400` as
+        // numbers, and a finite one can overflow under the place of a block. Reported behaviour: a LINE at x = nan came
+        // into the sketch as a NaN point with no word, and one at x = inf panicked in the weld of the sketch's ends.
+        if curves[first..].iter().any(|c| !c.is_finite()) {
+            curves.truncate(first);
+            *left.invalid.entry(kind(&entity.specific)).or_default() += 1;
         }
     }
 }
@@ -246,7 +262,9 @@ fn run(at: impl Fn(f64) -> Point2, from: f64, to: f64, curves: &mut Vec<ProfEdge
     }
     for w in ts.windows(2) {
         let (p, q) = (at(w[0]), at(w[1]));
-        if p.dist(q) > 1e-12 {
+        // a length that is not a number keeps the segment, for the check of its entity's numbers to leave it out by name
+        let length = p.dist(q);
+        if length > 1e-12 || length.is_nan() {
             curves.push(ProfEdge::Line { a: p, b: q });
         }
     }
@@ -423,7 +441,8 @@ fn polyline_curves(verts: &[(Point2, f64)], closed: bool, out: &mut Vec<ProfEdge
         if p1.dist(p2) < 1e-9 {
             continue; // a degenerate edge
         }
-        out.push(if bulge.abs() > 1e-9 { bulge_arc(p1, p2, bulge) } else { ProfEdge::Line { a: p1, b: p2 } });
+        // a bulge that is not a number makes an arc of no number, which the reader leaves out, not a straight edge
+        out.push(if bulge.abs() > 1e-9 || bulge.is_nan() { bulge_arc(p1, p2, bulge) } else { ProfEdge::Line { a: p1, b: p2 } });
     }
 }
 

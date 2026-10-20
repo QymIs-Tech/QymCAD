@@ -76,17 +76,22 @@ pub(crate) fn settle(app: &mut App, ctx: &egui::Context) {
 
 /// One line in IGES, in the fixed columns IGES is written in: a drawing, not a single surface in it.
 fn iges_line() -> String {
+    iges_lines(&["0.,0.,0.,10.,0.,0."])
+}
+
+/// Lines in IGES, each by its parameters: a drawing, not a single surface in it.
+fn iges_lines(lines: &[&str]) -> String {
     let g = "1H,,1H;,1Hc,1Hc,1Hc,1Hc,32,38,6,308,15,1Hc,1.,2,2HMM;";
-    [
-        format!("{:<72}S{:>7}", "a drawing for the check", 1),
-        format!("{:<72}G{:>7}", g, 1),
-        format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, 1, 0, 0, 0, 0, 0, 0, "00000000", 1),
-        format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, 0, 0, 1, 0, "", "", "", 0, 2),
-        format!("{:<64}{:>8}P{:>7}", "110,0.,0.,0.,10.,0.,0.;", 1, 1),
-        format!("S{:>7}G{:>7}D{:>7}P{:>7}{:<40}T{:>7}", 1, 1, 2, 1, "", 1),
-    ]
-    .join("\n")
-        + "\n"
+    let mut out = vec![format!("{:<72}S{:>7}", "a drawing for the check", 1), format!("{:<72}G{:>7}", g, 1)];
+    for k in 0..lines.len() {
+        out.push(format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, k + 1, 0, 0, 0, 0, 0, 0, "00000000", 2 * k + 1));
+        out.push(format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, 0, 0, 1, 0, "", "", "", 0, 2 * k + 2));
+    }
+    for (k, params) in lines.iter().enumerate() {
+        out.push(format!("{:<64}{:>8}P{:>7}", format!("110,{params};"), 2 * k + 1, k + 1));
+    }
+    out.push(format!("S{:>7}G{:>7}D{:>7}P{:>7}{:<40}T{:>7}", 1, 1, 2 * lines.len(), lines.len(), "", 1));
+    out.join("\n") + "\n"
 }
 
 /// The folder the scale checks write their files into, under `target`.

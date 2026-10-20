@@ -163,7 +163,7 @@ fn a_rational_spline_stays_on_its_circle() {
 fn notes_are_counted_and_a_file_of_nothing_is_refused() {
     let note = E(212, 0, TOP, 0, "1,5,1.,1.,0.,0.,0,0,0.,0.,0.,5Hnote.".into());
     let d = read("note.igs", &iges((2, "MM"), &[note, E(110, 0, TOP, 0, "0.,0.,0.,1.,0.,0.".into())])).expect("reads");
-    assert_eq!(d.skipped, vec![(212, 1)], "the note was not counted");
+    assert_eq!(d.skipped, vec![qymcad_io::IgesCount { typ: 212, count: 1 }], "the note was not counted");
     assert_eq!(d.curves.len(), 1);
     let only = E(212, 0, TOP, 0, "1,5,1.,1.,0.,0.,0,0,0.,0.,0.,5Hnote.".into());
     assert_eq!(read("only-note.igs", &iges((2, "MM"), &[only])).err().as_deref(), Some("io-iges-no-curves"));

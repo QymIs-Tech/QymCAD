@@ -5,7 +5,7 @@
 //! kernel's reader passes over the network subfigures and arrays such files are built from. Measured on a
 //! reported file (a chip library cell): the kernel gave one 10 x 5 rectangle out of a cell of fourteen polylines
 //! and eight contacts. So the drawing side of IGES is read here, the way DXF is.
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use qymcad_core::geom::bspline::{Approximated, BSpline};
 use qymcad_core::geom::{Point2, ProfEdge};
@@ -14,10 +14,19 @@ use qymcad_core::geom::{Point2, ProfEdge};
 #[derive(Debug, Default)]
 pub struct IgesDrawing {
     pub curves: Vec<ProfEdge>,
-    /// Entities of kinds that are not drawn (a note, a dimension, a surface), as (IGES type, how many).
-    pub skipped: Vec<(u32, usize)>,
+    /// Entities of kinds that are not drawn (a note, a dimension, a surface), by IGES type.
+    pub skipped: Vec<IgesCount>,
+    /// Entities left out because a number of theirs is not a finite number, by IGES type.
+    pub invalid: Vec<IgesCount>,
     /// The file places nothing and only defines subfigures - a library - so the definitions are what is shown.
     pub definitions_only: bool,
+}
+
+/// How many entities of one IGES type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IgesCount {
+    pub typ: u32,
+    pub count: usize,
 }
 
 /// Read the curves of an IGES drawing. The coordinates come out in millimetres whatever unit the file names.
@@ -260,7 +269,7 @@ impl File {
     }
 
     fn draw(&self) -> IgesDrawing {
-        let mut out = Pen { to_mm: self.to_mm, curves: Vec::new(), skipped: HashMap::new() };
+        let mut out = Pen { to_mm: self.to_mm, curves: Vec::new(), skipped: BTreeMap::new(), invalid: BTreeMap::new() };
         // WHAT IS DRAWN AT THE TOP: visible, not an annotation, and independent - or a member of a group that no
         // subfigure, instance or composite curve places, since a group only gathers what exists on its own. Reported
         // behaviour: two lines of a 402 did not come in, and a drawing of grouped lines only was refused as empty.
@@ -293,9 +302,8 @@ impl File {
                 }
             }
         }
-        let mut skipped: Vec<(u32, usize)> = out.skipped.into_iter().collect();
-        skipped.sort();
-        IgesDrawing { curves: out.curves, skipped, definitions_only }
+        let counted = |m: BTreeMap<u32, usize>| m.into_iter().map(|(typ, count)| IgesCount { typ, count }).collect();
+        IgesDrawing { curves: out.curves, skipped: counted(out.skipped), invalid: counted(out.invalid), definitions_only }
     }
 
     /// The entities a subfigure or an instance refers to.
@@ -320,6 +328,14 @@ impl File {
         let v = |k: usize| e.params.get(k).map(|s| num(s)).unwrap_or(0.0);
         let or = |k: usize, default: f64| if e.params.get(k).is_some_and(|x| !x.trim().is_empty()) { v(k) } else { default };
         let before = pen.curves.len();
+        // A NUMBER THAT IS NOT A NUMBER LEAVES ITS CURVE OUT, NAMED: `num` parses `NaN`, `inf` and `1.D400` as numbers, and
+        // a finite one can overflow under the transforms that place it. Reported behaviour: an arc whose centre was NaN
+        // came into the sketch as a NaN point with no word, and a line at x = inf panicked in the weld of its ends.
+        let curve = matches!(e.typ, 100 | 106 | 110 | 126);
+        if curve && !e.params.iter().skip(1).all(|s| num(s).is_finite()) {
+            *pen.invalid.entry(e.typ).or_insert(0) += 1;
+            return false;
+        }
         match e.typ {
             110 => pen.line(&m, [v(1), v(2), v(3)], [v(4), v(5), v(6)]),
             100 => pen.arc(&m, v(1), [v(2), v(3)], [v(4), v(5)], [v(6), v(7)]),
@@ -341,7 +357,11 @@ impl File {
                     pen.line(&m, pts[pts.len() - 1], pts[0]);
                 }
             }
-            126 => pen.spline(&m, &e.params),
+            126 => {
+                if pen.spline(&m, &e.params).is_err() {
+                    *pen.invalid.entry(126).or_insert(0) += 1;
+                }
+            }
             102 => {
                 for c in self.references(de) {
                     self.entity(c, &m, pen, depth + 1);
@@ -389,6 +409,10 @@ impl File {
             124 | 402 | 406 | 132 => {}
             other => *pen.skipped.entry(other).or_insert(0) += 1,
         }
+        if curve && pen.curves[before..].iter().any(|c| !c.is_finite()) {
+            pen.curves.truncate(before);
+            *pen.invalid.entry(e.typ).or_insert(0) += 1;
+        }
         pen.curves.len() > before
     }
 }
@@ -397,8 +421,12 @@ impl File {
 struct Pen {
     to_mm: f64,
     curves: Vec<ProfEdge>,
-    skipped: HashMap<u32, usize>,
+    skipped: BTreeMap<u32, usize>,
+    invalid: BTreeMap<u32, usize>,
 }
+
+/// A curve whose numbers, placed, are not finite: it is left out and named.
+struct NotANumber;
 
 impl Pen {
     fn at(&self, m: &M, p: [f64; 3]) -> Point2 {
@@ -408,7 +436,9 @@ impl Pen {
 
     fn line(&mut self, m: &M, a: [f64; 3], b: [f64; 3]) {
         let (a, b) = (self.at(m, a), self.at(m, b));
-        if (a.x - b.x).hypot(a.y - b.y) > 1e-12 {
+        // a length that is not a number keeps the line, for the check of its numbers to leave it out by name
+        let length = (a.x - b.x).hypot(a.y - b.y);
+        if length > 1e-12 || length.is_nan() {
             self.curves.push(ProfEdge::Line { a, b });
         }
     }
@@ -457,7 +487,7 @@ impl Pen {
     /// A rational B-spline curve (entity 126), placed and approximated by the cubic B-spline of the sketch within
     /// 0.001 mm (`BSpline::approximate`), its knots begun at the file's: laid out as 16 segments a span, a curve of the
     /// drawing was a run of lines a person could not drag, and a body had a face for each.
-    fn spline(&mut self, m: &M, p: &[String]) {
+    fn spline(&mut self, m: &M, p: &[String]) -> Result<(), NotANumber> {
         let at = |k: usize| p.get(k).map(|s| num(s)).unwrap_or(0.0);
         let (k, deg) = (at(1) as usize, at(2) as usize);
         let nk = k + deg + 2;
@@ -466,7 +496,11 @@ impl Pen {
         let cp: Vec<[f64; 3]> = (0..=k).map(|i| [at(8 + nk + k + 3 * i), at(9 + nk + k + 3 * i), at(10 + nk + k + 3 * i)]).collect();
         let (v0, v1) = (at(8 + nk + k + 3 * (k + 1)), at(9 + nk + k + 3 * (k + 1)));
         if knots.len() != nk || v1 <= v0 {
-            return;
+            return Ok(());
+        }
+        // placed past the range of a number, the control points make no curve to approximate
+        if cp.iter().any(|q| apply(m, *q).iter().any(|v| !(v * self.to_mm).is_finite())) {
+            return Err(NotANumber);
         }
         let eval = |t: f64| -> [f64; 3] {
             // de Boor on homogeneous points
@@ -509,5 +543,6 @@ impl Pen {
                 }
             }
         }
+        Ok(())
     }
 }
