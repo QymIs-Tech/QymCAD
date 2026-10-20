@@ -1,0 +1,130 @@
+# Build the portable ZIP for Windows 7/8.x (x64). Runs after building for x86_64-win7-windows-msvc.
+#
+# Packages the application binary, OCCT libraries, the combase.dll export forwarder,
+# Visual C++ runtime DLLs, application assets, and documentation.
+$ErrorActionPreference = "Stop"
+
+$bin = if ($env:QYMCAD_BIN) { $env:QYMCAD_BIN } else { "target\x86_64-win7-windows-msvc\release\qymcad.exe" }
+if (-not (Test-Path $bin)) {
+    $bin = "target\release\qymcad.exe"
+}
+if (-not (Test-Path $bin)) { throw "no binary at $bin - run cargo build for x86_64-win7-windows-msvc first" }
+
+# A tag names the package itself; anything else is named by manifest version and commit hash.
+if ($env:QYMCAD_VERSION) {
+    $name = "qymcad-" + ($env:QYMCAD_VERSION -replace '^v', '')
+} else {
+    $ver = (Select-String -Path Cargo.toml -Pattern '^version' | Select-Object -First 1).Line -replace '[^0-9.]', ''
+    if (-not $ver) { $ver = "0.0.0" }
+    $sha = (git rev-parse --short=9 HEAD 2>$null)
+    $name = if ($sha) { "qymcad-$ver-dev.$sha" } else { "qymcad-$ver" }
+}
+
+$out = "dist\qymcad-win7"
+if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+New-Item -ItemType Directory -Force -Path $out | Out-Null
+Copy-Item $bin "$out\qymcad.exe"
+
+# --- combase.dll export forwarder ---
+#
+# Windows 7 lacks combase.dll (introduced in Windows 8). Basic COM functions live in ole32.dll.
+# The PE loader resolves exported forwarders directly into ole32.dll.
+$fwdSrc = "packaging\win\combase_forwarder.c"
+$fwdDll = "$out\combase.dll"
+if (Test-Path $fwdSrc) {
+    Write-Host ">>> Compiling combase.dll forwarder..."
+    if (Get-Command clang -ErrorAction SilentlyContinue) {
+        $obj = "$out\combase.obj"
+        & clang --target=x86_64-pc-windows-msvc -c $fwdSrc -o $obj
+        & lld-link /dll /machine:x64 /entry:DllMainCRTStartup $obj /out:$fwdDll
+        Remove-Item $obj -ErrorAction SilentlyContinue
+    } elseif (Get-Command cl.exe -ErrorAction SilentlyContinue) {
+        & cl.exe /nologo /LD /O2 /Fe:$fwdDll $fwdSrc /link /MACHINE:X64 /NOENTRY
+        Remove-Item "$out\combase.obj", "$out\combase.lib", "$out\combase.exp" -ErrorAction SilentlyContinue
+    } else {
+        Write-Warning "neither clang nor cl.exe was found - combase.dll forwarder was not built"
+    }
+}
+
+# --- OCCT libraries ---
+$occtBin = Join-Path $env:OCCT_ROOT "bin"
+if (-not (Test-Path $occtBin)) { throw "no OCCT binaries at $occtBin" }
+$dlls = Get-ChildItem "$occtBin\*.dll" | Where-Object {
+    $_.Name -notmatch '^(?i)(vtk|qt|q(?!ymcad))' -and
+    $_.Name -notmatch '(?i)debug' -and
+    $_.Name -notmatch '(?i)(draw|test|inspector|tkivtk|shapeview|dfbrowser|treemodel|messagemodel|messageview|tkview\.dll|tkdcaf\.dll)'
+}
+if ($dlls.Count -eq 0) { throw "$occtBin holds no DLLs" }
+Write-Host ">>> OCCT libraries: $($dlls.Count)"
+Copy-Item $dlls.FullName $out
+
+# --- Patch TBB for Windows 7 compatibility ---
+if (Test-Path "$out\tbb12.dll") {
+    Write-Host ">>> Patching tbb12.dll for Windows 7 compatibility..."
+    python -c @"
+import os
+for fname in ['tbb12.dll', 'tbb12_debug.dll']:
+    p = os.path.join(r'$out', fname)
+    if os.path.exists(p):
+        with open(p, 'rb') as f:
+            d = bytearray(f.read())
+        old_sym = b'\x38\x02GetCurrentThreadStackLimits\x00'
+        new_sym = b'\x00\x00GetTickCount\x00' + b'\x00' * (len(old_sym) - len(b'\x00\x00GetTickCount\x00'))
+        pos = d.find(old_sym)
+        if pos != -1:
+            d[pos:pos+len(new_sym)] = new_sym
+        # Replace stack size detection with standard 2 MB thread stack:
+        # b8 00 00 20 00        mov eax, 0x200000 (2 MB)
+        # 16x 90                nop padding
+        # 48 8d 0d 98 22 04 00  lea rcx, [rip + 0x42298] (mutex address preserved exactly)
+        # 5x 90                 nop padding
+        orig_code = bytes.fromhex('488d542438488d4c2440ff15b44e0100488b442438488d0d98220400482b442440')
+        prev_patch = bytes.fromhex('65488b04250800000065482b042510000000909090488d0d982204009090909090')
+        c_pos = d.find(orig_code)
+        if c_pos == -1:
+            c_pos = d.find(prev_patch)
+        if c_pos != -1:
+            new_code = bytes.fromhex('b800002000' + '90' * 16 + '488d0d98220400' + '90' * 5)
+            d[c_pos:c_pos+len(new_code)] = new_code
+        with open(p, 'wb') as f:
+            f.write(d)
+"@
+}
+
+# --- Visual C++ runtime ---
+$redist = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" -Directory -ErrorAction SilentlyContinue |
+          Sort-Object FullName | Select-Object -Last 1
+if ($redist) {
+    Write-Host ">>> Visual C++ runtime from $($redist.FullName)"
+    Copy-Item "$($redist.FullName)\*.dll" $out
+} else {
+    Write-Warning "the Visual C++ runtime was not found - the archive will need it installed on the machine"
+}
+
+# --- assets, license, and notices ---
+if (Test-Path "assets") {
+    Copy-Item "assets" -Destination "$out\assets" -Recurse
+}
+Copy-Item LICENSE "$out\LICENSE.txt"
+Copy-Item THIRD-PARTY-NOTICES.md $out
+
+# --- user instructions and platform notes ---
+@"
+QymCAD - portable build for Windows 7 SP1 / 8 / 8.1 / 10 / 11 (x64).
+To run: qymcad.exe (all required runtime DLLs are included in this directory).
+
+System Requirements:
+- Windows 7 SP1 (64-bit), Windows 8/8.1 (64-bit), or Windows 10/11 (64-bit).
+- On Windows 7: Service Pack 1 and KB2999226 (Universal CRT) or Visual C++ Redistributable are required.
+- GPU with OpenGL 3.3+ / DirectX 11 support.
+
+Notice:
+This build provides compatibility with legacy Windows versions (starting with Windows 7 SP1).
+Operation on Windows 7 and 8 is provided as-is without guarantee of full stability or frequent updates.
+For Windows 10/11, the primary release build is recommended.
+"@ | Set-Content -Encoding UTF8 "$out\README.txt"
+
+$zip = "dist\$name-win7-x64.zip"
+if (Test-Path $zip) { Remove-Item $zip }
+Compress-Archive -Path "$out\*" -DestinationPath $zip
+Write-Host ">>> DONE: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
