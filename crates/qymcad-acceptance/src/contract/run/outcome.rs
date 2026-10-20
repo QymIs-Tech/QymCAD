@@ -26,7 +26,9 @@ pub(crate) fn matches(s: &mut Session, want: &Outcome) -> Result<(), String> {
         Outcome::Pieces { pieces, volume } => {
             let (volume_got, at) = {
                 let b = the_body(&doc)?;
-                (b.volume, doc.bodies.iter().position(|x| x.name == b.name).unwrap_or(0))
+                // THE BODY ITSELF, NOT ITS NAME: a feature's result carries the name of the body it consumed, and the
+                // consumed one stands earlier in the list
+                (b.volume, doc.bodies.iter().position(|x| std::ptr::eq(x, b)).unwrap_or(0))
             };
             let solids = s.inspect(at).map(|i| i.solids).unwrap_or(0);
             let close = |a: f64, b: f64| (a - b).abs() <= 1e-5 * b.abs().max(1.0);
