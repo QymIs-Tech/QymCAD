@@ -39,9 +39,32 @@ struct Entity {
     /// The directory entry of a transformation (type 124), or 0.
     matrix: usize,
     blanked: bool,
-    independent: bool,
+    subordinate: Subordinate,
     annotation: bool,
     params: Vec<String>,
+}
+
+/// The subordinate entity switch of a directory entry, digits 3-4 of its status (IGES 5.3, 2.2.4.4.9.2).
+enum Subordinate {
+    /// 00: referred to by nothing, drawn on its own
+    Independent,
+    /// 01: exists only through the entity that refers to it - a member of a subfigure, a piece of a composite curve
+    Physically,
+    /// 02: exists on its own and is gathered by a grouping entity such as a 402, whose matrix does not move it
+    Logically,
+    /// 03: both
+    Both,
+}
+
+impl Subordinate {
+    fn of(digits: &str) -> Subordinate {
+        match digits {
+            "01" => Subordinate::Physically,
+            "02" => Subordinate::Logically,
+            "03" => Subordinate::Both,
+            _ => Subordinate::Independent,
+        }
+    }
 }
 
 struct File {
@@ -200,7 +223,7 @@ impl File {
                     form: int(&field(b, 4)) as u32,
                     matrix: int(&field(a, 6)).max(0) as usize,
                     blanked: &status[0..2] == "01",
-                    independent: &status[2..4] == "00",
+                    subordinate: Subordinate::of(&status[2..4]),
                     annotation: &status[4..6] == "01",
                     params,
                 },
@@ -238,8 +261,16 @@ impl File {
 
     fn draw(&self) -> IgesDrawing {
         let mut out = Pen { to_mm: self.to_mm, curves: Vec::new(), skipped: HashMap::new() };
-        // what is drawn at the top: independent, visible, not an annotation
-        let tops: Vec<usize> = self.order.iter().copied().filter(|de| self.entities[de].independent && !self.entities[de].blanked).collect();
+        // WHAT IS DRAWN AT THE TOP: visible, not an annotation, and independent - or a member of a group that no
+        // subfigure, instance or composite curve places, since a group only gathers what exists on its own. Reported
+        // behaviour: two lines of a 402 did not come in, and a drawing of grouped lines only was refused as empty.
+        let placed: HashSet<usize> = self.order.iter().flat_map(|de| self.references(*de)).collect();
+        let on_its_own = |de: &usize| match self.entities[de].subordinate {
+            Subordinate::Independent => true,
+            Subordinate::Logically => !placed.contains(de),
+            Subordinate::Physically | Subordinate::Both => false,
+        };
+        let tops: Vec<usize> = self.order.iter().copied().filter(|de| on_its_own(de) && !self.entities[de].blanked).collect();
         let mut drawn_any = false;
         for &de in &tops {
             let e = &self.entities[&de];
@@ -255,10 +286,9 @@ impl File {
         // the cells, not the parts they are made of.
         let mut definitions_only = false;
         if !drawn_any && out.curves.is_empty() {
-            let used: HashSet<usize> = self.order.iter().flat_map(|de| self.references(*de)).collect();
             for &de in &self.order {
                 let e = &self.entities[&de];
-                if matches!(e.typ, 308 | 320) && !used.contains(&de) {
+                if matches!(e.typ, 308 | 320) && !placed.contains(&de) {
                     definitions_only |= self.entity(de, &ONE, &mut out, 0);
                 }
             }

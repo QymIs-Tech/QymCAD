@@ -256,6 +256,28 @@ fn an_instance_is_turned_by_its_own_matrix_where_it_stands() {
     assert_eq!(sorted_lines(&read("rot412.igs", &text).expect("reads")), vec![[100.0, 0.0, 100.0, 4.0], [110.0, 0.0, 110.0, 4.0]], "the 412");
 }
 
+/// A MEMBER OF A GROUP IS DRAWN: subordinate switch 02, logically dependent, is an entity that "can exist alone" and
+/// is only gathered by a grouping entity such as a 402 (IGES 5.3, 2.2.4.4.9.2). `group402.igs`: a line at y 0 and two
+/// at y 20 and 40 in a 402. Reported behaviour: only the line at y 0 came in, and nothing was said. A drawing whose
+/// every line is in a group comes in too, not refused as one with no curves.
+#[test]
+fn a_member_of_a_group_is_drawn() {
+    let want = vec![[0.0, 0.0, 50.0, 0.0], [0.0, 20.0, 50.0, 20.0], [0.0, 40.0, 50.0, 40.0]];
+    assert_eq!(sorted_lines(&data("group402.igs")), want, "the grouped lines");
+    let grouped = "00020000";
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(110, 0, grouped, 0, "0.,0.,0.,50.,0.,0.".into()),   // DE 1
+            E(110, 0, grouped, 0, "0.,20.,0.,50.,20.,0.".into()), // DE 3
+            E(402, 1, TOP, 0, "2,1,3".into()),                    // DE 5: the group
+        ],
+    );
+    let d = read("all-grouped.igs", &text).expect("a drawing of grouped lines reads");
+    assert_eq!(sorted_lines(&d), vec![[0.0, 0.0, 50.0, 0.0], [0.0, 20.0, 50.0, 20.0]], "every line in the group");
+    assert!(!d.definitions_only, "grouped lines are not a library");
+}
+
 /// THE REPORTED FILE: a chip library cell, defined and placed nowhere. `QYM_IGES` names it.
 #[test]
 #[ignore = "a file on this machine"]
