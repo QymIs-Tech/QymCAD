@@ -44,4 +44,19 @@ mod tests {
         let thread_rows: Vec<&String> = rows.iter().filter(|t| t.contains("M14")).collect();
         assert!(thread_rows.iter().any(|t| t.contains("M14×2")), "the tree names the thread of 14 with the pitch of ISO 261, 2; it shows {thread_rows:?}");
     }
+
+    /// A cylinder of 2.5 and its M2.5 thread are named with the half they hold. Reported behaviour: the rows read
+    /// "Cylinder Ø2×10" and "Thread M2×0.45 ext×10" - a rounded nominal names another standard size.
+    #[test]
+    fn a_size_with_a_fraction_is_named_with_it() {
+        let rows = threaded_cylinder(Cylinder { r: 1.25, h: 10.0 });
+        let named: Vec<&String> = rows.iter().filter(|t| t.contains(&crate::i18n::tr("cmd-cylinder")) || t.contains("Thread")).collect();
+        let mut bad = Vec::new();
+        for want in ["Cylinder Ø2.5×10", "Thread M2.5×0.45"] {
+            if !named.iter().any(|t| t.contains(want)) {
+                bad.push(want);
+            }
+        }
+        assert!(bad.is_empty(), "the tree does not show {bad:?}; it shows {named:?}");
+    }
 }

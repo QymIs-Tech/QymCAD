@@ -2081,7 +2081,7 @@ mod tests {
                 }
                 let ti = app.project.timeline.iter().position(|n| n.id == node).unwrap_or(0);
                 let row = crate::gui::panels_tree::feature_row_label(&app.project, ti);
-                let height = crate::i18n::num(34.0, 1);
+                let height = crate::i18n::tr1("feat-extrude", "h", "34");
                 if !row.contains(&height) {
                     problems.push(format!("the variable was changed to 34 and the tree row of the extrude reads \"{row}\""));
                 }
