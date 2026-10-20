@@ -7,7 +7,7 @@
 //! and a subassembly at (5, 10, 0) holding a pin at z 5. A plate is a 10 x 20 x 5 box.
 #[cfg(test)]
 mod tests {
-    use crate::gui::a_component_stepped_into_is_not_lit::tests::calm;
+    use crate::gui::a_component_stepped_into_is_not_lit::tests::{brought_in, calm};
     use crate::gui::import_door::tests::{answer, click, frame, key, running, settle, spot};
     use crate::gui::App;
     use qymcad_core::feature::ComponentKind;
@@ -50,14 +50,29 @@ mod tests {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() < tol)
     }
 
+    /// The name component `id` carries.
+    fn name_of(app: &App, id: Id) -> String {
+        app.project.components.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default()
+    }
+
+    /// THE NAME THE REFERENCE'S ASSEMBLY LANDS UNDER: its own, numbered apart when the root of the document reads the
+    /// same - which it does in a Russian window, the reference being named in Russian. Measured: in a Russian window the
+    /// assembly landed as the name with " (2)", and every check looking it up by the bare name found nothing.
+    fn landed_name(app: &App) -> String {
+        let root = crate::i18n::name(&name_of(app, app.project.root));
+        if root == name(0) {
+            format!("{} (2)", name(0))
+        } else {
+            name(0).to_string()
+        }
+    }
+
     #[test]
     fn a_step_assembly_lands_as_its_tree() {
         let (mut app, ctx) = running();
         let steps = app.disk.edits.undo.len();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx); // the clone's body is built by the rebuild after the reading
-        let root = *named(&app, name(0)).first().unwrap_or_else(|| panic!("no subassembly under the file's name; the tree: {:?}", app.project.components.iter().map(|c| &c.name).collect::<Vec<_>>()));
+        let root = brought_in(&mut app, &ctx, &reference());
+        assert_eq!(name_of(&app, root), landed_name(&app), "the subassembly does not land under the file's name");
         assert_eq!(under(&app, root), [(name(1).to_string(), ComponentKind::Part), (name(1).to_string(), ComponentKind::Part), (name(2).to_string(), ComponentKind::Assembly)]);
         let unit = named(&app, name(2))[0];
         assert_eq!(under(&app, unit), [(name(3).to_string(), ComponentKind::Part)]);
@@ -86,15 +101,12 @@ mod tests {
     #[test]
     fn a_step_assembly_goes_out_as_it_came_in() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = named(&app, name(0))[0];
+        let root = brought_in(&mut app, &ctx, &reference());
         let (bodies, back) = exported(&mut app, &ctx, root, "door-out.step");
         let roots: Vec<usize> = (0..back.len()).filter(|&i| back[i].parent.is_none()).collect();
         assert_eq!(
             roots.iter().map(|&i| back[i].name.as_str()).collect::<Vec<_>>(),
-            [name(0)],
+            [landed_name(&app)],
             "the subassembly does not go out under its name; the file holds {:?}",
             back.iter().map(|n| &n.name).collect::<Vec<_>>()
         );
@@ -107,6 +119,25 @@ mod tests {
         let near = |c: Option<[f32; 3]>, want: [f32; 3]| c.is_some_and(|c| c.iter().zip(want).all(|(g, w)| (g - w).abs() < 0.01));
         assert!(near(back[pin].color, [0.1, 0.2, 0.9]), "the pin goes out coloured {:?}, not blue", back[pin].color);
         assert!(app.live.shapes.len() >= 3, "the bodies did not come back to the cache after the write");
+    }
+
+    /// AN ASSEMBLY NAMED AS THE ROOT OF THE DOCUMENT READS IS NUMBERED APART, and goes out under the name it carries: in
+    /// a Russian window the root reads the very name the reference's assembly carries, and two rows reading the same
+    /// could not be told apart.
+    #[test]
+    fn an_assembly_named_as_the_root_reads_is_numbered_apart() {
+        let was = qymcad_i18n::language();
+        qymcad_i18n::set_language("ru");
+        let (mut app, ctx) = running();
+        let reads = crate::i18n::name(&name_of(&app, app.project.root));
+        let root = brought_in(&mut app, &ctx, &reference());
+        let carried = name_of(&app, root);
+        let (_, back) = exported(&mut app, &ctx, root, "door-out-numbered.step");
+        qymcad_i18n::set_language(&was);
+        assert_eq!(reads, name(0), "GUARD: the root of the document reads the name of the reference's assembly");
+        assert_eq!(carried, format!("{} (2)", name(0)), "the assembly is not numbered apart from the root reading the same");
+        let roots: Vec<&str> = back.iter().filter(|n| n.parent.is_none()).map(|n| n.name.as_str()).collect();
+        assert_eq!(roots, [carried.as_str()], "the assembly does not go out under the name it carries");
     }
 
     /// Component `id` written into `target/step-export/<file>` as its row's menu writes it, and the file read back: its
@@ -173,10 +204,7 @@ mod tests {
     #[test]
     fn a_step_assembly_goes_out_to_gltf_as_its_tree() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = named(&app, name(0))[0];
+        let root = brought_in(&mut app, &ctx, &reference());
         let back = exported_mesh(&mut app, &ctx, root, qymcad_ui_state::MeshFormat::Glb, "door-out.glb");
         // THE PLATE'S GREEN TOP FACE GOES OUT GREEN, the rest of it red
         let green = back[0].tri_colors.iter().filter(|c| **c == [26, 204, 26]).count();
@@ -223,10 +251,7 @@ mod tests {
     #[test]
     fn a_step_assembly_goes_out_to_3mf_as_its_parts() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = named(&app, name(0))[0];
+        let root = brought_in(&mut app, &ctx, &reference());
         let back = exported_mesh(&mut app, &ctx, root, qymcad_ui_state::MeshFormat::ThreeMf, "door-out.3mf");
         // THE PLATE'S GREEN TOP FACE GOES OUT GREEN, the rest of it red
         let green = back[0].tri_colors.iter().filter(|c| **c == [26, 204, 26]).count();
@@ -269,10 +294,8 @@ mod tests {
     #[test]
     fn an_iges_assembly_lands_as_its_tree() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, concat!(env!("CARGO_MANIFEST_DIR"), "/../qymcad-kernel/tests/data/assembly.igs"));
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = *named(&app, name(0)).first().unwrap_or_else(|| panic!("no subassembly under the file's name; the tree: {:?}", app.project.components.iter().map(|c| &c.name).collect::<Vec<_>>()));
+        let root = brought_in(&mut app, &ctx, concat!(env!("CARGO_MANIFEST_DIR"), "/../qymcad-kernel/tests/data/assembly.igs"));
+        assert_eq!(name_of(&app, root), landed_name(&app), "the subassembly does not land under the file's name");
         assert_eq!(under(&app, root), [(name(1).to_string(), ComponentKind::Part), (name(1).to_string(), ComponentKind::Part), (name(2).to_string(), ComponentKind::Assembly)]);
         let two = named(&app, name(1));
         assert_eq!(app.project.instance_origin(two[1]), two[0], "the second plate is not a clone of the first");

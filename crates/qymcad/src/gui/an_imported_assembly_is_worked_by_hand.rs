@@ -7,7 +7,7 @@
 //! height 12 standing on its base.
 #[cfg(test)]
 mod tests {
-    use crate::gui::a_component_stepped_into_is_not_lit::tests::{calm, double_click_at};
+    use crate::gui::a_component_stepped_into_is_not_lit::tests::{brought_in, calm, double_click_at};
     use crate::gui::hand::Hand;
     use crate::gui::import_door::tests::{answer, click, frame, key, running, settle, spot};
     use crate::gui::{App, Sel};
@@ -29,15 +29,16 @@ mod tests {
     /// The reference come in by the door, and the tree standing inside it, entered by a double click on its row.
     fn inside_the_reference() -> (App, egui::Context) {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, concat!(env!("CARGO_MANIFEST_DIR"), "/../qymcad-kernel/tests/data/assembly.step"));
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
+        let asm = brought_in(&mut app, &ctx, concat!(env!("CARGO_MANIFEST_DIR"), "/../qymcad-kernel/tests/data/assembly.step"));
+        // THE ROW AS IT READS: in a Russian window the root of the document reads the very name of the reference's
+        // assembly, and the assembly is numbered apart from it - a double click on the bare name went into the root
+        let reads = app.project.components.iter().find(|c| c.id == asm).map(|c| crate::i18n::name(&c.name)).unwrap_or_default();
         let texts = frame(&mut app, &ctx, Vec::new());
-        let row = spot(&texts, name(0)).unwrap_or_else(|| panic!("no row {:?} in the tree; the screen shows {:?}", name(0), texts.iter().map(|(t, _)| t).collect::<Vec<_>>()));
+        let row = spot(&texts, &reads).unwrap_or_else(|| panic!("no row {reads:?} in the tree; the screen shows {:?}", texts.iter().map(|(t, _)| t).collect::<Vec<_>>()));
         double_click_at(&mut app, &ctx, row);
         let _ = frame(&mut app, &ctx, Vec::new());
         let _ = frame(&mut app, &ctx, Vec::new());
-        assert_eq!(qymcad_ui_state::current_ctx_id(&app.active_path, &app.project), named(&app, name(0))[0], "the double click did not go into the assembly");
+        assert_eq!(qymcad_ui_state::current_ctx_id(&app.active_path, &app.project), asm, "the double click did not go into the assembly");
         (app, ctx)
     }
 
@@ -106,7 +107,7 @@ mod tests {
     #[test]
     fn a_mate_joins_parts_of_two_subassemblies() {
         let (mut app, ctx) = inside_the_reference();
-        let (asm, plates, unit, pin) = (named(&app, name(0))[0], named(&app, name(1)), named(&app, name(2))[0], named(&app, name(3))[0]);
+        let (asm, plates, unit, pin) = (qymcad_ui_state::current_ctx_id(&app.active_path, &app.project), named(&app, name(1)), named(&app, name(2))[0], named(&app, name(3))[0]);
         let (plate_body, pin_body) = (app.project.component_bodies(plates[1])[0], app.project.component_bodies(pin)[0]);
         let transform = |app: &App, id: Id| app.project.components.iter().find(|c| c.id == id).map(|c| c.transform).expect("a component");
         let (unit_was, pin_was, first_was) = (transform(&app, unit), transform(&app, pin), app.project.world_transform(plates[0]));

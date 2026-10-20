@@ -13,6 +13,7 @@
 pub(crate) mod tests {
     use crate::gui::import_door::tests::{answer, click, frame, running, settle, spot};
     use crate::gui::App;
+    use qymcad_core::model::Id;
     use qymcad_ui_state::Want;
 
     fn reference() -> String {
@@ -41,6 +42,19 @@ pub(crate) mod tests {
             calm = if app.regen.busy.is_none() { calm + 1 } else { 0 };
             calm >= 5
         });
+    }
+
+    /// The file at `path` brought in by the door, its rebuild waited out. Answers the component it landed as: the one
+    /// the import added under a component that stood there before - found by the tree, not by its name, which the window
+    /// numbers apart when a row of the document already reads it.
+    pub(crate) fn brought_in(app: &mut App, ctx: &egui::Context, path: &str) -> Id {
+        let before: Vec<Id> = app.project.components.iter().map(|c| c.id).collect();
+        answer(app, ctx, Want::Anything, path);
+        settle(app, ctx);
+        calm(app, ctx);
+        let tops: Vec<Id> = app.project.components.iter().filter(|c| !before.contains(&c.id) && c.parent.is_some_and(|p| before.contains(&p))).map(|c| c.id).collect();
+        assert_eq!(tops.len(), 1, "the file did not land as one component; the tree: {:?}", app.project.components.iter().map(|c| &c.name).collect::<Vec<_>>());
+        tops[0]
     }
 
     /// `path` in through the door, with the program calm after it.
