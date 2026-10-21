@@ -96,11 +96,13 @@ bool corner_of(const QymShape* s, const TopoDS_Edge& edge, const TopTools_Indexe
     return c.into_first.Dot(c.out_second) < -1e-9 && c.into_second.Dot(c.out_first) < -1e-9;
 }
 
-/// THE PRISM A BLEND TAKES OFF along the corner `c`: its section laid out from `near` on the first face to `far` on the
-/// second - straight for a chamfer, an arc for a fillet of `radius` through `centre` - and closed outside the body, the
+/// THE PRISM A BLEND TAKES OFF along the corner `c`: its section laid out from `on_first` on the first face to `on_second` on
+/// the second - straight for a chamfer, an arc for a fillet of `radius` through `centre` - and closed outside the body, the
 /// prism carried `past` beyond both ends. The face the section's blend side sweeps is given back in `surface`.
+// NOT `near` AND `far`: the headers of Windows define both as empty macros, and MSVC read `sec.near = ...` as
+// `sec. = ...` - the release build for Windows stopped on this file.
 struct Section {
-    gp_Vec near, far;
+    gp_Vec on_first, on_second;
     bool arc;
     gp_Vec centre;
     double radius;
@@ -109,8 +111,8 @@ struct Section {
 TopoDS_Shape prism_of(const Corner& c, const Section& sec, double past, TopoDS_Face& surface) {
     const gp_Pnt origin = c.start.Translated(gp_Vec(c.along) * -past);
     auto at = [&](const gp_Vec& v) { return origin.Translated(v); };
-    const double out = 2.0 * (sec.near.Magnitude() + sec.far.Magnitude()) + 1.0;
-    const gp_Vec p1 = sec.near, p2 = sec.near + c.out_first * out, p3 = (c.out_first + c.out_second) * out, p4 = sec.far + c.out_second * out, p5 = sec.far;
+    const double out = 2.0 * (sec.on_first.Magnitude() + sec.on_second.Magnitude()) + 1.0;
+    const gp_Vec p1 = sec.on_first, p2 = sec.on_first + c.out_first * out, p3 = (c.out_first + c.out_second) * out, p4 = sec.on_second + c.out_second * out, p5 = sec.on_second;
     BRepBuilderAPI_MakeWire wire;
     wire.Add(BRepBuilderAPI_MakeEdge(at(p1), at(p2)).Edge());
     wire.Add(BRepBuilderAPI_MakeEdge(at(p2), at(p3)).Edge());
@@ -195,19 +197,19 @@ extern "C" QymShape* qym_shape_blend_limit(const QymShape* s, const QymBlendLimi
             if (!corner_of(&body, edge, faces_of, flip, ref_face, c)) return why("blend/limit", "an edge is not a straight line between planar faces meeting convexly"), nullptr;
             Section sec{};
             if (kind == 1) {
-                sec.near = c.into_first * a;
-                sec.far = c.into_second * b;
+                sec.on_first = c.into_first * a;
+                sec.on_second = c.into_second * b;
             } else {
                 // the circle touches each face where it lies `a` from the other: `a / tan(angle / 2)` from the edge
                 const double angle = c.into_first.Angle(c.into_second);
                 const double touch = a / std::tan(angle / 2.0);
-                sec.near = c.into_first * touch;
-                sec.far = c.into_second * touch;
+                sec.on_first = c.into_first * touch;
+                sec.on_second = c.into_second * touch;
                 sec.arc = true;
-                sec.centre = sec.near - c.out_first * a;
+                sec.centre = sec.on_first - c.out_first * a;
                 sec.radius = a;
             }
-            if (!lands_on(c, c.first, sec.near) || !lands_on(c, c.second, sec.far))
+            if (!lands_on(c, c.first, sec.on_first) || !lands_on(c, c.second, sec.on_second))
                 return why("blend/limit", "the blend reaches past a face it lies on"), nullptr;
             TopoDS_Face surface;
             TopoDS_Shape prism = prism_of(c, sec, 2.0 * (a + b) + 1.0, surface);
