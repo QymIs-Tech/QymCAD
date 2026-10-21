@@ -6,6 +6,12 @@
 /dist
 *.AppImage
 
+# The macOS signing certificate and its key (packaging/macos/make-signing-cert.sh writes them outside the tree and
+# refuses a folder inside one; this is the second line, for a copy brought in by hand)
+*.p12
+*.p12.b64
+*.key
+
 # Backups / debug
 **/*.rs.bk
 *.pdb

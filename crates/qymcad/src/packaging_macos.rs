@@ -453,6 +453,85 @@ fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
     }
 }
 
+/// A place to run `make-signing-cert.sh`: `tree/` is a git working tree standing for the repository, `home/` the
+/// person's home folder, `bin/` stubs for the two clipboard tools - the script copies the base64 to the clipboard
+/// when it finds one, and a probe must not leave that in the clipboard of whoever runs the tests.
+fn cert_sandbox(case: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("qym_macos_cert_{case}"));
+    let _ = fs::remove_dir_all(&dir);
+    for sub in ["tree", "home", "bin"] {
+        fs::create_dir_all(dir.join(sub)).expect("the sandbox is writable");
+    }
+    let git = Command::new("git").args(["init", "-q"]).current_dir(dir.join("tree")).env("HOME", dir.join("home")).output().expect("git runs");
+    assert!(git.status.success(), "git init failed:\n{}", said(&git));
+
+    let stub = |name: &str, text: &str| {
+        let p = dir.join("bin").join(name);
+        fs::write(&p, text).expect("the stub is written");
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("the bit is set");
+    };
+    stub("xclip", "#!/usr/bin/env bash\ncat > /dev/null\n");
+    stub("pbcopy", "#!/usr/bin/env bash\ncat > /dev/null\n");
+    dir
+}
+
+/// Run the real `make-signing-cert.sh` from the sandbox's working tree, as its instructions say to run it from the
+/// repository's root. `out` is `OUT`, left unset when `None`.
+fn make_cert(dir: &Path, out: Option<&Path>) -> Output {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/make-signing-cert.sh");
+    let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap_or_default());
+    let mut run = Command::new("bash");
+    run.arg(&script)
+        .current_dir(dir.join("tree"))
+        .env("PATH", path)
+        .env("HOME", dir.join("home"))
+        .env_remove("OUT")
+        .env_remove("P12_PASSWORD")
+        .env_remove("CN_NAME")
+        .stdin(std::process::Stdio::null());
+    if let Some(out) = out {
+        run.env("OUT", out);
+    }
+    run.env("P12_PASSWORD", "a probe's password");
+    run.output().expect("bash runs the certificate script")
+}
+
+/// The names of the files `make-signing-cert.sh` leaves in a folder, sorted.
+fn cert_files(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> =
+        fs::read_dir(dir).map(|entries| entries.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.starts_with("qymcad-signing")).collect()).unwrap_or_default();
+    names.sort();
+    names
+}
+
+/// A KEY WRITTEN INTO THE REPOSITORY IS ONE `git add` AWAY FROM BEING PUBLISHED. Asked to write into a folder of a
+/// git working tree, the script refuses in words and writes nothing - not the certificate, not the key.
+#[test]
+fn a_certificate_is_not_written_into_a_working_tree() {
+    let dir = cert_sandbox("into_tree");
+    let tree = dir.join("tree");
+    let out = make_cert(&dir, Some(&tree));
+    assert!(!out.status.success(), "the certificate was written into a git working tree:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("inside a git working tree"), "the refusal did not say what was wrong:\n{}", said(&out));
+    assert_eq!(cert_files(&tree), Vec::<String>::new(), "files were left in the working tree:\n{}", said(&out));
+}
+
+/// RUN FROM THE REPOSITORY'S ROOT, the script writes into a folder of the home directory, closed to everyone but
+/// its owner, and leaves the tree clean. The bare key is gone; the .p12 holds it.
+#[test]
+fn a_certificate_goes_outside_the_tree_by_default() {
+    let dir = cert_sandbox("default");
+    let out = make_cert(&dir, None);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+    assert_eq!(cert_files(&dir.join("tree")), Vec::<String>::new(), "files were left in the working tree:\n{}", said(&out));
+
+    let kept = dir.join("home/.qymcad-signing");
+    assert_eq!(cert_files(&kept), ["qymcad-signing.crt", "qymcad-signing.p12", "qymcad-signing.p12.b64"], "the folder does not hold what the secrets are made of:\n{}", said(&out));
+    let mode = |p: &Path| fs::metadata(p).expect("the file is there").permissions().mode() & 0o777;
+    assert_eq!(mode(&kept), 0o700, "the folder is open to other users of the machine");
+    assert_eq!(mode(&kept.join("qymcad-signing.p12")) & 0o077, 0, "the .p12 is readable by other users of the machine");
+}
+
 /// The width and height a PNG file declares in its header, in pixels.
 #[derive(Debug, PartialEq)]
 struct PngSize {

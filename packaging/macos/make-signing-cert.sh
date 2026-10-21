@@ -10,17 +10,38 @@
 #
 # Run it once, on any machine with openssl; keep the .p12 and the password somewhere safe. A new certificate
 # is a new identity, and every permission granted under the old one is asked again.
+#
+# OUTSIDE THE REPOSITORY. The files go to ~/.qymcad-signing, a folder only its owner can open, unless `OUT`
+# names another one - and a folder inside a git working tree is refused: the key written there is one
+# `git add` away from being published, and a published key is a certificate to make anew.
 set -euo pipefail
+# Every file below is for its owner alone.
+umask 077
 
 CN_NAME=${CN_NAME:-QymCAD}
 DAYS_VALID=3650
-OUT=${OUT:-.}
+DEFAULT_OUT="$HOME/.qymcad-signing"
+OUT=${OUT:-$DEFAULT_OUT}
 KEY_FILE="$OUT/qymcad-signing.key"
 CRT_FILE="$OUT/qymcad-signing.crt"
 P12_FILE="$OUT/qymcad-signing.p12"
 B64_FILE="$OUT/qymcad-signing.p12.b64"
 
 command -v openssl >/dev/null || { echo "!!! openssl is not installed" >&2; exit 1; }
+
+# `OUT` may not exist yet, so the question goes to the nearest folder above it that does. Without git there is
+# no working tree to commit the key from.
+nearest=$OUT
+while [ ! -d "$nearest" ]; do nearest=$(dirname "$nearest"); done
+if command -v git >/dev/null && git -C "$nearest" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "!!! $OUT is inside a git working tree ($(git -C "$nearest" rev-parse --show-toplevel))." >&2
+    echo "!!! A key written there is one 'git add' away from being published; leave OUT unset or name a folder outside it." >&2
+    exit 1
+fi
+mkdir -p "$OUT"
+if [ "$OUT" = "$DEFAULT_OUT" ]; then
+    chmod 700 "$OUT"
+fi
 
 if [ -z "${P12_PASSWORD:-}" ]; then
     read -r -s -p "Password for the .p12: " P12_PASSWORD
