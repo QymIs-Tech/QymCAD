@@ -453,10 +453,28 @@ fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
     }
 }
 
+/// How `make-signing-cert.sh` gets the password of the .p12.
+#[derive(Clone, Copy, PartialEq)]
+enum Password {
+    /// `P12_PASSWORD` set in the environment, the way a script calling it would.
+    Environment,
+    /// Typed at the two prompts, the way a person runs it.
+    Typed,
+}
+
+/// What `openssl pkcs12 -export` does.
+#[derive(Clone, Copy, PartialEq)]
+enum Export {
+    /// The real tool writes the .p12.
+    Works,
+    /// A stub in front of the real tool refuses, after the key has been written by `openssl req`.
+    Fails,
+}
+
 /// A place to run `make-signing-cert.sh`: `tree/` is a git working tree standing for the repository, `home/` the
 /// person's home folder, `bin/` stubs for the two clipboard tools - the script copies the base64 to the clipboard
 /// when it finds one, and a probe must not leave that in the clipboard of whoever runs the tests.
-fn cert_sandbox(case: &str) -> PathBuf {
+fn cert_sandbox(case: &str, export: Export) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("qym_macos_cert_{case}"));
     let _ = fs::remove_dir_all(&dir);
     for sub in ["tree", "home", "bin"] {
@@ -472,12 +490,18 @@ fn cert_sandbox(case: &str) -> PathBuf {
     };
     stub("xclip", "#!/usr/bin/env bash\ncat > /dev/null\n");
     stub("pbcopy", "#!/usr/bin/env bash\ncat > /dev/null\n");
+    if export == Export::Fails {
+        let which = Command::new("bash").args(["-c", "command -v openssl"]).output().expect("bash runs");
+        let real = String::from_utf8_lossy(&which.stdout).trim().to_string();
+        assert!(!real.is_empty(), "openssl is not installed");
+        stub("openssl", &format!("#!/usr/bin/env bash\nif [ \"$1 $2\" = 'pkcs12 -export' ]; then echo 'stub: the export fails' >&2; exit 1; fi\nexec {real} \"$@\"\n"));
+    }
     dir
 }
 
 /// Run the real `make-signing-cert.sh` from the sandbox's working tree, as its instructions say to run it from the
 /// repository's root. `out` is `OUT`, left unset when `None`.
-fn make_cert(dir: &Path, out: Option<&Path>) -> Output {
+fn make_cert(dir: &Path, out: Option<&Path>, password: Password) -> Output {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/make-signing-cert.sh");
     let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap_or_default());
     let mut run = Command::new("bash");
@@ -488,12 +512,24 @@ fn make_cert(dir: &Path, out: Option<&Path>) -> Output {
         .env_remove("OUT")
         .env_remove("P12_PASSWORD")
         .env_remove("CN_NAME")
-        .stdin(std::process::Stdio::null());
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     if let Some(out) = out {
         run.env("OUT", out);
     }
-    run.env("P12_PASSWORD", "a probe's password");
-    run.output().expect("bash runs the certificate script")
+    if password == Password::Environment {
+        run.env("P12_PASSWORD", "a probe's password");
+    }
+    let mut child = run.spawn().expect("bash runs the certificate script");
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().expect("the script's input");
+        if password == Password::Typed {
+            stdin.write_all(b"a probe's password\na probe's password\n").expect("the password is typed");
+        }
+    }
+    child.wait_with_output().expect("the certificate script finishes")
 }
 
 /// The names of the files `make-signing-cert.sh` leaves in a folder, sorted.
@@ -508,9 +544,9 @@ fn cert_files(dir: &Path) -> Vec<String> {
 /// git working tree, the script refuses in words and writes nothing - not the certificate, not the key.
 #[test]
 fn a_certificate_is_not_written_into_a_working_tree() {
-    let dir = cert_sandbox("into_tree");
+    let dir = cert_sandbox("into_tree", Export::Works);
     let tree = dir.join("tree");
-    let out = make_cert(&dir, Some(&tree));
+    let out = make_cert(&dir, Some(&tree), Password::Environment);
     assert!(!out.status.success(), "the certificate was written into a git working tree:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stderr).contains("inside a git working tree"), "the refusal did not say what was wrong:\n{}", said(&out));
     assert_eq!(cert_files(&tree), Vec::<String>::new(), "files were left in the working tree:\n{}", said(&out));
@@ -520,8 +556,8 @@ fn a_certificate_is_not_written_into_a_working_tree() {
 /// its owner, and leaves the tree clean. The bare key is gone; the .p12 holds it.
 #[test]
 fn a_certificate_goes_outside_the_tree_by_default() {
-    let dir = cert_sandbox("default");
-    let out = make_cert(&dir, None);
+    let dir = cert_sandbox("default", Export::Works);
+    let out = make_cert(&dir, None, Password::Environment);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
     assert_eq!(cert_files(&dir.join("tree")), Vec::<String>::new(), "files were left in the working tree:\n{}", said(&out));
 
@@ -530,6 +566,31 @@ fn a_certificate_goes_outside_the_tree_by_default() {
     let mode = |p: &Path| fs::metadata(p).expect("the file is there").permissions().mode() & 0o777;
     assert_eq!(mode(&kept), 0o700, "the folder is open to other users of the machine");
     assert_eq!(mode(&kept.join("qymcad-signing.p12")) & 0o077, 0, "the .p12 is readable by other users of the machine");
+}
+
+/// THE PASSWORD TYPED AT THE PROMPT REACHES `openssl`. Reported behaviour: the first run by hand stopped with "No
+/// environment variable P12_PASSWORD" after the key was written, and left that key unencrypted beside the
+/// certificate - the prompt filled a shell variable, and `-passout env:` reads the environment.
+#[test]
+fn a_typed_password_reaches_openssl() {
+    let dir = cert_sandbox("typed", Export::Works);
+    let out = make_cert(&dir, None, Password::Typed);
+    assert!(out.status.success(), "the typed password did not reach openssl:\n{}", said(&out));
+    let kept = dir.join("home/.qymcad-signing");
+    assert_eq!(cert_files(&kept), ["qymcad-signing.crt", "qymcad-signing.p12", "qymcad-signing.p12.b64"], "the .p12 was not made:\n{}", said(&out));
+}
+
+/// THE BARE KEY GOES ON ANY EXIT. `openssl req` writes it unencrypted, and the .p12 is what holds it afterwards;
+/// a script that stops between the two must not leave it lying beside the certificate.
+#[test]
+fn a_failed_export_leaves_no_bare_key() {
+    let dir = cert_sandbox("export_fails", Export::Fails);
+    // The folder exists beforehand, so the key has somewhere to be written and to stay.
+    let kept = dir.join("home/kept");
+    fs::create_dir_all(&kept).expect("the sandbox is writable");
+    let out = make_cert(&dir, Some(&kept), Password::Environment);
+    assert!(!out.status.success(), "the stub refused the export and the script was happy:\n{}", said(&out));
+    assert!(!kept.join("qymcad-signing.key").exists(), "the unencrypted key was left behind:\n{}", said(&out));
 }
 
 /// The width and height a PNG file declares in its header, in pixels.

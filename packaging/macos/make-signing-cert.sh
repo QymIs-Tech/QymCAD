@@ -50,6 +50,13 @@ if [ -z "${P12_PASSWORD:-}" ]; then
     echo
     [ "$P12_PASSWORD" = "$P12_PASSWORD_CONFIRM" ] || { echo "!!! the passwords differ" >&2; exit 1; }
 fi
+# `-passout env:` reads the ENVIRONMENT, and `read` fills a shell variable only. Reported behaviour: the
+# password typed at the prompt stopped the run with "No environment variable P12_PASSWORD".
+export P12_PASSWORD
+
+# The key `openssl req` writes is unencrypted, and the .p12 holds it once made: it goes on every exit, a
+# failed one included, not only at the end of a run that got there.
+trap 'rm -f "$KEY_FILE"' EXIT
 
 openssl req -x509 -newkey rsa:2048 -nodes \
     -keyout "$KEY_FILE" \
@@ -85,9 +92,6 @@ elif command -v xclip >/dev/null; then
     xclip -selection clipboard < "$B64_FILE"
     echo ">>> the base64 is on the clipboard"
 fi
-
-# The key is inside the .p12 already; a second, unencrypted copy beside it is only a thing to leak.
-rm -f "$KEY_FILE"
 
 echo ">>> $P12_FILE   - keep it, with its password"
 echo ">>> $B64_FILE   - the value of the MACOS_CERT_P12 secret"

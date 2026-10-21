@@ -144,7 +144,8 @@ Developer Program.
 
 **The certificate** is made once, by `packaging/macos/make-signing-cert.sh` on any machine with openssl. It
 asks for a password and writes into `~/.qymcad-signing`, a folder closed to other users: the `.p12`, its base64
-for the `MACOS_CERT_P12` secret, and the public `.crt`; the password is the `MACOS_CERT_PASSWORD` secret. `OUT=<folder>` names another
+for the `MACOS_CERT_P12` secret, and the public `.crt`; the password is the `MACOS_CERT_PASSWORD` secret. The
+unencrypted key `openssl` writes on the way is removed however the script ends. `OUT=<folder>` names another
 folder, but never one inside a git working tree - the script refuses that, since a key there is one `git add`
 away from being published; `.gitignore` keeps `*.p12`, `*.p12.b64` and `*.key` out as a second line. A new
 certificate is a new identity, and every permission granted under the old one is asked again, so the `.p12`
