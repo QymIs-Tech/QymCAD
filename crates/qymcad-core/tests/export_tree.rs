@@ -50,15 +50,21 @@ fn a_tree_goes_out_as_it_stands() {
     assert_eq!((tree[4].body, tree[4].place, tree[4].color), (Some(pin), moved(0.0, 0.0, 5.0), Some([26, 51, 230])));
 }
 
-/// A PART SPLIT INTO TWO BODIES GOES OUT WHOLE (#195). The export took `active_body` only, so a part of
+/// A PART SPLIT INTO TWO BODIES GOES OUT WHOLE. Reported behaviour: the export took `active_body` only, so a part of
 /// 2 bodies went out as 1 solid while the status counted 2. Every visible body of the part goes out as its
 /// own node: two extrusions with no boolean between them (the shape of split pieces) give two body nodes.
+/// One square of the part: the name of its sketch and where along X it starts.
+struct Square {
+    name: &'static str,
+    x: f64,
+}
+
 #[test]
 fn a_part_of_two_bodies_goes_out_whole() {
     use qymcad_core::geom::Point2;
     let mut p = Project::default();
     let _part = p.new_document();
-    for (name, x) in [("s1", 0.0), ("s2", 30.0)] {
+    for Square { name, x } in [Square { name: "s1", x: 0.0 }, Square { name: "s2", x: 30.0 }] {
         let sid = p.add_line_sketch(name, vec![Point2::new(x, 0.0), Point2::new(x + 10.0, 0.0), Point2::new(x + 10.0, 10.0), Point2::new(x, 10.0)], true);
         p.add_sketch_node(sid, name);
         p.add_extrude(sid, 5.0);
