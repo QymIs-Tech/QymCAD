@@ -656,7 +656,7 @@ pub(crate) fn spawn_project_load(regen: &mut super::Rebuilding, path: String) {
                                            // model is already on screen.
                                            // LIVE BODIES ARE PARSED RIGHT HERE, IN THE THREAD: on the UI thread this would be a
                                            // freeze of exactly the kind we are getting away from.
-                let saved = breps.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
+                let saved = breps.into_iter().map(|b| qymcad_kernel::imports::SavedBody { body: b.id, bytes: b.bytes }).collect();
                 let shapes = qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)).collect();
                 JobResult::ProjectLoaded { path, project: Box::new(project), shapes }
             }
@@ -1114,7 +1114,7 @@ pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Proj
             live.blobs.insert(id, b);
         }
     }
-    let breps: Vec<(qymcad_core::model::Id, Vec<u8>)> = live.blobs.iter().map(|(id, b)| (*id, b.clone())).collect();
+    let breps: Vec<qymcad_io::BrepEntry> = live.blobs.iter().map(|(id, b)| qymcad_io::BrepEntry { id: *id, bytes: b.clone() }).collect();
     let (tx, rx) = std::sync::mpsc::channel();
     let p = path.clone();
     std::thread::spawn(move || {

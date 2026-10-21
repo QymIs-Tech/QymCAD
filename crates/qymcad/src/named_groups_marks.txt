@@ -288,7 +288,7 @@ crates/qymcad-io/src/lib.rs 0 3 0
 crates/qymcad-io/src/obj.rs 3 2 0
 crates/qymcad-io/src/part_file.rs 0 1 0
 crates/qymcad-io/src/ply.rs 0 3 0
-crates/qymcad-io/src/project_file.rs 0 5 0
+crates/qymcad-io/src/project_file.rs 0 1 0
 crates/qymcad-io/src/rigid.rs 1 1 0
 crates/qymcad-io/src/stl_import.rs 0 1 0
 crates/qymcad-io/src/svg_import.rs 2 1 0
@@ -682,7 +682,7 @@ crates/qymcad/src/gui/import_door/tests/chooser.rs 0 3 0
 crates/qymcad/src/gui/import_door/tests/meshes.rs 0 4 0
 crates/qymcad/src/gui/import_scale.rs 1 3 0
 crates/qymcad/src/gui/input.rs 0 0 1
-crates/qymcad/src/gui/io_jobs.rs 1 20 6
+crates/qymcad/src/gui/io_jobs.rs 1 19 6
 crates/qymcad/src/gui/joint_creation.rs 0 2 0
 crates/qymcad/src/gui/joint_flow.rs 1 0 0
 crates/qymcad/src/gui/joint_pick_highlight.rs 0 1 0
@@ -744,7 +744,7 @@ crates/qymcad/src/gui/session/frames.rs 1 0 2
 crates/qymcad/src/gui/session/keys.rs 0 1 0
 crates/qymcad/src/gui/session/pointer.rs 2 0 0
 crates/qymcad/src/gui/session/reading.rs 0 3 0
-crates/qymcad/src/gui/session/space.rs 6 2 0
+crates/qymcad/src/gui/session/space.rs 6 1 0
 crates/qymcad/src/gui/settings_memory.rs 1 2 0
 crates/qymcad/src/gui/settings_sections_tests.rs 0 2 0
 crates/qymcad/src/gui/sketch_paint.rs 0 1 1
