@@ -144,9 +144,7 @@ pub(crate) fn ensure_logo(logo_tex: &mut Option<egui::TextureHandle>, ctx: &egui
     if logo_tex.is_some() {
         return;
     }
-    const LOGO: &[u8] = include_bytes!("../../../../assets/icons/linux/256x256.png");
-    if let Ok(img) = image::load_from_memory(LOGO) {
-        let rgba = img.to_rgba8();
+    if let Some(rgba) = crate::gui::startup::app_logo() {
         let (w, h) = rgba.dimensions();
         let color = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
         *logo_tex = Some(ctx.load_texture("app-logo", color, egui::TextureOptions::LINEAR));

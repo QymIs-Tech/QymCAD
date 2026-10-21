@@ -58,7 +58,8 @@ pub fn save_part(project: &Project, manifest: &PartManifest, faces: &[Vec<MeshFa
     }
 
     if let Some(png) = thumb_png {
-        zip.start_file("thumb.png", opts).map_err(|e| e.to_string())?;
+        let thumb_opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("thumb.png", thumb_opts).map_err(|e| e.to_string())?;
         zip.write_all(png).map_err(|e| e.to_string())?;
     }
 
@@ -112,7 +113,7 @@ pub fn load_part_bytes(bytes: &[u8]) -> Result<LoadedPart, String> {
         faces.push(f);
     }
 
-    let thumb_png = read_bytes(&mut zip, "thumb.png").ok();
+    let thumb_png = crate::project_file::read_thumb_bytes(&mut zip);
 
     Ok(LoadedPart { project, manifest, faces, thumb_png })
 }
@@ -146,15 +147,8 @@ pub fn load_part_thumb_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     if !bytes.starts_with(b"PK") {
         return None;
     }
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).ok()?;
-    read_bytes(&mut zip, "thumb.png").ok()
-}
-
-fn read_bytes<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<Vec<u8>, String> {
-    let mut f = zip.by_name(name).map_err(|e| format!("{name}: {e}"))?;
-    let mut v = Vec::new();
-    f.read_to_end(&mut v).map_err(|e| e.to_string())?;
-    Ok(v)
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    crate::project_file::read_thumb_bytes(&mut zip)
 }
 
 fn read_entry<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<String, String> {

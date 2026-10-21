@@ -12,21 +12,30 @@ pub(crate) const APP_ID: &str = "qymcad";
 /// window bar, the task bar and the About window all say this one.
 pub(crate) const APP_NAME: &str = "QymCAD";
 
+/// The application logo, decoded once from the 256x256 PNG built into the binary: the window icon, the splash
+/// screen and the badge of a project preview are one image.
+pub(crate) fn app_logo() -> Option<&'static image::RgbaImage> {
+    static LOGO: std::sync::OnceLock<Option<image::RgbaImage>> = std::sync::OnceLock::new();
+    LOGO.get_or_init(|| {
+        const BYTES: &[u8] = include_bytes!("../../../../assets/icons/linux/256x256.png");
+        image::load_from_memory(BYTES).ok().map(|img| img.to_rgba8())
+    })
+    .as_ref()
+}
+
 /// The window icon, decoded from the 256x256 PNG built into the binary.
 ///
 /// The same image the splash screen shows. A window with no icon of its own is given the framework's,
 /// and a program that wears someone else's face in the task bar looks like a stray tool rather than the
 /// one that was installed.
 pub(crate) fn app_icon() -> egui::IconData {
-    const ICON: &[u8] = include_bytes!("../../../../assets/icons/linux/256x256.png");
-    match image::load_from_memory(ICON) {
-        Ok(img) => {
-            let rgba = img.to_rgba8();
+    match app_logo() {
+        Some(rgba) => {
             let (w, h) = rgba.dimensions();
-            egui::IconData { rgba: rgba.into_raw(), width: w, height: h }
+            egui::IconData { rgba: rgba.clone().into_raw(), width: w, height: h }
         }
         // An icon is worth nothing next to starting at all: a window without one still works.
-        Err(_) => egui::IconData::default(),
+        None => egui::IconData::default(),
     }
 }
 
