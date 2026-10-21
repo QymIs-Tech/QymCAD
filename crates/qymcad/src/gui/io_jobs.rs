@@ -192,7 +192,7 @@ impl App {
                 // write leave the project dirty. But it is APPLIED only after a successful write, otherwise a
                 // failed save silently marked the project clean and leaving never asked about unsaved work.
                 self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
-                spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
+                spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, SaveTask { path, kind: SaveKind::File });
             }
             None => self.save_project_as(),
         }
@@ -204,8 +204,7 @@ impl App {
             let path = path.to_string_lossy().into_owned();
             crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
             app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx())); // confirmed once the write actually succeeds
-            spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path, false);
-            // the write goes to the background
+            spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, SaveTask { path, kind: SaveKind::File });
         });
     }
 
@@ -1087,13 +1086,39 @@ pub(crate) fn export_base_name(project: &Project, project_path: &Option<String>,
     }
 }
 
-pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut qymcad_ui_state::Notice, path: String, autosave: bool) {
+/// SAVE AS File -> Save writes, and wait for the write: a test must take the same path as Save does.
+#[cfg(test)]
+pub(crate) fn save_for_test(app: &mut App, task: SaveTask) {
+    spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, task);
+    app.wait_bg();
+}
+
+/// WHAT KIND OF WRITE: the file the person saves, or the autosave snapshot beside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SaveKind {
+    /// Save or Save As: the file carries the preview a file manager shows (`thumb.png`).
+    File,
+    /// The periodic snapshot: no preview, it is never shown in a file manager as the project, and drawing one
+    /// would be work done on every autosave for nobody.
+    Autosave,
+}
+
+/// A WRITE ASKED FOR: where to, and of what kind. Remembered whole while a previous write is still running.
+#[derive(Clone, Debug)]
+pub(crate) struct SaveTask {
+    pub path: String,
+    pub kind: SaveKind,
+}
+
+pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut qymcad_ui_state::Notice, task: SaveTask) {
     // two writes of one file at once are a tmp+rename race. While the first is running, the LAST
     // request is remembered and started when the first reports back (see the JobResult::Saved handler).
     if regen.bg.iter().any(|b| b.kind == BgKind::Save) {
-        io.save_request = Some((path, autosave));
+        io.save_request = Some(task);
         return;
     }
+    let SaveTask { path, kind } = task;
+    let autosave = kind == SaveKind::Autosave;
     // "WHEN IT WAS STARTED" IS A FACT, NOT A PROPERTY OF THE LAST WRITE: set once, on the first save,
     // and never touched again. An autosave does not start a document - it is a snapshot.
     if !autosave && project.meta.created.is_empty() {
@@ -1115,8 +1140,11 @@ pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Proj
     let (tx, rx) = std::sync::mpsc::channel();
     let p = path.clone();
     std::thread::spawn(move || {
+        // THE PREVIEW IS DRAWN HERE, in the thread of the write, from the copy of the document: the window does not
+        // wait for the raster and the PNG.
+        let thumb = if autosave { None } else { crate::gui::render_scene::render_project_file_preview_png(&proj) };
         // THROUGH THE GUARDED WRITE: an empty document over a non-empty file is a refusal, not a loss.
-        let res = qymcad_io::save_project_guarded_with_brep(&proj, &p, &breps);
+        let res = qymcad_io::save_project_guarded_bundle(&proj, &p, &breps, thumb.as_deref());
         let _ = tx.send(JobResult::Saved { path: p, autosave, error: res.err() });
     });
     regen.bg.push(Busy {

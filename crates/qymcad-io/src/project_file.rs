@@ -1,9 +1,11 @@
 //! The project file `.qcad`: a zip bundle.
 //!
 //! The layout: `meta.ron` with the schema version, `document.ron` with the project and the mesh geometry moved
-//! out, `meshes/<id>.ron` with the geometry of a mesh under its stable id, deflated, and `sources/*` with the
-//! originals of imports. The old flat format is not read: the project is in development and compatibility is
-//! not needed.
+//! out, `meshes/<id>.ron` with the geometry of a mesh under its stable id, deflated, `faces/<id>.ron` with the
+//! cache of B-rep faces, `brep/<id>.brep` with the live bodies, `sources/*` with the originals of imports, and
+//! `thumb.png` at the archive root with an optional 256x256 preview raster stored uncompressed (Stored). See
+//! `docs/thumbnails.md` for shell integration details.
+//! The old flat format is not read: the project is in development and compatibility is not needed.
 
 use std::io::{Read, Write};
 
@@ -16,7 +18,7 @@ const SCHEMA: u32 = 2;
 /// Save a project as a `.qcad` zip bundle. The faces live inside the body itself (`Body.faces`), so a separate
 /// parallel list is no longer needed and cannot drift apart from the meshes.
 pub fn save_project(project: &Project, path: &str) -> Result<(), String> {
-    save_project_with_brep(project, path, &[])
+    save_project_bundle(project, path, &[], None)
 }
 
 /// THE LIVE BODY OF ONE BODY OF THE DOCUMENT, as the kernel wrote it.
@@ -35,9 +37,16 @@ pub struct BrepEntry {
 /// timeline — the bundle held meshes and faces, that is the geometry of the display, and nobody held a live
 /// body, so the kernel built everything anew. A professional CAD puts the body itself into the file, and so
 /// does this one now.
-///
-/// The bytes arrive ready-made: the format need know nothing of the kernel, and the kernel nothing of zip.
 pub fn save_project_with_brep(project: &Project, path: &str, breps: &[BrepEntry]) -> Result<(), String> {
+    save_project_bundle(project, path, breps, None)
+}
+
+/// The same, with the live bodies and the preview a file manager shows (`thumb.png`, a PNG). `None` writes
+/// no preview: the file is then shown with the icon of its type.
+///
+/// The bytes arrive ready-made: the format need know nothing of the kernel or of drawing, and the kernel
+/// nothing of zip.
+pub fn save_project_bundle(project: &Project, path: &str, breps: &[BrepEntry], thumb_png: Option<&[u8]>) -> Result<(), String> {
     let mut doc = project.clone();
     doc.ensure_ids(); // in case of geometry without ids, built directly
 
@@ -116,6 +125,15 @@ pub fn save_project_with_brep(project: &Project, path: &str, breps: &[BrepEntry]
         }
     }
 
+    // THE PREVIEW at the archive root, STORED: a PNG is deflated already, and an entry stored as it is can be read
+    // by a file manager's thumbnailer with no inflating. No preview given, none written - a preview of the
+    // previous version is not carried over, since it would show what the file no longer holds.
+    if let Some(png) = thumb_png {
+        let thumb_opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("thumb.png", thumb_opts).map_err(|e| e.to_string())?;
+        zip.write_all(png).map_err(|e| e.to_string())?;
+    }
+
     zip.finish().map_err(|e| e.to_string())?;
 
     // The previous version stays alongside. An atomic swap saves from a truncated write but not from writing
@@ -151,11 +169,11 @@ pub fn content_weight(p: &Project) -> usize {
 /// from the previous file, and saving erased the work. Whether the mistake was human or in the program does not
 /// matter here: a write that destroys content and creates nothing makes sense in no scenario.
 pub fn save_project_guarded(project: &Project, path: &str) -> Result<(), String> {
-    save_project_guarded_with_brep(project, path, &[])
+    save_project_guarded_bundle(project, path, &[], None)
 }
 
-/// The same, but with the live bodies; see [`save_project_with_brep`].
-pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[BrepEntry]) -> Result<(), String> {
+/// The same, but with the live bodies and an optional preview thumbnail; see [`save_project_bundle`].
+pub fn save_project_guarded_bundle(project: &Project, path: &str, breps: &[BrepEntry], thumb_png: Option<&[u8]>) -> Result<(), String> {
     if content_weight(project) == 0 {
         if let Ok(existing) = load_project(path) {
             if content_weight(&existing) > 0 {
@@ -163,7 +181,7 @@ pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[Br
             }
         }
     }
-    save_project_with_brep(project, path, breps)
+    save_project_bundle(project, path, breps, thumb_png)
 }
 
 /// A BODY READ FROM A FILE HOLDS NUMBERS, or the file is refused with the place of the first that is not one, as the
@@ -188,6 +206,53 @@ pub(crate) fn finite_body(body: usize, mesh: &qymcad_core::geom::Mesh, faces: &[
 /// empty vector for a mesh means the bundle held no faces for it.
 pub fn load_project(path: &str) -> Result<Project, String> {
     load_project_with_brep(path).map(|l| l.project)
+}
+
+/// THE LARGEST PREVIEW READ, in bytes; a larger `thumb.png` is refused.
+///
+/// The readers below are meant for any file a file manager comes across, and an entry of a zip declares its
+/// own size: without a bound one damaged or forged file is a reader that takes all memory. A 256x256 RGBA8
+/// image is 256 KiB raw, and a PNG of it can never need much more; the previews the program writes are
+/// 13.7 KB and 13.9 KB on the two example projects (14 and 45 bodies). 2 MiB is eight raw images.
+pub const MAX_THUMB_SIZE: u64 = 2 * 1024 * 1024;
+
+/// THE PREVIEW ALONE out of a `.qcad` on disk: only the directory of the zip and the one entry are read, not the
+/// document and not the geometry.
+///
+/// `None` when the file holds no preview (nothing to draw, or an autosave), cannot be read, or holds an entry
+/// larger than [`MAX_THUMB_SIZE`] or not a PNG.
+pub fn load_project_thumb(path: &str) -> Option<Vec<u8>> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    let mut zip = zip::ZipArchive::new(reader).ok()?;
+    read_thumb_bytes(&mut zip)
+}
+
+/// The same, from the bytes of a file already in memory; they are read in place, not copied.
+pub fn load_project_thumb_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !bytes.starts_with(b"PK") {
+        return None;
+    }
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    read_thumb_bytes(&mut zip)
+}
+
+/// `thumb.png` of an open bundle (a project or a library part), under the bound and the PNG signature.
+pub(crate) fn read_thumb_bytes<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>) -> Option<Vec<u8>> {
+    let mut f = zip.by_name("thumb.png").ok()?;
+    if f.size() > MAX_THUMB_SIZE {
+        return None;
+    }
+    let mut v = Vec::with_capacity(f.size().min(MAX_THUMB_SIZE) as usize);
+    f.by_ref().take(MAX_THUMB_SIZE + 1).read_to_end(&mut v).ok()?;
+    if v.len() as u64 > MAX_THUMB_SIZE || v.is_empty() {
+        return None;
+    }
+    const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if !v.starts_with(PNG_MAGIC) {
+        return None;
+    }
+    Some(v)
 }
 
 /// WHAT CAME OUT OF A BUNDLE: the document, and the live bodies where the file carries them.

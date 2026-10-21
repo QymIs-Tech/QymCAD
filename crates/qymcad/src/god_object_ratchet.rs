@@ -49,7 +49,7 @@ mod tests {
     /// It also cannot be gamed the other way. Splitting a method in two adds a line and no more; the only
     /// way this number falls is code leaving `impl App`. That is the thing that has to reach zero before the
     /// interface can live in a crate of its own, since a method belongs to the crate declaring the type.
-    const APP_SIZE_CEILING: usize = 172_461;
+    const APP_SIZE_CEILING: usize = 172_192;
 
     /// Methods that exist ONLY so a check can reach inside - `*_for_test` and `*_pub`.
     ///
@@ -61,7 +61,7 @@ mod tests {
     /// in. When the function becomes free and takes what it needs, the facade stops being needed - the
     /// check calls it directly. So this number is expected to fall BY ITSELF as the one above falls, and if
     /// it does not, the wrong things are being moved.
-    const APP_TEST_FACADES_CEILING: usize = 14;
+    const APP_TEST_FACADES_CEILING: usize = 12;
 
     /// Fields of `App`.
     ///
