@@ -214,9 +214,12 @@ pub fn sync_hole_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_stat
     let want = hole.kind != 0;
     let has = cmd.params.iter().any(|p| p.key == "dia2");
     if want && !has {
+        // twice the hole, as a professional CAD offers it (a hole of 5 gets a recess of 10): a fixed 12 left every hole
+        // of 12 and more with a recess no wider than itself
+        let recess = 2.0 * qymcad_ui_state::cmd_val(cmd, "diameter");
         let (d2, dp2) = match cmd.edit {
-            Some(fid) => (cmd_param_from(project, fid, "f-recess-d", "dia2", 12.0, 0.1, 10000.0), cmd_param_from(project, fid, "f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
-            None => (qymcad_ui_state::CmdParam::new("f-recess-d", "dia2", 12.0, 0.1, 10000.0), qymcad_ui_state::CmdParam::new("f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
+            Some(fid) => (cmd_param_from(project, fid, "f-recess-d", "dia2", recess, 0.1, 10000.0), cmd_param_from(project, fid, "f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
+            None => (qymcad_ui_state::CmdParam::new("f-recess-d", "dia2", recess, 0.1, 10000.0), qymcad_ui_state::CmdParam::new("f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
         };
         cmd.params.push(d2);
         cmd.params.push(dp2);

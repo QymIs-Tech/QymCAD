@@ -129,6 +129,7 @@ error-sweep-profile-missing = Профиль протяжки не найден
 error-sweep-path-missing = Траектория протяжки не найдена
 error-no-isolated-points-for-holes = В эскизе нет изолированных точек, куда ставить отверстия
 error-no-points-for-holes = Нет точек, куда ставить отверстия
+error-recess-not-wider = Ø{ $recess } выемки не больше Ø{ $hole } отверстия: задайте выемку шире отверстия
 
 ## Плоскости-ссылки
 

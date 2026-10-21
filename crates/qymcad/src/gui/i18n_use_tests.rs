@@ -406,6 +406,7 @@ fn every_core_error_has_words_in_every_language() {
         E::SweepPathMissing,
         E::NoIsolatedPointsForHoles,
         E::NoPointsForHoles,
+        E::RecessNotWider { recess: 12.0, hole: 14.0 },
         E::ThreadRimNotFound,
         E::AugerRimNotFound,
         E::AugerBadPitchOrLength,

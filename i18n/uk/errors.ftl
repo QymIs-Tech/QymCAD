@@ -129,6 +129,7 @@ error-sweep-profile-missing = Профіль протягування не зн�
 error-sweep-path-missing = Траєкторію протягування не знайдено
 error-no-isolated-points-for-holes = В ескізі немає ізольованих точок для розташування отворів
 error-no-points-for-holes = Немає точок для розташування отворів
+error-recess-not-wider = Ø{ $recess } виїмки не більший за Ø{ $hole } отвору: задайте виїмку ширшою за отвір
 
 ## Площини-посилання
 

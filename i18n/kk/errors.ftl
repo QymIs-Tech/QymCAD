@@ -129,6 +129,7 @@ error-sweep-profile-missing = Траектория бойымен созу пр�
 error-sweep-path-missing = Траектория бойымен созу траекториясы табылмады
 error-no-isolated-points-for-holes = Эскизде тесік қоятын оқшау нүктелер жоқ
 error-no-points-for-holes = Тесік қоятын нүктелер жоқ
+error-recess-not-wider = Ойыс Ø{ $recess } тесік Ø{ $hole } кең емес: ойысты тесіктен кеңірек етіп беріңіз
 
 ## Reference planes
 

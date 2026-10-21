@@ -60,6 +60,15 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
         };
         return Trial::Refused(key.to_string(), qymcad_i18n::error_words::error_text(&refused));
     }
+    // a recess no wider than its hole is refused by the rebuild before the kernel, so it is said beside the recess's
+    // own field: the trial below names the command's first one, the diameter of the hole
+    if kind == qymcad_ui_state::PartTool::Hole && qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
+        let val = |key| qymcad_ui_state::cmd_val(pc.cmd, key);
+        let tool = qymcad_core::model::HoleTool { kind: pc.hole.kind, diameter: val("diameter"), depth: val("depth"), dia2: val("dia2"), depth2: val("depth2") };
+        if let Some(refused) = tool.refusal() {
+            return Trial::Refused("dia2".to_string(), qymcad_i18n::error_words::error_text(&refused));
+        }
+    }
     let id = qymcad_ui_state::trial_slot_id();
     if !TRIED.contains(&kind) || pc.live.shapes.is_empty() || !super::cmd_ready(pc) || !qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
         // the last answer goes with the pick it was about: its faces drawn on after the face was let go of

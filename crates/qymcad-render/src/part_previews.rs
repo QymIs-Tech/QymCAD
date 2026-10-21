@@ -282,7 +282,9 @@ pub fn draw_hole_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     };
     let basis = pn.cam.basis();
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };
-    let col = qymcad_scheme::a(pn.scheme.pal.preview(), 220);
+    // a recess that will be refused is drawn in the colour of a refusal, not as a hole about to be drilled
+    let tone = if tool.refusal().is_some() { qymcad_ui_state::tone_colour(&pn.scheme.pal, qymcad_ui_state::Tone::Refusal) } else { pn.scheme.pal.preview() };
+    let col = qymcad_scheme::a(tone, 220);
     for pl in &frames {
         for line in qymcad_ui_state::hole_outline(pl, tool) {
             painter.add(egui::Shape::line(line.iter().map(|p| scr.at(*p).0).collect(), Stroke::new(1.5, col)));

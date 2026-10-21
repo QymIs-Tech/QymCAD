@@ -239,6 +239,15 @@ pub struct HoleTool {
     pub depth2: f64,
 }
 
+impl HoleTool {
+    /// WHY IT CANNOT DRILL WHAT IT IS CALLED: a counterbore or a countersink whose recess is not wider than the hole has
+    /// no step to cut, and the kernel drills a plain hole for it. Reported behaviour: dia 14 with the recess left at
+    /// dia 12 came out a plain dia 14 hole, the node green and still called a counterbore.
+    pub fn refusal(&self) -> Option<crate::errors::CoreError> {
+        (self.kind != 0 && self.dia2 <= self.diameter).then_some(crate::errors::CoreError::RecessNotWider { recess: self.dia2, hole: self.diameter })
+    }
+}
+
 /// ONE DIRECTION OF A LINEAR PATTERN: the step vector and how many copies go along it.
 ///
 /// The rebuild used to take these twelve numbers and three counts as fifteen separate arguments, and the

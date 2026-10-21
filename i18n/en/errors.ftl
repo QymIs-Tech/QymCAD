@@ -129,6 +129,7 @@ error-sweep-profile-missing = The sweep profile was not found
 error-sweep-path-missing = The sweep path was not found
 error-no-isolated-points-for-holes = The sketch has no isolated points to place holes at
 error-no-points-for-holes = No points to place holes at
+error-recess-not-wider = Recess Ø{ $recess } is not wider than the hole Ø{ $hole }: set the recess wider than the hole
 
 ## Reference planes
 

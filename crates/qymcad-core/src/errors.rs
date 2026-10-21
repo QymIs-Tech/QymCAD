@@ -360,6 +360,9 @@ pub enum CoreError {
     NoIsolatedPointsForHoles,
     /// There are no points for the holes.
     NoPointsForHoles,
+    /// A counterbore or a countersink whose recess is not wider than the hole: there is no step to cut, and the
+    /// kernel would drill a plain hole under the name of a recessed one.
+    RecessNotWider { recess: f64, hole: f64 },
     /// Thread: the rim of the cylinder or hole, a circular edge, was not found.
     ThreadRimNotFound,
     /// Auger: the rim of the shaft, a circular edge, was not found.
@@ -507,6 +510,7 @@ impl CoreError {
             SweepPathMissing => "error-sweep-path-missing".into(),
             NoIsolatedPointsForHoles => "error-no-isolated-points-for-holes".into(),
             NoPointsForHoles => "error-no-points-for-holes".into(),
+            RecessNotWider { .. } => "error-recess-not-wider".into(),
             ThreadRimNotFound => "error-thread-rim-not-found".into(),
             AugerRimNotFound => "error-auger-rim-not-found".into(),
             AugerBadPitchOrLength => "error-auger-bad-pitch-or-length".into(),
@@ -577,6 +581,7 @@ impl std::fmt::Display for CoreError {
             KernelRequired(op) => write!(f, "real OCCT kernel required: {:?}", op),
             SplitPieceCount { got, want } => write!(f, "split produced {got} pieces, expected {want}"),
             AugerOuterNotBigger { outer, shaft } => write!(f, "auger outer {outer:.1} not bigger than shaft {shaft:.1}"),
+            RecessNotWider { recess, hole } => write!(f, "recess {recess:.1} not wider than hole {hole:.1}"),
             ThreadRemovedNothing { before, after } => write!(f, "thread removed nothing ({before:.0} -> {after:.0})"),
             AugerAddedNothing { before, after } => write!(f, "auger added nothing ({before:.0} -> {after:.0})"),
             JointUnsatisfied { residual } => write!(f, "joint unsatisfied, residual {residual:.3}"),

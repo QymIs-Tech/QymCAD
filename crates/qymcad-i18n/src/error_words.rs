@@ -20,6 +20,10 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
             args.set("outer", fmt1(*outer));
             args.set("shaft", fmt1(*shaft));
         }
+        E::RecessNotWider { recess, hole } => {
+            args.set("recess", fmt1(*recess));
+            args.set("hole", fmt1(*hole));
+        }
         E::ThreadRemovedNothing { before, after } | E::AugerAddedNothing { before, after } => {
             args.set("before", fmt0(*before));
             args.set("after", fmt0(*after));

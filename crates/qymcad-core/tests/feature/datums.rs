@@ -302,6 +302,36 @@ fn hole_typed_routes_kind_and_recess_to_kernel() {
 }
 
 #[test]
+fn a_recess_not_wider_than_its_hole_is_refused_in_words() {
+    // Reported behaviour: a counterbore of dia 14 with the recess left at dia 12 was drilled as a plain dia 14 hole, the
+    // node green and still called a counterbore. A recess of dia 12 or of dia 14 over a hole of dia 14, of either
+    // recessed kind, is refused with both diameters and the kernel is not asked to drill; a recess of dia 18 drills.
+    use qymcad_core::errors::CoreError;
+    use qymcad_core::feature::FaceKey;
+    let mut fails = Vec::new();
+    for kind in [1u8, 2] {
+        for dia2 in [12.0, 14.0, 18.0] {
+            let refused = dia2 <= 14.0;
+            let mut p = part_project();
+            let sid = square(&mut p, "square");
+            p.add_sketch_node(sid, "square");
+            let base = p.add_extrude_on(sid, 0, 10.0, qymcad_core::feature::Reach::Forward, 0.0);
+            let key = FaceKey { index: 0, centroid: [5.0, 5.0, 10.0], normal: [0.0, 0.0, 1.0], id: 0 };
+            let h = p.add_hole_typed(base, key, qymcad_core::model::HoleTool { kind, diameter: 14.0, depth: 8.0, dia2, depth2: 3.0 });
+            let k = MockKernel::default();
+            p.regenerate(&k);
+            let drilled = k.calls.borrow().iter().any(|c| c.starts_with("hole "));
+            let said = p.regen_errors.get(&h).cloned();
+            let want = refused.then_some(CoreError::RecessNotWider { recess: dia2, hole: 14.0 });
+            if said != want || drilled == refused {
+                fails.push(format!("kind {kind}, recess dia {dia2} over dia 14: the node says {said:?}, wanted {want:?}; the kernel drilled: {drilled}"));
+            }
+        }
+    }
+    assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+}
+
+#[test]
 fn holes_from_sketch_points_route_to_kernel() {
     // Holes at the isolated points of a sketch make one `kernel.holes` call with N placements.
     use qymcad_core::model::Param;
