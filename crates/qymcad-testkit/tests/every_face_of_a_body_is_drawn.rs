@@ -13,7 +13,7 @@ fn the_rounded_boss_of_the_frame_sample_is_drawn_whole() {
     }
     let loaded = qymcad_io::load_project_with_brep(path).expect("the sample opens");
     let mut p = loaded.project;
-    let seed = loaded.breps.iter().filter_map(|(id, bytes)| qymcad_kernel::specimen::read(bytes).map(|s| (*id, s))).collect();
+    let seed = loaded.breps.iter().filter_map(|b| qymcad_kernel::specimen::read(&b.bytes).map(|s| (b.id, s))).collect();
     let (report, shapes) = qymcad_testkit::regenerate_with_shapes(&mut p, seed);
     assert!(report.errors.is_empty(), "the sample did not rebuild: {:?}", report.errors);
     let last = p.timeline.iter().rev().find_map(|n| n.kind.body()).expect("a node with a body");

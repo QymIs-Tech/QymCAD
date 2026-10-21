@@ -19,6 +19,15 @@ pub fn save_project(project: &Project, path: &str) -> Result<(), String> {
     save_project_with_brep(project, path, &[])
 }
 
+/// THE LIVE BODY OF ONE BODY OF THE DOCUMENT, as the kernel wrote it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BrepEntry {
+    /// The id of the body in the document; the entry is `brep/<id>.brep`.
+    pub id: model::Id,
+    /// The B-rep blob; an empty one is not written.
+    pub bytes: Vec<u8>,
+}
+
 /// The same, but with the live bodies: `breps` maps a body id to a B-rep blob.
 ///
 /// The complaint was that making a cut meant waiting for a rebuild. A measurement found the culprit: an edit in
@@ -28,7 +37,7 @@ pub fn save_project(project: &Project, path: &str) -> Result<(), String> {
 /// does this one now.
 ///
 /// The bytes arrive ready-made: the format need know nothing of the kernel, and the kernel nothing of zip.
-pub fn save_project_with_brep(project: &Project, path: &str, breps: &[(model::Id, Vec<u8>)]) -> Result<(), String> {
+pub fn save_project_with_brep(project: &Project, path: &str, breps: &[BrepEntry]) -> Result<(), String> {
     let mut doc = project.clone();
     doc.ensure_ids(); // in case of geometry without ids, built directly
 
@@ -74,12 +83,12 @@ pub fn save_project_with_brep(project: &Project, path: &str, breps: &[(model::Id
 
     // The live bodies sit next to the meshes. Without them opening shows the model instantly, but the very
     // first operation pays for a full rebuild of the timeline.
-    for (id, blob) in breps {
-        if blob.is_empty() {
+    for b in breps {
+        if b.bytes.is_empty() {
             continue;
         }
-        zip.start_file(format!("brep/{id}.brep"), opts).map_err(|e| e.to_string())?;
-        zip.write_all(blob).map_err(|e| e.to_string())?;
+        zip.start_file(format!("brep/{}.brep", b.id), opts).map_err(|e| e.to_string())?;
+        zip.write_all(&b.bytes).map_err(|e| e.to_string())?;
     }
 
     // The embedded originals of imports; their bytes live here rather than in `document.ron`.
@@ -146,7 +155,7 @@ pub fn save_project_guarded(project: &Project, path: &str) -> Result<(), String>
 }
 
 /// The same, but with the live bodies; see [`save_project_with_brep`].
-pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[(model::Id, Vec<u8>)]) -> Result<(), String> {
+pub fn save_project_guarded_with_brep(project: &Project, path: &str, breps: &[BrepEntry]) -> Result<(), String> {
     if content_weight(project) == 0 {
         if let Ok(existing) = load_project(path) {
             if content_weight(&existing) > 0 {
@@ -189,7 +198,7 @@ pub struct LoadedProject {
     /// The document itself.
     pub project: Project,
     /// The live B-rep of each body the file happened to carry, by body id. Empty is a legitimate answer.
-    pub breps: Vec<(model::Id, Vec<u8>)>,
+    pub breps: Vec<BrepEntry>,
 }
 
 /// The same, but also returning the live bodies where the bundle holds them, as a map from body id to a B-rep
@@ -230,10 +239,10 @@ pub fn load_project_with_brep(path: &str) -> Result<LoadedProject, String> {
         }
     }
     // the live bodies, under the same ids as the meshes
-    let mut breps: Vec<(model::Id, Vec<u8>)> = Vec::new();
+    let mut breps: Vec<BrepEntry> = Vec::new();
     for id in &ids {
         if let Ok(blob) = read_bytes(&mut zip, &format!("brep/{id}.brep")) {
-            breps.push((*id, blob));
+            breps.push(BrepEntry { id: *id, bytes: blob });
         }
     }
     Ok(LoadedProject { project, breps })

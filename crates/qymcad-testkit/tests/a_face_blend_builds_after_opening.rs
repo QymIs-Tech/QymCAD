@@ -46,10 +46,11 @@ fn a_cylinder_opened_from_a_file(tag: &str) -> Opened {
         }
     }
     let path = std::env::temp_dir().join(format!("qym-face-blend-{tag}-{}.qcad", std::process::id())).to_string_lossy().into_owned();
-    qymcad_io::save_project_with_brep(&p, &path, &shapes.iter().filter_map(|(id, s)| s.to_brep_bytes().map(|b| (*id, b))).collect::<Vec<_>>()).expect("the document is written");
+    let breps: Vec<qymcad_io::BrepEntry> = shapes.iter().filter_map(|(id, s)| s.to_brep_bytes().map(|bytes| qymcad_io::BrepEntry { id: *id, bytes })).collect();
+    qymcad_io::save_project_with_brep(&p, &path, &breps).expect("the document is written");
     let opened = qymcad_io::load_project_with_brep(&path).expect("the document opens");
     let _ = std::fs::remove_file(&path);
-    let shapes = opened.breps.iter().filter_map(|(id, b)| qymcad_kernel::specimen::read(b).map(|s| (*id, s))).collect();
+    let shapes = opened.breps.iter().filter_map(|b| qymcad_kernel::specimen::read(&b.bytes).map(|s| (b.id, s))).collect();
     let mut p = opened.project;
     for i in 0..p.bodies.len() {
         if let (Some(b), false) = (p.mesh_id(i), p.bodies[i].faces.is_empty()) {
