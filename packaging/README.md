@@ -122,8 +122,8 @@ cargo build --release --bin qymcad
 bash packaging/macos/bundle.sh
 ```
 
-It leaves two packages in `dist/` holding the same signed bundle and the same four notes: `*-macos-<arch>.zip`, and
-`*-macos-<arch>.dmg`, a disk image that shows the program beside a link to Applications.
+It leaves `dist/qymcad-*-macos-<arch>.dmg`, the one package for that processor: a disk image that shows the
+signed program beside a link to Applications, with the four notes under them.
 
 **What makes a mac bundle different.** A dylib carries the path it was BUILT at, baked into whatever
 loads it - so a copied library is looked for where it used to live, and the program dies on start. The

@@ -1,5 +1,5 @@
 # Building the release packages in CI: the Windows portable zip and MSI, the Linux AppImage and the macOS
-# .app for Apple Silicon and for Intel.
+# disk image for Apple Silicon and for Intel.
 #
 # ONE TRIGGER: the button (Actions -> Run workflow). Nothing builds by itself - not on a push, not on a
 # tag. Commits may arrive daily; a package is made when it is asked for, and asking is a person pressing
@@ -371,14 +371,8 @@ jobs:
           MACOS_ARCH: ${{ matrix.arch }}
         run: bash packaging/macos/bundle.sh
 
-      # Two files, two steps, each uploaded as it is - see the reason at the Windows job. The disk image is
-      # not an archive to this action, but `archive: false` keeps it a file and names the artifact after it.
-      - name: Upload the zip (for workflow_dispatch)
-        uses: actions/upload-artifact@v7
-        with:
-          path: dist/*.zip
-          archive: false
-
+      # A single file, uploaded as it is - see the reason at the Windows job. The disk image is not an archive
+      # to this action, but `archive: false` keeps it a file and names the artifact after it.
       - name: Upload the disk image (for workflow_dispatch)
         uses: actions/upload-artifact@v7
         with:
@@ -419,14 +413,14 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
-      # SEVEN FILES, AND ALL SEVEN ACTUALLY FILES. The packages are uploaded unzipped, and the release
+      # FIVE FILES, AND ALL FIVE ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
       # the Release page would go up with a download missing. Fifteen seconds against that.
       #
-      # Seven, not three: Windows produces two (the portable zip and the MSI installer), and macOS four - a zip
-      # and a disk image for each processor, from the two upload steps the matrix runs twice. The number is
-      # written out rather than counted from the jobs on purpose - a package that silently stopped being
-      # built is exactly what this step exists to catch.
+      # Five, not three: Windows produces two (the portable zip and the MSI installer), and macOS two - a disk
+      # image for each processor, from the one upload step the matrix runs twice. The number is written out
+      # rather than counted from the jobs on purpose - a package that silently stopped being built is exactly
+      # what this step exists to catch.
       - name: What was built
         run: |
           ls -lh dist
@@ -434,7 +428,7 @@ jobs:
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
           n=$(ls dist | wc -l)
-          [ "$n" -eq 7 ] || { echo "!!! seven packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq 5 ] || { echo "!!! five packages were expected, $n arrived"; exit 1; }
 
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #
@@ -453,6 +447,6 @@ jobs:
           files: dist/*
           # WHAT TO DOWNLOAD AND HOW TO START IT, ON THE PAGE ITSELF. Generated notes alone are a line
           # saying "Full Changelog" - which tells whoever arrives from a link neither which of the files
-          # is theirs nor, on a mac, why the system calls the download damaged.
+          # is theirs nor, on a mac, how the first launch is allowed.
           body_path: packaging/release-body.md
           generate_release_notes: true

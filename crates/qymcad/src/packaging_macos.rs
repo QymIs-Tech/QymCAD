@@ -11,9 +11,9 @@
 //! They are replaced by stubs on PATH - one records what it was asked to do and remembers which files it
 //! rewrote, another prints a dependency list in the real format and answers according to those marks, the
 //! signing two record their calls and seal the bundle, `codesign --verify` answers by that seal, and `dmgbuild`
-//! records what the folder it was given held and writes the image file.
+//! records every file and link in the folder it was given and writes the image file.
 //! Everything the mistakes were actually in - the copying, the loops, the sentinel, the order of signing,
-//! the archive, the disk image's folder - is ordinary shell and runs anywhere.
+//! the disk image's folder - is ordinary shell and runs anywhere.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -71,7 +71,7 @@ fn sandbox(case: &str, deps: Deps, seal: Seal) -> PathBuf {
     executable(&write("target/release/qymcad", "the program\n"));
 
     // As OCCT installs them: one real file per module and two links to it. The chain matters - a `cp` that
-    // follows links writes three full copies of every module, which is how an 80 MB archive was measured.
+    // follows links writes three full copies of every module, which is how an 80 MB package was measured.
     for module in ["libTKernel", "libTKMath"] {
         write(&format!("occt/lib/{module}.7.8.1.dylib"), "a library\n");
         std::os::unix::fs::symlink(format!("{module}.7.8.1.dylib"), dir.join(format!("occt/lib/{module}.7.8.dylib"))).expect("the link is made");
@@ -174,11 +174,14 @@ done
              [ -f \"$settings\" ] || {{ echo \"no settings file: $settings\" >&2; exit 1; }}
 \
              (cd \"$stage\" && ls -1) > {held}
+\
+             (cd \"$stage\" && find . -type f | sed 's|^\\./|f |'; find . -type l | sed 's|^\\./|l |') > {tree}
 : > \"${{@: -1}}\"
 exit 0
 ",
             signs = signs.display(),
-            held = dir.join("dmg-held.txt").display()
+            held = dir.join("dmg-held.txt").display(),
+            tree = dir.join("dmg-tree.txt").display()
         ),
     ));
     dir
@@ -191,7 +194,7 @@ fn bundle(dir: &Path, signer: Signer) -> Output {
     bundle_for(dir, "arm64", signer)
 }
 
-/// The same, for a named processor. It is always named: left to `uname -m` the archive would be called
+/// The same, for a named processor. It is always named: left to `uname -m` the image would be called
 /// after whatever machine runs the tests.
 fn bundle_for(dir: &Path, arch: &str, signer: Signer) -> Output {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/bundle.sh");
@@ -221,22 +224,16 @@ fn said(out: &Output) -> String {
     format!("--- stdout ---\n{}--- stderr ---\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
 }
 
-/// The disk image the script makes beside the archive.
+/// The disk image the script makes.
 fn disk_image(dir: &Path) -> PathBuf {
     dir.join("dist/qymcad-0.1.0-macos-arm64.dmg")
 }
 
-/// What the archive holds, one entry per line.
-fn archive(dir: &Path) -> String {
-    listing(dir, "-Z1")
-}
-
-/// The same, in the long form where the first column tells a link from a file.
-fn listing(dir: &Path, form: &str) -> String {
-    let zip = dir.join("dist/qymcad-0.1.0-macos-arm64.zip");
-    assert!(zip.exists(), "the archive was not made: {}", zip.display());
-    let out = Command::new("unzip").arg(form).arg(&zip).output().expect("unzip reads the archive");
-    String::from_utf8_lossy(&out.stdout).into_owned()
+/// What went into the disk image, one entry per line: `f QymCAD.app/...` for a file, `l QymCAD.app/...` for a
+/// link, as the stub `dmgbuild` found the folder it was given at the moment of the call.
+fn image(dir: &Path) -> String {
+    assert!(disk_image(dir).exists(), "the disk image was not made: {}", disk_image(dir).display());
+    fs::read_to_string(dir.join("dmg-tree.txt")).expect("dmgbuild was called")
 }
 
 /// THE CASE THAT KILLED THE SECOND RUN. OCCT built by CMake announces itself through `@rpath` already, so
@@ -248,7 +245,7 @@ fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
     let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused although every path was already @rpath:\n{}", said(&out));
 
-    let held = archive(&dir);
+    let held = image(&dir);
     for entry in [
         "QymCAD.app/Contents/MacOS/qymcad",
         "QymCAD.app/Contents/Info.plist",
@@ -257,10 +254,10 @@ fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
         "QymCAD.app/Contents/Resources/THIRD-PARTY-NOTICES.md",
         "README.txt",
     ] {
-        assert!(held.contains(entry), "the archive does not hold {entry}:\n{held}");
+        assert!(held.contains(entry), "the image does not hold {entry}:\n{held}");
     }
     // A note per language of the program travels; three are named in an alphabet this file does not spell out.
-    assert_eq!(held.lines().filter(|l| l.ends_with(".txt") && !l.contains("Contents/")).count(), 4, "all four notes must be in the archive:\n{held}");
+    assert_eq!(held.lines().filter(|l| l.ends_with(".txt") && !l.contains("Contents/")).count(), 4, "all four notes must be in the image:\n{held}");
 
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(calls.contains("-add_rpath @executable_path/../Frameworks"), "the bundle was not pointed at its own Frameworks:\n{calls}");
@@ -277,9 +274,9 @@ fn every_library_travels_once_and_its_other_names_are_links() {
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains(">>> libraries: 2, links to them: 4"), "the two modules were not counted apart from their links:\n{}", said(&out));
 
-    let long = listing(&dir, "-Z");
-    let links = long.lines().filter(|l| l.starts_with('l') && l.contains(".dylib")).count();
-    let files = long.lines().filter(|l| l.starts_with('-') && l.contains(".dylib")).count();
+    let long = image(&dir);
+    let links = long.lines().filter(|l| l.starts_with("l ") && l.contains(".dylib")).count();
+    let files = long.lines().filter(|l| l.starts_with("f ") && l.contains(".dylib")).count();
     assert_eq!((files, links), (2, 4), "each module must travel once, its other two names as links:\n{long}");
 
     // The id is set on the file, never through a link: writing through one would leave the real file
@@ -298,7 +295,7 @@ fn paths_naming_the_build_machine_are_rewritten() {
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(calls.contains("-change ") && calls.contains(" @rpath/libTKernel.7.8.dylib "), "no path was rewritten to @rpath:\n{calls}");
     assert!(calls.contains("MacOS/qymcad"), "the program itself was left naming the build machine:\n{calls}");
-    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
+    assert!(image(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
 }
 
 /// THE SENTINEL MUST STILL FIRE. One path left naming the build machine means a program that starts here
@@ -309,24 +306,21 @@ fn a_path_left_naming_the_build_machine_fails_the_bundle() {
     let out = bundle(&dir, Signer::AdHoc);
     assert!(!out.status.success(), "a library still named the build machine and the script was happy:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("still points at the build machine"), "the refusal did not say what was wrong:\n{}", said(&out));
-    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that cannot start");
     assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that cannot start");
 }
 
 /// TWO PACKAGES GO UP SIDE BY SIDE, and the file name is all a person has to choose between them. The
 /// Intel build must be named for Intel and say so in both notes; a note still promising Apple Silicon
-/// inside an Intel archive sends its reader to the wrong download.
+/// inside an Intel image sends its reader to the wrong download.
 #[test]
 fn an_intel_build_is_named_and_described_as_one() {
     let dir = sandbox("intel", Deps::Rpath, Seal::Holds);
     let out = bundle_for(&dir, "x86_64", Signer::AdHoc);
     assert!(out.status.success(), "the script refused an Intel build:\n{}", said(&out));
-    assert!(dir.join("dist/qymcad-0.1.0-macos-x86_64.zip").exists(), "the Intel archive is not named for its processor:\n{}", said(&out));
-    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an Intel build was packed under the Apple Silicon name");
     assert!(dir.join("dist/qymcad-0.1.0-macos-x86_64.dmg").exists(), "the Intel disk image is not named for its processor:\n{}", said(&out));
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.dmg").exists(), "the Intel build made its disk image under the Apple Silicon name");
 
-    // every note beside the archive, one per language of the program
+    // every note the image is made with, one per language of the program
     let notes: Vec<std::path::PathBuf> = fs::read_dir(dir.join("dist")).expect("the dist folder").flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
     assert_eq!(notes.len(), 4, "the Intel build carries {} notes, not the four: {notes:?}", notes.len());
     for note in notes {
@@ -347,7 +341,7 @@ fn an_unknown_processor_is_refused() {
 /// THE BUNDLE IS SEALED, INSIDE OUT. The CI package carried only the linker's signature on the program and
 /// none on the bundle, and macOS called the download damaged. Each library is signed before the bundle,
 /// because sealing the bundle records the signatures of the code inside it; links are not signed twice
-/// through their other names; the bundle is verified before it is archived.
+/// through their other names; the bundle is verified before it is packed.
 #[test]
 fn the_bundle_is_signed_after_its_libraries_and_verified() {
     let dir = sandbox("signed", Deps::Rpath, Seal::Holds);
@@ -365,7 +359,7 @@ fn the_bundle_is_signed_after_its_libraries_and_verified() {
     let app = at(&|c| signing(&c) && c.ends_with("QymCAD.app"));
     let verify = at(&|c| c.starts_with("codesign --verify") && c.ends_with("QymCAD.app"));
     assert!(matches!((lib, app, verify), (Some(l), Some(a), Some(v)) if l < a && a < v), "the libraries, then the bundle, then the check - in that order:\n{calls:#?}");
-    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
+    assert!(image(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
 }
 
 /// A CERTIFICATE SIGNS THROUGH `rcodesign`. `codesign` refuses a self-signed certificate the system does not
@@ -388,25 +382,26 @@ fn a_certificate_signs_the_bundle_through_rcodesign() {
 /// A BUNDLE THAT DOES NOT VERIFY IS NOT SHIPPED. That is the "damaged" message, found by whoever downloads
 /// the package; the build must stop on it instead.
 #[test]
-fn a_bundle_that_does_not_verify_is_not_archived() {
+fn a_bundle_that_does_not_verify_is_not_packed() {
     let dir = sandbox("broken", Deps::Rpath, Seal::Breaks);
     let out = bundle(&dir, Signer::AdHoc);
     assert!(!out.status.success(), "a bundle that does not verify was let through:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stderr).contains("code has no resources"), "the refusal did not say what was wrong:\n{}", said(&out));
-    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that does not verify");
     assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that does not verify");
 }
 
-/// THE DISK IMAGE, BESIDE THE ARCHIVE. It holds the program and the four notes, laid out by the settings
-/// file beside the script, and it is made from the bundle only after that bundle verified. The staging
-/// folder is gone afterwards, so `dist/` holds the packages and the bundle and nothing half-made.
+/// THE DISK IMAGE IS THE ONE PACKAGE. It holds the program and the four notes, laid out by the settings file
+/// beside the script, and it is made from the bundle only after that bundle verified. The staging folder is
+/// gone afterwards, and no zip of the same bundle lies beside the image: `dist/` holds the image, the bundle and
+/// the notes, nothing half-made and nothing to choose between.
 #[test]
 fn a_disk_image_holds_the_verified_bundle_and_the_notes() {
     let dir = sandbox("dmg", Deps::Rpath, Seal::Holds);
     let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
     assert!(disk_image(&dir).exists(), "the disk image was not made:\n{}", said(&out));
-    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"), "the archive stopped being made beside the image");
+    let zips: Vec<String> = fs::read_dir(dir.join("dist")).expect("dist/ is readable").flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".zip")).collect();
+    assert!(zips.is_empty(), "a zip was packed beside the image: {zips:?}");
 
     let held = fs::read_to_string(dir.join("dmg-held.txt")).expect("dmgbuild was called");
     let lines: Vec<&str> = held.lines().collect();
@@ -450,6 +445,8 @@ fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
             assert!(text.contains(step), "a note lacks {step:?}:\n{text}");
         }
         assert!(!text.contains("xattr") && !text.contains("Terminal"), "a note still sends the reader to a terminal:\n{text}");
+        // The disk image is the one package, so the note installs from it and names no archive.
+        assert!(text.contains("(.dmg)") && !text.contains(".zip"), "a note does not install from the disk image alone:\n{text}");
     }
 }
 

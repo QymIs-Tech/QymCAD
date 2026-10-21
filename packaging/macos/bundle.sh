@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble QymCAD into a macOS .app and zip it. Runs after `cargo build --release` on the machine it is
+# Assemble QymCAD into a macOS .app and pack it into a disk image. Runs after `cargo build --release` on the machine it is
 # packing for - Apple Silicon or Intel - with OCCT installed at $OCCT_ROOT (built from source - see
 # .github/workflows/release.yml).
 #
@@ -14,7 +14,7 @@ BIN=target/release/qymcad
 [ -x "$BIN" ] || { echo "!!! no $BIN - run cargo build --release first"; exit 1; }
 OCCT_ROOT=${OCCT_ROOT:?set OCCT_ROOT to the OCCT installation}
 
-# THE PROCESSOR, in the archive name and in the notes. Two packages go up side by side, and a person
+# THE PROCESSOR, in the package name and in the notes. Two packages go up side by side, and a person
 # holding an Intel mac must be able to tell theirs from the file name alone. CI names it (MACOS_ARCH);
 # by hand it is the machine the script runs on, which is the machine cargo just built for.
 ARCH=${MACOS_ARCH:-$(uname -m)}
@@ -75,7 +75,7 @@ PLIST
 # the name written into the dependencies - so the other two were pure weight.
 #
 # `-RP` copies links as links on both toolchains (POSIX: with -R and no -H/-L, a link is copied, not
-# followed), and `zip -y` stores them as links instead of expanding them again in the archive.
+# followed), here and again into the disk image's folder below.
 echo ">>> gathering the kernel libraries"
 cp -RP "$OCCT_ROOT"/lib/*.dylib "$APP/Contents/Frameworks/"
 n=$(find "$APP/Contents/Frameworks" -type f -name '*.dylib' | wc -l | tr -d ' ')
@@ -201,8 +201,7 @@ NOTES=(README.txt ПРОЧТИ.txt ПРОЧИТАЙ.txt ОҚЫҢЫЗ.txt)
 cat > dist/README.txt <<TXT
 QymCAD - build for macOS ($MACHINE).
 
-INSTALL. From the disk image (.dmg): drag QymCAD onto the Applications folder beside it. From the
-archive (.zip): unpack it and move QymCAD.app into Applications.
+INSTALL. Open the disk image (.dmg) and drag QymCAD onto the Applications folder beside it.
 
 FIRST RUN. The build is signed, but not with a certificate Apple issued, so macOS refuses to open it
 the first time and says Apple could not verify it is free of malware. It is allowed once, in System
@@ -227,8 +226,8 @@ TXT
 cat > dist/ПРОЧТИ.txt <<TXT
 QymCAD - сборка для macOS ($MACHINE).
 
-УСТАНОВКА. Из образа диска (.dmg): перетащите QymCAD на папку «Программы» (Applications) рядом с ним.
-Из архива (.zip): распакуйте его и переместите QymCAD.app в «Программы».
+УСТАНОВКА. Откройте образ диска (.dmg) и перетащите QymCAD на папку «Программы» (Applications) рядом
+с ним.
 
 ПЕРВЫЙ ЗАПУСК. Сборка подписана, но не сертификатом, выданным Apple, поэтому в первый раз macOS
 откажется её открыть и скажет, что Apple не может проверить её на вредоносное ПО. Разрешить запуск
@@ -255,8 +254,8 @@ TXT
 cat > dist/ПРОЧИТАЙ.txt <<TXT
 QymCAD - збірка для macOS ($MACHINE).
 
-ВСТАНОВЛЕННЯ. З образу диска (.dmg): перетягніть QymCAD на папку «Програми» (Applications) поруч
-із ним. З архіву (.zip): розархівуйте його та перемістіть QymCAD.app у «Програми».
+ВСТАНОВЛЕННЯ. Відкрийте образ диска (.dmg) і перетягніть QymCAD на папку «Програми» (Applications)
+поруч із ним.
 
 ПЕРШИЙ ЗАПУСК. Збірку підписано, але не сертифікатом, виданим Apple, тож першого разу macOS
 відмовиться її відкрити й повідомить, що Apple не може перевірити її на зловмисне ПЗ. Дозволити
@@ -284,8 +283,8 @@ TXT
 cat > dist/ОҚЫҢЫЗ.txt <<TXT
 QymCAD - macOS ($MACHINE) жинағы.
 
-ОРНАТУ. Диск бейнесінен (.dmg): QymCAD-ты жанындағы «Бағдарламалар» (Applications) қалтасына
-сүйреңіз. Мұрағаттан (.zip): оны ашып, QymCAD.app-ты «Бағдарламалар» қалтасына жылжытыңыз.
+ОРНАТУ. Диск бейнесін (.dmg) ашып, QymCAD-ты жанындағы «Бағдарламалар» (Applications) қалтасына
+сүйреңіз.
 
 АЛҒАШҚЫ ІСКЕ ҚОСУ. Жинаққа қол қойылған, бірақ сертификатты Apple бермеген, сондықтан macOS оны
 алғаш рет ашудан бас тартып, Apple оны зиянды бағдарламаға тексере алмайтынын айтады. Іске қосуға
@@ -310,18 +309,14 @@ QymCAD - macOS ($MACHINE) жинағы.
 macOS 12 немесе жаңарағы, $MACHINE процессоры бар компьютер қажет.
 TXT
 
-ZIP="dist/$NAME-macos-$ARCH.zip"
-rm -f "$ZIP"
-( cd dist && zip -r -y -q "$(basename "$ZIP")" QymCAD.app "${NOTES[@]}" )
-echo ">>> DONE: $ZIP ($(du -h "$ZIP" | cut -f1))"
-
 # THE DISK IMAGE, the form a mac download is expected in. Opened, it shows one window drawn for it: the
 # program on the left, Applications on the right, an arrow from one to the other, and under them a card
-# holding the notes. It holds the same signed bundle as the archive - made after the check above, so
-# nothing unverified goes in - and the same notes, because the first launch is refused the same way for
-# the copy dragged out of it. The mounted volume carries the program's icon.
+# holding the notes. It holds the signed bundle - made after the check above, so nothing unverified goes
+# in - and the notes, because the first launch is refused the same way for the copy dragged out of it. The
+# mounted volume carries the program's icon.
 #
-# The zip stays beside it: it is the file older links point at.
+# THE ONLY PACKAGE. A zip of the same bundle beside it would be a second file per processor to choose
+# between on the download page, and nothing takes a zip that the image does not serve.
 #
 # `dmgbuild`, NOT A FINDER SCRIPT. The window's layout - its size, the background, where each icon stands
 # - lives in a `.DS_Store` file inside the image. The usual way to make one is to mount the image and have

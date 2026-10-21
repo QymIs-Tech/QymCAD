@@ -29,7 +29,9 @@
 * **Faster rebuilds:** a rebuild computes independent nodes on several cores (how many is a setting); the scene
   draws large models with less memory.
 * **First start** opens a sample; afterwards the last project opens.
-* **A macOS build for Intel** beside the one for Apple Silicon: `macos-x86_64.zip` and `macos-arm64.zip`.
+* **macOS as a disk image, for Intel too:** `macos-arm64.dmg` for Apple Silicon and `macos-x86_64.dmg` for Intel.
+  The build is signed, so the first launch is allowed once with **Open Anyway** in System Settings -> Privacy &
+  Security, without a terminal.
 
 **Fixed**
 
