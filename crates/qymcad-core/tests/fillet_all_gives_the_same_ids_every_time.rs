@@ -5,7 +5,7 @@
 //! arcs other ids from one run to the next - eight different assignments in twelve runs on a 100 x 4 rectangle - and
 //! the document saved another file. The corners are now taken by id.
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 
 /// One rounded corner: where its arc's centre stands, in whole micrometres so that it compares exactly, and the id the
 /// arc took.
@@ -26,12 +26,10 @@ fn arcs_by_corner(r: f64) -> Vec<RoundedCorner> {
     let mut arcs: Vec<RoundedCorner> = s
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Arc { center, .. } => {
-                let q = s.points.iter().find(|q| q.id == center).expect("the centre");
-                Some(RoundedCorner { centre_x_um: (q.x * 1e3).round() as i64, centre_y_um: (q.y * 1e3).round() as i64, arc: e.id })
-            }
-            _ => None,
+        .filter_map(|e| {
+            let arc = e.kind.as_arc()?;
+            let q = s.points.iter().find(|q| q.id == arc.center).expect("the centre");
+            Some(RoundedCorner { centre_x_um: (q.x * 1e3).round() as i64, centre_y_um: (q.y * 1e3).round() as i64, arc: e.id })
         })
         .collect();
     arcs.sort();
