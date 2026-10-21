@@ -51,6 +51,20 @@ fn rebuild_says_it_ended(regen: &mut qymcad_ui_state::Rebuilding, status: &mut q
     qymcad_ui_state::invalidate(regen); // the geometry moved: what is drawn from it is drawn again
 }
 
+/// An autosave newer than the file means the previous session broke off after edits - offer to recover.
+/// THE WARNING OUTRANKS "LOADED": set before it, "loaded" painted over the warning in the same call, and the
+/// person never heard that the autosave held newer work.
+/// ONE RULE FOR THE NAME, not a copy of it. This place used to build the autosave name itself, and
+/// the moment `autosave_path` started taking the stem instead of the whole name the two would have
+/// parted: the recovery check would look for a file the autosave never writes.
+fn check_autosave_recovery(project_path: &Option<String>) -> Option<Notice> {
+    let p = project_path.as_deref()?;
+    let auto = qymcad_ui_state::autosave_path(project_path);
+    let ma = std::fs::metadata(&auto).ok()?.modified().ok()?;
+    let mf = std::fs::metadata(p).ok()?.modified().ok()?;
+    (ma > mf).then(|| Notice::warning(crate::i18n::tr1("io-autosave-found", "path", &auto)))
+}
+
 impl App {
     /// WAIT for background work (writing the project, fetching B-rep) and apply its result.
     /// Needed where there will be no "later": leaving the program with a save still in flight. In tests it
@@ -167,24 +181,7 @@ impl App {
         self.viewing.view.initialized = false;
         self.viewing.cam.init = false;
         self.disk.edits.saved_key = qymcad_ui_state::edit_key(&self.draw_ctx()); // straight off the disk - there are no edits
-                                                                                 // an autosave newer than the file means the previous session broke off after edits - offer to recover
-        if let Some(p) = self.disk.project_path.clone() {
-            // ONE RULE FOR THE NAME, not a copy of it. This place used to build the autosave name itself, and
-            // the moment `autosave_path` started taking the stem instead of the whole name the two would have
-            // parted: the recovery check would look for a file the autosave never writes.
-            let auto = qymcad_ui_state::autosave_path(&self.disk.project_path);
-            let p = &p;
-            let newer = (|| -> Option<bool> {
-                let ma = std::fs::metadata(&auto).ok()?.modified().ok()?;
-                let mf = std::fs::metadata(p).ok()?.modified().ok()?;
-                Some(ma > mf)
-            })()
-            .unwrap_or(false);
-            if newer {
-                self.status = Notice::warning(crate::i18n::tr1("io-autosave-found", "path", &auto));
-            }
-        }
-        self.status = Notice::info(crate::i18n::tr("io-project-loaded"));
+        self.status = check_autosave_recovery(&self.disk.project_path).unwrap_or_else(|| Notice::info(crate::i18n::tr("io-project-loaded")));
     }
 
     /// Save (Ctrl+S): if the project has been saved before, write there silently; otherwise Save As.

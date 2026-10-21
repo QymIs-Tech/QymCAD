@@ -1,6 +1,7 @@
 //! Opening, saving, the live shapes behind them, undo and autosave.
 
 use super::*;
+use crate::gui::hand::Hand;
 
 /// Reported behaviour: every opening ran "Preparing B-rep", and afterwards the program asked to save although
 /// nothing had been changed. Two faults at once: (1) `refresh_edges` is called EVERY FRAME in 3D and pulled
@@ -400,4 +401,49 @@ fn the_clock_is_read_in_the_zone_asked() {
     assert_eq!(super::super::hh_mm_in(at_11_27, &hour(-5)), "06:27");
     assert_eq!(super::super::hh_mm_in(at_23_30, &hour(3)), "02:30");
     assert_eq!(super::super::hh_mm_in(at_11_27, &hour(-12)), "23:27");
+}
+
+/// A scratch folder of one check, emptied first: a file left from an earlier run would answer for this one.
+fn scratch_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("qym_saving_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the scratch folder is made");
+    dir
+}
+
+/// Ctrl+S into `path` through a whole frame of the window, as a person saves, and the write waited for.
+fn press_save(app: &mut App, path: &str) {
+    // THE PATH IS REMEMBERED as Save As remembers it: without one Ctrl+S opens a file dialogue a check does not have
+    crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.to_string());
+    Hand::new(app).ctrl(egui::Key::S);
+    app.wait_bg();
+}
+
+/// THE WARNING ABOUT A NEWER AUTOSAVE REACHES THE STATUS LINE. Reported behaviour: a project was opened while an
+/// autosave newer than it lay beside it, and the line said "The project is loaded." - the warning was set and
+/// painted over in the same call, so the work kept in the autosave went unmentioned.
+#[test]
+fn opening_says_an_autosave_is_newer() {
+    let dir = scratch_dir("recover");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    press_save(&mut app, &path);
+    // the session broke off after an edit: the autosave is newer than the file
+    let _edit = sketch_rect(&mut app, 40.0, 0.0, 50.0, 10.0);
+    app.maybe_autosave(true);
+    app.wait_bg();
+    let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    assert!(std::path::Path::new(&auto).exists(), "setup: the autosave was written: {}", app.status);
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    std::fs::File::options().write(true).open(&path).and_then(|f| f.set_modified(hour_ago)).expect("the file is dated an hour back");
+
+    let mut opened = App::default();
+    opened.open_for_test(path.clone());
+    let warning = crate::i18n::tr1("io-autosave-found", "path", &auto);
+    let first_words: String = warning.chars().take(30).collect();
+    let pal = opened.scheme.pal.clone();
+    let said = Hand::new(&mut opened).status_painted().into_iter().find(|w| w.text.contains(&first_words));
+    assert!(said.as_ref().is_some_and(|w| w.colour == pal.warning()), "the status line does not say in yellow that a newer autosave lies beside the file: {:?}", said.map(|w| (w.text, w.colour)));
+    let _ = std::fs::remove_dir_all(&dir);
 }
