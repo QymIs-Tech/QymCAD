@@ -206,6 +206,82 @@ fn sweep_auto_transports_profile_to_path_start() {
 }
 
 #[test]
+fn a_sweep_starts_at_the_profile_where_it_is_drawn() {
+    // A triangle drawn away from its sketch's origin, the path leaving its plane at one of the triangle's corners - from
+    // its start or from its end. The body stands over the triangle as drawn: its box is the triangle's box run along the
+    // path, not the triangle carried by the sketch's origin and turned by the world axes. Reported behaviour: such a
+    // sweep stood 32 mm off and turned over.
+    use crate::Shape;
+    struct Case {
+        label: &'static str,
+        prof_tf: [f64; 12],
+        corners: [(f64, f64); 3],
+        path_tf: [f64; 12],
+        from: (f64, f64),
+        to: (f64, f64),
+        min: [f64; 3],
+        max: [f64; 3],
+    }
+    // the table: the sketch's X and Y are the world's
+    let table = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    // an upright plane through y = 3: the sketch's X is the world X, its Y the world Z
+    let upright = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 3.0, 0.0, 1.0, 0.0, 0.0];
+    // the face x = -5 looking down -X: the sketch's X is the world Z, its Y the world Y
+    let side = [0.0, 0.0, -1.0, -5.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
+    // the face y = -20 looking down -Y: the sketch's X is the world X, its Y the world Z
+    let front = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -20.0, 0.0, 1.0, 0.0, 0.0];
+    let cases = [
+        Case {
+            label: "up from a corner of a triangle on the table",
+            prof_tf: table,
+            corners: [(4.0, 3.0), (8.0, 3.0), (4.0, 6.0)],
+            path_tf: upright,
+            from: (4.0, 0.0),
+            to: (4.0, 20.0),
+            min: [4.0, 3.0, 0.0],
+            max: [8.0, 6.0, 20.0],
+        },
+        Case {
+            label: "the same path drawn from its far end down to the corner",
+            prof_tf: table,
+            corners: [(4.0, 3.0), (8.0, 3.0), (4.0, 6.0)],
+            path_tf: upright,
+            from: (4.0, 20.0),
+            to: (4.0, 0.0),
+            min: [4.0, 3.0, 0.0],
+            max: [8.0, 6.0, 20.0],
+        },
+        Case {
+            label: "along X from a triangle on a side face",
+            prof_tf: side,
+            corners: [(30.0, -20.0), (31.0, -16.0), (30.0, -16.0)],
+            path_tf: front,
+            from: (-5.0, 30.0),
+            to: (5.0, 30.0),
+            min: [-5.0, -20.0, 30.0],
+            max: [5.0, -16.0, 31.0],
+        },
+    ];
+    let mut fails = Vec::new();
+    for c in &cases {
+        let [a, b, d] = c.corners;
+        let prof = enc::prof(&[&[enc::line(a.0, a.1, b.0, b.1), enc::line(b.0, b.1, d.0, d.1), enc::line(d.0, d.1, a.0, a.1)]]);
+        let path = enc::prof(&[&[enc::line(c.from.0, c.from.1, c.to.0, c.to.1)]]);
+        let Some(s) = Shape::sweep_profile(&prof, &c.prof_tf, &path, &c.path_tf) else {
+            fails.push(format!("{}: the sweep was not built", c.label));
+            continue;
+        };
+        let qymcad_core::geom::Built { mesh: m, .. } = s.tessellate(0.3).remove(0);
+        let got = m.bounds().expect("bbox");
+        let (min, max) = ([got.min.x, got.min.y, got.min.z], [got.max.x, got.max.y, got.max.z]);
+        if (0..3).any(|i| (min[i] - c.min[i]).abs() > 1e-3 || (max[i] - c.max[i]).abs() > 1e-3) {
+            fails.push(format!("{}: the body stands in {min:.2?} .. {max:.2?}, not over the triangle in {:?} .. {:?}", c.label, c.min, c.max));
+        }
+    }
+    assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+}
+
+#[test]
 fn loft_two_squares_makes_frustum() {
     // a loft through two square sections — 10×10 at z = 0 and 4×4 at z = 20 — giving a truncated pyramid
     use crate::Shape;

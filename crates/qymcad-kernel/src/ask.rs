@@ -98,6 +98,41 @@ pub fn clashes(bodies: &[PlacedBody<'_>], wait: Wait) -> Option<Vec<Clash>> {
     Some(out)
 }
 
+/// THE PATH A SWEEP IS ASKED TO RUN ALONG.
+#[derive(Clone, Copy, Debug)]
+pub enum SweepPath<'a> {
+    /// A path sketch: its path as the sweep takes it (`[1.0, loop_block]`) and the placement of its sketch.
+    Sketch { path: &'a [f64], place: [f64; 12] },
+}
+
+/// A SWEEP ASKED ABOUT BEFORE IT IS BUILT: the placement of the profile's sketch and the path.
+#[derive(Clone, Copy, Debug)]
+pub struct SweepAsked<'a> {
+    pub profile_place: [f64; 12],
+    pub path: SweepPath<'a>,
+}
+
+/// WHERE A SWEEP WILL RUN: the 3x4 placement that takes the profile from its sketch to where the body starts, and the
+/// path in the world as points, from the end the body starts at.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SweepRun {
+    pub place: [f64; 12],
+    pub path: Vec<[f64; 3]>,
+}
+
+/// WHERE A SWEEP WILL RUN, by the rule the sweep itself is built by - asked by its preview every frame, so with
+/// `Wait::IfFree` there is no answer (`None`) while a rebuild holds the kernel, and the preview is drawn on a later
+/// frame. `None` too when the path makes no run.
+pub fn sweep_run(asked: &SweepAsked<'_>, wait: Wait) -> Option<SweepRun> {
+    let _gate = match wait {
+        Wait::IfFree => crate::kernel::try_kernel_gate()?,
+        Wait::Always => crate::kernel::kernel_gate(),
+    };
+    match asked.path {
+        SweepPath::Sketch { path, place } => crate::shape::sweep_run_along_sketch(&asked.profile_place, path, &place),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +156,27 @@ mod tests {
             assert_eq!(clashes(&bodies, Wait::IfFree), None, "a clash was asked while a rebuild held the kernel");
         }
         assert_eq!(clashes(&bodies, Wait::IfFree), Some(vec![Clash { a: 1, b: 2 }]), "two overlapping blocks of two parts do not clash");
+    }
+
+    /// A SWEEP'S RUN ASKED WHILE A REBUILD HOLDS THE KERNEL is not waited for: its preview is asked every frame, and the
+    /// window would freeze for the rebuild. With the kernel free it is answered: a path drawn down from (10, 0, 30) to
+    /// the corner of a profile on the table runs from that corner up, the profile staying where it is drawn.
+    #[test]
+    fn a_sweep_run_is_not_asked_beside_a_rebuild() {
+        use qymcad_core::geom::{encode_loops, Point2, ProfEdge};
+        let down = encode_loops(&[&[ProfEdge::Line { a: Point2::new(10.0, 30.0), b: Point2::new(10.0, 0.0) }]]);
+        // the front plane: the sketch's X is the world X, its Y the world Z
+        let front = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let asked = SweepAsked { profile_place: PLACE_IDENTITY, path: SweepPath::Sketch { path: &down, place: front } };
+        {
+            let _rebuild = crate::kernel::kernel_gate();
+            assert_eq!(sweep_run(&asked, Wait::IfFree), None, "a sweep's run was asked while a rebuild held the kernel");
+        }
+        let run = sweep_run(&asked, Wait::IfFree).expect("the run of a sweep with the kernel free");
+        assert_eq!(run.place, PLACE_IDENTITY, "the profile drawn at the foot of the path moved");
+        let ends = [run.path[0], run.path[run.path.len() - 1]];
+        let near = |p: [f64; 3], q: [f64; 3]| (0..3).all(|c| (p[c] - q[c]).abs() < 1e-6);
+        assert!(near(ends[0], [10.0, 0.0, 0.0]) && near(ends[1], [10.0, 0.0, 30.0]), "the path runs {ends:?}, not up from the profile's corner");
     }
 
     /// THE ANSWERS ARE THOSE OF THE OPERATIONS, and the body asked about is left as it was, byte for byte.

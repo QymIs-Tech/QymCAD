@@ -292,3 +292,22 @@ impl Shape {
         }
     }
 }
+
+/// WHERE A SWEEP'S PROFILE STANDS AND THE PATH IT RUNS, as the bridge answers it into room for points: asked with room
+/// for 256 points, and again with room for all of them when they did not fit. `None` when there is no run.
+fn sweep_run_answered(ask: impl Fn(*mut f64, *mut f64, usize) -> usize) -> Option<crate::ask::SweepRun> {
+    let mut place = [0.0; 12];
+    let mut pts = vec![0.0; 3 * 256];
+    let mut n = ask(place.as_mut_ptr(), pts.as_mut_ptr(), 256);
+    if n > 256 {
+        pts = vec![0.0; 3 * n];
+        n = ask(place.as_mut_ptr(), pts.as_mut_ptr(), n);
+    }
+    (n >= 2 && 3 * n <= pts.len()).then(|| crate::ask::SweepRun { place, path: pts[..3 * n].chunks(3).map(|p| [p[0], p[1], p[2]]).collect() })
+}
+
+/// The run of a sweep of a profile placed by `profile_place` along the path sketch `path` (`[1.0, loop_block]`) placed
+/// by `path_place`, by the rule the sweep is built by.
+pub(crate) fn sweep_run_along_sketch(profile_place: &[f64; 12], path: &[f64], path_place: &[f64; 12]) -> Option<crate::ask::SweepRun> {
+    sweep_run_answered(|place, pts, cap| unsafe { qym_sweep_run(profile_place.as_ptr(), path.as_ptr(), path.len(), path_place.as_ptr(), place, pts, cap) })
+}

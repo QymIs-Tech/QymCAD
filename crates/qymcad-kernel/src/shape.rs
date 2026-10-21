@@ -78,6 +78,7 @@ extern "C" {
     fn qym_shape_revolve_profile(data: *const c_double, n: usize, axis: i32, angle_deg: c_double) -> *mut QymShape;
     fn qym_shape_revolve_profile_axis(data: *const c_double, n: usize, origin: *const f64, dir: *const f64, angle_deg: c_double, cap0: u32, cap1: u32) -> *mut QymShape;
     fn qym_shape_sweep(prof: *const c_double, np: usize, prof_tf: *const c_double, path: *const c_double, npath: usize, path_tf: *const c_double, cap0: u32, cap1: u32) -> *mut QymShape;
+    fn qym_sweep_run(prof_tf: *const c_double, path: *const c_double, npath: usize, path_tf: *const c_double, out_place: *mut c_double, out_pts: *mut c_double, cap: usize) -> usize;
     fn qym_shape_loft(data: *const c_double, ndata: usize, offsets: *const usize, nsec: usize, places: *const c_double, ruled: i32, solid: i32, cap0: u32, cap1: u32) -> *mut QymShape;
     fn qym_shape_extrude_profiles_fused(data: *const c_double, offsets: *const usize, nprof: usize, h: c_double, caps: *const u32, ncaps: usize) -> *mut QymShape;
     fn qym_shape_cylinder(r: c_double, h: c_double, cap0: u32, cap1: u32, side: u32) -> *mut QymShape;
@@ -965,6 +966,7 @@ pub(crate) fn box_mesh(dx: f64, dy: f64, dz: f64, deflection: f64) -> Mesh {
 }
 
 mod build;
+pub(crate) use build::sweep_run_along_sketch;
 mod asks;
 mod edges;
 mod ops;

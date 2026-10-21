@@ -219,6 +219,83 @@ probe! {
     }
 }
 
+/// A path of a sweep up the front plane, as drawn: from `from` to `to`, in the plane's own X and Z.
+struct Path {
+    label: &'static str,
+    from: (f64, f64),
+    to: (f64, f64),
+}
+
+probe! {
+    /// A SWEEP STARTS AT ITS PROFILE WHERE IT IS DRAWN: a 6 x 4 rectangle drawn on the table away from the origin, a
+    /// path up the front plane from its corner - drawn from the corner or down to it. The body stands over the
+    /// rectangle, 30 tall. Reported behaviour: the body stood away from the profile, carried by its sketch's origin to
+    /// the start of the path, and with the path drawn the other way it was turned over as well.
+    fn a_sweep_starts_at_its_profile_where_it_is_drawn() {
+        let mut fails = Vec::new();
+        let paths = [Path { label: "up from the corner", from: (10.0, 0.0), to: (10.0, 30.0) }, Path { label: "down to the corner", from: (10.0, 30.0), to: (10.0, 0.0) }];
+        for path in &paths {
+            let mut s = Session::start();
+            build::into_the_first_part(&mut s);
+            on_plane(&mut s, "plane-xy-table");
+            build::draw(&mut s, "tb-rect-hint", &[(10.0, 0.0), (16.0, 4.0)]);
+            finish(&mut s);
+            on_plane(&mut s, "plane-xz-front");
+            build::line(&mut s, path.from, path.to);
+            finish(&mut s);
+            s.key(Key::Escape);
+            let (profile, along) = (s.document().sketches[0].name.clone(), s.document().sketches[1].name.clone());
+            tree_row(&mut s, &profile);
+            let sweep = s.word("tb-sweep-hint");
+            s.press_hint(&sweep);
+            tree_row(&mut s, &along);
+            s.key(Key::Enter);
+            let now = body(&mut s);
+            let (min, max) = ([10.0, 0.0, 0.0], [16.0, 4.0, 30.0]);
+            if (0..3).any(|i| (now.min[i] - min[i]).abs() > 1e-3 || (now.max[i] - max[i]).abs() > 1e-3) {
+                fails.push(format!("{}: the body stands in {:.2?} .. {:.2?}, not over the rectangle in {min:?} .. {max:?}", path.label, now.min, now.max));
+            }
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+probe! {
+    /// A SWEEP ALONG AN ARC FROM A TRIANGLE ON A FACE STANDS ON THE FACE (a private sample): a triangle drawn on the
+    /// side face of a ring, an arc on its front face from the triangle's corner, around the ring. The body runs along the
+    /// arc from the triangle, within the arc's 10 mm span across X and the triangle's 4 mm across Y. Reported behaviour:
+    /// the body was built 32 mm off, by the profile sketch's origin.
+    fn a_sweep_along_an_arc_from_a_triangle_on_a_face_stands_on_the_face() {
+        let Some(path) = qymcad_acceptance::private_sample("issue-239/project.qcad") else { return };
+        let mut s = Session::start();
+        build::open_project(&mut s, &path);
+        let part = s.document().parts.first().map(|p| p.name.clone()).unwrap_or_else(|| panic!("the sample holds no part"));
+        let row = s.find(&part, qymcad::pos2(0.0, 300.0)).unwrap_or_else(|| panic!("the part {part:?} is not in the tree"));
+        s.double_click(row.center());
+        s.key(Key::Escape);
+        // the last two sketches of the sample: the triangle on the side face, then the arc on the front face
+        let sketches: Vec<String> = s.document().sketches.iter().map(|k| k.name.clone()).collect();
+        let [.., triangle, arc] = sketches.as_slice() else { panic!("the sample holds fewer than two sketches: {sketches:?}") };
+        tree_row(&mut s, triangle);
+        let sweep = s.word("tb-sweep-hint");
+        s.press_hint(&sweep);
+        tree_row(&mut s, arc);
+        let before: Vec<String> = s.document().bodies.iter().map(|b| b.name.clone()).collect();
+        s.key(Key::Enter);
+        let doc = s.document();
+        let red: Vec<_> = doc.features.iter().filter(|f| matches!(f.kind.as_str(), "Sweep" | "BodyBoolean") && f.error.is_some()).collect();
+        assert!(red.is_empty(), "the sweep did not build: {red:?}; the program says {:?}", s.status());
+        let made = doc.bodies.iter().find(|b| !before.contains(&b.name)).unwrap_or_else(|| panic!("the sweep made no body: {:?}", doc.bodies));
+        // The triangle stands on x = -5.05, y from -20 to -15.86, z from 31.73 to 32.73; the arc about the Y axis in
+        // y = -20 turns it by 17.96 deg, from x = -5.05 to x = 4.98 at radius 32.13. Its outer corner, at radius 33.12,
+        // ends at x = 33.12 sin(9.19 deg) = 5.29 and passes over the top at z = 33.12; its inner edge keeps to 31.73
+        // at both ends. The body the old placement built stood at y 11.7 .. 12.7, z 12.0 .. 16.3.
+        let (min, max) = ([-5.047, -20.0, 31.732], [5.288, -15.861, 33.117]);
+        let off = (0..3).any(|i| (made.min[i] - min[i]).abs() > 0.01 || (made.max[i] - max[i]).abs() > 0.01);
+        assert!(!off, "the body stands in {:.3?} .. {:.3?}, not along the arc from the triangle in {min:?} .. {max:?}", made.min, made.max);
+    }
+}
+
 probe! {
     /// LOFT: the body runs from one section to the other, and its volume is the one the two sections and the distance
     /// between them give.
