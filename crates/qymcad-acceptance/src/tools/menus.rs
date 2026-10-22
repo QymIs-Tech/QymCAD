@@ -25,12 +25,12 @@ const SHOWS: &[(u8, &str)] = &[
 
 /// An item of the menus that opens the window of this title, and lays no step of undo.
 macro_rules! shows {
-    ($name:ident, $id:literal, $path:expr, $title:literal, $help:literal) => {
+    (@by $name:ident, $id:literal, $entries:expr, $title:literal, $help:literal) => {
         pub static $name: Tool = Tool {
             id: $id,
             flow: Flow::Action,
             title: $title,
-            entries: &[Entry::Menu($path)],
+            entries: $entries,
             other: (Entry::Button("tb-mirror-body-hint"), "cmd-mirror"),
             fixture: Fixture::FirstPart,
             picks: &[],
@@ -53,6 +53,9 @@ macro_rules! shows {
             not_applicable: SHOWS,
         };
     };
+    ($name:ident, $id:literal, $path:expr, $title:literal, $help:literal) => {
+        shows!(@by $name, $id, &[Entry::Menu($path)], $title, $help);
+    };
 }
 
 shows!(SETTINGS, "menu.settings", &["menu-windows", "menu-settings"], "win-settings", "general/07-settings");
@@ -60,6 +63,9 @@ shows!(PARTS_LIBRARY, "menu.parts-library", &["menu-windows", "menu-parts-librar
 shows!(START_SCREEN, "menu.start-screen", &["menu-windows", "win-start"], "start-title", "general/01-window");
 shows!(HOTKEYS, "menu.hotkeys", &["menu-help", "help-hotkeys"], "hotkeys-title", "general/10-hotkeys");
 shows!(REPORT, "menu.report", &["menu-help", "help-report"], "report-title", "general/13-report");
+
+// the search of the commands, opened by Ctrl+K: the way into any tool the article of how any tool works starts with
+shows!(@by COMMAND_SEARCH, "menu.command-search", &[Entry::Key(qymcad::Modifiers::COMMAND, qymcad::Key::K)], "cs-title", "general/16-tools");
 
 /// What the items of history leave out: they act on the document as it stands, and take nothing.
 const HISTORY: &[(u8, &str)] = &[

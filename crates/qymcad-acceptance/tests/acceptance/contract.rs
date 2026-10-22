@@ -77,6 +77,7 @@ contract!(comp_linear_pattern, qymcad_acceptance::tools::assembly::COMP_LINEAR_P
 contract!(comp_circular_pattern, qymcad_acceptance::tools::assembly::COMP_CIRCULAR_PATTERN);
 contract!(mirror_part, qymcad_acceptance::tools::assembly::MIRROR_PART);
 contract!(menu_settings, qymcad_acceptance::tools::menus::SETTINGS);
+contract!(menu_command_search, qymcad_acceptance::tools::menus::COMMAND_SEARCH);
 contract!(menu_parts_library, qymcad_acceptance::tools::menus::PARTS_LIBRARY);
 contract!(menu_start_screen, qymcad_acceptance::tools::menus::START_SCREEN);
 contract!(menu_hotkeys, qymcad_acceptance::tools::menus::HOTKEYS);
