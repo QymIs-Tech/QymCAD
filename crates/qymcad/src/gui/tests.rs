@@ -189,3 +189,6 @@ mod the_tool_in_hand_after_its_work;
 
 #[cfg(test)]
 mod the_key_of_the_tool_in_hand_puts_it_down;
+
+#[cfg(test)]
+mod finish_climbs_the_tree;

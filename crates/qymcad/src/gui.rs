@@ -897,7 +897,7 @@ impl App {
         si
     }
 
-    /// Enter a component (drill in): remember the camera, go one level down, fit the view.
+    /// Enter a component (drill in): the path becomes its place in the tree, the view is fitted.
     pub(crate) fn enter_component(&mut self, cid: Id) {
         if self.sketch_ses.editing.is_some() {
             self.finish_sketch_edit();
@@ -908,8 +908,7 @@ impl App {
         }
         self.cancel_all_tools(); // entering a component drops the active tool (nothing is carried in from the parent context)
         self.tree.search.clear(); // and the search query: it was about the PREVIOUS context, here it lies
-        self.viewing.nav_stash.push((self.viewing.cam, self.viewing.view, self.viewing.mode_3d));
-        self.active_path = qymcad_ui_state::path_into(&self.active_path, &self.project, cid); // a clone lands in its original
+        qymcad_ui_state::step_into(&mut self.viewing, &mut self.active_path, &self.project, cid);
         self.chosen.sel = Sel::None;
         self.viewing.view.initialized = false;
         self.viewing.cam.init = false;

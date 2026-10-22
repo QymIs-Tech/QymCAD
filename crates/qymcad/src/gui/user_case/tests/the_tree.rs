@@ -54,6 +54,8 @@ pub(super) fn a_nested_assembly(app: &mut App, problems: &mut Vec<String>) {
         problems.push(format!("after working in the subassembly the ROOT gained builds: there were {root_bodies_before}, now {}", bodies_in_root(app)));
     }
 
+    a_link_leads_to_the_place_in_the_tree(app, body, problems);
+
     // go back up - the context must return and the subassembly must stay in the tree
     app.set_context_to(root);
     if qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) != root {
@@ -65,3 +67,42 @@ pub(super) fn a_nested_assembly(app: &mut App, problems: &mut Vec<String>) {
     check_all(app, "a nested assembly", problems);
 }
 
+/// A LINK LEADS TO THE PLACE IN THE TREE AND "FINISH" CLIMBS IT: the height of `body` named in the parameters, the
+/// person at the root clicks the path of that driver in the window of parameters and lands in the part of the body -
+/// the path above the canvas its chain of ancestors - and "Finish" pressed once per level comes back to the root.
+/// Reported behaviour: each jump by a link was appended to the path it started from, and "Finish" walked back along the
+/// jumps.
+fn a_link_leads_to_the_place_in_the_tree(app: &mut App, body: qymcad_core::model::Id, problems: &mut Vec<String>) {
+    let step = "a link of a driver into the part of a subassembly";
+    let node = app.project.timeline.iter().find(|n| n.kind.body() == Some(body)).map(|n| n.id);
+    let Some(part) = app.project.body_owner(body).filter(|_| node.is_some()) else {
+        problems.push(format!("[{step}] the body built in the subassembly has no node or no part"));
+        return;
+    };
+    let node = node.unwrap_or_default();
+    let root = app.project.root;
+    let driver = "inner_h".to_string();
+    app.project.add_named_feat_dim(driver.clone(), node, "height");
+    app.set_context_to(root);
+    let mut hand = Hand::new(app);
+    hand.press_word(&crate::i18n::tr("wb-params"), egui::pos2(0.0, 0.0));
+    let path = hand.app.project.named_dims.iter().find(|d| d.name == driver).map(|d| qymcad_ui_state::path_in_words(&hand.app.project.driver_path(&d.target))).unwrap_or_default();
+    hand.frame(Vec::new());
+    let near = hand.window_at("win_params").map_or(egui::pos2(0.0, 0.0), |w| w.center());
+    if !hand.press_word(&path, near) {
+        problems.push(format!("[{step}] the window of parameters shows no path {path:?}"));
+    }
+    let tree = qymcad_ui_state::context_path_to(&hand.app.project, part);
+    if hand.app.active_path != tree {
+        problems.push(format!("[{step}] the path is {:?}, the place of the part in the tree is {tree:?}", hand.app.active_path));
+    }
+    hand.close_titled(&crate::i18n::tr("win-params"));
+    for _ in 1..tree.len() {
+        hand.press_word(&crate::i18n::tr("wb-finish"), egui::pos2(0.0, 0.0));
+    }
+    hand.close_window();
+    if hand.app.active_path != vec![root] {
+        problems.push(format!("[{step}] \"Finish\" pressed {} times left the path {:?}, not the root", tree.len() - 1, hand.app.active_path));
+    }
+    check_all(app, step, problems);
+}
