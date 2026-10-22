@@ -51,6 +51,8 @@ pub trait Doors {
     fn back(&mut self) -> Stepped {
         Stepped::NothingLeft
     }
+    /// Enter was refused with `words`: the tool may say them where its workbench speaks besides the plate of the frame.
+    fn refused(&mut self, _words: &Notice) {}
 }
 
 /// GO THROUGH THE DOOR THE ANSWER OF THE FRAME NAMES: Apply applies, and a refusal is said where the tool speaks, while
@@ -58,11 +60,14 @@ pub trait Doors {
 /// go of puts the tool down.
 pub fn go_through(ctx: &egui::Context, gate: &Gate, verdict: Verdict, doors: &mut dyn Doors) {
     match verdict {
-        // a refused Enter is said by the frame as it answers
-        Verdict::Stay | Verdict::Refused(_) => {}
+        Verdict::Stay => {}
+        // a refused Enter is said by the frame as it answers, and told to the tool
+        Verdict::Refused(words) => doors.refused(&words),
         Verdict::Apply => {
             if let Err(why) = doors.apply() {
-                remember_refusal(ctx, gate, &why.said());
+                let said = why.said();
+                remember_refusal(ctx, gate, &said);
+                doors.refused(&said);
             }
         }
         Verdict::Cancel => doors.cancel(),

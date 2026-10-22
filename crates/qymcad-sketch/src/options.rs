@@ -334,6 +334,9 @@ pub(crate) fn opt_took(sk: &mut qymcad_ui_state::SketchCtx, did: Did) {
                 // the field of a corner already open takes the keys back: the click on the word took them, and the values
                 // typed after choosing two distances on a chamfer of two lines chosen before the tool went nowhere
                 sk.corner.focus |= sk.corner.at.is_some();
+                // and its fields are made anew of the values of the way chosen: opened in the way before it, the second
+                // field of two distances held the 0 of the symmetric chamfer, refused as nothing, and Enter cut nothing
+                sk.corner.fields.clear();
             }
             _ => {}
         },

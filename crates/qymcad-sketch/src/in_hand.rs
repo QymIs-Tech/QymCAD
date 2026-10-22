@@ -179,6 +179,11 @@ impl FramedTool for InSketch<'_, '_> {
         self.sk.draw()
     }
 
+    /// A refused Enter is said on the status line of the sketch too, as the boxes of a sketch said it on main.
+    fn refused(&mut self, words: &Notice) {
+        *self.sk.status = words.clone();
+    }
+
     /// An option of a row of a size of the shape in the box - kept until Enter lays it - or of the bar.
     fn took(&mut self, did: Did) {
         if let (Boxed::Shape, qymcad_ui_state::Sel::Sketch(si)) = (self.boxed, *self.sk.sel) {

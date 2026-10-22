@@ -32,6 +32,9 @@ pub trait FramedTool {
     fn finished_by_click(&mut self) -> bool {
         false
     }
+    /// ENTER WAS REFUSED with `words` - by the gate, or by the apply: said on the plate of the frame, and where the
+    /// workbench says what its tools did, if it says it elsewhere.
+    fn refused(&mut self, _words: &Notice) {}
     /// Esc with no field holding the keyboard: let go of one thing, or say there is nothing left to let go of - a tool
     /// that picks nothing along the way has nothing, and Esc puts it down.
     fn back(&mut self) -> Stepped {
@@ -253,5 +256,9 @@ impl Doors for Through<'_, '_> {
 
     fn back(&mut self) -> Stepped {
         self.tool.back()
+    }
+
+    fn refused(&mut self, words: &Notice) {
+        self.tool.refused(words);
     }
 }

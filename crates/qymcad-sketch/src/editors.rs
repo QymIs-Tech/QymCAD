@@ -338,6 +338,11 @@ impl FramedTool for DimEdit<'_, '_> {
         self.sk.draw()
     }
 
+    /// A refused Enter is said on the status line of the sketch too, as the boxes of a sketch said it on main.
+    fn refused(&mut self, words: &Notice) {
+        *self.sk.status = words.clone();
+    }
+
     fn took(&mut self, did: Did) {
         let sk = &mut *self.sk;
         let asked = match did {
@@ -817,7 +822,13 @@ impl FramedTool for CornerEdit<'_, '_> {
         let corner = if self.at.chamfer == Cut::Chamfer { Corner::Chamfer } else { Corner::Fillet };
         let name = if corner == Corner::Chamfer { "tool-chamfer" } else { "tool-fillet" };
         let rect = sk.canvas;
-        let spot = corner_box_spot(&corner_ctx(sk), rect, self.at.si, standing.first().copied(), corner == Corner::Chamfer);
+        // A VALUE THE CORNER CANNOT BE CUT BY draws no preview, and the box stands by the point of the corner then, as on
+        // main: gone from under the keys, it took the value typed and the Enter that was to refuse it
+        let spot = corner_box_spot(&corner_ctx(sk), rect, self.at.si, standing.first().copied(), corner == Corner::Chamfer).or_else(|| {
+            let (pid, _) = standing.first().copied()?;
+            let at = qymcad_ui_state::Sheet { view: *sk.view, rect }.at(qymcad_ui_state::sketch_pt(&*sk.project, self.at.si, pid)?);
+            Some(BoxSpot { at, around: vec![at] })
+        });
         let Some(spot) = spot else {
             return Described { head: head(ph::BEZIER_CURVE, name), bar, gate, says: Vec::new(), boxed: None };
         };
@@ -848,6 +859,11 @@ impl FramedTool for CornerEdit<'_, '_> {
 
     fn look(&self) -> qymcad_ui_state::DrawCtx<'_> {
         self.sk.draw()
+    }
+
+    /// A refused Enter is said on the status line of the sketch too, as the boxes of a sketch said it on main.
+    fn refused(&mut self, words: &Notice) {
+        *self.sk.status = words.clone();
     }
 
     /// A name typed under a value is kept until the cut; anything else is the bar's.
@@ -1000,6 +1016,11 @@ impl FramedTool for OffsetEdit<'_, '_> {
 
     fn look(&self) -> qymcad_ui_state::DrawCtx<'_> {
         self.sk.draw()
+    }
+
+    /// A refused Enter is said on the status line of the sketch too, as the boxes of a sketch said it on main.
+    fn refused(&mut self, words: &Notice) {
+        *self.sk.status = words.clone();
     }
 
     /// The copy made, and the distance named: the first dimension the copy lays takes the name, the others read it.

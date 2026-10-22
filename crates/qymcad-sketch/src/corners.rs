@@ -303,8 +303,11 @@ pub(crate) fn corner_apply(cc: &mut qymcad_ui_state::CornerCtx, of: CornerOf) ->
     } else {
         qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
     }
+    // A VALUE THE CORNERS CANNOT TAKE is said on the status line as on main, and the box stays open on it
     if cut == 0 {
-        return Err(qymcad_ui_state::NotApplied::Refused(qymcad_i18n::tr("sk-fillet-too-big")));
+        let why = qymcad_i18n::tr("sk-fillet-too-big");
+        *cc.status = Notice::refusal(why.clone());
+        return Err(qymcad_ui_state::NotApplied::Refused(why));
     }
     // THE CHOSEN LINES THAT THE KNIFE HAS CONSUMED GO OUT OF THE SELECTION: a line that is no longer there cannot stand
     // lit; what is left is what a further click would work on
