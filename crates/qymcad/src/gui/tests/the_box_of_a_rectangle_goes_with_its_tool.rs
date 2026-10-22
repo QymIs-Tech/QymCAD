@@ -11,7 +11,7 @@ use qymcad_core::feature::SketchPlane;
 
 /// The words of the box of sizes, as the person sees them.
 fn width_word() -> String {
-    crate::i18n::tr("sk-width-short")
+    crate::i18n::tr("sk-width")
 }
 
 #[test]

@@ -1286,7 +1286,7 @@ hint-path-sketch = укажите эскиз-траекторию в дерев�
 hint-count-dir-step = кол-во/направление сверху -> шаг у геометрии -> Enter
 hint-count-axis-angle = кол-во/ось сверху -> угол у геометрии -> Enter
 f-rotation-centre = центра вращения
-f-number-or-expr = число / w/2
+f-number-or-expr = 50 или w/2
 
 # --- СКЕТЧЕР ---
 sk-enter-apply-expr = Enter — применить · ƒ можно w/2, len+5, pi
@@ -2375,9 +2375,9 @@ msg-profiles-n = Профилей: { $n } — указывайте ещё; Enter
 sk-r-all-corners = R всех углов
 sk-filleted-n = Скруглено углов: { $n }
 sk-fillet-too-big = Не удалось: уменьши значение (не влезает в рёбра угла)
-sk-length-short = Д
-sk-width-short = Ш
-sk-height-short = В
+sk-length = Длина
+sk-width = Ширина
+sk-height = Высота
 sk-dim-conflict = Конфликт размеров: значение противоречит геометрии — измените значение или удалите лишний
 sk-driven-dim-hint = Справочный размер — геометрия уже определена. Перемещайте — выносится
 sk-drag-dim-hint = Перемещайте мышь — размер выносится; укажите, чтобы поставить

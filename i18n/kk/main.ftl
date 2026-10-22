@@ -1284,7 +1284,7 @@ hint-path-sketch = ағаштан траектория эскизін шерті
 hint-count-dir-step = жоғарыда саны мен бағыты, геометрия жанында қадам, содан соң Enter
 hint-count-axis-angle = жоғарыда саны мен ось, геометрия жанында бұрыш, содан соң Enter
 f-rotation-centre = айналу центрі
-f-number-or-expr = сан не w/2
+f-number-or-expr = 50 не w/2
 
 # --- SKETCHER ---
 sk-enter-apply-expr = Enter — қолдану · ƒ w/2, len+5, pi қабылдайды
@@ -2369,9 +2369,9 @@ msg-profiles-n = Профильдер: { $n } — тағы шертіңіз; Ent
 sk-r-all-corners = Барлық бұрыштардың R
 sk-filleted-n = Дөңгелектелген бұрыштар: { $n }
 sk-fillet-too-big = Орындалмады: мәнді азайтыңыз (бұрыш қырларына сыймайды)
-sk-length-short = Ұ
-sk-width-short = Е
-sk-height-short = Б
+sk-length = Ұзындық
+sk-width = Ені
+sk-height = Биіктік
 sk-dim-conflict = Өлшемдер қайшылығы: мән геометрияға қайшы — оны өзгертіңіз не артығын алып тастаңыз
 sk-driven-dim-hint = Анықтамалық өлшем — геометрия қазірдің өзінде анықталған. Орналастыру үшін сүйреңіз
 sk-drag-dim-hint = Өлшемді орналастыру үшін тінтуірді жылжытыңыз; қою үшін шертіңіз

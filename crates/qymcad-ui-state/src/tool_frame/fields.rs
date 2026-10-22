@@ -24,6 +24,8 @@ pub struct FieldsBox<'a> {
     pub layout: &'a Layout,
     /// The tool's own word on whether it can be applied: the picks, the trial build. The fields are judged by the frame.
     pub gate: &'a Gate,
+    /// The fields named as drivers: the row of each name stands under its field.
+    pub names: &'a [FieldName],
 }
 
 /// The id of field `key` of the box of tool `tool`: the field keeps what is typed into it under it, and a check reaches
@@ -54,11 +56,19 @@ pub(crate) struct BoxLook<'a> {
 /// whether Enter was pressed in it.
 fn field_row(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, id: egui::Id, focus: Focus) -> FieldSays {
     ui.label(field_caption(p));
-    field_input(ui, look, p, id, focus)
+    field_input(ui, look, p, id, Input { focus, note: Note::Beside })
+}
+
+/// HOW A FIELD IS DRAWN: whether it takes the keyboard in this frame, and where what its formula comes to is said.
+#[derive(Clone, Copy)]
+pub(crate) struct Input {
+    pub focus: Focus,
+    pub note: Note,
 }
 
 /// The formula of one field, its caption standing elsewhere - in the row of a section.
-pub(crate) fn field_input(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, id: egui::Id, focus: Focus) -> FieldSays {
+pub(crate) fn field_input(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, id: egui::Id, how: Input) -> FieldSays {
+    let Input { focus, note } = how;
     let o = expr_field_autofocus(ui, look.project, id, &p.txt, 74.0, &qymcad_i18n::tr("f-number-or-expr"), focus == Focus::Takes);
     p.txt = o.text;
     let enter = o.resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -69,12 +79,22 @@ pub(crate) fn field_input(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, i
     if o.cancelled {
         did.push(FieldDid::LeftByEsc);
     }
-    FieldSays { value: field_value(p, &look.project.param_map()), enter, did }
+    let value = field_value(p, &look.project.param_map());
+    // A FORMULA SAYS WHAT IT COMES TO beside itself (`w/2` -> `= 15`): a plain number says it already. A row that says it
+    // under the field (`Note::Under`) says it there, the number included
+    let formula = p.txt.trim().parse::<f64>().is_err();
+    match &value {
+        Ok(v) if formula && note == Note::Beside => {
+            ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(*v, 3))).weak().small());
+        }
+        _ => {}
+    }
+    FieldSays { value, enter, did }
 }
 
 /// WHAT A FIELD SAID IN A FRAME: its value or why it has none, whether Enter was pressed in it, and what else it did.
 pub(crate) struct FieldSays {
-    value: Result<f64, String>,
+    pub(crate) value: Result<f64, String>,
     enter: bool,
     did: Vec<FieldDid>,
 }
@@ -131,7 +151,7 @@ impl Typed {
 /// Enter in a field applies through the gate; a field refusing its value marks itself with why and shuts the gate, and
 /// a refused Enter is said with the words of the tool. `b.gate` is the tool's own - the picks and the trial build; the
 /// fields are judged here, as they are typed. The box stands in the view `rect` of what `draw` draws.
-pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &FieldsBox, fields: &mut [CmdParam]) -> Answer {
+pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &FieldsBox, fields: &mut [CmdParam], numbers: Option<&mut ExprBarCtx>) -> Answer {
     let basis = draw.cam.basis();
     let here = current_ctx_id(draw.active_path, draw.project);
     let look = &BoxLook { project: draw.project, pal: &draw.scheme.pal, screen: Screen { cam: draw.cam, set: draw.set, rect, basis: &basis }, here };
@@ -170,7 +190,11 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
         at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             let drawing = Drawing { b, look, trial: trial.as_ref() };
-            let drawn = draw_rows(ui, &drawing, fields, layout, b.focus);
+            let drawn = draw_rows(ui, &drawing, fields, layout, Rows { focus: b.focus, numbers });
+            // HOW A VALUE IS TYPED, said in every box that has a value to type: Enter applies, a formula is taken
+            if !shown_keys(ui.ctx(), fields, b, layout).is_empty() || layout.sections.iter().flat_map(|s| &s.rows).flat_map(|r| &r.cells).any(|c| matches!(c, Cell::Opt(Opt::Number { .. }))) {
+                ui.label(egui::RichText::new(qymcad_i18n::tr("sk-enter-apply-expr")).weak().small());
+            }
             seen.add(drawn.typed);
             did = drawn.did;
             let can = if shut_by(gate, &seen, ui.ctx()).open() { Can::Yes } else { Can::No };

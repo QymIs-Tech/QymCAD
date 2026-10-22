@@ -47,6 +47,18 @@ pub struct Row {
     pub caption: String,
     pub cells: Vec<Cell>,
     pub unit: Option<String>,
+    /// where what the formula of its field comes to is said: beside a formula, or under the row, the number included
+    pub note: Note,
+}
+
+/// WHERE A ROW SAYS WHAT ITS FORMULA COMES TO, or why it cannot be taken: beside a formula, a plain number saying it
+/// already - or on a line of its own under the row, always, as the box of a dimension says it (`= 42.500`, or the words
+/// of the error where a mark beside the field would hide them under the pointer).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Note {
+    #[default]
+    Beside,
+    Under,
 }
 
 /// WHAT STANDS IN A ROW: a field of the tool by its key, with a short tag before it where the row holds several (X, Y,
@@ -59,7 +71,13 @@ pub enum Cell {
 impl Row {
     /// A row with its caption and nothing after it yet.
     pub fn new(caption: impl Into<String>) -> Row {
-        Row { caption: caption.into(), cells: Vec::new(), unit: None }
+        Row { caption: caption.into(), cells: Vec::new(), unit: None, note: Note::Beside }
+    }
+
+    /// The same row saying what its formula comes to - or why it cannot be taken - on a line under it.
+    pub fn said_under(mut self) -> Row {
+        self.note = Note::Under;
+        self
     }
 
     /// The same row with field `key` after what it holds.
@@ -153,16 +171,18 @@ pub(crate) struct Drawing<'a, 'b> {
 
 /// WHAT THE ROWS OF A BOX CAME TO: the fields typed, the options touched, and whether the first field shown has taken
 /// the keyboard it was given.
-pub(crate) struct Drawn {
+pub(crate) struct Drawn<'n, 'p> {
     pub typed: Typed,
     pub did: Vec<Did>,
     pub focus: Focus,
+    /// where a number of the tool keeps its formula: the numbers of the bar are typed in the box
+    pub numbers: Option<&'n mut ExprBarCtx<'p>>,
 }
 
 /// DRAW THE ROWS OF A BOX: the fields of their own rows and the sections, a grid of the caption and the value each, the
 /// title of a section a button that folds it.
-pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], layout: &Layout, focus: Focus) -> Drawn {
-    let mut drawn = Drawn { typed: Typed::default(), did: Vec::new(), focus };
+pub(crate) fn draw_rows<'n, 'p>(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], layout: &Layout, how: Rows<'n, 'p>) -> Drawn<'n, 'p> {
+    let mut drawn = Drawn { typed: Typed::default(), did: Vec::new(), focus: how.focus, numbers: how.numbers };
     let placed = sections_of(fields, d.b, layout);
     let mut lead = Vec::new();
     for p in &placed {
@@ -195,8 +215,15 @@ pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam],
     drawn
 }
 
+/// HOW THE ROWS OF A BOX ARE DRAWN: whether the first field takes the keyboard, and where the numbers of the tool keep
+/// their formulas.
+pub(crate) struct Rows<'n, 'p> {
+    pub focus: Focus,
+    pub numbers: Option<&'n mut ExprBarCtx<'p>>,
+}
+
 /// The rows given, as a grid of two columns: the caption, and the fields and options after it on one line.
-fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], id: egui::Id, drawn: &mut Drawn) {
+fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], id: egui::Id, drawn: &mut Drawn<'_, '_>) {
     let held = |fields: &[CmdParam], key: &str| fields.iter().any(|p| p.key == key && p.at.is_none() && !d.b.hidden.contains(&key));
     egui::Grid::new(id).num_columns(2).spacing(egui::vec2(10.0, 4.0)).show(ui, |ui| {
         for row in rows {
@@ -206,6 +233,7 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
             ui.label(row.caption.as_str());
             // the unit stands right after the last field of the row, before a switch or a button after it
             let last = row.cells.iter().rposition(|c| matches!(c, Cell::Field { .. }));
+            let mut under: Option<Result<f64, String>> = None;
             ui.horizontal(|ui| {
                 for (n, cell) in row.cells.iter().enumerate() {
                     match cell {
@@ -214,11 +242,17 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
                             if let Some(tag) = tag {
                                 ui.label(egui::RichText::new(tag.as_str()).weak());
                             }
-                            let said = field_input(ui, d.look, p, field_id(d.b.tool, &p.key), drawn.focus);
+                            let said = field_input(ui, d.look, p, field_id(d.b.tool, &p.key), Input { focus: drawn.focus, note: row.note });
+                            if row.note == Note::Under {
+                                under = Some(said.value.clone());
+                            }
                             drawn.focus = Focus::Waits;
                             drawn.typed.add(judge(ui, d.look.pal, p, said, d.trial));
                         }
-                        Cell::Opt(o) => drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o), None)),
+                        Cell::Opt(o) => {
+                            let did = draw_opts(ui, d.look.pal, std::slice::from_ref(o), drawn.numbers.as_deref_mut());
+                            drawn.did.extend(did);
+                        }
                     }
                     if Some(n) == last {
                         if let Some(unit) = &row.unit {
@@ -228,6 +262,61 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
                 }
             });
             ui.end_row();
+            // WHAT THE FORMULA COMES TO, or the words of why it cannot be taken, on a line of its own under the row. The line
+            // stands in every frame, empty when there is nothing to say (a reference shows no field): a grid keeps the
+            // height of a row by its place, and a line there in one frame and not in the next moved every row under it by
+            // 27.5 points - the field of a name came under the pointer resting on the words of its refusal.
+            if row.note == Note::Under {
+                ui.label("");
+                match under {
+                    Some(Ok(v)) => {
+                        ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(v, 3))).weak().small());
+                    }
+                    Some(Err(why)) => {
+                        under_words(ui, |ui| say(ui, d.look.pal, &Notice::refusal(why), NoticeSize::Small));
+                    }
+                    None => {
+                        ui.label("");
+                    }
+                }
+                ui.end_row();
+            }
+            // THE NAME OF A FIELD OF THE ROW, on a row of its own under it - a field hidden now keeps its name: a reference
+            // dimension shows its value and is still read by its name
+            for cell in &row.cells {
+                let Cell::Field { key, .. } = cell else { continue };
+                let Some(n) = d.b.names.iter().find(|n| n.field == *key) else { continue };
+                let Some(at) = fields.iter().position(|p| p.key == *key) else { continue };
+                let named = name_row(at, n);
+                ui.label(named.caption.as_str());
+                ui.horizontal(|ui| {
+                    for c in &named.cells {
+                        if let Cell::Opt(o) = c {
+                            drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o), None));
+                        }
+                    }
+                });
+                ui.end_row();
+                // WHY THE NAME WILL NOT DO, on a line of its own under it, as what a formula comes to stands under its field
+                if let Some(u) = &n.unfit {
+                    ui.label("");
+                    under_words(ui, |ui| say(ui, d.look.pal, &Notice::warning(u.said.clone()), NoticeSize::Small).on_hover_text(&u.hint));
+                    ui.end_row();
+                }
+            }
         }
+    });
+}
+
+/// HOW WIDE THE WORDS UNDER A FIELD RUN before they wrap: a refusal of a sentence or two stood as one line of 632 points,
+/// the box grew to it in the frame after it was first laid narrow, and the rule laid the box anew elsewhere - under the
+/// pointer resting on the words there came the canvas.
+const UNDER_WORDS: f32 = 260.0;
+
+/// Words under a field, wrapped at the one width every box keeps them to.
+fn under_words(ui: &mut egui::Ui, words: impl FnOnce(&mut egui::Ui) -> egui::Response) {
+    ui.vertical(|ui| {
+        ui.set_max_width(UNDER_WORDS);
+        words(ui);
     });
 }

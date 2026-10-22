@@ -49,3 +49,17 @@ fn a_length_and_a_width_set_are_the_slot_s() {
     }
     assert_eq!(p.sketches[si].figures.len(), 1, "the slot is no longer a figure");
 }
+
+#[test]
+fn a_size_of_a_slot_tells_the_dimension_it_is_held_by() {
+    let mut p = Project::default();
+    let si = p.new_sketch("slot");
+    p.add_slot_entity(si, Point2::new(10.0, 8.0), Point2::new(20.0, 8.0), 3.0, Purpose::Real);
+    let side = p.sketches[si].figures[0].curves[0];
+    assert_eq!(p.slot_size_dim(si, side, SlotSize::Length), None, "a slot drawn tells a dimension it does not hold");
+    p.set_slot_size(si, side, SlotSize::Width, 8.0);
+    p.set_slot_size(si, side, SlotSize::Length, 15.0);
+    let held = |which: SlotSize| p.slot_size_dim(si, side, which).and_then(|ci| p.sketches[si].constraints.get(ci)).and_then(Constraint::dim_value);
+    assert_eq!(held(SlotSize::Length), Some(15.0), "the length is not told by its own dimension");
+    assert_eq!(held(SlotSize::Width), Some(8.0), "the width is not told by its own dimension");
+}

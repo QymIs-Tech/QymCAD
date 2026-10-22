@@ -243,7 +243,7 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
         hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(10.0, 0.0);
-        assert!(hand.app.tools.inline.circle().is_some(), "the circle drawn opened no field of its diameter");
+        assert!(hand.app.tools.place.round().is_some(), "the circle drawn opened no field of its diameter");
         hand.type_text("20").key(egui::Key::Enter);
 
         let s = &app.project.sketches[si];

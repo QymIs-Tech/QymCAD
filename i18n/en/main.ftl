@@ -1286,7 +1286,7 @@ hint-path-sketch = click the path sketch in the tree (the profile is placed on i
 hint-count-dir-step = count and direction above, the step at the geometry, then Enter
 hint-count-axis-angle = count and axis above, the angle at the geometry, then Enter
 f-rotation-centre = the centre of rotation
-f-number-or-expr = a number or w/2
+f-number-or-expr = 50 or w/2
 
 # --- SKETCHER ---
 sk-enter-apply-expr = Enter applies it · ƒ accepts w/2, len+5, pi
@@ -2375,9 +2375,9 @@ msg-profiles-n = Profiles: { $n } — click more; Enter sets the size; Esc cance
 sk-r-all-corners = R of every corner
 sk-filleted-n = Corners filleted: { $n }
 sk-fillet-too-big = It did not work: make the value smaller (it does not fit the corner edges)
-sk-length-short = L
-sk-width-short = W
-sk-height-short = H
+sk-length = Length
+sk-width = Width
+sk-height = Height
 sk-dim-conflict = Dimension conflict: the value contradicts the geometry — change it or remove the extra one
 sk-driven-dim-hint = A reference dimension — the geometry is already defined. Drag to place it
 sk-drag-dim-hint = Move the mouse to place the dimension; click to put it down

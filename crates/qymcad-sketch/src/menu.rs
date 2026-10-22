@@ -18,9 +18,9 @@ pub fn corner_crossing_upkeep(sk: &mut qymcad_ui_state::SketchCtx) {
 pub fn escape_step(sk: &mut qymcad_ui_state::SketchCtx) {
     let mut said = tools_said(sk);
     let t = &mut said.tools;
-    if t.inline.dim().is_some() || t.inline.circle().is_some() {
-        // the popup for editing a dimension is open (a double click on a dimension or a circle) - Esc cancels ONLY the
-        // popup rather than closing the whole sketch
+    if t.inline.dim().is_some() {
+        // the popup for editing a dimension is open (a double click on a dimension) - Esc cancels ONLY the popup rather
+        // than closing the whole sketch
         t.inline.clear();
         t.dim.put_away();
     } else if t.pending_import.curves.is_some() {
@@ -232,8 +232,8 @@ pub(crate) fn open_the_size_of_the_new_shape(sk: &mut qymcad_ui_state::SketchCtx
     if purpose == qymcad_core::feature::Purpose::Construction {
         return;
     }
-    *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid);
-    sk.dim.focus = true;
+    sk.place.set(qymcad_ui_state::PlacingShape::Round(eid));
+    sk.place.focus = true;
 }
 
 /// The arc the tool has just added, the last entity of the sketch, has the field of its radius opened.

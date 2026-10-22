@@ -91,7 +91,7 @@ mod tests {
                 let (mut app, _ctx) = a_sketch();
                 let mut hand = Hand::new(&mut app);
                 draw(&mut hand, tool);
-                if hand.app.tools.inline.circle().is_none() {
+                if hand.app.tools.place.round().is_none() {
                     failures.push(format!("the {name} drawn opened no field of its size"));
                     continue;
                 }
@@ -125,7 +125,7 @@ mod tests {
             hand.sk_select();
             assert!(sizes(&hand).is_empty(), "GUARD: the circle is free");
             hand.double_click2d(0.0, 10.0);
-            if hand.app.tools.inline.circle().is_none() && hand.app.tools.inline.dim().is_none() {
+            if hand.app.tools.place.round().is_none() && hand.app.tools.inline.dim().is_none() {
                 failures.push(format!("{how:?}: a double click on the circle opened no field"));
                 continue;
             }
@@ -186,7 +186,7 @@ mod tests {
                     hand.double_click2d(40.0 + 12.0 * half.cos(), 12.0 * half.sin());
                 }
             }
-            let open = hand.app.tools.inline.circle().is_some() || hand.app.tools.inline.dim().is_some();
+            let open = hand.app.tools.place.round().is_some() || hand.app.tools.inline.dim().is_some();
             if !open {
                 failures.push(format!("a double click on {by} opened no field; status {:?}, selected {:?}", hand.app.status, hand.app.tools.sel_sk.items));
                 continue;
@@ -273,7 +273,7 @@ mod tests {
             // by the arc
             let (x, y) = (shape.middle)(r);
             hand.double_click2d(x, y);
-            if hand.app.tools.inline.circle().is_none() && hand.app.tools.inline.dim().is_none() {
+            if hand.app.tools.place.round().is_none() && hand.app.tools.inline.dim().is_none() {
                 failures.push(format!("{}: a double click on the arc opened no field; selected {:?}", shape.name, hand.app.tools.sel_sk.items));
                 continue;
             }
@@ -291,7 +291,7 @@ mod tests {
                 failures.push(format!("{}: no radius R7.0 to double-click: {labels:?}", shape.name));
                 continue;
             }
-            if hand.app.tools.inline.circle().is_none() && hand.app.tools.inline.dim().is_none() {
+            if hand.app.tools.place.round().is_none() && hand.app.tools.inline.dim().is_none() {
                 failures.push(format!("{}: a double click on its radius opened no field", shape.name));
                 continue;
             }

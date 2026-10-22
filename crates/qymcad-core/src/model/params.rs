@@ -27,7 +27,7 @@ impl Project {
                 let DimTarget::Feature { node, key } = &nd.target else { continue };
                 let v = match self.feat_dim(*node, key).filter(|e| !e.trim().is_empty()) {
                     Some(e) => crate::expr::eval(e, &m).ok(),
-                    None => self.timeline.iter().find(|n| n.id == *node).and_then(|n| n.kind.dim(key)),
+                    None => self.kept_number(*node, key),
                 };
                 if let Some(v) = v {
                     changed |= m.get(&nd.name).is_none_or(|o| (o - v).abs() > 1e-12);
@@ -77,6 +77,19 @@ impl Project {
     /// Name a feature parameter (`height`, `radius`, `thickness` and so on).
     pub fn add_named_feat_dim(&mut self, name: String, node: Id, key: &str) -> bool {
         self.name_dim(name, DimTarget::Feature { node, key: key.to_string() })
+    }
+
+    /// THE NUMBER `key` OF `node` HOLDS WITHOUT ITS FORMULA: the number kept in a node of the timeline, or the value a
+    /// slot of a joint holds - what drives it, or, free, where the part stands (`angle`, `offset`, `offset2`). A joint
+    /// keeps its formulas under its own id as a node does, so a name given to a value of a joint reads it here;
+    /// searched among the nodes alone, a named offset of a slider with no formula gave formulas nothing.
+    pub fn kept_number(&self, node: Id, key: &str) -> Option<f64> {
+        if let Some(n) = self.timeline.iter().find(|n| n.id == node) {
+            return n.kind.dim(key);
+        }
+        let j = self.joints.iter().find(|j| j.id == node)?;
+        let slot = ["angle", "offset", "offset2"].iter().position(|k| *k == key)?;
+        Some(j.drive[slot].unwrap_or([j.angle, j.offset, j.offset2][slot]))
     }
 
     /// Whether a driver name is already taken by something else (a global parameter or another
@@ -181,7 +194,7 @@ impl Project {
                 true
             }
             DimTarget::Feature { node, key } => {
-                if self.timeline.iter().find(|n| n.id == *node).and_then(|n| n.kind.dim(key)).is_none() {
+                if self.kept_number(*node, key).is_none() {
                     return false; // This feature has no such parameter.
                 }
                 // For a feature the number lives in the expression: that is how the rebuild applies it

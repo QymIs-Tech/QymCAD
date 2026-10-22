@@ -12,7 +12,7 @@ pub(crate) fn offset_side_click(sk: &mut qymcad_ui_state::SketchCtx, hit: Option
     {
         return false;
     }
-    sk.sel_sk.offset = qymcad_ui_state::OffsetAim { at: Some(at), field: Vec::new(), focus: true }; // the box makes its field of the distance of the bar
+    sk.sel_sk.offset = qymcad_ui_state::OffsetAim { at: Some(at), focus: true, ..Default::default() }; // the box makes its field of the distance of the bar
     *sk.status = Notice::info(qymcad_i18n::tr("sk-offset-type"));
     true
 }

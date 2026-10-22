@@ -392,8 +392,8 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-enter-diameter"));
                 }
             } else {
-                *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid); // an arc or a fillet
-                sk.dim.focus = true;
+                sk.place.reopen(qymcad_ui_state::PlacingShape::Round(eid)); // an arc or a fillet
+                sk.place.focus = true;
                 *sk.status = Notice::info(qymcad_i18n::tr("sk-enter-arc-radius"));
             }
             return true;

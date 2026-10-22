@@ -369,9 +369,14 @@ pub struct Counts<'a> {
 /// Store the dimensions of a command on feature `body` through the one door of a feature's number
 /// (`Project::write_feat_formula`): an expression stays parametric, a plain number removes the expression (this matters
 /// while editing, when a formula gets replaced by a number). The first refusal stops the store and is handed back.
+///
+/// THE NAMES TYPED FOR THE FIELDS GO IN WITH THEM: a number of a feature is a driver as a dimension of a sketch is.
 pub fn store_cmd_exprs(cmd: &qymcad_ui_state::FeatCommand, project: &mut Project, body: Id) -> Result<(), qymcad_core::errors::ExprError> {
     for p in &cmd.params {
         project.write_feat_formula(&qymcad_core::model::FeatNumber { node: body, key: &p.key }, &p.txt, qymcad_core::model::PlainNumber::ClearsFormula)?;
+        if let Some(nm) = cmd.names.get(&p.key) {
+            qymcad_ui_state::give_name(project, qymcad_core::model::DimTarget::Feature { node: body, key: p.key.clone() }, nm);
+        }
     }
     Ok(())
 }

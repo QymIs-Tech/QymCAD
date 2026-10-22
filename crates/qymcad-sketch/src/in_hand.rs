@@ -16,7 +16,7 @@ pub fn in_hand<'a>(sk: &'a mut qymcad_ui_state::SketchCtx<'_>) -> Option<Box<dyn
     if let Some(e) = editor_open(sk) {
         return Some(editor_tool(sk, e));
     }
-    Some(Box::new(InSketch { sk, boxed: Boxed::Nothing, seen: Vec::new(), ctx: None }))
+    Some(Box::new(InSketch { sk, boxed: Boxed::Nothing, seen: Vec::new(), ctx: None, gate: Gate::Open }))
 }
 
 /// WHAT HOLDS THE HAND OF A SKETCH beyond its tool: FILLET ALL, waiting for the shape to round; a copy, a cut or an insert,
@@ -42,12 +42,13 @@ enum Boxed {
 }
 
 /// THE TOOL OF THE SKETCH IN HAND: the context it works over, what its box holds, the values of its fields as the frame
-/// began, and the context of the frame - where the pointer is when Enter is pressed.
+/// began, the context of the frame - where the pointer is when Enter is pressed - and the gate its box leaves.
 struct InSketch<'a, 'b> {
     sk: &'a mut qymcad_ui_state::SketchCtx<'b>,
     boxed: Boxed,
     seen: Vec<f64>,
     ctx: Option<egui::Context>,
+    gate: Gate,
 }
 
 /// What holds the hand of the sketch.
@@ -75,11 +76,16 @@ impl InSketch<'_, '_> {
         let sheet = qymcad_ui_state::Sheet { view: *sk.view, rect: sk.canvas };
         if let Some(now) = shape_now(sk.project, sk.place, si) {
             if sk.place.fields.is_empty() {
-                sk.place.fields = now.fields;
+                sk.place.fields = now.fields.clone();
             }
             let around: Vec<Pos2> = now.around.iter().map(|p| sheet.at(*p)).collect();
             let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::sheet_spot(sheet.at(now.at), &around)));
             spec.focus = qymcad_ui_state::Focus::take(&mut sk.place.focus);
+            let shape = shape_box(sk.project, sk.place, &now);
+            spec.layout = shape.layout;
+            spec.hidden = shape.hidden;
+            spec.names = shape.names;
+            self.gate = shape.gate;
             self.boxed = Boxed::Shape;
             self.seen = sk.place.fields.iter().map(|p| p.val).collect();
             return Some(spec);
@@ -95,6 +101,8 @@ impl InSketch<'_, '_> {
         let at = sheet.at(base);
         let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::sheet_spot(at, &[at])));
         spec.focus = qymcad_ui_state::Focus::take(&mut sk.rot.focus);
+        let row = qymcad_ui_state::Row::new(format!("{} {}", ph::ARROWS_CLOCKWISE, qymcad_i18n::tr("sk-angle-deg"))).field("angle").said_under();
+        spec.layout = qymcad_ui_state::Layout { sections: vec![qymcad_ui_state::Section::plain(vec![row])], foot: Vec::new() };
         self.boxed = Boxed::Turn;
         Some(spec)
     }
@@ -104,6 +112,7 @@ impl FramedTool for InSketch<'_, '_> {
     fn describe(&mut self, ctx: &egui::Context) -> Described {
         self.ctx = Some(ctx.clone());
         self.boxed = Boxed::Nothing;
+        self.gate = Gate::Open;
         let sk = &mut *self.sk;
         let head = |name: String, ends| Head { icon: ph::PENCIL_SIMPLE, name, ends };
         match now(sk) {
@@ -127,10 +136,6 @@ impl FramedTool for InSketch<'_, '_> {
                 if !matches!(*sk.armed, qymcad_ui_state::Armed::None) {
                     sk.clip.drop_geom();
                 }
-                // the box at the copy of an offset types the distance: the bar shows it rather than its own old text over it
-                if sk.sel_sk.offset.at.is_some() && !ctx.memory(|m| m.has_focus(qymcad_ui_state::bar_field_id("sk_offset"))) {
-                    sk.bar_exprs.remove("sk_offset");
-                }
                 let bar = tool_opts(sk);
                 let name = tool_name(sk.armed);
                 let pattern = sk.armed.pattern().is_some();
@@ -138,12 +143,14 @@ impl FramedTool for InSketch<'_, '_> {
                 let boxed = self.box_now();
                 let ends = match self.boxed {
                     Boxed::Turn => Ends::ApplyCancel,
-                    Boxed::Shape => Ends::Close,
+                    // THE BOX OF A SHAPE ENDS AS EVERY BOX DOES: Apply lays what was typed, Cancel - as Esc - leaves the shape as
+                    // it stands without it
+                    Boxed::Shape => Ends::ApplyCancel,
                     Boxed::Nothing if pattern => Ends::ApplyCancel,
                     Boxed::Nothing if empty => Ends::Nothing,
                     Boxed::Nothing => Ends::Close,
                 };
-                Described { head: head(name, ends), bar, gate: Gate::Open, says: Vec::new(), boxed }
+                Described { head: head(name, ends), bar, gate: self.gate.clone(), says: Vec::new(), boxed }
             }
         }
     }
@@ -163,7 +170,13 @@ impl FramedTool for InSketch<'_, '_> {
         self.sk.draw()
     }
 
+    /// An option of a row of a size of the shape in the box - kept until Enter lays it - or of the bar.
     fn took(&mut self, did: Did) {
+        if let (Boxed::Shape, qymcad_ui_state::Sel::Sketch(si)) = (self.boxed, *self.sk.sel) {
+            if shape_took(self.sk, si, &did) {
+                return;
+            }
+        }
         opt_took(self.sk, did);
     }
 
@@ -233,7 +246,9 @@ impl FramedTool for InSketch<'_, '_> {
                 *sk.status = Notice::info(qymcad_i18n::tr(if w.name == "win-insert" { "in-insert-cancelled" } else { "in-copy-cancelled" }));
             }
             Now::Tool => match self.boxed {
-                Boxed::Shape => sk.place.clear(),
+                Boxed::Shape => {
+                    self.back();
+                }
                 Boxed::Turn => {
                     *sk.armed = qymcad_ui_state::Armed::None;
                     sk.tool.move_base = None;
@@ -255,18 +270,19 @@ impl FramedTool for InSketch<'_, '_> {
         }
     }
 
-    /// ONE STEP OF THE Esc OF A SKETCH (`escape_step`); the box of the sizes of a shape goes with it, as its own Esc took it.
+    /// ONE STEP OF THE Esc OF A SKETCH (`escape_step`). Esc in the box of the sizes of a shape is a step of its own: the
+    /// shape stays without the sizes typed, and the drawing tool stays in hand - the next Esc puts it down.
     fn back(&mut self) -> Stepped {
         if self.boxed == Boxed::Shape {
             self.sk.place.clear();
+            return Stepped::Back;
         }
         escape_step(self.sk);
         Stepped::Back
     }
 
     /// ONE Esc ENDS THE BOX OF A SHAPE, its field holding the keyboard or not: the shape stays as it stands, the sizes
-    /// typed are not laid, and the step of Esc goes on as with the field let go - the tool is put down.
-    /// A value typed into the box of a shape is a size meant: Enter lays it.
+    /// typed are not laid, the tool stays in hand. A value typed into the box of a shape is a size meant: Enter lays it.
     fn field_did(&mut self, did: qymcad_ui_state::FieldDid) {
         match did {
             qymcad_ui_state::FieldDid::Typed if self.boxed == Boxed::Shape => self.sk.place.typed = true,

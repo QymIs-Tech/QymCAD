@@ -157,7 +157,7 @@ pub fn context_path_to(project: &Project, cid: Id) -> Vec<Id> {
 pub fn undo_keys(ctx: &egui::Context, place: &mut Placing, inline: &mut InlineEdit, in_sketch: bool) -> (bool, bool) {
     // the field of a new shape stands in the sketch being edited: out of it, a field in focus is some other one (the
     // search of the tree) and keeps its keys - a shape left sizing when the sketch was finished took them from it
-    let sizing = in_sketch && (place.active() || place.dim.is_some() || inline.dim().is_some() || inline.circle().is_some());
+    let sizing = in_sketch && (place.active() || place.dim.is_some() || inline.dim().is_some());
     if ctx.egui_wants_keyboard_input() && !sizing {
         return (false, false);
     }

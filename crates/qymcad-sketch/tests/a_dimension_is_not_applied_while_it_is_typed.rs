@@ -124,8 +124,8 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
     b.sketch_ses.editing = Some(sid);
     b.sel = qymcad_ui_state::Sel::Sketch(si);
     let eid = b.project.sketches[si].entities[0].id;
-    b.inline = qymcad_ui_state::InlineEdit::Circle(eid);
-    b.dim.focus = true;
+    b.place.reopen(qymcad_ui_state::PlacingShape::Round(eid));
+    b.place.focus = true;
     b.view = qymcad_ui_state::View2d { center: egui::Vec2::ZERO, scale: 4.0, initialized: true, fit: 4.0 };
 
     let radius = |b: &qymcad_ui_state::Bench| match b.project.sketches[si].entities[0].kind.as_circle() {
@@ -133,7 +133,7 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
         _ => f64::NAN,
     };
     // what the field of the box holds, as typed
-    let typed = |b: &qymcad_ui_state::Bench| b.dim.field.first().map(|p| p.txt.trim().to_string()).unwrap_or_default();
+    let typed = |b: &qymcad_ui_state::Bench| b.place.fields.first().map(|p| p.txt.trim().to_string()).unwrap_or_default();
     let ctx = egui::Context::default();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
     let frame = |b: &mut qymcad_ui_state::Bench, events: Vec<egui::Event>| -> Vec<(String, egui::Rect)> {

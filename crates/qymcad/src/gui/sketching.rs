@@ -104,22 +104,7 @@ impl App {
                     self.tools.inline = InlineEdit::Note(ni);
                     self.tools.annot.note_buf = self.project.sketches[si].notes.get(ni).map(|n| n.text.clone()).unwrap_or_default();
                 } else if let Some(ci) = dim_at(&mut self.sketch_ctx(), rect, pos, si) {
-                    // the radius of the circumscribed circle of A POLYGON opens the polygon popup (the
-                    // radius plus the rotation angle) rather than the ordinary dimension editor
-                    let poly_center = match self.project.sketches[si].constraints.get(ci) {
-                        Some(qymcad_core::model::Constraint::Diameter { c, .. }) => {
-                            let c = *c;
-                            self.project.sketches[si].constraints.iter().any(|x| matches!(x, qymcad_core::model::Constraint::PointOnCircle { c: cc, .. } if *cc == c)).then_some(c)
-                        }
-                        _ => None,
-                    };
-                    if let Some(c) = poly_center {
-                        self.tools.place.set(PlacingShape::Poly(c));
-                        self.tools.place.focus = true;
-                    } else {
-                        self.tools.inline = InlineEdit::Dim(ci);
-                        self.tools.dim.focus = true;
-                    }
+                    open_dim_box(&mut self.sketch_ctx(), ci);
                 } else {
                     open_shape_size(&mut self.sketch_ctx(), rect, pos, si);
                 }

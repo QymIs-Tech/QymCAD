@@ -377,7 +377,7 @@ impl Project {
     fn stored_value_of_name(&self, name: &str) -> Option<f64> {
         if let Some(nd) = self.named_dims.iter().rev().find(|n| n.name == name) {
             return match &nd.target {
-                DimTarget::Feature { node, key } => self.timeline.iter().find(|n| n.id == *node)?.kind.dim(key),
+                DimTarget::Feature { node, key } => self.kept_number(*node, key),
                 sketch => self.dim_target_value(sketch),
             };
         }

@@ -52,9 +52,10 @@ impl Mode {
 }
 
 /// IS A SWITCH ON, OR A PICK BEING MADE.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Lit {
     On,
+    #[default]
     Off,
 }
 
@@ -243,11 +244,15 @@ pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &
                     did.push(Did::Pressed { key: *key });
                 }
             }
+            // WORDS BESIDE THE OPTIONS ARE READ LESS THAN THE OPTIONS, and are drawn so: a hint, a count, a value shown
             Opt::Readout(words) => {
-                ui.label(words.as_str());
+                ui.label(egui::RichText::new(words.as_str()).weak());
             }
             Opt::Number { key, caption, value, limits } => {
-                ui.label(caption.as_str());
+                // a number in a row of a box has its caption in the row
+                if !caption.is_empty() {
+                    ui.label(caption.as_str());
+                }
                 match numbers.as_deref_mut() {
                     Some(n) => {
                         let unit = limits.unit.map(qymcad_i18n::tr).unwrap_or_default();

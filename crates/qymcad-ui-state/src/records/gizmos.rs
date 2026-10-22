@@ -137,7 +137,6 @@ pub enum InlineEdit {
     Note(usize),
     Text(usize),
     Dim(usize),
-    Circle(Id),
 }
 
 impl InlineEdit {
@@ -156,12 +155,6 @@ impl InlineEdit {
     pub fn dim(&self) -> Option<usize> {
         match *self {
             InlineEdit::Dim(i) => Some(i),
-            _ => None,
-        }
-    }
-    pub fn circle(&self) -> Option<Id> {
-        match *self {
-            InlineEdit::Circle(i) => Some(i),
             _ => None,
         }
     }

@@ -44,12 +44,14 @@ pub struct BoxSpec {
     pub layout: Layout,
     pub hidden: Vec<&'static str>,
     pub focus: Focus,
+    /// the fields named as drivers, each with the row of its name under it
+    pub names: Vec<FieldName>,
 }
 
 impl BoxSpec {
     /// A box standing by `place`, each field in a row of its own, all of them shown, the keyboard left where it is.
     pub fn by(place: Place) -> BoxSpec {
-        BoxSpec { place, layout: Layout::default(), hidden: Vec::new(), focus: Focus::Waits }
+        BoxSpec { place, layout: Layout::default(), hidden: Vec::new(), focus: Focus::Waits, names: Vec::new() }
     }
 }
 
@@ -61,6 +63,7 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
     let ctx = ui.ctx().clone();
     let canvas = view_or_window(&ctx, canvas);
     let mut described = tool.describe(&ctx);
+    numbers_into_the_box(&mut described);
     let mut fields = std::mem::take(tool.fields());
     let mut texts = tool.bar_texts().map(std::mem::take);
     let look = tool.look();
@@ -71,13 +74,24 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
         described.gate = described.gate.with_fields(&shown, look.project);
     }
     let bar = tool_bar(ui, &mut BarLook { scheme: look.scheme, project: look.project, bar_exprs: texts.as_mut(), canvas }, &described);
-    let boxed = described.boxed.as_ref().filter(|_| !fields.is_empty()).map(|spec| {
+    let boxed = described.boxed.as_ref().filter(|spec| !fields.is_empty() || spec.layout.sections.iter().any(|s| !s.rows.is_empty())).map(|spec| {
         let id = box_id(&described.head);
-        let the_box =
-            FieldsBox { id, tool: id.value(), place: spec.place, focus: spec.focus, hidden: &spec.hidden, ends: described.head.ends, esc: EscBy::Bar, layout: &spec.layout, gate: &described.gate };
+        let the_box = FieldsBox {
+            id,
+            tool: id.value(),
+            place: spec.place,
+            focus: spec.focus,
+            hidden: &spec.hidden,
+            ends: described.head.ends,
+            esc: EscBy::Bar,
+            layout: &spec.layout,
+            gate: &described.gate,
+            names: &spec.names,
+        };
         let frame = ctx.cumulative_frame_nr(); // asked before the data is locked: the context takes the same lock
         ctx.data_mut(|d| d.insert_temp(drawn_box_id(), DrawnBox { frame, id }));
-        tool_box(&ctx, &look, canvas, &the_box, &mut fields)
+        let mut numbers = texts.as_mut().map(|bar_exprs| ExprBarCtx { bar_exprs, project: look.project, scheme: look.scheme });
+        tool_box(&ctx, &look, canvas, &the_box, &mut fields, numbers.as_mut())
     });
     *tool.fields() = fields;
     if let Some(texts) = texts {
@@ -107,6 +121,27 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
         tool.field_did(d);
     }
     go_through(&ctx, &described.gate, verdict, &mut Through { tool: &mut *tool });
+}
+
+/// THE BAR HOLDS WHAT IS SWITCHED AND PRESSED, THE BOX WHAT IS TYPED: a number a tool describes for its bar - the sides of
+/// a polygon, the count and the steps of a pattern, the radius of a fillet - is a row of its box at the geometry, with
+/// the formula it takes; a tool with no box now gets one in the corner of the view for its numbers. One place for every
+/// tool of every workbench: no tool lays a field in its bar.
+fn numbers_into_the_box(described: &mut Described) {
+    let numbers: Vec<Opt> = described.bar.iter().filter(|o| matches!(o, Opt::Number { .. })).cloned().collect();
+    if numbers.is_empty() {
+        return;
+    }
+    described.bar.retain(|o| !matches!(o, Opt::Number { .. }));
+    let rows = numbers
+        .into_iter()
+        .map(|o| match o {
+            Opt::Number { key, caption, value, limits } => Row::new(caption).opt(Opt::Number { key, caption: String::new(), value, limits }),
+            o => Row::new(String::new()).opt(o),
+        })
+        .collect();
+    let spec = described.boxed.get_or_insert_with(|| BoxSpec::by(Place::close_by(By::ViewCorner)));
+    spec.layout.sections.push(Section::plain(rows));
 }
 
 /// THE BOX OF THE TOOL IN HAND DRAWN LAST: the frame it was drawn in, and its id.

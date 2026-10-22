@@ -39,6 +39,10 @@ impl FramedTool for CommandTool<'_, '_> {
         command_step(self.pc, ctx);
         let mut d = describe(self.pc, ctx, self.kind);
         d.boxed = command_box(self.pc);
+        // a name that will not do keeps Enter from laying the feature unnamed
+        if let Some(spec) = d.boxed.as_ref().filter(|_| d.gate.open()) {
+            d.gate = qymcad_ui_state::names_gate(&spec.names);
+        }
         d
     }
 
@@ -54,8 +58,16 @@ impl FramedTool for CommandTool<'_, '_> {
         self.pc.draw()
     }
 
+    /// A name typed under a field is kept until the command writes its numbers; anything else is the command's.
     fn took(&mut self, did: Did) {
-        act(self.pc, did);
+        match did {
+            Did::Retyped { key, text } | Did::Entered { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
+                if let Some(field) = self.pc.cmd.params.get(key.at).map(|p| p.key.clone()) {
+                    self.pc.cmd.names.insert(field, text);
+                }
+            }
+            did => act(self.pc, did),
+        }
     }
 
     /// Enter of an extrusion or a revolution in the flat choice of its contours, the contours picked, takes the command
@@ -124,7 +136,22 @@ fn command_box(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::Box
     let hidden = if kind == qymcad_ui_state::PartTool::Chamfer && pc.chamfer.mode == qymcad_core::feature::ChamferMode::Symmetric { vec!["d2"] } else { Vec::new() };
     // a one-shot focus of the first field: Enter works straight away, what it holds selected
     let focus = qymcad_ui_state::Focus::take(&mut pc.cmd.focus);
-    Some(qymcad_ui_state::BoxSpec { place, layout: command_layout(pc), hidden, focus })
+    Some(qymcad_ui_state::BoxSpec { place, layout: command_layout(pc), hidden, focus, names: field_names(pc) })
+}
+
+/// THE NAME OF EVERY FIELD OF THE COMMAND, as typed so far or as the feature reopened holds it: a number of a feature is
+/// named as a dimension of a sketch is, in the row under its field.
+fn field_names(pc: &qymcad_ui_state::PartCtx) -> Vec<qymcad_ui_state::FieldName> {
+    pc.cmd
+        .params
+        .iter()
+        .map(|p| {
+            let target = pc.cmd.edit.map(|node| qymcad_core::model::DimTarget::Feature { node, key: p.key.clone() });
+            let had = target.as_ref().map(|t| qymcad_i18n::name(&pc.project.name_of_target(t))).unwrap_or_default();
+            let text = pc.cmd.names.get(&p.key).cloned().unwrap_or(had);
+            qymcad_ui_state::FieldName::judged(pc.project, &p.key, text, target.as_ref())
+        })
+        .collect()
 }
 
 /// The boolean node being edited, while it is still a boolean.

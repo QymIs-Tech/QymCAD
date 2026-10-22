@@ -168,3 +168,6 @@ mod a_blend_built_short_advises_what_builds;
 
 #[cfg(test)]
 mod the_box_of_a_rectangle_goes_with_its_tool;
+
+#[cfg(test)]
+mod a_feature_value_is_named_in_its_box;

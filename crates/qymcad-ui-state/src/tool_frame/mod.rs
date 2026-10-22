@@ -23,6 +23,8 @@ mod fields;
 pub use fields::*;
 mod layout;
 pub use layout::*;
+mod names;
+pub use names::*;
 mod opts;
 pub use opts::*;
 mod place;

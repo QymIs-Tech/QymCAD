@@ -425,8 +425,11 @@ pub enum PlacingShape {
     Poly(Id),
     /// an ellipse: the entity and its centre
     Ellipse(Id, Point2),
-    /// a rectangle reopened by a double click on a side: its width and height dimensions, edited in place
-    RectDims(qymcad_core::model::RectDims),
+    /// a rectangle reopened by a double click on a side: its width and height, typed into the dimensions it holds them by,
+    /// laid only once typed
+    RectSide(Id),
     /// a slot drawn, or reopened by a double click on a side: a curve of it, its length and width typed in place
     Slot(Id),
+    /// a circle or an arc drawn, or opened by a double click or by the radius tool: its diameter or radius typed in place
+    Round(Id),
 }

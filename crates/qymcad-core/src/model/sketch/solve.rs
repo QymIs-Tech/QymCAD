@@ -27,7 +27,7 @@ impl Project {
                         return crate::expr::eval(e, &self.param_map()).ok();
                     }
                 }
-                self.timeline.iter().find(|n| n.id == *node)?.kind.dim(key)
+                self.kept_number(*node, key)
             }
         }
     }

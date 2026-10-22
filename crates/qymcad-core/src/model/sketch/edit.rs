@@ -6,6 +6,9 @@ impl Project {
     /// THE WIDTH AND THE HEIGHT DIMENSIONS OF THE RECTANGLE WITH SIDE `side`, laid when it has none: a dimension of a
     /// side, or of the side across from it, is its width or its height. `None` when the side is no rectangle's.
     pub fn rect_dims(&mut self, si: usize, side: Id) -> Option<crate::model::RectDims> {
+        if let Some(held) = self.rect_dims_held(si, side) {
+            return Some(held);
+        }
         let s = self.sketches.get(si)?;
         let r = s.rects().iter().find(|r| r.sides.contains(&side))?.clone();
         let [c0, c1, c2, c3] = r.corners;
@@ -25,6 +28,23 @@ impl Project {
                 Some(crate::model::RectDims { width: n - 2, height: n - 1 })
             }
         }
+    }
+    /// THE WIDTH AND THE HEIGHT DIMENSIONS THE RECTANGLE WITH SIDE `side` HOLDS, both of them; none while it holds fewer -
+    /// nothing is laid. A double click on a rectangle opens its sizes by them, and lays them only once a size is typed.
+    pub fn rect_dims_held(&self, si: usize, side: Id) -> Option<crate::model::RectDims> {
+        let s = self.sketches.get(si)?;
+        let r = s.rects().iter().find(|r| r.sides.contains(&side))?.clone();
+        let [c0, c1, c2, c3] = r.corners;
+        let find =
+            |pairs: [[Id; 2]; 2]| s.constraints.iter().position(|c| matches!(*c, Constraint::Distance { a, b, axis: 0, .. } if pairs.iter().any(|&[x, y]| (a == x && b == y) || (a == y && b == x))));
+        Some(crate::model::RectDims { width: find([[c0, c1], [c3, c2]])?, height: find([[c1, c2], [c0, c3]])? })
+    }
+    /// THE CORNERS OF THE RECTANGLE WITH SIDE `side`, in order round it; none when the side is no rectangle's.
+    pub fn rect_corners(&self, si: usize, side: Id) -> Option<[Point2; 4]> {
+        let s = self.sketches.get(si)?;
+        let r = s.rects().iter().find(|r| r.sides.contains(&side))?.clone();
+        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+        Some([at(r.corners[0])?, at(r.corners[1])?, at(r.corners[2])?, at(r.corners[3])?])
     }
     /// THE TWO POINTS A SIZE OF THE SLOT WITH CURVE `curve` IS MEASURED BETWEEN: the centres of its ends for its length,
     /// the two points its sides touch its first end at - twice its radius apart - for its width. `None` when the curve
@@ -50,17 +70,20 @@ impl Project {
     /// sketch solved - the slot follows, its sides touching both ends. Answers whether the curve is a slot's.
     pub fn set_slot_size(&mut self, si: usize, curve: Id, which: crate::model::SlotSize, v: f64) -> bool {
         let Some([x, y]) = self.slot_size_ends(si, curve, which) else { return false };
+        let held = self.slot_size_dim(si, curve, which);
         let s = &mut self.sketches[si];
-        let held = s.constraints.iter_mut().find_map(|c| match c {
-            Constraint::Distance { a, b, axis: 0, d, .. } if (*a == x && *b == y) || (*a == y && *b == x) => Some(d),
-            _ => None,
-        });
-        match held {
-            Some(d) => *d = v,
-            None => s.constraints.push(Constraint::Distance { a: x, b: y, d: v, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }),
+        match held.and_then(|ci| s.constraints.get_mut(ci)) {
+            Some(Constraint::Distance { d, .. }) => *d = v,
+            _ => s.constraints.push(Constraint::Distance { a: x, b: y, d: v, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }),
         }
         self.solve_sketch(si);
         true
+    }
+    /// THE PLACE AMONG THE CONSTRAINTS OF THE DIMENSION A SIZE OF THE SLOT WITH CURVE `curve` IS HELD BY: none while the
+    /// size has no dimension, or the curve is no slot's. The box of a slot makes it a reference or names it by it.
+    pub fn slot_size_dim(&self, si: usize, curve: Id, which: crate::model::SlotSize) -> Option<usize> {
+        let [x, y] = self.slot_size_ends(si, curve, which)?;
+        self.sketches.get(si)?.constraints.iter().position(|c| matches!(*c, Constraint::Distance { a, b, axis: 0, .. } if (a == x && b == y) || (a == y && b == x)))
     }
     /// THE WIDTH AND THE HEIGHT OF THE RECTANGLE WITH SIDE `side` LAID AS DIMENSIONS, at the lengths its first two sides
     /// stand at, each led out a fifth of the shorter side beyond its side (a positive offset is to the right of a side

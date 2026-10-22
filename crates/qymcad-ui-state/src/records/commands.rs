@@ -111,6 +111,8 @@ pub struct Placing {
     pub focus: bool,
     /// a value was typed into the fields: closing them with Enter then lays the dimensions typed
     pub typed: bool,
+    /// what was asked of the dimensions the box lays on Enter: a reference, a driver name
+    pub asks: DimAsks,
 }
 
 impl Placing {
@@ -131,14 +133,6 @@ impl Placing {
         }
     }
 
-    /// A rectangle reopened for its width and height: the indices of those dimensions.
-    pub fn rect_dims(&self) -> Option<qymcad_core::model::RectDims> {
-        match &self.shape {
-            PlacingShape::RectDims(d) => Some(*d),
-            _ => None,
-        }
-    }
-
     /// A slot drawn or reopened for its length and width: a curve of it.
     pub fn slot(&self) -> Option<Id> {
         match &self.shape {
@@ -151,6 +145,14 @@ impl Placing {
     pub fn rect_center(&self) -> Option<(Point2, Point2, Vec<Id>)> {
         match &self.shape {
             PlacingShape::RectCenter { center, corner, ids } => Some((*center, *corner, ids.clone())),
+            _ => None,
+        }
+    }
+
+    /// A circle or an arc in the box of its size.
+    pub fn round(&self) -> Option<Id> {
+        match self.shape {
+            PlacingShape::Round(id) => Some(id),
             _ => None,
         }
     }
@@ -173,6 +175,7 @@ impl Placing {
     pub fn set(&mut self, shape: PlacingShape) {
         self.shape = shape;
         self.fields.clear(); // the box of the shape before is not this one's
+        self.asks = DimAsks::default();
         self.opened = Opened::ByDrawing;
     }
 
@@ -190,12 +193,15 @@ impl Placing {
         let tool = match self.shape {
             // no box: a dimension being placed is kept here, and goes with its own tool
             PlacingShape::None => return true,
-            _ if self.opened == Opened::Again => return !armed.any(),
-            PlacingShape::RectDims(_) => return !armed.any(),
+            // A BOX OPENED AGAIN EDITS WHAT STANDS: it lives until it is closed, whatever tool is taken - what is typed
+            // goes into the dimensions the shape holds, not into a shape rebuilt from where it was drawn
+            _ if self.opened == Opened::Again => return true,
+            PlacingShape::RectSide(_) => return true,
             PlacingShape::Rect { .. } | PlacingShape::RectCenter { .. } => crate::SketchShape::Rect,
             PlacingShape::Poly(_) => crate::SketchShape::Polygon,
             PlacingShape::Ellipse(..) => crate::SketchShape::Ellipse,
             PlacingShape::Slot(_) => crate::SketchShape::Slot,
+            PlacingShape::Round(_) => return matches!(armed.drawing(), Some(crate::SketchShape::Circle | crate::SketchShape::Arc)),
         };
         armed.drawing() == Some(tool)
     }
@@ -374,6 +380,9 @@ pub struct FeatCommand {
     pub focus: bool,
     /// the body on whose face the command's sketch sits (an associative placement)
     pub ref_body: Option<Id>,
+    /// THE NAMES TYPED FOR ITS FIELDS, by the key of each: the drivers the formulas of the document will read them by,
+    /// given as the command writes its numbers (`store_cmd_exprs`)
+    pub names: std::collections::BTreeMap<String, String>,
 }
 
 impl FeatCommand {
@@ -428,6 +437,9 @@ pub struct CornerInput {
     pub crossing: CrossingCut,
     /// whether the corner follows the pointer or is fixed where it was clicked
     pub aim: Aim,
+    /// the names typed for the values of the set, by the key of each field: the first dimension the cut lays takes the
+    /// name, the others read it
+    pub names: std::collections::BTreeMap<String, String>,
 }
 
 /// WHETHER THE CORNER OF THE SET FOLLOWS THE POINTER OR STANDS WHERE IT WAS CLICKED. A point with more than one corner
@@ -760,6 +772,8 @@ pub struct OffsetAim {
     pub field: Vec<CmdParam>,
     /// the box takes the keyboard on the frame it opens
     pub focus: bool,
+    /// the name typed for the distance: the first dimension the copy lays takes it
+    pub name: String,
 }
 
 impl SketchSelection {
@@ -837,6 +851,8 @@ pub struct DimTool {
     pub field: Vec<CmdParam>,
     /// the name of the dimension as typed so far; none while the box shows the name the dimension has
     pub name: Option<String>,
+    /// what was asked of the dimension the box of the size of a circle or an arc lays on Enter
+    pub asks: DimAsks,
     pub focus: bool,
     /// THE FIELD OF THE SIZE OF A CIRCLE OR AN ARC WAS TYPED IN since it opened: only a value typed is laid as a
     /// dimension, as the width and the height of a rectangle are (`Placing::typed`)
@@ -856,8 +872,50 @@ impl DimTool {
     pub fn put_away(&mut self) {
         self.field.clear();
         self.name = None;
+        self.asks = DimAsks::default();
         self.focus = false;
         self.typed = false;
+    }
+}
+
+/// IS A DIMENSION OF A CIRCLE SHOWN AS ITS RADIUS OR ITS DIAMETER.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Shown {
+    Radius,
+    #[default]
+    Diameter,
+}
+
+/// WHAT A PERSON ASKED OF ONE DIMENSION A BOX WILL LAY ON Enter, the dimension not laid yet: whether it is a reference,
+/// the name the formulas read it by, and - for a circle - whether it is shown as its radius.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DimAsk {
+    pub driven: crate::Lit,
+    pub name: String,
+    /// shown as its radius or its diameter; none - as the dimension is laid by its shape
+    pub shown: Option<Shown>,
+}
+
+/// WHAT WAS ASKED OF THE DIMENSIONS A BOX WILL LAY, by the key of the field of each.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DimAsks {
+    pub rows: std::collections::BTreeMap<String, DimAsk>,
+}
+
+impl DimAsks {
+    /// What was asked of the dimension of field `key`; nothing asked yet answers the defaults.
+    pub fn of(&self, key: &str) -> DimAsk {
+        self.rows.get(key).cloned().unwrap_or_default()
+    }
+
+    /// What was asked of the dimension of field `key`, to be changed.
+    pub fn at(&mut self, key: &str) -> &mut DimAsk {
+        self.rows.entry(key.to_string()).or_default()
+    }
+
+    /// Was anything asked of the dimension of field `key` beyond its value: a reference, a name, its radius shown.
+    pub fn touched(&self, key: &str) -> bool {
+        self.rows.get(key).is_some_and(|a| a.driven == crate::Lit::On || !a.name.trim().is_empty() || a.shown.is_some())
     }
 }
 
