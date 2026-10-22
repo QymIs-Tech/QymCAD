@@ -47,6 +47,7 @@ file-quit = Quit
 
 help-hotkeys = Keyboard shortcuts…
 help-about = About…
+help-support = Support the author…
 
 ## Settings — language
 
@@ -1744,6 +1745,9 @@ win-params = Parameters
 win-add-param = Add a parameter
 win-settings = Settings
 win-about = About
+win-support = Support the author
+support-intro = QymCAD is free. If it is useful to you, its development can be supported in one of these ways.
+support-scan = Open a link, or point a phone camera at its code.
 win-parts-library = Parts library
 win-refresh = Refresh
 win-insert = Insert
@@ -1937,6 +1941,7 @@ report-copy-path = Copy the path
 crash-what = A crash report has been saved to a file. Attach it to a problem report: it records what the program was doing before it stopped.
 crash-copy-path = Copy the path
 about-copy-hint = Copy the build details for a problem report
+about-support = Support the author
 confirm-delete-what = Delete { $what }?
 cmd-comp-circ-array = Circular pattern of components
 cmd-comp-lin-array = Linear pattern of components

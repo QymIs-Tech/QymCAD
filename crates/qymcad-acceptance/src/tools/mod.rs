@@ -138,6 +138,7 @@ pub static ALL: &[&Tool] = &[
     &menus::SAVE_AS_TEMPLATE,
     &menus::DOCUMENT_PROPERTIES,
     &menus::ABOUT,
+    &menus::SUPPORT,
     &menus::QUIT,
     &menus::PARAMETERS,
     &menus::EXPORT_PROJECT,

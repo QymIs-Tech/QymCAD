@@ -89,6 +89,7 @@ mod command_catalog;
 mod templates;
 mod gui;
 mod parts_library;
+mod support;
 mod viewport_gpu;
 mod start_notice;
 mod system;

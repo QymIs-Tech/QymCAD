@@ -102,6 +102,7 @@ contract!(menu_open_project, qymcad_acceptance::tools::menus::OPEN_PROJECT);
 contract!(menu_save_as_template, qymcad_acceptance::tools::menus::SAVE_AS_TEMPLATE);
 contract!(menu_document_properties, qymcad_acceptance::tools::menus::DOCUMENT_PROPERTIES);
 contract!(menu_about, qymcad_acceptance::tools::menus::ABOUT);
+contract!(menu_support, qymcad_acceptance::tools::menus::SUPPORT);
 contract!(menu_quit, qymcad_acceptance::tools::menus::QUIT);
 contract!(edit_copy, qymcad_acceptance::tools::sketch::EDIT_COPY);
 contract!(edit_cut, qymcad_acceptance::tools::sketch::EDIT_CUT);

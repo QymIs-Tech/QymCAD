@@ -213,12 +213,14 @@ pub enum WinKind {
     IconPackager,
     /// The errors and warnings of the document, each with the way to it - opened from the status line.
     Faults,
+    /// The ways to support the author: their links and QR codes (Help -> Support the author, and the About window).
+    Support,
 }
 
 impl WinKind {
     /// EVERY KIND, so that a walk over the windows cannot silently miss one added later. A guard checks that the
     /// count here matches the number of variants declared above.
-    pub const ALL: [WinKind; 14] = [
+    pub const ALL: [WinKind; 15] = [
         WinKind::SaveTemplate,
         WinKind::Start,
         WinKind::DocProps,
@@ -233,6 +235,7 @@ impl WinKind {
         WinKind::IconManager,
         WinKind::IconPackager,
         WinKind::Faults,
+        WinKind::Support,
     ];
 }
 

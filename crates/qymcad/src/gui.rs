@@ -1296,7 +1296,7 @@ impl App {
         self.take_screenshot(ctx); // the picture of the window for a report comes back as an event
         crate::gui::panels_windows::crash_notice(&mut self.disk.crash_report, ctx); // "the last run ended in an error" - only after a crash
         self.report_window(ctx); // Help -> Report a problem
-        crate::gui::panels_windows::about_dialog(&mut self.win, &self.scheme, ctx); // the About window
+        crate::gui::panels_windows::help_windows(&mut self.win, &self.scheme, ctx); // About, Support
         crate::gui::panels_windows::updates_dialog(&mut self.win, &self.scheme, ctx); // Help -> Check for updates
         {
             let mut asks = Vec::new();

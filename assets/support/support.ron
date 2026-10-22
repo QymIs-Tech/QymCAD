@@ -1,0 +1,8 @@
+// The ways to support the author, in the order the window shows them: the words of the link, its address, and the
+// picture of its QR code lying in this folder. Each picture is made by `qrencode -t PNG -v 4 -l M -s 8 -m 4` from the
+// address - one version of the code, so one size, 328 px - and read back by `zbarimg --raw` before it is put here.
+[
+    (label: "DonationAlerts", url: "https://www.donationalerts.com/r/basson_xvi", qr: "donationalerts.png"),
+    (label: "Boosty", url: "https://boosty.to/basson_xvi", qr: "boosty.png"),
+    (label: "Patreon", url: "https://www.patreon.com/cw/QymIsTech", qr: "patreon.png"),
+]

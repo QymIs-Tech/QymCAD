@@ -232,6 +232,10 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 bc.win.open(WinKind::About);
                 ui.close();
             }
+            if ui.button(format!("{} {}", ph::HEART, qymcad_i18n::tr("help-support"))).clicked() {
+                bc.win.open(WinKind::Support);
+                ui.close();
+            }
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);

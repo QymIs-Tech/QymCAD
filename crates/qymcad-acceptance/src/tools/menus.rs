@@ -336,6 +336,7 @@ asks!(SAVE_AS_TEMPLATE, "menu.save-as-template", "file-save-as-template", "file-
 
 shows!(DOCUMENT_PROPERTIES, "menu.document-properties", &["menu-file", "file-doc-props"], "doc-props-title", "general/08-documents");
 shows!(ABOUT, "menu.about", &["menu-help", "help-about"], "win-about", "general/14-updates");
+shows!(SUPPORT, "menu.support", &["menu-help", "help-support"], "win-support", "general/01-window");
 asks!(QUIT, "menu.quit", "file-quit", "nav-unsaved-title");
 
 /// An item of View that switches the colours of the window: dark or light, whatever the part holds.
