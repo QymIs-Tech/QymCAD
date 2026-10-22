@@ -291,8 +291,9 @@ struct DimEdit<'a, 'b> {
 }
 
 impl FramedTool for DimEdit<'_, '_> {
-    fn describe(&mut self, _ctx: &egui::Context) -> Described {
+    fn describe(&mut self, ctx: &egui::Context) -> Described {
         let Dim { si, ci } = self.dim;
+        in_its_box_now(ctx, self.dim);
         let rect = self.sk.canvas;
         let at = dim_label_pos(self.sk, rect, si, ci);
         let sk = &mut *self.sk;
@@ -400,6 +401,31 @@ impl FramedTool for DimEdit<'_, '_> {
             self.cancel();
         }
     }
+}
+
+/// THE DIMENSION STANDING IN ITS BOX AT THE GEOMETRY, told to the list of the sketch by the frame it was drawn in: the
+/// list shows the value of that dimension in words, the box being where it is typed.
+#[derive(Clone, Copy)]
+struct InItsBox {
+    dim: Dim,
+    frame: u64,
+}
+
+/// The key the dimension in its box is told by.
+fn in_its_box_id() -> egui::Id {
+    egui::Id::new("the dimension standing in its box at the geometry")
+}
+
+/// Dimension `dim` stands in its box this frame.
+fn in_its_box_now(ctx: &egui::Context, dim: Dim) {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(in_its_box_id(), InItsBox { dim, frame }));
+}
+
+/// THE DIMENSION STANDING IN ITS BOX, this frame or the one before - the list may be drawn before the box.
+pub(crate) fn in_its_box(ctx: &egui::Context) -> Option<Dim> {
+    let now = ctx.cumulative_frame_nr();
+    ctx.data(|d| d.get_temp::<InItsBox>(in_its_box_id())).filter(|b| b.frame + 1 >= now).map(|b| b.dim)
 }
 
 /// IS A VALUE TRIED AGAIN even when its text was tried already: once a text while it is typed, again on Enter, over the

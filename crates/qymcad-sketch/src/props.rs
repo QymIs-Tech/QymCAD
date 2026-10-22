@@ -91,6 +91,11 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
         let cur_sel = pr.gsel.constraint;
         let (mut rm, mut changed, mut sel_click, mut hov) = (None, false, None, None);
         let mut to_driven: Option<usize> = None;
+        // THE DIMENSION OPEN IN ITS BOX AT THE GEOMETRY is typed there: the value it tries stands on the document until the
+        // box keeps it or lets it go, a value typed into the list meanwhile was taken back with it, and the list showed a
+        // second field of the very value the box was editing
+        let in_box = crate::editors::in_its_box(ui.ctx()).filter(|d| d.si == si).map(|d| d.ci);
+        let typed = |ci: usize| if in_box == Some(ci) { Typed::InItsBox } else { Typed::InTheList };
         // Does the sketch contain fillets (structural tangencies)? Their Jacobian at the point of contact
         // is degenerate (parallel to the intrinsic of the arc), so the rank analysis falsely marks as
         // redundant not only the tangencies themselves but the constraints ENTANGLED with them (the
@@ -145,10 +150,11 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
                                     sel_click = Some(ci);
                                 }
                                 let limits = qymcad_ui_state::Limits { unit: Some("unit-mm-suffix"), ..qymcad_ui_state::Limits::between(0.01..=100000.0) };
-                                changed |= qymcad_ui_state::panel_number(
+                                changed |= value_of_a_dimension(
                                     ui,
                                     &*pr.project,
                                     qymcad_ui_state::PanelNumber { id: ui.id().with(("the value of a dimension", ci)), value: d, formula: Some(expr), limits },
+                                    typed(ci),
                                 );
                             }
                             Constraint::Angle { deg, expr, .. } => {
@@ -156,10 +162,11 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
                                     sel_click = Some(ci);
                                 }
                                 let limits = qymcad_ui_state::Limits { unit: Some("unit-deg-suffix"), ..qymcad_ui_state::Limits::between(0.1..=359.9) };
-                                changed |= qymcad_ui_state::panel_number(
+                                changed |= value_of_a_dimension(
                                     ui,
                                     &*pr.project,
                                     qymcad_ui_state::PanelNumber { id: ui.id().with(("the value of an angle", ci)), value: deg, formula: Some(expr), limits },
+                                    typed(ci),
                                 );
                             }
                             other => {
@@ -229,4 +236,23 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
         qymcad_ui_state::ask_delete(&mut *pr.deferred, qymcad_ui_state::Sel::Sketch(si));
         // the same path the tree takes - the question and the deletion
     }
+}
+
+/// WHERE THE VALUE OF A DIMENSION IS TYPED: in the list, or in its box at the geometry while it stands there.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Typed {
+    InTheList,
+    InItsBox,
+}
+
+/// THE VALUE OF A DIMENSION IN THE LIST: a field of its formula (`panel_number`), or - while the dimension stands in its
+/// box at the geometry - the value and its formula in words, the box being where it is typed then.
+fn value_of_a_dimension(ui: &mut egui::Ui, project: &qymcad_core::model::Project, n: qymcad_ui_state::PanelNumber, typed: Typed) -> bool {
+    if typed == Typed::InTheList {
+        return qymcad_ui_state::panel_number(ui, project, n);
+    }
+    let formula = n.formula.as_deref().map(|f| f.trim()).filter(|f| !f.is_empty()).map(|f| format!("{f} = ")).unwrap_or_default();
+    let unit = n.limits.unit.map(|u| qymcad_i18n::tr(u).trim().to_string()).unwrap_or_default();
+    ui.label(egui::RichText::new(format!("{formula}{} {unit}", qymcad_core::expr::fmt_num(*n.value))).weak());
+    false
 }
