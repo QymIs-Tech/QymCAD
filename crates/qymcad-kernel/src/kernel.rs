@@ -636,7 +636,8 @@ impl qymcad_core::feature::Kernel for OcctKernel {
         })
     }
     fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], roles: qymcad_core::feature::BlendRoles) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.fillet_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles })
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::Fillet, body, src, sizes: &[radius], edges, roles: &roles, more: String::new() };
+        self.blend_kept(asked, || self.fillet_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles: roles.clone() }))
     }
     fn fillet_at_vertices(
         &self,
@@ -647,13 +648,17 @@ impl qymcad_core::feature::Kernel for OcctKernel {
         verts: &[qymcad_core::feature::RadiusAt],
         roles: qymcad_core::feature::BlendRoles,
     ) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.fillet_at_vertices_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles }, verts)
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::FilletVar, body, src, sizes: &[radius], edges, roles: &roles, more: format!("{verts:?}") };
+        self.blend_kept(asked, || self.fillet_at_vertices_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles: roles.clone() }, verts))
     }
     fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], roles: qymcad_core::feature::BlendRoles) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.chamfer_op(crate::ops::blend::BlendAsk { body, src, size: dist, edges, roles })
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::Chamfer, body, src, sizes: &[dist], edges, roles: &roles, more: String::new() };
+        self.blend_kept(asked, || self.chamfer_op(crate::ops::blend::BlendAsk { body, src, size: dist, edges, roles: roles.clone() }))
     }
     fn chamfer_ex(&self, body: Id, src: Id, d1: f64, shape: qymcad_core::model::ChamferShape, edges: &[u32], roles: qymcad_core::feature::BlendRoles) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.chamfer_asym_op(crate::ops::blend::BlendAsk { body, src, size: d1, edges, roles }, shape)
+        let more = format!("{:?} {:?} {:?} {}", shape.mode, shape.d2, shape.flip, shape.ref_face);
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::ChamferAsym, body, src, sizes: &[d1], edges, roles: &roles, more };
+        self.blend_kept(asked, || self.chamfer_asym_op(crate::ops::blend::BlendAsk { body, src, size: d1, edges, roles: roles.clone() }, shape))
     }
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]

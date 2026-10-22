@@ -7,6 +7,15 @@ impl Shape {
     pub fn volume(&self) -> f64 {
         unsafe { qym_shape_volume(self.ptr) }
     }
+    /// A BODY OF ITS OWN, with the names of its faces and edges: what is kept for later shares nothing with this one.
+    pub(crate) fn own_copy(&self) -> Option<Shape> {
+        Shape::wrap(unsafe { qym_shape_own_copy(self.ptr) })
+    }
+    /// THE STATE OF THE BODY AS A NUMBER: the same for a body built again or carried through its bytes, another for one
+    /// whose geometry or names changed. Zero when it cannot be read.
+    pub(crate) fn state(&self) -> u64 {
+        unsafe { qym_shape_state(self.ptr) }
+    }
     /// THE VOLUME TO A PERCENT, for the checks that a result holds any and fits the box it came from - the exact one where
     /// it was counted already. What a person reads (properties, mass) is `volume`.
     pub(crate) fn rough_volume(&self) -> f64 {

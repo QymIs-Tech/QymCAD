@@ -379,6 +379,77 @@ QymShape qym_own_copy(const QymShape& s) {
 }
 
 
+// A BODY OF ITS OWN, handed out: what is kept for later shares no part with the body it was taken from.
+extern "C" QymShape* qym_shape_own_copy(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body it copies");
+    if (!s) return nullptr;
+    try {
+        QYM_SIGNALS;
+        QymShape* out = new QymShape(qym_own_copy(*s));
+        out->volume_memo = s->volume_memo;
+        return out;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+// THE STATE OF A BODY AS A NUMBER: its faces and edges by their names and by points laid on them, its vertices by where
+// they stand. Two bodies with one number are one body to every operation that reads it - a fillet asked of either gives
+// the same; a body that moved by a hair, or whose names changed, has another. It reads the geometry, not the identity of
+// the shape: the same body built again, or carried to a worker through its bytes, keeps its number.
+extern "C" uint64_t qym_shape_state(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
+    uint64_t h = 1469598103934665603ULL;
+    auto mix = [&h](uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            h ^= (v >> (8 * i)) & 0xff;
+            h *= 1099511628211ULL;
+        }
+    };
+    auto num = [&mix](double v) {
+        uint64_t bits;
+        v = v == 0.0 ? 0.0 : v; // -0 and 0 are one place
+        std::memcpy(&bits, &v, sizeof bits);
+        mix(bits);
+    };
+    auto pnt = [&num](const gp_Pnt& p) { num(p.X()); num(p.Y()); num(p.Z()); };
+    if (!s || s->shape.IsNull()) return 0;
+    try {
+        QYM_SIGNALS;
+        TopTools_IndexedMapOfShape faces, edges, verts;
+        TopExp::MapShapes(s->shape, TopAbs_FACE, faces);
+        TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
+        TopExp::MapShapes(s->shape, TopAbs_VERTEX, verts);
+        mix(faces.Extent());
+        mix(edges.Extent());
+        mix(verts.Extent());
+        // five by five points over the bounds of every face, five along every edge: a surface or a curve changed between
+        // its ends changes them
+        for (int i = 1; i <= faces.Extent(); ++i) {
+            const TopoDS_Face& f = TopoDS::Face(faces(i));
+            mix(s->fids.IsBound(f) ? (uint64_t)s->fids.Find(f) : 0);
+            mix(f.Orientation());
+            Standard_Real u0, u1, v0, v1;
+            BRepTools::UVBounds(f, u0, u1, v0, v1);
+            BRepAdaptor_Surface surf(f, Standard_False);
+            mix(surf.GetType());
+            for (int a = 0; a < 5; ++a)
+                for (int b = 0; b < 5; ++b) pnt(surf.Value(u0 + (u1 - u0) * a / 4.0, v0 + (v1 - v0) * b / 4.0));
+        }
+        for (int i = 1; i <= edges.Extent(); ++i) {
+            const TopoDS_Edge& e = TopoDS::Edge(edges(i));
+            mix(s->eids.IsBound(e) ? (uint64_t)s->eids.Find(e) : 0);
+            if (BRep_Tool::Degenerated(e)) continue;
+            BRepAdaptor_Curve curve(e);
+            for (int a = 0; a < 5; ++a) pnt(curve.Value(curve.FirstParameter() + (curve.LastParameter() - curve.FirstParameter()) * a / 4.0));
+        }
+        for (int i = 1; i <= verts.Extent(); ++i) pnt(BRep_Tool::Pnt(TopoDS::Vertex(verts(i))));
+        return h;
+    } catch (...) {
+        return 0;
+    }
+}
+
 extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
     if (!s) return why("fillet/asked", "there is no body to round"), nullptr;
     if (r <= 0.0) return why("fillet/asked", "the radius is zero"), nullptr;

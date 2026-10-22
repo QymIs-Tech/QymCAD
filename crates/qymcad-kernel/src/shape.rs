@@ -244,6 +244,8 @@ extern "C" {
     ) -> *mut QymShape;
     fn qym_shape_volume(s: *const QymShape) -> c_double;
     fn qym_shape_volume_rough(s: *const QymShape) -> c_double;
+    fn qym_shape_own_copy(s: *const QymShape) -> *mut QymShape;
+    fn qym_shape_state(s: *const QymShape) -> u64;
     fn qym_shape_bbox(s: *const QymShape, out: *mut f64) -> i32;
     fn qym_shape_bbox_exact(s: *const QymShape, out: *mut f64) -> i32;
     fn qym_shape_is_valid(s: *const QymShape) -> i32;

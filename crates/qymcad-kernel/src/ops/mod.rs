@@ -2,6 +2,7 @@
 //! faces it makes, the call of the OCCT algorithm - and none of what the door does for all of them.
 
 pub mod blend;
+pub(crate) mod kept;
 pub mod faces;
 pub mod holes;
 pub mod primitives;
