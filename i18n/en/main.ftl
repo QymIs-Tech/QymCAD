@@ -1635,6 +1635,7 @@ g-paste-needs-assembly = Components cannot go inside a part — pick an assembly
 g-new-project = A new project.
 g-circle-hint = Circle: the centre, then a point on the radius
 g-open-sketch-dim = Open a sketch, then click a line for its length or a circle for its radius
+sk-tool-outside-sketch = This tool works inside a sketch. Open a sketch with a double click in the tree, or start a new one, then take the tool again
 g-slot-hint = Slot: 2 centres, then the width
 g-body-moved = Moved
 g-rect-hint = Rectangle: 2 corners

@@ -47,6 +47,9 @@ mod a_box_follows_what_it_sizes;
 mod a_tool_with_nothing_to_apply_closes_plainly;
 
 #[cfg(test)]
+mod a_sketch_tool_outside_a_sketch_says_so;
+
+#[cfg(test)]
 mod the_doors_of_a_tool;
 
 #[cfg(test)]

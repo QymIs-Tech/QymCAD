@@ -19,6 +19,9 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
             ui.label(egui::RichText::new(qymcad_i18n::tr2("sk-source", "name", &sf.name, "kb", &qymcad_i18n::num(sf.data.len() as f64 / 1024.0, 1))).weak().small());
         }
     }
+    // a face found by place, not by its name: said here, where a click on the row of the sketch leads, with Accept
+    let sid = pr.project.sketches[si].id;
+    qymcad_ui_state::node_warning_props(pr, ui, sid);
 
     // --- while editing: a clean panel, with no clutter ---
     if qymcad_ui_state::edit_si(&*pr.project, &*pr.sketch_ses) == Some(si) {

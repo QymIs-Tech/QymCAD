@@ -428,7 +428,14 @@ pub(crate) fn tree_sketch_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::
         }
         let nid = qymcad_ui_state::node_of_sel(&*tc.project, Sel::Sketch(si)).unwrap_or(sid);
         let lit = *tc.sel == Sel::Sketch(si) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, nid);
-        let resp = ui.selectable_label(lit, crate::gui::sel_title(&*tc.scheme, raw, lit)).on_hover_text(crate::i18n::tr("tree-sketch-hint"));
+        // A WARNING OF THE SKETCH - its face found by place - yellow with the words, as the row of a feature says it
+        let warn = tc.project.node_warning(sid).filter(|_| !tc.project.regen_errors.contains_key(&sid)).as_ref().map(crate::gui::error_words::error_text);
+        let icon = warn.as_ref().and_then(|_| qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Warning));
+        let raw = if let Some(icon) = icon { format!("{icon} {raw}") } else { raw };
+        let title = crate::gui::sel_title(&*tc.scheme, raw, lit);
+        let title = if warn.is_some() && !lit { title.color(qymcad_ui_state::tone_colour(&tc.scheme.pal, qymcad_ui_state::Tone::Warning)) } else { title };
+        let hover = warn.map_or_else(|| crate::i18n::tr("tree-sketch-hint"), |w| format!("{} {w}", icon.unwrap_or_default()));
+        let resp = ui.selectable_label(lit, title).on_hover_text(hover);
         if *tc.sel == Sel::Sketch(si) {
             show_in_view(&mut *tc.tree, ui, &resp, nid); // a sketch selected from elsewhere is shown in the tree
         }

@@ -419,6 +419,12 @@ const ROWS: &[Command] = &[
 /// again is put down, as every tool button does.
 pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
     use qymcad_ui_state::{take_or_drop, BarAsk};
+    // A TOOL OF A SKETCH WITH NO SKETCH OPEN IS REFUSED IN WORDS: the search offers every command, and taken in a part
+    // a dimension turned the view flat with no bar, swallowed every click and left the view flat after Esc
+    if qymcad_ui_state::edit_si(&*bc.project, &*bc.sketch_ses).is_none() {
+        *bc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("sk-tool-outside-sketch"));
+        return;
+    }
     match launch {
         Launch::SketchSelect => bc.ask.push(BarAsk::SketchSelectMode),
         Launch::SkTool(n) => bc.ask.push(take_or_drop(bc.armed.drawing() == Some(n), BarAsk::SketchTool(n))),

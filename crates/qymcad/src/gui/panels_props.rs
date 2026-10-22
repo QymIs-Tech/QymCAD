@@ -695,18 +695,7 @@ pub(crate) fn feature_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::U
     if pr.project.rollback.is_some_and(|r| r <= ti) {
         ui.label(egui::RichText::new(crate::i18n::tr("fp-below-rollback")).weak().small());
     }
-    // A WARNING OF THE NODE - a reference found by place, edges left out, a blend a hair short - said in the voice's
-    // warning tone, as the tree says it; a reference found by place with the one button that accepts what was found
-    if let Some(warning) = pr.project.node_warning(fid).filter(|_| !pr.project.regen_errors.contains_key(&fid)) {
-        ui.separator();
-        let text = crate::gui::error_words::error_text(&warning);
-        qymcad_ui_state::say(ui, &pr.scheme.pal, &qymcad_ui_state::Notice::warning(text), qymcad_ui_state::NoticeSize::Small);
-    }
-    if pr.project.placed_refs.contains(&fid) && ui.button(format!("{} {}", ph::CHECK, crate::i18n::tr("props-accept-place"))).on_hover_text(crate::i18n::tr("props-accept-place-hint")).clicked() {
-        qymcad_ui_state::begin_edit(pr.edits, pr.project, crate::i18n::tr("cmdname-accept-place")); // THE BOUNDARY OF AN OPERATION
-        pr.project.accept_found_by_place(fid);
-        qymcad_ui_state::commit_edit(&mut pr.rebuild());
-    }
+    qymcad_ui_state::node_warning_props(pr, ui, fid);
 
     ui.separator();
     ui.horizontal(|ui| {

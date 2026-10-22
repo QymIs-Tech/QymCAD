@@ -317,6 +317,7 @@ pub(crate) fn set_sketch_plane(sk: &mut qymcad_ui_state::SketchCtx, si: usize, p
     let plane = crate::gui::resolve_placement_plane(&mut *sk.cmd, &mut *sk.project, &mut *sk.status, plane);
     let sid = sk.project.sketches[si].id;
     sk.project.sketches[si].plane = plane;
+    sk.project.accept_found_by_place(sid); // the face picked anew is the person's word: a mark of a face found by place goes
     sk.project.mark_sketch_dirty(sid); // associativity: the bodies on this sketch will be rebuilt
     qymcad_ui_state::mark_dirty_for_rebuild(&mut sk.rebuild()); // the document is marked; the scheduler does the computing
     sk.picking.clear();

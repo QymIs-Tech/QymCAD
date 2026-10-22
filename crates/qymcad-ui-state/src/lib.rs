@@ -679,6 +679,23 @@ pub fn props_header(ui: &mut egui::Ui, icon: &str, kind_key: &str, name: NameSlo
     renamed
 }
 
+/// A WARNING OF STEP `node` IN ITS PROPERTIES - a reference found by place, edges left out, a blend a hair short - said
+/// in the voice's warning tone, as the tree says it; a reference found by place with the one button that accepts what
+/// was found, inside one undo step. One place for every kind of step: a feature and a sketch on a face both hold it.
+pub fn node_warning_props(pr: &mut PropsCtx, ui: &mut egui::Ui, node: Id) {
+    if let Some(warning) = pr.project.node_warning(node).filter(|_| !pr.project.regen_errors.contains_key(&node)) {
+        ui.separator();
+        let text = qymcad_i18n::error_words::error_text(&warning);
+        say(ui, &pr.scheme.pal, &Notice::warning(text), NoticeSize::Small);
+    }
+    let accept = format!("{} {}", egui_phosphor::regular::CHECK, qymcad_i18n::tr("props-accept-place"));
+    if pr.project.placed_refs.contains(&node) && ui.button(accept).on_hover_text(qymcad_i18n::tr("props-accept-place-hint")).clicked() {
+        begin_edit(pr.edits, pr.project, qymcad_i18n::tr("cmdname-accept-place")); // THE BOUNDARY OF AN OPERATION
+        pr.project.accept_found_by_place(node);
+        commit_edit(&mut pr.rebuild());
+    }
+}
+
 /// INSTALL THE FONTS INTO A CONTEXT — IN ONE PLACE.
 ///
 /// This used to be done right inside the application start-up, and the `qym-bold` family existed only

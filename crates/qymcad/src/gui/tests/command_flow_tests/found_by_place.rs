@@ -64,6 +64,91 @@ fn a_rounding_whose_edge_was_found_by_place_says_so_and_is_accepted() {
     assert!(hand.app.project.placed_refs.contains(&fillet), "Ctrl+Z did not bring the mark back");
 }
 
+/// The name of the sketch the next document holds.
+const FACE_SKETCH: &str = "Sketch on the top";
+
+/// A cube of 20 with a sketch on its top face whose face name was lost and found by place, rebuilt and written to
+/// `path`. Returns the node of the sketch.
+fn written_with_a_face_found_by_place(path: &str) -> Id {
+    use qymcad_core::feature::{FaceKey, SketchPlane};
+    use qymcad_core::names::{GeoName, Role};
+    let mut p = qymcad_core::model::Project::default();
+    p.new_document();
+    let block = p.add_box(20.0, 20.0, 20.0);
+    let kernel = qymcad_kernel::OcctKernel::default();
+    let gate = qymcad_kernel::kernel_gate();
+    let _ = p.regenerate(&kernel);
+    let top = p.regen_faces[&block].iter().enumerate().find(|(_, f)| f.normal[2] > 0.9).map(|(i, f)| FaceKey {
+        index: i as u32,
+        centroid: [f.centroid.x, f.centroid.y, f.centroid.z],
+        normal: f.normal,
+        id: f.id,
+    });
+    let top = top.expect("the top face of the cube");
+    let si = p.new_sketch(FACE_SKETCH);
+    let sid = p.sketches[si].id;
+    p.sketches[si].plane = SketchPlane::Face(block, top);
+    p.add_sketch_node(sid, FACE_SKETCH);
+    let _ = p.regenerate(&kernel);
+    let lost = p.names.intern_face(GeoName::new(999, Role::Wall, 1));
+    if let SketchPlane::Face(_, key) = &mut p.sketches[si].plane {
+        key.id = lost;
+    }
+    p.mark_sketch_dirty(sid);
+    let _ = p.regenerate(&kernel);
+    drop(gate);
+    // the faces of the body with their names, as the window lays them after a rebuild (`set_body_faces`): a face picked
+    // in the view carries the name it has there
+    for (body, faces) in p.regen_faces.clone() {
+        p.set_body_faces(body, faces);
+    }
+    assert!(p.placed_refs.contains(&sid), "GUARD: the sketch found its face by place");
+    qymcad_io::save_project(&p, path).expect("the document is written");
+    sid
+}
+
+/// A SKETCH WHOSE FACE WAS FOUND BY PLACE SAYS SO WHERE THE SKETCH IS: its row under the sketches stands yellow, its own
+/// properties - a click on that row - say it and hold Accept, which takes the mark away as one step Ctrl+Z gives back.
+/// Reported behaviour: the warning and Accept were reachable only through the badge of the status line.
+#[test]
+fn a_sketch_whose_face_was_found_by_place_says_so_and_is_accepted() {
+    let dir = std::env::temp_dir().join(format!("qym_face_found_by_place_window_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a folder for the file");
+    let path = dir.join("facesk_lost.qcad").to_string_lossy().into_owned();
+    let sketch = written_with_a_face_found_by_place(&path);
+    let loaded = qymcad_io::load_project(&path).expect("the document reads");
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut app = App::default();
+    app.finish_project_load(path.clone(), loaded, Vec::new());
+    let said = crate::gui::error_words::error_text(&qymcad_core::errors::CoreError::RefFoundByPlace);
+    let accept = crate::i18n::tr("props-accept-place");
+    let pal = app.scheme.pal.clone();
+    let mut hand = Hand::new(&mut app);
+    let part = hand.app.project.components.iter().find(|c| c.kind == qymcad_core::feature::ComponentKind::Part).map(|c| crate::i18n::name(&c.name)).expect("the part");
+    assert!(hand.double_click_word(&part), "the part {part:?} is not in the tree");
+    // the row of the sketch, as the tree paints it: yellow
+    let row = hand.painted_words().into_iter().find(|w| w.text.ends_with(FACE_SKETCH));
+    let row = row.unwrap_or_else(|| panic!("no row of the sketch; the window writes {:?}", hand.words_drawn().iter().map(|(w, _)| w.clone()).collect::<Vec<_>>()));
+    assert_eq!(row.colour, pal.warning(), "the row of the sketch whose face was found by place is not yellow: {:?}", row.text);
+    hand.click_screen(row.rect.center());
+    assert!(hand.shows(&said), "the properties of the sketch do not say its face was found by place");
+    assert!(hand.press_word(&accept, row.rect.center()), "no Accept in the properties of the sketch");
+    assert!(!hand.shows(&said) && !hand.app.project.placed_refs.contains(&sketch), "accepted, the sketch is still marked");
+    hand.undo();
+    assert!(hand.app.project.placed_refs.contains(&sketch), "Ctrl+Z did not bring the mark back");
+    // the other way the warning names: the face picked again - the right button on the row, "Move sketch", the top face
+    let top = match hand.app.project.sketches.iter().find(|s| s.id == sketch).map(|s| s.plane) {
+        Some(qymcad_core::feature::SketchPlane::Face(_, key)) => key.centroid,
+        other => panic!("the sketch stands on {other:?}, not on a face"),
+    };
+    let at = hand.painted_words().into_iter().find(|w| w.text.ends_with(FACE_SKETCH)).map(|w| w.rect.center()).expect("the row of the sketch");
+    let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+    hand.frame(vec![egui::Event::PointerMoved(at)]).frame(vec![button(true)]).frame(vec![button(false)]);
+    assert!(hand.press_word(&crate::i18n::tr("act-move-sketch"), at), "no Move sketch in the menu of the row");
+    hand.click(top).settle();
+    assert!(!hand.app.project.placed_refs.contains(&sketch), "the face picked again, the sketch is still marked");
+}
+
 /// A ROUNDING BUILT A HAIR SHORT SAYS SO IN ITS PROPERTIES: four roundings of R5 on the top of a cube of 10 meet at its
 /// corners and are built a hair short of their size; rebuilt in the window, the properties of the rounding say so in the
 /// warning tone, as its row does. Before, the row stood yellow and its properties said nothing of it.
