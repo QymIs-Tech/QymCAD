@@ -322,8 +322,11 @@ io-stl-no-faces = STL: файлда бірде-бір үшбұрыш жоқ
 io-stl-no-triangles = STL: экспорттайтын үшбұрыштар жоқ
 io-stl-too-many-triangles = STL: үшбұрыштар тым көп
 io-stl-write-failed = STL: жазу орындалмады: { $v }
+io-body-corner-not-finite = Дене { $v }: { $w } төбесі шекті сан емес ({ $x }); файл ашылмады
+io-body-face-not-finite = Дене { $v }: { $w } беті шекті сан емес ({ $x }); файл ашылмады
 
 io-svg-empty-sketch = SVG: эскиз бос
+io-svg-too-deep = SVG: сызба { $v } деңгейден тереңірек салынған және оқылмайды
 io-svg-write-failed = SVG: жазу орындалмады: { $v }
 io-dxf-empty-sketch = DXF: эскиз бос
 io-dxf-write-failed = DXF: жазу орындалмады: { $v }
