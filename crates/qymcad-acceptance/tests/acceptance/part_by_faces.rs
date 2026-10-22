@@ -590,3 +590,55 @@ probe! {
         assert!(solids.len() == 1 && (solids[0].volume - 18000.0).abs() < 1.0, "the block with its top replaced is {:?}, 40 x 30 x 15 = 18000 was expected; the status line says {:?}", solids.iter().map(|b| (b.volume, b.min, b.max)).collect::<Vec<_>>(), s.status());
     }
 }
+
+/// Where the wall of the hole stands across the block, as (x, y): the middle of the one cylinder face of the body.
+fn hole_at(s: &mut Session) -> Option<(f64, f64)> {
+    let now = body(s);
+    let kinds = s.document().bodies.iter().rposition(|b| !b.consumed && !b.sheet).and_then(|i| s.inspect(i)).map(|k| k.kinds.cylinder);
+    // the wall of a hole through a block is the only face whose middle lies inside the block's top and bottom
+    let walls: Vec<[f64; 3]> = now.face_centres.iter().copied().filter(|c| c[2] > now.min[2] + 1.0 && c[2] < now.max[2] - 1.0 && c[0] > 1.0 && c[0] < 39.0 && c[1] > 1.0 && c[1] < 29.0).collect();
+    (kinds == Some(1) && walls.len() == 1).then(|| (walls[0][0], walls[0][1]))
+}
+
+probe! {
+    /// THE SHIFTS OF A HOLE ARE EDITED BY OPENING IT AGAIN, and hold through a rebuild: a hole through the middle of the
+    /// top shifted 5 along it, opened again from the tree, shows 5; shifted 10 and applied it stands 10 off the middle;
+    /// the block made 12 tall under it, the hole is still 10 off and shows 10. Reported behaviour: the shifts typed when
+    /// the hole was opened again went back to the first ones.
+    fn the_shifts_of_a_hole_are_edited_by_opening_it_again() {
+        let mut s = a_block();
+        take(&mut s, "tb-hole-hint");
+        let top = s.face_at([20.0, 15.0, 10.0]);
+        s.click(top);
+        field(&mut s, "f-hole-u", "5");
+        s.key(Key::Enter);
+        let mut fails = Vec::new();
+        let caption = s.word("f-hole-u");
+        build::reopen(&mut s, "feat-hole");
+        let shown = s.field(&caption).value;
+        if shown.parse::<f64>().ok() != Some(5.0) {
+            fails.push(format!("the hole shifted 5, opened again, shows the shift {shown:?}"));
+        }
+        s.fill(&caption, "10").key(Key::Enter);
+        let at = hole_at(&mut s);
+        if at.is_none_or(|(x, y)| (x - 30.0).abs() > 0.1 || (y - 15.0).abs() > 0.1) {
+            fails.push(format!("the hole shifted 10 from the middle (20, 15) of the top stands at {at:?}"));
+        }
+        // the block rebuilt under the hole: 12 tall instead of 10
+        build::reopen(&mut s, "feat-extrude");
+        let length = s.word("f-length");
+        s.fill(&length, "12").key(Key::Enter);
+        let now = body(&mut s);
+        let at = hole_at(&mut s);
+        if (now.max[2] - 12.0).abs() > 1e-3 || at.is_none_or(|(x, y)| (x - 30.0).abs() > 0.1 || (y - 15.0).abs() > 0.1) {
+            fails.push(format!("the block made 12 tall reaches {} and the hole stands at {at:?}, not at (30, 15)", now.max[2]));
+        }
+        build::reopen(&mut s, "feat-hole");
+        let shown = s.field(&caption).value;
+        if shown.parse::<f64>().ok() != Some(10.0) {
+            fails.push(format!("the hole shifted 10, rebuilt and opened again, shows the shift {shown:?}"));
+        }
+        s.key(Key::Escape);
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
