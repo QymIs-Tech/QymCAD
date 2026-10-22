@@ -250,22 +250,20 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
                 }
             });
             ui.end_row();
-            // WHAT THE FORMULA COMES TO, or the words of why it cannot be taken, on a line of its own under the row. The line
-            // stands in every frame, empty when there is nothing to say (a reference shows no field): a grid keeps the
-            // height of a row by its place, and a line there in one frame and not in the next moved every row under it by
-            // 27.5 points - the field of a name came under the pointer resting on the words of its refusal.
-            if row.note == Note::Under {
+            // WHAT A FORMULA COMES TO, or the words of why the value cannot be taken, on a line of its own under the row - a
+            // plain number says itself, and a line under every field left the box with a blank line under each row
+            let said = match under {
+                Some(Ok(v)) if fields.iter().any(|p| row_holds(row, p) && p.txt.trim().parse::<f64>().is_err()) => Some(Ok(v)),
+                Some(Err(why)) => Some(Err(why)),
+                _ => None,
+            };
+            if let Some(said) = said {
                 ui.label("");
-                match under {
-                    Some(Ok(v)) => {
+                match said {
+                    Ok(v) => {
                         ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(v, 3))).weak().small());
                     }
-                    Some(Err(why)) => {
-                        under_words(ui, |ui| say(ui, d.look.pal, &Notice::refusal(why), NoticeSize::Small));
-                    }
-                    None => {
-                        ui.label("");
-                    }
+                    Err(why) => under_words(ui, |ui| say(ui, d.look.pal, &Notice::refusal(why), NoticeSize::Small)),
                 }
                 ui.end_row();
             }
@@ -294,6 +292,11 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
             }
         }
     });
+}
+
+/// Does `row` hold field `p`.
+fn row_holds(row: &Row, p: &CmdParam) -> bool {
+    row.cells.iter().any(|c| matches!(c, Cell::Field { key, .. } if *key == p.key))
 }
 
 /// HOW WIDE THE WORDS UNDER A FIELD RUN before they wrap: a refusal of a sentence or two stood as one line of 632 points,

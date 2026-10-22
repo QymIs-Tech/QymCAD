@@ -179,6 +179,9 @@ mod a_feature_value_is_named_in_its_box;
 mod a_number_of_the_bar_is_a_field_of_the_box;
 
 #[cfg(test)]
+mod the_boxes_look;
+
+#[cfg(test)]
 mod the_tool_in_hand_after_its_work;
 
 #[cfg(test)]

@@ -70,6 +70,9 @@ pub(crate) struct Input {
 pub(crate) fn field_input(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, id: egui::Id, how: Input) -> FieldSays {
     let Input { focus, note } = how;
     let o = expr_field_autofocus(ui, look.project, id, &p.txt, 74.0, &qymcad_i18n::tr("f-number-or-expr"), focus == Focus::Takes);
+    // HOW A VALUE IS TYPED, said over every field of every box as the box of a mate says it: Enter applies, a formula is
+    // taken. A line of it under the fields wrapped and pushed past the box of an extrusion.
+    let o = ExprOut { resp: o.resp.on_hover_text(qymcad_i18n::tr("sk-enter-apply-expr")), ..o };
     p.txt = o.text;
     let enter = o.resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let mut did = Vec::new();
@@ -191,10 +194,6 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             let drawing = Drawing { b, look, trial: trial.as_ref() };
             let drawn = draw_rows(ui, &drawing, fields, layout, b.focus);
-            // HOW A VALUE IS TYPED, said in every box that has a value to type: Enter applies, a formula is taken
-            if !shown_keys(ui.ctx(), fields, b, layout).is_empty() {
-                ui.label(egui::RichText::new(qymcad_i18n::tr("sk-enter-apply-expr")).weak().small());
-            }
             seen.add(drawn.typed);
             did = drawn.did;
             let can = if shut_by(gate, &seen, ui.ctx()).open() { Can::Yes } else { Can::No };

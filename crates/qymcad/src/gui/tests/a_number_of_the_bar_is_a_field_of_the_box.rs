@@ -20,8 +20,8 @@ fn refusal(label: &'static str, number: qymcad_ui_state::Number, range: std::ops
     qymcad_ui_state::field_value(&p, &project.param_map()).err()
 }
 
-/// THE SIDES OF A POLYGON: every refused text is said under the field and leaves the sides as they were; a good one is
-/// taken and said as what it comes to.
+/// THE SIDES OF A POLYGON: every refused text is said under the field and leaves the sides as they were; a good formula
+/// is taken and said as what it comes to.
 #[test]
 fn the_sides_of_a_polygon_are_judged_in_the_box() {
     let mut app = App::default();
@@ -39,11 +39,12 @@ fn the_sides_of_a_polygon_are_judged_in_the_box() {
         hand.key(egui::Key::Enter);
         assert_eq!(hand.app.tool_prefs.poly_n, was, "{:?} was taken as the sides of the polygon", case.typed);
     }
-    assert!(hand.type_after_word(&label, "5"));
+    // a formula is said as what it comes to under the field; a plain number says itself
+    assert!(hand.type_after_word(&label, "2+3"));
     hand.frame(Vec::new());
     let said = format!("= {}", crate::i18n::num(5.0, 3));
     assert!(hand.words_drawn().iter().any(|(t, _)| *t == said), "the box does not say {said:?} under the field: {:?}", hand.words_drawn());
-    assert_eq!(hand.app.tool_prefs.poly_n, 5, "5 typed was not taken as the sides of the polygon");
+    assert_eq!(hand.app.tool_prefs.poly_n, 5, "2+3 typed was not taken as the sides of the polygon");
 }
 
 /// THE HEIGHT OF A TEXT: a height of nothing or a broken formula is said under the field and left out; a good one taken.

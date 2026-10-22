@@ -102,14 +102,14 @@ fn times(painted: &[Painted], word: &str) -> usize {
     painted.iter().filter(|p| p.text == word).count()
 }
 
-/// The box says what the box of a dimension says: the unit, the switch of the radius, the reference switch, the driver
-/// and how Enter takes it.
+/// The box says what the box of a dimension says: the unit, the switch of the radius, the reference switch and the
+/// driver.
 #[test]
 fn the_box_of_the_size_of_a_circle_says_what_the_box_of_its_dimension_says() {
     let Drawn { mut b, .. } = a_circle_in_its_box();
     let ctx = egui::Context::default();
     let painted = settled(&ctx, &mut b);
-    let mut words = ["sk-mm", "sk-ref-short", "sk-driver-label", "sk-enter-apply-expr"].map(qymcad_i18n::tr).to_vec();
+    let mut words = ["sk-mm", "sk-ref-short", "sk-driver-label"].map(qymcad_i18n::tr).to_vec();
     words.push("->R".to_string());
     let missing: Vec<&String> = words.iter().filter(|w| times(&painted, w) == 0).collect();
     assert!(missing.is_empty(), "the box of the size of a circle does not say {missing:?}; it says {:?}", painted.iter().map(|p| &p.text).collect::<Vec<_>>());
