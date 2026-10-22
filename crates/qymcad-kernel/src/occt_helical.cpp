@@ -795,12 +795,37 @@ extern "C" int qym_shape_bbox(const QymShape* s, double* out) {
 
 // The box of the geometry itself (`AddOptimal`), not of the poles of its curves and surfaces.
 extern "C" int qym_shape_bbox_exact(const QymShape* s, double* out) {
+    QYM_AS_HANDED(s, "it only reads the body; the box it counts is kept with it");
+    try {
+        QYM_SIGNALS;
+        if (!s || s->shape.IsNull() || !out) return 0;
+        if (s->bbox_known) {
+            for (int i = 0; i < 6; ++i) out[i] = s->bbox_memo[i];
+            return 1;
+        }
+        Bnd_Box b;
+        BRepBndLib::AddOptimal(s->shape, b, Standard_False, Standard_False);
+        if (b.IsVoid()) return 0;
+        b.Get(out[0], out[1], out[2], out[3], out[4], out[5]);
+        for (int i = 0; i < 6; ++i) s->bbox_memo[i] = out[i];
+        s->bbox_known = true;
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+// THE BOX OF THE POLES OF THE CURVES AND SURFACES, the triangulation of the body left aside: a body meshed and one not
+// are boxed alike, so a result not meshed yet is compared with its meshed source on the same footing. The box of the
+// triangulation is tighter by what the poles stand out, 2.9 mm on a variable fillet of a plate, 14 mm on a chamfer on
+// a loft; compared with it, the box of the poles of a sound result stood past it on every fillet of a propeller.
+extern "C" int qym_shape_bbox_poles(const QymShape* s, double* out) {
     QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull() || !out) return 0;
         Bnd_Box b;
-        BRepBndLib::AddOptimal(s->shape, b, Standard_False, Standard_False);
+        BRepBndLib::Add(s->shape, b, Standard_False);
         if (b.IsVoid()) return 0;
         b.Get(out[0], out[1], out[2], out[3], out[4], out[5]);
         return 1;
@@ -808,6 +833,29 @@ extern "C" int qym_shape_bbox_exact(const QymShape* s, double* out) {
         return 0;
     }
 }
+
+// THE EXACT BOX OF THE FACES THE OPERATION MADE OR TRIMMED (`fresh`): a face it kept stands where it stood, so the box
+// of a result past the box of its source comes from the faces it made or trimmed. The exact box of a whole body of 80
+// spline faces took 0.6 s, of the faces a fillet of 8 edges made and trimmed a fraction of it. Every face counts where
+// the faces made are not known. 0 when there is no such face.
+extern "C" int qym_shape_bbox_exact_fresh(const QymShape* got, double* out) {
+    QYM_AS_HANDED(got, "it only reads the body");
+    try {
+        QYM_SIGNALS;
+        if (!got || got->shape.IsNull() || !out) return 0;
+        Bnd_Box b;
+        for (TopExp_Explorer ex(got->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            if (got->fresh_known && !got->fresh.Contains(ex.Current())) continue;
+            BRepBndLib::AddOptimal(ex.Current(), b, Standard_False, Standard_False);
+        }
+        if (b.IsVoid()) return 0;
+        b.Get(out[0], out[1], out[2], out[3], out[4], out[5]);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
 
 // B-rep validity (BRepCheck_Analyzer): 1 for a valid solid, 0 for a broken or self-intersecting one. It lets
 // operations fail gracefully when the kernel "builds" them (IsDone = true) but the result is geometrically
@@ -822,8 +870,13 @@ extern "C" int qym_shape_heal_pinched_faces(QymShape* s) {
     if (!s) return 0;
     try {
         QYM_SIGNALS;
-        s->volume_memo = -1.0;
-        return heal_pinched_faces(s->shape, s->fids, s->eids, s->fsplit_of, s->fsplit_idx);
+        const int healed = heal_pinched_faces(s->shape, s->fids, s->eids, s->fsplit_of, s->fsplit_idx);
+        if (healed > 0) {
+            s->volume_memo = -1.0;
+            s->fresh.Clear();
+            s->fresh_known = false;
+        }
+        return healed;
     } catch (...) { return 0; } // it did not work out; the solid stays as it was, no worse
 }
 

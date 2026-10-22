@@ -387,6 +387,8 @@ extern "C" QymShape* qym_shape_own_copy(const QymShape* s) {
         QYM_SIGNALS;
         QymShape* out = new QymShape(qym_own_copy(*s));
         out->volume_memo = s->volume_memo;
+        out->bbox_known = s->bbox_known;
+        for (int i = 0; i < 6; ++i) out->bbox_memo[i] = s->bbox_memo[i];
         return out;
     } catch (...) {
         return nullptr;
@@ -1636,8 +1638,14 @@ static QymShape* off_seams(const QymShape* s, const uint32_t* idx, size_t n, con
     ++again;
     QymShape* q = op(&moved);
     --again;
-    // the lines the moving left are glued away: the part keeps the faces it had, with the blend on it
-    if (q) q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed);
+    // the lines the moving left are glued away: the part keeps the faces it had, with the blend on it - and the faces
+    // the blend noted as made are of the body before the glue, not of this one
+    if (q) {
+        q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed);
+        q->fresh.Clear();
+        q->fresh_known = false;
+        q->bbox_known = false;
+    }
     return q;
 }
 

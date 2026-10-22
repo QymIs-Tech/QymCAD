@@ -177,7 +177,18 @@ impl Shape {
         let mut out = [0.0f64; 6];
         (unsafe { qym_shape_bbox_exact(self.ptr, out.as_mut_ptr()) } == 1).then_some(out)
     }
-
+    /// THE BOX OF THE POLES of the curves and surfaces, the triangulation left aside: a body meshed and one not yet are
+    /// boxed alike.
+    pub(crate) fn bbox_poles(&self) -> Option<[f64; 6]> {
+        let mut out = [0.0f64; 6];
+        (unsafe { qym_shape_bbox_poles(self.ptr, out.as_mut_ptr()) } == 1).then_some(out)
+    }
+    /// THE EXACT BOX OF THE FACES THE OPERATION MADE OR TRIMMED - not those it kept, which stand where they stood; every
+    /// face where that is not known. `None` with no such face.
+    pub(crate) fn bbox_exact_of_new_faces(&self) -> Option<[f64; 6]> {
+        let mut out = [0.0f64; 6];
+        (unsafe { qym_shape_bbox_exact_fresh(self.ptr, out.as_mut_ptr()) } == 1).then_some(out)
+    }
     /// A BLEND OF EDGES STAYS IN ITS BODY. A fillet or a chamfer takes material off a convex edge and puts it into a
     /// concave corner: either way the result stands inside the box of the body it was made from - give or take `reach`,
     /// the size of the blend - and its volume stays above zero and
@@ -185,20 +196,22 @@ impl Shape {
     /// a rounding of R1.99999996 on the arc of an R10 rounding ending in the corners of two chamfers that ate their
     /// faces came back 3.6e6 mm^3 reaching 590 mm out of a block of 48,916 mm^3. Such a body is refused, in words.
     ///
-    /// The two boxes are read off the poles first, which stand round the geometry by millimetres: a result whose poles
-    /// stand within a twentieth of the size of the body past its poles is taken, and the boxes of the geometry itself are
-    /// sought only past that - a search over every surface, which took most of a rounding of a side swept from a spline.
-    /// The bodies refused stand hundreds of millimetres past.
+    /// The two boxes are read off the poles first, which stand round the geometry by millimetres, both the same way -
+    /// the box of a meshed body is read off its triangulation otherwise, and the box of the poles of every sound fillet of
+    /// a propeller stood past it: a result whose poles stand within a twentieth of the size of the body past its poles is
+    /// taken. Past that, the box of the geometry itself: of the source whole, kept with it once counted (0.6 s on a body
+    /// of 80 spline faces), and of the faces the blend made or trimmed - the faces it kept stand where they stood. The
+    /// bodies refused stand hundreds of millimetres past (a stair of 3.6e6 mm^3 standing 590 mm out).
     pub(crate) fn blended(&self, got: Option<Shape>, reach: f64) -> Option<Shape> {
         let got = got?;
         let past = |a: [f64; 6], b: [f64; 6]| (0..3).map(|i| (a[i] - b[i]).max(b[i + 3] - a[i + 3])).fold(0.0f64, f64::max);
         let limit = |a: [f64; 6]| reach.abs() + 1e-3 * ((a[3] - a[0]).powi(2) + (a[4] - a[1]).powi(2) + (a[5] - a[2]).powi(2)).sqrt().max(1.0);
         // the poles of a rounding stand out round it by millimetres; a body the kernel botched, by hundreds
         let roomy = |a: [f64; 6]| limit(a) + 0.05 * ((a[3] - a[0]).powi(2) + (a[4] - a[1]).powi(2) + (a[5] - a[2]).powi(2)).sqrt();
-        let within = self.bbox().is_some_and(|a| got.bbox().is_some_and(|b| past(a, b) <= roomy(a)));
+        let within = self.bbox_poles().is_some_and(|a| got.bbox_poles().is_some_and(|b| past(a, b) <= roomy(a)));
         if !within {
             if let Some(a) = self.bbox_exact() {
-                let beyond = got.bbox_exact().map_or(0.0, |b| past(a, b));
+                let beyond = got.bbox_exact_of_new_faces().map_or(0.0, |b| past(a, b));
                 if beyond > limit(a) {
                     return refuse("blend/check", &format!("the kernel gave a body standing {beyond:.1} mm past the body it blends"));
                 }

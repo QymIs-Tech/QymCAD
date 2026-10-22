@@ -320,6 +320,16 @@ struct QymShape {
     // 80 faces, 51 of them splines, 1.3-1.6 s a time, and the body a fillet reads was counted again for every node built
     // on it. Only `heal_pinched_faces` and `drop_slivers` change a shape in place, and they forget it.
     mutable double volume_memo = -1.0;
+    // THE FACES THE OPERATION MADE OR TRIMMED: every face that is not a face of a body it worked on, as it was. A face
+    // trimmed on a plane keeps its surface and not its bounds - a boundary that ran off is where a botched body stands
+    // past its source - so it counts with the faces made. Known once a result passed `qym_result`; a step that reshapes
+    // the body afterwards forgets them, and every face counts.
+    TopTools_MapOfShape fresh;
+    bool fresh_known = false;
+    // THE EXACT BOX OF THE GEOMETRY ONCE COUNTED (`BRepBndLib::AddOptimal`): a search over every surface, 0.6 s on a
+    // body of 80 faces, 51 of them splines, asked of the body by every blend made on it.
+    mutable double bbox_memo[6] = {0, 0, 0, 0, 0, 0};
+    mutable bool bbox_known = false;
 };
 
 /// Note, for every edge of `taken` (a face cut out of the body `s` as `source`, the same edges in the same order), the

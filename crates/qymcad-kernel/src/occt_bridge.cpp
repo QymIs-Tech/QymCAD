@@ -503,7 +503,20 @@ QymShape* qym_result(QymHistory& history, const TopoDS_Shape& res, const QymResu
     keep_standing(q->shape, TopAbs_EDGE, q->eids);
     keep_standing(q->shape, TopAbs_FACE, q->fsplit_of);
     keep_standing(q->shape, TopAbs_FACE, q->fsplit_idx);
-    if (spec.unify) q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed); // THE MONOLITH: merge the boolean's seam
+    // the faces the operation made or trimmed: every face that is not one of its operands' as it was
+    {
+        TopTools_MapOfShape old;
+        for (const QymOperand& o : spec.operands)
+            for (TopExp_Explorer ex(o.body->shape, TopAbs_FACE); ex.More(); ex.Next()) old.Add(ex.Current());
+        for (TopExp_Explorer ex(q->shape, TopAbs_FACE); ex.More(); ex.Next())
+            if (!old.Contains(ex.Current())) q->fresh.Add(ex.Current());
+        q->fresh_known = true;
+    }
+    if (spec.unify) {
+        q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed); // THE MONOLITH: merge the boolean's seam
+        q->fresh.Clear();
+        q->fresh_known = false;
+    }
     return q.release();
 }
 
