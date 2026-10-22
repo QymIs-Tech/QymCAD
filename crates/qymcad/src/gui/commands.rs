@@ -170,13 +170,9 @@ impl App {
     /// A copy here is AN INSTANCE rather than the part inserted again: its body associatively repeats the
     /// active body of the source, and the array drives the placement. Edit the part and every copy follows.
     pub(super) fn start_comp_array(&mut self, mode: PatternKind) {
-        match qymcad_part::comp_array_source(&mut self.part_ctx()) {
-            Ok(src) => {
-                self.cancel_all_tools(); // exclusivity: the array drops the previous tool
-                qymcad_part::begin_comp_array(&mut self.part_ctx(), mode, src);
-            }
-            Err(said) => self.status = said,
-        }
+        let src = qymcad_part::comp_array_source(&mut self.part_ctx()).ok();
+        self.cancel_all_tools(); // exclusivity: the array drops the previous tool
+        qymcad_part::take_comp_array(&mut self.part_ctx(), mode, src);
     }
 
     /// Reopen an EXISTING component array for editing (a double click in the tree).

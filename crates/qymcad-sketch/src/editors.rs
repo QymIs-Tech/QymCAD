@@ -44,9 +44,9 @@ pub(crate) fn editor_open(sk: &mut qymcad_ui_state::SketchCtx) -> Option<Editor>
 /// The editor `e` over sketch context `sk`, as a tool of the frame.
 pub(crate) fn editor_tool<'a>(sk: &'a mut qymcad_ui_state::SketchCtx<'_>, e: Editor) -> Box<dyn FramedTool + 'a> {
     match e {
-        Editor::Dim(dim) => Box::new(DimEdit { sk, dim }),
-        Editor::Corner(at) => Box::new(CornerEdit { sk, at }),
-        Editor::Offset(at) => Box::new(OffsetEdit { sk, at }),
+        Editor::Dim(dim) => Box::new(DimEdit { sk, dim, asks: Vec::new() }),
+        Editor::Corner(at) => Box::new(CornerEdit { sk, at, asks: Vec::new() }),
+        Editor::Offset(at) => Box::new(OffsetEdit { sk, at, asks: Vec::new() }),
     }
 }
 
@@ -189,10 +189,6 @@ const VALUE: &str = "value";
 pub(crate) const ROUND: &str = "dim-radius-or-diameter";
 /// The near or the far edge of a circle a tangent gap is measured to.
 const EDGE: &str = "dim-edge";
-/// A reference dimension, which shows its value and drives nothing.
-pub(crate) const DRIVEN: &str = "dim-driven";
-/// The name of the field of the first dimension of a box - the one of a box of one dimension.
-pub const DIM_NAME: OptKey = OptKey::of(qymcad_ui_state::FIELD_NAME);
 
 /// A DIMENSION IN ITS BOX: its sketch and its place among the constraints of the sketch.
 #[derive(Clone, Copy)]
@@ -291,6 +287,7 @@ fn target_of(sk: &qymcad_ui_state::SketchCtx, si: usize, c: &Constraint) -> Opti
 struct DimEdit<'a, 'b> {
     sk: &'a mut qymcad_ui_state::SketchCtx<'b>,
     dim: Dim,
+    asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl FramedTool for DimEdit<'_, '_> {
@@ -309,24 +306,17 @@ impl FramedTool for DimEdit<'_, '_> {
         };
         if sk.dim.focus || sk.dim.field.is_empty() {
             sk.dim.field = vec![value_field(&c, kind)];
-            sk.dim.name = None;
         }
         let target = target_of(sk, si, &c);
         let gate = value_gate(sk.project, &c, target.as_ref(), &sk.dim.field);
         let mut spec = box_by(at, &[at], &mut sk.dim.focus);
-        let driven = if c.is_driven() { Driven::Reads(shown_value(&c)) } else { Driven::No };
         // A DRIVER BELONGS TO ANY DIMENSION, NOT ONLY TO A LINEAR ONE: an angle, a diameter, a distance to a line, an arc
-        // length or a tangent gap is named as well, a driver being told by the set of entities it sizes
-        if let Some(t) = target.as_ref() {
-            let had = qymcad_i18n::name(&sk.project.name_of_target(t));
-            let text = sk.dim.name.clone().unwrap_or(had);
-            spec.names = vec![qymcad_ui_state::FieldName::judged(sk.project, VALUE, text, Some(t))];
-        }
-        let rows = dim_rows(DimRows { caption: row_caption(kind), field: VALUE, at: 0, kind, driven });
-        spec.layout = dim_layout(rows);
-        if c.is_driven() {
-            spec.hidden = vec![VALUE];
-        }
+        // length or a tangent gap is named as well, a driver being told by the set of entities it sizes; the frame keeps
+        // the name and the reference as they are typed and switched (`take_asks`)
+        let had = target.as_ref().map(|t| qymcad_i18n::name(&sk.project.name_of_target(t))).unwrap_or_default();
+        let lit = if c.is_driven() { qymcad_ui_state::Lit::On } else { qymcad_ui_state::Lit::Off };
+        spec.names = vec![qymcad_ui_state::FieldName::of(VALUE, had, target).with_driven(lit)];
+        spec.layout = dim_layout(dim_rows(DimRows { caption: row_caption(kind), field: VALUE, at: 0, kind }));
         Described { head, bar: bar_under(sk, &[]), gate, says: Vec::new(), boxed: Some(spec) }
     }
 
@@ -348,15 +338,6 @@ impl FramedTool for DimEdit<'_, '_> {
         let asked = match did {
             Did::Pressed { key } if key.name == ROUND => Asked { round: Ask::Yes, ..Asked::default() },
             Did::Pressed { key } if key.name == EDGE => Asked { edge: Ask::Yes, ..Asked::default() },
-            Did::Switched { key } if key.name == DRIVEN => Asked { driven: Ask::Yes, ..Asked::default() },
-            Did::Retyped { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
-                sk.dim.name = Some(text);
-                return;
-            }
-            Did::Entered { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
-                name_dimension(sk, self.dim, &text);
-                return;
-            }
             _ => {
                 opt_took(sk, did);
                 return;
@@ -380,6 +361,14 @@ impl FramedTool for DimEdit<'_, '_> {
         }
         let fresh = self.sk.dim.fresh.is_some_and(|(fc, steps)| fc == self.dim.ci && steps == self.sk.edits.undo.len());
         trial_kept(self.sk, if fresh { Kept::IntoTheLast } else { Kept::OwnStep });
+        // the reference switched and the name typed in the row of the value go in as the value did
+        if let Some(ask) = self.asks.first().cloned() {
+            let driven_was = constraint_of(self.sk, self.dim).is_some_and(|c| c.is_driven());
+            if (ask.driven == qymcad_ui_state::Lit::On) != driven_was {
+                let _ = change_dimension(self.sk, self.dim, Asked { driven: Ask::Yes, ..Asked::default() });
+            }
+            name_dimension(self.sk, self.dim, &ask.name);
+        }
         put_away(self.sk);
         self.sk.dim.fresh = None;
         Ok(())
@@ -395,6 +384,10 @@ impl FramedTool for DimEdit<'_, '_> {
     /// A good value typed is tried on the geometry at once (`try_on`).
     fn after(&mut self) {
         let _ = self.try_typed(Tried::OnceAText);
+    }
+
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     fn back(&mut self) -> Stepped {
@@ -475,40 +468,25 @@ pub(crate) struct DimRows {
     pub(crate) field: &'static str,
     pub(crate) at: usize,
     pub(crate) kind: Kind,
-    pub(crate) driven: Driven,
-}
-
-/// IS A DIMENSION A REFERENCE: no, or one reading the value it shows.
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Driven {
-    No,
-    Reads(f64),
 }
 
 /// THE ROWS OF ONE DIMENSION, the one description of a dimension wherever it is typed - laid already, or laid by its box
 /// on Enter: the value - a number or a formula - with what it comes to said under it, the switch of a radius and a
 /// diameter or of the near and the far edge, the unit, and "ref.".
 pub(crate) fn dim_rows(d: DimRows) -> Vec<qymcad_ui_state::Row> {
-    let mut value = qymcad_ui_state::Row::new(d.caption).said_under();
+    // THE ROW OF A VALUE, as every box lays it: the caption, the field, its unit, then what the value is switched by -
+    // the radius or the diameter, the near or the far edge; its name and its reference follow, laid by the frame
+    let unit = if d.kind == Kind::Angle { "unit-deg-suffix" } else { "sk-mm" };
+    let mut value = qymcad_ui_state::Row::new(d.caption).field(d.field).unit(unit);
+    // THE SIGN OF A ROUND VALUE IS THE BUTTON THAT SWITCHES IT, in the place of the caption: "Ø" shown, a click makes it
+    // a radius
     if let Kind::Round(shown) = d.kind {
-        let word = if shown == Shown::Diameter { "->R" } else { "->\u{d8}" };
-        value = value.opt(Opt::press(OptKey::at(ROUND, d.at), word).hint(qymcad_i18n::tr("sk-toggle-rad-dia")));
+        let sign = if shown == Shown::Diameter { "\u{d8}" } else { "R" };
+        value = value.lead(Opt::press(OptKey::at(ROUND, d.at), sign).hint(qymcad_i18n::tr("sk-toggle-rad-dia")));
     }
     if d.kind == Kind::Edge {
         value = value.opt(Opt::press(OptKey::at(EDGE, d.at), qymcad_i18n::tr("sk-edge-toggle")).hint(qymcad_i18n::tr("sk-near-far-edge")));
     }
-    value = value.field(d.field);
-    if d.kind != Kind::Angle {
-        value = value.unit("sk-mm");
-    }
-    let lit = match d.driven {
-        Driven::No => qymcad_ui_state::Lit::Off,
-        Driven::Reads(v) => {
-            value = value.opt(Opt::Readout(qymcad_i18n::tr1("sk-driven-value", "v", &qymcad_i18n::num(v, 3))));
-            qymcad_ui_state::Lit::On
-        }
-    };
-    value = value.opt(Opt::switch(OptKey::at(DRIVEN, d.at), qymcad_i18n::tr("sk-ref-short"), lit).hint(qymcad_i18n::tr("sk-driven-hint")));
     vec![value]
 }
 
@@ -519,7 +497,7 @@ pub(crate) fn dim_layout(rows: Vec<qymcad_ui_state::Row>) -> qymcad_ui_state::La
 
 /// WHAT WAS ASKED OF A DIMENSION BEFORE ITS BOX LAID IT, given to it now it stands: its radius or diameter, the formula
 /// typed, whether it is a reference, its name.
-pub(crate) fn ask_laid(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, ask: &qymcad_ui_state::DimAsk, formula: Option<Value>) {
+pub(crate) fn ask_laid(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, ask: AskOf, formula: Option<Value>) {
     let refuse = |sk: &mut qymcad_ui_state::SketchCtx, r: Result<(), &'static str>| {
         if let Err(key) = r {
             *sk.status = Notice::refusal(qymcad_i18n::tr1(key, "max", &qymcad_i18n::num(MAX_SKETCH_LENGTH, 0)));
@@ -535,13 +513,21 @@ pub(crate) fn ask_laid(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, ask: &qymc
         let r = change_dimension(sk, dim, Asked { value: Some(value), ..Asked::default() });
         refuse(sk, r);
     }
-    if ask.driven == qymcad_ui_state::Lit::On && !constraint_of(sk, dim).is_some_and(|c| c.is_driven()) {
+    let Some(row) = ask.row else { return };
+    if row.driven == qymcad_ui_state::Lit::On && !constraint_of(sk, dim).is_some_and(|c| c.is_driven()) {
         let r = change_dimension(sk, dim, Asked { driven: Ask::Yes, ..Asked::default() });
         refuse(sk, r);
     }
-    if !ask.name.trim().is_empty() {
-        name_dimension(sk, dim, &ask.name);
+    if !row.name.trim().is_empty() {
+        name_dimension(sk, dim, &row.name);
     }
+}
+
+/// WHAT WAS ASKED OF A DIMENSION A BOX LAYS: its radius or diameter, and the row of its name and reference the frame kept.
+#[derive(Clone, Copy)]
+pub(crate) struct AskOf<'a> {
+    pub(crate) shown: Option<Shown>,
+    pub(crate) row: Option<&'a qymcad_ui_state::FieldAsk>,
 }
 
 /// A FORMULA TYPED INTO FIELD `p`, kept beside the value it comes to; none for a plain number, which the dimension holds
@@ -698,7 +684,6 @@ fn name_dimension(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, typed: &str) {
     if nm == old || qymcad_ui_state::name_unfit(sk.project, Some(&target), &nm).is_some() {
         return;
     }
-    sk.dim.name = None;
     let mut ed = qymcad_ui_state::edit_over(sk.rebuild(), qymcad_i18n::tr("sk-driver-step"));
     qymcad_ui_state::give_name(ed.project(), target, &nm);
     drop(ed);
@@ -753,6 +738,7 @@ fn corner_ctx<'s>(sk: &'s mut qymcad_ui_state::SketchCtx) -> qymcad_ui_state::Co
 struct CornerEdit<'a, 'b> {
     sk: &'a mut qymcad_ui_state::SketchCtx<'b>,
     at: CornerAt,
+    asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl CornerEdit<'_, '_> {
@@ -842,14 +828,14 @@ impl FramedTool for CornerEdit<'_, '_> {
         // THE VALUE OF A CORNER IS A VALUE OF ONE DESCRIPTION: its formula, its unit, what it comes to - or why the
         // corners refuse it - said under it
         let angle = sk.tool_prefs.chamfer_mode == qymcad_core::feature::ChamferMode::DistAngle;
-        let row = |p: &qymcad_ui_state::CmdParam, unit: &str| qymcad_ui_state::Row::new(qymcad_ui_state::field_caption(p)).field(&p.key).unit(unit).said_under();
+        let row = |p: &qymcad_ui_state::CmdParam, unit: &str| qymcad_ui_state::Row::new(qymcad_ui_state::field_caption(p)).field(&p.key).unit(unit);
         let rows: Vec<qymcad_ui_state::Row> = sk.corner.fields.iter().map(|p| row(p, if p.key == "r2" && angle { "unit-deg-suffix" } else { "sk-mm" })).collect();
         // HOW MUCH IS IN HAND, said in the box: a person typing one value for four corners has to know that it is four,
         // and the one answer that cuts them is one Enter
-        let foot = vec![Opt::Readout(qymcad_i18n::tr1("sk-corner-set-n", "n", &standing.len().to_string()))];
+        let set = if corner == Corner::Chamfer { "sk-corner-set-chamfer-n" } else { "sk-corner-set-n" };
+        let foot = vec![Opt::Readout(qymcad_i18n::tr1(set, "n", &standing.len().to_string()))];
         spec.layout = qymcad_ui_state::Layout { sections: vec![qymcad_ui_state::Section::plain(rows)], foot };
-        spec.names = sk.corner.fields.iter().map(|p| qymcad_ui_state::FieldName::judged(sk.project, &p.key, sk.corner.names.get(&p.key).cloned().unwrap_or_default(), None)).collect();
-        let gate = if gate.open() { qymcad_ui_state::names_gate(&spec.names) } else { gate };
+        spec.names = sk.corner.fields.iter().map(|p| qymcad_ui_state::FieldName::of(&p.key, String::new(), None)).collect();
         Described { head: head(ph::BEZIER_CURVE, name), bar, gate, says: Vec::new(), boxed: Some(spec) }
     }
 
@@ -866,29 +852,25 @@ impl FramedTool for CornerEdit<'_, '_> {
         *self.sk.status = words.clone();
     }
 
-    /// A name typed under a value is kept until the cut; anything else is the bar's.
     fn took(&mut self, did: Did) {
-        match did {
-            Did::Retyped { key, text } | Did::Entered { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
-                if let Some(field) = self.sk.corner.fields.get(key.at).map(|p| p.key.clone()) {
-                    self.sk.corner.names.insert(field, text);
-                }
-            }
-            did => opt_took(self.sk, did),
-        }
+        opt_took(self.sk, did);
+    }
+
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     /// THE SET CUT, AND THE VALUE NAMED: the first dimension the cut lays of the value takes its name, every other one
     /// reads it - one name drives the whole set, as one value cut it.
     fn apply(&mut self) -> Result<(), NotApplied> {
         let CornerAt { si, pid, chamfer } = self.at;
-        let names = self.sk.corner.names.clone();
+        let asks = self.asks.clone();
         let values: Vec<qymcad_ui_state::CmdParam> = self.sk.corner.fields.clone();
         let before = self.sk.project.sketches[si].constraints.len();
         corner_apply(&mut corner_ctx(self.sk), CornerOf { si, pid, chamfer: chamfer == Cut::Chamfer })?;
         for p in &values {
-            if let Some(nm) = names.get(&p.key) {
-                name_what_was_laid(self.sk, Laying { si, since: before, value: p.val.abs() }, nm);
+            if let Some(ask) = asks.iter().find(|a| a.field == p.key) {
+                name_what_was_laid(self.sk, Laying { si, since: before, value: p.val.abs() }, &ask.name);
             }
         }
         Ok(())
@@ -984,6 +966,7 @@ pub(crate) struct OffsetAt {
 struct OffsetEdit<'a, 'b> {
     sk: &'a mut qymcad_ui_state::SketchCtx<'b>,
     at: OffsetAt,
+    asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl FramedTool for OffsetEdit<'_, '_> {
@@ -1003,11 +986,10 @@ impl FramedTool for OffsetEdit<'_, '_> {
         let sheet = qymcad_ui_state::Sheet { view: *sk.view, rect: sk.canvas };
         let spot = sheet.at(near);
         let mut boxed = box_by(spot, &[spot, sheet.at(at)], &mut sk.sel_sk.offset.focus);
-        let row = qymcad_ui_state::Row::new(qymcad_i18n::tr("opt-distance")).field("d").unit("sk-mm").said_under();
+        let row = qymcad_ui_state::Row::new(qymcad_i18n::tr("opt-distance")).field("d").unit("sk-mm");
         boxed.layout = qymcad_ui_state::Layout { sections: vec![qymcad_ui_state::Section::plain(vec![row])], foot: Vec::new() };
-        boxed.names = vec![qymcad_ui_state::FieldName::judged(sk.project, "d", sk.sel_sk.offset.name.clone(), None)];
-        let gate = qymcad_ui_state::names_gate(&boxed.names);
-        Described { head: head(ph::COPY, "tool-offset"), bar, gate, says: Vec::new(), boxed: Some(boxed) }
+        boxed.names = vec![qymcad_ui_state::FieldName::of("d", String::new(), None)];
+        Described { head: head(ph::COPY, "tool-offset"), bar, gate: Gate::Open, says: Vec::new(), boxed: Some(boxed) }
     }
 
     fn fields(&mut self) -> &mut Vec<qymcad_ui_state::CmdParam> {
@@ -1027,7 +1009,7 @@ impl FramedTool for OffsetEdit<'_, '_> {
     fn apply(&mut self) -> Result<(), NotApplied> {
         let sk = &mut *self.sk;
         let d = sk.tool_prefs.offset;
-        let name = std::mem::take(&mut sk.sel_sk.offset.name);
+        let name = self.asks.first().map(|a| a.name.clone()).unwrap_or_default();
         let before = sk.project.sketches[self.at.si].constraints.len();
         offset_make(
             OffsetCtx { project: &mut *sk.project, edits: &mut *sk.edits, regen: &mut *sk.regen, sel_sk: &mut *sk.sel_sk, status: &mut *sk.status, tool_prefs: &mut *sk.tool_prefs },
@@ -1039,13 +1021,8 @@ impl FramedTool for OffsetEdit<'_, '_> {
         Ok(())
     }
 
-    /// A name typed under the distance is kept until the copy is made.
-    fn took(&mut self, did: Did) {
-        if let Did::Retyped { key, text } | Did::Entered { key, text } = did {
-            if key.name == qymcad_ui_state::FIELD_NAME {
-                self.sk.sel_sk.offset.name = text;
-            }
-        }
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     /// The side is freed, and the copy follows the pointer again.

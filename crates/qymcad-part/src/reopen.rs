@@ -309,8 +309,8 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
                 }
                 _ => (0.0, 0.0),
             };
-            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-u", "off_u", u, -100000.0, 100000.0));
-            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-v", "off_v", v, -100000.0, 100000.0));
+            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-u", "off_u", u, -100000.0, 100000.0).hint("f-hole-shift-hint"));
+            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-v", "off_v", v, -100000.0, 100000.0).hint("f-hole-shift-hint"));
             if kind != 0 {
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-recess-d", "dia2", dia2, 0.1, 10000.0));
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-recess-depth", "depth2", depth2, 0.1, 10000.0));
@@ -453,12 +453,9 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.arr.count = count.max(1);
             pc.arr.axis = axis;
-            pc.arr.full = angle.abs() >= 359.9;
             pc.arr.two = false;
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "cmd-copies", "count", f64::from(count.max(1)), 1.0, 512.0).whole()];
-            if !pc.arr.full {
-                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, 1.0, 360.0));
-            }
+            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, 1.0, 360.0));
         }
         // THE DATUMS: a double click reopens the command - a plane, a point or an axis is edited in place
         FeatureKind::Plane { plane } => {

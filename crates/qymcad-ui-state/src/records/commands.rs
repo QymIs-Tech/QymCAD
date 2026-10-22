@@ -387,9 +387,6 @@ pub struct FeatCommand {
     pub focus: bool,
     /// the body on whose face the command's sketch sits (an associative placement)
     pub ref_body: Option<Id>,
-    /// THE NAMES TYPED FOR ITS FIELDS, by the key of each: the drivers the formulas of the document will read them by,
-    /// given as the command writes its numbers (`store_cmd_exprs`)
-    pub names: std::collections::BTreeMap<String, String>,
 }
 
 impl FeatCommand {
@@ -444,9 +441,6 @@ pub struct CornerInput {
     pub crossing: CrossingCut,
     /// whether the corner follows the pointer or is fixed where it was clicked
     pub aim: Aim,
-    /// the names typed for the values of the set, by the key of each field: the first dimension the cut lays takes the
-    /// name, the others read it
-    pub names: std::collections::BTreeMap<String, String>,
 }
 
 /// WHETHER THE CORNER OF THE SET FOLLOWS THE POINTER OR STANDS WHERE IT WAS CLICKED. A point with more than one corner
@@ -779,8 +773,6 @@ pub struct OffsetAim {
     pub field: Vec<CmdParam>,
     /// the box takes the keyboard on the frame it opens
     pub focus: bool,
-    /// the name typed for the distance: the first dimension the copy lays takes it
-    pub name: String,
 }
 
 impl SketchSelection {
@@ -806,6 +798,46 @@ impl AxisPoint {
     }
 }
 
+/// THE SECOND OR THE THIRD DIRECTION OF A LINEAR PATTERN, by the key of the title of its section.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoreDirection {
+    Second,
+    Third,
+}
+
+impl MoreDirection {
+    /// The direction the title `key` of its section switches: `dir3_on` the third, any other the second.
+    pub fn of(key: &str) -> MoreDirection {
+        if key == "dir3_on" {
+            MoreDirection::Third
+        } else {
+            MoreDirection::Second
+        }
+    }
+}
+
+/// THE SECOND OR THIRD DIRECTION OF A LINEAR PATTERN SWITCHED as its section is opened or folded. Switched on, it runs
+/// along an axis the directions before it do not, so opening it makes a grid at once; the third goes with the second.
+pub fn switch_direction(arr: &mut ArrayParams, first: u8, which: MoreDirection) {
+    match which {
+        MoreDirection::Second => {
+            arr.two = !arr.two;
+            if arr.two && arr.dir2 == first {
+                arr.dir2 = (first + 1) % 3;
+            }
+        }
+        MoreDirection::Third => {
+            arr.three = !arr.three && arr.two;
+            if arr.three {
+                arr.dir3 = 3 - first.min(2) - arr.dir2.min(2);
+            }
+        }
+    }
+    if !arr.two {
+        arr.three = false;
+    }
+}
+
 /// THE PART PATTERN'S PARAMETERS: up to three linear directions, or a circular one about an axis.
 /// Eleven fields described ONE intention, and "two directions" could end up switched on with a count of 1, or an
 /// axis chosen for a linear pattern.
@@ -821,9 +853,9 @@ pub struct ArrayParams {
     pub three: bool,
     pub count3: u32,
     pub dir3: u8,
-    /// a circular pattern about an axis: the axis itself, whether it is a full turn, and whether the axis is being picked by a click
+    /// a circular pattern about an axis: the axis itself, and whether the axis is being picked by a click; the angle it
+    /// spans is a field of its box, 360 a full turn
     pub axis: Id,
-    pub full: bool,
     pub axis_pick: bool,
     /// the first of two points an axis is being picked through, until the second comes
     pub axis_first: Option<AxisPoint>,
@@ -856,10 +888,6 @@ pub struct DimTool {
     pub pick: Vec<Id>,
     /// THE FIELD OF THE BOX OF A DIMENSION, or of the size of a circle, as it is typed: empty while no box is up
     pub field: Vec<CmdParam>,
-    /// the name of the dimension as typed so far; none while the box shows the name the dimension has
-    pub name: Option<String>,
-    /// what was asked of the dimension the box of the size of a circle or an arc lays on Enter
-    pub asks: DimAsks,
     /// the text last tried on the dimension in its box, so a value is tried once, not in every frame
     pub tried: Option<String>,
     pub focus: bool,
@@ -880,8 +908,6 @@ impl DimTool {
     /// The box of a dimension put away: nothing typed into it stays.
     pub fn put_away(&mut self) {
         self.field.clear();
-        self.name = None;
-        self.asks = DimAsks::default();
         self.tried = None;
         self.focus = false;
         self.typed = false;
@@ -896,12 +922,10 @@ pub enum Shown {
     Diameter,
 }
 
-/// WHAT A PERSON ASKED OF ONE DIMENSION A BOX WILL LAY ON Enter, the dimension not laid yet: whether it is a reference,
-/// the name the formulas read it by, and - for a circle - whether it is shown as its radius.
+/// WHAT A PERSON ASKED OF ONE DIMENSION A BOX WILL LAY ON Enter beyond its name and its reference, which the frame keeps:
+/// for a circle, whether it is shown as its radius.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DimAsk {
-    pub driven: crate::Lit,
-    pub name: String,
     /// shown as its radius or its diameter; none - as the dimension is laid by its shape
     pub shown: Option<Shown>,
 }
@@ -923,9 +947,9 @@ impl DimAsks {
         self.rows.entry(key.to_string()).or_default()
     }
 
-    /// Was anything asked of the dimension of field `key` beyond its value: a reference, a name, its radius shown.
+    /// Was the radius or the diameter of the dimension of field `key` asked.
     pub fn touched(&self, key: &str) -> bool {
-        self.rows.get(key).is_some_and(|a| a.driven == crate::Lit::On || !a.name.trim().is_empty() || a.shown.is_some())
+        self.rows.get(key).is_some_and(|a| a.shown.is_some())
     }
 }
 
@@ -936,8 +960,6 @@ pub struct JointCommand {
     pub new_kind: qymcad_core::feature::JointKind,
     /// The fields of the box of the joint being edited, as they are typed.
     pub fields: crate::JointFields,
-    /// the names typed for the values of the joint being edited, by the key of each, until Enter gives them
-    pub names: std::collections::BTreeMap<String, String>,
     /// KEEP IT WHERE IT STANDS RIGHT AT CREATION (an "as-built" joint).
     ///
     /// A "keep it where it stands" button in the joint's properties comes TOO LATE: the joint has
@@ -1017,7 +1039,6 @@ impl Default for JointCommand {
         Self {
             new_kind: qymcad_core::feature::JointKind::Rigid,
             fields: crate::JointFields::default(),
-            names: std::collections::BTreeMap::new(),
             new_as_built: false,
             pick_faces: false,
             ground_pick: false,

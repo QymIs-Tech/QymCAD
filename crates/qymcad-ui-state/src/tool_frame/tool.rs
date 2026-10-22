@@ -35,6 +35,9 @@ pub trait FramedTool {
     /// ENTER WAS REFUSED with `words` - by the gate, or by the apply: said on the plate of the frame, and where the
     /// workbench says what its tools did, if it says it elsewhere.
     fn refused(&mut self, _words: &Notice) {}
+    /// WHAT WAS ASKED OF THE NAMED FIELDS of the box in this frame - the names typed, the references switched - handed
+    /// by the frame before it goes through the doors, so Apply lays them where the workbench lays a value.
+    fn take_asks(&mut self, _asks: Vec<FieldAsk>) {}
     /// Esc with no field holding the keyboard: let go of one thing, or say there is nothing left to let go of - a tool
     /// that picks nothing along the way has nothing, and Esc puts it down.
     fn back(&mut self) -> Stepped {
@@ -111,9 +114,14 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
         ctx.data_mut(|d| d.insert_temp(drawn_box_id(), DrawnBox { frame, id }));
         tool_box(&ctx, &look, canvas, &the_box, &mut fields)
     });
+    // what was asked of the names, the numbers of the bar among the fields
+    let asks = described.boxed.as_ref().map(|spec| asks_of(&ctx, box_id(&described.head), &spec.names, &fields));
     // THE NUMBERS OF THE BAR GO BACK where the bar kept them: the text as typed, a value taken given to the tool
     let typed = numbers_back(fields.split_off(own), &moved, texts.as_mut(), look.project);
     *tool.fields() = fields;
+    if let Some(asks) = asks {
+        tool.take_asks(asks);
+    }
     if let Some(texts) = texts {
         if let Some(kept) = tool.bar_texts() {
             *kept = texts;
@@ -164,6 +172,19 @@ fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, texts: O
     let tool = box_id(&described.head).value();
     let mut moved = Vec::new();
     let mut rows = Vec::new();
+    // A TOOL LAYS ITS NUMBERS ITSELF where it wants them in sections - the directions of a pattern; the rest stand a row
+    // each
+    let laid: Vec<String> = described
+        .boxed
+        .iter()
+        .flat_map(|b| &b.layout.sections)
+        .flat_map(|s| &s.rows)
+        .flat_map(|r| &r.cells)
+        .filter_map(|c| match c {
+            Cell::Field { key, .. } => Some(key.clone()),
+            Cell::Opt(_) => None,
+        })
+        .collect();
     for o in &described.bar {
         let Opt::Number { key, label, value, limits } = o else { continue };
         let mut p = CmdParam::new(label, key.name, *value, *limits.range.start(), *limits.range.end());
@@ -171,11 +192,11 @@ fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, texts: O
         p.nonzero = limits.zero == Zero::Refused;
         let typing = ctx.memory(|m| m.has_focus(field_id(tool, key.name)));
         p.txt = texts.filter(|_| typing).and_then(|t| t.get(key.name).cloned()).unwrap_or_else(|| qymcad_core::expr::fmt_num(*value));
-        let row = Row::new(qymcad_i18n::tr(label)).field(key.name).said_under();
-        rows.push(match limits.unit {
-            Some(unit) => row.unit(unit),
-            None => row,
-        });
+        // the bar names the unit of its number, or none: a ratio is not a length
+        p.unit = limits.unit.map_or(UnitOf::Bare, UnitOf::Key);
+        if !laid.iter().any(|k| k == key.name) {
+            rows.push(Row::new(qymcad_i18n::tr(label)).field(key.name));
+        }
         moved.push(Moved { key: *key, was: *value, field: p });
     }
     if moved.is_empty() {
@@ -183,7 +204,9 @@ fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, texts: O
     }
     described.bar.retain(|o| !matches!(o, Opt::Number { .. }));
     let spec = described.boxed.get_or_insert_with(|| BoxSpec::by(Place::close_by(By::ViewCorner)));
-    spec.layout.sections.push(Section::plain(rows));
+    if !rows.is_empty() {
+        spec.layout.sections.push(Section::plain(rows));
+    }
     moved
 }
 

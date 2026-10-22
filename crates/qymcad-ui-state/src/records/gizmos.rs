@@ -169,8 +169,6 @@ pub struct AnnotEdit {
     pub note: Option<usize>,
     pub note_buf: String,
     pub text: Option<usize>,
-    pub text_buf: String,
-    pub text_h: f64,
     /// The text field of the popup has just been opened and asks for the caret.
     ///
     /// Without it the popup opened with the focus nowhere: a person had to click into the field before

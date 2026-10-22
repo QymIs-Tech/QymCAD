@@ -99,7 +99,8 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
     for (key, val) in [("off_u", u), ("off_v", v)] {
         if let Some(p) = pc.cmd.params.iter_mut().find(|p| p.key == key) {
             p.val = (val * 1000.0).round() / 1000.0;
-            p.txt = qymcad_i18n::num(p.val, 3);
+            // one way of writing a number in every field: "0", not "0.000"
+            p.txt = qymcad_core::expr::fmt_num(p.val);
         }
     }
 }

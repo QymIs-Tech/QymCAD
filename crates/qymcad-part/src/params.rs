@@ -311,14 +311,12 @@ pub fn sync_array_params(arr: qymcad_ui_state::ArrayParams, armed: &qymcad_ui_st
         }
         Some(qymcad_ui_state::PartTool::CircularPattern) => {
             let has_ang = cmd.params.iter().any(|p| p.key == "angle");
-            if !arr.full && !has_ang {
+            if !has_ang {
                 let prm = match cmd.edit {
                     Some(fid) => cmd_param_from(project, fid, "f-angle", "angle", 360.0, 1.0, 360.0),
                     None => qymcad_ui_state::CmdParam::new("f-angle", "angle", 360.0, 1.0, 360.0),
                 };
                 cmd.params.push(prm);
-            } else if arr.full && has_ang {
-                cmd.params.retain(|p| p.key != "angle");
             }
         }
         _ => {}
@@ -369,14 +367,9 @@ pub struct Counts<'a> {
 /// Store the dimensions of a command on feature `body` through the one door of a feature's number
 /// (`Project::write_feat_formula`): an expression stays parametric, a plain number removes the expression (this matters
 /// while editing, when a formula gets replaced by a number). The first refusal stops the store and is handed back.
-///
-/// THE NAMES TYPED FOR THE FIELDS GO IN WITH THEM: a number of a feature is a driver as a dimension of a sketch is.
 pub fn store_cmd_exprs(cmd: &qymcad_ui_state::FeatCommand, project: &mut Project, body: Id) -> Result<(), qymcad_core::errors::ExprError> {
     for p in &cmd.params {
         project.write_feat_formula(&qymcad_core::model::FeatNumber { node: body, key: &p.key }, &p.txt, qymcad_core::model::PlainNumber::ClearsFormula)?;
-        if let Some(nm) = cmd.names.get(&p.key) {
-            qymcad_ui_state::give_name(project, qymcad_core::model::DimTarget::Feature { node: body, key: p.key.clone() }, nm);
-        }
     }
     Ok(())
 }

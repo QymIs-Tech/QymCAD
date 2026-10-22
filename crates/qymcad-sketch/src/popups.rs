@@ -123,8 +123,9 @@ pub(crate) fn shape_now(project: &Project, place: &qymcad_ui_state::Placing, si:
             let (cx, cy, r) = project.polygon_circle(si, *cid)?;
             let ang = project.polygon_angle(si, *cid)?;
             let shown = shown_of(place, "r", Shown::Radius);
-            let mut turn = qymcad_ui_state::CmdParam::new("sk-angle-deg", "a", ang.to_degrees(), -360.0, 360.0);
-            turn.txt = qymcad_core::expr::fmt_num(ang.to_degrees());
+            let mut turn = qymcad_ui_state::CmdParam::new("sk-angle", "a", ang.to_degrees(), -360.0, 360.0).unit("unit-deg-suffix");
+            // written to a hundredth of a degree: "-28.1701" read as noise; the value itself stays as the shape holds it
+            turn.txt = qymcad_core::expr::fmt_num((ang.to_degrees() * 100.0).round() / 100.0);
             let fields = vec![as_dimension(qymcad_ui_state::CmdParam::new(round_label(shown), "r", round_value(r, shown), 0.01, MAX_SKETCH_LENGTH)), turn];
             let sizes = vec![dimension("r", Kind::Round(shown)), Size { key: "a", kind: Kind::Angle, held: Held::Free }];
             Some(ShapeNow { fields, sizes, at: Point2::new(cx + r, cy), around: square(Point2::new(cx, cy), r) })
@@ -181,21 +182,20 @@ fn rect_now(diagonal: [Point2; 2]) -> ShapeNow {
     ShapeNow { fields, sizes, at: hi, around: corners(qymcad_core::geom::Bbox { min: Point2::new(a.x.min(b.x), a.y.min(b.y)), max: hi }) }
 }
 
-/// THE BOX OF A SHAPE AS ITS ROWS SAY IT: the layout, the fields a reference hides, the names of its dimensions, and the
-/// gate those names leave.
+/// THE BOX OF A SHAPE AS ITS ROWS SAY IT: the layout, and the names and references of its dimensions.
 pub(crate) struct ShapeBox {
     pub(crate) layout: qymcad_ui_state::Layout,
-    pub(crate) hidden: Vec<&'static str>,
     pub(crate) names: Vec<qymcad_ui_state::FieldName>,
-    pub(crate) gate: qymcad_ui_state::Gate,
+    /// the sizes no dimension holds, named as parameters of the project
+    pub(crate) free: Vec<&'static str>,
 }
 
 /// THE BOX OF THE SIZES OF A SHAPE IS THE BOX OF ITS DIMENSIONS, a row of a dimension for each size a dimension will hold
 /// - the same rows as the box of the dimension once laid (`dim_rows`) - and a plain row for a size no dimension holds.
-pub(crate) fn shape_box(project: &Project, place: &qymcad_ui_state::Placing, now: &ShapeNow) -> ShapeBox {
+pub(crate) fn shape_box(place: &qymcad_ui_state::Placing, now: &ShapeNow) -> ShapeBox {
     let mut rows = Vec::new();
-    let mut hidden = Vec::new();
     let mut names = Vec::new();
+    let mut free = Vec::new();
     for (at, size) in now.sizes.iter().enumerate() {
         let Some(p) = place.fields.iter().find(|p| p.key == size.key) else { continue };
         let caption = match size.kind {
@@ -203,57 +203,41 @@ pub(crate) fn shape_box(project: &Project, place: &qymcad_ui_state::Placing, now
             _ => qymcad_ui_state::field_caption(p),
         };
         if size.held == Held::Free {
-            let row = qymcad_ui_state::Row::new(caption).field(size.key).said_under();
-            rows.push(if size.kind == Kind::Angle { row } else { row.unit("sk-mm") });
+            // the unit of a free size is its field's own (`CmdParam::unit`), written after it by the frame
+            // ITS DRIVER IS A PARAMETER OF THE PROJECT: no dimension holds the axes of an ellipse or the turn of a polygon
+            rows.push(qymcad_ui_state::Row::new(caption).field(size.key));
+            names.push(qymcad_ui_state::FieldName::of(size.key, String::new(), None));
+            free.push(size.key);
             continue;
         }
-        let ask = place.asks.of(size.key);
-        let driven = if ask.driven == qymcad_ui_state::Lit::On { Driven::Reads(p.val) } else { Driven::No };
-        if driven != Driven::No {
-            hidden.push(size.key);
-        }
-        names.push(qymcad_ui_state::FieldName::judged(project, size.key, ask.name, None));
-        rows.extend(dim_rows(DimRows { caption, field: size.key, at, kind: size.kind, driven }));
+        // its name and its reference are the frame's, kept as typed and switched until Enter lays the dimension
+        names.push(qymcad_ui_state::FieldName::of(size.key, String::new(), None).with_driven(qymcad_ui_state::Lit::Off));
+        rows.extend(dim_rows(DimRows { caption, field: size.key, at, kind: size.kind }));
     }
-    let gate = qymcad_ui_state::names_gate(&names);
-    ShapeBox { layout: dim_layout(rows), hidden, names, gate }
+    ShapeBox { layout: dim_layout(rows), names, free }
 }
 
-/// AN OPTION OF A ROW OF A SIZE TOUCHED in the box of a shape: the radius or the diameter shown - the value in the field
-/// written anew in it - a reference, a name. Kept until Enter lays the dimension. Answers whether `did` was one.
+/// THE RADIUS OR THE DIAMETER OF A ROUND SIZE SWITCHED in the box of a shape, the value in the field written anew in it;
+/// kept until Enter lays the dimension. Answers whether `did` was it.
 pub(crate) fn shape_took(sk: &mut qymcad_ui_state::SketchCtx, si: usize, did: &qymcad_ui_state::Did) -> bool {
     use qymcad_ui_state::{Did, Shown};
     let Some(now) = shape_now(sk.project, sk.place, si) else { return false };
-    let size = |key: &qymcad_ui_state::OptKey| now.sizes.get(key.at);
-    match did {
-        Did::Pressed { key } if key.name == ROUND => {
-            let Some(Size { key: field, kind: Kind::Round(was), .. }) = size(key) else { return false };
-            let shown = if *was == Shown::Diameter { Shown::Radius } else { Shown::Diameter };
-            sk.place.asks.at(field).shown = Some(shown);
-            if let Some(p) = sk.place.fields.iter_mut().find(|p| p.key == *field) {
-                p.set_label(round_label(shown));
-                // a number is written anew as the other size; a formula stays as it was typed
-                if !is_formula(&p.txt) {
-                    p.val = if shown == Shown::Radius { p.val * 0.5 } else { p.val * 2.0 };
-                    p.txt = qymcad_core::expr::fmt_num(p.val);
-                }
-            }
-            true
-        }
-        Did::Switched { key } if key.name == DRIVEN => {
-            let Some(s) = size(key) else { return false };
-            let ask = sk.place.asks.at(s.key);
-            ask.driven = if ask.driven == qymcad_ui_state::Lit::On { qymcad_ui_state::Lit::Off } else { qymcad_ui_state::Lit::On };
-            true
-        }
-        // the place of a name is the place of its field among the fields of the box
-        Did::Retyped { key, text } | Did::Entered { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
-            let Some(field) = sk.place.fields.get(key.at).map(|p| p.key.clone()) else { return false };
-            sk.place.asks.at(&field).name = text.clone();
-            true
-        }
-        _ => false,
+    let Did::Pressed { key } = did else { return false };
+    if key.name != ROUND {
+        return false;
     }
+    let Some(Size { key: field, kind: Kind::Round(was), .. }) = now.sizes.get(key.at) else { return false };
+    let shown = if *was == Shown::Diameter { Shown::Radius } else { Shown::Diameter };
+    sk.place.asks.at(field).shown = Some(shown);
+    if let Some(p) = sk.place.fields.iter_mut().find(|p| p.key == *field) {
+        p.set_label(round_label(shown));
+        // a number is written anew as the other size; a formula stays as it was typed
+        if !is_formula(&p.txt) {
+            p.val = if shown == Shown::Radius { p.val * 0.5 } else { p.val * 2.0 };
+            p.txt = qymcad_core::expr::fmt_num(p.val);
+        }
+    }
+    true
 }
 
 /// The value field `key` of the box of a shape holds.
@@ -327,13 +311,16 @@ struct Laid {
 /// of them in their rows: a reference, a name, the radius shown for a diameter, the formula typed. A rectangle lays its
 /// width and height once a size of it is typed or touched; a slot each size changed or touched; a circle or an arc its
 /// size, a polygon its radius, when typed or touched. A shape closed untouched is left free.
-pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
+pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rows: &[qymcad_ui_state::FieldAsk]) {
     use qymcad_core::model::SlotSize;
     use qymcad_ui_state::{PlacingShape, Shown};
     let typed = sk.place.typed;
     let asks = sk.place.asks.clone();
     let fields = sk.place.fields.clone();
-    let wanted = |key: &str| typed || asks.touched(key);
+    let row = |key: &str| rows.iter().find(|a| a.field == key);
+    // asked in the row of a size: its radius or diameter, a reference, a name
+    let asked = |key: &str| asks.touched(key) || row(key).is_some_and(|a| a.driven == qymcad_ui_state::Lit::On || !a.name.trim().is_empty());
+    let wanted = |key: &str| typed || asked(key);
     let mut laid: Vec<Laid> = Vec::new();
     // a shape that followed its fields as they were typed holds the numbers already, and a dimension laid on it is given a
     // formula only; a rectangle reopened was not touched, and its dimensions are given the values typed
@@ -356,7 +343,7 @@ pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
                 let now = sk.project.slot_size(si, curve, size);
                 let v = field(sk.place, key);
                 let changed = v.is_some_and(|v| Some(v) != now);
-                if !changed && !asks.touched(key) {
+                if !changed && !asked(key) {
                     continue;
                 }
                 if let Some(v) = v.or(now) {
@@ -395,7 +382,7 @@ pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
             Sized::Followed => p.and_then(formula_of),
             Sized::ByValue => p.map(|p| Value { number: p.val, text: p.txt.trim().to_string() }),
         };
-        ask_laid(sk, l.dim, &asks.of(l.key), value);
+        ask_laid(sk, l.dim, AskOf { shown: asks.of(l.key).shown, row: row(l.key) }, value);
     }
 }
 

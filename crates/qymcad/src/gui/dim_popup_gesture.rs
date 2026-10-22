@@ -55,12 +55,12 @@ mod tests {
                 app.handle_key_commands(ctx);
                 crate::gui::panel_places::sketch_tool(app, ui);
             });
-            if let Some(r) = self.ctx.read_response(qymcad_ui_state::text_field_id(qymcad_sketch::DIM_NAME)) {
-                self.name_rect = r.rect;
-            }
             self.drawn.clear();
             for cs in &out.shapes {
                 super::super::screen_keys::tests::collect_text(&cs.shape, &mut self.drawn);
+            }
+            if let Some(r) = self.ctx.read_response(qymcad_ui_state::name_field_id("value")) {
+                self.name_rect = r.rect;
             }
             self
         }

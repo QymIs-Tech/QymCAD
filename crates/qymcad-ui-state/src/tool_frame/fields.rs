@@ -69,7 +69,7 @@ pub(crate) struct Input {
 /// The formula of one field, its caption standing elsewhere - in the row of a section.
 pub(crate) fn field_input(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, id: egui::Id, how: Input) -> FieldSays {
     let Input { focus, note } = how;
-    let o = expr_field_autofocus(ui, look.project, id, &p.txt, 74.0, &qymcad_i18n::tr("f-number-or-expr"), focus == Focus::Takes);
+    let o = expr_field_autofocus(ui, look.project, id, &p.txt, FIELD_WIDTH, &qymcad_i18n::tr("f-number-or-expr"), focus == Focus::Takes);
     // HOW A VALUE IS TYPED, said over every field of every box as the box of a mate says it: Enter applies, a formula is
     // taken. A line of it under the fields wrapped and pushed past the box of an extrusion.
     let o = ExprOut { resp: o.resp.on_hover_text(qymcad_i18n::tr("sk-enter-apply-expr")), ..o };
@@ -92,12 +92,13 @@ pub(crate) fn field_input(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, i
         }
         _ => {}
     }
-    FieldSays { value, enter, did }
+    FieldSays { value, enter, did, rect: o.resp.rect }
 }
 
 /// WHAT A FIELD SAID IN A FRAME: its value or why it has none, whether Enter was pressed in it, and what else it did.
 pub(crate) struct FieldSays {
     pub(crate) value: Result<f64, String>,
+    rect: egui::Rect,
     enter: bool,
     did: Vec<FieldDid>,
 }
@@ -121,8 +122,9 @@ pub(crate) fn judge(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, p: &mut Cmd
             trial.filter(|r| r.key == p.key).map(|r| r.why.clone())
         }
     };
+    // a value the field cannot take frames the field in the colour of a refusal; the words stand under its row
     let refused = why.map(|why| {
-        tone_mark(ui, pal, Tone::Refusal).on_hover_text(&why);
+        refused_frame(ui, pal, said.rect);
         Refusal { key: p.key.clone(), field: field_caption(p), why }
     });
     Typed { refused, enter: if said.enter { Enter::Pressed } else { Enter::Not }, did: said.did }
@@ -137,6 +139,11 @@ pub(crate) struct Typed {
 }
 
 impl Typed {
+    /// Enter pressed in a field that holds no value of its own - the name of one.
+    pub(crate) fn entered() -> Typed {
+        Typed { enter: Enter::Pressed, ..Typed::default() }
+    }
+
     pub(crate) fn add(&mut self, field: Typed) {
         if let Some(r) = field.refused {
             self.refused.get_or_insert(r);
@@ -189,13 +196,20 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
     let mut did = Vec::new();
     // THE BOX IS MOVED BY ITS FREE SPACE - its captions, its margins - and stands where it is put until its tool goes
     let at = box_corner(ctx, b.id, b.place, look);
-    let shown = egui::Area::new(b.id).current_pos(at).movable(true).order(AT_GEOMETRY).show(ctx, |ui| {
+    // NOT CONSTRAINED BY EGUI: a box near the right edge of the screen had its rows squeezed to what was left there, the
+    // rule laid it anew by that narrow size, and the box of a chamfer stood at four places over its first five frames,
+    // the last over the corner it sizes. Where the box stands inside the view is the rule's (`box_corner`).
+    let shown = egui::Area::new(b.id).current_pos(at).movable(true).constrain(false).order(AT_GEOMETRY).show(ctx, |ui| {
         at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             let drawing = Drawing { b, look, trial: trial.as_ref() };
             let drawn = draw_rows(ui, &drawing, fields, layout, b.focus);
             seen.add(drawn.typed);
             did = drawn.did;
+            // a name that will not do shuts the box as a value it cannot take does
+            if let Some(r) = names_refusal(ui.ctx(), look.project, b.id, b.names) {
+                seen.refused.get_or_insert(r);
+            }
             let can = if shut_by(gate, &seen).open() { Can::Yes } else { Can::No };
             if seen.refused.is_some() {
                 let frame = ui.ctx().cumulative_frame_nr();

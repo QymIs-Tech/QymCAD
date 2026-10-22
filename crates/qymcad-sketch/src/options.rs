@@ -185,7 +185,7 @@ fn corner_opts(sk: &qymcad_ui_state::SketchCtx, corner: Corner) -> Vec<Opt> {
 /// The fields of a linear pattern: the count and the step.
 fn linear_steps(pat: &qymcad_ui_state::SketchPattern) -> Vec<Opt> {
     vec![
-        number(OptKey::of("skpat_count"), "opt-count", f64::from(pat.count), count(2.0..=200.0)),
+        number(OptKey::of("skpat_count"), "cmd-copies", f64::from(pat.count), count(2.0..=200.0)),
         number(OptKey::of("skpat_dx"), "opt-step-x", pat.dx, mm(-100000.0..=100000.0)),
         number(OptKey::of("skpat_dy"), "opt-step-y", pat.dy, mm(-100000.0..=100000.0)),
     ]
@@ -194,7 +194,7 @@ fn linear_steps(pat: &qymcad_ui_state::SketchPattern) -> Vec<Opt> {
 /// The fields of a circular pattern: the count and the angle it spans.
 fn circular_steps(pat: &qymcad_ui_state::SketchPattern) -> Vec<Opt> {
     let angle = Limits { range: -360.0..=360.0, number: Number::Real, zero: Zero::Takes, unit: Some("unit-deg-suffix") };
-    vec![number(OptKey::of("skpat_count"), "opt-count", f64::from(pat.count), count(2.0..=200.0)), number(OptKey::of("skpat_angle"), "cmd-angle", pat.angle, angle)]
+    vec![number(OptKey::of("skpat_count"), "cmd-copies", f64::from(pat.count), count(2.0..=200.0)), number(OptKey::of("skpat_angle"), "cmd-angle", pat.angle, angle)]
 }
 
 /// THE OPTIONS OF THE DRAWING TOOL IN HAND: construction, no ties, and what the shape takes - the text and its font, the
@@ -207,13 +207,8 @@ fn drawing_opts(sk: &qymcad_ui_state::SketchCtx, shape: SketchShape) -> Vec<Opt>
     ];
     match shape {
         SketchShape::Text => {
-            opts.push(said("tool-text"));
-            opts.push(Opt::Text { key: OptKey::of("text"), text: prefs.text.clone(), placeholder: String::new(), unfit: None, hint: None });
-            opts.push(number(OptKey::of("text_h"), "opt-height-short", prefs.text_h, mm(0.1..=1000.0)));
-            // WHICH FONT IT WILL BE WRITTEN IN, named on the button itself. "Font..." alone said nothing: a person pressed it
-            // to find out what they were about to write with.
-            opts.push(Opt::press(OptKey::of("font"), qymcad_ui_state::font_label(&prefs.font, "opt-font")).hint(qymcad_i18n::tr("opt-pick-font")));
-            opts.push(Opt::switch(OptKey::of("note"), qymcad_i18n::tr("opt-note"), prefs.text_note.lit()).hint(qymcad_i18n::tr("opt-text-as-note")));
+            // the string, the font and whether it is a note stand in the box of the text with its height (`text_box`)
+            opts.push(number(OptKey::of("text_h"), "sk-height", prefs.text_h, mm(0.1..=1000.0)));
         }
         SketchShape::Polygon => {
             opts.push(number(OptKey::of("poly_n"), "opt-sides", f64::from(prefs.poly_n), count(3.0..=64.0)));
@@ -245,10 +240,10 @@ pub(crate) fn tool_opts(sk: &qymcad_ui_state::SketchCtx) -> Vec<Opt> {
         // the pattern: the parameters and a hint - the preview is live, Enter applies
         let mut opts = if kind == PatternKind::Linear {
             let mut v = linear_steps(sk.sk_pat);
-            v.push(number(OptKey::of("skpat_count2"), "opt-rows", f64::from(sk.sk_pat.count2), count(1.0..=200.0)));
+            v.push(number(OptKey::of("skpat_count2"), "cmd-copies", f64::from(sk.sk_pat.count2), count(1.0..=200.0)));
             if sk.sk_pat.count2 > 1 {
-                v.push(number(OptKey::of("skpat_dx2"), "opt-row-step-x", sk.sk_pat.dx2, mm(-100000.0..=100000.0)));
-                v.push(number(OptKey::of("skpat_dy2"), "opt-row-step-y", sk.sk_pat.dy2, mm(-100000.0..=100000.0)));
+                v.push(number(OptKey::of("skpat_dx2"), "opt-step-x", sk.sk_pat.dx2, mm(-100000.0..=100000.0)));
+                v.push(number(OptKey::of("skpat_dy2"), "opt-step-y", sk.sk_pat.dy2, mm(-100000.0..=100000.0)));
             }
             v
         } else {
@@ -307,6 +302,8 @@ pub(crate) fn opt_took(sk: &mut qymcad_ui_state::SketchCtx, did: Did) {
             "no_ties" => sk.tool.ties = if sk.tool.ties == qymcad_ui_state::Ties::Free { qymcad_ui_state::Ties::Laid } else { qymcad_ui_state::Ties::Free },
             "note" => sk.tool_prefs.text_note = !sk.tool_prefs.text_note,
             "extend_both" => sk.tool_prefs.extend_both = !sk.tool_prefs.extend_both,
+            // THE SECOND DIRECTION OF A PATTERN OPENED IS SWITCHED ON, with two copies along it; folded, it is off
+            crate::in_hand::SECOND_DIRECTION => sk.sk_pat.count2 = if sk.sk_pat.count2 > 1 { 1 } else { 2 },
             _ => {}
         },
         Did::Chose { key, index } => match key.name {
@@ -342,7 +339,11 @@ pub(crate) fn opt_took(sk: &mut qymcad_ui_state::SketchCtx, did: Did) {
         },
         Did::Typed { key, value } => typed_into(sk, key.name, value),
         Did::Retyped { key, text } if key.name == "text" => sk.tool_prefs.text = text,
-        Did::Pressed { key } if key.name == "font" => sk.font_cache.picker.open = true,
+        Did::Pressed { key } if key.name == "font" => {
+            sk.font_cache.picker.open = true;
+            // the font chosen while a label is edited is the label's own
+            sk.font_cache.picker.for_label = sk.inline.text().is_some();
+        }
         _ => {}
     }
 }

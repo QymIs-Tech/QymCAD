@@ -72,11 +72,20 @@ fn frame(ctx: &egui::Context, b: &mut qymcad_ui_state::Bench, events: Vec<egui::
     texts
 }
 
-/// The texts painted once the box has settled.
+/// The texts painted once the box has settled: two frames running with every text where it stood. Measured: the grid of
+/// a box learns the widths of its columns from the frames before, and the box of a circle stood at x 457, 417, 398 and
+/// 371 over its first four frames.
 fn settled(ctx: &egui::Context, b: &mut qymcad_ui_state::Bench) -> Vec<Painted> {
-    let mut painted = Vec::new();
-    for _ in 0..3 {
-        painted = frame(ctx, b, Vec::new());
+    let mut painted: Vec<Painted> = Vec::new();
+    let mut still = 0;
+    for _ in 0..20 {
+        let now = frame(ctx, b, Vec::new());
+        let same = now.len() == painted.len() && now.iter().zip(&painted).all(|(a, b)| a.text == b.text && a.rect == b.rect);
+        still = if same { still + 1 } else { 0 };
+        painted = now;
+        if still >= 2 {
+            break;
+        }
     }
     painted
 }

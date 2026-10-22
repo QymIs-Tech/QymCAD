@@ -244,11 +244,32 @@ pub fn begin_comp_array(pc: &mut qymcad_ui_state::PartCtx, mode: qymcad_ui_state
     *pc.carr = qymcad_ui_state::CompArrayCmd { mode: Some(mode), src, dir: 0, axis: 2, edit: 0 };
     pc.gsel.before.spend_object(); // the part picked is the pattern's object, not a click of it
     pc.arr.count = if mode == qymcad_ui_state::PatternKind::Circular { 6 } else { 3 };
-    (pc.arr.full, pc.arr.two, pc.arr.three, pc.arr.axis) = (true, false, false, 0);
+    (pc.arr.two, pc.arr.three, pc.arr.axis) = (false, false, 0);
     *pc.mode_3d = true;
     pc.cmd.params.clear();
     sync_comp_array_params(*pc.arr, Some(mode), pc.cmd);
     *pc.status = Notice::info(qymcad_i18n::tr(if mode == qymcad_ui_state::PatternKind::Circular { "msg-comp-circ-array" } else { "msg-comp-lin-array" }));
+}
+
+/// TAKE A PATTERN OF COMPONENTS: of the part selected, its preview at once; with none, the tool waits for a part to be
+/// picked, as every tool waits for what it works on (`comp_array_waiting`).
+pub fn take_comp_array(pc: &mut qymcad_ui_state::PartCtx, mode: qymcad_ui_state::PatternKind, src: Option<Id>) {
+    match src {
+        Some(src) => begin_comp_array(pc, mode, src),
+        None => {
+            *pc.carr = qymcad_ui_state::CompArrayCmd { mode: Some(mode), src: 0, dir: 0, axis: 2, edit: 0 };
+            pc.cmd.params.clear();
+            *pc.status = Notice::info(qymcad_i18n::tr("msg-pick-part-first"));
+        }
+    }
+}
+
+/// A PATTERN OF COMPONENTS WAITING FOR ITS PART: its name, what to pick, and nothing to apply yet.
+pub(crate) fn comp_array_waiting(pc: &qymcad_ui_state::PartCtx) -> Described {
+    let title = if pc.carr.is_circular() { "cmd-comp-circ-array" } else { "cmd-comp-lin-array" };
+    let ask = qymcad_i18n::tr("msg-pick-part-first");
+    let head = Head { icon: ph::STACK, name: qymcad_i18n::tr(title), ends: Ends::Close, after: AfterApply::Select };
+    Described { head, bar: vec![Opt::Readout(ask.clone())], gate: Gate::Waiting(ask), says: Vec::new(), boxed: None }
 }
 
 /// A PATTERN OF COMPONENTS AS ITS BAR DESCRIBES IT: the part repeated, then the options of a pattern of bodies.
@@ -261,11 +282,11 @@ pub(crate) fn comp_array_described(pc: &qymcad_ui_state::PartCtx) -> Described {
     let (title, bar) = if pc.carr.is_circular() {
         // AN AXIS OF ITS OWN, picked in the view as a pattern of bodies picks it, or one of the assembly's. Reported
         // behaviour: the axis of a circular pattern of parts could only be X, Y or Z through the origin of the assembly.
-        ("cmd-comp-circ-array", circular_array_opts(&*pc.project, &*pc.arr, source, NoAxisPicked::OneOf(pc.carr.axis), &mut says))
+        ("cmd-comp-circ-array", circular_array_opts(&*pc.project, &*pc.arr, source, NoAxisPicked::OneOf(pc.carr.axis)))
     } else {
         // THE SECOND AND THIRD DIRECTIONS, as a pattern of bodies has them. Reported behaviour: a linear pattern of
         // parts ran one way only.
-        ("cmd-comp-lin-array", linear_array_opts(&*pc.arr, pc.carr.dir, source, &mut says))
+        ("cmd-comp-lin-array", linear_array_opts(source, &mut says))
     };
     let head = Head { icon: ph::STACK, name: qymcad_i18n::tr(title), ends: Ends::ApplyCancel, after: AfterApply::Select };
     Described { head, bar, gate: comp_array_gate(pc), says, boxed: None }
@@ -291,16 +312,7 @@ pub(crate) fn comp_array_act(pc: &mut qymcad_ui_state::PartCtx, did: Did) {
     match did {
         Did::Chose { key, index } if key.name == "dir" => pc.carr.dir = axis(index),
         Did::Chose { key, index } if key.name == "carr_axis" => pc.carr.axis = axis(index),
-        Did::Switched { key } if key.name == "dir2_on" && !pc.arr.two => {
-            pc.arr.two = true;
-            if pc.arr.dir2 == pc.carr.dir {
-                pc.arr.dir2 = (pc.carr.dir + 1) % 3;
-            }
-        }
-        Did::Switched { key } if key.name == "dir3_on" && !pc.arr.three => {
-            pc.arr.three = true;
-            pc.arr.dir3 = 3 - pc.carr.dir.min(2) - pc.arr.dir2.min(2);
-        }
+        Did::Switched { key } if key.name == "dir2_on" || key.name == "dir3_on" => qymcad_ui_state::switch_direction(pc.arr, pc.carr.dir, qymcad_ui_state::MoreDirection::of(key.name)),
         d => act(pc, d),
     }
     if !pc.arr.two {
@@ -323,7 +335,6 @@ pub fn open_comp_array_edit(pc: &mut qymcad_ui_state::PartCtx, pid: Id) {
         CompPatternKind::Circular { angle, count, axis, .. } => {
             pc.arr.count = count.max(1);
             pc.arr.axis = axis;
-            pc.arr.full = (angle - 360.0).abs() < 0.1;
             vec![FieldValue { key: "cangle", value: angle }]
         }
         CompPatternKind::Linear { step, count, more, .. } => {
@@ -366,8 +377,9 @@ pub fn sync_comp_array_params(arr: qymcad_ui_state::ArrayParams, mode: Option<qy
                 want.extend([count("f-copies3", "count3", arr.count3.max(2)), step("f-pitch3", "cstep3")]);
             }
         }
-    } else if !arr.full {
-        want.push(CmdParam::new("f-angle", "cangle", 180.0, -3600.0, 3600.0));
+    } else {
+        // THE ANGLE IS ALWAYS A FIELD of the box, a full turn of 360 as it opens: a tick of a full circle stood in the bar
+        want.push(CmdParam::new("f-angle", "cangle", 360.0, -3600.0, 3600.0));
     }
     cmd.params.retain(|p| want.iter().any(|w| w.key == p.key));
     for w in want {

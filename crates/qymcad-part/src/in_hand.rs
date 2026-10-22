@@ -9,16 +9,16 @@ use super::*;
 /// gizmo - the order the place of the command bar showed them in.
 pub fn in_hand<'a>(pc: &'a mut qymcad_ui_state::PartCtx<'_>) -> Option<Box<dyn FramedTool + 'a>> {
     if let Some(kind) = pc.armed.part_tool() {
-        return Some(Box::new(CommandTool { pc, kind }));
+        return Some(Box::new(CommandTool { pc, kind, asks: Vec::new(), free: Vec::new() }));
     }
     if pc.boolean.pick.is_some() || bool_edited(pc).is_some() {
         return Some(Box::new(BoolTool { pc }));
     }
     if pc.carr.mode.is_some() {
-        return Some(Box::new(CompArrayTool { pc }));
+        return Some(Box::new(CompArrayTool { pc, asks: Vec::new() }));
     }
     let (on, ax, rot) = pc.body_giz.num?;
-    Some(Box::new(GizmoTool { pc, on, step: GizmoStep { ax, rot, by: 0.0, at: [0.0; 3] } }))
+    Some(Box::new(GizmoTool { pc, on, step: GizmoStep { ax, rot, by: 0.0, at: [0.0; 3] }, asks: Vec::new() }))
 }
 
 /// THE TOOL OF THE PLACE OF THE SECTION IN HAND, if one is: the measure, a command waiting for its sketch, the pencil
@@ -32,6 +32,11 @@ pub fn plane_in_hand<'a>(pb: &'a mut PlaneBarCtx<'_>) -> Option<Box<dyn FramedTo
 struct CommandTool<'a, 'b> {
     pc: &'a mut qymcad_ui_state::PartCtx<'b>,
     kind: qymcad_ui_state::PartTool,
+    /// what the frame kept of the names typed under the fields
+    asks: Vec<qymcad_ui_state::FieldAsk>,
+    /// the numbers of the bar in the box - the starts of a thread, the sides of a prism: no key of the feature holds
+    /// them, their drivers are parameters
+    free: Vec<&'static str>,
 }
 
 impl CommandTool<'_, '_> {
@@ -46,10 +51,7 @@ impl FramedTool for CommandTool<'_, '_> {
         command_step(self.pc, ctx);
         let mut d = describe(self.pc, ctx, self.kind);
         d.boxed = command_box(self.pc);
-        // a name that will not do keeps Enter from laying the feature unnamed
-        if let Some(spec) = d.boxed.as_ref().filter(|_| d.gate.open()) {
-            d.gate = qymcad_ui_state::names_gate(&spec.names);
-        }
+        self.free = if self.kind == qymcad_ui_state::PartTool::Recognise { Vec::new() } else { qymcad_ui_state::name_bar_numbers(&mut d) };
         // Enter in the flat choice of the contours takes the command into 3D, not out of the hand
         if self.takes_into_3d() {
             d.head.after = qymcad_ui_state::AfterApply::Stays;
@@ -69,16 +71,12 @@ impl FramedTool for CommandTool<'_, '_> {
         self.pc.draw()
     }
 
-    /// A name typed under a field is kept until the command writes its numbers; anything else is the command's.
     fn took(&mut self, did: Did) {
-        match did {
-            Did::Retyped { key, text } | Did::Entered { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
-                if let Some(field) = self.pc.cmd.params.get(key.at).map(|p| p.key.clone()) {
-                    self.pc.cmd.names.insert(field, text);
-                }
-            }
-            did => act(self.pc, did),
-        }
+        act(self.pc, did);
+    }
+
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     /// Enter of an extrusion or a revolution in the flat choice of its contours, the contours picked, takes the command
@@ -90,7 +88,24 @@ impl FramedTool for CommandTool<'_, '_> {
             *pc.status = Notice::info(qymcad_i18n::tr("in-drag-or-type"));
             return Ok(());
         }
-        apply_feat_cmd_kept(self.pc)
+        // THE NAMES TYPED UNDER THE FIELDS go on the numbers of the node the command made or edits, as the command
+        // wrote them
+        let before: Vec<Id> = self.pc.project.timeline.iter().map(|n| n.id).collect();
+        let edited = self.pc.cmd.edit;
+        apply_feat_cmd_kept(self.pc)?;
+        let node = edited.or_else(|| self.pc.project.timeline.iter().map(|n| n.id).find(|id| !before.contains(id)));
+        if qymcad_ui_state::name_free_values(self.pc.project, &self.asks, &self.free) {
+            qymcad_ui_state::invalidate(self.pc.regen);
+        }
+        if let Some(node) = node {
+            for ask in self.asks.iter().filter(|a| !self.free.contains(&a.field.as_str())) {
+                let target = qymcad_core::model::DimTarget::Feature { node, key: ask.field.clone() };
+                if ask.renamed(&qymcad_i18n::name(&self.pc.project.name_of_target(&target))) {
+                    qymcad_ui_state::give_name(self.pc.project, target, &ask.name);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn cancel(&mut self) {
@@ -158,14 +173,17 @@ fn command_box(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::Box
 /// THE NAME OF EVERY FIELD OF THE COMMAND, as typed so far or as the feature reopened holds it: a number of a feature is
 /// named as a dimension of a sketch is, in the row under its field.
 fn field_names(pc: &qymcad_ui_state::PartCtx) -> Vec<qymcad_ui_state::FieldName> {
+    // THE SETTINGS OF RECOGNISING A MESH are how it is read, not values of the model: nothing reads them by a name
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Recognise) {
+        return Vec::new();
+    }
     pc.cmd
         .params
         .iter()
         .map(|p| {
             let target = pc.cmd.edit.map(|node| qymcad_core::model::DimTarget::Feature { node, key: p.key.clone() });
             let had = target.as_ref().map(|t| qymcad_i18n::name(&pc.project.name_of_target(t))).unwrap_or_default();
-            let text = pc.cmd.names.get(&p.key).cloned().unwrap_or(had);
-            qymcad_ui_state::FieldName::judged(pc.project, &p.key, text, target.as_ref())
+            qymcad_ui_state::FieldName::of(&p.key, had, target)
         })
         .collect()
 }
@@ -232,19 +250,34 @@ impl FramedTool for BoolTool<'_, '_> {
 /// A PATTERN OF COMPONENTS.
 struct CompArrayTool<'a, 'b> {
     pc: &'a mut qymcad_ui_state::PartCtx<'b>,
+    /// what the frame kept of the drivers typed in its box
+    asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl FramedTool for CompArrayTool<'_, '_> {
     /// Its box stands clear of the source part: its edges are what the axis is picked on, and a box laid over them took
     /// the click meant for one.
     fn describe(&mut self, _ctx: &egui::Context) -> Described {
+        // THE PART AWAITED: taken with none selected, the tool waits for one, and the part picked is taken at once
+        if self.pc.carr.src == 0 {
+            match comp_array_source(self.pc) {
+                Ok(src) => begin_comp_array(self.pc, self.pc.carr.mode.unwrap_or(qymcad_ui_state::PatternKind::Linear), src),
+                Err(_) => return comp_array_waiting(self.pc),
+            }
+        }
         let mut d = comp_array_described(self.pc);
         if !self.pc.cmd.params.is_empty() && *self.pc.mode_3d {
             let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::By::Part(self.pc.carr.src)));
             spec.layout = comp_array_layout(self.pc);
+            // its values are named as every value of a box is; no node holds them, their drivers are parameters
+            spec.names = self.pc.cmd.params.iter().map(|p| qymcad_ui_state::FieldName::of(&p.key, String::new(), None)).collect();
             d.boxed = Some(spec);
         }
         d
+    }
+
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     fn fields(&mut self) -> &mut Vec<qymcad_ui_state::CmdParam> {
@@ -264,7 +297,14 @@ impl FramedTool for CompArrayTool<'_, '_> {
     }
 
     fn apply(&mut self) -> Result<(), NotApplied> {
-        apply_comp_array_kept(self.pc)
+        apply_comp_array_kept(self.pc)?;
+        let free: Vec<&str> = self.asks.iter().map(|a| a.field.as_str()).collect();
+        if self.asks.iter().any(|a| !a.name.trim().is_empty()) {
+            qymcad_ui_state::begin_edit(self.pc.edits, self.pc.project, qymcad_i18n::tr("sk-driver-step"));
+            qymcad_ui_state::name_free_values(self.pc.project, &self.asks, &free);
+            qymcad_ui_state::commit_edit_if_changed(&mut self.pc.rebuild());
+        }
+        Ok(())
     }
 
     fn cancel(&mut self) {
@@ -304,6 +344,8 @@ struct GizmoTool<'a, 'b> {
     pc: &'a mut qymcad_ui_state::PartCtx<'b>,
     on: qymcad_ui_state::GizmoOf,
     step: GizmoStep,
+    /// what the frame kept of the driver typed
+    asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl FramedTool for GizmoTool<'_, '_> {
@@ -327,6 +369,8 @@ impl FramedTool for GizmoTool<'_, '_> {
         // its gizmo is kept clear of as every one (`keep_in_sight`)
         let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::By::Point(o)));
         spec.focus = qymcad_ui_state::Focus::take(&mut pc.body_giz.num_focus);
+        // the move typed is named as every value of a box is; no node holds it by a name, its driver is a parameter
+        spec.names = vec![qymcad_ui_state::FieldName::of("giz", String::new(), None)];
         Described { head, bar: Vec::new(), gate: qymcad_ui_state::Gate::Open, says: Vec::new(), boxed: Some(spec) }
     }
 
@@ -341,7 +385,16 @@ impl FramedTool for GizmoTool<'_, '_> {
     fn apply(&mut self) -> Result<(), NotApplied> {
         let by = self.pc.body_giz.num_field.first().map_or(0.0, |p| p.val);
         gizmo_move(self.pc, self.on, GizmoStep { by, ..self.step });
+        if self.asks.iter().any(|a| !a.name.trim().is_empty()) {
+            qymcad_ui_state::begin_edit(self.pc.edits, self.pc.project, qymcad_i18n::tr("sk-driver-step"));
+            qymcad_ui_state::name_free_values(self.pc.project, &self.asks, &["giz"]);
+            qymcad_ui_state::commit_edit_if_changed(&mut self.pc.rebuild());
+        }
         Ok(())
+    }
+
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     /// The move typed is let go: nothing was made on the way.

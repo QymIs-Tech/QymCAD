@@ -671,7 +671,7 @@ mod in_hand;
 pub use in_hand::in_hand;
 use in_hand::*;
 mod editors;
-pub use editors::DIM_NAME;
+
 use editors::*;
 mod ties;
 pub use ties::*;

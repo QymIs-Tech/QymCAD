@@ -163,14 +163,14 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     let split_offset = qymcad_ui_state::cmd_val(pc.cmd, "offset");
     let thickness_v = qymcad_ui_state::cmd_val(pc.cmd, "thickness"); // the thickening
                                                                      // the array: gather the vector, the angle and the count BEFORE the timeline is borrowed
-    let (a_dir, a_dir2, a_dir3, a_two, a_three, a_axis, a_full) = (pc.arr.dir, pc.arr.dir2, pc.arr.dir3, pc.arr.two, pc.arr.three, pc.arr.axis, pc.arr.full);
+    let (a_dir, a_dir2, a_dir3, a_two, a_three, a_axis) = (pc.arr.dir, pc.arr.dir2, pc.arr.dir3, pc.arr.two, pc.arr.three, pc.arr.axis);
     let (a_count, a_count2, a_count3) = (pc.arr.count.max(1), pc.arr.count2.max(1), pc.arr.count3.max(1));
     let (a_dx, a_dy, a_dz) = qymcad_ui_state::arr_vec(a_dir, qymcad_ui_state::cmd_val(pc.cmd, "step"));
     let (a_dx2, a_dy2, a_dz2) = if a_two { qymcad_ui_state::arr_vec(a_dir2, qymcad_ui_state::cmd_val(pc.cmd, "step2")) } else { (0.0, 0.0, 0.0) };
     let a_c2 = if a_two { a_count2 } else { 1 };
     let (a_dx3, a_dy3, a_dz3) = if a_two && a_three { qymcad_ui_state::arr_vec(a_dir3, qymcad_ui_state::cmd_val(pc.cmd, "step3")) } else { (0.0, 0.0, 0.0) };
     let a_c3 = if a_two && a_three { a_count3 } else { 1 };
-    let a_angle = if a_full { 360.0 } else { qymcad_ui_state::cmd_val(pc.cmd, "angle") };
+    let a_angle = qymcad_ui_state::cmd_val(pc.cmd, "angle");
     let (a_step_txt, a_step2_txt, a_step3_txt) = (cmd_txt(pc.cmd, "step"), cmd_txt(pc.cmd, "step2"), cmd_txt(pc.cmd, "step3"));
     // the primitives: values under the same keys the regen uses (radii)
     let (p_dx, p_dy, p_dz) = (qymcad_ui_state::cmd_val(pc.cmd, "dx"), qymcad_ui_state::cmd_val(pc.cmd, "dy"), qymcad_ui_state::cmd_val(pc.cmd, "dz"));
@@ -523,10 +523,9 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, fid) {
         return Err(formula_refused(&e));
     }
-    // the array: the step expressions go onto the components of the vector (the regen reads those), and the
-    // angle is cleared for a full circle
-    match pc.armed.part_tool() {
-        Some(qymcad_ui_state::PartTool::LinearPattern) => {
+    // the array: the step expressions go onto the components of the vector (the regen reads those)
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::LinearPattern) {
+        {
             if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx", "dy", "dz"], a_dir, a_step_txt.clone()) {
                 return Err(formula_refused(&e));
             }
@@ -549,10 +548,6 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
                 }
             }
         }
-        Some(qymcad_ui_state::PartTool::CircularPattern) if a_full => {
-            pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: "angle" });
-        }
-        _ => {}
     }
     // the step opened and applied again is the person's word on what it takes: a mark of a reference found by place goes
     pc.project.accept_found_by_place(fid);

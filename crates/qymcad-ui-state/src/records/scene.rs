@@ -186,7 +186,26 @@ pub struct CmdParam {
     /// WHOSE VALUE IT IS, where the caption alone does not tell: the anchor A or B an offset belongs to, the degree a
     /// limit bounds. A catalogue key, said before the caption.
     pub of: Option<LabelKey>,
+    /// THE UNIT ITS NUMBERS ARE IN, written after the field by the frame (`CmdParam::unit_key`).
+    pub unit: UnitOf,
+    /// What the caption alone does not say, by its catalogue key, shown over the caption: "0 takes the standard one".
+    pub hint: Option<&'static str>,
 }
+
+/// WHAT UNIT THE NUMBERS OF A FIELD ARE IN: as the kind of the value says, by a catalogue key, or none - a ratio.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UnitOf {
+    #[default]
+    ByKind,
+    Key(&'static str),
+    Bare,
+}
+
+/// THE MARKS OF THE KEY OF A LABEL OF AN ANGLE, in degrees: `f-angle`, `sec-tilt1`, `j-turn`, `giz-rotation-x`.
+const ANGLE_MARKS: [&str; 5] = ["angle", "tilt", "turn", "sharp", "rotation"];
+
+/// THE MARKS OF THE KEY OF A LABEL OF A BARE NUMBER: a count of copies, of sides, of rows, a component of a direction.
+const BARE_MARKS: [&str; 5] = ["copies", "sides", "count", "rows", "Dir."];
 
 impl CmdParam {
     /// The KEY of the field's label. The words are chosen by whoever draws it - a record of the
@@ -201,7 +220,47 @@ impl CmdParam {
     }
 
     pub fn new(label: &'static str, key: &str, val: f64, lo: f64, hi: f64) -> Self {
-        Self { label: LabelKey(label), key: key.to_string(), val, txt: format!("{val:.2}"), lo, hi, at: None, nonzero: false, number: Number::Real, of: None }
+        // ONE WAY OF WRITING A NUMBER for every field: "10", not "10.00" in a box of a part beside "40" in a box of a sketch
+        Self {
+            label: LabelKey(label),
+            key: key.to_string(),
+            val,
+            txt: qymcad_core::expr::fmt_num(val),
+            lo,
+            hi,
+            at: None,
+            nonzero: false,
+            number: Number::Real,
+            of: None,
+            unit: UnitOf::ByKind,
+            hint: None,
+        }
+    }
+
+    /// The same field with its numbers in the unit of catalogue key `unit`, written after it.
+    pub fn unit(mut self, unit: &'static str) -> Self {
+        self.unit = UnitOf::Key(unit);
+        self
+    }
+
+    /// The same field with what its caption does not say, by catalogue key `hint`, shown over the caption.
+    pub fn hint(mut self, hint: &'static str) -> Self {
+        self.hint = Some(hint);
+        self
+    }
+
+    /// THE UNIT THE NUMBERS OF THE FIELD ARE IN, by its catalogue key: as the field names it; none for a whole number
+    /// or a bare one; degrees for an angle; millimetres for every other value of a box - a length. A caption carried its
+    /// unit ("Angle, deg", "Simplify, mm") in some boxes and none in others, and a length stood with no unit at all.
+    pub fn unit_key(&self) -> Option<&'static str> {
+        let key = self.label.0;
+        match self.unit {
+            UnitOf::Key(u) => Some(u),
+            UnitOf::Bare => None,
+            UnitOf::ByKind if self.number == Number::Whole || BARE_MARKS.iter().any(|m| key.contains(m)) => None,
+            UnitOf::ByKind if ANGLE_MARKS.iter().any(|m| key.contains(m)) => Some("unit-deg-suffix"),
+            UnitOf::ByKind => Some("unit-mm-suffix"),
+        }
     }
 
     /// A field of a whole number: a count of copies, a number of sides - written without a fraction.

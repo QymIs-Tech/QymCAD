@@ -54,7 +54,7 @@ pub fn draw_array_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         }
     } else {
         let c = pn.arr.count.max(1);
-        let angle = if pn.arr.full { 360.0 } else { qymcad_ui_state::cmd_val(pn.cmd, "angle") };
+        let angle = qymcad_ui_state::cmd_val(pn.cmd, "angle");
         let step = if angle.abs() >= 359.9 { 360.0 / c as f64 } else { angle / c as f64 };
         let (org, dir) = if pn.arr.axis != 0 {
             pn.project.datum_axes.iter().find(|d| d.id == pn.arr.axis).map(|d| (d.origin(), d.dir())).unwrap_or(([0.0; 3], [0.0, 0.0, 1.0]))

@@ -1,7 +1,8 @@
 //! THE LAYOUT OF A BOX AT THE GEOMETRY, as its tool describes it: sections - a title, folded or not as the box opens,
 //! and rows - each a caption and what stands after it: one field or several on one line (X, Y, Z), a group of choices,
-//! a switch, a button. The frame draws the rows of a section as a grid of two columns, the caption and the value, and
-//! the title of a section folds it.
+//! a switch, a button. The frame draws the rows of a section in three aligned columns - the caption, the value with
+//! its unit and its buttons, the name of a driver - with what a formula comes to, or why a value cannot be taken, on a
+//! line under the row across the value and the name; the title of a section folds it.
 //!
 //! The box of a joint laid its nine fields one under another, then its switches and buttons wrapped in a heap after
 //! them: what belonged to part A, to part B and to the limits could not be told apart.
@@ -21,17 +22,27 @@ pub struct Section {
     pub title: Option<String>,
     pub folded: Folded,
     pub rows: Vec<Row>,
+    /// A section that is a switch of its tool - the second direction of a pattern: opened, it is switched on, folded,
+    /// off; its title tells the tool, which says whether it stands open (`folded`).
+    pub switch: Option<OptKey>,
 }
 
 impl Section {
     /// A section with no title - the rows at the top of a box.
     pub fn plain(rows: Vec<Row>) -> Section {
-        Section { title: None, folded: Folded::No, rows }
+        Section { title: None, folded: Folded::No, rows, switch: None }
     }
 
     /// A section under its title, folded or not as the box opens.
     pub fn titled(title: String, folded: Folded, rows: Vec<Row>) -> Section {
-        Section { title: Some(title), folded, rows }
+        Section { title: Some(title), folded, rows, switch: None }
+    }
+
+    /// A section under its title that switches what it holds on as it is opened: `key` told to the tool, `on` as the
+    /// tool holds it.
+    pub fn switched(title: String, key: OptKey, on: Lit, rows: Vec<Row>) -> Section {
+        let folded = if on == Lit::On { Folded::No } else { Folded::Yes };
+        Section { title: Some(title), folded, rows, switch: Some(key) }
     }
 }
 
@@ -42,18 +53,18 @@ pub enum Folded {
     Yes,
 }
 
-/// ONE ROW OF A SECTION: its caption, what stands after it on one line, and the unit its numbers are in, after them.
+/// ONE ROW OF A SECTION: its caption - or a button in its place, the radius or the diameter a value is shown as - what
+/// stands after it on one line, and the unit its numbers are in, after them.
+#[derive(Clone)]
 pub struct Row {
     pub caption: String,
+    pub lead: Option<Opt>,
     pub cells: Vec<Cell>,
     pub unit: Option<String>,
-    /// where what the formula of its field comes to is said: beside a formula, or under the row, the number included
-    pub note: Note,
 }
 
-/// WHERE A ROW SAYS WHAT ITS FORMULA COMES TO, or why it cannot be taken: beside a formula, a plain number saying it
-/// already - or on a line of its own under the row, always, as the box of a dimension says it (`= 42.500`, or the words
-/// of the error where a mark beside the field would hide them under the pointer).
+/// WHERE A FIELD SAYS WHAT ITS FORMULA COMES TO: beside it, in a small box of a field at a point of its own, or on the
+/// line under its row, in a box laid in rows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Note {
     #[default]
@@ -63,6 +74,7 @@ pub enum Note {
 
 /// WHAT STANDS IN A ROW: a field of the tool by its key, with a short tag before it where the row holds several (X, Y,
 /// Z), or an option.
+#[derive(Clone)]
 pub enum Cell {
     Field { key: String, tag: Option<String> },
     Opt(Opt),
@@ -71,12 +83,12 @@ pub enum Cell {
 impl Row {
     /// A row with its caption and nothing after it yet.
     pub fn new(caption: impl Into<String>) -> Row {
-        Row { caption: caption.into(), cells: Vec::new(), unit: None, note: Note::Beside }
+        Row { caption: caption.into(), lead: None, cells: Vec::new(), unit: None }
     }
 
-    /// The same row saying what its formula comes to - or why it cannot be taken - on a line under it.
-    pub fn said_under(mut self) -> Row {
-        self.note = Note::Under;
+    /// The same row with button `o` in the place of its caption: "Ø" switching the value to a radius.
+    pub fn lead(mut self, o: Opt) -> Row {
+        self.lead = Some(o);
         self
     }
 
@@ -112,6 +124,9 @@ fn fold_id(b: &FieldsBox, at: usize) -> egui::Id {
 
 /// Is section `at` of box `b` open now - as it was left, or as it stands when the box opens.
 fn open(ctx: &egui::Context, b: &FieldsBox, at: usize, s: &Section) -> bool {
+    if s.switch.is_some() {
+        return s.folded == Folded::No;
+    }
     ctx.data(|d| d.get_temp::<bool>(fold_id(b, at))).unwrap_or(s.folded == Folded::No)
 }
 
@@ -125,7 +140,8 @@ pub(crate) fn sections_of(fields: &[CmdParam], b: &FieldsBox, layout: &Layout) -
     let mut out = loose;
     for (at, s) in layout.sections.iter().enumerate() {
         let rows: Vec<&Row> = s.rows.iter().filter(|r| r.cells.iter().any(|c| matches!(c, Cell::Opt(_)) || matches!(c, Cell::Field { key, .. } if held(key)))).collect();
-        if !rows.is_empty() {
+        // a section that switches its fields on stands folded with none of them held
+        if !rows.is_empty() || s.switch.is_some() {
             out.push(Placed::Section { at });
         }
     }
@@ -175,12 +191,22 @@ pub(crate) struct Drawn {
     pub typed: Typed,
     pub did: Vec<Did>,
     pub focus: Focus,
+    columns: Lined,
+}
+
+/// The columns of a box as they stood the frame before, and as they come out in this one.
+#[derive(Clone, Copy, Default)]
+struct Lined {
+    was: Columns,
+    now: Columns,
 }
 
 /// DRAW THE ROWS OF A BOX: the fields of their own rows and the sections, a grid of the caption and the value each, the
 /// title of a section a button that folds it.
 pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], layout: &Layout, focus: Focus) -> Drawn {
-    let mut drawn = Drawn { typed: Typed::default(), did: Vec::new(), focus };
+    let columns_id = d.b.id.with("the columns of the rows");
+    let was = ui.ctx().data(|m| m.get_temp::<Columns>(columns_id)).unwrap_or_default();
+    let mut drawn = Drawn { typed: Typed::default(), did: Vec::new(), focus, columns: Lined { was, now: Columns::default() } };
     let placed = sections_of(fields, d.b, layout);
     let mut lead = Vec::new();
     for p in &placed {
@@ -189,7 +215,7 @@ pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam],
         }
     }
     if !lead.is_empty() {
-        grid(ui, d, fields, &lead, d.b.id.with("the rows of their own"), &mut drawn);
+        grid(ui, d, fields, &lead, &mut drawn);
     }
     for p in placed {
         let Placed::Section { at } = p else { continue };
@@ -198,105 +224,226 @@ pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam],
             let is_open = open(ui.ctx(), d.b, at, s);
             let mark = if is_open { ph::CARET_DOWN } else { ph::CARET_RIGHT };
             if ui.add(egui::Button::new(egui::RichText::new(format!("{mark} {title}")).strong()).frame(false)).clicked() {
-                ui.ctx().data_mut(|m| m.insert_temp(fold_id(d.b, at), !is_open));
+                match s.switch {
+                    Some(key) => drawn.did.push(Did::Switched { key }),
+                    None => {
+                        ui.ctx().data_mut(|m| m.insert_temp(fold_id(d.b, at), !is_open));
+                    }
+                }
             }
             if !is_open {
                 continue;
             }
         }
-        grid(ui, d, fields, &s.rows, d.b.id.with(("the rows of a section", at)), &mut drawn);
+        grid(ui, d, fields, &s.rows, &mut drawn);
     }
+    let now = drawn.columns.now;
+    ui.ctx().data_mut(|m| m.insert_temp(columns_id, now));
     if !layout.foot.is_empty() {
         ui.separator();
-        // the foot wraps at the width of the words under a field: a count said in a sentence widened the box of a corner
-        // to 320 points, and the box laid by the rule for its first size came to stand over the corner
+        // the foot wraps at the width of the rows over it: a count said in a sentence widened the box of a corner to 320
+        // points, and the box laid by the rule for its first size came to stand over the corner
+        let wide = ui.min_rect().width().max(UNDER_WORDS);
         ui.horizontal_wrapped(|ui| {
-            ui.set_max_width(UNDER_WORDS);
+            ui.set_max_width(wide);
             drawn.did.extend(draw_opts(ui, d.look.pal, &layout.foot));
         });
     }
     drawn
 }
 
-/// The rows given, as a grid of two columns: the caption, and the fields and options after it on one line.
-fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], id: egui::Id, drawn: &mut Drawn) {
+/// HOW WIDE THE COLUMNS OF A BOX STOOD the frame before: the caption, the value with its unit and buttons, the name of
+/// a driver - one for every section of the box, so the rows of all of them stand lined up. A row is laid from the left and how wide it comes out is known once it is laid; the columns of the
+/// frame before line the rows up in this one. A box opening is laid unseen in its first frame, so the rows a person
+/// sees are lined up from the first.
+#[derive(Clone, Copy, Default)]
+struct Columns {
+    caption: f32,
+    value: f32,
+    name: f32,
+}
+
+/// THE ROOM BETWEEN THE COLUMNS of a row, and between what stands in one column.
+const GAP: f32 = 6.0;
+
+/// The cursor of row `ui` carried on to `x`, where it stands short of it.
+fn up_to(ui: &mut egui::Ui, x: f32) {
+    let short = x - ui.cursor().left();
+    if short > 0.0 {
+        ui.add_space(short);
+    }
+}
+
+/// WHAT `draw` LAYS IN A ROW, its pieces `GAP` apart; answers how wide it came out. The row itself lays its columns with
+/// no room of its own between them, so a column starts where the row says, to the point.
+fn piece(ui: &mut egui::Ui, draw: impl FnOnce(&mut egui::Ui)) -> f32 {
+    let from = ui.cursor().left();
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = GAP;
+        draw(ui);
+    });
+    ui.cursor().left() - from
+}
+
+/// THE ROWS GIVEN, in three columns lined up down the box: the caption - or the button in its place - the value with its
+/// unit and its buttons, and the name of a driver where the value has one; what a formula comes to, or why the value or
+/// its name cannot be taken, on a line of its own under the row, across the value and the name. Each column is as wide
+/// as the widest of it, measured the frame before by where the cursor stood.
+fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], drawn: &mut Drawn) {
     let held = |fields: &[CmdParam], key: &str| fields.iter().any(|p| p.key == key && p.at.is_none() && !d.b.hidden.contains(&key));
-    egui::Grid::new(id).num_columns(2).spacing(egui::vec2(10.0, 4.0)).show(ui, |ui| {
-        for row in rows {
-            if !row.cells.iter().any(|c| matches!(c, Cell::Opt(_)) || matches!(c, Cell::Field { key, .. } if held(fields, key))) {
+    let was = drawn.columns.was;
+    let mut now = drawn.columns.now;
+    for line in lines_of(rows, d.b.names) {
+        let row = match line {
+            Line::Heading(words) => {
+                ui.label(egui::RichText::new(words).weak());
                 continue;
             }
-            ui.label(row.caption.as_str());
-            // the unit stands right after the last field of the row, before a switch or a button after it
-            let last = row.cells.iter().rposition(|c| matches!(c, Cell::Field { .. }));
-            let mut under: Option<Result<f64, String>> = None;
-            ui.horizontal(|ui| {
-                for (n, cell) in row.cells.iter().enumerate() {
-                    match cell {
+            Line::Row(row) => row,
+        };
+        let row: &Row = &row;
+        if !row.cells.iter().any(|c| matches!(c, Cell::Opt(_)) || matches!(c, Cell::Field { key, .. } if held(fields, key))) {
+            continue;
+        }
+        let mut under: Option<Result<f64, String>> = None;
+        let mut name_refused: Option<Unfit> = None;
+        let mut row_value = 0.0_f32;
+        let named: Vec<&FieldName> = row.cells.iter().filter_map(|c| if let Cell::Field { key, .. } = c { d.b.names.iter().find(|n| n.field == *key) } else { None }).collect();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let x0 = ui.cursor().left();
+            now.caption = now.caption.max(piece(ui, |ui| match &row.lead {
+                Some(o) => drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o))),
+                None => {
+                    let r = ui.label(row.caption.as_str());
+                    if let Some(hint) = fields.iter().find(|p| row_holds(row, p)).and_then(|p| p.hint) {
+                        r.on_hover_text(qymcad_i18n::tr(hint));
+                    }
+                }
+            }));
+            let v0 = x0 + was.caption + GAP;
+            up_to(ui, v0);
+            // THE NAME COLUMN IS LINED UP BY THE ROWS THAT HAVE ONE: a row of X, Y and Z, or of choices, runs as long as it
+            // is and pushes no name to its far end
+            let lined = !named.is_empty();
+            let value = piece(ui, |ui| {
+                // the unit stands right after the last field of the row, before a switch or a button after it
+                let last = row.cells.iter().rposition(|c| matches!(c, Cell::Field { .. }));
+                for (n, c) in row.cells.iter().enumerate() {
+                    match c {
                         Cell::Field { key, tag } => {
                             let Some(p) = fields.iter_mut().find(|p| p.key == *key && p.at.is_none() && !d.b.hidden.contains(&key.as_str())) else { continue };
                             if let Some(tag) = tag {
                                 ui.label(egui::RichText::new(tag.as_str()).weak());
                             }
-                            let said = field_input(ui, d.look, p, field_id(d.b.tool, &p.key), Input { focus: drawn.focus, note: row.note });
-                            if row.note == Note::Under {
+                            // A REFERENCE SHOWS ITS VALUE, it drives nothing: its value written in place of the field, as wide
+                            if named.iter().any(|n| n.field == *key && driven_now(ui.ctx(), d.b.id, n) == Lit::On) {
+                                ui.add_sized([FIELD_WIDTH, ui.spacing().interact_size.y], egui::Label::new(egui::RichText::new(format!("({})", qymcad_i18n::num(p.val, 3))).weak()));
+                            } else {
+                                let said = field_input(ui, d.look, p, field_id(d.b.tool, &p.key), Input { focus: drawn.focus, note: Note::Under });
                                 under = Some(said.value.clone());
+                                drawn.focus = Focus::Waits;
+                                drawn.typed.add(judge(ui, d.look.pal, p, said, d.trial));
                             }
-                            drawn.focus = Focus::Waits;
-                            drawn.typed.add(judge(ui, d.look.pal, p, said, d.trial));
                         }
-                        Cell::Opt(o) => drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o))),
+                        Cell::Opt(o) => {
+                            let did = draw_opts(ui, d.look.pal, std::slice::from_ref(o));
+                            // Enter in a text of the box - the string of a label edited - applies it, as Enter in a value does
+                            if did.iter().any(|x| matches!(x, Did::Entered { .. })) {
+                                drawn.typed.add(Typed::entered());
+                            }
+                            drawn.did.extend(did);
+                        }
                     }
                     if Some(n) == last {
-                        if let Some(unit) = &row.unit {
-                            ui.label(egui::RichText::new(unit.as_str()).weak());
+                        if let Some(unit) = row.unit.clone().or_else(|| unit_of_last(row, fields)) {
+                            ui.label(egui::RichText::new(unit).weak());
                         }
                     }
                 }
             });
-            ui.end_row();
-            // WHAT A FORMULA COMES TO, or the words of why the value cannot be taken, on a line of its own under the row - a
-            // plain number says itself, and a line under every field left the box with a blank line under each row
-            let said = match under {
-                Some(Ok(v)) if fields.iter().any(|p| row_holds(row, p) && p.txt.trim().parse::<f64>().is_err()) => Some(Ok(v)),
-                Some(Err(why)) => Some(Err(why)),
-                _ => None,
-            };
-            if let Some(said) = said {
-                ui.label("");
-                match said {
-                    Ok(v) => {
-                        ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(v, 3))).weak().small());
-                    }
-                    Err(why) => under_words(ui, |ui| say(ui, d.look.pal, &Notice::refusal(why), NoticeSize::Small)),
-                }
-                ui.end_row();
-            }
-            // THE NAME OF A FIELD OF THE ROW, on a row of its own under it - a field hidden now keeps its name: a reference
-            // dimension shows its value and is still read by its name
-            for cell in &row.cells {
-                let Cell::Field { key, .. } = cell else { continue };
-                let Some(n) = d.b.names.iter().find(|n| n.field == *key) else { continue };
-                let Some(at) = fields.iter().position(|p| p.key == *key) else { continue };
-                let named = name_row(at, n);
-                ui.label(named.caption.as_str());
-                ui.horizontal(|ui| {
-                    for c in &named.cells {
-                        if let Cell::Opt(o) = c {
-                            drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o)));
+            row_value = value;
+            // THE NAME AND THE REFERENCE OF THE VALUE, in a column of their own lined up down the box
+            if lined {
+                now.value = now.value.max(value);
+                up_to(ui, v0 + was.value + GAP * 2.0);
+                now.name = now.name.max(piece(ui, |ui| {
+                    for n in &named {
+                        let says = name_cells(ui, d, n);
+                        if name_refused.is_none() {
+                            name_refused = says.unfit;
+                        }
+                        if says.enter == Enter::Pressed {
+                            drawn.typed.add(Typed::entered());
                         }
                     }
-                });
-                ui.end_row();
-                // WHY THE NAME WILL NOT DO, on a line of its own under it, as what a formula comes to stands under its field
-                if let Some(u) = &n.unfit {
-                    ui.label("");
-                    under_words(ui, |ui| say(ui, d.look.pal, &Notice::warning(u.said.clone()), NoticeSize::Small).on_hover_text(&u.hint));
-                    ui.end_row();
-                }
+                }));
             }
+        });
+        // WHAT A FORMULA COMES TO, or the words of why the value - or its name - cannot be taken, on a line of its own
+        // under the row: a plain number says itself, and a line under every field left a blank line under each row
+        let said = match under {
+            Some(Ok(v)) if fields.iter().any(|p| row_holds(row, p) && p.txt.trim().parse::<f64>().is_err()) => Some(Notice::info(format!("= {}", qymcad_i18n::num(v, 3)))),
+            Some(Err(why)) => Some(Notice::refusal(why)),
+            _ => name_refused.map(|u| Notice::refusal(u.said)),
+        };
+        if let Some(said) = said {
+            let across = (was.value + if was.name > 0.0 { GAP * 2.0 + was.name } else { 0.0 }).max(row_value).max(UNDER_WORDS);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.add_space(was.caption + GAP);
+                ui.vertical(|ui| {
+                    ui.set_max_width(across);
+                    if said.tone == Tone::Info {
+                        ui.label(egui::RichText::new(said.words).weak().small());
+                    } else {
+                        say(ui, d.look.pal, &said, NoticeSize::Small);
+                    }
+                });
+            });
         }
-    });
+    }
+    drawn.columns.now = now;
+}
+
+/// ONE LINE OF A SECTION: a row, or the caption of a row whose values stand a line each under it.
+enum Line<'a> {
+    Row(std::borrow::Cow<'a, Row>),
+    Heading(String),
+}
+
+/// THE LINES OF THE ROWS: a row of several values each with its driver - X, Y and Z of a point - is its caption on a line
+/// of its own and each value on a line under it, its tag for a caption, then its driver. On one line the three drivers
+/// stood in a heap at its far end, and which was whose could not be told.
+fn lines_of<'a>(rows: &'a [Row], names: &[FieldName]) -> Vec<Line<'a>> {
+    let mut lines = Vec::new();
+    for row in rows {
+        let named = row.cells.iter().filter(|c| matches!(c, Cell::Field { key, .. } if names.iter().any(|n| n.field == *key))).count();
+        if named < 2 {
+            lines.push(Line::Row(std::borrow::Cow::Borrowed(row)));
+            continue;
+        }
+        if !row.caption.is_empty() {
+            lines.push(Line::Heading(row.caption.clone()));
+        }
+        for c in &row.cells {
+            let one = match c {
+                Cell::Field { key, tag } => Row { caption: tag.clone().unwrap_or_default(), lead: None, cells: vec![Cell::Field { key: key.clone(), tag: None }], unit: row.unit.clone() },
+                Cell::Opt(o) => Row { caption: String::new(), lead: None, cells: vec![Cell::Opt(o.clone())], unit: None },
+            };
+            lines.push(Line::Row(std::borrow::Cow::Owned(one)));
+        }
+    }
+    lines
+}
+
+/// The unit of the last field of `row` as the field itself names it, where the row names none.
+fn unit_of_last(row: &Row, fields: &[CmdParam]) -> Option<String> {
+    let key = row.cells.iter().rev().find_map(|c| match c {
+        Cell::Field { key, .. } => Some(key),
+        Cell::Opt(_) => None,
+    })?;
+    fields.iter().find(|p| p.key == *key)?.unit_key().map(|u| qymcad_i18n::tr(u).trim().to_string())
 }
 
 /// Does `row` hold field `p`.
@@ -304,16 +451,10 @@ fn row_holds(row: &Row, p: &CmdParam) -> bool {
     row.cells.iter().any(|c| matches!(c, Cell::Field { key, .. } if *key == p.key))
 }
 
-/// HOW WIDE THE WORDS UNDER A FIELD AND AT THE FOOT OF A BOX RUN before they wrap: a refusal of a sentence or two stood
-/// as one line of 632 points, the box grew to it in the frame after it was first laid narrow, and the rule laid the box
-/// anew elsewhere - under the pointer resting on the words there came the canvas. At 260 the box of a corner, 264 points
-/// wide, found no side of the corner it stood clear on in a view of 310 points between the tree and the properties.
+/// THE NARROWEST THE WORDS UNDER A ROW AND AT THE FOOT OF A BOX WRAP AT; wider rows give them their own width. A
+/// refusal of a sentence or two stood as one line of 632 points, the box grew to it in the frame after it was first laid
+/// narrow, and the rule laid the box anew elsewhere.
 const UNDER_WORDS: f32 = 200.0;
 
-/// Words under a field, wrapped at the one width every box keeps them to.
-fn under_words(ui: &mut egui::Ui, words: impl FnOnce(&mut egui::Ui) -> egui::Response) {
-    ui.vertical(|ui| {
-        ui.set_max_width(UNDER_WORDS);
-        words(ui);
-    });
-}
+/// HOW WIDE A FIELD OF A BOX IS, and the value of a reference written in its place.
+pub(crate) const FIELD_WIDTH: f32 = 74.0;

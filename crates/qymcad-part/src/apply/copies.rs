@@ -88,14 +88,11 @@ pub fn apply_array_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Result<Id, NotAppli
     let src =
         qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel).ok_or_else(no_body)?;
     if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::CircularPattern) {
-        let angle = if pc.arr.full { 360.0 } else { qymcad_ui_state::cmd_val(pc.cmd, "angle") };
+        let angle = qymcad_ui_state::cmd_val(pc.cmd, "angle");
         let body = pc.project.add_circular_array_axis(src, pc.arr.count.max(1), angle, pc.arr.axis);
         // the count and the angle are fields of the command, kept parametric through the one door of a feature's number
         if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, body) {
             return Err(formula_refused(&e));
-        }
-        if pc.arr.full {
-            pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: body, key: "angle" });
         }
         Ok(body)
     } else {

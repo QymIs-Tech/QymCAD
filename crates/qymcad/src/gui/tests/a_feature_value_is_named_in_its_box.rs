@@ -54,11 +54,7 @@ mod tests {
         }
         let label = crate::i18n::tr("sk-driver-label");
         assert!(drawn.iter().any(|t| t.trim() == label.trim()), "the box of the extrude has no {label:?} row; it says {drawn:?}");
-        let at = app.tools.cmd.params.iter().position(|p| p.key == "height").expect("the height field");
-        let field = ctx
-            .read_response(qymcad_ui_state::text_field_id(qymcad_ui_state::OptKey::at(qymcad_ui_state::FIELD_NAME, at)))
-            .map(|r| r.rect.center())
-            .expect("the name field of the height is not drawn");
+        let field = ctx.read_response(qymcad_ui_state::name_field_id("height")).map(|r| r.rect.center()).expect("the name field of the height is not drawn");
         let button = |pressed| egui::Event::PointerButton { pos: field, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         frame(&mut app, &ctx, vec![egui::Event::PointerMoved(field)]);
         frame(&mut app, &ctx, vec![button(true)]);

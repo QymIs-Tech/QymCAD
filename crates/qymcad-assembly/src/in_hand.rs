@@ -13,12 +13,12 @@ pub fn in_hand<'a>(jc: &'a mut qymcad_ui_state::JointCtx<'_>) -> Option<Box<dyn 
     }
     if let Some(jid) = jc.joint.edit {
         match jc.project.joints.iter().find(|x| x.id == jid).cloned() {
-            Some(j) => return Some(Box::new(JointEdit { jc, j, seen: Seen::default() })),
+            Some(j) => return Some(Box::new(JointEdit { jc, j, seen: Seen::default(), asks: Vec::new() })),
             None => jc.joint.edit = None, // the joint is gone (deleted) - leave the edit
         }
     }
     let tool = AsmTool::of(jc.joint)?;
-    Some(Box::new(AsmTools { jc, tool }))
+    Some(Box::new(AsmTools { jc, tool, own: Vec::new(), free: Vec::new(), asks: Vec::new() }))
 }
 
 /// WHAT THE BOX OF A JOINT SAW AS THE FRAME BEGAN: the context the keyboard is asked of, the joints before the widgets of
@@ -36,6 +36,8 @@ struct JointEdit<'a, 'b> {
     jc: &'a mut qymcad_ui_state::JointCtx<'b>,
     j: qymcad_core::feature::Joint,
     seen: Seen,
+    /// what the frame kept of the names typed under the values
+    asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl FramedTool for JointEdit<'_, '_> {
@@ -53,8 +55,7 @@ impl FramedTool for JointEdit<'_, '_> {
             .map(|slot| {
                 let target = qymcad_core::model::DimTarget::Feature { node: self.j.id, key: SLOT_KEYS[slot].to_string() };
                 let had = qymcad_i18n::name(&jc.project.name_of_target(&target));
-                let text = jc.joint.names.get(SLOT_KEYS[slot]).cloned().unwrap_or(had);
-                qymcad_ui_state::FieldName::judged(jc.project, SLOT_KEYS[slot], text, Some(&target))
+                qymcad_ui_state::FieldName::of(SLOT_KEYS[slot], had, Some(target))
             })
             .collect();
         d.boxed = Some(spec);
@@ -74,20 +75,6 @@ impl FramedTool for JointEdit<'_, '_> {
         let jc = &mut *self.jc;
         let jid = self.j.id;
         match did {
-            // a name typed under a value is kept, and given by Enter in its field as one step of undo
-            Did::Retyped { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
-                if let Some(field) = jc.joint.fields.fields.get(key.at).map(|p| p.key.clone()) {
-                    jc.joint.names.insert(field, text);
-                }
-            }
-            Did::Entered { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
-                let Some(field) = jc.joint.fields.fields.get(key.at).map(|p| p.key.clone()) else { return };
-                jc.joint.names.remove(&field);
-                let target = qymcad_core::model::DimTarget::Feature { node: jid, key: field };
-                qymcad_ui_state::begin_edit(&mut *jc.edits, &*jc.project, qymcad_i18n::tr("sk-driver-step"));
-                qymcad_ui_state::give_name(jc.project, target, &text);
-                qymcad_ui_state::commit_edit_if_changed(&mut jc.rebuild());
-            }
             Did::Chose { key, index } if key.name == "kind" => {
                 if qymcad_ui_state::change_joint_kind(jc.project, jc.status, jid, JOINT_KINDS[index.min(JOINT_KINDS.len() - 1)]) {
                     qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
@@ -104,8 +91,19 @@ impl FramedTool for JointEdit<'_, '_> {
     }
 
     fn apply(&mut self) -> Result<(), NotApplied> {
+        // the names typed under the values go in with the joint, in the step of undo its editing opened
+        for ask in &self.asks {
+            let target = qymcad_core::model::DimTarget::Feature { node: self.j.id, key: ask.field.clone() };
+            if ask.renamed(&qymcad_i18n::name(&self.jc.project.name_of_target(&target))) {
+                qymcad_ui_state::give_name(self.jc.project, target, &ask.name);
+            }
+        }
         joint_edit_keep(self.jc);
         Ok(())
+    }
+
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     fn cancel(&mut self) {
@@ -149,16 +147,27 @@ impl FramedTool for JointEdit<'_, '_> {
 struct AsmTools<'a, 'b> {
     jc: &'a mut qymcad_ui_state::JointCtx<'b>,
     tool: AsmTool,
+    /// no field of its own: the box shows the numbers of the bar alone, not the fields of the joint edited last
+    own: Vec<qymcad_ui_state::CmdParam>,
+    /// the numbers of the bar - the ratio of a relation - named as parameters
+    free: Vec<&'static str>,
+    asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl FramedTool for AsmTools<'_, '_> {
     fn describe(&mut self, _ctx: &egui::Context) -> Described {
-        asm_tool_described(self.jc, &self.tool)
+        let mut d = asm_tool_described(self.jc, &self.tool);
+        self.free = qymcad_ui_state::name_bar_numbers(&mut d);
+        d
     }
 
-    /// No tool that picks has a box: its fields stay as they are.
+    /// No tool that picks has fields of its own: the box holds the numbers of its bar.
     fn fields(&mut self) -> &mut Vec<qymcad_ui_state::CmdParam> {
-        &mut self.jc.joint.fields.fields
+        &mut self.own
+    }
+
+    fn take_asks(&mut self, asks: Vec<qymcad_ui_state::FieldAsk>) {
+        self.asks = asks;
     }
 
     fn bar_texts(&mut self) -> Option<&mut std::collections::HashMap<&'static str, String>> {
@@ -187,7 +196,15 @@ impl FramedTool for AsmTools<'_, '_> {
             }
             AsmTool::Width => width_pick_confirm(jc),
             AsmTool::Group => group_pick_confirm(jc),
-            AsmTool::Relation => relation_pick_confirm(jc),
+            AsmTool::Relation => {
+                relation_pick_confirm(jc)?;
+                if self.asks.iter().any(|a| !a.name.trim().is_empty()) {
+                    qymcad_ui_state::begin_edit(&mut *jc.edits, &*jc.project, qymcad_i18n::tr("sk-driver-step"));
+                    qymcad_ui_state::name_free_values(jc.project, &self.asks, &self.free);
+                    qymcad_ui_state::commit_edit_if_changed(&mut jc.rebuild());
+                }
+                Ok(())
+            }
             AsmTool::Ground | AsmTool::Anchor | AsmTool::Joint => Ok(()),
         }
     }

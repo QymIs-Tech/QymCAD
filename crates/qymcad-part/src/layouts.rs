@@ -21,14 +21,27 @@ const BODY_DIRECTIONS: [Direction; 3] = [Direction { count: "count", step: "step
 /// The directions of a pattern of parts.
 const PART_DIRECTIONS: [Direction; 3] = [Direction { count: "count", step: "cstep" }, Direction { count: "count2", step: "cstep2" }, Direction { count: "count3", step: "cstep3" }];
 
-/// THE ROWS OF THE DIRECTIONS OF A PATTERN: the copies and the pitch of each direction on its line.
-fn directions(keys: &[Direction; 3]) -> Vec<Row> {
-    keys.iter()
-        .enumerate()
-        .map(|(n, d)| {
-            Row::new(qymcad_i18n::tr1("box-direction-n", "n", &(n + 1).to_string())).tagged(qymcad_i18n::tr("cmd-copies"), d.count).tagged(qymcad_i18n::tr("f-pitch"), d.step).unit("unit-mm-suffix")
-        })
-        .collect()
+/// THE DIRECTIONS OF A PATTERN, a section each under its title as the parts of a joint are: its axis, its copies and
+/// its pitch, each value with its driver. The second and the third are folded until opened, which switches them on - the
+/// third offered once the second is on; nothing of them stands in the bar.
+fn directions(keys: &[Direction; 3], arr: &qymcad_ui_state::ArrayParams, first: u8) -> Vec<Section> {
+    use qymcad_ui_state::{AsLit, OptKey};
+    let rows = |d: &Direction, axis: &'static str, along: u8| {
+        vec![
+            Row::new(qymcad_i18n::tr("box-axis")).opt(crate::bars::direction(OptKey::of(axis), None, along)),
+            Row::new(qymcad_i18n::tr("cmd-copies")).field(d.count),
+            Row::new(qymcad_i18n::tr("f-pitch")).field(d.step),
+        ]
+    };
+    let title = |n: usize| qymcad_i18n::tr1("box-direction-n", "n", &n.to_string());
+    let mut sections = vec![
+        Section::titled(title(1), Folded::No, rows(&keys[0], "dir", first)),
+        Section::switched(title(2), OptKey::of("dir2_on"), arr.two.lit(), rows(&keys[1], "dir2", arr.dir2)),
+    ];
+    if arr.two {
+        sections.push(Section::switched(title(3), OptKey::of("dir3_on"), arr.three.lit(), rows(&keys[2], "dir3", arr.dir3)));
+    }
+    sections
 }
 
 /// THE LAYOUT OF THE BOX OF THE PART COMMAND IN HAND.
@@ -36,7 +49,7 @@ pub(crate) fn command_layout(pc: &qymcad_ui_state::PartCtx) -> Layout {
     let f = &pc.cmd.params;
     let xyz = |caption: &str, keys: [&str; 3]| ["X", "Y", "Z"].into_iter().zip(keys).fold(Row::new(qymcad_i18n::tr(caption)), |r, (tag, key)| r.tagged(tag, key));
     let sections = match pc.armed.part_tool() {
-        Some(qymcad_ui_state::PartTool::LinearPattern) => vec![Section::plain(directions(&BODY_DIRECTIONS))],
+        Some(qymcad_ui_state::PartTool::LinearPattern) => directions(&BODY_DIRECTIONS, pc.arr, pc.arr.dir),
         // the hole and its shift from the centre of the face, then its recess - a counterbore or a countersink
         Some(qymcad_ui_state::PartTool::Hole) => vec![
             // the shift a row each: on one line the box grew over the centre of the face the hole is picked on
@@ -58,7 +71,7 @@ pub(crate) fn command_layout(pc: &qymcad_ui_state::PartCtx) -> Layout {
 
 /// THE LAYOUT OF THE BOX OF A PATTERN OF PARTS: a linear one by its directions, a circular one a field a row.
 pub(crate) fn comp_array_layout(pc: &qymcad_ui_state::PartCtx) -> Layout {
-    let sections = if pc.carr.mode == Some(qymcad_ui_state::PatternKind::Linear) { vec![Section::plain(directions(&PART_DIRECTIONS))] } else { Vec::new() };
+    let sections = if pc.carr.mode == Some(qymcad_ui_state::PatternKind::Linear) { directions(&PART_DIRECTIONS, pc.arr, pc.carr.dir) } else { Vec::new() };
     Layout { sections, foot: Vec::new() }
 }
 

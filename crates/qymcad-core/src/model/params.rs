@@ -335,6 +335,19 @@ impl Project {
         }
     }
 
+    /// A VALUE NAMED WHERE THE MODEL HOLDS NO PLACE FOR ITS NAME - the sides of a polygon drawn, the count of a pattern of
+    /// a sketch: a parameter of the project `name = formula`, read by any formula by the name. A name another value holds
+    /// already, or one that is no name, adds nothing. Answers whether the parameter was added.
+    pub fn name_a_value(&mut self, name: &str, formula: &str) -> bool {
+        let name = name.trim();
+        if crate::drivers::check_ident(name).is_err() || self.name_owner(name).is_some() {
+            return false;
+        }
+        self.parameters.push(super::Param { name: name.to_string(), expr: formula.trim().to_string(), value: 0.0 });
+        self.eval_parameters();
+        true
+    }
+
     /// Re-evaluate the expressions. Returns pairs of "what was evaluated" and an error code rather than
     /// phrases: the core knows no language, and the first half is the user's own input, which must not be
     /// translated.

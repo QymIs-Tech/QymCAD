@@ -110,7 +110,7 @@ pub fn set_thread_params(cmd: &mut FeatCommand, thread: ThreadParams) {
             CmdParam::new("th-nominal-d", "nominal", d, 0.5, 1000.0),
             // 0 means the standard coarse pitch for this diameter (ISO 261 / ISO 2901), so choosing the
             // size is enough.
-            CmdParam::new("th-pitch-std", "pitch", 0.0, 0.0, 100.0),
+            CmdParam::new("th-pitch-std", "pitch", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
             CmdParam::new("th-length", "length", (d * 1.5).max(10.0), 0.1, 10000.0),
             // THE FIT CLEARANCE is what printed threads are made for: a bolt and a nut screw together.
             CmdParam::new("th-fit-clearance", "fit", 0.2, 0.0, 5.0),
@@ -118,8 +118,8 @@ pub fn set_thread_params(cmd: &mut FeatCommand, thread: ThreadParams) {
             CmdParam::new("th-lead-out", "lead_out", 1.5, 0.0, 10000.0),
             // FILLETS on both the crest and the root. 0 means follow the standard; a value of one's own
             // overrides the table — for printing the crest is rounded more, so the layers do not tear.
-            CmdParam::new("th-crest-fillet", "crest_r", 0.0, 0.0, 100.0),
-            CmdParam::new("th-root-fillet", "root_r", 0.0, 0.0, 100.0),
+            CmdParam::new("th-crest-fillet", "crest_r", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
+            CmdParam::new("th-root-fillet", "root_r", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
         ]
     };
     // A "custom" form is a profile NOT described by a standard, so the angle and the depth are given by

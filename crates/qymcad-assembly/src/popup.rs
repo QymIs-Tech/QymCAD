@@ -248,7 +248,7 @@ pub(crate) fn joint_layout(jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feat
     for slot in shown_slots(j) {
         let w = joint_slot_words(j.kind, slot);
         let (icon, hint) = if j.drive[slot].is_some() { (ph::LOCK, "j-value-set") } else { (ph::LOCK_OPEN, "j-value-free") };
-        let lock = Opt::switch(OptKey::at("drive", slot), icon, j.drive[slot].is_some().lit()).hint(qymcad_i18n::tr(hint));
+        let lock = Opt::toggle(OptKey::at("drive", slot), icon, j.drive[slot].is_some().lit()).hint(qymcad_i18n::tr(hint));
         top.push(Row::new(qymcad_i18n::tr(w.row)).field(SLOT_KEYS[slot]).unit(w.unit).opt(lock));
     }
     if project.joint_home(j).is_some_and(|h| h != project.root) {

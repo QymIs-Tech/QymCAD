@@ -57,8 +57,8 @@ pub fn start_body_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: qymcad_ui_state::P
         _ => vec![
             qymcad_ui_state::CmdParam::new("f-diameter", "diameter", 6.0, 0.1, 10000.0),
             qymcad_ui_state::CmdParam::new("f-depth", "depth", 15.0, 0.1, 10000.0),
-            qymcad_ui_state::CmdParam::new("f-hole-u", "off_u", 0.0, -100000.0, 100000.0),
-            qymcad_ui_state::CmdParam::new("f-hole-v", "off_v", 0.0, -100000.0, 100000.0),
+            qymcad_ui_state::CmdParam::new("f-hole-u", "off_u", 0.0, -100000.0, 100000.0).hint("f-hole-shift-hint"),
+            qymcad_ui_state::CmdParam::new("f-hole-v", "off_v", 0.0, -100000.0, 100000.0).hint("f-hole-shift-hint"),
         ],
     };
     *pc.status = match cmd {
@@ -521,7 +521,6 @@ pub fn start_array_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: qymcad_ui_state::
     pc.arr.count3 = 2;
     pc.arr.dir3 = 2;
     pc.arr.axis = 0;
-    pc.arr.full = true;
     pc.arr.axis_pick = false;
     // the count and the step are fields at the geometry; a full circular array asks no angle (the sync adds the field once
     // "full" is switched off)

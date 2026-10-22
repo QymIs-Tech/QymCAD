@@ -129,8 +129,8 @@ pub(crate) fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, k
             Opt::switch(OptKey::of("keep"), qymcad_i18n::tr("cmd-with-original"), pc.opts.mirror_keep.lit()),
             Opt::Readout(qymcad_i18n::tr1("cmd-plane-is", "what", &plane_named(pc, pc.mirror.plane.as_ref()))),
         ],
-        qymcad_ui_state::PartTool::LinearPattern => linear_array_opts(&*pc.arr, pc.arr.dir, taken_line(pc), &mut says),
-        qymcad_ui_state::PartTool::CircularPattern => circular_array_opts(&*pc.project, &*pc.arr, taken_line(pc), NoAxisPicked::WorldZ, &mut says),
+        qymcad_ui_state::PartTool::LinearPattern => linear_array_opts(taken_line(pc), &mut says),
+        qymcad_ui_state::PartTool::CircularPattern => circular_array_opts(&*pc.project, &*pc.arr, taken_line(pc), NoAxisPicked::WorldZ),
         qymcad_ui_state::PartTool::DatumPlane => {
             says.push(Notice::info(qymcad_i18n::tr("cmd-offset-field-hint")));
             vec![Opt::Readout(qymcad_i18n::tr1("cmd-from-is", "what", &plane_named(pc, pc.datum.plane_pick.as_ref())))]
@@ -538,25 +538,16 @@ fn hole_opts(pc: &qymcad_ui_state::PartCtx, says: &mut Vec<Notice>) -> Vec<Opt> 
 }
 
 /// The three directions a pattern repeats along, as a group of choices.
-fn direction(key: OptKey, caption: Option<&str>, dir: u8) -> Opt {
+pub(crate) fn direction(key: OptKey, caption: Option<&str>, dir: u8) -> Opt {
     Opt::Modes { key, caption: caption.map(qymcad_i18n::tr), choices: ["X", "Y", "Z"].into_iter().map(Mode::new).collect(), current: Some(usize::from(dir)) }
 }
 
-/// THE OPTIONS OF A LINEAR PATTERN, of bodies or of parts: what it repeats (`taken`), its direction `dir`, and a second
-/// and a third direction ticked on. The counts and the steps are fields at the geometry, ghosts preview the copies.
-pub(super) fn linear_array_opts(arr: &qymcad_ui_state::ArrayParams, dir: u8, taken: Option<String>, says: &mut Vec<Notice>) -> Vec<Opt> {
-    let mut v: Vec<Opt> = taken.map(Opt::Readout).into_iter().collect();
-    v.push(direction(OptKey::of("dir"), Some("cmd-direction"), dir));
-    v.push(Opt::switch(OptKey::of("dir2_on"), qymcad_i18n::tr("cmd-dir2"), arr.two.lit()));
-    if arr.two {
-        v.push(direction(OptKey::of("dir2"), None, arr.dir2));
-        v.push(Opt::switch(OptKey::of("dir3_on"), qymcad_i18n::tr("cmd-dir3"), arr.three.lit()));
-        if arr.three {
-            v.push(direction(OptKey::of("dir3"), None, arr.dir3));
-        }
-    }
+/// THE BAR OF A LINEAR PATTERN, of bodies or of parts: what it repeats (`taken`). Its directions - the axis, the copies
+/// and the step of each, the second and the third switched on by opening them - are sections of its box
+/// (`layouts::directions`); ghosts preview the copies.
+pub(super) fn linear_array_opts(taken: Option<String>, says: &mut Vec<Notice>) -> Vec<Opt> {
     says.push(Notice::info(qymcad_i18n::tr("cmd-pitch-field-hint")));
-    v
+    taken.map(Opt::Readout).into_iter().collect()
 }
 
 /// WHAT A CIRCULAR PATTERN TURNS ABOUT while no axis of its own is picked: world Z for a pattern of bodies, one of the
@@ -569,7 +560,7 @@ pub(super) enum NoAxisPicked {
 /// THE OPTIONS OF A CIRCULAR PATTERN, of bodies or of parts: what it repeats (`taken`), the axis - CLICK-PICKED, as the
 /// mirror plane is, rather than chosen from a combo box - and whether it is a full turn; the angle is a field at the
 /// geometry otherwise.
-pub(super) fn circular_array_opts(project: &Project, arr: &qymcad_ui_state::ArrayParams, taken: Option<String>, unpicked: NoAxisPicked, says: &mut Vec<Notice>) -> Vec<Opt> {
+pub(super) fn circular_array_opts(project: &Project, arr: &qymcad_ui_state::ArrayParams, taken: Option<String>, unpicked: NoAxisPicked) -> Vec<Opt> {
     let mut v: Vec<Opt> = taken.map(Opt::Readout).into_iter().collect();
     let axis = project.datum_axes.iter().find(|d| d.id == arr.axis).filter(|_| arr.axis != 0).map(|d| qymcad_i18n::name(&d.name));
     let picked = axis.is_some();
@@ -580,10 +571,6 @@ pub(super) fn circular_array_opts(project: &Project, arr: &qymcad_ui_state::Arra
     v.push(Opt::pick(OptKey::of("axis"), ask, axis, arr.axis_pick.lit()).hint(qymcad_i18n::tr("cmd-revolve-pick-axis3d")));
     if let (false, NoAxisPicked::OneOf(of)) = (picked, unpicked) {
         v.push(direction(OptKey::of("carr_axis"), None, of));
-    }
-    v.push(Opt::switch(OptKey::of("full"), qymcad_i18n::tr("cmd-full-circle"), arr.full.lit()));
-    if !arr.full {
-        says.push(Notice::info(qymcad_i18n::tr("cmd-angle-field-lower")));
     }
     v
 }
@@ -738,8 +725,7 @@ fn switched(pc: &mut qymcad_ui_state::PartCtx, key: OptKey) {
         ("neutral", _) => pc.draft.pick_neutral = !pc.draft.pick_neutral,
         ("left", _) => pc.thread.left = !pc.thread.left,
         ("keep", _) => pc.opts.mirror_keep = !pc.opts.mirror_keep,
-        ("dir2_on", _) => pc.arr.two = !pc.arr.two,
-        ("dir3_on", _) => pc.arr.three = !pc.arr.three,
+        ("dir2_on" | "dir3_on", _) => qymcad_ui_state::switch_direction(pc.arr, pc.arr.dir, qymcad_ui_state::MoreDirection::of(key.name)),
         ("axis", _) => {
             pc.arr.axis_pick = !pc.arr.axis_pick;
             if pc.arr.axis_pick {
@@ -747,7 +733,6 @@ fn switched(pc: &mut qymcad_ui_state::PartCtx, key: OptKey) {
                 *pc.status = Notice::info(qymcad_i18n::tr("cmd-array-axis-hint"));
             }
         }
-        ("full", _) => pc.arr.full = !pc.arr.full,
         _ => {}
     }
 }

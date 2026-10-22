@@ -343,7 +343,7 @@ impl Default for FeatParams {
             mirror: MirrorParams::default(),
             split: SplitParams::default(),
             // Three copies along the first direction, two along each of the others.
-            arr: ArrayParams { count: 3, count2: 2, count3: 2, dir2: 1, dir3: 2, full: true, ..Default::default() },
+            arr: ArrayParams { count: 3, count2: 2, count3: 2, dir2: 1, dir3: 2, ..Default::default() },
             boolean: BoolCommand::default(),
             // A single-start thread.
             thread: ThreadParams { starts: 1, ..Default::default() },

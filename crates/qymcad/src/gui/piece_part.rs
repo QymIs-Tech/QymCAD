@@ -17,6 +17,8 @@ struct Asking {
     body: Id,
     name: String,
     pos: Pos2,
+    /// the box has just opened: its field takes the keyboard with the name selected
+    fresh: bool,
 }
 
 /// The piece and the name typed, once Enter confirms. Only with no command in hand (under a command the right button
@@ -55,26 +57,38 @@ pub(crate) fn menu(pn: &qymcad_ui_state::Painting, resp: &Response, rect: Rect) 
     let a = asking.as_mut()?;
     let mut done = None;
     let mut gone = false;
-    egui::Area::new(ask_id).order(qymcad_ui_state::AT_GEOMETRY).fixed_pos(a.pos).show(&resp.ctx, |ui| {
-        qymcad_ui_state::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            // the caption beside the field, on its line, as every field of the program stands
-            let field = ui
-                .horizontal(|ui| {
-                    ui.label(crate::i18n::tr("piece-part-name"));
-                    ui.add(egui::TextEdit::singleline(&mut a.name).desired_width(220.0))
-                })
-                .inner;
-            field.request_focus();
-            // an empty name goes on too, to be refused in words - the field stays open for another
-            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                done = Some((a.body, a.name.trim().to_string()));
-            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                gone = true;
-            }
-            ui.label(egui::RichText::new(crate::i18n::tr("piece-part-name-hint")).weak());
-        });
-    });
+    // THE BOX OF THE NAME IS A BOX OF THE FRAME, as the box of every tool: the caption and the field on one line, Apply and
+    // Cancel under them, Enter and Esc as everywhere
+    use qymcad_ui_state::{Focus, Opt, OptKey, Row, Section};
+    let focus = if std::mem::take(&mut a.fresh) { Focus::Takes } else { Focus::Waits };
+    let text = Opt::Text { key: OptKey::of("piece-name"), text: a.name.clone(), placeholder: String::new(), unfit: None, hint: Some(crate::i18n::tr("piece-part-name-hint")), focus };
+    let layout = qymcad_ui_state::Layout { sections: vec![Section::plain(vec![Row::new(crate::i18n::tr("piece-part-name")).opt(text)])], foot: Vec::new() };
+    let gate = qymcad_ui_state::Gate::Open;
+    let the_box = qymcad_ui_state::FieldsBox {
+        id: ask_id,
+        tool: ask_id.value(),
+        place: qymcad_ui_state::Place::by(qymcad_ui_state::sheet_spot(a.pos, &[a.pos])),
+        focus: Focus::Waits,
+        hidden: &[],
+        ends: qymcad_ui_state::Ends::ApplyCancel,
+        esc: qymcad_ui_state::EscBy::Box,
+        layout: &layout,
+        gate: &gate,
+        names: &[],
+    };
+    let draw = qymcad_ui_state::DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path };
+    let answer = qymcad_ui_state::tool_box(&resp.ctx, &draw, rect, &the_box, &mut []);
+    for d in &answer.did {
+        if let qymcad_ui_state::Did::Retyped { text, .. } = d {
+            a.name = text.clone();
+        }
+    }
+    // an empty name goes on too, to be refused in words - the box stays open for another
+    match answer.verdict {
+        qymcad_ui_state::Verdict::Apply => done = Some((a.body, a.name.trim().to_string())),
+        qymcad_ui_state::Verdict::Cancel | qymcad_ui_state::Verdict::Back => gone = true,
+        _ => {}
+    }
     let given = done.as_ref().is_some_and(|(_, n)| !n.is_empty());
     let keep = if given || gone { None } else { asking };
     resp.ctx.data_mut(|d| d.insert_temp(ask_id, keep));
@@ -114,7 +128,7 @@ fn ask_id() -> egui::Id {
 /// tree alike. The field is drawn with the canvas, by [`menu`], which also answers once Enter confirms.
 pub(crate) fn ask(ctx: &egui::Context, project: &Project, body: Id, pos: Pos2) {
     let name = piece_name(project, body);
-    ctx.data_mut(|d| d.insert_temp(ask_id(), Some(Asking { body, name, pos })));
+    ctx.data_mut(|d| d.insert_temp(ask_id(), Some(Asking { body, name, pos, fresh: true })));
 }
 
 /// The name offered: the part the piece came from with "piece" after it, numbered when a part reads so already.
