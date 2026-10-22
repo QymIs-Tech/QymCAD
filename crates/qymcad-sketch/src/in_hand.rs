@@ -639,9 +639,9 @@ impl FramedTool for InSketch<'_, '_> {
     }
 }
 
-/// A VALUE TYPED INTO THE BOX OF A SHAPE WHOSE SIZES ARE DIMENSIONS, TRIED: the first figure lays the dimensions over the
-/// document as the box found it, and the part of the sketch they hold is found then (`Project::value_trial`), as it
-/// stood when the box was found; every figure after it takes back that part alone and solves it alone.
+/// A VALUE TYPED INTO THE BOX OF A SHAPE WHOSE SIZES ARE DIMENSIONS, TRIED: the part of the sketch the shape stands in is
+/// found with the first figure (`Project::trial_round`), before the dimensions are laid; every figure takes back that
+/// part alone and solves it alone, the dimensions the box laid with it.
 fn try_shape(sk: &mut qymcad_ui_state::SketchCtx, si: usize, asks: &[qymcad_ui_state::FieldAsk]) {
     if !trying(sk) {
         sk.dim.trial = None;
@@ -655,14 +655,31 @@ fn try_shape(sk: &mut qymcad_ui_state::SketchCtx, si: usize, asks: &[qymcad_ui_s
         });
         return;
     }
-    let laid = try_on(sk, From::Snapshot, |sk| shape_lay(sk, si, asks));
-    if let Some(ci) = laid.flatten() {
-        let mut t = sk.project.value_trial(qymcad_core::model::DimOf { si, ci });
-        if let (Some(t), Some((_, before))) = (t.as_mut(), sk.edits.open.as_ref()) {
-            t.began_in(&before.project);
+    // THE FIRST FIGURE MAKES THE TRIAL BEFORE IT LAYS ANYTHING: the part the shape stands in, found around a point of it,
+    // the dimensions the box lays solved with that part alone - over the document as it stands, which nothing was tried
+    // on yet and the trial keeps for Esc. Laid over a copy of the document taken back, and each of them solving the whole
+    // sketch, the first figure among 10 000 lines cost 100-115 ms.
+    if !trying(sk) {
+        if let Some(seed) = shape_seed(sk, si) {
+            try_on(sk, From::AsItStands, |sk| {
+                sk.dim.trial = sk.project.trial_round(si, seed);
+                shape_lay(sk, si, asks)
+            });
+            return;
         }
-        sk.dim.trial = t;
     }
+    // a shape with no point to stand by, or a figure tried before with no part found: over the document as the box found it
+    try_on(sk, From::Snapshot, |sk| shape_lay(sk, si, asks));
+}
+
+/// A POINT OF THE SHAPE IN THE BOX, the part of the sketch it stands in being what its sizes move.
+fn shape_seed(sk: &qymcad_ui_state::SketchCtx, si: usize) -> Option<qymcad_core::model::Id> {
+    use qymcad_ui_state::PlacingShape;
+    let curve = match sk.place.shape {
+        PlacingShape::RectSide(id) | PlacingShape::Slot(id) | PlacingShape::Round(id) => id,
+        _ => return None,
+    };
+    sk.project.sketches.get(si)?.entity(curve).map(qymcad_core::model::entity_points)?.first().copied()
 }
 
 /// APPLY OR UPDATE THE PATTERN of the sketch: one step of undo; nothing chosen to repeat, it is refused in words and the

@@ -90,6 +90,9 @@ fn typing_a_width_of_a_rectangle_opened_again_costs_the_work_of_one_rectangle() 
         figures.push(cost_of(Doer::Thread, || frame(&mut b, &ctx, rect, vec![egui::Event::Text(t.into())])).cost.work);
     }
     eprintln!("A SIZE OF A SHAPE TRIED: the figures typed {figures:?}");
+    // THE FIRST FIGURE FINDS THE PART AND LAYS THE DIMENSIONS ON IT: measured in a test build, 100-115 ms laid over a copy
+    // of the document taken back and solving the whole sketch for each, 30 ms solved with the part
+    assert!(qymcad_core::time_budget::within(figures[0], std::time::Duration::from_millis(60)), "the first figure typed among 10 000 lines took {:?}, budget 60 ms in a test build", figures[0]);
     let corners = b.project.rect_corners(si, side).expect("the first rectangle");
     assert!((corners[0].dist(corners[1]) - 125.0).abs() < 1e-6, "GUARD: 125 typed, the width is {}", corners[0].dist(corners[1]));
     for (k, f) in figures.iter().enumerate().skip(1) {

@@ -59,39 +59,30 @@ pub struct ValueTrial {
     /// the loops of the sketch and the boxes of its curves, made once, so each figure makes again only the loops round
     /// what it moved, as a frame of a drag does (`frame_loops`); none for a sketch a drag takes no session of
     loops: Option<Box<crate::model::drag::DragSession>>,
-}
-
-impl ValueTrial {
-    /// THE TRIAL AS IT BEGAN IN `before`, the document as the box found it: the points and the circles of the part as
-    /// they stood there. A box that laid the dimensions of its shape with the first figure makes its trial after it, over
-    /// the dimensions laid, and takes back the geometry as the box found it.
-    pub fn began_in(&mut self, before: &Project) {
-        let Some(s) = before.sketches.get(self.si) else { return };
-        for (&i, was) in self.points.iter().zip(self.points_was.iter_mut()) {
-            if let Some(p) = s.points.get(i).filter(|p| p.id == was.id) {
-                *was = *p;
-            }
-        }
-        for c in self.circles.iter_mut() {
-            if let Some(k) = s.entities.get(c.entity).and_then(|e| e.kind.as_circle()) {
-                c.r = k.r;
-            }
-        }
-    }
+    /// how many constraints the sketch held when the trial began: what a box lays after it - the dimensions of a shape
+    /// sized by its box - is solved with the part
+    laid_from: usize,
 }
 
 impl Project {
     /// THE TRIAL OF A VALUE OF DIMENSION `of`: the part of the sketch it holds, as it stands now. None for a dimension the
     /// sketch does not solve with - a reference - or that names no point.
     pub fn value_trial(&self, of: DimOf) -> Option<ValueTrial> {
-        let DimOf { si, ci } = of;
-        let radii = self.entity_radii(si);
-        let intrinsics = self.entity_intrinsics(si);
-        let s = self.sketches.get(si)?;
-        let dim = s.constraints.get(ci)?;
+        let s = self.sketches.get(of.si)?;
+        let dim = s.constraints.get(of.ci)?;
         if !s.solves(dim) {
             return None;
         }
+        self.trial_round(of.si, *dim.points().first()?)
+    }
+
+    /// THE TRIAL OF THE VALUES OF A SHAPE AROUND POINT `seed` OF SKETCH `si`: the part of the sketch the point stands in,
+    /// as it stands now - for a box that lays the dimensions of its shape as the first figure is typed, which are solved
+    /// with the part (`solve_trial`). None for a point not in the sketch.
+    pub fn trial_round(&self, si: usize, seed: Id) -> Option<ValueTrial> {
+        let radii = self.entity_radii(si);
+        let intrinsics = self.entity_intrinsics(si);
+        let s = self.sketches.get(si)?;
         // the constraints as the solve takes them, each with the place of its constraint in the sketch
         let mut active: Vec<Constraint> = Vec::new();
         let mut origin: Vec<Option<usize>> = Vec::new();
@@ -101,7 +92,7 @@ impl Project {
         }
         origin.extend(intrinsics.iter().map(|_| None));
         active.extend(intrinsics);
-        let part = crate::solver::part_holding(&s.points, &radii, &active, *dim.points().first()?)?;
+        let part = crate::solver::part_holding(&s.points, &radii, &active, seed)?;
         let ids: std::collections::HashSet<Id> = part.points.iter().map(|&i| s.points[i].id).collect();
         let place: std::collections::HashMap<Id, usize> = part.points.iter().map(|&i| (s.points[i].id, i)).collect();
         let part_radii: Vec<crate::solver::RadiusVar> = part.radii.iter().map(|&j| radii[j]).collect();
@@ -117,7 +108,7 @@ impl Project {
             .filter_map(|r| Some(MidOf { centre: *place.get(&r.centre)?, a: *place.get(&r.corners[0])?, c: *place.get(&r.corners[2])? }))
             .collect();
         let driven = s.constraints.iter().enumerate().filter(|(_, c)| c.is_driven() && c.points().iter().any(|p| ids.contains(p))).map(|(i, _)| i).collect();
-        let loops = self.drag_session(si, *dim.points().first()?, crate::model::drag::structure_stamp(s)).map(Box::new);
+        let loops = self.drag_session(si, seed, crate::model::drag::structure_stamp(s)).map(Box::new);
         let own_origin: Vec<Option<usize>> = part.constraints.iter().map(|&k| origin[k]).collect();
         Some(ValueTrial {
             si,
@@ -132,6 +123,7 @@ impl Project {
             mids,
             driven,
             loops,
+            laid_from: s.constraints.len(),
         })
     }
 
@@ -192,6 +184,9 @@ impl Project {
                 *c = s.as_solved(now);
             }
         }
+        // and what a box laid on the part since the trial began
+        let ids: std::collections::HashSet<Id> = own.iter().map(|p| p.id).collect();
+        constraints.extend(s.constraints.iter().skip(t.laid_from).filter(|c| s.solves(c) && c.points().iter().all(|p| ids.contains(p))).map(|c| s.as_solved(c)));
         // where curves made to touch touch now, read before the solve as a solve of the whole sketch reads it
         for c in constraints.iter_mut() {
             if let Constraint::TangentCurves { one, other, near, end: None } = c {
