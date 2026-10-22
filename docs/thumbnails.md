@@ -75,12 +75,25 @@ The packages of QymCAD do not install a thumbnailer yet: the recipes below are w
 
 Desktop environments implementing the FreeDesktop Thumbnail Management Standard (GNOME, KDE, XFCE, Cinnamon) discover thumbnail providers through `.thumbnailer` files in `/usr/share/thumbnailers/` or `~/.local/share/thumbnailers/`.
 
-Create `/usr/share/thumbnailers/qymcad.thumbnailer`:
+A thumbnailer is run on any file the file manager comes across, so it bounds the entry as the readers above do: a damaged or forged `.qcad` may declare a `thumb.png` of any size. Create `/usr/bin/qymcad-thumbnailer` (executable):
+
+```sh
+#!/bin/sh
+# qymcad-thumbnailer INPUT OUTPUT: thumb.png of a .qcad, at most 2 MiB and a PNG, or no output at all
+unzip -p "$1" thumb.png | head -c 2097153 > "$2"
+n=$(wc -c < "$2")
+magic=$(head -c 8 "$2" | od -An -tx1 | tr -d ' \n')
+[ "$n" -gt 0 ] && [ "$n" -le 2097152 ] && [ "$magic" = 89504e470d0a1a0a ] && exit 0
+rm -f "$2"
+exit 1
+```
+
+and `/usr/share/thumbnailers/qymcad.thumbnailer`:
 
 ```ini
 [Thumbnailer Entry]
-TryExec=unzip
-Exec=sh -c 'unzip -p "$1" thumb.png > "$2" || { rm -f "$2"; exit 1; }' -- %i %o
+TryExec=qymcad-thumbnailer
+Exec=qymcad-thumbnailer %i %o
 MimeType=application/x-qymcad;
 ```
 
