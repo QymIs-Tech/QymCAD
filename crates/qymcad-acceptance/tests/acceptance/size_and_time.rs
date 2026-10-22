@@ -173,3 +173,64 @@ probe! {
         assert!(frame <= scaled(qymcad_acceptance::oracles::STEP_FRAME_BUDGET), "a frame after the grip came in took {frame:?}");
     }
 }
+
+/// How long a trial build of a blend may take to answer a reopening or a click, and how long Enter may take to rebuild
+/// the propeller below the fillet edited.
+const TRIAL: Duration = Duration::from_secs(3);
+const BLEND_ENTER: Duration = Duration::from_secs(30);
+
+/// Is Apply of the tool in hand open?
+fn apply_open(s: &mut Session) -> bool {
+    let apply = s.word("cmd-apply-enter");
+    s.widgets().into_iter().any(|w| w.label.contains(&apply) && w.enabled)
+}
+
+probe! {
+    budget = 1800;
+    /// THE PROPELLER SAMPLE, ITS FILLET EDITED AS A PERSON EDITS IT: the part entered, the fillet R10 at the top of its 11
+    /// nodes reopened from the tree, two edges of the blades added by clicks, Enter. The trial of each step answers in time
+    /// with Apply open and no Enter pressed, and Enter rebuilds in time. Reported behaviour: each step 35-37 s of work for
+    /// its trial, and Enter 40 s more behind them. That a trial running is said at once is checked where the words are
+    /// laid (`a_trial_running_is_said_before_enter`): here every step is followed by the checks of every step, which wait
+    /// for the program to come to rest.
+    fn the_propeller_sample_takes_a_fillet_in_time() {
+        let Some(path) = qymcad_acceptance::private_sample("blend-speed/propeller_test_speed.qcad") else { return };
+        let mut s = Session::start();
+        s.budget(Duration::from_secs(600));
+        build::open_project(&mut s, &path);
+        let part = s.find("Part 1", qymcad::pos2(0.0, 300.0)).expect("the part is not in the tree");
+        std::thread::sleep(Duration::from_millis(700));
+        s.double_click(part.center());
+        let row = s.words().into_iter().find(|w| w.contains("R10")).expect("the fillet R10 is not in the tree");
+        let at = s.find(&row, qymcad::pos2(0.0, 300.0)).expect("the row of the fillet R10 is not on screen");
+        std::thread::sleep(Duration::from_millis(700));
+        let mut problems = Vec::new();
+        let m = meter();
+        s.double_click(at.center());
+        let _ = s.document();
+        let took = spent("the fillet R10 reopened", &m);
+        if !holds(took, TRIAL) {
+            problems.push(over("the trial of the fillet reopened", took, scaled(TRIAL)));
+        }
+        // the long top edges of two blades, as the bodies of the sample stand
+        for edge in [[21.2, 50.7, 14.0], [-50.7, 21.2, 14.0]] {
+            let to = s.edge_at(edge);
+            let m = meter();
+            s.click(to);
+            let _ = s.document();
+            let took = spent("an edge of a blade added", &m);
+            if !holds(took, TRIAL) {
+                problems.push(over("the trial of an edge added", took, scaled(TRIAL)));
+            }
+            assert!(apply_open(&mut s), "the trial answered and Apply stays shut; the corner says {:?}", s.tool_says());
+        }
+        let m = meter();
+        s.key(qymcad::Key::Enter);
+        let _ = s.document();
+        let took = spent("Enter on the fillet", &m);
+        if !holds(took, BLEND_ENTER) {
+            problems.push(over("rebuilding the propeller after Enter", took, scaled(BLEND_ENTER)));
+        }
+        assert!(problems.is_empty(), "{}", problems.join("; "));
+    }
+}
