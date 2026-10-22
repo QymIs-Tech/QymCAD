@@ -23,3 +23,16 @@ fn the_volume_read_is_exact_and_the_volume_checked_is_to_a_percent() {
     assert!((exact - want).abs() < 1e-6 * want, "the volume read is {exact}, not the exact {want}");
     assert_eq!(rounded.rough_volume(), rough, "the volume checked is another once the exact one is known: two bodies compared are read to one precision");
 }
+
+/// THE VOLUME CHECKED IS COUNTED ONCE TOO: asked again of the same body it answers from what it knows - a blend asked
+/// it of its body and the door of its result, 20-50 ms a time on a body of 80 faces.
+#[test]
+fn the_volume_checked_is_counted_once() {
+    // the body as it comes back from its bytes, as a trial build reads it: nothing known of it yet
+    let bytes = a_rounded_block().to_brep_bytes().expect("the rounded block has no bytes");
+    let rounded = crate::specimen::read(&bytes).expect("the rounded block does not read back");
+    let first = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || rounded.rough_volume());
+    let second = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || rounded.rough_volume());
+    assert_eq!(first.out, second.out, "the volume checked again is another: {} then {}", first.out, second.out);
+    assert!(second.cost.work * 10 <= first.cost.work, "the volume checked was counted again: {:?} the first time, {:?} the second", first.cost.work, second.cost.work);
+}

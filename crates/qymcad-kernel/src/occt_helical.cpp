@@ -747,6 +747,7 @@ extern "C" double qym_shape_volume(const QymShape* s) {
 extern "C" double qym_shape_volume_rough(const QymShape* s) {
     QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return 0.0;
+    if (s->rough_memo >= 0.0) return s->rough_memo;
     try {
         QYM_SIGNALS;
         double v = 0.0;
@@ -755,6 +756,7 @@ extern "C" double qym_shape_volume_rough(const QymShape* s) {
             BRepGProp::VolumeProperties(ex.Current(), g, 0.01);
             v += g.Mass();
         }
+        if (v >= 0.0) s->rough_memo = v;
         return v;
     } catch (...) {
         return 0.0;
@@ -864,7 +866,6 @@ extern "C" int qym_shape_marks(const QymShape* s, int* out) {
     out[1] = s->fresh_known ? 1 : 0;
     return 1;
 }
-
 
 // B-rep validity (BRepCheck_Analyzer): 1 for a valid solid, 0 for a broken or self-intersecting one. It lets
 // operations fail gracefully when the kernel "builds" them (IsDone = true) but the result is geometrically

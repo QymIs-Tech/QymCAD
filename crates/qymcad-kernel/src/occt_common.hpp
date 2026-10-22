@@ -320,6 +320,9 @@ struct QymShape {
     // 80 faces, 51 of them splines, 1.3-1.6 s a time, and the body a fillet reads was counted again for every node built
     // on it. Only `heal_pinched_faces` and `drop_slivers` change a shape in place, and they forget it.
     mutable double volume_memo = -1.0;
+    // THE VOLUME TO A PERCENT ONCE COUNTED, below zero until then: asked of a body by every blend of it and of every
+    // result twice - by the check of the blend and by the door - 20-50 ms a time on a body of 80 faces.
+    mutable double rough_memo = -1.0;
     // WHETHER THE BODY PASSED THE CHECK OF A SOUND SOLID (`BRepCheck_Analyzer` with its geometric checks), once asked
     // or once an operation checked its own result: 1 sound, 0 broken, -1 not asked yet. The check took 100 ms on a
     // body of 80 faces and ran three times on every result of a blend - in the operation, in the wrap of its result
@@ -342,6 +345,7 @@ struct QymShape {
 // are asked of the body as it stands now.
 inline void forget_marks(QymShape& s) {
     s.volume_memo = -1.0;
+    s.rough_memo = -1.0;
     s.valid_memo = -1;
     s.fresh.Clear();
     s.fresh_known = false;

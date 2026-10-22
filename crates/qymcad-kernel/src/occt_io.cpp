@@ -394,6 +394,7 @@ extern "C" QymShape* qym_shape_own_copy(const QymShape* s) {
         QYM_SIGNALS;
         QymShape* out = new QymShape(qym_own_copy(*s));
         out->volume_memo = s->volume_memo;
+        out->rough_memo = s->rough_memo;
         out->valid_memo = s->valid_memo;
         out->bbox_known = s->bbox_known;
         for (int i = 0; i < 6; ++i) out->bbox_memo[i] = s->bbox_memo[i];
