@@ -54,6 +54,20 @@ fn typing_the_width_moves_the_corners_of_the_same_rectangle() {
     assert_eq!(entities_after, entities_before, "typing the width laid the rectangle anew: its lines are other ones");
     let corners = b.project.rect_corners(si, ids[0]).expect("the rectangle is still the one of its first side");
     assert!((corners[0].dist(corners[1]) - 25.0).abs() < 1e-6, "the width is {} and not 25", corners[0].dist(corners[1]));
+    // THE LOOP THE LINES ARE DRAWN BY GOES WITH THE CORNERS at once. Reported behaviour: the points of a rectangle went
+    // with the width typed and its lines stood where they were, drawn anew only some time after
+    let closed = b.project.sketches[si]
+        .contour_ids
+        .iter()
+        .filter_map(|&cid| b.project.contour_index(cid))
+        .filter(|&ci| b.project.contours[ci].closed)
+        .map(|ci| {
+            let xs = b.project.contours[ci].points.iter().map(|p| p.x);
+            let (lo, hi) = xs.fold((f64::MAX, f64::MIN), |(lo, hi), x| (lo.min(x), hi.max(x)));
+            hi - lo
+        })
+        .fold(0.0_f64, f64::max);
+    assert!((closed - 25.0).abs() < 1e-6, "the closed loop of the rectangle is {closed} wide after 25 was typed: its lines stand where they were");
     let rect = b.project.sketches[si].rects().into_iter().find(|r| r.sides.contains(&ids[0])).expect("the rectangle");
     assert!(rect.corners.contains(&line_end), "the corner shared with the end of the line is gone: the corners are {:?}", rect.corners);
 }

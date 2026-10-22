@@ -48,8 +48,8 @@ impl Project {
     /// THE RECTANGLE WITH SIDE `side` GIVEN `size` BY MOVING ITS CORNERS: the width along its first side, the height
     /// along the side after it, the corner it was drawn from - or its centre - left where it stands. The points and the
     /// lines are the same ones, so what is tied to them stays tied: a rectangle laid anew for every figure typed took
-    /// new ids each time, and the ties a snap had given its corners went with the old ones. False when the side is no
-    /// rectangle's.
+    /// new ids each time, and the ties a snap had given its corners went with the old ones. Its loops are made again round
+    /// the corners moved. False when the side is no rectangle's.
     pub fn size_rect(&mut self, si: usize, side: Id, size: crate::model::RectSize) -> bool {
         let (Some(r), Some(p)) = (self.rect_of(si, side), self.rect_corners(si, side)) else { return false };
         let unit = |x: f64, y: f64| {
@@ -85,6 +85,9 @@ impl Project {
                 (q.x, q.y) = (g.to.x, g.to.y);
             }
         }
+        // the loops its lines are drawn by go with the corners: laid anew, a rectangle made its loops anew, and moved by
+        // its corners alone its lines stood where they were until the next rebuild of the sketch
+        self.regen_sketch_moved(si, &moved.iter().map(|g| g.id).collect());
         true
     }
     /// THE TWO POINTS A SIZE OF THE SLOT WITH CURVE `curve` IS MEASURED BETWEEN: the centres of its ends for its length,
