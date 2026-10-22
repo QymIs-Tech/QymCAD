@@ -23,15 +23,23 @@ mod tests {
     /// here, exactly as `assembly_tools::doors` does for the two Assembly sub-modes.
     fn arm(app: &mut App, t: DrawTool) {
         match t {
-            DrawTool::Draw => app.set_sk_tool(1),
-            DrawTool::ClickOp => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 1),
+            DrawTool::Draw => app.set_sk_tool(qymcad_ui_state::SketchShape::Line),
+            DrawTool::ClickOp => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Trim),
             DrawTool::Modify => qymcad_ui_state::modify_button(qymcad_ui_state::editing_of!(app), &mut qymcad_ui_state::tools_of!(app), app.sk_pat, &app.tool_prefs, qymcad_ui_state::EditTool::Mirror),
-            DrawTool::Move => qymcad_part::start_move_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.status, 1),
-            DrawTool::Pattern => qymcad_part::start_pattern(&mut qymcad_ui_state::tools_of!(app), &mut app.status, 1),
-            DrawTool::Dimension => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 1),
-            DrawTool::Command => app.start_feat_cmd(4),
+            DrawTool::Move => qymcad_sketch::start_move_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.status, qymcad_ui_state::MoveKind::Move),
+            DrawTool::Pattern => qymcad_sketch::start_pattern(&mut qymcad_ui_state::tools_of!(app), &mut app.status, qymcad_ui_state::PatternKind::Linear),
+            DrawTool::Dimension => qymcad_ui_state::set_dim_tool(
+                &mut qymcad_ui_state::tools_of!(app),
+                &mut app.viewing.mode_3d,
+                &app.project,
+                app.chosen.sel,
+                app.sketch_ses,
+                &mut app.status,
+                qymcad_ui_state::DimKind::Linear,
+            ),
+            DrawTool::Command => app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet),
             DrawTool::Measure => qymcad_ui_state::set_measure(&mut qymcad_ui_state::tools_of!(app), true),
-            DrawTool::Place => app.start_prim_cmd(1),
+            DrawTool::Place => app.start_feat_cmd(qymcad_ui_state::PartTool::Box),
             // The sub-modes: `has_door` says they are not taken on their own, and the sweep skips them.
             DrawTool::Pick | DrawTool::Import | DrawTool::Corner | DrawTool::Annot => {}
         }
@@ -74,11 +82,13 @@ mod tests {
             concat!(
                 include_str!("../../../qymcad-part/src/bars/feat_bar.rs"),
                 "\n",
-                include_str!("../../../qymcad-part/src/bars/options.rs"),
+                include_str!("../../../qymcad-sketch/src/options.rs"),
                 "\n",
-                include_str!("../../../qymcad-part/src/bars/toolbar.rs"),
+                include_str!("../../../qymcad-ui-state/src/path_bar.rs"),
                 "\n",
                 include_str!("../../../qymcad-part/src/bars/commands.rs"),
+                "\n",
+                include_str!("../../../qymcad-sketch/src/commands.rs"),
                 "\n",
                 include_str!("../../../qymcad-part/src/bars.rs")
             ),
@@ -86,6 +96,8 @@ mod tests {
             include_str!("../../../qymcad-part/src/params.rs"),
             "\n",
             include_str!("../../../qymcad-part/src/picks.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/aims.rs"),
             "\n",
             include_str!("../../../qymcad-part/src/popups.rs"),
             "\n",

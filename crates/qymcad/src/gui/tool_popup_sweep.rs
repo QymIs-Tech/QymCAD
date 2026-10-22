@@ -55,14 +55,14 @@ pub(crate) mod tests {
     }
 
     /// Give the command the least selection without which it cannot have an anchor.
-    fn arm(app: &mut App, kind: u8, mi: usize, body: u64) {
+    fn arm(app: &mut App, kind: qymcad_ui_state::PartTool, mi: usize, body: u64) {
         let top = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap()).cloned();
         match kind {
-            6 | 23 | 25 | 26 | 28 => {
+            qymcad_ui_state::PartTool::Shell | qymcad_ui_state::PartTool::Draft | qymcad_ui_state::PartTool::PushFace | qymcad_ui_state::PartTool::RemoveFace | qymcad_ui_state::PartTool::Thicken => {
                 if let Some(f) = top {
                     app.tools.gsel.faces.insert(f.id);
                     app.tools.gsel.faces_body = Some(body);
-                    if kind == 23 {
+                    if kind == qymcad_ui_state::PartTool::Draft {
                         // a draft also needs a neutral face — any other one
                         if let Some(side) = app.project.bodies[mi].faces.iter().find(|s| s.id != f.id) {
                             app.params.draft.neutral = side.id;
@@ -70,13 +70,13 @@ pub(crate) mod tests {
                     }
                 }
             }
-            7 => {
+            qymcad_ui_state::PartTool::Hole => {
                 if let Some(f) = top {
                     let fi = app.project.bodies[mi].faces.iter().position(|x| x.id == f.id).expect("the index of the face");
                     app.chosen.sel = Sel::Face(mi, fi);
                 }
             }
-            27 | 29 => {
+            qymcad_ui_state::PartTool::SplitBody | qymcad_ui_state::PartTool::SplitFace => {
                 use qymcad_core::feature::{BasePlane, SketchPlane};
                 app.params.split.plane = Some(SketchPlane::World(BasePlane::XY));
             }
@@ -84,8 +84,20 @@ pub(crate) mod tests {
         }
     }
 
-    /// The Part tools that aim by clicking the body. Each has a command number of its own.
-    const AIMED_AT_THE_BODY: [u8; 11] = [4, 5, 6, 7, 23, 25, 26, 27, 28, 29, 24];
+    /// The Part tools that aim by clicking the body.
+    const AIMED_AT_THE_BODY: [qymcad_ui_state::PartTool; 11] = [
+        qymcad_ui_state::PartTool::Fillet,
+        qymcad_ui_state::PartTool::Chamfer,
+        qymcad_ui_state::PartTool::Shell,
+        qymcad_ui_state::PartTool::Hole,
+        qymcad_ui_state::PartTool::Draft,
+        qymcad_ui_state::PartTool::PushFace,
+        qymcad_ui_state::PartTool::RemoveFace,
+        qymcad_ui_state::PartTool::SplitBody,
+        qymcad_ui_state::PartTool::Thicken,
+        qymcad_ui_state::PartTool::SplitFace,
+        qymcad_ui_state::PartTool::Thread,
+    ];
 
     /// A COMMAND WITH A NUMERIC FIELD MUST HAVE AN ANCHOR.
     ///
@@ -108,7 +120,7 @@ pub(crate) mod tests {
                 continue; // there is no number, so there is nothing to show
             }
             if crate::gui::commands::cmd_place(&mut app.part_ctx()).is_none() {
-                missing.push(format!("{kind} ({} fields)", app.tools.cmd.params.len()));
+                missing.push(format!("{kind:?} ({} fields)", app.tools.cmd.params.len()));
             }
         }
         assert!(missing.is_empty(), "these commands have a numeric field and no anchor — there is nowhere to show it: {}", missing.join(", "));
@@ -132,11 +144,11 @@ pub(crate) mod tests {
             let bb = body_box(&app, mi, rect);
             if the_box.intersects(bb) {
                 over.push(format!(
-                    "{kind} (the box {:.0},{:.0}..{:.0},{:.0} over {:.0},{:.0}..{:.0},{:.0})",
+                    "{kind:?} (the box {:.0},{:.0}..{:.0},{:.0} over {:.0},{:.0}..{:.0},{:.0})",
                     the_box.min.x, the_box.min.y, the_box.max.x, the_box.max.y, bb.min.x, bb.min.y, bb.max.x, bb.max.y
                 ));
             }
-            assert!(rect.contains_rect(the_box), "command {kind}: the box went outside the viewport — it cannot be seen: {the_box:?}");
+            assert!(rect.contains_rect(the_box), "command {kind:?}: the box went outside the viewport — it cannot be seen: {the_box:?}");
         }
         assert!(over.is_empty(), "the popup lay on the part — and that is what is aimed at next: {}", over.join("; "));
     }
@@ -156,8 +168,8 @@ pub(crate) mod tests {
     fn every_tool_with_a_direction_has_a_handle() {
         let rect = viewport();
         let _ = rect;
-        let mut missing: Vec<u8> = Vec::new();
-        for kind in [6u8, 25, 27, 28] {
+        let mut missing: Vec<qymcad_ui_state::PartTool> = Vec::new();
+        for kind in [qymcad_ui_state::PartTool::Shell, qymcad_ui_state::PartTool::PushFace, qymcad_ui_state::PartTool::SplitBody, qymcad_ui_state::PartTool::Thicken] {
             let mut app = App::default();
             let (mi, body) = part_with_cube(&mut app);
             app.viewing.mode_3d = true;
@@ -185,20 +197,18 @@ pub(crate) mod tests {
     /// what is drawn cannot be caught in a headless run — but it catches exactly what was missed.
     #[test]
     fn every_face_tool_shows_what_is_picked() {
-        let render = crate::gui::render_source::RENDER;
-        // every place where the drawing of the scene looks at the kind of command
-        let mut covered: Vec<u8> = Vec::new();
-        for line in render.lines() {
-            let Some(pos) = line.find("pn.armed.cmd_kind()") else { continue };
-            let tail = &line[pos..];
-            for tok in tail.split(|c: char| !c.is_ascii_digit()) {
-                if let Ok(k) = tok.parse::<u8>() {
-                    covered.push(k);
-                }
-            }
-        }
-        let mut blind: Vec<u8> = Vec::new();
-        for kind in [6u8, 23, 25, 26, 28, 30, 31] {
+        use qymcad_ui_state::PartTool;
+        let covered = crate::gui::render_source::tools_the_drawing_names(crate::gui::render_source::RENDER);
+        let mut blind: Vec<PartTool> = Vec::new();
+        for kind in [
+            qymcad_ui_state::PartTool::Shell,
+            qymcad_ui_state::PartTool::Draft,
+            qymcad_ui_state::PartTool::PushFace,
+            qymcad_ui_state::PartTool::RemoveFace,
+            qymcad_ui_state::PartTool::Thicken,
+            qymcad_ui_state::PartTool::FaceCopy,
+            qymcad_ui_state::PartTool::SurfaceReplace,
+        ] {
             if !covered.contains(&kind) {
                 blind.push(kind);
             }
@@ -261,7 +271,7 @@ pub(crate) mod tests {
                 }
             }
             if !texts.iter().any(|t| t.contains("vysota_korpusa")) {
-                without.push(format!("{kind}"));
+                without.push(format!("{kind:?}"));
             }
         }
         assert!(without.is_empty(), "the driver list did not appear in the popups of these part tools: {}", without.join(", "));

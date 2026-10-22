@@ -35,7 +35,7 @@ mod tests {
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si0);
         app.feat.op = 0;
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         app.apply_feat_cmd();
 
         // 2) a cut from the SECOND sketch — this feature has a source body
@@ -45,7 +45,7 @@ mod tests {
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si1);
         app.feat.op = 1; // cut
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         app.apply_feat_cmd();
         assert!(app.project.regen_errors.is_empty(), "the model built cleanly: {:?}", app.project.regen_errors);
 

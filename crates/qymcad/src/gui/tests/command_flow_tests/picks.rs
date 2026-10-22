@@ -15,7 +15,7 @@ fn revolve_flow() {
     };
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 2; // stale from a previous cut - the revolve must reset it to 0
-    app.start_feat_cmd(3);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve);
     assert_eq!(app.feat.op, 0, "the revolve starts on Add");
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
         p.val = 360.0;
@@ -114,7 +114,7 @@ fn export_plan_is_shared_by_step_and_stl() {
     let si = sketch_rect(&mut app, 40.0, 0.0, 60.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 20.0;
         p.txt = "20".into();

@@ -10,15 +10,15 @@ pub fn select_all_sketch(annot: &mut AnnotEdit, gsel: &mut GeomSelection, projec
     let sys: std::collections::HashSet<Id> = s.system_ids().into_iter().collect();
     // points already taken by entities and primitives: they are not added as separate points
     let mut used: std::collections::HashSet<Id> = std::collections::HashSet::new();
-    let mut sel: Vec<(u8, Id)> = Vec::new();
+    let mut sel: Vec<crate::SketchItem> = Vec::new();
     for e in &s.entities {
-        sel.push((1, e.id));
+        sel.push(crate::SketchItem::curve(e.id));
         used.extend(qymcad_core::model::entity_points(e));
     }
     // lone points (not part of an entity and not system ones)
     for p in &s.points {
         if !used.contains(&p.id) && !sys.contains(&p.id) {
-            sel.push((0, p.id));
+            sel.push(crate::SketchItem::point(p.id));
         }
     }
     let n = sel.len();
@@ -30,7 +30,7 @@ pub fn select_all_sketch(annot: &mut AnnotEdit, gsel: &mut GeomSelection, projec
 
 /// Delete the current sketch selection (entities, primitives and points, apart from the system ones).
 pub fn delete_sketch_sel(project: &mut Project, regen: &mut Rebuilding, sel_sk: &mut SketchSelection, status: &mut Notice, si: usize) {
-    let eids: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = sel_sk.curves().collect();
     let eids: Vec<Id> = {
         let s = &project.sketches[si];
         eids.into_iter().filter(|e| s.entities.iter().any(|x| x.id == *e)).collect()
@@ -39,7 +39,7 @@ pub fn delete_sketch_sel(project: &mut Project, regen: &mut Rebuilding, sel_sk: 
         let s = &project.sketches[si];
         s.immovable_points().into_iter().collect() // system and driven points: they are not deleted one by one
     };
-    let pids: Vec<Id> = sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
+    let pids: Vec<Id> = sel_sk.items.iter().filter(|crate::SketchItem { kind: k, id }| *k == crate::ItemKind::Point && !sys.contains(id)).map(|crate::SketchItem { id, .. }| *id).collect();
     // A PIECE OF A PROJECTION DELETED cuts it: the rest is ordinary geometry held by what it plainly is
     // (`delete_sketch_curves`)
     if !eids.is_empty() {
@@ -357,13 +357,13 @@ pub fn box_select_sketch(ed: Editing, sel_sk: &mut SketchSelection, rect: Rect, 
         }
     }
     for id in add_ent {
-        if !sel_sk.items.contains(&(1, id)) {
-            sel_sk.items.push((1, id));
+        if !sel_sk.items.contains(&crate::SketchItem::curve(id)) {
+            sel_sk.items.push(crate::SketchItem::curve(id));
         }
     }
     for id in add_pt {
-        if !sel_sk.items.contains(&(0, id)) {
-            sel_sk.items.push((0, id));
+        if !sel_sk.items.contains(&crate::SketchItem::point(id)) {
+            sel_sk.items.push(crate::SketchItem::point(id));
         }
     }
     *ed.status = Notice::info(qymcad_i18n::tr1("g-selected-n", "n", &sel_sk.items.len().to_string()));

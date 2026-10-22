@@ -60,8 +60,8 @@ pub fn draw_axes(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         return;
     }
     // the axes as reference geometry: X red, Y green; the selected one orange and thicker
-    let xsel = pn.sel_sk.items.contains(&(3, 0));
-    let ysel = pn.sel_sk.items.contains(&(3, 1));
+    let xsel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(0));
+    let ysel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(1));
     let xst = if xsel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_x()) };
     let yst = if ysel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_y()) };
     painter.line_segment([Pos2::new(rect.left(), o.y), Pos2::new(rect.right(), o.y)], xst);
@@ -131,15 +131,12 @@ pub fn draw_pick_plane(pn: &Painting, painter: &egui::Painter, rect: Rect, basis
 
 /// Highlighting the plane candidates while a sketch plane is being chosen (translucent squares, brighter under the cursor).
 pub fn draw_sketch_plane_picker(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    // active while choosing a sketch plane, while placing an import, in the MIRROR (16) / DATUM PLANE (20)
-    // / SPLIT (27) command, while picking a MIRRORED PART and while picking a SECTION - one click-pick for all
+    // active while choosing a sketch plane, while placing an import, in the MIRROR / DATUM PLANE
+    // / SPLIT command, while picking a MIRRORED PART and while picking a SECTION - one click-pick for all
     if !(pn.picking.is_sketch_plane()
         || pn.picking.replace_sketch().is_some()
         || pn.pending_import.curves.is_some()
-        || pn.armed.cmd_kind() == 16
-        || pn.armed.cmd_kind() == 20
-        || pn.armed.cmd_kind() == 27
-        || pn.armed.cmd_kind() == 29
+        || pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::aims_at_a_plane)
         || pn.mirror.in_hand()
         || pn.section.pick)
         || !pn.mode_3d
@@ -150,12 +147,7 @@ pub fn draw_sketch_plane_picker(pn: &Painting, painter: &egui::Painter, rect: Re
     // the plane ALREADY CHOSEN is lit PERMANENTLY (in blue), the candidate under the cursor in yellow.
     // That way both what is chosen (a FACE included) and what is under the cursor right now are visible -
     // before, a chosen face could not be seen at all.
-    let picked = match pn.armed.cmd_kind() {
-        16 => pn.mirror.plane,
-        20 => pn.datum.plane_pick,
-        27 | 29 => pn.split.plane,
-        _ => None,
-    };
+    let picked = qymcad_ui_state::plane_taken(pn);
     let hovered = painter.ctx().pointer_hover_pos().and_then(|p| qymcad_pick::pick_sketch_plane_at(pn, rect, p));
     // An earlier edition drew ALL the candidate planes PERMANENTLY (blue frames). Reported behaviour:
     // squares that cannot be selected, and planes lighting up that have nothing to do with anything -

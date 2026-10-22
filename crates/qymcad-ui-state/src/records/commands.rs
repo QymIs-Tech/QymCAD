@@ -102,8 +102,12 @@ pub struct Placing {
     pub shape: PlacingShape,
     /// the dimension is following the cursor and has not been placed yet (the constraint's index)
     pub dim: Option<usize>,
-    /// the dimension input fields and the focus within them
-    pub buf: [String; 2],
+    /// THE FIELDS OF THE BOX OF THE SHAPE, in the frame of every tool: filled from the shape as the box opens, read back
+    /// into it as they are typed
+    pub fields: Vec<CmdParam>,
+    /// how the box of the shape was opened: by drawing the shape, or again by a double click on it
+    pub opened: Opened,
+    /// the first field of the box of the shape takes the keyboard
     pub focus: bool,
     /// a value was typed into the fields: closing them with Enter then lays the dimensions typed
     pub typed: bool,
@@ -168,7 +172,43 @@ impl Placing {
     /// Start or update the shape. The previous one disappears - it is no longer being drawn.
     pub fn set(&mut self, shape: PlacingShape) {
         self.shape = shape;
+        self.fields.clear(); // the box of the shape before is not this one's
+        self.opened = Opened::ByDrawing;
     }
+
+    /// The box of a shape opened again, by a double click on the shape: the select tool in hand, no tool of its own.
+    pub fn reopen(&mut self, shape: PlacingShape) {
+        self.set(shape);
+        self.opened = Opened::Again;
+    }
+
+    /// DOES THE BOX OF THE SHAPE STAND WITH `armed` IN HAND: the box of a shape just drawn goes with its drawing tool, the
+    /// box of a rectangle reopened for its sizes with any tool taken. Reported behaviour (issue #271): the box of a
+    /// rectangle stayed after the Select tool was taken, and a value typed into it later rebuilt the rectangle at its old
+    /// size, throwing away the dimensions laid since.
+    pub fn stands_with(&self, armed: &Armed) -> bool {
+        let tool = match self.shape {
+            // no box: a dimension being placed is kept here, and goes with its own tool
+            PlacingShape::None => return true,
+            _ if self.opened == Opened::Again => return !armed.any(),
+            PlacingShape::RectDims(_) => return !armed.any(),
+            PlacingShape::Rect { .. } | PlacingShape::RectCenter { .. } => crate::SketchShape::Rect,
+            PlacingShape::Poly(_) => crate::SketchShape::Polygon,
+            PlacingShape::Ellipse(..) => crate::SketchShape::Ellipse,
+            PlacingShape::Slot(_) => crate::SketchShape::Slot,
+        };
+        armed.drawing() == Some(tool)
+    }
+}
+
+/// HOW THE BOX OF A SHAPE WAS OPENED.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub enum Opened {
+    /// By drawing the shape: it goes with the drawing tool.
+    #[default]
+    ByDrawing,
+    /// Again, by a double click on the shape: it goes with any tool taken.
+    Again,
 }
 
 /// THE DRAWING TOOLS' PREFERENCES: each has a mode and numbers of its own. This is NOT the state of the current
@@ -300,8 +340,11 @@ impl SketchTool {
     /// Choose a tool: whatever was clicked with the previous one MUST disappear - it has nothing to do
     /// with the new one - and WHAT IS IN HAND changes with it. Clicking the tool already in hand puts it
     /// down, which is why the old value is read before the new one is written.
-    pub fn select(&mut self, armed: &mut Armed, kind: u8) {
-        *armed = if armed.draw_kind() == kind { Armed::None } else { Armed::Draw(kind) };
+    pub fn select(&mut self, armed: &mut Armed, kind: Option<SketchShape>) {
+        *armed = match kind {
+            Some(k) if armed.drawing() != Some(k) => Armed::Draw(k),
+            _ => Armed::None,
+        };
         self.pts.clear();
     }
 }
@@ -337,12 +380,9 @@ impl FeatCommand {
     /// Open command `kind`: the previous state MUST disappear entirely, and WHAT IS IN HAND changes
     /// with it. The two travel together because they are one act - taking this command means letting
     /// whatever was in hand go, and `Armed` is a single field, so it cannot say both.
-    pub fn open(&mut self, armed: &mut Armed, kind: u8, prev_3d: bool) {
+    pub fn open(&mut self, armed: &mut Armed, kind: PartTool, prev_3d: bool) {
         *self = Self { prev_3d, focus: true, ..Default::default() };
-        // KIND ZERO IS NOT A COMMAND. While the kind lived in a field, "open command 0" was how the
-        // apply path SAID "close", and the two readings of one number went unnoticed. The enum has a
-        // name for "nothing in hand", and a command numbered zero is not it.
-        *armed = if kind == 0 { Armed::None } else { Armed::Command(kind) };
+        *armed = Armed::Command(kind);
     }
 
     /// Close the command (applied or cancelled).
@@ -622,8 +662,8 @@ impl Default for Settings {
 /// that editing one silently changes the other.
 #[derive(Clone, Debug)]
 pub struct CompArrayCmd {
-    /// which command is open: 0 none, 1 linear, 2 circular
-    pub mode: u8,
+    /// which command is open, linear or circular; none when none is
+    pub mode: Option<crate::PatternKind>,
     /// the source component (chosen before the start or by a click)
     pub src: Id,
     /// linear: the direction, 0 for X, 1 for Y, 2 for Z
@@ -634,9 +674,16 @@ pub struct CompArrayCmd {
     pub edit: Id,
 }
 
+impl CompArrayCmd {
+    /// Is the pattern of components in hand a circular one?
+    pub fn is_circular(&self) -> bool {
+        self.mode == Some(crate::PatternKind::Circular)
+    }
+}
+
 impl Default for CompArrayCmd {
     fn default() -> Self {
-        Self { mode: 0, src: 0, dir: 0, axis: 2, edit: 0 }
+        Self { mode: None, src: 0, dir: 0, axis: 2, edit: 0 }
     }
 }
 

@@ -5,7 +5,7 @@ use super::*;
 pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
     draw_offset_preview(pn, painter, &sh);
-    if pn.armed.draw_kind() == 0 {
+    if pn.armed.drawing().is_none() {
         return;
     }
     let col = if pn.tool.construction { pn.scheme.pal.sketch_construction() } else { pn.scheme.pal.sketch_line() };
@@ -13,24 +13,24 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     // THE CLICKS THAT ARE NOTHING YET ARE MARKED, and of a chain of lines only the corner the next segment goes from: the
     // corners already laid are points of the sketch and drawn as such, and the solve after an automatic constraint moves
     // them - marked again where they were clicked, a second dot stood beside every corner of the chain.
-    let marked = if pn.armed.draw_kind() == 1 { pn.tool.pts.len().saturating_sub(1) } else { 0 };
+    let marked = if pn.armed.drawing() == Some(qymcad_ui_state::SketchShape::Line) { pn.tool.pts.len().saturating_sub(1) } else { 0 };
     for p in &pn.tool.pts[marked..] {
         painter.circle_filled(sh.at(*p), 3.0, col);
     }
     let Some(cur) = pn.cursor else { return };
     let sc = sh.at(cur);
-    match pn.armed.draw_kind() {
+    match pn.armed.drawing() {
         // THE LABEL WHERE THE CLICK WILL PUT IT: its outlines follow the pointer (a note, its words)
-        11 if pn.tool_prefs.text_note => {
+        Some(qymcad_ui_state::SketchShape::Text) if pn.tool_prefs.text_note => {
             painter.text(sc, egui::Align2::LEFT_BOTTOM, &pn.tool_prefs.text, egui::FontId::proportional(14.0), col);
         }
-        11 if qymcad_ui_state::text_ghost_shown(pn.armed, &pn.inline) => {
+        Some(qymcad_ui_state::SketchShape::Text) if qymcad_ui_state::text_ghost_shown(pn.armed, &pn.inline) => {
             for glyph in pn.tool.text_ghost.iter().flat_map(|(.., g)| g) {
                 let pts: Vec<Pos2> = glyph.iter().chain(glyph.first()).map(|p| sh.at(Point2::new(cur.x + p.x, cur.y + p.y))).collect();
                 painter.add(egui::Shape::line(pts, stroke));
             }
         }
-        1 => {
+        Some(qymcad_ui_state::SketchShape::Line) => {
             if let Some(&last) = pn.tool.pts.last() {
                 painter.line_segment([sh.at(last), sc], stroke);
                 // a live preview of the automatic constraints: what will be attached if a point is placed here - none
@@ -45,7 +45,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
-        2 => match pn.tool_prefs.rect_mode {
+        Some(qymcad_ui_state::SketchShape::Rect) => match pn.tool_prefs.rect_mode {
             1 => {
                 // centre plus corner: the extent is mirrored through the centre
                 if let Some(&c) = pn.tool.pts.first() {
@@ -75,7 +75,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         },
-        3 => {
+        Some(qymcad_ui_state::SketchShape::Circle) => {
             if pn.tool_prefs.circ_mode == 2 {
                 // a circle touching the two curves picked: the one of the radius of the bar whose centre is nearest the
                 // pointer
@@ -106,7 +106,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
-        4 if pn.tool_prefs.arc_mode == 2 => {
+        Some(qymcad_ui_state::SketchShape::Arc) if pn.tool_prefs.arc_mode == 2 => {
             // a tangent arc: once started (at the end of a curve), an arc from s to the cursor, smooth into the base
             if pn.tool.pts.len() == 1 {
                 let s = pn.tool.pts[0];
@@ -134,7 +134,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
-        4 => {
+        Some(qymcad_ui_state::SketchShape::Arc) => {
             if pn.tool_prefs.arc_mode == 1 {
                 // by three points: the start, the end, and the cursor as a point on the arc
                 if pn.tool.pts.len() == 1 {
@@ -169,7 +169,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.circle_stroke(scn, scn.distance(sc), Stroke::new(0.6, col));
             }
         }
-        6 => {
+        Some(qymcad_ui_state::SketchShape::Polygon) => {
             if let Some(&first) = pn.tool.pts.first() {
                 let n = pn.tool_prefs.poly_n.max(3);
                 // the same polygon the click will make, from the one computation of it
@@ -185,7 +185,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.add(egui::Shape::line(pts, stroke));
             }
         }
-        7 => {
+        Some(qymcad_ui_state::SketchShape::Slot) => {
             if pn.tool.pts.len() == 1 {
                 painter.line_segment([sh.at(pn.tool.pts[0]), sc], stroke);
             } else if pn.tool.pts.len() == 2 {
@@ -197,7 +197,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.circle_stroke(sb, r, Stroke::new(0.6, col));
             }
         }
-        8 => {
+        Some(qymcad_ui_state::SketchShape::Ellipse) => {
             // the major axis follows the cursor after the centre, the whole ellipse after the end of the axis
             if pn.tool.pts.len() == 1 {
                 painter.line_segment([sh.at(pn.tool.pts[0]), sc], stroke);
@@ -215,7 +215,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.add(egui::Shape::line(pts, stroke));
             }
         }
-        9 => {
+        Some(qymcad_ui_state::SketchShape::Spline) => {
             // a polyline preview of the knots + a tail to the cursor
             let mut sp: Vec<Pos2> = pn.tool.pts.iter().map(|p| sh.at(*p)).collect();
             sp.push(sc);
@@ -281,13 +281,13 @@ pub(crate) fn draw_extend_preview(pn: &Painting, painter: &egui::Painter, rect: 
 /// ellipse, an arc of one and a spline had none.
 pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
-    if pn.armed.click_op() == 0 {
+    if pn.armed.click_tool().is_none() {
         return;
     }
     let Some(cur) = pn.cursor else { return };
     let Sel::Sketch(si) = pn.sel else { return };
     let pos = sh.at(cur);
-    if let (2, Some(held)) = (pn.armed.click_op(), pn.tool.extend) {
+    if let (Some(qymcad_ui_state::ClickTool::Extend), Some(held)) = (pn.armed.click_tool(), pn.tool.extend) {
         draw_extend_preview(pn, painter, rect, ExtendHeld { si, curve: held, pos });
         return;
     }
@@ -297,13 +297,13 @@ pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let Some(curve) = s.entity(eid).and_then(|e| qymcad_core::model::curve::Curve::of(s, e)) else { return };
     let (red, green) = (pn.scheme.pal.error(), pn.scheme.pal.add());
     let on_screen = |c: &qymcad_core::model::curve::Curve| c.polyline().into_iter().map(|p| sh.at(p)).collect::<Vec<Pos2>>();
-    match pn.armed.click_op() {
-        1 => {
+    match pn.armed.click_tool() {
+        Some(qymcad_ui_state::ClickTool::Trim) => {
             if let Some(span) = pn.project.trim_span(si, eid, cur) {
                 painter.add(egui::Shape::line(on_screen(&span), Stroke::new(3.0, red)));
             }
         }
-        2 => {
+        Some(qymcad_ui_state::ClickTool::Extend) => {
             // the end that will be pulled - the one nearest the pointer - and, for a curve, the curve as it will run
             if let Some(end) = (!curve.closed()).then(|| curve.ends()).and_then(|ends| ends.into_iter().min_by(|p, q| p.dist(cur).total_cmp(&q.dist(cur)))) {
                 painter.circle_stroke(sh.at(end), 6.0, Stroke::new(2.0, green));
@@ -312,7 +312,7 @@ pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.add(egui::Shape::dashed_line(&on_screen(&longer), Stroke::new(2.0, green), 6.0, 4.0));
             }
         }
-        3 => {
+        Some(qymcad_ui_state::ClickTool::Break) => {
             for t in pn.project.break_at(si, eid, cur) {
                 let sp = sh.at(curve.at(t));
                 painter.circle_filled(sp, 4.0, green);
@@ -327,7 +327,7 @@ pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// selection (for a new pattern) or the source of the pattern being edited.
 pub fn draw_pattern_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     use qymcad_core::model::PatternKind;
-    if pn.armed.pat_op() == 0 {
+    if pn.armed.pattern().is_none() {
         return;
     }
     let Sel::Sketch(si) = pn.sel else { return };
@@ -429,13 +429,13 @@ pub(crate) fn draw_texts_xform(pn: &Painting, painter: &egui::Painter, rect: Rec
 
 pub fn draw_move_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
-    if pn.armed.move_op() == 0 {
+    if pn.armed.moving().is_none() {
         return;
     }
     let Sel::Sketch(si) = pn.sel else { return };
     let Some(base) = pn.tool.move_base else { return };
     // rotation: the ghost is turned by rot_angle about the centre (the angle comes from the popup, not from the cursor)
-    if pn.armed.move_op() == 3 {
+    if pn.armed.moving() == Some(qymcad_ui_state::MoveKind::Rotate) {
         let (sn, cs) = (pn.rot.angle.to_radians().sin(), pn.rot.angle.to_radians().cos());
         let col = pn.scheme.pal.preview_axis();
         let stroke = Stroke::new(1.4, col);
@@ -454,7 +454,7 @@ pub fn draw_move_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     }
     let Some(cur) = pn.cursor else { return };
     let (dx, dy) = (cur.x - base.x, cur.y - base.y);
-    let col = if pn.armed.move_op() == 2 { pn.scheme.pal.clip() } else { pn.scheme.pal.highlight() };
+    let col = if pn.armed.moving() == Some(qymcad_ui_state::MoveKind::Copy) { pn.scheme.pal.clip() } else { pn.scheme.pal.highlight() };
     let stroke = Stroke::new(1.4, col);
     let f = move |x: f64, y: f64| (x + dx, y + dy);
     for id in qymcad_ui_state::shapes_chosen(pn.project, si, pn.sel_sk) {

@@ -24,7 +24,7 @@ struct Asking {
 pub(crate) fn menu(pn: &qymcad_ui_state::Painting, resp: &Response, rect: Rect) -> Option<(Id, String)> {
     let under_id = resp.id.with(std::any::TypeId::of::<Under>());
     let ask_id = ask_id();
-    if pn.armed.cmd_kind() == 0 && resp.secondary_clicked() {
+    if pn.armed.part_tool().is_none() && resp.secondary_clicked() {
         let pos = resp.interact_pointer_pos().filter(|p| rect.contains(*p));
         let hit = pos.and_then(|p| qymcad_pick::pick_face_ray(pn, rect, p));
         let under = hit.filter(|(b, _, _)| pn.project.may_be_made_a_part(*b)).map(|(b, _, _)| (b, pos.unwrap_or_default()));
@@ -32,7 +32,7 @@ pub(crate) fn menu(pn: &qymcad_ui_state::Painting, resp: &Response, rect: Rect) 
     }
     // the command taken from the search with nothing picked: a click on a piece takes it, Esc lets the command go
     if resp.ctx.data(|d| d.get_temp::<bool>(waiting_id())).unwrap_or(false) {
-        if resp.ctx.input(|i| i.key_pressed(egui::Key::Escape)) || pn.armed.cmd_kind() != 0 {
+        if resp.ctx.input(|i| i.key_pressed(egui::Key::Escape)) || pn.armed.part_tool().is_some() {
             resp.ctx.data_mut(|d| d.remove::<bool>(waiting_id()));
         } else if resp.clicked() {
             let pos = resp.interact_pointer_pos().filter(|p| rect.contains(*p));
@@ -43,7 +43,7 @@ pub(crate) fn menu(pn: &qymcad_ui_state::Painting, resp: &Response, rect: Rect) 
         }
     }
     let under: Option<(Id, Pos2)> = resp.ctx.data(|d| d.get_temp(under_id)).flatten();
-    if let Some((body, pos)) = under.filter(|_| pn.armed.cmd_kind() == 0) {
+    if let Some((body, pos)) = under.filter(|_| pn.armed.part_tool().is_none()) {
         resp.context_menu(|ui| {
             if ui.button(format!("{} {}", egui_phosphor::regular::CUBE, crate::i18n::tr("act-piece-to-part"))).clicked() {
                 ask(&resp.ctx, pn.project, body, pos);

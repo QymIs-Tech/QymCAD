@@ -18,8 +18,8 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             sk.sel_sk.clear(); // the selection and whatever was waiting for it
         }
         if let Some(id) = sk.project.sketches.get(si).and_then(|s| s.texts.get(ti)).map(|t| t.id) {
-            if !sk.sel_sk.items.contains(&(qymcad_ui_state::SEL_TEXT, id)) {
-                sk.sel_sk.items.push((qymcad_ui_state::SEL_TEXT, id));
+            if !sk.sel_sk.items.contains(&qymcad_ui_state::SketchItem::text(id)) {
+                sk.sel_sk.items.push(qymcad_ui_state::SketchItem::text(id));
             }
         }
         *sk.status = Notice::info(qymcad_i18n::tr("sk-text-selected"));
@@ -54,7 +54,7 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
     // point at once, the middle took every click a person makes in the middle of a line, and constraints between lines
     // were laid between their midpoints.
     let middle = match hit {
-        Some((1, eid)) => sk
+        Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, id: eid }) => sk
             .snap_hint
             .filter(|&(_, kind)| kind == 3)
             .and_then(|(at, _)| line_with_middle_at(&*sk.project, si, at))
@@ -64,13 +64,13 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
     // a click on the origin materialises the reference point and picks it (for constraints and dimensions)
     if hit.is_none() && sh.at(Point2::new(0.0, 0.0)).distance(pos) <= qymcad_ui_state::grab::grab(sk.set, Grab::Point) {
         let o = sk.project.ensure_origin(si);
-        hit = Some((0u8, o));
+        hit = Some(qymcad_ui_state::SketchItem::point(o));
     }
     // a click on the diameter or radius caption of a circle or an arc (outside the contour) picks it as an
     // entity
     if hit.is_none() {
         if let Some(eid) = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si) {
-            hit = Some((1u8, eid));
+            hit = Some(qymcad_ui_state::SketchItem::curve(eid));
         }
     }
     // a click on the X or Y axis (when no other geometry is near) picks the axis as a line (kind 3, id 0
@@ -80,9 +80,9 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
         let near_x = (pos.y - o.y).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide); // the horizontal X axis (y = 0)
         let near_y = (pos.x - o.x).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide); // the vertical Y axis (x = 0)
         if near_x && (!near_y || (pos.y - o.y).abs() <= (pos.x - o.x).abs()) {
-            hit = Some((3u8, 0));
+            hit = Some(qymcad_ui_state::SketchItem::axis(0));
         } else if near_y {
-            hit = Some((3u8, 1));
+            hit = Some(qymcad_ui_state::SketchItem::axis(1));
         }
     }
     // THE MIRROR'S SECOND STEP: a plain click NAMES WHAT IT REFLECTS ABOUT - a line, a point or an axis - and Shift adds
@@ -93,7 +93,9 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
     // question with an answer to the second.
     if !sk.sel_sk.mirror_of.is_empty() {
         if shift {
-            if let Some(refr) = hit.filter(|&(k, id)| k == 1 || (k == 0 && qymcad_ui_state::point_alone(&*sk.project, si, id))) {
+            if let Some(refr) = hit.filter(|&qymcad_ui_state::SketchItem { kind: k, id }| {
+                k == qymcad_ui_state::ItemKind::Curve || (k == qymcad_ui_state::ItemKind::Point && qymcad_ui_state::point_alone(&*sk.project, si, id))
+            }) {
                 match sk.sel_sk.items.iter().position(|r| *r == refr) {
                     Some(k) => {
                         sk.sel_sk.items.remove(k);
@@ -105,9 +107,9 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             return;
         }
         match hit {
-            Some((3, w)) => qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, w as usize),
-            Some((0, p)) => qymcad_ui_state::mirror_about_point(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, p),
-            Some((1, eid)) => match sk.project.sketches.get(si).and_then(|s| s.entity(eid)).and_then(|e| e.kind.as_line()) {
+            Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Axis, id: w }) => qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, w as usize),
+            Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Point, id: p }) => qymcad_ui_state::mirror_about_point(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, p),
+            Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, id: eid }) => match sk.project.sketches.get(si).and_then(|s| s.entity(eid)).and_then(|e| e.kind.as_line()) {
                 // CONSTRUCTION GEOMETRY SERVES AS WELL: what matters is that two points make a line, and a
                 // construction line is exactly what people draw to mirror about.
                 Some(line) => qymcad_ui_state::mirror_about_line(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, line.a, line.b),
@@ -122,9 +124,11 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
     // geometry to mirror; then Shift + click or Shift + box adds, and a plain click mirrors about what it is on".
     if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror) {
         // a curve, or a point that stands alone: a shape of its own
-        if let Some(refr) = hit.filter(|&(k, id)| k == 1 || (k == 0 && qymcad_ui_state::point_alone(&*sk.project, si, id))) {
+        if let Some(refr) = hit.filter(|&qymcad_ui_state::SketchItem { kind: k, id }| {
+            k == qymcad_ui_state::ItemKind::Curve || (k == qymcad_ui_state::ItemKind::Point && qymcad_ui_state::point_alone(&*sk.project, si, id))
+        }) {
             let shapes = qymcad_ui_state::shapes_chosen(&*sk.project, si, &*sk.sel_sk);
-            sk.sel_sk.items.retain(|r| shapes.contains(&r.1));
+            sk.sel_sk.items.retain(|r| shapes.contains(&r.id));
             if !sk.sel_sk.items.contains(&refr) {
                 sk.sel_sk.items.push(refr);
             }
@@ -144,7 +148,7 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             }
             if let Some(p) = sk.sel_sk.items.iter().position(|r| *r == refr) {
                 sk.sel_sk.items.remove(p); // a second click deselects it
-                sk.sel_sk.at_middle.retain(|&e| e != refr.1);
+                sk.sel_sk.at_middle.retain(|&e| e != refr.id);
             } else {
                 sk.sel_sk.items.push(refr);
                 if let Some(eid) = middle {
@@ -171,7 +175,7 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
     }
     // THE OFFSET GATHERS ITS CURVES: a click adds to what it will offset, and Enter offsets them (`sketch_tool_keys`)
     if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) {
-        if sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
+        if sk.sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Curve) {
             *sk.status = Notice::info(qymcad_i18n::tr("sk-offset-side"));
         }
     } else if let Some(op) = sk.sel_sk.modify {
@@ -186,17 +190,17 @@ pub fn sketch_tool_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: P
     // THE BOUNDARY OF AN OPERATION: a click with a drawing tool is a deliberate act, so it makes one undo
     // step with a name of its own. The step used to be "noticed" by the frame, so what got undone in a
     // sketch was not an action but whatever had accumulated between observations.
-    let name = match sk.armed.draw_kind() {
-        1 => &qymcad_i18n::tr("sk-line"),
-        2 => &qymcad_i18n::tr("sk-rect"),
-        3 => &qymcad_i18n::tr("sk-circle"),
-        4 => &qymcad_i18n::tr("sk-arc"),
-        5 => &qymcad_i18n::tr("sk-point"),
-        6 => &qymcad_i18n::tr("sk-polygon"),
-        7 => &qymcad_i18n::tr("sk-slot"),
-        8 => &qymcad_i18n::tr("sk-ellipse"),
-        9 => &qymcad_i18n::tr("sk-spline"),
-        11 => &qymcad_i18n::tr("sk-text"),
+    let name = match sk.armed.drawing() {
+        Some(qymcad_ui_state::SketchShape::Line) => &qymcad_i18n::tr("sk-line"),
+        Some(qymcad_ui_state::SketchShape::Rect) => &qymcad_i18n::tr("sk-rect"),
+        Some(qymcad_ui_state::SketchShape::Circle) => &qymcad_i18n::tr("sk-circle"),
+        Some(qymcad_ui_state::SketchShape::Arc) => &qymcad_i18n::tr("sk-arc"),
+        Some(qymcad_ui_state::SketchShape::Point) => &qymcad_i18n::tr("sk-point"),
+        Some(qymcad_ui_state::SketchShape::Polygon) => &qymcad_i18n::tr("sk-polygon"),
+        Some(qymcad_ui_state::SketchShape::Slot) => &qymcad_i18n::tr("sk-slot"),
+        Some(qymcad_ui_state::SketchShape::Ellipse) => &qymcad_i18n::tr("sk-ellipse"),
+        Some(qymcad_ui_state::SketchShape::Spline) => &qymcad_i18n::tr("sk-spline"),
+        Some(qymcad_ui_state::SketchShape::Text) => &qymcad_i18n::tr("sk-text"),
         _ => &qymcad_i18n::tr("sk-drawing"),
     };
     qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, name);
@@ -224,8 +228,8 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
     // a new click finishes the previous dimension entry
     sk.place.clear(); // everything unfinished in the drawing, all at once
     let con = sk.tool.construction;
-    match sk.armed.draw_kind() {
-        1 => {
+    match sk.armed.drawing() {
+        Some(qymcad_ui_state::SketchShape::Line) => {
             // a chain of lines: every further click adds a segment
             if sk.tool.pts.last().is_some_and(|last| same_place(sk, *last, w)) {
                 return; // the second click of the double click that ends the chain: no segment of no length
@@ -271,7 +275,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
             }
             sk.tool.pts.push(w);
         }
-        2 => {
+        Some(qymcad_ui_state::SketchShape::Rect) => {
             sk.tool.pts.push(w);
             let need = if sk.tool_prefs.rect_mode == 2 { 3 } else { 2 };
             if sk.tool.pts.len() == need {
@@ -309,7 +313,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 };
             }
         }
-        3 if sk.tool_prefs.circ_mode == 2 => {
+        Some(qymcad_ui_state::SketchShape::Circle) if sk.tool_prefs.circ_mode == 2 => {
             // A CIRCLE TOUCHING TWO CURVES: the first two clicks pick the curves, of any kind; the circle of the radius of
             // the bar then follows the pointer between them, and the third click lays it held touching both, its size
             // open to be typed
@@ -333,7 +337,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 }
             }
         }
-        3 if sk.tool_prefs.circ_mode == 3 => {
+        Some(qymcad_ui_state::SketchShape::Circle) if sk.tool_prefs.circ_mode == 3 => {
             // a circle through three points
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 3 {
@@ -347,7 +351,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.tool.pts.clear();
             }
         }
-        3 => {
+        Some(qymcad_ui_state::SketchShape::Circle) => {
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 2 {
                 let (p0, p1) = (sk.tool.pts[0], sk.tool.pts[1]);
@@ -374,7 +378,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 open_the_size_of_the_new_shape(sk, eid, qymcad_core::feature::Purpose::of(con));
             }
         }
-        4 if sk.tool_prefs.arc_mode == 2 => {
+        Some(qymcad_ui_state::SketchShape::Arc) if sk.tool_prefs.arc_mode == 2 => {
             // A TANGENT arc: the start (the end of a line or an arc) plus the end; a smooth continuation
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 2 {
@@ -400,7 +404,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.tool.pts.clear();
             }
         }
-        4 => {
+        Some(qymcad_ui_state::SketchShape::Arc) => {
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 3 {
                 let (p0, p1, p2) = (sk.tool.pts[0], sk.tool.pts[1], sk.tool.pts[2]);
@@ -426,12 +430,12 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 qymcad_ui_state::invalidate(&mut *sk.regen);
             }
         }
-        5 => {
+        Some(qymcad_ui_state::SketchShape::Point) => {
             // a point is a single node
             sk.project.sketch_point_at(si, w.x, w.y, 1e-6);
             qymcad_ui_state::invalidate(&mut *sk.regen);
         }
-        6 => {
+        Some(qymcad_ui_state::SketchShape::Polygon) => {
             // a polygon: the centre plus a vertex (the number of sides and the kind come from the options bar)
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 2 && sk.tool.pts[0].dist(sk.tool.pts[1]) < 1e-3 {
@@ -453,7 +457,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.place.focus = true;
             }
         }
-        7 => {
+        Some(qymcad_ui_state::SketchShape::Slot) => {
             // a slot: two centres plus a point that sets the width
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 3 {
@@ -472,7 +476,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 }
             }
         }
-        8 => {
+        Some(qymcad_ui_state::SketchShape::Ellipse) => {
             // an ellipse: the centre, the end of the major semi-axis (its length and direction), then a point that
             // sets the minor semi-axis by its distance from the major axis. Two clicks (centre and a corner of the
             // bounding box) could only draw an axis-aligned ellipse, and the entity was laid on the second click,
@@ -488,7 +492,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.place.focus = true;
             }
         }
-        9 => {
+        Some(qymcad_ui_state::SketchShape::Spline) => {
             // a spline: a set of nodes (a double click or Esc finishes it). The second click of the double click
             // lands on the node just put down and adds nothing.
             // A CLICK ON THE FIRST NODE CLOSES IT: the spline becomes a loop through its nodes, not a curve ending on its
@@ -499,7 +503,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.tool.pts.push(w);
             }
         }
-        11 if sk.tool_prefs.text_note => {
+        Some(qymcad_ui_state::SketchShape::Text) if sk.tool_prefs.text_note => {
             // a text note, which is not geometry
             if !sk.tool_prefs.text.trim().is_empty() {
                 sk.project.add_note(si, w.x, w.y, sk.tool_prefs.text.clone());
@@ -508,7 +512,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.tool_prefs.text.clear();
             }
         }
-        11 if sk.tool_prefs.text.trim().is_empty() => {
+        Some(qymcad_ui_state::SketchShape::Text) if sk.tool_prefs.text.trim().is_empty() => {
             // AN EMPTY STRING IS NO REASON TO STAY SILENT. The tool was armed, the click went through, and
             // nothing happened: there was no telling whether the program was broken or something had been
             // left undone. Emptied by the font, which could not write the letters typed, it is the font that is
@@ -519,7 +523,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 qymcad_i18n::tr("sk-text-needs-string")
             });
         }
-        11 => {
+        Some(qymcad_ui_state::SketchShape::Text) => {
             // A CLICK ON A LABEL THAT IS ALREADY THERE PLACES NOTHING. The tool is in hand while a label is edited, and
             // the next thing a person does to fix a typo is double-click the label: each click of that double click
             // would place a label of its own on top of it - three labels where there was one.
@@ -614,13 +618,13 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         *sk.status = Notice::refusal(qymcad_i18n::tr("sk-click-shape-line"));
                     }
                 }
-            } else if sk.armed.draw_kind() != 0 && !qymcad_ui_state::bar_fields_valid(ctx) {
+            } else if sk.armed.drawing().is_some() && !qymcad_ui_state::bar_fields_valid(ctx) {
                 // A FIELD OF THE BAR THAT CANNOT BE TAKEN stops the click as it stops Enter: the shape would
                 // be made with the last value the field held, not with what is written in it
                 *sk.status = Notice::refusal(qymcad_i18n::tr("sk-fix-bar-field"));
-            } else if sk.armed.draw_kind() != 0 {
+            } else if sk.armed.drawing().is_some() {
                 sketch_tool_click(sk, rect, pos);
-            } else if sk.armed.dim_kind() != 0 {
+            } else if sk.armed.dimension().is_some() {
                 dim_click(sk, rect, pos);
             } else if sk.armed.measuring() {
                 let w = snap_world(sk, rect, pos);
@@ -639,14 +643,14 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                 if let Some(pts) = sk.pending_import.draw_pts.as_mut() {
                     pts.push(w);
                 }
-            } else if sk.armed.click_op() == 6 {
+            } else if sk.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Project) {
                 // PROJECT THE GEOMETRY OF A BODY: a click on an edge of the underlay takes it into
                 // the sketch as a driven entity. The underlay was drawn before as well - but only as
                 // a picture: it could be snapped to and not taken as geometry.
                 if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel {
                     project_clicked_edge(sk, si, rect, pos);
                 }
-            } else if sk.armed.click_op() == 4 || sk.armed.click_op() == 5 {
+            } else if sk.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Corner) || sk.armed.click_tool() == Some(qymcad_ui_state::ClickTool::CornerChamfer) {
                 // THE FILLET AND THE CHAMFER CUT A SET OF CORNERS, and the set is what the chosen lines
                 // make - not a list of corners a person points at one after another. The field stands open
                 // for the whole set and one answer cuts all of it; Shift is what lets a set be more than
@@ -673,7 +677,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         return;
                     }
                     sk.corner.track_px = qymcad_ui_state::corner_reach(sk.set);
-                    let chamfer = sk.armed.click_op() == 5;
+                    let chamfer = sk.armed.click_tool() == Some(qymcad_ui_state::ClickTool::CornerChamfer);
                     let shift = ctx.input(|i| i.modifiers.shift);
                     // WAS THE FIELD ALREADY STANDING? The click that opens it is acted upon as a click
                     // as well - see `corner_click` - so what it lands on is named either way, and this
@@ -717,7 +721,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     // CURVE OR LET ONE GO CUTS NOTHING: cut by the click that chose the second curve, the corner stood on
                     // the side of that curve the click was on, before the pointer had been near the crossing.
                     let chose = matches!(act, qymcad_ui_state::CornerClick::LineChosen(_) | qymcad_ui_state::CornerClick::LineLetGo(_));
-                    let chosen: Vec<Id> = if chose { Vec::new() } else { sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect() };
+                    let chosen: Vec<Id> = if chose { Vec::new() } else { sk.sel_sk.curves().collect() };
                     let w = qymcad_ui_state::to_world(sk.view, rect, pos);
                     let crossing = chosen.iter().enumerate().find_map(|(i, &one)| chosen[i + 1..].iter().find_map(|&other| sk.project.crossing_of(si, [one, other], Point2::new(w.x, w.y))));
                     if let Some(crossing) = crossing {
@@ -726,8 +730,8 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         qymcad_ui_state::close_edit(&mut *sk.edits, &*sk.project);
                         qymcad_ui_state::invalidate(&mut *sk.regen);
                         sk.corner.crossing = qymcad_ui_state::CrossingCut::Cut;
-                        sk.sel_sk.items.retain(|&(k, id)| !(k == 1 && (id == crossing.one || id == crossing.other)));
-                        let rest: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+                        sk.sel_sk.items.retain(|&qymcad_ui_state::SketchItem { kind: k, id }| !(k == qymcad_ui_state::ItemKind::Curve && (id == crossing.one || id == crossing.other)));
+                        let rest: Vec<Id> = sk.sel_sk.curves().collect();
                         sk.corner.set.follow(&*sk.project, si, &rest);
                         if let Some(pid) = cut {
                             let w = qymcad_ui_state::to_world(sk.view, rect, pos);
@@ -804,15 +808,15 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         qymcad_ui_state::CornerClick::Opened => *sk.status = Notice::info(qymcad_i18n::tr(if chamfer { "tb-chamfer-sketch-hint" } else { "tb-fillet-sketch-hint" })),
                     }
                 }
-            } else if sk.armed.click_op() != 0 {
+            } else if sk.armed.click_tool().is_some() {
                 // trimming, extending or breaking by click: a line first, then a circle or an arc
                 if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel {
                     let w = qymcad_ui_state::to_world(&*sk.view, rect, pos);
                     // THE BOUNDARY OF AN OPERATION: the click is the act, one step of undo named after the tool
                     // - left for the frame to notice, the change was a step called "Edit"
-                    let tool = match sk.armed.click_op() {
-                        1 => "tool-trim",
-                        2 => "tool-extend",
+                    let tool = match sk.armed.click_tool() {
+                        Some(qymcad_ui_state::ClickTool::Trim) => "tool-trim",
+                        Some(qymcad_ui_state::ClickTool::Extend) => "tool-extend",
                         _ => "tool-break",
                     };
                     qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr(tool));
@@ -821,7 +825,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     let s = &sk.project.sketches[si];
                     let open = target.filter(|e| s.entity(*e).and_then(|x| qymcad_core::model::curve::Curve::of(s, x)).is_some_and(|c| !c.closed()));
                     // EXTEND HOLDS AN OPEN CURVE, or takes the one clicked: the click applies what the preview shows
-                    if sk.armed.click_op() == 2 && (sk.tool.extend.is_some() || open.is_some()) {
+                    if sk.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Extend) && (sk.tool.extend.is_some() || open.is_some()) {
                         extend_click(sk, ExtendAt { rect, pos, si, curve: open });
                         qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild()); // taking the curve changes nothing
                         return;
@@ -829,10 +833,10 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     // the curve nearest the pointer through the one door of the tool, whatever its kind; where it does not
                     // take the edit, the next curve under the pointer
                     let under = qymcad_pick::curves_under(&sk.pick(), rect, pos, si);
-                    let ok = under.iter().take(2).any(|&eid| match sk.armed.click_op() {
-                        1 => sk.project.trim_curve(si, eid, w.x, w.y),
-                        2 => sk.project.extend_curve(si, eid, w.x, w.y),
-                        3 => sk.project.break_curve(si, eid, w.x, w.y),
+                    let ok = under.iter().take(2).any(|&eid| match sk.armed.click_tool() {
+                        Some(qymcad_ui_state::ClickTool::Trim) => sk.project.trim_curve(si, eid, w.x, w.y),
+                        Some(qymcad_ui_state::ClickTool::Extend) => sk.project.extend_curve(si, eid, w.x, w.y),
+                        Some(qymcad_ui_state::ClickTool::Break) => sk.project.break_curve(si, eid, w.x, w.y),
                         _ => false,
                     });
                     if ok {
@@ -887,13 +891,13 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("win-insert"));
                     let ids = sk.project.paste_sketch_geometry(si, &clip, w.x, w.y);
                     sk.project.solve_sketch(si);
-                    sk.sel_sk.items = ids.into_iter().map(|id| (1u8, id)).collect();
+                    sk.sel_sk.items = ids.into_iter().map(qymcad_ui_state::SketchItem::curve).collect();
                     qymcad_ui_state::invalidate(&mut *sk.regen);
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-pasted"));
                     qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
                 }
                 sk.clip.geom_place = false;
-            } else if sk.armed.pat_op() != 0 && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {
+            } else if sk.armed.pattern().is_some() && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {
                 // an array: pick the entities, then (for a circular one) click THE CENTRE of
                 // rotation, then Enter
                 let shift = ctx.input(|i| i.modifiers.shift);
@@ -908,7 +912,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         qymcad_ui_state::take_whole_figures(&*sk.project, si, &mut *sk.sel_sk);
                     }
                     *sk.status = if matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(si) if !qymcad_ui_state::shapes_chosen(&*sk.project, si, &*sk.sel_sk).is_empty()) {
-                        Notice::info(if sk.armed.pat_op() == 2 { qymcad_i18n::tr("sk-click-rot-centre") } else { qymcad_i18n::tr("sk-params-above") })
+                        Notice::info(if sk.armed.pattern() == Some(qymcad_ui_state::PatternKind::Circular) { qymcad_i18n::tr("sk-click-rot-centre") } else { qymcad_i18n::tr("sk-params-above") })
                     } else {
                         Notice::info(qymcad_i18n::tr("sk-click-for-array"))
                     };
@@ -918,12 +922,12 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel {
                         qymcad_ui_state::take_whole_figures(&*sk.project, si, &mut *sk.sel_sk);
                     }
-                } else if sk.armed.pat_op() == 2 {
+                } else if sk.armed.pattern() == Some(qymcad_ui_state::PatternKind::Circular) {
                     // circular: a click sets or moves the centre, snapping to an intersection or a vertex
                     sk.pat.center = Some(snap_world(sk, rect, pos));
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-centre-set-params"));
                 }
-            } else if sk.armed.move_op() != 0 && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {
+            } else if sk.armed.moving().is_some() && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {
                 // an interactive move or copy: the selection, then the base point, then the target
                 let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return }; // the selection may have changed between frames - do not crash
                 let w = snap_world(sk, rect, pos);
@@ -935,7 +939,9 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                 if eids.is_empty() && texts.is_empty() {
                     sketch_select_click(sk, rect, pos, shift);
                     qymcad_ui_state::take_whole_figures(&*sk.project, si, &mut *sk.sel_sk);
-                    if qymcad_ui_state::shapes_chosen(&*sk.project, si, &*sk.sel_sk).is_empty() && !sk.sel_sk.items.iter().any(|(k, _)| *k == qymcad_ui_state::SEL_TEXT) {
+                    if qymcad_ui_state::shapes_chosen(&*sk.project, si, &*sk.sel_sk).is_empty()
+                        && !sk.sel_sk.items.iter().any(|qymcad_ui_state::SketchItem { kind: k, id: _ }| *k == qymcad_ui_state::ItemKind::Text)
+                    {
                         *sk.status = Notice::info(qymcad_i18n::tr("sk-click-for-move"));
                     } else {
                         *sk.status = Notice::info(qymcad_i18n::tr("sk-click-base-point"));
@@ -947,29 +953,32 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     qymcad_ui_state::take_whole_figures(&*sk.project, si, &mut *sk.sel_sk);
                 } else if sk.tool.move_base.is_none() {
                     sk.tool.move_base = Some(w);
-                    if sk.armed.move_op() == 3 {
+                    if sk.armed.moving() == Some(qymcad_ui_state::MoveKind::Rotate) {
                         // the centre is set, so the angle is typed in the popup - no target click is
                         // awaited
                         sk.rot.angle = 0.0;
-                        sk.rot.buf = "0".into();
+                        sk.rot.field = vec![turn_field()];
                         sk.rot.focus = true;
                         *sk.status = Notice::info(qymcad_i18n::tr("sk-centre-set-angle"));
                     } else {
                         *sk.status = Notice::info(qymcad_i18n::tr("sk-click-target-point"));
                     }
-                } else if sk.armed.move_op() != 3 {
+                } else if sk.armed.moving() != Some(qymcad_ui_state::MoveKind::Rotate) {
                     let Some(base) = sk.tool.move_base.take() else { return };
                     let (dx, dy) = (w.x - base.x, w.y - base.y);
                     // THE BOUNDARY OF AN OPERATION: the target click is the act, so it makes one step of
                     // undo named after the tool. A change left for the frame to notice is called "Edit".
-                    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr(if sk.armed.move_op() == 2 { "tool-copy" } else { "tool-move" }));
-                    if sk.armed.move_op() == 2 {
+                    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr(if sk.armed.moving() == Some(qymcad_ui_state::MoveKind::Copy) { "tool-copy" } else { "tool-move" }));
+                    if sk.armed.moving() == Some(qymcad_ui_state::MoveKind::Copy) {
                         let ids = if eids.is_empty() { Vec::new() } else { sk.project.copy_entities(si, &eids, dx, dy) };
                         let text_ids: Vec<Id> = texts.iter().filter_map(|&ti| sk.project.copy_sketch_text(si, ti, dx, dy)).collect();
                         sk.project.solve_sketch(si);
                         // select the copies
-                        sk.sel_sk.items =
-                            ids.into_iter().map(|id| (qymcad_ui_state::kind_of_shape(&*sk.project, si, id), id)).chain(text_ids.into_iter().map(|id| (qymcad_ui_state::SEL_TEXT, id))).collect();
+                        sk.sel_sk.items = ids
+                            .into_iter()
+                            .map(|id| qymcad_ui_state::SketchItem { kind: qymcad_ui_state::kind_of_shape(&*sk.project, si, id), id })
+                            .chain(text_ids.into_iter().map(|id| qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Text, id }))
+                            .collect();
                         *sk.status = Notice::info(qymcad_i18n::tr("sk-copied"));
                     } else {
                         // WHERE IT WAS ASKED TO GO, and where the constraints let it go.
@@ -1006,7 +1015,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     qymcad_ui_state::invalidate(&mut *sk.regen);
                     qymcad_ui_state::commit_edit(&mut sk.rebuild());
                 }
-            } else if sk.armed.cmd_kind() == 3 && sk.rev.pick_line {
+            } else if sk.armed.part_tool() == Some(qymcad_ui_state::PartTool::Revolve) && sk.rev.pick_line {
                 // the axis of revolution is picked BY CLICKING a line of the sketch. It used to be
                 // chosen from a list of "Line 1 / Line 2 / Line 3", where a number tells nothing
                 // about which one is wanted.
@@ -1036,7 +1045,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     sk.view.initialized = false;
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-contour-picked"));
                 } else {
-                    *sk.status = Notice::refusal(qymcad_i18n::tr("sk-miss-contour"));
+                    *sk.status = Notice::refusal(qymcad_i18n::tr("msg-miss-contour"));
                 }
             } else if sk.armed.commanding() {
                 // a click on a contour ALWAYS adds to the selection (as Ctrl used to): a single click
@@ -1049,7 +1058,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         if !sk.gsel.profiles.remove(&cid) {
                             sk.gsel.profiles.insert(cid); // a repeated click on a contour deselects it
                         }
-                        *sk.status = Notice::info(qymcad_i18n::tr1("sk-profiles-n", "n", &sk.gsel.profiles.len().to_string()));
+                        *sk.status = Notice::info(qymcad_i18n::tr1("msg-profiles-n", "n", &sk.gsel.profiles.len().to_string()));
                     }
                 }
             } else if *sk.workbench == qymcad_ui_state::Workbench::Sketch && matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(_)) {

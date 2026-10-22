@@ -5,7 +5,6 @@
 //! the light theme exactly as the canvas of the viewport once did.
 use qymcad_ui_state::Notice;
 use super::App;
-use qymcad_ui_state::EditTool;
 use crate::help::{Block, Span};
 use egui_phosphor::regular as ph;
 
@@ -67,7 +66,7 @@ impl App {
     /// stuck.
     pub(crate) fn help_for_context(&self) -> &'static str {
         if self.tools.armed.commanding() {
-            if let Some(a) = crate::help_map::part_article(self.tools.armed.cmd_kind()) {
+            if let Some(a) = crate::command_catalog::article_in_hand(&self.tools.armed) {
                 return a;
             }
         }
@@ -83,13 +82,12 @@ impl App {
                 return a;
             }
         }
-        if self.side.carr.mode != 0 {
+        if self.side.carr.mode.is_some() {
             if let Some(a) = crate::help_map::assembly_article("asm.comp-array") {
                 return a;
             }
         }
-        let a = &self.tools.armed;
-        if let Some(art) = self.sketch_ses.editing.and(crate::help_map::sketch_tool_article(a.draw_kind(), a.dim_kind(), a.click_op(), a.modify().map(EditTool::code))) {
+        if let Some(art) = self.sketch_ses.editing.and(crate::command_catalog::article_in_hand(&self.tools.armed)) {
             return art;
         }
         // TOOLBAR BUTTONS WITH NO COMMAND NUMBER are an occupied hand as well, and F1 must answer about

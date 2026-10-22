@@ -16,6 +16,7 @@ fn the_shell_names_no_workbench() {
         Source { file: "lib.rs", text: include_str!("lib.rs") },
         Source { file: "draw.rs", text: include_str!("draw.rs") },
         Source { file: "bar.rs", text: include_str!("bar.rs") },
+        Source { file: "path.rs", text: include_str!("path.rs") },
     ] {
         // THE CODE, WITHOUT THE PROSE. The doc comments name a tree and a toolbar on purpose - as examples
         // of what MIGHT stand in a place - and forbidding that would forbid explaining the file.

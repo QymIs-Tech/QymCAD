@@ -24,7 +24,7 @@ pub fn try_modify(mut ed: Editing, sel_sk: &mut SketchSelection, sk_pat: SketchP
 
 pub(crate) fn try_modify_in(ed: Editing, sel_sk: &mut SketchSelection, sk_pat: SketchPattern, tool_prefs: &SketchToolPrefs, op: EditTool) -> bool {
     let Sel::Sketch(si) = *ed.sel else { return false };
-    let eids: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = sel_sk.curves().collect();
     if eids.is_empty() {
         return false;
     }
@@ -126,6 +126,8 @@ pub struct PopupLooks<'a> {
     pub scheme: &'a SchemeUi,
     /// THE SETTINGS OF THE SHEET, and where the width of the zone of a point that names a corner is read from.
     pub set: &'a Settings,
+    /// THE CAMERA OF THE VIEW: the box of a tool is drawn in the view it stands in, a sheet laid flat among them.
+    pub cam: &'a Cam3,
 }
 
 /// THE STATES OF THE SKETCH THE POPUPS AT THE GEOMETRY WRITE: the corner being cut, the shape being placed, what
@@ -201,7 +203,7 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
     if op == EditTool::Offset {
         sel_sk.modify = Some(op);
         sel_sk.offset = OffsetAim::default(); // a side fixed for the copy before is not this copy's side
-        let curves = sel_sk.items.iter().any(|(k, _)| *k == 1);
+        let curves = sel_sk.items.iter().any(|it| it.kind == crate::ItemKind::Curve);
         // points chosen and no curve: said what the tool takes, not "pick the entities" as though nothing were chosen
         *ed.status = match (curves, sel_sk.items.is_empty()) {
             (true, _) => Notice::info(qymcad_i18n::tr("sk-offset-side")),
@@ -301,13 +303,9 @@ pub fn mirror_takes_the_choice(project: &Project, si: usize, sel_sk: &mut Sketch
 ///
 /// `None` means no editing button is in hand and the ladder should carry on to its next rung.
 pub fn leave_editing_tool(t: &mut Tools, status: &mut Notice) -> Option<()> {
-    let corner = match t.armed.click_op() {
-        0 => return None,
-        4 | 5 => true,
-        _ => false,
-    };
+    let corner = t.armed.click_tool()?.of_corner();
     // EXTEND HOLDING A LINE lets it go first and stays in hand, as a drawing tool drops its points before itself
-    if t.armed.click_op() == 2 && t.tool.extend.take().is_some() {
+    if t.armed.click_tool() == Some(ClickTool::Extend) && t.tool.extend.take().is_some() {
         *status = Notice::info(qymcad_i18n::tr("opt-extend-hint"));
         return Some(());
     }
@@ -808,7 +806,7 @@ pub fn corner_click(project: &Project, si: usize, corner: &mut CornerInput, sel_
     if !was_open {
         corner.at = Some((si, CORNER_SET, false));
     }
-    let before: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let before: Vec<Id> = sel_sk.curves().collect();
     // THE CLICK THAT OPENS THE FIELD GROWS THE SET RATHER THAN SINGLING IT OUT: there was no set in hand to single
     // out, and the lines standing chosen are the start of one.
     let grow = shift || !was_open;
@@ -828,7 +826,7 @@ pub fn corner_click(project: &Project, si: usize, corner: &mut CornerInput, sel_
                 let was_there = corner.set.occupied(id);
                 // THE WHOLE OF THE SET GOES: the lines chosen, the corners they made, the corners named at the
                 // other points. What is put back is this point and this point alone.
-                sel_sk.items.retain(|&(k, _)| k != 1);
+                sel_sk.items.retain(|&crate::SketchItem { kind: k, id: _ }| k != crate::ItemKind::Curve);
                 corner.set.clear();
                 let act = if was_there {
                     PointAct::PointRemoved
@@ -849,7 +847,7 @@ pub fn corner_click(project: &Project, si: usize, corner: &mut CornerInput, sel_
             if chosen {
                 // A LINE THAT IS CHOSEN AND IS CLICKED AGAIN IS LET GO OF: the corner it made goes with it, and the
                 // line that stays does not pair again with a neighbour of the one that left.
-                sel_sk.items.retain(|&(k, id)| !(k == 1 && id == eid));
+                sel_sk.items.retain(|&crate::SketchItem { kind: k, id }| !(k == crate::ItemKind::Curve && id == eid));
                 CornerClick::LineLetGo(eid)
             } else if grow || second_of_a_pair(project, si, &before, eid, &corner.set) {
                 // A THIRD LINE AT A STRAIGHT JOINT IS NOT TAKEN, and the point it would have stood at is named:
@@ -858,13 +856,13 @@ pub fn corner_click(project: &Project, si: usize, corner: &mut CornerInput, sel_
                 if let Some(pid) = straight_joint_in_the_way(project, si, eid, &before, &corner.set.spoken_at_points()) {
                     return CornerClick::StraightJoint(pid);
                 }
-                sel_sk.items.push((1, eid));
+                sel_sk.items.push(crate::SketchItem::curve(eid));
                 CornerClick::LineChosen(eid)
             } else {
                 // A CLICK WITHOUT SHIFT IS A SINGLE SELECTION: only this line is chosen, and the corners that
                 // follow from it are the ones one answer cuts.
-                sel_sk.items.retain(|&(k, _)| k != 1);
-                sel_sk.items.push((1, eid));
+                sel_sk.items.retain(|&crate::SketchItem { kind: k, id: _ }| k != crate::ItemKind::Curve);
+                sel_sk.items.push(crate::SketchItem::curve(eid));
                 CornerClick::LineChosen(eid)
             }
         }
@@ -876,7 +874,7 @@ pub fn corner_click(project: &Project, si: usize, corner: &mut CornerInput, sel_
             return if was_open { CornerClick::SingleMode } else { CornerClick::Opened };
         }
     };
-    let after: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let after: Vec<Id> = sel_sk.curves().collect();
     corner.set.follow_from(project, si, &before, &after);
     act
 }
@@ -938,13 +936,14 @@ pub struct CornerChoice {
     pub through: Option<Id>,
 }
 
-/// TAKE THE FILLET OR THE CHAMFER INTO HAND (4 = fillet, 5 = chamfer) and hold it to what is already chosen.
-pub fn start_corner_tool(bc: &mut BarCtx, op: u8) {
+/// TAKE THE ROUNDING OR THE CHAMFER OF A CORNER INTO HAND and hold it to what is already chosen.
+pub fn start_corner_tool(bc: &mut BarCtx, op: ClickTool) {
     set_click_op(&mut tools_in!(bc), &mut *bc.mode_3d, op);
-    if bc.armed.click_op() != op {
+    if bc.armed.click_tool() != Some(op) {
         return; // pressed again: the tool goes back down, and what was chosen stays chosen
     }
-    *bc.status = Notice::info(qymcad_i18n::tr(if op == 5 { "tb-chamfer-sketch-hint" } else { "tb-fillet-sketch-hint" }));
+    let chamfer = op == ClickTool::CornerChamfer;
+    *bc.status = Notice::info(qymcad_i18n::tr(if chamfer { "tb-chamfer-sketch-hint" } else { "tb-fillet-sketch-hint" }));
     bc.corner.track_px = corner_reach(&*bc.set);
     let si = match *bc.sel {
         Sel::Sketch(si) => si,
@@ -964,40 +963,44 @@ pub fn start_corner_tool(bc: &mut BarCtx, op: u8) {
     // frame, so that every way of opening a field draws alike and a person who changes the scheme sees it.
     bc.corner.shifted = false; // the tool is single until a Shift is held
     bc.corner.pos = None;
-    let chosen: Vec<Id> = bc.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let chosen: Vec<Id> = bc.sel_sk.curves().collect();
     bc.corner.set.follow(&*bc.project, si, &chosen);
     // A CHOICE THAT ALREADY MAKES A CORNER OPENS THE FIELD AT ONCE, beside that corner: the tool lands in hand with what
     // was chosen and asks for its value. Kept shut, two lines chosen and the tool taken waited for a click on what was
     // already chosen, and the value typed went nowhere.
     if !bc.corner.set.standing().is_empty() {
-        bc.corner.at = Some((si, CORNER_SET, op == 5));
+        bc.corner.at = Some((si, CORNER_SET, chamfer));
         bc.corner.focus = true;
     }
 }
 
-/// Turn a click-driven editing operation on or off (1 = trim, 2 = extend, 3 = break).
-pub fn set_click_op(t: &mut Tools, mode_3d: &mut bool, op: u8) {
-    let cur = t.armed.click_op();
+/// Turn a click-driven editing operation on or off.
+pub fn set_click_op(t: &mut Tools, mode_3d: &mut bool, op: ClickTool) {
+    let cur = t.armed.click_tool();
     exit_draw_tools(&mut t.reborrow());
     let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk, tool } = t;
     **armed = Armed::None;
     sel_sk.constraint = None;
     sel_sk.modify = None;
-    **armed = if cur == op { Armed::None } else { Armed::ClickOp(op) };
+    **armed = if cur == Some(op) { Armed::None } else { Armed::ClickOp(op) };
     // EXTEND TAKES THE CURVE SELECTED BEFORE IT, as every tool takes its selection; nothing selected, it waits for a pick
-    tool.extend = if armed.click_op() == 2 { sel_sk.items.iter().find(|(k, _)| *k == 1).map(|(_, id)| *id) } else { None };
-    if armed.click_op() != 0 {
+    tool.extend = if armed.click_tool() == Some(ClickTool::Extend) {
+        sel_sk.items.iter().find(|it| it.kind == crate::ItemKind::Curve).map(|crate::SketchItem { id, .. }| *id)
+    } else {
+        None
+    };
+    if armed.click_tool().is_some() {
         *mode_3d = false;
     }
 }
 
-/// Turn the dimension tool on or off (k: 1 = linear, 2 = angular, 3 = radius).
-pub fn set_dim_tool(t: &mut Tools, mode_3d: &mut bool, project: &Project, sel: Sel, sketch_ses: SketchSession, status: &mut Notice, k: u8) {
-    let cur = t.armed.dim_kind();
+/// Turn the dimension tool of kind `k` on, or off when it is in hand.
+pub fn set_dim_tool(t: &mut Tools, mode_3d: &mut bool, project: &Project, sel: Sel, sketch_ses: SketchSession, status: &mut Notice, k: crate::DimKind) {
+    let cur = t.armed.dimension();
     exit_draw_tools(&mut t.reborrow()); // entering a tool means leaving all the others, in one move
     let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk: _, tool: _ } = t;
-    **armed = if cur == k { Armed::None } else { Armed::Dimension(k) };
-    if armed.dim_kind() != 0 {
+    **armed = if cur == Some(k) { Armed::None } else { Armed::Dimension(k) };
+    if armed.dimension().is_some() {
         *mode_3d = false;
         if edit_si(project, &sketch_ses).is_none() && !matches!(sel, Sel::Sketch(_)) {
             *status = Notice::info(qymcad_i18n::tr("g-open-sketch-dim"));

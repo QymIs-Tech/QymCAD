@@ -10,7 +10,6 @@ pub use trial::{trial_refusal, Trial};
 use egui::{Pos2, Rect};
 use egui_phosphor::regular as ph;
 use qymcad_core::model::{ArrayAxis, Id, Project};
-use qymcad_ui_state::WinKind;
 
 mod bars;
 pub use bars::*;
@@ -26,6 +25,8 @@ mod picks;
 pub use picks::*;
 mod topology;
 pub use topology::*;
+mod aims;
+pub use aims::*;
 mod reopen;
 pub use reopen::*;
 mod start;

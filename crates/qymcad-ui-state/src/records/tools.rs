@@ -23,41 +23,155 @@ pub enum Armed {
     /// Nothing: clicks go to selection.
     #[default]
     None,
-    /// A sketch drawing tool, by its own code: line, circle, arc, rectangle.
-    Draw(u8),
+    /// A sketch drawing tool: line, circle, arc, rectangle.
+    Draw(SketchShape),
     /// Trim, extend, break, corner fillet - the ones that act on a click.
-    ClickOp(u8),
+    ClickOp(ClickTool),
     /// Mirror, offset and the rest of the editing buttons.
     Modify(EditTool),
     /// Move, copy, rotate.
-    Move(u8),
-    /// The sketch pattern: 1 linear, 2 circular.
-    Pattern(u8),
+    Move(MoveKind),
+    /// The pattern of a sketch, linear or circular.
+    Pattern(PatternKind),
     /// The dimension tool, by kind.
-    Dimension(u8),
-    /// A feature command of the Part (extrude, hole, fillet...), by kind.
-    Command(u8),
+    Dimension(DimKind),
+    /// A tool of the Part: a command of its timeline, a primitive or a datum.
+    Command(PartTool),
     /// The measuring tool.
     Measure,
 }
 
+/// WHAT THE DRAWING TOOL OF A SKETCH IN HAND DRAWS.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum SketchShape {
+    Line,
+    Rect,
+    Circle,
+    Arc,
+    Point,
+    Polygon,
+    Slot,
+    Ellipse,
+    Spline,
+    Text,
+}
+
+impl SketchShape {
+    /// EVERY DRAWING TOOL OF A SKETCH, in the order of its bar.
+    pub const ALL: [SketchShape; 10] = [
+        SketchShape::Point,
+        SketchShape::Line,
+        SketchShape::Rect,
+        SketchShape::Circle,
+        SketchShape::Arc,
+        SketchShape::Polygon,
+        SketchShape::Slot,
+        SketchShape::Ellipse,
+        SketchShape::Spline,
+        SketchShape::Text,
+    ];
+}
+
+/// A TOOL OF A SKETCH THAT ACTS ON A CLICK.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum ClickTool {
+    Trim,
+    Extend,
+    Break,
+    /// The rounding of a corner.
+    Corner,
+    /// The chamfer of a corner.
+    CornerChamfer,
+    /// The projection of a body's edges into the sketch.
+    Project,
+}
+
+impl ClickTool {
+    /// Is it a tool of the corner - its rounding or its chamfer.
+    pub fn of_corner(self) -> bool {
+        matches!(self, ClickTool::Corner | ClickTool::CornerChamfer)
+    }
+}
+
+/// WHAT THE MOVING TOOL OF A SKETCH DOES with what is picked: moves it, copies it, or turns it about a centre.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum MoveKind {
+    Move,
+    Copy,
+    Rotate,
+}
+
+/// THE PATTERN OF A SKETCH: copies along one or two directions, or about a centre.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum PatternKind {
+    Linear,
+    Circular,
+}
+
+/// THE DIMENSION TOOL OF A SKETCH: a length or a distance, an angle, a radius or a diameter.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum DimKind {
+    Linear,
+    Angular,
+    Radial,
+}
+
+impl DimKind {
+    /// Every dimension tool, in the order of the bar.
+    pub const ALL: [DimKind; 3] = [DimKind::Linear, DimKind::Angular, DimKind::Radial];
+}
+
+/// A CONSTRAINT OF A SKETCH a button lays on what is picked.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum ConstraintKind {
+    Coincident,
+    Horizontal,
+    Vertical,
+    Parallel,
+    Perpendicular,
+    Equal,
+    Fix,
+    Collinear,
+    Concentric,
+    Tangent,
+    Symmetric,
+    Midpoint,
+}
+
+impl ConstraintKind {
+    /// Every constraint a button lays.
+    pub const ALL: [ConstraintKind; 12] = [
+        ConstraintKind::Coincident,
+        ConstraintKind::Horizontal,
+        ConstraintKind::Vertical,
+        ConstraintKind::Parallel,
+        ConstraintKind::Perpendicular,
+        ConstraintKind::Equal,
+        ConstraintKind::Fix,
+        ConstraintKind::Collinear,
+        ConstraintKind::Concentric,
+        ConstraintKind::Tangent,
+        ConstraintKind::Symmetric,
+        ConstraintKind::Midpoint,
+    ];
+}
+
 impl Armed {
-    /// The code of the drawing tool in hand, or zero. Named as the field it replaces, so that a reading
-    /// site says the same thing it said before.
-    pub fn draw_kind(&self) -> u8 {
+    /// The drawing tool of a sketch in hand, if one is.
+    pub fn drawing(&self) -> Option<SketchShape> {
         if let Armed::Draw(k) = self {
-            *k
+            Some(*k)
         } else {
-            0
+            None
         }
     }
 
-    /// The code of the click-acting tool, or zero.
-    pub fn click_op(&self) -> u8 {
+    /// The click-acting tool of a sketch in hand, if one is.
+    pub fn click_tool(&self) -> Option<ClickTool> {
         if let Armed::ClickOp(k) = self {
-            *k
+            Some(*k)
         } else {
-            0
+            None
         }
     }
 
@@ -70,39 +184,39 @@ impl Armed {
         }
     }
 
-    /// The code of the move tool, or zero.
-    pub fn move_op(&self) -> u8 {
+    /// The moving tool of a sketch in hand, if one is.
+    pub fn moving(&self) -> Option<MoveKind> {
         if let Armed::Move(k) = self {
-            *k
+            Some(*k)
         } else {
-            0
+            None
         }
     }
 
-    /// The code of the sketch pattern, or zero.
-    pub fn pat_op(&self) -> u8 {
+    /// The pattern of a sketch in hand, if one is.
+    pub fn pattern(&self) -> Option<PatternKind> {
         if let Armed::Pattern(k) = self {
-            *k
+            Some(*k)
         } else {
-            0
+            None
         }
     }
 
-    /// The kind of dimension being placed, or zero.
-    pub fn dim_kind(&self) -> u8 {
+    /// The kind of dimension being placed, if one is.
+    pub fn dimension(&self) -> Option<DimKind> {
         if let Armed::Dimension(k) = self {
-            *k
+            Some(*k)
         } else {
-            0
+            None
         }
     }
 
-    /// The kind of feature command being run, or zero.
-    pub fn cmd_kind(&self) -> u8 {
+    /// The tool of the part in hand, if one is.
+    pub fn part_tool(&self) -> Option<PartTool> {
         if let Armed::Command(k) = self {
-            *k
+            Some(*k)
         } else {
-            0
+            None
         }
     }
 

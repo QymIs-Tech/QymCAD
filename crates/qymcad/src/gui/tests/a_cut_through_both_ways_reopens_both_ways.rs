@@ -28,19 +28,19 @@ fn the_cut(app: &App) -> Option<Cut> {
 /// XY - in the middle of the plate - and cut through all, the extent picked in the bar by its word.
 fn a_plate_cut_through(hand: &mut Hand, extent: &str) -> Id {
     assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a sketch is started on XY");
-    hand.sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 40.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 40.0);
     assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the sketch is finished");
     hand.close_window();
-    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(1);
+    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
     assert!(hand.press_word(&qymcad_i18n::tr("cmd-symmetric"), egui::pos2(0.0, 0.0)), "setup: the bar offers symmetric");
     // the rebuild of the plate waited for, as a person waits for its barrier to lift before the next sketch: pressed under
     // it, the plane XY was taken by the barrier - 3 frames of 4 ms each against a rebuild of 30 ms
     hand.set("height", 20.0).enter().close_window();
     assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a second sketch is started on XY");
-    hand.sk_tool(2).click2d(15.0, 15.0).click2d(25.0, 25.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(15.0, 15.0).click2d(25.0, 25.0);
     assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the second sketch is finished");
     hand.close_window();
-    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(1);
+    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
     assert!(hand.press_word(&qymcad_i18n::tr("cmd-cut"), egui::pos2(0.0, 0.0)), "setup: the bar offers the cut");
     assert!(hand.press_word(extent, egui::pos2(0.0, 0.0)), "the bar offers {extent:?}");
     hand.enter();

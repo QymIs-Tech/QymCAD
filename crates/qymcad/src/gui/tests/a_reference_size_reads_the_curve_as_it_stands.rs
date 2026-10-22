@@ -20,18 +20,18 @@ fn sketch() -> App {
 }
 
 /// Points `a` then `b` picked, constraint `code` pressed, and the pick let go by a click on nothing.
-fn tie(hand: &mut Hand, points: [Point2; 2], code: u8) {
+fn tie(hand: &mut Hand, points: [Point2; 2], code: qymcad_ui_state::ConstraintKind) {
     let [a, b] = points;
-    hand.sk_tool(0).shift_click2d(a.x, a.y).shift_click2d(b.x, b.y);
+    hand.sk_select().shift_click2d(a.x, a.y).shift_click2d(b.x, b.y);
     hand.constraint(code);
     hand.key(egui::Key::Escape);
-    hand.sk_tool(0).click2d(90.0, 90.0);
+    hand.sk_select().click2d(90.0, 90.0);
 }
 
 /// The distance from point `a` to point `b` dimensioned by hand and set to 20.
 fn twenty(hand: &mut Hand, points: [Point2; 2], place: Point2) {
     let [a, b] = points;
-    hand.sk_tool(0);
+    hand.sk_select();
     assert!(hand.press_hint(&crate::i18n::tr("tb-dim-hint")), "the dimension tool");
     hand.close_window();
     hand.click2d(a.x, a.y).click2d(b.x, b.y).click2d(place.x, place.y);
@@ -43,7 +43,7 @@ fn twenty(hand: &mut Hand, points: [Point2; 2], place: Point2) {
 /// The size of a curve dimensioned by hand by a click on it and one beside it.
 fn size_of(hand: &mut Hand, clicks: [Point2; 2]) {
     let [at, place] = clicks;
-    hand.sk_tool(0);
+    hand.sk_select();
     assert!(hand.press_hint(&crate::i18n::tr("tb-dim-hint")), "the dimension tool");
     hand.close_window();
     hand.click2d(at.x, at.y).click2d(place.x, place.y);
@@ -52,7 +52,7 @@ fn size_of(hand: &mut Hand, clicks: [Point2; 2]) {
 
 /// The dimension reading 20 at `place` opened by a double click on its value and set to 26.
 fn twenty_six(hand: &mut Hand, place: Point2) -> bool {
-    hand.sk_tool(0);
+    hand.sk_select();
     let near = hand.on_screen2d((place.x, place.y));
     let Some(value) = hand.written_near("20.0", near) else { return false };
     hand.double_click_screen(value.center());
@@ -88,18 +88,18 @@ fn a_reference_radius_and_length_of_an_arc_read_it_after_its_size_changed() {
     let mut hand = Hand::new(&mut app);
     // an arc about (30, 30) from (50, 30) round to (30, 50); its centre fixed, its ends level and upright of it, the
     // first 20 from it
-    hand.sk_tool(4).click2d(30.0, 30.0).click2d(50.0, 30.0).click2d(30.0, 50.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    tie(&mut hand, [Point2::new(30.0, 30.0), Point2::new(50.0, 30.0)], 1);
-    tie(&mut hand, [Point2::new(30.0, 30.0), Point2::new(30.0, 50.0)], 2);
-    hand.sk_tool(0).click2d(30.0, 30.0);
-    hand.constraint(6);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Arc).click2d(30.0, 30.0).click2d(50.0, 30.0).click2d(30.0, 50.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    tie(&mut hand, [Point2::new(30.0, 30.0), Point2::new(50.0, 30.0)], qymcad_ui_state::ConstraintKind::Horizontal);
+    tie(&mut hand, [Point2::new(30.0, 30.0), Point2::new(30.0, 50.0)], qymcad_ui_state::ConstraintKind::Vertical);
+    hand.sk_select().click2d(30.0, 30.0);
+    hand.constraint(qymcad_ui_state::ConstraintKind::Fix);
     hand.key(egui::Key::Escape);
-    hand.sk_tool(0).click2d(90.0, 90.0);
+    hand.sk_select().click2d(90.0, 90.0);
     twenty(&mut hand, [Point2::new(30.0, 30.0), Point2::new(50.0, 30.0)], Point2::new(40.0, 24.0));
     // its radius and its length dimensioned: both come as references, held as they are by the rest
     let r = 20.0 * std::f64::consts::FRAC_1_SQRT_2;
     size_of(&mut hand, [Point2::new(30.0 + r, 30.0 + r), Point2::new(52.0, 52.0)]);
-    hand.sk_tool(0).click2d(30.0 + r, 30.0 + r);
+    hand.sk_select().click2d(30.0 + r, 30.0 + r);
     hand.right_click2d(30.0 + r, 30.0 + r);
     assert!(hand.press_word(&crate::i18n::tr("sk-arc-length-dim"), egui::pos2(0.0, 0.0)), "no arc length in the menu of the arc");
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
@@ -128,12 +128,12 @@ fn a_reference_radius_of_a_circle_reads_it_after_its_size_changed() {
     let mut app = sketch();
     let mut hand = Hand::new(&mut app);
     // a circle about (30, 30) through (50, 30), its centre fixed, and a line from its centre to its rim, 20 long
-    hand.sk_tool(3).click2d(30.0, 30.0).click2d(50.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0).click2d(30.0, 30.0);
-    hand.constraint(6);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(30.0, 30.0).click2d(50.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_select().click2d(30.0, 30.0);
+    hand.constraint(qymcad_ui_state::ConstraintKind::Fix);
     hand.key(egui::Key::Escape);
-    hand.sk_tool(0).click2d(90.0, 90.0);
-    hand.sk_tool(1).click2d(30.0, 30.0).click2d(50.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_select().click2d(90.0, 90.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 30.0).click2d(50.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
     twenty(&mut hand, [Point2::new(30.0, 30.0), Point2::new(50.0, 30.0)], Point2::new(40.0, 24.0));
     let r = 20.0 * std::f64::consts::FRAC_1_SQRT_2;
     size_of(&mut hand, [Point2::new(30.0 + r, 30.0 + r), Point2::new(52.0, 52.0)]);

@@ -12,8 +12,8 @@ mod tests {
 
     /// A sketch with a line drawn, open for editing, and the line's id.
     fn a_line(hand: &mut Hand) -> u64 {
-        hand.sk_tool(1).click2d(0.0, 0.0).click2d(30.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(30.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_select();
         hand.app.project.sketches[0].entities[0].id
     }
 
@@ -21,17 +21,17 @@ mod tests {
     fn every_drawing_tool_drops_the_selection() {
         let mut failures = Vec::new();
         // by its button: line, rectangle, circle, arc, point, polygon, slot, ellipse, spline, circle by three points, text
-        for kind in 1..=11u8 {
+        for kind in qymcad_ui_state::SketchShape::ALL {
             let (mut app, _ctx) = running();
             let si = app.create_sketch_on(SketchPlane::default());
             let mut hand = Hand::new(&mut app);
             hand.app.enter_sketch_edit(si);
             let line = a_line(&mut hand);
-            assert!(hand.select2d(&[(1, line)]), "the line could not be picked");
+            assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(line)]), "the line could not be picked");
             assert!(!hand.app.tools.sel_sk.items.is_empty(), "GUARD: the line is selected before the tool is taken");
             hand.sk_tool(kind);
             if !hand.app.tools.sel_sk.items.is_empty() {
-                failures.push(format!("the drawing tool {kind} taken by its button left {:?} selected", hand.app.tools.sel_sk.items));
+                failures.push(format!("the drawing tool {kind:?} taken by its button left {:?} selected", hand.app.tools.sel_sk.items));
             }
         }
         // by its key, and a shape drawn after it
@@ -41,13 +41,13 @@ mod tests {
             let mut hand = Hand::new(&mut app);
             hand.app.enter_sketch_edit(si);
             let line = a_line(&mut hand);
-            assert!(hand.select2d(&[(1, line)]), "the line could not be picked");
+            assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(line)]), "the line could not be picked");
             hand.key(key);
-            if hand.app.tools.sel_sk.items.contains(&(1, line)) {
+            if hand.app.tools.sel_sk.items.contains(&qymcad_ui_state::SketchItem::curve(line)) {
                 failures.push(format!("the {name} taken by its key left the line selected"));
             }
             hand.click2d(50.0, 10.0).click2d(60.0, 20.0).key(egui::Key::Escape);
-            if hand.app.tools.sel_sk.items.contains(&(1, line)) {
+            if hand.app.tools.sel_sk.items.contains(&qymcad_ui_state::SketchItem::curve(line)) {
                 failures.push(format!("after a {name} drawn the line is selected again"));
             }
         }
@@ -65,12 +65,12 @@ mod tests {
             let mut hand = Hand::new(&mut app);
             hand.app.enter_sketch_edit(si);
             let first = a_line(&mut hand);
-            hand.sk_tool(1).click2d(0.0, 20.0).click2d(30.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
-            hand.sk_tool(0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 20.0).click2d(30.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_select();
             let sk = &hand.app.project.sketches[0];
             let second = sk.entities[1].id;
             let point = sk.points.iter().find(|p| p.x.abs() > 1.0 && p.y.abs() < 1e-6).expect("the far end of the first line").id;
-            let picked = [(1, first), (1, second), (0, point)];
+            let picked = [qymcad_ui_state::SketchItem::curve(first), qymcad_ui_state::SketchItem::curve(second), qymcad_ui_state::SketchItem::point(point)];
             assert!(hand.select2d(&picked), "the two lines and the point could not be picked");
             assert_eq!(hand.app.tools.sel_sk.items.len(), 3, "GUARD: three things are selected before the tool is taken");
             match take {
@@ -78,7 +78,7 @@ mod tests {
                     hand.key(key);
                 }
                 None => {
-                    hand.sk_tool(3);
+                    hand.sk_tool(qymcad_ui_state::SketchShape::Circle);
                 }
             }
             if !hand.app.tools.sel_sk.items.is_empty() {
@@ -95,8 +95,8 @@ mod tests {
         let mut hand = Hand::new(&mut app);
         hand.app.enter_sketch_edit(si);
         let line = a_line(&mut hand);
-        assert!(hand.select2d(&[(1, line)]), "the line could not be picked");
-        hand.sk_tool(0);
-        assert!(hand.app.tools.sel_sk.items.contains(&(1, line)), "the arrow of selection dropped the line selected");
+        assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(line)]), "the line could not be picked");
+        hand.sk_select();
+        assert!(hand.app.tools.sel_sk.items.contains(&qymcad_ui_state::SketchItem::curve(line)), "the arrow of selection dropped the line selected");
     }
 }

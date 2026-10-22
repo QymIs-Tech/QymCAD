@@ -57,7 +57,7 @@ mod tests {
         app.project.regen_sketch(si);
         let d = 10.0 * std::f64::consts::FRAC_1_SQRT_2;
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         let mut failures = Vec::new();
 
         // geometry chosen, then the tool: Shift + click adds the short line, a plain click on the upright reflects about it

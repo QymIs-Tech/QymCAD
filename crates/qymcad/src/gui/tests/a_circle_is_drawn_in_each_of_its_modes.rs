@@ -38,21 +38,21 @@ fn sketch() -> App {
 fn drawn(hand: &mut Hand, two: Two) -> Clicks {
     match two {
         Two::Lines => {
-            hand.sk_tool(1).click2d(10.0, 10.0).double_click2d(60.0, 10.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 10.0).double_click2d(60.0, 10.0);
             hand.click2d(10.0, 10.0).double_click2d(10.0, 60.0);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
             Clicks { first: Point2::new(40.0, 10.0), second: Point2::new(10.0, 40.0), stand: Point2::new(16.0, 16.0) }
         }
         Two::LineAndCircle => {
-            hand.sk_tool(1).click2d(10.0, 10.0).double_click2d(70.0, 10.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 10.0).double_click2d(70.0, 10.0);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
-            hand.sk_tool(3).click2d(40.0, 24.0).click2d(48.0, 24.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(40.0, 24.0).click2d(48.0, 24.0).key(egui::Key::Escape).key(egui::Key::Escape);
             Clicks { first: Point2::new(60.0, 10.0), second: Point2::new(40.0, 32.0), stand: Point2::new(31.0, 15.0) }
         }
         Two::SplineAndLine => {
-            hand.sk_tool(1).click2d(10.0, 10.0).double_click2d(70.0, 10.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 10.0).double_click2d(70.0, 10.0);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
-            hand.sk_tool(9).click2d(10.0, 18.0).click2d(25.0, 21.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(10.0, 18.0).click2d(25.0, 21.0);
             hand.double_click2d(40.0, 18.0);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
             Clicks { first: Point2::new(65.0, 10.0), second: Point2::new(25.0, 21.0), stand: Point2::new(18.0, 15.0) }
@@ -68,7 +68,7 @@ fn circles(app: &App) -> Vec<Curve> {
 
 /// The circle tool taken and its mode `word` pressed on the bar.
 fn circle_in(hand: &mut Hand, word: &str) {
-    hand.sk_tool(3);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle);
     assert!(hand.press_word(&crate::i18n::tr(word), egui::pos2(400.0, 0.0)), "no mode {word:?} on the bar of the circle");
 }
 

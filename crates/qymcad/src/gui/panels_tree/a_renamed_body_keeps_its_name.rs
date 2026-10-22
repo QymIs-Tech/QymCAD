@@ -24,7 +24,7 @@ mod tests {
         assert!(hand.shows("Housing"), "GUARD: the tree names the body as typed");
         let body = hand.app.project.mesh_id(0).expect("the body");
         let edge = hand.app.project.regen_edges[&body].iter().filter(|e| (e.a[2] - e.b[2]).abs() < 1e-6).max_by(|x, y| x.mid[2].total_cmp(&y.mid[2])).cloned().expect("an edge of the top");
-        hand.look_at([0.0, 0.0, 10.0], 9.0).tool(4).click(edge.mid).set("radius", 2.0).enter().settle();
+        hand.look_at([0.0, 0.0, 10.0], 9.0).tool(qymcad_ui_state::PartTool::Fillet).click(edge.mid).set("radius", 2.0).enter().settle();
         let rounded = hand.app.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Fillet { .. }));
         assert!(rounded, "GUARD: a click on an edge and Enter round it; status: {}", hand.app.status);
         let consumed = hand.app.project.consumed_bodies();

@@ -50,7 +50,7 @@ mod tests {
     fn select_all_entities(app: &mut App, si: usize) {
         let ids: Vec<u64> = app.project.sketches[si].entities.iter().map(|e| e.id).collect();
         assert!(ids.len() >= 4, "GUARD: the rectangle must give at least four entities to mirror");
-        app.tools.sel_sk.items = ids.into_iter().map(|id| (1u8, id)).collect();
+        app.tools.sel_sk.items = ids.into_iter().map(qymcad_ui_state::SketchItem::curve).collect();
     }
 
     /// PRESSING THE BUTTON WITH A SELECTION TAKES IT AND ASKS FOR THE AXIS.
@@ -92,7 +92,7 @@ mod tests {
         press_mirror(&mut app); // armed, nothing selected
 
         let first = app.project.sketches[si].entities[0].id;
-        app.tools.sel_sk.items.push((1, first));
+        app.tools.sel_sk.items.push(qymcad_ui_state::SketchItem::curve(first));
         press_mirror(&mut app); // pressing again is what advances the tool; a bare click must not
 
         assert_eq!(app.project.sketches[si].entities.len(), before, "one click must select, not mirror: otherwise two entities can never be mirrored together");

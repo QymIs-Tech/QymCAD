@@ -55,13 +55,13 @@ fn the_box_of_the_corners_refuses_a_size_in_the_soft_red_of_the_theme() {
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         for (x, y) in [(0.0, 0.0), (40.0, 0.0), (40.0, 30.0)] {
             hand.click2d(x, y);
         }
         hand.key(egui::Key::Escape);
         let s = &hand.app.project.sketches[si];
-        let corner = s.entities.iter().filter(|e| e.kind.as_line().is_some()).map(|e| (1u8, e.id)).collect::<Vec<_>>();
+        let corner = s.entities.iter().filter(|e| e.kind.as_line().is_some()).map(|e| qymcad_ui_state::SketchItem::curve(e.id)).collect::<Vec<_>>();
         assert_eq!(corner.len(), 2, "setup: two lines meet at a corner");
         assert!(hand.sk_corner_typed("tb-fillet-sketch-hint", None, &corner, 0.0), "{theme}: no place to click on the two lines");
         let why = crate::i18n::tr("cmd-value-zero");

@@ -126,7 +126,7 @@ pub const MAX_SKETCH_LENGTH: f64 = 10000.0;
 
 /// WHAT STANDS LIT UNDER THE CURSOR BEFORE A CLICK: the geometry, or else the glyph of a constraint.
 pub struct PreSelect {
-    pub sketch: Option<(u8, Id)>,
+    pub sketch: Option<qymcad_ui_state::SketchItem>,
     pub constraint: Option<usize>,
 }
 
@@ -137,20 +137,20 @@ pub fn pre_select(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, hover: Option
     let none = PreSelect { sketch: None, constraint: None };
     let (qymcad_ui_state::Sel::Sketch(si), Some(hp)) = (*sk.sel, hover) else { return none };
     let still = !dragged && sk.drag.pt().is_none() && sk.drag.mov().is_none();
-    if qymcad_ui_state::edit_si(sk.project, sk.sketch_ses) != Some(si) || sk.armed.draw_kind() != 0 || sk.armed.dim_kind() != 0 || !still {
+    if qymcad_ui_state::edit_si(sk.project, sk.sketch_ses) != Some(si) || sk.armed.drawing().is_some() || sk.armed.dimension().is_some() || !still {
         return none;
     }
-    let corner_tool = matches!(sk.armed.click_op(), 4 | 5);
+    let corner_tool = sk.armed.click_tool().is_some_and(qymcad_ui_state::ClickTool::of_corner);
     let construction = |id: Id| sk.project.sketches.get(si).is_some_and(|s| s.entities.iter().any(|e| e.id == id && e.construction));
-    let sketch = sketch_hit(&sk.pick(), rect, hp, si).filter(|&(k, id)| !(corner_tool && k == 1 && construction(id)));
+    let sketch = sketch_hit(&sk.pick(), rect, hp, si).filter(|&qymcad_ui_state::SketchItem { kind: k, id }| !(corner_tool && k == qymcad_ui_state::ItemKind::Curve && construction(id)));
     // the glyph of a constraint is lit only where no geometry is
     let constraint = if sketch.is_none() { constraint_glyph_at(sk, rect, hp, si) } else { None };
     PreSelect { sketch, constraint }
 }
 
-/// What is under the cursor in a sketch: (kind, Id). 0 is a point, 1 an entity (a line, an arc, a
-/// circle), 2 a primitive (a contour). Ordinary geometry takes priority over construction geometry.
-pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<(u8, Id)> {
+/// What is under the cursor in a sketch: a point, a curve or a contour. Ordinary geometry takes priority over
+/// construction geometry.
+pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<qymcad_ui_state::SketchItem> {
     // a system id of 0 means "not materialised yet" and must not match a real point
     let p_eq = |sys: Id, id: Id| sys != 0 && sys == id;
     let sh = qymcad_ui_state::Sheet { view: *pick.view, rect };
@@ -186,10 +186,10 @@ pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: us
         }
     }
     if let Some((_, id)) = best_pt.or(best_sys) {
-        return Some((0u8, id));
+        return Some(qymcad_ui_state::SketchItem::point(id));
     }
     // 2) the nearest curve, of whatever kind, a construction one yielding to an ordinary one as near (`curves_under`)
-    qymcad_pick::curves_under(pick, rect, pos, si).first().map(|&id| (1u8, id))
+    qymcad_pick::curves_under(pick, rect, pos, si).first().map(|&id| qymcad_ui_state::SketchItem::curve(id))
 }
 
 /// FINISH THE SPLINE - what a double click does.
@@ -235,7 +235,7 @@ fn same_place(sk: &qymcad_ui_state::SketchCtx, a: Point2, b: Point2) -> bool {
 /// Esc ON A CONSTRUCTION UNDER WAY. A spline has no last click - it is finished by a double click or by Esc, as
 /// its hint says - so Esc keeps the nodes clicked so far as a spline. Any other shape is broken off.
 pub fn end_construction(sk: &mut qymcad_ui_state::SketchCtx) {
-    if sk.armed.draw_kind() == 9 {
+    if sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Spline) {
         finish_spline(sk);
     } else {
         sk.tool.pts.clear();
@@ -293,15 +293,9 @@ pub fn begin_point_drag(
 /// The largest turn a rotation takes, in degrees: ten whole turns.
 const TEN_TURNS: f64 = 3600.0;
 
-/// THE ANGLE OF A TURN as typed, or in words why it cannot be taken: not a number, no turn at all, or past ten whole
-/// turns.
-fn angle_of(project: &Project, text: &str) -> Result<f64, String> {
-    match parse_num(project, text) {
-        None => Err(qymcad_i18n::tr("sk-angle-not-number")),
-        Some(v) if v.abs() < 1e-9 => Err(qymcad_i18n::tr("cmd-value-zero")),
-        Some(v) if v.abs() > TEN_TURNS => Err(qymcad_i18n::tr2("cmd-value-out-of-range", "lo", &(-TEN_TURNS).to_string(), "hi", &TEN_TURNS.to_string())),
-        Some(v) => Ok(v),
-    }
+/// THE FIELD OF THE BOX OF A TURN: the angle in degrees, neither nothing nor past ten turns.
+pub(crate) fn turn_field() -> qymcad_ui_state::CmdParam {
+    qymcad_ui_state::CmdParam::new("sk-angle-deg", "angle", 0.0, -TEN_TURNS, TEN_TURNS).nonzero()
 }
 
 /// The size of every curve of sketch `si`, in the order of its entities: its length, of whatever kind it is - what a
@@ -356,20 +350,20 @@ fn turn_to_level(project: &mut Project, si: usize, (a, b): (Id, Id), level: Leve
 /// "the centre above the middle of the line" is what is meant. Every other constraint takes the lines as lines, and so
 /// do Horizontal and Vertical on lines alone. Each such line is replaced in the selection by a point held at its middle
 /// (`materialize_ref`, the dimension tool's door), laid inside the constraint's own step of undo.
-fn middles_for(project: &mut Project, si: usize, sel_sk: &mut qymcad_ui_state::SketchSelection, code: u8) {
-    let with_points = sel_sk.items.iter().any(|(k, _)| *k == 0);
+fn middles_for(project: &mut Project, si: usize, sel_sk: &mut qymcad_ui_state::SketchSelection, code: qymcad_ui_state::ConstraintKind) {
+    let with_points = sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Point);
     let reads = match code {
-        0 => true,
-        1 | 2 => with_points,
+        qymcad_ui_state::ConstraintKind::Coincident => true,
+        qymcad_ui_state::ConstraintKind::Horizontal | qymcad_ui_state::ConstraintKind::Vertical => with_points,
         _ => false,
     };
     if !reads || sel_sk.at_middle.is_empty() {
         return;
     }
     for eid in std::mem::take(&mut sel_sk.at_middle) {
-        let Some(slot) = sel_sk.items.iter().position(|&it| it == (1, eid)) else { continue };
+        let Some(slot) = sel_sk.items.iter().position(|&it| it == qymcad_ui_state::SketchItem::curve(eid)) else { continue };
         let Some((a, b)) = line_ends_of(project, si, eid) else { continue };
-        sel_sk.items[slot] = (0, qymcad_ui_state::materialize_ref(project, si, qymcad_ui_state::SketchRef::Midpoint(a, b)));
+        sel_sk.items[slot] = qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Point, id: qymcad_ui_state::materialize_ref(project, si, qymcad_ui_state::SketchRef::Midpoint(a, b)) };
     }
 }
 
@@ -393,12 +387,12 @@ fn middle_touch(project: &mut Project, si: usize, sel_sk: &qymcad_ui_state::Sket
 pub fn sketch_sel_points(project: &Project, sel_sk: &qymcad_ui_state::SketchSelection, si: usize) -> Vec<Id> {
     let Some(s) = project.sketches.get(si) else { return vec![] };
     let mut ids: std::collections::HashSet<Id> = std::collections::HashSet::new();
-    for (k, id) in &sel_sk.items {
+    for qymcad_ui_state::SketchItem { kind: k, id } in &sel_sk.items {
         match k {
-            0 => {
+            qymcad_ui_state::ItemKind::Point => {
                 ids.insert(*id);
             }
-            1 => {
+            qymcad_ui_state::ItemKind::Curve => {
                 if let Some(e) = s.entities.iter().find(|e| e.id == *id) {
                     ids.extend(qymcad_core::model::entity_points(e));
                 }
@@ -539,20 +533,39 @@ pub fn sketch_ref_edges_2d_ids(sk: &mut qymcad_ui_state::SketchCtx, si: usize) -
 /// The table belongs to the sketch, not to the window: the window's job is to hear the key and to take the
 /// tool, and it had eleven lines of "this action means that number" written into it - one per tool, growing
 /// by one with every tool added.
-pub fn tool_for_action(action: &str) -> Option<u8> {
+pub fn tool_for_action(action: &str) -> Option<qymcad_ui_state::SketchShape> {
+    use qymcad_ui_state::SketchShape as S;
     Some(match action {
-        "sketch.line" => 1,
-        "sketch.rect" => 2,
-        "sketch.circle" => 3,
-        "sketch.arc" => 4,
-        "sketch.point" => 5,
-        "sketch.polygon" => 6,
-        "sketch.slot" => 7,
-        "sketch.ellipse" => 8,
-        "sketch.spline" => 9,
-        "sketch.text" => 11,
+        "sketch.line" => S::Line,
+        "sketch.rect" => S::Rect,
+        "sketch.circle" => S::Circle,
+        "sketch.arc" => S::Arc,
+        "sketch.point" => S::Point,
+        "sketch.polygon" => S::Polygon,
+        "sketch.slot" => S::Slot,
+        "sketch.ellipse" => S::Ellipse,
+        "sketch.spline" => S::Spline,
+        "sketch.text" => S::Text,
         _ => return None,
     })
+}
+
+/// WHAT THE STATUS LINE SAYS AS DRAWING TOOL `shape` IS TAKEN - or the arrow, with none.
+pub fn drawing_hint(shape: Option<qymcad_ui_state::SketchShape>) -> qymcad_ui_state::Notice {
+    use qymcad_ui_state::SketchShape as S;
+    qymcad_ui_state::Notice::info(qymcad_i18n::tr(match shape {
+        Some(S::Line) => "g-line-hint",
+        Some(S::Rect) => "g-rect-hint",
+        Some(S::Circle) => "g-circle-hint",
+        Some(S::Arc) => "g-arc-cse",
+        Some(S::Point) => "g-point-hint",
+        Some(S::Polygon) => "g-polygon-hint",
+        Some(S::Slot) => "g-slot-hint",
+        Some(S::Ellipse) => "g-ellipse-hint",
+        Some(S::Spline) => "g-spline-hint",
+        Some(S::Text) => "g-text-hint",
+        None => "g-select",
+    }))
 }
 
 /// The two ends of line `eid` of sketch `si`.
@@ -609,11 +622,17 @@ fn delete_selected_in(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
         }
         return;
     }
-    let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = sk.sel_sk.curves().collect();
     // system points (the origin and the axes) and DRIVEN ones (projections of a body) are not deleted one
     // by one
     let sys: std::collections::HashSet<Id> = sk.project.sketches[si].immovable_points();
-    let pids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
+    let pids: Vec<Id> = sk
+        .sel_sk
+        .items
+        .iter()
+        .filter(|qymcad_ui_state::SketchItem { kind: k, id }| *k == qymcad_ui_state::ItemKind::Point && !sys.contains(id))
+        .map(|qymcad_ui_state::SketchItem { id, .. }| *id)
+        .collect();
     if eids.is_empty() && pids.is_empty() {
         return;
     }
@@ -648,6 +667,8 @@ mod corners;
 pub use corners::*;
 mod popups;
 pub use popups::*;
+mod shape_box;
+use shape_box::*;
 mod ties;
 pub use ties::*;
 mod constraints;
@@ -666,3 +687,7 @@ mod drag;
 pub use drag::*;
 mod snap;
 pub use snap::*;
+mod commands;
+pub use commands::*;
+mod options;
+pub use options::*;

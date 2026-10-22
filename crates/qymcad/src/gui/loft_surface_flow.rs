@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn the_surface_choice_reaches_the_node() {
         let (mut app, picks) = app_with_two_sections();
-        app.start_feat_cmd(9);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Loft);
         // THE COMMAND MAY HAVE PICKED UP THE ACTIVE SKETCH as the first section — collect our own two
         // from scratch, otherwise a set of three would be checked that nobody chose.
         app.params.loft.sids.clear();
@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn without_it_the_loft_is_still_a_solid() {
         let (mut app, picks) = app_with_two_sections();
-        app.start_feat_cmd(9);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Loft);
         // THE COMMAND MAY HAVE PICKED UP THE ACTIVE SKETCH as the first section — collect our own two
         // from scratch, otherwise a set of three would be checked that nobody chose.
         app.params.loft.sids.clear();

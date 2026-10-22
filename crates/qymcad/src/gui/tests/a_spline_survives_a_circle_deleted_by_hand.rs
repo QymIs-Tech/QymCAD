@@ -19,12 +19,12 @@ fn a_circle_deleted_leaves_the_spline_beside_it_whole() {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.enter_sketch_edit(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(9).click2d(10.0, 30.0).click2d(20.0, 38.0).double_click2d(30.0, 30.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(10.0, 30.0).click2d(20.0, 38.0).double_click2d(30.0, 30.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(3).click2d(60.0, 30.0).click2d(65.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(60.0, 30.0).click2d(65.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
     let before = nodes(hand.app, si);
     assert_eq!(before.len(), 3, "setup: the spline of three nodes drawn");
-    hand.sk_tool(0).click2d(65.0, 30.0).key(egui::Key::Delete);
+    hand.sk_select().click2d(65.0, 30.0).key(egui::Key::Delete);
     let circles = |a: &App| a.project.sketches[si].entities.iter().filter(|e| e.kind.as_circle().is_some()).count();
     let mut failures = Vec::new();
     if circles(hand.app) != 0 {

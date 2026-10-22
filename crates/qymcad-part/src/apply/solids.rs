@@ -127,8 +127,8 @@ pub fn apply_recognise_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Result<Id, NotA
     Ok(body)
 }
 
-/// A fillet (4) or a chamfer (5) on the picked edges of the picked body (an empty pick means every edge).
-pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Result<Id, NotApplied> {
+/// A fillet or a chamfer on the picked edges of the picked body (an empty pick means every edge).
+pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: qymcad_ui_state::PartTool) -> Result<Id, NotApplied> {
     // the target of a fillet or a chamfer is the body whose PERSISTENT edge ids actually sit in the edge
     // selection (`pc.edges.body`, kept in step by `refresh_edges`) rather than `qymcad_ui_state::selected_body()`:
     // otherwise, if `pc.sel` moved to another body between picking the edges and pressing Enter, the
@@ -160,7 +160,7 @@ pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Result<Id, 
     // edge parallel to this one"), the description goes in: it survives an edit that adds elements.
     // Otherwise the list of picked ids goes in.
     let described = pc.gsel.described_ref();
-    let last = if cmd == 4 {
+    let last = if cmd == qymcad_ui_state::PartTool::Fillet {
         let r = qymcad_ui_state::cmd_val(pc.cmd, "radius");
         // THE "VERTEX -> RADIUS" TABLE. It works with a description and with a list alike: the radius is
         // set at a point rather than along an edge, so it needs no direction of an edge.
@@ -312,7 +312,7 @@ pub fn apply_draft_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Result<Id, NotAppli
 }
 
 /// Extrude or revolve along the picked contours. Returns the last body created.
-pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Result<Id, NotApplied> {
+pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: qymcad_ui_state::PartTool) -> Result<Id, NotApplied> {
     let si = pc.cmd.sketch.filter(|&si| si < pc.project.sketches.len()).ok_or_else(|| refused("msg-pick-a-contour"))?;
     let sid = pc.project.sketches[si].id;
     // THE CONTEXT: a feature built from a sketch belongs to the component that OWNS the sketch (the part)
@@ -350,7 +350,7 @@ pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Result<Id
     let owner_body = pc.project.sketch_owner(sid).and_then(|o| pc.project.active_body(o));
     // A body is REQUIRED only for A CUT or AN INTERSECTION. A pad (op 1) with no body simply creates a new
     // one, as a join does in an empty part, rather than refusing silently with "build a body first".
-    let need_target = (cmd == 1 || cmd == 3) && matches!(pc.feat.op, 2 | 3);
+    let need_target = (cmd == qymcad_ui_state::PartTool::Extrude || cmd == qymcad_ui_state::PartTool::Revolve) && matches!(pc.feat.op, 2 | 3);
     let target = if need_target { owner_body.unwrap_or(0) } else { 0 };
     if need_target && target == 0 {
         return Err(refused("cmd-cut-needs-body"));
@@ -365,7 +365,7 @@ pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Result<Id
     // ALL the picked contours go through ONE operation and make ONE node (the core fuses N tools into a
     // single boolean against the body of the part). No chain of Extrude plus BodyBoolean or Combine, and
     // no collapsing.
-    if cmd == 1 {
+    if cmd == qymcad_ui_state::PartTool::Extrude {
         let part = owner_body.unwrap_or(0); // the body of the part that OWNS the sketch (0 means an empty part, so create one)
         let h = qymcad_ui_state::cmd_val(pc.cmd, "height").abs();
         // console diagnostics ON REQUEST (`QYM_EXTRUDE_DEBUG=1`), as with the contour analysis. It used to
@@ -505,13 +505,13 @@ pub fn apply_boolean(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotApplied
 pub fn apply_prim_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Result<Id, NotApplied> {
     let cmd = pc.cmd.clone();
     let v = |k: &str| qymcad_ui_state::cmd_val(&cmd, k);
-    let body = match pc.armed.cmd_kind() {
-        10 => pc.project.add_box(v("dx"), v("dy"), v("dz")),
-        11 => pc.project.add_cylinder(v("r"), v("h")),
-        12 => pc.project.add_sphere(v("r")),
-        13 => pc.project.add_cone(v("r1"), v("r2"), v("h")),
-        14 => pc.project.add_torus(v("major"), v("minor")),
-        15 => pc.project.add_prism(v("r"), pc.prim.n.max(3), v("h")),
+    let body = match pc.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Box) => pc.project.add_box(v("dx"), v("dy"), v("dz")),
+        Some(qymcad_ui_state::PartTool::Cylinder) => pc.project.add_cylinder(v("r"), v("h")),
+        Some(qymcad_ui_state::PartTool::Sphere) => pc.project.add_sphere(v("r")),
+        Some(qymcad_ui_state::PartTool::Cone) => pc.project.add_cone(v("r1"), v("r2"), v("h")),
+        Some(qymcad_ui_state::PartTool::Torus) => pc.project.add_torus(v("major"), v("minor")),
+        Some(qymcad_ui_state::PartTool::Prism) => pc.project.add_prism(v("r"), pc.prim.n.max(3), v("h")),
         _ => return Err(op_failed()),
     };
     if let Err(e) = store_cmd_exprs(&cmd, pc.project, body) {

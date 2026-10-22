@@ -22,11 +22,11 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1).click2d(0.0, -10.0).click2d(len, -10.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(1).click2d(-10.0, 0.0).click2d(-10.0, len).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, -10.0).click2d(len, -10.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(-10.0, 0.0).click2d(-10.0, len).key(egui::Key::Escape).key(egui::Key::Escape);
         let mut laid = Vec::new();
         for (middle, step) in [((len / 2.0, -10.0), ["0", "20"]), ((-10.0, len / 2.0), ["20", "0"])] {
-            hand.sk_tool(0);
+            hand.sk_select();
             hand.click2d(middle.0, middle.1);
             assert!(hand.press_hint(&crate::i18n::tr("tb-lin-array-hint")), "the linear pattern");
             assert!(hand.type_after_word(&crate::i18n::tr("opt-count"), &n.to_string()), "the count of the pattern");

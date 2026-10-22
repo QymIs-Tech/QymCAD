@@ -72,9 +72,9 @@ pub fn handle_arrows(pn: &Painting) -> Vec<CmdArrow> {
         let len = (tip[0] - o[0]) * n[0] + (tip[1] - o[1]) * n[1] + (tip[2] - o[2]) * n[2];
         return vec![CmdArrow { base: o, dir: n, len, key }];
     }
-    let keys: Option<[&'static str; 3]> = match pn.armed.cmd_kind() {
-        21 if pn.datum.pt_mode == 0 => Some(["x", "y", "z"]),
-        22 if pn.datum.axis_mode == 1 => Some(["ox", "oy", "oz"]),
+    let keys: Option<[&'static str; 3]> = match pn.armed.part_tool() {
+        Some(crate::PartTool::DatumPoint) if pn.datum.pt_mode == 0 => Some(["x", "y", "z"]),
+        Some(crate::PartTool::DatumAxis) if pn.datum.axis_mode == 1 => Some(["ox", "oy", "oz"]),
         _ => None,
     };
     let Some(keys) = keys else { return Vec::new() };
@@ -100,7 +100,7 @@ pub struct DatumPlaneMade {
 /// The datum plane the command in hand will make, once its reference is picked.
 pub fn datum_plane_made(pn: &Painting) -> Option<DatumPlaneMade> {
     use qymcad_core::feature::{PlaneTilt, SketchPlane};
-    if pn.armed.cmd_kind() != 20 {
+    if pn.armed.part_tool() != Some(crate::PartTool::DatumPlane) {
         return None;
     }
     let sp = pn.datum.plane_pick.as_ref()?;
@@ -125,14 +125,14 @@ pub fn datum_plane_made(pn: &Painting) -> Option<DatumPlaneMade> {
 /// no rings, their direction was typed only.
 pub fn handle_rings(pn: &Painting) -> Vec<CmdRing> {
     let radius = DATUM_RING_PX / f64::from(pn.cam.scale).max(1e-9);
-    match pn.armed.cmd_kind() {
-        20 => {
+    match pn.armed.part_tool() {
+        Some(crate::PartTool::DatumPlane) => {
             let Some(m) = datum_plane_made(pn) else { return Vec::new() };
             let f = qymcad_core::feature::PlaneTilt::axes(m.untilted);
             let field = |axis: [f64; 3], key: &'static str| CmdRing { center: m.origin, axis, radius, key, turns: RingTurns::Field };
             vec![field(f.x, "tilt_x"), field(f.y, "tilt_y"), field(m.normal, "turn")]
         }
-        22 if pn.datum.axis_mode == 1 => {
+        Some(crate::PartTool::DatumAxis) if pn.datum.axis_mode == 1 => {
             let center = ["ox", "oy", "oz"].map(|k| cmd_val(pn.cmd, k));
             let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
             ["about_x", "about_y", "about_z"].iter().zip(axes).map(|(&key, axis)| CmdRing { center, axis, radius, key, turns: RingTurns::Direction }).collect()

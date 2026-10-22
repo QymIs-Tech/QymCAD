@@ -48,7 +48,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "line",
         draw: Some(|h, c| {
-            h.sk_tool(1);
+            h.sk_tool(qymcad_ui_state::SketchShape::Line);
             clicks(h, c, &[Point2::new(-8.0, -4.0), Point2::new(8.0, 4.0)]);
             h.key(egui::Key::Escape);
         }),
@@ -57,7 +57,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "rectangle",
         draw: Some(|h, c| {
-            h.sk_tool(2);
+            h.sk_tool(qymcad_ui_state::SketchShape::Rect);
             clicks(h, c, &[Point2::new(-8.0, -5.0), Point2::new(8.0, 5.0)]);
         }),
         curves: 4,
@@ -65,7 +65,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "polygon",
         draw: Some(|h, c| {
-            h.sk_tool(6);
+            h.sk_tool(qymcad_ui_state::SketchShape::Polygon);
             clicks(h, c, &[Point2::new(0.0, 0.0), Point2::new(7.0, 0.0)]);
         }),
         curves: 7,
@@ -73,7 +73,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "slot",
         draw: Some(|h, c| {
-            h.sk_tool(7);
+            h.sk_tool(qymcad_ui_state::SketchShape::Slot);
             clicks(h, c, &[Point2::new(-5.0, 0.0), Point2::new(5.0, 0.0), Point2::new(5.0, 3.0)]);
         }),
         curves: 4,
@@ -81,7 +81,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "circle",
         draw: Some(|h, c| {
-            h.sk_tool(3);
+            h.sk_tool(qymcad_ui_state::SketchShape::Circle);
             clicks(h, c, &[Point2::new(0.0, 0.0), Point2::new(6.0, 0.0)]);
         }),
         curves: 1,
@@ -89,7 +89,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "arc",
         draw: Some(|h, c| {
-            h.sk_tool(4);
+            h.sk_tool(qymcad_ui_state::SketchShape::Arc);
             clicks(h, c, &[Point2::new(0.0, -3.0), Point2::new(7.0, -3.0), Point2::new(-5.0, 2.0)]);
         }),
         curves: 1,
@@ -97,7 +97,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "ellipse",
         draw: Some(|h, c| {
-            h.sk_tool(8);
+            h.sk_tool(qymcad_ui_state::SketchShape::Ellipse);
             clicks(h, c, &[Point2::new(0.0, 0.0), Point2::new(8.0, 0.0), Point2::new(0.0, 4.0)]);
         }),
         curves: 1,
@@ -107,17 +107,17 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "arc of an ellipse",
         draw: Some(|h, c| {
-            h.sk_tool(8);
+            h.sk_tool(qymcad_ui_state::SketchShape::Ellipse);
             clicks(h, c, &[Point2::new(0.0, 0.0), Point2::new(8.0, 0.0), Point2::new(0.0, 4.0)]);
             h.key(egui::Key::Escape);
-            h.sk_tool(1);
+            h.sk_tool(qymcad_ui_state::SketchShape::Line);
             clicks(h, c, &[Point2::new(-12.0, -1.0), Point2::new(12.0, -1.0)]);
             h.key(egui::Key::Escape).key(egui::Key::Escape);
             assert!(h.press_hint(&crate::i18n::tr("tb-trim-hint")), "no trim button");
             h.close_window();
             h.click2d(c.x, c.y - 4.0);
             h.key(egui::Key::Escape);
-            h.sk_tool(0);
+            h.sk_select();
             h.click2d(c.x + 11.0, c.y - 1.0);
             h.key(egui::Key::Delete);
         }),
@@ -126,7 +126,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "open spline",
         draw: Some(|h, c| {
-            h.sk_tool(9);
+            h.sk_tool(qymcad_ui_state::SketchShape::Spline);
             clicks(h, c, &[Point2::new(-8.0, 0.0), Point2::new(-3.0, 4.0), Point2::new(3.0, -4.0)]);
             h.double_click2d(c.x + 8.0, c.y + 1.0);
         }),
@@ -135,7 +135,7 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "closed spline",
         draw: Some(|h, c| {
-            h.sk_tool(9);
+            h.sk_tool(qymcad_ui_state::SketchShape::Spline);
             clicks(h, c, &[Point2::new(-8.0, 0.0), Point2::new(0.0, 5.0), Point2::new(8.0, 0.0), Point2::new(0.0, -5.0), Point2::new(-8.0, 0.0)]);
         }),
         curves: 1,
@@ -143,25 +143,18 @@ pub(super) const KINDS: &[Kind] = &[
     Kind {
         name: "point",
         draw: Some(|h, c| {
-            h.sk_tool(5);
+            h.sk_tool(qymcad_ui_state::SketchShape::Point);
             clicks(h, c, &[Point2::new(0.0, 0.0)]);
         }),
         curves: 0,
     },
 ];
 
-/// WHAT A CLICK PICKS a curve or a point by, as the sketch selection keeps it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Picked {
-    pub kind: u8,
-    pub id: u64,
-}
-
 /// A CURVE OF THE SKETCH as a cell sees it: its kind in words, whether it is construction geometry, and its points in
 /// order along it.
 #[derive(Clone, Debug)]
 pub(super) struct Curve {
-    pub key: Picked,
+    pub key: qymcad_ui_state::SketchItem,
     pub kind: &'static str,
     pub construction: bool,
     pub path: Vec<Point2>,
@@ -170,7 +163,7 @@ pub(super) struct Curve {
 /// A POINT OF THE SKETCH as a cell sees it: what picks it, and where it stands.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Dot {
-    pub key: Picked,
+    pub key: qymcad_ui_state::SketchItem,
     pub at: Point2,
 }
 
@@ -241,11 +234,11 @@ pub(super) fn drawing(app: &App) -> Drawing {
                 let closed = k.as_spline().is_some_and(|sp| sp.ends == qymcad_core::feature::Ends::Closed);
                 (if closed { "closed spline" } else { "open spline" }, dense(s, e))
             };
-            Curve { key: Picked { kind: 1, id: e.id }, kind, construction: e.construction, path }
+            Curve { key: qymcad_ui_state::SketchItem::curve(e.id), kind, construction: e.construction, path }
         })
         .collect();
     let unseen = s.unseen_points();
-    let points = s.points.iter().filter(|q| !unseen.contains(&q.id)).map(|q| Dot { key: Picked { kind: 0, id: q.id }, at: Point2::new(q.x, q.y) }).collect();
+    let points = s.points.iter().filter(|q| !unseen.contains(&q.id)).map(|q| Dot { key: qymcad_ui_state::SketchItem::point(q.id), at: Point2::new(q.x, q.y) }).collect();
     Drawing { curves, points }
 }
 
@@ -262,7 +255,7 @@ pub(super) fn laid(kind: &Kind, places: &[Point2]) -> Result<App, String> {
     for p in places {
         draw(&mut hand, *p);
         hand.key(egui::Key::Escape);
-        hand.sk_tool(0);
+        hand.sk_select();
     }
     let d = drawing(&app);
     let (want, got) = if kind.curves == 0 { (places.len(), d.points.len()) } else { (kind.curves * places.len(), d.curves.len()) };
@@ -291,7 +284,7 @@ pub(super) fn share_along(path: &[Point2], t: f64) -> Point2 {
 /// the way along, and the cell sees what that picked.
 pub(super) fn spot(hand: &mut Hand, c: &Curve) -> Point2 {
     const SHARES: [f64; 12] = [0.37, 0.3, 0.44, 0.23, 0.52, 0.16, 0.6, 0.09, 0.68, 0.76, 0.84, 0.92];
-    SHARES.iter().map(|t| share_along(&c.path, *t)).find(|p| hand.would_pick2d((p.x, p.y), c.key.kind, c.key.id)).unwrap_or_else(|| share_along(&c.path, SHARES[0]))
+    SHARES.iter().map(|t| share_along(&c.path, *t)).find(|p| hand.would_pick2d((p.x, p.y), c.key)).unwrap_or_else(|| share_along(&c.path, SHARES[0]))
 }
 
 /// THE SPOTS a person clicks to pick the whole drawing: one on every curve, or every point of a drawing of points.
@@ -349,7 +342,7 @@ pub(super) fn places(way: Way) -> Vec<Point2> {
 pub(super) fn pick(hand: &mut Hand, way: Way) {
     let d = drawing(hand.app);
     let b = bounds(&d);
-    hand.sk_tool(0);
+    hand.sk_select();
     match way {
         Way::Click | Way::Shift | Way::ToolFirst => {
             for (k, p) in spots(hand, &d).iter().enumerate() {
@@ -373,8 +366,8 @@ pub(super) fn pick(hand: &mut Hand, way: Way) {
 }
 
 /// WHAT IS PICKED, as the window keeps it.
-pub(super) fn picked(app: &App) -> Vec<Picked> {
-    app.tools.sel_sk.items.iter().map(|&(kind, id)| Picked { kind, id }).collect()
+pub(super) fn picked(app: &App) -> Vec<qymcad_ui_state::SketchItem> {
+    app.tools.sel_sk.items.clone()
 }
 
 /// THE RIGHT EDGE OF A CROSSING BOX: the middle of the drawing, or past it when the drawing has no width - a point.
@@ -388,7 +381,7 @@ fn crossing_edge(b: &Bounds) -> f64 {
 
 /// WHAT A CROSSING BOX over the left half of the drawing touches: the curves with a point left of its right edge, and
 /// the points there.
-pub(super) fn crossed(d: &Drawing) -> Vec<Picked> {
+pub(super) fn crossed(d: &Drawing) -> Vec<qymcad_ui_state::SketchItem> {
     let edge = crossing_edge(&bounds(d));
     let curves = d.curves.iter().filter(|c| c.path.iter().any(|p| p.x <= edge)).map(|c| c.key);
     curves.chain(d.points.iter().filter(|p| d.curves.is_empty() && p.at.x <= edge).map(|p| p.key)).collect()

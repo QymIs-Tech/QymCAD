@@ -5,8 +5,11 @@ use super::*;
 
 /// THE SIDE OF AN OFFSET FIXED BY A CLICK: with curves chosen, a click that names no curve fixes the side of the copy
 /// where it is, and the box of the distance opens beside the copy (`offset_box`). A click on a curve adds it, as before.
-pub(crate) fn offset_side_click(sk: &mut qymcad_ui_state::SketchCtx, hit: Option<(u8, Id)>, at: Point2) -> bool {
-    if sk.sel_sk.modify != Some(qymcad_ui_state::EditTool::Offset) || matches!(hit, Some((1, _))) || !sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
+pub(crate) fn offset_side_click(sk: &mut qymcad_ui_state::SketchCtx, hit: Option<qymcad_ui_state::SketchItem>, at: Point2) -> bool {
+    if sk.sel_sk.modify != Some(qymcad_ui_state::EditTool::Offset)
+        || matches!(hit, Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, id: _ }))
+        || !sk.sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Curve)
+    {
         return false;
     }
     sk.sel_sk.offset = qymcad_ui_state::OffsetAim { at: Some(at), buf: qymcad_core::expr::fmt_num(sk.tool_prefs.offset), focus: true };
@@ -26,7 +29,7 @@ pub struct OffsetCtx<'a> {
 
 /// THE CURVES THE OFFSET HOLDS: the lines, arcs and circles chosen.
 pub(crate) fn offset_curves(sel_sk: &qymcad_ui_state::SketchSelection) -> Vec<Id> {
-    sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect()
+    sel_sk.curves().collect()
 }
 
 /// MAKE THE COPY: the curves chosen offset by the distance `dist` of the tool on the side of `toward`, one step of undo.

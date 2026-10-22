@@ -63,7 +63,7 @@ mod tests {
     fn dragging_across_several_segments_trims_them_all() {
         let mut app = App::default();
         let si = grid_sketch(&mut app);
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 1);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Trim);
         let before: Vec<(f64, f64)> = app.project.sketches[si].points.iter().map(|p| (p.x, p.y)).collect();
 
         // drag the cursor across the three verticals at a height between the horizontals (y = 20)
@@ -83,7 +83,7 @@ mod tests {
     fn jitter_on_one_span_cuts_it_only_once() {
         let mut app = App::default();
         let si = grid_sketch(&mut app);
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 1);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Trim);
 
         // jitter the cursor at one point on one vertical
         let p = (qymcad_ui_state::Sheet { view: app.viewing.view, rect: rect() }).at(qymcad_core::geom::Point2::new(20.0, 20.0));

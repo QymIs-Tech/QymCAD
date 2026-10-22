@@ -14,7 +14,7 @@ fn the_nodes_of_the_copy_of_an_offset_are_not_drawn() {
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
     let blob = [(-22.0, 6.0), (-14.0, 14.0), (-3.0, 7.0), (7.0, 25.0), (21.0, 9.0), (10.0, -9.0), (-17.0, -14.0)];
-    hand.sk_tool(9);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline);
     for (x, y) in blob {
         hand.click2d(x, y);
     }
@@ -24,7 +24,7 @@ fn the_nodes_of_the_copy_of_an_offset_are_not_drawn() {
     let spline = s.entities.iter().find(|e| e.kind.as_spline().is_some()).map(|e| e.id).expect("setup: the spline");
     // half way along its first span, by the knots of its curve
     let on_it = Curve::of(s, s.entity(spline).expect("the spline")).map(|c| c.at(0.5 * c.b_spline().and_then(|b| b.inner_knots().first().copied()).unwrap_or(0.14))).expect("its curve");
-    hand.sk_tool(0).click2d(on_it.x, on_it.y);
+    hand.sk_select().click2d(on_it.x, on_it.y);
     assert!(hand.press_hint(&crate::i18n::tr("tb-offset-hint")), "no sketch offset button");
     hand.click2d(0.0, 0.0);
     hand.type_text("2").key(egui::Key::Enter);

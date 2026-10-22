@@ -19,9 +19,9 @@ fn parallel_against_an_angle_of_45_is_taken_back() {
     p.solve_sketch(si);
     let before: Vec<(f64, f64)> = p.sketches[si].points.iter().map(|x| (x.x, x.y)).collect();
     let mut regen = qymcad_ui_state::Rebuilding::default();
-    let mut sel_sk = qymcad_ui_state::SketchSelection { items: vec![(1, l1), (1, l2)], ..Default::default() };
+    let mut sel_sk = qymcad_ui_state::SketchSelection { items: vec![qymcad_ui_state::SketchItem::curve(l1), qymcad_ui_state::SketchItem::curve(l2)], ..Default::default() };
     let mut status = Notice::default();
-    qymcad_sketch::try_constraint_inner(&mut p, &mut regen, qymcad_ui_state::Sel::Sketch(si), &mut sel_sk, &mut status, 3);
+    qymcad_sketch::try_constraint_inner(&mut p, &mut regen, qymcad_ui_state::Sel::Sketch(si), &mut sel_sk, &mut status, qymcad_ui_state::ConstraintKind::Parallel);
 
     assert!(!p.sketches[si].constraints.iter().any(|c| matches!(c, Constraint::Parallel { .. })), "parallel stayed beside the angle it contradicts");
     let after: Vec<(f64, f64)> = p.sketches[si].points.iter().map(|x| (x.x, x.y)).collect();
@@ -46,9 +46,9 @@ fn equal_on_two_dimensioned_circles_makes_the_second_radius_a_reference() {
     p.sketches[si].constraints.push(Constraint::Diameter { c: c2, d: 7.0, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     p.solve_sketch(si);
     let mut regen = qymcad_ui_state::Rebuilding::default();
-    let mut sel_sk = qymcad_ui_state::SketchSelection { items: vec![(1, e1), (1, e2)], ..Default::default() };
+    let mut sel_sk = qymcad_ui_state::SketchSelection { items: vec![qymcad_ui_state::SketchItem::curve(e1), qymcad_ui_state::SketchItem::curve(e2)], ..Default::default() };
     let mut status = Notice::default();
-    qymcad_sketch::try_constraint_inner(&mut p, &mut regen, qymcad_ui_state::Sel::Sketch(si), &mut sel_sk, &mut status, 5);
+    qymcad_sketch::try_constraint_inner(&mut p, &mut regen, qymcad_ui_state::Sel::Sketch(si), &mut sel_sk, &mut status, qymcad_ui_state::ConstraintKind::Equal);
     let cs = &p.sketches[si].constraints;
     assert!(cs.iter().any(|c| matches!(c, Constraint::EqualRadius { .. })), "equal was not put on the circles: {status:?}");
     assert!(cs.iter().any(|c| matches!(c, Constraint::Diameter { c, driven: true, .. } if *c == c2)), "the second circle's radius did not become a reference");

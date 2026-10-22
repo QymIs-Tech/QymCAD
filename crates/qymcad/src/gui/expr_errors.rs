@@ -123,7 +123,7 @@ mod tests {
         let mut app = super::super::screen_keys::tests::plate();
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
-        app.start_feat_cmd(7); // a hole: diameter + depth
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Hole); // a hole: diameter + depth
         let label = {
             let p = app.tools.cmd.params.first_mut().expect("a field of the command");
             p.txt = "10 /".into();

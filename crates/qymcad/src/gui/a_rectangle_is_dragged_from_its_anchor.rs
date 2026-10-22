@@ -17,10 +17,10 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect);
         assert!(hand.press_word(&qymcad_i18n::tr(mode), egui::pos2(0.0, 0.0)), "no {mode} on the bar");
         hand.click2d(clicks[0].0, clicks[0].1).click2d(clicks[1].0, clicks[1].1).key(egui::Key::Enter);
-        Hand::new(&mut app).sk_tool(0);
+        Hand::new(&mut app).sk_select();
         assert_eq!(app.project.sketches[si].rects().len(), 1, "the rectangle was not drawn as one shape");
         (app, si)
     }
@@ -102,7 +102,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect);
         hand.click2d(10.0, 10.0).click2d(50.0, 40.0).type_text("60").key(egui::Key::Tab).type_text("35").key(egui::Key::Enter);
         let got = dims(&app, si);
         if got.len() != 2 || (got[0] - 35.0).abs() > 1e-6 || (got[1] - 60.0).abs() > 1e-6 {
@@ -148,14 +148,14 @@ mod tests {
     fn the_centre_of_a_rectangle_takes_constraints() {
         let mut sins = Vec::new();
         let (mut app, si) = a_rectangle("opt-rect-2corners", [(10.0, 10.0), (50.0, 40.0)]);
-        Hand::new(&mut app).click2d(30.0, 25.0).shift_click2d(0.0, 0.0).constraint(0);
+        Hand::new(&mut app).click2d(30.0, 25.0).shift_click2d(0.0, 0.0).constraint(qymcad_ui_state::ConstraintKind::Coincident);
         let c = point_near(&app, si, app.project.sketches[si].rects()[0].centre);
         if c.0.hypot(c.1) > 1e-6 {
             sins.push(format!("the centre made coincident with the origin stands at {c:?}; status: {}", app.status));
         }
         let (mut app, si) = a_rectangle("opt-rect-2corners", [(10.0, 10.0), (50.0, 40.0)]);
-        Hand::new(&mut app).sk_tool(3).click2d(70.0, 60.0).click2d(75.0, 60.0).key(egui::Key::Enter);
-        Hand::new(&mut app).sk_tool(0).click2d(30.0, 25.0).shift_click2d(70.0, 60.0).constraint(2);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(70.0, 60.0).click2d(75.0, 60.0).key(egui::Key::Enter);
+        Hand::new(&mut app).sk_select().click2d(30.0, 25.0).shift_click2d(70.0, 60.0).constraint(qymcad_ui_state::ConstraintKind::Vertical);
         let c = point_near(&app, si, app.project.sketches[si].rects()[0].centre);
         let o = app.project.sketches[si]
             .entities

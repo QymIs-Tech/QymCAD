@@ -18,9 +18,9 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         let o = (5.0, 10.0);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1).click2d(o.0 - 20.0, o.1).double_click2d(o.0 + 20.0, o.1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(o.0 - 20.0, o.1).double_click2d(o.0 + 20.0, o.1);
         hand.click2d(o.0, o.1 - 20.0).double_click2d(o.0, o.1 + 20.0);
-        hand.key(egui::Key::Escape).sk_tool(0);
+        hand.key(egui::Key::Escape).sk_select();
         assert!(hand.press_hint(&crate::i18n::tr("tb-chamfer-sketch-hint")), "no sketch chamfer button");
         hand.shift_click2d(o.0 - 12.0, o.1).shift_click2d(o.0, o.1 - 12.0);
         let (named, fixed) = (qymcad_sketch::corner_colour(&hand.app.scheme, false), qymcad_sketch::corner_colour(&hand.app.scheme, true));

@@ -94,7 +94,7 @@ pub fn comp_gizmo_mode(pn: &Painting, comp: Id) -> CompGizmoMode {
 /// The glyph is the tie a click there lays (`tie_what_landed` in the sketcher): none while a drawing tool lays no ties.
 pub fn snap_infer_glyph(pn: &Painting) -> Option<(Gly, Point2)> {
     let (p, kind) = pn.snap_hint?;
-    if pn.armed.draw_kind() != 0 && !qymcad_ui_state::ties_laid(pn.tool, pn.set) {
+    if pn.armed.drawing().is_some() && !qymcad_ui_state::ties_laid(pn.tool, pn.set) {
         return None;
     }
     let g = match kind {

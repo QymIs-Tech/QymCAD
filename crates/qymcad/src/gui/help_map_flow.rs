@@ -16,19 +16,16 @@ mod tests {
 
     use crate::{help, help_map};
 
-    /// THE NUMBERS OF THE TOOLS ON THE BARS of the workbenches: the part commands, and the sketch tools by their handle.
-    /// The bars are drawn from the rows of the catalogue, so the rows are the buttons.
-    fn tools_in_panels() -> (Vec<u8>, Vec<(String, u8)>) {
+    /// THE TOOLS ON THE BARS of the workbenches, by the code of their row: the part commands and the sketch tools. The
+    /// bars are drawn from the rows of the catalogue, so the rows are the buttons.
+    fn tools_in_panels() -> (Vec<&'static str>, Vec<&'static str>) {
         use crate::command_catalog::{all, Launch};
-        let mut part: Vec<u8> = Vec::new();
-        let mut sketch: Vec<(String, u8)> = Vec::new();
+        let mut part: Vec<&'static str> = Vec::new();
+        let mut sketch: Vec<&'static str> = Vec::new();
         for c in all().filter(|c| c.shelf == qymcad_ui_state::catalogue::Shelf::Bar) {
             match c.launch {
-                Launch::Feat(n) | Launch::Prim(n) => part.push(n),
-                Launch::SkTool(n) => sketch.push(("sk".to_string(), n)),
-                Launch::Dim(n) => sketch.push(("dim".to_string(), n)),
-                Launch::ClickOp(n) => sketch.push(("click".to_string(), n)),
-                Launch::Modify(t) => sketch.push(("mod".to_string(), t.code())),
+                Launch::Feat(_) | Launch::Prim(_) => part.push(c.code),
+                Launch::SkTool(_) | Launch::Dim(_) | Launch::ClickOp(_) | Launch::Modify(_) => sketch.push(c.code),
                 _ => {}
             }
         }
@@ -45,11 +42,11 @@ mod tests {
         let (part, sketch) = tools_in_panels();
         assert!(part.len() > 20, "suspiciously few Part commands were found: {}", part.len());
         assert!(sketch.len() > 15, "suspiciously few Sketch tools were found: {}", sketch.len());
-        for n in &part {
-            assert!(help_map::part_article(*n).is_some(), "the Part command {n} is in the panel and there is no article for it in the table — F1 on it will stay silent");
+        for code in &part {
+            assert!(help_map::part_article(code).is_some(), "the Part command {code} is in the panel and there is no article for it in the table — F1 on it will stay silent");
         }
-        for (h, n) in &sketch {
-            assert!(help_map::sketch_article(h, *n).is_some(), "the Sketch tool {h}({n}) is in the panel and there is no article for it in the table");
+        for code in &sketch {
+            assert!(help_map::sketch_article(code).is_some(), "the Sketch tool {code} is in the panel and there is no article for it in the table");
         }
     }
 
@@ -57,11 +54,11 @@ mod tests {
     #[test]
     fn the_table_promises_nothing_that_does_not_exist() {
         let (part, sketch) = tools_in_panels();
-        for (n, a) in help_map::PART {
-            assert!(part.contains(n), "the table holds command {n} (\"{a}\") and the panels do not — an article about a tool that does not exist");
+        for row in help_map::PART {
+            assert!(part.contains(&row.code), "the table holds command {} (\"{}\") and the panels do not — an article about a tool that does not exist", row.code, row.article);
         }
-        for (h, n, a) in help_map::SKETCH {
-            assert!(sketch.contains(&(h.to_string(), *n)), "the table holds the tool {h}({n}) (\"{a}\") and the panels do not");
+        for row in help_map::SKETCH {
+            assert!(sketch.contains(&row.code), "the table holds the tool {} (\"{}\") and the panels do not", row.code, row.article);
         }
     }
 
@@ -86,7 +83,7 @@ mod tests {
         assert_eq!(app.help_for_context(), "assembly/02-joints", "while the faces of a mate are being picked, F1 must lead to the article about mates");
         app.cancel_all_tools();
 
-        app.side.carr.mode = 1;
+        app.side.carr.mode = Some(qymcad_ui_state::PatternKind::Linear);
         assert_eq!(app.help_for_context(), "assembly/04-arrays", "while a component array is being laid out, F1 must lead to the article about arrays");
     }
 
@@ -110,7 +107,7 @@ mod tests {
         // with a command — its article
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
-        app.start_feat_cmd(7); // the hole
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Hole); // the hole
         assert_eq!(app.help_for_context(), "part/08-hole", "F1 inside the open Hole command must lead to the article about holes, and it leads to \"{}\"", app.help_for_context());
     }
 
@@ -178,11 +175,11 @@ mod tests {
     fn f1_reaches_the_article_of_an_armed_toolbar_tool() {
         let cases: &[Armed] = &[
             armed("tb-bool-bodies-hint", |a| a.params.boolean.pick = Some((1, 0))),
-            armed("tb-move-hint", |a| crate::gui::commands::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 1)),
-            armed("tb-copy-hint", |a| crate::gui::commands::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 2)),
-            armed("tb-rotate-hint", |a| crate::gui::commands::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 3)),
-            armed("tb-lin-array-hint", |a| crate::gui::commands::start_pattern(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 1)),
-            armed("tb-circ-array-hint", |a| crate::gui::commands::start_pattern(&mut qymcad_ui_state::tools_of!(a), &mut a.status, 2)),
+            armed("tb-move-hint", |a| qymcad_sketch::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, qymcad_ui_state::MoveKind::Move)),
+            armed("tb-copy-hint", |a| qymcad_sketch::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, qymcad_ui_state::MoveKind::Copy)),
+            armed("tb-rotate-hint", |a| qymcad_sketch::start_move_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.status, qymcad_ui_state::MoveKind::Rotate)),
+            armed("tb-lin-array-hint", |a| qymcad_sketch::start_pattern(&mut qymcad_ui_state::tools_of!(a), &mut a.status, qymcad_ui_state::PatternKind::Linear)),
+            armed("tb-circ-array-hint", |a| qymcad_sketch::start_pattern(&mut qymcad_ui_state::tools_of!(a), &mut a.status, qymcad_ui_state::PatternKind::Circular)),
             armed("tb-measure3d-hint", |a| a.side.m3.on = true),
         ];
         for Armed { hint, arm } in cases {

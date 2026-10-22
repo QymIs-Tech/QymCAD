@@ -94,12 +94,12 @@ pub fn draw_sketch_points(pn: &Painting, painter: &egui::Painter, rect: Rect, si
     let has_conflict = !diag.conflicts.is_empty();
     // the reference points and the virtual sharps of rectangles are not drawn as numbered geometry
     let unseen = s.unseen_points();
-    let selected: std::collections::HashSet<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 0).map(|(_, id)| *id).collect();
+    let selected: std::collections::HashSet<Id> = pn.sel_sk.points().collect();
     let sight = rect.expand(8.0);
     let in_sight: Vec<(usize, Pos2)> =
         s.points.iter().enumerate().filter(|(_, p)| !unseen.contains(&p.id)).map(|(pi, p)| (pi, sh.at(Point2::new(p.x, p.y)))).filter(|(_, sp)| sight.contains(*sp)).collect();
     // the points marked go first, so a plain point gives way to them and not they to it
-    let marked = |id: Id| selected.contains(&id) || pn.hover.sketch == Some((0, id)) || picked.contains(&id);
+    let marked = |id: Id| selected.contains(&id) || pn.hover.sketch == Some(qymcad_ui_state::SketchItem::point(id)) || picked.contains(&id);
     // stable, in two passes rather than a sort: 70 000 points in sight sorted every frame were part of 60 ms
     let in_sight = in_sight.iter().filter(|&&(pi, _)| marked(s.points[pi].id)).chain(in_sight.iter().filter(|&&(pi, _)| !marked(s.points[pi].id))).copied();
     let (mut dots, mut numbers) = (Dots::new(rect.expand(8.0)), Taken::new(24.0));
@@ -114,7 +114,7 @@ pub fn draw_sketch_points(pn: &Painting, painter: &egui::Painter, rect: Rect, si
         };
         let (col, r) = if selected.contains(&id) {
             (pn.scheme.pal.emphasis(), 5.0)
-        } else if pn.hover.sketch == Some((0, id)) {
+        } else if pn.hover.sketch == Some(qymcad_ui_state::SketchItem::point(id)) {
             (pn.scheme.pal.preview(), 5.0) // the pre-select highlight
         } else if picked.contains(&id) {
             (pn.scheme.pal.sketch_point(), 4.5)

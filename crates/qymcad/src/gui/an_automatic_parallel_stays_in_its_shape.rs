@@ -18,7 +18,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         for chain in chains {
             for &(x, y) in *chain {
                 hand.click2d(x, y);

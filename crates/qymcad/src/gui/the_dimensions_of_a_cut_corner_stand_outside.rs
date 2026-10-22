@@ -21,12 +21,12 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         for (x, y) in [(0.0, 0.0), (40.0, 0.0), (40.0, 30.0), (0.0, 30.0), (0.0, 0.0)] {
             hand.click2d(x, y);
         }
         hand.key(egui::Key::Escape);
-        Hand::new(&mut app).sk_tool(0);
+        Hand::new(&mut app).sk_select();
         (app, si)
     }
 
@@ -37,7 +37,8 @@ mod tests {
     fn cut(app: &mut App, si: usize, at: (f64, f64), key: &str, mode: Option<&str>, value: f64) {
         let s = &app.project.sketches[si];
         let near = |id: u64| s.points.iter().any(|q| q.id == id && (q.x - at.0).hypot(q.y - at.1) < 1e-6);
-        let lines: Vec<(u8, u64)> = s.entities.iter().filter(|e| e.kind.as_line().is_some_and(|qymcad_core::model::LineParts { a, b }| near(a) || near(b))).map(|e| (1u8, e.id)).collect();
+        let lines: Vec<qymcad_ui_state::SketchItem> =
+            s.entities.iter().filter(|e| e.kind.as_line().is_some_and(|qymcad_core::model::LineParts { a, b }| near(a) || near(b))).map(|e| qymcad_ui_state::SketchItem::curve(e.id)).collect();
         assert_eq!(lines.len(), 2, "setup: two lines meet at {at:?}");
         assert!(Hand::new(app).sk_corner_set_in(key, mode, &lines, value), "no place to click on the two lines");
     }

@@ -150,7 +150,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = h;
             p.txt = format!("{h}");
@@ -376,7 +376,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 6.0;
             p.txt = "6".into();
@@ -398,7 +398,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(3); // revolve, through the same command a person uses
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve); // revolve, through the same command a person uses
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
             p.val = 270.0;
             p.txt = "270".into();
@@ -664,7 +664,7 @@ mod tests {
         // program takes: a cylinder as a primitive, the round rim as an edge, the thread command.
         {
             let mut app = App::default();
-            app.start_prim_cmd(11);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Cylinder);
             for (k, v) in [("r", 15.0), ("h", 60.0)] {
                 if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
                     p.val = v;
@@ -736,7 +736,7 @@ mod tests {
             if let Some(mi) = a2.project.timeline.iter().rev().find_map(|n| n.kind.body()).and_then(|b| a2.project.mesh_index(b)) {
                 a2.chosen.sel = super::super::Sel::Mesh(mi);
             }
-            a2.start_feat_cmd(32);
+            a2.start_feat_cmd(qymcad_ui_state::PartTool::Patch);
             crate::gui::commands::refresh_edges(&mut a2.part_ctx());
             for id in rim(&a2) {
                 a2.tools.gsel.edges.insert(id);
@@ -909,7 +909,7 @@ mod tests {
                     };
                     {
                         let mut asks = Vec::new();
-                        crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), ui);
+                        qymcad_ui_state::path_bar(&mut a.bar_ctx(&mut asks), ui, &crate::command_catalog::BENCHES);
                         let c = ui.ctx().clone();
                         a.do_bar_asks(asks, &c);
                     };
@@ -942,7 +942,7 @@ mod tests {
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
             app.chosen.sel = super::super::Sel::Sketch(si);
-            app.start_feat_cmd(1);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
             if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = h;
                 p.txt = format!("{h}");
@@ -1085,7 +1085,7 @@ mod tests {
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
             app.chosen.sel = super::super::Sel::Sketch(si);
-            app.start_feat_cmd(1);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
             if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 14.0;
                 p.txt = "14".into();
@@ -1111,7 +1111,7 @@ mod tests {
                     };
                     {
                         let mut asks = Vec::new();
-                        crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), ui);
+                        qymcad_ui_state::path_bar(&mut a.bar_ctx(&mut asks), ui, &crate::command_catalog::BENCHES);
                         let c = ui.ctx().clone();
                         a.do_bar_asks(asks, &c);
                     };

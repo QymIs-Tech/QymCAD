@@ -49,7 +49,7 @@ fn a_thread_of_ones_own() -> (Bench, qymcad_core::thread::ThreadSpec) {
     let mut b = Bench { mode_3d: true, ..Default::default() };
     b.thread.radius = 10.0; // the cylinder the thread sits on: Ø20
     b.thread.form = 5; // a profile of one's own
-    b.cmd.open(&mut b.armed, 24, true);
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Thread, true);
     qymcad_ui_state::set_thread_params(&mut b.cmd, b.thread);
     typed(&mut b.cmd, "pitch", 5.0);
     typed(&mut b.cmd, "angle", 40.0);
@@ -117,7 +117,7 @@ fn the_depth_field_opens_on_the_depth_that_will_be_cut() {
     let mut b = Bench::default();
     b.thread.radius = 10.0; // Ø20
     b.thread.form = 5; // a profile of one's own
-    b.cmd.open(&mut b.armed, 24, true);
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Thread, true);
     qymcad_ui_state::set_thread_params(&mut b.cmd, b.thread);
     // The pitch is left at zero - "the standard coarse pitch for this size" - which is what a person gets
     // without touching it.

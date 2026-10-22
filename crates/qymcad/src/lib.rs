@@ -6,8 +6,8 @@
 use std::process::ExitCode;
 
 pub use gui::session::{
-    pos2, vec2, Arg, Badge, Chooser, Datum, Document, FaceKinds, Feature, Gizmo, InRow, Inspection, JointInfo, Key, Kept, Kind, Machine, Modifiers, Notice, Parameter, Part, Picture, PointerButton,
-    Pos2, Rect, Session, SketchInfo, SketchPick, SnapGlyph, Solid, Tone, Vec2, Widget, WordAt, time_budget,
+    pos2, vec2, Arg, Badge, Chooser, ClickTool, Datum, Document, FaceKinds, Feature, Gizmo, InRow, Inspection, JointInfo, Key, Kept, Kind, Machine, Modifiers, Notice, Parameter, Part, Picture,
+    PointerButton, Pos2, Rect, Session, SketchInfo, SketchPick, SketchShape, SnapGlyph, Solid, Tone, Vec2, Widget, WordAt, time_budget,
 };
 
 /// START THE PROGRAM: open the window and run it until it closes; a start that fails is told to the person.
@@ -45,6 +45,8 @@ mod one_voice_guard;
 mod wall_clock_guard;
 #[cfg(test)]
 mod tool_frame_guard;
+#[cfg(test)]
+mod tools_by_name_guard;
 // The macOS bundling script, run here with the mac-only tools stubbed out. Unix only: it is a shell script.
 #[cfg(all(test, unix))]
 mod packaging_macos;

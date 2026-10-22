@@ -14,7 +14,7 @@ use super::App;
 
 pub use crate::system::Chooser;
 pub use egui::{pos2, vec2, Key, Modifiers, PointerButton, Pos2, Rect, Vec2};
-pub use qymcad_ui_state::{Notice, Tone};
+pub use qymcad_ui_state::{ClickTool, Notice, SketchShape, Tone};
 
 /// THE MACHINE THE PROGRAM IS STARTED ON.
 pub struct Machine {

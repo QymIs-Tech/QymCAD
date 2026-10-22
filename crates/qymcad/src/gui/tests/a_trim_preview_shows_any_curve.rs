@@ -20,9 +20,9 @@ fn trim_lights_the_piece_of_an_ellipse_it_takes_away() {
     let mut app = sketch();
     let mut hand = Hand::new(&mut app);
     // an ellipse 8 by 4 about (40, 30), and a line across it at y = 29 cutting off its lower piece
-    hand.sk_tool(8).click2d(40.0, 30.0).click2d(48.0, 30.0).click2d(40.0, 34.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Ellipse).click2d(40.0, 30.0).click2d(48.0, 30.0).click2d(40.0, 34.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(1).click2d(28.0, 29.0).double_click2d(52.0, 29.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(28.0, 29.0).double_click2d(52.0, 29.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
     assert!(hand.press_hint(&qymcad_i18n::tr("tb-trim-hint")), "no trim button");
     hand.close_window();
@@ -36,9 +36,9 @@ fn extend_draws_the_spline_as_it_will_run() {
     let mut app = sketch();
     let mut hand = Hand::new(&mut app);
     // a spline ending at (30, 30), and a line upright at x = 40 on its way
-    hand.sk_tool(9).click2d(20.0, 30.0).click2d(25.0, 33.0).double_click2d(30.0, 30.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(20.0, 30.0).click2d(25.0, 33.0).double_click2d(30.0, 30.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(1).click2d(40.0, 15.0).double_click2d(40.0, 45.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(40.0, 15.0).double_click2d(40.0, 45.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
     assert!(hand.press_hint(&qymcad_i18n::tr("tb-extend-hint")), "no extend button");
     hand.close_window();

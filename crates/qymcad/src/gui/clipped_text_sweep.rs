@@ -67,7 +67,7 @@ mod tests {
             }),
             surface("tool bar", |a, c| {
                 let mut asks = Vec::new();
-                crate::gui::panels_bars::tool_options_bar(&mut a.bar_ctx(&mut asks), c);
+                qymcad_sketch::tool_options_bar(&mut a.bar_ctx(&mut asks), c);
                 let c = c.ctx().clone();
                 a.do_bar_asks(asks, &c);
             }),

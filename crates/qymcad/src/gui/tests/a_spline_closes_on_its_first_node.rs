@@ -11,7 +11,7 @@ fn a_click_near_the_first_node_closes_the_spline() {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(9).click2d(10.0, 10.0).click2d(30.0, 14.0).click2d(34.0, 30.0).click2d(14.0, 32.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(10.0, 10.0).click2d(30.0, 14.0).click2d(34.0, 30.0).click2d(14.0, 32.0);
     // 6 px off the first node, at the scale of the sheet
     let off = 6.0 / f64::from(hand.app.viewing.view.scale);
     hand.hover2d(10.0 + off, 10.0).click2d(10.0 + off, 10.0);

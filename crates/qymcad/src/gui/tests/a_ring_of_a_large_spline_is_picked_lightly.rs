@@ -31,7 +31,7 @@ fn the_ring_between_a_large_spline_and_its_offset_is_hovered_and_taken_lightly()
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
     let nodes = nodes();
-    hand.sk_tool(9);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline);
     for (x, y) in &nodes {
         hand.click2d(*x, *y);
     }
@@ -40,7 +40,7 @@ fn the_ring_between_a_large_spline_and_its_offset_is_hovered_and_taken_lightly()
     let s = &hand.app.project.sketches[si];
     let spline = s.entities.iter().find(|e| e.kind.as_spline().is_some_and(|sp| sp.ends == qymcad_core::feature::Ends::Closed)).map(|e| e.id).expect("setup: the spline was not closed");
     let on_it = s.entity(spline).and_then(|e| Curve::of(s, e)).map(|c| c.at(0.01)).expect("the spline");
-    hand.sk_tool(0).click2d(on_it.x, on_it.y);
+    hand.sk_select().click2d(on_it.x, on_it.y);
     assert!(hand.press_hint(&crate::i18n::tr("tb-offset-hint")), "no sketch offset button");
     let laid = cost_of(Doer::Thread, || {
         hand.click2d(0.0, 0.0);
@@ -75,7 +75,7 @@ fn the_ring_between_a_large_spline_and_its_offset_is_hovered_and_taken_lightly()
         .map(|(id, _)| id);
     hand.key(egui::Key::Escape).ctrl(egui::Key::Enter);
     assert!(matches!(hand.app.chosen.sel, Sel::Sketch(s) if s == si), "setup: the sketch left is not selected");
-    hand.tool(1);
+    hand.tool(qymcad_ui_state::PartTool::Extrude);
     hand.look2d((places[0].x, places[0].y));
     let mut failures = Vec::new();
     let hovered = cost_of(Doer::Thread, || {

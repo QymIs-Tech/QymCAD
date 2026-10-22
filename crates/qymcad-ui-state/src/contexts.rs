@@ -175,7 +175,7 @@ pub struct RollbackDrag {
 #[derive(Clone, Copy, Default)]
 pub struct Hover {
     /// sketch geometry, as (kind, Id)
-    pub sketch: Option<(u8, Id)>,
+    pub sketch: Option<crate::SketchItem>,
     /// a constraint in the sketch list or glyph
     pub constraint: Option<usize>,
     /// an assembly joint
@@ -1002,10 +1002,10 @@ pub enum BarAsk {
     GotoPath(usize),
     ExitContext,
     /// Take up a sketch tool.
-    SketchTool(u8),
+    SketchTool(SketchShape),
     /// Start a feature command, or a primitive.
-    FeatCmd(u8),
-    PrimCmd(u8),
+    FeatCmd(crate::PartTool),
+    PrimCmd(crate::PartTool),
     /// The view switches that need more than a flag.
     ToggleSection,
     /// Start mirroring the whole part or subassembly named here: release every other tool, then wait for
@@ -1015,7 +1015,7 @@ pub enum BarAsk {
     /// Step into a component.
     EnterComponent(Id),
     /// Start an array of components.
-    CompArray(u8),
+    CompArray(crate::PatternKind),
     /// Put every tool down, then take up the one named (if any). A tool taken straight from the bar goes through
     /// here: set before the put-down runs, it would be put down with the rest, and set without one it stood beside
     /// the tool already in hand - two bars at once.
@@ -1027,7 +1027,7 @@ pub enum BarAsk {
     /// Put the sketch tools down and go back to picking with the arrow.
     SketchSelectMode,
     /// Apply a sketch constraint by its code.
-    Constraint(u8),
+    Constraint(crate::ConstraintKind),
     /// The assembly picks.
     JointPick,
     GroundPick,

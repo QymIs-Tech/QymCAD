@@ -106,7 +106,7 @@ fn crossing_hover(cc: &qymcad_ui_state::CornerCtx, ctx: &egui::Context, rect: Re
     let p = ctx.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p))?;
     let w = qymcad_ui_state::to_world(cc.view, rect, p);
     let reach = f64::from(qymcad_ui_state::corner_zone_px(cc.set)) / f64::from(cc.view.scale);
-    let chosen: Vec<Id> = cc.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let chosen: Vec<Id> = cc.sel_sk.curves().collect();
     let of_chosen = || {
         if qymcad_pick::edit_target(&cc.pick(), rect, p, si).is_some() {
             return None;
@@ -187,11 +187,11 @@ pub(crate) fn draw_the_corner_preview(cc: &qymcad_ui_state::CornerCtx, ctx: &egu
         // **NOTHING OF A CORNER IS DRAWN WITH ANOTHER TOOL IN HAND.** Without the field there is nothing but the
         // amber preview, and it belongs to the fillet and to the chamfer alone: the corner of a drawing lies under
         // the cursor of every tool that goes near it, and rounding it belongs to one of these two.
-        if !matches!(cc.armed.click_op(), 4 | 5) {
+        if !cc.armed.click_tool().is_some_and(qymcad_ui_state::ClickTool::of_corner) {
             return;
         }
         let qymcad_ui_state::Sel::Sketch(si) = *cc.sel else { return };
-        let cut = corner_cut(cc, cc.armed.click_op() == 5, value_for_preview(cc));
+        let cut = corner_cut(cc, cc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::CornerChamfer), value_for_preview(cc));
         let hovered = corner_hover_under(cc, ctx, rect, si).and_then(|(pid, pair)| cc.project.corner_blend(si, pid, pair, cut)).or_else(|| crossing_hover(cc, ctx, rect, si, cut));
         draw_corner_preview(cc, ctx, rect, si, &hovered.map(|blend| Drawn { blend, in_set: false }).into_iter().collect::<Vec<_>>());
         return;

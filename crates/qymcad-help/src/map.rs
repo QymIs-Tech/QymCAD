@@ -9,82 +9,86 @@
 //! to read than one. The reverse is forbidden: a tool without an article is an F1 that does not
 //! answer.
 //!
-//! THE NUMBERS HERE ARE THE SAME AS IN THE CODE (`start_feat_cmd`, `set_sk_tool` and the rest): the
+//! THE KEYS HERE ARE THOSE OF THE CODE - the codes of the commands of the catalogue: the
 //! table is compared against the source of the panels, so "added a tool, forgot the article" reddens
 //! the build.
 
-/// The commands of the Part: the number of `start_feat_cmd`/`start_prim_cmd` -> the article.
-pub const PART: &[(u8, &str)] = &[
-    (1, "part/01-extrude"),
-    (3, "part/02-revolve"),
-    (8, "part/03-sweep"),
-    (9, "part/04-loft"),
-    (4, "part/05-fillet"),
-    (5, "part/06-chamfer"),
-    (6, "part/07-shell"),
-    (7, "part/08-hole"),
-    (23, "part/09-draft"),
-    (24, "part/10-thread"),
-    (25, "part/11-push-face"),
-    (26, "part/12-remove-face"),
-    (27, "part/13-split-body"),
-    (29, "part/14-split-face"),
-    (28, "part/15-thicken"),
-    (30, "part/20-face-copy"),
-    (36, "part/27-offset-surface"),
-    (31, "part/21-surface-replace"),
-    (32, "part/22-patch"),
-    (33, "part/23-stitch"),
-    (34, "part/24-trim"),
-    (35, "part/26-recognise"),
-    (16, "part/16-mirror"),
-    (17, "part/17-linear-array"),
-    (18, "part/18-circular-array"),
+/// The commands of the Part: the code of the command -> the article.
+pub const PART: &[Article] = &[
+    Article { code: "part.extrude", article: "part/01-extrude" },
+    Article { code: "part.revolve", article: "part/02-revolve" },
+    Article { code: "part.sweep", article: "part/03-sweep" },
+    Article { code: "part.loft", article: "part/04-loft" },
+    Article { code: "part.fillet", article: "part/05-fillet" },
+    Article { code: "part.chamfer", article: "part/06-chamfer" },
+    Article { code: "part.shell", article: "part/07-shell" },
+    Article { code: "part.hole", article: "part/08-hole" },
+    Article { code: "part.draft", article: "part/09-draft" },
+    Article { code: "part.thread", article: "part/10-thread" },
+    Article { code: "part.push-face", article: "part/11-push-face" },
+    Article { code: "part.remove-face", article: "part/12-remove-face" },
+    Article { code: "part.split-body", article: "part/13-split-body" },
+    Article { code: "part.split-face", article: "part/14-split-face" },
+    Article { code: "part.thicken", article: "part/15-thicken" },
+    Article { code: "part.face-copy", article: "part/20-face-copy" },
+    Article { code: "part.offset-surface", article: "part/27-offset-surface" },
+    Article { code: "part.surface-replace", article: "part/21-surface-replace" },
+    Article { code: "part.patch", article: "part/22-patch" },
+    Article { code: "part.stitch", article: "part/23-stitch" },
+    Article { code: "part.trim", article: "part/24-trim" },
+    Article { code: "part.recognise", article: "part/26-recognise" },
+    Article { code: "part.mirror", article: "part/16-mirror" },
+    Article { code: "part.array-linear", article: "part/17-linear-array" },
+    Article { code: "part.array-circular", article: "part/18-circular-array" },
     // DATUMS are commands too, and are shared by the Part and the Assembly: their buttons live in the
     // common creation panel rather than in the workbench panel. One article for three: a plane, an axis
     // and a point answer one question — what to build from — and differ only in what they set.
-    (20, "general/04-datums"),
-    (21, "general/04-datums"),
-    (22, "general/04-datums"),
+    Article { code: "part.datum-plane", article: "general/04-datums" },
+    Article { code: "part.datum-point", article: "general/04-datums" },
+    Article { code: "part.datum-axis", article: "general/04-datums" },
     // six primitives, one article: they differ in their fields rather than in their meaning
-    (10, "part/19-primitives"),
-    (11, "part/19-primitives"),
-    (12, "part/19-primitives"),
-    (13, "part/19-primitives"),
-    (14, "part/19-primitives"),
-    (15, "part/19-primitives"),
+    Article { code: "part.box", article: "part/19-primitives" },
+    Article { code: "part.cylinder", article: "part/19-primitives" },
+    Article { code: "part.sphere", article: "part/19-primitives" },
+    Article { code: "part.cone", article: "part/19-primitives" },
+    Article { code: "part.torus", article: "part/19-primitives" },
+    Article { code: "part.prism", article: "part/19-primitives" },
 ];
 
-/// The tools of the Sketch: (which handle, its number) -> the article.
-///
-/// The handle is part of the key because the numbers are THEIR OWN: `set_sk_tool(1)` is a line while
-/// `set_click_op(1)` is a trim. Glue them into one number and the table starts lying silently.
-pub const SKETCH: &[(&str, u8, &str)] = &[
-    ("sk", 1, "sketch/01-line"),
-    ("sk", 2, "sketch/02-rect"),
-    ("sk", 3, "sketch/03-circle"),
+/// ONE ROW OF A TABLE OF THE ARTICLES: the code of a command of the catalogue and its article.
+pub struct Article {
+    pub code: &'static str,
+    pub article: &'static str,
+}
+
+/// The tools of the Sketch: the code of the command -> the article. Keyed by the code of the command rather than by a
+/// number of the tool: a number belongs to its kind of tool, a line and a trim were both 1, and a key glued of a kind
+/// and a number was a second name for what the code already names.
+pub const SKETCH: &[Article] = &[
+    Article { code: "sketch.line", article: "sketch/01-line" },
+    Article { code: "sketch.rect", article: "sketch/02-rect" },
+    Article { code: "sketch.circle", article: "sketch/03-circle" },
     // a circle by three points is the same tool set a different way: one article for both
-    ("sk", 4, "sketch/04-arc"),
-    ("sk", 5, "sketch/05-point"),
-    ("sk", 6, "sketch/06-polygon"),
-    ("sk", 7, "sketch/07-slot"),
-    ("sk", 8, "sketch/08-ellipse"),
-    ("sk", 9, "sketch/09-spline"),
-    ("sk", 11, "sketch/10-text"),
-    ("dim", 1, "sketch/11-dimensions"),
-    ("dim", 2, "sketch/11-dimensions"),
-    ("dim", 3, "sketch/11-dimensions"),
-    ("click", 1, "sketch/12-trim"),
-    ("click", 2, "sketch/13-extend"),
-    ("click", 3, "sketch/14-break"),
-    // the numbers the buttons take: 4 the fillet of a corner, 5 its chamfer, 6 the projection (of edges and of a body
-    // alike - one tool)
-    ("click", 4, "sketch/16-corner"),
-    ("click", 5, "sketch/16-corner"),
-    ("click", 6, "sketch/15-project"),
-    ("mod", 0, "sketch/18-delete"),
-    ("mod", 1, "sketch/19-mirror"),
-    ("mod", 6, "sketch/20-offset"),
+    Article { code: "sketch.arc", article: "sketch/04-arc" },
+    Article { code: "sketch.point", article: "sketch/05-point" },
+    Article { code: "sketch.polygon", article: "sketch/06-polygon" },
+    Article { code: "sketch.slot", article: "sketch/07-slot" },
+    Article { code: "sketch.ellipse", article: "sketch/08-ellipse" },
+    Article { code: "sketch.spline", article: "sketch/09-spline" },
+    Article { code: "sketch.text", article: "sketch/10-text" },
+    Article { code: "sketch.dim", article: "sketch/11-dimensions" },
+    Article { code: "sketch.dim-angle", article: "sketch/11-dimensions" },
+    Article { code: "sketch.dim-radius", article: "sketch/11-dimensions" },
+    Article { code: "sketch.trim", article: "sketch/12-trim" },
+    Article { code: "sketch.extend", article: "sketch/13-extend" },
+    Article { code: "sketch.break", article: "sketch/14-break" },
+    // the rounding of a corner and its chamfer share an article; the projection is one tool, of edges and of a body alike
+    Article { code: "sketch.corner", article: "sketch/16-corner" },
+    Article { code: "sketch.corner-chamfer", article: "sketch/16-corner" },
+    Article { code: "sketch.project", article: "sketch/15-project" },
+    Article { code: "sketch.delete", article: "sketch/18-delete" },
+    Article { code: "sketch.mirror", article: "sketch/19-mirror" },
+    Article { code: "sketch.offset", article: "sketch/20-offset" },
 ];
 
 /// THE MODES OF THE ASSEMBLY -> the article. The tools of the Assembly are not timeline commands but
@@ -229,27 +233,18 @@ pub fn workbench_article(wb: &str) -> &'static str {
 }
 
 /// The article of the active Part command.
-pub fn part_article(kind: u8) -> Option<&'static str> {
-    PART.iter().find(|(k, _)| *k == kind).map(|(_, a)| *a)
+pub fn part_article(code: &str) -> Option<&'static str> {
+    PART.iter().find(|r| r.code == code).map(|r| r.article)
 }
 
 /// The article of the active Sketch tool.
-pub fn sketch_article(handle: &str, n: u8) -> Option<&'static str> {
-    SKETCH.iter().find(|(h, k, _)| *h == handle && *k == n).map(|(_, _, a)| *a)
-}
-
-/// THE ARTICLE OF THE SKETCH TOOL IN HAND, whichever kind it is: a drawing tool, a dimension, a tool acting on a click
-/// (trim, extend, break, the corner, the projection), a button editing the picked (delete, mirror, offset). F1 asked the
-/// first two only, and on the corner, the mirror or the projection opened the article of the workbench.
-pub fn sketch_tool_article(draw: u8, dim: u8, click: u8, modify: Option<u8>) -> Option<&'static str> {
-    [("sk", (draw > 0).then_some(draw)), ("dim", (dim > 0).then_some(dim)), ("click", (click > 0).then_some(click)), ("mod", modify)]
-        .into_iter()
-        .find_map(|(h, n)| n.and_then(|n| sketch_article(h, n)))
+pub fn sketch_article(code: &str) -> Option<&'static str> {
+    SKETCH.iter().find(|r| r.code == code).map(|r| r.article)
 }
 
 /// Every article promised by the table (without repeats).
 pub fn promised() -> Vec<&'static str> {
-    let mut v: Vec<&'static str> = PART.iter().map(|(_, a)| *a).chain(SKETCH.iter().map(|(_, _, a)| *a)).chain(ASSEMBLY.iter().map(|(_, a)| *a)).chain(TOOLBAR.iter().map(|(_, a)| *a)).collect();
+    let mut v: Vec<&'static str> = PART.iter().map(|r| r.article).chain(SKETCH.iter().map(|r| r.article)).chain(ASSEMBLY.iter().map(|(_, a)| *a)).chain(TOOLBAR.iter().map(|(_, a)| *a)).collect();
     v.sort();
     v.dedup();
     v

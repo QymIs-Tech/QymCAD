@@ -22,20 +22,20 @@ fn housing_with_two_cuts(app: &mut App) -> Vec<Id> {
     let part = app.project.add_part("Housing");
     app.enter_component(part);
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
-    Hand::new(app).sk_tool(2).click2d(0.0, 0.0).click2d(60.0, 40.0);
+    Hand::new(app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(60.0, 40.0);
     app.finish_sketch_edit();
     app.chosen.sel = Sel::Sketch(si);
-    Hand::new(app).look_at([30.0, 20.0, 10.0], 8.0).tool(1).set("height", 25.0).formula(Typed { field: "height", text: "H" }).enter();
+    Hand::new(app).look_at([30.0, 20.0, 10.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 25.0).formula(Typed { field: "height", text: "H" }).enter();
     let mut cuts = Vec::new();
     for x in [20.0, 40.0] {
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         let side = app.project.regen_faces[&body].iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned().expect("the side face");
         let key = qymcad_core::feature::FaceKey { index: 0, centroid: [side.centroid.x, side.centroid.y, side.centroid.z], normal: side.normal, id: side.id };
         let sk = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
-        Hand::new(app).sk_tool(3).click2d(x, 12.0).click2d(x + 4.0, 12.0);
+        Hand::new(app).sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(x, 12.0).click2d(x + 4.0, 12.0);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(sk);
-        Hand::new(app).look_at([30.0, 20.0, 12.0], 8.0).tool(1).op(2).set("height", 10.0).enter();
+        Hand::new(app).look_at([30.0, 20.0, 12.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude).op(2).set("height", 10.0).enter();
         cuts.push(app.project.timeline.last().map(|n| n.id).expect("the cut"));
     }
     assert!(app.project.regen_errors.is_empty(), "setup: the housing and its cuts build: {:?}", app.project.regen_errors);

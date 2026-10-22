@@ -36,12 +36,20 @@ fn a_centre_drawn_rectangle() -> (Bench, usize, Point2) {
     (b, si, center)
 }
 
+/// The values the fields of the box of sizes hold: the width, the height.
+fn held(b: &Bench) -> Vec<f64> {
+    b.place.fields.iter().map(|p| p.val).collect()
+}
+
 /// The width-by-height popup, driven through real frames: what typing does.
 fn frame(b: &mut Bench, ctx: &egui::Context, rect: egui::Rect, si: usize, events: Vec<egui::Event>) {
     let raw = egui::RawInput { screen_rect: Some(rect), events, ..Default::default() };
+    let (scheme, set, cam) = (qymcad_ui_state::SchemeUi::default(), qymcad_ui_state::Settings::default(), qymcad_ui_state::Cam3::default());
+    let mut prefs = qymcad_ui_state::SketchToolPrefs::default();
     let _ = ctx.run_ui(raw, |ui| {
         let mut place = qymcad_ui_state::PlaceCtx { place: &mut b.place, project: &mut b.project, view: &b.view, regen: &mut b.regen };
-        qymcad_sketch::rect_input_popup(&mut place, ui.ctx(), rect, si);
+        let looks = qymcad_ui_state::PopupLooks { tool_prefs: &mut prefs, scheme: &scheme, set: &set, cam: &cam };
+        qymcad_sketch::rect_input_popup(&mut place, &looks, ui.ctx(), rect, si);
     });
 }
 
@@ -103,7 +111,7 @@ fn typing_the_width_keeps_the_centre() {
     for _ in 0..3 {
         frame(&mut b, &ctx, rect, si, Vec::new());
     }
-    assert_eq!(b.place.buf, ["40".to_string(), "60".to_string()], "GUARD: the fields must open on the full 40 by 60, or what follows is about nothing");
+    assert_eq!(held(&b), [40.0, 60.0], "GUARD: the fields must open on the full 40 by 60, or what follows is about nothing");
     assert!(ctx.memory(|m| m.focused()).is_some(), "GUARD: the width field must hold the keyboard, or nothing below is really typed");
 
     // TYPED FOR REAL. On auto-focus the whole text is selected, so the keystroke replaces it - which
@@ -112,7 +120,7 @@ fn typing_the_width_keeps_the_centre() {
     for _ in 0..3 {
         frame(&mut b, &ctx, rect, si, Vec::new());
     }
-    assert_eq!(b.place.buf[0], "25", "GUARD: \"25\" must really be in the width field: {:?}", b.place.buf);
+    assert_eq!(held(&b)[0], 25.0, "GUARD: \"25\" must really be in the width field: {:?}", held(&b));
 
     let bounds = rect_corners(&b.project, si);
     assert!((bounds.width() - 25.0).abs() < 1e-6, "the width is {:.3} instead of 25", bounds.width());
@@ -155,7 +163,7 @@ fn typing_the_width_keeps_the_first_corner() {
     for _ in 0..3 {
         frame(&mut b, &ctx, rect, si, Vec::new());
     }
-    assert_eq!(b.place.buf, ["40".to_string(), "60".to_string()], "GUARD: the fields must open on 40 by 60: {:?}", b.place.buf);
+    assert_eq!(held(&b), [40.0, 60.0], "GUARD: the fields must open on 40 by 60: {:?}", held(&b));
 
     frame(&mut b, &ctx, rect, si, vec![egui::Event::Text("25".into())]);
     for _ in 0..3 {

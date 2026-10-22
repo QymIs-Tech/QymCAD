@@ -59,7 +59,7 @@ fn turned(c: Point2, deg: f64) -> impl Fn(Point2) -> Point2 {
 struct Change {
     before: Drawing,
     after: Drawing,
-    picked: Vec<Picked>,
+    picked: Vec<qymcad_ui_state::SketchItem>,
 }
 
 /// THE CURVES OR POINTS WANTED after the tool: the drawing before, each of `maps` applied to it, all together.
@@ -91,10 +91,10 @@ fn offset_kind(kind: &'static str) -> &'static str {
 
 /// WHAT IS PICKED IS WHAT THE WAY TOOK: every curve of the drawing (every point of a drawing of points), or what the
 /// crossing box touched and nothing else.
-fn pick_took(before: &Drawing, way: Way, got: &[Picked]) -> Result<(), String> {
+fn pick_took(before: &Drawing, way: Way, got: &[qymcad_ui_state::SketchItem]) -> Result<(), String> {
     let of_points = before.curves.is_empty();
-    let curves: Vec<Picked> = got.iter().copied().filter(|p| of_points || p.kind != 0).collect();
-    let every: Vec<Picked> = if of_points { before.points.iter().map(|p| p.key).collect() } else { before.curves.iter().map(|c| c.key).collect() };
+    let curves: Vec<qymcad_ui_state::SketchItem> = got.iter().copied().filter(|p| of_points || p.kind != qymcad_ui_state::ItemKind::Point).collect();
+    let every: Vec<qymcad_ui_state::SketchItem> = if of_points { before.points.iter().map(|p| p.key).collect() } else { before.curves.iter().map(|c| c.key).collect() };
     let want = if way == Way::Crossing { crossed(before) } else { every };
     let missing = want.iter().filter(|w| !curves.contains(w)).count();
     let extra = if way == Way::Crossing { curves.iter().filter(|c| !want.contains(c)).count() } else { 0 };
@@ -137,14 +137,14 @@ fn work(hand: &mut Hand, tool: Tool, way: Way, at: &[Point2]) -> Result<(), Stri
             hand.key(egui::Key::Delete);
         }
         Tool::Move | Tool::Copy => {
-            hand.sk_move_tool(if tool == Tool::Move { 1 } else { 2 });
+            hand.sk_move_tool(if tool == Tool::Move { qymcad_ui_state::MoveKind::Move } else { qymcad_ui_state::MoveKind::Copy });
             if first_tool {
                 click_all(hand, at);
             }
             hand.click2d(BASE.x, BASE.y).click2d(to.x, to.y);
         }
         Tool::Rotate => {
-            hand.sk_move_tool(3);
+            hand.sk_move_tool(qymcad_ui_state::MoveKind::Rotate);
             if first_tool {
                 click_all(hand, at);
             }

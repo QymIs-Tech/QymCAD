@@ -53,15 +53,15 @@ mod tests {
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(32), "part"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::Patch), "part"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH: the button, clicks on edges with the real pick, Enter, the surface in the timeline.
     #[test]
     fn edges_can_be_picked_and_the_patch_reaches_the_timeline() {
         let (mut app, body) = open_box();
-        app.start_feat_cmd(32);
-        assert_eq!(app.tools.armed.cmd_kind(), 32, "the command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Patch);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Patch), "the command must open");
         crate::gui::commands::refresh_edges(&mut app.part_ctx());
 
         let want = rim(&app, body);
@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn the_smooth_switch_reaches_the_node() {
         let (mut app, body) = open_box();
-        app.start_feat_cmd(32);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Patch);
         crate::gui::commands::refresh_edges(&mut app.part_ctx());
         for id in rim(&app, body) {
             app.tools.gsel.edges.insert(id);

@@ -121,7 +121,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 14.0;
             p.txt = "14".into();
@@ -175,7 +175,7 @@ mod tests {
         app.enter_component(p);
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
-        app.start_feat_cmd(7); // hole
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Hole); // hole
         whole(&mut app, "05-command-hole");
 
         let mut app = part();
@@ -183,7 +183,7 @@ mod tests {
         app.enter_component(p);
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
-        app.start_feat_cmd(4); // fillet
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // fillet
         whole(&mut app, "06-command-fillet");
 
         // 7. A SKETCH UNDER EDIT — the whole workbench.
@@ -203,7 +203,7 @@ mod tests {
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         app.project.add_rect_entity(si, -30.0, -20.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
-        app.set_sk_tool(3); // circle
+        app.set_sk_tool(qymcad_ui_state::SketchShape::Circle);
         app.viewing.view.scale = 6.0;
         app.viewing.view.initialized = true;
         whole(&mut app, "08-sketch-tool");
@@ -219,7 +219,7 @@ mod tests {
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
             app.chosen.sel = super::super::Sel::Sketch(si);
-            app.start_feat_cmd(1);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
             if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = h;
                 p.txt = format!("{h}");
@@ -282,7 +282,7 @@ mod tests {
         app.enter_component(p);
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
-        app.start_feat_cmd(7);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Hole);
         if let Some(f) = app.tools.cmd.params.first_mut() {
             f.txt = "10 /".into();
         }

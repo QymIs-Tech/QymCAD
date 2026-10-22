@@ -18,11 +18,11 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.enter_sketch_edit(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1).click2d(0.0, 0.0).click2d(10.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(10.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
         for &x in across {
-            hand.sk_tool(1).click2d(x, -5.0).click2d(x, 5.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(x, -5.0).click2d(x, 5.0).key(egui::Key::Escape).key(egui::Key::Escape);
         }
-        hand.sk_tool(0);
+        hand.sk_select();
         let line = hand.app.project.sketches[0].entities[0].id;
         (app, ctx, line)
     }
@@ -56,7 +56,7 @@ mod tests {
     fn a_line_selected_first_is_extended_to_the_nearest_with_its_preview() {
         let (mut app, _ctx, line) = lines(&[20.0, 30.0]);
         let mut hand = Hand::new(&mut app);
-        assert!(hand.select2d(&[(1, line)]), "the line could not be picked");
+        assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(line)]), "the line could not be picked");
         take_extend(&mut hand);
         assert_eq!(hand.app.tools.tool.extend, Some(line), "Extend did not take the line selected before it");
         hand.hover2d(12.0, 1.0);
@@ -86,7 +86,7 @@ mod tests {
         for (across, want) in [(&[-15.0, 20.0][..], (-15.0, 20.0)), (&[20.0][..], (0.0, 20.0))] {
             let (mut app, _ctx, line) = lines(across);
             let mut hand = Hand::new(&mut app);
-            assert!(hand.select2d(&[(1, line)]), "the line could not be picked");
+            assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(line)]), "the line could not be picked");
             take_extend(&mut hand);
             assert!(hand.press_word(&crate::i18n::tr("opt-extend-both"), egui::pos2(0.0, 0.0)), "no Both sides in the bar");
             assert!(hand.app.tool_prefs.extend_both, "GUARD: Both sides ticked");
@@ -121,7 +121,7 @@ mod tests {
         let mut hand = Hand::new(&mut app);
         // the arc picked by a click on it at 45 deg
         let r = 10.0 * std::f64::consts::FRAC_1_SQRT_2;
-        hand.sk_tool(0).click2d(r, r);
+        hand.sk_select().click2d(r, r);
         take_extend(&mut hand);
         assert_eq!(hand.app.tools.tool.extend, Some(arc), "Extend did not take the arc selected before it");
         assert!(hand.press_word(&crate::i18n::tr("opt-extend-both"), egui::pos2(0.0, 0.0)), "no Both sides in the bar");
@@ -140,12 +140,12 @@ mod tests {
     fn esc_lets_the_line_go_and_a_second_puts_the_tool_down() {
         let (mut app, _ctx, line) = lines(&[20.0]);
         let mut hand = Hand::new(&mut app);
-        assert!(hand.select2d(&[(1, line)]), "the line could not be picked");
+        assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(line)]), "the line could not be picked");
         take_extend(&mut hand);
         hand.key(egui::Key::Escape);
-        assert!(hand.app.tools.tool.extend.is_none() && hand.app.tools.armed.click_op() == 2, "Esc did not let the line go, keeping the tool");
+        assert!(hand.app.tools.tool.extend.is_none() && hand.app.tools.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Extend), "Esc did not let the line go, keeping the tool");
         hand.key(egui::Key::Escape);
-        assert_eq!(hand.app.tools.armed.click_op(), 0, "a second Esc did not put Extend down");
+        assert_eq!(hand.app.tools.armed.click_tool(), None, "a second Esc did not put Extend down");
         assert_eq!(ends_x(&hand, line), (0.0, 10.0), "Esc changed the line");
     }
 }

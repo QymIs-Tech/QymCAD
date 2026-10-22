@@ -9,7 +9,7 @@ pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2)
     let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
     let w = qymcad_ui_state::to_world(&*sk.view, rect, screen);
     // "No ties" on the bar of a drawing tool: the point goes where the pointer is, and the preview snaps to nothing
-    if sk.armed.draw_kind() != 0 && sk.tool.ties == qymcad_ui_state::Ties::Free {
+    if sk.armed.drawing().is_some() && sk.tool.ties == qymcad_ui_state::Ties::Free {
         *sk.snap_hint = None;
         return Point2::new(w.x, w.y);
     }
@@ -104,7 +104,7 @@ pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2)
     // closes the spline. It is no point of the sketch yet and was no target, and a click closed the spline only within
     // 0.4 mm of it - 2.4 px at the 6 px to the millimetre of a new sketch. Reported behaviour: "the point on the mouse does
     // not snap to the start of the spline, it is hard to hit".
-    if sk.armed.draw_kind() == 9 && sk.tool.pts.len() >= 3 {
+    if sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Spline) && sk.tool.pts.len() >= 3 {
         if let Some(&first) = sk.tool.pts.first() {
             let d = sd(first, &*sk.view);
             if best.is_none_or(|(bd, _, _)| d < bd) {
@@ -115,7 +115,7 @@ pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2)
     // THE PLACE A LINE BEING DRAWN TOUCHES A CURVE, nearer the pointer than any vertex, before the vertex: on a closed
     // spline the place a line from above touched it stood 1.2 mm off a node, and the node 7 px off the pointer took the
     // end of the line
-    let start = (sk.armed.draw_kind() == 1).then(|| sk.tool.pts.last().copied()).flatten();
+    let start = (sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Line)).then(|| sk.tool.pts.last().copied()).flatten();
     if let (Some(from), Some(si)) = (start, qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses)) {
         let reach = f64::from(qymcad_ui_state::grab::grab(sk.set, Grab::Snap)) / f64::from(sk.view.scale);
         let touch = curve_snaps(&sk.project.sketches[si], CurveSnapAsk { at: Point2::new(w.x, w.y), start: Some(from), reach, moving: &[] })
@@ -226,7 +226,7 @@ pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2)
         // 2c) THE CURVES OF ANY KIND near the pointer (`curve_snaps`): where they cross, their quadrants and middles, the
         // point nearest the pointer, the place a line being drawn touches them - the nearest of the best rank, weighed
         // against the rest once they are all found, by its rank and not by what it says
-        let start = (sk.armed.draw_kind() == 1).then(|| sk.tool.pts.last().copied()).flatten();
+        let start = (sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Line)).then(|| sk.tool.pts.last().copied()).flatten();
         for found in curve_snaps(s, CurveSnapAsk { at: w, start, reach: reach_mm, moving: &moving }) {
             let d = sd(found.at, &*sk.view);
             if d <= grab_snap && curve_cand.as_ref().is_none_or(|b| found.rank.cmp(&b.snap.rank).then(d.total_cmp(&b.off)).is_lt()) {

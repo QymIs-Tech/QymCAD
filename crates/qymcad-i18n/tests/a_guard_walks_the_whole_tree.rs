@@ -20,7 +20,7 @@
 ///
 /// Keyed by the path from `crates/`: an exception written as a bare file name would excuse every namesake,
 /// and each workbench crate is a single `lib.rs`.
-const ALLOWED: [Allowed; 2] = [
+const ALLOWED: [Allowed; 3] = [
     Allowed {
         file: "qymcad/src/god_object_ratchet.rs",
         why: "it addresses ONE NAMED FILE, `src/gui.rs`, because the god object being measured is that file - not a \
@@ -30,6 +30,11 @@ const ALLOWED: [Allowed; 2] = [
         file: "qymcad-kernel/tests/every_operation_goes_through_the_door.rs",
         why: "it addresses NAMED FILES, `kernel.rs`, the door `door/` and the operations `ops/` of the bridge: the one implementation of `Kernel` and the door \
               of its results live there and nowhere else - the walk of every C++ entry is its neighbour's",
+    },
+    Allowed {
+        file: "qymcad-part/tests/the_part_holds_no_tool_of_the_sketch.rs",
+        why: "it addresses ONE NAMED CRATE, the part: the rule is that the part holds no tool of the sketch, and the sketch \
+              workbench, the one other place those marks may stand, holds them by right",
     },
 ];
 

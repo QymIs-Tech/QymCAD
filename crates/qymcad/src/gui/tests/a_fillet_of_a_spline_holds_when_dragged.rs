@@ -14,10 +14,10 @@ fn a_fillet_of_a_spline_and_a_line_holds_when_the_line_is_dragged() {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(9).click2d(-20.0, -10.0).click2d(5.0, 10.0).double_click2d(20.0, 20.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(-20.0, -10.0).click2d(5.0, 10.0).double_click2d(20.0, 20.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(1).click2d(20.0, 20.0).click2d(30.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(20.0, 20.0).click2d(30.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_select();
     assert!(hand.press_hint(&crate::i18n::tr("tb-fillet-sketch-hint")), "no fillet button");
     hand.close_window();
     hand.click2d(20.0, 20.0);
@@ -25,7 +25,7 @@ fn a_fillet_of_a_spline_and_a_line_holds_when_the_line_is_dragged() {
     hand.chord(egui::Modifiers::COMMAND, egui::Key::A).type_text("3").key(egui::Key::Enter);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
     assert!(hand.app.project.sketches[si].entities.iter().any(|e| e.kind.as_arc().is_some()), "setup: the corner was not rounded; the status line says {:?}", hand.app.status);
-    hand.sk_tool(0).click2d(60.0, -30.0);
+    hand.sk_select().click2d(60.0, -30.0);
     hand.drag2d((30.0, 40.0), (38.0, 36.0));
     let s = &hand.app.project.sketches[si];
     let arc = s.entities.iter().find(|e| e.kind.as_arc().is_some()).and_then(|e| Curve::of(s, e)).expect("the arc");

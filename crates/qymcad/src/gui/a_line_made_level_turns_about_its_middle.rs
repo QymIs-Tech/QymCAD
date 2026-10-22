@@ -18,7 +18,7 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         // 30 long at 80 deg: past the auto-constraints' 3.4 deg, so it is drawn with no Vertical on it
         let (dx, dy) = (30.0 * 80f64.to_radians().cos(), 30.0 * 80f64.to_radians().sin());
-        Hand::new(&mut app).sk_tool(1).click2d(10.0, 0.0).click2d(10.0 + dx, dy).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 0.0).click2d(10.0 + dx, dy).key(egui::Key::Escape);
         let ends = |app: &App| {
             let s = &app.project.sketches[si];
             let (a, b) = s.entities.iter().find_map(|e| if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() { Some((a, b)) } else { None }).expect("the line");
@@ -27,8 +27,8 @@ mod tests {
         };
         let (a0, b0) = ends(&app);
         let before = (b0.0 - a0.0).hypot(b0.1 - a0.1);
-        Hand::new(&mut app).sk_tool(0).click2d((a0.0 + b0.0) / 2.0, (a0.1 + b0.1) / 2.0);
-        Hand::new(&mut app).constraint(1);
+        Hand::new(&mut app).sk_select().click2d((a0.0 + b0.0) / 2.0, (a0.1 + b0.1) / 2.0);
+        Hand::new(&mut app).constraint(qymcad_ui_state::ConstraintKind::Horizontal);
         let (a, b) = ends(&app);
         let after = (b.0 - a.0).hypot(b.1 - a.1);
         assert!((a.1 - b.1).abs() < 1e-6 && (after - before).abs() < 1e-3, "given Horizontal, the line {a:?}-{b:?} is {after:.3} long, it was {before:.3}; status: {}", app.status);
@@ -41,16 +41,16 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(10.0, 0.0).click2d(10.0, 30.0).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 0.0).click2d(10.0, 30.0).key(egui::Key::Escape);
         let vertical = app.project.sketches[si].constraints.iter().position(|c| matches!(c, qymcad_core::model::Constraint::Vertical { .. })).expect("setup: auto-constraints laid Vertical");
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         let glyph =
             qymcad_pick::constraint_glyphs(&hand.app.pick_ctx(), hand.app.viewing.view_rect, si).into_iter().find(|(ci, _, _)| *ci == vertical).map(|(_, at, _)| at).expect("the glyph of Vertical");
         hand.click_screen(glyph).key(egui::Key::Delete);
         assert!(!hand.app.project.sketches[si].constraints.iter().any(|c| matches!(c, qymcad_core::model::Constraint::Vertical { .. })), "setup: Vertical deleted by its glyph");
-        Hand::new(&mut app).sk_tool(0).click2d(10.0, 15.0);
-        Hand::new(&mut app).constraint(1);
+        Hand::new(&mut app).sk_select().click2d(10.0, 15.0);
+        Hand::new(&mut app).constraint(qymcad_ui_state::ConstraintKind::Horizontal);
         let s = &app.project.sketches[si];
         let (a, b) = s.entities.iter().find_map(|e| if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() { Some((a, b)) } else { None }).expect("the line");
         let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("an end");

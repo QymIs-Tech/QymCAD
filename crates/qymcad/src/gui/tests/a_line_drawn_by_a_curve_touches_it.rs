@@ -27,19 +27,19 @@ fn a_line_drawn_along_a_curve_of_any_kind_is_made_to_touch_it() {
         // each with its top at (30, 30)
         match kind {
             Kind::Circle => {
-                hand.sk_tool(3).click2d(30.0, 20.0).click2d(40.0, 20.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(30.0, 20.0).click2d(40.0, 20.0);
             }
             Kind::Ellipse => {
-                hand.sk_tool(8).click2d(30.0, 22.0).click2d(44.0, 22.0).click2d(30.0, 30.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Ellipse).click2d(30.0, 22.0).click2d(44.0, 22.0).click2d(30.0, 30.0);
             }
             Kind::Spline => {
-                hand.sk_tool(9).click2d(16.0, 22.0).click2d(30.0, 30.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(16.0, 22.0).click2d(30.0, 30.0);
                 hand.double_click2d(44.0, 22.0);
             }
         }
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
         // a line level a hair above the top, clear of the snaps of the curve
-        hand.sk_tool(1).click2d(18.0, 30.12).double_click2d(42.0, 30.12);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(18.0, 30.12).double_click2d(42.0, 30.12);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
         let s = &hand.app.project.sketches[si];
         let touches = s.constraints.iter().any(|c| matches!(c, Constraint::Tangent { .. } | Constraint::TangentCurves { .. }));

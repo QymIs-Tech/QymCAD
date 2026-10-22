@@ -71,12 +71,12 @@ fn draw_cap(h: &mut Hand, cap: &Cap) {
     let at = |h: &mut Hand, p: Point2| {
         h.click2d(V.x + p.x, V.y + p.y);
     };
-    h.sk_tool(8);
+    h.sk_tool(qymcad_ui_state::SketchShape::Ellipse);
     for p in [cap.centre, cap.axis, cap.width] {
         at(h, p);
     }
     h.key(egui::Key::Escape);
-    h.sk_tool(1);
+    h.sk_tool(qymcad_ui_state::SketchShape::Line);
     for p in cap.cut {
         at(h, p);
     }
@@ -85,7 +85,7 @@ fn draw_cap(h: &mut Hand, cap: &Cap) {
     h.close_window();
     at(h, cap.trim_at);
     h.key(egui::Key::Escape);
-    h.sk_tool(0);
+    h.sk_select();
     at(h, cap.line_at);
     h.key(egui::Key::Delete);
 }
@@ -97,13 +97,13 @@ fn arrive(h: &mut Hand, kind: &str) {
     };
     match kind {
         "line" => {
-            h.sk_tool(1);
+            h.sk_tool(qymcad_ui_state::SketchShape::Line);
             at(h, -12.0, 0.0);
             at(h, 0.0, 0.0);
         }
         // round a centre 6 left of the vertex, from below it up to the vertex
         "arc" => {
-            h.sk_tool(4);
+            h.sk_tool(qymcad_ui_state::SketchShape::Arc);
             at(h, -6.0, 0.0);
             at(h, -6.0, -6.0);
             at(h, 0.0, 0.0);
@@ -111,7 +111,7 @@ fn arrive(h: &mut Hand, kind: &str) {
         // arriving from above, at 80 deg to the line leaving: arriving from below it ran on nearly straight into it, a
         // turn of 26 deg, and a fillet of 2 there was an arc of 0.6 mm standing within the reach of the curves it joins
         "open spline" => {
-            h.sk_tool(9);
+            h.sk_tool(qymcad_ui_state::SketchShape::Spline);
             at(h, -12.0, 3.0);
             at(h, -8.0, -1.0);
             at(h, -4.0, 2.0);
@@ -135,7 +135,7 @@ fn arrive(h: &mut Hand, kind: &str) {
         _ => return,
     }
     h.key(egui::Key::Escape).key(egui::Key::Escape);
-    h.sk_tool(0);
+    h.sk_select();
 }
 
 /// A CURVE DRAWN BY HAND LEAVING THE VERTEX to the upper right, its first point clicked on the vertex.
@@ -145,13 +145,13 @@ fn leave(h: &mut Hand, kind: &str) {
     };
     match kind {
         "line" => {
-            h.sk_tool(1);
+            h.sk_tool(qymcad_ui_state::SketchShape::Line);
             at(h, 0.0, 0.0);
             at(h, 8.0, 10.0);
         }
         // leaving the vertex the way the line does, at 51 deg, round a centre 6 to its left, through 60 deg
         "arc" => {
-            h.sk_tool(4);
+            h.sk_tool(qymcad_ui_state::SketchShape::Arc);
             at(h, -4.68, 3.72);
             at(h, 0.0, 0.0);
             at(h, 0.9, 5.92);
@@ -159,7 +159,7 @@ fn leave(h: &mut Hand, kind: &str) {
         // leaving the vertex at 50 deg, as the line does: through (3, 5) the spline of continuous curvature left it at 72
         // deg, 18 deg off the arc arriving upright, and a fillet of 2 there was an arc of 0.6 mm
         "open spline" => {
-            h.sk_tool(9);
+            h.sk_tool(qymcad_ui_state::SketchShape::Spline);
             at(h, 0.0, 0.0);
             at(h, 4.0, 4.0);
             at(h, 7.0, 6.0);
@@ -182,7 +182,7 @@ fn leave(h: &mut Hand, kind: &str) {
         _ => return,
     }
     h.key(egui::Key::Escape).key(egui::Key::Escape);
-    h.sk_tool(0);
+    h.sk_select();
 }
 
 /// A CORNER OF THE MATRIX: two curves meeting at a vertex, or a figure with a corner of its own.
@@ -218,7 +218,7 @@ fn drawn(pair: &Pair) -> Result<Drawn, String> {
         Some(f) => {
             (f.draw.ok_or("no tool draws the figure")?)(&mut hand, V);
             hand.key(egui::Key::Escape);
-            hand.sk_tool(0);
+            hand.sk_select();
             // the lower left corner of the rectangle, the corner at the right of the polygon
             if f.name == "rectangle" {
                 Point2::new(V.x - 8.0, V.y - 5.0)
@@ -434,9 +434,9 @@ fn at_crossing(kind: &Kind, tool: Tool) -> Result<(), String> {
     let x = cross_x(kind);
     let mut app = laid(kind, &[V])?;
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(1).click2d(x, V.y - 14.0).click2d(x, V.y + 14.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(x, V.y - 14.0).click2d(x, V.y + 14.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_select();
     let before = drawing(hand.app);
     let upright = before.curves.iter().find(|c| c.kind == "line" && c.path.iter().all(|p| (p.x - x).abs() < NEAR)).cloned().ok_or("no upright line")?;
     let own: Vec<Curve> = before.curves.iter().filter(|c| c.key != upright.key && !c.construction).cloned().collect();

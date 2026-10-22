@@ -17,7 +17,7 @@ mod tests {
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let body = app.project.mesh_id(0).expect("the cube");
         app.chosen.sel = Sel::Mesh(app.project.mesh_index(body).expect("the mesh of the cube"));
-        app.start_feat_cmd(27);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::SplitBody);
         app.params.split.plane = Some(qymcad_core::feature::SketchPlane::default());
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             (p.val, p.txt) = (5.0, "5".into());

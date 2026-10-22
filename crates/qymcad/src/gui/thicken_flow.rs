@@ -28,7 +28,7 @@ mod tests {
     /// The button is there.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(28), "part"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::Thicken), "part"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH: the button -> a click on a face -> the thickness -> Enter -> the part has grown
@@ -40,8 +40,8 @@ mod tests {
         let bodies_before = (0..app.project.bodies.len()).filter(|i| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), *i)).count();
         let before_v = app.project.mesh_index(body).map(|i| app.project.bodies[i].mesh.volume()).unwrap_or(0.0);
 
-        app.start_feat_cmd(28);
-        assert_eq!(app.tools.armed.cmd_kind(), 28, "the command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Thicken);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Thicken), "the command must open");
         assert!(app.tools.cmd.params.iter().any(|p| p.key == "thickness"), "the command must have a thickness field");
 
         // A CLICK ON A FACE THROUGH A REAL PICK
@@ -99,7 +99,7 @@ mod tests {
         // the sheet lies ON a face of the part, and a real pick there is ambiguous — what is checked here
         // is not the pick but whose face the command takes the clicked one to be.
         app.chosen.sel = Sel::Mesh(mi);
-        app.start_feat_cmd(28);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Thicken);
         app.tools.gsel.faces.insert(sface);
         app.tools.gsel.faces_body = Some(sheet);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
@@ -135,7 +135,7 @@ mod tests {
         let mut app = App::default();
         let (mi, _body) = part_with_cube(&mut app);
         let before = app.project.timeline.len();
-        app.start_feat_cmd(28);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Thicken);
         let fid = app.project.bodies[mi].faces.iter().find(|f| f.normal[2] > 0.9).map(|f| f.id).expect("a face");
         app.tools.gsel.faces.insert(fid);
         app.tools.gsel.faces_body = app.project.mesh_id(mi);
@@ -152,8 +152,8 @@ mod tests {
     #[test]
     fn the_tool_shows_the_face_and_where_the_plate_goes() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("} else if pn.armed.cmd_kind() == 28 {").expect("the tool must have a drawing block of its own");
-        let b = src[a..].find("} else if pn.armed.cmd_kind() == 26 {").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("} else if shows == qymcad_ui_state::Shows::FaceAndPlate {").expect("the tool must have a drawing block of its own");
+        let b = src[a..].find("} else if shows == qymcad_ui_state::Shows::FacesThatGo {").map(|i| a + i).unwrap_or(src.len());
         let blk = &src[a..b];
         assert!(blk.contains("egui::Mesh::default()"), "the selected face must be highlighted with a fill");
         assert!(blk.contains("line_segment"), "the offset outline of the plate must be visible");
@@ -196,7 +196,7 @@ mod tests {
     fn the_thickness_field_has_a_place_at_the_geometry() {
         let mut app = App::default();
         let (mi, _body) = part_with_cube(&mut app);
-        app.start_feat_cmd(28);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Thicken);
         app.viewing.mode_3d = true;
         app.viewing.cam.init = true;
         app.viewing.cam.scale = 8.0;
@@ -224,7 +224,7 @@ mod tests {
     fn the_thickness_can_be_dragged_by_a_handle() {
         let mut app = App::default();
         let (mi, body) = part_with_cube(&mut app);
-        app.start_feat_cmd(28);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Thicken);
         let top = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap()).map(|f| f.id).expect("the top face");
         app.tools.gsel.faces.insert(top);
         app.tools.gsel.faces_body = Some(body);
@@ -267,7 +267,7 @@ mod tests {
     /// yet nearby.
     #[test]
     fn the_popup_does_not_cover_the_face_being_picked() {
-        for kind in [25u8, 28] {
+        for kind in [qymcad_ui_state::PartTool::PushFace, qymcad_ui_state::PartTool::Thicken] {
             let mut app = App::default();
             let (mi, body) = part_with_cube(&mut app);
             app.start_feat_cmd(kind);
@@ -291,9 +291,13 @@ mod tests {
             }
             let bbox = bbox.expect("the face is visible on screen");
             let the_box = crate::gui::tool_popup_sweep::tests::box_by_the_rule(&mut app, rect).expect("the box of the popup must have a place");
-            assert!(!the_box.intersects(bbox), "command {kind}: the popup lay on the selected face — the very thing aimed at next (the face {bbox:?}, the box {the_box:?})");
-            assert!(rect.contains_rect(the_box), "command {kind}: the box must be inside the viewport, and it is {the_box:?}");
-            assert!(the_box.center().distance(bbox.center()) < 400.0, "command {kind}: the box must stay AT THE GEOMETRY, and it is {:.0} px from the face", the_box.center().distance(bbox.center()));
+            assert!(!the_box.intersects(bbox), "command {kind:?}: the popup lay on the selected face — the very thing aimed at next (the face {bbox:?}, the box {the_box:?})");
+            assert!(rect.contains_rect(the_box), "command {kind:?}: the box must be inside the viewport, and it is {the_box:?}");
+            assert!(
+                the_box.center().distance(bbox.center()) < 400.0,
+                "command {kind:?}: the box must stay AT THE GEOMETRY, and it is {:.0} px from the face",
+                the_box.center().distance(bbox.center())
+            );
         }
     }
 }

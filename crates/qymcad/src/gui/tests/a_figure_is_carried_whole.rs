@@ -14,10 +14,10 @@ fn one_side_of_a_polygon_copied_copies_the_polygon() {
     app.enter_sketch_edit(si);
     let mut hand = Hand::new(&mut app);
     // a hexagon about (0, 0) through (14, 0); its first side is clicked 0.3 along from (14, 0) to (7, 12.12)
-    hand.sk_tool(6).click2d(0.0, 0.0).click2d(14.0, 0.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Polygon).click2d(0.0, 0.0).click2d(14.0, 0.0);
     hand.key(egui::Key::Escape);
-    hand.sk_tool(0).click2d(11.9, 3.64);
-    hand.sk_move_tool(2).click2d(40.0, -30.0).click2d(70.0, -30.0);
+    hand.sk_select().click2d(11.9, 3.64);
+    hand.sk_move_tool(qymcad_ui_state::MoveKind::Copy).click2d(40.0, -30.0).click2d(70.0, -30.0);
     let s = &hand.app.project.sketches[si];
     let circles = s.entities.iter().filter(|e| e.kind.as_circle().is_some()).count();
     let status = hand.app.status.clone();
@@ -32,9 +32,9 @@ fn one_side_of_a_rectangle_mirrored_mirrors_the_rectangle() {
     let si = app.create_sketch_on(SketchPlane::default());
     app.enter_sketch_edit(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(2).click2d(5.0, 0.0).click2d(25.0, 10.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(5.0, 0.0).click2d(25.0, 10.0);
     hand.key(egui::Key::Escape);
-    hand.sk_tool(0).click2d(11.0, 0.0);
+    hand.sk_select().click2d(11.0, 0.0);
     assert!(hand.press_hint(&qymcad_i18n::tr("tb-mirror-sketch-hint")), "no mirror button");
     hand.close_window();
     hand.click2d(0.0, 30.0); // the Y axis

@@ -17,12 +17,12 @@ fn a_line_from_a_quadrant_and_a_point_on_a_centre_line_go_with_the_centre() {
     let mut hand = Hand::new(&mut app);
     // off the axes, which hold what stands on them anyway
     let c = (20.0, 20.0);
-    hand.sk_tool(3).click2d(c.0, c.1).click2d(c.0 + 10.0, c.1).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(1).click2d(c.0 + 10.0, c.1).click2d(c.0 + 30.0, c.1 - 3.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(5).click2d(c.0, c.1 + 6.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(c.0, c.1).click2d(c.0 + 10.0, c.1).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(c.0 + 10.0, c.1).click2d(c.0 + 30.0, c.1 - 3.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Point).click2d(c.0, c.1 + 6.0).key(egui::Key::Escape).key(egui::Key::Escape);
     let at = |hand: &Hand, x: f64, y: f64| hand.app.project.sketches[si].points.iter().filter(|q| (q.x - x).hypot(q.y - y) < 0.05).map(|q| q.id).next_back();
     let (start, point) = (at(&hand, c.0 + 10.0, c.1).expect("the start of the line"), at(&hand, c.0, c.1 + 6.0).expect("the point"));
-    hand.sk_tool(0).click2d(60.0, -30.0);
+    hand.sk_select().click2d(60.0, -30.0);
     hand.drag2d(c, (c.0 + 3.0, c.1 + 4.0));
     let s = &hand.app.project.sketches[si];
     let place = |id: u64| s.point(id).map(|q| Point2::new(q.x, q.y)).expect("a point");

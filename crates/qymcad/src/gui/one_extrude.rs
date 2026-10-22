@@ -12,7 +12,7 @@ mod tests {
     #[test]
     fn the_toolbar_offers_one_extrude_button() {
         // the bar is drawn from the rows: the count of rows starting the extrusion is the count of its buttons
-        let n = crate::command_catalog::of_bench("part").into_iter().filter(|c| c.launch == crate::command_catalog::Launch::Feat(1)).count();
+        let n = crate::command_catalog::of_bench("part").into_iter().filter(|c| c.launch == crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::Extrude)).count();
         assert_eq!(
             n, 1,
             "extrude must be ONE button (the operation is chosen in the bar), and {n} buttons \
@@ -33,7 +33,7 @@ mod tests {
         let si = app.project.sketches.iter().position(|s| !s.entities.is_empty()).expect("there is a sketch");
         app.chosen.sel = super::super::Sel::Sketch(si);
         app.part_hotkey(egui::Key::Q);
-        assert_eq!(app.tools.armed.cmd_kind(), 1, "\"cut\" must open the extrude command");
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "\"cut\" must open the extrude command");
         assert_eq!(app.feat.op, 2, "...with the operation preset to Cut");
     }
 }

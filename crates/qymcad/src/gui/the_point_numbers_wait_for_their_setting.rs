@@ -34,9 +34,9 @@ pub(crate) mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         let mut hand = Hand::new(&mut app);
         hand.app.enter_sketch_edit(si);
-        hand.sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(1).click2d(60.0, 0.0).click2d(90.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(60.0, 0.0).click2d(90.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_select();
         hand.frame(Vec::new());
         assert!(!hand.app.set.show_point_numbers, "the numbers of the points are on by default");
         assert_eq!(numbers(&hand), 0, "a sketch shows numbers beside its points with the box unticked");

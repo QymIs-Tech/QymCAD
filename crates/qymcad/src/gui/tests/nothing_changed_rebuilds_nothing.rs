@@ -70,7 +70,7 @@ mod tests {
         let sid = h.app.sketch_ses.editing.expect("setup: the sketch is open");
         let points = |h: &Hand| h.app.project.sketches.iter().find(|s| s.id == sid).map(|s| s.points.len()).unwrap_or(0);
         let before = points(&h);
-        h.sk_tool(5);
+        h.sk_tool(qymcad_ui_state::SketchShape::Point);
         h.mouse2d(3.0, 4.0);
         let open = rebuilds_over(&mut h, 30);
         assert!(points(&h) > before, "setup: the point was not put in the sketch");

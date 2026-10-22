@@ -24,7 +24,7 @@ mod tests {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
-        Hand::new(&mut app).look_at([10.0, 10.0, 5.0], 8.0).tool(4).click([10.0, 0.0, 10.0]);
+        Hand::new(&mut app).look_at([10.0, 10.0, 5.0], 8.0).tool(qymcad_ui_state::PartTool::Fillet).click([10.0, 0.0, 10.0]);
         assert!(!app.tools.gsel.edges.is_empty(), "setup: the edge was not taken; the program says {:?}", app.status);
         let ctx = egui::Context::default();
         let (first, last) = answer(&mut app, &ctx, 3.0);
@@ -49,7 +49,7 @@ mod tests {
         let mut app = App::default();
         super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
-        Hand::new(&mut app).look_at([10.0, 10.0, 5.0], 8.0).tool(4).click([10.0, 0.0, 10.0]);
+        Hand::new(&mut app).look_at([10.0, 10.0, 5.0], 8.0).tool(qymcad_ui_state::PartTool::Fillet).click([10.0, 0.0, 10.0]);
         let ctx = egui::Context::default();
         let _ = answer(&mut app, &ctx, 3.0);
         app.viewing.mode_3d = true;

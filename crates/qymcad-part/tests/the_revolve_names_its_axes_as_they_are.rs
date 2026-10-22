@@ -44,7 +44,7 @@ fn the_revolve_bar_on(plane: qymcad_core::feature::BasePlane) -> Vec<String> {
     b.project.add_rect_entity(si, 10.0, 10.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
     b.project.regen_sketch(si);
     b.mode_3d = true;
-    b.cmd.open(&mut b.armed, 3, true); // revolve
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Revolve, true); // revolve
     b.cmd.sketch = Some(si);
 
     let ctx = egui::Context::default();

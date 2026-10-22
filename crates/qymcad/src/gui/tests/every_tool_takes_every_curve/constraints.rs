@@ -68,7 +68,7 @@ type Draw = fn(&mut Hand);
 /// what must hold, and the point dragged after it to see that it holds.
 struct Case {
     name: &'static str,
-    code: u8,
+    code: qymcad_ui_state::ConstraintKind,
     first: Draw,
     second: Draw,
     picks: &'static [Pick],
@@ -78,38 +78,38 @@ struct Case {
 
 fn put_down(h: &mut Hand) {
     h.key(egui::Key::Escape).key(egui::Key::Escape);
-    h.sk_tool(0);
+    h.sk_select();
 }
 
 fn line_at(h: &mut Hand, seg: [Point2; 2]) {
-    h.sk_tool(1);
+    h.sk_tool(qymcad_ui_state::SketchShape::Line);
     h.click2d(seg[0].x, seg[0].y).click2d(seg[1].x, seg[1].y);
     put_down(h);
 }
 
 fn circle_at(h: &mut Hand, c: Point2, r: f64) {
-    h.sk_tool(3);
+    h.sk_tool(qymcad_ui_state::SketchShape::Circle);
     h.click2d(c.x, c.y).click2d(c.x + r, c.y);
     put_down(h);
 }
 
 /// An arc about `c` of radius 6 from its right through a quarter turn up.
 fn arc_at(h: &mut Hand, c: Point2) {
-    h.sk_tool(4);
+    h.sk_tool(qymcad_ui_state::SketchShape::Arc);
     h.click2d(c.x, c.y).click2d(c.x + 6.0, c.y).click2d(c.x - 4.0, c.y + 4.5);
     put_down(h);
 }
 
 /// An ellipse about `c`, 8 along X and 4 up.
 fn ellipse_at(h: &mut Hand, c: Point2) {
-    h.sk_tool(8);
+    h.sk_tool(qymcad_ui_state::SketchShape::Ellipse);
     h.click2d(c.x, c.y).click2d(c.x + 8.0, c.y).click2d(c.x, c.y + 4.0);
     put_down(h);
 }
 
 /// A spline through `nodes`, closed when its last node is its first.
 fn spline_at(h: &mut Hand, nodes: &[Point2]) {
-    h.sk_tool(9);
+    h.sk_tool(qymcad_ui_state::SketchShape::Spline);
     let closed = nodes.len() > 3 && nodes[0].dist(nodes[nodes.len() - 1]) < 1e-9;
     for (k, p) in nodes.iter().enumerate() {
         if k + 1 == nodes.len() && !closed {
@@ -190,14 +190,54 @@ const AXIS: Point2 = p([41.0, 42.0]);
 /// THE CASES.
 const CASES: &[Case] = &[
     // a point on every curve: the end of the left line put on the curve right of it
-    Case { name: "an end of a line on a line", code: 0, first: line_left, second: line_right, picks: &[Pick::Point(LINE_END), Pick::Second], holds: Holds::OnCurve, drag: p([46.0, 22.0]) },
-    Case { name: "an end of a line on a circle", code: 0, first: line_left, second: circle_right, picks: &[Pick::Point(LINE_END), Pick::Second], holds: Holds::OnCurve, drag: p([52.0, 31.0]) },
-    Case { name: "an end of a line on an arc", code: 0, first: line_left, second: arc_right, picks: &[Pick::Point(LINE_END), Pick::Second], holds: Holds::OnCurve, drag: p([52.0, 29.0]) },
-    Case { name: "an end of a line on an ellipse", code: 0, first: line_left, second: ellipse_right, picks: &[Pick::Point(LINE_END), Pick::Second], holds: Holds::OnCurve, drag: p([54.0, 32.0]) },
-    Case { name: "an end of a line on an open spline", code: 0, first: line_left, second: spline_right, picks: &[Pick::Point(LINE_END), Pick::Second], holds: Holds::OnCurve, drag: p([56.0, 26.0]) },
+    Case {
+        name: "an end of a line on a line",
+        code: qymcad_ui_state::ConstraintKind::Coincident,
+        first: line_left,
+        second: line_right,
+        picks: &[Pick::Point(LINE_END), Pick::Second],
+        holds: Holds::OnCurve,
+        drag: p([46.0, 22.0]),
+    },
+    Case {
+        name: "an end of a line on a circle",
+        code: qymcad_ui_state::ConstraintKind::Coincident,
+        first: line_left,
+        second: circle_right,
+        picks: &[Pick::Point(LINE_END), Pick::Second],
+        holds: Holds::OnCurve,
+        drag: p([52.0, 31.0]),
+    },
+    Case {
+        name: "an end of a line on an arc",
+        code: qymcad_ui_state::ConstraintKind::Coincident,
+        first: line_left,
+        second: arc_right,
+        picks: &[Pick::Point(LINE_END), Pick::Second],
+        holds: Holds::OnCurve,
+        drag: p([52.0, 29.0]),
+    },
+    Case {
+        name: "an end of a line on an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Coincident,
+        first: line_left,
+        second: ellipse_right,
+        picks: &[Pick::Point(LINE_END), Pick::Second],
+        holds: Holds::OnCurve,
+        drag: p([54.0, 32.0]),
+    },
+    Case {
+        name: "an end of a line on an open spline",
+        code: qymcad_ui_state::ConstraintKind::Coincident,
+        first: line_left,
+        second: spline_right,
+        picks: &[Pick::Point(LINE_END), Pick::Second],
+        holds: Holds::OnCurve,
+        drag: p([56.0, 26.0]),
+    },
     Case {
         name: "an end of a line on a closed spline",
-        code: 0,
+        code: qymcad_ui_state::ConstraintKind::Coincident,
         first: line_left,
         second: closed_spline_right,
         picks: &[Pick::Point(LINE_END), Pick::Second],
@@ -206,7 +246,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "an end of a line on an end of a spline",
-        code: 0,
+        code: qymcad_ui_state::ConstraintKind::Coincident,
         first: line_left,
         second: spline_right,
         picks: &[Pick::Point(LINE_END), Pick::Point(p([46.0, 28.0]))],
@@ -215,7 +255,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "a centre of a circle on an end of an arc",
-        code: 0,
+        code: qymcad_ui_state::ConstraintKind::Coincident,
         first: circle_left,
         second: arc_right,
         picks: &[Pick::Point(p([30.0, 30.0])), Pick::Point(p([58.0, 29.0]))],
@@ -223,33 +263,177 @@ const CASES: &[Case] = &[
         drag: p([52.0, 29.0]),
     },
     // tangency of every straight-round, round-round and free pair
-    Case { name: "a line and a circle", code: 9, first: line_left, second: circle_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([52.0, 31.0]) },
-    Case { name: "a line and an arc", code: 9, first: line_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([52.0, 29.0]) },
-    Case { name: "a line and an ellipse", code: 9, first: line_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([54.0, 32.0]) },
-    Case { name: "a line and an open spline", code: 9, first: line_left, second: spline_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([56.0, 26.0]) },
-    Case { name: "two circles", code: 9, first: circle_left, second: circle_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([52.0, 31.0]) },
-    Case { name: "a circle and an arc", code: 9, first: circle_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([52.0, 29.0]) },
-    Case { name: "two arcs", code: 9, first: arc_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([52.0, 29.0]) },
-    Case { name: "a circle and an ellipse", code: 9, first: circle_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([54.0, 32.0]) },
-    Case { name: "a circle and a closed spline", code: 9, first: circle_left, second: closed_spline_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([58.0, 30.0]) },
-    Case { name: "an ellipse and an open spline", code: 9, first: ellipse_left, second: spline_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([56.0, 26.0]) },
-    Case { name: "two open splines", code: 9, first: spline_left, second: spline_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([56.0, 26.0]) },
+    Case {
+        name: "a line and a circle",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: line_left,
+        second: circle_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([52.0, 31.0]),
+    },
+    Case {
+        name: "a line and an arc",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: line_left,
+        second: arc_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([52.0, 29.0]),
+    },
+    Case {
+        name: "a line and an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: line_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([54.0, 32.0]),
+    },
+    Case {
+        name: "a line and an open spline",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: line_left,
+        second: spline_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([56.0, 26.0]),
+    },
+    Case {
+        name: "two circles",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: circle_left,
+        second: circle_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([52.0, 31.0]),
+    },
+    Case {
+        name: "a circle and an arc",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: circle_left,
+        second: arc_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([52.0, 29.0]),
+    },
+    Case { name: "two arcs", code: qymcad_ui_state::ConstraintKind::Tangent, first: arc_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Touch, drag: p([52.0, 29.0]) },
+    Case {
+        name: "a circle and an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: circle_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([54.0, 32.0]),
+    },
+    Case {
+        name: "a circle and a closed spline",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: circle_left,
+        second: closed_spline_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([58.0, 30.0]),
+    },
+    Case {
+        name: "an ellipse and an open spline",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: ellipse_left,
+        second: spline_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([56.0, 26.0]),
+    },
+    Case {
+        name: "two open splines",
+        code: qymcad_ui_state::ConstraintKind::Tangent,
+        first: spline_left,
+        second: spline_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Touch,
+        drag: p([56.0, 26.0]),
+    },
     // equality
-    Case { name: "two lines", code: 5, first: line_left, second: line_right, picks: &[Pick::First, Pick::Second], holds: Holds::Same, drag: p([58.0, 40.0]) },
-    Case { name: "two circles", code: 5, first: circle_left, second: circle_right, picks: &[Pick::First, Pick::Second], holds: Holds::Same, drag: p([52.0, 31.0]) },
-    Case { name: "a circle and an arc", code: 5, first: circle_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Same, drag: p([52.0, 29.0]) },
-    Case { name: "two arcs", code: 5, first: arc_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Same, drag: p([52.0, 29.0]) },
-    Case { name: "two ellipses", code: 5, first: ellipse_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::Same, drag: p([54.0, 32.0]) },
+    Case { name: "two lines", code: qymcad_ui_state::ConstraintKind::Equal, first: line_left, second: line_right, picks: &[Pick::First, Pick::Second], holds: Holds::Same, drag: p([58.0, 40.0]) },
+    Case {
+        name: "two circles",
+        code: qymcad_ui_state::ConstraintKind::Equal,
+        first: circle_left,
+        second: circle_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Same,
+        drag: p([52.0, 31.0]),
+    },
+    Case {
+        name: "a circle and an arc",
+        code: qymcad_ui_state::ConstraintKind::Equal,
+        first: circle_left,
+        second: arc_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Same,
+        drag: p([52.0, 29.0]),
+    },
+    Case { name: "two arcs", code: qymcad_ui_state::ConstraintKind::Equal, first: arc_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Same, drag: p([52.0, 29.0]) },
+    Case {
+        name: "two ellipses",
+        code: qymcad_ui_state::ConstraintKind::Equal,
+        first: ellipse_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Same,
+        drag: p([54.0, 32.0]),
+    },
     // concentricity
-    Case { name: "two circles", code: 8, first: circle_left, second: circle_right, picks: &[Pick::First, Pick::Second], holds: Holds::OneCentre, drag: p([52.0, 31.0]) },
-    Case { name: "a circle and an arc", code: 8, first: circle_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::OneCentre, drag: p([58.0, 29.0]) },
-    Case { name: "two arcs", code: 8, first: arc_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::OneCentre, drag: p([58.0, 29.0]) },
-    Case { name: "a circle and an ellipse", code: 8, first: circle_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::OneCentre, drag: p([62.0, 32.0]) },
-    Case { name: "two ellipses", code: 8, first: ellipse_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::OneCentre, drag: p([62.0, 32.0]) },
+    Case {
+        name: "two circles",
+        code: qymcad_ui_state::ConstraintKind::Concentric,
+        first: circle_left,
+        second: circle_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::OneCentre,
+        drag: p([52.0, 31.0]),
+    },
+    Case {
+        name: "a circle and an arc",
+        code: qymcad_ui_state::ConstraintKind::Concentric,
+        first: circle_left,
+        second: arc_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::OneCentre,
+        drag: p([58.0, 29.0]),
+    },
+    Case {
+        name: "two arcs",
+        code: qymcad_ui_state::ConstraintKind::Concentric,
+        first: arc_left,
+        second: arc_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::OneCentre,
+        drag: p([58.0, 29.0]),
+    },
+    Case {
+        name: "a circle and an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Concentric,
+        first: circle_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::OneCentre,
+        drag: p([62.0, 32.0]),
+    },
+    Case {
+        name: "two ellipses",
+        code: qymcad_ui_state::ConstraintKind::Concentric,
+        first: ellipse_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::OneCentre,
+        drag: p([62.0, 32.0]),
+    },
     // symmetry of any two points about a line
     Case {
         name: "the centres of a circle and an ellipse",
-        code: 10,
+        code: qymcad_ui_state::ConstraintKind::Symmetric,
         first: circle_and_upright,
         second: ellipse_right,
         picks: &[Pick::Point(p([30.0, 30.0])), Pick::Point(p([54.0, 32.0])), Pick::Curve(AXIS)],
@@ -258,7 +442,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "the ends of two splines",
-        code: 10,
+        code: qymcad_ui_state::ConstraintKind::Symmetric,
         first: spline_and_upright,
         second: spline_right,
         picks: &[Pick::Point(p([36.0, 32.0])), Pick::Point(p([46.0, 28.0])), Pick::Curve(AXIS)],
@@ -267,7 +451,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "an end of an arc and of a line",
-        code: 10,
+        code: qymcad_ui_state::ConstraintKind::Symmetric,
         first: arc_and_upright,
         second: line_right,
         picks: &[Pick::Point(p([36.0, 30.0])), Pick::Point(p([46.0, 22.0])), Pick::Curve(AXIS)],
@@ -275,26 +459,42 @@ const CASES: &[Case] = &[
         drag: p([58.0, 40.0]),
     },
     // fixing any point
-    Case { name: "a node of a spline", code: 6, first: spline_left, second: nothing, picks: &[Pick::Point(p([25.0, 35.0]))], holds: Holds::Fixed, drag: p([25.0, 35.0]) },
-    Case { name: "the centre of an ellipse", code: 6, first: ellipse_left, second: nothing, picks: &[Pick::Point(p([28.0, 30.0]))], holds: Holds::Fixed, drag: p([28.0, 30.0]) },
-    Case { name: "an end of an arc", code: 6, first: arc_left, second: nothing, picks: &[Pick::Point(p([36.0, 30.0]))], holds: Holds::Fixed, drag: p([36.0, 30.0]) },
+    Case {
+        name: "a node of a spline",
+        code: qymcad_ui_state::ConstraintKind::Fix,
+        first: spline_left,
+        second: nothing,
+        picks: &[Pick::Point(p([25.0, 35.0]))],
+        holds: Holds::Fixed,
+        drag: p([25.0, 35.0]),
+    },
+    Case {
+        name: "the centre of an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Fix,
+        first: ellipse_left,
+        second: nothing,
+        picks: &[Pick::Point(p([28.0, 30.0]))],
+        holds: Holds::Fixed,
+        drag: p([28.0, 30.0]),
+    },
+    Case { name: "an end of an arc", code: qymcad_ui_state::ConstraintKind::Fix, first: arc_left, second: nothing, picks: &[Pick::Point(p([36.0, 30.0]))], holds: Holds::Fixed, drag: p([36.0, 30.0]) },
     // level and upright: a line, the axis of an ellipse, two centres
-    Case { name: "a line", code: 1, first: line_left, second: nothing, picks: &[Pick::First], holds: Holds::Level, drag: p([22.0, 26.0]) },
-    Case { name: "an ellipse", code: 1, first: ellipse_right, second: nothing, picks: &[Pick::First], holds: Holds::Level, drag: p([62.0, 32.0]) },
+    Case { name: "a line", code: qymcad_ui_state::ConstraintKind::Horizontal, first: line_left, second: nothing, picks: &[Pick::First], holds: Holds::Level, drag: p([22.0, 26.0]) },
+    Case { name: "an ellipse", code: qymcad_ui_state::ConstraintKind::Horizontal, first: ellipse_right, second: nothing, picks: &[Pick::First], holds: Holds::Level, drag: p([62.0, 32.0]) },
     Case {
         name: "the centres of a circle and an ellipse",
-        code: 1,
+        code: qymcad_ui_state::ConstraintKind::Horizontal,
         first: circle_left,
         second: ellipse_right,
         picks: &[Pick::Point(p([30.0, 30.0])), Pick::Point(p([54.0, 32.0]))],
         holds: Holds::Level,
         drag: p([54.0, 32.0]),
     },
-    Case { name: "a line", code: 2, first: line_left, second: nothing, picks: &[Pick::First], holds: Holds::Upright, drag: p([22.0, 26.0]) },
-    Case { name: "an ellipse", code: 2, first: ellipse_right, second: nothing, picks: &[Pick::First], holds: Holds::Upright, drag: p([62.0, 32.0]) },
+    Case { name: "a line", code: qymcad_ui_state::ConstraintKind::Vertical, first: line_left, second: nothing, picks: &[Pick::First], holds: Holds::Upright, drag: p([22.0, 26.0]) },
+    Case { name: "an ellipse", code: qymcad_ui_state::ConstraintKind::Vertical, first: ellipse_right, second: nothing, picks: &[Pick::First], holds: Holds::Upright, drag: p([62.0, 32.0]) },
     Case {
         name: "the centres of a circle and an ellipse",
-        code: 2,
+        code: qymcad_ui_state::ConstraintKind::Vertical,
         first: circle_left,
         second: ellipse_right,
         picks: &[Pick::Point(p([30.0, 30.0])), Pick::Point(p([54.0, 32.0]))],
@@ -302,15 +502,55 @@ const CASES: &[Case] = &[
         drag: p([54.0, 32.0]),
     },
     // parallel, square, collinear: two lines, a line and the axis of an ellipse
-    Case { name: "two lines", code: 3, first: line_left, second: line_right, picks: &[Pick::First, Pick::Second], holds: Holds::Parallel, drag: p([58.0, 40.0]) },
-    Case { name: "a line and an ellipse", code: 3, first: line_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::Parallel, drag: p([62.0, 32.0]) },
-    Case { name: "two lines", code: 4, first: line_left, second: line_right, picks: &[Pick::First, Pick::Second], holds: Holds::Square, drag: p([58.0, 40.0]) },
-    Case { name: "a line and an ellipse", code: 4, first: line_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::Square, drag: p([62.0, 32.0]) },
-    Case { name: "two lines", code: 7, first: line_left, second: line_right, picks: &[Pick::First, Pick::Second], holds: Holds::OneLine, drag: p([58.0, 40.0]) },
+    Case {
+        name: "two lines",
+        code: qymcad_ui_state::ConstraintKind::Parallel,
+        first: line_left,
+        second: line_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Parallel,
+        drag: p([58.0, 40.0]),
+    },
+    Case {
+        name: "a line and an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Parallel,
+        first: line_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Parallel,
+        drag: p([62.0, 32.0]),
+    },
+    Case {
+        name: "two lines",
+        code: qymcad_ui_state::ConstraintKind::Perpendicular,
+        first: line_left,
+        second: line_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Square,
+        drag: p([58.0, 40.0]),
+    },
+    Case {
+        name: "a line and an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Perpendicular,
+        first: line_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Square,
+        drag: p([62.0, 32.0]),
+    },
+    Case {
+        name: "two lines",
+        code: qymcad_ui_state::ConstraintKind::Collinear,
+        first: line_left,
+        second: line_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::OneLine,
+        drag: p([58.0, 40.0]),
+    },
     // the middle of a line and of an arc
     Case {
         name: "a centre of a circle in the middle of a line",
-        code: 11,
+        code: qymcad_ui_state::ConstraintKind::Midpoint,
         first: circle_left,
         second: line_right,
         picks: &[Pick::Point(p([30.0, 30.0])), Pick::Second],
@@ -319,7 +559,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "an end of a line in the middle of an arc",
-        code: 11,
+        code: qymcad_ui_state::ConstraintKind::Midpoint,
         first: line_left,
         second: arc_right,
         picks: &[Pick::Point(LINE_END), Pick::Second],
@@ -327,26 +567,74 @@ const CASES: &[Case] = &[
         drag: p([52.0, 29.0]),
     },
     // no sense on these: the window refuses, in words, and the drawing stays
-    Case { name: "an open spline", code: 1, first: spline_right, second: nothing, picks: &[Pick::First], holds: Holds::Refused, drag: p([56.0, 26.0]) },
-    Case { name: "a circle", code: 2, first: circle_left, second: nothing, picks: &[Pick::First], holds: Holds::Refused, drag: p([30.0, 30.0]) },
-    Case { name: "two circles", code: 3, first: circle_left, second: circle_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([52.0, 31.0]) },
-    Case { name: "a line and an arc", code: 4, first: line_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([52.0, 29.0]) },
-    Case { name: "two lines", code: 8, first: line_left, second: line_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([58.0, 40.0]) },
-    Case { name: "a line and an open spline", code: 5, first: line_left, second: spline_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([56.0, 26.0]) },
+    Case { name: "an open spline", code: qymcad_ui_state::ConstraintKind::Horizontal, first: spline_right, second: nothing, picks: &[Pick::First], holds: Holds::Refused, drag: p([56.0, 26.0]) },
+    Case { name: "a circle", code: qymcad_ui_state::ConstraintKind::Vertical, first: circle_left, second: nothing, picks: &[Pick::First], holds: Holds::Refused, drag: p([30.0, 30.0]) },
+    Case {
+        name: "two circles",
+        code: qymcad_ui_state::ConstraintKind::Parallel,
+        first: circle_left,
+        second: circle_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Refused,
+        drag: p([52.0, 31.0]),
+    },
+    Case {
+        name: "a line and an arc",
+        code: qymcad_ui_state::ConstraintKind::Perpendicular,
+        first: line_left,
+        second: arc_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Refused,
+        drag: p([52.0, 29.0]),
+    },
+    Case {
+        name: "two lines",
+        code: qymcad_ui_state::ConstraintKind::Concentric,
+        first: line_left,
+        second: line_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Refused,
+        drag: p([58.0, 40.0]),
+    },
+    Case {
+        name: "a line and an open spline",
+        code: qymcad_ui_state::ConstraintKind::Equal,
+        first: line_left,
+        second: spline_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Refused,
+        drag: p([56.0, 26.0]),
+    },
     // a circle has one size and an ellipse two, and the length of a spline is held by nothing a sketch keeps: as in the
     // sketchers a person comes from, neither is made equal
-    Case { name: "a circle and an ellipse", code: 5, first: circle_left, second: ellipse_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([54.0, 32.0]) },
-    Case { name: "two open splines", code: 5, first: spline_left, second: spline_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([56.0, 26.0]) },
-    Case { name: "two arcs", code: 7, first: arc_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([52.0, 29.0]) },
+    Case {
+        name: "a circle and an ellipse",
+        code: qymcad_ui_state::ConstraintKind::Equal,
+        first: circle_left,
+        second: ellipse_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Refused,
+        drag: p([54.0, 32.0]),
+    },
+    Case {
+        name: "two open splines",
+        code: qymcad_ui_state::ConstraintKind::Equal,
+        first: spline_left,
+        second: spline_right,
+        picks: &[Pick::First, Pick::Second],
+        holds: Holds::Refused,
+        drag: p([56.0, 26.0]),
+    },
+    Case { name: "two arcs", code: qymcad_ui_state::ConstraintKind::Collinear, first: arc_left, second: arc_right, picks: &[Pick::First, Pick::Second], holds: Holds::Refused, drag: p([52.0, 29.0]) },
 ];
 
 /// THE SHAPES OF A CASE DRAWN BY HAND, and what of them a cell reads: the curves of each shape and the points picked.
 struct Laid {
-    first: Vec<Picked>,
-    second: Vec<Picked>,
-    points: Vec<Picked>,
-    line: Option<Picked>,
-    dragged: Picked,
+    first: Vec<qymcad_ui_state::SketchItem>,
+    second: Vec<qymcad_ui_state::SketchItem>,
+    points: Vec<qymcad_ui_state::SketchItem>,
+    line: Option<qymcad_ui_state::SketchItem>,
+    dragged: qymcad_ui_state::SketchItem,
 }
 
 /// A DOCUMENT WITH THE SHAPES OF A CASE DRAWN, and what of them a cell reads.
@@ -364,7 +652,7 @@ fn lay(case: &Case) -> Result<Ready, String> {
     (case.first)(&mut hand);
     let first = keys(&hand);
     (case.second)(&mut hand);
-    let second: Vec<Picked> = keys(&hand).into_iter().filter(|k| !first.contains(k)).collect();
+    let second: Vec<qymcad_ui_state::SketchItem> = keys(&hand).into_iter().filter(|k| !first.contains(k)).collect();
     let d = drawing(hand.app);
     let dot = |at: Point2| d.points.iter().find(|q| q.at.dist(at) < 0.5).map(|q| q.key).ok_or_else(|| format!("no point at ({:.1}, {:.1}) when the shapes are drawn", at.x, at.y));
     let points = case.picks.iter().filter_map(|k| if let Pick::Point(at) = k { Some(dot(*at)) } else { None }).collect::<Result<Vec<_>, _>>()?;
@@ -377,12 +665,12 @@ fn lay(case: &Case) -> Result<Ready, String> {
 }
 
 /// The curve of `key`, as the drawing holds it.
-fn curve<'a>(d: &'a Drawing, key: Option<&Picked>) -> Result<&'a Curve, String> {
+fn curve<'a>(d: &'a Drawing, key: Option<&qymcad_ui_state::SketchItem>) -> Result<&'a Curve, String> {
     key.and_then(|k| d.curves.iter().find(|c| c.key == *k)).ok_or_else(|| "a curve of the case is gone".to_string())
 }
 
 /// Where the point of `key` stands.
-fn dot_at(d: &Drawing, key: Picked) -> Option<Point2> {
+fn dot_at(d: &Drawing, key: qymcad_ui_state::SketchItem) -> Option<Point2> {
     d.points.iter().find(|q| q.key == key).map(|q| q.at)
 }
 
@@ -564,7 +852,7 @@ fn tie(case: &Case, way: Way) -> Result<(), String> {
     let (laid_before, drawn_before) = (constraints(&app), drawing(&app));
     let mut hand = Hand::new(&mut app);
     let places = case.picks.iter().map(|k| place_of(&mut hand, &laid, *k)).collect::<Result<Vec<_>, _>>()?;
-    hand.sk_tool(0);
+    hand.sk_select();
     if way == Way::ButtonFirst {
         hand.constraint(case.code);
     }
@@ -591,7 +879,7 @@ fn tie(case: &Case, way: Way) -> Result<(), String> {
     // a point of the geometry dragged: what the constraint ties goes with it
     let d = drawing(hand.app);
     let from = dot_at(&d, laid.dragged).ok_or("the dragged point is gone")?;
-    hand.sk_tool(0);
+    hand.sk_select();
     hand.drag2d((from.x, from.y), (from.x + 1.5, from.y + 1.0));
     let after = drawing(hand.app);
     if matches!(case.holds, Holds::Fixed) {
@@ -602,8 +890,8 @@ fn tie(case: &Case, way: Way) -> Result<(), String> {
 }
 
 /// The name of a constraint by its code, as the panel numbers its buttons.
-fn named(code: u8) -> &'static str {
-    ["coincidence", "level", "upright", "parallel", "square", "equal", "fixed", "collinear", "concentric", "tangent", "symmetric", "middle"][code as usize]
+fn named(code: qymcad_ui_state::ConstraintKind) -> String {
+    format!("{code:?}").to_lowercase()
 }
 
 fn constraint_cells(way: Way) {

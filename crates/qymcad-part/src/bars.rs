@@ -108,7 +108,7 @@ pub struct PlaneBarCtx<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaneTool {
     Measure,
-    SketchFor(u8),
+    SketchFor(qymcad_ui_state::PartTool),
     Pencil,
     MirrorPart,
     Section,
@@ -171,9 +171,9 @@ fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Described {
         }
         PlaneTool::SketchFor(kind) => {
             let name = match kind {
-                3 => "cmd-revolve",
-                8 => "cmd-sweep",
-                9 => "cmd-loft",
+                qymcad_ui_state::PartTool::Revolve => "cmd-revolve",
+                qymcad_ui_state::PartTool::Sweep => "cmd-sweep",
+                qymcad_ui_state::PartTool::Loft => "cmd-loft",
                 _ => "cmd-extrude",
             };
             waiting(head(ph::CUBE, name, Ends::ApplyCancel), qymcad_i18n::tr("g-pick-sketch-for"))
@@ -267,23 +267,39 @@ pub fn section_cancel(section: &mut qymcad_ui_state::SectionTool, regen: &mut qy
     section.drag_anchor = None;
 }
 
+/// THE PART A PATTERN OF COMPONENTS REPEATS: the component selected, or the part of the body selected - not the root,
+/// and a part with a body; otherwise what is missing, said.
+pub fn comp_array_source(pc: &mut qymcad_ui_state::PartCtx) -> Result<Id, Notice> {
+    let src = match *pc.sel {
+        qymcad_ui_state::Sel::Component(ci) => pc.project.components.get(ci).map(|c| c.id),
+        _ => qymcad_ui_state::selected_body(&*pc.project, &*pc.sel).and_then(|b| pc.project.body_owner(b)),
+    };
+    let Some(src) = src.filter(|c| *c != pc.project.root) else {
+        return Err(Notice::info(qymcad_i18n::tr("msg-pick-part-first")));
+    };
+    if pc.project.active_body(src).is_none() {
+        return Err(Notice::refusal(qymcad_i18n::tr("msg-part-no-body")));
+    }
+    Ok(src)
+}
+
 /// TAKE A PATTERN OF COMPONENTS of part `src` in hand: a row of three or a full turn of six, one direction, the axis of
 /// the assembly; the counts and the step at the geometry.
-pub fn begin_comp_array(pc: &mut qymcad_ui_state::PartCtx, mode: u8, src: Id) {
-    *pc.carr = qymcad_ui_state::CompArrayCmd { mode, src, dir: 0, axis: 2, edit: 0 };
+pub fn begin_comp_array(pc: &mut qymcad_ui_state::PartCtx, mode: qymcad_ui_state::PatternKind, src: Id) {
+    *pc.carr = qymcad_ui_state::CompArrayCmd { mode: Some(mode), src, dir: 0, axis: 2, edit: 0 };
     pc.gsel.before.spend_object(); // the part picked is the pattern's object, not a click of it
-    pc.arr.count = if mode == 2 { 6 } else { 3 };
+    pc.arr.count = if mode == qymcad_ui_state::PatternKind::Circular { 6 } else { 3 };
     (pc.arr.full, pc.arr.two, pc.arr.three, pc.arr.axis) = (true, false, false, 0);
     *pc.mode_3d = true;
     pc.cmd.params.clear();
-    sync_comp_array_params(*pc.arr, mode, pc.cmd);
-    *pc.status = Notice::info(qymcad_i18n::tr(if mode == 2 { "msg-comp-circ-array" } else { "msg-comp-lin-array" }));
+    sync_comp_array_params(*pc.arr, Some(mode), pc.cmd);
+    *pc.status = Notice::info(qymcad_i18n::tr(if mode == qymcad_ui_state::PatternKind::Circular { "msg-comp-circ-array" } else { "msg-comp-lin-array" }));
 }
 
 /// THE TOP BAR OF A COMPONENT PATTERN (in an assembly) - the same bar as the pattern of bodies, described by the same
 /// options: the direction or the axis here; the counts, the step or the angle in fields at the geometry; Enter applies.
 pub fn comp_array_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
-    if pc.carr.mode == 0 {
+    if pc.carr.mode.is_none() {
         return;
     }
     let tool = comp_array_described(pc);
@@ -301,7 +317,7 @@ fn comp_array_described(pc: &qymcad_ui_state::PartCtx) -> Described {
     let name = pc.project.components.iter().find(|c| c.id == pc.carr.src).map(|c| qymcad_i18n::name(&c.name)).unwrap_or_default();
     let source = Some(qymcad_i18n::tr1("cmd-source", "name", &name));
     let mut says = Vec::new();
-    let (title, bar) = if pc.carr.mode == 2 {
+    let (title, bar) = if pc.carr.is_circular() {
         // AN AXIS OF ITS OWN, picked in the view as a pattern of bodies picks it, or one of the assembly's. Reported
         // behaviour: the axis of a circular pattern of parts could only be X, Y or Z through the origin of the assembly.
         ("cmd-comp-circ-array", circular_array_opts(&*pc.project, &*pc.arr, source, NoAxisPicked::OneOf(pc.carr.axis), &mut says))
@@ -357,10 +373,10 @@ pub fn open_comp_array_edit(pc: &mut qymcad_ui_state::PartCtx, pid: Id) {
     use qymcad_core::model::CompPatternKind;
     let Some(pat) = pc.project.comp_pattern(pid) else { return };
     let (mode, dir, axis) = match pat.kind {
-        CompPatternKind::Linear { dir, .. } => (1u8, axis_of(dir), 2u8),
-        CompPatternKind::Circular { dir, .. } => (2u8, 0u8, axis_of(dir)),
+        CompPatternKind::Linear { dir, .. } => (qymcad_ui_state::PatternKind::Linear, axis_of(dir), 2u8),
+        CompPatternKind::Circular { dir, .. } => (qymcad_ui_state::PatternKind::Circular, 0u8, axis_of(dir)),
     };
-    *pc.carr = qymcad_ui_state::CompArrayCmd { mode, src: pat.src, dir, axis, edit: pid };
+    *pc.carr = qymcad_ui_state::CompArrayCmd { mode: Some(mode), src: pat.src, dir, axis, edit: pid };
     *pc.mode_3d = true;
     let values: Vec<FieldValue> = match pat.kind {
         CompPatternKind::Circular { angle, count, axis, .. } => {
@@ -378,7 +394,7 @@ pub fn open_comp_array_edit(pc: &mut qymcad_ui_state::PartCtx, pid: Id) {
         }
     };
     pc.cmd.params.clear();
-    sync_comp_array_params(*pc.arr, mode, pc.cmd);
+    sync_comp_array_params(*pc.arr, Some(mode), pc.cmd);
     for f in values {
         if let Some(p) = pc.cmd.params.iter_mut().find(|p| p.key == f.key) {
             (p.val, p.txt) = (f.value, qymcad_core::expr::fmt_num(f.value));
@@ -396,12 +412,12 @@ struct FieldValue {
 /// THE FIELDS OF A PATTERN OF COMPONENTS follow its options: the count always; a linear one's step, and a second and a
 /// third count and step with the second and third direction ticked; a circular one's angle when it is not a full turn.
 /// A field that stays keeps what is typed in it.
-pub fn sync_comp_array_params(arr: qymcad_ui_state::ArrayParams, mode: u8, cmd: &mut qymcad_ui_state::FeatCommand) {
+pub fn sync_comp_array_params(arr: qymcad_ui_state::ArrayParams, mode: Option<qymcad_ui_state::PatternKind>, cmd: &mut qymcad_ui_state::FeatCommand) {
     use qymcad_ui_state::CmdParam;
     let count = |label, key, n: u32| CmdParam::new(label, key, f64::from(n), 1.0, 512.0).whole();
     let step = |label, key| CmdParam::new(label, key, 30.0, 0.01, 100000.0);
     let mut want = vec![count("cmd-copies", "count", arr.count.max(1))];
-    if mode == 1 {
+    if mode == Some(qymcad_ui_state::PatternKind::Linear) {
         want.push(step("f-pitch", "cstep"));
         if arr.two {
             want.extend([count("f-copies2", "count2", arr.count2.max(2)), step("f-pitch2", "cstep2")]);
@@ -426,15 +442,11 @@ pub fn sync_comp_array_params(arr: qymcad_ui_state::ArrayParams, mode: u8, cmd: 
 /// did not: the wait lives in `Picking`, and the button lit from `armed` alone, so a tool that WAS waiting
 /// looked untouched. A tool that acts and does not look taken is the same trouble as one that looks taken
 /// and does not act.
-pub(crate) fn tool_is_taken(bc: &qymcad_ui_state::BarCtx, kind: u8) -> bool {
-    bc.armed.cmd_kind() == kind || bc.picking.sketch_for() == Some(kind)
+pub(crate) fn tool_is_taken(bc: &qymcad_ui_state::BarCtx, kind: qymcad_ui_state::PartTool) -> bool {
+    bc.armed.part_tool() == Some(kind) || bc.picking.sketch_for() == Some(kind)
 }
 
 mod feat_bar;
 pub use feat_bar::*;
-mod toolbar;
-pub use toolbar::*;
 mod commands;
 pub use commands::*;
-mod options;
-pub use options::*;

@@ -8,7 +8,7 @@ use super::*;
 /// It is drawn WHILE EDITING too: there the pattern result is hidden (`edit_result_body`) and the source
 /// is visible, so the ghosts are the preview.
 pub fn draw_array_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    if !matches!(pn.armed.cmd_kind(), 17 | 18) || !pn.mode_3d {
+    if !pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::is_a_pattern) || !pn.mode_3d {
         return;
     }
     let Some(src) = qymcad_ui_state::selected_body(pn.project, &pn.sel) else { return };
@@ -25,7 +25,7 @@ pub fn draw_array_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             painter.line_segment([pts[a], pts[b]], st);
         }
     };
-    if pn.armed.cmd_kind() == 17 {
+    if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::LinearPattern) {
         let (dx, dy, dz) = qymcad_ui_state::arr_vec(pn.arr.dir, qymcad_ui_state::cmd_val(pn.cmd, "step"));
         let (dx2, dy2, dz2, c2) = if pn.arr.two {
             let (a, b, c) = qymcad_ui_state::arr_vec(pn.arr.dir2, qymcad_ui_state::cmd_val(pn.cmd, "step2"));
@@ -74,7 +74,7 @@ pub fn draw_array_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// centred at the origin).
 pub fn draw_prim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     // only while CREATING (there is no body). While editing (feat_edit) the body is already drawn, so the wireframe is not duplicated.
-    if !(10..=15).contains(&pn.armed.cmd_kind()) || pn.cmd.edit.is_some() {
+    if !pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::is_a_primitive) || pn.cmd.edit.is_some() {
         return;
     }
     let basis = pn.cam.basis();
@@ -102,8 +102,8 @@ pub fn draw_prim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         }
     };
     let seg = |painter: &egui::Painter, a: [f64; 3], b: [f64; 3]| painter.line_segment([pr(a), pr(b)], st);
-    match pn.armed.cmd_kind() {
-        10 => {
+    match pn.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Box) => {
             let (hx, hy, dz) = (v("dx") / 2.0, v("dy") / 2.0, v("dz"));
             let c = [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]];
             for &z in &[0.0, dz] {
@@ -114,7 +114,7 @@ pub fn draw_prim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 seg(painter, [p[0], p[1], 0.0], [p[0], p[1], dz]);
             }
         }
-        11 => {
+        Some(qymcad_ui_state::PartTool::Cylinder) => {
             let (r, h) = (v("r"), v("h"));
             poly(painter, &ring_xy(r, 0.0, 48));
             poly(painter, &ring_xy(r, h, 48));
@@ -123,7 +123,7 @@ pub fn draw_prim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 seg(painter, [r * a.cos(), r * a.sin(), 0.0], [r * a.cos(), r * a.sin(), h]);
             }
         }
-        12 => {
+        Some(qymcad_ui_state::PartTool::Sphere) => {
             let r = v("r");
             poly(painter, &ring_xy(r, 0.0, 48));
             let ring_v = |swap: bool| -> Vec<Pos2> {
@@ -138,7 +138,7 @@ pub fn draw_prim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             poly(painter, &ring_v(false));
             poly(painter, &ring_v(true));
         }
-        13 => {
+        Some(qymcad_ui_state::PartTool::Cone) => {
             let (r1, r2, h) = (v("r1"), v("r2"), v("h"));
             if r1 > 1e-6 {
                 poly(painter, &ring_xy(r1, 0.0, 48));
@@ -151,12 +151,12 @@ pub fn draw_prim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 seg(painter, [r1 * a.cos(), r1 * a.sin(), 0.0], [r2 * a.cos(), r2 * a.sin(), h]);
             }
         }
-        14 => {
+        Some(qymcad_ui_state::PartTool::Torus) => {
             let (mr, tr) = (v("major"), v("minor"));
             poly(painter, &ring_xy(mr + tr, 0.0, 64));
             poly(painter, &ring_xy((mr - tr).max(0.0), 0.0, 64));
         }
-        15 => {
+        Some(qymcad_ui_state::PartTool::Prism) => {
             let (r, h, n) = (v("r"), v("h"), pn.prim.n.max(3) as usize);
             poly(painter, &ring_xy(r, 0.0, n));
             poly(painter, &ring_xy(r, h, n));
@@ -173,7 +173,7 @@ pub fn draw_prim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// the Chamfer/Fillet command (outside them edges are not pickable, so the view is not littered with a
 /// mesh and orange edges).
 pub fn draw_body_edges(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    if !matches!(pn.armed.cmd_kind(), 4 | 5 | 32) || pn.edges.polys.is_empty() {
+    if !pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_edges) || pn.edges.polys.is_empty() {
         return;
     }
     let basis = pn.cam.basis();
@@ -230,7 +230,7 @@ pub fn edges_to_draw(polys: &[Vec<[f32; 3]>], picked: &[bool], budget: usize) ->
 pub fn draw_edge_blend_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let Some(body) = pn.edges.body else { return };
     let Some(mesh) = pn.project.mesh_index(body).map(|mi| &pn.project.bodies[mi].mesh) else { return };
-    let blend = if pn.armed.cmd_kind() == 4 {
+    let blend = if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Fillet) {
         qymcad_ui_state::Blend::Round(qymcad_ui_state::cmd_val(pn.cmd, "radius"))
     } else {
         use qymcad_core::feature::ChamferMode;
@@ -418,7 +418,7 @@ pub fn draw_measure_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 
 pub fn draw_comp_array_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     use qymcad_core::feature::apply12;
-    if pn.carr.mode == 0 || !pn.mode_3d {
+    if pn.carr.mode.is_none() || !pn.mode_3d {
         return;
     }
     let Some(src_body) = pn.project.active_body(pn.carr.src) else { return };
@@ -471,16 +471,16 @@ pub fn comp_array_ghosts(pn: &Painting, pre: &[f64; 12], base: &[f64; 12], alrea
         .collect()
 }
 
-/// THE DATUM COMMAND PREVIEW: 20 a plane as a square (offset from the reference), 21 a point as a cross, 22 an axis as a line.
+/// THE DATUM COMMAND PREVIEW: a plane as a square (offset from the reference), a point as a cross, an axis as a line.
 pub fn draw_datum_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    if !matches!(pn.armed.cmd_kind(), 20..=22) || !pn.mode_3d {
+    if !pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::is_a_datum) || !pn.mode_3d {
         return;
     }
     let basis = pn.cam.basis();
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };
     let st = Stroke::new(1.6, qymcad_scheme::a(pn.scheme.pal.preview_datum(), 205));
-    match pn.armed.cmd_kind() {
-        20 => {
+    match pn.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::DatumPlane) => {
             // the plane as Enter makes it - offset, tilted and turned (`datum_plane_made`), the square along its own axes
             let Some(m) = qymcad_ui_state::datum_plane_made(pn) else { return };
             let f = qymcad_core::feature::PlaneFrame::world_aligned(m.origin, m.normal, m.turn);
@@ -490,7 +490,7 @@ pub fn draw_datum_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             let poly: Vec<Pos2> = [corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0)].iter().map(|p| scr.at(*p).0).collect();
             painter.add(egui::Shape::convex_polygon(poly, qymcad_scheme::a(pn.scheme.pal.preview_datum(), 45), st));
         }
-        21 => {
+        Some(qymcad_ui_state::PartTool::DatumPoint) => {
             use qymcad_core::feature::{apply12, is_identity12};
             // the preview point's position: "at a vertex" -> the world position of the picked vertex; "coordinates" -> the X/Y/Z fields
             let p = if pn.datum.pt_mode == 1 {
@@ -529,7 +529,7 @@ pub fn draw_datum_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
-        22 => {
+        Some(qymcad_ui_state::PartTool::DatumAxis) => {
             let od = if pn.datum.axis_mode == 1 {
                 Some((
                     [qymcad_ui_state::cmd_val(pn.cmd, "ox"), qymcad_ui_state::cmd_val(pn.cmd, "oy"), qymcad_ui_state::cmd_val(pn.cmd, "oz")],
@@ -564,8 +564,10 @@ pub fn draw_datum_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// same single click-pick as the mirror plane highlight.
 pub fn draw_axis_picker(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     use qymcad_core::feature::{apply12, is_identity12};
-    // active while picking the pattern axis (18), the Revolve axis (3, 64) OR in the DATUM AXIS command by edge/face (22, mode 0)
-    let active = (pn.armed.cmd_kind() == 18 && pn.arr.axis_pick) || (pn.armed.cmd_kind() == 3 && pn.rev.pick_axis) || (pn.armed.cmd_kind() == 22 && pn.datum.axis_mode == 0);
+    // active while picking the pattern axis, the Revolve axis OR in the DATUM AXIS command by edge/face (mode 0)
+    let active = (pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::CircularPattern) && pn.arr.axis_pick)
+        || (pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Revolve) && pn.rev.pick_axis)
+        || (pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::DatumAxis) && pn.datum.axis_mode == 0);
     if !active || !pn.mode_3d {
         return;
     }
@@ -636,7 +638,7 @@ pub fn draw_axis_picker(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// before Enter (both creation AND editing: while editing, the result is hidden by
 /// `edit_result_body` and the source is visible, so the ghost is the preview of the mirror).
 pub fn draw_mirror_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    if pn.armed.cmd_kind() != 16 || !pn.mode_3d {
+    if pn.armed.part_tool() != Some(qymcad_ui_state::PartTool::Mirror) || !pn.mode_3d {
         return;
     }
     let Some(sp) = pn.mirror.plane else { return };
@@ -672,7 +674,7 @@ pub fn draw_mirror_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// along the body's edges. Without a preview the tool would be blind: before Enter neither where the cut
 /// will run nor whether it hits the body at all would be visible.
 pub fn draw_split_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    if !matches!(pn.armed.cmd_kind(), 27 | 29) || !pn.mode_3d {
+    if !pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::splits) || !pn.mode_3d {
         return;
     }
     let Some(sp) = pn.split.plane else { return };
@@ -745,7 +747,7 @@ pub fn draw_split_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// clicked. The ones that already have a radius of their own are larger and in the active colour: a
 /// display of state, not just an invitation.
 pub fn draw_fillet_vertices(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    if pn.armed.cmd_kind() != 4 || pn.gsel.edges.is_empty() {
+    if pn.armed.part_tool() != Some(qymcad_ui_state::PartTool::Fillet) || pn.gsel.edges.is_empty() {
         return;
     }
     let Some(body) = pn.edges.body else { return };
@@ -789,33 +791,33 @@ pub fn draw_feat_cmd_preview(pn: &Painting, painter: &egui::Painter, rect: Rect)
     if pn.armed.commanding() && pn.mode_3d {
         draw_trial_faces(pn, painter, rect);
     }
-    if pn.armed.cmd_kind() == 8 && pn.mode_3d {
+    if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Sweep) && pn.mode_3d {
         draw_sweep_preview(pn, painter, rect);
         return;
     }
-    if pn.armed.cmd_kind() == 9 && pn.mode_3d {
+    if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Loft) && pn.mode_3d {
         draw_loft_preview(pn.cam, pn.loft, pn.project, pn.scheme, pn.set, painter, rect);
         return;
     }
-    if pn.armed.cmd_kind() == 24 && pn.mode_3d {
+    if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Thread) && pn.mode_3d {
         draw_thread_preview(pn, painter, rect);
         return;
     }
-    if matches!(pn.armed.cmd_kind(), 4 | 5) && pn.mode_3d {
+    if pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::blends_edges) && pn.mode_3d {
         draw_edge_blend_preview(pn, painter, rect);
         return;
     }
-    if pn.armed.cmd_kind() == 7 && pn.mode_3d {
+    if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Hole) && pn.mode_3d {
         draw_hole_preview(pn, painter, rect);
         return;
     }
-    if pn.armed.cmd_kind() == 23 && pn.mode_3d {
+    if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Draft) && pn.mode_3d {
         draw_draft_preview(pn, painter, rect);
         return;
     }
     // THE CONTOURS A REVOLUTION TAKES are outlined where they lie: a pick is lit, as it is in the professional systems,
     // and a click that lets one go takes its outline away
-    if pn.armed.cmd_kind() == 3 && pn.mode_3d {
+    if pn.armed.part_tool() == Some(qymcad_ui_state::PartTool::Revolve) && pn.mode_3d {
         if let (Some(si), false) = (pn.cmd.sketch, pn.gsel.profiles.is_empty()) {
             if let Some(f) = pn.project.sketch_frame(si) {
                 let basis = pn.cam.basis();
@@ -864,7 +866,7 @@ pub fn draw_feat_cmd_preview(pn: &Painting, painter: &egui::Painter, rect: Rect)
         }
         return;
     }
-    if pn.armed.cmd_kind() == 0 || pn.gsel.profiles.is_empty() || !pn.mode_3d {
+    if pn.armed.part_tool().is_none() || pn.gsel.profiles.is_empty() || !pn.mode_3d {
         return;
     }
     let Some(si) = pn.cmd.sketch else { return };

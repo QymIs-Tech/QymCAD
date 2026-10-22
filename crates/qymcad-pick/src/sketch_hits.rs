@@ -288,7 +288,7 @@ pub fn nearest_parallel_line(project: &Project, si: usize, p1: Point2, p2: Point
 ///
 /// Answers only while a tool is WAITING for a sketch: outside that, an outline lighting under the cursor
 /// would say a click does something it does not.
-pub fn sketch_hover_3d(pn: &Painting, rect: Rect, at: Option<Pos2>, waiting: Option<u8>) -> Option<usize> {
+pub fn sketch_hover_3d(pn: &Painting, rect: Rect, at: Option<Pos2>, waiting: Option<qymcad_ui_state::PartTool>) -> Option<usize> {
     let at = at.filter(|p| rect.contains(*p))?;
     waiting?;
     sketch_at_3d(pn, rect, at)

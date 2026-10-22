@@ -14,9 +14,9 @@ mod tests {
     fn a_pattern_in_hand<'a>(app: &'a mut App, hint: &str) -> Hand<'a> {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(app).sk_tool(1).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape);
+        Hand::new(app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape);
         let mut hand = Hand::new(app);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.click2d(10.0, 0.0);
         assert!(hand.press_hint(&crate::i18n::tr(hint)), "the button of the pattern {hint}");
         hand

@@ -33,16 +33,16 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 30.0).type_text("45").key(egui::Key::Tab).type_text("35").key(egui::Key::Enter);
-        Hand::new(&mut app).sk_tool(0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 30.0).type_text("45").key(egui::Key::Tab).type_text("35").key(egui::Key::Enter);
+        Hand::new(&mut app).sk_select();
         let sides = app.project.sketches[si].rects()[0].sides;
-        let named: Vec<(u8, u64)> = sides.iter().map(|&id| (1u8, id)).collect();
+        let named: Vec<qymcad_ui_state::SketchItem> = sides.iter().map(|&id| qymcad_ui_state::SketchItem::curve(id)).collect();
         assert!(Hand::new(&mut app).sk_corner_set("tb-fillet-sketch-hint", &named, 3.0), "no place to click on the four sides");
         let before = arcs(&app, si);
         assert!(before.len() == 4 && before.iter().all(|(sweep, r)| (sweep - 90.0).abs() < 1e-6 && (r - 3.0).abs() < 1e-6), "the four corners are not rounded R3: {before:?}");
 
         let side = sides[0];
-        let spot = Hand::new(&mut app).spot2d((1, side)).expect("a place on the bottom side");
+        let spot = Hand::new(&mut app).spot2d(qymcad_ui_state::SketchItem::curve(side)).expect("a place on the bottom side");
         Hand::new(&mut app).sk_rotate(spot, (22.5, 17.5), 30.0);
 
         let mut sins = Vec::new();

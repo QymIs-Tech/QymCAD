@@ -50,7 +50,7 @@ mod tests {
         crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let four: Vec<u32> = live_edges(app, body).into_iter().take(4).collect();
         assert_eq!(four.len(), 4, "a cube must have at least four edges");
-        app.start_feat_cmd(5);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Chamfer);
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
         // THE SELECTION IS PUT IN DIRECTLY, as the neighbouring sweep over the tools does
         // (`tool_popup_sweep`): aiming the mouse at four particular edges is not needed here — the
@@ -124,7 +124,13 @@ mod tests {
     #[test]
     fn every_feature_with_references_keeps_only_what_was_picked() {
         // (the command, its name for the message, whether it picks faces rather than edges, how many)
-        let cases: &[(u8, &str, bool, usize)] = &[(4, "fillet", false, 4), (5, "chamfer", false, 4), (6, "shell", true, 1), (26, "remove face", true, 1), (23, "draft", true, 1)];
+        let cases: &[(qymcad_ui_state::PartTool, &str, bool, usize)] = &[
+            (qymcad_ui_state::PartTool::Fillet, "fillet", false, 4),
+            (qymcad_ui_state::PartTool::Chamfer, "chamfer", false, 4),
+            (qymcad_ui_state::PartTool::Shell, "shell", true, 1),
+            (qymcad_ui_state::PartTool::RemoveFace, "remove face", true, 1),
+            (qymcad_ui_state::PartTool::Draft, "draft", true, 1),
+        ];
         let mut bad: Vec<String> = Vec::new();
         for (cmd, what, faces, n) in cases {
             let mut app = App::default();
@@ -146,7 +152,7 @@ mod tests {
             app.tools.gsel.faces_body = Some(body);
             // A DRAFT NEEDS A NEUTRAL FACE BESIDES the ones being tilted — that is why it stood outside this
             // list for a while, and why "the method is shared, so it holds" was all that covered it.
-            if *cmd == 23 {
+            if *cmd == qymcad_ui_state::PartTool::Draft {
                 let other = live_faces(&app, body).into_iter().find(|f| !picks.contains(f));
                 let Some(other) = other else {
                     bad.push(format!("  {what}: the cube gave no face for the neutral one"));

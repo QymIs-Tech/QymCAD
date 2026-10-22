@@ -14,7 +14,7 @@ impl Doors for FeatDoors<'_, '_> {
     /// into 3D to set its size there - the gizmo or the field; the next Enter applies it.
     fn apply(&mut self) -> Result<(), NotApplied> {
         let pc = &mut *self.pc;
-        if matches!(pc.armed.cmd_kind(), 1 | 3) && !*pc.mode_3d && !pc.gsel.profiles.is_empty() {
+        if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && !*pc.mode_3d && !pc.gsel.profiles.is_empty() {
             *pc.mode_3d = true;
             *pc.status = Notice::info(qymcad_i18n::tr("in-drag-or-type"));
             return Ok(());

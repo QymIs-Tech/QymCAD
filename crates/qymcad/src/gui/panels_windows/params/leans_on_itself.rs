@@ -31,10 +31,10 @@ mod tests {
     /// A plate 60 x 40 drawn and extruded 12 by hand, the height of the extrusion named `depth`.
     fn plate_named_depth(hand: &mut Hand) -> Plate {
         assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a sketch is started on XY");
-        hand.sk_tool(2).click2d(0.0, 0.0).click2d(60.0, 40.0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(60.0, 40.0);
         assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the sketch is finished");
         hand.close_window();
-        hand.look_at([30.0, 20.0, 6.0], 8.0).tool(1).set("height", 12.0).enter();
+        hand.look_at([30.0, 20.0, 6.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 12.0).enter();
         let (ti, node) = hand.app.project.timeline.iter().enumerate().find(|(_, n)| matches!(n.kind, FeatureKind::Extrude { .. })).map(|(i, n)| (i, n.id)).expect("setup: the extrusion");
         assert!(hand.app.project.add_named_feat_dim("depth".into(), node, "height"), "setup: the height is named");
         Plate { ti, node }
@@ -49,7 +49,7 @@ mod tests {
         app.enter_sketch_edit(si);
         let pal = app.scheme.pal.clone();
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(10.0, 0.0);
         hand.type_text("20").key(egui::Key::Enter);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
         hand.sk_select();
@@ -117,7 +117,7 @@ mod tests {
         let body = hand.app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("setup: the plate");
         let app = &mut *hand.app;
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
-        hand.look_at([30.0, 20.0, 6.0], 8.0).tool(17).enter();
+        hand.look_at([30.0, 20.0, 6.0], 8.0).tool(qymcad_ui_state::PartTool::LinearPattern).enter();
         let (ti, node) = hand.app.project.timeline.iter().enumerate().find(|(_, n)| matches!(n.kind, FeatureKind::LinearArray { .. })).map(|(i, n)| (i, n.id)).expect("setup: the array");
         Plate { ti, node }
     }

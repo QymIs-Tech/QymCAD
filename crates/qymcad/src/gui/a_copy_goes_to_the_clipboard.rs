@@ -26,10 +26,10 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.enter_sketch_edit(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2).click2d(0.0, 0.0).click2d(20.0, 10.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(20.0, 10.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_select();
         hand.ctrl(egui::Key::A);
-        assert_eq!(hand.app.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).count(), 4, "GUARD: the four sides selected");
+        assert_eq!(hand.app.tools.sel_sk.items.iter().filter(|it| it.kind == qymcad_ui_state::ItemKind::Curve).count(), 4, "GUARD: the four sides selected");
         (app, ctx)
     }
 
@@ -119,7 +119,7 @@ mod tests {
         assert!(hand.press_word(&crate::i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "the sketch could not be left");
         let other = hand.app.create_sketch_on(SketchPlane::default());
         hand.app.enter_sketch_edit(other);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.paste();
         hand.click2d(30.0, 30.0);
         assert_eq!(lines(&hand, other), 4, "the copy pasted into another sketch: {} curves there", lines(&hand, other));

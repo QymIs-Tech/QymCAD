@@ -16,10 +16,10 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect);
         assert!(hand.press_word(&qymcad_i18n::tr("opt-rect-centre"), egui::pos2(0.0, 0.0)), "no centre + corner on the bar");
         hand.click2d(20.0, 15.0).click2d(40.0, 30.0).key(egui::Key::Enter);
-        Hand::new(&mut app).sk_tool(0);
+        Hand::new(&mut app).sk_select();
         assert!(app.project.sketches[si].rects().first().is_some_and(|r| r.diagonals.is_some()), "the rectangle was not drawn from its centre with its diagonals");
         (app, si)
     }
@@ -32,7 +32,7 @@ mod tests {
             let r = app.project.sketches[si].rects()[0].clone();
             let diagonal = r.diagonals.expect("the diagonals")[0];
             let entities = app.project.sketches[si].entities.len();
-            if !Hand::new(&mut app).sk_corner_set(key, &[(1, r.sides[0]), (1, diagonal)], 3.0) {
+            if !Hand::new(&mut app).sk_corner_set(key, &[qymcad_ui_state::SketchItem::curve(r.sides[0]), qymcad_ui_state::SketchItem::curve(diagonal)], 3.0) {
                 sins.push(format!("{tool}: no place to click on the side and the diagonal"));
                 continue;
             }
@@ -40,7 +40,7 @@ mod tests {
             if now != entities {
                 sins.push(format!("{tool}: a side and the diagonal were cut as a corner - {entities} entities became {now}"));
             }
-            if app.tools.sel_sk.items.iter().any(|&(k, id)| k == 1 && id == diagonal) {
+            if app.tools.sel_sk.items.iter().any(|&qymcad_ui_state::SketchItem { kind: k, id }| k == qymcad_ui_state::ItemKind::Curve && id == diagonal) {
                 sins.push(format!("{tool}: the diagonal stands chosen"));
             }
         }
@@ -55,19 +55,19 @@ mod tests {
         for (key, tool) in [("tb-chamfer-sketch-hint", "the chamfer"), ("tb-fillet-sketch-hint", "the fillet")] {
             let (mut app, si) = from_its_centre();
             let diagonal = app.project.sketches[si].rects()[0].diagonals.expect("the diagonals")[0];
-            let Some(spot) = Hand::new(&mut app).spot2d((1, diagonal)) else {
+            let Some(spot) = Hand::new(&mut app).spot2d(qymcad_ui_state::SketchItem::curve(diagonal)) else {
                 sins.push(format!("{tool}: no place on the diagonal the select tool picks"));
                 continue;
             };
             Hand::new(&mut app).hover2d(spot.0, spot.1);
-            if app.chosen.hover.sketch != Some((1, diagonal)) {
+            if app.chosen.hover.sketch != Some(qymcad_ui_state::SketchItem::curve(diagonal)) {
                 sins.push(format!("{tool}: the select tool does not light the diagonal at {spot:?} - the place is wrong, not the tool"));
                 continue;
             }
             let mut hand = Hand::new(&mut app);
             assert!(hand.press_hint(&qymcad_i18n::tr(key)), "no button of {tool}");
             hand.hover2d(spot.0, spot.1);
-            if app.chosen.hover.sketch == Some((1, diagonal)) {
+            if app.chosen.hover.sketch == Some(qymcad_ui_state::SketchItem::curve(diagonal)) {
                 sins.push(format!("{tool}: the diagonal stands lit under the cursor"));
             }
         }

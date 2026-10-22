@@ -25,9 +25,9 @@ fn cut_at_the_crossing(cut: Cut) -> App {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(1).click2d(-15.0, -5.0).double_click2d(25.0, 25.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(-15.0, -5.0).double_click2d(25.0, 25.0);
     hand.click2d(20.0, -10.0).double_click2d(-5.0, 30.0);
-    hand.key(egui::Key::Escape).sk_tool(0);
+    hand.key(egui::Key::Escape).sk_select();
     let hint = match cut {
         Cut::Fillet => "tb-fillet-sketch-hint",
         Cut::Chamfer => "tb-chamfer-sketch-hint",
@@ -68,7 +68,7 @@ fn a_fillet_at_a_crossing_goes_whole_with_the_centre_of_its_arc() {
         s.point(c).map(|q| (q.x, q.y)).expect("its centre")
     };
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(0).click2d(centre.0, centre.1);
+    hand.sk_select().click2d(centre.0, centre.1);
     hand.drag2d(centre, (centre.0 + 2.0, centre.1 - 2.0));
     let s = &hand.app.project.sketches[si];
     let arc = s.entities.iter().find(|e| e.kind.as_arc().is_some()).and_then(|e| Curve::of(s, e)).expect("the arc");

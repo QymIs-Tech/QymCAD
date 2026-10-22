@@ -50,9 +50,9 @@ mod tests {
     #[test]
     fn creating_an_extrude_over_two_contours_asks_which_ones() {
         let mut app = a_sketch_of(2);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
 
-        assert!(app.tools.armed.cmd_kind() == 1, "GUARD: the extrude command must be open");
+        assert!(app.tools.armed.part_tool() == Some(qymcad_ui_state::PartTool::Extrude), "GUARD: the extrude command must be open");
         assert!(!app.viewing.mode_3d, "the command went straight to the 3D preview over both contours: the person is shown a body built out of everything and has to guess that a button changes it");
     }
 
@@ -60,9 +60,9 @@ mod tests {
     #[test]
     fn creating_an_extrude_over_one_contour_goes_straight_to_the_size() {
         let mut app = a_sketch_of(1);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
 
-        assert!(app.tools.armed.cmd_kind() == 1, "GUARD: the extrude command must be open");
+        assert!(app.tools.armed.part_tool() == Some(qymcad_ui_state::PartTool::Extrude), "GUARD: the extrude command must be open");
         assert!(app.viewing.mode_3d, "with a single contour there is nothing to pick, and a step that can end only one way is worse than none");
     }
 
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn creating_a_revolve_over_two_contours_asks_which_ones() {
         let mut app = a_sketch_of(2);
-        app.start_feat_cmd(3);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve);
         assert!(!app.viewing.mode_3d, "a revolve created over two contours must ask which ones, exactly as an extrude does");
     }
 
@@ -83,13 +83,13 @@ mod tests {
     #[test]
     fn leaving_the_picker_leads_to_the_size_and_then_applies() {
         let mut app = a_sketch_of(2);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         assert!(!app.viewing.mode_3d, "GUARD: the command must start in the picker");
         pick_all(&mut app);
 
         app.apply_feat_cmd(); // the first Enter: the contours are chosen
         assert!(app.viewing.mode_3d, "leaving the picker must bring the person to the size, in the 3D preview");
-        assert!(app.tools.armed.cmd_kind() == 1, "and the command is still open - the first Enter chooses, it does not apply");
+        assert!(app.tools.armed.part_tool() == Some(qymcad_ui_state::PartTool::Extrude), "and the command is still open - the first Enter chooses, it does not apply");
 
         app.apply_feat_cmd(); // the second Enter: the feature is made
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn editing_a_feature_opens_on_its_size_not_on_the_contours() {
         let mut app = a_sketch_of(2);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         pick_all(&mut app);
         app.apply_feat_cmd(); // out of the picker
         app.apply_feat_cmd(); // and the feature is made

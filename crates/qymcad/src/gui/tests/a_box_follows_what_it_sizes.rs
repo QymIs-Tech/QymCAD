@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn no_box_covers_a_handle_or_a_gizmo() {
         let mut wrong = Vec::new();
-        for kind in [21u8, 20] {
+        for kind in [qymcad_ui_state::PartTool::DatumPoint, qymcad_ui_state::PartTool::DatumPlane] {
             let mut app = App::default();
             crate::gui::joint_flow::tests::add_part_at(&mut app, 0.0);
             qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
@@ -93,17 +93,17 @@ mod tests {
             let side = app.project.regen_faces[&body].iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned().expect("the side face");
             let mut hand = Hand::new(&mut app);
             hand.look_at([10.0, 10.0, 5.0], 8.0).tool(kind);
-            if kind == 20 {
+            if kind == qymcad_ui_state::PartTool::DatumPlane {
                 hand.click([side.centroid.x, side.centroid.y, side.centroid.z]);
             }
             hand.frame(Vec::new()).frame(Vec::new()).frame(Vec::new());
             let id = egui::Id::new("feat_cmd_popup");
             if hand.kept_in_sight().is_empty() {
-                wrong.push(format!("tool {kind}: GUARD - it drew no handles to keep clear of"));
+                wrong.push(format!("tool {kind:?}: GUARD - it drew no handles to keep clear of"));
             }
             let over = covered(&hand, id);
             if !over.is_empty() {
-                wrong.push(format!("tool {kind}: the box {:?} covers {over:?}", hand.area_rect(id)));
+                wrong.push(format!("tool {kind:?}: the box {:?} covers {over:?}", hand.area_rect(id)));
             }
         }
         let mut app = App::default();

@@ -18,7 +18,7 @@ fn chamfered_block() -> App {
     app.project.regen_sketch(si);
     app.finish_sketch_edit();
     app.chosen.sel = qymcad_ui_state::Sel::Sketch(si);
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 12.0;
         p.txt = "12".into();

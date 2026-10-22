@@ -344,7 +344,7 @@ impl Session {
             return None;
         }
         let app = &self.app;
-        let behind = qymcad_ui_state::edit_si(&app.project, &app.sketch_ses).is_some() || app.side.section.plane.is_some() || app.side.carr.mode != 0 || app.side.joint.edit.is_some();
+        let behind = qymcad_ui_state::edit_si(&app.project, &app.sketch_ses).is_some() || app.side.section.plane.is_some() || app.side.carr.mode.is_some() || app.side.joint.edit.is_some();
         (!behind).then_some(bar)
     }
 

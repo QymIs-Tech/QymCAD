@@ -16,7 +16,7 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(10.0, 0.0).click2d(30.0, 0.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 0.0).click2d(30.0, 0.0);
         let (a, _) = app.project.sketches[si]
             .entities
             .iter()
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn the_move_tool_does_not_carry_a_pinned_point_along() {
         let (mut app, si, pinned) = a_pinned_line();
-        Hand::new(&mut app).sk_move(1, (20.0, 0.0), (20.0, 0.0), (24.0, 4.0));
+        Hand::new(&mut app).sk_move(qymcad_ui_state::MoveKind::Move, (20.0, 0.0), (20.0, 0.0), (24.0, 4.0));
         app.project.regen_sketch(si);
         let (x, y) = at(&app, si, pinned);
         assert!((x - 10.0).abs() < 1e-6 && y.abs() < 1e-6, "the move tool carried the pinned point to ({x}, {y})");

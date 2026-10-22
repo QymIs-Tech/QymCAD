@@ -872,25 +872,13 @@ impl App {
     }
 
     /// Pick a sketch drawing tool (entering a sketch first, if not in one yet).
-    pub(crate) fn set_sk_tool(&mut self, t: u8) {
+    pub(crate) fn set_sk_tool(&mut self, t: qymcad_ui_state::SketchShape) {
         if edit_si(&self.project, &self.sketch_ses).is_none() {
             self.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         }
-        qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), t);
+        qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), Some(t));
         self.viewing.mode_3d = false;
-        self.status = match self.tools.armed.draw_kind() {
-            1 => Notice::info(crate::i18n::tr("g-line-hint")),
-            2 => Notice::info(crate::i18n::tr("g-rect-hint")),
-            3 => Notice::info(crate::i18n::tr("g-circle-hint")),
-            4 => Notice::info(crate::i18n::tr("g-arc-cse")),
-            5 => Notice::info(crate::i18n::tr("g-point-hint")),
-            6 => Notice::info(crate::i18n::tr("g-polygon-hint")),
-            7 => Notice::info(crate::i18n::tr("g-slot-hint")),
-            8 => Notice::info(crate::i18n::tr("g-ellipse-hint")),
-            9 => Notice::info(crate::i18n::tr("g-spline-hint")),
-            11 => Notice::info(crate::i18n::tr("g-text-hint")),
-            _ => Notice::info(crate::i18n::tr("g-select")),
-        };
+        self.status = qymcad_sketch::drawing_hint(self.tools.armed.drawing());
     }
 
     /// Create a sketch on a given plane (World, Datum or Face) and enter its editing.
@@ -1017,7 +1005,7 @@ impl App {
     pub(crate) fn clipboard_copy(&mut self, cut: bool) {
         // while editing a sketch, the GEOMETRY is copied, whatever is selected in the tree
         if edit_si(&self.project, &self.sketch_ses).is_some() {
-            let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+            let eids: Vec<Id> = self.tools.sel_sk.curves().collect();
             if eids.is_empty() {
                 // A REFUSAL COSTS NOTHING. Nothing is selected, so there is no copy to make - and the tool
                 // stays in hand: taking a half-drawn shape away over a mis-press would punish the person for
@@ -1655,27 +1643,23 @@ impl App {
         let Some(action) = qymcad_ui_state::hotkey_action(&self.set, "part", key) else { return };
         match action {
             "part.sketch-pick" => self.toggle_sketch_pick(),
-            "part.datum-plane" => self.start_feat_cmd(20),
-            "part.extrude" => {
-                self.feat.op = 0;
-                self.start_feat_cmd(1);
+            // A CUT IS THE EXTRUSION with the operation of a cut, as its key says; the extrusion's own key adds
+            "part.extrude" | "part.cut" => {
+                self.feat.op = if action == "part.cut" { 2 } else { 0 };
+                if let Some(t) = crate::command_catalog::part_tool_of("part.extrude") {
+                    self.start_feat_cmd(t);
+                }
             }
-            "part.cut" => {
-                self.feat.op = 2;
-                self.start_feat_cmd(1);
-            }
-            "part.revolve" => self.start_feat_cmd(3),
-            "part.fillet" => self.start_feat_cmd(4),
-            "part.chamfer" => self.start_feat_cmd(5),
-            "part.shell" => self.start_feat_cmd(6),
-            "part.hole" => self.start_feat_cmd(7),
-            "part.mirror" => self.start_feat_cmd(16),
-            "part.box" => self.start_prim_cmd(10),
-            "part.cylinder" => self.start_prim_cmd(11),
             "part.measure" => self.toggle_measure_3d(),
             // go back to picking the contours of the active sketch command (extrude, revolve) from its 3D step
-            "part.contour-reselect" if matches!(self.tools.armed.cmd_kind(), 1 | 3) && self.tools.cmd.sketch.is_some() && self.viewing.mode_3d => {
+            "part.contour-reselect" if self.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && self.tools.cmd.sketch.is_some() && self.viewing.mode_3d => {
                 crate::gui::commands::enter_contour_reselect(&mut self.part_ctx())
+            }
+            // the tool of the row of the catalogue under the code of the action
+            "part.datum-plane" | "part.revolve" | "part.fillet" | "part.chamfer" | "part.shell" | "part.hole" | "part.mirror" | "part.box" | "part.cylinder" => {
+                if let Some(t) = crate::command_catalog::part_tool_of(action) {
+                    self.start_feat_cmd(t);
+                }
             }
             _ => {}
         }
@@ -1687,7 +1671,11 @@ impl App {
         let Some(action) = qymcad_ui_state::hotkey_action(&self.set, "assembly", key) else { return };
         match action {
             // there are NO sketch keys in an Assembly: a sketch is inert there (see `create_panel_common`)
-            "assembly.datum-plane" => self.start_feat_cmd(20),
+            "assembly.datum-plane" => {
+                if let Some(t) = crate::command_catalog::part_tool_of(crate::command_catalog::DATUM_PLANE) {
+                    self.start_feat_cmd(t);
+                }
+            }
             "assembly.new-part" => {
                 let id = self.project.add_part(self.project.free_part_name());
                 self.enter_component(id);

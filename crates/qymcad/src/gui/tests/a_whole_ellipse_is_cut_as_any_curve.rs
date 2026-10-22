@@ -21,7 +21,7 @@ fn a_half_of_an_ellipse_cut_by_a_line_is_extruded_alone() {
     assert_eq!(closed.len(), 2, "the ellipse and the line across it make {} closed regions, not its two halves", closed.len());
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
-    hand.tool(1);
+    hand.tool(qymcad_ui_state::PartTool::Extrude);
     assert!(!hand.app.viewing.mode_3d, "the extrusion over two regions does not ask which one");
     hand.click2d(0.0, 4.0).key(egui::Key::Enter);
     hand.set("height", 10.0).enter();

@@ -26,6 +26,9 @@ pub enum By {
     Pair { a: [f64; 3], b: [f64; 3] },
     /// Nothing picked yet: the top left corner of the view, clear of everything to be picked.
     ViewCorner,
+    /// A place on a sketch laid flat, where it stands on the screen: the sheet is no view of the world, so the sketch
+    /// finds the point and what the box sizes on its sheet itself (`sheet_spot`).
+    OnSheet(Spot),
 }
 
 /// WHAT A BOX STANDS BY, whether it may change sides, and whether it stands off the model.
@@ -124,7 +127,14 @@ pub fn spot_of(by: By, project: &Project, screen: &Screen, here: Id) -> Spot {
             }
         }
         By::ViewCorner => corner,
+        By::OnSheet(spot) => spot,
     }
+}
+
+/// WHERE A BOX STANDS ON A SKETCH LAID FLAT: by `at` on the screen, clear of all of `around` - the shape it sizes.
+pub fn sheet_spot(at: egui::Pos2, around: &[egui::Pos2]) -> By {
+    let subject = around.iter().fold(Rect::NOTHING, |r, p| r.union(Rect::from_center_size(*p, egui::Vec2::ZERO)));
+    By::OnSheet(Spot { at, subject: if subject.is_finite() { subject.expand(8.0) } else { Rect::NOTHING } })
 }
 
 /// THE SIDE OF WHAT IT SIZES A BOX STANDS ON. The side it stood on the frame before is asked first, so a box does not

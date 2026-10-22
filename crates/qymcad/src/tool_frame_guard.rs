@@ -27,14 +27,9 @@ mod tests {
     /// Why each drawing tool of the sketch is allowed its own box.
     const NOT_YET: &str = "a box of a drawing tool of the sketch, with its own Enter and Esc, kept until the sketch comes onto the frame of a tool";
 
-    const ALLOWED: [Allowed; 10] = [
+    const ALLOWED: [Allowed; 5] = [
         Allowed { path: "qymcad-sketch/src/popups.rs", function: "corner_input_popup", why: NOT_YET },
         Allowed { path: "qymcad-sketch/src/popups.rs", function: "dim_editor", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/popups.rs", function: "ellipse_input_popup", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/popups.rs", function: "poly_input_popup", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/popups.rs", function: "rect_dims_popup", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/popups.rs", function: "rect_input_popup", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/popups.rs", function: "sketch_rotate_popup", why: NOT_YET },
         Allowed { path: "qymcad-sketch/src/offset.rs", function: "offset_box", why: NOT_YET },
         Allowed { path: "qymcad-sketch/src/offset.rs", function: "offset_on_enter", why: NOT_YET },
         Allowed {

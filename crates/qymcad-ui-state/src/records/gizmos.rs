@@ -11,11 +11,12 @@ pub struct CompGizmo {
     pub ring: Option<u8>,
 }
 
-/// TYPING A ROTATION ANGLE: the value, the buffer and the focus — one unfinished input.
+/// TYPING A ROTATION ANGLE: the value the preview turns by, the field of the box of the turn and its focus - one
+/// unfinished input.
 #[derive(Clone, Default)]
 pub struct RotInput {
     pub angle: f64,
-    pub buf: String,
+    pub field: Vec<CmdParam>,
     pub focus: bool,
 }
 

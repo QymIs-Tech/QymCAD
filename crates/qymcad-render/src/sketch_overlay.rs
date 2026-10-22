@@ -347,8 +347,8 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
     }
     // highlighting the selected entities (white) and the hovered ones (blue, thinner)
     for e in &s.entities {
-        let sel = pn.sel_sk.items.contains(&(1, e.id));
-        let hov = pn.hover.sketch == Some((1, e.id));
+        let sel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::curve(e.id));
+        let hov = pn.hover.sketch == Some(qymcad_ui_state::SketchItem::curve(e.id));
         if !sel && !hov {
             continue;
         }
@@ -426,7 +426,7 @@ pub(crate) fn draw_offset_preview(pn: &Painting, painter: &egui::Painter, sh: &q
     // the side a click fixed, in the colour of a fixed corner; before the click, the side of the pointer
     let fixed = pn.sel_sk.offset.at;
     let (Some(si), Some(cur)) = (qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses), fixed.or(pn.cursor)) else { return };
-    let eids: Vec<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = pn.sel_sk.curves().collect();
     if eids.is_empty() {
         return;
     }

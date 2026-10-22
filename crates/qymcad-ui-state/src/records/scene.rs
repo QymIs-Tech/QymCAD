@@ -161,7 +161,7 @@ impl HelpWin {
 
 /// One editable dimension of the active Part command: the label + the key (for `feat_dims`) + the current value +
 /// the input buffer (a number OR an expression like `w/2+3`). An on-screen field like the sketch dimensions have.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct CmdParam {
     /// A CATALOGUE KEY rather than a finished phrase: the field's label must follow a change of language by itself,
     /// without the command being recreated. The key is stable; the translation is taken at the moment of display.

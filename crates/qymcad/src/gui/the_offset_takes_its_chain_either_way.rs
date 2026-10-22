@@ -35,8 +35,8 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
         let [a, b, c, d] = ZIGZAG;
-        hand.sk_tool(1).click2d(a.0, a.1).click2d(b.0, b.1).click2d(c.0, c.1).double_click2d(d.0, d.1);
-        hand.key(egui::Key::Escape).sk_tool(0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(a.0, a.1).click2d(b.0, b.1).click2d(c.0, c.1).double_click2d(d.0, d.1);
+        hand.key(egui::Key::Escape).sk_select();
         let (following, fixed) = (hand.app.scheme.pal.preview_corner_new(), hand.app.scheme.pal.preview_corner_fixed());
         let mut failures = Vec::new();
 
@@ -98,12 +98,12 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
         let [a, b, c, d] = ZIGZAG;
-        hand.sk_tool(1).click2d(a.0, a.1).click2d(b.0, b.1).click2d(c.0, c.1).double_click2d(d.0, d.1);
-        hand.key(egui::Key::Escape).sk_tool(0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(a.0, a.1).click2d(b.0, b.1).click2d(c.0, c.1).double_click2d(d.0, d.1);
+        hand.key(egui::Key::Escape).sk_select();
         assert!(hand.press_hint(&crate::i18n::tr("tb-offset-hint")), "no sketch offset button");
         // the box from above the left end down past the right end, over the whole zigzag, on nothing but paper
         hand.drag2d((-38.0, 22.0), (38.0, -12.0));
-        let curves = hand.app.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).count();
+        let curves = hand.app.tools.sel_sk.items.iter().filter(|it| it.kind == qymcad_ui_state::ItemKind::Curve).count();
         let mut failures = Vec::new();
         if hand.app.tools.sel_sk.modify != Some(EditTool::Offset) || hand.app.tools.armed.modify() != Some(EditTool::Offset) || curves != 3 {
             failures.push(format!(

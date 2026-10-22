@@ -65,7 +65,7 @@ enum Shape {
 
 fn put_down(h: &mut Hand) {
     h.key(egui::Key::Escape).key(egui::Key::Escape);
-    h.sk_tool(0);
+    h.sk_select();
 }
 
 /// Draw `shape` by hand about `at`.
@@ -76,38 +76,38 @@ fn draw(h: &mut Hand, shape: Shape, at: Point2) {
     };
     match shape {
         Shape::Point => {
-            h.sk_tool(5);
+            h.sk_tool(qymcad_ui_state::SketchShape::Point);
             click(h, c(0.0, 0.0));
         }
         Shape::Line => {
-            h.sk_tool(1);
+            h.sk_tool(qymcad_ui_state::SketchShape::Line);
             click(h, c(-4.0, -6.0));
             click(h, c(2.0, 6.0));
         }
         Shape::SecondLine => {
-            h.sk_tool(1);
+            h.sk_tool(qymcad_ui_state::SketchShape::Line);
             click(h, c(-6.0, -6.0));
             click(h, c(6.0, 2.0));
         }
         Shape::Circle => {
-            h.sk_tool(3);
+            h.sk_tool(qymcad_ui_state::SketchShape::Circle);
             click(h, c(0.0, 0.0));
             click(h, c(5.0, 0.0));
         }
         Shape::Arc => {
-            h.sk_tool(4);
+            h.sk_tool(qymcad_ui_state::SketchShape::Arc);
             click(h, c(0.0, -2.0));
             click(h, c(6.0, -2.0));
             click(h, c(-4.0, 2.5));
         }
         Shape::Ellipse => {
-            h.sk_tool(8);
+            h.sk_tool(qymcad_ui_state::SketchShape::Ellipse);
             click(h, c(0.0, 0.0));
             click(h, c(7.0, 0.0));
             click(h, c(0.0, 3.5));
         }
         Shape::OpenSpline => {
-            h.sk_tool(9);
+            h.sk_tool(qymcad_ui_state::SketchShape::Spline);
             click(h, c(-6.0, -1.0));
             click(h, c(-2.0, 4.0));
             click(h, c(2.0, -3.0));
@@ -194,9 +194,9 @@ fn round_of(c: &Curve) -> [f64; 2] {
 
 /// WHERE A LINEAR OR ANGULAR DIMENSION IS PLACED: 3 mm across and 3 mm up or down from the middle of the way between the
 /// nearest points of the two things - or of the ends of the one line - on the side of its normal.
-fn placed(d: &Drawing, things: &[Option<Picked>]) -> Option<Point2> {
-    let path = |key: Picked| -> Option<Vec<Point2>> {
-        if key.kind == 0 {
+fn placed(d: &Drawing, things: &[Option<qymcad_ui_state::SketchItem>]) -> Option<Point2> {
+    let path = |key: qymcad_ui_state::SketchItem| -> Option<Vec<Point2>> {
+        if key.kind == qymcad_ui_state::ItemKind::Point {
             d.points.iter().find(|q| q.key == key).map(|q| vec![q.at])
         } else {
             d.curves.iter().find(|c| c.key == key).map(|c| c.path.clone())
@@ -224,12 +224,12 @@ fn placed(d: &Drawing, things: &[Option<Picked>]) -> Option<Point2> {
 }
 
 /// THE VALUE THE GEOMETRY HAS NOW for what the case sets.
-fn measured(case: &Case, things: &[Option<Picked>], d: &Drawing) -> Result<f64, String> {
+fn measured(case: &Case, things: &[Option<qymcad_ui_state::SketchItem>], d: &Drawing) -> Result<f64, String> {
     let curve = |k: usize| -> Result<&Curve, String> { things[k].and_then(|key| d.curves.iter().find(|c| c.key == key)).ok_or_else(|| "a curve of the case is gone".into()) };
     // a distance to a line is to the whole line through it, as in every sketcher
     let path = |k: usize| -> Result<Vec<Point2>, String> {
         match things[k] {
-            Some(key) if key.kind == 0 => d.points.iter().find(|q| q.key == key).map(|q| vec![q.at]).ok_or_else(|| "the point is gone".into()),
+            Some(key) if key.kind == qymcad_ui_state::ItemKind::Point => d.points.iter().find(|q| q.key == key).map(|q| vec![q.at]).ok_or_else(|| "the point is gone".into()),
             _ => {
                 let c = curve(k)?;
                 if c.kind != "line" {
@@ -277,7 +277,7 @@ fn sized(case: &Case) -> Result<(), String> {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.enter_sketch_edit(si);
     let mut hand = Hand::new(&mut app);
-    let mut keys: Vec<Option<Picked>> = Vec::new();
+    let mut keys: Vec<Option<qymcad_ui_state::SketchItem>> = Vec::new();
     for (shape, at) in case.shapes.iter().zip(PLACES) {
         let before: Vec<u64> = drawing(hand.app).curves.iter().map(|c| c.key.id).chain(drawing(hand.app).points.iter().map(|q| q.key.id)).collect();
         draw(&mut hand, *shape, at);
@@ -292,7 +292,7 @@ fn sized(case: &Case) -> Result<(), String> {
     if keys.iter().any(Option::is_none) {
         return Err("a shape of the case left nothing on the sheet".into());
     }
-    let things: Vec<Option<Picked>> = case
+    let things: Vec<Option<qymcad_ui_state::SketchItem>> = case
         .clicks
         .iter()
         .map(|t| match t {

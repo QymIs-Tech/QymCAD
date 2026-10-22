@@ -42,7 +42,7 @@ mod tests {
         app.finish_sketch_edit();
         // a BODY: a drag that starts on the model turns the view, one that starts on empty space draws a frame
         app.chosen.sel = qymcad_ui_state::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         app.apply_feat_cmd();
         app.chosen.sel = qymcad_ui_state::Sel::None; // no gizmo stands over the body to catch the drag
         app.viewing.mode_3d = true;

@@ -161,7 +161,7 @@ pub fn comp_array_kind(arr: ArrayParams, carr: &CompArrayCmd, cmd: &FeatCommand)
         _ => [1.0, 0.0, 0.0],
     };
     let count = arr.count.max(1);
-    if carr.mode == 2 {
+    if carr.is_circular() {
         let angle = if arr.full { 360.0 } else { cmd_val(cmd, "cangle") };
         // THE AXIS PASSES THROUGH THE ORIGIN OF THE ASSEMBLY: the array has no axis of its own yet, and
         // that is stated honestly - for bolts around a flange the part is placed relative to the origin

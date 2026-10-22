@@ -6,28 +6,16 @@
 //! a name a person reads, and launching by code leads into the command the button starts.
 #[cfg(test)]
 mod tests {
-    use crate::command_catalog::{all, Launch, Named};
+    use crate::command_catalog::{all, Named};
 
     /// EVERY COMMAND THE HELP KNOWS HAS A ROW, so a button on its bar and a line in the search. The tables of the
-    /// help name the commands by their kind and number; a number without a row is a command a person cannot reach.
+    /// help name the commands by the codes of their rows; a code without a row is a command a person cannot reach.
     #[test]
     fn every_command_the_help_knows_is_in_the_catalogue() {
         let mut missing = Vec::new();
-        for (kind, _) in qymcad_help::map::PART {
-            if !all().any(|c| matches!(c.launch, Launch::Feat(k) | Launch::Prim(k) if k == *kind)) {
-                missing.push(format!("the part kind {kind}"));
-            }
-        }
-        for (handle, n, _) in qymcad_help::map::SKETCH {
-            let found = all().any(|c| match c.launch {
-                Launch::SkTool(m) => *handle == "sk" && m == *n,
-                Launch::Dim(m) => *handle == "dim" && m == *n,
-                Launch::ClickOp(m) => *handle == "click" && m == *n,
-                Launch::Modify(t) => *handle == "mod" && t.code() == *n,
-                _ => false,
-            });
-            if !found {
-                missing.push(format!("the sketch tool {handle} {n}"));
+        for row in qymcad_help::map::PART.iter().chain(qymcad_help::map::SKETCH) {
+            if !all().any(|c| c.code == row.code) {
+                missing.push(format!("the command {}", row.code));
             }
         }
         assert!(missing.is_empty(), "the help knows these commands and the catalogue has no row for them: {missing:?}");
@@ -97,9 +85,9 @@ mod tests {
         let mut app = super::super::screen_keys::tests::plate();
         app.chosen.sel = super::super::Sel::Sketch(0);
         app.run_command("part.extrude", &egui::Context::default());
-        assert_eq!(app.tools.armed.cmd_kind(), 1, "\"part.extrude\" did not open the extrude");
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "\"part.extrude\" did not open the extrude");
         app.cancel_all_tools();
         app.run_command("part.hole", &egui::Context::default());
-        assert_eq!(app.tools.armed.cmd_kind(), 7, "\"part.hole\" did not open the hole");
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Hole), "\"part.hole\" did not open the hole");
     }
 }

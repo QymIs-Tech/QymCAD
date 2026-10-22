@@ -23,8 +23,8 @@ mod tests {
             let si = app.create_sketch_on(SketchPlane::default());
             app.enter_sketch_edit(si);
             let mut hand = Hand::new(&mut app);
-            hand.sk_tool(1).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
-            hand.sk_tool(1).click2d(start.0, start.1).click2d(end.0, end.1).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(start.0, start.1).click2d(end.0, end.1).key(egui::Key::Escape).key(egui::Key::Escape);
             let s = &hand.app.project.sketches[si];
             let lines: Vec<(u64, u64)> = s.entities.iter().filter_map(|e| if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() { Some((a, b)) } else { None }).collect();
             let (base, new) = (lines[0], lines[1]);

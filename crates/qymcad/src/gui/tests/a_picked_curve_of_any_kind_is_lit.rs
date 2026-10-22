@@ -16,14 +16,14 @@ const KINDS: [Drawn; 4] = [
     Drawn {
         name: "circle",
         draw: |h| {
-            h.sk_tool(3).click2d(40.0, 30.0).click2d(46.0, 30.0);
+            h.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(40.0, 30.0).click2d(46.0, 30.0);
         },
         on: (46.0, 30.0),
     },
     Drawn {
         name: "ellipse",
         draw: |h| {
-            h.sk_tool(8).click2d(40.0, 30.0).click2d(48.0, 30.0).click2d(40.0, 34.0);
+            h.sk_tool(qymcad_ui_state::SketchShape::Ellipse).click2d(40.0, 30.0).click2d(48.0, 30.0).click2d(40.0, 34.0);
         },
         // 45 deg round the ellipse, clear of the ends of its axes
         on: (45.657, 32.828),
@@ -31,7 +31,7 @@ const KINDS: [Drawn; 4] = [
     Drawn {
         name: "open spline",
         draw: |h| {
-            h.sk_tool(9).click2d(30.0, 30.0).click2d(40.0, 34.0).double_click2d(50.0, 30.0);
+            h.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(30.0, 30.0).click2d(40.0, 34.0).double_click2d(50.0, 30.0);
         },
         // between its first two nodes
         on: (35.0, 32.6),
@@ -39,7 +39,7 @@ const KINDS: [Drawn; 4] = [
     Drawn {
         name: "line",
         draw: |h| {
-            h.sk_tool(1).click2d(30.0, 30.0).double_click2d(50.0, 30.0);
+            h.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 30.0).double_click2d(50.0, 30.0);
         },
         on: (37.0, 30.0),
     },
@@ -55,7 +55,7 @@ fn every_kind_picked_is_lit_in_the_colour_of_the_selection() {
         let mut hand = Hand::new(&mut app);
         (kind.draw)(&mut hand);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0).click2d(kind.on.0, kind.on.1);
+        hand.sk_select().click2d(kind.on.0, kind.on.1);
         let colour = hand.app.scheme.pal.emphasis();
         if hand.strokes_near2d(kind.on, colour) == 0 {
             dark.push(format!("{}: picked {:?}", kind.name, hand.app.tools.sel_sk.items));

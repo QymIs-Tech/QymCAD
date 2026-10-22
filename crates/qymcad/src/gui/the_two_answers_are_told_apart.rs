@@ -45,7 +45,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1); // extrude
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude); // extrude
         app
     }
 

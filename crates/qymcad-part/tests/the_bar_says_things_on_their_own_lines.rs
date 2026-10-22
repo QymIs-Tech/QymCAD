@@ -87,7 +87,7 @@ fn drawn_of(t: &Drawn, n: &qymcad_ui_state::Notice) -> bool {
 /// The thread command as a person meets it: opened, with the defaults of its own fields.
 fn the_thread_bar() -> ThreadBar {
     let mut b = Bench { mode_3d: true, ..Default::default() };
-    b.cmd.open(&mut b.armed, 24, true);
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Thread, true);
     qymcad_ui_state::set_thread_params(&mut b.cmd, b.thread);
 
     let ctx = egui::Context::default();

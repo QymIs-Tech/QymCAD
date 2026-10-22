@@ -25,9 +25,17 @@ impl App {
                 self.tools.tool.pts.clear();
                 self.status = Notice::info(crate::i18n::tr("sk-select"));
             }
-            "sketch.dim" => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, &self.project, self.chosen.sel, self.sketch_ses, &mut self.status, 1),
-            "sketch.corner-fillet" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, 4),
-            "sketch.trim" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, 1),
+            "sketch.dim" => qymcad_ui_state::set_dim_tool(
+                &mut qymcad_ui_state::tools_of!(self),
+                &mut self.viewing.mode_3d,
+                &self.project,
+                self.chosen.sel,
+                self.sketch_ses,
+                &mut self.status,
+                qymcad_ui_state::DimKind::Linear,
+            ),
+            "sketch.corner-fillet" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, qymcad_ui_state::ClickTool::Corner),
+            "sketch.trim" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, qymcad_ui_state::ClickTool::Trim),
             "sketch.mirror" => qymcad_ui_state::modify_button(qymcad_ui_state::editing_of!(self), &mut qymcad_ui_state::tools_of!(self), self.sk_pat, &self.tool_prefs, EditTool::Mirror),
             "sketch.construction" => qymcad_ui_state::construction_toggle(qymcad_ui_state::editing_of!(self), &self.tools.sel_sk, &self.sketch_ses, &mut self.tools.tool.construction),
             _ => {}
@@ -81,39 +89,15 @@ impl App {
         }
         // a double click finishes a chain of lines; otherwise it edits a dimension
         if resp.double_clicked() && self.workbench == Workbench::Sketch {
-            if self.tools.armed.draw_kind() == 1 {
+            if self.tools.armed.drawing() == Some(qymcad_ui_state::SketchShape::Line) {
                 self.tools.tool.pts.clear(); // finish the current chain; the tool stays armed
-            } else if self.tools.armed.draw_kind() == 9 {
+            } else if self.tools.armed.drawing() == Some(qymcad_ui_state::SketchShape::Spline) {
                 finish_spline(&mut self.sketch_ctx());
             } else if let (Sel::Sketch(si), Some(pos)) = (self.chosen.sel, resp.interact_pointer_pos()) {
                 // a copy of an array opens its parameters; a text object opens for editing; so do a
                 // note, a dimension and a circle
-                if let Some(pi) = sketch_hit(&self.pick_ctx(), rect, pos, si).filter(|(k, _)| *k == 1).and_then(|(_, eid)| self.project.pattern_of_entity(si, eid)) {
-                    // a double click on a copy of an array edits the count and the step, with a preview
-                    use qymcad_core::model::PatternKind;
-                    // re-opening an array TAKES the pattern tool, so the previous one goes first
-                    qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_of!(self));
-                    self.tools.pat.edit = Some(pi);
-                    match self.project.sketches[si].patterns[pi].kind {
-                        PatternKind::Linear { dx, dy, count, dx2, dy2, count2 } => {
-                            self.tools.armed = qymcad_ui_state::Armed::Pattern(1);
-                            self.sk_pat.dx = dx;
-                            self.sk_pat.dy = dy;
-                            self.sk_pat.count = count;
-                            self.sk_pat.dx2 = dx2;
-                            self.sk_pat.dy2 = dy2;
-                            self.sk_pat.count2 = count2.max(1);
-                            self.tools.pat.center = None;
-                        }
-                        PatternKind::Circular { cx, cy, count, total_deg } => {
-                            self.tools.armed = qymcad_ui_state::Armed::Pattern(2);
-                            self.sk_pat.count = count;
-                            self.sk_pat.angle = total_deg;
-                            self.tools.pat.center = Some(qymcad_core::geom::Point2::new(cx, cy));
-                            // the centre from the record (it can be re-picked)
-                        }
-                    }
-                    self.status = Notice::info(crate::i18n::tr("sk-array-edit-hint"));
+                if let Some(pi) = sketch_hit(&self.pick_ctx(), rect, pos, si).and_then(qymcad_ui_state::SketchItem::curve_id).and_then(|eid| self.project.pattern_of_entity(si, eid)) {
+                    reopen_pattern(&mut self.sketch_ctx(), pi); // a copy of an array edits the count and the step
                 } else if let Some(ti) = qymcad_ui_state::text_at(&self.project, &self.viewing.view, rect, pos, si) {
                     qymcad_ui_state::begin_text_edit(&self.project, &mut qymcad_ui_state::tools_of!(self), &mut self.tool_prefs, si, ti);
                 } else if let Some(ni) = qymcad_ui_state::note_at(&self.project, &self.viewing.view, rect, pos, si) {

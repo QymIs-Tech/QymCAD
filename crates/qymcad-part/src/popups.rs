@@ -11,11 +11,11 @@ pub fn cmd_place(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::P
     let dc = |pc: &qymcad_ui_state::PartCtx| {
         qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel)
     };
-    match pc.armed.cmd_kind() {
-        1 | 3 => {
+    match pc.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Extrude) | Some(qymcad_ui_state::PartTool::Revolve) => {
             let (base, dir, h) = qymcad_ui_state::feat_cmd_axis(pc.cmd, pc.gsel, pc.project)?;
-            let dir = if pc.armed.cmd_kind() == 1 && pc.feat.flip { [-dir[0], -dir[1], -dir[2]] } else { dir };
-            if pc.armed.cmd_kind() == 3 {
+            let dir = if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Extrude) && pc.feat.flip { [-dir[0], -dir[1], -dir[2]] } else { dir };
+            if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Revolve) {
                 return Some(Place::by(By::Point(base)));
             }
             // clear of the whole arrow. Reported behaviour: the length field of an extrusion stood against the tip of its
@@ -30,13 +30,32 @@ pub fn cmd_place(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::P
         //
         // The shell, the draft, pushing and removing a face, thickening - all belong here. What helps
         // with aiming is not the popup but THE HANDLE: it sits on the geometry and covers nothing.
-        4 | 5 | 6 | 7 | 17 | 18 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 | 36 => {
+        Some(qymcad_ui_state::PartTool::Fillet)
+        | Some(qymcad_ui_state::PartTool::Chamfer)
+        | Some(qymcad_ui_state::PartTool::Shell)
+        | Some(qymcad_ui_state::PartTool::Hole)
+        | Some(qymcad_ui_state::PartTool::LinearPattern)
+        | Some(qymcad_ui_state::PartTool::CircularPattern)
+        | Some(qymcad_ui_state::PartTool::Draft)
+        | Some(qymcad_ui_state::PartTool::Thread)
+        | Some(qymcad_ui_state::PartTool::PushFace)
+        | Some(qymcad_ui_state::PartTool::RemoveFace)
+        | Some(qymcad_ui_state::PartTool::SplitBody)
+        | Some(qymcad_ui_state::PartTool::Thicken)
+        | Some(qymcad_ui_state::PartTool::SplitFace)
+        | Some(qymcad_ui_state::PartTool::FaceCopy)
+        | Some(qymcad_ui_state::PartTool::SurfaceReplace)
+        | Some(qymcad_ui_state::PartTool::Patch)
+        | Some(qymcad_ui_state::PartTool::Stitch)
+        | Some(qymcad_ui_state::PartTool::Trim)
+        | Some(qymcad_ui_state::PartTool::Recognise)
+        | Some(qymcad_ui_state::PartTool::OffsetSurface) => {
             let b = pc.recognise.src.or_else(|| pc.stitch_parts.first().copied()).or(pc.trim.keep.map(|(b, _)| b)).or(pc.gsel.faces_body).or_else(|| dc(pc))?;
             Some(Place::by(By::Body(b)))
         }
-        // datum plane (20): beside the arrow of its offset; point (21): at (x,y,z); axis (22): at the origin of the
+        // datum plane: beside the arrow of its offset; point: at (x,y,z); axis: at the origin of the
         // reference or of the hand-typed one
-        20 => {
+        Some(qymcad_ui_state::PartTool::DatumPlane) => {
             // NOTHING PICKED YET: in the corner of the view, clear of everything a plane or a face is to be picked on - at
             // the origin it stood over the faces of a part drawn there
             let Some((o, n)) =
@@ -51,8 +70,8 @@ pub fn cmd_place(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::P
         }
         // A POINT AND THE ORIGIN OF AN AXIS BY HAND are moved by the arrows and rings out of them: the box stands clear of
         // those as of every handle (`keep_in_sight`)
-        21 => Some(Place::by(By::Point(["x", "y", "z"].map(|k| qymcad_ui_state::cmd_val(pc.cmd, k))))),
-        22 => {
+        Some(qymcad_ui_state::PartTool::DatumPoint) => Some(Place::by(By::Point(["x", "y", "z"].map(|k| qymcad_ui_state::cmd_val(pc.cmd, k))))),
+        Some(qymcad_ui_state::PartTool::DatumAxis) => {
             let p = if pc.datum.axis_mode == 1 {
                 ["ox", "oy", "oz"].map(|k| qymcad_ui_state::cmd_val(pc.cmd, k))
             } else {
@@ -62,7 +81,7 @@ pub fn cmd_place(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::P
         }
         // primitives: beside the body while editing (like the chamfer), by the placement point once it is clicked; before
         // the click in the corner of the view - by the origin the box lay over the place about to be clicked
-        10..=15 => match (qymcad_ui_state::selected_body(pc.project, pc.sel).filter(|_| pc.cmd.edit.is_some()), pc.prim.place) {
+        Some(k) if k.is_a_primitive() => match (qymcad_ui_state::selected_body(pc.project, pc.sel).filter(|_| pc.cmd.edit.is_some()), pc.prim.place) {
             (Some(b), _) => Some(Place::by(By::Body(b))),
             (None, Some(p)) => Some(Place::by(By::Point(p))),
             (None, None) => Some(Place::by(By::ViewCorner)),
@@ -93,7 +112,7 @@ pub(crate) fn command_gate(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Contex
         return qymcad_ui_state::Gate::Waiting(pc.status.words.clone());
     }
     // EDGES OF A PATCH THAT DO NOT CLOSE are picked, and will not do: said as they are, not asked for again
-    if pc.armed.cmd_kind() == 32 && !pc.gsel.edges.is_empty() && !cmd_ready(pc) {
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Patch) && !pc.gsel.edges.is_empty() && !cmd_ready(pc) {
         return qymcad_ui_state::Gate::Wrong(qymcad_i18n::tr("msg-patch-needs-edges"));
     }
     let ask = (!cmd_ready(pc)).then(|| cmd_hint(&*pc.armed, &*pc.gsel, &*pc.trim));
@@ -104,26 +123,27 @@ pub(crate) fn command_gate(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Contex
 /// THE FIELDS OF THE COMMAND IN HAND AT THE GEOMETRY, in the box of the frame: a number OR an expression such as
 /// `w/2+3`, beside what they size. Enter applies, Esc cancels; one mechanism for every part tool.
 pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, rect: Rect) {
-    if pc.carr.mode != 0 {
+    if pc.carr.mode.is_some() {
         comp_array_popup(pc, ctx, rect); // a pattern of components takes its values at the geometry as every tool does
         return;
     }
-    if pc.armed.cmd_kind() == 0 || pc.cmd.params.is_empty() || !*pc.mode_3d {
+    if pc.armed.part_tool().is_none() || pc.cmd.params.is_empty() || !*pc.mode_3d {
         return;
     }
     let Some(place) = cmd_place(pc) else { return };
     // A PATTERN OR A HOLE SIZES WHAT IS PICKED: before the pick there is nothing to size, and a box beside the body would
     // lie over the very place to be clicked - the centre of the face a hole is put on
-    if matches!(pc.armed.cmd_kind(), 7 | 17 | 18) && !cmd_ready(pc) {
+    if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::sizes_what_is_picked) && !cmd_ready(pc) {
         return;
     }
     let gate = command_gate(pc, ctx);
     let id = egui::Id::new("feat_cmd_popup");
     // in a symmetric chamfer the d2 field (the second leg or the angle) takes no part, so it is hidden
-    let hidden: &[&str] = if pc.armed.cmd_kind() == 5 && pc.chamfer.mode == qymcad_core::feature::ChamferMode::Symmetric { &["d2"] } else { &[] };
+    let hidden: &[&str] = if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Chamfer) && pc.chamfer.mode == qymcad_core::feature::ChamferMode::Symmetric { &["d2"] } else { &[] };
     // a one-shot focus of the first field: Enter works straight away, what it holds selected
     let focus = if std::mem::take(&mut pc.cmd.focus) { qymcad_ui_state::Focus::Takes } else { qymcad_ui_state::Focus::Waits };
-    let the_box = qymcad_ui_state::FieldsBox { id, tool: u64::from(pc.armed.cmd_kind()), place, focus, hidden, ends: qymcad_ui_state::Ends::ApplyCancel, esc: qymcad_ui_state::EscBy::Bar };
+    let the_box =
+        qymcad_ui_state::FieldsBox { id, tool: pc.armed.part_tool().map_or(0, |t| t as u64 + 1), place, focus, hidden, ends: qymcad_ui_state::Ends::ApplyCancel, esc: qymcad_ui_state::EscBy::Bar };
     let basis = pc.cam.basis();
     let scheme = pc.scheme;
     let here = qymcad_ui_state::current_ctx_id(pc.active_path, pc.project);

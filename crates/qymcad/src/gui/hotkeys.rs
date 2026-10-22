@@ -551,7 +551,7 @@ mod tests {
         ("part", "pub(super) fn part_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {", true),
         ("assembly", "pub(super) fn assembly_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>) {", true),
         ("sketch", "pub(super) fn sketch_hotkey(&mut self, key: impl Into<qymcad_ui_state::Chord>)", true),
-        ("sketch", "pub fn tool_for_action(action: &str) -> Option<u8>", false),
+        ("sketch", "pub fn tool_for_action(action: &str) -> Option<qymcad_ui_state::SketchShape>", false),
     ];
 
     fn handler_sources() -> [(&'static str, &'static str, &'static str, bool); 4] {

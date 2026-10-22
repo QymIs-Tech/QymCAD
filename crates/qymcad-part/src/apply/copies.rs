@@ -13,8 +13,8 @@ pub fn apply_datum_cmd(
     project: &mut Project,
 ) -> Result<Id, NotApplied> {
     use qymcad_core::feature::SketchPlane;
-    match armed.cmd_kind() {
-        20 => {
+    match armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::DatumPlane) => {
             let dist = qymcad_ui_state::cmd_val(cmd, "dist");
             let id = match datum.plane_pick {
                 Some(SketchPlane::World(bp)) => project.add_offset_plane(bp, dist),
@@ -29,7 +29,7 @@ pub fn apply_datum_cmd(
             }
             Ok(id)
         }
-        21 => {
+        Some(qymcad_ui_state::PartTool::DatumPoint) => {
             // "at a vertex" gives an associative point that travels with the vertex; otherwise the
             // coordinates, which stay parametric
             if datum.pt_mode == 1 {
@@ -44,7 +44,7 @@ pub fn apply_datum_cmd(
             }
             Ok(id)
         }
-        22 => {
+        Some(qymcad_ui_state::PartTool::DatumAxis) => {
             // mode 2, "two points": if BOTH are datum points the axis is a parametric TwoPoints;
             // otherwise it is a manual one built from the coordinates
             if datum.axis_mode == 2 {
@@ -87,7 +87,7 @@ pub fn apply_datum_cmd(
 pub fn apply_array_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Result<Id, NotApplied> {
     let src =
         qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel).ok_or_else(no_body)?;
-    if pc.armed.cmd_kind() == 18 {
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::CircularPattern) {
         let angle = if pc.arr.full { 360.0 } else { qymcad_ui_state::cmd_val(pc.cmd, "angle") };
         let body = pc.project.add_circular_array_axis(src, pc.arr.count.max(1), angle, pc.arr.axis);
         // the count and the angle are fields of the command, kept parametric through the one door of a feature's number

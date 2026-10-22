@@ -12,9 +12,9 @@ fn every_corner_of_a_rectangle_rounded_to_half_its_short_side_is_a_slot() {
     let si = app.create_sketch_on(SketchPlane::default());
     app.enter_sketch_edit(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 20.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 20.0);
     hand.key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_select();
     hand.click2d(20.0, 0.0).shift_click2d(40.0, 10.0).shift_click2d(20.0, 20.0).shift_click2d(0.0, 10.0);
     assert!(hand.press_hint(&qymcad_i18n::tr("tb-fillet-sketch-hint")), "no sketch fillet button");
     hand.close_window();

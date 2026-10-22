@@ -18,20 +18,20 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         for &(x, y) in clicks {
             hand.click2d(x, y);
         }
         hand.key(egui::Key::Escape);
-        Hand::new(&mut app).sk_tool(0);
+        Hand::new(&mut app).sk_select();
         (app, si)
     }
 
     /// The lines of the sketch that end at `at`, as items to pick.
-    fn lines_at(app: &App, si: usize, at: (f64, f64)) -> Vec<(u8, u64)> {
+    fn lines_at(app: &App, si: usize, at: (f64, f64)) -> Vec<qymcad_ui_state::SketchItem> {
         let s = &app.project.sketches[si];
         let near = |id: u64| s.points.iter().any(|q| q.id == id && (q.x - at.0).hypot(q.y - at.1) < 1e-6);
-        s.entities.iter().filter(|e| e.kind.as_line().is_some_and(|qymcad_core::model::LineParts { a, b }| near(a) || near(b))).map(|e| (1u8, e.id)).collect()
+        s.entities.iter().filter(|e| e.kind.as_line().is_some_and(|qymcad_core::model::LineParts { a, b }| near(a) || near(b))).map(|e| qymcad_ui_state::SketchItem::curve(e.id)).collect()
     }
 
     /// The constraints the corner holds itself by that are drawn as badges anyway.
@@ -76,7 +76,7 @@ mod tests {
         let lines = lines_at(&app, si, (0.0, 0.0));
         assert!(Hand::new(&mut app).sk_corner_set("tb-fillet-sketch-hint", &lines, 20.0), "no place to click on the two lines");
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1); // a drawing tool: the cursor snaps while drawing
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line); // a drawing tool: the cursor snaps while drawing
         let far = (20.0 + 20.0 * 20f64.to_radians().cos(), 20.0 + 20.0 * 20f64.to_radians().sin());
         hand.hover2d(far.0, far.1);
         let hint = app.snap_hint;
@@ -90,16 +90,16 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 30.0).key(egui::Key::Enter);
-        Hand::new(&mut app).sk_tool(0);
-        let sides: Vec<(u8, u64)> = app.project.sketches[si].rects()[0].sides.iter().map(|&id| (1u8, id)).collect();
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 30.0).key(egui::Key::Enter);
+        Hand::new(&mut app).sk_select();
+        let sides: Vec<qymcad_ui_state::SketchItem> = app.project.sketches[si].rects()[0].sides.iter().map(|&id| qymcad_ui_state::SketchItem::curve(id)).collect();
         assert!(Hand::new(&mut app).sk_corner_set("tb-fillet-sketch-hint", &sides, 3.0), "no place to click on the four sides");
         let corner = app.project.sketches[si].rects()[0].corners[2];
         assert!(!app.project.sketches[si].unseen_points().contains(&corner), "the corner of the rounded rectangle is hidden from the drawing");
         let at = app.project.sketches[si].points.iter().find(|q| q.id == corner).map(|q| (q.x, q.y)).expect("the corner stays");
         let mut hand = Hand::new(&mut app);
         hand.hover2d(at.0, at.1);
-        assert_eq!(app.chosen.hover.sketch, Some((0, corner)), "the cursor on the sharp of the rounded corner does not take it");
+        assert_eq!(app.chosen.hover.sketch, Some(qymcad_ui_state::SketchItem::point(corner)), "the cursor on the sharp of the rounded corner does not take it");
     }
 
     /// THE DIMENSION OF A SYMMETRIC CHAMFER STANDS OUTSIDE: on a corner of a triangle the dimension line is drawn off to

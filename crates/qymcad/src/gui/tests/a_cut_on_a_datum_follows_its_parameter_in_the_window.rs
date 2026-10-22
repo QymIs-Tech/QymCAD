@@ -24,19 +24,19 @@ fn a_cut_on_a_datum_follows_its_parameter_edited_in_the_window() {
     app.enter_component(part);
     // the plate, 6 thick by the formula t, drawn and extruded by hand
     let si = app.create_sketch_on(SketchPlane::default());
-    Hand::new(&mut app).sk_tool(2).click2d(-20.0, -20.0).click2d(20.0, 20.0);
+    Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(-20.0, -20.0).click2d(20.0, 20.0);
     app.finish_sketch_edit();
     app.chosen.sel = Sel::Sketch(si);
-    Hand::new(&mut app).look_at([0.0, 0.0, 3.0], 8.0).tool(1).set("height", 6.0).formula(Typed { field: "height", text: "t" }).enter();
+    Hand::new(&mut app).look_at([0.0, 0.0, 3.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 6.0).formula(Typed { field: "height", text: "t" }).enter();
     // the plane from XY at t, the pocket sketched on it and cut 3 into the plate by hand
     let plane = app.project.add_plane(WorkPlane { origin: [0.0, 0.0, 6.0], def: PlaneDef::OffsetBase { base: BasePlane::XY, dist: 6.0 }, ..Default::default() });
     app.project.set_feat_dim(plane, "dist", "t".into());
     let sk = app.create_sketch_on(SketchPlane::Datum(plane));
-    Hand::new(&mut app).sk_tool(2).click2d(-5.0, -5.0).click2d(5.0, 5.0);
+    Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(-5.0, -5.0).click2d(5.0, 5.0);
     app.finish_sketch_edit();
     app.chosen.sel = Sel::Sketch(sk);
     let mut hand = Hand::new(&mut app);
-    hand.look_at([0.0, 0.0, 6.0], 8.0).tool(1).op(2).set("height", 3.0);
+    hand.look_at([0.0, 0.0, 6.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude).op(2).set("height", 3.0);
     // the plane faces up, out of the plate: the cut is turned into it with the button of the direction
     assert!(hand.press_word(&crate::i18n::tr("cmd-flip-btn"), egui::pos2(0.0, 0.0)), "setup: the bar offers the direction");
     hand.enter();

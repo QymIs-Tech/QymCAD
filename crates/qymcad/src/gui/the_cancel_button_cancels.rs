@@ -23,7 +23,7 @@ mod tests {
         app.enter_component(part);
         app.chosen.sel = super::super::Sel::Sketch(0);
         app.viewing.mode_3d = true;
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         assert!(app.tools.armed.commanding(), "setup: the extrude did not open - there is nothing to check");
         app
     }

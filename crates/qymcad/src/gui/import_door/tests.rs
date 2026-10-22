@@ -235,7 +235,7 @@ fn a_hole_by_hand_in_a_mesh_solid(stem: &str) -> (App, egui::Context) {
     let at = spot(&texts, stem).unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     crate::gui::a_component_stepped_into_is_not_lit::tests::double_click_at(&mut app, &ctx, at); // into the part
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35); // the recognition tool from the Part's bar
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise); // the recognition tool from the Part's bar
     let texts = frame(&mut app, &ctx, Vec::new());
     // THE MESH AS IT IS - a polyhedron - is the tool's second choice, taken in its bar
     let asis = spot(&texts, &crate::i18n::tr("cmd-recognise-asis")).unwrap_or_else(|| panic!("the bar offers no polyhedron: {:?}", names(&texts)));
@@ -323,7 +323,7 @@ fn an_open_box_recognised(stem: &str) -> (App, egui::Context) {
     let at = spot(&texts, stem).unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     double_click_at(&mut app, &ctx, at);
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let _ = frame(&mut app, &ctx, Vec::new());
     let basis = app.viewing.cam.basis();
     let on = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at([5.0, 0.0, 5.0]).0;

@@ -39,7 +39,7 @@ fn opening_and_preparing_brep_keeps_project_clean() {
     let si = sketch_rect(&mut app2, 40.0, 0.0, 60.0, 20.0);
     app2.chosen.sel = Sel::Sketch(si);
     app2.feat.op = 0;
-    app2.start_feat_cmd(1);
+    app2.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     app2.apply_feat_cmd();
     assert!(qymcad_ui_state::is_dirty(&mut app2.rebuild_ctx()), "after a real edit the project is dirty");
     let _ = std::fs::remove_file(&path);
@@ -87,7 +87,7 @@ fn undo_snapshot_does_not_carry_embedded_source_bytes() {
     let si = sketch_rect(&mut app, 40.0, 0.0, 60.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     app.apply_feat_cmd();
     // the undo step is created by THE COMMAND itself (the edit boundary) - nothing has to be pushed by hand
     app.undo();
@@ -199,7 +199,7 @@ fn successful_save_clears_dirty_but_edits_during_write_do_not() {
     let si = sketch_rect(&mut app, 40.0, 40.0, 50.0, 50.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     app.apply_feat_cmd();
     assert!(qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "a new edit makes the project dirty again");
     let _ = std::fs::remove_file(&path);

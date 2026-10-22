@@ -18,8 +18,8 @@ impl Hand<'_> {
     /// the hand gives the path there - as the checks of importing do - to the same answer the button leads to.
     pub fn pick_font_file(&mut self, path: &str) -> &mut Self {
         if !self.app.font_cache.picker.open {
-            if self.app.tools.armed.draw_kind() != 11 {
-                self.sk_tool(11);
+            if self.app.tools.armed.drawing() != Some(qymcad_ui_state::SketchShape::Text) {
+                self.sk_tool(qymcad_ui_state::SketchShape::Text);
             }
             let named = qymcad_ui_state::font_label(&self.app.tool_prefs.font, "opt-font");
             assert!(self.press_word(&named, egui::Pos2::new(700.0, 0.0)), "the top bar named no font {named:?} to open the list with");
@@ -41,8 +41,8 @@ impl Hand<'_> {
     pub fn pick_font_from_list(&mut self, query: &str) -> bool {
         self.app.viewing.mode_3d = false;
         if !self.app.font_cache.picker.open {
-            if self.app.tools.armed.draw_kind() != 11 {
-                self.sk_tool(11); // not twice: the button of a tool in hand puts the tool down
+            if self.app.tools.armed.drawing() != Some(qymcad_ui_state::SketchShape::Text) {
+                self.sk_tool(qymcad_ui_state::SketchShape::Text); // not twice: the button of a tool in hand puts the tool down
             }
             let named = qymcad_ui_state::font_label(&self.app.tool_prefs.font, "opt-font");
             if !self.press_word(&named, egui::Pos2::ZERO) {
@@ -90,8 +90,8 @@ impl Hand<'_> {
     /// Each field is clicked just right of the word that names it, its text is selected with Ctrl+A and typed
     /// over. Tab leaves the height, so the next click on the canvas is not a click out of a field.
     pub fn sk_text(&mut self, text: &str, height: f64) -> &mut Self {
-        if self.app.tools.armed.draw_kind() != 11 {
-            self.sk_tool(11);
+        if self.app.tools.armed.drawing() != Some(qymcad_ui_state::SketchShape::Text) {
+            self.sk_tool(qymcad_ui_state::SketchShape::Text);
         }
         self.frame(Vec::new());
         let word =

@@ -30,7 +30,7 @@ mod tests {
         let (_, _, fwd) = hand.app.viewing.cam.basis();
         let aside = (-fwd[1]).atan2(-fwd[0]) - std::f64::consts::FRAC_PI_3;
         let wall = [size.r * aside.cos(), size.r * aside.sin(), size.h / 2.0];
-        hand.look_at([0.0, 0.0, size.h / 2.0], 300.0 / size.h as f32).tool(24);
+        hand.look_at([0.0, 0.0, size.h / 2.0], 300.0 / size.h as f32).tool(qymcad_ui_state::PartTool::Thread);
         hand.click(wall).set("pitch", 0.0).enter().settle();
         let threaded = hand.app.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Thread { .. }));
         assert!(threaded, "GUARD: a click on the wall of the cylinder and Enter make a thread; status: {}", hand.app.status);
@@ -73,7 +73,7 @@ mod tests {
         assert!(hand.press_hint(&crate::i18n::tr("tb-box-hint")), "GUARD: the panel has the button of the box");
         hand.enter().settle();
         // the side of the box facing +X, which the eye sees: the box of 20 stands about the origin
-        hand.look_at([0.0, 0.0, 10.0], 10.0).tool(16).click([10.0, 4.0, 13.0]).enter().settle();
+        hand.look_at([0.0, 0.0, 10.0], 10.0).tool(qymcad_ui_state::PartTool::Mirror).click([10.0, 4.0, 13.0]).enter().settle();
         let mirror = hand.app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Mirror { face: Some(_), .. }));
         let Some(ti) = mirror else { panic!("GUARD: a click on the side face and Enter mirror the box across it; status: {}", hand.app.status) };
         let label = crate::gui::panels_tree::feature_row_label(&hand.app.project, ti);

@@ -1,7 +1,6 @@
-//! The options bar of the tool in hand.
+//! THE OPTIONS BAR OF THE TOOL IN HAND of a sketch: its name, its switches and its fields, and the ways of a corner.
 
 use qymcad_ui_state::Notice;
-use super::*;
 
 pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     if qymcad_ui_state::edit_si(&*bc.project, &*bc.sketch_ses).is_none() {
@@ -66,43 +65,43 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     }
     ui.horizontal_wrapped(|ui| {
         // the name of the active tool or operation
-        let name = if bc.armed.pat_op() != 0 {
-            if bc.armed.pat_op() == 1 {
+        let name = if bc.armed.pattern().is_some() {
+            if bc.armed.pattern() == Some(qymcad_ui_state::PatternKind::Linear) {
                 qymcad_i18n::tr("tool-lin-array")
             } else {
                 qymcad_i18n::tr("tool-circ-array")
             }
-        } else if bc.armed.move_op() != 0 {
-            match bc.armed.move_op() {
-                1 => qymcad_i18n::tr("tool-move"),
-                2 => qymcad_i18n::tr("tool-copy"),
-                _ => qymcad_i18n::tr("tool-rotate"),
+        } else if let Some(m) = bc.armed.moving() {
+            match m {
+                qymcad_ui_state::MoveKind::Move => qymcad_i18n::tr("tool-move"),
+                qymcad_ui_state::MoveKind::Copy => qymcad_i18n::tr("tool-copy"),
+                qymcad_ui_state::MoveKind::Rotate => qymcad_i18n::tr("tool-rotate"),
             }
-        } else if bc.armed.click_op() != 0 {
-            match bc.armed.click_op() {
-                1 => qymcad_i18n::tr("tool-trim"),
-                2 => qymcad_i18n::tr("tool-extend"),
-                3 => qymcad_i18n::tr("tool-break"),
-                4 => qymcad_i18n::tr("tool-fillet"),
-                5 => qymcad_i18n::tr("tool-chamfer"),
-                6 => qymcad_i18n::tr("tool-project-body"),
+        } else if bc.armed.click_tool().is_some() {
+            match bc.armed.click_tool() {
+                Some(qymcad_ui_state::ClickTool::Trim) => qymcad_i18n::tr("tool-trim"),
+                Some(qymcad_ui_state::ClickTool::Extend) => qymcad_i18n::tr("tool-extend"),
+                Some(qymcad_ui_state::ClickTool::Break) => qymcad_i18n::tr("tool-break"),
+                Some(qymcad_ui_state::ClickTool::Corner) => qymcad_i18n::tr("tool-fillet"),
+                Some(qymcad_ui_state::ClickTool::CornerChamfer) => qymcad_i18n::tr("tool-chamfer"),
+                Some(qymcad_ui_state::ClickTool::Project) => qymcad_i18n::tr("tool-project-body"),
                 _ => "—".to_string(),
             }
-        } else if bc.armed.dim_kind() != 0 {
+        } else if bc.armed.dimension().is_some() {
             qymcad_i18n::tr("tool-dim")
         } else if bc.armed.measuring() {
             qymcad_i18n::tr("tool-measure")
-        } else if bc.armed.draw_kind() != 0 {
-            match bc.armed.draw_kind() {
-                1 => qymcad_i18n::tr("tool-line"),
-                2 => qymcad_i18n::tr("tool-rect"),
-                3 => qymcad_i18n::tr("tool-circle"),
-                4 => qymcad_i18n::tr("tool-arc"),
-                5 => qymcad_i18n::tr("tool-point"),
-                6 => qymcad_i18n::tr("tool-polygon"),
-                7 => qymcad_i18n::tr("tool-slot"),
-                8 => qymcad_i18n::tr("sk-ellipse"),
-                9 => qymcad_i18n::tr("sk-spline"),
+        } else if bc.armed.drawing().is_some() {
+            match bc.armed.drawing() {
+                Some(qymcad_ui_state::SketchShape::Line) => qymcad_i18n::tr("tool-line"),
+                Some(qymcad_ui_state::SketchShape::Rect) => qymcad_i18n::tr("tool-rect"),
+                Some(qymcad_ui_state::SketchShape::Circle) => qymcad_i18n::tr("tool-circle"),
+                Some(qymcad_ui_state::SketchShape::Arc) => qymcad_i18n::tr("tool-arc"),
+                Some(qymcad_ui_state::SketchShape::Point) => qymcad_i18n::tr("tool-point"),
+                Some(qymcad_ui_state::SketchShape::Polygon) => qymcad_i18n::tr("tool-polygon"),
+                Some(qymcad_ui_state::SketchShape::Slot) => qymcad_i18n::tr("tool-slot"),
+                Some(qymcad_ui_state::SketchShape::Ellipse) => qymcad_i18n::tr("sk-ellipse"),
+                Some(qymcad_ui_state::SketchShape::Spline) => qymcad_i18n::tr("sk-spline"),
                 _ => "—".to_string(),
             }
         } else {
@@ -119,13 +118,13 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new(name).strong());
         ui.separator();
         // ONLY the parameters of the active tool or operation
-        if bc.armed.draw_kind() != 0 {
+        if bc.armed.drawing().is_some() {
             ui.checkbox(&mut bc.tool.construction, qymcad_i18n::tr("opt-construction-short")).on_hover_text(qymcad_i18n::tr("opt-construction-hint"));
             let mut free = bc.tool.ties == qymcad_ui_state::Ties::Free;
             if ui.checkbox(&mut free, qymcad_i18n::tr("opt-no-ties-short")).on_hover_text(qymcad_i18n::tr("opt-no-ties-hint")).changed() {
                 bc.tool.ties = if free { qymcad_ui_state::Ties::Free } else { qymcad_ui_state::Ties::Laid };
             }
-            if bc.armed.draw_kind() == 11 {
+            if bc.armed.drawing() == Some(qymcad_ui_state::SketchShape::Text) {
                 ui.separator();
                 ui.label(qymcad_i18n::tr("tool-text"));
                 ui.add(egui::TextEdit::singleline(&mut bc.tool_prefs.text).desired_width(140.0));
@@ -145,7 +144,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 }
                 ui.checkbox(&mut bc.tool_prefs.text_note, qymcad_i18n::tr("opt-note")).on_hover_text(qymcad_i18n::tr("opt-text-as-note"));
             }
-            if bc.armed.draw_kind() == 6 {
+            if bc.armed.drawing() == Some(qymcad_ui_state::SketchShape::Polygon) {
                 ui.separator();
                 ui.label(qymcad_i18n::tr("opt-sides"));
                 bc.tool_prefs.poly_n = qymcad_ui_state::num_or_expr(
@@ -159,7 +158,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 ui.selectable_value(&mut bc.tool_prefs.poly_mode, 1u8, qymcad_i18n::tr("opt-polygon-circumscribed"));
                 ui.selectable_value(&mut bc.tool_prefs.poly_mode, 2u8, qymcad_i18n::tr("opt-by-edge"));
             }
-            if bc.armed.draw_kind() == 2 {
+            if bc.armed.drawing() == Some(qymcad_ui_state::SketchShape::Rect) {
                 ui.separator();
                 ui.label(qymcad_i18n::tr("opt-rect-mode"));
                 if ui.selectable_label(bc.tool_prefs.rect_mode == 0, qymcad_i18n::tr("opt-rect-2corners")).clicked() {
@@ -175,7 +174,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     bc.tool.pts.clear();
                 }
             }
-            if bc.armed.draw_kind() == 3 {
+            if bc.armed.drawing() == Some(qymcad_ui_state::SketchShape::Circle) {
                 ui.separator();
                 ui.label(qymcad_i18n::tr("opt-circle-mode"));
                 // centre and radius, two points, touching two curves, three points: the modes of one tool, as the arc's
@@ -202,7 +201,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     );
                 }
             }
-            if bc.armed.draw_kind() == 4 {
+            if bc.armed.drawing() == Some(qymcad_ui_state::SketchShape::Arc) {
                 ui.separator();
                 ui.label(qymcad_i18n::tr("opt-arc-mode"));
                 if ui.selectable_label(bc.tool_prefs.arc_mode == 0, qymcad_i18n::tr("opt-arc-cse")).clicked() {
@@ -218,16 +217,16 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     bc.tool.pts.clear();
                 }
             }
-        } else if bc.armed.dim_kind() != 0 {
+        } else if bc.armed.dimension().is_some() {
             ui.label(egui::RichText::new(qymcad_i18n::tr("opt-dim-hint")).weak());
-        } else if bc.armed.click_op() != 0 {
-            if bc.armed.click_op() == 4 || bc.armed.click_op() == 5 {
-                if bc.armed.click_op() == 5 {
+        } else if bc.armed.click_tool().is_some() {
+            if bc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Corner) || bc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::CornerChamfer) {
+                if bc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::CornerChamfer) {
                     chamfer_modes(bc, ui);
                 } else {
                     fillet_modes(bc, ui);
                 }
-                ui.label(qymcad_i18n::tr(if bc.armed.click_op() == 4 {
+                ui.label(qymcad_i18n::tr(if bc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Corner) {
                     qymcad_ui_state::fillet_label(bc.tool_prefs.fillet_by)
                 } else {
                     qymcad_ui_state::chamfer_d1_label(bc.tool_prefs.chamfer_mode)
@@ -247,11 +246,11 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     bc.tool_prefs.fillet,
                     qymcad_ui_state::NumFormat { lo: 0.01, hi: corner_hi, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                 );
-                if bc.armed.click_op() == 5 {
+                if bc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::CornerChamfer) {
                     chamfer_second_field(bc, ui);
                 }
             }
-            if bc.armed.click_op() == 6 {
+            if bc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Project) {
                 // WHAT IS TAKEN: one edge under the cursor, or the whole outline of the sketch's host face
                 if ui.selectable_label(!bc.tool.proj_face, qymcad_i18n::tr("opt-edge")).on_hover_text(qymcad_i18n::tr("opt-project-edge-hint")).clicked() {
                     bc.tool.proj_face = false;
@@ -260,22 +259,22 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     bc.tool.proj_face = true;
                 }
             }
-            if bc.armed.click_op() == 2 {
+            if bc.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Extend) {
                 ui.checkbox(&mut bc.tool_prefs.extend_both, qymcad_i18n::tr("opt-extend-both")).on_hover_text(qymcad_i18n::tr("opt-extend-both-hint"));
             }
-            let h = match bc.armed.click_op() {
-                1 => &qymcad_i18n::tr("opt-trim-hint"),
+            let h = match bc.armed.click_tool() {
+                Some(qymcad_ui_state::ClickTool::Trim) => &qymcad_i18n::tr("opt-trim-hint"),
                 // the line held, the tool says what it waits for next
-                2 if bc.tool.extend.is_some() => &qymcad_i18n::tr("opt-extend-to-hint"),
-                2 => &qymcad_i18n::tr("opt-extend-hint"),
-                3 => &qymcad_i18n::tr("opt-break-hint"),
-                4 => &qymcad_i18n::tr("opt-fillet-hint"),
-                5 => &qymcad_i18n::tr("opt-chamfer-hint"),
-                6 => &qymcad_i18n::tr("opt-project-hint"),
+                Some(qymcad_ui_state::ClickTool::Extend) if bc.tool.extend.is_some() => &qymcad_i18n::tr("opt-extend-to-hint"),
+                Some(qymcad_ui_state::ClickTool::Extend) => &qymcad_i18n::tr("opt-extend-hint"),
+                Some(qymcad_ui_state::ClickTool::Break) => &qymcad_i18n::tr("opt-break-hint"),
+                Some(qymcad_ui_state::ClickTool::Corner) => &qymcad_i18n::tr("opt-fillet-hint"),
+                Some(qymcad_ui_state::ClickTool::CornerChamfer) => &qymcad_i18n::tr("opt-chamfer-hint"),
+                Some(qymcad_ui_state::ClickTool::Project) => &qymcad_i18n::tr("opt-project-hint"),
                 _ => "",
             };
             ui.label(egui::RichText::new(h).weak());
-        } else if bc.armed.pat_op() != 0 {
+        } else if bc.armed.pattern().is_some() {
             // the pattern: the parameters + a hint (the preview is live, Enter applies)
             ui.label(qymcad_i18n::tr("opt-count"));
             bc.sk_pat.count = qymcad_ui_state::num_or_expr(
@@ -285,7 +284,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 bc.sk_pat.count as f64,
                 qymcad_ui_state::NumFormat { lo: 2.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
             ) as u32;
-            if bc.armed.pat_op() == 1 {
+            if bc.armed.pattern() == Some(qymcad_ui_state::PatternKind::Linear) {
                 ui.label(qymcad_i18n::tr("opt-step-x"));
                 bc.sk_pat.dx = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
@@ -461,3 +460,67 @@ const CIRCLE_MODES: &[ModeWord] = &[
     ModeWord { mode: 2, word: "opt-tangent-m", hint: Some("opt-tangent-hint") },
     ModeWord { mode: 3, word: "opt-rect-3pt", hint: Some("opt-circle-3pt-hint") },
 ];
+
+/// HOW A SKETCH CHAMFER IS GIVEN, on the bar of the chamfer: equal legs, two legs, or a leg and an angle - the words of
+/// the chamfer of a part - and, for the last two, the second value beside the first leg. Reported (issue #35): the
+/// sketch chamfer took one distance only, and a chamfer of 5 x 3 or of 5 at 30 deg had to be built by hand.
+/// The ways of a sketch fillet, before its field: by its radius, its chord or the length of its arc.
+fn fillet_modes(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
+    use qymcad_core::model::FilletBy;
+    for by in [FilletBy::Radius, FilletBy::Chord, FilletBy::ArcLength] {
+        if ui.selectable_label(bc.tool_prefs.fillet_by == by, qymcad_i18n::tr(qymcad_ui_state::fillet_label(by))).clicked() {
+            bc.tool_prefs.fillet_by = by;
+            // the field of a corner already open takes the keys back: the click on the word took them
+            bc.corner.focus |= bc.corner.at.is_some();
+        }
+    }
+    ui.separator();
+}
+
+/// A WAY OF A SKETCH CHAMFER ON ITS BAR: the mode and its word.
+struct ChamferWay {
+    mode: qymcad_core::feature::ChamferMode,
+    word: &'static str,
+}
+
+/// THE WAYS OF A SKETCH CHAMFER: equal legs, two legs, a leg and an angle - the words of the chamfer of a part.
+const CHAMFER_WAYS: [ChamferWay; 3] = [
+    ChamferWay { mode: qymcad_core::feature::ChamferMode::Symmetric, word: "cmd-symmetric" },
+    ChamferWay { mode: qymcad_core::feature::ChamferMode::TwoDist, word: "cmd-two-distances" },
+    ChamferWay { mode: qymcad_core::feature::ChamferMode::DistAngle, word: "cmd-leg-angle" },
+];
+
+/// The modes of a sketch chamfer, before its fields: the fields of one chamfer stand together after them.
+fn chamfer_modes(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
+    for way in CHAMFER_WAYS {
+        if ui.selectable_label(bc.tool_prefs.chamfer_mode == way.mode, qymcad_i18n::tr(way.word)).clicked() {
+            qymcad_ui_state::set_chamfer_mode(bc.tool_prefs, way.mode);
+            // the field of a corner already open takes the keys back: the click on the word took them, and the values
+            // typed after choosing two distances on a chamfer of two lines chosen before the tool went nowhere
+            bc.corner.focus |= bc.corner.at.is_some();
+        }
+    }
+    ui.separator();
+}
+
+/// The second field of a sketch chamfer of two legs or of a leg and an angle, right after the first.
+fn chamfer_second_field(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
+    use qymcad_core::feature::ChamferMode;
+    if bc.tool_prefs.chamfer_mode != ChamferMode::Symmetric {
+        let angle = bc.tool_prefs.chamfer_mode == ChamferMode::DistAngle;
+        ui.label(qymcad_i18n::tr(qymcad_ui_state::chamfer_d2_label(bc.tool_prefs.chamfer_mode)));
+        bc.tool_prefs.chamfer_second = qymcad_ui_state::num_or_expr(
+            &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
+            ui,
+            "sk_chamfer2",
+            bc.tool_prefs.chamfer_second,
+            qymcad_ui_state::NumFormat {
+                lo: 0.01,
+                hi: if angle { 179.99 } else { 10000.0 },
+                integer: false,
+                suffix: &qymcad_i18n::tr(if angle { "unit-deg-suffix" } else { "unit-mm-suffix" }),
+                nonzero: false,
+            },
+        );
+    }
+}

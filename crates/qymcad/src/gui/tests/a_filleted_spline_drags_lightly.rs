@@ -15,12 +15,12 @@ fn a_node_of_a_spline_rounded_to_a_circle_drags_lightly() {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(3).click2d(20.0, 20.0).click2d(32.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(9).click2d(2.0, 40.0).click2d(10.0, 30.0).click2d(18.0, 22.0).click2d(28.0, 18.0).click2d(34.0, 26.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(20.0, 20.0).click2d(32.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(2.0, 40.0).click2d(10.0, 30.0).click2d(18.0, 22.0).click2d(28.0, 18.0).click2d(34.0, 26.0);
     hand.double_click2d(42.0, 36.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
     // the corner outside the circle at the crossing near (11, 29), by a click on each curve and one in its quarter
-    hand.sk_tool(0);
+    hand.sk_select();
     assert!(hand.press_hint(&crate::i18n::tr("tb-fillet-sketch-hint")), "no fillet button");
     hand.close_window();
     hand.frame(Vec::new());
@@ -40,7 +40,7 @@ fn a_node_of_a_spline_rounded_to_a_circle_drags_lightly() {
         .and_then(|id| s.point(id))
         .map(|q| (q.x, q.y))
         .expect("a node of the spline");
-    hand.sk_tool(0);
+    hand.sk_select();
     let drag = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || {
         hand.drag2d(node, (node.0 + 6.0, node.1 - 6.0));
     });

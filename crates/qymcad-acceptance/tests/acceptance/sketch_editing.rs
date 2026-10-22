@@ -439,8 +439,8 @@ probe! {
         pick(&mut s, 10.0, 0.0, false);
         take(&mut s, "tb-rotate-hint");
         s.click_on_sketch(0.0, 0.0);
-        let angle = s.word("sk-angle-placeholder");
-        s.fill_hinted(&angle, "90").key(Key::Enter);
+        let angle = s.word("sk-angle-deg");
+        s.fill(&angle, "90").key(Key::Enter);
         assert!(counts(&mut s).0 == 1, "turning the line added geometry: {:?}", counts(&mut s));
         assert!(box_is(&mut s, [0.0, 0.0], [0.0, 20.0]), "the line did not turn a quarter about the origin: it runs {:?}", box_of(&mut s));
     }
@@ -1117,11 +1117,11 @@ probe! {
         pick_shift(&mut s, 45.0, 25.0);
         pick_shift(&mut s, 15.0, 25.0);
         assert_eq!(lit(&mut s), 3, "setup: the three lines of the contour are not all chosen: {}", s.status());
-        assert_eq!(tool(&mut s), 4, "setup: the fillet is not in hand");
+        assert_eq!(tool(&mut s), Some(qymcad::ClickTool::Corner), "setup: the fillet is not in hand");
         let drawn = violet(&mut s);
         assert!(drawn > 40, "setup: no corner of the set is drawn in the colour of one that stands: {drawn} pixels of it");
         s.key(Key::Escape);
-        assert_eq!(tool(&mut s), 0, "Esc left the fillet in hand: the tool says it is still working");
+        assert_eq!(tool(&mut s), None, "Esc left the fillet in hand: the tool says it is still working");
         assert_eq!(lit(&mut s), 0, "{} lines are still lit after Esc took the corner tool down", lit(&mut s));
         let after = violet(&mut s);
         assert!(after + 40 < drawn, "the corners of the set are still drawn after Esc: {drawn} pixels of violet before, {after} after");

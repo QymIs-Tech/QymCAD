@@ -284,7 +284,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // A GREY EDGE OF THE BODY CLICKED IS TAKEN INTO THE SKETCH FIRST, as construction, and the dimension is laid on it:
     // a dimension from the edge of the face the sketch sits on holds what it measures to the body. The click went to
     // nothing, and the value typed after it was laid as the length of the line clicked next.
-    if sk.place.dim.is_none() && sk.armed.dim_kind() != 3 {
+    if sk.place.dim.is_none() && sk.armed.dimension() != Some(qymcad_ui_state::DimKind::Radial) {
         let w = qymcad_ui_state::to_world(&*sk.view, rect, pos);
         auto_project_under(sk, rect, si, Point2::new(w.x, w.y));
     }
@@ -358,7 +358,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
         return true;
     }
     // a radius or a diameter: a circle entity (a diameter or radius dimension) or a circle primitive
-    if sk.armed.dim_kind() == 3 {
+    if sk.armed.dimension() == Some(qymcad_ui_state::DimKind::Radial) {
         let under = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si);
         let round = |eid: &Id| sk.project.sketches[si].entity(*eid).is_some_and(|e| e.kind.as_circle().is_some() || e.kind.as_arc().is_some());
         if let Some(eid) = under.filter(round) {
@@ -412,7 +412,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // that follows the cursor, but a click on a second element switches it to a distance between them
     // (point to line, line to a parallel line, or to an axis). A single line and nothing else is a
     // length.
-    if sk.armed.dim_kind() == 1 {
+    if sk.armed.dimension() == Some(qymcad_ui_state::DimKind::Linear) {
         // the sketch before this pick: resolving it may make an axis of the sketch on demand, and Esc takes that back too
         let before = sk.dim.first.is_none().then(|| Box::new(sk.project.sketches[si].clone()));
         let Some(r) = resolve_dim_ref(sk, rect, pos, si) else {

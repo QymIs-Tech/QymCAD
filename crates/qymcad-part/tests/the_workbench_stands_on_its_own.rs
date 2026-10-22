@@ -17,8 +17,8 @@ use qymcad_ui_state::{Armed, Bench};
 #[test]
 fn cancelling_a_command_leaves_the_hand_empty() {
     let mut b = Bench::default();
-    b.cmd.open(&mut b.armed, 1, false); // extrude
-    assert_eq!(b.armed, Armed::Command(1), "opening a command must put it in hand");
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Extrude, false);
+    assert_eq!(b.armed, Armed::Command(qymcad_ui_state::PartTool::Extrude), "opening a command must put it in hand");
 
     qymcad_ui_state::cancel_feat_cmd(&mut b.part_ctx());
     assert_eq!(b.armed, Armed::None, "cancelling must leave nothing in hand");
@@ -35,10 +35,10 @@ fn cancelling_a_command_leaves_the_hand_empty() {
 fn the_command_names_itself_from_the_hand() {
     let mut b = Bench::default();
 
-    b.cmd.open(&mut b.armed, 1, false); // extrude
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Extrude, false); // extrude
     let extrude = qymcad_part::feat_cmd_name(&b.armed, b.feat);
 
-    b.cmd.open(&mut b.armed, 4, false); // fillet
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Fillet, false); // fillet
     let fillet = qymcad_part::feat_cmd_name(&b.armed, b.feat);
 
     assert!(!extrude.is_empty() && !fillet.is_empty(), "a command in hand must have a name to show");

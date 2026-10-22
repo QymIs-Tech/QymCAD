@@ -140,7 +140,7 @@ pub(crate) mod tests {
         let before = hand.app.project.sketches[si].constraints.len();
         // a line drawn nearly level below the drawing takes a Horizontal of its own
         let t_line = timed(|| {
-            hand.sk_tool(1).click2d(0.0, -20.0).click2d(60.0, -19.6);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, -20.0).click2d(60.0, -19.6);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
         });
         let s = &hand.app.project.sketches[si];
@@ -148,7 +148,7 @@ pub(crate) mod tests {
         assert!(s.constraints[before..].iter().any(|c| matches!(c, qymcad_core::model::Constraint::Horizontal { .. })), "the line drawn nearly level took no Horizontal");
         let laid = s.constraints.len();
         let t_dim = timed(|| {
-            hand.sk_tool(0);
+            hand.sk_select();
             assert!(hand.press_hint(&crate::i18n::tr("tb-dim-hint")), "the dimension tool");
             hand.click2d(30.0, -19.8);
             hand.click2d(30.0, -28.0);

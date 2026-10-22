@@ -20,7 +20,7 @@ fn deleting_feature_does_not_rebuild_whole_project() {
     let si = sketch_rect(&mut app, 40.0, 0.0, 60.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();
@@ -197,7 +197,7 @@ fn sketch_edit_matrix_gui() {
         let cube = build_cube(&mut app);
         let eid = app.project.regen_edges.get(&cube).and_then(|es| es.iter().find(|e| e.a[0].abs() < 1e-6 && e.a[1].abs() < 1e-6 && (e.a[2] - e.b[2]).abs() > 1.0)).map(|e| e.id);
         if let Some(eid) = eid {
-            app.start_feat_cmd(4); // an edge fillet
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // an edge fillet
             app.tools.gsel.edges.insert(eid);
             app.edges.body = Some(cube);
             if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
@@ -272,7 +272,7 @@ fn sketch_edit_matrix_gui() {
         let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
         app.chosen.sel = Sel::Sketch(s2);
         app.feat.op = 2;
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 5.0;
             p.txt = "5".into();
@@ -302,13 +302,13 @@ fn cancel_then_extrude_flow() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 2; // a CUT was started (not allowed in an empty part, but the command can be opened)
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     crate::gui::cancel_feat_cmd(&mut app.part_ctx()); // Esc
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the command was dropped");
+    assert_eq!(app.tools.armed.part_tool(), None, "the command was dropped");
     // now an honest extrude - nothing leaked from the cut
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();
@@ -326,7 +326,7 @@ fn edit_cut_depth_flow() {
     let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
     app.chosen.sel = Sel::Sketch(s2);
     app.feat.op = 2;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 5.0;
         p.txt = "5".into();
@@ -350,7 +350,7 @@ fn edit_cut_depth_flow() {
 #[test]
 fn primitive_flows() {
     let mut app = App::default();
-    app.start_prim_cmd(10); // a box
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Box); // a box
     for (k, v) in [("dx", 20.0), ("dy", 20.0), ("dz", 20.0)] {
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
             p.val = v;
@@ -358,7 +358,7 @@ fn primitive_flows() {
         }
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the box was applied: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the box was applied: {}", app.status);
     let consumed = qymcad_ui_state::consumed_bodies(&app.project);
     let live: Vec<f64> = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).collect();
     assert_eq!(live.len(), 1, "one body after the box");
@@ -371,8 +371,8 @@ fn shell_button_flow() {
     let mut app = App::default();
     let cube = build_cube(&mut app);
     let top = app.project.regen_faces.get(&cube).and_then(|fs| fs.iter().find(|f| f.normal[2] > 0.9)).map(|f| f.id).expect("the top face");
-    app.start_feat_cmd(6);
-    assert_eq!(app.tools.armed.cmd_kind(), 6, "the shell started: {}", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Shell);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Shell), "the shell started: {}", app.status);
     app.tools.gsel.faces.insert(top);
     app.tools.gsel.faces_body = Some(cube);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
@@ -380,7 +380,7 @@ fn shell_button_flow() {
         p.txt = "2".into();
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the shell was applied: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the shell was applied: {}", app.status);
     let consumed = qymcad_ui_state::consumed_bodies(&app.project);
     let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
     let exp = 8000.0 - 16.0 * 16.0 * 18.0;
@@ -399,8 +399,8 @@ fn impossible_cases_are_honest() {
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
-        app.start_feat_cmd(1);
-        assert_eq!(app.tools.armed.cmd_kind(), 0, "the command does NOT start without a closed contour");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
+        assert_eq!(app.tools.armed.part_tool(), None, "the command does NOT start without a closed contour");
         assert_eq!(app.status, Notice::refusal(crate::i18n::tr("msg-no-closed-contour")), "a clear status");
     }
     // 2) a cut ENTIRELY CLEAR of the body: the node is created, but the rebuild must give an honest error or
@@ -411,7 +411,7 @@ fn impossible_cases_are_honest() {
         let s2 = sketch_rect(&mut app, 100.0, 100.0, 120.0, 120.0); // far from the block
         app.chosen.sel = Sel::Sketch(s2);
         app.feat.op = 2;
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 5.0;
             p.txt = "5".into();
@@ -426,7 +426,7 @@ fn impossible_cases_are_honest() {
         let mut app = App::default();
         let cube = build_cube(&mut app);
         let top = app.project.regen_faces.get(&cube).and_then(|fs| fs.iter().find(|f| f.normal[2] > 0.9)).map(|f| f.id).unwrap();
-        app.start_feat_cmd(6);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Shell);
         app.tools.gsel.faces.insert(top);
         app.tools.gsel.faces_body = Some(cube);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "thickness") {
@@ -445,7 +445,7 @@ fn impossible_cases_are_honest() {
         let mut app = App::default();
         let cube = build_cube(&mut app);
         let eid = app.project.regen_edges.get(&cube).and_then(|es| es.first()).map(|e| e.id).unwrap();
-        app.start_feat_cmd(4);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
         app.tools.gsel.edges.insert(eid);
         app.edges.body = Some(cube);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
@@ -464,12 +464,12 @@ fn impossible_cases_are_honest() {
 fn mirror_button_flow() {
     let mut app = App::default();
     let _cube = build_cube(&mut app); // a block from 0 to 20, touching the YZ plane along the face at x=0
-    app.start_feat_cmd(16);
-    assert_eq!(app.tools.armed.cmd_kind(), 16, "the mirror started: {}", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Mirror);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Mirror), "the mirror started: {}", app.status);
     app.params.mirror.plane = Some(qymcad_core::feature::SketchPlane::World(qymcad_core::feature::BasePlane::YZ));
     app.opts.mirror_keep = true;
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the mirror was applied: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the mirror was applied: {}", app.status);
     let consumed = qymcad_ui_state::consumed_bodies(&app.project);
     let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
     assert!((v - 16000.0).abs() < 160.0, "a mirror keeping the original: V={v:.0}, 16000 expected");
@@ -480,8 +480,8 @@ fn mirror_button_flow() {
 fn linear_array_button_flow() {
     let mut app = App::default();
     let _cube = build_cube(&mut app);
-    app.start_array_cmd(17);
-    assert_eq!(app.tools.armed.cmd_kind(), 17, "the pattern started: {}", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::LinearPattern);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::LinearPattern), "the pattern started: {}", app.status);
     // the body to repeat is picked, as a person clicks it: a pattern with nothing picked is refused
     app.chosen.sel = Sel::Mesh(app.project.bodies.len() - 1);
     app.params.arr.count = 3;
@@ -491,7 +491,7 @@ fn linear_array_button_flow() {
         p.txt = "40".into();
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the pattern was applied: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the pattern was applied: {}", app.status);
     let consumed = qymcad_ui_state::consumed_bodies(&app.project);
     let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
     assert!((v - 24000.0).abs() < 240.0, "three blocks: V={v:.0}");

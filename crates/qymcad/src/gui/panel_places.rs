@@ -80,7 +80,7 @@ impl qymcad_shell::Fills for App {
         match key {
             "command_bar" => true,
             "section_bar" => self.side.section.plane.is_some() || section_bar_holds_a_tool(self),
-            "comp_array_bar" => self.side.carr.mode != 0,
+            "comp_array_bar" => self.side.carr.mode.is_some(),
             "feat_cmd_bar" => self.tools.armed.commanding(),
             "sk_tool_opts" => edit_si(&self.project, &self.sketch_ses).is_some(),
             "bool_tool_bar" => self.params.boolean.pick.is_some() || self.params.boolean.edit.is_some(),
@@ -114,7 +114,7 @@ impl qymcad_shell::Fills for App {
                 }
             }
             "menubar" => crate::gui::panels_bars::menu_bar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "toolbar" => crate::gui::panels_bars::toolbar(&mut self.bar_ctx(&mut bar_asks), ui),
+            "toolbar" => qymcad_ui_state::path_bar(&mut self.bar_ctx(&mut bar_asks), ui, &crate::command_catalog::BENCHES),
             "section_bar" => crate::gui::panels_bars::section_bar(
                 &mut qymcad_part::PlaneBarCtx {
                     regen: &mut self.regen,
@@ -135,7 +135,7 @@ impl qymcad_shell::Fills for App {
             ),
             "comp_array_bar" => crate::gui::panels_bars::comp_array_bar(&mut self.part_ctx(), ui),
             "feat_cmd_bar" => self.feat_command_bar(ui),
-            "sk_tool_opts" => crate::gui::panels_bars::tool_options_bar(&mut self.bar_ctx(&mut bar_asks), ui),
+            "sk_tool_opts" => qymcad_sketch::tool_options_bar(&mut self.bar_ctx(&mut bar_asks), ui),
             "bool_tool_bar" => crate::gui::commands::bool_tool_bar(&mut self.part_ctx(), ui),
             "joint_tool_bar" => qymcad_assembly::joint_tool_bar(&mut self.joint_ctx(), ui),
             "joint_edit_bar" => qymcad_assembly::joint_edit_bar(&mut self.joint_ctx(), ui),

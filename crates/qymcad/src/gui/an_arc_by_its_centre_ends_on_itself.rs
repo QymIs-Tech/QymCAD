@@ -16,7 +16,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(4);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Arc);
         assert!(hand.press_word(&crate::i18n::tr("opt-arc-cse"), egui::Pos2::ZERO), "the centre mode of the arc on the bar");
         hand.click2d(0.0, 0.0).click2d(40.0, 0.0).click2d(end.0, end.1).key(egui::Key::Escape);
         let at = |app: &App| {

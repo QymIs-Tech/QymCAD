@@ -252,7 +252,7 @@ macro_rules! popup_tools {
 #[macro_export]
 macro_rules! popup_looks {
     ($x:expr) => {
-        $crate::PopupLooks { tool_prefs: &mut $x.tool_prefs, scheme: &$x.scheme, set: &$x.set }
+        $crate::PopupLooks { tool_prefs: &mut $x.tool_prefs, scheme: &$x.scheme, set: &$x.set, cam: &$x.viewing.cam }
     };
 }
 
@@ -845,10 +845,10 @@ mod tool_buttons {
     /// the arrow, a command cancelled.
     #[test]
     fn a_tool_button_takes_or_puts_down() {
-        assert!(matches!(take_or_drop(false, BarAsk::FeatCmd(4)), BarAsk::FeatCmd(4)), "a free hand takes the command");
-        assert!(matches!(take_or_drop(true, BarAsk::FeatCmd(4)), BarAsk::CancelAllTools(crate::Then::Nothing)), "a held command is put down");
-        assert!(matches!(take_or_drop(true, BarAsk::SketchTool(3)), BarAsk::SketchSelectMode), "a held sketch tool gives the arrow back");
-        assert!(matches!(take_or_drop(false, BarAsk::SketchTool(3)), BarAsk::SketchTool(3)), "a free hand takes the sketch tool");
+        assert!(matches!(take_or_drop(false, BarAsk::FeatCmd(crate::PartTool::Fillet)), BarAsk::FeatCmd(crate::PartTool::Fillet)), "a free hand takes the command");
+        assert!(matches!(take_or_drop(true, BarAsk::FeatCmd(crate::PartTool::Fillet)), BarAsk::CancelAllTools(crate::Then::Nothing)), "a held command is put down");
+        assert!(matches!(take_or_drop(true, BarAsk::SketchTool(crate::SketchShape::Circle)), BarAsk::SketchSelectMode), "a held sketch tool gives the arrow back");
+        assert!(matches!(take_or_drop(false, BarAsk::SketchTool(crate::SketchShape::Circle)), BarAsk::SketchTool(crate::SketchShape::Circle)), "a free hand takes the sketch tool");
     }
 }
 
@@ -1049,6 +1049,9 @@ mod corners;
 pub use corners::*;
 mod tool_steps;
 pub use tool_steps::*;
+mod path_bar;
+pub use path_bar::*;
+pub use qymcad_shell::{Drew, Switches};
 mod voice;
 pub use voice::*;
 mod tool_frame;

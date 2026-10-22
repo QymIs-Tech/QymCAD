@@ -18,11 +18,11 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(2).click2d(10.0, 10.0).click2d(50.0, 40.0).key(egui::Key::Enter);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(10.0, 10.0).click2d(50.0, 40.0).key(egui::Key::Enter);
         let mut dims = [0usize; 2];
         for (k, (side, place)) in [((30.0, 10.0), (30.0, 2.0)), ((50.0, 25.0), (58.0, 25.0))].into_iter().enumerate() {
             let mut hand = Hand::new(&mut app);
-            hand.sk_tool(0);
+            hand.sk_select();
             assert!(hand.press_hint(&crate::i18n::tr("tb-dim-hint")), "the dimension tool");
             hand.click2d(side.0, side.1);
             dims[k] = hand.app.tools.place.dim.expect("a dimension being placed");
@@ -79,10 +79,10 @@ mod tests {
         let mut sins = along_their_sides(&app, si, dims, "as drawn");
         assert!(sins.is_empty(), "setup: {sins:?}");
         let side = app.project.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some()).map(|e| e.id).expect("a side");
-        let spot = Hand::new(&mut app).spot2d((1, side)).expect("a place to pick the side");
+        let spot = Hand::new(&mut app).spot2d(qymcad_ui_state::SketchItem::curve(side)).expect("a place to pick the side");
         Hand::new(&mut app).sk_rotate(spot, (30.0, 25.0), 30.0);
         sins.extend(along_their_sides(&app, si, dims, "turned by 30 deg"));
-        let spot = Hand::new(&mut app).spot2d((1, side)).expect("a place to pick the side");
+        let spot = Hand::new(&mut app).spot2d(qymcad_ui_state::SketchItem::curve(side)).expect("a place to pick the side");
         Hand::new(&mut app).sk_rotate(spot, (30.0, 25.0), -30.0);
         sins.extend(along_their_sides(&app, si, dims, "turned back"));
         assert!(sins.is_empty(), "the dimensions did not go with their sides:\n{}", sins.join("\n"));

@@ -29,7 +29,7 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
         // the corner: the point both lines end at
         let ends: Vec<u64> = app.project.sketches[si]
             .entities
@@ -41,7 +41,7 @@ mod tests {
             .collect();
         let corner = *ends.iter().find(|&&p| ends.iter().filter(|&&q| q == p).count() == 2).expect("two lines meeting at a corner");
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0); // the flat canvas at the scale the sketch checks draw at
+        hand.sk_select(); // the flat canvas at the scale the sketch checks draw at
         assert!(hand.press_hint(&qymcad_i18n::tr("tb-chamfer-sketch-hint")), "no sketch chamfer button");
         assert!(hand.press_word(&qymcad_i18n::tr(mode), egui::pos2(400.0, 0.0)), "no {mode} on the bar");
         hand.click2d(click.0, click.1).type_text(first).key(egui::Key::Tab).type_text(second).key(egui::Key::Enter);
@@ -56,9 +56,9 @@ mod tests {
             let mut app = App::default();
             let si = app.create_sketch_on(SketchPlane::default());
             app.chosen.sel = Sel::Sketch(si);
-            Hand::new(&mut app).sk_tool(1).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
+            Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
             let mut hand = Hand::new(&mut app);
-            hand.sk_tool(0);
+            hand.sk_select();
             assert!(hand.press_hint(&qymcad_i18n::tr("tb-chamfer-sketch-hint")), "no sketch chamfer button");
             assert!(hand.press_word(&qymcad_i18n::tr(mode), egui::pos2(400.0, 0.0)), "no {mode} on the bar");
             // THE FIELDS OF ONE CHAMFER STAND TOGETHER on the bar, the modes before them: with the modes between them the

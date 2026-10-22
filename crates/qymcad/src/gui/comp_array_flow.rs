@@ -24,8 +24,8 @@ pub(super) mod tests {
     #[test]
     fn the_tools_have_buttons() {
         use crate::command_catalog::{has_button, Launch};
-        assert!(has_button(Launch::CompArray(1), "assembly"), "a linear component array without a button does not exist");
-        assert!(has_button(Launch::CompArray(2), "assembly"), "a circular component array without a button does not exist");
+        assert!(has_button(Launch::CompArray(qymcad_ui_state::PatternKind::Linear), "assembly"), "a linear component array without a button does not exist");
+        assert!(has_button(Launch::CompArray(qymcad_ui_state::PatternKind::Circular), "assembly"), "a circular component array without a button does not exist");
     }
 
     /// THE WHOLE PATH: pick a part -> the button -> the count and the step -> Enter -> the copies stand.
@@ -36,8 +36,8 @@ pub(super) mod tests {
         let ci = app.project.components.iter().position(|c| c.id == comp).expect("the index");
         app.chosen.sel = Sel::Component(ci);
 
-        app.start_comp_array(1);
-        assert_eq!(app.side.carr.mode, 1, "the command must open; the status line: {}", app.status);
+        app.start_comp_array(qymcad_ui_state::PatternKind::Linear);
+        assert_eq!(app.side.carr.mode, Some(qymcad_ui_state::PatternKind::Linear), "the command must open; the status line: {}", app.status);
         assert_eq!(app.side.carr.src, comp, "the source is the selected part");
         assert!(app.tools.cmd.params.iter().any(|p| p.key == "cstep"), "a linear array must have a step field");
 
@@ -58,7 +58,7 @@ pub(super) mod tests {
             let v = app.project.component_bodies(*c).first().and_then(|b| app.project.mesh_index(*b)).map(|m| app.project.bodies[m].mesh.volume()).unwrap_or(0.0);
             assert!(v > 1.0, "copy {i} must have A BODY, and its volume is {v}");
         }
-        assert_eq!(app.side.carr.mode, 0, "after applying, the command closes");
+        assert_eq!(app.side.carr.mode, None, "after applying, the command closes");
     }
 
     /// A GRID PAST THE LIMIT IS REFUSED WITH THE LIMIT IN WORDS: 101 by 100 is 10,100 instances, past
@@ -94,8 +94,8 @@ pub(super) mod tests {
         let mut app = App::default();
         assembly_with_part(&mut app);
         app.chosen.sel = Sel::None;
-        app.start_comp_array(1);
-        assert_eq!(app.side.carr.mode, 0, "the command must not open without a source");
+        app.start_comp_array(qymcad_ui_state::PatternKind::Linear);
+        assert_eq!(app.side.carr.mode, None, "the command must not open without a source");
         assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-pick-part-first")), "the reason must be said out loud");
     }
 
@@ -106,9 +106,9 @@ pub(super) mod tests {
         let comp = assembly_with_part(&mut app);
         let ci = app.project.components.iter().position(|c| c.id == comp).expect("the index");
         app.chosen.sel = Sel::Component(ci);
-        app.start_comp_array(1);
+        app.start_comp_array(qymcad_ui_state::PatternKind::Linear);
         super::super::hand::escape(&mut app);
-        assert_eq!(app.side.carr.mode, 0, "the command is closed");
+        assert_eq!(app.side.carr.mode, None, "the command is closed");
         assert!(app.project.comp_patterns().is_empty(), "nothing was created");
     }
 
@@ -163,7 +163,7 @@ pub(super) mod tests {
             "the request must be carried out - a request nobody performs is a dead menu item"
         );
         app.start_comp_array_edit(pid);
-        assert_eq!(app.side.carr.mode, 1, "editing must open the same command");
+        assert_eq!(app.side.carr.mode, Some(qymcad_ui_state::PatternKind::Linear), "editing must open the same command");
         assert_eq!(app.side.carr.edit, pid, "it is THIS array that is being edited");
         assert_eq!(app.params.arr.count, 3, "the number of instances must be restored");
         assert!((qymcad_ui_state::cmd_val(&app.tools.cmd, "cstep") - 30.0).abs() < 1e-9, "the step must be restored");
@@ -321,7 +321,7 @@ mod preview_matches_result {
         off[3] = 37.0; // a shifted source: with a correct computation the ghost travels with it
         app.project.set_component_transform(src, off);
 
-        app.side.carr.mode = 1;
+        app.side.carr.mode = Some(qymcad_ui_state::PatternKind::Linear);
         app.side.carr.src = src;
         let ctx = qymcad_ui_state::current_ctx_id(&app.active_path, &app.project);
         let parent = app.project.components.iter().find(|c| c.id == src).and_then(|c| c.parent).unwrap_or(app.project.root);
@@ -352,7 +352,7 @@ mod preview_matches_result {
     fn editing_an_existing_pattern_does_not_double_the_frames() {
         let mut app = App::default();
         let src = super::tests::assembly_with_part(&mut app);
-        app.side.carr.mode = 1;
+        app.side.carr.mode = Some(qymcad_ui_state::PatternKind::Linear);
         app.side.carr.src = src;
         let all = crate::gui::render::comp_array_ghosts(&app.painting(), &PLACE_IDENTITY, &PLACE_IDENTITY, 0).len();
         assert!(all >= 1, "setup: with no copies placed the ghosts must exist");

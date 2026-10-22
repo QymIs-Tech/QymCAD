@@ -7,12 +7,10 @@ use super::*;
 pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
     // the top row of the active Part command: the options + Apply/Cancel.
     // The SIZE itself is set on the canvas (the gizmo arrow or a field at the geometry), not here.
-    if !pc.armed.commanding() {
-        return;
-    }
+    let Some(kind) = pc.armed.part_tool() else { return };
     let ctx = ui.ctx().clone();
     command_step(pc, &ctx);
-    let tool = describe(pc, &ctx);
+    let tool = describe(pc, &ctx, kind);
     let answer = part_bar(pc, ui, &tool);
     for d in answer.did {
         act(pc, d);
@@ -30,58 +28,57 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
 }
 
 /// The name the bar gives the command `kind`.
-fn command_title(kind: u8) -> String {
+fn command_title(kind: qymcad_ui_state::PartTool) -> String {
     qymcad_i18n::tr(match kind {
-        1 => "cmd-extrude",
-        3 => "cmd-revolve",
-        8 => "cmd-sweep",
-        9 => "cmd-loft",
-        4 => "cmd-fillet",
-        5 => "cmd-chamfer",
-        6 => "cmd-shell",
-        7 => "cmd-hole",
-        10 => "cmd-box",
-        11 => "cmd-cylinder",
-        12 => "cmd-sphere",
-        13 => "cmd-cone",
-        14 => "cmd-torus",
-        15 => "cmd-prism",
-        16 => "cmd-mirror",
-        17 => "cmd-linear-array",
-        18 => "cmd-circular-array",
-        20 => "cmd-plane",
-        21 => "cmd-point",
-        22 => "cmd-axis",
-        23 => "cmd-draft",
-        24 => "cmd-thread",
-        25 => "f-push-face",
-        26 => "feat-name-remove-face",
-        27 => "feat-name-split-body",
-        28 => "feat-name-thicken",
-        29 => "feat-name-split-face",
-        30 => "feat-name-face-copy",
-        36 => "feat-name-offset-surface",
-        31 => "f-surface-replace",
-        32 => "feat-name-patch",
-        33 => "f-stitch",
-        34 => "feat-name-trim",
-        35 => "f-recognise",
-        _ => "cmd-command",
+        qymcad_ui_state::PartTool::Extrude => "cmd-extrude",
+        qymcad_ui_state::PartTool::Revolve => "cmd-revolve",
+        qymcad_ui_state::PartTool::Sweep => "cmd-sweep",
+        qymcad_ui_state::PartTool::Loft => "cmd-loft",
+        qymcad_ui_state::PartTool::Fillet => "cmd-fillet",
+        qymcad_ui_state::PartTool::Chamfer => "cmd-chamfer",
+        qymcad_ui_state::PartTool::Shell => "cmd-shell",
+        qymcad_ui_state::PartTool::Hole => "cmd-hole",
+        qymcad_ui_state::PartTool::Box => "cmd-box",
+        qymcad_ui_state::PartTool::Cylinder => "cmd-cylinder",
+        qymcad_ui_state::PartTool::Sphere => "cmd-sphere",
+        qymcad_ui_state::PartTool::Cone => "cmd-cone",
+        qymcad_ui_state::PartTool::Torus => "cmd-torus",
+        qymcad_ui_state::PartTool::Prism => "cmd-prism",
+        qymcad_ui_state::PartTool::Mirror => "cmd-mirror",
+        qymcad_ui_state::PartTool::LinearPattern => "cmd-linear-array",
+        qymcad_ui_state::PartTool::CircularPattern => "cmd-circular-array",
+        qymcad_ui_state::PartTool::DatumPlane => "cmd-plane",
+        qymcad_ui_state::PartTool::DatumPoint => "cmd-point",
+        qymcad_ui_state::PartTool::DatumAxis => "cmd-axis",
+        qymcad_ui_state::PartTool::Draft => "cmd-draft",
+        qymcad_ui_state::PartTool::Thread => "cmd-thread",
+        qymcad_ui_state::PartTool::PushFace => "f-push-face",
+        qymcad_ui_state::PartTool::RemoveFace => "feat-name-remove-face",
+        qymcad_ui_state::PartTool::SplitBody => "feat-name-split-body",
+        qymcad_ui_state::PartTool::Thicken => "feat-name-thicken",
+        qymcad_ui_state::PartTool::SplitFace => "feat-name-split-face",
+        qymcad_ui_state::PartTool::FaceCopy => "feat-name-face-copy",
+        qymcad_ui_state::PartTool::OffsetSurface => "feat-name-offset-surface",
+        qymcad_ui_state::PartTool::SurfaceReplace => "f-surface-replace",
+        qymcad_ui_state::PartTool::Patch => "feat-name-patch",
+        qymcad_ui_state::PartTool::Stitch => "f-stitch",
+        qymcad_ui_state::PartTool::Trim => "feat-name-trim",
+        qymcad_ui_state::PartTool::Recognise => "f-recognise",
     })
 }
 
 /// WHAT THE COMMAND IN HAND FOLLOWS EVERY FRAME, apart from what is touched in its bar: the side a cut goes to, the path
 /// or the sections picked in the tree, the sketch of a hole, what a recognition found.
 fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
-    match pc.armed.cmd_kind() {
-        1 => {
+    match pc.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Extrude) => {
             // THE BUTTON SHOWS AND TURNS THE DIRECTION IN FORCE. A cut on a face goes into the body by itself, worked out
             // only at Enter, so the button stood released over a cut already turned into the body and its first press
             // turned it... into the body. Reported behaviour: a square on the top cut 5 up, away from the block, still took
             // 500 mm^3 out of it.
             if pc.feat.flip_auto {
                 if let Some(si) = pc.cmd.sketch.filter(|i| *i < pc.project.sketches.len()) {
-                    pc.feat.flip = smart_flip(pc.armed.cmd_kind(), pc.feat.op, &pc.project.sketches[si].plane);
+                    pc.feat.flip = pc.armed.part_tool().is_some_and(|t| smart_flip(t, pc.feat.op, &pc.project.sketches[si].plane));
                 }
             }
             if pc.feat.op == 0 && pc.cmd.extent.through() {
@@ -89,9 +86,9 @@ fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
             }
         }
         // WHAT WAS FOUND, before Enter: the regions by kind, and those that fit no surface
-        35 => recognise_preview(pc, ctx),
+        Some(qymcad_ui_state::PartTool::Recognise) => recognise_preview(pc, ctx),
         // the path is taken from the tree selection while the pick is active (as for a hole driven by a sketch)
-        8 if pc.sweep.pick_path => {
+        Some(qymcad_ui_state::PartTool::Sweep) if pc.sweep.pick_path => {
             if let qymcad_ui_state::Sel::Sketch(si) = *pc.sel {
                 if let Some(id) = pc.project.sketches.get(si).map(|s| s.id).filter(|id| *id != pc.sweep.prof_sid) {
                     (pc.sweep.path_sid, pc.sweep.path_cid, pc.sweep.pick_path) = (id, 0, false);
@@ -101,7 +98,7 @@ fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
         // A new section is taken on the EDGE of a change in the tree selection (while the pick is active). Only when the
         // selected sketch changes - otherwise a section removed by its cross would come straight back while the same
         // sketch stayed selected in the tree.
-        9 if pc.loft.pick => {
+        Some(qymcad_ui_state::PartTool::Loft) if pc.loft.pick => {
             let cur = if let qymcad_ui_state::Sel::Sketch(si) = *pc.sel { pc.project.sketches.get(si).map(|s| s.id) } else { None };
             if cur != pc.loft.pick_last {
                 pc.loft.pick_last = cur;
@@ -112,7 +109,7 @@ fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
             }
         }
         // "from a sketch": the selected sketch is taken
-        7 if pc.hole.mode == 1 => {
+        Some(qymcad_ui_state::PartTool::Hole) if pc.hole.mode == 1 => {
             if let qymcad_ui_state::Sel::Sketch(si) = *pc.sel {
                 if let Some(id) = pc.project.sketches.get(si).map(|s| s.id) {
                     pc.hole.sketch = Some(id);
@@ -120,50 +117,49 @@ fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
             }
         }
         // the third direction only sits on top of the second (a full 3D grid)
-        17 if !pc.arr.two => pc.arr.three = false,
+        Some(qymcad_ui_state::PartTool::LinearPattern) if !pc.arr.two => pc.arr.three = false,
         _ => {}
     }
 }
 
 /// THE COMMAND IN HAND AS ITS BAR DESCRIBES IT.
-fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) -> qymcad_ui_state::Described {
-    let kind = pc.armed.cmd_kind();
+fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, kind: qymcad_ui_state::PartTool) -> qymcad_ui_state::Described {
     let mut says = Vec::new();
     let bar = match kind {
-        1 => extrude_opts(pc, &mut says, ctx),
-        35 => recognise_opts(pc, &mut says),
-        3 => revolve_opts(pc, ctx),
-        8 => sweep_opts(pc, &mut says),
-        9 => loft_opts(pc, &mut says),
-        5 => chamfer_opts(pc, &mut says),
-        32 => vec![Opt::modes(OptKey::of("patch"), None, &["cmd-patch-flat", "cmd-patch-tangent"], usize::from(pc.opts.patch_tangent)), edges_readout(pc)],
-        6 => vec![
+        qymcad_ui_state::PartTool::Extrude => extrude_opts(pc, &mut says, ctx),
+        qymcad_ui_state::PartTool::Recognise => recognise_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::Revolve => revolve_opts(pc, ctx),
+        qymcad_ui_state::PartTool::Sweep => sweep_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::Loft => loft_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::Chamfer => chamfer_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::Patch => vec![Opt::modes(OptKey::of("patch"), None, &["cmd-patch-flat", "cmd-patch-tangent"], usize::from(pc.opts.patch_tangent)), edges_readout(pc)],
+        qymcad_ui_state::PartTool::Shell => vec![
             Opt::modes(OptKey::of("shell_side"), Some("cmd-thickness"), &["cmd-inwards", "cmd-outwards", "cmd-centred"], shell_side_at(pc.opts.shell_side)),
             Opt::Readout(qymcad_i18n::tr1("cmd-open-faces-n", "n", &pc.gsel.faces.len().to_string())),
         ],
-        23 => draft_opts(pc, &mut says),
-        24 => thread_opts(pc, &mut says),
-        7 => hole_opts(pc, &mut says),
-        15 => {
+        qymcad_ui_state::PartTool::Draft => draft_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::Thread => thread_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::Hole => hole_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::Prism => {
             says.push(Notice::info(qymcad_i18n::tr("cmd-dia-height-hint")));
             vec![]
         }
-        10..=14 => {
+        k if k.is_a_primitive() => {
             says.push(Notice::info(qymcad_i18n::tr("cmd-sizes-hint")));
             vec![]
         }
-        16 => vec![
+        qymcad_ui_state::PartTool::Mirror => vec![
             Opt::switch(OptKey::of("keep"), qymcad_i18n::tr("cmd-with-original"), pc.opts.mirror_keep.lit()),
             Opt::Readout(qymcad_i18n::tr1("cmd-plane-is", "what", &plane_named(pc, pc.mirror.plane.as_ref()))),
         ],
-        17 => linear_array_opts(&*pc.arr, pc.arr.dir, taken_line(pc), &mut says),
-        18 => circular_array_opts(&*pc.project, &*pc.arr, taken_line(pc), NoAxisPicked::WorldZ, &mut says),
-        20 => {
+        qymcad_ui_state::PartTool::LinearPattern => linear_array_opts(&*pc.arr, pc.arr.dir, taken_line(pc), &mut says),
+        qymcad_ui_state::PartTool::CircularPattern => circular_array_opts(&*pc.project, &*pc.arr, taken_line(pc), NoAxisPicked::WorldZ, &mut says),
+        qymcad_ui_state::PartTool::DatumPlane => {
             says.push(Notice::info(qymcad_i18n::tr("cmd-offset-field-hint")));
             vec![Opt::Readout(qymcad_i18n::tr1("cmd-from-is", "what", &plane_named(pc, pc.datum.plane_pick.as_ref())))]
         }
-        21 => datum_point_opts(pc, &mut says),
-        22 => datum_axis_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::DatumPoint => datum_point_opts(pc, &mut says),
+        qymcad_ui_state::PartTool::DatumAxis => datum_axis_opts(pc, &mut says),
         _ => {
             // what the command waits for, and what it has taken, in the bar where the picks are named
             let mut v = vec![Opt::Readout(cmd_hint(&*pc.armed, &*pc.gsel, &*pc.trim))];
@@ -704,14 +700,14 @@ fn chose(pc: &mut qymcad_ui_state::PartCtx, key: OptKey, index: usize) {
 
 /// A switch of the bar turned over, or a pick begun or given up.
 fn switched(pc: &mut qymcad_ui_state::PartCtx, key: OptKey) {
-    match (key.name, pc.armed.cmd_kind()) {
-        ("flip", 1) => {
+    match (key.name, pc.armed.part_tool()) {
+        ("flip", Some(qymcad_ui_state::PartTool::Extrude)) => {
             let f = !pc.feat.flip;
             pc.feat.set_flip(f); // the direction was set by hand
         }
-        ("flip", 3) => pc.feat.flip = !pc.feat.flip,
-        ("flip", 23) => pc.draft.flip = !pc.draft.flip,
-        ("flip", 7) => pc.hole.flip = !pc.hole.flip,
+        ("flip", Some(qymcad_ui_state::PartTool::Revolve)) => pc.feat.flip = !pc.feat.flip,
+        ("flip", Some(qymcad_ui_state::PartTool::Draft)) => pc.draft.flip = !pc.draft.flip,
+        ("flip", Some(qymcad_ui_state::PartTool::Hole)) => pc.hole.flip = !pc.hole.flip,
         ("axis_line", _) => {
             let l = pc.cmd.sketch.map(|si| qymcad_ui_state::profile_axis_lines(&*pc.project, si)).unwrap_or_default().first().copied().unwrap_or(0);
             pc.rev.axis_line = if pc.rev.axis_line == l { 0 } else { l };

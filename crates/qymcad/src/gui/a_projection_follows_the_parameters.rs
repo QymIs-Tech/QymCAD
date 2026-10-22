@@ -52,7 +52,7 @@ mod tests {
         app.project.solve_sketch(si1);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si1);
-        Hand::new(app).look_at([0.0, 0.0, 25.0], 6.0).tool(1).set("height", 50.0).enter();
+        Hand::new(app).look_at([0.0, 0.0, 25.0], 6.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 50.0).enter();
         app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the base")
     }
 
@@ -118,7 +118,7 @@ mod tests {
         hand.app.project.solve_sketch(si2);
         hand.app.finish_sketch_edit();
         hand.app.chosen.sel = Sel::Sketch(si2);
-        Hand::new(&mut app).look_at([0.0, 0.0, 55.0], 6.0).tool(1).set("height", 10.0).enter();
+        Hand::new(&mut app).look_at([0.0, 0.0, 55.0], 6.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 10.0).enter();
         let before = bounds(&app, si2, &outline);
 
         parameters_changed(&mut app, 30.0, 20.0);
@@ -145,7 +145,7 @@ mod tests {
         let si2 = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
         // a line from the corner (-30, -30) of the face, an edge of the body under the sketch, into the face
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1).click2d(-30.0, -30.0).click2d(-10.0, -20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(-30.0, -30.0).click2d(-10.0, -20.0).key(egui::Key::Escape).key(egui::Key::Escape);
         let s = &hand.app.project.sketches[si2];
         let start = s.entities.iter().find_map(|e| match e.kind.as_line() {
             Some(qymcad_core::model::LineParts { a, .. }) if !e.construction => Some(a),

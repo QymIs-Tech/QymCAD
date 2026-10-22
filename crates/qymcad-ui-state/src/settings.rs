@@ -24,16 +24,16 @@ pub fn armed_toolbar_hint(pn: &Painting) -> Option<&'static str> {
     if pn.clip.geom_pending.is_some() || pn.clip.geom_place {
         return Some("tb-copy-hint");
     }
-    match pn.armed.move_op() {
-        1 => return Some("tb-move-hint"),
-        2 => return Some("tb-copy-hint"),
-        3 => return Some("tb-rotate-hint"),
-        _ => {}
+    match pn.armed.moving() {
+        Some(crate::MoveKind::Move) => return Some("tb-move-hint"),
+        Some(crate::MoveKind::Copy) => return Some("tb-copy-hint"),
+        Some(crate::MoveKind::Rotate) => return Some("tb-rotate-hint"),
+        None => {}
     }
-    match pn.armed.pat_op() {
-        1 => return Some("tb-lin-array-hint"),
-        2 => return Some("tb-circ-array-hint"),
-        _ => {}
+    match pn.armed.pattern() {
+        Some(crate::PatternKind::Linear) => return Some("tb-lin-array-hint"),
+        Some(crate::PatternKind::Circular) => return Some("tb-circ-array-hint"),
+        None => {}
     }
     if pn.m3.on {
         return Some("tb-measure3d-hint");

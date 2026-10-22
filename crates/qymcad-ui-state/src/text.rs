@@ -119,7 +119,7 @@ pub fn begin_text_edit(project: &Project, tools: &mut Tools, prefs: &mut SketchT
     prefs.font = t.font.clone();
     // Not `select`, which TOGGLES: pressing the text tool twice puts it down, and opening an editor must
     // always end with the tool in hand.
-    *tools.armed = Armed::Draw(11);
+    *tools.armed = Armed::Draw(SketchShape::Text);
     tools.tool.pts.clear();
 }
 

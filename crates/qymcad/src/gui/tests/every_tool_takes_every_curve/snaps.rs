@@ -27,10 +27,10 @@ type Draw = fn(&mut Hand);
 
 fn put_down(h: &mut Hand) {
     h.key(egui::Key::Escape).key(egui::Key::Escape);
-    h.sk_tool(0);
+    h.sk_select();
 }
 
-fn clicks(h: &mut Hand, tool: u8, at: &[Point2]) {
+fn clicks(h: &mut Hand, tool: qymcad_ui_state::SketchShape, at: &[Point2]) {
     h.sk_tool(tool);
     for q in at {
         h.click2d(q.x, q.y);
@@ -45,19 +45,19 @@ const fn p(at: [f64; 2]) -> Point2 {
 mod shapes {
     use super::*;
     pub fn line(h: &mut Hand) {
-        clicks(h, 1, &[p([32.0, 26.0]), p([48.0, 34.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Line, &[p([32.0, 26.0]), p([48.0, 34.0])]);
     }
     pub fn arc(h: &mut Hand) {
-        clicks(h, 4, &[p([40.0, 27.0]), p([47.0, 27.0]), p([35.0, 32.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Arc, &[p([40.0, 27.0]), p([47.0, 27.0]), p([35.0, 32.0])]);
     }
     pub fn circle(h: &mut Hand) {
-        clicks(h, 3, &[p([40.0, 30.0]), p([46.0, 30.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Circle, &[p([40.0, 30.0]), p([46.0, 30.0])]);
     }
     pub fn ellipse(h: &mut Hand) {
-        clicks(h, 8, &[p([40.0, 30.0]), p([48.0, 30.0]), p([40.0, 34.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Ellipse, &[p([40.0, 30.0]), p([48.0, 30.0]), p([40.0, 34.0])]);
     }
     pub fn spline(h: &mut Hand) {
-        h.sk_tool(9);
+        h.sk_tool(qymcad_ui_state::SketchShape::Spline);
         for q in [p([32.0, 30.0]), p([37.0, 34.0]), p([43.0, 26.0])] {
             h.click2d(q.x, q.y);
         }
@@ -65,22 +65,22 @@ mod shapes {
         put_down(h);
     }
     pub fn closed_spline(h: &mut Hand) {
-        clicks(h, 9, &[p([32.0, 30.0]), p([40.0, 37.0]), p([48.0, 30.0]), p([40.0, 23.0]), p([32.0, 30.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Spline, &[p([32.0, 30.0]), p([40.0, 37.0]), p([48.0, 30.0]), p([40.0, 23.0]), p([32.0, 30.0])]);
     }
     pub fn rectangle(h: &mut Hand) {
-        clicks(h, 2, &[p([32.0, 25.0]), p([48.0, 35.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Rect, &[p([32.0, 25.0]), p([48.0, 35.0])]);
     }
     pub fn polygon(h: &mut Hand) {
-        clicks(h, 6, &[p([40.0, 30.0]), p([47.0, 30.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Polygon, &[p([40.0, 30.0]), p([47.0, 30.0])]);
     }
     pub fn slot(h: &mut Hand) {
-        clicks(h, 7, &[p([35.0, 30.0]), p([45.0, 30.0]), p([45.0, 33.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Slot, &[p([35.0, 30.0]), p([45.0, 30.0]), p([45.0, 33.0])]);
     }
     pub fn upright(h: &mut Hand) {
-        clicks(h, 1, &[p([43.0, 14.0]), p([43.0, 46.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Line, &[p([43.0, 14.0]), p([43.0, 46.0])]);
     }
     pub fn far_circle(h: &mut Hand) {
-        clicks(h, 3, &[p([48.0, 30.0]), p([53.0, 30.0])]);
+        clicks(h, qymcad_ui_state::SketchShape::Circle, &[p([48.0, 30.0]), p([53.0, 30.0])]);
     }
     pub fn nothing(_: &mut Hand) {}
 }
@@ -165,7 +165,7 @@ fn centre(c: &Curve) -> Point2 {
 }
 
 /// WHERE THE FEATURE STANDS in the drawing, read from its curves and points.
-fn feature_at(case: &Case, d: &Drawing, shapes: &[Vec<Picked>]) -> Result<Point2, String> {
+fn feature_at(case: &Case, d: &Drawing, shapes: &[Vec<qymcad_ui_state::SketchItem>]) -> Result<Point2, String> {
     let first = shapes[0].first().and_then(|k| d.curves.iter().find(|c| c.key == *k)).filter(|c| !c.construction).or_else(|| d.curves.iter().find(|c| shapes[0].contains(&c.key) && !c.construction));
     let first = first.ok_or("the first shape has no curve")?;
     let ends = [first.path[0], first.path[first.path.len() - 1]];
@@ -190,16 +190,16 @@ fn snapped(case: &Case) -> Result<(), String> {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.enter_sketch_edit(si);
     let mut hand = Hand::new(&mut app);
-    let mut shapes: Vec<Vec<Picked>> = Vec::new();
+    let mut shapes: Vec<Vec<qymcad_ui_state::SketchItem>> = Vec::new();
     for draw in [case.first, case.second] {
-        let had: Vec<Picked> = drawing(hand.app).curves.iter().map(|c| c.key).collect();
+        let had: Vec<qymcad_ui_state::SketchItem> = drawing(hand.app).curves.iter().map(|c| c.key).collect();
         draw(&mut hand);
         shapes.push(drawing(hand.app).curves.iter().map(|c| c.key).filter(|k| !had.contains(k)).collect());
     }
     let d = drawing(hand.app);
     let at = feature_at(case, &d, &shapes)?;
-    let old: Vec<Picked> = d.curves.iter().map(|c| c.key).collect();
-    hand.sk_tool(1);
+    let old: Vec<qymcad_ui_state::SketchItem> = d.curves.iter().map(|c| c.key).collect();
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line);
     let (start, end) = match case.feature {
         Feature::Touch(from) => {
             // near where a line from the place above touches the left of the curve: the point of the curve seen from

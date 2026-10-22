@@ -18,19 +18,19 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         for &(x, y) in clicks {
             hand.click2d(x, y);
         }
         hand.key(egui::Key::Escape);
-        Hand::new(&mut app).sk_tool(0);
+        Hand::new(&mut app).sk_select();
         (app, si)
     }
 
     const SQUARE: [(f64, f64); 5] = [(0.0, 0.0), (40.0, 0.0), (40.0, 30.0), (0.0, 30.0), (0.0, 0.0)];
 
     /// The lines of the sketch with both ends at the places `ends`, as items to pick, in the order of `ends`.
-    fn lines(app: &App, si: usize, ends: &[[(f64, f64); 2]]) -> Vec<(u8, u64)> {
+    fn lines(app: &App, si: usize, ends: &[[(f64, f64); 2]]) -> Vec<qymcad_ui_state::SketchItem> {
         let s = &app.project.sketches[si];
         let at = |id: u64, p: (f64, f64)| s.points.iter().any(|q| q.id == id && (q.x - p.0).hypot(q.y - p.1) < 1e-6);
         ends.iter()
@@ -40,7 +40,7 @@ mod tests {
                     .iter()
                     .find(|e| e.kind.as_line().is_some_and(|qymcad_core::model::LineParts { a, b }| (at(a, *p) && at(b, *q)) || (at(a, *q) && at(b, *p))))
                     .expect("a line between the two places");
-                (1u8, e.id)
+                qymcad_ui_state::SketchItem::curve(e.id)
             })
             .collect()
     }

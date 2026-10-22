@@ -71,7 +71,7 @@ pub(in crate::gui) mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
@@ -94,7 +94,14 @@ pub(in crate::gui) mod tests {
         for code in ["ru", "en"] {
             i18n::set_language(code);
             // the Part tools with fields at the geometry: fillet, chamfer, shell, hole, patterns
-            for cmd in [4u8, 5, 6, 7, 17, 18] {
+            for cmd in [
+                qymcad_ui_state::PartTool::Fillet,
+                qymcad_ui_state::PartTool::Chamfer,
+                qymcad_ui_state::PartTool::Shell,
+                qymcad_ui_state::PartTool::Hole,
+                qymcad_ui_state::PartTool::LinearPattern,
+                qymcad_ui_state::PartTool::CircularPattern,
+            ] {
                 app.start_feat_cmd(cmd);
                 if app.tools.cmd.params.is_empty() {
                     continue; // the tool did not open on this scene — it will have one of its own
@@ -115,7 +122,7 @@ pub(in crate::gui) mod tests {
                 drawn += texts.len();
                 for t in texts {
                     if keys.contains(&t) {
-                        leaks.push(format!("{code}: tool {cmd} drew the key \"{t}\""));
+                        leaks.push(format!("{code}: tool {cmd:?} drew the key \"{t}\""));
                     }
                 }
             }
@@ -201,14 +208,14 @@ pub(in crate::gui) mod tests {
                 if let Some(s) = a.project.sketches.first() {
                     a.sketch_ses.editing = Some(s.id); // the tool bar belongs to an open sketch
                 }
-                a.tools.armed = qymcad_ui_state::Armed::Draw(1);
+                a.tools.armed = qymcad_ui_state::Armed::Draw(qymcad_ui_state::SketchShape::Line);
                 let mut asks = Vec::new();
-                crate::gui::panels_bars::tool_options_bar(&mut a.bar_ctx(&mut asks), c);
+                qymcad_sketch::tool_options_bar(&mut a.bar_ctx(&mut asks), c);
                 let c = c.ctx().clone();
                 a.do_bar_asks(asks, &c);
             }),
             surface("command bar", |a, c| {
-                a.start_feat_cmd(4); // a fillet: a command with fields, so the bar has something to show
+                a.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // a fillet: a command with fields, so the bar has something to show
                 a.feat_command_bar(c);
             }),
             surface("section bar", |a, c| {
@@ -233,7 +240,7 @@ pub(in crate::gui) mod tests {
                 );
             }),
             surface("component pattern bar", |a, c| {
-                a.side.carr.mode = 1;
+                a.side.carr.mode = Some(qymcad_ui_state::PatternKind::Linear);
                 crate::gui::panels_bars::comp_array_bar(&mut a.part_ctx(), c);
             }),
             surface("settings", |a, c| {

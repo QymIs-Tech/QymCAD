@@ -22,7 +22,18 @@ use std::sync::{Arc, Mutex};
 /// split body, thicken, split faces, offset surface - a curved face moved in past its radius turns inside out. A thread
 /// is judged by the checks the rebuild makes before the kernel instead: a trial of a good thread sweeps its turns, 3 s
 /// and more a frame in a debug build.
-const TRIED: [u8; 10] = [4, 5, 6, 7, 14, 23, 27, 28, 29, 36];
+const TRIED: [qymcad_ui_state::PartTool; 10] = [
+    qymcad_ui_state::PartTool::Fillet,
+    qymcad_ui_state::PartTool::Chamfer,
+    qymcad_ui_state::PartTool::Shell,
+    qymcad_ui_state::PartTool::Hole,
+    qymcad_ui_state::PartTool::Torus,
+    qymcad_ui_state::PartTool::Draft,
+    qymcad_ui_state::PartTool::SplitBody,
+    qymcad_ui_state::PartTool::Thicken,
+    qymcad_ui_state::PartTool::SplitFace,
+    qymcad_ui_state::PartTool::OffsetSurface,
+];
 
 pub use qymcad_ui_state::Trial;
 
@@ -36,8 +47,8 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
             p.val = v;
         }
     }
-    let kind = pc.armed.cmd_kind();
-    if kind == 24 && !pc.thread.auger && qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
+    let Some(kind) = pc.armed.part_tool() else { return Trial::Clear };
+    if kind == qymcad_ui_state::PartTool::Thread && !pc.thread.auger && qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
         let t = *pc.thread;
         let length = qymcad_ui_state::cmd_val(pc.cmd, "length");
         let Some(refused) = t.src.and_then(|src| pc.project.thread_refusal(src, (t.axis.0, t.axis.1, t.radius), super::thread_spec(pc.cmd, t), length)) else { return Trial::Clear };
@@ -89,7 +100,7 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
 fn state_key(pc: &PartCtx) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    pc.armed.cmd_kind().hash(&mut h);
+    pc.armed.part_tool().hash(&mut h);
     for p in &pc.cmd.params {
         (&p.key, &p.txt).hash(&mut h);
     }

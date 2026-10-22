@@ -28,7 +28,7 @@ mod tests {
         app.chosen.sel = super::super::Sel::Sketch(0);
         app.viewing.mode_3d = true;
         app.project.parameters.push(qymcad_core::model::Param { name: "width".into(), expr: "50".into(), value: 50.0 });
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         assert!(app.tools.armed.commanding(), "setup: the extrude did not open — there is nothing to check");
         app
     }

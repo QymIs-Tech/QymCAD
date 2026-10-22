@@ -373,7 +373,7 @@ pub fn apply_theme(scheme: &mut SchemeUi, set: &Settings, ctx: &egui::Context) {
 /// Whether there is anything to copy right now (used to enable the Edit menu items).
 pub fn clipboard_can_copy(project: &Project, sel: Sel, sel_sk: &SketchSelection, sketch_ses: SketchSession) -> bool {
     if edit_si(project, &sketch_ses).is_some() {
-        return sel_sk.items.iter().any(|(k, _)| *k == 1);
+        return sel_sk.items.iter().any(|it| it.kind == crate::ItemKind::Curve);
     }
     match sel {
         Sel::Sketch(_) => true,
@@ -386,7 +386,7 @@ pub fn clipboard_can_copy(project: &Project, sel: Sel, sel_sk: &SketchSelection,
 pub fn fillet_all_corners(project: &Project, corner: &mut CornerInput, picking: &mut Picking, sel: Sel, sel_sk: &SketchSelection, status: &mut Notice, tool_prefs: &SketchToolPrefs) {
     // A COMMAND. With a selection, the popup opens on it straight away; without one, the mode becomes "click a shape".
     if let Sel::Sketch(si) = sel {
-        let only: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+        let only: Vec<Id> = sel_sk.curves().collect();
         // the tool is held either way: after Enter it waits for the next shape, as a tool of the sketch stays in hand
         *picking = Picking::FilletAll;
         if only.is_empty() {
@@ -542,8 +542,8 @@ impl Sheet {
 
 pub fn needs_live_brep(d: Doing, project: &Project, set: &Settings) -> bool {
     let Doing { armed, cmd: _, gsel, joint, picking, sketch_ses, workbench } = d;
-    // chamfer (4), fillet (5) and thread (24) work by edges and by face axes
-    if matches!(armed.cmd_kind(), 4 | 5 | 24) || !gsel.edges.is_empty() {
+    // the fillet, the chamfer and the thread work by edges and by face axes
+    if armed.part_tool().is_some_and(crate::PartTool::reads_the_live_brep) || !gsel.edges.is_empty() {
         return true;
     }
     // the interference check computes the volume of the common part through the kernel - without a live B-rep no pairs can be found

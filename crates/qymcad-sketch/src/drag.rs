@@ -24,7 +24,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
     // A DRAWING TOOL IN HAND TAKES NO DRAG: picking up a point, a dimension or the selection, and the selection box, are
     // the work of selection mode. Reported behaviour (issue #33): with Line in hand a drag over empty space selected
     // what lay in the band, and a drag from a point moved it.
-    if sk.armed.draw_kind() != 0 {
+    if sk.armed.drawing().is_some() {
         return;
     }
     let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
@@ -195,7 +195,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
 /// cut once per drag - otherwise the same piece would keep being trimmed until its neighbours
 /// disappeared.
 pub fn power_trim_drag(sk: &mut qymcad_ui_state::SketchCtx, resp: &egui::Response, rect: Rect) {
-    if sk.armed.click_op() != 1 {
+    if sk.armed.click_tool() != Some(qymcad_ui_state::ClickTool::Trim) {
         return;
     }
     // THE LEFT BUTTON ONLY: the sheet is moved with the middle one (or the gesture of the scheme), and a move of the
@@ -558,7 +558,7 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
                     sk.sel_sk.clear(); // the selection and whatever was waiting for it
                 }
                 qymcad_ui_state::box_select(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, *sk.sketch_ses, rect, a, b);
-                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
+                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Curve) {
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-offset-side"));
                     // what to do next, not how many were chosen
                 }
@@ -569,7 +569,7 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
             }
             sk.tree_sel.box_start = None;
         }
-    } else if resp.dragged_by(egui::PointerButton::Primary) && sk.armed.draw_kind() == 0 {
+    } else if resp.dragged_by(egui::PointerButton::Primary) && sk.armed.drawing().is_none() {
         // the fallback pan is for the left button only, and not with a drawing tool in hand - the drawing would slide
         // away under the tool - a middle drag is served by the EXPLICIT
         // handler below (otherwise the middle button would pan twice, at double speed)

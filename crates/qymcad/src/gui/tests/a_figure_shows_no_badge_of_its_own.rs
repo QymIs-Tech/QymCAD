@@ -15,14 +15,14 @@ fn a_rectangle_turned_by_an_angle_a_hexagon_and_a_slot_show_no_badge() {
     let si = app.create_sketch_on(SketchPlane::default());
     app.enter_sketch_edit(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(2).click2d(5.0, 5.0).click2d(25.0, 15.0).key(egui::Key::Escape);
-    hand.sk_tool(6).click2d(-30.0, 20.0).click2d(-22.0, 20.0).key(egui::Key::Escape);
-    hand.sk_tool(7).click2d(-30.0, -20.0).click2d(-10.0, -20.0).click2d(-10.0, -17.0).key(egui::Key::Escape);
-    hand.sk_tool(1).click2d(10.0, -30.0).click2d(30.0, -24.0).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(5.0, 5.0).click2d(25.0, 15.0).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Polygon).click2d(-30.0, 20.0).click2d(-22.0, 20.0).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Slot).click2d(-30.0, -20.0).click2d(-10.0, -20.0).click2d(-10.0, -17.0).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, -30.0).click2d(30.0, -24.0).key(egui::Key::Escape);
+    hand.sk_select();
     assert!(hand.press_hint(&crate::i18n::tr("tb-dim-angle-hint")), "the angle dimension tool");
     hand.click2d(16.0, -28.2).click2d(11.0, 5.0).click2d(40.0, -10.0).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_select();
     let s = &hand.app.project.sketches[si];
     let status = hand.app.status.clone();
     assert!(

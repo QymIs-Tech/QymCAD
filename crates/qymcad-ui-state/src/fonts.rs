@@ -147,14 +147,14 @@ pub fn text_popups(mut ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx
     // the font changed, not every frame
     // A NOTE IS DRAWN IN THE INTERFACE'S FONT, so its letters are asked of that font and not of the tool's: a letter
     // the interface cannot draw is a box on the sheet, whatever the tool's font holds
-    if tc.armed.draw_kind() == 11 && tc.writes_note {
+    if tc.armed.drawing() == Some(SketchShape::Text) && tc.writes_note {
         let font = egui::FontId::proportional(14.0);
         let kept: String = tc.text.chars().filter(|c| c.is_whitespace() || ctx.fonts_mut(|f| f.has_glyph(&font, *c))).collect();
         if kept != *tc.text {
             *tc.text = kept;
             *ed.status = Notice::refusal(qymcad_i18n::tr("sk-note-no-letters"));
         }
-    } else if tc.armed.draw_kind() == 11 {
+    } else if tc.armed.drawing() == Some(SketchShape::Text) {
         let stale = tc.tool.text_ghost.as_ref().is_none_or(|(t, h, f, _)| t != &*tc.text || *h != tc.tool_text_height || f != &*tc.font);
         if stale {
             // a copy: finding the face a font stands for fills the name in, and the bar would then name a font the

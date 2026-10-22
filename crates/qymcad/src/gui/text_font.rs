@@ -186,11 +186,13 @@ mod tests {
             concat!(
                 include_str!("../../../qymcad-part/src/bars/feat_bar.rs"),
                 "\n",
-                include_str!("../../../qymcad-part/src/bars/options.rs"),
+                include_str!("../../../qymcad-sketch/src/options.rs"),
                 "\n",
-                include_str!("../../../qymcad-part/src/bars/toolbar.rs"),
+                include_str!("../../../qymcad-ui-state/src/path_bar.rs"),
                 "\n",
                 include_str!("../../../qymcad-part/src/bars/commands.rs"),
+                "\n",
+                include_str!("../../../qymcad-sketch/src/commands.rs"),
                 "\n",
                 include_str!("../../../qymcad-part/src/bars.rs")
             ),
@@ -198,6 +200,8 @@ mod tests {
             include_str!("../../../qymcad-part/src/params.rs"),
             "\n",
             include_str!("../../../qymcad-part/src/picks.rs"),
+            "\n",
+            include_str!("../../../qymcad-part/src/aims.rs"),
             "\n",
             include_str!("../../../qymcad-part/src/popups.rs"),
             "\n",
@@ -311,7 +315,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(11).frame(Vec::new());
+        hand.sk_tool(qymcad_ui_state::SketchShape::Text).frame(Vec::new());
         assert!(hand.press_word(&qymcad_i18n::tr("opt-note"), egui::pos2(700.0, 0.0)), "the bar of the text tool has no note box");
         hand.sk_text("A\u{17000}", 20.0).frame(Vec::new());
         drop(hand);
@@ -362,8 +366,8 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         Hand::new(&mut app).pick_font_file(OURS).sk_text("Ag", 20.0).click2d(0.0, 0.0);
         // put the tool down, as a person does before picking things with the arrow
-        Hand::new(&mut app).sk_tool(0);
-        assert_eq!(app.tools.armed.draw_kind(), 0, "setup: a tool is still in hand");
+        Hand::new(&mut app).sk_select();
+        assert_eq!(app.tools.armed.drawing(), None, "setup: a tool is still in hand");
         app.tool_prefs.text = "something else".into();
         app.tool_prefs.text_h = 3.0;
 
@@ -371,7 +375,7 @@ mod tests {
         let opened = Hand::canvas(&mut app).sk_open_text_edit(((x0 + x1) / 2.0, (y0 + y1) / 2.0));
 
         assert!(opened, "the double click found no label to edit");
-        assert_eq!(app.tools.armed.draw_kind(), 11, "editing a label left the arrow in hand instead of the text tool");
+        assert_eq!(app.tools.armed.drawing(), Some(qymcad_ui_state::SketchShape::Text), "editing a label left the arrow in hand instead of the text tool");
         assert_eq!(app.tool_prefs.text, "Ag", "the bar shows some other string than the label being edited");
         assert!((app.tool_prefs.text_h - 20.0).abs() < 1e-9, "the bar shows some other height: {}", app.tool_prefs.text_h);
         assert_eq!(app.tool_prefs.font.family, "Liberation Sans", "the bar shows some other font: {:?}", app.tool_prefs.font);
@@ -390,8 +394,8 @@ mod tests {
         Hand::new(&mut app).pick_font_file(OURS).sk_text("Ag", 20.0).click2d(0.0, 0.0);
         assert_eq!(app.project.sketches[si].texts.len(), 1, "setup: the label was not placed");
         // a label is placed once and the tool put down: it is taken up again, as for the next label
-        Hand::new(&mut app).sk_tool(11);
-        assert_eq!(app.tools.armed.draw_kind(), 11, "setup: the text tool is not in hand");
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Text);
+        assert_eq!(app.tools.armed.drawing(), Some(qymcad_ui_state::SketchShape::Text), "setup: the text tool is not in hand");
 
         let (x0, y0, x1, y1) = app.project.sketch_text_bbox(si, 0).expect("the label is there");
         let opened = Hand::canvas(&mut app).sk_open_text_edit(((x0 + x1) / 2.0, (y0 + y1) / 2.0));
@@ -418,7 +422,7 @@ mod tests {
         let middle = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
         Hand::canvas(&mut app).sk_edit_text(middle, "Ag", 40.0);
 
-        assert_eq!(app.tools.armed.draw_kind(), 0, "the text tool stayed in hand after the edit was applied");
+        assert_eq!(app.tools.armed.drawing(), None, "the text tool stayed in hand after the edit was applied");
 
         // and a click on the canvas places nothing: there is nothing in hand
         Hand::canvas(&mut app).click2d(60.0, -40.0);

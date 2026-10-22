@@ -25,7 +25,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         app.apply_feat_cmd();
         assert!(!app.project.timeline.is_empty(), "setup: the timeline must hold something");
 

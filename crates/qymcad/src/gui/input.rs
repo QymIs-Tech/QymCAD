@@ -42,14 +42,14 @@ impl App {
             self.open_help(a);
         }
         // Enter confirms an array if one is active and the focus is not in a text field
-        if self.tools.armed.pat_op() != 0 && ((!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))) || qymcad_ui_state::bar_enter_take(ctx)) {
+        if self.tools.armed.pattern().is_some() && ((!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))) || qymcad_ui_state::bar_enter_take(ctx)) {
             self.confirm_pattern();
         }
         // Enter of a Part command and of a pattern of components is the frame's: their bars take it (`tool_bar`).
         // Ctrl+Enter finishes the current context (leaving a sketch, a part or a subassembly one level
         // up) without the mouse. Only when no command or array is active — otherwise Enter applies
         // those.
-        if self.tools.armed.cmd_kind() == 0 && self.tools.armed.pat_op() == 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter)) {
+        if self.tools.armed.part_tool().is_none() && self.tools.armed.pattern().is_none() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter)) {
             self.exit_context();
         }
         // ESC cancels a typing mode or a drawing, otherwise it clears the selection (the whole ladder
@@ -170,12 +170,12 @@ impl App {
         } else if self.tools.sel_sk.constraint.is_some() || self.tools.sel_sk.modify.is_some() {
             qymcad_ui_state::escape_waiting_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.status);
         } else if qymcad_ui_state::tools_of!(self).leave_click_tool(&mut self.status) {
-        } else if self.tools.armed.pat_op() != 0 {
+        } else if self.tools.armed.pattern().is_some() {
             self.tools.armed = qymcad_ui_state::Armed::None;
             self.tools.pat.edit = None;
             self.tools.pat.center = None;
             self.status = Notice::info(crate::i18n::tr("in-array-cancelled"));
-        } else if self.tools.armed.move_op() != 0 {
+        } else if self.tools.armed.moving().is_some() {
             self.tools.armed = qymcad_ui_state::Armed::None;
             self.tools.tool.move_base = None;
             self.status = Notice::info(crate::i18n::tr("in-move-cancelled"));

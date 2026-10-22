@@ -23,7 +23,7 @@ pub(in crate::gui) mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
@@ -195,7 +195,7 @@ pub(in crate::gui) mod tests {
         app.live.shapes.clear();
         app.live.ready = false;
         app.live.tried_rev = None;
-        app.tools.armed = qymcad_ui_state::Armed::Command(24); // THE THREAD
+        app.tools.armed = qymcad_ui_state::Armed::Command(qymcad_ui_state::PartTool::Thread); // THE THREAD
         crate::gui::commands::refresh_edges(&mut app.part_ctx());
         assert!(app.live.ready || app.regen.wanted || !app.live.shapes.is_empty(), "the thread tool must ask for the live B-rep: without it, it answers a correct click with a miss");
     }

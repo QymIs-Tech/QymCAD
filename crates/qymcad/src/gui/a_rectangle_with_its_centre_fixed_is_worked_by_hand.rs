@@ -19,11 +19,11 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.enter_sketch_edit(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2).click2d(10.0, 10.0).click2d(50.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(10.0, 10.0).click2d(50.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_select();
         let centre = hand.app.project.sketches[0].rects().first().map(|r| r.centre).expect("the rectangle drawn");
-        assert!(hand.select2d(&[(0, centre)]), "the centre of the rectangle could not be picked");
-        hand.constraint(6);
+        assert!(hand.select2d(&[qymcad_ui_state::SketchItem::point(centre)]), "the centre of the rectangle could not be picked");
+        hand.constraint(qymcad_ui_state::ConstraintKind::Fix);
         hand.key(egui::Key::Escape);
         assert!(hand.app.project.sketches[0].constraints.iter().any(|c| matches!(c, qymcad_core::model::Constraint::Fixed { p } if *p == centre)), "GUARD: the centre is fixed");
 

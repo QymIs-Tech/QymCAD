@@ -280,7 +280,7 @@ mod tests {
         let mut hand = super::super::hand::Hand::new(&mut app);
         // a circle with its diameter typed, reopened by a double click on the number of the diameter on the sheet, not on
         // the row of the list of constraints
-        hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(10.0, 0.0);
         hand.type_text("20").key(egui::Key::Enter);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
         hand.sk_select();

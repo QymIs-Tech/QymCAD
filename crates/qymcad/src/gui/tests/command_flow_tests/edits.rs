@@ -8,8 +8,8 @@ fn fillet_button_flow() {
     let mut app = App::default();
     let cube = build_cube(&mut app);
     let eid = app.project.regen_edges.get(&cube).and_then(|es| es.iter().find(|e| e.a[0].abs() < 1e-6 && e.a[1].abs() < 1e-6 && (e.a[2] - e.b[2]).abs() > 1.0)).map(|e| e.id).expect("a vertical edge");
-    app.start_feat_cmd(4);
-    assert_eq!(app.tools.armed.cmd_kind(), 4, "the fillet started: {}", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Fillet), "the fillet started: {}", app.status);
     app.tools.gsel.edges.insert(eid);
     app.edges.body = Some(cube);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
@@ -17,7 +17,7 @@ fn fillet_button_flow() {
         p.txt = "4".into();
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the fillet was applied: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the fillet was applied: {}", app.status);
     let consumed = qymcad_ui_state::consumed_bodies(&app.project);
     let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
     let exp = 8000.0 - (16.0 - std::f64::consts::PI * 4.0) * 20.0;
@@ -30,7 +30,7 @@ fn edit_fillet_shows_selected_edges() {
     let mut app = App::default();
     let cube = build_cube(&mut app);
     let eid = app.project.regen_edges.get(&cube).and_then(|es| es.iter().find(|e| (e.a[2] - e.b[2]).abs() > 10.0)).map(|e| e.id).expect("an edge");
-    app.start_feat_cmd(4);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
     app.tools.gsel.edges.insert(eid);
     app.edges.body = Some(cube);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
@@ -73,7 +73,7 @@ fn delete_feature_flow() {
     let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
     app.chosen.sel = Sel::Sketch(s2);
     app.feat.op = 2;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 5.0;
         p.txt = "5".into();
@@ -120,7 +120,7 @@ fn thread_command_is_standard_driven_and_auger_switches_fields() {
     let cube = build_cube(&mut app);
     qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, cube);
     crate::gui::commands::start_thread_cmd(&mut app.part_ctx());
-    assert_eq!(app.tools.armed.cmd_kind(), 24, "the thread command started: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Thread), "the thread command started: {}", app.status);
 
     // the fields are the size and the fit, NOT the angle and the depth
     let keys: Vec<String> = app.tools.cmd.params.iter().map(|p| p.key.to_string()).collect();
@@ -223,7 +223,7 @@ fn escape_cancels_tool_then_selection_and_stops() {
 
     // 2) there are selected elements: Esc clears the selection and the sketch is still open
     let ent = app.project.sketches[si].entities.first().map(|e| e.id).expect("an entity");
-    app.tools.sel_sk.items.push((1, ent));
+    app.tools.sel_sk.items.push(qymcad_ui_state::SketchItem::curve(ent));
     app.on_escape();
     assert!(app.tools.sel_sk.items.is_empty(), "the selection is cleared: {}", app.status);
     assert!(app.sketch_ses.editing.is_some(), "and the sketch is still open");
@@ -248,16 +248,16 @@ fn escape_ladder_covers_draw_and_dim_tools() {
     app.project.add_rect_entity(si, 0.0, 0.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
     app.project.regen_sketch(si);
 
-    qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 1); // the distance dimension
+    qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, qymcad_ui_state::DimKind::Linear); // the distance dimension
     app.on_escape();
-    assert_eq!(app.tools.armed.dim_kind(), 0, "the dimension tool is dropped");
+    assert_eq!(app.tools.armed.dimension(), None, "the dimension tool is dropped");
     assert!(app.sketch_ses.editing.is_some(), "the sketch is open");
 
-    app.tools.armed = qymcad_ui_state::Armed::Draw(2); // a drawing tool
+    app.tools.armed = qymcad_ui_state::Armed::Draw(qymcad_ui_state::SketchShape::Rect); // a drawing tool
     app.tools.tool.pts.push(qymcad_core::geom::Point2::new(0.0, 0.0));
     app.on_escape();
-    assert!(app.tools.tool.pts.is_empty() && app.tools.armed.draw_kind() == 2, "the first Esc aborts the UNFINISHED construction");
+    assert!(app.tools.tool.pts.is_empty() && app.tools.armed.drawing() == Some(qymcad_ui_state::SketchShape::Rect), "the first Esc aborts the UNFINISHED construction");
     app.on_escape();
-    assert_eq!(app.tools.armed.draw_kind(), 0, "the second Esc leaves the tool for Select");
+    assert_eq!(app.tools.armed.drawing(), None, "the second Esc leaves the tool for Select");
     assert!(app.sketch_ses.editing.is_some(), "and only after that may the sketch be closed");
 }

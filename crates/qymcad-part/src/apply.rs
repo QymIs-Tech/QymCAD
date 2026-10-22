@@ -29,7 +29,7 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), Not
     // been switched in the bar after opening (see `smart_flip`).
     if pc.feat.flip_auto {
         if let Some(si) = pc.cmd.sketch.filter(|i| *i < pc.project.sketches.len()) {
-            pc.feat.flip = smart_flip(pc.armed.cmd_kind(), pc.feat.op, &pc.project.sketches[si].plane);
+            pc.feat.flip = pc.armed.part_tool().is_some_and(|t| smart_flip(t, pc.feat.op, &pc.project.sketches[si].plane));
         }
     }
     qymcad_ui_state::ensure_brep(&mut pc.rebuild()); // after opening from a bundle there are no live shapes yet - bring the cache up once
@@ -40,7 +40,7 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), Not
                                                      // profile selection is non-empty) would apply 10 mm straight away during a Ctrl multi-pick, with no
                                                      // gizmo and no popup, and would breed a chain of nodes. A single contour already moves to 3D at the
                                                      // start.
-    if matches!(pc.armed.cmd_kind(), 1 | 3) && pc.cmd.edit.is_none() && !*pc.mode_3d && !pc.gsel.profiles.is_empty() {
+    if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && pc.cmd.edit.is_none() && !*pc.mode_3d && !pc.gsel.profiles.is_empty() {
         qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore); // the view is borrowed for the command and returned on exit
         *pc.mode_3d = true;
         *pc.status = Notice::info(qymcad_i18n::tr("msg-profile-picked"));
@@ -57,31 +57,31 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), Not
     let last = if let Some(fid) = pc.cmd.edit {
         update_feat(pc, fid)
     } else {
-        match pc.armed.cmd_kind() {
-            1 | 3 => apply_sketch_cmd(pc, pc.armed.cmd_kind()),
-            8 => apply_sweep_cmd(*pc.feat, pc.project, *pc.sweep),
-            9 => apply_loft_cmd(pc),
-            4 | 5 => apply_edge_cmd(pc, pc.armed.cmd_kind()),
-            6 => apply_shell_cmd(pc),
-            23 => apply_draft_cmd(pc),
-            25 => apply_push_face_cmd(pc),
-            26 => apply_remove_face_cmd(pc),
-            30 => apply_face_copy_cmd(pc),
-            36 => apply_offset_surface_cmd(pc),
-            31 => apply_surface_replace_cmd(pc),
-            32 => apply_patch_cmd(pc),
-            33 => apply_stitch_cmd(pc.cmd, pc.project, pc.stitch_parts),
-            35 => apply_recognise_cmd(pc),
-            34 => apply_trim_cmd(pc.project, pc.trim),
-            27 => apply_split_cmd(pc),
-            28 => apply_thicken_cmd(pc),
-            29 => apply_split_face_cmd(pc),
-            24 => apply_thread_cmd(pc.cmd, pc.project, *pc.thread),
-            7 => apply_hole_cmd(pc.cmd, *pc.hole, pc.project, *pc.sel),
-            10..=15 => apply_prim_cmd(pc),                                                // the primitives
-            16 => apply_mirror_cmd(pc),                                                   // the mirror
-            17 | 18 => apply_array_cmd(pc),                                               // the array
-            20..=22 => apply_datum_cmd(pc.armed, pc.cmd, pc.datum, pc.edges, pc.project), // a datum plane, point or axis
+        match pc.armed.part_tool() {
+            Some(t @ (qymcad_ui_state::PartTool::Extrude | qymcad_ui_state::PartTool::Revolve)) => apply_sketch_cmd(pc, t),
+            Some(qymcad_ui_state::PartTool::Sweep) => apply_sweep_cmd(*pc.feat, pc.project, *pc.sweep),
+            Some(qymcad_ui_state::PartTool::Loft) => apply_loft_cmd(pc),
+            Some(t @ (qymcad_ui_state::PartTool::Fillet | qymcad_ui_state::PartTool::Chamfer)) => apply_edge_cmd(pc, t),
+            Some(qymcad_ui_state::PartTool::Shell) => apply_shell_cmd(pc),
+            Some(qymcad_ui_state::PartTool::Draft) => apply_draft_cmd(pc),
+            Some(qymcad_ui_state::PartTool::PushFace) => apply_push_face_cmd(pc),
+            Some(qymcad_ui_state::PartTool::RemoveFace) => apply_remove_face_cmd(pc),
+            Some(qymcad_ui_state::PartTool::FaceCopy) => apply_face_copy_cmd(pc),
+            Some(qymcad_ui_state::PartTool::OffsetSurface) => apply_offset_surface_cmd(pc),
+            Some(qymcad_ui_state::PartTool::SurfaceReplace) => apply_surface_replace_cmd(pc),
+            Some(qymcad_ui_state::PartTool::Patch) => apply_patch_cmd(pc),
+            Some(qymcad_ui_state::PartTool::Stitch) => apply_stitch_cmd(pc.cmd, pc.project, pc.stitch_parts),
+            Some(qymcad_ui_state::PartTool::Recognise) => apply_recognise_cmd(pc),
+            Some(qymcad_ui_state::PartTool::Trim) => apply_trim_cmd(pc.project, pc.trim),
+            Some(qymcad_ui_state::PartTool::SplitBody) => apply_split_cmd(pc),
+            Some(qymcad_ui_state::PartTool::Thicken) => apply_thicken_cmd(pc),
+            Some(qymcad_ui_state::PartTool::SplitFace) => apply_split_face_cmd(pc),
+            Some(qymcad_ui_state::PartTool::Thread) => apply_thread_cmd(pc.cmd, pc.project, *pc.thread),
+            Some(qymcad_ui_state::PartTool::Hole) => apply_hole_cmd(pc.cmd, *pc.hole, pc.project, *pc.sel),
+            Some(k) if k.is_a_primitive() => apply_prim_cmd(pc),             // the primitives
+            Some(qymcad_ui_state::PartTool::Mirror) => apply_mirror_cmd(pc), // the mirror
+            Some(qymcad_ui_state::PartTool::LinearPattern) | Some(qymcad_ui_state::PartTool::CircularPattern) => apply_array_cmd(pc), // the array
+            Some(k) if k.is_a_datum() => apply_datum_cmd(pc.armed, pc.cmd, pc.datum, pc.edges, pc.project), // a datum plane, point or axis
             _ => Err(op_failed()),
         }
     };
@@ -98,7 +98,7 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), Not
     let made = pc.project.timeline.iter().find(|n| n.kind.body() == Some(body)).map(|n| qymcad_i18n::name(&n.name));
     // A CLEAN finish: the command is dropped and the selection is cleared, so neither the gizmo arrows
     // nor the right-hand panel remain
-    pc.cmd.open(pc.armed, 0, *pc.mode_3d); // a clean slate, then open
+    pc.cmd.close(pc.armed);
 
     qymcad_ui_state::clear_feat_picks(qymcad_ui_state::feat_picks_in!(pc));
     // back from the flat half-sketcher into 3D: RETURN the view that was borrowed rather than refitting
@@ -125,7 +125,7 @@ pub fn apply_feat_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotApplie
     if let Some((label, msg)) = pc.cmd.params.iter().find_map(|p| field_refused(p).map(|m| (qymcad_i18n::tr(p.label_key()), m))) {
         return Err(NotApplied::Refused(format!("{label}: {msg}")));
     }
-    if !cmd_ready(pc) && !matches!(pc.armed.cmd_kind(), 22 | 25 | 26 | 28 | 30 | 32 | 34) {
+    if !cmd_ready(pc) && !pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::says_what_it_wants) {
         return Err(NotApplied::Refused(qymcad_i18n::tr1("cmd-not-ready", "ask", &cmd_hint(&*pc.armed, &*pc.gsel, &*pc.trim))));
     }
     // the counts as their fields hold them in this very frame: Enter in the field of a count applies what was typed

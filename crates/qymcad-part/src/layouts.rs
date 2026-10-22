@@ -35,22 +35,22 @@ fn directions(keys: &[Direction; 3]) -> Vec<Row> {
 pub(crate) fn command_layout(pc: &qymcad_ui_state::PartCtx) -> Layout {
     let f = &pc.cmd.params;
     let xyz = |caption: &str, keys: [&str; 3]| ["X", "Y", "Z"].into_iter().zip(keys).fold(Row::new(qymcad_i18n::tr(caption)), |r, (tag, key)| r.tagged(tag, key));
-    let sections = match pc.armed.cmd_kind() {
-        17 => vec![Section::plain(directions(&BODY_DIRECTIONS))],
+    let sections = match pc.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::LinearPattern) => vec![Section::plain(directions(&BODY_DIRECTIONS))],
         // the hole and its shift from the centre of the face, then its recess - a counterbore or a countersink
-        7 => vec![
+        Some(qymcad_ui_state::PartTool::Hole) => vec![
             // the shift a row each: on one line the box grew over the centre of the face the hole is picked on
             Section::plain(vec![own(f, "diameter"), own(f, "depth"), own(f, "off_u"), own(f, "off_v")]),
             Section::titled(qymcad_i18n::tr("box-recess"), Folded::No, vec![own(f, "dia2"), own(f, "depth2")]),
         ],
         // the thread, how it begins and ends, and the roundings of its profile - folded, as they are seldom touched
-        24 => vec![
+        Some(qymcad_ui_state::PartTool::Thread) => vec![
             Section::plain(["nominal", "outer", "pitch", "angle", "depth", "thickness", "length", "fit"].into_iter().map(|k| own(f, k)).collect()),
             Section::titled(qymcad_i18n::tr("box-ends"), Folded::No, vec![own(f, "lead_in"), own(f, "lead_out")]),
             Section::titled(qymcad_i18n::tr("box-fillets"), Folded::Yes, vec![own(f, "crest_r"), own(f, "root_r"), own(f, "edge_r")]),
         ],
-        21 => vec![Section::plain(vec![xyz("cmd-coordinates", ["x", "y", "z"]).unit("unit-mm-suffix")])],
-        22 => vec![Section::plain(vec![xyz("box-origin", ["ox", "oy", "oz"]).unit("unit-mm-suffix"), xyz("cmd-direction", ["dx", "dy", "dz"])])],
+        Some(qymcad_ui_state::PartTool::DatumPoint) => vec![Section::plain(vec![xyz("cmd-coordinates", ["x", "y", "z"]).unit("unit-mm-suffix")])],
+        Some(qymcad_ui_state::PartTool::DatumAxis) => vec![Section::plain(vec![xyz("box-origin", ["ox", "oy", "oz"]).unit("unit-mm-suffix"), xyz("cmd-direction", ["dx", "dy", "dz"])])],
         _ => Vec::new(),
     };
     Layout { sections, foot: Vec::new() }
@@ -58,7 +58,7 @@ pub(crate) fn command_layout(pc: &qymcad_ui_state::PartCtx) -> Layout {
 
 /// THE LAYOUT OF THE BOX OF A PATTERN OF PARTS: a linear one by its directions, a circular one a field a row.
 pub(crate) fn comp_array_layout(pc: &qymcad_ui_state::PartCtx) -> Layout {
-    let sections = if pc.carr.mode == 1 { vec![Section::plain(directions(&PART_DIRECTIONS))] } else { Vec::new() };
+    let sections = if pc.carr.mode == Some(qymcad_ui_state::PatternKind::Linear) { vec![Section::plain(directions(&PART_DIRECTIONS))] } else { Vec::new() };
     Layout { sections, foot: Vec::new() }
 }
 

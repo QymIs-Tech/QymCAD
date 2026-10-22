@@ -28,7 +28,7 @@ fn line_starts(app: &App) -> Vec<[f64; 2]> {
 fn a_line_started_near_a_centre_line_starts_on_it() {
     let mut app = a_sketch();
     let _ = app.project.add_circle_entity(0, 50.5, 30.5, 10.0, qymcad_core::feature::Purpose::Real);
-    Hand::new(&mut app).sk_tool(1).click2d(50.7, 36.0).double_click2d(90.0, 50.0);
+    Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(50.7, 36.0).double_click2d(90.0, 50.0);
     let starts = line_starts(&app);
     assert!(starts.iter().any(|[x, _]| (x - 50.5).abs() < 1e-6), "the line started at {starts:?}, not on the centre line x = 50.5");
 }
@@ -39,7 +39,7 @@ fn a_line_started_near_a_centre_line_starts_on_it() {
 fn the_centre_lines_of_a_circle_are_drawn() {
     let mut app = a_sketch();
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(3).click2d(50.0, 30.0).click2d(60.0, 30.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(50.0, 30.0).click2d(60.0, 30.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
     hand.sk_select();
     let colour = hand.app.scheme.pal.sketch_construction().gamma_multiply(0.7);

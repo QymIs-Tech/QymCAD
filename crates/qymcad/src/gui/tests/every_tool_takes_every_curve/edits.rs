@@ -95,10 +95,10 @@ fn stroke_through(d: &Drawing, p: Point2) -> [Point2; 2] {
 
 /// A LINE DRAWN BY HAND from `a` to `b`, the tool put down after it.
 fn line(hand: &mut Hand, seg: [Point2; 2]) {
-    hand.sk_tool(1);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line);
     hand.click2d(seg[0].x, seg[0].y).click2d(seg[1].x, seg[1].y);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_select();
 }
 
 /// PRESS the button of `key` in the panel, or fail naming it.
@@ -190,7 +190,7 @@ fn extend(hand: &mut Hand, kind: &Kind, edit: Edit, before: &Drawing) -> Result<
     let near_end = share_along(&curve.path, if curve.path[0].dist(about(s.end)) < 0.5 { 0.15 } else { 0.85 });
     let target = along(to, 0.5);
     if edit == Edit::ExtendPicked {
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.click2d(near_end.x, near_end.y);
         press(hand, "tb-extend-hint")?;
         hand.hover2d(target.x, target.y);

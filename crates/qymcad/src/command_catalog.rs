@@ -16,9 +16,12 @@
 
 pub use qymcad_ui_state::catalogue::{Command, Launch};
 
-/// EVERY COMMAND: the rows each workbench gives, in the order of their bars - the sketch, the part, the assembly.
+/// THE WORKBENCHES THAT GIVE COMMANDS, in the order of their bars - the sketch, the part, the assembly.
+pub(crate) const BENCHES: [&qymcad_ui_state::catalogue::Offer; 3] = [&qymcad_sketch::OFFER, &qymcad_part::OFFER, &qymcad_assembly::OFFER];
+
+/// EVERY COMMAND: the rows each workbench gives, in the order of their bars.
 pub fn all() -> impl Iterator<Item = &'static Command> {
-    qymcad_part::SKETCH_COMMANDS.iter().chain(qymcad_part::PART_COMMANDS).chain(qymcad_assembly::COMMANDS)
+    BENCHES.into_iter().flat_map(|b| b.rows.iter())
 }
 
 /// A command by its code.
@@ -31,13 +34,22 @@ pub fn of_bench(bench: &str) -> Vec<&'static Command> {
     all().filter(|c| c.on(bench)).collect()
 }
 
-/// PRESS A COMMAND, through the workbench it belongs to: its button, its row of "More" and the search come here
+/// THE ROW OF THE DATUM PLANE: one row, which the bars of the part and of the assembly both show.
+pub const DATUM_PLANE: &str = "part.datum-plane";
+
+/// THE TOOL OF A PART under the code of a row of the catalogue - what a key bound to that code takes.
+pub fn part_tool_of(code: &str) -> Option<qymcad_ui_state::PartTool> {
+    match by_code(code)?.launch {
+        Launch::Feat(t) | Launch::Prim(t) => Some(t),
+        _ => None,
+    }
+}
+
+/// PRESS A COMMAND, through the workbench that gave its row: its button, its row of "More" and the search come here
 /// alike.
 pub fn press(cmd: &Command, bc: &mut qymcad_ui_state::BarCtx) {
-    if cmd.home() == "assembly" {
-        qymcad_assembly::press(cmd.launch, bc);
-    } else {
-        qymcad_part::press(cmd.launch, bc);
+    if let Some(bench) = BENCHES.into_iter().find(|b| b.rows.iter().any(|r| r.code == cmd.code)) {
+        (bench.press)(cmd.launch, bc);
     }
 }
 
@@ -79,17 +91,31 @@ impl Named for Command {
 
     fn help_article(&self) -> Option<&'static str> {
         let by_launch = match self.launch {
-            Launch::Feat(n) | Launch::Prim(n) => crate::help_map::part_article(n),
-            Launch::SkTool(n) => crate::help_map::sketch_article("sk", n),
-            Launch::Dim(n) => crate::help_map::sketch_article("dim", n),
-            Launch::ClickOp(n) => crate::help_map::sketch_article("click", n),
-            Launch::Modify(tool) => crate::help_map::sketch_article("mod", tool.code()),
+            Launch::Feat(_) | Launch::Prim(_) => crate::help_map::part_article(self.code),
+            Launch::SkTool(_) | Launch::Dim(_) | Launch::ClickOp(_) | Launch::Modify(_) => crate::help_map::sketch_article(self.code),
             Launch::Joint => crate::help_map::assembly_article("asm.joint"),
             Launch::PieceToPart => Some("part/13-split-body"),
             _ => None,
         };
         by_launch.or_else(|| crate::help_map::toolbar_article(self.hint_key))
     }
+}
+
+/// THE ARTICLE OF THE TOOL IN HAND, whichever kind it is - a tool of a part, a drawing tool of a sketch, a dimension, a
+/// tool acting on a click, a button editing what is picked: the command whose press put it in hand, and the article of
+/// that command.
+pub fn article_in_hand(armed: &qymcad_ui_state::Armed) -> Option<&'static str> {
+    use qymcad_ui_state::Armed;
+    let launch = match *armed {
+        Armed::Command(t) if t.is_a_primitive() => Launch::Prim(t),
+        Armed::Command(t) => Launch::Feat(t),
+        Armed::Draw(s) => Launch::SkTool(s),
+        Armed::ClickOp(c) => Launch::ClickOp(c),
+        Armed::Dimension(k) => Launch::Dim(k),
+        Armed::Modify(t) => Launch::Modify(t),
+        _ => return None,
+    };
+    all().find(|c| c.launch == launch).and_then(|c| c.help_article())
 }
 
 /// IS THERE A BUTTON FOR `launch` on the bar of `bench`: a row of the catalogue on its shelf.
@@ -104,11 +130,14 @@ mod tests {
 
     /// A COMMAND FOUND BY NAME OPENS THE TOOL OF THAT NAME: the row of the datum axis starts the axis and shows the
     /// hint of the axis. Reported behaviour: Ctrl+K "Datum axis" opened the point (the bar "Point", the fields X, Y, Z)
-    /// and "Datum point" the axis - the catalogue had 21 for the axis and 22 for the point, the window the other way.
+    /// and "Datum point" the axis - the catalogue and the window had the two kinds the other way round.
     /// Now the button is the row, and the row is checked against the kinds the bar of the command is built for.
     #[test]
     fn a_command_found_by_name_launches_the_kind_of_its_own_button() {
-        for (code, kind, hint) in [("part.datum-axis", 22, "g-datum-axis-hint"), ("part.datum-point", 21, "g-datum-point-hint")] {
+        for (code, kind, hint) in [
+            ("part.datum-axis", qymcad_ui_state::PartTool::DatumAxis, "g-datum-axis-hint"),
+            ("part.datum-point", qymcad_ui_state::PartTool::DatumPoint, "g-datum-point-hint"),
+        ] {
             let c = by_code(code).unwrap_or_else(|| panic!("{code} is not in the catalogue"));
             assert_eq!(c.launch, Launch::Feat(kind), "{code} launches {:?}", c.launch);
             assert_eq!(c.hint_key, hint, "{code} shows the hint of another button");

@@ -31,7 +31,7 @@ fn slot_length(app: &App) -> f64 {
 fn a_slot_drawn_takes_its_length_in_its_field() {
     let mut app = sketch();
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(7).click2d(0.0, 0.0).click2d(20.0, 0.0).click2d(0.0, 3.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Slot).click2d(0.0, 0.0).click2d(20.0, 0.0).click2d(0.0, 3.0);
     hand.type_text("30").key(egui::Key::Enter);
     let status = hand.app.status.clone();
     let length = slot_length(hand.app);
@@ -42,7 +42,7 @@ fn a_slot_drawn_takes_its_length_in_its_field() {
 fn a_slot_drawn_and_left_untyped_holds_no_dimension() {
     let mut app = sketch();
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(7).click2d(0.0, 0.0).click2d(20.0, 0.0).click2d(0.0, 3.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Slot).click2d(0.0, 0.0).click2d(20.0, 0.0).click2d(0.0, 3.0);
     hand.key(egui::Key::Escape);
     let dims = hand.app.project.sketches[0].constraints.iter().filter(|c| matches!(c, qymcad_core::model::Constraint::Distance { .. })).count();
     assert_eq!(dims, 0, "a slot closed with Esc holds {dims} dimensions nobody typed");
@@ -52,9 +52,9 @@ fn a_slot_drawn_and_left_untyped_holds_no_dimension() {
 fn a_double_click_on_a_side_of_a_slot_opens_its_length() {
     let mut app = sketch();
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(7).click2d(0.0, 0.0).click2d(20.0, 0.0).click2d(0.0, 3.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Slot).click2d(0.0, 0.0).click2d(20.0, 0.0).click2d(0.0, 3.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_select();
     hand.double_click2d(7.0, 3.0);
     hand.type_text("25").key(egui::Key::Enter);
     let status = hand.app.status.clone();
@@ -67,9 +67,9 @@ fn a_double_click_on_the_middle_of_a_side_of_a_polygon_opens_its_radius() {
     let mut app = sketch();
     let mut hand = Hand::new(&mut app);
     // a hexagon R50; its first side runs from (50, 0) to (25, 43.3), and its middle stands 6.7 mm inside the circle
-    hand.sk_tool(6).click2d(0.0, 0.0).click2d(50.0, 0.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Polygon).click2d(0.0, 0.0).click2d(50.0, 0.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_select();
     hand.double_click2d(40.0, 17.32);
     hand.type_text("40").key(egui::Key::Enter);
     let s = &hand.app.project.sketches[0];

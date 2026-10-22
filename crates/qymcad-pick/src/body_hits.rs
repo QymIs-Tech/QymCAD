@@ -107,7 +107,7 @@ pub fn pick_contour(project: &Project, sel: &mut Sel, set: &Settings, view: View
 /// Among the selected ones only — a variable radius makes sense on the set being rounded, and offering
 /// the vertices of the whole part would clutter the aim with what will affect nothing anyway.
 pub fn fillet_vertex_at(scr: &Screen, armed: &qymcad_ui_state::Armed, edges: &EdgeCache, gsel: &GeomSelection, project: &mut Project, screen: Pos2) -> Option<(u32, [f64; 3])> {
-    if armed.cmd_kind() != 4 || gsel.edges.is_empty() {
+    if armed.part_tool() != Some(qymcad_ui_state::PartTool::Fillet) || gsel.edges.is_empty() {
         return None;
     }
     let body = edges.body?;

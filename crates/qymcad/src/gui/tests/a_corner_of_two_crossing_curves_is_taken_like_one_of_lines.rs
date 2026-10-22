@@ -37,7 +37,7 @@ enum Tool {
 
 /// The circle about (20, 20) of radius 10, drawn by its tool.
 fn circle(hand: &mut Hand) {
-    hand.sk_tool(3).click2d(20.0, 20.0).click2d(30.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(20.0, 20.0).click2d(30.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
 }
 
 /// The two curves drawn by hand in a new sketch.
@@ -49,31 +49,31 @@ fn drawn(two: Two) -> App {
     match two {
         Two::Circles => {
             circle(&mut hand);
-            hand.sk_tool(3).click2d(32.0, 20.0).click2d(42.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(32.0, 20.0).click2d(42.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
         }
         Two::ArcAndCircle => {
             circle(&mut hand);
-            hand.sk_tool(4).click2d(32.0, 20.0).click2d(30.26, 29.85).click2d(30.26, 10.15).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Arc).click2d(32.0, 20.0).click2d(30.26, 29.85).click2d(30.26, 10.15).key(egui::Key::Escape).key(egui::Key::Escape);
         }
         Two::SplineAndCircle => {
             circle(&mut hand);
-            hand.sk_tool(9).click2d(8.0, 36.0).click2d(20.0, 24.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(8.0, 36.0).click2d(20.0, 24.0);
             hand.double_click2d(34.0, 36.0);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
         }
         Two::SplineEndingInside => {
             circle(&mut hand);
-            hand.sk_tool(9).click2d(4.0, 36.0).click2d(10.0, 29.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(4.0, 36.0).click2d(10.0, 29.0);
             hand.double_click2d(16.0, 22.0);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
         }
         Two::Lines => {
-            hand.sk_tool(1).click2d(10.0, 28.0).double_click2d(40.0, 28.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 28.0).double_click2d(40.0, 28.0);
             hand.click2d(20.0, 14.0).double_click2d(32.0, 42.0);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
         }
     }
-    hand.sk_tool(0);
+    hand.sk_select();
     app
 }
 
@@ -129,7 +129,7 @@ fn cut(two: Two, tool: Tool) -> Result<(), String> {
     };
     let shown = hand.app.project.crossing_blend(0, crossing_of, toward, size).ok_or(format!("the corner of the quarter takes no cut of {v}"))?;
     hand.click2d(pick_a.x, pick_a.y).click2d(pick_b.x, pick_b.y);
-    let chosen: Vec<Id> = hand.app.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let chosen: Vec<Id> = hand.app.tools.sel_sk.curves().collect();
     if !(chosen.contains(&a) && chosen.contains(&b)) {
         return Err(format!("a click on each curve chose {chosen:?}, not both of {a} and {b}"));
     }

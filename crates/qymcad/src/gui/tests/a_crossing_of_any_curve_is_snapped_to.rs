@@ -26,14 +26,14 @@ fn a_line_started_by_a_crossing_of_any_curve_starts_on_it() {
         let mut hand = Hand::new(&mut app);
         match at {
             Where::SplineAndAxis => {
-                hand.sk_tool(9).click2d(10.0, 8.0).click2d(18.0, -6.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(10.0, 8.0).click2d(18.0, -6.0);
                 hand.double_click2d(26.0, -10.0);
             }
             Where::EllipseAndCentreLine => {
                 // a circle about (40, 30) of radius 10 - its level centre line runs from x 27.5 to 52.5 - and an ellipse
                 // about (50, 33) whose rim crosses that line at x 43.07, inside the circle
-                hand.sk_tool(3).click2d(40.0, 30.0).click2d(40.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
-                hand.sk_tool(8).click2d(50.0, 33.0).click2d(58.0, 33.0).click2d(50.0, 39.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(40.0, 30.0).click2d(40.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Ellipse).click2d(50.0, 33.0).click2d(58.0, 33.0).click2d(50.0, 39.0);
             }
         }
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
@@ -50,7 +50,7 @@ fn a_line_started_by_a_crossing_of_any_curve_starts_on_it() {
         };
         // 3 px off it
         let off = 3.0 / f64::from(hand.app.viewing.view.scale);
-        hand.sk_tool(1).click2d(crossing.x + off, crossing.y + off).double_click2d(crossing.x + 20.0, crossing.y + 15.0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(crossing.x + off, crossing.y + off).double_click2d(crossing.x + 20.0, crossing.y + 15.0);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
         let s = &hand.app.project.sketches[si];
         let start = s.entities.iter().filter_map(|e| e.kind.as_line().and_then(|l| s.point(l.a))).map(|q| Point2::new(q.x, q.y)).last();

@@ -26,7 +26,7 @@ fn a_base_held_by_a(app: &mut App) -> u64 {
     app.project.solve_sketch(si);
     app.finish_sketch_edit();
     app.chosen.sel = Sel::Sketch(si);
-    Hand::new(app).look_at([0.0, 0.0, 5.0], 6.0).tool(1).set("height", 10.0).enter();
+    Hand::new(app).look_at([0.0, 0.0, 5.0], 6.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 10.0).enter();
     app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the base")
 }
 
@@ -63,7 +63,7 @@ fn a_projected_ellipse_and_a_line_held_on_it_follow_the_parameter() {
     assert!(matches!(axes[..], [Some([a, b])] if (a - 10.0).abs() < 1e-3 && (b - 5.0).abs() < 1e-3), "the outline of the top face came in as {axes:?}, not one ellipse 10 x 5");
     // a line from outside the face to the place of the ellipse at 60 deg round it
     let (x, y) = (10.0 * 60f64.to_radians().cos(), 5.0 * 60f64.to_radians().sin());
-    hand.sk_tool(1).click2d(20.0, 15.0).click2d(x, y).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(20.0, 15.0).click2d(x, y).key(egui::Key::Escape).key(egui::Key::Escape);
     let end = {
         let s = &hand.app.project.sketches[si];
         s.points.iter().filter(|q| (q.x - x).hypot(q.y - y) < 0.05).map(|q| q.id).find(|id| s.entities.iter().any(|e| e.kind.as_line().is_some_and(|l| l.b == *id)))

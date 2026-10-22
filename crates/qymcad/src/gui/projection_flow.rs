@@ -34,8 +34,11 @@ mod tests {
     #[test]
     fn the_tool_has_a_button() {
         // a button of the sketch's bar switches the click operation to SIX - the projection
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::ClickOp(6), "sketch"), "without a button the operation does not exist for a person");
-        assert!(crate::gui::sketch_source::SKETCH.contains(".armed.click_op() == 6 {"), "a click in a sketch must lead to the projection");
+        assert!(
+            crate::command_catalog::has_button(crate::command_catalog::Launch::ClickOp(qymcad_ui_state::ClickTool::Project), "sketch"),
+            "without a button the operation does not exist for a person"
+        );
+        assert!(crate::gui::sketch_source::SKETCH.contains(".armed.click_tool() == Some(qymcad_ui_state::ClickTool::Project) {"), "a click in a sketch must lead to the projection");
     }
 
     /// THE WHOLE FACE-OUTLINE PATH: button -> mode -> click -> driven geometry in the sketch.
@@ -45,8 +48,8 @@ mod tests {
         let (si, _body) = part_with_sketch_on_face(&mut app);
         let ents_before = app.project.sketches[si].entities.len();
 
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6);
-        assert_eq!(app.tools.armed.click_op(), 6, "the projection tool must switch on");
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Project);
+        assert_eq!(app.tools.armed.click_tool(), Some(qymcad_ui_state::ClickTool::Project), "the projection tool must switch on");
         app.tools.tool.proj_face = true; // the face-outline toggle in the top bar
 
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
@@ -64,7 +67,7 @@ mod tests {
     fn clicking_near_an_edge_projects_that_edge() {
         let mut app = App::default();
         let (si, _body) = part_with_sketch_on_face(&mut app);
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Project);
         app.tools.tool.proj_face = false;
         app.viewing.view.initialized = true;
         app.viewing.view.scale = 8.0;
@@ -90,7 +93,7 @@ mod tests {
     fn a_miss_says_so() {
         let mut app = App::default();
         let (si, _body) = part_with_sketch_on_face(&mut app);
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Project);
         app.tools.tool.proj_face = false;
         app.viewing.view.initialized = true;
         app.viewing.view.scale = 8.0;
@@ -106,7 +109,7 @@ mod tests {
     fn projected_geometry_is_not_draggable() {
         let mut app = App::default();
         let (si, _body) = part_with_sketch_on_face(&mut app);
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Project);
         app.tools.tool.proj_face = true;
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         crate::gui::sketching::project_clicked_edge(&mut app.sketch_ctx(), si, rect, egui::pos2(450.0, 350.0));
@@ -114,7 +117,7 @@ mod tests {
         // a group move: even if the driven points ended up in the selection, they must not move
         let driven: Vec<u64> = app.project.sketches[si].projected_points().into_iter().collect();
         assert!(!driven.is_empty(), "setup: the driven points are there");
-        app.tools.sel_sk.items = driven.iter().map(|id| (0u8, *id)).collect();
+        app.tools.sel_sk.items = driven.iter().map(|id| qymcad_ui_state::SketchItem::point(*id)).collect();
         let movable = crate::gui::sketching::sketch_sel_points(&app.project, &app.tools.sel_sk, si);
         assert!(movable.is_empty(), "the driven points must drop out of the move, and it holds {movable:?}");
     }
@@ -125,13 +128,13 @@ mod tests {
     fn deleting_a_projected_side_leaves_the_other_sides_projected() {
         let mut app = App::default();
         let (si, _body) = part_with_sketch_on_face(&mut app);
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Project);
         app.tools.tool.proj_face = true;
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         crate::gui::sketching::project_clicked_edge(&mut app.sketch_ctx(), si, rect, egui::pos2(450.0, 350.0));
         let one: u64 = *app.project.sketches[si].projections[0].entities.first().expect("the entity is there");
 
-        app.tools.sel_sk.items = vec![(1u8, one)];
+        app.tools.sel_sk.items = vec![qymcad_ui_state::SketchItem::curve(one)];
         qymcad_ui_state::delete_sketch_sel(&mut app.project, &mut app.regen, &mut app.tools.sel_sk, &mut app.status, si);
 
         let s = &app.project.sketches[si];

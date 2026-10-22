@@ -119,7 +119,12 @@ pub fn line_screen_dir(project: &Project, view: &View2d, si: usize, a: Id, b: Id
 
 pub fn sel_circle_centers(project: &Project, sel_sk: &SketchSelection, si: usize) -> Vec<Id> {
     let Some(s) = project.sketches.get(si) else { return Vec::new() };
-    sel_sk.items.iter().filter(|(k, _)| *k == 1).filter_map(|(_, eid)| s.entity(*eid).and_then(|e| qymcad_core::model::circle_of(s, e)).map(|c| c.center)).collect()
+    sel_sk
+        .items
+        .iter()
+        .filter(|it| it.kind == crate::ItemKind::Curve)
+        .filter_map(|crate::SketchItem { id: eid, .. }| s.entity(*eid).and_then(|e| qymcad_core::model::circle_of(s, e)).map(|c| c.center))
+        .collect()
 }
 
 /// The text object under a screen point (by the bounding box of its glyphs). For selecting, moving and editing.
@@ -159,11 +164,11 @@ pub fn radius_of(project: &Project, si: usize, c: Id) -> Option<f64> {
 /// TAKE DRAWING TOOL `kind` IN HAND: every other tool put down in one move (`exit_draw_tools`), whatever the one before
 /// had collected cleared (`SketchTool::select`), and the selection of the geometry dropped - a drawing tool works on
 /// nothing selected before it. Reported behaviour: a line selected, the circle taken and drawn, and the line stood
-/// selected the whole time and after. The arrow of selection (kind 0) keeps the selection.
-pub fn take_drawing_tool(t: &mut Tools, kind: u8) {
+/// selected the whole time and after. The arrow of selection (no shape) keeps the selection.
+pub fn take_drawing_tool(t: &mut Tools, kind: Option<SketchShape>) {
     exit_draw_tools(t);
     t.tool.select(t.armed, kind);
-    if t.armed.draw_kind() != 0 {
+    if t.armed.drawing().is_some() {
         t.sel_sk.clear();
     }
 }
@@ -181,7 +186,7 @@ pub fn exit_draw_tools(t: &mut Tools) {
     // being rounded, and with the mode gone there is nothing to show - they stood lit with nothing in hand, and the
     // next mode read a selection that was not its own. (The button that offers the corner of two lines already
     // chosen reads them while no mode is in hand, so this costs that nothing.)
-    if matches!(armed.click_op(), 4 | 5) {
+    if armed.click_tool().is_some_and(ClickTool::of_corner) {
         sel_sk.items.clear();
     }
     **armed = Armed::None; // ONE FIELD: letting go is saying that nothing is in hand
@@ -1042,4 +1047,15 @@ pub fn body_snap_mm(set: &Settings) -> f64 {
 /// The snapping step for rotating a body (deg): the rotation field from the snapping panel.
 pub fn body_snap_deg(set: &Settings) -> f64 {
     set.snap.rot_deg.max(0.1)
+}
+
+/// THE PLANE THE TOOL OF A PART IN HAND HAS TAKEN, for the tool that aims at one: the mirror plane, the base of a datum
+/// plane, the cutting plane of a split.
+pub fn plane_taken(pn: &Painting) -> Option<qymcad_core::feature::SketchPlane> {
+    match pn.armed.part_tool()? {
+        crate::PartTool::Mirror => pn.mirror.plane,
+        crate::PartTool::DatumPlane => pn.datum.plane_pick,
+        t if t.splits() => pn.split.plane,
+        _ => None,
+    }
 }

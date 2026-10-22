@@ -184,10 +184,11 @@ fn moved_by_hand(ctx: &egui::Context, id: egui::Id, r: &egui::Response) {
 
 /// TAB GOES ROUND THE FIELDS OF THE BOX: from one field to the next, from the last to the first, Shift+Tab back - not on
 /// to the buttons under them, where what is typed next goes nowhere. Asked before the fields are drawn, so the key is the
-/// box's and egui's own walk through the widgets does not follow it.
+/// box's and egui's own walk through the widgets does not follow it. The field come to by Tab holds its value selected,
+/// so what is typed takes its place: "60", Tab, "35" made a height of 30.0035 of the 30.00 the field held.
 fn tab_round(ctx: &egui::Context, b: &FieldsBox, fields: &[CmdParam], layout: &Layout) {
-    let ids: Vec<egui::Id> =
-        shown_keys(ctx, fields, b, layout).into_iter().chain(fields.iter().filter(|p| p.at.is_some()).map(|p| p.key.clone())).map(|key| egui::Id::new(("cmdparam", b.tool, key))).collect();
+    let keys: Vec<String> = shown_keys(ctx, fields, b, layout).into_iter().chain(fields.iter().filter(|p| p.at.is_some()).map(|p| p.key.clone())).collect();
+    let ids: Vec<egui::Id> = keys.iter().map(|key| egui::Id::new(("cmdparam", b.tool, key.clone()))).collect();
     let Some(i) = ctx.memory(|m| m.focused()).and_then(|f| ids.iter().position(|id| *id == f)) else { return };
     let back = ctx.input(|i| i.modifiers.shift);
     let held = if back { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
@@ -197,6 +198,10 @@ fn tab_round(ctx: &egui::Context, b: &FieldsBox, fields: &[CmdParam], layout: &L
             m.request_focus(ids[next]);
             m.move_focus(egui::FocusDirection::None);
         });
+        let held = fields.iter().find(|p| p.key == keys[next]).map_or(0, |p| p.txt.chars().count());
+        let mut state = egui::TextEdit::load_state(ctx, ids[next]).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(held))));
+        state.store(ctx, ids[next]);
     }
 }
 

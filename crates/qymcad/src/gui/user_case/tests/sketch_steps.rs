@@ -1,5 +1,5 @@
-//! STEPS OF THE SCENARIO IN A SKETCH: the sizes laid only when typed and a rectangle with its centre fixed, in the
-//! sketch of every tool; and every kind of curve cut, extended and copied in a sketch of its own.
+//! STEPS OF THE SCENARIO IN A SKETCH: the sizes laid only when typed, a rectangle with its centre fixed and the tools
+//! taken by a click, in the sketch of every tool; and every kind of curve cut, extended and copied in a sketch of its own.
 use super::*;
 
 /// THE SIZES OF THE SKETCH OF EVERY TOOL: a size laid only when typed, then a rectangle with its centre fixed.
@@ -28,7 +28,7 @@ fn a_size_only_when_typed(app: &mut App, si: usize, problems: &mut Vec<String>) 
         problems.push(format!("sketch: circles and an arc drawn without a value typed carry sizes {:?}", sizes(app)));
     }
     let mut hand = Hand::new(app);
-    hand.sk_tool(3).click2d(100.0, 10.0).click2d(106.0, 10.0).type_text("12").key(egui::Key::Enter);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(100.0, 10.0).click2d(106.0, 10.0).type_text("12").key(egui::Key::Enter);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
     if sizes(app) != vec![(true, 12.0)] {
         problems.push(format!("sketch: a circle drawn with 12 typed carries sizes {:?}", sizes(app)));
@@ -40,12 +40,12 @@ fn a_size_only_when_typed(app: &mut App, si: usize, problems: &mut Vec<String>) 
 /// mouse - it resizes about the centre, which stays
 fn a_rectangle_with_its_centre_fixed(app: &mut App, si: usize, problems: &mut Vec<String>) {
     let mut hand = Hand::new(app);
-    hand.sk_tool(2).click2d(110.0, 30.0).click2d(130.0, 50.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(110.0, 30.0).click2d(130.0, 50.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_select();
     let centre = hand.app.project.sketches[si].rects().last().map(|r| r.centre);
     match centre {
-        Some(c) if hand.select2d(&[(0, c)]) => {
-            hand.constraint(6);
+        Some(c) if hand.select2d(&[qymcad_ui_state::SketchItem::point(c)]) => {
+            hand.constraint(qymcad_ui_state::ConstraintKind::Fix);
             hand.key(egui::Key::Escape);
             hand.drag2d((130.0, 50.0), (134.0, 53.0));
             let sk = &hand.app.project.sketches[si];
@@ -73,9 +73,9 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     let curves = |a: &App| a.project.sketches[si].entities.iter().filter_map(|e| qymcad_core::model::curve::Curve::of(&a.project.sketches[si], e)).collect::<Vec<_>>();
     let mut hand = Hand::new(app);
-    hand.sk_tool(8).click2d(0.0, 40.0).click2d(12.0, 40.0).click2d(0.0, 46.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Ellipse).click2d(0.0, 40.0).click2d(12.0, 40.0).click2d(0.0, 46.0).key(egui::Key::Escape).key(egui::Key::Escape);
     for x in [-6.0, 6.0] {
-        hand.sk_tool(1).click2d(x, 25.0).click2d(x, 55.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(x, 25.0).click2d(x, 55.0).key(egui::Key::Escape).key(egui::Key::Escape);
     }
     check_all(app, "curves: an ellipse between two uprights", problems);
     // the top of the ellipse, between the uprights, trimmed away
@@ -92,9 +92,9 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     // an open spline left of the left upright, its right end extended to it - the way it leaves its end meets the upright at
     // y = 30
     let mut hand = Hand::new(app);
-    hand.sk_tool(9).click2d(-30.0, 30.0).click2d(-24.0, 34.0).double_click2d(-16.0, 33.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(-30.0, 30.0).click2d(-24.0, 34.0).double_click2d(-16.0, 33.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_select();
     assert!(hand.press_hint(&qymcad_i18n::tr("tb-extend-hint")), "no Extend button");
     hand.close_window();
     hand.click2d(-16.8, 33.2).click2d(-6.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
@@ -105,9 +105,9 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     check_all(app, "curves: a spline extended to an upright", problems);
     // a hexagon copied to the clipboard and pasted
     let mut hand = Hand::new(app);
-    hand.sk_tool(6).click2d(30.0, 40.0).click2d(36.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Polygon).click2d(30.0, 40.0).click2d(36.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
     // the hexagon taken whole by a window drawn round it
-    hand.sk_tool(0).drag2d((21.0, 31.0), (39.0, 49.0));
+    hand.sk_select().drag2d((21.0, 31.0), (39.0, 49.0));
     hand.copy();
     hand.click2d(30.0, 40.0);
     hand.paste();
@@ -121,9 +121,9 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     // two circles crossing at (76, 8) and (76, -8), the fillet taken, a click on each circle and one above the upper
     // crossing: the corner is rounded with the radius of the bar
     let mut hand = Hand::new(app);
-    hand.sk_tool(3).click2d(70.0, 0.0).click2d(80.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(3).click2d(82.0, 0.0).click2d(92.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(70.0, 0.0).click2d(80.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(82.0, 0.0).click2d(92.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_select();
     assert!(hand.press_hint(&qymcad_i18n::tr("tb-fillet-sketch-hint")), "no Fillet button");
     hand.close_window();
     let r = hand.app.tool_prefs.fillet;
@@ -140,10 +140,10 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     // two lines meeting at (110, 0), the circle in its mode of touching two curves: a click on each line and one inside
     // the corner lay a circle of the radius of the bar touching both
     let mut hand = Hand::new(app);
-    hand.sk_tool(1).click2d(110.0, 0.0).double_click2d(140.0, 0.0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(110.0, 0.0).double_click2d(140.0, 0.0);
     hand.click2d(110.0, 0.0).double_click2d(110.0, 30.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
-    hand.sk_tool(3);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle);
     assert!(hand.press_word(&qymcad_i18n::tr("opt-tangent-m"), egui::pos2(400.0, 0.0)), "no mode of touching on the bar of the circle");
     let r = hand.app.tool_prefs.circ_r;
     hand.click2d(130.0, 0.0).click2d(110.0, 20.0).hover2d(116.0, 6.0).click2d(116.0, 6.0);
@@ -157,7 +157,7 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     check_all(app, "curves: a circle touching two lines", problems);
     // the circle in its mode of three points: three clicks lay the circle of radius 10 about (130, 30)
     let mut hand = Hand::new(app);
-    hand.sk_tool(3);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle);
     assert!(hand.press_word(&qymcad_i18n::tr("opt-rect-3pt"), egui::pos2(400.0, 0.0)), "no mode of three points on the bar of the circle");
     hand.click2d(140.0, 30.0).click2d(130.0, 40.0).click2d(120.0, 30.0);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
@@ -169,4 +169,28 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     }
     check_all(app, "curves: a circle by three points", problems);
     app.finish_sketch_edit();
+}
+
+/// THE TOOLS TAKEN BY A CLICK on the lines of the sketch of every tool: a chamfer, a trim, an extension and a break,
+/// each clicked once - none of them does nothing in silence.
+pub(super) fn the_click_tools(app: &mut App, si: usize, problems: &mut Vec<String>) {
+    let count = |a: &App| a.project.sketches[si].entities.len() + a.project.sketches[si].points.len();
+    let ops = [
+        drawing(qymcad_ui_state::ClickTool::CornerChamfer, "chamfer", &[(30.0, 0.0)]),
+        drawing(qymcad_ui_state::ClickTool::Trim, "trim", &[(40.0, 0.0)]),
+        drawing(qymcad_ui_state::ClickTool::Extend, "extend", &[(30.0, 7.0)]),
+        drawing(qymcad_ui_state::ClickTool::Break, "break", &[(50.0, 7.0)]),
+    ];
+    for op in ops {
+        let before = count(app);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, op.tool);
+        for &(x, y) in op.clicks {
+            Hand::new(app).click2d(x, y);
+        }
+        if count(app) == before && app.status.words.trim().is_empty() {
+            problems.push(format!("sketch: \"{}\" silently did nothing", op.name));
+        }
+        check_all(app, &format!("sketch: {}", op.name), problems);
+    }
+    qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_of!(app));
 }

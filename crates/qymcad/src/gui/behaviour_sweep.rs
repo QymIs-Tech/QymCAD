@@ -23,7 +23,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
@@ -59,7 +59,7 @@ mod tests {
                 app.project.regen_sketch(si);
                 app.finish_sketch_edit();
                 app.chosen.sel = Sel::Sketch(si);
-                app.start_feat_cmd(1);
+                app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
                 app.apply_feat_cmd();
                 qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 // BACK IN THE ASSEMBLY: the second part was drawn inside itself, and the tools of the assembly are taken
@@ -197,7 +197,7 @@ mod tests {
         let mut app = stage("part");
         let si = app.project.sketches.len() - 1;
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         assert!(app.tools.armed.commanding(), "the scene did not open the command — there is nothing to check");
         let feats_before = app.project.timeline.len();
 

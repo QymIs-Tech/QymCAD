@@ -28,13 +28,13 @@ fn a_tangent_arc_goes_on_from_the_end_of_a_curve_of_any_kind() {
         // each ending at (30, 20)
         match kind {
             Kind::Line => {
-                hand.sk_tool(1).click2d(10.0, 14.0).double_click2d(30.0, 20.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(10.0, 14.0).double_click2d(30.0, 20.0);
             }
             Kind::Arc => {
-                hand.sk_tool(4).click2d(20.0, 20.0).click2d(20.0, 30.0).click2d(30.0, 20.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Arc).click2d(20.0, 20.0).click2d(20.0, 30.0).click2d(30.0, 20.0);
             }
             Kind::Spline => {
-                hand.sk_tool(9).click2d(10.0, 10.0).click2d(20.0, 24.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Spline).click2d(10.0, 10.0).click2d(20.0, 24.0);
                 hand.double_click2d(30.0, 20.0);
             }
         }
@@ -44,7 +44,7 @@ fn a_tangent_arc_goes_on_from_the_end_of_a_curve_of_any_kind() {
             let s = &hand.app.project.sketches[si];
             s.entities.iter().find(|e| Curve::of(s, e).is_some_and(|c| c.ends().iter().any(|q| q.dist(Point2::new(30.0, 20.0)) < 1e-6))).map(|e| e.id).expect("setup: the curve ends at (30, 20)")
         };
-        hand.sk_tool(4);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Arc);
         assert!(hand.press_word(&crate::i18n::tr("opt-tangent"), egui::pos2(400.0, 0.0)), "no tangent mode on the bar of the arc");
         hand.click2d(30.0, 20.0).click2d(40.0, 30.0);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);

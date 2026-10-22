@@ -34,7 +34,7 @@ mod tests {
         app.project.ensure_document(); // the same thing that opening a file does
         let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| {
             let mut asks = Vec::new();
-            crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), c);
+            qymcad_ui_state::path_bar(&mut a.bar_ctx(&mut asks), c, &crate::command_catalog::BENCHES);
             let c = c.ctx().clone();
             a.do_bar_asks(asks, &c);
         });
@@ -57,7 +57,7 @@ mod tests {
             i18n::set_language(code);
             let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| {
                 let mut asks = Vec::new();
-                crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), c);
+                qymcad_ui_state::path_bar(&mut a.bar_ctx(&mut asks), c, &crate::command_catalog::BENCHES);
                 let c = c.ctx().clone();
                 a.do_bar_asks(asks, &c);
             });

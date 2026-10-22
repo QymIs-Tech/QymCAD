@@ -131,7 +131,7 @@ mod tests {
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
         let mut hand = super::super::hand::Hand::new(app);
-        hand.tool(1);
+        hand.tool(qymcad_ui_state::PartTool::Extrude);
         hand.frame(Vec::new());
         hand.frame(Vec::new());
         hand

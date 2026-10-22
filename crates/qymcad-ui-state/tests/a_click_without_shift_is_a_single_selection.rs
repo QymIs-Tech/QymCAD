@@ -42,7 +42,7 @@ fn taken() -> (CornerInput, SketchSelection) {
 
 /// THE LINES CHOSEN, in the order they were chosen: that order is what pairs them two at a time at a point.
 fn chosen(sel: &SketchSelection) -> Vec<Id> {
-    sel.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect()
+    sel.curves().collect()
 }
 
 /// A LINE WITH SHIFT JOINS THE SET, AND A SECOND ONE WITH SHIFT MAKES A CORNER OF THE TWO.
@@ -155,8 +155,8 @@ fn a_shift_click_on_a_point_keeps_the_lines_chosen() {
 fn the_first_click_after_taking_the_tool_grows_the_set() {
     let (p, si, l) = square();
     let (mut corner, mut sel) = taken();
-    sel.items.push((1, l[0]));
-    sel.items.push((1, l[1]));
+    sel.items.push(qymcad_ui_state::SketchItem::curve(l[0]));
+    sel.items.push(qymcad_ui_state::SketchItem::curve(l[1]));
     assert!(corner.at.is_none(), "the field was open before anything was pointed at");
     assert_eq!(qymcad_ui_state::corner_click(&p, si, &mut corner, &mut sel, CornerOver::Line(l[2]), false), CornerClick::LineChosen(l[2]));
     assert_eq!(chosen(&sel), vec![l[0], l[1], l[2]], "the first click after taking the tool threw the chosen lines away");

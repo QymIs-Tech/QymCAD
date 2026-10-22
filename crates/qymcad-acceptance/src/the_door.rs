@@ -154,7 +154,7 @@ fn the_program_opens_no_door_but_its_session() {
 fn every_way_around_the_window_is_caught() {
     let sample = "let a: App = x; unsafe {} egui::Key; eframe::run; qymcad_core::X; qymcad_kernel::X; qymcad_io::X; qymcad_ui_state::X; qymcad_sketch::X; \
                   qymcad_part::X; qymcad_assembly::X; qymcad_i18n::tr; qymcad_testkit::X; qymcad_paths::X; qymcad_render::X; s.drain_bg_for_test(); \
-                  s.start_feat_cmd(1); s.apply_feat_cmd(); s.viewport_3d_click_at(p); regenerate_all(c); rebuild_if_dirty(c); resync_after_topology_change(); \
+                  s.start_feat_cmd(t); s.apply_feat_cmd(); s.viewport_3d_click_at(p); regenerate_all(c); rebuild_if_dirty(c); resync_after_topology_change(); \
                   wait_bg(); std::process::Command::new(\"x\");";
     let found = ways_around(sample);
     assert_eq!(found.len(), 15 + 10, "the guard missed a way around the window; it found only:\n{}", found.join("\n"));

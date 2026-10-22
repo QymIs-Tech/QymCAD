@@ -16,8 +16,8 @@ pub fn update_datum_feat(
 ) -> Result<Id, NotApplied> {
     use qymcad_core::feature::SketchPlane;
     use qymcad_core::model::{AxisDef, PlaneDef};
-    match armed.cmd_kind() {
-        20 => {
+    match armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::DatumPlane) => {
             let dist = qymcad_ui_state::cmd_val(cmd, "dist");
             let pi = project.planes.iter().position(|p| p.id == fid).ok_or_else(op_failed)?;
             match datum.plane_pick {
@@ -36,7 +36,7 @@ pub fn update_datum_feat(
             }
             Ok(fid)
         }
-        21 => {
+        Some(qymcad_ui_state::PartTool::DatumPoint) => {
             use qymcad_core::model::PointDef;
             let pi = project.datum_points.iter().position(|p| p.id == fid).ok_or_else(op_failed)?;
             if datum.pt_mode == 1 {
@@ -57,7 +57,7 @@ pub fn update_datum_feat(
             }
             Ok(fid)
         }
-        22 => {
+        Some(qymcad_ui_state::PartTool::DatumAxis) => {
             let ai = project.datum_axes.iter().position(|a| a.id == fid).ok_or_else(op_failed)?;
             match datum.axis_mode {
                 1 => {
@@ -101,7 +101,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     use qymcad_core::feature::FeatureKind;
     // THE DATUMS edit `project.planes`, `points` and `axes` plus the feature dims rather than
     // `node.kind`, so they take a separate path
-    if matches!(pc.armed.cmd_kind(), 20..=22) {
+    if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::is_a_datum) {
         return update_datum_feat(pc.armed, pc.cmd, pc.datum, pc.edges, pc.project, fid);
     }
     // take everything out of the command state in advance, to avoid borrowing self twice
@@ -148,8 +148,8 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     // borrowed; if it disagrees with the number of pieces the feature has, the edit is rejected below -
     // the bodies of the cut have already spread through the timeline (they are referred to and they are
     // visible), and their number cannot be changed in place.
-    let (split_resolved, split_pieces) = if pc.armed.cmd_kind() == 27 || pc.armed.cmd_kind() == 29 {
-        let n = (pc.armed.cmd_kind() == 27)
+    let (split_resolved, split_pieces) = if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::splits) {
+        let n = (pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::SplitBody))
             .then(|| {
                 qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel)
                     .and_then(|src| split_piece_count(pc, src))
@@ -525,8 +525,8 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     }
     // the array: the step expressions go onto the components of the vector (the regen reads those), and the
     // angle is cleared for a full circle
-    match pc.armed.cmd_kind() {
-        17 => {
+    match pc.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::LinearPattern) => {
             if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx", "dy", "dz"], a_dir, a_step_txt.clone()) {
                 return Err(formula_refused(&e));
             }
@@ -549,7 +549,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
                 }
             }
         }
-        18 if a_full => {
+        Some(qymcad_ui_state::PartTool::CircularPattern) if a_full => {
             pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: "angle" });
         }
         _ => {}
