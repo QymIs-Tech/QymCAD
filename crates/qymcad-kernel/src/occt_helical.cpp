@@ -723,14 +723,36 @@ extern "C" QymShape* qym_shape_thread(const QymShape* base, const double* origin
 // ONLY SOLIDS HOLD VOLUME: VolumeProperties of an open shell takes it as if it were closed - two faces of a block
 // 40 x 30 x 10 stitched along their shared edge weighed 2000 mm^3. A sheet, or the sheet part of a compound, weighs 0.
 extern "C" double qym_shape_volume(const QymShape* s) {
-    QYM_AS_HANDED(s, "it only reads the body");
+    QYM_AS_HANDED(s, "it only reads the body; the volume it counts is kept with it");
     if (!s) return 0.0;
+    if (s->volume_memo >= 0.0) return s->volume_memo;
     try {
         QYM_SIGNALS;
         double v = 0.0;
         for (TopExp_Explorer ex(s->shape, TopAbs_SOLID); ex.More(); ex.Next()) {
             GProp_GProps g;
             BRepGProp::VolumeProperties(ex.Current(), g);
+            v += g.Mass();
+        }
+        if (v >= 0.0) s->volume_memo = v;
+        return v;
+    } catch (...) {
+        return 0.0;
+    }
+}
+
+// THE VOLUME TO A PERCENT, for a check that asks only whether a body holds any and whether it fits the box it came from:
+// one pass of the integration with no refinement. The exact one is taken where it is already known.
+extern "C" double qym_shape_volume_rough(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
+    if (!s) return 0.0;
+    if (s->volume_memo >= 0.0) return s->volume_memo;
+    try {
+        QYM_SIGNALS;
+        double v = 0.0;
+        for (TopExp_Explorer ex(s->shape, TopAbs_SOLID); ex.More(); ex.Next()) {
+            GProp_GProps g;
+            BRepGProp::VolumeProperties(ex.Current(), g, 0.01);
             v += g.Mass();
         }
         return v;
@@ -800,6 +822,7 @@ extern "C" int qym_shape_heal_pinched_faces(QymShape* s) {
     if (!s) return 0;
     try {
         QYM_SIGNALS;
+        s->volume_memo = -1.0;
         return heal_pinched_faces(s->shape, s->fids, s->eids, s->fsplit_of, s->fsplit_idx);
     } catch (...) { return 0; } // it did not work out; the solid stays as it was, no worse
 }

@@ -7,6 +7,11 @@ impl Shape {
     pub fn volume(&self) -> f64 {
         unsafe { qym_shape_volume(self.ptr) }
     }
+    /// THE VOLUME TO A PERCENT, for the checks that a result holds any and fits the box it came from - the exact one where
+    /// it was counted already. What a person reads (properties, mass) is `volume`.
+    pub(crate) fn rough_volume(&self) -> f64 {
+        unsafe { qym_shape_volume_rough(self.ptr) }
+    }
     /// B-rep validity, through `BRepCheck_Analyzer`: true for a correct body, false for one broken, doubled
     /// or self-intersecting.
     /// Resolve pinched faces into real ones, a face lying in two places not being a face. It returns how
@@ -197,7 +202,7 @@ impl Shape {
     /// volume to keep.
     fn volume_kept(&self, got: Shape) -> Option<Shape> {
         let Some(a) = self.bbox() else { return Some(got) };
-        let (before, after) = (self.volume(), got.volume());
+        let (before, after) = (self.rough_volume(), got.rough_volume());
         let room = (a[3] - a[0]) * (a[4] - a[1]) * (a[5] - a[2]);
         if before > 0.0 && (after <= 0.0 || after > room) {
             return refuse("blend/check", &format!("the kernel gave a body of {after:.1} mm^3 from one of {before:.1} mm^3"));

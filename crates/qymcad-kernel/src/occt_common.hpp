@@ -316,6 +316,10 @@ struct QymShape {
     // has edges with one face only, and an edge is named after the pair of its faces: the face that stood across its
     // source edge is the second of the pair. Filled where a sheet is cut out of a body, read when its edges are named.
     TopTools_DataMapOfShapeInteger ebeside;
+    // THE EXACT VOLUME ONCE COUNTED, below zero until then. Integrated over spline faces it is seconds: on a propeller of
+    // 80 faces, 51 of them splines, 1.3-1.6 s a time, and the body a fillet reads was counted again for every node built
+    // on it. Only `heal_pinched_faces` and `drop_slivers` change a shape in place, and they forget it.
+    mutable double volume_memo = -1.0;
 };
 
 /// Note, for every edge of `taken` (a face cut out of the body `s` as `source`, the same edges in the same order), the

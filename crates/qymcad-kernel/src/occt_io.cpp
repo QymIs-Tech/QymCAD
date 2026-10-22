@@ -1213,6 +1213,7 @@ extern "C" int qym_shape_drop_slivers(QymShape* s, double width) {
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
+        s->volume_memo = -1.0;
         width = std::max(width, 1e-5);
         int cracks = 0, before = 0; // not `small`: a macro of the Windows headers
         for (TopExp_Explorer fx(s->shape, TopAbs_FACE); fx.More(); fx.Next()) {

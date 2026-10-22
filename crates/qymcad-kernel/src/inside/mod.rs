@@ -2,6 +2,7 @@
 //! crate because the operations that build are closed to every other crate - a tool of the window asks the bridge
 //! (`ask`) or goes through the door, it does not build.
 
+mod a_checked_volume_is_counted_once;
 mod a_fault_of_occt_is_a_refusal;
 mod a_boolean_of_touching_bodies_is_refused;
 mod a_face_that_did_not_mesh_is_a_hole;
