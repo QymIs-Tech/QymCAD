@@ -106,7 +106,7 @@ pub fn body_on_screen(b: Id, project: &Project, screen: &Screen, here: Id) -> Op
 /// stands at the corner of the view.
 pub fn spot_of(by: By, project: &Project, screen: &Screen, here: Id) -> Spot {
     let at = |p: [f64; 3]| screen.at(p).0;
-    let corner = Spot { at: screen.rect.min + egui::vec2(16.0, 48.0), subject: Rect::NOTHING };
+    let corner = corner_of(screen.rect);
     // a body is sized by its top right corner: the box reads as the body's, beside it
     let beside = |r: Rect| Spot { at: r.right_top(), subject: r };
     match by {
@@ -129,6 +129,11 @@ pub fn spot_of(by: By, project: &Project, screen: &Screen, here: Id) -> Spot {
         By::ViewCorner => corner,
         By::OnSheet(spot) => spot,
     }
+}
+
+/// THE CORNER OF VIEW `rect` A BOX WITH NOTHING TO STAND BY TAKES: under the words of the tool along its top.
+fn corner_of(rect: Rect) -> Spot {
+    Spot { at: rect.min + egui::vec2(16.0, 48.0), subject: Rect::NOTHING }
 }
 
 /// WHERE A BOX STANDS ON A SKETCH LAID FLAT: by `at` on the screen, clear of all of `around` - the shape it sizes.
@@ -267,15 +272,13 @@ pub(crate) fn box_corner(ctx: &egui::Context, id: egui::Id, place: Place, look: 
     // it stood before the pick, not on the side it took by the arrow of the pick
     let was = stood.filter(|s| std::mem::discriminant(&s.by) == std::mem::discriminant(&place.by)).map(|s| s.side);
     let seen = seen(ctx);
-    let laid = place_by_the_rule(&Laying {
-        spot: spot_of(place.by, look.project, &look.screen, look.here),
-        sides: place.sides,
-        size: size_of(ctx, id),
-        view: look.screen.rect,
-        kept: &seen.gizmos,
-        model: seen.model.filter(|_| place.off == Off::Model),
-        was,
-    });
+    // THE VIEW CLEAR OF THE BARS LAID OVER IT: the tools laid along the top of the view stood under a box in its corner
+    let clear = qymcad_shell::clear_of_overs(ctx, look.screen.rect);
+    let mut spot = spot_of(place.by, look.project, &look.screen, look.here);
+    if spot == corner_of(look.screen.rect) {
+        spot = corner_of(clear);
+    }
+    let laid = place_by_the_rule(&Laying { spot, sides: place.sides, size: size_of(ctx, id), view: clear, kept: &seen.gizmos, model: seen.model.filter(|_| place.off == Off::Model), was });
     ctx.data_mut(|d| d.insert_temp(stood_id, Stood { frame, by: place.by, side: laid.side, moved: None }));
     laid.at
 }
