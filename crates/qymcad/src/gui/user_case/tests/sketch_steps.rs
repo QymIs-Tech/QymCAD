@@ -1,5 +1,6 @@
 //! STEPS OF THE SCENARIO IN A SKETCH: the sizes laid only when typed, a rectangle with its centre fixed and the tools
-//! taken by a click, in the sketch of every tool; and every kind of curve cut, extended and copied in a sketch of its own.
+//! taken by a click, in the sketch of every tool; and every kind of curve cut, extended and copied in a sketch of its own,
+//! the sketch then opened again and its own steps taken back and brought again.
 use super::*;
 
 /// THE SIZES OF THE SKETCH OF EVERY TOOL: a size laid only when typed, then a rectangle with its centre fixed.
@@ -169,6 +170,50 @@ pub(super) fn every_kind_of_curve_cut_extended_and_copied(app: &mut App, problem
     }
     check_all(app, "curves: a circle by three points", problems);
     app.finish_sketch_edit();
+    a_sketch_reopened_walks_its_own_steps(app, si, problems);
+}
+
+/// THE SKETCH OF THE CURVES OPENED AGAIN, A SESSION OF ITS OWN: finished, it was one step of the document; two lines
+/// drawn in it again, three Ctrl+Z take them back and touch no step of the document, two Ctrl+Shift+Z bring them;
+/// finished, one Ctrl+Z takes both lines away and one Ctrl+Shift+Z brings them.
+fn a_sketch_reopened_walks_its_own_steps(app: &mut App, si: usize, problems: &mut Vec<String>) {
+    let name = qymcad_i18n::tr1("g-sketch-edited", "name", &crate::i18n::name(&app.project.sketches[si].name));
+    let top = |a: &App| a.disk.edits.undo.last().map(|s| s.name.clone());
+    if top(app).as_ref() != Some(&name) {
+        problems.push(format!("history: the finished sketch of the curves is the step {:?}, not {name:?}", top(app)));
+    }
+    let lines = |a: &App| a.project.sketches[si].entities.iter().filter(|e| e.kind.as_line().is_some()).count();
+    let depth = app.disk.edits.undo.len();
+    app.enter_sketch_edit(si);
+    let opened = lines(app);
+    let mut hand = Hand::new(app);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, -20.0).double_click2d(20.0, -20.0);
+    hand.key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, -30.0).double_click2d(20.0, -30.0);
+    hand.key(egui::Key::Escape).key(egui::Key::Escape);
+    let drawn = lines(hand.app);
+    for _ in 0..3 {
+        hand.undo();
+    }
+    let redo = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    let (back, kept) = (lines(hand.app), hand.app.disk.edits.undo.len());
+    hand.chord(redo, egui::Key::Z).chord(redo, egui::Key::Z).close_window();
+    if drawn != opened + 2 || back != opened || kept != depth || lines(app) != drawn {
+        problems.push(format!(
+            "history: two lines in the sketch reopened - {opened} lines, {drawn} drawn, {back} after three Ctrl+Z with {kept} steps of the {depth} of the document, {} brought again",
+            lines(app)
+        ));
+    }
+    check_all(app, "history: the steps of a sketch reopened", problems);
+    app.finish_sketch_edit();
+    let mut hand = Hand::new(app);
+    hand.undo();
+    let undone = lines(hand.app);
+    hand.chord(redo, egui::Key::Z).close_window();
+    if undone != opened || lines(app) != drawn || app.disk.edits.undo.len() != depth + 1 {
+        problems.push(format!("history: the sketch finished again - one Ctrl+Z left {undone} lines of {opened}, one Ctrl+Shift+Z {} of {drawn}, {} steps", lines(app), app.disk.edits.undo.len()));
+    }
+    check_all(app, "history: a finished sketch is one step", problems);
 }
 
 /// THE TOOLS TAKEN BY A CLICK on the lines of the sketch of every tool: a chamfer, a trim, an extension and a break,

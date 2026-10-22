@@ -243,6 +243,7 @@ pub static SKETCH_ON_FACE: Tool = Tool {
         (7, "the sketch opens on the click: there is nothing to show before it"),
         (8, "the sketch is opened by the click on the face, and it is left by \"Finish\", not applied with Enter"),
         (9, "Esc before the click puts the pencil down, which is point 1; after it the sketch is open and left by \"Finish\""),
+        (11, "Ctrl+Z in the sketch the click opened walks the sketch's own steps and stops at its first; the sketch is taken back by one Ctrl+Z after \"Finish\", which undo_redo::inside_a_sketch_undo_walks_its_own_steps_and_a_finished_sketch_is_one_step checks"),
         (13, "the sketch is reopened by a double click on its row, which is the sketch's own contract"),
         (14, "a change above is carried by the sketch on the face, which is the matter of in-context references"),
         (17, "any flat face can carry a sketch: there is nothing the kernel could refuse"),
