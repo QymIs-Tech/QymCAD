@@ -48,6 +48,7 @@ mod matrix_split;
 mod matrix_surfaces;
 mod reported;
 mod panel_formulas;
+mod the_bar_of_a_sketch_as_it_was;
 mod parameters;
 mod part_booleans;
 mod part_by_faces;

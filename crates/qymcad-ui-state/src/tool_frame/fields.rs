@@ -219,7 +219,8 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
         });
     });
     moved_by_hand(ctx, b.id, &shown.response);
-    let esc = b.esc == EscBy::Box && !typing && ctx.input(|i| i.key_pressed(egui::Key::Escape) && !i.modifiers.any());
+    // Esc with Shift, Ctrl or Alt held is Esc all the same, as it always was in a sketch
+    let esc = b.esc == EscBy::Box && !typing && ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let keys = Keys { enter: seen.enter, esc: if esc { Esc::Pressed } else { Esc::Not } };
     let verdict = verdict(ctx, pressed, keys, &shut_by(gate, &seen));
     Answer { verdict, did, fields: seen.did }

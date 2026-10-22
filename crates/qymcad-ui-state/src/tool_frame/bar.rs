@@ -46,10 +46,21 @@ pub fn tool_bar(ui: &mut egui::Ui, look: &mut BarLook, tool: &Described) -> Answ
         ui.separator();
         did = draw_opts(ui, pal, &tool.bar);
         let can = if tool.gate.open() { Can::Yes } else { Can::No };
-        pressed = end_of_bar(ui, |ui| the_ends(pal, ui, tool.head.ends, can)).inner;
+        // the ends outermost, the count of what is selected beside them, as the bar always told it
+        pressed = end_of_bar(ui, |ui| {
+            let pressed = the_ends(pal, ui, tool.head.ends, can);
+            for o in &tool.bar {
+                if let Opt::Tally(words) = o {
+                    ui.label(egui::RichText::new(words.as_str()).weak());
+                }
+            }
+            pressed
+        })
+        .inner;
     });
     let enter = !typing && ctx.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.command);
-    let esc = !typing && ctx.input(|i| i.key_pressed(egui::Key::Escape) && !i.modifiers.any());
+    // Esc with Shift, Ctrl or Alt held is Esc all the same, as it always was in a sketch
+    let esc = !typing && ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let keys = Keys { enter: if enter { Enter::Pressed } else { Enter::Not }, esc: if esc { Esc::Pressed } else { Esc::Not } };
     let gate = tool.gate.clone();
     let verdict = verdict(&ctx, pressed, keys, &gate);

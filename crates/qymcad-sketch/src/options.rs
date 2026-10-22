@@ -264,7 +264,7 @@ pub(crate) fn tool_opts(sk: &qymcad_ui_state::SketchCtx) -> Vec<Opt> {
             _ => vec![Opt::switch(OptKey::of("construction"), qymcad_i18n::tr("opt-construction-short"), sk.tool.construction.lit()), said("opt-select-hint")],
         }
     };
-    opts.push(Opt::Readout(qymcad_i18n::tr1("opt-selected-n", "n", &sk.sel_sk.items.len().to_string())));
+    opts.push(Opt::Tally(qymcad_i18n::tr1("opt-selected-n", "n", &sk.sel_sk.items.len().to_string())));
     opts
 }
 

@@ -91,6 +91,8 @@ pub enum Opt {
     Press { key: OptKey, word: String, hint: Option<String> },
     /// Words shown as they are: what is taken, how many, what was found.
     Readout(String),
+    /// A count told at the end of the bar, beside its ends: how many things are selected.
+    Tally(String),
     /// A number of the tool - the ratio of a relation, the sides of a polygon to draw: its caption by its catalogue key.
     /// The bar holds no field: the frame makes it a field of the box at the geometry (`numbers_into_the_box`), a formula
     /// judged as any field of a box is.
@@ -167,7 +169,7 @@ impl Opt {
     pub fn hint(mut self, text: impl Into<String>) -> Opt {
         match &mut self {
             Opt::Switch { hint, .. } | Opt::Toggle { hint, .. } | Opt::Pick { hint, .. } | Opt::Press { hint, .. } | Opt::Text { hint, .. } => *hint = Some(text.into()),
-            Opt::Modes { .. } | Opt::Readout(_) | Opt::Number { .. } => {}
+            Opt::Modes { .. } | Opt::Readout(_) | Opt::Tally(_) | Opt::Number { .. } => {}
         }
         self
     }
@@ -223,7 +225,8 @@ pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &
                             Some(h) => r.on_hover_text(h),
                             None => r,
                         };
-                        if r.clicked() && *current != Some(n) {
+                        // the way already chosen, clicked again, is told too: a drawing begun in it starts anew
+                        if r.clicked() {
                             did.push(Did::Chose { key: *key, index: n });
                         }
                     }
@@ -260,6 +263,8 @@ pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &
             Opt::Readout(words) => {
                 ui.label(egui::RichText::new(words.as_str()).weak());
             }
+            // a count stands at the end of the bar, beside its ends (`bar`)
+            Opt::Tally(_) => {}
             // a number is a field of the box, never drawn as an option (`numbers_into_the_box`)
             Opt::Number { .. } => {}
             Opt::Text { key, text, placeholder, unfit, hint, focus } => did.extend(text_opt(ui, pal, TextOpt { key: *key, text, placeholder, unfit: unfit.as_ref(), hint, focus: *focus })),
