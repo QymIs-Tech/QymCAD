@@ -69,7 +69,7 @@ pub fn name_unfit(project: &Project, target: Option<&qymcad_core::model::DimTarg
     };
     Some(match owner {
         Some(o) => Unfit {
-            said: qymcad_i18n::tr2("par-name-taken", "name", "", "where", &if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { path_in_words(&o.path) }),
+            said: qymcad_i18n::tr2("par-name-taken", "name", nm, "where", &if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { path_in_words(&o.path) }),
             hint: qymcad_i18n::tr("sk-driver-name-taken-hint"),
         },
         None => Unfit { said: unfit.clone(), hint: unfit },

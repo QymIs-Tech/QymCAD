@@ -39,7 +39,11 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
     egui::CollapsingHeader::new(crate::i18n::tr("cp-edits")).id_salt(("edits", i)).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("cp-offset-mm"));
-            ui.add(egui::DragValue::new(&mut set.defaults.offset_2d).speed(0.2).range(0.1..=500.0));
+            qymcad_ui_state::panel_number(
+                ui,
+                &*ed.project,
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the offset of a contour"), value: &mut set.defaults.offset_2d, limits: qymcad_ui_state::Limits::between(0.1..=500.0) },
+            );
         });
         ui.horizontal(|ui| {
             let d = set.defaults.offset_2d;
@@ -71,12 +75,24 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
         });
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("cp-array-n"));
-            ui.add(egui::DragValue::new(&mut array.n).range(2..=100));
+            let mut n = f64::from(array.n);
+            let whole = qymcad_ui_state::Limits { number: qymcad_ui_state::Number::Whole, ..qymcad_ui_state::Limits::between(2.0..=100.0) };
+            if qymcad_ui_state::panel_number(ui, &*ed.project, qymcad_ui_state::PanelNumber { id: ui.id().with("the count of a contour pattern"), value: &mut n, limits: whole }) {
+                array.n = n as u32;
+            }
         });
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("cp-step-xy"));
-            ui.add(egui::DragValue::new(&mut array.dx).speed(0.5));
-            ui.add(egui::DragValue::new(&mut array.dy).speed(0.5));
+            qymcad_ui_state::panel_number(
+                ui,
+                &*ed.project,
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the step x of a contour pattern"), value: &mut array.dx, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+            );
+            qymcad_ui_state::panel_number(
+                ui,
+                &*ed.project,
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the step y of a contour pattern"), value: &mut array.dy, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+            );
         });
         if ui.button(crate::i18n::tr("cp-make-array")).clicked() {
             let base = ed.project.contours[i].clone();
@@ -124,12 +140,20 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
         let (mut dx, mut dy) = (0.0, 0.0);
         egui::Grid::new(("cpos", i)).num_columns(2).spacing([6.0, 3.0]).show(ui, |ui| {
             ui.label("X");
-            if ui.add(egui::DragValue::new(&mut nx).speed(1.0)).changed() {
+            if qymcad_ui_state::panel_number(
+                ui,
+                &*ed.project,
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the x of a contour"), value: &mut nx, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+            ) {
                 dx = nx - bb.min.x;
             }
             ui.end_row();
             ui.label("Y");
-            if ui.add(egui::DragValue::new(&mut ny).speed(1.0)).changed() {
+            if qymcad_ui_state::panel_number(
+                ui,
+                &*ed.project,
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the y of a contour"), value: &mut ny, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+            ) {
                 dy = ny - bb.min.y;
             }
             ui.end_row();
@@ -549,7 +573,11 @@ pub(crate) fn plane_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui,
         ui.label(egui::RichText::new(crate::i18n::tr1("pp-from-body-face", "name", &nm)).weak().small());
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("pp-offset-mm"));
-            changed |= ui.add(egui::DragValue::new(&mut dist).speed(0.5).range(-100000.0..=100000.0)).changed();
+            changed |= qymcad_ui_state::panel_number(
+                ui,
+                &*pr.project,
+                qymcad_ui_state::PanelNumber { id: ui.id().with(("the offset of a plane", i)), value: &mut dist, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+            );
         });
         pr.project.planes[i].def = PlaneDef::OffsetFace { body, face, dist };
         qymcad_ui_state::dim_expr_field_in(&mut pr.rebuild(), ui, pid, "dist", "");
@@ -577,7 +605,11 @@ pub(crate) fn plane_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui,
         });
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("pp-offset-mm"));
-            changed |= ui.add(egui::DragValue::new(&mut dist).speed(0.5).range(-100000.0..=100000.0)).changed();
+            changed |= qymcad_ui_state::panel_number(
+                ui,
+                &*pr.project,
+                qymcad_ui_state::PanelNumber { id: ui.id().with(("the offset of a plane", i)), value: &mut dist, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+            );
         });
         pr.project.planes[i].def = PlaneDef::OffsetBase { base, dist };
         qymcad_ui_state::dim_expr_field_in(&mut pr.rebuild(), ui, pid, "dist", ""); // the distance is an expression over the global variables (parametric)
@@ -816,33 +848,27 @@ pub(crate) fn component_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui:
         ui.separator();
         ui.label(egui::RichText::new(crate::i18n::tr("comp-placement")).strong());
         let mut t = pr.project.component_transform(cid);
-        let (mut moved, mut dragging_on) = (false, false);
+        let mut moved = false;
         ui.horizontal(|ui| {
             for (k, axis) in [(3, "X"), (7, "Y"), (11, "Z")] {
                 ui.label(axis);
-                let r = ui.add(egui::DragValue::new(&mut t[k]).speed(0.5).suffix(crate::i18n::tr("unit-mm-suffix")));
-                moved |= r.changed();
-                dragging_on |= r.dragged() && !r.drag_started();
+                let mm = qymcad_ui_state::Limits { unit: Some("unit-mm-suffix"), ..qymcad_ui_state::Limits::between(-100000.0..=100000.0) };
+                moved |= qymcad_ui_state::panel_number(ui, &*pr.project, qymcad_ui_state::PanelNumber { id: ui.id().with(("the place of a component", k)), value: &mut t[k], limits: mm });
             }
         });
-        // EACH PLACEMENT IS A STEP OF UNDO of its own; the frames of one drag fold into the step it began
+        // EACH PLACEMENT TYPED IS A STEP OF UNDO of its own
         if moved {
-            let name = crate::i18n::tr("status-move-component");
-            if dragging_on && pr.edits.undo.last().is_some_and(|s| s.name == name) {
-                pr.project.set_component_transform(cid, t);
-                qymcad_ui_state::fold_into_last_step(pr.edits, pr.project);
-            } else {
-                qymcad_ui_state::begin_edit(pr.edits, pr.project, name);
-                pr.project.set_component_transform(cid, t);
-                qymcad_ui_state::close_edit(pr.edits, pr.project);
-            }
+            qymcad_ui_state::begin_edit(pr.edits, pr.project, crate::i18n::tr("status-move-component"));
+            pr.project.set_component_transform(cid, t);
+            qymcad_ui_state::close_edit(pr.edits, pr.project);
             qymcad_ui_state::after_placement_change(&mut pr.rebuild());
         }
         let mut rot = pr.opts.rot_deg;
         let mut rot_axis: Option<u8> = None;
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("comp-rotation"));
-            ui.add(egui::DragValue::new(&mut rot).speed(1.0).suffix("°").range(-360.0..=360.0));
+            let deg = qymcad_ui_state::Limits { unit: Some("unit-deg-suffix"), ..qymcad_ui_state::Limits::between(-360.0..=360.0) };
+            qymcad_ui_state::panel_number(ui, &*pr.project, qymcad_ui_state::PanelNumber { id: ui.id().with("the turn of a component"), value: &mut rot, limits: deg });
             if ui.button(format!("{}X", ph::ARROW_CLOCKWISE)).clicked() {
                 rot_axis = Some(0);
             }

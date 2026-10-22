@@ -936,6 +936,8 @@ pub struct JointCommand {
     pub new_kind: qymcad_core::feature::JointKind,
     /// The fields of the box of the joint being edited, as they are typed.
     pub fields: crate::JointFields,
+    /// the names typed for the values of the joint being edited, by the key of each, until Enter gives them
+    pub names: std::collections::BTreeMap<String, String>,
     /// KEEP IT WHERE IT STANDS RIGHT AT CREATION (an "as-built" joint).
     ///
     /// A "keep it where it stands" button in the joint's properties comes TOO LATE: the joint has
@@ -1015,6 +1017,7 @@ impl Default for JointCommand {
         Self {
             new_kind: qymcad_core::feature::JointKind::Rigid,
             fields: crate::JointFields::default(),
+            names: std::collections::BTreeMap::new(),
             new_as_built: false,
             pick_faces: false,
             ground_pick: false,

@@ -98,6 +98,19 @@ fn the_boxes_look() {
     reopened("sketch-polygon-reopened", SketchShape::Polygon, &[(0.0, 0.0), (20.0, 0.0)], (20.0, 0.0), &mut missing);
     on_a_chosen_line("sketch-dim-length", OnALine { hint: "tb-dim-hint", then: &[(20.0, 0.0), (20.0, 10.0)] }, &mut missing);
     on_a_chosen_line("sketch-offset", OnALine { hint: "tb-offset-hint", then: &[(20.0, 6.0)] }, &mut missing);
+    {
+        let mut app = App::default();
+        sketching(&mut app);
+        let mut hand = Hand::new(&mut app);
+        hand.sk_tool(SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 30.0).key(egui::Key::Enter);
+        hand.sk_select();
+        if hand.press_hint(&crate::i18n::tr("tb-fillet-sketch-hint")) {
+            hand.mouse2d(40.0, 30.0);
+            save(&mut hand, "sketch-fillet", &mut missing);
+        } else {
+            missing.push("sketch-fillet: no button".to_string());
+        }
+    }
     on_a_chosen_line("sketch-rotate", OnALine { hint: "tb-rotate-hint", then: &[(0.0, 0.0)] }, &mut missing);
     {
         let mut app = super::super::screen_keys::tests::plate();

@@ -47,6 +47,16 @@ impl FramedTool for JointEdit<'_, '_> {
         joint_fields_follow(ctx, jc.project, jc.joint, &JointBox { j: &self.j, head: &d.head });
         let mut spec = qymcad_ui_state::BoxSpec::by(place);
         spec.layout = joint_layout(jc, &self.j);
+        // A VALUE OF A JOINT IS NAMED AS A DIMENSION IS, in the row under its field: a formula reads it by the name
+        spec.names = shown_slots(&self.j)
+            .into_iter()
+            .map(|slot| {
+                let target = qymcad_core::model::DimTarget::Feature { node: self.j.id, key: SLOT_KEYS[slot].to_string() };
+                let had = qymcad_i18n::name(&jc.project.name_of_target(&target));
+                let text = jc.joint.names.get(SLOT_KEYS[slot]).cloned().unwrap_or(had);
+                qymcad_ui_state::FieldName::judged(jc.project, SLOT_KEYS[slot], text, Some(&target))
+            })
+            .collect();
         d.boxed = Some(spec);
         self.seen = Seen { ctx: Some(ctx.clone()), before: jc.project.joints.clone(), changed: false };
         d
@@ -64,6 +74,20 @@ impl FramedTool for JointEdit<'_, '_> {
         let jc = &mut *self.jc;
         let jid = self.j.id;
         match did {
+            // a name typed under a value is kept, and given by Enter in its field as one step of undo
+            Did::Retyped { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
+                if let Some(field) = jc.joint.fields.fields.get(key.at).map(|p| p.key.clone()) {
+                    jc.joint.names.insert(field, text);
+                }
+            }
+            Did::Entered { key, text } if key.name == qymcad_ui_state::FIELD_NAME => {
+                let Some(field) = jc.joint.fields.fields.get(key.at).map(|p| p.key.clone()) else { return };
+                jc.joint.names.remove(&field);
+                let target = qymcad_core::model::DimTarget::Feature { node: jid, key: field };
+                qymcad_ui_state::begin_edit(&mut *jc.edits, &*jc.project, qymcad_i18n::tr("sk-driver-step"));
+                qymcad_ui_state::give_name(jc.project, target, &text);
+                qymcad_ui_state::commit_edit_if_changed(&mut jc.rebuild());
+            }
             Did::Chose { key, index } if key.name == "kind" => {
                 if qymcad_ui_state::change_joint_kind(jc.project, jc.status, jid, JOINT_KINDS[index.min(JOINT_KINDS.len() - 1)]) {
                     qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting

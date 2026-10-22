@@ -64,7 +64,8 @@ mod tests {
             let mut hand = Hand::new(&mut app);
             assert!(hand.press_hint(&qymcad_i18n::tr(key)), "no button of {tool}");
             hand.mouse2d(40.0, 30.0);
-            hand.frame(Vec::new());
+            // a box opened by a frame is laid unseen in the next and stands where the rule lays it from the one after
+            hand.frame(Vec::new()).frame(Vec::new());
             sins.extend(covered(&hand, si, chamfer).into_iter().map(|s| format!("{tool}, at the point: {s}")));
             // named by its two lines, picked near the corner
             let (mut app, si) = a_rectangle();
@@ -72,7 +73,7 @@ mod tests {
             assert!(hand.press_hint(&qymcad_i18n::tr(key)), "no button of {tool}");
             hand.mouse2d(34.0, 30.0);
             hand.shift_click2d(40.0, 24.0);
-            hand.frame(Vec::new());
+            hand.frame(Vec::new()).frame(Vec::new());
             sins.extend(covered(&hand, si, chamfer).into_iter().map(|s| format!("{tool}, by its lines: {s}")));
         }
         assert!(sins.is_empty(), "{}", sins.join("\n"));

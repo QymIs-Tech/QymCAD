@@ -56,7 +56,9 @@ pub(crate) mod tests {
         let area = hand.tool_box_id().and_then(|id| hand.area_rect(id)).expect("the box of the joint is drawn");
         let fields = hand.fields_in(area);
         assert!(fields.len() > shown, "a click on the title of the limits showed no field: {shown} before, {} after", fields.len());
-        assert!(fields.iter().any(|f| f.top() > folded.top()), "the field of the limit does not stand under its title: {fields:?}");
+        // the box grown by the section unfolded is laid anew by the rule: the title is read where it stands now
+        let unfolded = written_in(&hand, &limits, area).expect("the section of the limits is in the box");
+        assert!(fields.iter().any(|f| f.top() > unfolded.top()), "the field of the limit does not stand under its title: {fields:?}");
     }
 
     /// THE BOX ENDS AS EVERY TOOL DOES, Apply and Cancel, with the run of the angle at its foot beside "keep as it stands".

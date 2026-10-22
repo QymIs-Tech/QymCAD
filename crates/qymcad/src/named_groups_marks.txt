@@ -148,7 +148,7 @@ crates/qymcad-core/src/model/round.rs 5 5 0
 crates/qymcad-core/src/model/sketch.rs 10 7 0
 crates/qymcad-core/src/model/sketch/contours.rs 1 8 0
 crates/qymcad-core/src/model/sketch/corners.rs 7 17 0
-crates/qymcad-core/src/model/sketch/edit.rs 8 7 2
+crates/qymcad-core/src/model/sketch/edit.rs 8 4 2
 crates/qymcad-core/src/model/sketch/entities.rs 25 8 3
 crates/qymcad-core/src/model/sketch/offset.rs 0 3 0
 crates/qymcad-core/src/model/sketch/profiles.rs 9 5 0

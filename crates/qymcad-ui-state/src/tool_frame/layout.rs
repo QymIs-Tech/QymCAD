@@ -208,7 +208,12 @@ pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam],
     }
     if !layout.foot.is_empty() {
         ui.separator();
-        ui.horizontal_wrapped(|ui| drawn.did.extend(draw_opts(ui, d.look.pal, &layout.foot)));
+        // the foot wraps at the width of the words under a field: a count said in a sentence widened the box of a corner
+        // to 320 points, and the box laid by the rule for its first size came to stand over the corner
+        ui.horizontal_wrapped(|ui| {
+            ui.set_max_width(UNDER_WORDS);
+            drawn.did.extend(draw_opts(ui, d.look.pal, &layout.foot));
+        });
     }
     drawn
 }
@@ -299,10 +304,11 @@ fn row_holds(row: &Row, p: &CmdParam) -> bool {
     row.cells.iter().any(|c| matches!(c, Cell::Field { key, .. } if *key == p.key))
 }
 
-/// HOW WIDE THE WORDS UNDER A FIELD RUN before they wrap: a refusal of a sentence or two stood as one line of 632 points,
-/// the box grew to it in the frame after it was first laid narrow, and the rule laid the box anew elsewhere - under the
-/// pointer resting on the words there came the canvas.
-const UNDER_WORDS: f32 = 260.0;
+/// HOW WIDE THE WORDS UNDER A FIELD AND AT THE FOOT OF A BOX RUN before they wrap: a refusal of a sentence or two stood
+/// as one line of 632 points, the box grew to it in the frame after it was first laid narrow, and the rule laid the box
+/// anew elsewhere - under the pointer resting on the words there came the canvas. At 260 the box of a corner, 264 points
+/// wide, found no side of the corner it stood clear on in a view of 310 points between the tree and the properties.
+const UNDER_WORDS: f32 = 200.0;
 
 /// Words under a field, wrapped at the one width every box keeps them to.
 fn under_words(ui: &mut egui::Ui, words: impl FnOnce(&mut egui::Ui) -> egui::Response) {

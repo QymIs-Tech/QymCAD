@@ -821,7 +821,10 @@ impl FramedTool for CornerEdit<'_, '_> {
         let Some(spot) = spot else {
             return Described { head: head(ph::BEZIER_CURVE, name), bar, gate, says: Vec::new(), boxed: None };
         };
+        // THE BOX OF A CORNER STANDS CLEAR OF THE CORNER, its cut ends and its arc - not of the whole sketch, which leaves it
+        // no side in a narrow view and pulled it over the corner (as `corner_box_place` on main stood off the corner only)
         let mut spec = box_by(spot.at, &spot.around, &mut sk.corner.focus);
+        spec.place = qymcad_ui_state::Place::close_by(qymcad_ui_state::sheet_spot(spot.at, &spot.around));
         if !second {
             spec.hidden = vec!["r2"];
         }

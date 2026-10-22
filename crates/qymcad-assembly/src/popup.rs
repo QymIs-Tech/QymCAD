@@ -44,7 +44,7 @@ pub(crate) fn popup_place(ctx: &egui::Context, jc: &qymcad_ui_state::JointCtx, j
 }
 
 /// The keys of the fields of the three slots of a joint, in the order of the slots.
-const SLOT_KEYS: [&str; 3] = ["angle", "offset", "offset2"];
+pub(crate) const SLOT_KEYS: [&str; 3] = ["angle", "offset", "offset2"];
 
 /// The two anchors of a joint as its box names them: the key of the tag and the prefix of the keys of their fields.
 const ANCHORS: [AnchorTag; 2] = [AnchorTag { tag: "j-tag-a", prefix: "a" }, AnchorTag { tag: "j-tag-b", prefix: "b" }];
@@ -67,7 +67,7 @@ pub(crate) struct JointBox<'a> {
 
 /// The slots of joint `j` shown in its box: a rigid joint has an angle as well - no freedom, but the turn about its
 /// axis is a value of it, and without the field there was nothing to turn a fastened part with.
-fn shown_slots(j: &qymcad_core::feature::Joint) -> Vec<usize> {
+pub(crate) fn shown_slots(j: &qymcad_core::feature::Joint) -> Vec<usize> {
     use qymcad_core::feature::JointKind;
     let has = [
         matches!(j.kind, JointKind::Rigid | JointKind::Revolute | JointKind::Cylindrical | JointKind::PinSlot | JointKind::Ball | JointKind::Planar),

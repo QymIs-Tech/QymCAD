@@ -98,52 +98,26 @@ pub fn dim_expr_field_in(rc: &mut RebuildCtx, ui: &mut egui::Ui, id: Id, key: &s
         // behaviour: a buffer, a refusal that loses no letters, and the owner named.
         let target = qymcad_core::model::DimTarget::Feature { node: id, key: key.to_string() };
         let cur_name = rc.project.name_of_target(&target);
-        // THE NAME CHECK IS COMPUTED BEFORE THE EDIT. The closure holds `rc.project` while applying
-        // asks for `&mut self`: both cannot be borrowed at once, so the verdict is computed up front and
-        // the ready answer is what gets used further on.
         ui.label(qymcad_i18n::tr("sk-driver-label")).on_hover_text(qymcad_i18n::tr("sk-driver-name-hint"));
         let nid = if place.is_empty() { egui::Id::new(("featdrv", id, key)) } else { egui::Id::new(("featdrv", id, key, place)) };
-        // a name that would close a circle of formulas will not do either, and the line says the chain
-        let fits = |project: &qymcad_core::model::Project, nm: &str| {
-            nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !project.driver_name_taken_by(nm, &target) && project.naming_closes_circle(&target, nm).is_none())
-        };
+        // THE NAME IS JUDGED AND GIVEN BY THE ONE DESCRIPTION OF A NAME (`tool_frame/names.rs`), as in every box: what will
+        // not do keeps its letters and says why under the field, whose it is when somebody holds it
         let rn = {
-            let ok = |nm: &str| fits(rc.project, nm);
+            let ok = |nm: &str| name_unfit(rc.project, Some(&target), nm.trim()).is_none();
             name_field(ui, rc.project, nid, &cur_name, 100.0, &qymcad_i18n::tr("sk-name-placeholder"), &ok)
         };
         let nm = rn.text.trim().to_string();
-        let name_ok = fits(rc.project, &nm);
-        if rn.committed && nm != cur_name.trim() {
+        if rn.committed && nm != cur_name.trim() && name_unfit(rc.project, Some(&target), &nm).is_none() {
             begin_edit(rc.edits, rc.project, qymcad_i18n::tr("sk-driver-step"));
-            let old = cur_name.trim().to_string();
-            if !old.is_empty() && !nm.is_empty() {
-                let _ = rc.project.rename_driver(&old, &nm);
-            } else {
-                rc.project.name_dim(nm.clone(), target.clone());
-            }
+            give_name(rc.project, target.clone(), &nm);
             commit_edit(rc);
             if !nm.is_empty() {
                 rc.project.mark_param_dependents_dirty_for(&nm);
             }
             mark_dirty_for_rebuild(rc);
         }
-        if !nm.is_empty() && !name_ok {
-            // THE OWNER IS SOMEBODY ELSE: the number keeps its own name in the field, and a name of its own that will not
-            // do (`pi` from a document on disk) is unfit, not taken. The path is said in words, as the tree says it.
-            let other = rc.project.driver_name_taken_by(&nm, &target);
-            let who = rc.project.name_owner(&nm).filter(|_| other).map(|o| if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { crate::path_in_words(&o.path) });
-            // THE HINT GIVES THE SAME REASON AS THE LINE: "taken" only when somebody holds the name. Reported
-            // behaviour: over `pi`, which nobody holds, the hint said another dimension already used the name.
-            let unfit = match rc.project.naming_closes_circle(&target, &nm) {
-                Some(chain) => qymcad_i18n::error_words::expr_error_text(&qymcad_core::errors::ExprError::LeansOnItself(chain)),
-                None => qymcad_i18n::error_words::ident_refusal_text(&nm),
-            };
-            let hint = if who.is_some() { qymcad_i18n::tr("sk-driver-name-taken-hint") } else { unfit.clone() };
-            let msg = match who {
-                Some(w) => qymcad_i18n::tr2("par-name-taken", "name", &nm, "where", &w),
-                None => unfit,
-            };
-            crate::say(ui, &rc.scheme.pal, &crate::Notice::warning(msg), crate::NoticeSize::Small).on_hover_text(hint);
+        if let Some(u) = name_unfit(rc.project, Some(&target), &nm) {
+            crate::say(ui, &rc.scheme.pal, &crate::Notice::warning(u.said), crate::NoticeSize::Small).on_hover_text(u.hint);
         }
         let shown = o.text;
         if !shown.trim().is_empty() {
@@ -688,4 +662,45 @@ pub fn bar_field_bad(key: &str) -> bool {
 pub fn bar_fields_valid(ctx: &egui::Context) -> bool {
     let now = ctx.cumulative_pass_nr();
     ctx.data(|d| d.get_temp::<std::collections::HashMap<&'static str, u64>>(egui::Id::new(BAR_BAD))).is_none_or(|bad| bad.values().all(|&f| f + 2 < now))
+}
+
+/// A NUMBER OF A PANEL: the widget it is told apart by, the value it shows and takes, and what it takes.
+pub struct PanelNumber<'a> {
+    pub id: egui::Id,
+    pub value: &'a mut f64,
+    pub limits: Limits,
+}
+
+/// A NUMBER OF A PANEL TYPED AS A FORMULA, as every field of a box at the geometry is: `50`, `w/2`, `len+5`, the example
+/// in the empty field and how a value is typed in the hint over it; a value the field cannot take - a broken formula,
+/// zero where zero is no value, past the limits - keeps the value and says why beside it; a formula says what it comes
+/// to. The panels used to drag a number with no formula at all. Answers whether the value changed.
+pub fn panel_number(ui: &mut egui::Ui, project: &Project, n: PanelNumber) -> bool {
+    let PanelNumber { id, value, limits } = n;
+    let o = expr_field(ui, project, id, &qymcad_core::expr::fmt_num(*value), 74.0, &qymcad_i18n::tr("f-number-or-expr"));
+    o.resp.clone().on_hover_text(qymcad_i18n::tr("sk-enter-apply-expr"));
+    if let Some(unit) = limits.unit {
+        ui.label(egui::RichText::new(qymcad_i18n::tr(unit).trim().to_string()).weak());
+    }
+    let mut p = CmdParam::new("f-number-or-expr", "n", *value, *limits.range.start(), *limits.range.end());
+    p.number = limits.number;
+    p.nonzero = limits.zero == Zero::Refused;
+    p.txt = o.text.clone();
+    let judged = field_value(&p, &project.param_map());
+    match &judged {
+        Err(why) => {
+            tone_mark_in(ui, Tone::Refusal).on_hover_text(why);
+        }
+        Ok(v) if p.txt.trim().parse::<f64>().is_err() => {
+            ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(*v, 3))).weak().small());
+        }
+        Ok(_) => {}
+    }
+    match judged {
+        Ok(v) if o.committed && (v - *value).abs() > 1e-12 => {
+            *value = v;
+            true
+        }
+        _ => false,
+    }
 }

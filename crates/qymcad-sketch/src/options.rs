@@ -162,9 +162,10 @@ pub(crate) fn corner_ways(sk: &qymcad_ui_state::SketchCtx, corner: Corner) -> Op
     }
 }
 
-/// THE WAYS AND THE FIELDS OF A CORNER - a fillet or a chamfer, of a corner clicked or of the shapes chosen: the way it
-/// is given, its first value - up to `hi` - and the second value of a chamfer of two legs or of a leg and an angle.
-fn corner_opts(sk: &qymcad_ui_state::SketchCtx, corner: Corner, hi: f64) -> Vec<Opt> {
+/// THE WAYS AND THE NUMBERS OF THE CORNERS OF THE SHAPES CHOSEN - a fillet or a chamfer: the way it is given, its first
+/// value and the second value of a chamfer of two legs or of a leg and an angle.
+fn corner_opts(sk: &qymcad_ui_state::SketchCtx, corner: Corner) -> Vec<Opt> {
+    let hi = 10000.0;
     use qymcad_core::feature::ChamferMode;
     let prefs = &*sk.tool_prefs;
     let mut opts = vec![corner_ways(sk, corner)];
@@ -259,8 +260,8 @@ pub(crate) fn tool_opts(sk: &qymcad_ui_state::SketchCtx) -> Vec<Opt> {
         opts
     } else {
         match sk.armed.modify() {
-            Some(EditTool::Fillet) => corner_opts(sk, Corner::Fillet, 10000.0),
-            Some(EditTool::Chamfer) => corner_opts(sk, Corner::Chamfer, 10000.0),
+            Some(EditTool::Fillet) => corner_opts(sk, Corner::Fillet),
+            Some(EditTool::Chamfer) => corner_opts(sk, Corner::Chamfer),
             Some(EditTool::Offset) => vec![number(OptKey::of("sk_offset"), "opt-distance", sk.tool_prefs.offset, Limits { zero: Zero::Refused, ..mm(-10000.0..=10000.0) })],
             Some(EditTool::LinearPattern) => linear_steps(sk.sk_pat),
             Some(EditTool::CircularPattern) => circular_steps(sk.sk_pat),
@@ -276,18 +277,9 @@ pub(crate) fn tool_opts(sk: &qymcad_ui_state::SketchCtx) -> Vec<Opt> {
 /// extension, and what the tool waits for.
 fn click_opts(sk: &qymcad_ui_state::SketchCtx, click: ClickTool) -> Vec<Opt> {
     let mut opts = match click {
-        ClickTool::Corner | ClickTool::CornerChamfer => {
-            let corner = if click == ClickTool::CornerChamfer { Corner::Chamfer } else { Corner::Fillet };
-            // with a corner clicked, the most it takes; short of it, the largest the field ever takes
-            let hi = sk
-                .corner
-                .at
-                .and_then(|(si, pid, ch)| {
-                    (pid != 0).then(|| qymcad_ui_state::corner_limit_in(&*sk.project, si, pid, qymcad_ui_state::corner_tool(ch, sk.tool_prefs), sk.tool_prefs.fillet_by)).flatten()
-                })
-                .map_or(10000.0, |l| l * (1.0 - 1e-9));
-            corner_opts(sk, corner, hi)
-        }
+        // THE VALUE OF A CORNER CLICKED IS TYPED IN THE BOX AT THE CORNER, which the click opens (`CornerEdit`): the bar says
+        // only how the corner is given
+        ClickTool::Corner | ClickTool::CornerChamfer => vec![corner_ways(sk, if click == ClickTool::CornerChamfer { Corner::Chamfer } else { Corner::Fillet })],
         ClickTool::Project => vec![ways("proj", None, &PROJECT_WAYS, usize::from(sk.tool.proj_face))],
         ClickTool::Extend => vec![Opt::switch(OptKey::of("extend_both"), qymcad_i18n::tr("opt-extend-both"), sk.tool_prefs.extend_both.lit()).hint(qymcad_i18n::tr("opt-extend-both-hint"))],
         _ => Vec::new(),
