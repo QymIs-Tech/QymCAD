@@ -50,6 +50,36 @@ enum Signer {
     Certificate,
 }
 
+/// One language of the program: its folder under `i18n/` and the notes of the disk image found in its `macos/`.
+struct Language {
+    code: String,
+    notes: Vec<PathBuf>,
+}
+
+/// The repository's `i18n/`.
+fn repo_i18n() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../i18n")
+}
+
+/// Every language under an `i18n/` folder - each folder in it is one - with its notes, sorted by code.
+fn languages(i18n: &Path) -> Vec<Language> {
+    let mut found: Vec<Language> = fs::read_dir(i18n)
+        .expect("i18n/ is readable")
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| {
+            let notes = fs::read_dir(e.path().join("macos")).map(|d| d.flatten().map(|n| n.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect()).unwrap_or_default();
+            Language { code: e.file_name().to_string_lossy().into_owned(), notes }
+        })
+        .collect();
+    found.sort_by(|a, b| a.code.cmp(&b.code));
+    found
+}
+
+fn file_name(p: &Path) -> String {
+    p.file_name().expect("a file name").to_string_lossy().into_owned()
+}
+
 /// A tree that looks enough like the repository for the script: the binary, the icon, the licence, the
 /// notices, a manifest with a version, and an OCCT installation of two modules under three names each -
 /// `libTKernel.dylib` -> `libTKernel.7.8.dylib` -> `libTKernel.7.8.1.dylib`, exactly as OCCT installs.
@@ -69,6 +99,17 @@ fn sandbox(case: &str, deps: Deps, seal: Seal) -> PathBuf {
     write("THIRD-PARTY-NOTICES.md", "notices\n");
     write("assets/icons/macos/qymcad.icns", "icns\n");
     executable(&write("target/release/qymcad", "the program\n"));
+
+    // The notes of the image as the repository holds them, one per language: the script reads `i18n/` from the
+    // folder it runs in, and a probe that wrote its own texts would test those instead of the shipped ones.
+    // A language without a note comes over as its bare folder, so the script meets it as it would in the tree.
+    for language in languages(&repo_i18n()) {
+        fs::create_dir_all(dir.join("i18n").join(&language.code)).expect("the sandbox is writable");
+        for note in &language.notes {
+            let text = fs::read_to_string(note).expect("a note is readable");
+            write(&format!("i18n/{}/macos/{}", language.code, file_name(note)), &text);
+        }
+    }
 
     // As OCCT installs them: one real file per module and two links to it. The chain matters - a `cp` that
     // follows links writes three full copies of every module, which is how an 80 MB package was measured.
@@ -252,12 +293,10 @@ fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
         "QymCAD.app/Contents/Resources/qymcad.icns",
         "QymCAD.app/Contents/Resources/LICENSE.txt",
         "QymCAD.app/Contents/Resources/THIRD-PARTY-NOTICES.md",
-        "README.txt",
+        "README/README.txt",
     ] {
         assert!(held.contains(entry), "the image does not hold {entry}:\n{held}");
     }
-    // A note per language of the program travels; three are named in an alphabet this file does not spell out.
-    assert_eq!(held.lines().filter(|l| l.ends_with(".txt") && !l.contains("Contents/")).count(), 4, "all four notes must be in the image:\n{held}");
 
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(calls.contains("-add_rpath @executable_path/../Frameworks"), "the bundle was not pointed at its own Frameworks:\n{calls}");
@@ -321,8 +360,8 @@ fn an_intel_build_is_named_and_described_as_one() {
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.dmg").exists(), "the Intel build made its disk image under the Apple Silicon name");
 
     // every note the image is made with, one per language of the program
-    let notes: Vec<std::path::PathBuf> = fs::read_dir(dir.join("dist")).expect("the dist folder").flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
-    assert_eq!(notes.len(), 4, "the Intel build carries {} notes, not the four: {notes:?}", notes.len());
+    let notes = written_notes(&dir);
+    assert_eq!(notes.len(), languages(&repo_i18n()).len(), "the Intel build carries {} notes, not one per language: {notes:?}", notes.len());
     for note in notes {
         let text = fs::read_to_string(&note).expect("the note is written");
         assert!(text.contains("Intel") && !text.contains("Apple Silicon"), "{} does not describe an Intel build:\n{text}", note.display());
@@ -390,7 +429,7 @@ fn a_bundle_that_does_not_verify_is_not_packed() {
     assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that does not verify");
 }
 
-/// THE DISK IMAGE IS THE ONE PACKAGE. It holds the program and the four notes, laid out by the settings file
+/// THE DISK IMAGE IS THE ONE PACKAGE. It holds the program and the folder of notes, laid out by the settings file
 /// beside the script, and it is made from the bundle only after that bundle verified. The staging folder is
 /// gone afterwards, and no zip of the same bundle lies beside the image: `dist/` holds the image, the bundle and
 /// the notes, nothing half-made and nothing to choose between.
@@ -404,11 +443,7 @@ fn a_disk_image_holds_the_verified_bundle_and_the_notes() {
     assert!(zips.is_empty(), "a zip was packed beside the image: {zips:?}");
 
     let held = fs::read_to_string(dir.join("dmg-held.txt")).expect("dmgbuild was called");
-    let lines: Vec<&str> = held.lines().collect();
-    for entry in ["QymCAD.app", "README.txt"] {
-        assert!(lines.contains(&entry), "the image's folder does not hold {entry}:\n{held}");
-    }
-    assert_eq!(lines.iter().filter(|l| l.ends_with(".txt")).count(), 4, "all four notes must be in the image:\n{held}");
+    assert_eq!(held.lines().collect::<Vec<_>>(), ["QymCAD.app", "README"], "the image's folder holds the program and the folder of notes, nothing else:\n{held}");
 
     let calls = signs(&dir);
     let verify = calls.iter().position(|c| c.starts_with("codesign --verify"));
@@ -426,20 +461,15 @@ fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
     let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
 
-    let en = fs::read_to_string(dir.join("dist/README.txt")).expect("the English note is written");
+    let en = fs::read_to_string(dir.join("dist/README/README.txt")).expect("the English note is written");
     for step in ["Privacy & Security", "Open Anyway", "Applications"] {
         assert!(en.contains(step), "the English note does not name {step:?}:\n{en}");
     }
     // The other three are named and written in alphabets this file does not spell out, so each is held to the
     // English one's shape: the same four steps, Touch ID, the menu path written with `->`, and the system's
     // button names in English beside its own words - the note's language says nothing of the system's.
-    let notes: Vec<String> = fs::read_dir(dir.join("dist"))
-        .expect("dist/ is readable")
-        .map(|e| e.expect("an entry").path())
-        .filter(|p| p.extension().is_some_and(|x| x == "txt"))
-        .map(|p| fs::read_to_string(p).expect("a note is readable"))
-        .collect();
-    assert_eq!(notes.len(), 4, "a note per language of the program: English, Russian, Ukrainian, Kazakh");
+    let notes: Vec<String> = written_notes(&dir).iter().map(|p| fs::read_to_string(p).expect("a note is readable")).collect();
+    assert_eq!(notes.len(), languages(&repo_i18n()).len(), "a note per language of the program");
     for text in &notes {
         for step in ["  1. ", "  2. ", "  3. ", "  4. ", "Touch ID", " -> ", "Privacy & Security", "Open Anyway"] {
             assert!(text.contains(step), "a note lacks {step:?}:\n{text}");
@@ -447,7 +477,77 @@ fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
         assert!(!text.contains("xattr") && !text.contains("Terminal"), "a note still sends the reader to a terminal:\n{text}");
         // The disk image is the one package, so the note installs from it and names no archive.
         assert!(text.contains("(.dmg)") && !text.contains(".zip"), "a note does not install from the disk image alone:\n{text}");
+        assert!(text.contains("Apple Silicon") && !text.contains("{ $"), "a note was written with its processor left unsaid:\n{text}");
     }
+}
+
+/// The notes the script wrote into `dist/README/`, the folder that goes into the image.
+fn written_notes(dir: &Path) -> Vec<PathBuf> {
+    fs::read_dir(dir.join("dist/README")).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default()
+}
+
+/// EVERY LANGUAGE OF THE PROGRAM CARRIES ITS NOTE. The first launch is refused on every mac, and a person who
+/// reads only their own language must find the steps in it: each folder of `i18n/` holds one note for the disk
+/// image in its `macos/`, named in its own language, with the processor left to the script. No two languages
+/// share a name - the notes lie side by side in one folder.
+#[test]
+fn every_language_has_a_note_for_the_disk_image() {
+    let found = languages(&repo_i18n());
+    assert!(found.len() >= 4, "i18n/ holds {} languages", found.len());
+    let mut names = Vec::new();
+    for language in &found {
+        assert_eq!(language.notes.len(), 1, "i18n/{}/macos/ must hold one note, it holds {:?}", language.code, language.notes);
+        let text = fs::read_to_string(&language.notes[0]).expect("the note is readable");
+        assert!(text.contains("{ $machine }"), "i18n/{}/macos/ does not name the processor through {{ $machine }}:\n{text}", language.code);
+        names.push(file_name(&language.notes[0]));
+    }
+    let mut unique = names.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), names.len(), "two languages name their notes alike: {names:?}");
+}
+
+/// THE FOLDER OF NOTES HOLDS ONE PER LANGUAGE, named as the language names it. The window shows one folder
+/// however many languages there are; what is inside it is what `i18n/` holds, note for note.
+#[test]
+fn the_readme_folder_holds_a_note_per_language() {
+    let dir = sandbox("readme", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let mut held: Vec<String> = image(&dir).lines().filter_map(|l| l.strip_prefix("f README/")).map(str::to_string).collect();
+    held.sort();
+    let mut wanted: Vec<String> = languages(&repo_i18n()).iter().flat_map(|l| l.notes.iter().map(|n| file_name(n))).collect();
+    wanted.sort();
+    assert_eq!(held, wanted, "the README folder of the image is not the notes of i18n/");
+}
+
+/// A NEW LANGUAGE BRINGS ITS NOTE BY ITSELF. A translation that adds `i18n/<code>/macos/<name>.txt` finds its note
+/// in the image with the processor written in, and nothing in the script, the layout or the picture is edited.
+#[test]
+fn a_language_added_to_i18n_brings_its_note() {
+    let dir = sandbox("new_language", Deps::Rpath, Seal::Holds);
+    let note = "QymCAD - macOS ({ $machine }).\n\nAbra la imagen de disco (.dmg).\n";
+    fs::create_dir_all(dir.join("i18n/es/macos")).expect("the sandbox is writable");
+    fs::write(dir.join("i18n/es/macos/LÉAME.txt"), note).expect("the note is written");
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    assert!(image(&dir).lines().any(|l| l == "f README/LÉAME.txt"), "the new language's note is not in the image:\n{}", image(&dir));
+    let text = fs::read_to_string(dir.join("dist/README/LÉAME.txt")).expect("the new note is written");
+    assert_eq!(text, "QymCAD - macOS (Apple Silicon).\n\nAbra la imagen de disco (.dmg).\n", "the note did not come over as written, with the processor in");
+}
+
+/// A LANGUAGE WITHOUT ITS NOTE STOPS THE BUILD, in words. A release with a language whose reader finds nothing
+/// to read is the one the notes exist to prevent; so is a language with two, of which the window shows both.
+#[test]
+fn a_language_without_one_note_is_refused() {
+    let dir = sandbox("no_note", Deps::Rpath, Seal::Holds);
+    fs::create_dir_all(dir.join("i18n/es")).expect("the sandbox is writable");
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(!out.status.success(), "a language without a note was packed:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("i18n/es/"), "the refusal did not name the language:\n{}", said(&out));
+    assert!(!disk_image(&dir).exists(), "a disk image was made with a language left unexplained");
 }
 
 /// How `make-signing-cert.sh` gets the password of the .p12.
@@ -613,7 +713,7 @@ struct Placed {
 }
 
 /// THE PICTURE AND THE PLACES AGREE. The background is painted around the icons - the arrow between the
-/// program and Applications, the card under the notes - from the numbers in settings.py. A picture of the
+/// program and Applications, the card beside the folder of notes - from the numbers in settings.py. A picture of the
 /// wrong size is stretched by nobody and cropped by Finder; an icon moved off its place sits on the arrow.
 /// The settings file is executed by python3 the way dmgbuild executes it.
 ///
@@ -656,6 +756,10 @@ fn the_window_layout_fits_its_background() {
     for name in &shown {
         assert!(placed.iter().any(|p| &p.name == name), "{name} goes into the image with no place in the window:\n{text}");
     }
+    // The program, Applications and the folder of notes - however many languages the folder holds.
+    shown.sort();
+    assert_eq!(shown, ["Applications", "QymCAD.app", "README"], "the window does not show the three icons:\n{text}");
+    assert_eq!(placed.len(), 3, "the window places other icons than its three:\n{text}");
     let half = icon / 2.0;
     for p in &placed {
         // The label hangs under the icon, about 20 points of 13-point text.

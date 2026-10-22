@@ -85,7 +85,7 @@ chmod +x qymcad-*.AppImage
 **macOS 12+** — for Apple Silicon (M1 and later) `qymcad-*-macos-arm64.dmg`, for Intel
 `qymcad-*-macos-x86_64.dmg`. Open the disk image and drag QymCAD onto Applications. The first launch is refused
 once, because the build is not signed by Apple: press "Open Anyway" in System Settings -> Privacy & Security.
-`README.txt` beside the app walks through it step by step.
+The `README` folder beside the app walks through it step by step, in every language of the program.
 
 ## Help
 

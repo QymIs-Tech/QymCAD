@@ -189,130 +189,36 @@ codesign --verify --deep --strict --verbose "$APP"
 # signature, which the system called damaged and offered no button for. The Control-click-and-Open
 # exception is gone as well on a current macOS.
 #
-# The steps are written out plainly, for a person who has never opened System Settings by that path.
-# ONE NOTE PER LANGUAGE OF THE PROGRAM, each named in its own language so it is found at a glance. The
-# names of the system's buttons are given in the note's language AND in English, in brackets: the note's
-# language says nothing about the language macOS itself is set to.
-NOTES=(README.txt ПРОЧТИ.txt ПРОЧИТАЙ.txt ОҚЫҢЫЗ.txt)
+# ONE NOTE PER LANGUAGE OF THE PROGRAM, TAKEN FROM THE LANGUAGE ITSELF. Each folder of i18n/ is a language and
+# keeps its note in `macos/`, named in that language so it is found at a glance.
+# The notes go into one folder, README, so the window shows one icon for them however many languages there
+# are: a language added to i18n/ with its note reaches the image with no edit here, in settings.py or in the
+# picture. A language with no note, or with two, stops the build - its reader would find nothing, or two.
 #
-# The notes are unquoted heredocs for the one word that differs between the two builds - the processor.
-# Nothing else in them may carry a `$` or a backtick.
-
-cat > dist/README.txt <<TXT
-QymCAD - build for macOS ($MACHINE).
-
-INSTALL. Open the disk image (.dmg) and drag QymCAD onto the Applications folder beside it.
-
-FIRST RUN. The build is signed, but not with a certificate Apple issued, so macOS refuses to open it
-the first time and says Apple could not verify it is free of malware. It is allowed once, in System
-Settings:
-
-  1. Open QymCAD with a double click. When the message appears, press "Done".
-
-  2. Open the Apple menu -> System Settings -> Privacy & Security.
-
-  3. Scroll down to "Security". It says "QymCAD" was blocked to protect your Mac.
-     Press "Open Anyway" beside it, and enter your password (or use Touch ID).
-
-  4. The message appears once more, now with an "Open Anyway" button. Press it.
-
-From then on QymCAD opens with an ordinary double click. If the "Open Anyway" button is not there,
-repeat step 1 first: it is shown for about an hour after a refused launch. A new version downloaded
-later is allowed the same way, once.
-
-Requires macOS 12 or newer, a mac with an $MACHINE processor.
-TXT
-
-cat > dist/ПРОЧТИ.txt <<TXT
-QymCAD - сборка для macOS ($MACHINE).
-
-УСТАНОВКА. Откройте образ диска (.dmg) и перетащите QymCAD на папку «Программы» (Applications) рядом
-с ним.
-
-ПЕРВЫЙ ЗАПУСК. Сборка подписана, но не сертификатом, выданным Apple, поэтому в первый раз macOS
-откажется её открыть и скажет, что Apple не может проверить её на вредоносное ПО. Разрешить запуск
-нужно один раз, в Системных настройках. В скобках - названия кнопок в macOS на английском.
-
-  1. Откройте QymCAD двойным щелчком. Когда появится сообщение, нажмите «Готово» ("Done").
-
-  2. Откройте меню Apple -> Системные настройки -> Конфиденциальность и безопасность
-     (System Settings -> Privacy & Security).
-
-  3. Прокрутите вниз до раздела «Безопасность» ("Security"). Там написано, что «QymCAD»
-     заблокирована для защиты Mac. Нажмите рядом «Все равно открыть» ("Open Anyway")
-     и введите пароль (или Touch ID).
-
-  4. Сообщение появится ещё раз, теперь с кнопкой «Все равно открыть» ("Open Anyway"). Нажмите её.
-
-Дальше QymCAD открывается обычным двойным щелчком. Если кнопки «Все равно открыть» нет, сначала
-повторите шаг 1: она показывается примерно час после отказа в запуске. Новую версию, скачанную
-позже, разрешают так же, один раз.
-
-Требуется macOS 12 или новее, компьютер с процессором $MACHINE.
-TXT
-
-cat > dist/ПРОЧИТАЙ.txt <<TXT
-QymCAD - збірка для macOS ($MACHINE).
-
-ВСТАНОВЛЕННЯ. Відкрийте образ диска (.dmg) і перетягніть QymCAD на папку «Програми» (Applications)
-поруч із ним.
-
-ПЕРШИЙ ЗАПУСК. Збірку підписано, але не сертифікатом, виданим Apple, тож першого разу macOS
-відмовиться її відкрити й повідомить, що Apple не може перевірити її на зловмисне ПЗ. Дозволити
-запуск потрібно один раз, у Системних параметрах. У дужках - назви кнопок у macOS англійською.
-
-  1. Відкрийте QymCAD подвійним клацанням. Коли з'явиться повідомлення, натисніть «Готово» ("Done").
-
-  2. Відкрийте меню Apple -> Системні параметри -> Приватність і безпека
-     (System Settings -> Privacy & Security).
-
-  3. Прокрутіть униз до розділу «Безпека» ("Security"). Там написано, що «QymCAD»
-     заблоковано для захисту Mac. Натисніть поруч «Усе одно відкрити» ("Open Anyway")
-     і введіть пароль (або Touch ID).
-
-  4. Повідомлення з'явиться ще раз, тепер із кнопкою «Усе одно відкрити» ("Open Anyway").
-     Натисніть її.
-
-Далі QymCAD відкривається звичайним подвійним клацанням. Якщо кнопки «Усе одно відкрити» немає,
-спершу повторіть крок 1: вона показується приблизно годину після відмови в запуску. Нову версію,
-завантажену пізніше, дозволяють так само, один раз.
-
-Потрібна macOS 12 або новіша, комп'ютер із процесором $MACHINE.
-TXT
-
-cat > dist/ОҚЫҢЫЗ.txt <<TXT
-QymCAD - macOS ($MACHINE) жинағы.
-
-ОРНАТУ. Диск бейнесін (.dmg) ашып, QymCAD-ты жанындағы «Бағдарламалар» (Applications) қалтасына
-сүйреңіз.
-
-АЛҒАШҚЫ ІСКЕ ҚОСУ. Жинаққа қол қойылған, бірақ сертификатты Apple бермеген, сондықтан macOS оны
-алғаш рет ашудан бас тартып, Apple оны зиянды бағдарламаға тексере алмайтынын айтады. Іске қосуға
-бір рет, System Settings ішінде рұқсат беру керек. Жақшада - macOS батырмаларының ағылшынша атаулары.
-
-  1. QymCAD-ты екі рет басып ашыңыз. Хабарлама шыққанда «Дайын» ("Done") батырмасын басыңыз.
-
-  2. Apple мәзірі -> Жүйе параметрлері -> Құпиялылық және қауіпсіздік
-     (System Settings -> Privacy & Security) бөлімін ашыңыз.
-
-  3. Төмен қарай «Қауіпсіздік» ("Security") бөліміне дейін айналдырыңыз. Онда «QymCAD»
-     Mac-ты қорғау үшін бұғатталғаны жазылған. Жанындағы «Бәрібір ашу» ("Open Anyway")
-     батырмасын басып, құпиясөзді енгізіңіз (немесе Touch ID).
-
-  4. Хабарлама тағы бір рет, енді «Бәрібір ашу» ("Open Anyway") батырмасымен шығады.
-     Оны басыңыз.
-
-Осыдан кейін QymCAD әдеттегідей екі рет басқанда ашылады. «Бәрібір ашу» батырмасы болмаса, алдымен
-1-қадамды қайталаңыз: ол іске қосудан бас тартылғаннан кейін шамамен бір сағат көрсетіледі. Кейін
-жүктелген жаңа нұсқаға да дәл осылай, бір рет рұқсат беріледі.
-
-macOS 12 немесе жаңарағы, $MACHINE процессоры бар компьютер қажет.
-TXT
+# The one word that differs between the two builds - the processor - is written `{ $machine }` in a note,
+# the way a substitution is written in the catalogue beside it. It holds no `*`, `?` or `[`, so as a pattern
+# it matches only itself, on the bash 3.2 a mac ships as well as on a newer one.
+placeholder='{ $machine }'
+NOTES=dist/README
+rm -rf "$NOTES"
+mkdir -p "$NOTES"
+for lang in i18n/*/; do
+    notes=("${lang}"macos/*.txt)
+    if [ "${#notes[@]}" -ne 1 ] || [ ! -f "${notes[0]}" ]; then
+        echo "!!! ${lang}macos/ must hold one note for the disk image, a .txt named in its language"
+        exit 1
+    fi
+    name=$(basename "${notes[0]}")
+    [ ! -e "$NOTES/$name" ] || { echo "!!! two languages name their note $name - ${lang}macos/"; exit 1; }
+    text=$(<"${notes[0]}")
+    printf '%s\n' "${text//$placeholder/$MACHINE}" > "$NOTES/$name"
+done
+echo ">>> notes: $(find "$NOTES" -type f | wc -l | tr -d ' ')"
 
 # THE DISK IMAGE, the form a mac download is expected in. Opened, it shows one window drawn for it: the
-# program on the left, Applications on the right, an arrow from one to the other, and under them a card
-# holding the notes. It holds the signed bundle - made after the check above, so nothing unverified goes
-# in - and the notes, because the first launch is refused the same way for the copy dragged out of it. The
+# program on the left, Applications on the right, an arrow from one to the other, and under them the folder
+# of notes beside a picture of the way to "Open Anyway". It holds the signed bundle - made after the check
+# above, so nothing unverified goes in - and the notes, because the first launch is refused the same way for the copy dragged out of it. The
 # mounted volume carries the program's icon.
 #
 # THE ONLY PACKAGE. A zip of the same bundle beside it would be a second file per processor to choose
@@ -331,7 +237,7 @@ DMG="dist/$NAME-macos-$ARCH.dmg"
 STAGE=dist/dmg
 rm -rf "$STAGE" "$DMG"
 mkdir -p "$STAGE"
-cp -RP "$APP" "${NOTES[@]/#/dist/}" "$STAGE/"
+cp -RP "$APP" "$NOTES" "$STAGE/"
 command -v dmgbuild >/dev/null || { echo "!!! dmgbuild is not installed: python3 -m pip install --require-hashes -r packaging/macos/dmg/requirements.txt"; exit 1; }
 # The layout lies beside this script, wherever the script is run from.
 ART="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dmg"

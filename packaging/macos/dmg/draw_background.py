@@ -6,8 +6,10 @@ Run from the root of the repository, with Pillow installed:
     python3 packaging/macos/dmg/draw_background.py --regular /path/to/LiberationSans-Regular.ttf
 
 The two pictures are kept in the repository, so a build never runs this; it is here so the picture can be
-made again after the layout in settings.py or the logo changes. Every place - the arrow's ends, the panel
-under the notes - is taken from settings.py, the same file Finder's layout is written from.
+made again after the layout in settings.py or the logo changes. Every place - the arrow's ends, the card
+under them, the steps of the first launch - is taken from settings.py, the same file Finder's layout is
+written from. The picture holds no language's words: the one word in it is the system's "Open Anyway",
+which every note gives in brackets.
 
 THE PICTURE IS DRAWN AT FOUR TIMES THE 1x SIZE AND SCALED DOWN. Pillow draws lines and shapes without
 smoothing; scaled down by Lanczos from 4x they come out with smooth edges at both 2x and 1x.
@@ -187,39 +189,138 @@ def arrow(img, start, end, lift):
     img.alpha_composite(paint)
 
 
-def panel(img, width, top, bottom, notes, bold, regular):
-    """The card under the notes: what to do before the first launch, and under each note's name the name
-    of its language, written in that language - the file name alone says "read me", not whose."""
-    box = [px(40), px(top), px(width - 40), px(bottom)]
+def card(img, box, divider_x):
+    """The card under the program and Applications, holding the README folder on its left and the way to the
+    first launch on its right, with a thin rule between them."""
+    box = [px(v) for v in box]
     radius = px(14)
     img.alpha_composite(soft_shadow(img.size, lambda d: d.rounded_rectangle(box, radius, fill=255), px(8), 0.10, (0, px(3))))
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     d.rounded_rectangle(box, radius, fill=(255, 255, 255, 190), outline=(214, 222, 233, 255), width=px(1))
+    d.line([(px(divider_x), box[1] + px(26)), (px(divider_x), box[3] - px(26))], fill=(214, 222, 233, 255), width=px(1))
     img.alpha_composite(layer)
-
-    d = ImageDraw.Draw(img)
-    cx = px(width / 2)
-    head = ImageFont.truetype(bold, px(12))
-    body = ImageFont.truetype(regular, px(12))
-    y = px(top + 20)
-    d.text((cx, y), "Before the first launch, open the note in your language", font=head, fill=INK, anchor="mm")
-    d.text((cx, y + px(17)), "Прочтите  \u00b7  Прочитайте  \u00b7  Оқыңыз", font=body, fill=MUTED, anchor="mm")
-
-    # Under Finder's label of each note: about 4 points below the icon, then a 16-point line of 13-point text.
-    lang = ImageFont.truetype(regular, px(11))
-    for (x, y_note), language, half in notes:
-        d.text((px(x), px(y_note + half + 4 + 16 + 9)), language, font=lang, fill=MUTED, anchor="mm")
 
     # A thin rule of the logo's gradient along the card's top edge: the one place the colour repeats.
     rule = Image.new("RGBA", img.size, (0, 0, 0, 0))
     r = ImageDraw.Draw(rule)
-    x0, x1 = px(width / 2 - 60), px(width / 2 + 60)
+    mid = (box[0] + box[2]) / 2
+    x0, x1 = round(mid - px(60)), round(mid + px(60))
     for x in range(x0, x1):
         t = (x - x0) / (x1 - x0)
         a = round(255 * math.sin(math.pi * t))
-        r.line([(x, px(top) - px(1)), (x, px(top) + px(1))], fill=mix(BLUE, MAGENTA, t) + (a,))
+        r.line([(x, box[1] - px(1)), (x, box[1] + px(1))], fill=mix(BLUE, MAGENTA, t) + (a,))
     img.alpha_composite(rule)
+
+
+TILE = 60
+
+
+def tile(img, centre, top, bottom):
+    """A rounded square in the shape of a macOS settings icon, shaded from `top` to `bottom`, with its shadow."""
+    cx, cy = px(centre[0]), px(centre[1])
+    h = px(TILE / 2)
+    box = [cx - h, cy - h, cx + h, cy + h]
+    radius = px(TILE * 0.225)
+    img.alpha_composite(soft_shadow(img.size, lambda d: d.rounded_rectangle(box, radius, fill=255), px(4), 0.25, (0, px(2))))
+    shade = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(shade)
+    for y in range(box[1], box[3] + 1):
+        d.line([(box[0], y), (box[2], y)], fill=mix(top, bottom, (y - box[1]) / (box[3] - box[1])) + (255,))
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle(box, radius, fill=255)
+    shade.putalpha(mask)
+    img.alpha_composite(shade)
+
+
+def gear(img, centre):
+    """System Settings: a grey tile holding a gear - a ring of teeth around a hub."""
+    tile(img, centre, (196, 200, 207), (128, 134, 144))
+    cx, cy = px(centre[0]), px(centre[1])
+    d = ImageDraw.Draw(img)
+    outer, inner, hub = px(21), px(15.5), px(6.5)
+    teeth = 10
+    points = []
+    for i in range(teeth * 4):
+        a = 2 * math.pi * i / (teeth * 4) - math.pi / 2
+        r = outer if i % 4 in (0, 1) else inner
+        points.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    d.polygon(points, fill=(246, 247, 249))
+    d.ellipse([cx - px(11), cy - px(11), cx + px(11), cy + px(11)], fill=(150, 156, 166))
+    d.ellipse([cx - hub, cy - hub, cx + hub, cy + hub], fill=(246, 247, 249))
+
+
+def shield(img, centre):
+    """Privacy & Security: a blue tile holding a white shield with a tick."""
+    tile(img, centre, (64, 156, 255), (20, 104, 220))
+    cx, cy = px(centre[0]), px(centre[1])
+    w, top, mid, bottom = px(15), cy - px(19), cy + px(2), cy + px(21)
+    outline = [(cx, top), (cx + w, top + px(6))]
+    outline += [bezier((cx + w, top + px(6)), (cx + w, mid + px(8)), (cx, bottom), i / 40) for i in range(41)]
+    outline += [bezier((cx, bottom), (cx - w, mid + px(8)), (cx - w, top + px(6)), i / 40) for i in range(41)]
+    d = ImageDraw.Draw(img)
+    d.polygon(outline, fill=(255, 255, 255))
+    d.line([(cx - px(7), cy + px(1)), (cx - px(2), cy + px(6)), (cx + px(8), cy - px(5))], fill=(28, 112, 228), width=px(3.5), joint="curve")
+
+
+def button(img, centre, regular):
+    """The system's "Open Anyway" button, as it stands under Security, with a pointer pressing it. The one
+    word in the picture: the notes give the same English name in brackets, whatever their language. Returns
+    half the button's width in points, where the arrow before it has to stop."""
+    font = ImageFont.truetype(regular, px(13))
+    d = ImageDraw.Draw(img)
+    text = "Open Anyway"
+    w = d.textlength(text, font=font) + px(28)
+    h = px(26)
+    cx, cy = px(centre[0]), px(centre[1])
+    box = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
+    img.alpha_composite(soft_shadow(img.size, lambda m: m.rounded_rectangle(box, px(7), fill=255), px(2), 0.22, (0, px(1))))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle(box, px(7), fill=(255, 255, 255), outline=(196, 204, 216), width=px(1))
+    d.text((cx, cy), text, font=font, fill=INK, anchor="mm")
+
+    # The pointer: the classic arrow, black with a white rim, its tip on the button's lower right.
+    tip = (box[2] - px(14), box[3] - px(5))
+    shape = [(0, 0), (0, 17), (4.2, 13.2), (7, 19.5), (9.6, 18.4), (6.9, 12.3), (12.2, 12.3)]
+    pts = [(tip[0] + px(x), tip[1] + px(y)) for x, y in shape]
+    d.polygon(pts, fill=(255, 255, 255))
+    d.line(pts + [pts[0]], fill=(255, 255, 255), width=px(3), joint="curve")
+    inner = [(tip[0] + px(x * 0.8 + 1), tip[1] + px(y * 0.8 + 1.9)) for x, y in shape]
+    d.polygon(inner, fill=(20, 20, 24))
+    return w / 2 / SCALE
+
+
+def step_arrow(img, start, end):
+    """A short muted arrow between two steps of the first launch."""
+    d = ImageDraw.Draw(img)
+    a, b = (px(start[0]), px(start[1])), (px(end[0]), px(end[1]))
+    d.line([a, (b[0] - px(5), b[1])], fill=MUTED, width=px(2.2))
+    head = px(6)
+    d.polygon([b, (b[0] - head, b[1] - head * 0.7), (b[0] - head, b[1] + head * 0.7)], fill=MUTED)
+
+
+def step_number(img, centre, n, bold):
+    """A small number in a circle above a step: the order reads without words."""
+    d = ImageDraw.Draw(img)
+    cx, cy = px(centre[0]), px(centre[1])
+    r = px(9)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=mix(BLUE, MAGENTA, (n - 1) / 2))
+    d.text((cx, cy + px(0.5)), str(n), font=ImageFont.truetype(bold, px(11)), fill=(255, 255, 255), anchor="mm")
+
+
+def first_run(img, s, bold, regular):
+    """System Settings -> Privacy & Security -> "Open Anyway", numbered, right of the README folder."""
+    settings, security, anyway = s["SETTINGS"], s["SECURITY"], s["OPEN_ANYWAY"]
+    half = TILE / 2
+    gear(img, settings)
+    shield(img, security)
+    anyway_half = button(img, anyway, regular)
+    gap = 12
+    step_arrow(img, (settings[0] + half + gap, settings[1]), (security[0] - half - gap, security[1]))
+    step_arrow(img, (security[0] + half + gap, security[1]), (anyway[0] - anyway_half - gap, anyway[1]))
+    below = s["STEP_Y"] + half + 22
+    for n, (x, _) in enumerate([settings, security, anyway], start=1):
+        step_number(img, (x, below), n, bold)
 
 
 def main():
@@ -234,13 +335,13 @@ def main():
     picture = height + s["STATUS_BAR"]
     app, apps = s["APP"], s["APPLICATIONS"]
     half = s["icon_size"] / 2
-    notes = [(place, s["LANGUAGES"][name], half) for name, place in s["NOTES"].items()]
 
     img = ground(width, picture)
     header(img, width, bold, args.regular)
     wells(img, [app, apps])
     arrow(img, (app[0] + half + 16, app[1] - 2), (apps[0] - half - 16, apps[1] - 2), 34)
-    panel(img, width, s["NOTE_Y"] - 100, height - 10, notes, bold, args.regular)
+    card(img, s["CARD"], s["DIVIDER_X"])
+    first_run(img, s, bold, args.regular)
 
     img = img.convert("RGB")
     img.resize((width * 2, picture * 2), Image.LANCZOS).save(os.path.join(HERE, "background@2x.png"), optimize=True)
