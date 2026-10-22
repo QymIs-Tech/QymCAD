@@ -508,3 +508,207 @@ probe! {
         assert!(bodies.len() == 2 && keys.len() == 2, "two parts of one body each were expected: {:?}", bodies.iter().map(|b| (&b.name, b.part_key, b.volume)).collect::<Vec<_>>());
     }
 }
+
+/// What a loft through the inner squares of the two rings of `bodies::loft_rings` holds: a square of 20 to a square of
+/// 10, 30 apart - 30/6 * (400 + 4 * 225 + 100).
+const INNER_LOFT: f64 = 7000.0;
+
+/// A CLICK BESIDE A LINE, on one side of it: 3 px off the point `at` of the view, towards the point `toward`.
+struct Beside {
+    at: [f64; 3],
+    toward: [f64; 3],
+}
+
+/// Where on screen the click [`Beside`] lands.
+fn beside(s: &mut Session, b: Beside) -> qymcad::Pos2 {
+    let at = s.in_space(b.at);
+    let toward = s.projected(b.toward) - at;
+    at + toward.normalized() * 3.0
+}
+
+probe! {
+    /// LOFT, THE INNER CONTOURS CLICKED IN 3D: the sections are the two sketches picked in the tree, and a click on the
+    /// line of the inner square of each takes that square as the contour of its section. Reported behaviour: a click on
+    /// a section in 3D took nothing of it - the face behind it, or nothing - and the loft ran through the outer squares.
+    fn a_loft_takes_the_inner_contours_clicked_in_3d() {
+        let mut s = Session::start();
+        qymcad_acceptance::bodies::loft_rings(&mut s);
+        let loft = s.word("tb-loft-hint");
+        s.press_hint(&loft);
+        let second = s.document().sketches[1].name.clone();
+        tree_row(&mut s, &second);
+        let first_inner = s.in_space([20.0, 10.0, 0.0]);
+        s.click(first_inner);
+        let second_inner = s.in_space([20.0, 15.0, 30.0]);
+        s.click(second_inner);
+        s.key(Key::Enter);
+        let now = body(&mut s);
+        assert!((now.volume - INNER_LOFT).abs() < 1.0, "a loft through the inner squares holds {INNER_LOFT}, and the body holds {} from {:?} to {:?}", now.volume, now.min, now.max);
+    }
+}
+
+probe! {
+    /// A LOFT BEING EDITED TAKES ITS SECTIONS BY THEIR LINES, and stays in hand saying it is being edited: the loft
+    /// through the outer squares is opened again from the tree, the inner line of the upper section clicked in 3D on the
+    /// top of the body, the inner line of the lower one in its sketch laid flat. Reported behaviour: the click in 3D took
+    /// the face and let go of the loft being edited, and a contour picked in the sketch said "Enter builds it", as if the
+    /// loft were new.
+    fn a_loft_being_edited_takes_its_sections_by_their_lines() {
+        let mut s = Session::start();
+        qymcad_acceptance::bodies::loft_rings(&mut s);
+        let loft = s.word("tb-loft-hint");
+        s.press_hint(&loft);
+        let second = s.document().sketches[1].name.clone();
+        tree_row(&mut s, &second);
+        s.key(Key::Enter);
+        let outer = body(&mut s).volume;
+        assert!((outer - 48000.0).abs() < 1.0, "setup: the loft through the outer squares holds 48000, and the body holds {outer}");
+        build::reopen(&mut s, "feat-loft");
+        let editing = s.word("msg-edit-feature");
+        let upper = s.in_space([20.0, 15.0, 30.0]);
+        s.click(upper);
+        let mut fails = Vec::new();
+        if s.status() != editing {
+            fails.push(format!("the upper section clicked in 3D: the loft being edited says {:?}, in hand: {:?}", s.status(), s.in_hand()));
+        }
+        section_by_its_line(&mut s, 0, 10.0);
+        if s.status() != editing {
+            fails.push(format!("the lower section picked in its sketch: the loft being edited says {:?}, in hand: {:?}", s.status(), s.in_hand()));
+        }
+        s.key(Key::Enter);
+        let now = body(&mut s);
+        if (now.volume - INNER_LOFT).abs() > 1.0 {
+            fails.push(format!("the loft edited onto the inner squares holds {INNER_LOFT}, and the body holds {} from {:?} to {:?}", now.volume, now.min, now.max));
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+/// THE CONTOUR OF SECTION `section` PICKED IN ITS SKETCH LAID FLAT, 3 px below the line at y = `line` there: the button
+/// of the section - "c<n>/<of>", the sections in order along the bar - lays the sketch flat, and the click falls just
+/// outside the inner square, inside the outer one.
+fn section_by_its_line(s: &mut Session, section: usize, line: f64) {
+    let mut buttons: Vec<_> = s.words_at().into_iter().filter(|(t, _)| t.starts_with('c') && t.contains('/') && t.len() <= 6).collect();
+    buttons.sort_by(|a, b| a.1.min.x.total_cmp(&b.1.min.x));
+    let (_, at) = buttons.get(section).cloned().unwrap_or_else(|| panic!("no contour button of section {}: {buttons:?}", section + 1));
+    s.click(at.center());
+    let on = s.on_sheet(20.0, line);
+    s.click(qymcad::pos2(on.x, on.y + 3.0));
+}
+
+probe! {
+    /// THE CONTOUR OF A SECTION PICKED IN THE SKETCH BY ITS LINE: the button of the first section lays its sketch flat,
+    /// and a click 3 px outside the inner square - inside the outer one - takes the inner square, whose line it is
+    /// at. Reported behaviour: the outer square, around the click, was taken, and the inner one could not be.
+    fn a_section_contour_is_picked_in_the_sketch_by_its_line() {
+        let mut s = Session::start();
+        qymcad_acceptance::bodies::loft_rings(&mut s);
+        let loft = s.word("tb-loft-hint");
+        s.press_hint(&loft);
+        let second = s.document().sketches[1].name.clone();
+        tree_row(&mut s, &second);
+        // the bottom line of the inner square of each section: y 10 on the table, y 15 above
+        section_by_its_line(&mut s, 0, 10.0);
+        section_by_its_line(&mut s, 1, 15.0);
+        s.key(Key::Enter);
+        let now = body(&mut s);
+        assert!((now.volume - INNER_LOFT).abs() < 1.0, "a loft through the inner squares picked in the sketch holds {INNER_LOFT}, and the body holds {} from {:?} to {:?}", now.volume, now.min, now.max);
+    }
+}
+
+/// What a tool leaves of the ring once the inner square is let go.
+struct Leaves {
+    tool: &'static str,
+    ring: f64,
+}
+
+probe! {
+    /// AN EXTRUSION AND A REVOLUTION TAKE THE LINE UNDER A 3D CLICK FIRST, as the loft does: the ring of a square of 40
+    /// about a square of 20 and the square in it picked, a click in 3D 3 px into the ring, beside the line of the inner
+    /// square, lets go of the inner square, not of the ring around the click.
+    fn an_extrusion_and_a_revolution_take_the_line_under_a_3d_click_first() {
+        use std::f64::consts::PI;
+        let mut fails = Vec::new();
+        // the ring left once the inner square is let go: extruded 10, or turned about X with its middle 20 off the axis
+        for Leaves { tool, ring } in [Leaves { tool: "tb-extrude-hint", ring: 1200.0 * 10.0 }, Leaves { tool: "tb-revolve-hint", ring: 1200.0 * 2.0 * PI * 20.0 }] {
+            let mut s = Session::start();
+            build::into_the_first_part(&mut s);
+            on_plane(&mut s, "plane-xy-table");
+            build::draw(&mut s, "tb-rect-hint", &[(0.0, 0.0), (40.0, 40.0)]);
+            build::draw(&mut s, "tb-rect-hint", &[(10.0, 10.0), (30.0, 30.0)]);
+            finish(&mut s);
+            let hint = s.word(tool);
+            s.press_hint(&hint);
+            // both regions picked on the flat sheet - the ring and the square in it - and on to 3D with Enter
+            for (x, y) in [(5.0, 5.0), (20.0, 20.0)] {
+                let at = s.on_sheet(x, y);
+                s.click(at);
+            }
+            s.key(Key::Enter);
+            let click = beside(&mut s, Beside { at: [20.0, 30.0, 0.0], toward: [20.0, 40.0, 0.0] });
+            s.click(click);
+            if tool == "tb-extrude-hint" {
+                let length = s.word("f-length");
+                s.fill(&length, "10");
+            }
+            s.key(Key::Enter);
+            let got = s.document().bodies.last().map(|b| b.volume);
+            if got.is_none_or(|v| (v - ring).abs() > ring * 1e-3) {
+                fails.push(format!("{tool}: the inner square let go leaves the ring, {ring:.1}, and the body holds {got:?}"));
+            }
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+probe! {
+    /// ON THE SHEET A CLICK TAKES THE LINE UNDER IT FIRST, AND THE REGION LIT UNDER THE POINTER IS THE ONE IT TAKES: the
+    /// ring of a square of 40 about a square of 20, the pointer 3 px into the ring beside the line of the inner square.
+    /// The inner square is lit - its middle, away from every line, changes - and the click picks it: extruded 10 it
+    /// holds 4000. Reported behaviour: the smallest contour around the pointer was taken and lit, the ring.
+    fn on_the_sheet_a_click_takes_the_line_under_it_and_lights_what_it_takes() {
+        let mut s = Session::start();
+        build::into_the_first_part(&mut s);
+        on_plane(&mut s, "plane-xy-table");
+        build::draw(&mut s, "tb-rect-hint", &[(0.0, 0.0), (40.0, 40.0)]);
+        build::draw(&mut s, "tb-rect-hint", &[(10.0, 10.0), (30.0, 30.0)]);
+        finish(&mut s);
+        let hint = s.word("tb-extrude-hint");
+        s.press_hint(&hint);
+        // the sheet is fitted to the sketch as the tool lays it out: the places are read once it stands
+        s.snapshot();
+        // the pointer in the ring away from every line lights the ring, beside the line of the inner square the square
+        let in_ring = s.on_sheet(35.0, 20.0);
+        s.move_to(in_ring);
+        let ring_lit = s.snapshot();
+        let line = s.on_sheet(20.0, 30.0);
+        let beside = line + (s.on_sheet(20.0, 40.0) - line).normalized() * 3.0;
+        s.move_to(beside);
+        let lit = s.snapshot();
+        let middle = qymcad::Rect::from_center_size(s.on_sheet(20.0, 20.0), qymcad::vec2(16.0, 16.0));
+        let mut fails = Vec::new();
+        let (dark, light) = (brightness(&ring_lit, middle), brightness(&lit, middle));
+        if light < dark + 10.0 {
+            fails.push(format!("the pointer beside the line of the inner square does not light the inner square: its middle is {light:.0} bright, and {dark:.0} with the ring lit"));
+        }
+        s.click(beside);
+        s.key(Key::Enter);
+        let length = s.word("f-length");
+        s.fill(&length, "10").key(Key::Enter);
+        let got = s.document().bodies.last().map(|b| b.volume);
+        if got.is_none_or(|v| (v - 4000.0).abs() > 1.0) {
+            fails.push(format!("the click beside the line of the inner square picks it, 20 x 20 extruded 10 = 4000, and the body holds {got:?}"));
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+/// How bright `area` of a picture is, the mean of the channels of its pixels: a region lit under the pointer is filled a
+/// shade lighter than the sheet, 25 steps of a channel, under the tolerance pictures are told apart by.
+fn brightness(p: &qymcad::Picture, area: qymcad::Rect) -> f64 {
+    let across = area.min.x as usize..(area.max.x as usize).min(p.width);
+    let down = area.min.y as usize..(area.max.y as usize).min(p.height);
+    let count = across.len() * down.len();
+    let sum: f64 = down.flat_map(|y| across.clone().map(move |x| (y * p.width + x) * 4)).map(|i| p.rgba[i..i + 3].iter().map(|c| f64::from(*c)).sum::<f64>() / 3.0).sum();
+    sum / count.max(1) as f64
+}

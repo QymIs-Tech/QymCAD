@@ -212,15 +212,18 @@ pub(crate) fn fill_region(painter: &egui::Painter, tris: &[[Point2; 3]], at: imp
     }
 }
 
-/// THE REGION UNDER THE POINTER in the sketch of the running command, among its closed contours: the innermost one the
-/// point lies in, as a click picks it (`contour_under_2d`).
-pub(crate) fn region_under(project: &qymcad_core::model::Project, si: usize, at: Point2) -> Option<Id> {
-    qymcad_ui_state::sketch_closed_contours(project, si)
-        .into_iter()
-        .filter_map(|cid| project.contour_index(cid).map(|ci| (cid, &project.contours[ci])))
-        .filter(|(_, c)| c.points.len() >= 3 && c.contains(at))
-        .min_by(|a, b| a.1.area().total_cmp(&b.1.area()))
-        .map(|(cid, _)| cid)
+/// THE REGION UNDER THE POINTER that a click would take: a contour of the slot of a sweep or a loft being picked, or
+/// of the sketch of the running command - by the rule the click picks by (`slot_contour_under_2d`,
+/// `contour_under_2d`), so what is lit is what the click takes.
+pub(crate) fn region_under(pn: &Painting, rect: Rect, at: Point2) -> Option<Id> {
+    let screen = qymcad_ui_state::Sheet { view: pn.view, rect }.at(at);
+    match pn.picking.contour() {
+        Some(slot) => {
+            let pick = qymcad_ui_state::PickCtx { project: pn.project, set: pn.set, view: &pn.view };
+            qymcad_ui_state::slot_contour_under_2d(&pick, rect, screen, &qymcad_ui_state::slot_candidates(pn.loft, pn.project, pn.sweep, slot))
+        }
+        None => qymcad_ui_state::contour_under_2d(pn.project, &pn.view, rect, screen, pn.cmd.sketch?),
+    }
 }
 
 /// THE REGIONS OF A PROFILE PICKER, FILLED: the picked ones in the colour of a profile, the one under the pointer
@@ -234,8 +237,8 @@ pub(crate) fn fill_picked_regions(pn: &Painting, painter: &egui::Painter, rect: 
         fill_region(painter, &region_triangles(pn.project, *cid), |p| sheet.at(p), qymcad_scheme::a(pn.scheme.pal.contour_profile(), 110));
     }
     let picking = pn.armed.commanding() || pn.picking.contour().is_some();
-    if let (true, Some(si), Some(at)) = (picking, pn.cmd.sketch, pn.cursor) {
-        if let Some(cid) = region_under(pn.project, si, at).filter(|c| !picked.contains(c) && !slot.contains(c)) {
+    if let (true, Some(at)) = (picking, pn.cursor) {
+        if let Some(cid) = region_under(pn, rect, at).filter(|c| !picked.contains(c) && !slot.contains(c)) {
             fill_region(painter, &region_triangles(pn.project, cid), |p| sheet.at(p), qymcad_scheme::a(pn.scheme.pal.contour_hover(), 90));
         }
     }

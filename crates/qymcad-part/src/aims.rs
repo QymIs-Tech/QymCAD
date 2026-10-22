@@ -8,6 +8,9 @@ use qymcad_ui_state::Notice;
 /// WHAT THE TOOL IN HAND AIMS AT under a click in the view.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Aim {
+    /// A contour of a sketch: a profile of the extrusion or the revolution in its sketch, the contour of a section of
+    /// the loft in the sketches of its sections.
+    Contour,
     /// A plane, a datum or a face: the mirror plane, the cutting plane, the base of a datum plane.
     Plane,
     /// A vertex of the part in hand: a datum point at a vertex, associative.
@@ -36,6 +39,8 @@ pub enum Aim {
 pub fn aim(pc: &qymcad_ui_state::PartCtx) -> Option<Aim> {
     use qymcad_ui_state::PartTool as T;
     Some(match pc.armed.part_tool()? {
+        t if t.picks_profiles() && pc.cmd.sketch.is_some() => Aim::Contour,
+        T::Loft if !pc.loft.sids.is_empty() => Aim::Contour,
         t if t.aims_at_a_plane() => Aim::Plane,
         T::DatumPoint if pc.datum.pt_mode == 1 => Aim::VertexOfThePart,
         T::DatumPoint => Aim::PointSnap,

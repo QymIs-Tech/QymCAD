@@ -259,6 +259,21 @@ pub mod build {
         let extrude = s.word("tb-extrude-hint");
         s.press_hint(&extrude).key(Key::Enter);
     }
+
+    /// THE NODE OPENED AGAIN BY A DOUBLE CLICK ON ITS ROW IN THE TREE: the one row left of the canvas that holds the
+    /// words `row` begins with - the words before its first number, "Hole" of "Hole 6x15".
+    ///
+    /// # Panics
+    /// When no row, or more than one, begins so.
+    pub fn reopen(s: &mut Session, row: &str) {
+        s.key(Key::Escape);
+        let line = s.word(row);
+        let lead = line.split('{').next().unwrap_or_default().trim().to_string();
+        let left = s.canvas().min.x;
+        let rows: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(w, r)| r.max.x < left && w.contains(&lead)).map(|(_, r)| r).collect();
+        let [at] = rows.as_slice() else { panic!("the row of the node, beginning {lead:?}, is not one row of the tree: {rows:?}") };
+        s.double_click(at.center());
+    }
 }
 
 #[cfg(test)]

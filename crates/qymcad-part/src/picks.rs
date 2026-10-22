@@ -14,10 +14,13 @@ use super::*;
 /// systems. A click past every contour says so and leaves what is gathered. Reported behaviour: a click on a contour in
 /// 3D changed nothing - neither the picture, nor the bar, nor the status line.
 pub fn profile_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos: egui::Pos2) {
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Loft) {
+        return section_click_3d(pc, rect, pos);
+    }
     let Some(si) = pc.cmd.sketch else { return };
     let basis = pc.cam.basis();
     let hit = qymcad_ui_state::contour_under_3d(&*pc.project, &qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis }, pos, si);
-    match hit {
+    match hit.map(|h| h.id) {
         Some(cid) => {
             if !pc.gsel.profiles.remove(&cid) {
                 pc.gsel.profiles.insert(cid);
@@ -26,6 +29,39 @@ pub fn profile_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos
         }
         None => *pc.status = Notice::refusal(qymcad_i18n::tr("msg-miss-contour")),
     }
+}
+
+/// A CLICK IN THE 3D VIEW WHILE A LOFT IS IN HAND takes the contour under it as the contour of its section: among
+/// the sketches of the sections, the one whose contour is caught - by its line first, the section in front of two
+/// seen one behind the other. A pick of that section's contour waiting in the half-sketcher is done with. The words
+/// of an edit stay: the node is still being edited. Reported behaviour: a click on a section in 3D took the face of
+/// the body behind it, and the loft being edited was let go.
+fn section_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos: egui::Pos2) {
+    let basis = pc.cam.basis();
+    let scr = qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis };
+    let mut best: Option<Section> = None;
+    for (at, sid) in pc.loft.sids.iter().enumerate() {
+        let Some(hit) = pc.project.sketch_index(*sid).and_then(|si| qymcad_ui_state::contour_under_3d(&*pc.project, &scr, pos, si)) else { continue };
+        if best.is_none_or(|b| hit.beats_behind(&b.hit)) {
+            best = Some(Section { at, hit });
+        }
+    }
+    let Some(Section { at, hit }) = best else {
+        *pc.status = Notice::refusal(qymcad_i18n::tr("msg-miss-contour"));
+        return;
+    };
+    qymcad_ui_state::set_contour_slot(&mut *pc.loft, &mut *pc.sweep, qymcad_ui_state::ContourSlot::LoftSection(at), hit.id);
+    if pc.picking.contour() == Some(qymcad_ui_state::ContourSlot::LoftSection(at)) {
+        pc.picking.clear();
+    }
+    *pc.status = qymcad_ui_state::contour_picked_words(pc.cmd);
+}
+
+/// A SECTION OF A LOFT caught under the pointer: its place in the list and how its contour lies there.
+#[derive(Clone, Copy)]
+struct Section {
+    at: usize,
+    hit: qymcad_ui_state::ContourUnder,
 }
 
 /// WHAT A CLICK ON A BODY SELECTS: the face under it for the tools that want one, the body otherwise. For the tools
