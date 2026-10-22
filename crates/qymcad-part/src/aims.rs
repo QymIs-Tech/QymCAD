@@ -39,6 +39,9 @@ pub enum Aim {
 pub fn aim(pc: &qymcad_ui_state::PartCtx) -> Option<Aim> {
     use qymcad_ui_state::PartTool as T;
     Some(match pc.armed.part_tool()? {
+        // the axis asked for in 3D first: a revolution holds its sketch while its axis is picked, and the contours of
+        // the sketch would take the click
+        T::Revolve if pc.rev.pick_axis => Aim::RevolveAxis,
         t if t.picks_profiles() && pc.cmd.sketch.is_some() => Aim::Contour,
         T::Loft if !pc.loft.sids.is_empty() => Aim::Contour,
         t if t.aims_at_a_plane() => Aim::Plane,
@@ -48,7 +51,6 @@ pub fn aim(pc: &qymcad_ui_state::PartCtx) -> Option<Aim> {
         T::DatumAxis if pc.datum.axis_mode == 2 => Aim::TwoPoints,
         t if t.is_a_primitive() && pc.cmd.edit.is_none() => Aim::Placement,
         T::CircularPattern if pc.arr.axis_pick => Aim::PatternAxis,
-        T::Revolve if pc.rev.pick_axis => Aim::RevolveAxis,
         T::Chamfer if pc.chamfer.pick_ref && pc.chamfer.mode != qymcad_core::feature::ChamferMode::Symmetric => Aim::ReferenceFace,
         t if t.picks_edges() => Aim::Edges,
         T::Thread => Aim::ThreadRim,

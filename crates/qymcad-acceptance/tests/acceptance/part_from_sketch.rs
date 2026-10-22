@@ -946,6 +946,37 @@ probe! {
 }
 
 probe! {
+    /// THE AXIS OF A REVOLUTION IS CLICKED IN 3D WITH ITS SKETCH IN HAND: a rectangle beside a block revolved, the pick of
+    /// the axis in 3D taken from the bar and the top front edge of the block clicked - the edge is the axis, said in the
+    /// status line, and the revolution is built about it. Reported behaviour: with the sketch of the profile in hand a
+    /// click in 3D went to the contours of the sketch, and the axis was never taken.
+    fn the_axis_of_a_revolution_is_clicked_in_3d_with_its_sketch_in_hand() {
+        let mut s = Session::start();
+        build::block(&mut s);
+        on_plane(&mut s, "plane-xy-table");
+        build::draw(&mut s, "tb-rect-hint", &[(50.0, 0.0), (60.0, 10.0)]);
+        finish(&mut s);
+        let revolve = s.word("tb-revolve-hint");
+        s.press_hint(&revolve);
+        bar_word(&mut s, "cmd-pick-axis-3d");
+        let edge = s.edge_at([20.0, 0.0, 10.0]);
+        s.click(edge);
+        let taken = s.word("g-axis-body-edge");
+        let said = s.status();
+        let mut fails = Vec::new();
+        if !said.contains(&taken) {
+            fails.push(format!("the top front edge of the block clicked for the axis: the status line says {said:?}, not that the axis is {taken:?}"));
+        }
+        let before = s.document().bodies.len();
+        s.key(Key::Enter);
+        if s.document().bodies.len() <= before && s.document().features.iter().all(|f| f.kind != "Revolve") {
+            fails.push(format!("no revolution was built about the edge; the status line says {:?}", s.status()));
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+probe! {
     /// THE FIRST SWEEP OF A PART, OPENED AGAIN AND APPLIED, IS THE SAME BODY: a square of 10 swept up a line of 40 in an
     /// empty part, 4000, opened by a double click on its row and applied with Enter - still 4000, the node green; given Cut
     /// when opened again, it is refused in words, there being no body before it to cut. Reported behaviour: the edit took
