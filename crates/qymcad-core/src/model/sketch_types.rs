@@ -645,6 +645,13 @@ pub struct RectDims {
     pub height: usize,
 }
 
+/// THE SIZE A RECTANGLE IS GIVEN: its width along its first side, its height along the side after it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RectSize {
+    pub width: f64,
+    pub height: f64,
+}
+
 /// A SIZE OF A SLOT: its length between the centres of its ends, or its width across an end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotSize {

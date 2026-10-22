@@ -20,15 +20,14 @@ use qymcad_ui_state::Bench;
 /// A sketch with a centre-drawn rectangle awaiting its width and height: the centre click at
 /// (10, 20), the corner click at (30, 50), so the fields open on 40 by 60.
 ///
-/// Built exactly the way the rectangle tool builds it: the opposite corner mirrored through the
-/// centre, four sides, and the unfinished drawing kept as centre plus corner.
+/// Built exactly the way the rectangle tool builds it (`add_rect_from_centre`): four sides held about the centre, and
+/// the unfinished drawing kept as centre plus corner.
 fn a_centre_drawn_rectangle() -> (Bench, usize, Point2) {
     let mut b = Bench::default();
     b.project.new_document();
     let si = b.project.new_sketch("S");
     let (center, corner) = (Point2::new(10.0, 20.0), Point2::new(30.0, 50.0));
-    let mirror = Point2::new(2.0 * center.x - corner.x, 2.0 * center.y - corner.y);
-    let ids = b.project.add_rect_entity(si, mirror.x, mirror.y, corner.x, corner.y, qymcad_core::feature::Purpose::Real);
+    let ids = b.project.add_rect_from_centre(si, center, corner, qymcad_core::feature::Purpose::Real);
     b.project.regen_sketch(si);
     b.view = qymcad_ui_state::View2d { center: egui::Vec2::ZERO, scale: 4.0, initialized: true, fit: 4.0 };
     b.place.set(qymcad_ui_state::PlacingShape::RectCenter { center, corner, ids });

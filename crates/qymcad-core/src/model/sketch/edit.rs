@@ -45,6 +45,48 @@ impl Project {
         let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
         Some([at(r.corners[0])?, at(r.corners[1])?, at(r.corners[2])?, at(r.corners[3])?])
     }
+    /// THE RECTANGLE WITH SIDE `side` GIVEN `size` BY MOVING ITS CORNERS: the width along its first side, the height
+    /// along the side after it, the corner it was drawn from - or its centre - left where it stands. The points and the
+    /// lines are the same ones, so what is tied to them stays tied: a rectangle laid anew for every figure typed took
+    /// new ids each time, and the ties a snap had given its corners went with the old ones. False when the side is no
+    /// rectangle's.
+    pub fn size_rect(&mut self, si: usize, side: Id, size: crate::model::RectSize) -> bool {
+        let (Some(r), Some(p)) = (self.rect_of(si, side), self.rect_corners(si, side)) else { return false };
+        let unit = |x: f64, y: f64| {
+            let l = x.hypot(y);
+            (l > 1e-12).then(|| Point2::new(x / l, y / l))
+        };
+        let u = unit(p[1].x - p[0].x, p[1].y - p[0].y).unwrap_or(Point2::new(1.0, 0.0));
+        let v = unit(p[3].x - p[0].x, p[3].y - p[0].y).unwrap_or(Point2::new(-u.y, u.x));
+        let (w, h) = (size.width, size.height);
+        // where each corner stands from the first, in order round the rectangle
+        let off = [Point2::new(0.0, 0.0), Point2::new(u.x * w, u.y * w), Point2::new(u.x * w + v.x * h, u.y * w + v.y * h), Point2::new(v.x * h, v.y * h)];
+        let half = Point2::new(off[2].x / 2.0, off[2].y / 2.0);
+        let at = |id: Id| self.sketches[si].points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+        let first = match r.anchor {
+            crate::model::RectAnchor::Corner(c) => {
+                let k = r.corners.iter().position(|&x| x == c).unwrap_or(0);
+                Point2::new(p[k].x - off[k].x, p[k].y - off[k].y)
+            }
+            crate::model::RectAnchor::Centre => {
+                let c = at(r.centre).unwrap_or(Point2::new((p[0].x + p[2].x) / 2.0, (p[0].y + p[2].y) / 2.0));
+                Point2::new(c.x - half.x, c.y - half.y)
+            }
+        };
+        /// A point of the rectangle and where it goes.
+        struct Goes {
+            id: Id,
+            to: Point2,
+        }
+        let mut moved: Vec<Goes> = r.corners.iter().zip(off).map(|(&id, o)| Goes { id, to: Point2::new(first.x + o.x, first.y + o.y) }).collect();
+        moved.push(Goes { id: r.centre, to: Point2::new(first.x + half.x, first.y + half.y) });
+        for q in self.sketches[si].points.iter_mut() {
+            if let Some(g) = moved.iter().find(|g| g.id == q.id) {
+                (q.x, q.y) = (g.to.x, g.to.y);
+            }
+        }
+        true
+    }
     /// THE TWO POINTS A SIZE OF THE SLOT WITH CURVE `curve` IS MEASURED BETWEEN: the centres of its ends for its length,
     /// the two points its sides touch its first end at - twice its radius apart - for its width. `None` when the curve
     /// is no slot's.

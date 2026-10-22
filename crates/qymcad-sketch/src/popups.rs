@@ -273,19 +273,23 @@ pub(crate) fn follow_typed(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
                 sk.project.set_ellipse_turn(si, handle, t.to_radians());
             }
         }
+        // A RECTANGLE GOES WITH ITS SIZES BY ITS CORNERS MOVED, from the corner it was drawn from or about its centre: the
+        // same lines and points, so the ties a snap gave them hold
         PlacingShape::Rect { a, b, ids } => {
-            let nw = w.unwrap_or(1.0);
-            let nh = h.unwrap_or(1.0);
-            let nb = Point2::new(a.x + if b.x < a.x { -nw } else { nw }, a.y + if b.y < a.y { -nh } else { nh });
-            sk.project.delete_entities(si, &ids);
-            let nids = sk.project.add_rect_entity(si, a.x, a.y, nb.x, nb.y, qymcad_core::feature::Purpose::Real);
-            sk.place.shape = PlacingShape::Rect { a, b: nb, ids: nids };
+            let size = qymcad_core::model::RectSize { width: w.unwrap_or(1.0), height: h.unwrap_or(1.0) };
+            let nb = Point2::new(a.x + if b.x < a.x { -size.width } else { size.width }, a.y + if b.y < a.y { -size.height } else { size.height });
+            if let Some(&side) = ids.first() {
+                sk.project.size_rect(si, side, size);
+            }
+            sk.place.shape = PlacingShape::Rect { a, b: nb, ids };
         }
         PlacingShape::RectCenter { center, ids, .. } => {
-            let nb = Point2::new(center.x + w.unwrap_or(1.0) / 2.0, center.y + h.unwrap_or(1.0) / 2.0);
-            sk.project.delete_entities(si, &ids);
-            let nids = sk.project.add_rect_from_centre(si, center, nb, qymcad_core::feature::Purpose::Real);
-            sk.place.shape = PlacingShape::RectCenter { center, corner: nb, ids: nids };
+            let size = qymcad_core::model::RectSize { width: w.unwrap_or(1.0), height: h.unwrap_or(1.0) };
+            let nb = Point2::new(center.x + size.width / 2.0, center.y + size.height / 2.0);
+            if let Some(&side) = ids.first() {
+                sk.project.size_rect(si, side, size);
+            }
+            sk.place.shape = PlacingShape::RectCenter { center, corner: nb, ids };
         }
         PlacingShape::Poly(cid) => {
             if let Some(r) = radius_of(sk.place, "r", qymcad_ui_state::Shown::Radius) {

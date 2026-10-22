@@ -260,45 +260,85 @@ impl Project {
         put(mi, ry, a + half);
     }
 
-    /// THE SIDES OF THE POLYGON ABOUT CENTRE `c` MADE `n`: its vertices and sides laid anew on its circle, at its radius
-    /// and its turn; the circle, its centre and the dimension of its radius stay, and what stood on the old vertices goes
-    /// with them. Answers whether the polygon has `n` sides now.
+    /// THE SIDES OF THE POLYGON ABOUT CENTRE `c` MADE `n`, ITS OWN POINTS AND LINES KEPT: the vertices it has and the
+    /// sides between them stay, set round its circle at its radius and its turn; the ones it gains are added after them,
+    /// the ones it loses go with what stood on them; one side is turned to close it. Only the ties of the figure itself
+    /// are laid anew. Laid anew whole, a polygon whose count was typed took new ids each time, and what held a vertex
+    /// went with it. Answers whether the polygon has `n` sides now.
     pub fn set_polygon_sides(&mut self, si: usize, c: Id, n: u32) -> bool {
         let n = n.max(3) as usize;
-        let verts = self.polygon_vertices(si, c);
-        if verts.len() == n {
-            return true;
-        }
         let (Some((cx, cy, r)), Some(a0)) = (self.polygon_circle(si, c), self.polygon_angle(si, c)) else { return false };
         let Some(s) = self.sketches.get(si) else { return false };
         let Some(circ) = s.entities.iter().find(|e| e.kind.as_circle().is_some_and(|k| k.center == c)).map(|e| e.id) else { return false };
-        let sides: Vec<Id> = s.entities.iter().filter(|e| e.kind.as_line().is_some_and(|l| verts.contains(&l.a) && verts.contains(&l.b))).map(|e| e.id).collect();
-        let construction = s.entities.iter().find(|e| sides.contains(&e.id)).is_some_and(|e| e.construction);
-        self.delete_entities(si, &sides);
-        let s = &mut self.sketches[si];
-        s.constraints.retain(|k| !k.points().iter().any(|p| verts.contains(p)));
-        s.points.retain(|q| !verts.contains(&q.id));
-        s.figures.retain(|f| !f.curves.contains(&circ));
-        let pids: Vec<Id> = (0..n)
-            .map(|k| {
-                let a = a0 + std::f64::consts::TAU * k as f64 / n as f64;
-                let id = self.alloc_id();
-                self.sketches[si].points.push(SketchPoint { id, x: cx + r * a.cos(), y: cy + r * a.sin() });
-                id
-            })
-            .collect();
-        let mut eids = Vec::with_capacity(n);
-        for k in 0..n {
+        let Some(fi) = s.figures.iter().position(|f| f.curves.contains(&circ)) else { return false };
+        let ends = |id: Id| s.entity(id).and_then(|e| e.kind.as_line()).map(|l| [l.a, l.b]);
+        let lines: Vec<Id> = s.figures[fi].curves.iter().copied().filter(|&id| ends(id).is_some()).collect();
+        // THE VERTICES IN ORDER ROUND IT, walked along its sides from the first
+        let Some([v0, mut next]) = lines.first().and_then(|&l| ends(l)) else { return false };
+        let mut verts = vec![v0];
+        let mut sides = vec![lines[0]];
+        while next != v0 && verts.len() <= lines.len() {
+            verts.push(next);
+            let Some(&l) = lines.iter().find(|&&l| !sides.contains(&l) && ends(l).is_some_and(|e| e.contains(&next))) else { return false };
+            sides.push(l);
+            next = ends(l).and_then(|e| e.into_iter().find(|&p| p != next)).unwrap_or(v0);
+        }
+        let m = verts.len();
+        if m == n {
+            return true;
+        }
+        let construction = s.entity(sides[0]).is_some_and(|e| e.construction);
+        // the figure is taken out while its curves change - a curve of it deleted takes the figure with it - and put back
+        // under its own id
+        let figure = self.sketches[si].figures.remove(fi);
+        // side k runs from vertex k to vertex k + 1; the last one closes the polygon on vertex 0
+        let mut pids: Vec<Id> = verts.iter().copied().take(n).collect();
+        let gone: Vec<Id> = verts.iter().copied().skip(n).collect();
+        while pids.len() < n {
             let id = self.alloc_id();
-            self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::LineParts { a: pids[k], b: pids[(k + 1) % n] }.into(), construction });
-            eids.push(id);
+            self.sketches[si].points.push(SketchPoint { id, x: cx, y: cy });
+            pids.push(id);
+        }
+        let set_ends = |p: &mut Project, line: Id, a: Id, b: Id| {
+            if let Some(e) = p.sketches[si].entities.iter_mut().find(|e| e.id == line) {
+                e.kind = crate::model::LineParts { a, b }.into();
+            }
+        };
+        let mut eids: Vec<Id> = sides.iter().copied().take(n.min(m) - 1).collect();
+        if n > m {
+            // the side that closed it goes on from the last old vertex, and the new ones follow to close it again
+            set_ends(self, sides[m - 1], pids[m - 1], pids[m]);
+            eids.push(sides[m - 1]);
+            for k in m..n {
+                let id = self.alloc_id();
+                self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::LineParts { a: pids[k], b: pids[(k + 1) % n] }.into(), construction });
+                eids.push(id);
+            }
+        } else {
+            set_ends(self, sides[n - 1], pids[n - 1], pids[0]);
+            eids.push(sides[n - 1]);
+            let extra: Vec<Id> = sides.iter().copied().skip(n).collect();
+            self.delete_entities(si, &extra);
+        }
+        let sk = &mut self.sketches[si];
+        // the ties of the figure itself: each vertex on the circle, the sides equal
+        let own_tie = |k: &Constraint| match *k {
+            Constraint::PointOnCircle { p, c: cc } => cc == c && verts.contains(&p),
+            Constraint::Equal { a, b, c: cc, d } => [a, b, cc, d].iter().all(|p| verts.contains(p)),
+            _ => false,
+        };
+        sk.constraints.retain(|k| !own_tie(k) && !k.points().iter().any(|p| gone.contains(p)));
+        sk.points.retain(|q| !gone.contains(&q.id));
+        for (k, &p) in pids.iter().enumerate() {
+            let a = a0 + std::f64::consts::TAU * k as f64 / n as f64;
+            if let Some(q) = sk.points.iter_mut().find(|q| q.id == p) {
+                (q.x, q.y) = (cx + r * a.cos(), cy + r * a.sin());
+            }
         }
         let mut own: Vec<Constraint> = pids.iter().map(|&p| Constraint::PointOnCircle { p, c }).collect();
         own.extend((1..n).map(|k| Constraint::Equal { a: pids[0], b: pids[1], c: pids[k], d: pids[(k + 1) % n] }));
-        self.sketches[si].constraints.extend(own.iter().cloned());
-        let id = self.alloc_id();
-        let curves = eids.into_iter().chain([circ]).collect();
-        self.sketches[si].figures.push(SketchFigure { id, shape: FigureShape::Polygon, curves, own });
+        sk.constraints.extend(own.iter().cloned());
+        sk.figures.push(SketchFigure { curves: eids.into_iter().chain([circ]).collect(), own, ..figure });
         self.regen_sketch(si);
         true
     }
