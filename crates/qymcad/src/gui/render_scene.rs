@@ -10,60 +10,159 @@ use super::*;
 // for a frame, refreshing the cache of the selected body's edges.
 impl App {}
 
+/// WHICH BODIES OF THE SUBTREE A RASTER DRAWS.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Bodies {
+    /// Every body of the subtree that has triangles, ticked or not: a part saved to the library is drawn whole.
+    Whole,
+    /// What the root assembly shows with nothing in hand, by the very rule of the viewport (`body_shown`): a body
+    /// consumed by a cut or a boolean, a body or component whose tick is off and the body of a red node stay out.
+    OnScreen,
+}
+
+/// HOW THE BODIES ARE FITTED INTO THE FRAME.
+enum Framing {
+    /// The largest of the three world extents fills this share of the frame.
+    Extent3D(f64),
+    /// The outline projected on the view fills this share of the frame along its longer side.
+    FitScreen2D(f64),
+}
+
+/// The background, the framing and the choice of bodies of one raster.
+struct ThumbnailOptions {
+    bg: egui::Color32,
+    framing: Framing,
+    bodies: Bodies,
+}
+
 /// A preview of component `cid`'s body: a self-contained 256x256 orthographic raster (the isometric view of
 /// the default camera), WITHOUT mutating the camera or visibility state. It renders only the subtree's bodies
-/// in their own frame. `None` means there are no bodies (nothing was built). Used for the product's `thumb.png`.
+/// in their own frame. `None` means nothing was drawn: no body, or bodies without a single triangle facing the
+/// view. Used for the library part's `thumb.png` and the dialogs that show a part.
 pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qymcad_core::model::Id) -> Option<egui::ColorImage> {
+    render_project_mesh_raster(dc.project, &dc.scheme.pal, dc.set.ghost_alpha, cid, ThumbnailOptions { bg: dc.scheme.pal.thumbnail_bg(), framing: Framing::Extent3D(0.42), bodies: Bodies::Whole })
+}
+
+/// THE PREVIEW KEPT IN A PROJECT FILE (`thumb.png` of a `.qcad`), encoded as PNG: what the root assembly shows,
+/// on a transparent background, fitted to 95% of the frame, with the application badge in the lower right
+/// corner. `None` when nothing is drawn - the file then carries no preview at all.
+///
+/// THE COLOURS ARE THE DEFAULT SCHEME'S, not the scheme of whoever saves: the picture belongs to the file, and
+/// one file saved from a light and from a dark scheme gave two different previews - the light scheme raises
+/// the brightness of a body (`body_lighten`, `body_saturate`) and lowers the floor of its shading.
+pub(crate) fn render_project_file_preview_png(project: &qymcad_core::model::Project) -> Option<Vec<u8>> {
+    // no body of the preview is a ghost (`shade_tri` gets `ghost: false`), so the opacity of a ghost is never read
+    let ghost_alpha = u8::MAX;
+    let mut img = render_project_mesh_raster(
+        project,
+        &qymcad_scheme::dark(),
+        ghost_alpha,
+        project.root,
+        ThumbnailOptions { bg: egui::Color32::TRANSPARENT, framing: Framing::FitScreen2D(0.95), bodies: Bodies::OnScreen },
+    )?;
+    overlay_watermark(&mut img);
+    color_image_to_png(&img)
+}
+
+/// The bodies of a raster with their transform relative to `cid` (the part at its own origin).
+fn raster_items(project: &qymcad_core::model::Project, cid: qymcad_core::model::Id, bodies: Bodies) -> Vec<(usize, [f64; 12])> {
+    let mut subtree: std::collections::HashSet<qymcad_core::model::Id> = project.descendants(cid).into_iter().collect();
+    subtree.insert(cid);
+    // THE VIEW OF THE ROOT ASSEMBLY WITH NOTHING IN HAND: no command, no sketch being edited, no context ghosts.
+    // The preview is drawn on a copy of the document in the thread of the save, where the window's own records
+    // are out of reach; these are the records of a window that has just opened the file.
+    let cache = qymcad_ui_state::Caches::default();
+    let regen = qymcad_ui_state::Rebuilding::default();
+    let win = qymcad_ui_state::Windows::default();
+    let cmd = qymcad_ui_state::FeatCommand::default();
+    let armed = qymcad_ui_state::Armed::default();
+    let root = [project.root];
+    let view = qymcad_ui_state::BodyView { armed: &armed, active_path: &root, cache: &cache, cmd: &cmd, project, regen: &regen, sketch_ses: qymcad_ui_state::SketchSession::default(), win: &win };
+    let mut items = Vec::new();
+    for mi in 0..project.bodies.len() {
+        let Some(b) = project.mesh_id(mi) else { continue };
+        let Some(owner) = project.body_owner(b) else { continue };
+        if !subtree.contains(&owner) || project.bodies[mi].mesh.tris.is_empty() {
+            continue;
+        }
+        if bodies == Bodies::OnScreen && !qymcad_ui_state::body_shown(view, mi) {
+            continue;
+        }
+        items.push((mi, project.body_display_transform(b, cid)));
+    }
+    items
+}
+
+fn render_project_mesh_raster(project: &qymcad_core::model::Project, pal: &qymcad_scheme::Palette, ghost_alpha: u8, cid: qymcad_core::model::Id, opts: ThumbnailOptions) -> Option<egui::ColorImage> {
     use qymcad_core::feature::{apply12, is_identity12};
     const TS: usize = 256;
-    let mut subtree: std::collections::HashSet<qymcad_core::model::Id> = dc.project.descendants(cid).into_iter().collect();
-    subtree.insert(cid);
-    // the subtree's bodies + their transform RELATIVE TO cid (the part at its own origin)
-    let mut items: Vec<(usize, [f64; 12])> = Vec::new();
-    for mi in 0..dc.project.bodies.len() {
-        let Some(b) = dc.project.mesh_id(mi) else { continue };
-        if dc.project.body_owner(b).map(|o| subtree.contains(&o)) != Some(true) {
-            continue;
-        }
-        if dc.project.bodies[mi].mesh.verts.is_empty() {
-            continue;
-        }
-        items.push((mi, dc.project.body_display_transform(b, cid)));
-    }
+    let items = raster_items(project, cid, opts.bodies);
     if items.is_empty() {
         return None;
     }
-    // the subtree's world bbox
-    let (mut mn, mut mx) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for &(mi, wt) in &items {
-        let ident = is_identity12(&wt);
-        for v in &dc.project.bodies[mi].mesh.verts {
-            let p = if ident { [v.x, v.y, v.z] } else { apply12(&wt, [v.x, v.y, v.z]) };
-            for a in 0..3 {
-                mn[a] = mn[a].min(p[a]);
-                mx[a] = mx[a].max(p[a]);
-            }
-        }
-    }
-    if !mn[0].is_finite() {
-        return None;
-    }
-    let center = [(mn[0] + mx[0]) / 2.0, (mn[1] + mx[1]) / 2.0, (mn[2] + mx[2]) / 2.0];
-    let ext = (mx[0] - mn[0]).max(mx[1] - mn[1]).max(mx[2] - mn[2]).max(1e-3);
     let (right, up, fwd) = Cam3::default().basis(); // a fixed isometric view, independent of the current camera
+    let (center_u, center_v, s) = match opts.framing {
+        Framing::Extent3D(fill) => {
+            let (mut mn, mut mx) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            for &(mi, wt) in &items {
+                let ident = is_identity12(&wt);
+                for v in &project.bodies[mi].mesh.verts {
+                    let p = if ident { [v.x, v.y, v.z] } else { apply12(&wt, [v.x, v.y, v.z]) };
+                    for a in 0..3 {
+                        mn[a] = mn[a].min(p[a]);
+                        mx[a] = mx[a].max(p[a]);
+                    }
+                }
+            }
+            if !mn[0].is_finite() {
+                return None;
+            }
+            let center = [(mn[0] + mx[0]) / 2.0, (mn[1] + mx[1]) / 2.0, (mn[2] + mx[2]) / 2.0];
+            let ext = (mx[0] - mn[0]).max(mx[1] - mn[1]).max(mx[2] - mn[2]).max(1e-3);
+            let s = (TS as f64 * fill) / ext;
+            (v_dot(center, right), v_dot(center, up), s)
+        }
+        Framing::FitScreen2D(fill) => {
+            let (mut mn_u, mut mx_u) = (f64::INFINITY, f64::NEG_INFINITY);
+            let (mut mn_v, mut mx_v) = (f64::INFINITY, f64::NEG_INFINITY);
+            for &(mi, wt) in &items {
+                let ident = is_identity12(&wt);
+                for v in &project.bodies[mi].mesh.verts {
+                    let p = if ident { [v.x, v.y, v.z] } else { apply12(&wt, [v.x, v.y, v.z]) };
+                    let u = v_dot(p, right);
+                    let v = v_dot(p, up);
+                    mn_u = mn_u.min(u);
+                    mx_u = mx_u.max(u);
+                    mn_v = mn_v.min(v);
+                    mx_v = mx_v.max(v);
+                }
+            }
+            if !mn_u.is_finite() {
+                return None;
+            }
+            let span_u = (mx_u - mn_u).max(1e-4);
+            let span_v = (mx_v - mn_v).max(1e-4);
+            let cu = (mn_u + mx_u) / 2.0;
+            let cv = (mn_v + mx_v) / 2.0;
+            let target = (TS as f64) * fill;
+            let s = (target / span_u).min(target / span_v);
+            (cu, cv, s)
+        }
+    };
     let lights = qymcad_ui_state::scene_lights(&(right, up, fwd));
-    let s = (TS as f64 * 0.42) / ext; // the scale that fits it into the frame
     let hc = TS as f64 / 2.0;
     let proj = |p: [f64; 3]| -> (f64, f64, f64) {
-        let dv = [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
-        (hc + v_dot(dv, right) * s, hc - v_dot(dv, up) * s, v_dot(dv, fwd)) // (x, y, depth along the view)
+        let u = v_dot(p, right);
+        let v = v_dot(p, up);
+        let depth = v_dot(p, fwd);
+        (hc + (u - center_u) * s, hc - (v - center_v) * s, depth)
     };
     let ef = |ux: f64, uy: f64, vx: f64, vy: f64, px: f64, py: f64| (vx - ux) * (py - uy) - (vy - uy) * (px - ux);
-    let mut color = vec![dc.scheme.pal.thumbnail_bg(); TS * TS]; // a dark background, as in the viewport
+    let mut color = vec![opts.bg; TS * TS];
     let mut zbuf = vec![f64::INFINITY; TS * TS];
     for &(mi, wt) in &items {
-        let mesh = &dc.project.bodies[mi].mesh;
-        let base = dc.project.mesh_color(mi);
+        let mesh = &project.bodies[mi].mesh;
+        let base = project.mesh_color(mi);
         let ident = is_identity12(&wt);
         let pw = |vi: u32| {
             let p = mesh.verts[vi as usize];
@@ -82,7 +181,7 @@ pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qym
             if v_dot(n, fwd) >= 0.0 {
                 continue; // the bodies are oriented outwards
             }
-            let col = qymcad_pick::shade_tri(&dc.scheme.pal, dc.set.ghost_alpha, false, false, base, n, &lights);
+            let col = qymcad_pick::shade_tri(pal, ghost_alpha, false, false, base, n, &lights);
             let (ax, ay, az) = proj(a);
             let (bx, by, bz) = proj(b);
             let (cx, cy, cz) = proj(cc);
@@ -111,7 +210,56 @@ pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qym
             }
         }
     }
+    if zbuf.iter().all(|&z| z.is_infinite()) {
+        return None;
+    }
     Some(egui::ColorImage { size: [TS, TS], source_size: egui::Vec2::new([TS, TS][0] as f32, [TS, TS][1] as f32), pixels: color })
+}
+
+fn overlay_watermark(img: &mut egui::ColorImage) {
+    let [width, height] = img.size;
+    let pixels = &mut img.pixels;
+    let Some(logo) = watermark_logo() else { return };
+    let (lw, lh) = logo.dimensions();
+    let (lw, lh) = (lw as usize, lh as usize);
+    const MARGIN: usize = 8;
+    if width < lw + MARGIN || height < lh + MARGIN {
+        return;
+    }
+    let start_x = width - lw - MARGIN;
+    let start_y = height - lh - MARGIN;
+    for ly in 0..lh {
+        for lx in 0..lw {
+            let sp = logo.get_pixel(lx as u32, ly as u32);
+            let sa = sp[3] as f32 / 255.0;
+            if sa <= 1e-4 {
+                continue;
+            }
+            let idx = (start_y + ly) * width + (start_x + lx);
+            // the channels of the frame in straight alpha, as those of the badge are: `Color32` holds them premultiplied
+            let dst = pixels[idx].to_srgba_unmultiplied();
+            let da = dst[3] as f32 / 255.0;
+            let out_a = sa + da * (1.0 - sa);
+            if out_a > 1e-4 {
+                let sr = sp[0] as f32;
+                let sg = sp[1] as f32;
+                let sb = sp[2] as f32;
+                let dr = dst[0] as f32;
+                let dg = dst[1] as f32;
+                let db = dst[2] as f32;
+                let out_r = ((sr * sa + dr * da * (1.0 - sa)) / out_a).round().min(255.0) as u8;
+                let out_g = ((sg * sa + dg * da * (1.0 - sa)) / out_a).round().min(255.0) as u8;
+                let out_b = ((sb * sa + db * da * (1.0 - sa)) / out_a).round().min(255.0) as u8;
+                let out_a_u8 = (out_a * 255.0).round().min(255.0) as u8;
+                pixels[idx] = egui::Color32::from_rgba_unmultiplied(out_r, out_g, out_b, out_a_u8);
+            }
+        }
+    }
+}
+
+fn watermark_logo() -> Option<&'static image::RgbaImage> {
+    static BADGE: std::sync::OnceLock<Option<image::RgbaImage>> = std::sync::OnceLock::new();
+    BADGE.get_or_init(|| crate::gui::startup::app_logo().map(|logo| image::imageops::resize(logo, 64, 64, image::imageops::FilterType::Lanczos3))).as_ref()
 }
 
 /// Assemble the scene's vertices for the GPU: world triangles + the face normal (for culling in the

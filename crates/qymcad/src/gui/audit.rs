@@ -128,8 +128,7 @@ mod live_session {
         // 5. SAVING AND OPENING: the volume must match
         let path = std::env::temp_dir().join("qym_audit.qcad");
         let p = path.to_string_lossy().to_string();
-        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, p.clone(), false);
-        app.wait_bg();
+        crate::gui::io_jobs::save_for_test(&mut app, crate::gui::io_jobs::SaveTask { path: p.clone(), kind: crate::gui::io_jobs::SaveKind::File });
         let mut app2 = App::default();
         match qymcad_io::load_project(&p) {
             Err(e) => fails.push(format!("5. opening what was saved: {e}")),
@@ -298,8 +297,7 @@ mod live_session {
 
         let path = std::env::temp_dir().join("qym_audit_open.qcad");
         let p = path.to_string_lossy().to_string();
-        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, p.clone(), false);
-        app.wait_bg();
+        crate::gui::io_jobs::save_for_test(&mut app, crate::gui::io_jobs::SaveTask { path: p.clone(), kind: crate::gui::io_jobs::SaveKind::File });
         let proj = qymcad_io::load_project(&p).expect("the opening");
         app.finish_project_load(p, proj, Vec::new());
 
@@ -531,7 +529,14 @@ mod live_session {
         let before = vol(&app);
 
         let path = std::env::temp_dir().join("qym_bg_edit.qcad").to_string_lossy().to_string();
-        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path.clone(), false);
+        crate::gui::io_jobs::spawn_save(
+            &mut app.disk.io,
+            &mut app.live,
+            &mut app.project,
+            &mut app.regen,
+            &mut app.status,
+            crate::gui::io_jobs::SaveTask { path: path.clone(), kind: crate::gui::io_jobs::SaveKind::File },
+        );
         // WHILE THE WRITE IS UNDER WAY the document is edited
         let si2 = rect(&mut app, 30.0, 0.0, 60.0, 10.0); // ACROSS the edge of the plate: inside it the union adds nothing, apart from it the part would be two pieces
         app.chosen.sel = Sel::Sketch(si2);

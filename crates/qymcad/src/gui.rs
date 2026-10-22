@@ -155,7 +155,7 @@ pub(crate) struct App {
 #[derive(Clone, Default)]
 pub(crate) struct DocIo {
     /// a write was requested while the previous one was still running (the last one wins)
-    pub save_request: Option<(String, bool)>,
+    pub save_request: Option<io_jobs::SaveTask>,
     /// the state keys AWAITING the thread's confirmation: applied only on success
     pub saved_key: Option<u64>,
     pub autosave_key: Option<u64>,
@@ -1183,19 +1183,6 @@ impl App {
         self.request_nav(nav, &ctx);
     }
 
-    /// Test facades for saving: a test must take the same path as Save does.
-    #[cfg(test)]
-    pub(crate) fn save_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
-        self.wait_bg();
-    }
-
-    #[cfg(test)]
-    pub(crate) fn autosave_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
-        self.wait_bg();
-    }
-
     #[cfg(test)]
     pub(crate) fn execute_deferred_delete_for_test(&mut self) {
         if let Some(sel) = self.deferred.delete.take() {
@@ -1875,13 +1862,17 @@ pub(crate) fn shade_tri_for_test(pal: &crate::palette::Palette, ghost_alpha: u8,
     qymcad_pick::shade_tri(pal, ghost_alpha, hot, ghost, base, n, lights)
 }
 
-/// A PNG out of a `ColorImage` (RGBA8) — for the `thumb.png` inside a `.qpart`. Uses `image` with its png feature.
+/// A PNG out of a `ColorImage` (RGBA8) — for the `thumb.png` inside a `.qpart` and a `.qcad`. Uses `image` with its png feature.
+///
+/// A PNG holds STRAIGHT alpha while a `Color32` holds premultiplied: written as it is held, a pixel at half
+/// opacity came out of the file at half its brightness, and the antialiased rim of the badge on a transparent
+/// preview was a dark fringe.
 pub(crate) fn color_image_to_png(img: &egui::ColorImage) -> Option<Vec<u8>> {
     use image::ImageEncoder;
     let (w, h) = (img.size[0] as u32, img.size[1] as u32);
     let mut rgba: Vec<u8> = Vec::with_capacity(img.pixels.len() * 4);
     for p in &img.pixels {
-        rgba.extend_from_slice(&p.to_array());
+        rgba.extend_from_slice(&p.to_srgba_unmultiplied());
     }
     let mut png = Vec::new();
     image::codecs::png::PngEncoder::new(&mut png).write_image(&rgba, w, h, image::ExtendedColorType::Rgba8).ok()?;
