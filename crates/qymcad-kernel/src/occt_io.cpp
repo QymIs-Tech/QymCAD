@@ -358,6 +358,13 @@ static QymShape* off_seams_first(const QymShape* s, const uint32_t* idx, size_t 
 static QymShape* off_seams(const QymShape* s, const uint32_t* idx, size_t n, const std::function<QymShape*(const QymShape*)>& op);
 static std::vector<uint32_t> every_edge(const QymShape* s);
 
+// A RESULT ITS OPERATION CHECKED SOUND (`BRepCheck_Analyzer` on the shape it hands over), marked so: the check is not
+// run on it again by the wrap of the result or by the door.
+static QymShape* checked(QymShape* q) {
+    if (q) q->valid_memo = 1;
+    return q;
+}
+
 // The body of its own, said in `occt_common.hpp`.
 QymShape qym_own_copy(const QymShape& s) {
     BRepBuilderAPI_Copy copier(s.shape);
@@ -387,6 +394,7 @@ extern "C" QymShape* qym_shape_own_copy(const QymShape* s) {
         QYM_SIGNALS;
         QymShape* out = new QymShape(qym_own_copy(*s));
         out->volume_memo = s->volume_memo;
+        out->valid_memo = s->valid_memo;
         out->bbox_known = s->bbox_known;
         for (int i = 0; i < 6; ++i) out->bbox_memo[i] = s->bbox_memo[i];
         return out;
@@ -476,7 +484,7 @@ extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
         // through the door of the result: the names of the body carried, a face cut in pieces recorded as its pieces,
         // what the fillets made numbered for the rule of the bridge
         QymBuilderHistory history(mk);
-        return qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}});
+        return checked(qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}}));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -504,7 +512,7 @@ extern "C" QymShape* qym_shape_chamfer_all(const QymShape* s, double d) {
             return why("chamfer/build", "the kernel could not bevel every edge of the body at this setback"), nullptr;
         }
         QymBuilderHistory history(mk);
-        return qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}});
+        return checked(qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}}));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1286,7 +1294,6 @@ extern "C" int qym_shape_drop_slivers(QymShape* s, double width) {
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
-        s->volume_memo = -1.0;
         width = std::max(width, 1e-5);
         int cracks = 0, before = 0; // not `small`: a macro of the Windows headers
         for (TopExp_Explorer fx(s->shape, TopAbs_FACE); fx.More(); fx.Next()) {
@@ -1638,13 +1645,11 @@ static QymShape* off_seams(const QymShape* s, const uint32_t* idx, size_t n, con
     ++again;
     QymShape* q = op(&moved);
     --again;
-    // the lines the moving left are glued away: the part keeps the faces it had, with the blend on it - and the faces
-    // the blend noted as made are of the body before the glue, not of this one
+    // the lines the moving left are glued away: the part keeps the faces it had, with the blend on it - and what the
+    // blend knew of its body before the glue (checked sound, the faces it made) is of that body, not of this one
     if (q) {
         q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed);
-        q->fresh.Clear();
-        q->fresh_known = false;
-        q->bbox_known = false;
+        forget_marks(*q);
     }
     return q;
 }
@@ -1683,7 +1688,7 @@ extern "C" QymShape* qym_shape_fillet_edges(const QymShape* s, double r, const u
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1750,7 +1755,7 @@ extern "C" QymShape* qym_shape_fillet_at_vertices(const QymShape* s, double r_de
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1779,7 +1784,7 @@ extern "C" QymShape* qym_shape_fillet_var(const QymShape* s, double r1, double r
             return why("fillet/build", "the kernel could not round these edges with a radius running between the two ends"), nullptr;
         }
         QymBuilderHistory history(mk);
-        return qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}});
+        return checked(qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}}));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1808,7 +1813,7 @@ extern "C" QymShape* qym_shape_chamfer_edges(const QymShape* s, double d, const 
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1882,7 +1887,7 @@ extern "C" QymShape* qym_shape_chamfer_edges_asym(const QymShape* s, double a, d
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }

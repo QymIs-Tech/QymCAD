@@ -514,8 +514,7 @@ QymShape* qym_result(QymHistory& history, const TopoDS_Shape& res, const QymResu
     }
     if (spec.unify) {
         q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed); // THE MONOLITH: merge the boolean's seam
-        q->fresh.Clear();
-        q->fresh_known = false;
+        forget_marks(*q);
     }
     return q.release();
 }

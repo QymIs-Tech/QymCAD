@@ -2,6 +2,7 @@
 //! crate because the operations that build are closed to every other crate - a tool of the window asks the bridge
 //! (`ask`) or goes through the door, it does not build.
 
+mod a_blend_glued_after_a_seam_moved_is_checked_afresh;
 mod a_blend_is_boxed_by_its_new_faces;
 mod a_checked_volume_is_counted_once;
 mod a_fault_of_occt_is_a_refusal;

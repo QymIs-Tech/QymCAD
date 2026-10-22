@@ -250,6 +250,8 @@ extern "C" {
     fn qym_shape_bbox_exact(s: *const QymShape, out: *mut f64) -> i32;
     fn qym_shape_bbox_poles(s: *const QymShape, out: *mut f64) -> i32;
     fn qym_shape_bbox_exact_fresh(got: *const QymShape, out: *mut f64) -> i32;
+    #[cfg(test)]
+    fn qym_shape_marks(s: *const QymShape, out: *mut i32) -> i32;
     fn qym_shape_is_valid(s: *const QymShape) -> i32;
     fn qym_shape_min_round_radius(s: *const QymShape) -> f64;
     fn qym_shape_solid_count(s: *const QymShape) -> i32;

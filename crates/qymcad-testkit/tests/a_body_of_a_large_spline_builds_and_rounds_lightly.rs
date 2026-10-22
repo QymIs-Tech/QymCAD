@@ -14,6 +14,18 @@ use qymcad_core::model::{Id, Project};
 use qymcad_core::time_budget::{cost_of, over, tell, within, Doer};
 use std::time::Duration;
 
+/// A LOOP OF THE SKETCH AND ITS AREA, for the one that holds the others.
+struct Loop {
+    id: Id,
+    area: f64,
+}
+
+/// THE OUTER LOOP OF THE SKETCH `s`: the one of the largest area, which holds the others.
+fn outer_loop(p: &Project, s: &qymcad_core::model::Sketch) -> Option<Id> {
+    let loops = s.contour_ids.iter().copied().filter_map(|id| p.contour_index(id).map(|i| Loop { id, area: p.contours[i].area().abs() }));
+    loops.max_by(|a, b| a.area.total_cmp(&b.area)).map(|l| l.id)
+}
+
 /// The budget of the extrusion of the ring.
 const EXTRUDED_IN: Duration = Duration::from_millis(1_000);
 /// The budget of the rounding of its edge.
@@ -48,7 +60,7 @@ fn a_ring_of_a_large_spline_extrudes_and_rounds_lightly() {
     let source = Curve::of(s, s.entity(spline).expect("the spline")).expect("its curve");
     let pieces = s.entities.iter().filter(|e| e.id != spline && e.kind.as_spline().is_some()).count();
     // the ring is the region of the loop that holds the other
-    let outer = s.contour_ids.iter().copied().filter_map(|id| p.contour_index(id).map(|i| (id, p.contours[i].area().abs()))).max_by(|a, b| a.1.total_cmp(&b.1)).map(|(id, _)| id);
+    let outer = outer_loop(&p, s);
     let body: Id = p.add_extrude_on(sid, outer.expect("setup: the loops"), 10.0, Reach::Forward, 0.0);
     p.finish_base_body(body, 1);
     let mut failures = Vec::new();
@@ -80,4 +92,42 @@ fn a_ring_of_a_large_spline_extrudes_and_rounds_lightly() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// THE BODY OF THE RING, ROUNDED, IS CHECKED SOUND ONCE: asked a second time whether it is a sound solid, it answers from
+/// what it knows, with a tenth of the work of the first time at most. The check ran on every result of a blend three
+/// times over - in the operation, in the wrap of its result, in the door - 100 ms a time on a body of 80 faces.
+#[test]
+fn the_ring_rounded_is_checked_sound_once() {
+    let mut p = Project::default();
+    p.new_document();
+    let c = p.add_part("A");
+    p.set_active_component(Some(c));
+    let si = p.new_sketch("s");
+    let sid = p.sketches[si].id;
+    p.add_sketch_node(sid, "s");
+    let spline = p.add_spline(si, nodes(), Ends::Closed, Purpose::Real).expect("setup: the spline");
+    assert!(p.offset_entities(si, &[spline], -5.0) > 0, "setup: the spline is not offset");
+    p.solve_sketch(si);
+    p.regen_sketch(si);
+    let s = &p.sketches[si];
+    let source = Curve::of(s, s.entity(spline).expect("the spline")).expect("its curve");
+    let outer = outer_loop(&p, s);
+    let body: Id = p.add_extrude_on(sid, outer.expect("setup: the loops"), 10.0, Reach::Forward, 0.0);
+    p.finish_base_body(body, 1);
+    let _ = qymcad_testkit::regenerate(&mut p);
+    let rim: Vec<u32> = p.regen_edges.get(&body).into_iter().flatten().filter(|e| e.mid[2] > 9.9 && source.nearest(Point2::new(e.mid[0], e.mid[1])).off < 0.05).map(|e| e.id).collect();
+    assert!(!rim.is_empty(), "setup: no edge of the top lies along the spline");
+    let rounded = p.add_fillet(body, 1.0, rim);
+    let (rep, shapes) = qymcad_testkit::regenerate(&mut p);
+    assert!(rep.errors.is_empty(), "setup: the edge along the spline did not round: {:?}", rep.errors);
+    // the body as it comes back from its bytes, as a trial build reads it: nothing known of it yet
+    let bytes = shapes.get(&rounded).and_then(|s| s.to_brep_bytes()).expect("setup: the rounded ring has no bytes");
+    let fresh = qymcad_kernel::specimen::read(&bytes).expect("setup: the rounded ring does not read back");
+    let first = cost_of(Doer::Thread, || fresh.is_valid());
+    let second = cost_of(Doer::Thread, || fresh.is_valid());
+    tell("the rounded ring checked", first.cost);
+    tell("the rounded ring checked again", second.cost);
+    assert!(first.out && second.out, "the rounded ring is not a sound solid");
+    assert!(second.cost.work * 10 <= first.cost.work, "the body checked sound was checked again: {:?} the first time, {:?} the second", first.cost.work, second.cost.work);
 }

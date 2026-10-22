@@ -856,6 +856,15 @@ extern "C" int qym_shape_bbox_exact_fresh(const QymShape* got, double* out) {
     }
 }
 
+// WHAT IS KNOWN OF A BODY, for a check: whether it is marked checked sound, whether the faces it made are known.
+extern "C" int qym_shape_marks(const QymShape* s, int* out) {
+    QYM_AS_HANDED(s, "it only reads the marks of the body");
+    if (!s || !out) return 0;
+    out[0] = s->valid_memo;
+    out[1] = s->fresh_known ? 1 : 0;
+    return 1;
+}
+
 
 // B-rep validity (BRepCheck_Analyzer): 1 for a valid solid, 0 for a broken or self-intersecting one. It lets
 // operations fail gracefully when the kernel "builds" them (IsDone = true) but the result is geometrically
@@ -871,11 +880,7 @@ extern "C" int qym_shape_heal_pinched_faces(QymShape* s) {
     try {
         QYM_SIGNALS;
         const int healed = heal_pinched_faces(s->shape, s->fids, s->eids, s->fsplit_of, s->fsplit_idx);
-        if (healed > 0) {
-            s->volume_memo = -1.0;
-            s->fresh.Clear();
-            s->fresh_known = false;
-        }
+        if (healed > 0) forget_marks(*s);
         return healed;
     } catch (...) { return 0; } // it did not work out; the solid stays as it was, no worse
 }
@@ -1591,7 +1596,9 @@ extern "C" int qym_shape_is_valid(const QymShape* s) {
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
+        if (s->valid_memo >= 0) return s->valid_memo;
         BRepCheck_Analyzer an(s->shape, Standard_True);
+        s->valid_memo = an.IsValid() ? 1 : 0;
         if (an.IsValid()) return 1;
         if (getenv("QYM_WHY_INVALID")) {
             {   // TWO QUESTIONS AT ONCE: is the shape valid without the GEOMETRIC checks, and is it fixable.

@@ -2,6 +2,13 @@
 
 use super::*;
 
+/// WHAT IS KNOWN OF A BODY, for a check of the marks.
+#[cfg(test)]
+pub(crate) struct Marks {
+    pub(crate) checked_sound: bool,
+    pub(crate) made_faces_known: bool,
+}
+
 impl Shape {
     /// The volume of the body, in mm³, through `GProp`, for tests and geometric checks.
     pub fn volume(&self) -> f64 {
@@ -188,6 +195,13 @@ impl Shape {
     pub(crate) fn bbox_exact_of_new_faces(&self) -> Option<[f64; 6]> {
         let mut out = [0.0f64; 6];
         (unsafe { qym_shape_bbox_exact_fresh(self.ptr, out.as_mut_ptr()) } == 1).then_some(out)
+    }
+    /// WHAT IS KNOWN OF THE BODY, for a check: marked checked sound or not, the faces it made known or not.
+    #[cfg(test)]
+    pub(crate) fn marks(&self) -> Marks {
+        let mut out = [0i32; 2];
+        let _ = unsafe { qym_shape_marks(self.ptr, out.as_mut_ptr()) };
+        Marks { checked_sound: out[0] == 1, made_faces_known: out[1] == 1 }
     }
     /// A BLEND OF EDGES STAYS IN ITS BODY. A fillet or a chamfer takes material off a convex edge and puts it into a
     /// concave corner: either way the result stands inside the box of the body it was made from - give or take `reach`,
