@@ -227,7 +227,10 @@ impl Project {
         // the reference dimensions on the part measure what it moved
         let ends: std::collections::HashSet<Id> = t.driven.iter().filter_map(|&i| s.constraints.get(i)).flat_map(|c| c.points()).collect();
         let pos: std::collections::HashMap<Id, (f64, f64)> = s.points.iter().filter(|p| ends.contains(&p.id)).map(|p| (p.id, (p.x, p.y))).collect();
-        let crad: std::collections::HashMap<Id, f64> = s.entities.iter().filter_map(|e| e.kind.as_circle()).filter(|k| ends.contains(&k.center)).map(|k| (k.center, k.r)).collect();
+        // a circle's radius, and an arc's from its first end, as `update_driven_dims` reads them: the points of the part
+        let near: std::collections::HashMap<Id, Point2> = t.points.iter().map(|&i| (s.points[i].id, Point2::new(s.points[i].x, s.points[i].y))).collect();
+        let crad: std::collections::HashMap<Id, f64> =
+            s.entities.iter().filter_map(|e| e.kind.circle_by(&|id| near.get(&id).copied())).filter(|k| ends.contains(&k.center)).map(|k| (k.center, k.r)).collect();
         for &i in &t.driven {
             if let Some(c) = s.constraints.get_mut(i) {
                 measure_driven(c, &pos, &crad);
