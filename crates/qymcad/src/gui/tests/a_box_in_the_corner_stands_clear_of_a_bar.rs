@@ -3,8 +3,8 @@
 //! Reported behaviour: the box of a pattern stood over the buttons of the tools laid along the top, in every workbench.
 #[cfg(test)]
 mod tests {
-    use super::super::hand::Hand;
-    use super::super::{App, Sel};
+    use crate::gui::hand::Hand;
+    use crate::gui::{App, Sel};
     use qymcad_core::feature::SketchPlane;
 
     #[test]

@@ -53,6 +53,9 @@ mod a_sketch_tool_outside_a_sketch_says_so;
 mod the_doors_of_a_tool;
 
 #[cfg(test)]
+mod a_box_in_the_corner_stands_clear_of_a_bar;
+
+#[cfg(test)]
 mod the_floor_fades_round_the_view;
 
 #[cfg(test)]
