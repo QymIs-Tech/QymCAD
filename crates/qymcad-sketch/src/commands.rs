@@ -432,7 +432,12 @@ pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
         // selected the switch says what is drawn next
         Launch::Construction => qymcad_ui_state::construction_toggle(qymcad_ui_state::editing_in!(bc), &*bc.sel_sk, &*bc.sketch_ses, &mut bc.tool.construction),
         Launch::Modify(tool) => qymcad_ui_state::modify_button(qymcad_ui_state::editing_in!(bc), &mut qymcad_ui_state::tools_in!(bc), *bc.sk_pat, &*bc.tool_prefs, tool),
-        Launch::SkPattern(n) => start_pattern(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, n),
+        Launch::SkPattern(n) => {
+            start_pattern(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, n);
+            if n == qymcad_ui_state::PatternKind::Circular {
+                centre_selected_before(bc);
+            }
+        }
         Launch::ClickOp(n) if n.of_corner() => qymcad_ui_state::start_corner_tool(bc, n),
         Launch::ClickOp(n) => {
             qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, n);
@@ -483,6 +488,19 @@ pub fn start_pattern(t: &mut qymcad_ui_state::Tools, status: &mut qymcad_ui_stat
     pat.edit = None;
     pat.center = None;
     *status = Notice::info(qymcad_i18n::tr(if op == qymcad_ui_state::PatternKind::Circular { "msg-circ-array-sketch" } else { "msg-lin-array-sketch" }));
+}
+
+/// A POINT SELECTED BEFORE A CIRCULAR PATTERN IS ITS CENTRE, as a point clicked with the tool in hand is: taken out of
+/// what is repeated, and the pattern waits for nothing more than Enter. A point standing alone is a shape of its own, and
+/// is repeated; the origin, an end or a centre is a place to turn about.
+fn centre_selected_before(bc: &mut qymcad_ui_state::BarCtx) {
+    let qymcad_ui_state::Sel::Sketch(si) = *bc.sel else { return };
+    let project = &*bc.project;
+    let Some(i) = bc.sel_sk.items.iter().position(|it| it.kind == qymcad_ui_state::ItemKind::Point && !qymcad_ui_state::point_alone(project, si, it.id)) else { return };
+    let Some(at) = qymcad_ui_state::sketch_pt(&*bc.project, si, bc.sel_sk.items[i].id) else { return };
+    bc.pat.center = Some(at);
+    bc.sel_sk.items.remove(i);
+    *bc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("sk-centre-set-params"));
 }
 
 /// THE SWITCHES OF A SKETCH on the bar of the path: while a shape is drawn point by point, closing, finishing or

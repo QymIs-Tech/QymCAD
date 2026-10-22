@@ -139,11 +139,10 @@ impl qymcad_shell::Fills for App {
         let (mut bar_asks, mut win_asks) = (Vec::new(), Vec::new());
         match key {
             "command_bar" => {
-                // ONE ROW TALL, empty or not, in the part and the assembly, so taking a tool or putting it down moves
-                // neither the view nor the panels; a sketch's own bar grows by its rows
-                if edit_si(&self.project, &self.sketch_ses).is_none() {
-                    ui.set_min_height(qymcad_ui_state::command_bar_row(ui));
-                }
+                // ONE ROW TALL AT LEAST, empty or not, in every workbench, so taking a tool or putting it down moves
+                // neither the view nor the panels; a sketch's own bar grows past it by its rows. Without it the
+                // outlined Apply and Cancel of a pattern of a sketch stood the bar 1 point taller than the arrow did.
+                ui.set_min_height(qymcad_ui_state::command_bar_row(ui));
                 if let Some(k) = COMMAND_BARS.into_iter().find(|k| self.live(k)) {
                     // ONE ID FOR THE PLACE, whatever bar stands in it: one bar of a command giving way to another lays its
                     // widgets where the last one's stood, and under the key of each bar egui marked the whole strip with a

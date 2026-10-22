@@ -22,6 +22,9 @@ pub fn cmd_place(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::P
             // arrow, and the arrow could hardly be seen or taken.
             Some(Place::by(By::Arrow { base, tip: [base[0] + dir[0] * h, base[1] + dir[1] * h, base[2] + dir[2] * h] }))
         }
+        // THE STITCH STANDS BY THE SHEETS IT HOLDS: with none it stands where it stood before the first, not by the sheet
+        // the selection still names after the last was clicked away
+        Some(qymcad_ui_state::PartTool::Stitch) => pc.stitch_parts.first().map(|b| Place::by(By::Body(*b))),
         // EVERYTHING AIMED BY CLICKING A BODY KEEPS ITS POPUP BESIDE THE BODY.
         //
         // The fillet and the chamfer already did that, while the hole put its field right at the face
@@ -46,7 +49,6 @@ pub fn cmd_place(pc: &mut qymcad_ui_state::PartCtx) -> Option<qymcad_ui_state::P
         | Some(qymcad_ui_state::PartTool::FaceCopy)
         | Some(qymcad_ui_state::PartTool::SurfaceReplace)
         | Some(qymcad_ui_state::PartTool::Patch)
-        | Some(qymcad_ui_state::PartTool::Stitch)
         | Some(qymcad_ui_state::PartTool::Trim)
         | Some(qymcad_ui_state::PartTool::Recognise)
         | Some(qymcad_ui_state::PartTool::OffsetSurface) => {

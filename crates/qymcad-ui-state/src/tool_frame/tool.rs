@@ -205,7 +205,14 @@ fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, kept: &K
         // THE TEXT TYPED STAYS while it is what the number comes to: a formula typed in the sides of a polygon came back a
         // number once the keyboard went to the driver beside it, and the polygon took no formula
         let typing = ctx.memory(|m| m.has_focus(field_id(tool, key.name)));
-        let holds = |t: &String| typing || kept.project.eval_expr(t).is_ok_and(|v| (v - *value).abs() < 1e-9);
+        // a text refused - by its form or by the limits of the field - stays as typed, with the words of why under it;
+        // only a text the field takes that reads another number now - the value set from elsewhere - gives way to it
+        let params = kept.project.param_map();
+        let holds = |t: &String| {
+            let mut tried = p.clone();
+            tried.txt = t.clone();
+            typing || super::field_value(&tried, &params).map_or(true, |v| (v - *value).abs() < 1e-9)
+        };
         p.txt = kept.texts.and_then(|t| t.get(key.name)).filter(|t| holds(t)).cloned().unwrap_or_else(|| qymcad_core::expr::fmt_num(*value));
         // the bar names the unit of its number, or none: a ratio is not a length
         p.unit = limits.unit.map_or(UnitOf::Bare, UnitOf::Key);

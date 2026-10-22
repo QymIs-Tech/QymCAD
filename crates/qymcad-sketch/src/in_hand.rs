@@ -110,7 +110,11 @@ fn now(sk: &qymcad_ui_state::SketchCtx) -> Now {
         return Now::FilletAll;
     }
     // EDIT -> COPY, CUT, INSERT hold the hand too: the base point or the place is awaited. Their words stood only in the
-    // status line, and the bar said "Select" over a click that would copy.
+    // status line, and the bar said "Select" over a click that would copy. Another tool taken over them is what is in
+    // hand, and puts them down.
+    if !matches!(*sk.armed, qymcad_ui_state::Armed::None) {
+        return Now::Tool;
+    }
     if let Some((_, cut)) = sk.clip.geom_pending.as_ref() {
         return Now::Waiting(if *cut { Wait { name: "menu-cut", ask: "g-cut-base-point" } } else { Wait { name: "tool-copy", ask: "g-copy-base-point" } });
     }
@@ -320,6 +324,9 @@ impl FramedTool for InSketch<'_, '_> {
                 let bar = tool_opts(sk);
                 let name = tool_name(sk.armed);
                 let pattern = sk.armed.pattern().is_some();
+                // A CIRCULAR PATTERN TURNS ABOUT A CENTRE CLICKED: Enter before it is refused in words, and nothing is made
+                let no_centre = sk.armed.pattern() == Some(qymcad_ui_state::PatternKind::Circular) && sk.pat.center.is_none();
+                let placing_text = sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Text) && sk.inline.text().is_none();
                 // a text, a move and a copy do one thing too, finished by a click (`finished_by_click`)
                 let by_click = sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Text) || sk.armed.moving().is_some();
                 let empty = matches!(*sk.armed, qymcad_ui_state::Armed::None);
@@ -350,7 +357,15 @@ impl FramedTool for InSketch<'_, '_> {
                 if self.boxed == Boxed::Shape {
                     bar.retain(|o| !matches!(o, Opt::Number { key, .. } if key.name == "sk_circle_touching_r"));
                 }
-                let mut d = Described { head: Head { after, ..head(name, ends) }, bar, gate: self.gate.clone(), says: Vec::new(), boxed };
+                let gate = if no_centre {
+                    Gate::Waiting(qymcad_i18n::tr("opt-click-rotation-centre"))
+                } else if placing_text && self.boxed == Boxed::Nothing {
+                    // A TEXT IS PLACED BY A CLICK: Enter before it is refused in words, and the tool stays with what was typed
+                    Gate::Waiting(qymcad_i18n::tr("sk-text-click-to-place"))
+                } else {
+                    self.gate.clone()
+                };
+                let mut d = Described { head: Head { after, ..head(name, ends) }, bar, gate, says: Vec::new(), boxed };
                 self.name_kept_values(&mut d);
                 d
             }

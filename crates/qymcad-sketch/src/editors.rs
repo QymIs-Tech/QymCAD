@@ -930,7 +930,7 @@ pub(crate) struct Laying {
 pub(crate) fn name_what_was_laid(sk: &mut qymcad_ui_state::SketchCtx, at: Laying, ask: &qymcad_ui_state::FieldAsk) {
     let nm = ask.name.trim().to_string();
     let formula = ask.formula.trim().to_string();
-    let is_formula = !formula.is_empty() && formula.parse::<f64>().is_err();
+    let is_formula = !formula.is_empty() && is_formula(&formula);
     if nm.is_empty() && !is_formula {
         return;
     }

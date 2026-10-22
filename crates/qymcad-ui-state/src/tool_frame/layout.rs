@@ -397,7 +397,8 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], d
                     if said.tone == Tone::Info {
                         ui.label(egui::RichText::new(said.words).weak().small());
                     } else {
-                        say(ui, d.look.pal, &said, NoticeSize::Small);
+                        // the words stand in the hint too: read whole under the pointer, where a narrow box wraps them
+                        say(ui, d.look.pal, &said, NoticeSize::Small).on_hover_text(said.words.clone());
                     }
                 });
             });
