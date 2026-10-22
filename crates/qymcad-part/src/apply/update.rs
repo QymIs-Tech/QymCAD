@@ -66,6 +66,9 @@ pub fn update_datum_feat(
                     let o = [qymcad_ui_state::cmd_val(cmd, "ox"), qymcad_ui_state::cmd_val(cmd, "oy"), qymcad_ui_state::cmd_val(cmd, "oz")];
                     let dv = [qymcad_ui_state::cmd_val(cmd, "dx"), qymcad_ui_state::cmd_val(cmd, "dy"), qymcad_ui_state::cmd_val(cmd, "dz")];
                     project.datum_axes[ai].set_manual(o, dv);
+                    if let Err(e) = store_cmd_exprs(cmd, project, fid) {
+                        return Err(formula_refused(&e));
+                    }
                 }
                 2 => {
                     if datum.axis_pts.len() == 2 {
@@ -118,7 +121,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     let vtable: Vec<(qymcad_core::refs::Ref, f64)> =
         fillet_vertex_table(pc.cmd).into_iter().map(|(desc, val)| (qymcad_core::refs::Ref::one(desc, qymcad_core::refs::Fingerprint::default()), val)).collect();
     let dist_v = qymcad_ui_state::cmd_val(pc.cmd, "dist"); // "push a face": the offset, which may be an expression
-    let (rec_tol, rec_sharp) = (qymcad_ui_state::cmd_val(pc.cmd, "tol"), qymcad_ui_state::cmd_val(pc.cmd, "sharp")); // the recognition's tolerance and sharp edge
+    let (rec_tol, rec_sharp, rec_simplify) = (qymcad_ui_state::cmd_val(pc.cmd, "tol"), qymcad_ui_state::cmd_val(pc.cmd, "sharp"), qymcad_ui_state::cmd_val(pc.cmd, "simplify")); // the recognition: its tolerance, sharp edge and simplifying
     let ch_d2 = qymcad_ui_state::cmd_val(pc.cmd, "d2"); // the second leg or the angle of the chamfer, in degrees
     let (ch_mode, ch_flip) = (pc.chamfer.mode, pc.chamfer.flip); // the mode plus the side of the reference face
     let patch_tangent = pc.opts.patch_tangent; // a patch by position or smooth
@@ -186,10 +189,26 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     // if ANOTHER face is picked while editing, it is updated on the feature. Only for the hole: the face
     // goes in by its persistent `FaceKey` (the shell is now a multiple selection by id - `faces_set`
     // above)
-    let hole_face: Option<(qymcad_core::feature::FaceKey, [f64; 3], [f64; 3])> = match *pc.sel {
-        qymcad_ui_state::Sel::Face(mi, fi) => pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map(|face| {
+    // THE FACE OF A HOLE REOPENED is its own face when no other is picked: the shifts typed in its box moved nothing until a
+    // face was clicked again, the selection being the row of the feature
+    let own_face = || {
+        let fid = pc.cmd.edit?;
+        let (src, face) = pc.project.timeline.iter().find(|n| n.id == fid).and_then(|n| match &n.kind {
+            qymcad_core::feature::FeatureKind::Hole { src, face, sketch: 0, .. } => Some((*src, face.clone())),
+            _ => None,
+        })?;
+        let key = qymcad_core::feature::FaceKey { index: 0, centroid: [0.0; 3], normal: [0.0, 0.0, 1.0], id: face_desc_of(&face)? };
+        qymcad_pick::resolve_face_sel(&*pc.project, src, &key)
+    };
+    let face_at = match *pc.sel {
+        qymcad_ui_state::Sel::Face(mi, fi) => Some((mi, fi)),
+        _ if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Hole) => own_face(),
+        _ => None,
+    };
+    let hole_face: Option<(qymcad_core::feature::FaceKey, [f64; 3], [f64; 3])> = match face_at {
+        Some((mi, fi)) => pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map(|face| {
             let k = qymcad_core::feature::FaceKey { index: fi as u32, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: face.id };
-            (k, hole_centre(k.centroid, k.normal, qymcad_ui_state::cmd_val(pc.cmd, "off_u"), qymcad_ui_state::cmd_val(pc.cmd, "off_v")), k.normal)
+            (k, qymcad_core::feature::point_on_face(k.centroid, k.normal, [qymcad_ui_state::cmd_val(pc.cmd, "off_u"), qymcad_ui_state::cmd_val(pc.cmd, "off_v")]), k.normal)
         }),
         _ => None,
     };
@@ -321,9 +340,10 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
                 }
                 *side = shell_side; // which way the wall goes
             }
-            FeatureKind::MeshRecognised { tol, sharp, .. } => {
+            FeatureKind::MeshRecognised { tol, sharp, simplify, .. } => {
                 *tol = rec_tol;
                 *sharp = rec_sharp;
+                *simplify = rec_simplify;
             }
             FeatureKind::Thicken { face, thickness, .. } => {
                 *thickness = thickness_v;
@@ -534,7 +554,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
                     return Err(formula_refused(&e));
                 }
             } else {
-                for k in ["dx2", "dy2", "dz2"] {
+                for k in ["dx2", "dy2", "dz2", "count2", "step2"] {
                     pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: k });
                 }
             }
@@ -543,11 +563,15 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
                     return Err(formula_refused(&e));
                 }
             } else {
-                for k in ["dx3", "dy3", "dz3"] {
+                for k in ["dx3", "dy3", "dz3", "count3", "step3"] {
                     pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: k });
                 }
             }
         }
+    }
+    // A SECOND SIDE SWITCHED OFF takes its formula with it: left, the rebuild read it and the extrusion stayed two-sided
+    if !pc.cmd.extent.two_sided() {
+        pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: "down" });
     }
     // the step opened and applied again is the person's word on what it takes: a mark of a reference found by place goes
     pc.project.accept_found_by_place(fid);

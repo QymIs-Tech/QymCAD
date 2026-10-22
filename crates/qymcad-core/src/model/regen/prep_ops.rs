@@ -379,7 +379,12 @@ impl Project {
 
     /// Move: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    pub(crate) fn prep_move(&mut self, src: Id, mat: [f64; 12], body: Id) -> crate::feature::KernelJob {
+    pub(crate) fn prep_move(&mut self, p: &mut Pass, src: Id, mat: [f64; 12], body: Id) -> crate::feature::KernelJob {
+        // THE SHIFT FOLLOWS ITS FORMULAS, typed at the gizmo or named: the translation of the transform, axis by axis
+        let mut mat = mat;
+        for (at, key) in [(3, "dx"), (7, "dy"), (11, "dz")] {
+            mat[at] = p.dim(key, mat[at]);
+        }
         // A BODY MADE OF A MESH MOVES IN THE DOCUMENT: it has no B-rep for the kernel to move - its mesh and the faces found
         // on it are moved as they are, and nothing is found on it again
         if self.mesh_born(src) {

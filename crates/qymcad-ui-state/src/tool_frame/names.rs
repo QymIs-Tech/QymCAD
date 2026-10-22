@@ -110,26 +110,51 @@ pub(crate) fn asks_of(ctx: &egui::Context, b: egui::Id, names: &[FieldName], fie
         .collect()
 }
 
-/// THE NUMBERS OF THE BAR OF `d` NAMED as every value of a box is - the starts of a thread, the ratio of a relation:
-/// their rows get a driver, the box made for them where the tool has none. Answers their keys, the values no key of the
-/// model holds (`name_free_values`).
-pub fn name_bar_numbers(d: &mut Described) -> Vec<&'static str> {
-    let keys: Vec<&'static str> = d.bar.iter().filter_map(|o| if let Opt::Number { key, .. } = o { Some(key.name) } else { None }).collect();
-    if !keys.is_empty() {
-        let spec = d.boxed.get_or_insert_with(|| BoxSpec::by(Place::close_by(By::ViewCorner)));
-        spec.names.extend(keys.iter().filter(|k| !spec.names.iter().any(|n| n.field == **k)).map(|k| FieldName::of(k, String::new(), None)).collect::<Vec<_>>());
-    }
-    keys
+/// A VALUE OF AN ITEM A BOX SETS: the field of the box, and the item and the key the item keeps the value under - a
+/// polygon its sides, a pattern its count, a relation its ratio (`Project::kept_number`).
+#[derive(Clone, Copy)]
+pub struct ItemValue<'a> {
+    pub field: &'a str,
+    pub node: qymcad_core::model::Id,
+    pub key: &'a str,
 }
 
-/// THE VALUES NAMED IN A BOX THAT THE MODEL HOLDS NO PLACE FOR - fields `free` - each a parameter of the project by its
-/// name and its formula (`Project::name_a_value`). Answers whether one was added.
-pub fn name_free_values(project: &mut Project, asks: &[FieldAsk], free: &[&str]) -> bool {
-    let mut added = false;
-    for a in asks.iter().filter(|a| free.contains(&a.field.as_str()) && !a.name.trim().is_empty()) {
-        added |= project.name_a_value(&a.name, &a.formula);
+/// THE VALUES OF ITEMS A BOX SET, KEPT BY THE ITEMS THEMSELVES as a node of the timeline keeps its numbers: a formula
+/// under the item's own id - a number too where it is named, so the name drives it - and the name given to the value as
+/// a driver. A plain number with no name, or a reference, keeps no formula: the item holds what it holds and a name reads
+/// that. Answers whether the document changed.
+pub fn keep_item_values(project: &mut Project, asks: &[FieldAsk], values: &[ItemValue]) -> bool {
+    let mut changed = false;
+    for v in values {
+        let Some(a) = asks.iter().find(|a| a.field == v.field) else { continue };
+        let at = qymcad_core::model::FeatNumber { node: v.node, key: v.key };
+        let had = project.feat_dim(v.node, v.key).map(str::to_string);
+        let plain = a.formula.trim().parse::<f64>().is_ok();
+        let keep = a.driven == Lit::Off && !a.formula.trim().is_empty() && (!plain || !a.name.trim().is_empty());
+        if keep {
+            if project.write_feat_formula(&at, &a.formula, qymcad_core::model::PlainNumber::Stands).is_err() {
+                continue;
+            }
+        } else {
+            project.clear_feat_formula(&at);
+        }
+        changed |= project.feat_dim(v.node, v.key).map(str::to_string) != had;
+        let target = qymcad_core::model::DimTarget::Feature { node: v.node, key: v.key.to_string() };
+        if a.renamed(&qymcad_i18n::name(&project.name_of_target(&target))) {
+            changed |= give_name(project, target, &a.name);
+        }
     }
-    added
+    changed
+}
+
+/// THE NAME OF FIELD `field` OF A BOX FOR A VALUE AN ITEM KEEPS - `node` none while the item is not laid yet: its name
+/// and whether it stands as a reference, as the item holds them. A value with no formula is a reference when it is named.
+pub fn item_field_name(project: &Project, field: &str, node: Option<qymcad_core::model::Id>, key: &str) -> FieldName {
+    let target = node.map(|node| qymcad_core::model::DimTarget::Feature { node, key: key.to_string() });
+    let had = target.as_ref().map(|t| qymcad_i18n::name(&project.name_of_target(t))).unwrap_or_default();
+    let formula = node.and_then(|n| project.feat_dim(n, key)).is_some_and(|f| !f.trim().is_empty());
+    let driven = if !had.is_empty() && !formula { Lit::On } else { Lit::Off };
+    FieldName::of(field, had, target).with_driven(driven)
 }
 
 /// THE FIRST NAME OF BOX `b` THAT WILL NOT DO, as a refusal of its field: Enter with it would leave the value unnamed.

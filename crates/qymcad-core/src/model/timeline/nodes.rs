@@ -114,8 +114,19 @@ impl Project {
         let crate::feature::FeatureKind::Move { mat, .. } = &mut node.kind else { return false };
         // THE NEW MOVE GOES FIRST: what is being applied now acts on the result of what was applied
         // before. Swapped, a drag after a turn would move along the OLD axes.
+        let was = [mat[3], mat[7], mat[11]];
         *mat = crate::feature::compose12(extra, mat);
+        let now = [mat[3], mat[7], mat[11]];
         node.dirty = true;
+        // A SHIFT HELD BY A FORMULA takes the move made by hand on top of it: left alone, the formula took the part back on
+        // the next rebuild
+        if let Some(dims) = self.feat_dims.get_mut(&body) {
+            for (k, key) in ["dx", "dy", "dz"].into_iter().enumerate() {
+                if let Some(f) = dims.get_mut(key).filter(|f| !f.trim().is_empty() && (now[k] - was[k]).abs() > 1e-12) {
+                    *f = format!("({f}) + {}", crate::expr::fmt_num(now[k] - was[k]));
+                }
+            }
+        }
         true
     }
 

@@ -541,7 +541,7 @@ impl Project {
         self.push_timeline(FeatureNode {
             id: body,
             name: "feat-name-hole".into(),
-            kind: FeatureKind::Hole { src, face, point, normal, diameter, depth, kind, dia2, depth2, sketch: 0, flip: false, body, pieces: Vec::new() },
+            kind: FeatureKind::Hole { src, face, point, normal, diameter, depth, kind, dia2, depth2, sketch: 0, flip: false, shift: [0.0; 2], body, pieces: Vec::new() },
             parent,
             dirty: true,
             suppressed: false,
@@ -564,7 +564,7 @@ impl Project {
         self.push_timeline(FeatureNode {
             id: body,
             name: "feat-name-holes-sketch".into(),
-            kind: FeatureKind::Hole { src, face, point: [0.0; 3], normal: [0.0, 0.0, 1.0], diameter, depth, kind, dia2, depth2, sketch, flip, body, pieces: Vec::new() },
+            kind: FeatureKind::Hole { src, face, point: [0.0; 3], normal: [0.0, 0.0, 1.0], diameter, depth, kind, dia2, depth2, sketch, flip, shift: [0.0; 2], body, pieces: Vec::new() },
             parent,
             dirty: true,
             suppressed: false,

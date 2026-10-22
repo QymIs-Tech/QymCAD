@@ -9,7 +9,7 @@ use super::*;
 /// gizmo - the order the place of the command bar showed them in.
 pub fn in_hand<'a>(pc: &'a mut qymcad_ui_state::PartCtx<'_>) -> Option<Box<dyn FramedTool + 'a>> {
     if let Some(kind) = pc.armed.part_tool() {
-        return Some(Box::new(CommandTool { pc, kind, asks: Vec::new(), free: Vec::new() }));
+        return Some(Box::new(CommandTool { pc, kind, asks: Vec::new(), kept: Vec::new() }));
     }
     if pc.boolean.pick.is_some() || bool_edited(pc).is_some() {
         return Some(Box::new(BoolTool { pc }));
@@ -34,10 +34,12 @@ struct CommandTool<'a, 'b> {
     kind: qymcad_ui_state::PartTool,
     /// what the frame kept of the names typed under the fields
     asks: Vec<qymcad_ui_state::FieldAsk>,
-    /// the numbers of the bar in the box - the starts of a thread, the sides of a prism: no key of the feature holds
-    /// them, their drivers are parameters
-    free: Vec<&'static str>,
+    /// the numbers of the bar in the box the feature keeps - the starts of a thread - by their keys in it
+    kept: Vec<qymcad_ui_state::ItemValue<'static>>,
 }
+
+/// THE NUMBERS OF THE BAR A FEATURE KEEPS, by the key of the bar and the key of the feature: the starts of a thread.
+const BAR_NUMBERS_KEPT: [(&str, &str); 1] = [("thread_starts", "starts")];
 
 impl CommandTool<'_, '_> {
     /// Does Enter take an extrusion or a revolution from the flat choice of its contours, the contours picked, into 3D.
@@ -51,7 +53,14 @@ impl FramedTool for CommandTool<'_, '_> {
         command_step(self.pc, ctx);
         let mut d = describe(self.pc, ctx, self.kind);
         d.boxed = command_box(self.pc);
-        self.free = if self.kind == qymcad_ui_state::PartTool::Recognise { Vec::new() } else { qymcad_ui_state::name_bar_numbers(&mut d) };
+        // A NUMBER OF THE BAR THE FEATURE KEEPS is named through the feature, as its fields are
+        self.kept.clear();
+        let numbers: Vec<&'static str> = d.bar.iter().filter_map(|o| if let qymcad_ui_state::Opt::Number { key, .. } = o { Some(key.name) } else { None }).collect();
+        for (field, key) in BAR_NUMBERS_KEPT.iter().filter(|(f, _)| numbers.contains(f)) {
+            self.kept.push(qymcad_ui_state::ItemValue { field, node: self.pc.cmd.edit.unwrap_or(0), key });
+            let name = qymcad_ui_state::item_field_name(&*self.pc.project, field, self.pc.cmd.edit, key);
+            d.boxed.get_or_insert_with(|| qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::close_by(qymcad_ui_state::By::ViewCorner))).names.push(name);
+        }
         // Enter in the flat choice of the contours takes the command into 3D, not out of the hand
         if self.takes_into_3d() {
             d.head.after = qymcad_ui_state::AfterApply::Stays;
@@ -93,12 +102,15 @@ impl FramedTool for CommandTool<'_, '_> {
         let before: Vec<Id> = self.pc.project.timeline.iter().map(|n| n.id).collect();
         let edited = self.pc.cmd.edit;
         apply_feat_cmd_kept(self.pc)?;
-        let node = edited.or_else(|| self.pc.project.timeline.iter().map(|n| n.id).find(|id| !before.contains(id)));
-        if qymcad_ui_state::name_free_values(self.pc.project, &self.asks, &self.free) {
-            qymcad_ui_state::invalidate(self.pc.regen);
-        }
+        // the node of the feature: a sketch the command put into the timeline first is not it
+        let new = |n: &&qymcad_core::feature::FeatureNode| !before.contains(&n.id) && !matches!(n.kind, qymcad_core::feature::FeatureKind::Sketch { .. });
+        let node = edited.or_else(|| self.pc.project.timeline.iter().find(new).map(|n| n.id));
         if let Some(node) = node {
-            for ask in self.asks.iter().filter(|a| !self.free.contains(&a.field.as_str())) {
+            let kept: Vec<qymcad_ui_state::ItemValue> = self.kept.iter().map(|k| qymcad_ui_state::ItemValue { node, ..*k }).collect();
+            if qymcad_ui_state::keep_item_values(self.pc.project, &self.asks, &kept) {
+                qymcad_ui_state::mark_dirty_for_rebuild(&mut self.pc.rebuild());
+            }
+            for ask in self.asks.iter().filter(|a| !self.kept.iter().any(|k| k.field == a.field)) {
                 let target = qymcad_core::model::DimTarget::Feature { node, key: ask.field.clone() };
                 if ask.renamed(&qymcad_i18n::name(&self.pc.project.name_of_target(&target))) {
                     qymcad_ui_state::give_name(self.pc.project, target, &ask.name);
@@ -269,8 +281,9 @@ impl FramedTool for CompArrayTool<'_, '_> {
         if !self.pc.cmd.params.is_empty() && *self.pc.mode_3d {
             let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::By::Part(self.pc.carr.src)));
             spec.layout = comp_array_layout(self.pc);
-            // its values are named as every value of a box is; no node holds them, their drivers are parameters
-            spec.names = self.pc.cmd.params.iter().map(|p| qymcad_ui_state::FieldName::of(&p.key, String::new(), None)).collect();
+            // its values are the node's own, named through it as the values of a feature are
+            let node = (self.pc.carr.edit != 0).then_some(self.pc.carr.edit);
+            spec.names = self.pc.cmd.params.iter().map(|p| qymcad_ui_state::item_field_name(&*self.pc.project, &p.key, node, &p.key)).collect();
             d.boxed = Some(spec);
         }
         d
@@ -296,14 +309,19 @@ impl FramedTool for CompArrayTool<'_, '_> {
         comp_array_act(self.pc, did);
     }
 
+    /// THE FORMULAS AND THE DRIVERS OF ITS VALUES go on the node of the pattern - made anew or edited - as a feature keeps
+    /// its numbers: a count read by a name follows it (`impose_comp_pattern_values`).
     fn apply(&mut self) -> Result<(), NotApplied> {
+        let before: Vec<Id> = self.pc.project.timeline.iter().map(|n| n.id).collect();
+        let edited = (self.pc.carr.edit != 0).then_some(self.pc.carr.edit);
         apply_comp_array_kept(self.pc)?;
-        let free: Vec<&str> = self.asks.iter().map(|a| a.field.as_str()).collect();
-        if self.asks.iter().any(|a| !a.name.trim().is_empty()) {
-            qymcad_ui_state::begin_edit(self.pc.edits, self.pc.project, qymcad_i18n::tr("sk-driver-step"));
-            qymcad_ui_state::name_free_values(self.pc.project, &self.asks, &free);
-            qymcad_ui_state::commit_edit_if_changed(&mut self.pc.rebuild());
-        }
+        let new = |n: &&qymcad_core::feature::FeatureNode| !before.contains(&n.id) && matches!(n.kind, qymcad_core::feature::FeatureKind::ComponentPattern { .. });
+        let Some(node) = edited.or_else(|| self.pc.project.timeline.iter().find(new).map(|n| n.id)) else { return Ok(()) };
+        let keys: Vec<String> = self.asks.iter().map(|a| a.field.clone()).collect();
+        let values: Vec<qymcad_ui_state::ItemValue> = keys.iter().map(|k| qymcad_ui_state::ItemValue { field: k, node, key: k }).collect();
+        qymcad_ui_state::begin_edit(self.pc.edits, self.pc.project, qymcad_i18n::tr("box-driver-step"));
+        qymcad_ui_state::keep_item_values(self.pc.project, &self.asks, &values);
+        qymcad_ui_state::commit_edit_if_changed(&mut self.pc.rebuild());
         Ok(())
     }
 
@@ -337,6 +355,8 @@ impl FramedTool for CompArrayTool<'_, '_> {
 /// The catalogue keys of the field at a gizmo: a turn about an axis, or a shift along it - X, Y, Z.
 const GIZMO_TURNS: [&str; 3] = ["giz-rotation-x", "giz-rotation-y", "giz-rotation-z"];
 const GIZMO_SHIFTS: [&str; 3] = ["giz-offset-x", "giz-offset-y", "giz-offset-z"];
+/// The keys a move keeps its shift along each axis under.
+const GIZMO_KEYS: [&str; 3] = ["dx", "dy", "dz"];
 
 /// EXACT NUMERIC INPUT AT THE GIZMO of a body or a part: a formula at the geometry - millimetres along an axis or degrees
 /// about it - and Apply makes a PARAMETRIC move.
@@ -369,8 +389,12 @@ impl FramedTool for GizmoTool<'_, '_> {
         // its gizmo is kept clear of as every one (`keep_in_sight`)
         let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::By::Point(o)));
         spec.focus = qymcad_ui_state::Focus::take(&mut pc.body_giz.num_focus);
-        // the move typed is named as every value of a box is; no node holds it by a name, its driver is a parameter
-        spec.names = vec![qymcad_ui_state::FieldName::of("giz", String::new(), None)];
+        // A SHIFT OF A BODY IS A VALUE OF ITS MOVE, named through it: the translation along the axis typed. A turn and a
+        // part moved by hand make no value a node keeps, and have no driver
+        if let (false, qymcad_ui_state::GizmoOf::Body(mi)) = (self.step.rot, self.on) {
+            let node = pc.project.mesh_id(mi).filter(|b| pc.project.timeline.iter().any(|n| n.id == *b && matches!(n.kind, qymcad_core::feature::FeatureKind::Move { .. })));
+            spec.names = vec![qymcad_ui_state::item_field_name(&*pc.project, "giz", node, GIZMO_KEYS[(self.step.ax as usize).min(2)])];
+        }
         Described { head, bar: Vec::new(), gate: qymcad_ui_state::Gate::Open, says: Vec::new(), boxed: Some(spec) }
     }
 
@@ -384,12 +408,32 @@ impl FramedTool for GizmoTool<'_, '_> {
 
     fn apply(&mut self) -> Result<(), NotApplied> {
         let by = self.pc.body_giz.num_field.first().map_or(0.0, |p| p.val);
+        let before: Vec<Id> = self.pc.project.timeline.iter().map(|n| n.id).collect();
+        let moved = match self.on {
+            qymcad_ui_state::GizmoOf::Body(mi) => self.pc.project.mesh_id(mi),
+            qymcad_ui_state::GizmoOf::Part(_) => None,
+        };
         gizmo_move(self.pc, self.on, GizmoStep { by, ..self.step });
-        if self.asks.iter().any(|a| !a.name.trim().is_empty()) {
-            qymcad_ui_state::begin_edit(self.pc.edits, self.pc.project, qymcad_i18n::tr("sk-driver-step"));
-            qymcad_ui_state::name_free_values(self.pc.project, &self.asks, &["giz"]);
-            qymcad_ui_state::commit_edit_if_changed(&mut self.pc.rebuild());
-        }
+        let Some(ask) = self.asks.first().filter(|_| !self.step.rot) else { return Ok(()) };
+        // the move the shift went into: the body's own, or the one made for it now
+        let is_move = |n: &&qymcad_core::feature::FeatureNode| matches!(n.kind, qymcad_core::feature::FeatureKind::Move { .. });
+        let node = self.pc.project.timeline.iter().filter(is_move).find(|n| Some(n.id) == moved || !before.contains(&n.id)).map(|n| n.id);
+        let Some(node) = node else { return Ok(()) };
+        let key = GIZMO_KEYS[(self.step.ax as usize).min(2)];
+        // THE VALUE IS THE SHIFT OF THE MOVE, what was there before and the step typed: a formula of the step stands on
+        // top of the number it held
+        let now = self.pc.project.kept_number(node, key).unwrap_or(by);
+        let held = self.pc.project.feat_dim(node, key).map(str::to_string);
+        let formula = match (held, ask.formula.trim().parse::<f64>().is_ok()) {
+            (Some(f), _) => f,
+            (None, true) => qymcad_core::expr::fmt_num(now),
+            (None, false) if (now - by).abs() < 1e-9 => ask.formula.clone(),
+            (None, false) => format!("{} + ({})", qymcad_core::expr::fmt_num(now - by), ask.formula),
+        };
+        let asks = [qymcad_ui_state::FieldAsk { formula, ..ask.clone() }];
+        qymcad_ui_state::begin_edit(self.pc.edits, self.pc.project, qymcad_i18n::tr("box-driver-step"));
+        qymcad_ui_state::keep_item_values(self.pc.project, &asks, &[qymcad_ui_state::ItemValue { field: "giz", node, key }]);
+        qymcad_ui_state::commit_edit_if_changed(&mut self.pc.rebuild());
         Ok(())
     }
 

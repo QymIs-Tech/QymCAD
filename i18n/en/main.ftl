@@ -1317,7 +1317,7 @@ sk-fix = Fix
 sk-params-hint = Named values for dimensions: w=50, d=w/2. A dimension can be given as an expression in its own field.
 sk-driver-name-hint = The name of a driver dimension (a skeleton sketch): its value becomes a parameter that a part can refer to by expression
 sk-driver-label = Driver
-sk-driver-step = driver name
+box-driver-step = driver name
 sk-driver-name-taken-hint = Another dimension or a global parameter already uses this name. A formula sees one name only, so two drivers cannot share it — pick another.
 sk-welcome = The tools are in the left bar. Dimensions and constraints are placed by clicking the geometry; a dimension value is set by double-clicking. A dimension can start from a point, a centre, a midpoint or the origin. Select geometry and drag it to move the whole of it.
 sk-tangency = Tangency

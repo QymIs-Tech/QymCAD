@@ -684,7 +684,7 @@ fn name_dimension(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, typed: &str) {
     if nm == old || qymcad_ui_state::name_unfit(sk.project, Some(&target), &nm).is_some() {
         return;
     }
-    let mut ed = qymcad_ui_state::edit_over(sk.rebuild(), qymcad_i18n::tr("sk-driver-step"));
+    let mut ed = qymcad_ui_state::edit_over(sk.rebuild(), qymcad_i18n::tr("box-driver-step"));
     qymcad_ui_state::give_name(ed.project(), target, &nm);
     drop(ed);
     // ONLY WHAT DEPENDS ON THIS NAME is marked, not the whole timeline of every body; it is rebuilt when the sketch

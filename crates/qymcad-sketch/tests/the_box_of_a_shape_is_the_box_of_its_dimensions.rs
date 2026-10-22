@@ -119,7 +119,7 @@ fn the_box_of_the_size_of_a_circle_says_what_the_box_of_its_dimension_says() {
     let ctx = egui::Context::default();
     let painted = settled(&ctx, &mut b);
     let mut words = ["sk-mm", "sk-ref-short", "sk-driver-label"].map(qymcad_i18n::tr).to_vec();
-    words.push("->R".to_string());
+    words.push("\u{d8}".to_string());
     let missing: Vec<&String> = words.iter().filter(|w| times(&painted, w) == 0).collect();
     assert!(missing.is_empty(), "the box of the size of a circle does not say {missing:?}; it says {:?}", painted.iter().map(|p| &p.text).collect::<Vec<_>>());
 }

@@ -47,6 +47,39 @@ pub fn one_way() -> [([f64; 3], f64, u32); 2] {
 }
 
 impl CompPatternKind {
+    /// THE VALUES OF THE LAYOUT, by the keys their formulas are kept under in `feat_dims` - the keys of the fields of its
+    /// box: the count and the step of each direction of a linear one, the count and the angle of a circular one.
+    pub fn values(&self) -> Vec<(&'static str, f64)> {
+        match *self {
+            CompPatternKind::Linear { step, count, more, .. } => {
+                vec![("count", f64::from(count)), ("cstep", step), ("count2", f64::from(more[0].2)), ("cstep2", more[0].1), ("count3", f64::from(more[1].2)), ("cstep3", more[1].1)]
+            }
+            CompPatternKind::Circular { angle, count, .. } => vec![("count", f64::from(count)), ("cangle", angle)],
+        }
+    }
+
+    /// The same layout with value `key` set to `v`; a count is whole and at least one.
+    pub fn with_value(mut self, key: &str, v: f64) -> Self {
+        let whole = v.round().max(1.0) as u32;
+        match &mut self {
+            CompPatternKind::Linear { step, count, more, .. } => match key {
+                "count" => *count = whole,
+                "cstep" => *step = v,
+                "count2" => more[0].2 = whole,
+                "cstep2" => more[0].1 = v,
+                "count3" => more[1].2 = whole,
+                "cstep3" => more[1].1 = v,
+                _ => {}
+            },
+            CompPatternKind::Circular { angle, count, .. } => match key {
+                "count" => *count = whole,
+                "cangle" => *angle = v,
+                _ => {}
+            },
+        }
+        self
+    }
+
     /// A linear pattern along one direction.
     pub fn linear(dir: [f64; 3], step: f64, count: u32) -> Self {
         CompPatternKind::Linear { dir, step, count, more: one_way() }
@@ -153,6 +186,26 @@ impl Project {
         self.grow_copies(id);
         self.resolve_comp_patterns();
         true
+    }
+
+    /// THE FORMULAS OF THE VALUES OF EVERY PATTERN IMPOSED before the copies are placed: a count or a step read by a name
+    /// follows it, copies added or taken away as `set_comp_pattern` does when the count is typed.
+    pub(crate) fn impose_comp_pattern_values(&mut self, vars: &std::collections::HashMap<String, f64>) {
+        let laid: Vec<(Id, CompPatternKind)> = self
+            .timeline
+            .iter()
+            .filter_map(|n| match &n.kind {
+                FeatureKind::ComponentPattern { kind, .. } => Some((n.id, *kind)),
+                _ => None,
+            })
+            .collect();
+        for (id, kind) in laid {
+            let Some(dims) = self.feat_dims.get(&id) else { continue };
+            let want = kind.values().into_iter().fold(kind, |k, (key, now)| k.with_value(key, crate::model::eval_dim(Some(dims), key, now, vars)));
+            if want != kind {
+                self.set_comp_pattern(id, want);
+            }
+        }
     }
 
     /// Delete a pattern: its node and the copies go, the source stays, being a part in its own right rather than a

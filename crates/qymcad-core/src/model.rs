@@ -1393,6 +1393,7 @@ pub use curve::refs::*;
 pub use curves::*;
 mod sketch_ops;
 mod params;
+mod item_values;
 mod formulas;
 pub use formulas::{FeatNumber, FeatText, NamedFormula, PlainNumber, Renamed};
 mod bodies;

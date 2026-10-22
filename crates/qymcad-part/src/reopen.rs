@@ -185,9 +185,13 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         // A RECOGNISED BODY reopens the recognition tool on its own mesh, with its tolerance and sharp edge in the fields;
         // a polyhedron has no number to change, and the tool opens on it all the same rather than sending a person to
         // the right-hand panel
-        FeatureKind::MeshRecognised { src, tol, sharp, .. } => {
+        FeatureKind::MeshRecognised { src, tol, sharp, simplify, .. } => {
             open_recognise_on(pc, src, was_3d, 0);
-            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-recognise-tol", "tol", tol, 0.1, 1000.0), cmd_param_from(&*pc.project, fid, "f-recognise-sharp", "sharp", sharp, 5.0, 90.0)];
+            pc.cmd.params = vec![
+                cmd_param_from(&*pc.project, fid, "f-recognise-tol", "tol", tol, 0.1, 1000.0),
+                cmd_param_from(&*pc.project, fid, "f-recognise-sharp", "sharp", sharp, 5.0, 90.0),
+                cmd_param_from(&*pc.project, fid, "f-recognise-simplify", "simplify", simplify, 0.0, 10.0),
+            ];
         }
         FeatureKind::MeshSolid { src, .. } => open_recognise_on(pc, src, was_3d, 1),
         FeatureKind::SplitFace { plane, datum, offset, face, .. } => {
@@ -303,11 +307,11 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             }
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-diameter", "diameter", diameter, 0.1, 10000.0), cmd_param_from(&*pc.project, fid, "f-depth", "depth", depth, 0.1, 10000.0)];
             // where it stands on its face, as the two shifts from the face centre the fields hold
-            let (u, v) = match *pc.sel {
+            let [u, v] = match *pc.sel {
                 qymcad_ui_state::Sel::Face(mi, fi) if sketch == 0 => {
-                    pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map_or((0.0, 0.0), |f| hole_shifts([f.centroid.x, f.centroid.y, f.centroid.z], f.normal, point))
+                    pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map_or([0.0, 0.0], |f| qymcad_core::feature::shift_on_face([f.centroid.x, f.centroid.y, f.centroid.z], f.normal, point))
                 }
-                _ => (0.0, 0.0),
+                _ => [0.0, 0.0],
             };
             pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-u", "off_u", u, -100000.0, 100000.0).hint("f-hole-shift-hint"));
             pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-v", "off_v", v, -100000.0, 100000.0).hint("f-hole-shift-hint"));

@@ -85,7 +85,7 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
     let (o, d) = qymcad_ui_state::screen_ray(pc.cam, rect, screen);
     let (lo, ld) = (qymcad_core::feature::apply12(&inv, o), qymcad_core::feature::apply12_dir(&inv, d));
     let Some(local) = qymcad_ui_state::ray_plane(lo, ld, c, n) else { return };
-    let (u, v) = hole_shifts(c, n, local);
+    let [u, v] = qymcad_core::feature::shift_on_face(c, n, local);
     // the same face clicked where the hole already stands (within 0.5 mm) lets it go; anywhere else on it moves the
     // hole there
     let here = (u - qymcad_ui_state::cmd_val(pc.cmd, "off_u")).hypot(v - qymcad_ui_state::cmd_val(pc.cmd, "off_v")) < 0.5;
@@ -103,21 +103,6 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
             p.txt = qymcad_core::expr::fmt_num(p.val);
         }
     }
-}
-
-/// How far `at` stands from the face centre `c` along the face's own two axes (those of a plane through `c` square to
-/// `n`).
-pub fn hole_shifts(c: [f64; 3], n: [f64; 3], at: [f64; 3]) -> (f64, f64) {
-    let f = qymcad_core::feature::PlaneFrame::from_origin_normal(c, n, 0.0);
-    let d = [at[0] - c[0], at[1] - c[1], at[2] - c[2]];
-    let dot = |a: [f64; 3]| a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
-    (dot(f.x), dot(f.y))
-}
-
-/// The hole centre `u` and `v` off the face centre `c` along the face's own axes.
-pub fn hole_centre(c: [f64; 3], n: [f64; 3], u: f64, v: f64) -> [f64; 3] {
-    let f = qymcad_core::feature::PlaneFrame::from_origin_normal(c, n, 0.0);
-    [c[0] + f.x[0] * u + f.y[0] * v, c[1] + f.x[1] * u + f.y[1] * v, c[2] + f.x[2] * u + f.y[2] * v]
 }
 
 /// THE ROW OF A SKETCH CLICKED AGAIN, the sketch already selected: a sweep lets go of its path, a loft of that section,

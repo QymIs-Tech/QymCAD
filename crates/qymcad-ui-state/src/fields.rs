@@ -108,7 +108,7 @@ pub fn dim_expr_field_in(rc: &mut RebuildCtx, ui: &mut egui::Ui, id: Id, key: &s
         };
         let nm = rn.text.trim().to_string();
         if rn.committed && nm != cur_name.trim() && name_unfit(rc.project, Some(&target), &nm).is_none() {
-            begin_edit(rc.edits, rc.project, qymcad_i18n::tr("sk-driver-step"));
+            begin_edit(rc.edits, rc.project, qymcad_i18n::tr("box-driver-step"));
             give_name(rc.project, target.clone(), &nm);
             commit_edit(rc);
             if !nm.is_empty() {

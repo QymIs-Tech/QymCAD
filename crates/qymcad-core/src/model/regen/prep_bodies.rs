@@ -169,6 +169,10 @@ impl Project {
             let v = p.dim("root_r", spec.root_r.unwrap_or(0.0));
             (v > 1e-9).then_some(v)
         };
+        // the profile of a thread of its own and the number of its starts follow their formulas as the size does
+        spec.custom_angle = p.dim("angle", spec.custom_angle);
+        spec.custom_depth = p.dim("depth", spec.custom_depth);
+        spec.starts = p.dim("starts", f64::from(spec.starts)).round().max(1.0) as u32;
         let length = p.dim("length", length);
         let lead_in = p.dim("lead_in", lead_in);
         let lead_out = p.dim("lead_out", lead_out);
@@ -229,6 +233,7 @@ impl Project {
         let HelixRun { src, edge, length, lead_in, lead_out, body } = run;
         let mut spec = spec;
         spec.outer_d = p.dim("outer", spec.outer_d);
+        spec.starts = p.dim("starts", f64::from(spec.starts)).round().max(1.0) as u32;
         spec.pitch = p.dim("pitch", spec.pitch);
         spec.thickness = p.dim("thickness", spec.thickness);
         spec.edge_r = p.dim("edge_r", spec.edge_r);
@@ -323,7 +328,15 @@ impl Project {
                     let (point, normal) = match resolved {
                         Ok(c) => {
                             let off = (0..3).map(|i| (point[i] - c.centroid[i]) * c.normal[i]).sum::<f64>();
-                            ([point[0] - off * c.normal[0], point[1] - off * c.normal[1], point[2] - off * c.normal[2]], c.normal)
+                            let on = [point[0] - off * c.normal[0], point[1] - off * c.normal[1], point[2] - off * c.normal[2]];
+                            // THE SHIFT FROM THE CENTRE OF THE FACE follows its formulas, typed in the box or named; with
+                            // none the hole holds its place. What it comes to is kept on the node, where a name reads it
+                            let held = crate::feature::shift_on_face(c.centroid, c.normal, on);
+                            let shift = [p.dim("off_u", held[0]), p.dim("off_v", held[1])];
+                            if let Some(FeatureKind::Hole { shift: kept, .. }) = self.timeline.iter_mut().find(|n| n.id == p.node).map(|n| &mut n.kind) {
+                                *kept = shift;
+                            }
+                            (if shift == held { on } else { crate::feature::point_on_face(c.centroid, c.normal, shift) }, c.normal)
                         }
                         Err(_) => (point, normal),
                     };
@@ -471,7 +484,15 @@ impl Project {
             .enumerate()
             .map(|(n, a)| {
                 let sfx = if n == 0 { String::new() } else { (n + 1).to_string() };
-                [p.dim(&format!("dx{sfx}"), a.d[0]), p.dim(&format!("dy{sfx}"), a.d[1]), p.dim(&format!("dz{sfx}"), a.d[2])]
+                let v = [p.dim(&format!("dx{sfx}"), a.d[0]), p.dim(&format!("dy{sfx}"), a.d[1]), p.dim(&format!("dz{sfx}"), a.d[2])];
+                // THE STEP NAMED OR WRITTEN AS A FORMULA of its own is the length of the vector, along the same direction
+                let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+                let want = p.dim(&format!("step{sfx}"), len);
+                if len > 1e-9 && (want - len).abs() > 1e-12 {
+                    [v[0] * want / len, v[1] * want / len, v[2] * want / len]
+                } else {
+                    v
+                }
             })
             .collect();
         // A 3D grid: direction one (i*d1) by two (j*d2) by three (k*d3). A count of one or less in
@@ -627,8 +648,12 @@ impl Project {
             FeatureKind::OffsetSurface { src, faces, dist, body } => (*body, self.prep_offset_surface(p, *src, faces, *dist, *body)),
             FeatureKind::Trim { src, tool, keep, body } => (*body, self.prep_trim(*src, *tool, *keep, *body)),
             FeatureKind::Stitch { parts, tol, body } => (*body, self.prep_stitch(p, parts, *tol, *body)),
-            FeatureKind::MeshSolid { src, body, simplify } => (*body, self.prep_mesh_solid(*src, *body, *simplify)),
-            FeatureKind::MeshRecognised { src, body, tol, sharp, simplify } => (*body, self.prep_mesh_recognised(*src, *body, *tol, *sharp, *simplify)),
+            // the settings of reading a mesh follow their formulas as the numbers of every feature do
+            FeatureKind::MeshSolid { src, body, simplify } => (*body, self.prep_mesh_solid(*src, *body, p.dim("simplify", *simplify))),
+            FeatureKind::MeshRecognised { src, body, tol, sharp, simplify } => {
+                let (tol, sharp, simplify) = (p.dim("tol", *tol), p.dim("sharp", *sharp), p.dim("simplify", *simplify));
+                (*body, self.prep_mesh_recognised(*src, *body, tol, sharp, simplify))
+            }
             FeatureKind::Thicken { src, face, thickness, join, body } => (*body, self.prep_thicken(p, *src, *face, *thickness, *join, *body)),
             FeatureKind::SplitFace { src, plane, datum, offset, body, face } => (*body, self.prep_splitface(p, *src, self.op_plane(*plane, *datum, *face), *offset, *body)),
             FeatureKind::Draft { src, faces, neutral, angle, flip, body } => (*body, self.prep_draft(p, *src, faces, DraftShape { neutral: neutral.clone(), angle: *angle, flip: *flip }, *body)),
@@ -640,7 +665,7 @@ impl Project {
             FeatureKind::Mirror { src, plane, keep, datum, body, face } => {
                 (*body, self.prep_mirror(p, *src, (*datum == 0 && face.is_none()).then_some(*plane), *keep, self.op_plane(*plane, *datum, *face), *body))
             }
-            FeatureKind::Move { src, mat, body } => (*body, self.prep_move(*src, *mat, *body)),
+            FeatureKind::Move { src, mat, body } => (*body, self.prep_move(p, *src, *mat, *body)),
             FeatureKind::Piece { src, body } => {
                 let (src, body) = (*src, *body);
                 (body, crate::feature::KernelJob::new(vec![src], move |k| k.transform_body(body, src, crate::feature::PLACE_IDENTITY)))

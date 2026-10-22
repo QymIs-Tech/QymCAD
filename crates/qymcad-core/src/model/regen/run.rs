@@ -191,6 +191,9 @@ impl Project {
         let mut dirty: std::collections::HashSet<Id> = std::collections::HashSet::new();
         // Snapshot for parametric feature dimensions (expressions over global parameters).
         let vars = self.param_map();
+        self.impose_comp_pattern_values(&vars);
+        // the values of the items of sketches and the ratios of the relations of mates follow their formulas too
+        self.impose_item_values(&vars, &mut Vec::new());
         let feat_dims = self.feat_dims.clone();
         let limit = self.rollback.unwrap_or(usize::MAX); // Rollback bar: build only the first N nodes.
                                                          // Component patterns come before bodies: the copies have to be in place by the time their bodies are
@@ -551,7 +554,7 @@ impl Project {
                     self.resolve_point_into(point, &vars, feat_dims.get(&node_id), kernel);
                 }
                 FeatureKind::DatumAxis { axis } => {
-                    self.resolve_axis_into(axis, kernel);
+                    self.resolve_axis_into(axis, &super::refs::Formulas { dims: feat_dims.get(&node_id), vars: &vars }, kernel);
                 }
                 FeatureKind::Sketch { sketch } => {
                     // A SKETCH WHOSE FACE IS GONE stands on the snapshot of where the face stood (the deletion froze it

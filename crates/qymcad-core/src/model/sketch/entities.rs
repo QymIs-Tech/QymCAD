@@ -113,6 +113,15 @@ impl Project {
     /// endpoints move along their current directions, so the rotation is preserved, and the solver keeps them
     /// perpendicular.
     pub fn set_ellipse_axes(&mut self, si: usize, center: Id, rx: f64, ry: f64) -> bool {
+        if !self.ellipse_axes_points(si, center, rx, ry) {
+            return false;
+        }
+        self.solve_sketch(si);
+        true
+    }
+    /// The points of the axes of an ellipse set to semi-axes `rx`, `ry` along their directions, with no solve: the
+    /// evaluation of the parameters sets them before the solve that follows it.
+    pub(crate) fn ellipse_axes_points(&mut self, si: usize, center: Id, rx: f64, ry: f64) -> bool {
         let (rx, ry) = (rx.max(0.01), ry.max(0.01));
         let Some(s) = self.sketches.get(si) else { return false };
         let Some((ma, mi)) = s.entities.iter().find_map(|e| match e.kind.as_ellipse() {
@@ -134,7 +143,6 @@ impl Project {
                 q.y = y;
             }
         }
-        self.solve_sketch(si);
         true
     }
     /// Vertices of a parametric polygon: the points bound by `PointOnCircle` to the centre of its circumscribed

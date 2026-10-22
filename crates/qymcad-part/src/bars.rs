@@ -352,6 +352,12 @@ pub fn open_comp_array_edit(pc: &mut qymcad_ui_state::PartCtx, pid: Id) {
             (p.val, p.txt) = (f.value, qymcad_core::expr::fmt_num(f.value));
         }
     }
+    // A FORMULA OF A VALUE COMES BACK AS IT WAS TYPED, the counts' too: the node keeps it (`keep_item_values`)
+    for p in pc.cmd.params.iter_mut() {
+        if let Some(f) = pc.project.feat_dim(pid, &p.key).filter(|f| !f.trim().is_empty()) {
+            p.txt = f.to_string();
+        }
+    }
     *pc.status = Notice::info(qymcad_i18n::tr("msg-edit-comp-array"));
 }
 

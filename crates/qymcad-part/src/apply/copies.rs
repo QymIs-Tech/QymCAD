@@ -76,7 +76,12 @@ pub fn apply_datum_cmd(
             if d[0].abs() + d[1].abs() + d[2].abs() < 1e-9 {
                 return Err(refused("msg-axis-not-set"));
             }
-            Ok(project.add_axis_manual(o, d))
+            let id = project.add_axis_manual(o, d);
+            // the origin and the direction stay parametric, as the coordinates of a point do
+            if let Err(e) = store_cmd_exprs(cmd, project, id) {
+                return Err(formula_refused(&e));
+            }
+            Ok(id)
         }
         _ => Err(op_failed()),
     }

@@ -186,8 +186,6 @@ fn rect_now(diagonal: [Point2; 2]) -> ShapeNow {
 pub(crate) struct ShapeBox {
     pub(crate) layout: qymcad_ui_state::Layout,
     pub(crate) names: Vec<qymcad_ui_state::FieldName>,
-    /// the sizes no dimension holds, named as parameters of the project
-    pub(crate) free: Vec<&'static str>,
 }
 
 /// THE BOX OF THE SIZES OF A SHAPE IS THE BOX OF ITS DIMENSIONS, a row of a dimension for each size a dimension will hold
@@ -195,7 +193,6 @@ pub(crate) struct ShapeBox {
 pub(crate) fn shape_box(place: &qymcad_ui_state::Placing, now: &ShapeNow) -> ShapeBox {
     let mut rows = Vec::new();
     let mut names = Vec::new();
-    let mut free = Vec::new();
     for (at, size) in now.sizes.iter().enumerate() {
         let Some(p) = place.fields.iter().find(|p| p.key == size.key) else { continue };
         let caption = match size.kind {
@@ -204,17 +201,16 @@ pub(crate) fn shape_box(place: &qymcad_ui_state::Placing, now: &ShapeNow) -> Sha
         };
         if size.held == Held::Free {
             // the unit of a free size is its field's own (`CmdParam::unit`), written after it by the frame
-            // ITS DRIVER IS A PARAMETER OF THE PROJECT: no dimension holds the axes of an ellipse or the turn of a polygon
+            // its driver is the item's own, named by the tool in hand (`InSketch::name_kept_values`): no dimension holds the
+            // axes of an ellipse or the turn of a polygon
             rows.push(qymcad_ui_state::Row::new(caption).field(size.key));
-            names.push(qymcad_ui_state::FieldName::of(size.key, String::new(), None));
-            free.push(size.key);
             continue;
         }
         // its name and its reference are the frame's, kept as typed and switched until Enter lays the dimension
         names.push(qymcad_ui_state::FieldName::of(size.key, String::new(), None).with_driven(qymcad_ui_state::Lit::Off));
         rows.extend(dim_rows(DimRows { caption, field: size.key, at, kind: size.kind }));
     }
-    ShapeBox { layout: dim_layout(rows), names, free }
+    ShapeBox { layout: dim_layout(rows), names }
 }
 
 /// THE RADIUS OR THE DIAMETER OF A ROUND SIZE SWITCHED in the box of a shape, the value in the field written anew in it;

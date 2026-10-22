@@ -102,28 +102,44 @@ fn joint_fields(project: &Project, j: &qymcad_core::feature::Joint) -> Vec<qymca
     // secondary axis and an offset along all three axes, as an anchor almost never sits at the centre of a face exactly
     for (a, cid) in ANCHORS.iter().zip([j.a, j.b]) {
         let Some(c) = project.connector(cid) else { continue };
-        v.push(field_of(CmdParam::new("j-turn", &format!("{}-turn", a.prefix), c.rot_deg, -3600.0, 3600.0), a.tag));
+        v.push(field_of(project, CmdParam::new("j-turn", &format!("{}-turn", a.prefix), c.rot_deg, -3600.0, 3600.0), Whose { tag: a.tag, node: cid, key: "turn" }));
         for (k, label) in ["j-offset-x", "j-offset-y", "j-offset-z"].into_iter().enumerate() {
-            v.push(field_of(CmdParam::new(label, &format!("{}-{k}", a.prefix), c.offset_xyz[k], -100000.0, 100000.0), a.tag));
+            let at = Whose { tag: a.tag, node: cid, key: ANCHOR_KEYS[k] };
+            v.push(field_of(project, CmdParam::new(label, &format!("{}-{k}", a.prefix), c.offset_xyz[k], -100000.0, 100000.0), at));
         }
     }
     let free = j.kind.free_slots();
     for slot in (0..3).filter(|s| free[*s]) {
         let name = joint_slot_words(j.kind, slot).name;
         if let Some(v0) = j.limit_min[slot] {
-            v.push(field_of(CmdParam::new("j-min", &format!("min{slot}"), v0, -100000.0, 100000.0), name));
+            v.push(field_of(project, CmdParam::new("j-min", &format!("min{slot}"), v0, -100000.0, 100000.0), Whose { tag: name, node: j.id, key: LIMIT_KEYS[slot] }));
         }
         if let Some(v1) = j.limit_max[slot] {
-            v.push(field_of(CmdParam::new("j-max", &format!("max{slot}"), v1, -100000.0, 100000.0), name));
+            v.push(field_of(project, CmdParam::new("j-max", &format!("max{slot}"), v1, -100000.0, 100000.0), Whose { tag: name, node: j.id, key: LIMIT_KEYS[3 + slot] }));
         }
     }
     v
 }
 
-/// A field told apart by whose value it is, its number written plainly.
-fn field_of(p: qymcad_ui_state::CmdParam, whose: &'static str) -> qymcad_ui_state::CmdParam {
-    let mut p = p.of(whose);
-    p.txt = qymcad_core::expr::fmt_num(p.val);
+/// The keys the offsets of an anchor keep their formulas under, by its id.
+const ANCHOR_KEYS: [&str; 3] = ["x", "y", "z"];
+
+/// The keys the limits of a joint keep their formulas under, by its id: the lower ones, then the upper.
+const LIMIT_KEYS: [&str; 6] = ["min0", "min1", "min2", "max0", "max1", "max2"];
+
+/// WHOSE A VALUE OF THE BOX OF A JOINT IS: the words it is told apart by, and the anchor or the joint and the key its
+/// formula is kept under.
+#[derive(Clone, Copy)]
+struct Whose {
+    tag: &'static str,
+    node: qymcad_core::model::Id,
+    key: &'static str,
+}
+
+/// A field told apart by whose value it is: its formula as the document keeps it, or its number.
+fn field_of(project: &Project, p: qymcad_ui_state::CmdParam, whose: Whose) -> qymcad_ui_state::CmdParam {
+    let mut p = p.of(whose.tag);
+    p.txt = project.feat_dim(whose.node, whose.key).filter(|t| !t.is_empty()).map_or_else(|| qymcad_core::expr::fmt_num(p.val), str::to_string);
     p
 }
 
@@ -194,6 +210,15 @@ pub(crate) fn joint_fields_take(project: &mut Project, fields: &[qymcad_ui_state
         let Some(c) = project.connector(cid).cloned() else { continue };
         let rot = typed(&format!("{}-turn", a.prefix));
         let off: [Option<Typed>; 3] = std::array::from_fn(|k| typed(&format!("{}-{k}", a.prefix)));
+        // the formulas typed are kept under the anchor, as the slots keep theirs under the joint: a parameter moves it
+        let typed_keys = std::iter::once(("turn", rot.as_ref())).chain(ANCHOR_KEYS.iter().copied().zip(off.iter().map(Option::as_ref)));
+        for (key, t) in typed_keys {
+            if let Some(t) = t {
+                if let Err(e) = project.write_feat_formula(&qymcad_core::model::FeatNumber { node: cid, key }, &t.text, qymcad_core::model::PlainNumber::Stands) {
+                    refused.get_or_insert(e);
+                }
+            }
+        }
         if rot.is_some() || off.iter().any(Option::is_some) {
             let offset: [f64; 3] = std::array::from_fn(|k| off[k].as_ref().map_or(c.offset_xyz[k], |t| t.value));
             changed |= project.set_connector_placement(cid, c.point, rot.map_or(c.rot_deg, |t| t.value), offset);
@@ -201,6 +226,13 @@ pub(crate) fn joint_fields_take(project: &mut Project, fields: &[qymcad_ui_state
     }
     let min: Vec<Option<Typed>> = (0..3).map(|s| typed(&format!("min{s}"))).collect();
     let max: Vec<Option<Typed>> = (0..3).map(|s| typed(&format!("max{s}"))).collect();
+    for (k, t) in min.iter().chain(max.iter()).enumerate() {
+        if let Some(t) = t {
+            if let Err(e) = project.write_feat_formula(&qymcad_core::model::FeatNumber { node: j.id, key: LIMIT_KEYS[k] }, &t.text, qymcad_core::model::PlainNumber::Stands) {
+                refused.get_or_insert(e);
+            }
+        }
+    }
     if let Some(jj) = project.joints.iter_mut().find(|x| x.id == j.id) {
         for slot in 0..3 {
             changed |= set_limit(&mut jj.limit_min[slot], min[slot].as_ref());

@@ -18,7 +18,7 @@ pub fn in_hand<'a>(jc: &'a mut qymcad_ui_state::JointCtx<'_>) -> Option<Box<dyn 
         }
     }
     let tool = AsmTool::of(jc.joint)?;
-    Some(Box::new(AsmTools { jc, tool, own: Vec::new(), free: Vec::new(), asks: Vec::new() }))
+    Some(Box::new(AsmTools { jc, tool, own: Vec::new(), asks: Vec::new() }))
 }
 
 /// WHAT THE BOX OF A JOINT SAW AS THE FRAME BEGAN: the context the keyboard is asked of, the joints before the widgets of
@@ -143,21 +143,25 @@ impl FramedTool for JointEdit<'_, '_> {
     }
 }
 
+/// The key of the number of the bar a relation is made with: its ratio.
+const RATIO: &str = "relation_ratio";
+
 /// A TOOL OF THE ASSEMBLY THAT PICKS: the tangent, the width, the group, grounding, an anchor, a relation, a joint.
 struct AsmTools<'a, 'b> {
     jc: &'a mut qymcad_ui_state::JointCtx<'b>,
     tool: AsmTool,
     /// no field of its own: the box shows the numbers of the bar alone, not the fields of the joint edited last
     own: Vec<qymcad_ui_state::CmdParam>,
-    /// the numbers of the bar - the ratio of a relation - named as parameters
-    free: Vec<&'static str>,
     asks: Vec<qymcad_ui_state::FieldAsk>,
 }
 
 impl FramedTool for AsmTools<'_, '_> {
     fn describe(&mut self, _ctx: &egui::Context) -> Described {
         let mut d = asm_tool_described(self.jc, &self.tool);
-        self.free = qymcad_ui_state::name_bar_numbers(&mut d);
+        // THE RATIO OF A RELATION is a value of the relation, named through it once it stands
+        if let Some(spec) = d.boxed.as_mut().filter(|_| self.tool == AsmTool::Relation) {
+            spec.names.push(qymcad_ui_state::item_field_name(&*self.jc.project, RATIO, None, "ratio"));
+        }
         d
     }
 
@@ -197,12 +201,13 @@ impl FramedTool for AsmTools<'_, '_> {
             AsmTool::Width => width_pick_confirm(jc),
             AsmTool::Group => group_pick_confirm(jc),
             AsmTool::Relation => {
+                let before: Vec<qymcad_core::model::Id> = jc.project.relations.iter().map(|r| r.id).collect();
                 relation_pick_confirm(jc)?;
-                if self.asks.iter().any(|a| !a.name.trim().is_empty()) {
-                    qymcad_ui_state::begin_edit(&mut *jc.edits, &*jc.project, qymcad_i18n::tr("sk-driver-step"));
-                    qymcad_ui_state::name_free_values(jc.project, &self.asks, &self.free);
-                    qymcad_ui_state::commit_edit_if_changed(&mut jc.rebuild());
-                }
+                // the formula and the driver of the ratio go on the relation just made
+                let Some(id) = jc.project.relations.iter().map(|r| r.id).find(|id| !before.contains(id)) else { return Ok(()) };
+                qymcad_ui_state::begin_edit(&mut *jc.edits, &*jc.project, qymcad_i18n::tr("box-driver-step"));
+                qymcad_ui_state::keep_item_values(jc.project, &self.asks, &[qymcad_ui_state::ItemValue { field: RATIO, node: id, key: "ratio" }]);
+                qymcad_ui_state::commit_edit_if_changed(&mut jc.rebuild());
                 Ok(())
             }
             AsmTool::Ground | AsmTool::Anchor | AsmTool::Joint => Ok(()),

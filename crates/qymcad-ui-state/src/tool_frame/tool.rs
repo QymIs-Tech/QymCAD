@@ -78,6 +78,11 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
     let ctx = ui.ctx().clone();
     let canvas = view_or_window(&ctx, canvas);
     let mut described = tool.describe(&ctx);
+    // what was asked of the names of its box the frame before: the work a click finishes names what it made by them
+    if let Some(spec) = &described.boxed {
+        let asks = asks_of(&ctx, box_id(&described.head), &spec.names, tool.fields());
+        tool.take_asks(asks);
+    }
     // THE WORK FINISHED BY A CLICK goes through the door Apply goes through: the tool put down where its head says so
     if tool.finished_by_click() && described.head.after == AfterApply::Select {
         tool.put_down();
