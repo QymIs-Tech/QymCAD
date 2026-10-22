@@ -25,12 +25,10 @@ impl ResolvedIcon {
     }
 }
 
-/// Ensure default CAD icons are loaded into `ctx` if not yet installed.
+/// Ensure default CAD icons are loaded into `ctx` if no icons were installed yet - by this, or by a cascade applied.
 pub fn ensure_cad_icons_installed(ctx: &egui::Context) {
-    let id_key = egui::Id::new("cad_icons_installed");
-    let is_installed = ctx.data(|d| d.get_temp::<bool>(id_key).unwrap_or(false));
+    let is_installed = ctx.data(|d| d.get_temp::<bool>(super::manager::icons_installed_id()).unwrap_or(false));
     if !is_installed {
-        ctx.data_mut(|d| d.insert_temp(id_key, true));
         super::manager::install_cad_icons(ctx, &[], &qymcad_scheme::dark());
     }
 }

@@ -19,20 +19,28 @@ pub(crate) struct IndexSwap {
     pub to: usize,
 }
 
-/// Render a selectable theme card item in the icon theme manager sidebar.
-pub(crate) fn manager_theme_card(ui: &mut egui::Ui, salt: impl std::hash::Hash + std::fmt::Debug, selected: bool, content: impl FnOnce(&mut egui::Ui) -> Option<egui::Rect>) -> ThemeCardResponse {
-    let fill = if selected { ui.visuals().selection.bg_fill.linear_multiply(0.22) } else { ui.visuals().faint_bg_color };
-    let (rect, background) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 68.0), egui::Sense::click());
-    ui.painter().rect_filled(rect, 6.0, fill);
-    let inner = rect.shrink2(egui::vec2(8.0, 6.0));
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).id_salt(&salt));
-    let action_rect = content(&mut child);
-    let mut selection_rect = rect;
-    if let Some(action_rect) = action_rect {
-        selection_rect.max.x = action_rect.left();
-    }
-    let foreground = ui.interact(selection_rect, ui.id().with(("theme_card", &salt)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-    ThemeCardResponse { clicked: foreground.clicked() || background.clicked(), rect }
+/// Render a selectable card of the theme `key` names - its selection key - in the icon theme manager sidebar.
+///
+/// THE CARD IS DRAWN UNDER THE KEY OF ITS THEME (`qymcad_shell::keyed`), the same in the cascade and among the themes
+/// available: its widgets keep their ids while the theme moves between the lists, the cascade is reordered or a theme
+/// comes or goes on the disk. Counted after the cards drawn before it, they took other ids each time, and egui marked
+/// them with red frames - measured on three themes: on a swap in the cascade four, on a theme come to the disk one, on a
+/// theme deactivated three. A theme is drawn once a frame.
+pub(crate) fn manager_theme_card(ui: &mut egui::Ui, key: &str, selected: bool, content: impl FnOnce(&mut egui::Ui) -> Option<egui::Rect>) -> ThemeCardResponse {
+    qymcad_shell::keyed(ui, ("a theme card", key), |ui| {
+        let fill = if selected { ui.visuals().selection.bg_fill.linear_multiply(0.22) } else { ui.visuals().faint_bg_color };
+        let (rect, background) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 68.0), egui::Sense::click());
+        ui.painter().rect_filled(rect, 6.0, fill);
+        let inner = rect.shrink2(egui::vec2(8.0, 6.0));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).id_salt("the content of the card"));
+        let action_rect = content(&mut child);
+        let mut selection_rect = rect;
+        if let Some(action_rect) = action_rect {
+            selection_rect.max.x = action_rect.left();
+        }
+        let foreground = ui.interact(selection_rect, ui.id().with("the face of the card"), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        ThemeCardResponse { clicked: foreground.clicked() || background.clicked(), rect }
+    })
 }
 
 /// Draw a truncated title for a theme card with full tooltip on hover.

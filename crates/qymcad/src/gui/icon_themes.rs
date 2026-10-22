@@ -13,6 +13,8 @@ pub(crate) mod sidebar;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod a_theme_card_keeps_its_id;
 
 pub(crate) use appearance_section::{apply_icon_themes, icon_theme_section};
 pub(crate) use manager_window::draw_icon_manager_window;

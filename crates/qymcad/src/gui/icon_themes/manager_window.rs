@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use super::appearance_section::draw_bundle_format_badge;
 pub(crate) use super::appearance_section::apply_icon_themes;
 use super::conflicts::draw_duplicate_conflict_view;
-use super::discovery::{all_theme_dirs, discover_all_theme_packs, ensure_discovery_worker, stop_discovery_worker, theme_discovery_ready};
+use super::discovery::{all_theme_dirs, ensure_discovery_worker, stop_discovery_worker, theme_discovery_ready, themes_of_the_frame};
 use super::gallery::{
     draw_gallery_icon_row, draw_pack_icon, draw_pack_icon_bytes, forget_pack_gallery_textures, manager_archive_preview, manager_directory_preview, manager_embedded_preview,
     request_manager_pack_preview, GalleryRowParams, ManagerPreviewImage,
@@ -80,7 +80,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
     }
 
     let discovery_ready = theme_discovery_ready(dirs);
-    let discovered = discover_all_theme_packs(dirs);
+    let discovered = themes_of_the_frame(ctx, dirs);
     let mut all_packs = discovered.packs;
 
     // Retain only directory packs in watched list
@@ -127,12 +127,19 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
 
                     let mut to_swap: Option<IndexSwap> = None;
                     let mut to_remove = None;
+                    // A THEME IS DRAWN ONCE A FRAME, its card under its own key: a theme twice in the cascade, twice among
+                    // those found on the disk, or in both lists at once is drawn the first time only
+                    let mut drawn: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    drawn.insert(DEFAULT_THEME_ID.to_string());
 
                     for (idx, id) in wc.set.active_icon_packs.iter().enumerate() {
+                        if !drawn.insert(id.clone()) {
+                            continue;
+                        }
                         let pack_opt = all_packs.iter().find(|p| &p.manifest.id == id);
                         let is_selected = state.selected_pack_id == *id;
 
-                        let card = manager_theme_card(ui, ("active_theme", idx, id.as_str()), is_selected, |ui| {
+                        let card = manager_theme_card(ui, id, is_selected, |ui| {
                             let text_width = (ui.available_width() - 150.0).max(96.0);
                             ui.horizontal(|ui| {
                                 if let Some(pack) = pack_opt {
@@ -182,7 +189,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                     }
 
                     // Base fallback
-                    let base_card = manager_theme_card(ui, ("base_fallback_theme", DEFAULT_THEME_ID), state.selected_pack_id == DEFAULT_THEME_ID, |ui| {
+                    let base_card = manager_theme_card(ui, DEFAULT_THEME_ID, state.selected_pack_id == DEFAULT_THEME_ID, |ui| {
                         let text_width = (ui.available_width() - 44.0).max(110.0);
                         let base_pack = all_packs.iter().find(|pack| pack.manifest.id == DEFAULT_THEME_ID && !pack.has_id_conflict());
                         ui.horizontal(|ui| {
@@ -222,8 +229,11 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                             continue;
                         }
                         let p_key = p.selection_key();
+                        if !drawn.insert(p_key.clone()) {
+                            continue;
+                        }
                         let is_selected = state.selected_pack_id == p_key || (!p.has_id_conflict() && state.selected_pack_id == p.manifest.id);
-                        let card = manager_theme_card(ui, ("available_theme", p_key.as_str()), is_selected, |ui| {
+                        let card = manager_theme_card(ui, &p_key, is_selected, |ui| {
                             let text_width = (ui.available_width() - 168.0).max(90.0);
                             ui.horizontal(|ui| {
                                 if p.has_id_conflict() {

@@ -95,11 +95,19 @@ pub fn update_cad_icon(ctx: &egui::Context, icon: IconId, stack: &[IconPack], pa
 
 /// Install / update all CAD icons directly into `egui::Context` loaders.
 /// Replaces existing icon bytes and evicts stale GPU textures so `egui::Image::new(icon.uri())`
-/// immediately renders the newly resolved icons.
+/// immediately renders the newly resolved icons. The icons are marked installed here, whoever installs them: a cascade
+/// applied at start left the mark unset, and the first icon drawn laid the default icons in the dark palette over it.
+/// Reported behaviour: the colours of a theme were gone after a restart and came back when the theme was clicked again.
 pub fn install_cad_icons(ctx: &egui::Context, stack: &[IconPack], palette: &qymcad_scheme::Palette) {
     for &icon in ALL_ICONS {
         update_cad_icon(ctx, icon, stack, palette);
     }
+    ctx.data_mut(|d| d.insert_temp(icons_installed_id(), true));
+}
+
+/// Where the mark that the CAD icons are in the loaders is kept.
+pub(crate) fn icons_installed_id() -> egui::Id {
+    egui::Id::new("cad_icons_installed")
 }
 
 pub(crate) fn watcher_id() -> egui::Id {
