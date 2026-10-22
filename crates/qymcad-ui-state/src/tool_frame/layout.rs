@@ -46,6 +46,39 @@ impl Section {
     }
 }
 
+/// ONE DIRECTION OF A PATTERN IN ITS BOX: the rows of the workbench under it - an axis, the copies and the pitch of a
+/// pattern of bodies or of parts, the copies and the steps along X and Y of a pattern of a sketch - and, for every direction
+/// after the first, the switch its title is and whether it is on.
+pub struct PatternDirection {
+    pub rows: Vec<Row>,
+    pub switch: Option<DirectionSwitch>,
+}
+
+/// The switch of a direction of a pattern after the first: the key told to the tool as its title is pressed, and whether
+/// the tool holds it on.
+#[derive(Clone, Copy)]
+pub struct DirectionSwitch {
+    pub key: OptKey,
+    pub on: Lit,
+}
+
+/// THE DIRECTIONS OF A PATTERN, ONE DESCRIPTION FOR EVERY WORKBENCH: a section each under its title "Direction N" as the
+/// parts of a joint are; the first open, every one after it folded until its title is pressed, which switches it on.
+/// Nothing of them stands in the bar.
+pub fn pattern_directions(directions: Vec<PatternDirection>) -> Vec<Section> {
+    directions
+        .into_iter()
+        .enumerate()
+        .map(|(k, d)| {
+            let title = qymcad_i18n::tr1("box-direction-n", "n", &(k + 1).to_string());
+            match d.switch {
+                Some(sw) => Section::switched(title, sw.key, sw.on, d.rows),
+                None => Section::titled(title, Folded::No, d.rows),
+            }
+        })
+        .collect()
+}
+
 /// DOES A SECTION STAND FOLDED as its box opens.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Folded {

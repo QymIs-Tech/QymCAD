@@ -21,11 +21,10 @@ const BODY_DIRECTIONS: [Direction; 3] = [Direction { count: "count", step: "step
 /// The directions of a pattern of parts.
 const PART_DIRECTIONS: [Direction; 3] = [Direction { count: "count", step: "cstep" }, Direction { count: "count2", step: "cstep2" }, Direction { count: "count3", step: "cstep3" }];
 
-/// THE DIRECTIONS OF A PATTERN, a section each under its title as the parts of a joint are: its axis, its copies and
-/// its pitch, each value with its driver. The second and the third are folded until opened, which switches them on - the
-/// third offered once the second is on; nothing of them stands in the bar.
+/// THE DIRECTIONS OF A PATTERN OF BODIES OR OF PARTS (`pattern_directions`): each its axis, its copies and its pitch,
+/// each value with its driver; the third offered once the second is on.
 fn directions(keys: &[Direction; 3], arr: &qymcad_ui_state::ArrayParams, first: u8) -> Vec<Section> {
-    use qymcad_ui_state::{AsLit, OptKey};
+    use qymcad_ui_state::{AsLit, DirectionSwitch, OptKey, PatternDirection};
     let rows = |d: &Direction, axis: &'static str, along: u8| {
         vec![
             Row::new(qymcad_i18n::tr("box-axis")).opt(crate::bars::direction(OptKey::of(axis), None, along)),
@@ -33,15 +32,14 @@ fn directions(keys: &[Direction; 3], arr: &qymcad_ui_state::ArrayParams, first: 
             Row::new(qymcad_i18n::tr("f-pitch")).field(d.step),
         ]
     };
-    let title = |n: usize| qymcad_i18n::tr1("box-direction-n", "n", &n.to_string());
-    let mut sections = vec![
-        Section::titled(title(1), Folded::No, rows(&keys[0], "dir", first)),
-        Section::switched(title(2), OptKey::of("dir2_on"), arr.two.lit(), rows(&keys[1], "dir2", arr.dir2)),
+    let mut all = vec![
+        PatternDirection { rows: rows(&keys[0], "dir", first), switch: None },
+        PatternDirection { rows: rows(&keys[1], "dir2", arr.dir2), switch: Some(DirectionSwitch { key: OptKey::of("dir2_on"), on: arr.two.lit() }) },
     ];
     if arr.two {
-        sections.push(Section::switched(title(3), OptKey::of("dir3_on"), arr.three.lit(), rows(&keys[2], "dir3", arr.dir3)));
+        all.push(PatternDirection { rows: rows(&keys[2], "dir3", arr.dir3), switch: Some(DirectionSwitch { key: OptKey::of("dir3_on"), on: arr.three.lit() }) });
     }
-    sections
+    qymcad_ui_state::pattern_directions(all)
 }
 
 /// THE LAYOUT OF THE BOX OF THE PART COMMAND IN HAND.

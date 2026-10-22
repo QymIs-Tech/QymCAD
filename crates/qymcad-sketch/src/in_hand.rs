@@ -197,19 +197,18 @@ impl InSketch<'_, '_> {
     }
 }
 
-/// THE BOX OF A PATTERN, as the pattern of a part is: a linear one by its directions - the copies and the steps of each
-/// under its title, the second folded until it is opened, which switches it on; a circular one a value a row. The numbers
-/// come from the bar (`numbers_into_the_box`).
+/// THE BOX OF A PATTERN, by the description of every pattern (`pattern_directions`): a linear one by its directions - the
+/// copies and the steps along X and Y of each, the second folded until its title switches it on; a circular one a value a
+/// row. The numbers come from the bar (`numbers_into_the_box`).
 fn pattern_box(armed: &qymcad_ui_state::Armed, pat: &qymcad_ui_state::SketchPattern) -> Option<qymcad_ui_state::BoxSpec> {
-    use qymcad_ui_state::{AsLit, OptKey, Row, Section};
+    use qymcad_ui_state::{AsLit, DirectionSwitch, OptKey, PatternDirection, Row, Section};
     let kind = armed.pattern()?;
     let rows = |of: &[PatternRow]| of.iter().map(|r| Row::new(qymcad_i18n::tr(r.caption)).field(r.field)).collect::<Vec<Row>>();
-    let direction = |n: usize| qymcad_i18n::tr1("box-direction-n", "n", &n.to_string());
     let sections = if kind == qymcad_ui_state::PatternKind::Linear {
-        vec![
-            Section::titled(direction(1), qymcad_ui_state::Folded::No, rows(&FIRST_DIRECTION)),
-            Section::switched(direction(2), OptKey::of(SECOND_DIRECTION), (pat.count2 > 1).lit(), rows(&SECOND_DIRECTION_ROWS)),
-        ]
+        qymcad_ui_state::pattern_directions(vec![
+            PatternDirection { rows: rows(&FIRST_DIRECTION), switch: None },
+            PatternDirection { rows: rows(&SECOND_DIRECTION_ROWS), switch: Some(DirectionSwitch { key: OptKey::of(SECOND_DIRECTION), on: (pat.count2 > 1).lit() }) },
+        ])
     } else {
         vec![Section::plain(rows(&AROUND))]
     };
