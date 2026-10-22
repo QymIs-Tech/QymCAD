@@ -1033,6 +1033,8 @@ mod rebuild;
 pub use rebuild::*;
 mod edits;
 pub use edits::*;
+mod sketch_history;
+pub use sketch_history::*;
 mod fields;
 pub use fields::*;
 mod fonts;

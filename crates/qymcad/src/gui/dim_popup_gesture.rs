@@ -332,7 +332,7 @@ mod tests {
         crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         // a live window: a rebuild asked for goes to the background and stands as `wanted`
         app.regen.ui_running = true;
-        qymcad_ui_state::open_sketch_session(&mut app.sketch_ses, &app.project, sid);
+        qymcad_ui_state::open_sketch_session(&mut app.sketch_ses, &mut app.disk.edits, &app.project, sid);
 
         let mut p = Popup::new();
         p.enter_driver_field(&mut app);

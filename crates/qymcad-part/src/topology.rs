@@ -66,6 +66,9 @@ pub fn delete_body_mesh(pc: &mut qymcad_ui_state::PartCtx, mi: usize, dependents
 /// the bodies built on it), then clearing the editing session and the selection, then a resync
 /// (regeneration plus prune).
 pub fn delete_sketch_full(pc: &mut qymcad_ui_state::PartCtx, sid: Id, dependents: bool) {
+    if pc.sketch_ses.editing == Some(sid) {
+        qymcad_ui_state::close_sketch_history(pc.edits, pc.project); // the session is one step, the deletion another
+    }
     qymcad_ui_state::begin_edit(&mut *pc.edits, &*pc.project, qymcad_i18n::tr("status-delete-sketch")); // THE OPERATION BOUNDARY
     let removed = if dependents {
         pc.project.delete_sketch_with_dependents(sid)

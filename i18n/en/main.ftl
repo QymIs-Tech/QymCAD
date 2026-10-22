@@ -2288,6 +2288,8 @@ anchor-vertex = vertex · { $what }
 # --- REMAINING GUI ---
 g-undone = Undone: { $what }
 g-redone = Redone: { $what }
+g-sketch-edited = { $name } edited
+g-sketch-undo-floor = The sketch has no earlier step to undo. To undo the steps before it, finish the sketch
 lib-load-error = Library: could not load the part — { $error }
 lib-part-inserted = The part “{ $name }” is inserted
 lib-category-error = creating the category: { $error }

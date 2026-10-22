@@ -9,6 +9,7 @@ pub fn abort_edit(rc: &mut RebuildCtx) {
         return;
     }
     let Some((_, before)) = rc.edits.open.take() else { return };
+    settle_sketch_floor(rc.edits);
     rc.edits.open_kind = OpenEdit::Working;
     rc.regen.pending = false; // the operation was rolled back: there is nothing to rebuild
     let _ = restore(rc, before); // an aborted operation leaves the window where it is
@@ -25,6 +26,7 @@ pub fn commit_edit_if_changed(rc: &mut RebuildCtx) {
         rc.edits.depth = 0;
         rc.edits.open = None;
         rc.edits.open_kind = OpenEdit::Working;
+        settle_sketch_floor(rc.edits);
     } else {
         commit_edit(rc);
     }
@@ -35,8 +37,8 @@ pub fn commit_edit_if_changed(rc: &mut RebuildCtx) {
 /// THE LAST STEP TAKEN BACK AND FORGOTTEN: the document as it was before it, and no step to redo - for a step a tool laid
 /// on its way and is put down without finishing (the lines a corner tool cut at a crossing, the corner never cut).
 pub fn take_back_last_step(edits: &mut Edits, project: &mut Project, regen: &mut Rebuilding) {
-    if edits.open.is_some() {
-        return;
+    if edits.open.is_some() || edits.undo.len() <= undo_floor(edits) {
+        return; // a step under the floor of an open sketch is not the tool's to take
     }
     let Some(step) = edits.undo.pop() else { return };
     *project = step.snap.project.clone();
@@ -46,7 +48,7 @@ pub fn take_back_last_step(edits: &mut Edits, project: &mut Project, regen: &mut
 }
 
 pub fn fold_into_last_step(edits: &mut Edits, project: &Project) {
-    if edits.open.is_some() || edits.undo.is_empty() {
+    if edits.open.is_some() || edits.undo.len() <= undo_floor(edits) {
         return;
     }
     edits.baseline = Snapshot { project: project.clone() };
@@ -89,13 +91,13 @@ pub fn close_edit(edits: &mut Edits, project: &Project) {
         return; // a nested operation: the outer one will sum it up
     }
     let Some((name, before)) = edits.open.take() else { return };
-    if doc_key(&before.project) == doc_key(project) {
-        return;
+    if doc_key(&before.project) != doc_key(project) {
+        edits.undo.push(Step { name, snap: before });
+        edits.redo.clear();
+        edits.baseline = Snapshot { project: project.clone() };
+        edits.committed_key = doc_key(project);
     }
-    edits.undo.push(Step { name, snap: before });
-    edits.redo.clear();
-    edits.baseline = Snapshot { project: project.clone() };
-    edits.committed_key = doc_key(project);
+    settle_sketch_floor(edits);
 }
 
 /// A REBUILD FROM THE THREAD HAS LANDED ON A DOCUMENT NOBODY TOUCHED SINCE: the state the next undo comes back to is
@@ -121,7 +123,9 @@ pub fn commit_edit(rc: &mut RebuildCtx) {
     rebuild_if_dirty(rc); // ONE point: the scheduler decides for itself whether to compute
     if rc.edits.undo.len() > rc.set.undo_cap.max(1) {
         rc.edits.undo.remove(0);
+        shift_sketch_history(rc.edits);
     }
+    settle_sketch_floor(rc.edits);
     rc.edits.redo.clear();
     rc.edits.baseline = Snapshot { project: rc.project.clone() };
     rc.edits.committed_key = doc_key(rc.project);

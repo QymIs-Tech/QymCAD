@@ -861,13 +861,11 @@ impl App {
         if let Some(s) = self.project.sketches.get(si) {
             // remember the viewpoint and mode, to bring them back on leaving the sketch (the drill-in stack)
             self.viewing.nav_stash.push((self.viewing.cam, self.viewing.view, self.viewing.mode_3d));
-            qymcad_ui_state::open_sketch_session(&mut self.sketch_ses, &self.project, s.id);
+            qymcad_ui_state::open_sketch_session(&mut self.sketch_ses, &mut self.disk.edits, &self.project, s.id);
             self.workbench = Workbench::Sketch;
             self.viewing.mode_3d = false;
             self.chosen.sel = Sel::Sketch(si);
             self.tools.sel_sk.clear(); // the selection, and whatever was waiting on it
-            self.tools.pending_import.draw_pts = None;
-            self.tools.armed = qymcad_ui_state::Armed::None;
             self.viewing.view.initialized = false; // fit the view to the sketch
             self.status = Notice::info(sketch_entry_status(&self.project, s));
         }

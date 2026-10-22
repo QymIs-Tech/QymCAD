@@ -2288,6 +2288,8 @@ anchor-vertex = вершина · { $what }
 # --- ОСТАТОК GUI ---
 g-undone = Отменено: { $what }
 g-redone = Повторено: { $what }
+g-sketch-edited = Правка эскиза «{ $name }»
+g-sketch-undo-floor = В истории эскиза раньше шагов нет. Чтобы отменить шаги до него, завершите эскиз
 lib-load-error = Библиотека: не удалось загрузить изделие — { $error }
 lib-part-inserted = Вставлено изделие «{ $name }»
 lib-category-error = создание категории: { $error }

@@ -2282,6 +2282,8 @@ anchor-vertex = төбе · { $what }
 # --- REMAINING GUI ---
 g-undone = Болдырылмады: { $what }
 g-redone = Қайтарылды: { $what }
+g-sketch-edited = «{ $name }» эскизін өзгерту
+g-sketch-undo-floor = Эскиз тарихында бұдан ертерек қадам жоқ. Одан бұрынғы қадамдарды болдырмау үшін эскизді аяқтаңыз
 lib-load-error = Кітапхана: бұйымды жүктеу мүмкін болмады — { $error }
 lib-part-inserted = «{ $name }» бұйымы кірістірілді
 lib-category-error = санат жасау: { $error }
