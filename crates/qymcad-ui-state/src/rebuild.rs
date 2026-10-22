@@ -48,6 +48,12 @@ pub fn rebuild_after_sketch(rc: &mut RebuildCtx, closed: SketchSession) {
 }
 
 pub fn regenerate_now(rc: &mut RebuildCtx) {
+    regenerate_now_unless(rc, &std::sync::Arc::default());
+}
+
+/// A REBUILD OF THIS THREAD THAT A FLAG STOPS: once `stop` is raised, between two nodes, or between two steps of the
+/// node the kernel is building. A rebuild stopped is of no use - its caller lets it go whole.
+pub fn regenerate_now_unless(rc: &mut RebuildCtx, stop: &std::sync::Arc<std::sync::atomic::AtomicBool>) {
     prune_dangling_features(rc.live, rc.project); // anti-ghost: on EVERY regen, orphan meshes and dangling features go
                                                   // THE REBUILD GRAPH: a parameter may have changed (including a named sketch dimension - those are in
                                                   // `param_map`) -> ONLY the features that refer to it are rebuilt. This used to mark ALL features
@@ -60,14 +66,15 @@ pub fn regenerate_now(rc: &mut RebuildCtx) {
     // One atomic store, and it cannot fall out of step with the setting. One core means single-threaded, which
     // is the switch a person reaches for when a parallel pass is suspected of lying.
     qymcad_kernel::set_parallel(rc.set.kernel_threads != 1, rc.set.kernel_threads);
-    let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut rc.live.shapes)), quality_k: rc.project.geom_quality.deflection_k(), ..Default::default() };
+    let kernel =
+        qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut rc.live.shapes)), quality_k: rc.project.geom_quality.deflection_k(), stop: stop.clone(), ..Default::default() };
     // HOW OFTEN THE GEOMETRIC FALLBACK FIRED is counted AROUND the rebuild. This is an event of a
     // different kind from rebinding a reference: there a name was found and moved, here no name was
     // found at all and the element was identified BY PLACE, by resemblance. Staying silent about it is
     // not allowed - that is exactly how a reference lands on a neighbouring face, and it is discovered
     // three operations later.
     let snaps_before = rc.project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed);
-    let report = rc.project.regenerate(&kernel);
+    let report = rc.project.regenerate_watched(&kernel, &Unless(stop));
     let snaps = rc.project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed).saturating_sub(snaps_before);
     rc.live.shapes = kernel.shapes.into_inner();
     settle_params_seen(rc.params_seen, rc.project); // the rebuild HAPPENED - only now are the values "seen"
@@ -102,6 +109,15 @@ pub fn regenerate_now(rc: &mut RebuildCtx) {
         *rc.status = said; // built, but some of it only in part
     }
     invalidate(rc.regen);
+}
+
+/// A REBUILD WATCHED FOR A FLAG that stops it.
+struct Unless<'a>(&'a std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl qymcad_core::feature::RegenWatch for Unless<'_> {
+    fn stopped(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 pub fn ensure_brep(rc: &mut RebuildCtx) {

@@ -13,6 +13,13 @@
 //! The trial runs on a worker, the frames keep coming: while it runs the command says it is checking and does not
 //! apply, and the answer takes its place beside the field when it lands. Run on the frame thread a trial of a heavy part
 //! stood the window still for as long as the kernel took.
+//!
+//! ONE TRIAL, OF THE STATE THAT STAYS. A state is tried once it has held for `SETTLED`, and a trial a newer state makes
+//! of no use is stopped: one waiting for the lock of the kernel leaves without building, one building stops between its
+//! steps. And it builds its own node only - the timeline is rolled back to just past it on the copy - not all that stands
+//! on it. Measured on a propeller of 11 nodes, a fillet R10 at the top reopened and two edges of the blades clicked:
+//! each value and each click was a trial of the whole timeline below the node, 35-37 s of work, none stopped - three
+//! clicks in a row queued 110 s for the lock, and Apply rebuilt behind them.
 use qymcad_ui_state::Notice;
 use qymcad_core::model::Id;
 use qymcad_ui_state::PartCtx;
@@ -37,6 +44,10 @@ const TRIED: [qymcad_ui_state::PartTool; 10] = [
 
 pub use qymcad_ui_state::Trial;
 
+/// HOW LONG A STATE OF THE COMMAND HOLDS BEFORE IT IS TRIED: a digit of a number being typed, one edge of several clicked
+/// in a row, is not.
+const SETTLED: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// WHY THE COMMAND AS IT STANDS WOULD NOT BUILD - or that it builds, or that the answer is still coming. A trial runs
 /// once per change of a value or a pick, not once a frame, and on a worker.
 pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
@@ -47,7 +58,10 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
             p.val = v;
         }
     }
-    let Some(kind) = pc.armed.part_tool() else { return Trial::Clear };
+    let Some(kind) = pc.armed.part_tool() else {
+        qymcad_ui_state::drop_trial(ctx);
+        return Trial::Clear;
+    };
     if kind == qymcad_ui_state::PartTool::Thread && !pc.thread.auger && qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
         let t = *pc.thread;
         let length = qymcad_ui_state::cmd_val(pc.cmd, "length");
@@ -72,37 +86,54 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
     let id = qymcad_ui_state::trial_slot_id();
     if !TRIED.contains(&kind) || pc.live.shapes.is_empty() || !super::cmd_ready(pc) || !qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
         // the last answer goes with the pick it was about: its faces drawn on after the face was let go of
-        ctx.data_mut(|d| d.remove::<qymcad_ui_state::TrialSlot>(id));
+        qymcad_ui_state::drop_trial(ctx);
         return Trial::Clear;
     }
     let key = state_key(pc);
-    if let Some(qymcad_ui_state::TrialSlot { key: k, answer }) = ctx.data(|d| d.get_temp::<qymcad_ui_state::TrialSlot>(id)) {
-        if k == key {
-            qymcad_ui_state::trial_is_current(ctx);
-            let got = answer.lock().ok().and_then(|a| a.clone()).map(|a| a.verdict);
-            if got.is_none() {
-                ctx.request_repaint_after(std::time::Duration::from_millis(30));
-                // a frame when the answer lands
+    let slot = match ctx.data(|d| d.get_temp::<qymcad_ui_state::TrialSlot>(id)) {
+        Some(slot) if slot.key == key => slot,
+        other => {
+            // a new state: the trial of the old one is of no use
+            if let Some(old) = other {
+                old.give_up();
             }
-            return got.unwrap_or(Trial::Checking);
+            let slot = qymcad_ui_state::TrialSlot::waiting(key);
+            ctx.data_mut(|d| d.insert_temp(id, slot.clone()));
+            slot
         }
+    };
+    qymcad_ui_state::trial_is_current(ctx);
+    if slot.run == qymcad_ui_state::TrialRun::Waiting {
+        let held = slot.since.elapsed();
+        if held < SETTLED {
+            // the frames keep coming while it waits, as while it runs: the window is not at rest with a value unchecked
+            ctx.request_repaint_after((SETTLED - held).min(std::time::Duration::from_millis(30)));
+            return Trial::Checking;
+        }
+        start(pc, &slot);
+        ctx.data_mut(|d| d.insert_temp(id, qymcad_ui_state::TrialSlot { run: qymcad_ui_state::TrialRun::Started, ..slot.clone() }));
     }
+    let got = slot.answer.lock().ok().and_then(|a| a.clone()).map(|a| a.verdict);
+    if got.is_none() {
+        // a frame when the answer lands
+        ctx.request_repaint_after(std::time::Duration::from_millis(30));
+    }
+    got.unwrap_or(Trial::Checking)
+}
+
+/// START THE TRIAL OF THE STATE OF `slot` on a worker: it writes its answer into the slot, unless it was given up.
+fn start(pc: &PartCtx, slot: &qymcad_ui_state::TrialSlot) {
     let first = pc.cmd.params.first().map(|p| p.key.to_string()).unwrap_or_default();
     let job = gather(pc);
-    let answer: Arc<Mutex<Option<qymcad_ui_state::TrialAnswer>>> = Arc::new(Mutex::new(None));
-    let out = answer.clone();
+    let (out, stop): (Arc<Mutex<Option<qymcad_ui_state::TrialAnswer>>>, _) = (slot.answer.clone(), slot.stop.clone());
     qymcad_kernel::worker(move || {
         // a trial names no field: the command's first one says it
-        let (words, faces) = run_trial(job);
-        let verdict = words.map_or(Trial::Clear, |w| Trial::Refused(first, w));
+        let Some(Tried { refused, faces }) = run_trial(job, &stop) else { return };
+        let verdict = refused.map_or(Trial::Clear, |w| Trial::Refused(first, w));
         if let Ok(mut a) = out.lock() {
             *a = Some(qymcad_ui_state::TrialAnswer { verdict, faces: Arc::new(faces) });
         }
     });
-    ctx.data_mut(|d| d.insert_temp::<qymcad_ui_state::TrialSlot>(id, qymcad_ui_state::TrialSlot { key, answer }));
-    qymcad_ui_state::trial_is_current(ctx);
-    ctx.request_repaint_after(std::time::Duration::from_millis(30));
-    Trial::Checking
 }
 
 /// What the trial depends on: the command, its values and picks, the settings of its bar, and the document.
@@ -217,10 +248,22 @@ fn gather(pc: &PartCtx) -> TrialJob {
     }
 }
 
+/// WHAT A TRIAL CAME TO: why it would not build, if it would not, and the faces it adds.
+struct Tried {
+    refused: Option<String>,
+    faces: Vec<[[f64; 3]; 3]>,
+}
+
+impl Tried {
+    fn refused(words: String) -> Self {
+        Self { refused: Some(words), faces: Vec::new() }
+    }
+}
+
 /// Apply the command to the copies and rebuild them at once, on the worker: the words of what refused, if anything did,
 /// and the triangles of the faces the new node adds - those its body has and the body it works on has not - in the frame
-/// of the context, for the preview.
-fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
+/// of the context, for the preview. Nothing when the trial was given up before it answered.
+fn run_trial(job: TrialJob, stop: &Arc<std::sync::atomic::AtomicBool>) -> Option<Tried> {
     let TrialJob {
         mut project,
         bodies,
@@ -261,13 +304,17 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         workbench,
         mut sketch_ses,
     } = job;
+    // given up while it waited for a worker: nothing of it is read
+    if stop.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
+    }
     let before: std::collections::HashSet<Id> = project.timeline.iter().map(|n| n.id).collect();
     let mut live = qymcad_ui_state::LiveGeom { ready: true, ..Default::default() };
     // the copies of the bodies, read back by the bridge under the lock of the kernel
     let saved = bodies.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
     live.shapes.extend(qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)));
-    // a rebuild outside a running window happens at once, here, rather than being handed to a thread of its own
-    let (mut regen, mut edits, mut status) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), Notice::default());
+    // the command lays its node with no rebuild - one is said to be running - and the trial rebuilds below, its node alone
+    let (mut regen, mut edits, mut status) = (qymcad_ui_state::Rebuilding { ui_running: true, ..Default::default() }, qymcad_ui_state::Edits::default(), Notice::default());
     let (mut recognise, mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default(), Default::default());
     let scheme = qymcad_ui_state::SchemeUi::default();
     let edited = cmd.edit;
@@ -323,18 +370,27 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         canvas: egui::Rect::NOTHING,
     };
     if let Err(why) = super::apply_feat_cmd(&mut trial) {
-        return (Some(why.words().to_string()), Vec::new());
+        return Some(Tried::refused(why.words().to_string()));
     }
-    let laid: Vec<Id> = project.timeline.iter().map(|n| n.id).filter(|id| !before.contains(id) || Some(*id) == edited).collect();
+    let laid: Vec<Id> = trial.project.timeline.iter().map(|n| n.id).filter(|id| !before.contains(id) || Some(*id) == edited).collect();
     // a command that laid nothing refused by itself, and its status says why (a split plane that cuts nothing)
     if laid.is_empty() {
-        return (Some(status.words), Vec::new());
+        return Some(Tried::refused(trial.status.words.clone()));
+    }
+    // ITS OWN NODE ONLY: what stands on it is rebuilt by Apply, and a fillet at the top of a timeline of 11 nodes asked
+    // for all of them - 35 s of work against 0.3 s for the fillet
+    let last = trial.project.timeline.iter().rposition(|n| laid.contains(&n.id)).unwrap_or(0);
+    trial.project.rollback = Some(last + 1);
+    trial.regen.ui_running = false;
+    qymcad_ui_state::regenerate_now_unless(&mut trial.rebuild(), stop);
+    if stop.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
     }
     let refused = laid.iter().find_map(|id| project.regen_errors.get(id).filter(|e| !e.retryable())).map(qymcad_i18n::error_words::error_text);
-    if refused.is_some() {
-        return (refused, Vec::new());
+    if let Some(words) = refused {
+        return Some(Tried::refused(words));
     }
-    (None, new_faces(&project, &active_path, &laid))
+    Some(Tried { refused: None, faces: new_faces(&project, &active_path, &laid) })
 }
 
 /// The triangles of the faces the nodes `laid` add: the faces of their bodies that the bodies they work on do not have.

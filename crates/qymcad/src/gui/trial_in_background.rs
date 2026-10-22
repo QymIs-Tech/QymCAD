@@ -41,6 +41,54 @@ mod tests {
         assert!(qymcad_ui_state::trial_faces(&ctx).is_none(), "a refused fillet still shows faces");
     }
 
+    /// The block with its top front edge in hand for a fillet.
+    fn a_fillet_in_hand() -> App {
+        let mut app = App::default();
+        super::super::joint_flow::tests::add_part_at(&mut app, 0.0);
+        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+        Hand::new(&mut app).look_at([10.0, 10.0, 5.0], 8.0).tool(qymcad_ui_state::PartTool::Fillet).click([10.0, 0.0, 10.0]);
+        assert!(!app.tools.gsel.edges.is_empty(), "setup: the edge was not taken; the program says {:?}", app.status);
+        app
+    }
+
+    /// The trial of the command in hand, as the frame keeps it.
+    fn slot(ctx: &egui::Context) -> qymcad_ui_state::TrialSlot {
+        ctx.data(|d| d.get_temp::<qymcad_ui_state::TrialSlot>(qymcad_ui_state::trial_slot_id())).expect("no trial is kept for the command in hand")
+    }
+
+    /// A TRIAL A NEWER VALUE MAKES OF NO USE IS STOPPED, not left to build for the lock of the kernel it holds. Reported
+    /// behaviour: two edges of a propeller clicked in a row and Apply waited for the trials of every state before.
+    #[test]
+    fn a_new_value_stops_the_trial_of_the_old() {
+        let mut app = a_fillet_in_hand();
+        let ctx = egui::Context::default();
+        Hand::new(&mut app).set("radius", 3.0);
+        crate::gui::session::waiting::until("the trial of R3 to start", || {
+            let _ = qymcad_part::trial_refusal(&mut app.part_ctx(), &ctx);
+            slot(&ctx).run == qymcad_ui_state::TrialRun::Started
+        });
+        let old = slot(&ctx);
+        Hand::new(&mut app).set("radius", 2.0);
+        let _ = qymcad_part::trial_refusal(&mut app.part_ctx(), &ctx);
+        assert!(old.stop.load(std::sync::atomic::Ordering::Relaxed), "the trial of R3 goes on building after R2 was typed");
+        let (_, last) = answer(&mut app, &ctx, 2.0);
+        assert_eq!(last, Trial::Clear, "the trial of R2 does not answer after R3 was given up: {last:?}");
+    }
+
+    /// VALUES TYPED IN A ROW ARE NOT TRIED ONE BY ONE: a state is tried once it holds, the ones it went through never.
+    #[test]
+    fn values_typed_in_a_row_are_tried_once() {
+        let mut app = a_fillet_in_hand();
+        let ctx = egui::Context::default();
+        for r in [1.0, 1.5, 1.8] {
+            Hand::new(&mut app).set("radius", r);
+            assert_eq!(qymcad_part::trial_refusal(&mut app.part_ctx(), &ctx), Trial::Checking, "R{r} typed is not said as being checked");
+            assert_eq!(slot(&ctx).run, qymcad_ui_state::TrialRun::Waiting, "R{r}, a value held for no time, is tried at once");
+        }
+        let (_, last) = answer(&mut app, &ctx, 1.8);
+        assert_eq!(last, Trial::Clear, "R1.8 held is not answered: {last:?}");
+    }
+
     /// THE PREVIEW OF A FILLET, SEEN: the block with R3 on its top front edge before Enter, into
     /// `target/look/trial-preview.png`.
     #[test]

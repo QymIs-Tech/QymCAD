@@ -456,10 +456,10 @@ pub trait KernelWorker: Send {
 ///
 /// The core knows nothing about threads or buttons: it asks before each node and obeys the answer.
 pub trait RegenWatch {
-    /// Node `done` of `total` is starting. Returning `false` stops the rebuild.
+    /// Node `done` of `total` is starting. Returning `false` stops the rebuild: by itself, once a stop was asked.
     fn step(&self, done: usize, total: usize) -> bool {
         let _ = (done, total);
-        true
+        !self.stopped()
     }
     /// Has a stop been asked at all, between the nodes or while one was being built?
     fn stopped(&self) -> bool {
