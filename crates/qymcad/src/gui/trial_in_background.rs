@@ -89,6 +89,21 @@ mod tests {
         assert_eq!(last, Trial::Clear, "R1.8 held is not answered: {last:?}");
     }
 
+    /// A GREY APPLY SAYS WHY UNDER THE POINTER while the trial runs: the words the corner of the view says, as the hint of
+    /// the button. Reported behaviour: Apply stood grey for minutes and nothing at it said what it waited for.
+    #[test]
+    fn a_grey_apply_says_it_checks_under_the_pointer() {
+        let mut app = a_fillet_in_hand();
+        let mut h = Hand::new(&mut app);
+        h.set("radius", 3.0);
+        h.frame(Vec::new());
+        let apply = qymcad_i18n::tr("cmd-apply-enter");
+        let at = h.words_drawn().iter().find(|(t, _)| t.contains(&apply)).map(|(_, r)| r.center()).expect("Apply is not on screen");
+        let checking = qymcad_i18n::tr("cmd-trial-checking");
+        let hints = h.hint_at(at);
+        assert!(hints.iter().any(|t| t == &checking), "under the pointer over the grey Apply came {hints:?}, not that the value is being checked");
+    }
+
     /// THE PREVIEW OF A FILLET, SEEN: the block with R3 on its top front edge before Enter, into
     /// `target/look/trial-preview.png`.
     #[test]
