@@ -77,33 +77,7 @@ impl Project {
         let s = &self.sketches[si];
         let mut used: std::collections::HashSet<Id> = s.system_ids().into_iter().collect();
         // Endpoints of the entities.
-        for e in &s.entities {
-            match e.kind {
-                EntityKind::Line { a, b } => {
-                    used.insert(a);
-                    used.insert(b);
-                }
-                EntityKind::Arc { center, a, b, .. } => {
-                    used.insert(center);
-                    used.insert(a);
-                    used.insert(b);
-                }
-                EntityKind::Circle { center, .. } => {
-                    used.insert(center);
-                }
-                EntityKind::Ellipse { c, ma, mi } => {
-                    used.insert(c);
-                    used.insert(ma);
-                    used.insert(mi);
-                }
-            }
-        }
-        // Spline nodes.
-        for sp in &s.splines {
-            for &p in &sp.points {
-                used.insert(p);
-            }
-        }
+        used.extend(s.entities.iter().flat_map(entity_points));
         s.points
             .iter()
             .filter(|p| !used.contains(&p.id))
@@ -119,32 +93,7 @@ impl Project {
         let Some(si) = self.sketch_index(sid) else { return Vec::new() };
         let s = &self.sketches[si];
         let mut used: std::collections::HashSet<Id> = s.system_ids().into_iter().collect();
-        for e in &s.entities {
-            match e.kind {
-                EntityKind::Line { a, b } => {
-                    used.insert(a);
-                    used.insert(b);
-                }
-                EntityKind::Arc { center, a, b, .. } => {
-                    used.insert(center);
-                    used.insert(a);
-                    used.insert(b);
-                }
-                EntityKind::Circle { center, .. } => {
-                    used.insert(center);
-                }
-                EntityKind::Ellipse { c, ma, mi } => {
-                    used.insert(c);
-                    used.insert(ma);
-                    used.insert(mi);
-                }
-            }
-        }
-        for sp in &s.splines {
-            for &p in &sp.points {
-                used.insert(p);
-            }
-        }
+        used.extend(s.entities.iter().flat_map(entity_points));
         s.points.iter().filter(|p| !used.contains(&p.id)).map(|p| p.id).collect()
     }
     /// Profile of sketch `si` for an extrude or a revolve: its first closed contour, flattened to XY.
@@ -175,7 +124,7 @@ impl Project {
     /// circles cut by a line, for instance. Used to pick an extrude profile.
     pub fn sketch_regions(&self, si: usize) -> Vec<crate::geom::Contour> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
-        arrangement_regions(&s.points, &s.entities, &s.splines)
+        arrangement_regions(&s.points, &s.entities)
     }
     /// Like `feature_profile_encoded`, but the contours listed in `fill` are not subtracted as holes, having
     /// been explicitly selected as filled. Two concentric circles with both selected put the inner one in
@@ -189,15 +138,38 @@ impl Project {
         let holes: Vec<&crate::geom::Contour> = hole_ids.iter().filter_map(|h| self.contour_index(*h).map(|i| &self.contours[i])).collect();
         Some(crate::geom::encode_profile(outer, &holes))
     }
-    /// THE SOURCE OF EVERY PIECE OF EVERY SKETCH ENTITY in the contours `loops`: the entity and the number of the piece
-    /// along it, each at its place in a list (counted from 1).
+    /// THE SOURCE OF EVERY PIECE OF EVERY SKETCH ENTITY in the contours `loops` of the sketch `sketch`: the entity, and
+    /// which piece of it - each at its place in a list (counted from 1).
     ///
     /// A source per entity is not enough. An entity cut by its neighbours gives several pieces, and regions that meet
     /// only at points keep them all as faces of one body: measured on a rectangle with a slanted bar over its corner,
     /// the band where the two overlap left out, 18 faces under 12 names and 36 edges under 15, so the cursor on one
-    /// edge lit another. The pieces of one entity are numbered along it (`geom::piece_of`); an entity of one piece, the
-    /// usual case, keeps number 0 and with it the name it always had.
-    pub(crate) fn piece_sources(&self, loops: &[Id]) -> PieceSources {
+    /// edge lit another. A piece is told by what cut it off: the entity crossing it at its start along the entity
+    /// (`geom::piece_start`) - the piece holding the start of the entity, the usual case of one piece, keeps the name it
+    /// always had - and numbered among the pieces starting at a crossing of the same entity. Numbered by their place
+    /// along the entity, the pieces after a crossing taken away took the numbers before them: on the vacuum cleaner an
+    /// arc that did not move went from the first piece of its circle to the second, and its wall was renamed.
+    pub(crate) fn piece_sources(&self, sketch: Id, loops: &[Id]) -> PieceSources {
+        let si = self.sketch_index(sketch);
+        let at = |pid: Id| si.and_then(|si| self.sketches[si].points.iter().find(|q| q.id == pid)).map(|q| crate::geom::Point2::new(q.x, q.y));
+        let ends_of = |src: Id| -> Vec<crate::geom::Point2> {
+            // the two ends of the curve only: a node of a spline or the end of an axis of an ellipse lies on it inside
+            si.and_then(|si| self.sketches[si].entities.iter().find(|e| e.id == src)).and_then(crate::model::entity_ends).map(|ends| ends.into_iter().filter_map(at).collect()).unwrap_or_default()
+        };
+        let near = |p: crate::geom::Point2, q: crate::geom::Point2| (p.x - q.x).abs() < 1e-6 && (p.y - q.y).abs() < 1e-6;
+        // the entities meeting at every end of every piece of the sketch, over all of its regions: what crosses a piece is
+        // there whether or not the region beyond the crossing is in the profile
+        let spot = |q: crate::geom::Point2| [(q.x * 1e6).round() as i64, (q.y * 1e6).round() as i64];
+        let mut meeting: std::collections::HashMap<[i64; 2], std::collections::BTreeMap<Id, std::collections::BTreeSet<[i64; 2]>>> = std::collections::HashMap::new();
+        let regions: Vec<&crate::geom::Contour> = si.map(|si| self.sketches[si].contour_ids.iter().filter_map(|c| self.contour_index(*c).map(|i| &self.contours[i])).collect()).unwrap_or_default();
+        for region in regions {
+            for (src, e) in region.sourced_edges() {
+                let key = crate::geom::piece_of(&e).0;
+                for q in crate::geom::piece_ends(&e).into_iter().flatten() {
+                    meeting.entry(spot(q)).or_default().entry(src).or_default().insert(key);
+                }
+            }
+        }
         let mut pieces: std::collections::BTreeMap<Id, Vec<PieceAt>> = std::collections::BTreeMap::new();
         for cid in loops {
             let Some(i) = self.contour_index(*cid) else { continue };
@@ -206,17 +178,29 @@ impl Project {
                     continue;
                 }
                 let (key, along) = crate::geom::piece_of(&e);
+                // what cuts the piece off at its start, the smallest by its id: inside its entity, any other entity meeting it
+                // there; at an end of its entity, only one running on through that point (pieces on both sides of it) - an
+                // entity only ending there is the corner the two meet at, and the piece keeps the name it always had
+                let cut = crate::geom::piece_start(&e)
+                    .and_then(|start| {
+                        let at_its_end = ends_of(src).into_iter().any(|q| near(q, start));
+                        meeting.get(&spot(start))?.iter().find(|(other, pieces)| **other != src && **other != 0 && (!at_its_end || pieces.len() >= 2)).map(|(other, _)| *other)
+                    })
+                    .unwrap_or(0);
                 let of = pieces.entry(src).or_default();
                 if !of.iter().any(|p| p.key == key) {
-                    of.push(PieceAt { key, along });
+                    of.push(PieceAt { key, along, cut });
                 }
             }
         }
         let mut out = PieceSources::default();
         for (src, mut of) in pieces {
             of.sort_by(|a, b| a.along.total_cmp(&b.along).then(a.key.cmp(&b.key)));
-            for (split, p) in of.into_iter().enumerate() {
-                out.sources.push(crate::feature::SideSource { src, split: split as u16 });
+            let mut counted: std::collections::HashMap<Id, u16> = std::collections::HashMap::new();
+            for p in of {
+                let split = counted.entry(p.cut).or_insert(0);
+                out.sources.push(crate::feature::SideSource { src, split: *split, cut: p.cut });
+                *split = split.saturating_add(1);
                 out.slot.insert(PieceKey { src, key: p.key }, out.sources.len() as u32);
             }
         }
@@ -269,7 +253,7 @@ impl Project {
         }
         let loops: Vec<Id> = faces.iter().flat_map(|(outer, holes)| std::iter::once(*outer).chain(holes.iter().copied())).collect();
         let regions: Vec<Id> = faces.iter().map(|(outer, _)| *outer).collect();
-        let pieces = self.piece_sources(&loops);
+        let pieces = self.piece_sources(sketch, &loops);
         let slot_of = |src: Id, e: &crate::geom::ProfEdge| -> u32 { pieces.slot.get(&PieceKey { src, key: crate::geom::piece_of(e).0 }).copied().unwrap_or(0) };
         let encoded: Option<Vec<Vec<f64>>> = faces
             .into_iter()
@@ -346,7 +330,7 @@ impl Project {
         let mut srcs: Vec<Id> = self.contour_index(first_cid).map(|i| self.contours[i].edge_src.iter().copied().filter(|s| *s != 0).collect()).unwrap_or_default();
         srcs.sort_unstable();
         srcs.dedup();
-        let sources: Vec<crate::feature::SideSource> = srcs.iter().map(|src| crate::feature::SideSource { src: *src, split: 0 }).collect();
+        let sources: Vec<crate::feature::SideSource> = srcs.iter().map(|src| crate::feature::SideSource { src: *src, split: 0, cut: 0 }).collect();
         let slots: std::collections::HashMap<Id, u32> = srcs.into_iter().enumerate().map(|(k, src)| (src, k as u32 + 1)).collect();
         let sections = self.loft_encoded_with(sketches, contours, &slots)?;
         Some(LoftEncoded { sections, sources })
@@ -466,5 +450,139 @@ impl Project {
         let (dx, dy) = (pb.0 - pa.0, pb.1 - pa.1);
         let len = (dx * dx + dy * dy).sqrt();
         (len > 1e-9).then(|| ([pa.0, pa.1, 0.0], [dx / len, dy / len, 0.0]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PieceKey, PieceSources};
+    use crate::feature::{Purpose, SideSource};
+    use crate::model::{Id, Project};
+
+    /// The pieces of every closed contour of the sketch `si`.
+    fn pieces(p: &Project, si: usize) -> PieceSources {
+        let loops: Vec<Id> = p.sketches[si].contour_ids.iter().copied().filter(|c| p.contour_profile_xy(*c).is_some()).collect();
+        p.piece_sources(p.sketches[si].id, &loops)
+    }
+
+    /// The source of the piece of the entity `src` whose middle is at `mid`.
+    fn source_at(pieces: &PieceSources, src: Id, mid: [f64; 2]) -> Option<SideSource> {
+        let key = mid.map(|v| (v * 1e6).round() as i64);
+        pieces.slot.get(&PieceKey { src, key }).map(|k| pieces.sources[*k as usize - 1])
+    }
+
+    /// A PIECE OF A SKETCH LINE KEEPS ITS SOURCE WHEN A PIECE BEFORE IT GOES. The pieces of an entity were numbered by
+    /// their place along it, and a line crossing it taken away renumbered the pieces after the crossing. Measured on the
+    /// vacuum cleaner: an arc of a circle that did not move went from the first to the second piece when an edit moved
+    /// another crossing over the start of the circle, and the wall swept from it was renamed. The bottom of a rectangle
+    /// 100 x 20 crossed at x = 10 and x = 30: the crossing at 10 moved off the rectangle, the piece from 30 to 100 keeps
+    /// its source.
+    #[test]
+    fn a_piece_of_a_line_keeps_its_source_when_a_crossing_before_it_goes() {
+        let mut p = Project::default();
+        p.new_document();
+        let si = p.new_sketch("pieces");
+        p.add_rect_entity(si, 0.0, 0.0, 100.0, 20.0, Purpose::Real);
+        p.add_line_entity(si, 30.0, -5.0, 30.0, 25.0, Purpose::Real);
+        let moving = p.add_line_entity(si, 10.0, -5.0, 10.0, 25.0, Purpose::Real);
+        p.regen_sketch(si);
+        let y_of = |p: &Project, pid: Id| p.sketches[si].points.iter().find(|q| q.id == pid).map_or(f64::NAN, |q| q.y);
+        let bottom = p.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some_and(|l| y_of(&p, l.a) == 0.0 && y_of(&p, l.b) == 0.0)).map(|e| e.id).expect("the bottom of the rectangle");
+        let before = source_at(&pieces(&p, si), bottom, [65.0, 0.0]).expect("setup: the piece from 30 to 100");
+        let ends: Vec<Id> = p.sketches[si].entities.iter().find(|e| e.id == moving).map(crate::model::entity_points).unwrap_or_default();
+        for q in p.sketches[si].points.iter_mut().filter(|q| ends.contains(&q.id)) {
+            q.x = -5.0;
+        }
+        p.regen_sketch(si);
+        let after = source_at(&pieces(&p, si), bottom, [65.0, 0.0]).expect("the piece from 30 to 100 is gone");
+        assert_eq!(after, before, "the piece from 30 to 100 did not move and its source changed");
+    }
+    /// The source of the piece of the entity `src` whose middle is nearest to `near`.
+    fn source_near(p: &Project, si: usize, src: Id, near: [f64; 2]) -> Option<SideSource> {
+        let all = pieces(p, si);
+        let keys = all.slot.keys().filter(|k| k.src == src).map(|k| k.key);
+        let dist = |key: [i64; 2]| (key[0] as f64 * 1e-6 - near[0]).hypot(key[1] as f64 * 1e-6 - near[1]);
+        let key = keys.min_by(|a, b| dist(*a).total_cmp(&dist(*b)))?;
+        source_at(&all, src, key.map(|v| v as f64 * 1e-6))
+    }
+
+    /// The line `line` of sketch `si` moved off to the left, out of everything.
+    fn move_off(p: &mut Project, si: usize, line: Id) {
+        let ends: Vec<Id> = p.sketches[si].entities.iter().find(|e| e.id == line).map(crate::model::entity_points).unwrap_or_default();
+        for q in p.sketches[si].points.iter_mut().filter(|q| ends.contains(&q.id)) {
+            q.x = -50.0;
+        }
+        p.regen_sketch(si);
+    }
+
+    /// A PIECE OF AN ELLIPSE OR OF A SPLINE KEEPS ITS SOURCE WHEN A PIECE BEFORE IT GOES, by the rule of the pieces of a
+    /// line: named after what cut it off at its start. The pieces of an ellipse and of a spline were numbered by their
+    /// place along it, and a line crossing it taken away renumbered the pieces after the crossing.
+    ///
+    /// The upper half of an ellipse about (50, 10) of semi-axes 40 x 8, closed by its diameter, crossed by upright lines at
+    /// x = 30 and x = 70, and at x = 50.3 by a line moved off: its piece beyond x = 30 keeps its source. A whole ellipse is a
+    /// region of its own, not cut by the lines crossing it (`curve::arrange`), and its one piece holds its start. A spline over (0, 0), (50, 20), (100, 0) closed by
+    /// the line under it, crossed at x = 30 and at x = 10 by a line moved off: its piece from x = 30 to its node at
+    /// x = 50 keeps its source.
+    #[test]
+    fn a_piece_of_an_ellipse_or_a_spline_keeps_its_source_when_a_crossing_before_it_goes() {
+        use crate::geom::Point2;
+        let mut failures = Vec::new();
+        let mut p = Project::default();
+        p.new_document();
+        let si = p.new_sketch("ellipse");
+        let arc = crate::model::EllipseArcSpec { centre: Point2::new(50.0, 10.0), radii: Point2::new(40.0, 8.0), rot: 0.0, angles: [0.0, std::f64::consts::PI], winding: crate::feature::Winding::Ccw };
+        let ellipse = p.add_ellipse_arc_entity(si, arc, Purpose::Real);
+        p.add_line_entity(si, 90.0, 10.0, 10.0, 10.0, Purpose::Real);
+        p.add_line_entity(si, 30.0, 5.0, 30.0, 25.0, Purpose::Real);
+        p.add_line_entity(si, 70.0, 5.0, 70.0, 25.0, Purpose::Real);
+        let moving = p.add_line_entity(si, 50.3, 5.0, 50.3, 25.0, Purpose::Real);
+        p.merge_close_points(si, 1e-9);
+        p.regen_sketch(si);
+        let before = source_near(&p, si, ellipse, [15.4, 14.0]);
+        move_off(&mut p, si, moving);
+        let after = source_near(&p, si, ellipse, [15.4, 14.0]);
+        if before.is_none() || after != before {
+            failures.push(format!("the piece of the arc of the ellipse beyond x = 30: {before:?} -> {after:?}"));
+        }
+        let mut p = Project::default();
+        p.new_document();
+        let si = p.new_sketch("spline");
+        let nodes = [[0.0, 0.0], [50.0, 20.0], [100.0, 0.0]].map(|q| Point2::new(q[0], q[1])).to_vec();
+        let spline = p.add_spline(si, nodes, crate::feature::Ends::Open, Purpose::Real).expect("the spline");
+        p.add_line_entity(si, 0.0, 0.0, 100.0, 0.0, Purpose::Real);
+        p.add_line_entity(si, 30.0, -5.0, 30.0, 25.0, Purpose::Real);
+        let moving = p.add_line_entity(si, 10.0, -5.0, 10.0, 25.0, Purpose::Real);
+        p.merge_close_points(si, 1e-9);
+        p.regen_sketch(si);
+        // the piece from the crossing at x = 30 to the end of the spline, one edge over its node
+        let before = source_near(&p, si, spline, [65.0, 18.0]);
+        move_off(&mut p, si, moving);
+        let after = source_near(&p, si, spline, [65.0, 18.0]);
+        if before.is_none() || after != before {
+            failures.push(format!("the piece of the spline from x = 30 to its end: {before:?} -> {after:?}"));
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// A LINE ENDING INSIDE A SPLINE CUTS IT THERE, at a node of the spline as between its nodes: only the two ends of a
+    /// curve are its ends. Every node of a spline was read as an end of it, and a line ending on a node cut nothing - the
+    /// piece after it was named as one of the pieces cut by nothing, apart from the same line ending a little beside the
+    /// node. A spline over (0, 0), (50, 20), (100, 0) closed by the line under it, and a line from (50, 0) up to its node:
+    /// the piece of the spline from the node on is cut off by that line.
+    #[test]
+    fn a_line_ending_on_a_node_of_a_spline_cuts_it_there() {
+        use crate::geom::Point2;
+        let mut p = Project::default();
+        p.new_document();
+        let si = p.new_sketch("spline");
+        let nodes = [[0.0, 0.0], [50.0, 20.0], [100.0, 0.0]].map(|q| Point2::new(q[0], q[1])).to_vec();
+        let spline = p.add_spline(si, nodes, crate::feature::Ends::Open, Purpose::Real).expect("the spline");
+        p.add_line_entity(si, 0.0, 0.0, 100.0, 0.0, Purpose::Real);
+        let up = p.add_line_entity(si, 50.0, 0.0, 50.0, 20.0, Purpose::Real);
+        p.merge_close_points(si, 1e-9);
+        p.regen_sketch(si);
+        let source = source_near(&p, si, spline, [75.0, 15.0]).expect("the piece of the spline after its node");
+        assert_eq!(source.cut, up, "the piece of the spline after the line ending on its node: {source:?}");
     }
 }

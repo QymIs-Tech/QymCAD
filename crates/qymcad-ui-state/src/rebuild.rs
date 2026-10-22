@@ -22,7 +22,8 @@ pub fn keep_live_shapes(live: &mut LiveGeom, project: &Project) {
 }
 
 /// A SKETCH OPENED FOR EDITING: the session takes it, and the key it is opened at.
-pub fn open_sketch_session(ses: &mut SketchSession, project: &Project, sid: Id) {
+pub fn open_sketch_session(ses: &mut SketchSession, edits: &mut Edits, project: &Project, sid: Id) {
+    open_sketch_history(edits, sid);
     ses.editing = Some(sid);
     ses.opened = project.sketch_key(sid);
 }
@@ -38,6 +39,7 @@ pub fn open_sketch_session(ses: &mut SketchSession, project: &Project, sid: Id) 
 /// A project from a bundle has no live B-rep, and the feature on a marked sketch asks for its source body: the missing
 /// ones are built first (`ensure_brep`), exactly those and not the whole project.
 pub fn rebuild_after_sketch(rc: &mut RebuildCtx, closed: SketchSession) {
+    close_sketch_history(rc.edits, rc.project);
     if let Some(sid) = closed.editing.filter(|sid| rc.project.sketch_key(*sid) != closed.opened) {
         ensure_brep(rc);
         rc.project.mark_sketch_dirty(sid);
@@ -307,6 +309,15 @@ pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> 
         }
         return None;
     }
+    // INSIDE A SKETCH UNDO STOPS AT ITS FIRST STEP: what lies under it is another part's, or the document's from before the sketch
+    // was opened
+    drop_stale_sketch_history(rc.edits, rc.project, rc.sketch_ses);
+    if !redo && rc.edits.undo.len() <= undo_floor(rc.edits) {
+        if !rc.edits.undo.is_empty() {
+            *rc.status = Notice::refusal(qymcad_i18n::tr("g-sketch-undo-floor"));
+        }
+        return None;
+    }
     let step = if redo { rc.edits.redo.pop() } else { rc.edits.undo.pop() }?;
     // an operation still open - a command, a sketch session - now starts from the state brought back: put down, it
     // returns there. Letting it go instead broke the sketch session that owned it, and rebuilding everything after an
@@ -333,7 +344,7 @@ pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> 
 /// until the document changes. The way to go on, where the edit was taken back.
 pub fn rebuild_cancelled(rc: &mut RebuildCtx) -> Option<Vec<Id>> {
     let depth = rc.edits.undo.len();
-    if depth > 0 && depth == rc.regen.computing_depth && rc.regen.computed_depth + 1 == depth {
+    if depth > undo_floor(rc.edits) && depth == rc.regen.computing_depth && rc.regen.computed_depth + 1 == depth {
         let step = rc.edits.undo.pop()?;
         let now = std::mem::replace(&mut rc.edits.baseline, step.snap.clone());
         rc.edits.redo.push(Step { name: step.name.clone(), snap: now });

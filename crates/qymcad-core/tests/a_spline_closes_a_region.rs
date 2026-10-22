@@ -35,11 +35,11 @@ fn p2(x: f64, y: f64) -> Point2 {
 #[test]
 fn a_spline_closed_by_two_lines_is_one_region_of_its_area() {
     let (mut p, si) = sketch();
-    p.add_spline(si, vec![p2(0.0, 0.0), p2(5.0, 6.0), p2(10.0, 0.0)], Ends::Open, Purpose::Real);
+    let sp = p.add_spline(si, vec![p2(0.0, 0.0), p2(5.0, 6.0), p2(10.0, 0.0)], Ends::Open, Purpose::Real).expect("the spline");
     p.add_line_entity(si, 10.0, 0.0, 5.0, -5.0, Purpose::Real);
     p.add_line_entity(si, 5.0, -5.0, 0.0, 0.0, Purpose::Real);
     // the cap of the curve over its chord, plus the triangle under the chord: 10 x 5 / 2
-    let want = shoelace(&p.spline_polyline(si, 0)) + 25.0;
+    let want = shoelace(&p.spline_polyline(si, sp)) + 25.0;
     let regions = closed(&p, si);
     let areas: Vec<f64> = regions.iter().map(|c| c.area()).collect();
     assert_eq!(regions.len(), 1, "a spline and two lines close one region; the areas found: {areas:?}");
@@ -59,7 +59,7 @@ fn a_spline_crossing_itself_gives_its_two_lobes() {
 #[test]
 fn a_closed_spline_over_a_rectangle_gives_the_parts_the_two_make() {
     let (mut p, si) = sketch();
-    p.add_spline(si, vec![p2(10.0, 0.0), p2(0.0, 10.0), p2(-10.0, 0.0), p2(0.0, -10.0)], Ends::Closed, Purpose::Real);
+    let sp = p.add_spline(si, vec![p2(10.0, 0.0), p2(0.0, 10.0), p2(-10.0, 0.0), p2(0.0, -10.0)], Ends::Closed, Purpose::Real).expect("the spline");
     let corners = [(-5.0, -15.0), (5.0, -15.0), (5.0, 15.0), (-5.0, 15.0)];
     for k in 0..4 {
         let (a, b) = (corners[k], corners[(k + 1) % 4]);
@@ -69,7 +69,56 @@ fn a_closed_spline_over_a_rectangle_gives_the_parts_the_two_make() {
     let areas: Vec<f64> = regions.iter().map(|c| c.area()).collect();
     // the middle the two share, the two sides of the spline left and right, the two ends of the rectangle above and below
     assert_eq!(regions.len(), 5, "a closed spline over a rectangle makes five parts; the areas found: {areas:?}");
-    let union = shoelace(&p.spline_polyline(si, 0)) + 10.0 * 30.0 - areas.iter().copied().fold(0.0, f64::max);
+    let union = shoelace(&p.spline_polyline(si, sp)) + 10.0 * 30.0 - areas.iter().copied().fold(0.0, f64::max);
     let sum: f64 = areas.iter().sum();
     assert!((sum - union).abs() < 0.01 * union, "the parts cover {sum} mm^2, not the {union} mm^2 of the two together");
+}
+
+/// A SPLINE OR AN ARC OF AN ELLIPSE HANGING INTO A REGION IS NO PART OF ITS EDGE, as a line hanging into it is not: the
+/// walk round the region goes out along it and back, and the region came with a spike of no width the kernel would not
+/// make a face of. A square 10 x 10, and from the middle of its bottom an open spline up into it, or a quarter of an
+/// ellipse about (7, 0) of semi-axes 2 x 4 from its bottom at (5, 0) up to (7, 4): the square is one region of area 100,
+/// with neither curve on its edge.
+#[test]
+fn a_spline_or_an_arc_of_an_ellipse_hanging_into_a_region_is_no_edge_of_it() {
+    let mut failures = Vec::new();
+    let square = |p: &mut Project, si: usize| {
+        p.add_rect_entity(si, 0.0, 0.0, 10.0, 10.0, Purpose::Real);
+    };
+    let (mut p, si) = sketch();
+    square(&mut p, si);
+    let spline = p.add_spline(si, vec![p2(5.0, 0.0), p2(4.0, 3.0), p2(6.0, 5.0)], Ends::Open, Purpose::Real).expect("the spline");
+    p.merge_close_points(si, 1e-9);
+    p.regen_sketch(si);
+    let regions = closed(&p, si);
+    if regions.len() != 1 || (regions[0].area().abs() - 100.0).abs() > 1e-6 || regions[0].edge_src.contains(&spline) {
+        failures.push(format!(
+            "the spline hanging into the square: {} regions of {:?}, the spline on their edges {:?}",
+            regions.len(),
+            regions.iter().map(|c| c.area().abs()).collect::<Vec<_>>(),
+            regions.iter().map(|c| c.edge_src.contains(&spline)).collect::<Vec<_>>()
+        ));
+    }
+    let (mut p, si) = sketch();
+    square(&mut p, si);
+    let arc = qymcad_core::model::EllipseArcSpec {
+        centre: p2(7.0, 0.0),
+        radii: p2(2.0, 4.0),
+        rot: 0.0,
+        angles: [std::f64::consts::FRAC_PI_2, std::f64::consts::PI],
+        winding: qymcad_core::feature::Winding::Ccw,
+    };
+    let quarter = p.add_ellipse_arc_entity(si, arc, Purpose::Real);
+    p.merge_close_points(si, 1e-9);
+    p.regen_sketch(si);
+    let regions = closed(&p, si);
+    if regions.len() != 1 || (regions[0].area().abs() - 100.0).abs() > 1e-6 || regions[0].edge_src.contains(&quarter) {
+        failures.push(format!(
+            "the quarter of an ellipse hanging into the square: {} regions of {:?}, the quarter on their edges {:?}",
+            regions.len(),
+            regions.iter().map(|c| c.area().abs()).collect::<Vec<_>>(),
+            regions.iter().map(|c| c.edge_src.contains(&quarter)).collect::<Vec<_>>()
+        ));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

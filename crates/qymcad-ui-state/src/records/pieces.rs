@@ -123,7 +123,7 @@ pub enum AxisHit {
 ///
 /// The wrapper does not implement `Into<WidgetText>`, so `ui.label(p.label)` no longer compiles at all. This is not
 /// decoration: a translation that rests on attentiveness at every edit ends exactly the way it ended here.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct LabelKey(pub(crate) &'static str);
 
 /// A piece of a mesh file on its way into the document: a piece as the file names it (see `qymcad_io::NamedMesh`) with
@@ -211,7 +211,7 @@ pub fn construction_selected(ed: Editing, sel_sk: &SketchSelection, sketch_ses: 
     if edit_si(ed.project, sketch_ses) != Some(si) {
         return false;
     }
-    let eids: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = sel_sk.curves().collect();
     if eids.is_empty() {
         return false;
     }

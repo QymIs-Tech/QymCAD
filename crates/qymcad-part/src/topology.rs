@@ -66,6 +66,9 @@ pub fn delete_body_mesh(pc: &mut qymcad_ui_state::PartCtx, mi: usize, dependents
 /// the bodies built on it), then clearing the editing session and the selection, then a resync
 /// (regeneration plus prune).
 pub fn delete_sketch_full(pc: &mut qymcad_ui_state::PartCtx, sid: Id, dependents: bool) {
+    if pc.sketch_ses.editing == Some(sid) {
+        qymcad_ui_state::close_sketch_history(pc.edits, pc.project); // the session is one step, the deletion another
+    }
     qymcad_ui_state::begin_edit(&mut *pc.edits, &*pc.project, qymcad_i18n::tr("status-delete-sketch")); // THE OPERATION BOUNDARY
     let removed = if dependents {
         pc.project.delete_sketch_with_dependents(sid)
@@ -149,14 +152,14 @@ pub fn mirror_part_apply(
     regen: &mut qymcad_ui_state::Rebuilding,
     active_path: &[qymcad_core::model::Id],
     status: &mut qymcad_ui_state::Notice,
-) {
-    let (Some(src), Some((o, n))) = (mirror.part, mirror.at) else { return };
+) -> Result<(), qymcad_ui_state::NotApplied> {
+    let (Some(src), Some((o, n))) = (mirror.part, mirror.at) else { return Err(refused("tb-mirror-pick-part")) };
     qymcad_ui_state::begin_edit(edits, project, qymcad_i18n::tr("mp-title"));
     let cwt = project.world_transform(qymcad_ui_state::current_ctx_id(active_path, project));
     let (wo, wn) = (qymcad_core::feature::apply12(&cwt, o), qymcad_core::feature::apply12_dir(&cwt, n));
     let cnt = project.add_mirror_component(src, wo, wn).len();
-    mirror.drop_part();
     regen.pending = true; // the scheduler builds the copy once the operation is closed
     *status = Notice::info(qymcad_i18n::tr1("vp-mirror-created", "n", &cnt.to_string()));
     qymcad_ui_state::close_edit(edits, project);
+    Ok(())
 }

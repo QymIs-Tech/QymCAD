@@ -43,6 +43,7 @@ fn poly(edges: &[ProfEdge]) -> Vec<Point2> {
                 }
             }
             ProfEdge::Circle { .. } => {}
+            ProfEdge::Oval { .. } | ProfEdge::Spline(_) => p.extend((0..=400).filter_map(|i| e.curve_at(i as f64 / 400.0))),
         }
     }
     p

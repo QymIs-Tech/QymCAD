@@ -6,7 +6,7 @@ use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{load_default_pack, BundleFormat, DEFAULT_THEME_ID};
 use qymcad_ui_state::{Settings, WinCtx, WinKind};
 
-use super::discovery::{all_theme_dirs, discover_all_theme_packs, ensure_discovery_worker};
+use super::discovery::{all_theme_dirs, ensure_discovery_worker, themes_of_the_frame};
 
 /// Visual style parameters for the bundle format badge.
 struct BundleBadgeStyle {
@@ -53,7 +53,7 @@ pub(crate) fn icon_theme_section(wc: &mut WinCtx, ui: &mut egui::Ui, ctx: &egui:
 
     let dirs = all_theme_dirs();
     ensure_discovery_worker(ctx, &dirs);
-    let mut all_packs = discover_all_theme_packs(&dirs).packs;
+    let mut all_packs = themes_of_the_frame(ctx, &dirs).packs;
     if !all_packs.iter().any(|p| p.manifest.id == DEFAULT_THEME_ID) {
         if let Some(def) = load_default_pack() {
             all_packs.push(def);

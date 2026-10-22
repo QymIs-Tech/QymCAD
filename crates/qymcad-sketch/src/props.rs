@@ -19,6 +19,9 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
             ui.label(egui::RichText::new(qymcad_i18n::tr2("sk-source", "name", &sf.name, "kb", &qymcad_i18n::num(sf.data.len() as f64 / 1024.0, 1))).weak().small());
         }
     }
+    // a face found by place, not by its name: said here, where a click on the row of the sketch leads, with Accept
+    let sid = pr.project.sketches[si].id;
+    qymcad_ui_state::node_warning_props(pr, ui, sid);
 
     // --- while editing: a clean panel, with no clutter ---
     if qymcad_ui_state::edit_si(&*pr.project, &*pr.sketch_ses) == Some(si) {
@@ -88,6 +91,11 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
         let cur_sel = pr.gsel.constraint;
         let (mut rm, mut changed, mut sel_click, mut hov) = (None, false, None, None);
         let mut to_driven: Option<usize> = None;
+        // THE DIMENSION OPEN IN ITS BOX AT THE GEOMETRY is typed there: the value it tries stands on the document until the
+        // box keeps it or lets it go, a value typed into the list meanwhile was taken back with it, and the list showed a
+        // second field of the very value the box was editing
+        let in_box = crate::editors::in_its_box(ui.ctx()).filter(|d| d.si == si).map(|d| d.ci);
+        let typed = |ci: usize| if in_box == Some(ci) { Typed::InItsBox } else { Typed::InTheList };
         // Does the sketch contain fillets (structural tangencies)? Their Jacobian at the point of contact
         // is degenerate (parallel to the intrinsic of the arc), so the rank analysis falsely marks as
         // redundant not only the tangencies themselves but the constraints ENTANGLED with them (the
@@ -96,15 +104,16 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
         // red (real contradictions of values are still caught by `sketch_conflicts`, which works on the
         // geometry and is reliable).
         let flagged = qymcad_ui_state::flagged_redundant(&*pr.cache, &*pr.project, si); // ONE rule for the list and for the canvas
-        let holders = pr.project.sketches[si].corner_holders();
-        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-            for (ci, c) in cons.iter_mut().enumerate() {
-                if is_sys(c) {
-                    continue; // a system `Fixed` on the origin or an axis is not shown
-                }
-                if matches!(c, Constraint::Orientation { .. }) || holders.contains(&ci) {
-                    continue; // the turn of a rectangle is the rectangle's own, and a cut corner's holders are the corner's
-                }
+        let holders = pr.project.sketches[si].held_by_shapes();
+        // a system `Fixed` on the origin or an axis is not shown; a cut corner's holders are the corner's, a figure's own
+        // constraints the figure's
+        let rows: Vec<usize> = (0..cons.len()).filter(|ci| !is_sys(&cons[*ci]) && !holders.contains(ci)).collect();
+        // ONLY THE ROWS IN SIGHT ARE LAID OUT: the list of a sketch of 1 089 constraints, every row of it naming the curves it
+        // stands on, took 40 of the 61 ms of every frame of the sketch in a release build, nothing changing
+        let row_height = ui.spacing().interact_size.y;
+        egui::ScrollArea::vertical().max_height(360.0).show_rows(ui, row_height, rows.len(), |ui, in_sight| {
+            for ci in rows[in_sight].iter().copied() {
+                let c = &mut cons[ci];
                 let is_sel = cur_sel == Some(ci);
                 // is it a dimension? (consistent redundancy among dimensions is harmless and gets no warning)
                 let is_dim = matches!(
@@ -116,6 +125,7 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
                         | Constraint::ArcLength { .. }
                         | Constraint::Diameter { .. }
                         | Constraint::EdgeDistance { .. }
+                        | Constraint::CurveDistance { .. }
                 );
                 // which redundant ones to mark is decided by ONE rule, shared with the canvas glyphs
                 let redun_geom = flagged.contains(&ci);
@@ -133,19 +143,31 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
                             qymcad_ui_state::tone_mark(ui, &pr.scheme.pal, qymcad_ui_state::Tone::Warning).on_hover_text(qymcad_i18n::tr("sk-overdefined-hint"));
                         }
                         match c {
-                            Constraint::Distance { d, .. } => {
+                            // THE VALUE OF A DIMENSION TYPED AS A FORMULA, kept as its formula as in its box at the geometry: a value
+                            // standing past the field is shown as it stands and said, not put into the range on every frame
+                            Constraint::Distance { d, expr, .. } => {
                                 if ui.selectable_label(is_sel, qymcad_i18n::tr("sk-dim")).clicked() {
                                     sel_click = Some(ci);
                                 }
-                                // a dimension standing past the field is shown as it stands: put into the range on every frame, it
-                                // was written and solved as an edit, and the window never came to rest
-                                changed |= ui.add(egui::DragValue::new(d).speed(0.2).range(0.01..=100000.0).clamp_existing_to_range(false).suffix(qymcad_i18n::tr("unit-mm-suffix"))).changed();
+                                let limits = qymcad_ui_state::Limits { unit: Some("unit-mm-suffix"), ..qymcad_ui_state::Limits::between(0.01..=100000.0) };
+                                changed |= value_of_a_dimension(
+                                    ui,
+                                    &*pr.project,
+                                    qymcad_ui_state::PanelNumber { id: ui.id().with(("the value of a dimension", ci)), value: d, formula: Some(expr), limits },
+                                    typed(ci),
+                                );
                             }
-                            Constraint::Angle { deg, .. } => {
+                            Constraint::Angle { deg, expr, .. } => {
                                 if ui.selectable_label(is_sel, qymcad_i18n::tr("sk-angle")).clicked() {
                                     sel_click = Some(ci);
                                 }
-                                changed |= ui.add(egui::DragValue::new(deg).speed(0.5).range(0.1..=359.9).clamp_existing_to_range(false).suffix("°")).changed();
+                                let limits = qymcad_ui_state::Limits { unit: Some("unit-deg-suffix"), ..qymcad_ui_state::Limits::between(0.1..=359.9) };
+                                changed |= value_of_a_dimension(
+                                    ui,
+                                    &*pr.project,
+                                    qymcad_ui_state::PanelNumber { id: ui.id().with(("the value of an angle", ci)), value: deg, formula: Some(expr), limits },
+                                    typed(ci),
+                                );
                             }
                             other => {
                                 // THE PARTICIPANTS IN THE ROW: "Horizontal: Line 3". Without them a list of
@@ -214,4 +236,23 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
         qymcad_ui_state::ask_delete(&mut *pr.deferred, qymcad_ui_state::Sel::Sketch(si));
         // the same path the tree takes - the question and the deletion
     }
+}
+
+/// WHERE THE VALUE OF A DIMENSION IS TYPED: in the list, or in its box at the geometry while it stands there.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Typed {
+    InTheList,
+    InItsBox,
+}
+
+/// THE VALUE OF A DIMENSION IN THE LIST: a field of its formula (`panel_number`), or - while the dimension stands in its
+/// box at the geometry - the value and its formula in words, the box being where it is typed then.
+fn value_of_a_dimension(ui: &mut egui::Ui, project: &qymcad_core::model::Project, n: qymcad_ui_state::PanelNumber, typed: Typed) -> bool {
+    if typed == Typed::InTheList {
+        return qymcad_ui_state::panel_number(ui, project, n);
+    }
+    let formula = n.formula.as_deref().map(|f| f.trim()).filter(|f| !f.is_empty()).map(|f| format!("{f} = ")).unwrap_or_default();
+    let unit = n.limits.unit.map(|u| qymcad_i18n::tr(u).trim().to_string()).unwrap_or_default();
+    ui.label(egui::RichText::new(format!("{formula}{} {unit}", qymcad_core::expr::fmt_num(*n.value))).weak());
+    false
 }

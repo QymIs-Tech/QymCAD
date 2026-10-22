@@ -47,11 +47,7 @@ struct Boxes {
 
 impl Boxes {
     fn span(&self, b: &[f64; 4]) -> Option<[i64; 4]> {
-        if !b.iter().all(|v| v.is_finite()) {
-            return None;
-        }
-        let s = [(b[0] / self.cell).floor() as i64, (b[1] / self.cell).floor() as i64, (b[2] / self.cell).floor() as i64, (b[3] / self.cell).floor() as i64];
-        ((s[2] - s[0] + 1) * (s[3] - s[1] + 1) <= 64).then_some(s)
+        cells_of(self.cell, b)
     }
 
     fn put(&mut self, k: usize) {
@@ -76,6 +72,19 @@ impl Boxes {
     }
 }
 
+/// THE CELLS OF SIDE `cell` A BOX COVERS, as the first and the last column and row; `None` for a box over more than 64 of
+/// them, at no number, or of no area - the box of a loop with no point is laid out inverted, and its count of cells ran
+/// past what a number holds.
+fn cells_of(cell: f64, b: &[f64; 4]) -> Option<[i64; 4]> {
+    if !b.iter().all(|v| v.is_finite()) || b[0] > b[2] || b[1] > b[3] {
+        return None;
+    }
+    let s = b.map(|v| (v / cell).floor() as i64);
+    let across = s[2].saturating_sub(s[0]).saturating_add(1);
+    let up = s[3].saturating_sub(s[1]).saturating_add(1);
+    (across.saturating_mul(up) <= 64).then_some(s)
+}
+
 /// THE BOXES OF THE LOOPS OF A SKETCH on a grid, by loop id: which loops may meet a box, without a look at every loop.
 #[derive(Clone, Debug, Default)]
 struct LoopGrid {
@@ -87,11 +96,7 @@ struct LoopGrid {
 
 impl LoopGrid {
     fn span(&self, b: &[f64; 4]) -> Option<[i64; 4]> {
-        if !b.iter().all(|v| v.is_finite()) {
-            return None;
-        }
-        let s = [(b[0] / self.cell).floor() as i64, (b[1] / self.cell).floor() as i64, (b[2] / self.cell).floor() as i64, (b[3] / self.cell).floor() as i64];
-        ((s[2] - s[0] + 1) * (s[3] - s[1] + 1) <= 64).then_some(s)
+        cells_of(self.cell, b)
     }
 
     fn put(&mut self, id: Id, b: &[f64; 4]) {
@@ -169,26 +174,21 @@ pub struct DragSession {
     loop_grid: LoopGrid,
 }
 
-/// A STAMP OF THE STRUCTURE OF A SKETCH: how many points, entities, constraints, rectangles, splines and texts it has,
+/// A STAMP OF THE STRUCTURE OF A SKETCH: how many points, entities, constraints, figures, splines and texts it has,
 /// the ends of its entities, the kind of each constraint, whether it is a reference and the value of its dimension -
 /// what a frame of a drag leaves as it is. Each word turned and multiplied in, nothing laid out: laid out as the lists
 /// of the points of every entity and constraint, it was 20 ms of a frame on 70 000 rectangles. Where the points stand
 /// is told by `still_stamp`; a constraint moved onto other points with no number changing is not told - nothing does
 /// that in the middle of a drag, and the release rebuilds the sketch whole.
-fn structure_stamp(s: &Sketch) -> u64 {
+pub(crate) fn structure_stamp(s: &Sketch) -> u64 {
     let mut h: u64 = 0;
     let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
-    for n in [s.points.len(), s.entities.len(), s.constraints.len(), s.rects.len(), s.splines.len(), s.texts.len()] {
+    for n in [s.points.len(), s.entities.len(), s.constraints.len(), s.figures.len(), s.texts.len()] {
         mix(n as u64);
     }
     for e in &s.entities {
         mix(e.id ^ u64::from(e.construction) << 63);
-        match e.kind {
-            EntityKind::Line { a, b } => [a, b].into_iter().for_each(&mut mix),
-            EntityKind::Arc { center, a, b, .. } => [center, a, b].into_iter().for_each(&mut mix),
-            EntityKind::Circle { center, .. } => mix(center),
-            EntityKind::Ellipse { c, ma, mi } => [c, ma, mi].into_iter().for_each(&mut mix),
-        }
+        entity_points(e).into_iter().for_each(&mut mix);
     }
     use std::hash::{Hash, Hasher};
     let mut kinds = std::collections::hash_map::DefaultHasher::new();
@@ -249,8 +249,10 @@ impl Project {
         let at = |s: &Sketch, i: usize| (s.points[i].x, s.points[i].y);
         let at_start: Vec<(f64, f64)> = sess.watched.iter().map(|&i| at(s, i)).collect();
         // the centres of the rectangles drawn by their corners on the middles of their diagonals (`solve_sketch_inner`)
+        // the rectangles the frame touches read once, and only where it touches one
+        let rects = if sess.rects.is_empty() { Vec::new() } else { s.rects() };
         for r in sess.rects.iter().filter(|r| r.mid) {
-            let rect = &s.rects[r.index];
+            let rect = &rects[r.index];
             let (Some(&a), Some(&c), Some(&m)) = (sess.place.get(&rect.corners[0]), sess.place.get(&rect.corners[2]), sess.place.get(&rect.centre)) else { continue };
             (s.points[m].x, s.points[m].y) = ((s.points[a].x + s.points[c].x) / 2.0, (s.points[a].y + s.points[c].y) / 2.0);
         }
@@ -269,8 +271,8 @@ impl Project {
         let mut own_points: Vec<SketchPoint> = sess.points.iter().map(|&i| s.points[i]).collect();
         let was: Vec<(f64, f64)> = own_points.iter().map(|p| (p.x, p.y)).collect();
         let radius = |s: &Sketch, r: &PartRadius| match r.from {
-            RadiusFrom::Circle(e) => match s.entities[e].kind {
-                EntityKind::Circle { r, .. } => r,
+            RadiusFrom::Circle(e) => match s.entities[e].kind.as_circle() {
+                Some(crate::model::CircleParts { r, .. }) => r,
                 _ => 0.001,
             },
             RadiusFrom::Arc { centre, end } => (s.points[end].x - s.points[centre].x).hypot(s.points[end].y - s.points[centre].y).max(0.001),
@@ -278,8 +280,15 @@ impl Project {
         let mut own_radii: Vec<crate::solver::RadiusVar> = sess.radii.iter().map(|r| crate::solver::RadiusVar { center: r.centre, value: radius(s, r) }).collect();
         let radii_was: Vec<f64> = own_radii.iter().map(|r| r.value).collect();
         // a rectangle changes its size from where it was drawn (`held_for_size`)
-        let anchors = sess.rects.iter().filter_map(|r| held_for_size(&s.rects[r.index], Some(d), r.centre)).filter(|p| sess.place.contains_key(p)).map(|p| Constraint::Fixed { p });
-        let constraints: Vec<Constraint> = sess.constraints.iter().cloned().chain(anchors).collect();
+        let anchors = sess.rects.iter().filter_map(|r| held_for_size(&rects[r.index], Some(d), r.centre)).filter(|p| sess.place.contains_key(p)).map(|p| Constraint::Fixed { p });
+        let mut constraints: Vec<Constraint> = sess.constraints.iter().cloned().chain(anchors).collect();
+        // WHERE CURVES MADE TO TOUCH TOUCH NOW, read before each frame as a full solve reads it (`touchings_follow`): kept
+        // from the first frame, a circle made to touch an ellipse came away 10 deg off
+        for c in constraints.iter_mut() {
+            if let Constraint::TangentCurves { one, other, near, end: None } = c {
+                *near = crate::solver::touching_places(&own_points, &own_radii, [&*one, &*other], *near).or(*near);
+            }
+        }
         let outcome = crate::solver::solve_part_within(&mut own_points, &mut own_radii, &constraints, Some(drag), crate::solver::Budget::FRAME, &s.points);
         s.left_unsolved = outcome.left;
         // a move below rounding is not written (`solve_sketch_inner`)
@@ -291,11 +300,12 @@ impl Project {
         for ((r, solved), &old) in sess.radii.iter().zip(&own_radii).zip(&radii_was) {
             let value = if same(solved.value, old) { old } else { solved.value };
             if let RadiusFrom::Circle(e) = r.from {
-                if let EntityKind::Circle { r: cr, .. } = &mut s.entities[e].kind {
-                    if cr.to_bits() != value.to_bits() {
+                let kind = &mut s.entities[e].kind;
+                if let Some(was) = kind.as_circle().map(|c| c.r) {
+                    if was.to_bits() != value.to_bits() {
                         resized.push(r.centre);
                     }
-                    *cr = value;
+                    kind.set_radius(value);
                 }
             }
         }
@@ -318,11 +328,11 @@ impl Project {
                     }
                 }
             }
+            // a circle's radius, and an arc's from its first end (`update_driven_dims`)
+            let at = |id: Id| sess.place.get(&id).map(|&i| Point2::new(s.points[i].x, s.points[i].y));
             for e in &s.entities {
-                if let EntityKind::Circle { center, r } = e.kind {
-                    if pos.contains_key(&center) {
-                        crad.insert(center, r);
-                    }
+                if let Some(c) = e.kind.circle_by(&at).filter(|c| pos.contains_key(&c.center)) {
+                    crad.insert(c.center, c.r);
                 }
             }
             for &ci in &sess.driven {
@@ -335,11 +345,13 @@ impl Project {
     }
 
     /// The session of a drag of point `d` in sketch `si` (see the module), `None` where the sketch takes none.
-    fn drag_session(&self, si: usize, d: Id, stamp: u64) -> Option<DragSession> {
+    pub(crate) fn drag_session(&self, si: usize, d: Id, stamp: u64) -> Option<DragSession> {
         let s = self.sketches.get(si)?;
         let origin_drawn = s.origin != 0 && s.entities.iter().any(|e| entity_points(e).contains(&s.origin));
         let frame_missing = (s.origin != 0 || s.axis_pts.iter().any(|g| *g != 0)) && s.frame == 0;
-        if !s.splines.is_empty() || !s.texts.is_empty() || origin_drawn || frame_missing {
+        // a sketch with an offset laid again from its source has its copies laid anew in a frame, and the points the
+        // session keeps would not be theirs; text is made whole
+        if !s.offsets.is_empty() || !s.texts.is_empty() || origin_drawn || frame_missing {
             return None;
         }
         let place: HashMap<Id, usize> = s.points.iter().enumerate().map(|(i, p)| (p.id, i)).collect();
@@ -347,29 +359,29 @@ impl Project {
         let mut radii = Vec::new();
         let mut from = Vec::new();
         for (k, e) in s.entities.iter().enumerate() {
-            match e.kind {
-                EntityKind::Circle { center, r } => {
-                    radii.push(crate::solver::RadiusVar { center, value: r });
-                    from.push(PartRadius { centre: center, from: RadiusFrom::Circle(k) });
+            match e.kind.radius_source() {
+                Some(RadiusSource::Held(circle)) => {
+                    radii.push(crate::solver::RadiusVar { center: circle.center, value: circle.r });
+                    from.push(PartRadius { centre: circle.center, from: RadiusFrom::Circle(k) });
                 }
-                EntityKind::Arc { center, a, .. } => {
+                Some(RadiusSource::ToEnd { center, end: a }) => {
                     if let (Some(&c), Some(&end)) = (place.get(&center), place.get(&a)) {
                         let value = (s.points[end].x - s.points[c].x).hypot(s.points[end].y - s.points[c].y).max(0.001);
                         radii.push(crate::solver::RadiusVar { center, value });
                         from.push(PartRadius { centre: center, from: RadiusFrom::Arc { centre: c, end } });
                     }
                 }
-                _ => {}
+                None => {}
             }
         }
-        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| !c.is_driven()).cloned().collect();
+        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| s.solves(c)).map(|c| s.as_solved(c)).collect();
         active.extend(self.entity_intrinsics(si));
         let part = crate::solver::part_holding(&s.points, &radii, &active, d)?;
         let carried = s.carried_with(d);
         let mut touched: HashSet<Id> = part.points.iter().map(|&i| s.points[i].id).chain(carried.iter().copied()).collect();
         touched.insert(d);
         // how many constraints name each centre of a rectangle drawn by its corners
-        let mut naming: HashMap<Id, usize> = s.rects.iter().map(|r| (r.centre, 0)).collect();
+        let mut naming: HashMap<Id, usize> = s.rects().iter().map(|r| (r.centre, 0)).collect();
         for c in &s.constraints {
             for p in c.points() {
                 if let Some(n) = naming.get_mut(&p) {
@@ -384,8 +396,8 @@ impl Project {
             let own: Vec<Constraint> = part.constraints.iter().map(|&ci| active[ci].clone()).collect();
             own_points.iter().map(|q| q.id).zip(crate::solver::free_points(&own_points, &own_radii, &own)).collect()
         };
-        let rects: Vec<TouchedRect> = s
-            .rects
+        let all_rects = s.rects();
+        let rects: Vec<TouchedRect> = all_rects
             .iter()
             .enumerate()
             .filter(|(_, r)| touched.contains(&r.centre) || r.corners.iter().any(|k| touched.contains(k)))
@@ -396,7 +408,7 @@ impl Project {
             })
             .collect();
         let watched: Vec<usize> =
-            touched.iter().chain(rects.iter().map(|r| &s.rects[r.index].centre)).filter_map(|id| place.get(id).copied()).collect::<std::collections::BTreeSet<usize>>().into_iter().collect();
+            touched.iter().chain(rects.iter().map(|r| &all_rects[r.index].centre)).filter_map(|id| place.get(id).copied()).collect::<std::collections::BTreeSet<usize>>().into_iter().collect();
         let watched_ids: HashSet<Id> = watched.iter().map(|&i| s.points[i].id).collect();
         let driven: Vec<usize> = s.constraints.iter().enumerate().filter(|(_, c)| c.is_driven() && c.points().iter().any(|p| watched_ids.contains(p))).map(|(i, _)| i).collect();
         let drawn: Vec<usize> = s.entities.iter().enumerate().filter(|(_, e)| !e.construction).map(|(k, _)| k).collect();
@@ -458,7 +470,7 @@ impl Project {
 
     /// THE LOOPS OF A FRAME through the session: the regions and the open chains round what moved made again
     /// (`round`), the regions that held it before or met where it swept giving way to them.
-    fn frame_loops(&mut self, si: usize, sess: &mut DragSession, moved: &HashSet<Id>) {
+    pub(crate) fn frame_loops(&mut self, si: usize, sess: &mut DragSession, moved: &HashSet<Id>) {
         let s = &self.sketches[si];
         let pos = |id: Id| sess.place.get(&id).map(|&i| (s.points[i].x, s.points[i].y));
         // the curves that moved, by place among the drawn, and their boxes where they stood and where they stand
@@ -492,7 +504,7 @@ impl Project {
         for cid in old.iter().filter(|cid| !closed(cid)) {
             from.extend(sess.made_of.get(cid).into_iter().flatten().filter_map(|e| sess.drawn_at.get(e).copied()));
         }
-        let curve = |k: usize| s.entities[sess.drawn[k]];
+        let curve = |k: usize| s.entities[sess.drawn[k]].clone();
         let at = |id: Id| sess.place.get(&id).map(|&i| s.points[i]);
         let near = |b: &[f64; 4]| sess.boxes.near(b).into_iter().chain(sess.moving.iter().copied()).collect();
         let change = round::Change { curve: &curve, boxes: &sess.boxes.boxes, at: &at, near: &near, moved: &shifted, swept: &swept, held };

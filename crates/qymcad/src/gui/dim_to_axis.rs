@@ -37,7 +37,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         // drawn by hand, the way a person does it: the tool, the centre, a point on the rim
-        Hand::new(&mut app).sk_tool(3).click2d(40.0, 60.0).click2d(55.0, 60.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(40.0, 60.0).click2d(55.0, 60.0);
         assert!(!app.project.sketches[si].entities.is_empty(), "setup: the circle was not drawn");
         (app, si)
     }
@@ -52,8 +52,8 @@ mod tests {
 
     /// Arm the linear dimension tool - the same door the toolbar button uses.
     fn take_the_dimension_tool(app: &mut App) {
-        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 1);
-        assert_eq!(app.tools.armed.dim_kind(), 1, "setup: the dimension tool is not in hand");
+        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, qymcad_ui_state::DimKind::Linear);
+        assert_eq!(app.tools.armed.dimension(), Some(qymcad_ui_state::DimKind::Linear), "setup: the dimension tool is not in hand");
     }
 
     /// Does any dimension added after `before` reference one of the sketch's axis points.
@@ -126,11 +126,11 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         // a circle centred exactly at zero, drawn by hand
-        Hand::new(&mut app).sk_tool(3).click2d(0.0, 0.0).click2d(25.0, 0.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(25.0, 0.0);
         app.project.ensure_axis(si, 0); // as a dimension to the axis would
         app.project.regen_sketch(si);
-        let centre = match app.project.sketches[si].entities.iter().find_map(|e| match e.kind {
-            qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
+        let centre = match app.project.sketches[si].entities.iter().find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         }) {
             Some(c) => c,
@@ -150,7 +150,7 @@ mod tests {
         // THE COMPLAINT WORD FOR WORD: "I cannot move a circle away from the origin with the move tool".
         // The rim is clicked at 45 degrees, away from the centre and from anything else.
         let where_it_was = at(&app, si, centre);
-        Hand::new(&mut app).sk_move(1, (17.7, 17.7), (0.0, 0.0), (40.0, 30.0));
+        Hand::new(&mut app).sk_move(qymcad_ui_state::MoveKind::Move, (17.7, 17.7), (0.0, 0.0), (40.0, 30.0));
         app.project.regen_sketch(si);
         let now = at(&app, si, centre);
         let went = (now.0 - where_it_was.0).hypot(now.1 - where_it_was.1);
@@ -197,12 +197,12 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(3).click2d(0.0, 0.0).click2d(20.0, 0.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(20.0, 0.0);
         let (eid, centre) = app.project.sketches[si]
             .entities
             .iter()
-            .find_map(|e| match e.kind {
-                qymcad_core::model::EntityKind::Circle { center, .. } => Some((e.id, center)),
+            .find_map(|e| match e.kind.as_circle() {
+                Some(qymcad_core::model::CircleParts { center, .. }) => Some((e.id, center)),
                 _ => None,
             })
             .expect("setup: no circle");
@@ -242,8 +242,8 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
-        assert!(hand.app.tools.inline.circle().is_some(), "the circle drawn opened no field of its diameter");
+        hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        assert!(hand.app.tools.place.round().is_some(), "the circle drawn opened no field of its diameter");
         hand.type_text("20").key(egui::Key::Enter);
 
         let s = &app.project.sketches[si];

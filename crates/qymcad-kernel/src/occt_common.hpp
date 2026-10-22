@@ -90,6 +90,10 @@
 #include <ShapeFix_ShapeTolerance.hxx>
 #include <ShapeFix_FixSmallFace.hxx>
 #include <Geom_Circle.hxx>
+#include <Geom_Ellipse.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <gp_Elips.hxx>
 #include <BRepLib.hxx>
 #include <ShapeFix_Edge.hxx>
 #include <Geom_Curve.hxx>
@@ -99,6 +103,7 @@
 #include <Geom2dConvert.hxx>
 #include <BSplCLib.hxx>
 #include <TColStd_Array1OfReal.hxx>
+#include <TColStd_Array1OfInteger.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -199,6 +204,7 @@
 #include <gp_Trsf.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAdaptor_Curve.hxx>
+#include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <gp_Cylinder.hxx>
 #include <gp_Cone.hxx>
@@ -206,6 +212,7 @@
 #include <BRepBndLib.hxx>
 #include <GProp_GProps.hxx>
 #include <BRepGProp.hxx>
+#include <BRepGProp_Face.hxx>
 
 #include <vector>
 #include <cstdint>
@@ -353,6 +360,10 @@ struct QymShapeList {
 
 /// The bit that marks a STRUCTURAL name (one derived from the recipe) apart from a positional one.
 static const int QYM_NAMED = 0x40000000;
+/// HOW MANY NUMBERS THE EDGE OF A PROFILE AT `p` TAKES: its kind, the count `m` of the numbers of its shape, those, and
+/// its name. The Rust side writes the record (`geom::encode_edge`) and says what each number of each kind is.
+static inline size_t qym_edge_len(const double* p) { return 3 + (size_t)p[1]; }
+
 /// A ROLE AWAITING ITS NAME: the number the bridge hands a face an operation makes, until the table of the document
 /// names it when the result lands (`names::ROLE` on the Rust side).
 static const int QYM_ROLE = 0x10000000;
@@ -612,12 +623,64 @@ QymShape* qym_born(const TopoDS_Shape& s, const QymRecipe& recipe = {});
 // of the closed pieces where `solids`, and runs of sides along a patch's border one edge only where `border_runs`. A null
 // shape where this way does not come through. `dropped` counts the triangles with no area.
 TopoDS_Shape mesh_shells(const double* verts, size_t nv, const uint32_t* tris, size_t nt, bool solids, bool border_runs, size_t* dropped);
-// ONE LOCK FOR OCCT'S DATA EXCHANGE, held by every reader and writer of STEP and IGES alike. They share process-wide
-// state: the framework each kind sets up the first time a reader or writer of it is made, and the parameters they set
-// (`xstep.cascade.unit`). Measured: an IGES reader and a STEP reader made at the same moment died in
-// `MoniTool_TypedValue`, SIGSEGV, 1 run of 25. A lock of their own each kept two IGES files apart and two STEP ones,
-// never one of each.
-std::mutex& xstep_lock();
+/// WHAT OCCT KEEPS FOR THE WHOLE PROCESS, so that only one thread at a time may work it. Only what a measure caught
+/// stands here, and each is locked apart: a fillet waits for a fillet, never for a STEP file.
+enum class QymShared {
+    /// OCCT's data exchange, every reader and writer of STEP and IGES alike. They share process-wide state: the framework
+    /// each kind sets up the first time a reader or writer of it is made, and the parameters they set
+    /// (`xstep.cascade.unit`). Measured: an IGES reader and a STEP reader made at the same moment died in
+    /// `MoniTool_TypedValue`, SIGSEGV, 1 run of 25. A lock of their own each kept two IGES files apart and two STEP
+    /// ones, never one of each.
+    Exchange,
+    /// The building of a fillet or a chamfer (`Build` of `BRepFilletAPI_MakeFillet` and `BRepFilletAPI_MakeChamfer`).
+    /// Two of them built at once on two threads clash even on bodies of their own, copied with their surfaces and
+    /// curves (`qym_own_copy`): the chamfer 11963 of the case of the examples, rebuilt 50 times beside the chamfer 5128
+    /// of another part, came out invalid and was built a hair short in 5 of 50 rounds on copies alone, in 0 of 50
+    /// with the building locked. What the two share is inside OCCT, not in the bodies.
+    Blend,
+};
+
+/// ONE THREAD AT A TIME ON WHAT `what` NAMES, for as long as the returned guard lives. Recursive: a reader of STEP may
+/// ask the writer of the same exchange.
+std::unique_lock<std::recursive_mutex> qym_alone(QymShared what);
+
+/// THE WORK OF AN ALGORITHM, one thread at a time on what it shares (`qym_alone`).
+template <class Algo>
+void qym_build_alone(QymShared what, Algo& algo) {
+    const std::unique_lock<std::recursive_mutex> alone = qym_alone(what);
+    algo.Build();
+}
+
+/// A BODY OF ITS OWN for an operation that writes into the body it is handed: a copy of `s` with its surfaces and
+/// curves (`BRepBuilderAPI_Copy`), and every record of its names carried to the copy's elements. A body of the cache
+/// shares its edges and vertices with the bodies before it and beside it, and an algorithm of OCCT may raise the
+/// tolerances of what it is given (measured on the case of the examples: a chamfer of 3, the sum of the tolerances of
+/// its body 0.0720624 -> 0.0744600), so written in place it writes into bodies other threads read. The names are asked
+/// of what the body holds: the copy answers only of its own.
+///
+/// A COPY IS NOT THE BODY IN EVERY RESPECT: an edge lying along the seam of a round face and bounding another face is
+/// closed on the round face in the body and not in its copy (measured on a cone with a quarter cut out at its seam:
+/// two edges closed on a face in the body, one in the copy). What reads the seams of a body (`along_a_seam`) reads them
+/// before the copy is made. A copy of the topology alone (`copyGeom` false) is no way out: a boolean on it lost that
+/// edge from its result.
+QymShape qym_own_copy(const QymShape& s);
+
+/// WHAT AN ENTRY OF THE BRIDGE DOES TO THE BODY IT IS HANDED, said at the start of its work - one of the two, checked by
+/// `tests/every_entry_says_what_it_does_to_its_body.rs`:
+/// - `QYM_OWN_COPY(s)`: its algorithm may write into what it is given, so it works on a body of its own
+///   (`qym_own_copy`), and its result is named from that copy; `QYM_OWN_COPIES(parts, n)` the same for a list;
+/// - `QYM_AS_HANDED(s, "why")`: it works on the body as handed, and says why that is safe - it only reads it, or it
+///   writes what it writes on purpose and the rebuild keeps the bodies sharing it on one thread.
+#define QYM_OWN_COPY(s)                                \
+    const QymShape own_copy_of_##s = qym_own_copy(*s); \
+    s = &own_copy_of_##s
+#define QYM_OWN_COPIES(parts, n)                                                                       \
+    std::vector<QymShape> own_copies_of_##parts;                                                       \
+    for (size_t i = 0; i < (size_t)(n); ++i) own_copies_of_##parts.push_back(parts[i] ? qym_own_copy(*parts[i]) : QymShape{}); \
+    std::vector<const QymShape*> own_of_##parts;                                                       \
+    for (size_t i = 0; i < (size_t)(n); ++i) own_of_##parts.push_back(parts[i] ? &own_copies_of_##parts[i] : nullptr); \
+    parts = own_of_##parts.data()
+#define QYM_AS_HANDED(s, why) static_assert(sizeof(why) > 8, "an entry working on the body as handed says why"); (void)s
 Handle(Law_Function) runout_law(double z0, double z1, double L, double lin, double lout);
 TopoDS_Wire make_helix_wire_seg(const gp_Ax3& axes, double radius, double lead, double z0, double z1, bool left);
 TopoDS_Wire thread_profile_wire(const gp_Ax3& axes, double radius, double pitch, double angle_deg, double depth, bool internal, int form, double clearance_crest, double clearance_root);

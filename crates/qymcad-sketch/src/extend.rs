@@ -1,4 +1,4 @@
-//! PROJECT AND EXTEND: an edge of a body taken into the sketch, a line extended to what it meets.
+//! PROJECT AND EXTEND: an edge of a body taken into the sketch, a curve extended to what it meets.
 
 use qymcad_ui_state::Notice;
 use super::*;
@@ -40,7 +40,7 @@ pub fn project_clicked_edge(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rect
 pub(crate) fn auto_project_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, si: usize, at: Point2) {
     use qymcad_core::model::ProjSource;
     let pos = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(at);
-    if qymcad_pick::nearest_line_eid(&sk.pick(), rect, pos, si).is_some() || qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si).is_some() {
+    if !qymcad_pick::curves_under(&sk.pick(), rect, pos, si).is_empty() {
         return;
     }
     let Some((body, edge)) = nearest_ref_edge(sk, si, rect, pos) else { return };
@@ -52,46 +52,48 @@ pub(crate) fn auto_project_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect
     }
 }
 
-/// WHERE A CLICK OR AN ENTER OF EXTEND LANDS: the canvas, the pointer on it, the sketch, and the line under the pointer.
+/// WHERE A CLICK OR AN ENTER OF EXTEND LANDS: the canvas, the pointer on it, the sketch, and the open curve under the
+/// pointer.
 #[derive(Clone, Copy)]
 pub(crate) struct ExtendAt {
     pub(crate) rect: Rect,
     pub(crate) pos: Pos2,
     pub(crate) si: usize,
-    pub(crate) line: Option<Id>,
+    pub(crate) curve: Option<Id>,
 }
 
-/// WHAT EXTEND ASKS OF ITS LINE with the pointer at `pos`: the pointer in the sketch, the curve under it, and the ends
+/// WHAT EXTEND ASKS OF ITS CURVE with the pointer at `pos`: the pointer in the sketch, the curve under it, and the ends
 /// "Both sides" gives.
 pub(crate) fn extend_ask(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> qymcad_core::model::ExtendAsk {
     let w = qymcad_ui_state::to_world(&*sk.view, rect, pos);
     let held = sk.tool.extend;
-    let over = qymcad_pick::nearest_line_eid(&sk.pick(), rect, pos, si).filter(|e| Some(*e) != held).or_else(|| qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si));
+    let over = qymcad_pick::curves_under(&sk.pick(), rect, pos, si).into_iter().find(|e| Some(*e) != held);
     let sides = if sk.tool_prefs.extend_both { qymcad_core::model::ExtendSides::Both } else { qymcad_core::model::ExtendSides::Nearer };
     qymcad_core::model::ExtendAsk { pointer: Point2::new(w.x, w.y), over, sides }
 }
 
-/// A CLICK OF EXTEND: with no line held, the line clicked is taken and its extension previewed; with one held, the
-/// extension the preview shows is made and the line let go. A line meeting nothing on the side asked says so.
+/// A CLICK OF EXTEND: with no curve held, the curve clicked is taken and its extension previewed; with one held, the
+/// extension the preview shows is made and the curve let go. A curve meeting nothing on the side asked says so.
 pub(crate) fn extend_click(sk: &mut qymcad_ui_state::SketchCtx, at: ExtendAt) {
     let Some(held) = sk.tool.extend else {
-        sk.tool.extend = at.line;
+        sk.tool.extend = at.curve;
         *sk.status = Notice::info(qymcad_i18n::tr("opt-extend-to-hint"));
         return;
     };
     extend_apply(sk, at, held);
 }
 
-/// THE EXTENSION OF LINE `held` MADE as the pointer at `at` asks, and the line let go.
+/// THE EXTENSION OF CURVE `held` MADE as the pointer at `at` asks, the one its preview shows (`curve_extension`), and the
+/// curve let go.
 pub(crate) fn extend_apply(sk: &mut qymcad_ui_state::SketchCtx, at: ExtendAt, held: Id) {
     let ask = extend_ask(sk, at.rect, at.pos, at.si);
-    let ext = sk.project.line_extension(at.si, held, &ask);
-    if sk.project.extend_line_by(at.si, held, ext) {
+    let ext = sk.project.curve_extension(at.si, held, &ask);
+    if ext.as_ref().is_some_and(|ext| sk.project.extend_curve_by(at.si, held, ext)) {
         sk.tool.extend = None;
         sk.sel_sk.clear(); // the selection and whatever was waiting for it
         qymcad_ui_state::invalidate(&mut *sk.regen);
         *sk.status = Notice::info(qymcad_i18n::tr("sk-done"));
-    } else if ext.kept == qymcad_core::model::EndKept::Joined {
+    } else if ext.is_some_and(|ext| ext.kept == qymcad_core::model::EndKept::Joined) {
         *sk.status = Notice::refusal(qymcad_i18n::tr("sk-extend-end-joined"));
     } else {
         *sk.status = Notice::refusal(qymcad_i18n::tr("sk-op-failed-no-intersection"));

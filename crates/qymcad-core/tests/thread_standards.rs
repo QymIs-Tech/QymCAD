@@ -12,17 +12,144 @@ fn spec(std: ThreadStandard, d: f64, p: f64) -> ThreadSpec {
     ThreadSpec { standard: std, nominal_d: d, pitch: p, ..Default::default() }
 }
 
-/// The coarse pitch of a metric thread, per ISO 261.
-#[test]
-fn metric_coarse_pitch_matches_iso_261() {
+/// A size of a standard and the pitch the standard gives it.
+struct Tabulated {
+    d: f64,
+    pitch: f64,
+}
+
+/// ISO 261: every nominal diameter that has a coarse pitch, of all three choices. Reported behaviour: the table held
+/// only the first choice, and a second-choice size took the pitch of the smaller first-choice one - M14 got 1.75
+/// instead of 2 and would not take a standard M14 nut.
+const ISO_261_COARSE: &[Tabulated] = &[
+    Tabulated { d: 1.0, pitch: 0.25 },
+    Tabulated { d: 1.1, pitch: 0.25 },
+    Tabulated { d: 1.2, pitch: 0.25 },
+    Tabulated { d: 1.4, pitch: 0.3 },
+    Tabulated { d: 1.6, pitch: 0.35 },
+    Tabulated { d: 1.8, pitch: 0.35 },
+    Tabulated { d: 2.0, pitch: 0.4 },
+    Tabulated { d: 2.2, pitch: 0.45 },
+    Tabulated { d: 2.5, pitch: 0.45 },
+    Tabulated { d: 3.0, pitch: 0.5 },
+    Tabulated { d: 3.5, pitch: 0.6 },
+    Tabulated { d: 4.0, pitch: 0.7 },
+    Tabulated { d: 4.5, pitch: 0.75 },
+    Tabulated { d: 5.0, pitch: 0.8 },
+    Tabulated { d: 6.0, pitch: 1.0 },
+    Tabulated { d: 7.0, pitch: 1.0 },
+    Tabulated { d: 8.0, pitch: 1.25 },
+    Tabulated { d: 9.0, pitch: 1.25 },
+    Tabulated { d: 10.0, pitch: 1.5 },
+    Tabulated { d: 11.0, pitch: 1.5 },
+    Tabulated { d: 12.0, pitch: 1.75 },
+    Tabulated { d: 14.0, pitch: 2.0 },
+    Tabulated { d: 16.0, pitch: 2.0 },
+    Tabulated { d: 18.0, pitch: 2.5 },
+    Tabulated { d: 20.0, pitch: 2.5 },
+    Tabulated { d: 22.0, pitch: 2.5 },
+    Tabulated { d: 24.0, pitch: 3.0 },
+    Tabulated { d: 27.0, pitch: 3.0 },
+    Tabulated { d: 30.0, pitch: 3.5 },
+    Tabulated { d: 33.0, pitch: 3.5 },
+    Tabulated { d: 36.0, pitch: 4.0 },
+    Tabulated { d: 39.0, pitch: 4.0 },
+    Tabulated { d: 42.0, pitch: 4.5 },
+    Tabulated { d: 45.0, pitch: 4.5 },
+    Tabulated { d: 48.0, pitch: 5.0 },
+    Tabulated { d: 52.0, pitch: 5.0 },
+    Tabulated { d: 56.0, pitch: 5.5 },
+    Tabulated { d: 60.0, pitch: 5.5 },
+    Tabulated { d: 64.0, pitch: 6.0 },
+    Tabulated { d: 68.0, pitch: 6.0 },
+];
+
+/// ISO 2904 Table 1: every nominal diameter of a trapezoidal thread and its preferred pitch, of all choices.
+const ISO_2904_PREFERRED: &[Tabulated] = &[
+    Tabulated { d: 8.0, pitch: 1.5 },
+    Tabulated { d: 9.0, pitch: 2.0 },
+    Tabulated { d: 10.0, pitch: 2.0 },
+    Tabulated { d: 11.0, pitch: 2.0 },
+    Tabulated { d: 12.0, pitch: 3.0 },
+    Tabulated { d: 14.0, pitch: 3.0 },
+    Tabulated { d: 16.0, pitch: 4.0 },
+    Tabulated { d: 18.0, pitch: 4.0 },
+    Tabulated { d: 20.0, pitch: 4.0 },
+    Tabulated { d: 22.0, pitch: 5.0 },
+    Tabulated { d: 24.0, pitch: 5.0 },
+    Tabulated { d: 26.0, pitch: 5.0 },
+    Tabulated { d: 28.0, pitch: 5.0 },
+    Tabulated { d: 30.0, pitch: 6.0 },
+    Tabulated { d: 32.0, pitch: 6.0 },
+    Tabulated { d: 34.0, pitch: 6.0 },
+    Tabulated { d: 36.0, pitch: 6.0 },
+    Tabulated { d: 38.0, pitch: 7.0 },
+    Tabulated { d: 40.0, pitch: 7.0 },
+    Tabulated { d: 42.0, pitch: 7.0 },
+    Tabulated { d: 44.0, pitch: 7.0 },
+    Tabulated { d: 46.0, pitch: 8.0 },
+    Tabulated { d: 48.0, pitch: 8.0 },
+    Tabulated { d: 50.0, pitch: 8.0 },
+    Tabulated { d: 52.0, pitch: 8.0 },
+    Tabulated { d: 55.0, pitch: 9.0 },
+    Tabulated { d: 60.0, pitch: 9.0 },
+    Tabulated { d: 65.0, pitch: 10.0 },
+    Tabulated { d: 70.0, pitch: 10.0 },
+    Tabulated { d: 75.0, pitch: 10.0 },
+    Tabulated { d: 80.0, pitch: 10.0 },
+    Tabulated { d: 85.0, pitch: 12.0 },
+    Tabulated { d: 90.0, pitch: 12.0 },
+    Tabulated { d: 95.0, pitch: 12.0 },
+    Tabulated { d: 100.0, pitch: 12.0 },
+    Tabulated { d: 110.0, pitch: 12.0 },
+    Tabulated { d: 120.0, pitch: 14.0 },
+    Tabulated { d: 130.0, pitch: 14.0 },
+    Tabulated { d: 140.0, pitch: 14.0 },
+    Tabulated { d: 150.0, pitch: 16.0 },
+    Tabulated { d: 160.0, pitch: 16.0 },
+    Tabulated { d: 170.0, pitch: 16.0 },
+    Tabulated { d: 180.0, pitch: 18.0 },
+    Tabulated { d: 190.0, pitch: 18.0 },
+    Tabulated { d: 200.0, pitch: 18.0 },
+    Tabulated { d: 210.0, pitch: 20.0 },
+    Tabulated { d: 220.0, pitch: 20.0 },
+    Tabulated { d: 230.0, pitch: 20.0 },
+    Tabulated { d: 240.0, pitch: 22.0 },
+    Tabulated { d: 250.0, pitch: 22.0 },
+    Tabulated { d: 260.0, pitch: 22.0 },
+    Tabulated { d: 270.0, pitch: 24.0 },
+    Tabulated { d: 280.0, pitch: 24.0 },
+    Tabulated { d: 290.0, pitch: 24.0 },
+    Tabulated { d: 300.0, pitch: 24.0 },
+];
+
+/// The pitch a thread of pitch 0 is built with - the way the tool asks for the standard one - against the table of
+/// the standard, size by size; every disagreement is reported together.
+fn standard_pitches_disagree(std: ThreadStandard, name: &str, table: &[Tabulated]) -> Vec<String> {
     let mut bad = Vec::new();
-    for (d, p) in [(3.0, 0.5), (4.0, 0.7), (5.0, 0.8), (6.0, 1.0), (8.0, 1.25), (10.0, 1.5), (12.0, 1.75), (16.0, 2.0), (20.0, 2.5), (24.0, 3.0), (30.0, 3.5), (36.0, 4.0)] {
-        let got = metric_coarse_pitch(d);
-        if (got - p).abs() > 1e-9 {
-            bad.push(format!("M{d}: pitch {got}, ISO 261 says {p}"));
+    for row in table {
+        let got = spec(std, row.d, 0.0).geometry().pitch;
+        if (got - row.pitch).abs() > 1e-9 {
+            bad.push(format!("{name}{}: pitch {got}, the standard says {}", row.d, row.pitch));
         }
     }
-    assert!(bad.is_empty(), "the coarse pitch table disagrees with the standard:\n{}", bad.join("\n"));
+    bad
+}
+
+/// The coarse pitch of a metric thread, per ISO 261, for every size of every choice.
+#[test]
+fn metric_coarse_pitch_matches_iso_261() {
+    let bad = standard_pitches_disagree(ThreadStandard::MetricIso, "M", ISO_261_COARSE);
+    assert!(bad.is_empty(), "the coarse pitch table disagrees with ISO 261:\n{}", bad.join("\n"));
+    assert!((metric_coarse_pitch(14.0) - 2.0).abs() < 1e-9, "the table is the one the tool reads");
+}
+
+/// The preferred pitch of a trapezoidal thread, per ISO 2904, for every size of every choice. Reported behaviour:
+/// Tr22 got 4 instead of 5.
+#[test]
+fn trapezoidal_pitch_matches_iso_2904() {
+    let bad = standard_pitches_disagree(ThreadStandard::TrapezoidalTr, "Tr", ISO_2904_PREFERRED);
+    assert!(bad.is_empty(), "the trapezoidal pitch table disagrees with ISO 2904:\n{}", bad.join("\n"));
 }
 
 /// Metric ISO: the pitch and minor diameters follow the ISO 68-1 formulas — d2 = d − 0.649519P,
@@ -99,6 +226,7 @@ fn groove_profile_is_closed_exact_and_within_bounds() {
             ProfEdge::Line { a, b } => (a, b),
             ProfEdge::Arc { a, b, .. } => (a, b),
             ProfEdge::Circle { center, .. } => (center, center),
+            ProfEdge::Oval { .. } | ProfEdge::Spline(_) => unreachable!("a thread profile holds no ellipse and no spline"),
         };
         if g.groove.len() < 3 {
             bad.push(format!("{:?}: profile of {} edges", std, g.groove.len()));
@@ -161,6 +289,7 @@ fn print_fit_widens_groove_monotonically() {
                 ProfEdge::Line { a, b } => vec![a.x, b.x],
                 ProfEdge::Arc { a, b, .. } => vec![a.x, b.x],
                 ProfEdge::Circle { center, .. } => vec![center.x],
+                ProfEdge::Oval { .. } | ProfEdge::Spline(_) => unreachable!("a thread profile holds no ellipse and no spline"),
             })
             .fold(0.0_f64, |m, x| m.max(x.abs()))
     };
@@ -206,6 +335,7 @@ fn auger_flight_is_additive_ribbon_with_rounded_edges() {
             ProfEdge::Line { a, b } => vec![a.y, b.y],
             ProfEdge::Arc { a, b, .. } => vec![a.y, b.y],
             ProfEdge::Circle { center, .. } => vec![center.y],
+            ProfEdge::Oval { .. } | ProfEdge::Spline(_) => unreachable!("a thread profile holds no ellipse and no spline"),
         })
         .collect();
     assert!(ys.iter().cloned().fold(f64::MIN, f64::max) > 0.0, "the flight runs outwards from the shaft, y > 0");
@@ -241,6 +371,7 @@ fn crest_rounding_adds_arcs_and_keeps_contour_closed() {
         ProfEdge::Line { a, b } => (a, b),
         ProfEdge::Arc { a, b, .. } => (a, b),
         ProfEdge::Circle { center, .. } => (center, center),
+        ProfEdge::Oval { .. } | ProfEdge::Spline(_) => unreachable!("a thread profile holds no ellipse and no spline"),
     };
     for k in 0..round.groove.len() {
         let (_, b) = ends(&round.groove[k]);
@@ -267,6 +398,7 @@ fn internal_groove_goes_into_the_wall_external_into_the_shaft() {
                 ProfEdge::Line { a, b } => v.extend([a.y, b.y]),
                 ProfEdge::Arc { a, b, center, .. } => v.extend([a.y, b.y, center.y]),
                 ProfEdge::Circle { center, .. } => v.push(center.y),
+                ProfEdge::Oval { .. } | ProfEdge::Spline(_) => unreachable!("a thread profile holds no ellipse and no spline"),
             }
         }
         (v.iter().cloned().fold(f64::MAX, f64::min), v.iter().cloned().fold(f64::MIN, f64::max))
@@ -293,6 +425,7 @@ fn internal_groove_goes_into_the_wall_external_into_the_shaft() {
         ProfEdge::Line { a, b } => (a, b),
         ProfEdge::Arc { a, b, .. } => (a, b),
         ProfEdge::Circle { center, .. } => (center, center),
+        ProfEdge::Oval { .. } | ProfEdge::Spline(_) => unreachable!("a thread profile holds no ellipse and no spline"),
     };
     for k in 0..g.groove.len() {
         let (_, b) = ends(&g.groove[k]);

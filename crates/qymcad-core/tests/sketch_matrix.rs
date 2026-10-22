@@ -186,20 +186,8 @@ fn matrix_tangent_dumbbell_trim() {
     }
     // after the first trim the circle became an arc, possibly with a new id: find the arc entity centred at
     // (0,0)
-    let mid2 = p.sketches[si]
-        .entities
-        .iter()
-        .find(|e| {
-            matches!(e.kind, qymcad_core::model::EntityKind::Arc { .. } | qymcad_core::model::EntityKind::Circle { .. }) && {
-                let pid = match e.kind {
-                    qymcad_core::model::EntityKind::Arc { center, .. } => center,
-                    qymcad_core::model::EntityKind::Circle { center, .. } => center,
-                    _ => unreachable!(),
-                };
-                p.sketches[si].points.iter().any(|q| q.id == pid && q.x.abs() < 1e-6 && q.y.abs() < 1e-6)
-            }
-        })
-        .map(|e| e.id);
+    let mid2 =
+        p.sketches[si].entities.iter().find(|e| e.kind.round_centre().is_some_and(|pid| p.sketches[si].points.iter().any(|q| q.id == pid && q.x.abs() < 1e-6 && q.y.abs() < 1e-6))).map(|e| e.id);
     match mid2 {
         Some(id) => {
             if !p.trim_curve(si, id, -rr, 0.0) {
@@ -289,32 +277,11 @@ fn matrix_trim_no_orphan_points() {
     let l = p.add_line_entity(si, -20.0, 0.0, 20.0, 0.0, qymcad_core::feature::Purpose::Real);
     // cut off the right-hand tail of the line by clicking (15,0), with the cuts at ±10, which would orphan
     // the endpoint at (20,0)
-    if !p.trim_line(si, l, 15.0, 0.0) {
+    if !p.trim_curve(si, l, 15.0, 0.0) {
         fails.push("trim_line of the tail returned false".into());
     }
     let s = &p.sketches[si];
-    let mut used: std::collections::HashSet<u64> = Default::default();
-    for e in &s.entities {
-        match e.kind {
-            qymcad_core::model::EntityKind::Line { a, b } => {
-                used.insert(a);
-                used.insert(b);
-            }
-            qymcad_core::model::EntityKind::Arc { center, a, b, .. } => {
-                used.insert(center);
-                used.insert(a);
-                used.insert(b);
-            }
-            qymcad_core::model::EntityKind::Circle { center, .. } => {
-                used.insert(center);
-            }
-            qymcad_core::model::EntityKind::Ellipse { c, ma, mi } => {
-                used.insert(c);
-                used.insert(ma);
-                used.insert(mi);
-            }
-        }
-    }
+    let used: std::collections::HashSet<u64> = s.entities.iter().flat_map(qymcad_core::model::entity_points).collect();
     let sys: std::collections::HashSet<u64> = s.system_ids().into_iter().collect();
     for pt in &s.points {
         if !used.contains(&pt.id) && !sys.contains(&pt.id) {

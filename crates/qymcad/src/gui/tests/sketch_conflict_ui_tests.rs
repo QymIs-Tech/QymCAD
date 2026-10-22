@@ -14,9 +14,8 @@ fn app_with_conflict() -> (App, usize) {
     // THE ENDS OF THE LINE, asked of the line itself. Taken by position in `points` these used to be
     // the same thing by luck; a sketch also holds the frame of reference, and its points are in that
     // list too - see `Sketch::frame`.
-    let (a, b) = match app.project.sketches[si].entities[0].kind {
-        qymcad_core::model::EntityKind::Line { a, b } => (a, b),
-        ref other => panic!("setup: the first entity is not a line: {other:?}"),
+    let Some(qymcad_core::model::LineParts { a, b }) = app.project.sketches[si].entities[0].kind.as_line() else {
+        panic!("setup: the first entity is not a line: {:?}", app.project.sketches[si].entities[0].kind)
     };
     let s = &mut app.project.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });
@@ -37,9 +36,8 @@ fn app_with_geometric_conflict() -> (App, usize) {
     // THE ENDS OF THE LINE, asked of the line itself. Taken by position in `points` these used to be
     // the same thing by luck; a sketch also holds the frame of reference, and its points are in that
     // list too - see `Sketch::frame`.
-    let (a, b) = match app.project.sketches[si].entities[0].kind {
-        qymcad_core::model::EntityKind::Line { a, b } => (a, b),
-        ref other => panic!("setup: the first entity is not a line: {other:?}"),
+    let Some(qymcad_core::model::LineParts { a, b }) = app.project.sketches[si].entities[0].kind.as_line() else {
+        panic!("setup: the first entity is not a line: {:?}", app.project.sketches[si].entities[0].kind)
     };
     let s = &mut app.project.sketches[si];
     s.constraints.push(Constraint::Fixed { p: a });

@@ -3,7 +3,7 @@
 //! The contract checks the extrusion of a first body point by point; what is here is the rest of the bullet - the
 //! operations that need a body to work on, the extent that goes right through it, and the revolve with its axis and
 //! angle. Every check reads the body it made: its volume and how far it reaches.
-use qymcad::{pos2, Key, Session};
+use qymcad::{pos2, Key, Session, Tone};
 use qymcad_acceptance::build;
 use qymcad_acceptance::probe;
 
@@ -110,7 +110,10 @@ probe! {
         s.press_hint(&extrude);
         bar_word(&mut s, "cmd-cut");
         s.key(Key::Enter);
-        assert!(s.status() == s.word("cmd-cut-needs-body"), "nothing says a cut needs a body: the status line says {:?}", s.status());
+        // said where the tool speaks, in the tone of a refusal
+        let why = s.word("cmd-cut-needs-body");
+        let says = s.tool_says();
+        assert!(says.iter().any(|n| n.words == why && n.tone == qymcad::Tone::Refusal), "nothing says a cut needs a body where the tool speaks: {says:?}");
         assert!(s.document().bodies.is_empty(), "the cut in an empty part made a body: {:?}", s.document().bodies);
     }
 }
@@ -341,7 +344,8 @@ probe! {
         s.press_hint(&extrude);
         s.key(Key::Enter);
         let ask = s.word("hint-closed-contour");
-        assert!(s.status().contains(&ask), "Enter with no contour clicked was not refused in words: the status line says {:?}", s.status());
+        let said = s.tool_says();
+        assert!(said.iter().any(|n| n.tone == Tone::Refusal && n.words.contains(&ask)), "Enter with no contour clicked was not refused in words where the extrusion speaks: {said:?}");
         assert!(s.document().bodies.is_empty(), "Enter with no contour clicked made a body: {:?}", s.document().bodies);
     }
 }

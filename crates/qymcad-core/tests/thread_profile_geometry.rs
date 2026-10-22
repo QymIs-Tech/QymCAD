@@ -32,10 +32,12 @@ fn the_list_of_thread_standards_is_complete() {
 }
 
 fn ends(e: &ProfEdge) -> (Point2, Point2) {
-    match *e {
-        ProfEdge::Line { a, b } => (a, b),
-        ProfEdge::Arc { a, b, .. } => (a, b),
-        ProfEdge::Circle { center, .. } => (center, center),
+    match e.ends() {
+        Some([a, b]) => (a, b),
+        None => match *e {
+            ProfEdge::Circle { center, .. } | ProfEdge::Oval { centre: center, .. } => (center, center),
+            _ => unreachable!("an edge with no ends is a circle or a whole ellipse"),
+        },
     }
 }
 
@@ -75,6 +77,7 @@ fn polyline(edges: &[ProfEdge]) -> Vec<Point2> {
                 }
             }
             ProfEdge::Circle { .. } => {}
+            ProfEdge::Oval { .. } | ProfEdge::Spline(_) => pts.extend((0..=100).filter_map(|i| e.curve_at(i as f64 / 100.0))),
         }
     }
     pts

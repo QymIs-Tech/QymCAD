@@ -9,7 +9,6 @@ pub enum IconId {
     SketchLine,
     SketchRect,
     SketchCircle,
-    SketchCircle3Pt,
     SketchArc,
     SketchPolygon,
     SketchSlot,

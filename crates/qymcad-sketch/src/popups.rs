@@ -3,16 +3,21 @@
 use qymcad_ui_state::Notice;
 use super::*;
 
-pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Context, rect: Rect) {
+/// THE CORNER UNDER THE POINTER, on the sheet: the side of a corner with more than one to give follows the pointer while
+/// the corner is not fixed, and the preview of the cut is drawn. The box of the set is a tool of the frame (`CornerEdit`).
+pub fn corner_preview(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Context, rect: Rect) {
     // THE SIDE OF A CORNER WITH MORE THAN ONE TO GIVE IS WHERE THE POINTER IS, while the field is open: the corner of a
     // crossing follows it into the quarter it stands in, and the first leg of a chamfer is the line it is nearer to.
     // Reported behaviour: "the side of the fillet or the chamfer is chosen by where the cursor is, with the preview
     // drawn there".
     let following = cc.corner.aim == qymcad_ui_state::Aim::Following;
-    if let (true, Some((si, _, _)), Some(pos)) = (following, cc.corner.at, ctx.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p))) {
-        let w = qymcad_ui_state::to_world(cc.view, rect, pos);
-        if cc.corner.set.steer(&*cc.project, si, (w.x, w.y)) == qymcad_ui_state::Steered::Yes {
-            cc.corner.near = Some(Point2::new(w.x, w.y));
+    let pointer = ctx.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p));
+    if let Some((si, _, _)) = cc.corner.at.filter(|_| following) {
+        if let Some(pos) = pointer {
+            let w = qymcad_ui_state::to_world(cc.view, rect, pos);
+            if cc.corner.set.steer(&*cc.project, si, (w.x, w.y)) == qymcad_ui_state::Steered::Yes {
+                cc.corner.near = Some(Point2::new(w.x, w.y));
+            }
         }
     }
     // THE PREVIEW IS DRAWN FIRST, AND ALWAYS: it belongs to the sheet and not to the field, and a person deciding
@@ -22,473 +27,404 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
     // pointer that goes to it. A click fixes the corner, and the box opens then.
     if following && cc.corner.at.is_some() {
         *cc.status = Notice::info(qymcad_i18n::tr("sk-corner-click-to-fix"));
-        return;
-    }
-    // THE FIELD OF THE WHOLE SET, not of one corner: one value cuts every corner the chosen lines make, and the
-    // set is beside the field rather than under the pointer, so it does not move with it (Enter applies, Esc
-    // cancels, and both act on the whole set as one step of undo).
-    let Some((si, pid, chamfer)) = cc.corner.at else { return };
-
-    // THE WHOLE SET, AS IT STANDS THIS FRAME: what one answer will cut. Read on every frame, because a corner of
-    // the set can be one line further on or another the moment a line is chosen or let go.
-    let standing = cc.corner.set.standing();
-
-    // **A BOX WITH NOTHING TO CUT IN IT IS NOT DRAWN.** The box is the value for the set, and where there is no
-    // corner in the set there is nothing the value is for: the amber corner under the cursor says what a click would
-    // name, and a box standing over the drawing with a number in it invites a number to be typed for a set that does
-    // not exist. It is also what it was before - the box used to open on the tool being taken, over the middle of
-    // the drawing, with the set empty and nothing to answer.
-    if standing.is_empty() {
-        return;
-    }
-
-    let at = cc.corner.pos.unwrap_or_else(|| rect.center());
-    let want_focus = std::mem::take(&mut cc.corner.focus);
-    let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-    let (mut apply, mut cancel) = (false, false);
-    let mut buf = std::mem::take(&mut cc.corner.buf);
-
-    // ONE VALUE CUTS THE WHOLE SET, so it is held by the tightest corner in it AND by what the lines between the
-    // corners spend on themselves. A value that fits one corner and overruns the one beside it would leave a
-    // half-cut drawing behind, and rounding every corner of a rectangle takes half its short side for that reason.
-    let limit = cc.corner.set.limit(cc.project, si, qymcad_ui_state::corner_tool(chamfer, cc.tool_prefs), cc.tool_prefs.fillet_by);
-    // WHY THIS VALUE CANNOT BE TAKEN, said of the value as it is typed and again at Enter - one sentence, read in
-    // two places, so that what the box says beside the field is the very reason Enter refuses it for.
-    let judge = |project: &qymcad_core::model::Project, text: &str| -> Option<String> {
-        match qymcad_core::expr::eval(text.trim(), &project.param_map()) {
-            Err(e) => Some(qymcad_i18n::error_words::expr_error_text(&e)),
-            Ok(v) if !v.is_finite() || v <= 1e-6 => Some(qymcad_i18n::tr("cmd-value-zero")),
-            // A VALUE THE CORNERS CANNOT TAKE says so as it is typed: past the leg or the radius they hold, and
-            // nothing is drawn to promise what cannot be built.
-            Ok(v) if limit.is_some_and(|l| v >= l * (1.0 - 1e-9)) => Some(qymcad_i18n::tr("sk-fillet-too-big")),
-            Ok(_) if standing.is_empty() => Some(qymcad_i18n::tr("sk-no-corner-here")),
-            Ok(_) => None,
-        }
-    };
-    // THE SECOND VALUE OF A CHAMFER of two legs or of a leg and an angle: the corners of the set are cut by both,
-    // and one answer still cuts all of them.
-    let second_used = chamfer && cc.tool_prefs.chamfer_mode != qymcad_core::feature::ChamferMode::Symmetric;
-    let angle = cc.tool_prefs.chamfer_mode == qymcad_core::feature::ChamferMode::DistAngle;
-    let judge2 = |project: &qymcad_core::model::Project, text: &str| -> Option<String> {
-        match qymcad_core::expr::eval(text.trim(), &project.param_map()) {
-            Err(e) => Some(qymcad_i18n::error_words::expr_error_text(&e)),
-            Ok(v) if !v.is_finite() || v <= 1e-6 => Some(qymcad_i18n::tr("cmd-value-zero")),
-            Ok(v) if angle && v.to_radians() >= std::f64::consts::PI => Some(qymcad_i18n::tr("sk-fillet-too-big")),
-            Ok(_) => None,
-        }
-    };
-    // WHY THE VALUE AS TYPED IS REFUSED, said in the box and not only under the pointer. A tooltip exists only while
-    // the pointer rests on the glyph beside it, and the reason belongs to the value: a person reading back what they
-    // typed has their eyes on the field, not on a warning mark they have to find first.
-    let mut said: Option<String> = None;
-    let bar_typed = |key: &'static str| ctx.memory(|m| m.has_focus(qymcad_ui_state::bar_field_id(key)));
-    let area = egui::Id::new(("cornerinput", si, pid));
-    let size = ctx.memory(|m| m.area_rect(area)).map_or(CORNER_BOX_GUESS, |r| r.size());
-    let at = corner_box_place(cc, rect, si, standing.first().copied(), chamfer, size).unwrap_or_else(|| qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0));
-    egui::Area::new(area).fixed_pos(at).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
-        qymcad_ui_state::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // "R of every corner" is the field of FILLET ALL, and of nothing else: it is the one that rounds a
-                // whole contour rather than a corner of it, and the zero in the field it is opened with is what says
-                // so.
-                ui.label(if chamfer {
-                    qymcad_i18n::tr(qymcad_ui_state::chamfer_d1_label(cc.tool_prefs.chamfer_mode))
-                } else if pid == 0 {
-                    qymcad_i18n::tr("sk-r-all-corners")
-                } else {
-                    qymcad_i18n::tr(qymcad_ui_state::fillet_label(cc.tool_prefs.fillet_by))
-                });
-                let r0 = qymcad_ui_state::focus_edit(ui, &mut buf, 64.0, "", want_focus);
-                // THE REASON, TAKEN FROM THE TEXT AS IT IS TYPED - before the value of the bar is put over it below.
-                // Reading it after would read a buffer that has already been given back, and a value a person has
-                // typed and is still typing would be judged by something else than what they wrote.
-                said = judge(&*cc.project, &buf);
-                if let Some(why) = &said {
-                    qymcad_ui_state::tone_mark(ui, &cc.scheme.pal, qymcad_ui_state::Tone::Refusal).on_hover_text(why);
-                }
-                // ONE VALUE IN TWO PLACES: the radius on the bar and the one at the corners. Typed at the corners it
-                // is the bar's too; while the corner field is not the one being typed in, it shows the bar's. Two
-                // fields apart, a radius typed on the bar was not the one Enter applied - the corners kept the radius
-                // of the time before.
-                if r0.has_focus() {
-                    if let Some(v) = parse_num(cc.project, &buf).filter(|v| *v > 1e-6) {
-                        cc.tool_prefs.fillet = v;
-                    }
-                } else if bar_typed("sk_fillet") && !enter && !r0.lost_focus() && cc.corner.why.is_none() && parse_num(cc.project, &buf).is_none_or(|v| (v - cc.tool_prefs.fillet).abs() > 1e-12) {
-                    // the bar's value is taken only by a field at rest: in the frame of Enter it would put the old radius
-                    // over the text being applied, and after a refusal over the text refused
-                    buf = qymcad_core::expr::fmt_num(cc.tool_prefs.fillet);
-                }
-                // Enter in the field at the corners applies it, or Enter in the radius field of the bar (below)
-                if enter && (r0.lost_focus() || r0.has_focus()) {
-                    apply = true;
-                }
-                // Enter in the radius field of the bar is this Enter too
-                if qymcad_ui_state::bar_enter_take(ui.ctx()) {
-                    apply = true;
-                }
-                // THE SECOND VALUE OF A CHAMFER of two legs or of a leg and an angle, beside the first and before the
-                // buttons, so Tab goes from the one field to the other; it is the bar's too, as the first leg is.
-                // Every corner of the set is cut by both values, and Enter in either applies.
-                if second_used {
-                    ui.label(qymcad_i18n::tr(qymcad_ui_state::chamfer_d2_label(cc.tool_prefs.chamfer_mode)));
-                    let r2 = qymcad_ui_state::focus_edit(ui, &mut cc.corner.buf2, 64.0, "", false);
-                    if let Some(why) = judge2(&*cc.project, &cc.corner.buf2) {
-                        qymcad_ui_state::tone_mark(ui, &cc.scheme.pal, qymcad_ui_state::Tone::Refusal).on_hover_text(why);
-                    }
-                    if r2.has_focus() {
-                        if let Some(v) = parse_num(cc.project, &cc.corner.buf2).filter(|v| *v > 1e-6) {
-                            cc.tool_prefs.chamfer_second = v;
-                        }
-                    } else if bar_typed("sk_chamfer2") && !enter && !r2.lost_focus() && parse_num(cc.project, &cc.corner.buf2).is_none_or(|v| (v - cc.tool_prefs.chamfer_second).abs() > 1e-12) {
-                        cc.corner.buf2 = qymcad_core::expr::fmt_num(cc.tool_prefs.chamfer_second);
-                    }
-                    if enter && (r2.lost_focus() || r2.has_focus()) {
-                        apply = true;
-                    }
-                }
-                if ui.button(ph::CHECK).clicked() {
-                    apply = true;
-                }
-                if ui.button(ph::X).clicked() {
-                    cancel = true;
-                }
-            });
-            // HOW MUCH IS IN HAND, said beside the field: a person typing one value for four corners has to know
-            // that it is four, and the one answer that cuts them is one Enter.
-            if !standing.is_empty() {
-                ui.label(qymcad_i18n::tr1("sk-corner-set-n", "n", &standing.len().to_string()));
-            }
-            // WHY A VALUE IS REFUSED IS SAID IN THE BOX AND NOT ONLY UNDER THE POINTER. The reason belongs to the
-            // value being typed, and a person reading it back has their eyes on the field rather than hunting the
-            // sheet for a warning glyph: the words were a tooltip, and the tooltip only existed while the pointer
-            // rested on the glyph beside it.
-            if let Some(why) = &said {
-                qymcad_ui_state::say(ui, &cc.scheme.pal, &qymcad_ui_state::Notice::refusal(why.clone()), qymcad_ui_state::NoticeSize::Line);
-            }
-        });
-    });
-    cc.corner.buf = buf;
-    let refused = judge(&*cc.project, &cc.corner.buf).or_else(|| second_used.then(|| judge2(&*cc.project, &cc.corner.buf2)).flatten()); // taken as zero, it closed the field and did nothing
-    if apply && refused.is_some() {
-        *cc.status = Notice::refusal(refused.clone().unwrap_or_default());
-        cc.corner.why = refused;
-        apply = false;
-    }
-    if apply {
-        let r = parse_num(cc.project, &cc.corner.buf.clone()).unwrap_or(0.0);
-        // THE BOUNDARY OF AN OPERATION: one step of undo, named after the tool. A person naming four corners of a
-        // shape meant one act, and undo taking back one corner of it would leave the drawing in a state nobody
-        // asked for.
-        // the lines cut at a crossing to name the corner are the start of this step: the cut joins it, and one undo
-        // takes back the whole of it
-        let joins = cc.corner.crossing == qymcad_ui_state::CrossingCut::Cut;
-        if !joins {
-            qymcad_ui_state::begin_edit(&mut *cc.edits, &*cc.project, qymcad_i18n::tr(if chamfer { "tool-chamfer" } else { "tool-fillet" }));
-        }
-        if r > 1e-6 {
-            cc.tool_prefs.fillet = r; // sticky: the next corner offers the same value
-                                      // THE SIZE AS IT WAS GIVEN, not only as a radius: a fillet taken by the length of its arc or by the chord
-                                      // between its ends is a different drawing, and a chamfer of two legs is two numbers.
-            let size = qymcad_core::model::FilletSize { by: cc.tool_prefs.fillet_by, value: r };
-            if chamfer && second_used {
-                cc.tool_prefs.chamfer_second = parse_num(cc.project, &cc.corner.buf2.clone()).unwrap_or(cc.tool_prefs.chamfer_second);
-            }
-            let cut: usize = if pid == 0 {
-                // "ROUND EVERY CORNER" OF A SHAPE, which is one command about a whole set of lines rather than about
-                // the corners the set happens to name: it is the only corner cut left to the drawing to find.
-                let only = cc.corner.only.take().or_else(|| {
-                    let sel: std::collections::HashSet<Id> = cc.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
-                    (!sel.is_empty()).then_some(sel)
-                });
-                cc.project.fillet_all_corners_by(si, size, only.as_ref())
-            } else {
-                // ONE ANSWER CUTS THE WHOLE SET, OR NOTHING: the core cuts every corner by the size as the bar gives it,
-                // the same cut the preview drew, and leaves the sketch as it was where one corner does not take it
-                let corners: Vec<qymcad_core::model::CornerAt> = standing.iter().map(|&(point, pair)| qymcad_core::model::CornerAt { point, pair }).collect();
-                let cut = corner_cut(cc, chamfer, r);
-                cc.project.cut_corner_set(si, &corners, cut, cc.corner.near)
-            };
-            if cut > 0 {
-                // THE CHOSEN LINES THAT THE KNIFE HAS CONSUMED GO OUT OF THE SELECTION: a line that is no longer
-                // there cannot stand lit, and the selection would show a piece of the drawing that is not in it.
-                // What is left is lit as it is - a corner that was cut away took its lines with it, and the ones
-                // that remain are what a further click would work on.
-                cc.sel_sk.items.retain(|&(_, id)| qymcad_ui_state::pick_still_stands(&*cc.project, si, id));
-                qymcad_ui_state::invalidate(cc.regen);
-                *cc.status = if pid != 0 && cut > 1 {
-                    // MORE THAN ONE CORNER CUT AT ONCE IS SAID AS MANY: "done" would read as the one corner the
-                    // pointer was on, and the set is not visible in a word that size.
-                    Notice::info(qymcad_i18n::tr1("sk-filleted-n", "n", &cut.to_string()))
-                } else {
-                    Notice::info(qymcad_i18n::tr("sk-done"))
-                };
-            } else {
-                *cc.status = Notice::refusal(qymcad_i18n::tr("sk-fillet-too-big"));
-                cc.corner.why = Some(qymcad_i18n::tr("sk-fillet-too-big"));
-            }
-            if joins {
-                qymcad_ui_state::fold_into_last_step(&mut *cc.edits, &*cc.project);
-            } else {
-                qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
-            }
-            if cut > 0 {
-                cc.corner.clear(); // ALL of the input, so nothing of this set travels into the next call
-            }
-            // A VALUE THE CORNERS CANNOT TAKE keeps the field open with it, the reason said: closed, it left a
-            // person no field to put a smaller one in, and no words beside it.
-        } else {
-            // a size of nothing cuts nothing: the lines cut at a crossing for it are whole again
-            if joins {
-                qymcad_ui_state::take_back_last_step(&mut *cc.edits, &mut *cc.project, &mut *cc.regen);
-            } else {
-                qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
-            }
-            cc.corner.clear();
-        }
-    }
-    if cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        // the lines cut at a crossing for a corner never cut are whole again
-        if cc.corner.crossing != qymcad_ui_state::CrossingCut::None {
-            qymcad_ui_state::take_back_last_step(&mut *cc.edits, &mut *cc.project, &mut *cc.regen);
-        }
-        cc.corner.clear();
     }
 }
 
-/// An ellipse: width by height (the full axes are twice the semi-axes).
-pub fn ellipse_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context, rect: Rect, si: usize) {
-    // an ellipse: width by height (the full axes are twice the major and twice the minor semi-axis) - the
-    // entity is found through its centre handle
-    if let Some((handle, click)) = pl.place.ellipse() {
-        let cur = pl.project.ellipse_axes(si, handle);
-        if let Some((rx, ry)) = cur {
-            let (w0, h0) = (2.0 * rx, 2.0 * ry);
-            let at = (qymcad_ui_state::Sheet { view: *pl.view, rect }).at(Point2::new(click.x + rx, click.y + ry));
-            let want_focus = std::mem::take(&mut pl.place.focus);
-            if want_focus {
-                pl.place.buf[0] = format!("{}", (w0 * 1000.0).round() / 1000.0);
-                pl.place.buf[1] = format!("{}", (h0 * 1000.0).round() / 1000.0);
-            }
-            let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-            let (mut chg, mut close, mut got_focus) = (false, false, false);
-            let mut buf = [std::mem::take(&mut pl.place.buf[0]), std::mem::take(&mut pl.place.buf[1])];
-            egui::Area::new(egui::Id::new(("ellinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
-                qymcad_ui_state::at_geometry_ui(ui);
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(qymcad_i18n::tr("sk-width-short"));
-                        let r0 = qymcad_ui_state::focus_edit(ui, &mut buf[0], 60.0, "", want_focus);
-                        chg |= r0.changed();
-                        got_focus |= r0.has_focus();
-                        ui.label(qymcad_i18n::tr("sk-height-short"));
-                        let r1 = qymcad_ui_state::focus_edit(ui, &mut buf[1], 60.0, "", false);
-                        chg |= r1.changed();
-                        got_focus |= r1.has_focus();
-                        if (r0.lost_focus() || r1.lost_focus()) && enter {
-                            close = true;
-                        }
-                        if ui.button(ph::CHECK).clicked() {
-                            close = true;
-                        }
-                    });
-                });
-            });
-            pl.place.buf = buf.clone();
-            if got_focus {
-                pl.place.focus = false;
-            }
-            if chg {
-                let nw = parse_num(pl.project, &buf[0]).unwrap_or(w0).max(0.02);
-                let nh = parse_num(pl.project, &buf[1]).unwrap_or(h0).max(0.02);
-                pl.project.set_ellipse_axes(si, handle, nw / 2.0, nh / 2.0);
-                qymcad_ui_state::invalidate(pl.regen);
-            }
-            if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                pl.place.clear();
-                pl.place.focus = false;
-            }
-        } else {
-            pl.place.clear();
+/// WHAT THE BOX OF A SHAPE HOLDS AS IT OPENS, and where it stands on the sheet: its fields as the shape stands, what
+/// each of them sizes, the point it stands by and the corners of the shape.
+pub(crate) struct ShapeNow {
+    pub(crate) fields: Vec<qymcad_ui_state::CmdParam>,
+    pub(crate) sizes: Vec<Size>,
+    pub(crate) at: Point2,
+    pub(crate) around: Vec<Point2>,
+}
+
+/// ONE SIZE OF A SHAPE IN ITS BOX: the key of its field, its kind, and whether a dimension holds it.
+pub(crate) struct Size {
+    pub(crate) key: &'static str,
+    pub(crate) kind: Kind,
+    pub(crate) held: Held,
+}
+
+/// IS A SIZE OF A SHAPE HELD BY A DIMENSION once laid - so its row is a dimension's, with "ref." and a name - or free:
+/// the turn of a polygon is a freedom of the solve, not a dimension, and the axis of an ellipse is held by its half.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Held {
+    Dimension,
+    Free,
+}
+
+/// A size of a shape held by a dimension.
+fn dimension(key: &'static str, kind: Kind) -> Size {
+    Size { key, kind, held: Held::Dimension }
+}
+
+/// The field of a size of a shape, written as a dimension writes it - "40" and not "40.00".
+fn as_dimension(mut p: qymcad_ui_state::CmdParam) -> qymcad_ui_state::CmdParam {
+    p.txt = qymcad_core::expr::fmt_num(p.val);
+    p
+}
+
+/// The four corners of box `b`.
+fn corners(b: qymcad_core::geom::Bbox) -> Vec<Point2> {
+    vec![b.min, Point2::new(b.max.x, b.min.y), b.max, Point2::new(b.min.x, b.max.y)]
+}
+
+/// The corners of the square of half side `r` about `c`.
+fn square(c: Point2, r: f64) -> Vec<Point2> {
+    corners(qymcad_core::geom::Bbox { min: Point2::new(c.x - r, c.y - r), max: Point2::new(c.x + r, c.y + r) })
+}
+
+/// HOW A ROUND SIZE IS SHOWN in its box: as asked, or as its shape lays it - a circle by its diameter, an arc and a polygon
+/// by their radius.
+fn shown_of(place: &qymcad_ui_state::Placing, key: &str, natural: qymcad_ui_state::Shown) -> qymcad_ui_state::Shown {
+    place.asks.of(key).shown.unwrap_or(natural)
+}
+
+/// The caption key of a round size shown as `shown`.
+fn round_label(shown: qymcad_ui_state::Shown) -> &'static str {
+    match shown {
+        qymcad_ui_state::Shown::Diameter => "sk-diameter",
+        qymcad_ui_state::Shown::Radius => "sk-radius",
+    }
+}
+
+/// A radius `r` as a round size shown as `shown` writes it.
+fn round_value(r: f64, shown: qymcad_ui_state::Shown) -> f64 {
+    if shown == qymcad_ui_state::Shown::Diameter {
+        2.0 * r
+    } else {
+        r
+    }
+}
+
+/// THE SHAPE IN THE BOX, as it stands: an ellipse its width and height (the full axes, twice the semi-axes); a
+/// rectangle its width and height; a polygon the radius of its circle and its turn; a rectangle reopened the values of
+/// the dimensions it holds them by; a slot its length between the centres of its ends and its width; a circle its
+/// diameter, an arc its radius. None when no shape is placed, or the shape went from under the box.
+pub(crate) fn shape_now(project: &Project, place: &qymcad_ui_state::Placing, si: usize) -> Option<ShapeNow> {
+    use qymcad_ui_state::{PlacingShape, Shown};
+    let length = |key| dimension(key, Kind::Length);
+    match &place.shape {
+        PlacingShape::None => None,
+        PlacingShape::Ellipse(handle, centre) => {
+            let (rx, ry) = project.ellipse_axes(si, *handle)?;
+            // its turn as the polygon's: the direction of its major axis, written to a hundredth of a degree
+            let deg = project.kept_number(*handle, "turn").unwrap_or(0.0);
+            let mut turn = qymcad_ui_state::CmdParam::new("sk-angle", "turn", deg, -360.0, 360.0).unit("unit-deg-suffix");
+            turn.txt = qymcad_core::expr::fmt_num((deg * 100.0).round() / 100.0);
+            let fields = vec![
+                as_dimension(qymcad_ui_state::CmdParam::new("sk-width", "w", 2.0 * rx, 0.02, MAX_SKETCH_LENGTH)),
+                as_dimension(qymcad_ui_state::CmdParam::new("sk-height", "h", 2.0 * ry, 0.02, MAX_SKETCH_LENGTH)),
+                turn,
+            ];
+            let free = |key, kind| Size { key, kind, held: Held::Free };
+            let hi = Point2::new(centre.x + rx, centre.y + ry);
+            let sizes = vec![free("w", Kind::Length), free("h", Kind::Length), free("turn", Kind::Angle)];
+            Some(ShapeNow { fields, sizes, at: hi, around: corners(qymcad_core::geom::Bbox { min: Point2::new(centre.x - rx, centre.y - ry), max: hi }) })
+        }
+        PlacingShape::Rect { a, b, .. } => Some(rect_now([*a, *b])),
+        PlacingShape::RectCenter { center, corner, .. } => Some(rect_now([Point2::new(2.0 * center.x - corner.x, 2.0 * center.y - corner.y), *corner])),
+        PlacingShape::Poly(cid) => {
+            let (cx, cy, r) = project.polygon_circle(si, *cid)?;
+            let ang = project.polygon_angle(si, *cid)?;
+            let shown = shown_of(place, "r", Shown::Radius);
+            let mut turn = qymcad_ui_state::CmdParam::new("sk-angle", "a", ang.to_degrees(), -360.0, 360.0).unit("unit-deg-suffix");
+            // written to a hundredth of a degree: "-28.1701" read as noise; the value itself stays as the shape holds it
+            turn.txt = qymcad_core::expr::fmt_num((ang.to_degrees() * 100.0).round() / 100.0);
+            let fields = vec![as_dimension(qymcad_ui_state::CmdParam::new(round_label(shown), "r", round_value(r, shown), 0.01, MAX_SKETCH_LENGTH)), turn];
+            let sizes = vec![dimension("r", Kind::Round(shown)), Size { key: "a", kind: Kind::Angle, held: Held::Free }];
+            Some(ShapeNow { fields, sizes, at: Point2::new(cx + r, cy), around: square(Point2::new(cx, cy), r) })
+        }
+        PlacingShape::RectSide(side) => {
+            let [c0, c1, c2, c3] = project.rect_corners(si, *side)?;
+            let fields = vec![
+                as_dimension(qymcad_ui_state::CmdParam::new("sk-width", "w", c0.dist(c1), 0.01, MAX_SKETCH_LENGTH)),
+                as_dimension(qymcad_ui_state::CmdParam::new("sk-height", "h", c1.dist(c2), 0.01, MAX_SKETCH_LENGTH)),
+            ];
+            Some(ShapeNow { fields, sizes: vec![length("w"), length("h")], at: c2, around: vec![c0, c1, c2, c3] })
+        }
+        PlacingShape::Slot(curve) => {
+            use qymcad_core::model::SlotSize;
+            let length_now = project.slot_size(si, *curve, SlotSize::Length)?;
+            let width = project.slot_size(si, *curve, SlotSize::Width)?;
+            let ends: Vec<Point2> = project
+                .sketches
+                .get(si)
+                .and_then(|s| s.entity(*curve))
+                .map(qymcad_core::model::entity_points)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|p| qymcad_ui_state::sketch_pt(project, si, p))
+                .collect();
+            let fields = vec![
+                as_dimension(qymcad_ui_state::CmdParam::new("sk-length", "l", length_now, 0.01, MAX_SKETCH_LENGTH)),
+                as_dimension(qymcad_ui_state::CmdParam::new("sk-width", "w", width, 0.01, MAX_SKETCH_LENGTH)),
+            ];
+            Some(ShapeNow { fields, sizes: vec![length("l"), length("w")], at: *ends.first()?, around: ends })
+        }
+        PlacingShape::Round(eid) => {
+            let s = project.sketches.get(si)?;
+            let e = s.entity(*eid)?;
+            let k = qymcad_core::model::circle_of(s, e)?;
+            let c = qymcad_ui_state::sketch_pt(project, si, k.center)?;
+            let natural = if e.kind.as_arc().is_some() { Shown::Radius } else { Shown::Diameter };
+            let shown = shown_of(place, "size", natural);
+            let fields = vec![as_dimension(qymcad_ui_state::CmdParam::new(round_label(shown), "size", round_value(k.r, shown), 0.0, MAX_SKETCH_LENGTH).nonzero())];
+            Some(ShapeNow { fields, sizes: vec![dimension("size", Kind::Round(shown))], at: Point2::new(c.x + k.r, c.y), around: square(c, k.r) })
         }
     }
 }
 
-/// A rectangle: width by height. From two corners it is rebuilt from the anchor corner so the signs
-/// are kept; from the centre it grows about the centre, so the centre never travels while the numbers
-/// are typed.
-pub fn rect_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context, rect: Rect, si: usize) {
-    // WHAT STAYS PUT while the numbers are typed: the first corner, or the centre.
-    enum Anchor {
-        Corner { fixed: Point2, signs: Point2 },
-        Center { at: Point2 },
-    }
-    // The numbers the fields open on, where the popup stands, and what is being rebuilt.
-    struct Active {
-        anchor: Anchor,
-        ids: Vec<Id>,
-        w0: f64,
-        h0: f64,
-        at: Point2,
-    }
-    let active = pl
-        .place
-        .rect()
-        .map(|(a, b, ids)| {
-            let signs = Point2::new((b.x - a.x).signum(), (b.y - a.y).signum());
-            Active { anchor: Anchor::Corner { fixed: a, signs }, ids, w0: (b.x - a.x).abs(), h0: (b.y - a.y).abs(), at: Point2::new(a.x.max(b.x), a.y.max(b.y)) }
-        })
-        .or_else(|| {
-            pl.place.rect_center().map(|(center, corner, ids)| Active {
-                anchor: Anchor::Center { at: center },
-                ids,
-                w0: 2.0 * (corner.x - center.x).abs(),
-                h0: 2.0 * (corner.y - center.y).abs(),
-                at: Point2::new(center.x.max(corner.x), center.y.max(corner.y)),
-            })
-        });
-    // a rectangle: width by height (text fields, with auto-focus, Tab and Enter)
-    if let Some(active) = active {
-        let Active { anchor, ids, w0, h0, at } = active;
-        let want_focus = std::mem::take(&mut pl.place.focus);
-        if want_focus {
-            pl.place.buf[0] = format!("{}", (w0 * 1000.0).round() / 1000.0);
-            pl.place.buf[1] = format!("{}", (h0 * 1000.0).round() / 1000.0);
+/// A rectangle between the two corners of its diagonal, in its box.
+fn rect_now(diagonal: [Point2; 2]) -> ShapeNow {
+    let [a, b] = diagonal;
+    let fields = vec![
+        as_dimension(qymcad_ui_state::CmdParam::new("sk-width", "w", (b.x - a.x).abs(), 0.01, MAX_SKETCH_LENGTH)),
+        as_dimension(qymcad_ui_state::CmdParam::new("sk-height", "h", (b.y - a.y).abs(), 0.01, MAX_SKETCH_LENGTH)),
+    ];
+    let hi = Point2::new(a.x.max(b.x), a.y.max(b.y));
+    let sizes = vec![dimension("w", Kind::Length), dimension("h", Kind::Length)];
+    ShapeNow { fields, sizes, at: hi, around: corners(qymcad_core::geom::Bbox { min: Point2::new(a.x.min(b.x), a.y.min(b.y)), max: hi }) }
+}
+
+/// THE BOX OF A SHAPE AS ITS ROWS SAY IT: the layout, and the names and references of its dimensions.
+pub(crate) struct ShapeBox {
+    pub(crate) layout: qymcad_ui_state::Layout,
+    pub(crate) names: Vec<qymcad_ui_state::FieldName>,
+}
+
+/// THE BOX OF THE SIZES OF A SHAPE IS THE BOX OF ITS DIMENSIONS, a row of a dimension for each size a dimension will hold
+/// - the same rows as the box of the dimension once laid (`dim_rows`) - and a plain row for a size no dimension holds.
+pub(crate) fn shape_box(place: &qymcad_ui_state::Placing, now: &ShapeNow) -> ShapeBox {
+    let mut rows = Vec::new();
+    let mut names = Vec::new();
+    for (at, size) in now.sizes.iter().enumerate() {
+        let Some(p) = place.fields.iter().find(|p| p.key == size.key) else { continue };
+        let caption = match size.kind {
+            Kind::Round(_) => row_caption(size.kind),
+            _ => qymcad_ui_state::field_caption(p),
+        };
+        if size.held == Held::Free {
+            // the unit of a free size is its field's own (`CmdParam::unit`), written after it by the frame
+            // its driver is the item's own, named by the tool in hand (`InSketch::name_kept_values`): no dimension holds the
+            // axes of an ellipse or the turn of a polygon
+            rows.push(qymcad_ui_state::Row::new(caption).field(size.key));
+            continue;
         }
-        let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-        let (mut chg, mut close, mut got_focus) = (false, false, false);
-        let mut buf = [std::mem::take(&mut pl.place.buf[0]), std::mem::take(&mut pl.place.buf[1])];
-        egui::Area::new(egui::Id::new(("rectinput", si)))
-            .fixed_pos(qymcad_ui_state::clamp_popup((qymcad_ui_state::Sheet { view: *pl.view, rect }).at(at), rect) + egui::vec2(10.0, -10.0))
-            .order(qymcad_ui_state::AT_GEOMETRY)
-            .show(ctx, |ui| {
-                qymcad_ui_state::at_geometry_ui(ui);
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(qymcad_i18n::tr("sk-width-short"));
-                        let r0 = qymcad_ui_state::focus_edit(ui, &mut buf[0], 60.0, "", want_focus);
-                        chg |= r0.changed();
-                        got_focus |= r0.has_focus();
-                        ui.label(qymcad_i18n::tr("sk-height-short"));
-                        let r1 = qymcad_ui_state::focus_edit(ui, &mut buf[1], 60.0, "", false);
-                        chg |= r1.changed();
-                        got_focus |= r1.has_focus();
-                        if (r0.lost_focus() || r1.lost_focus()) && enter {
-                            close = true;
-                        }
-                        if ui.button(ph::CHECK).clicked() {
-                            close = true;
-                        }
-                    });
-                });
-            });
-        pl.place.buf = buf.clone();
-        pl.place.typed |= chg;
-        if got_focus {
-            pl.place.focus = false;
+        // its name and its reference are the frame's, kept as typed and switched until Enter lays the dimension
+        names.push(qymcad_ui_state::FieldName::of(size.key, String::new(), None).with_driven(qymcad_ui_state::Lit::Off));
+        rows.extend(dim_rows(DimRows { caption, field: size.key, at, kind: size.kind }));
+    }
+    ShapeBox { layout: dim_layout(rows), names }
+}
+
+/// THE RADIUS OR THE DIAMETER OF A ROUND SIZE SWITCHED in the box of a shape, the value in the field written anew in it;
+/// kept until Enter lays the dimension. Answers whether `did` was it.
+pub(crate) fn shape_took(sk: &mut qymcad_ui_state::SketchCtx, si: usize, did: &qymcad_ui_state::Did) -> bool {
+    use qymcad_ui_state::{Did, Shown};
+    let Some(now) = shape_now(sk.project, sk.place, si) else { return false };
+    let Did::Pressed { key } = did else { return false };
+    if key.name != ROUND {
+        return false;
+    }
+    let Some(Size { key: field, kind: Kind::Round(was), .. }) = now.sizes.get(key.at) else { return false };
+    let shown = if *was == Shown::Diameter { Shown::Radius } else { Shown::Diameter };
+    sk.place.asks.at(field).shown = Some(shown);
+    if let Some(p) = sk.place.fields.iter_mut().find(|p| p.key == *field) {
+        p.set_label(round_label(shown));
+        // a number is written anew as the other size; a formula stays as it was typed
+        if !is_formula(&p.txt) {
+            p.val = if shown == Shown::Radius { p.val * 0.5 } else { p.val * 2.0 };
+            p.txt = qymcad_core::expr::fmt_num(p.val);
         }
-        if chg {
-            let nw = parse_num(pl.project, &buf[0]).unwrap_or(w0).max(0.01);
-            let nh = parse_num(pl.project, &buf[1]).unwrap_or(h0).max(0.01);
-            match anchor {
-                Anchor::Corner { fixed, signs } => {
-                    let nb = Point2::new(fixed.x + if signs.x < 0.0 { -nw } else { nw }, fixed.y + if signs.y < 0.0 { -nh } else { nh });
-                    pl.project.delete_entities(si, &ids);
-                    let nids = pl.project.add_rect_entity(si, fixed.x, fixed.y, nb.x, nb.y, qymcad_core::feature::Purpose::Real);
-                    pl.place.set(qymcad_ui_state::PlacingShape::Rect { a: fixed, b: nb, ids: nids });
-                }
-                Anchor::Center { at: center } => {
-                    let nb = Point2::new(center.x + nw / 2.0, center.y + nh / 2.0);
-                    pl.project.delete_entities(si, &ids);
-                    let nids = pl.project.add_rect_from_centre(si, center, nb, qymcad_core::feature::Purpose::Real);
-                    pl.place.set(qymcad_ui_state::PlacingShape::RectCenter { center, corner: nb, ids: nids });
+    }
+    true
+}
+
+/// The value field `key` of the box of a shape holds.
+fn field(place: &qymcad_ui_state::Placing, key: &str) -> Option<f64> {
+    place.fields.iter().find(|p| p.key == key).map(|p| p.val)
+}
+
+/// A radius out of round field `key` of the box of a shape, shown as `natural` unless asked otherwise.
+fn radius_of(place: &qymcad_ui_state::Placing, key: &str, natural: qymcad_ui_state::Shown) -> Option<f64> {
+    let v = field(place, key)?;
+    Some(if shown_of(place, key, natural) == qymcad_ui_state::Shown::Diameter { v * 0.5 } else { v })
+}
+
+/// THE SHAPE FOLLOWS A VALUE TYPED into its box: an ellipse takes its axes; a rectangle is rebuilt from the corner it was
+/// drawn from, so the signs are kept, or about its centre, so the centre never travels while the numbers are typed; a
+/// polygon takes its radius and turn. A rectangle reopened, a slot, a circle and an arc are not touched while they are
+/// typed: Enter lays their sizes (`shape_apply`).
+pub(crate) fn follow_typed(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
+    use qymcad_ui_state::PlacingShape;
+    let w = field(sk.place, "w");
+    let h = field(sk.place, "h");
+    match sk.place.shape.clone() {
+        PlacingShape::Ellipse(handle, _) => {
+            if let Some(w) = w {
+                if let Some(h) = h {
+                    sk.project.set_ellipse_axes(si, handle, w / 2.0, h / 2.0);
                 }
             }
-            qymcad_ui_state::invalidate(pl.regen);
-        }
-        // A WIDTH OR A HEIGHT TYPED IS LAID AS DIMENSIONS when the fields are closed with Enter or the tick, as the
-        // diameter of a circle is: a size typed by hand is a size meant. Closed untouched, or with Esc, the rectangle is
-        // left free.
-        if close && pl.place.typed {
-            if let Some(side) = pl.place.rect().or_else(|| pl.place.rect_center()).and_then(|(_, _, ids)| ids.first().copied()) {
-                pl.project.dimension_rect(si, side);
-                pl.project.solve_sketch(si);
-                qymcad_ui_state::invalidate(pl.regen);
+            // the turn typed turns it, the axes kept
+            if let Some(t) = field(sk.place, "turn").filter(|t| sk.project.kept_number(handle, "turn").is_some_and(|now| (now - t).abs() > 1e-9)) {
+                sk.project.set_ellipse_turn(si, handle, t.to_radians());
             }
         }
-        if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            pl.place.clear();
-            pl.place.focus = false;
+        // A RECTANGLE GOES WITH ITS SIZES BY ITS CORNERS MOVED, from the corner it was drawn from or about its centre: the
+        // same lines and points, so the ties a snap gave them hold
+        PlacingShape::Rect { a, b, ids } => {
+            let size = qymcad_core::model::RectSize { width: w.unwrap_or(1.0), height: h.unwrap_or(1.0) };
+            let nb = Point2::new(a.x + if b.x < a.x { -size.width } else { size.width }, a.y + if b.y < a.y { -size.height } else { size.height });
+            if let Some(&side) = ids.first() {
+                sk.project.size_rect(si, side, size);
+            }
+            sk.place.shape = PlacingShape::Rect { a, b: nb, ids };
         }
+        PlacingShape::RectCenter { center, ids, .. } => {
+            let size = qymcad_core::model::RectSize { width: w.unwrap_or(1.0), height: h.unwrap_or(1.0) };
+            let nb = Point2::new(center.x + size.width / 2.0, center.y + size.height / 2.0);
+            if let Some(&side) = ids.first() {
+                sk.project.size_rect(si, side, size);
+            }
+            sk.place.shape = PlacingShape::RectCenter { center, corner: nb, ids };
+        }
+        PlacingShape::Poly(cid) => {
+            if let Some(r) = radius_of(sk.place, "r", qymcad_ui_state::Shown::Radius) {
+                sk.project.set_polygon_radius(si, cid, r);
+            }
+            if let Some(a) = field(sk.place, "a") {
+                sk.project.set_polygon_angle(si, cid, a.to_radians());
+            }
+        }
+        PlacingShape::Slot(_) | PlacingShape::Round(_) | PlacingShape::RectSide(_) | PlacingShape::None => return,
+    }
+    qymcad_ui_state::invalidate(&mut *sk.regen);
+}
+
+/// HAS A SHAPE TAKEN THE NUMBERS OF ITS BOX as they were typed, or does Enter give them to its dimensions.
+#[derive(Clone, Copy)]
+enum Sized {
+    Followed,
+    ByValue,
+}
+
+/// A DIMENSION THE BOX OF A SHAPE LAID, by the key of the field that sizes it.
+struct Laid {
+    key: &'static str,
+    dim: Dim,
+}
+
+/// THE SIZES OF A SHAPE LAID AS DIMENSIONS - a size typed by hand is a size meant - with what was asked
+/// of them in their rows: a reference, a name, the radius shown for a diameter, the formula typed. A rectangle lays its
+/// width and height once a size of it is typed or touched; a slot each size changed or touched; a circle or an arc its
+/// size, a polygon its radius, when typed or touched. A shape closed untouched is left free. Answers a dimension laid,
+/// by its place among the constraints of the sketch.
+pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rows: &[qymcad_ui_state::FieldAsk]) -> Option<usize> {
+    use qymcad_core::model::SlotSize;
+    use qymcad_ui_state::{PlacingShape, Shown};
+    let typed = sk.place.typed;
+    let asks = sk.place.asks.clone();
+    let fields = sk.place.fields.clone();
+    let row = |key: &str| rows.iter().find(|a| a.field == key);
+    // asked in the row of a size: its radius or diameter, a reference, a name
+    let asked = |key: &str| asks.touched(key) || row(key).is_some_and(|a| a.driven == qymcad_ui_state::Lit::On || !a.name.trim().is_empty());
+    let wanted = |key: &str| typed || asked(key);
+    let mut laid: Vec<Laid> = Vec::new();
+    // a shape that followed its fields as they were typed holds the numbers already, and a dimension laid on it is given a
+    // formula only; a rectangle reopened was not touched, and its dimensions are given the values typed
+    let mut sized = Sized::Followed;
+    match sk.place.shape.clone() {
+        PlacingShape::Rect { ids, .. } | PlacingShape::RectCenter { ids, .. } if wanted("w") || wanted("h") => {
+            if let Some(dims) = ids.first().and_then(|side| sk.project.rect_dims(si, *side)) {
+                sk.project.solve_sketch(si);
+                laid = vec![Laid { key: "w", dim: Dim { si, ci: dims.width } }, Laid { key: "h", dim: Dim { si, ci: dims.height } }];
+            }
+        }
+        PlacingShape::RectSide(side) if wanted("w") || wanted("h") => {
+            if let Some(dims) = sk.project.rect_dims(si, side) {
+                laid = vec![Laid { key: "w", dim: Dim { si, ci: dims.width } }, Laid { key: "h", dim: Dim { si, ci: dims.height } }];
+                sized = Sized::ByValue;
+            }
+        }
+        PlacingShape::Slot(curve) => {
+            for (key, size) in ["l", "w"].into_iter().zip([SlotSize::Length, SlotSize::Width]) {
+                let now = sk.project.slot_size(si, curve, size);
+                let v = field(sk.place, key);
+                let changed = v.is_some_and(|v| Some(v) != now);
+                if !changed && !asked(key) {
+                    continue;
+                }
+                if let Some(v) = v.or(now) {
+                    sk.project.set_slot_size(si, curve, size, v);
+                }
+                if let Some(ci) = sk.project.slot_size_dim(si, curve, size) {
+                    laid.push(Laid { key, dim: Dim { si, ci } });
+                }
+            }
+        }
+        PlacingShape::Poly(cid) if wanted("r") => {
+            if let Some(ci) = sk.project.ensure_diameter(si, cid, false) {
+                laid.push(Laid { key: "r", dim: Dim { si, ci } });
+            }
+        }
+        PlacingShape::Round(eid) if wanted("size") => {
+            let s = &sk.project.sketches[si];
+            let natural = if s.entity(eid).is_some_and(|e| e.kind.as_arc().is_some()) { Shown::Radius } else { Shown::Diameter };
+            if let Some(centre) = s.entity(eid).and_then(|e| qymcad_core::model::circle_of(s, e)).map(|k| k.center) {
+                if let Some(r) = radius_of(sk.place, "size", natural) {
+                    set_round_size(sk, si, eid, r);
+                }
+                if let Some(ci) = sk.project.sketches[si].constraints.iter().position(|c| matches!(c, qymcad_core::model::Constraint::Diameter { c, .. } if *c == centre)) {
+                    laid.push(Laid { key: "size", dim: Dim { si, ci } });
+                }
+            }
+        }
+        _ => {}
+    }
+    if !laid.is_empty() {
+        qymcad_ui_state::invalidate(&mut *sk.regen);
+    }
+    for l in &laid {
+        let p = fields.iter().find(|p| p.key == l.key).filter(|_| typed);
+        let value = match sized {
+            Sized::Followed => p.and_then(formula_of),
+            Sized::ByValue => p.map(|p| Value { number: p.val, text: p.txt.trim().to_string() }),
+        };
+        ask_laid(sk, l.dim, AskOf { shown: asks.of(l.key).shown, row: row(l.key) }, value);
+    }
+    laid.first().map(|l| l.dim.ci)
+}
+
+/// DOES A SHAPE FOLLOW ITS FIELDS STEP BY STEP as they are typed - rebuilt from the corner or the centre it was drawn from,
+/// its axes or its circle set - or is it laid anew over the document as the box found it: a rectangle opened again, a
+/// slot, a circle and an arc, whose sizes are dimensions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Follows {
+    StepByStep,
+    LaidAnew,
+}
+
+/// How shape `shape` follows its fields.
+pub(crate) fn follows(shape: &qymcad_ui_state::PlacingShape) -> Follows {
+    use qymcad_ui_state::PlacingShape;
+    match shape {
+        PlacingShape::Ellipse(..) | PlacingShape::Rect { .. } | PlacingShape::RectCenter { .. } | PlacingShape::Poly(_) => Follows::StepByStep,
+        _ => Follows::LaidAnew,
     }
 }
 
-/// A polygon: the radius of the construction circle plus the rotation angle.
-pub fn poly_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context, rect: Rect, si: usize) {
-    // a polygon: the radius of the construction circle plus the rotation angle (it is rebuilt)
-    if let Some(cid) = pl.place.poly() {
-        if let (Some((cx, cy, r)), Some(ang)) = (pl.project.polygon_circle(si, cid), pl.project.polygon_angle(si, cid)) {
-            let at = (qymcad_ui_state::Sheet { view: *pl.view, rect }).at(Point2::new(cx + r, cy));
-            let want_focus = std::mem::take(&mut pl.place.focus);
-            if want_focus {
-                pl.place.buf[0] = format!("{}", (r * 1000.0).round() / 1000.0);
-                pl.place.buf[1] = format!("{}", (ang.to_degrees() * 100.0).round() / 100.0);
-            }
-            let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-            let (mut chg, mut close, mut got_focus) = (false, false, false);
-            let mut buf = [std::mem::take(&mut pl.place.buf[0]), std::mem::take(&mut pl.place.buf[1])];
-            egui::Area::new(egui::Id::new(("polyinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(10.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
-                qymcad_ui_state::at_geometry_ui(ui);
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(qymcad_i18n::tr("sk-radius"));
-                        let r0 = qymcad_ui_state::focus_edit(ui, &mut buf[0], 60.0, "", want_focus);
-                        chg |= r0.changed();
-                        got_focus |= r0.has_focus();
-                        ui.label(qymcad_i18n::tr("sk-angle-deg"));
-                        let r1 = qymcad_ui_state::focus_edit(ui, &mut buf[1], 50.0, "", false);
-                        chg |= r1.changed();
-                        got_focus |= r1.has_focus();
-                        if (r0.lost_focus() || r1.lost_focus()) && enter {
-                            close = true;
-                        }
-                        if ui.button(ph::CHECK).clicked() {
-                            close = true;
-                        }
-                    });
-                });
-            });
-            pl.place.buf = buf.clone();
-            if got_focus {
-                pl.place.focus = false;
-            }
-            if chg {
-                let nr = parse_num(pl.project, &buf[0]).unwrap_or(r).max(0.01);
-                let na = parse_num(pl.project, &buf[1]).map(|d| d.to_radians()).unwrap_or(ang);
-                pl.project.set_polygon_radius(si, cid, nr);
-                pl.project.set_polygon_angle(si, cid, na);
-                qymcad_ui_state::invalidate(pl.regen);
-            }
-            if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                pl.place.clear();
-                pl.place.focus = false;
-            }
-        } else {
-            pl.place.clear();
-        }
-    }
-}
-
-/// The pop-up entry of sizes right after a rectangle or a polygon is built.
-/// THE POPUP OF THE CORNER TOOL (a fillet radius or a chamfer leg): Enter applies, Esc cancels.
+/// THE BOXES OF THE CORNER TOOL (a fillet radius or a chamfer leg) AND OF THE DISTANCE OF AN OFFSET whose side a click
+/// has fixed: Enter applies, Esc cancels.
 ///
 /// `armed` is the tool in hand, and it is here rather than in `Editing` because the preview on the sheet is drawn
 /// whether or not the field is up: before the first click there is no field, and the amber corner under the cursor
 /// is drawn as the chamfer or the fillet the tool in hand would cut it as.
 pub fn place_input_popup(ed: qymcad_ui_state::Editing, mut tools: qymcad_ui_state::PopupTools, looks: qymcad_ui_state::PopupLooks, ctx: &egui::Context, rect: Rect) {
     let qymcad_ui_state::PopupTools { corner, place, sel_sk, armed } = &mut tools;
-    corner_input_popup(
+    corner_preview(
         &mut qymcad_ui_state::CornerCtx {
             corner,
             project: &mut *ed.project,
@@ -506,102 +442,57 @@ pub fn place_input_popup(ed: qymcad_ui_state::Editing, mut tools: qymcad_ui_stat
         ctx,
         rect,
     );
-    let qymcad_ui_state::Sel::Sketch(si) = *ed.sel else {
+    if !matches!(*ed.sel, qymcad_ui_state::Sel::Sketch(_)) {
         place.clear(); // everything unfinished in the drawing at once (otherwise one of the three is forgotten)
-        return;
-    };
-    offset_box(OffsetCtx { project: &mut *ed.project, edits: &mut *ed.edits, regen: &mut *ed.regen, sel_sk, status: &mut *ed.status, tool_prefs: &mut *looks.tool_prefs }, &*ed.view, si, ctx, rect);
-    let pl = &mut qymcad_ui_state::PlaceCtx { place, project: ed.project, view: &*ed.view, regen: ed.regen };
-    ellipse_input_popup(pl, ctx, rect, si);
-    rect_input_popup(pl, ctx, rect, si);
-    rect_dims_popup(pl, ctx, rect, si);
-    poly_input_popup(pl, ctx, rect, si);
-}
-
-/// A RECTANGLE REOPENED BY A DOUBLE CLICK: its width and its height, typed into the dimensions it holds them by, as the
-/// diameter of a circle is. A value typed is the dimension's at once and the rectangle follows - from the corner it was
-/// drawn from, or about its centre; Enter, the tick or Esc closes the fields.
-pub fn rect_dims_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context, rect: Rect, si: usize) {
-    let Some(dims) = pl.place.rect_dims() else { return };
-    let dim = |p: &qymcad_core::model::Project, ci: usize| match p.sketches.get(si).and_then(|s| s.constraints.get(ci)) {
-        Some(c @ qymcad_core::model::Constraint::Distance { .. }) => Some(c.clone()),
-        _ => None,
-    };
-    let (Some(qymcad_core::model::Constraint::Distance { d: w0, a: at, .. }), Some(qymcad_core::model::Constraint::Distance { d: h0, .. })) =
-        (dim(pl.project, dims.width), dim(pl.project, dims.height))
-    else {
-        pl.place.clear(); // the dimensions went from under the fields
-        return;
-    };
-    let want_focus = std::mem::take(&mut pl.place.focus);
-    if want_focus {
-        pl.place.buf = [qymcad_core::expr::fmt_num(w0), qymcad_core::expr::fmt_num(h0)];
-    }
-    let Some(corner) = qymcad_ui_state::sketch_pt(pl.project, si, at) else { return };
-    let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-    let (mut chg, mut close) = (false, false);
-    let mut buf = std::mem::take(&mut pl.place.buf);
-    egui::Area::new(egui::Id::new(("rectdims", si)))
-        .fixed_pos(qymcad_ui_state::clamp_popup((qymcad_ui_state::Sheet { view: *pl.view, rect }).at(corner), rect) + egui::vec2(10.0, -10.0))
-        .order(qymcad_ui_state::AT_GEOMETRY)
-        .show(ctx, |ui| {
-            qymcad_ui_state::at_geometry_ui(ui);
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(qymcad_i18n::tr("sk-width-short"));
-                    let r0 = qymcad_ui_state::focus_edit(ui, &mut buf[0], 60.0, "", want_focus);
-                    ui.label(qymcad_i18n::tr("sk-height-short"));
-                    let r1 = qymcad_ui_state::focus_edit(ui, &mut buf[1], 60.0, "", false);
-                    chg = r0.changed() || r1.changed();
-                    if ((r0.lost_focus() || r1.lost_focus()) && enter) || ui.button(ph::CHECK).clicked() {
-                        close = true;
-                    }
-                });
-            });
-        });
-    if chg {
-        let mut set = |ci: usize, text: &str| {
-            if let Some(v) = parse_num(pl.project, text).filter(|v| *v > 0.01) {
-                if let Some(qymcad_core::model::Constraint::Distance { d, .. }) = pl.project.sketches[si].constraints.get_mut(ci) {
-                    *d = v;
-                }
-            }
-        };
-        set(dims.width, &buf[0]);
-        set(dims.height, &buf[1]);
-        pl.project.solve_sketch(si);
-        qymcad_ui_state::invalidate(pl.regen);
-    }
-    pl.place.buf = buf;
-    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        pl.place.clear();
     }
 }
 
-/// A DOUBLE CLICK ON A SHAPE OPENS ITS SIZE: a side of a rectangle its width and height, a circle its diameter (laid
+/// A DOUBLE CLICK ON A SHAPE OPENS ITS SIZE: a side of a rectangle its width and height, a straight side of a slot its
+/// length and width, a circle its diameter (laid
 /// as a dimension when it has none), an arc its radius, the circle a polygon hangs on - or the polygon itself - its
 /// radius and turn. Answers whether a shape was there.
 pub fn open_shape_size(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> bool {
     use qymcad_ui_state::{InlineEdit, PlacingShape};
-    if let Some((1, eid)) = sketch_hit(&sk.pick(), rect, pos, si) {
-        if let Some(dims) = sk.project.rect_dims(si, eid) {
-            sk.project.solve_sketch(si);
-            sk.place.set(PlacingShape::RectDims(dims));
+    if let Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, id: eid }) = sketch_hit(&sk.pick(), rect, pos, si) {
+        if sk.project.rect_corners(si, eid).is_some() {
+            sk.place.reopen(PlacingShape::RectSide(eid));
+            sk.place.focus = true;
+            return true;
+        }
+        // A SIDE OF A POLYGON OR A SLOT OPENS THE FIGURE'S SIZE, as a side of a rectangle does: the polygon its radius and
+        // turn, the slot its length and width. A polygon opened only within 8 px of its circle, which the middle of a
+        // side of a hexagon R50 stands 6.7 mm off.
+        if let Some(centre) = qymcad_ui_state::polygon_of_curve(&*sk.project, si, eid) {
+            sk.place.reopen(PlacingShape::Poly(centre));
+            sk.place.focus = true;
+            return true;
+        }
+        // AN ELLIPSE OPENS ITS AXES AND ITS TURN, as a polygon opens its radius and turn: it opened nothing
+        let ellipse = sk.project.sketches[si].entity(eid).and_then(|e| e.kind.as_ellipse()).map(|el| el.c);
+        if let Some(c) = ellipse {
+            if let Some(at) = qymcad_ui_state::sketch_pt(&*sk.project, si, c) {
+                sk.place.reopen(PlacingShape::Ellipse(c, at));
+                sk.place.focus = true;
+                return true;
+            }
+        }
+        // a straight side of a slot: an end of it is an arc, which opens its own radius below
+        let straight = sk.project.sketches[si].entity(eid).is_some_and(|e| e.kind.as_line().is_some());
+        if straight && sk.project.slot_size(si, eid, qymcad_core::model::SlotSize::Length).is_some() {
+            sk.place.reopen(PlacingShape::Slot(eid));
             sk.place.focus = true;
             return true;
         }
     }
-    if let Some(eid) = qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si) {
+    let round = |eid: &Id| sk.project.sketches[si].entity(*eid).is_some_and(|e| e.kind.as_circle().is_some() || e.kind.as_arc().is_some());
+    if let Some(eid) = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si).filter(round) {
         // a circle has its diameter edited, or the field of its size opened; an arc the field of its radius
-        let center = sk.project.sketches[si].entities.iter().find(|e| e.id == eid).and_then(|e| match e.kind {
-            qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
-            _ => None,
-        });
+        let center = sk.project.sketches[si].entity(eid).and_then(|e| e.kind.as_circle()).map(|k| k.center);
         // the circumscribed circle of a polygon (the vertices hang on it) opens the polygon popup (the radius plus the
         // angle), while an ordinary circle gets a diameter
         let is_poly_rim = center.is_some_and(|c| sk.project.sketches[si].constraints.iter().any(|x| matches!(x, qymcad_core::model::Constraint::PointOnCircle { c: cc, .. } if *cc == c)));
         if let (true, Some(c)) = (is_poly_rim, center) {
-            sk.place.set(PlacingShape::Poly(c));
+            sk.place.reopen(PlacingShape::Poly(c));
             sk.place.focus = true;
         } else if let Some(ci) = center.and_then(|c| sk.project.sketches[si].constraints.iter().position(|x| matches!(x, qymcad_core::model::Constraint::Diameter { c: cc, .. } if *cc == c))) {
             // a circle with its diameter laid: the dimension is edited
@@ -611,612 +502,103 @@ pub fn open_shape_size(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
             // A CIRCLE OR AN ARC WITH NO SIZE OF ITS OWN opens the field of its size, and a size is laid only when a value
             // is typed there - as at a circle just drawn. Reported behaviour: "a double click, if the size was not
             // changed, must not put a dimension line on the circle".
-            *sk.inline = InlineEdit::Circle(eid);
-            sk.dim.focus = true;
+            sk.place.reopen(PlacingShape::Round(eid));
+            sk.place.focus = true;
         }
         return true;
     }
     if let Some(cid) = qymcad_ui_state::polygon_under(&*sk.project, &*sk.view, rect, pos, si) {
-        sk.place.set(PlacingShape::Poly(cid)); // editing the radius of the construction circle
+        sk.place.reopen(PlacingShape::Poly(cid)); // editing the radius of the construction circle
         sk.place.focus = true;
         return true;
     }
     false
 }
 
-/// The ANGLE popup for the rotate tool (`move_op == 3`), placed at the picked centre. Enter or the tick
-/// applies `rotate_entities`; editing the value gives a live preview (the ghost in `draw_move_preview`).
-pub fn sketch_rotate_popup(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
-    if sk.armed.move_op() != 3 {
-        return;
-    }
+/// A DOUBLE CLICK ON DIMENSION `ci` OF THE SKETCH CHOSEN OPENS ITS BOX: the radius of the circle a polygon hangs on opens
+/// the box of the polygon - its radius and turn - as a double click on the polygon does; any other dimension its own box.
+pub fn open_dim_box(sk: &mut qymcad_ui_state::SketchCtx, ci: usize) {
     let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return };
-    let Some(base) = sk.tool.move_base else { return };
-    let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
-    let texts = qymcad_ui_state::sel_text_indices(&*sk.project, &*sk.sel_sk, si);
-    if eids.is_empty() && texts.is_empty() {
-        return;
-    }
-    let rot = &mut *sk.rot;
-    let at = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(base);
-    let want_focus = std::mem::take(&mut rot.focus);
-    let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-    let (mut chg, mut apply, mut got_focus) = (false, false, false);
-    let mut buf = std::mem::take(&mut rot.buf);
-    // AN ANGLE THAT CANNOT BE TAKEN is refused where it is typed: the reason on the mark beside the field, the tool
-    // and what was typed staying. It used to be applied as 0 or taken away with the popup.
-    let checked = angle_of(sk.project, &buf);
-    egui::Area::new(egui::Id::new(("rotinput", si))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(12.0, -12.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
-        qymcad_ui_state::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(format!("{} {}", ph::ARROWS_CLOCKWISE, qymcad_i18n::tr("sk-angle-deg")));
-                let r = qymcad_ui_state::focus_edit(ui, &mut buf, 64.0, &qymcad_i18n::tr("sk-angle-placeholder"), want_focus);
-                chg |= r.changed();
-                got_focus |= r.has_focus();
-                if r.lost_focus() && enter {
-                    apply = true;
-                }
-                if let Err(msg) = &checked {
-                    qymcad_ui_state::tone_mark(ui, &sk.scheme.pal, qymcad_ui_state::Tone::Refusal).on_hover_text(msg);
-                }
-                if ui.button(ph::CHECK).on_hover_text(qymcad_i18n::tr("sk-apply-enter")).clicked() {
-                    apply = true;
-                }
-            });
-        });
-    });
-    rot.buf = buf;
-    if got_focus {
-        rot.focus = false;
-    }
-    if chg || want_focus {
-        rot.angle = parse_num(sk.project, &rot.buf.clone()).unwrap_or(0.0); // the live preview
-    }
-    if let (true, Err(msg)) = (apply, angle_of(sk.project, &sk.rot.buf.clone())) {
-        *sk.status = Notice::refusal(msg);
-        sk.rot.focus = true;
-        return;
-    }
-    if apply {
-        if let Some(v) = parse_num(sk.project, &sk.rot.buf.clone()) {
-            // THE BOUNDARY OF AN OPERATION: applying the angle is the act, so it makes one step of undo named
-            // after the tool, as the target click of a move does.
-            qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-rotate"));
-            // WHERE A FREE TURN WOULD HAVE PUT THE POINTS, and where the constraints let them go.
-            //
-            // A rectangle carries two horizontal and two vertical constraints, so it CANNOT turn: the solver
-            // brings it back to upright, merely relocated - measured, a 90 degree turn about zero left the
-            // corner at (-5, 5) instead of (0, 0). Saying "Rotated by 90 deg" over that is the same lie the
-            // move tool used to tell, and it is told out loud here instead.
-            let ids = sk.project.entity_point_ids(si, &eids);
-            let at = |p: &qymcad_core::model::Project| -> Vec<(f64, f64)> {
-                p.sketches.get(si).map(|s| ids.iter().filter_map(|id| s.points.iter().find(|q| q.id == *id).map(|q| (q.x, q.y))).collect()).unwrap_or_default()
-            };
-            let before = at(sk.project);
-            let (sn, cs) = (v.to_radians().sin(), v.to_radians().cos());
-            let want: Vec<(f64, f64)> = before
-                .iter()
-                .map(|(x, y)| {
-                    let (dx, dy) = (x - base.x, y - base.y);
-                    (base.x + dx * cs - dy * sn, base.y + dx * sn + dy * cs)
-                })
-                .collect();
-            if !eids.is_empty() {
-                sk.project.rotate_entities(si, &eids, base.x, base.y, v);
-            }
-            for &ti in &texts {
-                sk.project.rotate_sketch_text(si, ti, base.x, base.y, v);
-            }
-            let after = at(sk.project);
-            let mean = |a: &[(f64, f64)], b: &[(f64, f64)]| -> f64 {
-                if a.len() != b.len() || a.is_empty() {
-                    return 0.0;
-                }
-                a.iter().zip(b).map(|((x0, y0), (x1, y1))| (x1 - x0).hypot(y1 - y0)).sum::<f64>() / a.len() as f64
-            };
-            let asked = mean(&before, &want); // how far the turn alone would have carried the points
-            let off = mean(&after, &want); // how far the result stands from that
-                                           // a tenth of what was asked, and at least a hundredth of a millimetre: below that it did turn
-            *sk.status = if asked > 1e-9 && off > (asked * 0.1).max(1e-2) {
-                Notice::warning(qymcad_i18n::tr("sk-turn-held"))
-            } else {
-                Notice::info(qymcad_i18n::tr1("sk-rotated-by", "a", &v.to_string()))
-            };
-            qymcad_ui_state::commit_edit(&mut sk.rebuild());
+    let poly = match sk.project.sketches[si].constraints.get(ci) {
+        Some(qymcad_core::model::Constraint::Diameter { c, .. }) => {
+            let c = *c;
+            sk.project.sketches[si].constraints.iter().any(|x| matches!(x, qymcad_core::model::Constraint::PointOnCircle { c: cc, .. } if *cc == c)).then_some(c)
         }
-        *sk.armed = qymcad_ui_state::Armed::None;
-        sk.tool.move_base = None;
-        qymcad_ui_state::invalidate(&mut *sk.regen);
+        _ => None,
+    };
+    match poly {
+        Some(c) => {
+            sk.place.reopen(qymcad_ui_state::PlacingShape::Poly(c));
+            sk.place.focus = true;
+        }
+        None => {
+            *sk.inline = qymcad_ui_state::InlineEdit::Dim(ci);
+            sk.dim.focus = true;
+        }
     }
 }
 
-/// The in-place editors of dimension values in the viewport (a double click, or the radius tool).
-pub fn dim_editor(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
-    use qymcad_core::model::{Constraint, EntityKind};
-    let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else {
-        sk.inline.clear();
-        sk.inline.clear();
-        return;
+/// WHAT A TURN OF THE ROTATE TOOL TURNS: the sketch, the centre, the shapes and the texts chosen.
+pub(crate) struct Turn {
+    si: usize,
+    base: Point2,
+    eids: Vec<Id>,
+    texts: Vec<usize>,
+}
+
+/// The turn about `base` of what is chosen in sketch `si`; none with nothing chosen.
+pub(crate) fn turn_of(sk: &qymcad_ui_state::SketchCtx, si: usize, base: Point2) -> Option<Turn> {
+    let eids = qymcad_ui_state::shapes_chosen(&*sk.project, si, &*sk.sel_sk);
+    let texts = qymcad_ui_state::sel_text_indices(&*sk.project, &*sk.sel_sk, si);
+    (!eids.is_empty() || !texts.is_empty()).then_some(Turn { si, base, eids, texts })
+}
+
+/// TURN WHAT IS CHOSEN by `v` degrees about the centre, one step of undo named after the tool, as the target click of a
+/// move is, and say whether it turned.
+///
+/// WHERE A FREE TURN WOULD HAVE PUT THE POINTS, and where the constraints let them go. A rectangle carries two horizontal
+/// and two vertical constraints, so it CANNOT turn: the solver brings it back to upright, merely relocated - measured, a
+/// 90 degree turn about zero left the corner at (-5, 5) instead of (0, 0). Saying "Rotated by 90 deg" over that is the
+/// same lie the move tool used to tell, and it is told out loud here instead.
+pub(crate) fn turn_by(sk: &mut qymcad_ui_state::SketchCtx, turn: &Turn, v: f64) {
+    let Turn { si, base, eids, texts } = turn;
+    let si = *si;
+    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-rotate"));
+    let ids = sk.project.entity_point_ids(si, eids);
+    let at = |p: &qymcad_core::model::Project| -> Vec<Point2> {
+        p.sketches.get(si).map(|s| ids.iter().filter_map(|id| s.points.iter().find(|q| q.id == *id).map(|q| Point2::new(q.x, q.y))).collect()).unwrap_or_default()
     };
-    // the radius of a circle or an arc entity
-    if let Some(eid) = sk.inline.circle() {
-        let info = sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).and_then(|e| match e.kind {
-            EntityKind::Circle { center, r } => Some((center, r, false)),
-            EntityKind::Arc { center, a, .. } => qymcad_ui_state::sketch_pt(&*sk.project, si, a)
-                .zip(qymcad_ui_state::sketch_pt(&*sk.project, si, center))
-                .map(|(pa, c)| (center, ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt(), true)),
-            _ => None,
-        });
-        if let (Some((_center, r, is_arc)), Some(cp)) = (info, info.and_then(|(c, ..)| qymcad_ui_state::sketch_pt(&*sk.project, si, c))) {
-            let at = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(Point2::new(cp.x + r, cp.y));
-            let mut rr = r;
-            let (mut chg, mut close) = (false, false);
-            let want_focus = sk.dim.focus;
-            let mut got_focus = false;
-            let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-            // the text buffer of the radius, with auto-focus and Enter, as with a linear dimension
-            let mut buf = std::mem::take(&mut sk.dim.buf);
-            if want_focus {
-                // THROUGH THE COMMON DOOR: no longer than four digits, with no tail. A raw `format!("{}")`
-                // printed the whole truth about an f64 - "12.750000000000002" in the radius field.
-                buf = qymcad_core::expr::fmt_num(if is_arc { r } else { 2.0 * r });
-                // a radius for an arc, a diameter for a circle
-                sk.dim.typed = false;
-            }
-            let mut buf_changed = false;
-            egui::Area::new(egui::Id::new(("circedit", si, eid))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(8.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
-                qymcad_ui_state::at_geometry_ui(ui);
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(if is_arc { qymcad_i18n::tr("sk-radius") } else { qymcad_i18n::tr("sk-diameter") });
-                        let rsp = qymcad_ui_state::focus_edit(ui, &mut buf, 80.0, &qymcad_i18n::tr("sk-mm"), want_focus);
-                        if rsp.changed() {
-                            buf_changed = true;
-                        }
-                        got_focus = rsp.has_focus();
-                        if rsp.lost_focus() && enter {
-                            close = true;
-                        }
-                        if ui.button(ph::CHECK).clicked() {
-                            close = true;
-                        }
-                    });
-                });
-            });
-            if got_focus {
-                sk.dim.focus = false;
-            }
-            sk.dim.buf = buf.clone();
-            // APPLIED ON COMMIT, NOT ON EVERY LETTER, exactly as a linear dimension is.
-            //
-            // Reported behaviour: "you place a dimension, try to type it in, and while you are erasing, 100
-            // becomes 1 - and at that moment the geometry gets thrown about". The linear field had already
-            // learnt this; the field one over, the radius and diameter of a circle, still rebuilt the
-            // circle on every keystroke, so erasing "100" really did build it at 10 and at 1 on the way.
-            //
-            // The value is evaluated when an expression is typed, and stored in the arc's radius dimension - put
-            // there by the tool when the arc had none.
-            // the model is not touched while the text is being typed - see below; only a value typed is laid
-            sk.dim.typed |= buf_changed;
-            if close && sk.dim.typed {
-                match parse_num(&*sk.project, &buf) {
-                    // A radius of zero or less is not a radius. It used to be clamped to 0.01 silently,
-                    // which answers a typing slip with a circle nobody can see.
-                    Some(v) if (if is_arc { v } else { v * 0.5 }) > 0.0 => {
-                        rr = if is_arc { v } else { v * 0.5 }; // Ø -> r
-                        chg = true;
-                    }
-                    Some(_) => {
-                        *sk.status = Notice::refusal(qymcad_i18n::tr("sk-dim-must-be-positive"));
-                        close = false; // the field stays open on the text that was refused
-                    }
-                    None => {}
-                }
-            }
-            if chg {
-                // THE SIZE TYPED IS ONE STEP OF UNDO, named as a dimension is
-                qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("sk-dim"));
-                if is_arc {
-                    // a fillet arc has its radius edited through the dimension constraint (parametrically);
-                    // failing that, the fillet is recomputed geometrically; failing that, it is a plain arc
-                    if !sk.project.set_fillet_radius_dim(si, eid, rr) && !sk.project.set_fillet_radius(si, eid, rr) {
-                        sk.project.put_arc_radius_dim(si, eid, rr); // a plain arc gets its dimension, as a circle has
-                    }
-                } else {
-                    // A DIAMETER TYPED IS LAID AS A DIMENSION, of the value typed
-                    let centre = sk.project.sketches.get_mut(si).and_then(|s| s.entities.iter_mut().find(|e| e.id == eid)).and_then(|e| match &mut e.kind {
-                        EntityKind::Circle { r, center } => {
-                            *r = rr;
-                            Some(*center)
-                        }
-                        _ => None,
-                    });
-                    if let Some(ci) = centre.and_then(|c| sk.project.ensure_diameter(si, c, true)) {
-                        if let Some(Constraint::Diameter { d, .. }) = sk.project.sketches[si].constraints.get_mut(ci) {
-                            *d = 2.0 * rr;
-                        }
-                    }
-                    // THE SOLVER, not a rebuild. The radius of a circle is a variable of the solve (it is
-                    // keyed by the centre), so a radius written straight into the entity is a value the
-                    // solver has not seen: a tangency or an equality holding this circle would go on being
-                    // drawn as satisfied while it no longer is.
-                    sk.project.solve_sketch(si);
-                }
-                qymcad_ui_state::invalidate(&mut *sk.regen);
-                qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
-            }
-            if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                sk.inline.clear();
-                sk.dim.buf.clear();
-                sk.dim.focus = false;
-                sk.dim.typed = false;
-            }
-        } else {
-            sk.inline.clear();
-        }
-    }
-    let Some(ci) = sk.inline.dim() else { return };
-    let Some(at) = dim_label_pos(sk, rect, si, ci) else {
-        sk.inline.clear();
-        return;
-    };
-    let mut changed = false;
-    let mut close = false;
-    let want_focus = sk.dim.focus; // focus is requested until the field actually takes it
-    let mut got_focus = false;
-    let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-    // the current state of the dimension: the value, the expression, whether it is driven, whether it is
-    // an angle
-    let (cur_val, cur_expr, is_driven, is_angle) = match sk.project.sketches[si].constraints.get(ci) {
-        // `DistancePL` stores a SIGNED d (which side); the magnitude is what gets shown and edited
-        Some(Constraint::DistancePL { d, expr, driven, .. }) => (d.abs(), expr.clone(), driven, false),
-        Some(Constraint::Distance { d, expr, driven, .. }) | Some(Constraint::Diameter { d, expr, driven, .. }) | Some(Constraint::EdgeDistance { d, expr, driven, .. }) => {
-            (*d, expr.clone(), driven, false)
-        }
-        Some(Constraint::ArcLength { len, expr, driven, .. }) => (*len, expr.clone(), driven, false),
-        Some(Constraint::Angle { deg, expr, driven, .. }) | Some(Constraint::AngleLines { deg, expr, driven, .. }) => (*deg, expr.clone(), driven, true),
-        _ => {
-            sk.inline.clear();
-            return;
-        }
-    };
-    // diameter or radius: which of the two the field shows
-    let diam_mode = matches!(sk.project.sketches[si].constraints.get(ci), Some(Constraint::Diameter { diam: true, .. }));
-    let is_diameter = matches!(sk.project.sketches[si].constraints.get(ci), Some(Constraint::Diameter { .. }));
-    // the buffer of the field: on opening it holds the current expression, or the number
-    let mut buf = std::mem::take(&mut sk.dim.buf);
-    if want_focus {
-        buf = if cur_expr.trim().is_empty() { qymcad_core::expr::fmt_num(cur_val) } else { cur_expr.clone() };
-    }
-    // A FORMULA THAT COMES BACK TO THE NAME OF THIS VERY DIMENSION has no value to take, as the table of parameters says
-    // (`check_dim_target_text`): taken, `dia + 1` written for `dia` added one on every solve - measured 20 -> 24 over the
-    // solves of one edit and two more. It is judged where every other formula with no value is, so the reason stands under
-    // the field while typing and Enter is refused with it.
-    let own =
-        sk.project.sketches[si].constraints.get(ci).and_then(Project::dim_refs).map(|r| qymcad_core::model::DimTarget::Sketch { sketch: sk.project.sketches[si].id, refs: Project::dim_key_pub(&r) });
-    let eval_res = if buf.trim().is_empty() {
-        None
-    } else {
-        Some(match &own {
-            Some(target) => sk.project.check_dim_target_text(target, &buf),
-            None => sk.project.eval_expr(&buf),
+    let before = at(sk.project);
+    let sn = v.to_radians().sin();
+    let cs = v.to_radians().cos();
+    let want: Vec<Point2> = before
+        .iter()
+        .map(|p| {
+            let d = Point2::new(p.x - base.x, p.y - base.y);
+            Point2::new(base.x + d.x * cs - d.y * sn, base.y + d.x * sn + d.y * cs)
         })
+        .collect();
+    if !eids.is_empty() {
+        sk.project.rotate_entities(si, eids, base.x, base.y, v);
+    }
+    for &ti in texts {
+        sk.project.rotate_sketch_text(si, ti, base.x, base.y, v);
+    }
+    let after = at(sk.project);
+    let mean = |a: &[Point2], b: &[Point2]| -> f64 {
+        if a.len() != b.len() || a.is_empty() {
+            return 0.0;
+        }
+        a.iter().zip(b).map(|(p, q)| (q.x - p.x).hypot(q.y - p.y)).sum::<f64>() / a.len() as f64
     };
-    let (mut toggle_driven, mut toggle_diam) = (false, false);
-    let mut name_taken = false;
-    let is_edge = matches!(sk.project.sketches[si].constraints.get(ci), Some(Constraint::EdgeDistance { .. }));
-    let mut toggle_edge = false;
-    let label = if is_angle {
-        qymcad_i18n::tr("sk-angle")
-    } else if is_diameter {
-        if diam_mode { "Ø" } else { "R" }.to_string()
-    } else if is_edge {
-        qymcad_i18n::tr("sk-tangent-short")
+    let asked = mean(&before, &want); // how far the turn alone would have carried the points
+    let off = mean(&after, &want); // how far the result stands from that
+                                   // a tenth of what was asked, and at least a hundredth of a millimetre: below that it did turn
+    *sk.status = if asked > 1e-9 && off > (asked * 0.1).max(1e-2) {
+        Notice::warning(qymcad_i18n::tr("sk-turn-held"))
     } else {
-        qymcad_i18n::tr("sk-dim")
+        Notice::info(qymcad_i18n::tr1("sk-rotated-by", "a", &v.to_string()))
     };
-    // A DRIVER BELONGS TO ANY DIMENSION, NOT ONLY TO A LINEAR ONE.
-    //
-    // This used to read "only `Constraint::Distance`", and the name field appeared solely on a distance
-    // between two points. The question came up plainly: why does a drive field exist in some places and
-    // not in others? There was no explainable logic behind it: the driver name WAS STORED as a pair of
-    // points, so an angle, a diameter, a distance to a line, an arc length or a tangent gap simply had
-    // nothing to be named by. Now a driver is identified by a set of entities, and any dimension can be
-    // named.
-    let dim_refs: Option<Vec<Id>> = sk.project.sketches[si].constraints.get(ci).and_then(Project::dim_refs);
-    let sid = sk.project.sketches[si].id;
-    let cur_name: String = dim_refs
-        .as_ref()
-        .map(|r| {
-            let t = qymcad_core::model::DimTarget::Sketch { sketch: sid, refs: Project::dim_key_pub(r) };
-            qymcad_i18n::name(&sk.project.name_of_target(&t))
-        })
-        .unwrap_or_default();
-    // THE TEXT LIVES IN THE BUFFER OF THE FIELD ITSELF WHILE IT IS BEING TYPED. The model is touched
-    // once, on Enter.
-    let key_refs = dim_refs.clone().unwrap_or_default();
-    // WHAT WAS ASKED FOR: a new driver name. It is applied AFTER the drawing - during it the document is
-    // lent to the field (which reads the project), and there is no reason to change the model mid-frame.
-    let mut name_commit: Option<String> = None;
-    let mut name_refusal: Option<String> = None;
-    // the hint over the refusal, with the same reason as the line
-    let mut name_hint = String::new();
-    egui::Area::new(egui::Id::new(("dimedit", si, ci))).fixed_pos(qymcad_ui_state::clamp_popup(at, rect) + egui::vec2(8.0, -10.0)).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
-        qymcad_ui_state::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(label);
-                if is_diameter && ui.button(if diam_mode { "->R" } else { "->Ø" }).on_hover_text(qymcad_i18n::tr("sk-toggle-rad-dia")).clicked() {
-                    toggle_diam = true;
-                }
-                if is_edge && ui.button(qymcad_i18n::tr("sk-edge-toggle")).on_hover_text(qymcad_i18n::tr("sk-near-far-edge")).clicked() {
-                    toggle_edge = true;
-                }
-                if *is_driven {
-                    ui.label(egui::RichText::new(qymcad_i18n::tr1("sk-driven-value", "v", &qymcad_i18n::num(cur_val, 3))).color(sk.scheme.pal.text_dim()));
-                } else {
-                    // ONE field for the whole project: a number or an expression (50, w/2, len+5), the list
-                    // of drivers, auto-focus with the previous text selected, and Enter to apply.
-                    let fid = egui::Id::new(("dimval", si, ci));
-                    let o = qymcad_ui_state::expr_field_autofocus(ui, &*sk.project, fid, &buf, 100.0, &qymcad_i18n::tr("sk-expr-example"), want_focus);
-                    buf = o.text;
-                    got_focus = o.resp.has_focus();
-                    if o.committed && enter {
-                        close = true;
-                    }
-                }
-                if ui.selectable_label(*is_driven, qymcad_i18n::tr("sk-ref-short")).on_hover_text(qymcad_i18n::tr("sk-driven-hint")).clicked() {
-                    toggle_driven = true;
-                }
-                if ui.button(ph::CHECK).clicked() {
-                    close = true;
-                }
-            });
-            if !is_driven {
-                match &eval_res {
-                    Some(Ok(v)) => {
-                        ui.label(egui::RichText::new(format!("= {v:.3}")).weak().small());
-                    }
-                    Some(Err(e)) => {
-                        // THROUGH THE COMMON DOOR: the `Display` of the error is in one language only, and
-                        // an interface in another showed a raw "unexpected token: /".
-                        qymcad_ui_state::say(ui, &sk.scheme.pal, &qymcad_ui_state::Notice::refusal(qymcad_i18n::error_words::expr_error_text(e)), qymcad_ui_state::NoticeSize::Small);
-                    }
-                    None => {}
-                }
-                ui.label(egui::RichText::new(qymcad_i18n::tr("sk-enter-apply-expr")).weak().small());
-            }
-            if dim_refs.is_some() {
-                // WHETHER THE NAME WILL DO. An empty one is legitimate: the dimension simply stops being a
-                // driver.
-                // a name that would close a circle of formulas will not do either, and the line says the chain
-                let circle = |nm: &str| own.as_ref().and_then(|t| sk.project.naming_closes_circle(t, nm));
-                let ok = |nm: &str| nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !sk.project.driver_name_taken(nm, sid, &key_refs) && circle(nm).is_none());
-                ui.horizontal(|ui| {
-                    // THE CAPTION IS TRANSLATABLE. A raw "driver:" used to stand here - the only string of
-                    // the popup that went around the language catalogue.
-                    ui.label(qymcad_i18n::tr("sk-driver-label")).on_hover_text(qymcad_i18n::tr("sk-driver-name-hint"));
-                    let id = egui::Id::new(("dimdrv", si, ci));
-                    let r = qymcad_ui_state::name_field(ui, &*sk.project, id, &cur_name, 110.0, &qymcad_i18n::tr("sk-name-placeholder"), &ok);
-                    let nm = r.text.trim().to_string();
-                    if r.committed && nm != cur_name.trim() {
-                        name_commit = Some(nm.clone());
-                    }
-                    // A TAKEN NAME GIVES A YELLOW LINE BELOW AND BLOCKS APPLYING. Not a single letter is
-                    // lost while this happens: type `len`, `lena` or `length` - until the name is free, the
-                    // popup simply refuses to apply and says why.
-                    name_taken = !nm.is_empty() && !ok(&nm);
-                    if name_taken {
-                        // WHOSE NAME IT IS, not merely "taken": otherwise the namesake has to be hunted for
-                        // across the whole project by hand. A name with no owner is unusable in itself, and
-                        // the line and its hint say why - the hint said "taken" over `tau`, which nobody holds.
-                        // the owner is somebody else: a dimension keeps its own name in the field
-                        let owner = sk.project.name_owner(&nm).filter(|_| sk.project.driver_name_taken(&nm, sid, &key_refs));
-                        let unfit = match circle(&nm) {
-                            Some(chain) => qymcad_i18n::error_words::expr_error_text(&qymcad_core::errors::ExprError::LeansOnItself(chain)),
-                            None => qymcad_i18n::error_words::ident_refusal_text(&nm),
-                        };
-                        name_hint = if owner.is_some() { qymcad_i18n::tr("sk-driver-name-taken-hint") } else { unfit.clone() };
-                        name_refusal = Some(match owner {
-                            Some(o) => {
-                                qymcad_i18n::tr2("par-name-taken", "name", "", "where", &if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { qymcad_ui_state::path_in_words(&o.path) })
-                            }
-                            None => unfit,
-                        });
-                    }
-                });
-                if let Some(msg) = name_refusal.take() {
-                    qymcad_ui_state::say(ui, &sk.scheme.pal, &qymcad_ui_state::Notice::warning(msg), qymcad_ui_state::NoticeSize::Small).on_hover_text(&name_hint);
-                }
-            }
-        });
-    });
-    if got_focus || *is_driven {
-        sk.dim.focus = false; // focus was taken (or there is nothing to focus) - stop asking
-    }
-    sk.dim.buf = buf.clone();
-    // a snapshot of the dimension AND of the point positions BEFORE the edit, so it can be ROLLED BACK if
-    // the new value CONFLICTS (over-defines the sketch). Otherwise the solver silently tilted a vertical
-    // or moved a fixed point - the soft least-squares compromise. An inconsistent dimension is rejected
-    // rather than allowed to break the sketch.
-    let old_con = sk.project.sketches[si].constraints.get(ci).cloned();
-    // WHAT THE FIELD DOES TO THE DOCUMENT IS ONE OPERATION, named: the value of a dimension just made joins the step
-    // that made it; any other change of a dimension is a step of its own rather than an unnamed one the frame notices
-    let fold = sk.dim.fresh.is_some_and(|(fc, steps)| fc == ci && steps == sk.edits.undo.len());
-    // THE TEXT DIFFERS FROM WHAT IS STORED, so there is something to apply on commit. TEXTS are compared
-    // rather than the number parsed again: parsing a value in the sketcher must go through one door
-    // (`parse_num`), and a second `parse::<f64>()` is caught at once by the ratchet in `expr_fields.rs`.
-    let shown_before = if cur_expr.trim().is_empty() { qymcad_core::expr::fmt_num(cur_val) } else { cur_expr.clone() };
-    let value_differs = buf.trim() != shown_before.trim();
-    // A VALUE THAT CANNOT BE TAKEN KEEPS THE FIELD OPEN with what was typed in it, and the status line says why: an
-    // empty field, or a formula that does not evaluate - an unknown name included, since a name that is not there
-    // yet would hold the dimension at a value nobody typed
-    if close && !is_driven && value_differs {
-        let why = match &eval_res {
-            None => Some(qymcad_i18n::tr("sk-dim-value-empty")),
-            Some(Err(e)) => Some(qymcad_i18n::error_words::expr_error_text(e)),
-            Some(Ok(_)) => None,
-        };
-        if let Some(why) = why {
-            close = false;
-            *sk.status = Notice::refusal(why);
-        }
-    }
-    let apply_value = close && !is_driven && value_differs;
-    let acting = !fold && (apply_value || toggle_driven || toggle_diam || toggle_edge);
-    if acting {
-        qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("sk-dim"));
-    }
-    // apply the changes to the constraint
-    let mut new_buf: Option<String> = None; // refresh the field after a value edit (a diameter/radius swap, say)
-    if let Some(c) = sk.project.sketches[si].constraints.get_mut(ci) {
-        if toggle_driven {
-            match c {
-                Constraint::Distance { driven, .. }
-                | Constraint::DistancePL { driven, .. }
-                | Constraint::Angle { driven, .. }
-                | Constraint::Diameter { driven, .. }
-                | Constraint::AngleLines { driven, .. }
-                | Constraint::ArcLength { driven, .. }
-                | Constraint::EdgeDistance { driven, .. } => *driven = !*driven,
-                _ => {}
-            }
-            changed = true;
-        }
-        if toggle_diam {
-            if let Constraint::Diameter { d, diam, expr, .. } = c {
-                *d = if *diam { *d * 0.5 } else { *d * 2.0 }; // diameter to radius: the value is recomputed
-                *diam = !*diam;
-                if expr.trim().is_empty() {
-                    new_buf = Some(qymcad_core::expr::fmt_num(*d)); // refresh the field
-                }
-            }
-            changed = true;
-        }
-    }
-    // THE VALUE IS APPLIED ON COMMIT, NOT ON EVERY LETTER.
-    //
-    // Every keystroke used to edit the constraint, solve the sketch again and mark the document for a
-    // rebuild: typing "125" meant three rebuilds, and on the intermediate "1" and "12" the sketch honestly
-    // rebuilt itself to a different size. The answer is visible anyway - the line "= 42.500" lives under
-    // the field, and it costs the document nothing.
-    //
-    // AND A LENGTH THAT CANNOT EXIST IS REFUSED rather than handed over - see `set_dim_value`. A typed
-    // EXPRESSION is judged by what it evaluates to now: it may change later with its parameter, and that is
-    // the parameter's business, but a formula that reads -5 today is refused today.
-    if apply_value {
-        let t = buf.trim();
-        // THE ONE BARE PARSE OF THE SKETCHER, and it is asked once: is this a number or a formula? The
-        // answer decides both what value goes in and whether the formula is kept beside it.
-        let as_number = t.parse::<f64>().ok();
-        match as_number.or_else(|| parse_num(&*sk.project, t)) {
-            Some(v) => {
-                let took = set_dim_value(&mut *sk.project, si, ci, v);
-                if took.is_ok() {
-                    if as_number.is_none() {
-                        // a formula keeps its text beside the value it evaluates to now
-                        if let Some(e) = sk.project.sketches[si].constraints.get_mut(ci).and_then(Constraint::expr_mut) {
-                            *e = buf.clone();
-                        }
-                    }
-                    changed = true;
-                } else if let Err(key) = took {
-                    // refused: the field stays open with what was typed, and the status line says why
-                    *sk.status = Notice::refusal(qymcad_i18n::tr1(key, "max", &qymcad_i18n::num(MAX_SKETCH_LENGTH, 0)));
-                    close = false;
-                }
-            }
-            // not a number and not a formula that evaluates yet - the text is kept, and it will be read
-            // again when the parameter it names appears
-            None => {
-                if let Some(e) = sk.project.sketches[si].constraints.get_mut(ci).and_then(Constraint::expr_mut) {
-                    *e = buf.clone();
-                    changed = true;
-                }
-            }
-        }
-    }
-    if let Some(nb) = new_buf {
-        sk.dim.buf = nb; // the field shows the new value (after a diameter/radius swap)
-    }
-    if toggle_edge {
-        // near edge against far edge: the non-zero m values are inverted and d is recomputed from the
-        // geometry, so nothing jumps
-        let edge = match sk.project.sketches[si].constraints.get(ci) {
-            Some(Constraint::EdgeDistance { c1, c2, m1, m2, .. }) => Some((c1, c2, m1, m2)),
-            _ => None,
-        };
-        if let Some((c1, c2, m1, m2)) = edge {
-            let (nm1, nm2) = (if *m1 != 0 { -*m1 } else { 0 }, if *m2 != 0 { -*m2 } else { 0 });
-            let nd = sk.project.measure_edge_distance(si, *c1, nm1, *c2, nm2);
-            if let Some(Constraint::EdgeDistance { m1, m2, d, expr, .. }) = sk.project.sketches[si].constraints.get_mut(ci) {
-                *m1 = nm1;
-                *m2 = nm2;
-                *d = nd;
-                expr.clear();
-            }
-            changed = true;
-        }
-    }
-    // THE DRIVER NAME GOES IN AS ONE OPERATION, ON ENTER.
-    //
-    // This was the main trouble that got reported: the name was written into the model on EVERY letter,
-    // and `mark_param_dependents_dirty()` was called right after, marking EVERY node carrying dimensions
-    // dirty - that is, the whole project was rebuilt per letter. Now the edit arrives once.
-    if let (Some(refs), Some(nm)) = (dim_refs.clone(), name_commit) {
-        let mut ed = qymcad_ui_state::edit_over(sk.rebuild(), qymcad_i18n::tr("sk-driver-step"));
-        let old = cur_name.trim().to_string();
-        if !old.is_empty() && !nm.is_empty() {
-            // RENAMING CARRIES THE FORMULAS WITH IT - otherwise the expressions stay pointed at a name
-            // that no longer exists, and the model breaks silently.
-            let _ = ed.project().rename_driver(&old, &nm);
-        } else {
-            ed.project().add_named_dim(nm.clone(), sid, refs);
-        }
-        drop(ed);
-        // ONLY WHAT DEPENDS ON THIS NAME is marked, not the whole timeline of every body; it is rebuilt when the sketch
-        // closes (`rebuild_after_sketch`). Asked for here, a name nothing used yet rebuilt 0 nodes for 0.8 s under the
-        // sign of a rebuild.
-        if !nm.is_empty() {
-            sk.project.mark_param_dependents_dirty_for(&nm);
-        }
-    }
-    if changed {
-        // a snapshot of the positions BEFORE solving (the sketch is consistent right now)
-        let old_pts: Vec<(f64, f64)> = sk.project.sketches[si].points.iter().map(|p| (p.x, p.y)).collect();
-        let resid = sk.project.solve_sketch(si);
-        // a large residual means the system is INCONSISTENT (the new dimension conflicts with a vertical,
-        // a fixed point or another constraint). The solver would converge to about 1e-6; a threshold of
-        // 1e-2 mm is above the noise and below any real conflict. The dimension and the positions are
-        // rolled back and solved again, so the sketch returns to a consistent state instead of breaking
-        // silently.
-        if resid > 1e-2 {
-            if let (Some(oc), Some(c)) = (old_con.clone(), sk.project.sketches[si].constraints.get_mut(ci)) {
-                *c = oc;
-            }
-            for (p, (x, y)) in sk.project.sketches[si].points.iter_mut().zip(old_pts) {
-                p.x = x;
-                p.y = y;
-            }
-            sk.project.solve_sketch(si);
-            *sk.status = Notice::refusal(qymcad_i18n::tr1("sk-dim-incompatible", "r", &qymcad_i18n::num(resid, 2)));
-        }
-        qymcad_ui_state::invalidate(&mut *sk.regen);
-    }
-    // the value typed into a dimension just made is part of making it
-    if changed && fold {
-        qymcad_ui_state::fold_into_last_step(&mut *sk.edits, &*sk.project);
-    }
-    if acting {
-        qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
-    }
-    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        sk.inline.clear();
-        sk.dim.buf.clear();
-        sk.dim.focus = false;
-        sk.dim.fresh = None;
-        // a driver whose value moved reaches the bodies that consume it when the sketch closes: the scheduler compares
-        // the values against those of the last rebuild (`mark_changed_params_dirty`)
-    }
+    qymcad_ui_state::commit_edit(&mut sk.rebuild());
+    qymcad_ui_state::invalidate(&mut *sk.regen);
 }

@@ -45,7 +45,7 @@ mod tests {
         // add a couple more kinds so the timeline is not uniform
         let mi = app.project.mesh_index(body).expect("the mesh");
         app.chosen.sel = Sel::Mesh(mi);
-        app.start_feat_cmd(4); // the fillet
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // the fillet
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 2.0;
             p.txt = "2".into();
@@ -60,7 +60,7 @@ mod tests {
             app.cancel_all_tools();
             crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
             let has_params = !app.tools.cmd.params.is_empty();
-            let opened = app.tools.armed.cmd_kind() != 0;
+            let opened = app.tools.armed.part_tool().is_some();
             assert!(opened || !has_params, "\"{name}\": the command did not open, so the feature cannot be edited from the properties panel");
         }
     }

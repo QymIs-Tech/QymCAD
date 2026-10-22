@@ -42,7 +42,7 @@ fn taken() -> (CornerInput, SketchSelection) {
 
 /// THE LINES CHOSEN, in the order they were chosen: that order is what pairs them two at a time at a point.
 fn chosen(sel: &SketchSelection) -> Vec<Id> {
-    sel.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect()
+    sel.curves().collect()
 }
 
 /// A LINE WITH SHIFT JOINS THE SET, AND A SECOND ONE WITH SHIFT MAKES A CORNER OF THE TWO.
@@ -155,8 +155,8 @@ fn a_shift_click_on_a_point_keeps_the_lines_chosen() {
 fn the_first_click_after_taking_the_tool_grows_the_set() {
     let (p, si, l) = square();
     let (mut corner, mut sel) = taken();
-    sel.items.push((1, l[0]));
-    sel.items.push((1, l[1]));
+    sel.items.push(qymcad_ui_state::SketchItem::curve(l[0]));
+    sel.items.push(qymcad_ui_state::SketchItem::curve(l[1]));
     assert!(corner.at.is_none(), "the field was open before anything was pointed at");
     assert_eq!(qymcad_ui_state::corner_click(&p, si, &mut corner, &mut sel, CornerOver::Line(l[2]), false), CornerClick::LineChosen(l[2]));
     assert_eq!(chosen(&sel), vec![l[0], l[1], l[2]], "the first click after taking the tool threw the chosen lines away");
@@ -230,4 +230,20 @@ fn a_third_line_at_a_straight_joint_is_refused_with_the_point_named() {
     let act = qymcad_ui_state::corner_click(&p, si, &mut corner, &mut sel, CornerOver::Line(ids[2]), true);
     assert_eq!(act, CornerClick::StraightJoint(at), "a third line at a straight joint was taken, and nothing was said");
     assert_eq!(chosen(&sel), vec![ids[0], ids[1]], "the refused line was chosen anyway");
+}
+
+/// THE SECOND CURVE OF A PAIR IS TAKEN WITHOUT SHIFT: a line chosen alone makes no corner, and a click on a line it meets
+/// or crosses makes the pair - a click on each of two curves names their corner, as Shift does. A line it neither meets
+/// nor crosses is a single selection, and so is a third click once the pair stands.
+#[test]
+fn the_second_curve_of_a_pair_is_taken_without_shift() {
+    let (p, si, l) = square();
+    let (mut corner, mut sel) = tool();
+    qymcad_ui_state::corner_click(&p, si, &mut corner, &mut sel, CornerOver::Line(l[0]), false);
+    assert_eq!(qymcad_ui_state::corner_click(&p, si, &mut corner, &mut sel, CornerOver::Line(l[1]), false), CornerClick::LineChosen(l[1]));
+    assert_eq!((chosen(&sel), corner.set.standing().len()), (vec![l[0], l[1]], 1), "a click on the line meeting the one chosen did not make the pair: {:?}", corner.set);
+    qymcad_ui_state::corner_click(&p, si, &mut corner, &mut sel, CornerOver::Line(l[2]), false);
+    assert_eq!(chosen(&sel), vec![l[2]], "a third click without Shift grew the pair");
+    qymcad_ui_state::corner_click(&p, si, &mut corner, &mut sel, CornerOver::Line(l[0]), false);
+    assert_eq!(chosen(&sel), vec![l[0]], "a click on a line that neither meets nor crosses the one chosen made a pair of them");
 }

@@ -83,7 +83,7 @@ mod tests {
         if !crate::gui::tests::a_quick_rebuild_does_not_blink::tests::signs_painted(h).is_empty() || h.app.regen.busy.is_some() {
             out.push(format!("the spinner of a rebuild: {}", h.app.status));
         }
-        if h.app.tools.armed.cmd_kind() == 35 && h.app.params.recognise.src.is_some() && h.app.params.recognise.ready(|_| ()).is_none() {
+        if h.app.tools.armed.part_tool() == Some(qymcad_ui_state::PartTool::Recognise) && h.app.params.recognise.src.is_some() && h.app.params.recognise.ready(|_| ()).is_none() {
             out.push("the bar of the recognition is still looking for surfaces".into());
         }
         out
@@ -94,7 +94,7 @@ mod tests {
     fn deleting_the_part_while_the_mesh_is_counted_leaves_nothing_turning() {
         let (mut app, part) = a_ball_brought_in("counted");
         let mut h = Hand::new(&mut app);
-        h.tool(35).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::Recognise).frame(Vec::new());
         h.click([0.0, 0.0, 40.0]).frame(Vec::new());
         assert!(h.app.params.recognise.src.is_some(), "setup: the click on the ball was not taken: {}", h.app.status);
         let ci = h.app.project.components.iter().position(|c| c.id == part).expect("the part");
@@ -114,7 +114,7 @@ mod tests {
     fn deleting_the_part_while_the_mesh_is_recognised_leaves_nothing_turning() {
         let (mut app, part) = a_ball_brought_in("recognised");
         let mut h = Hand::new(&mut app);
-        h.tool(35).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::Recognise).frame(Vec::new());
         h.click([0.0, 0.0, 40.0]).frame(Vec::new());
         assert!(h.app.params.recognise.src.is_some(), "setup: the click on the ball was not taken: {}", h.app.status);
         h.enter().frame(Vec::new());
@@ -134,7 +134,7 @@ mod tests {
     fn deleting_the_mesh_while_it_is_recognised_leaves_nothing_turning() {
         let (mut app, _) = a_ball_brought_in("mesh-gone");
         let mut h = Hand::new(&mut app);
-        h.tool(35).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::Recognise).frame(Vec::new());
         h.click([0.0, 0.0, 40.0]).frame(Vec::new());
         let src = h.app.params.recognise.src.expect("setup: the click on the ball was not taken");
         h.enter().frame(Vec::new());
@@ -156,7 +156,7 @@ mod tests {
     fn cancel_stops_a_long_recognition() {
         let (mut app, _) = a_ball_brought_in("cancelled");
         let mut h = Hand::new(&mut app);
-        h.tool(35).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::Recognise).frame(Vec::new());
         h.click([0.0, 0.0, 40.0]).frame(Vec::new());
         assert!(h.app.params.recognise.src.is_some(), "setup: the click on the ball was not taken: {}", h.app.status);
         let nodes = h.app.project.timeline.len();

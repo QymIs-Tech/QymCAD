@@ -17,7 +17,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
     pc.gsel.edges.clear();
     match node.kind {
         FeatureKind::Extrude { sketch, ref profiles, height, reach, down, ref fill, .. } => {
-            pc.cmd.open(pc.armed, 1, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Extrude, was_3d);
             pc.feat.op = 0;
             pc.feat.flip = reach == qymcad_core::feature::Reach::Backward; // restore the direction
             pc.cmd.sketch = pc.project.sketch_index(sketch);
@@ -38,7 +38,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-length", "height", height, 0.1, 10000.0)];
         }
         FeatureKind::Combine { sketch, ref profiles, height, op, extent, down, ref fill, .. } => {
-            pc.cmd.open(pc.armed, 1, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Extrude, was_3d);
             pc.feat.op = match op {
                 1 => 1,
                 2 => 3,
@@ -65,7 +65,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-depth", "height", height.abs(), 0.1, 10000.0)];
         }
         FeatureKind::Revolve { sketch, ref profiles, axis, angle, axis_datum, axis_line, reach, op, .. } => {
-            pc.cmd.open(pc.armed, 3, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Revolve, was_3d);
             use qymcad_core::feature::Reach;
             pc.cmd.extent = if reach == Reach::BothWays { qymcad_ui_state::ExtentMode::Symmetric } else { qymcad_ui_state::ExtentMode::Length };
             pc.feat.flip = reach == Reach::Backward;
@@ -90,7 +90,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         }
         FeatureKind::Sweep { sketch, ref profiles, path_sketch, path, op, .. } => {
             // reopen the sweep: restore the profile, the path and the picked contours, with no picking
-            pc.cmd.open(pc.armed, 8, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Sweep, was_3d);
             pc.cmd.sketch = pc.project.sketch_index(sketch);
             pc.sweep.prof_sid = sketch;
             pc.sweep.path_sid = path_sketch;
@@ -109,7 +109,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         }
         FeatureKind::Loft { sketches, contours, ruled, src, op, .. } => {
             // reopen the loft: restore the set of sections and the picked contours, with no picking
-            pc.cmd.open(pc.armed, 9, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Loft, was_3d);
             pc.cmd.sketch = sketches.first().and_then(|&s| pc.project.sketch_index(s));
             pc.loft.sids = sketches.clone();
             pc.loft.cids = (0..sketches.len()).map(|i| contours.get(i).copied().unwrap_or(0)).collect();
@@ -120,7 +120,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params.clear();
         }
         FeatureKind::Fillet { src, radius, ref edges, ref at_vertices, .. } => {
-            pc.cmd.open(pc.armed, 4, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Fillet, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc); // pull up the edges of the body (this clears the selection), then restore it
             restore_edge_picks(pc, src, edges);
@@ -139,7 +139,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             }
         }
         FeatureKind::Chamfer { src, dist, ref edges, mode, d2, flip, ref_face, .. } => {
-            pc.cmd.open(pc.armed, 5, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Chamfer, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc);
             restore_edge_picks(pc, src, edges);
@@ -161,7 +161,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             ];
         }
         FeatureKind::Shell { src, thickness, ref faces, side, .. } => {
-            pc.cmd.open(pc.armed, 6, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Shell, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             // restore the MULTIPLE selection of open faces by their PERSISTENT ids - the highlight follows
             // the face selection
@@ -171,7 +171,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-thickness", "thickness", thickness, 0.1, 1000.0)];
         }
         FeatureKind::Thicken { face, thickness, .. } => {
-            pc.cmd.open(pc.armed, 28, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Thicken, was_3d);
             qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
             *pc.mode_3d = true;
             pc.gsel.faces.clear();
@@ -185,13 +185,17 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         // A RECOGNISED BODY reopens the recognition tool on its own mesh, with its tolerance and sharp edge in the fields;
         // a polyhedron has no number to change, and the tool opens on it all the same rather than sending a person to
         // the right-hand panel
-        FeatureKind::MeshRecognised { src, tol, sharp, .. } => {
+        FeatureKind::MeshRecognised { src, tol, sharp, simplify, .. } => {
             open_recognise_on(pc, src, was_3d, 0);
-            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-recognise-tol", "tol", tol, 0.1, 1000.0), cmd_param_from(&*pc.project, fid, "f-recognise-sharp", "sharp", sharp, 5.0, 90.0)];
+            pc.cmd.params = vec![
+                cmd_param_from(&*pc.project, fid, "f-recognise-tol", "tol", tol, 0.1, 1000.0),
+                cmd_param_from(&*pc.project, fid, "f-recognise-sharp", "sharp", sharp, 5.0, 90.0),
+                cmd_param_from(&*pc.project, fid, "f-recognise-simplify", "simplify", simplify, 0.0, 10.0),
+            ];
         }
         FeatureKind::MeshSolid { src, .. } => open_recognise_on(pc, src, was_3d, 1),
         FeatureKind::SplitFace { plane, datum, offset, face, .. } => {
-            pc.cmd.open(pc.armed, 29, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SplitFace, was_3d);
             qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
             *pc.mode_3d = true;
             pc.split.plane = Some(qymcad_ui_state::op_plane_pick(plane, datum, face));
@@ -202,7 +206,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             // EDITING A CUT: restore the reference to the plane and the offset, exactly as at creation, so
             // that pressing Enter again does not recreate the feature from scratch and lose the link to the
             // datum.
-            pc.cmd.open(pc.armed, 27, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SplitBody, was_3d);
             qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
             *pc.mode_3d = true;
             pc.split.plane = Some(qymcad_ui_state::op_plane_pick(plane, datum, face));
@@ -212,7 +216,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         // THE PATCH REOPENS on its edges and its kind, the bar showing both; Enter puts the edges picked back. Reported
         // behaviour: a double click on the patch in the tree opened nothing.
         FeatureKind::Patch { src, ref edges, tangent, .. } => {
-            pc.cmd.open(pc.armed, 32, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Patch, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc);
             restore_edge_picks(pc, src, edges);
@@ -222,14 +226,14 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         // A COPY OF FACES, A STITCH AND A TRIM REOPEN on what they took, as every other command does. Reported behaviour:
         // a double click on their rows opened nothing, the bar empty.
         FeatureKind::FaceCopy { src, ref faces, .. } => {
-            pc.cmd.open(pc.armed, 30, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::FaceCopy, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.gsel.faces = live_picks(&*pc.project, src, faces, true);
             pc.gsel.faces_body = Some(src);
             pc.cmd.params = vec![];
         }
         FeatureKind::OffsetSurface { src, ref faces, dist, .. } => {
-            pc.cmd.open(pc.armed, 36, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::OffsetSurface, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.gsel.faces = live_picks(&*pc.project, src, faces, true);
             pc.gsel.faces_body = Some(src);
@@ -238,7 +242,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         // A FACE REPLACEMENT REOPENS on its faces and its sheet. Reported behaviour: a double click on its row opened
         // nothing, the bar empty.
         FeatureKind::SurfaceReplace { src, ref faces, surface, .. } => {
-            pc.cmd.open(pc.armed, 31, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SurfaceReplace, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.gsel.faces = live_picks(&*pc.project, src, faces, true);
             pc.gsel.faces_body = Some(src);
@@ -246,18 +250,18 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![];
         }
         FeatureKind::Stitch { ref parts, tol, .. } => {
-            pc.cmd.open(pc.armed, 33, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Stitch, was_3d);
             *pc.stitch_parts = parts.clone();
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-stitch-tol", "tol", tol, 1e-6, 10.0)];
         }
         FeatureKind::Trim { src, tool, keep, .. } => {
-            pc.cmd.open(pc.armed, 34, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Trim, was_3d);
             pc.trim.keep = Some((src, keep));
             pc.trim.tool = Some(tool);
             pc.cmd.params = vec![];
         }
         FeatureKind::RemoveFace { src, ref faces, .. } => {
-            pc.cmd.open(pc.armed, 26, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::RemoveFace, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.gsel.faces = live_picks(&*pc.project, src, faces, true);
             pc.gsel.faces_body = Some(src);
@@ -266,14 +270,14 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         FeatureKind::PushFace { src, ref face, dist, .. } => {
             // EDITING THE FEATURE: the picked face is restored by its persistent id and the offset as an
             // expression if there was one (`cmd_param_from` takes the text from the feature dims).
-            pc.cmd.open(pc.armed, 25, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::PushFace, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.gsel.faces = live_picks(&*pc.project, src, face, true);
             pc.gsel.faces_body = Some(src);
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-offset2", "dist", dist, -100000.0, 100000.0).nonzero()];
         }
         FeatureKind::Draft { src, ref faces, neutral, angle, flip, .. } => {
-            pc.cmd.open(pc.armed, 23, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Draft, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             // restore the set of tilted faces and the neutral one by their persistent ids
             pc.gsel.faces = live_picks(&*pc.project, src, faces, true);
@@ -284,7 +288,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, -60.0, 60.0).nonzero()];
         }
         FeatureKind::Hole { src, face, point, diameter, depth, kind, dia2, depth2, sketch, flip, .. } => {
-            pc.cmd.open(pc.armed, 7, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Hole, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.hole.kind = kind; // F1
             pc.hole.mode = if sketch != 0 { 1 } else { 0 }; // the placement mode
@@ -303,14 +307,17 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             }
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-diameter", "diameter", diameter, 0.1, 10000.0), cmd_param_from(&*pc.project, fid, "f-depth", "depth", depth, 0.1, 10000.0)];
             // where it stands on its face, as the two shifts from the face centre the fields hold
-            let (u, v) = match *pc.sel {
-                qymcad_ui_state::Sel::Face(mi, fi) if sketch == 0 => {
-                    pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map_or((0.0, 0.0), |f| hole_shifts([f.centroid.x, f.centroid.y, f.centroid.z], f.normal, point))
-                }
-                _ => (0.0, 0.0),
+            let [u, v] = match *pc.sel {
+                qymcad_ui_state::Sel::Face(mi, fi) if sketch == 0 => pc
+                    .project
+                    .bodies
+                    .get(mi)
+                    .and_then(|b| b.faces.get(fi))
+                    .map_or([0.0, 0.0], |f| qymcad_core::feature::shift_on_face(qymcad_core::feature::FaceAt { centre: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal }, point)),
+                _ => [0.0, 0.0],
             };
-            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-u", "off_u", u, -100000.0, 100000.0));
-            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-v", "off_v", v, -100000.0, 100000.0));
+            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-u", "off_u", u, -100000.0, 100000.0).hint("f-hole-shift-hint"));
+            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-v", "off_v", v, -100000.0, 100000.0).hint("f-hole-shift-hint"));
             if kind != 0 {
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-recess-d", "dia2", dia2, 0.1, 10000.0));
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-recess-depth", "depth2", depth2, 0.1, 10000.0));
@@ -319,56 +326,68 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         // A THREAD: a double click reopens it with its parameters; the rim, the axis and the radius are
         // restored from `regen_edges`
         FeatureKind::Thread { src, edge, spec, length, lead_in, lead_out, .. } => {
-            pc.cmd.open(pc.armed, 24, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Thread, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.thread.src = Some(src);
             pc.thread.edge = edge;
             pc.thread.auger = false;
             pc.thread.internal = spec.internal;
-            pc.thread.starts = spec.starts.max(1);
+            // what the starts come to as the rebuild takes them, the formula included
+            pc.thread.starts = (pc.project.feat_dim_value(fid, "starts", f64::from(spec.starts), &pc.project.param_map()).round() as u32).max(1);
+            // the starts typed as a formula come back as typed: the node keeps it, the bar number shows it
+            match pc.project.feat_dim(fid, "starts").filter(|f| !f.trim().is_empty()) {
+                Some(f) => pc.bar_exprs.insert("thread_starts", f.to_string()),
+                None => pc.bar_exprs.remove("thread_starts"),
+            };
             pc.thread.left = spec.left;
             pc.thread.form = qymcad_ui_state::thread_standard_idx(spec.standard);
             qymcad_ui_state::restore_thread_axis(&mut *pc.project, &mut *pc.thread, src, edge);
             // THE SET OF FIELDS IS THE SAME AS AT CREATION. The fillets were missing here entirely: they
             // could be set only when the feature was first built, and on editing they vanished silently.
             pc.cmd.params = vec![
-                cmd_param_from(&*pc.project, fid, "f-nominal-d", "nominal", spec.nominal_d, 0.5, 1000.0),
-                cmd_param_from(&*pc.project, fid, "f-pitch-std", "pitch", spec.pitch, 0.0, 100.0),
-                cmd_param_from(&*pc.project, fid, "f-length", "length", length, 0.1, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-fit-clearance", "fit", spec.fit, 0.0, 5.0),
-                cmd_param_from(&*pc.project, fid, "f-lead-in", "lead_in", lead_in, 0.0, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-lead-out", "lead_out", lead_out, 0.0, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-crest-fillet", "crest_r", spec.crest_r.unwrap_or(0.0), 0.0, 100.0),
-                cmd_param_from(&*pc.project, fid, "f-root-fillet", "root_r", spec.root_r.unwrap_or(0.0), 0.0, 100.0),
+                cmd_param_from(&*pc.project, fid, "th-nominal-d", "nominal", spec.nominal_d, 0.5, 1000.0),
+                cmd_param_from(&*pc.project, fid, "th-pitch-std", "pitch", spec.pitch, 0.0, 100.0).hint("th-std-zero-hint"),
+                cmd_param_from(&*pc.project, fid, "th-length", "length", length, 0.1, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-fit-clearance", "fit", spec.fit, 0.0, 5.0),
+                cmd_param_from(&*pc.project, fid, "th-lead-in", "lead_in", lead_in, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-lead-out", "lead_out", lead_out, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-crest-fillet", "crest_r", spec.crest_r.unwrap_or(0.0), 0.0, 100.0).hint("th-std-zero-hint"),
+                cmd_param_from(&*pc.project, fid, "th-root-fillet", "root_r", spec.root_r.unwrap_or(0.0), 0.0, 100.0).hint("th-std-zero-hint"),
             ];
             if spec.standard == qymcad_core::thread::ThreadStandard::Custom {
-                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-profile-angle", "angle", spec.custom_angle, 5.0, 170.0));
-                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-thread-depth", "depth", spec.custom_depth, 0.0, 1000.0));
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "th-profile-angle", "angle", spec.custom_angle, 5.0, 170.0));
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "th-depth", "depth", spec.custom_depth, 0.0, 1000.0));
             }
         }
         // AN AUGER - the same command, a mode of the timeline
         FeatureKind::Auger { src, edge, spec, length, lead_in, lead_out, .. } => {
-            pc.cmd.open(pc.armed, 24, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Thread, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.thread.src = Some(src);
             pc.thread.edge = edge;
             pc.thread.auger = true;
-            pc.thread.starts = spec.starts.max(1);
+            // what the starts come to as the rebuild takes them, the formula included
+            pc.thread.starts = (pc.project.feat_dim_value(fid, "starts", f64::from(spec.starts), &pc.project.param_map()).round() as u32).max(1);
+            // the starts typed as a formula come back as typed: the node keeps it, the bar number shows it
+            match pc.project.feat_dim(fid, "starts").filter(|f| !f.trim().is_empty()) {
+                Some(f) => pc.bar_exprs.insert("thread_starts", f.to_string()),
+                None => pc.bar_exprs.remove("thread_starts"),
+            };
             pc.thread.left = spec.left;
             qymcad_ui_state::restore_thread_axis(&mut *pc.project, &mut *pc.thread, src, edge);
             pc.cmd.params = vec![
-                cmd_param_from(&*pc.project, fid, "f-outer-d", "outer", spec.outer_d, 0.5, 2000.0),
-                cmd_param_from(&*pc.project, fid, "f-pitch", "pitch", spec.pitch, 0.1, 1000.0),
-                cmd_param_from(&*pc.project, fid, "f-length", "length", length, 0.1, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-flight-thickness", "thickness", spec.thickness, 0.1, 100.0),
-                cmd_param_from(&*pc.project, fid, "f-edge-fillet", "edge_r", spec.edge_r, 0.0, 50.0),
-                cmd_param_from(&*pc.project, fid, "f-taper-in", "lead_in", lead_in, 0.0, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-taper-out", "lead_out", lead_out, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-outer-d", "outer", spec.outer_d, 0.5, 2000.0),
+                cmd_param_from(&*pc.project, fid, "th-pitch", "pitch", spec.pitch, 0.1, 1000.0),
+                cmd_param_from(&*pc.project, fid, "th-length", "length", length, 0.1, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-flight-thickness", "thickness", spec.thickness, 0.1, 100.0),
+                cmd_param_from(&*pc.project, fid, "th-edge-fillet", "edge_r", spec.edge_r, 0.0, 50.0),
+                cmd_param_from(&*pc.project, fid, "th-taper-in", "lead_in", lead_in, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-taper-out", "lead_out", lead_out, 0.0, 10000.0),
             ];
         }
         // A MIRROR: a double click reopens the command; the plane is clicked in the viewport again
         FeatureKind::Mirror { src, plane, keep, datum, face, .. } => {
-            pc.cmd.open(pc.armed, 16, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Mirror, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.opts.mirror_keep = keep;
             pc.mirror.plane = Some(qymcad_ui_state::op_plane_pick(plane, datum, face));
@@ -377,7 +396,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         // THE PRIMITIVES: a double click reopens the command with the current sizes (the fields are the
         // keys the regen uses)
         FeatureKind::Box3 { dx, dy, dz, .. } => {
-            pc.cmd.open(pc.armed, 10, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Box, was_3d);
             pc.cmd.params = vec![
                 cmd_param_from(&*pc.project, fid, "f-length-x", "dx", dx, 0.1, 100000.0),
                 cmd_param_from(&*pc.project, fid, "f-width-y", "dy", dy, 0.1, 100000.0),
@@ -385,15 +404,15 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             ];
         }
         FeatureKind::Cylinder { r, h, .. } => {
-            pc.cmd.open(pc.armed, 11, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Cylinder, was_3d);
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-radius", "r", r, 0.05, 100000.0), cmd_param_from(&*pc.project, fid, "f-height", "h", h, 0.1, 100000.0)];
         }
         FeatureKind::Sphere { r, .. } => {
-            pc.cmd.open(pc.armed, 12, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Sphere, was_3d);
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-radius", "r", r, 0.05, 100000.0)];
         }
         FeatureKind::Cone { r1, r2, h, .. } => {
-            pc.cmd.open(pc.armed, 13, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Cone, was_3d);
             pc.cmd.params = vec![
                 cmd_param_from(&*pc.project, fid, "f-radius-bottom", "r1", r1, 0.0, 100000.0),
                 cmd_param_from(&*pc.project, fid, "f-radius-top", "r2", r2, 0.0, 100000.0),
@@ -401,19 +420,22 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             ];
         }
         FeatureKind::Torus { major, minor, .. } => {
-            pc.cmd.open(pc.armed, 14, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Torus, was_3d);
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-ring-r", "major", major, 0.1, 100000.0), cmd_param_from(&*pc.project, fid, "f-tube-r", "minor", minor, 0.1, 100000.0)];
         }
         FeatureKind::Prism { r, n, h, .. } => {
-            pc.cmd.open(pc.armed, 15, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Prism, was_3d);
             pc.prim.n = n;
-            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-radius-circ", "r", r, 0.1, 100000.0), cmd_param_from(&*pc.project, fid, "f-height", "h", h, 0.1, 100000.0)];
+            pc.cmd.params = vec![
+                cmd_param_from(&*pc.project, fid, "f-radius-circ", "r", r, 0.1, 100000.0),
+                cmd_param_from(&*pc.project, fid, "f-height", "h", h, 0.1, 100000.0),
+                cmd_param_from(&*pc.project, fid, "cmd-sides", "n", f64::from(n), 3.0, 64.0).whole(),
+            ];
         }
         // AN ARRAY: a double click reopens the command; the count, the direction and the axis live in the
         // bar, the step and the angle at the geometry
         FeatureKind::LinearArray { src, dx, dy, dz, count, dx2, dy2, dz2, count2, dx3, dy3, dz3, count3, .. } => {
-            pc.cmd.open(pc.armed, 17, was_3d);
-            restore_bar_counts(pc.bar_exprs, pc.project, fid);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::LinearPattern, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             let (dir, step) = qymcad_ui_state::arr_dir_of(dx, dy, dz);
             pc.arr.dir = dir;
@@ -430,25 +452,29 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.arr.count3 = count3.max(1);
             // the step is the expression text from the logical key (`store_cmd_exprs`); the numeric
             // fallback is the magnitude of the component
-            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-pitch", "step", step, 0.01, 100000.0)];
+            pc.cmd.params = vec![
+                cmd_param_from(&*pc.project, fid, "cmd-copies", "count", f64::from(count.max(1)), 1.0, 512.0).whole(),
+                cmd_param_from(&*pc.project, fid, "f-pitch", "step", step, 0.01, 100000.0),
+            ];
             // the second and third steps are added AT ONCE with the right magnitude as a fallback (the sync
             // does not know the value)
             if two {
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-copies2", "count2", f64::from(count2.max(1)), 1.0, 512.0).whole());
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-pitch2", "step2", s2, 0.01, 100000.0));
             }
             if three {
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-copies3", "count3", f64::from(count3.max(1)), 1.0, 512.0).whole());
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-pitch3", "step3", s3, 0.01, 100000.0));
             }
         }
         FeatureKind::CircularArray { src, count, angle, axis, .. } => {
-            pc.cmd.open(pc.armed, 18, was_3d);
-            restore_bar_counts(pc.bar_exprs, pc.project, fid);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::CircularPattern, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.arr.count = count.max(1);
             pc.arr.axis = axis;
-            pc.arr.full = angle.abs() >= 359.9;
             pc.arr.two = false;
-            pc.cmd.params = if pc.arr.full { vec![] } else { vec![cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, 1.0, 360.0)] };
+            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "cmd-copies", "count", f64::from(count.max(1)), 1.0, 512.0).whole()];
+            pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, 1.0, 360.0));
         }
         // THE DATUMS: a double click reopens the command - a plane, a point or an axis is edited in place
         FeatureKind::Plane { plane } => {
@@ -459,17 +485,17 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.datum.axis_mode = 0;
             match pl.def {
                 PlaneDef::OffsetBase { base, dist } => {
-                    pc.cmd.open(pc.armed, 20, was_3d);
+                    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::DatumPlane, was_3d);
                     pc.datum.plane_pick = Some(SketchPlane::World(base));
                     pc.cmd.params = datum_plane_fields_of(&*pc.project, fid, &pl, dist);
                 }
                 PlaneDef::OffsetFace { body, face, dist } => {
-                    pc.cmd.open(pc.armed, 20, was_3d);
+                    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::DatumPlane, was_3d);
                     pc.datum.plane_pick = Some(SketchPlane::Face(body, face));
                     pc.cmd.params = datum_plane_fields_of(&*pc.project, fid, &pl, dist);
                 }
                 PlaneDef::OffsetPlane { plane: src, dist } => {
-                    pc.cmd.open(pc.armed, 20, was_3d);
+                    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::DatumPlane, was_3d);
                     pc.datum.plane_pick = Some(SketchPlane::Datum(src));
                     pc.cmd.params = datum_plane_fields_of(&*pc.project, fid, &pl, dist);
                 }
@@ -482,7 +508,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         FeatureKind::DatumPoint { point } => {
             use qymcad_core::model::PointDef;
             let Some(dp) = pc.project.datum_points.iter().find(|p| p.id == point).cloned() else { return };
-            pc.cmd.open(pc.armed, 21, was_3d);
+            pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::DatumPoint, was_3d);
             match dp.def {
                 // an associative point: it reopens in "at a vertex" mode with the current reference as the
                 // preview; clicking a new vertex replaces it, and without a re-pick the definition is kept
@@ -507,7 +533,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             let Some(da) = pc.project.datum_axes.iter().find(|a| a.id == axis).cloned() else { return };
             match da.def {
                 AxisDef::Manual { .. } => {
-                    pc.cmd.open(pc.armed, 22, was_3d);
+                    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::DatumAxis, was_3d);
                     pc.datum.axis_mode = 1;
                     pc.datum.axis_ref = None;
                     pc.cmd.params = vec![
@@ -523,7 +549,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
                 // axis is the preview, and without a re-pick the definition is kept; clicking a new
                 // reference replaces it
                 AxisDef::TwoPoints { .. } | AxisDef::FromEdge { .. } | AxisDef::FromFace { .. } => {
-                    pc.cmd.open(pc.armed, 22, was_3d);
+                    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::DatumAxis, was_3d);
                     pc.datum.axis_mode = 0;
                     pc.datum.axis_hit = None;
                     pc.datum.axis_ref = Some((da.origin(), da.dir()));
@@ -532,10 +558,11 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
                 }
             }
         }
-        FeatureKind::BodyBoolean { .. } => {
+        FeatureKind::BodyBoolean { op, .. } => {
             // a body boolean has no dimension popup - its KIND is edited in the top bar (the edit mode of
             // `bool_tool_bar`)
             pc.boolean.edit = pc.project.timeline.iter().position(|n| n.id == fid);
+            pc.boolean.was = op;
             if let Some(ti) = pc.boolean.edit {
                 *pc.sel = qymcad_ui_state::Sel::Feature(ti);
             }

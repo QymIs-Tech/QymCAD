@@ -88,23 +88,24 @@ impl Session {
     pub fn sketch_under(&mut self, x: f64, y: f64) -> Option<SketchPick> {
         let pos = self.on_sketch(x, y);
         let si = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses)?;
-        let (kind, id) = qymcad_sketch::sketch_hit(&self.app.pick_ctx(), self.app.viewing.view_rect, pos, si)?;
+        let qymcad_ui_state::SketchItem { kind, id } = qymcad_sketch::sketch_hit(&self.app.pick_ctx(), self.app.viewing.view_rect, pos, si)?;
         let sk = &self.app.project.sketches[si];
         let pt = |id: u64| sk.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y)).unwrap_or((f64::NAN, f64::NAN));
-        if kind == 0 {
+        if kind == qymcad_ui_state::ItemKind::Point {
             return Some(SketchPick::Point { at: pt(id) });
         }
-        use qymcad_core::model::EntityKind;
-        if let Some(e) = sk.entities.iter().find(|e| e.id == id) {
-            return Some(match e.kind {
-                EntityKind::Line { a, b } => SketchPick::Line { from: pt(a), to: pt(b) },
-                EntityKind::Arc { center, a, b, ccw } => SketchPick::Arc { centre: pt(center), from: pt(a), to: pt(b), ccw },
-                EntityKind::Circle { center, r } => SketchPick::Circle { centre: pt(center), radius: r },
-                EntityKind::Ellipse { c, ma, mi } => SketchPick::Ellipse { centre: pt(c), major: pt(ma), minor: pt(mi) },
-            });
-        }
-        let spline = sk.splines.iter().find(|sp| sp.points.contains(&id))?;
-        Some(SketchPick::Spline { nodes: spline.points.iter().map(|p| pt(*p)).collect() })
+        // the curve as it stands, by the geometry the curve module reads off it
+        use qymcad_core::model::curve::Curve;
+        let xy = |p: qymcad_core::geom::Point2| (p.x, p.y);
+        let c = Curve::of(sk, sk.entity(id)?)?;
+        let [from, to] = c.ends();
+        Some(match c {
+            Curve::Line { a, b } => SketchPick::Line { from: xy(a), to: xy(b) },
+            Curve::Round { centre, r, .. } if c.closed() => SketchPick::Circle { centre: xy(centre), radius: r },
+            Curve::Round { centre, sweep, .. } => SketchPick::Arc { centre: xy(centre), from: xy(from), to: xy(to), ccw: sweep >= 0.0 },
+            Curve::Oval { centre, major, minor, .. } => SketchPick::Ellipse { centre: xy(centre), major: xy(centre + major), minor: xy(centre + minor) },
+            Curve::Spline { .. } => SketchPick::Spline { nodes: c.nodes().into_iter().map(xy).collect() },
+        })
     }
 
     /// WHERE THE POINT `p` OF THE 3D VIEW FALLS ON SCREEN AS THE VIEW STANDS NOW - no gesture, nothing brought into view,
@@ -303,14 +304,14 @@ impl Session {
         self.app.tools.sel_sk.items.len()
     }
 
-    /// WHICH EDITING BUTTON IS IN HAND, by its own number: 4 the corner fillet, 5 the chamfer, 0 none of them.
-    pub fn editing_tool(&self) -> u8 {
-        self.app.tools.armed.click_op()
+    /// WHICH TOOL OF A SKETCH ACTING ON A CLICK IS IN HAND: the rounding of a corner, its chamfer, a trim; none.
+    pub fn editing_tool(&self) -> Option<qymcad_ui_state::ClickTool> {
+        self.app.tools.armed.click_tool()
     }
 
-    /// WHICH DRAWING TOOL OF A SKETCH IS IN HAND, by its own number: 1 the line, 3 the circle, 9 the spline, 0 none.
-    pub fn drawing_tool(&self) -> u8 {
-        self.app.tools.armed.draw_kind()
+    /// WHICH DRAWING TOOL OF A SKETCH IS IN HAND: the line, the circle, the spline; none.
+    pub fn drawing_tool(&self) -> Option<qymcad_ui_state::SketchShape> {
+        self.app.tools.armed.drawing()
     }
 
     /// Is a text field taking the keys - a person in the middle of typing, where Ctrl+Z is the field's own?

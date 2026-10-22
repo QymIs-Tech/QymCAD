@@ -195,7 +195,7 @@ impl Project {
             return false;
         }
         let Some((ox, oy)) = s.points.iter().find(|p| p.id == origin).map(|p| (p.x, p.y)) else { return false };
-        let used = s.entities.iter().any(|e| entity_points(e).contains(&origin)) || s.splines.iter().any(|sp| sp.points.contains(&origin));
+        let used = s.entities.iter().any(|e| entity_points(e).contains(&origin));
         if !used {
             return false; // nobody's geometry - nothing to separate
         }
@@ -204,14 +204,11 @@ impl Project {
         s.points.push(SketchPoint { id: fresh, x: ox, y: oy });
         let (guides, frame) = (s.axis_pts, s.frame);
         for e in &mut s.entities {
-            remap_entity_point(e, origin, fresh);
-        }
-        for sp in &mut s.splines {
-            for id in &mut sp.points {
+            e.kind.each_point_mut(|id| {
                 if *id == origin {
                     *id = fresh;
                 }
-            }
+            });
         }
         for c in &mut s.constraints {
             // `Fixed` on the origin stays on the origin; so does anything naming the frame or an axis
@@ -275,7 +272,7 @@ impl Project {
         // Two such centres must not be stitched into one node, or their radii collapse and concentric circles
         // drawn from one coordinate break. The check runs against the current state of the entities, so it
         // accounts for the remappings already done in this loop.
-        let is_center = |ents: &[SketchEntity], pid: Id| ents.iter().any(|e| matches!(e.kind, EntityKind::Circle { center, .. } | EntityKind::Arc { center, .. } if center == pid));
+        let is_center = |ents: &[SketchEntity], pid: Id| ents.iter().any(|e| e.kind.round_centre() == Some(pid));
         // System points (the origin and the axis endpoints) must not be merged: they lie between 1 and sqrt(2)
         // apart while the tolerance of the line tool reaches 2.0, so merging would consume the axes and tear the
         // dimensions measured to them.
@@ -313,7 +310,7 @@ impl Project {
         }
         if merged > 0 {
             // Drop degenerate zero-length lines and the constraints they orphan.
-            s.entities.retain(|e| !matches!(e.kind, EntityKind::Line { a, b } if a == b));
+            s.entities.retain(|e| !e.kind.as_line().is_some_and(|l| l.a == l.b));
             self.regen_sketch(si);
         }
         merged

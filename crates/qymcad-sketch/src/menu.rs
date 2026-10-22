@@ -3,37 +3,101 @@
 use qymcad_ui_state::Notice;
 use super::*;
 
-/// THE KEYS OF THE SKETCH TOOLS IN HAND, each frame: Enter makes the extension Extend previews, as a click does; and
-/// the field of the rotation angle at its centre (`sketch_rotate_popup`).
-pub fn sketch_tool_keys(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
-    offset_on_enter(sk, ctx, rect);
-    // LINES A CORNER TOOL CUT AT A CROSSING, the tool put down with no corner cut, are whole again
+/// LINES A CORNER TOOL CUT AT A CROSSING, the tool put down with no corner cut, are whole again: looked at every frame.
+pub fn corner_crossing_upkeep(sk: &mut qymcad_ui_state::SketchCtx) {
     if sk.corner.crossing == qymcad_ui_state::CrossingCut::Left {
         qymcad_ui_state::take_back_last_step(&mut *sk.edits, &mut *sk.project, &mut *sk.regen);
         sk.corner.crossing = qymcad_ui_state::CrossingCut::None;
     }
-    sketch_rotate_popup(sk, ctx, rect);
-    let (Some(held), qymcad_ui_state::Sel::Sketch(si)) = (sk.tool.extend, *sk.sel) else { return };
-    if sk.armed.click_op() != 2 || ctx.egui_wants_keyboard_input() || !ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-        return;
+}
+
+/// THE ESC LADDER: THE INNERMOST state is cancelled, and only at the very bottom is the selection let go. The order
+/// matters - reports arrive exactly when some rung is missing and Esc "falls through" (the measure tool and the selected
+/// elements were two such rungs). While a sketch is open the frame of the tool in hand takes Esc and steps down by it;
+/// with no sketch open the window does.
+pub fn escape_step(sk: &mut qymcad_ui_state::SketchCtx) {
+    let mut said = tools_said(sk);
+    let t = &mut said.tools;
+    if t.inline.dim().is_some() {
+        // the popup for editing a dimension is open (a double click on a dimension) - Esc cancels ONLY the popup rather
+        // than closing the whole sketch
+        t.inline.clear();
+        t.dim.put_away();
+    } else if t.pending_import.curves.is_some() {
+        t.pending_import.curves = None;
+        *said.status = Notice::info(qymcad_i18n::tr("in-import-cancelled"));
+    } else if let Some(k) = t.picking.cancel_key() {
+        t.picking.clear(); // the modes Esc simply puts down; the words come from the mode itself
+        *said.status = Notice::info(qymcad_i18n::tr(k));
+    } else if t.picking.plane_face().is_some() {
+        t.picking.set_plane_face(None);
+        *said.status = Notice::info(qymcad_i18n::tr("in-plane-face-cancelled"));
+    } else if t.sel_sk.constraint.is_some() || t.sel_sk.modify.is_some() {
+        qymcad_ui_state::escape_waiting_tool(t, said.status);
+    } else if t.leave_click_tool(said.status) {
+    } else if t.armed.pattern().is_some() {
+        *t.armed = qymcad_ui_state::Armed::None;
+        t.pat.edit = None;
+        t.pat.center = None;
+        *said.status = Notice::info(qymcad_i18n::tr("in-array-cancelled"));
+    } else if t.armed.moving().is_some() {
+        *t.armed = qymcad_ui_state::Armed::None;
+        t.tool.move_base = None;
+        *said.status = Notice::info(qymcad_i18n::tr("in-move-cancelled"));
+    } else {
+        escape_lower_step(sk);
     }
-    let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
-    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-extend"));
-    extend_apply(sk, ExtendAt { rect, pos, si, line: None }, held);
-    qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
+    // the selection let go takes what it held from the next tool
+    sk.gsel.before.note(None, qymcad_ui_state::Adding::No);
+}
+
+/// THE LOWER RUNGS OF THE ESC LADDER: a copy or an insert waiting, a dimension being placed, its first reference, a
+/// construction under way, the tool in hand, the points of an import, the selection, and at the bottom what is chosen.
+fn escape_lower_step(sk: &mut qymcad_ui_state::SketchCtx) {
+    if sk.clip.geom_place {
+        sk.clip.geom_place = false;
+        *sk.status = Notice::info(qymcad_i18n::tr("in-insert-cancelled"));
+    } else if sk.clip.geom_pending.is_some() {
+        sk.clip.geom_pending = None;
+        *sk.status = Notice::info(qymcad_i18n::tr("in-copy-cancelled"));
+    } else if sk.place.dim.is_some() {
+        cancel_placing_dim(sk); // a provisional length goes without a trace
+    } else if sk.dim.first.is_some() {
+        sk.dim.first = None; // cancel the first reference (the point)
+    } else if !sk.tool.pts.is_empty() {
+        end_construction(sk); // a spline is finished, anything else broken off
+    } else if let Some(msg) = qymcad_ui_state::release_armed_sketch_tool(&mut tools_said(sk).tools) {
+        // ONE RUNG FOR EVERY SKETCH TOOL IN HAND, and the tool itself says what to clear. There used to be a rung per
+        // family here and none for the editing tools, so mirror, offset, fillet, chamfer and the arrays could not be put
+        // down at all - reported on the mirror, true of all of them.
+        *sk.status = Notice::info(qymcad_i18n::tr(msg));
+    } else if sk.pending_import.draw_pts.is_some() {
+        sk.pending_import.draw_pts = None;
+    } else if sk.sketch_ses.editing.is_some() && (!sk.sel_sk.items.is_empty() || sk.annot.text.is_some() || sk.annot.note.is_some()) {
+        // With elements SELECTED, Esc first clears the selection - as in any grown-up CAD. The selection used to take no
+        // part in the ladder, and the very first Esc closed the sketch.
+        sk.sel_sk.clear(); // the selection and whatever was waiting for it
+        sk.annot.text = None;
+        sk.annot.note = None;
+        *sk.status = Notice::info(qymcad_i18n::tr("in-selection-cleared"));
+    } else {
+        // THE LADDER ENDS HERE: Esc gives things back, it does not finish a context. Leaving the sketch was the rung
+        // below; it is Ctrl+Enter now - see `the_sketch_is_left_by_ctrl_enter.rs`.
+        *sk.sel = qymcad_ui_state::Sel::None;
+    }
 }
 
 /// THE MENU OF THE RIGHT BUTTON ON A SKETCH OPEN FOR EDITING, over what is selected: delete, construction, a projection
 /// made ordinary geometry, the dimensions an arc and two round edges take, the constraints, select all.
 pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::Ui, si: usize) {
     let has_sel = !sk.sel_sk.items.is_empty();
-    let has_ent = sk.sel_sk.items.iter().any(|(k, _)| *k == 1);
+    let has_ent = sk.sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Curve);
     if ui.add_enabled(has_sel, egui::Button::new(format!("{} {}", ph::TRASH, qymcad_i18n::tr("props-delete")))).clicked() {
         qymcad_ui_state::delete_sketch_sel(&mut *sk.project, &mut *sk.regen, &mut *sk.sel_sk, &mut *sk.status, si);
         ui.close();
     }
     if ui.add_enabled(has_ent, egui::Button::new(qymcad_i18n::tr("sk-construction-toggle"))).clicked() {
-        let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+        let eids: Vec<Id> = sk.sel_sk.curves().collect();
         sk.project.toggle_construction(si, &eids);
         sk.project.solve_sketch(si);
         qymcad_ui_state::invalidate(&mut *sk.regen);
@@ -41,7 +105,7 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
     }
     // THE CURVES LYING HERE: a curve picked that others lie over - a side drawn over another - lists them all, each by
     // its name and length, and the one clicked becomes the selection
-    let picked: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let picked: Vec<Id> = sk.sel_sk.curves().collect();
     if let [one] = picked.as_slice() {
         let here = sk.project.overlapping_curves(si, *one);
         if here.len() > 1 {
@@ -51,13 +115,13 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
                     let len = qymcad_i18n::num(curve_length(&*sk.project, si, id), 1);
                     // the rectangle the curve is a side of, by its number in the sketch: two sides of one length are told
                     // apart by the shape they belong to
-                    let rect = sk.project.sketches[si].rects.iter().position(|r| r.sides.contains(&id));
+                    let rect = sk.project.sketches[si].rects().iter().position(|r| r.sides.contains(&id));
                     let label = match rect {
                         Some(k) => qymcad_i18n::trn("sk-overlapping-side", &[("name", &name), ("rect", &(k + 1).to_string()), ("len", &len)]),
                         None => qymcad_i18n::tr2("sk-overlapping-item", "name", &name, "len", &len),
                     };
                     if ui.button(label).clicked() {
-                        sk.sel_sk.items = vec![(1, id)];
+                        sk.sel_sk.items = vec![qymcad_ui_state::SketchItem::curve(id)];
                         *sk.status = Notice::info(qymcad_i18n::tr1("sk-overlapping-picked", "name", &name));
                         ui.close();
                     }
@@ -66,7 +130,13 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
         }
     }
     // A PROJECTION MADE ORDINARY: the curves selected that a body drives are let go of it, and stay where they are
-    let projected: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, id)| *k == 1 && sk.project.sketches[si].projected_entities().contains(id)).map(|(_, id)| *id).collect();
+    let projected: Vec<Id> = sk
+        .sel_sk
+        .items
+        .iter()
+        .filter(|qymcad_ui_state::SketchItem { kind: k, id }| *k == qymcad_ui_state::ItemKind::Curve && sk.project.sketches[si].projected_entities().contains(id))
+        .map(|qymcad_ui_state::SketchItem { id, .. }| *id)
+        .collect();
     if !projected.is_empty() && ui.button(qymcad_i18n::tr("sk-make-ordinary")).on_hover_text(qymcad_i18n::tr("sk-make-ordinary-hint")).clicked() {
         qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("sk-make-ordinary"));
         sk.project.release_projections_of(si, &projected);
@@ -76,9 +146,10 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
         ui.close();
     }
     // an arc length dimension, for the picked arc
-    let arc_eid = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).find_map(|(_, id)| {
-        sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == *id)).and_then(|e| matches!(e.kind, qymcad_core::model::EntityKind::Arc { .. }).then_some(*id))
-    });
+    let arc_eid =
+        sk.sel_sk.items.iter().filter(|it| it.kind == qymcad_ui_state::ItemKind::Curve).find_map(|qymcad_ui_state::SketchItem { id, .. }| {
+            sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == *id)).and_then(|e| e.kind.as_arc().is_some().then_some(*id))
+        });
     if let Some(aid) = arc_eid {
         if ui.button(qymcad_i18n::tr("sk-arc-length-dim")).clicked() {
             if let Some(ci) = sk.project.ensure_arc_length(si, aid) {
@@ -98,13 +169,10 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
             sk.sel_sk
                 .items
                 .iter()
-                .filter_map(|&(k, id)| {
-                    if k == 1 {
-                        s.entities.iter().find(|e| e.id == id).and_then(|e| match e.kind {
-                            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some((center, -1i8)),
-                            _ => None,
-                        })
-                    } else if k == 0 {
+                .filter_map(|&qymcad_ui_state::SketchItem { kind: k, id }| {
+                    if k == qymcad_ui_state::ItemKind::Curve {
+                        s.entity(id).and_then(|e| e.kind.round_centre()).map(|c| (c, -1i8))
+                    } else if k == qymcad_ui_state::ItemKind::Point {
                         Some((id, 0i8))
                     } else {
                         None
@@ -127,15 +195,15 @@ pub fn sketch_context_menu(sk: &mut qymcad_ui_state::SketchCtx, ui: &mut egui::U
     ui.separator();
     ui.menu_button(qymcad_i18n::tr("sk-constraint"), |ui| {
         for (label, code) in [
-            (&qymcad_i18n::tr("sk-coincident"), 0u8),
-            (&qymcad_i18n::tr("sk-horizontal"), 1),
-            (&qymcad_i18n::tr("sk-vertical"), 2),
-            (&qymcad_i18n::tr("sk-parallel"), 3),
-            (&qymcad_i18n::tr("sk-perpendicular"), 4),
-            (&qymcad_i18n::tr("sk-equal"), 5),
-            (&qymcad_i18n::tr("sk-tangency"), 9),
-            (&qymcad_i18n::tr("sk-midpoint"), 11),
-            (&qymcad_i18n::tr("sk-fix"), 6),
+            (&qymcad_i18n::tr("sk-coincident"), qymcad_ui_state::ConstraintKind::Coincident),
+            (&qymcad_i18n::tr("sk-horizontal"), qymcad_ui_state::ConstraintKind::Horizontal),
+            (&qymcad_i18n::tr("sk-vertical"), qymcad_ui_state::ConstraintKind::Vertical),
+            (&qymcad_i18n::tr("sk-parallel"), qymcad_ui_state::ConstraintKind::Parallel),
+            (&qymcad_i18n::tr("sk-perpendicular"), qymcad_ui_state::ConstraintKind::Perpendicular),
+            (&qymcad_i18n::tr("sk-equal"), qymcad_ui_state::ConstraintKind::Equal),
+            (&qymcad_i18n::tr("sk-tangency"), qymcad_ui_state::ConstraintKind::Tangent),
+            (&qymcad_i18n::tr("sk-midpoint"), qymcad_ui_state::ConstraintKind::Midpoint),
+            (&qymcad_i18n::tr("sk-fix"), qymcad_ui_state::ConstraintKind::Fix),
         ] {
             if ui.button(label).clicked() {
                 constraint_button(sk, code);
@@ -164,13 +232,13 @@ pub(crate) fn open_the_size_of_the_new_shape(sk: &mut qymcad_ui_state::SketchCtx
     if purpose == qymcad_core::feature::Purpose::Construction {
         return;
     }
-    *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid);
-    sk.dim.focus = true;
+    sk.place.set(qymcad_ui_state::PlacingShape::Round(eid));
+    sk.place.focus = true;
 }
 
 /// The arc the tool has just added, the last entity of the sketch, has the field of its radius opened.
 pub(crate) fn open_the_size_of_the_new_arc(sk: &mut qymcad_ui_state::SketchCtx, si: usize, purpose: qymcad_core::feature::Purpose) {
-    let last = sk.project.sketches[si].entities.last().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Arc { .. })).map(|e| e.id);
+    let last = sk.project.sketches[si].entities.last().filter(|e| e.kind.as_arc().is_some()).map(|e| e.id);
     if let Some(eid) = last {
         open_the_size_of_the_new_shape(sk, eid, purpose);
     }

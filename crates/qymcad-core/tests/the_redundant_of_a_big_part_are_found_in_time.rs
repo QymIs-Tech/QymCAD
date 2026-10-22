@@ -6,7 +6,7 @@
 //! drawn in it. On every change the redundant constraints were counted by taking each constraint of the part out in
 //! turn and counting the part again: 9 s a count.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 use qymcad_core::time_budget::{cost_of, over, Doer};
 use std::time::Duration;
 
@@ -18,8 +18,8 @@ fn the_redundant_of_a_ladder_of_500_rungs_are_found_in_time() {
     let si = p.new_sketch("S");
     let width = 10.0 * n as f64;
     let rails = [p.add_line_entity(si, -5.0, 0.0, width, 0.0, Purpose::Real), p.add_line_entity(si, -5.0, 50.0, width, 50.0, Purpose::Real)];
-    let ends = |p: &Project, line: u64| match p.sketches[si].entities.iter().find(|e| e.id == line).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) => (a, b),
+    let ends = |p: &Project, line: u64| match p.sketches[si].entities.iter().find(|e| e.id == line).and_then(|e| e.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("a line"),
     };
     let (low, high) = (ends(&p, rails[0]), ends(&p, rails[1]));

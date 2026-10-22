@@ -1,7 +1,7 @@
 //! Two circles sharing a centre position must not collapse into one.
 //!
 //! Each circle has to own its centre node, since the radius variable of the solver is keyed by centre.
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 
 #[test]
 fn concentric_circles_get_distinct_centers_and_radii() {
@@ -18,8 +18,8 @@ fn concentric_circles_get_distinct_centers_and_radii() {
     let centers: Vec<_> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { center, r } => Some((e.id, center, r)),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, r }) => Some((e.id, center, r)),
             _ => None,
         })
         .collect();
@@ -34,8 +34,8 @@ fn concentric_circles_get_distinct_centers_and_radii() {
     let radii: Vec<f64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { r, .. } => Some(r),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
             _ => None,
         })
         .collect();

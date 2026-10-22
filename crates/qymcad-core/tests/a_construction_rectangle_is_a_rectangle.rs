@@ -42,8 +42,8 @@ fn laid(drawn: Drawn, purpose: Purpose) -> Laid {
     let s = &p.sketches[si];
     // the sides drawn dashed: the four lines between the corners, whatever else (the diagonals of a rectangle drawn
     // from its centre) is construction
-    let construction = s.entities.iter().filter(|e| e.construction && !s.rects.iter().any(|r| r.diagonals.is_some_and(|d| d.contains(&e.id)))).count();
-    Laid { rects: s.rects.len(), constraints: s.constraints.len(), dof: p.sketch_dof(si), construction }
+    let construction = s.entities.iter().filter(|e| e.construction && !s.rects().iter().any(|r| r.diagonals.is_some_and(|d| d.contains(&e.id)))).count();
+    Laid { rects: s.rects().len(), constraints: s.constraints.len(), dof: p.sketch_dof(si), construction }
 }
 
 #[test]

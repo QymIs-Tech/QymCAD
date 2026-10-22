@@ -7,7 +7,7 @@
 //! And where the rest of the drawing still needs the point - a third line at a T, or the two lines of the far square
 //! at the point two squares share - it stays as it is.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{ChamferLegs, Constraint, EntityKind, Project};
+use qymcad_core::model::{entity_points, ChamferLegs, Constraint, Project};
 
 /// An L of two lines meeting at (20, 0), with the point of the corner and the far end of the bottom line.
 fn an_angle() -> (Project, usize, u64, u64, u64) {
@@ -26,16 +26,6 @@ fn an_angle() -> (Project, usize, u64, u64, u64) {
 fn loose_points(p: &Project, si: usize) -> Vec<(f64, f64)> {
     let used: std::collections::HashSet<u64> = p.sketches[si].entities.iter().flat_map(entity_points).collect();
     p.sketches[si].points.iter().filter(|q| !used.contains(&q.id)).map(|q| (q.x, q.y)).collect()
-}
-
-/// The ids an entity stands on: the ends of a line, the centre and the ends of an arc.
-fn entity_points(e: &qymcad_core::model::SketchEntity) -> Vec<u64> {
-    match e.kind {
-        EntityKind::Line { a, b } => vec![a, b],
-        EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-        EntityKind::Circle { center, .. } => vec![center],
-        EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
-    }
 }
 
 #[test]
@@ -101,7 +91,7 @@ fn the_point_stays_while_a_line_still_comes_to_it() {
         p.vertex_edges(si, corner)
             .into_iter()
             .find(|&e| {
-                let Some(EntityKind::Line { a, b }) = p.sketches[si].entities.iter().find(|x| x.id == e).map(|x| x.kind) else { return false };
+                let Some(qymcad_core::model::LineParts { a, b }) = p.sketches[si].entities.iter().find(|x| x.id == e).and_then(|x| x.kind.as_line()) else { return false };
                 let other = if a == corner { b } else { a };
                 p.sketches[si].points.iter().any(|q| q.id == other && (q.x - to.0).abs() < 1e-6 && (q.y - to.1).abs() < 1e-6)
             })

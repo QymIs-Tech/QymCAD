@@ -15,9 +15,9 @@ fn rect_sketch(scale: f64) -> (Project, usize) {
     // a corner anchor plus overall dimensions: a typical fully constrained rectangle
     let (a, b) = {
         let s = &p.sketches[si];
-        let e = s.entities.iter().find(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).unwrap();
-        match e.kind {
-            qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+        let e = s.entities.iter().find(|e| e.kind.as_line().is_some()).unwrap();
+        match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => (a, b),
             _ => unreachable!(),
         }
     };
@@ -45,16 +45,16 @@ fn para_sketch(scale: f64) -> (Project, usize) {
     let l1 = p.add_line_entity(si, 0.0, 0.0, 30.0 * s, 0.0, qymcad_core::feature::Purpose::Real);
     let l2 = p.add_line_entity(si, 5.0 * s, 15.0 * s, 36.0 * s, 15.0 * s, qymcad_core::feature::Purpose::Real);
     let ids = |p: &Project, eid: u64| -> (u64, u64) {
-        match p.sketches[si].entities.iter().find(|e| e.id == eid).unwrap().kind {
-            qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+        match p.sketches[si].entities.iter().find(|e| e.id == eid).unwrap().kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => (a, b),
             _ => unreachable!(),
         }
     };
     let (a, b) = ids(&p, l1);
     let (c, d) = ids(&p, l2);
     let e1 = p.add_circle_entity(si, 15.0 * s, 7.0 * s, 7.0 * s, qymcad_core::feature::Purpose::Real);
-    let cc = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind {
-        qymcad_core::model::EntityKind::Circle { center, .. } => center,
+    let cc = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind.as_circle() {
+        Some(qymcad_core::model::CircleParts { center, .. }) => center,
         _ => unreachable!(),
     };
     let k = &mut p.sketches[si].constraints;

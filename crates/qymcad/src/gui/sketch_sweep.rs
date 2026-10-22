@@ -401,14 +401,13 @@ mod tests {
                 }
             }
         }
-        // AND THE COUNT ADDS UP: a regular hexagon has exactly SIX equality badges, one per side. Five
-        // constraints give ten badges, of which five point at one and the same side; the spreading merely
-        // laid that heap out more tidily, and a heap it remained. The check goes by count rather than by
-        // distance: badges laid out in a snake formally stand apart.
+        // AND A FIGURE SHOWS NONE OF ITS OWN: the sides of a regular hexagon are held equal by the figure, as the
+        // sides of a rectangle are, and a badge on each would be the heap of five equalities on one side that started
+        // all this, laid out as six.
         let (mut app, case) = scenes().into_iter().find(|(n, _)| n == &"06-polygon").expect("the polygon scene").1();
         let rect = flat_view(&mut app, case.si);
         let equals = crate::gui::sketching::constraint_glyphs(&app.pick_ctx(), rect, case.si).iter().filter(|(_, _, g)| *g == super::super::Gly::Equal).count();
-        assert_eq!(equals, 6, "there must be one equality badge per side, and there are {equals}");
+        assert_eq!(equals, 0, "a polygon is a figure and shows no badge of its own equalities, and there are {equals}");
 
         assert!(bad.is_empty(), "the badges are drawn badly ({}):\n{}", bad.len(), bad.join("\n"));
     }

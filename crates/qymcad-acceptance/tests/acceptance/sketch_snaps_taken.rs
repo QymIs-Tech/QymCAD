@@ -172,9 +172,10 @@ probe! {
 
 probe! {
     budget = 300;
-    /// THE CIRCLE BY THREE POINTS: its first click on each point of the sketch - the point held on the circle.
+    /// THE CIRCLE BY THREE POINTS, a mode of the circle: its first click on each point of the sketch - the point held on
+    /// the circle.
     fn a_circle_by_three_points_takes_the_snap_it_shows() {
-        check(Tool { hint: "tb-circle-3pt", mode: None, clicks: 3, ends: Ends::LastClick, puts: Puts::ARim });
+        check(Tool { hint: "tb-circle-hint", mode: Some("opt-rect-3pt"), clicks: 3, ends: Ends::LastClick, puts: Puts::ARim });
     }
 }
 

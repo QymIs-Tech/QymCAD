@@ -26,6 +26,39 @@ fn extruded_block(p: &mut Project) -> u64 {
     block
 }
 
+/// The closed profiles of sketch `si`, extruded 10 forward: the body.
+fn extruded_profiles(p: &mut Project, si: usize) -> u64 {
+    let sid = p.sketches[si].id;
+    p.regen_sketch(si);
+    let c: Vec<u64> = p.sketches[si].contour_ids.iter().copied().filter(|c| p.contour_profile_xy(*c).is_some()).collect();
+    let body = p.add_extrude_multi(sid, c, 10.0, Reach::Forward, 0.0, vec![]);
+    let (report, _) = qymcad_testkit::regenerate(p);
+    assert!(report.errors.is_empty(), "setup: the extrusion did not build: {:?}", report.errors);
+    body
+}
+
+/// An ellipse 20 by 10 about the origin on XY, extruded 10.
+fn extruded_ellipse(p: &mut Project) -> u64 {
+    let si = p.new_sketch("Ellipse");
+    let sid = p.sketches[si].id;
+    p.add_sketch_node(sid, "Ellipse");
+    p.add_ellipse_entity(si, p2(0.0, 0.0), 20.0, 10.0, 0.0, Purpose::Real);
+    extruded_profiles(p, si)
+}
+
+/// Three sides of a rectangle 40 x 20 on XY closed by a spline bowed up through (20, 28), extruded 10.
+fn extruded_spline(p: &mut Project) -> u64 {
+    let si = p.new_sketch("Spline");
+    let sid = p.sketches[si].id;
+    p.add_sketch_node(sid, "Spline");
+    p.add_line_entity(si, 0.0, 20.0, 0.0, 0.0, Purpose::Real);
+    p.add_line_entity(si, 0.0, 0.0, 40.0, 0.0, Purpose::Real);
+    p.add_line_entity(si, 40.0, 0.0, 40.0, 20.0, Purpose::Real);
+    p.add_spline(si, vec![p2(40.0, 20.0), p2(30.0, 26.0), p2(20.0, 28.0), p2(10.0, 26.0), p2(0.0, 20.0)], qymcad_core::feature::Ends::Open, Purpose::Real);
+    p.merge_close_points(si, 1e-9);
+    extruded_profiles(p, si)
+}
+
 /// The face of `body` whose normal is `normal`, by its id.
 fn face(p: &Project, body: u64, normal: [f64; 3]) -> u32 {
     p.regen_faces.get(&body).and_then(|fs| fs.iter().find(|f| (0..3).all(|i| (f.normal[i] - normal[i]).abs() < 1e-6))).map(|f| f.id).expect("the face of that normal")
@@ -103,8 +136,10 @@ struct Row {
     build: fn(&mut Project) -> u64,
 }
 
-const ROWS: [Row; 40] = [
+const ROWS: [Row; 42] = [
     Row { name: "an extruded block", kind: "Extrude", build: extruded_block },
+    Row { name: "an extruded ellipse", kind: "Extrude", build: extruded_ellipse },
+    Row { name: "an extruded profile closed by a spline", kind: "Extrude", build: extruded_spline },
     Row { name: "the box primitive", kind: "Box3", build: |p| p.add_box(40.0, 30.0, 10.0) },
     Row { name: "the prism primitive", kind: "Prism", build: |p| p.add_prism(10.0, 6, 10.0) },
     Row { name: "the cylinder primitive", kind: "Cylinder", build: |p| p.add_cylinder(10.0, 10.0) },

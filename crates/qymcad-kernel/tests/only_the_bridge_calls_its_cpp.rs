@@ -12,13 +12,14 @@
 const DECLARED_IN: &str = "qymcad-kernel/src/shape.rs";
 
 /// The entries of C++ that take a body to change in place, and why each may.
-const IN_PLACE: [InPlace; 6] = [
+const IN_PLACE: [InPlace; 7] = [
     InPlace { name: "qym_shape_free", why: "gives the body back" },
     InPlace { name: "qym_shape_drop_slivers", why: "a repair of the door, its names carried by `qym_result` through the record of the fixing" },
     InPlace { name: "qym_shape_heal_pinched_faces", why: "a repair of the door, its names carried by `qym_result` through the copy and the reshape" },
     InPlace { name: "qym_shape_clear_face_splits", why: "the records of pieces cleared once the names of the pieces are given" },
     InPlace { name: "qym_shape_rename_faces", why: "the names the table of the document gave, landed by the bridge" },
     InPlace { name: "qym_shape_rename_edges", why: "the names the table of the document gave, landed by the bridge" },
+    InPlace { name: "qym_shape_unshare_edge_ids", why: "a name worn by several edges taken from them before the bridge names each by its pair" },
 ];
 
 /// An entry allowed to change a body in place.

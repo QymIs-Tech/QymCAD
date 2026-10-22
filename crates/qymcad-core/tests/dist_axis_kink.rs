@@ -12,8 +12,8 @@ fn pt(p: &Project, si: usize, id: u64) -> (f64, f64) {
 fn line(p: &mut Project, si: usize, ax: f64, ay: f64, bx: f64, by: f64) -> (u64, u64) {
     let eid = p.add_line_entity(si, ax, ay, bx, by, qymcad_core::feature::Purpose::Real);
     let e = p.sketches[si].entities.iter().find(|e| e.id == eid).unwrap();
-    match e.kind {
-        qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+    match e.kind.as_line() {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => unreachable!(),
     }
 }

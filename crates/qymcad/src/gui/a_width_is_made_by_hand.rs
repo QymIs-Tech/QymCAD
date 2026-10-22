@@ -72,7 +72,7 @@ mod tests {
             qymcad_assembly::width_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, b, face);
         }
         let was = app.project.component_transform(comps[2])[3];
-        qymcad_assembly::width_pick_confirm(&mut app.joint_ctx());
+        qymcad_assembly::width_pick_confirm(&mut app.joint_ctx()).expect("the width is made");
         let at = |app: &App, c: Id| qymcad_core::feature::apply12(&app.project.world_transform(c), [0.0; 3])[0];
         // the bodies are built 60 apart inside parts standing at zero: the tab's face goes from 120 to 30 past the first
         // wall's, so its part goes by -90
@@ -98,7 +98,7 @@ mod tests {
         qymcad_assembly::width_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[2], face);
         assert_eq!(app.side.joint.width_pick.as_ref().map_or(0, |v| v.len()), 3, "{} supports picked instead of three", app.side.joint.width_pick.as_ref().map_or(0, |v| v.len()));
 
-        qymcad_assembly::width_pick_confirm(&mut app.joint_ctx());
+        qymcad_assembly::width_pick_confirm(&mut app.joint_ctx()).expect("the width is made");
         let c = app.project.mate_constraints.first().cloned().expect("the width was not created");
         assert_eq!(c.kind, ConstraintKind::Width, "the wrong constraint was created: {:?}", c.kind);
         assert_eq!(c.anchors.len(), 3, "a width must have two walls and a tab: {:?}", c.anchors);
@@ -120,11 +120,11 @@ mod tests {
         qymcad_assembly::width_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[0], face);
         let face = a_face(&app, bodies[1]);
         qymcad_assembly::width_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[1], face);
-        qymcad_assembly::width_pick_confirm(&mut app.joint_ctx());
+        let refused = qymcad_assembly::width_pick_confirm(&mut app.joint_ctx());
 
         assert!(app.project.mate_constraints.is_empty(), "the width was assembled from two supports — there is no tab");
         assert!(app.side.joint.width_pick.is_some(), "the tool was dropped instead of letting the tab be pointed at");
-        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-width-need-three")), "the person was not told what is missing: {}", app.status);
+        assert_eq!(refused, Err(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("j-width-need-three"))), "the person was not told what is missing");
     }
 
     /// THE WALLS MUST FACE THE SAME WAY: otherwise "in the middle" means nothing.

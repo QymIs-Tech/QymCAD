@@ -141,20 +141,20 @@ pub fn fonts_matching(faces: &[FontFace], query: &str) -> Vec<FontFace> {
 /// One door on purpose - the application object takes no logic by rule, and two calls plus the answer to
 /// "the person asked for a file" would be five lines of it. What the list asks for goes into the ordinary
 /// queue of requests, the same way every other button of the interface asks the application for a file.
-pub fn text_popups(mut ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx, ctx: &egui::Context, rect: Rect) -> Vec<BarAsk> {
+pub fn text_popups(mut ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx, ctx: &egui::Context) -> Vec<BarAsk> {
     let editing = tc.inline.text();
     // the preview of the text tool follows the string as it is typed: re-baked only when the string, the height or
     // the font changed, not every frame
     // A NOTE IS DRAWN IN THE INTERFACE'S FONT, so its letters are asked of that font and not of the tool's: a letter
     // the interface cannot draw is a box on the sheet, whatever the tool's font holds
-    if tc.armed.draw_kind() == 11 && tc.writes_note {
+    if tc.armed.drawing() == Some(SketchShape::Text) && tc.writes_note {
         let font = egui::FontId::proportional(14.0);
         let kept: String = tc.text.chars().filter(|c| c.is_whitespace() || ctx.fonts_mut(|f| f.has_glyph(&font, *c))).collect();
         if kept != *tc.text {
             *tc.text = kept;
             *ed.status = Notice::refusal(qymcad_i18n::tr("sk-note-no-letters"));
         }
-    } else if tc.armed.draw_kind() == 11 {
+    } else if tc.armed.drawing() == Some(SketchShape::Text) {
         let stale = tc.tool.text_ghost.as_ref().is_none_or(|(t, h, f, _)| t != &*tc.text || *h != tc.tool_text_height || f != &*tc.font);
         if stale {
             // a copy: finding the face a font stands for fills the name in, and the bar would then name a font the
@@ -185,7 +185,7 @@ pub fn text_popups(mut ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx
             tc.tool.text_ghost = Some((tc.text.clone(), tc.tool_text_height, tc.font.clone(), glyphs));
         }
     }
-    text_obj_editor(ed.reborrow(), font_cache, tc, ctx, rect);
+    text_obj_editor(ed.reborrow(), tc);
     let mut want_file = false;
     if let Some(f) = font_picker_window(font_cache, ctx, &mut want_file) {
         *ed.status = Notice::info(qymcad_i18n::tr1("pk-font-is", "name", &f.family));
@@ -196,7 +196,7 @@ pub fn text_popups(mut ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx
             if let (Sel::Sketch(si), Some(ti)) = (*ed.sel, editing) {
                 let at = ed.project.sketches[si].texts.get(ti).map(|t| (t.x, t.y, t.angle));
                 if let Some((x, y, angle)) = at {
-                    let (txt, h) = (tc.annot.text_buf.clone(), tc.annot.text_h);
+                    let (txt, h) = (tc.text.clone(), tc.tool_text_height);
                     let glyphs = bake_text_glyphs(font_cache, &f, GlyphPlace { at: Point2::new(x, y), height: h, angle }, &txt);
                     ed.project.set_sketch_text(si, ti, qymcad_core::model::TextSpec { at: Point2::new(x, y), height: h, angle, text: txt, glyphs, font: f });
                     invalidate(ed.regen);

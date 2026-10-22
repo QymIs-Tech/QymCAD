@@ -3,7 +3,7 @@
 //!
 //! The block every check starts from is 40 by 30 by 10, holding 12000 mm^3. Each check reads what the tool left: the
 //! volume, the faces and how far the body reaches.
-use qymcad::{Key, Session};
+use qymcad::{Key, Session, Tone};
 use qymcad_acceptance::build;
 use qymcad_acceptance::probe;
 
@@ -287,7 +287,7 @@ probe! {
         take(&mut s, "tb-thread-hint");
         let side = the_side_of_the_shaft(&mut s, 10.0, 10.0);
         s.click(side);
-        field(&mut s, "f-nominal-d", "20");
+        field(&mut s, "th-nominal-d", "20");
         field(&mut s, "f-length", "10");
         s.key(Key::Enter);
         let now = body(&mut s);
@@ -311,7 +311,7 @@ probe! {
             take(&mut s, "tb-thread-hint");
             let side = the_side_of_the_shaft(&mut s, 10.0, 10.0);
             s.click(side);
-            field(&mut s, "f-nominal-d", "20");
+            field(&mut s, "th-nominal-d", "20");
             field(&mut s, "f-length", "10");
             s.key(Key::Enter);
             before - body(&mut s).volume
@@ -321,9 +321,9 @@ probe! {
         take(&mut s, "tb-thread-hint");
         let side = the_side_of_the_shaft(&mut s, 10.0, 10.0);
         s.click(side);
-        field(&mut s, "f-nominal-d", "20");
+        field(&mut s, "th-nominal-d", "20");
         field(&mut s, "f-length", "10");
-        field(&mut s, "f-pitch-std", "4");
+        field(&mut s, "th-pitch-std", "4");
         s.key(Key::Enter);
         let mine = before - body(&mut s).volume;
         assert!(mine > 0.0, "the thread of one's own pitch took nothing off");
@@ -373,7 +373,9 @@ probe! {
         let at = s.edge_at([20.0, 2.0, 10.0]);
         s.click(at);
         s.key(Key::Enter);
-        assert!(s.status() == s.word("msg-patch-needs-edges"), "nothing says one edge is not a boundary: the status line says {:?}", s.status());
+        let why = s.word("msg-patch-needs-edges");
+        let said = s.tool_says();
+        assert!(said.iter().any(|n| n.tone == Tone::Refusal && n.words.contains(&why)), "nothing says one edge is not a boundary where the patch speaks: {said:?}");
         assert!(s.document().bodies == before.bodies, "a surface was made across a single edge anyway");
     }
 }

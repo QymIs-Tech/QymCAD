@@ -11,15 +11,15 @@ mod tests {
     use super::super::hand::Hand;
     use super::super::{App, Sel};
     use qymcad_core::feature::SketchPlane;
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
 
     /// A line from (0, 0) to (40, 0) and a circle about (25, 30), the select tool taken.
     fn a_line_and_a_circle() -> (App, usize) {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape);
-        Hand::new(&mut app).sk_tool(3).click2d(25.0, 30.0).click2d(30.0, 30.0).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(25.0, 30.0).click2d(30.0, 30.0).key(egui::Key::Escape);
         (app, si)
     }
 
@@ -28,11 +28,11 @@ mod tests {
     }
 
     fn centre(app: &App, si: usize) -> u64 {
-        app.project.sketches[si].entities.iter().find_map(|e| if let EntityKind::Circle { center, .. } = e.kind { Some(center) } else { None }).expect("the circle")
+        app.project.sketches[si].entities.iter().find_map(|e| if let Some(qymcad_core::model::CircleParts { center, .. }) = e.kind.as_circle() { Some(center) } else { None }).expect("the circle")
     }
 
     fn line_ends(app: &App, si: usize) -> (u64, u64) {
-        app.project.sketches[si].entities.iter().find_map(|e| if let EntityKind::Line { a, b } = e.kind { Some((a, b)) } else { None }).expect("the line")
+        app.project.sketches[si].entities.iter().find_map(|e| if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() { Some((a, b)) } else { None }).expect("the line")
     }
 
     #[test]
@@ -40,15 +40,18 @@ mod tests {
         let (mut app, si) = a_line_and_a_circle();
         let c = centre(&app, si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.hover2d(20.0, 0.0);
         assert!(matches!(hand.app.snap_hint, Some((_, 3))), "the triangle of the middle does not show under the pointer");
         hand.click2d(20.0, 0.0);
-        let picked: Vec<(u8, u64)> = hand.app.tools.sel_sk.items.clone();
-        assert!(matches!(picked.as_slice(), [(1, _)]) && hand.app.tools.sel_sk.at_middle == vec![picked[0].1], "a click on the middle did not pick the line at its middle: {picked:?}");
+        let picked: Vec<qymcad_ui_state::SketchItem> = hand.app.tools.sel_sk.items.clone();
+        assert!(
+            matches!(picked.as_slice(), [qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, .. }]) && hand.app.tools.sel_sk.at_middle == vec![picked[0].id],
+            "a click on the middle did not pick the line at its middle: {picked:?}"
+        );
         let centre_at = at(hand.app, si, c);
         hand.shift_click2d(centre_at.0, centre_at.1);
-        Hand::new(&mut app).constraint(2);
+        Hand::new(&mut app).constraint(qymcad_ui_state::ConstraintKind::Vertical);
         let mid = app.project.sketches[si].constraints.iter().find_map(|k| match *k {
             Constraint::Midpoint { p, .. } => Some(p),
             _ => None,
@@ -60,7 +63,7 @@ mod tests {
         // the line dragged by its far end: its middle moves, and the centre with it
         let (_, b) = line_ends(&app, si);
         let end = at(&app, si, b);
-        Hand::new(&mut app).sk_tool(0).drag2d(end, (end.0 + 10.0, end.1));
+        Hand::new(&mut app).sk_select().drag2d(end, (end.0 + 10.0, end.1));
         let (m, k) = (at(&app, si, mid), at(&app, si, c));
         let (a, b) = line_ends(&app, si);
         let (pa, pb) = (at(&app, si, a), at(&app, si, b));
@@ -71,12 +74,12 @@ mod tests {
     fn a_click_on_the_line_off_its_middle_picks_the_line() {
         let (mut app, si) = a_line_and_a_circle();
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.hover2d(10.0, 0.0);
         assert!(!matches!(hand.app.snap_hint, Some((_, 3))), "setup: no triangle a quarter along the line");
         hand.click2d(10.0, 0.0);
         let picked = hand.app.tools.sel_sk.items.clone();
-        assert!(matches!(picked.as_slice(), [(1, _)]), "a click on the line off its middle did not pick the line: {picked:?}");
+        assert!(matches!(picked.as_slice(), [qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, .. }]), "a click on the line off its middle did not pick the line: {picked:?}");
         let _ = si;
     }
 
@@ -85,15 +88,15 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(0.0, 0.0).click2d(40.0, 4.0).key(egui::Key::Escape).click2d(0.0, 20.0).click2d(40.0, 25.0).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(40.0, 4.0).key(egui::Key::Escape).click2d(0.0, 20.0).click2d(40.0, 25.0).key(egui::Key::Escape);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.hover2d(20.0, 2.0);
         hand.click2d(20.0, 2.0);
         hand.hover2d(20.0, 22.5);
         hand.shift_click2d(20.0, 22.5);
         assert_eq!(hand.app.tools.sel_sk.at_middle.len(), 2, "setup: both lines clicked at their middles: {:?}", hand.app.tools.sel_sk.items);
-        Hand::new(&mut app).constraint(1);
+        Hand::new(&mut app).constraint(qymcad_ui_state::ConstraintKind::Horizontal);
         let s = &app.project.sketches[si];
         let h = s.constraints.iter().filter(|k| matches!(k, Constraint::Horizontal { .. })).count();
         let mids = s.constraints.iter().filter(|k| matches!(k, Constraint::Midpoint { .. })).count();
@@ -107,7 +110,7 @@ mod tests {
     fn a_line_picked_at_its_middle_shows_a_ring_there() {
         let (mut app, _) = a_line_and_a_circle();
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.hover2d(20.0, 0.0);
         hand.click2d(20.0, 0.0);
         hand.hover2d(20.0, 15.0);

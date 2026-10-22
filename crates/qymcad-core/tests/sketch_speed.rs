@@ -9,7 +9,7 @@
 //! sizes to 300 are run - a smoke of the harness, not a measure.
 mod sketch_kinds;
 
-use qymcad_core::model::{Constraint, EntityKind, Project, SketchPoint};
+use qymcad_core::model::{Constraint, Project, SketchPoint};
 use sketch_kinds::{build, Kind, KINDS};
 use std::time::{Duration, Instant};
 
@@ -39,10 +39,9 @@ const OPS: [Op; 10] = [Op::Solve, Op::Drag, Op::AddConstraint, Op::AddDimension,
 /// The first point of the sketch that a shape stands on, to drag and to tie a new constraint to.
 fn a_point(p: &Project, si: usize) -> Option<SketchPoint> {
     let s = &p.sketches[si];
-    let id = s.entities.first().map(|e| match e.kind {
-        EntityKind::Line { a, .. } | EntityKind::Arc { a, .. } => a,
-        EntityKind::Circle { center, .. } => center,
-        EntityKind::Ellipse { c, .. } => c,
+    let id = s.entities.first().and_then(|e| match e.kind.as_arc() {
+        Some(qymcad_core::model::ArcParts { a, .. }) => Some(a),
+        _ => qymcad_core::model::entity_points(e).first().copied(),
     })?;
     s.points.iter().find(|q| q.id == id).copied()
 }

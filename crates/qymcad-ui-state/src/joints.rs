@@ -161,8 +161,8 @@ pub fn comp_array_kind(arr: ArrayParams, carr: &CompArrayCmd, cmd: &FeatCommand)
         _ => [1.0, 0.0, 0.0],
     };
     let count = arr.count.max(1);
-    if carr.mode == 2 {
-        let angle = if arr.full { 360.0 } else { cmd_val(cmd, "cangle") };
+    if carr.is_circular() {
+        let angle = cmd_val(cmd, "cangle");
         // THE AXIS PASSES THROUGH THE ORIGIN OF THE ASSEMBLY: the array has no axis of its own yet, and
         // that is stated honestly - for bolts around a flange the part is placed relative to the origin
         // of the assembly, and the centre sits there too.
@@ -324,8 +324,48 @@ pub fn change_joint_kind(project: &mut Project, status: &mut Notice, jid: Id, ne
 /// Leave the joint editing mode (Esc or Done).
 pub fn exit_joint_edit(joint: &mut JointCommand, status: &mut Notice) {
     joint.edit = None;
+    joint.edit_from = None;
     joint.edit_repick = None;
     *status = Notice::info(qymcad_i18n::tr("g-joint-edit-done"));
+}
+
+/// REMEMBER THE DOCUMENT as the joint in `joint.edit` is opened for editing, once per opening; forget it when no joint
+/// is edited. A change not yet laid as a step is laid first, so the first step of the edit starts from the document
+/// remembered. A joint just made is not remembered: its own open operation takes it away whole.
+pub fn joint_edit_remember(edits: &mut Edits, project: &Project, joint: &mut JointCommand) {
+    let Some(jid) = joint.edit.filter(|_| !joint.creating) else {
+        joint.edit_from = None;
+        return;
+    };
+    if joint.edit_from.as_ref().is_some_and(|f| f.joint == jid) || edits.open.is_some() {
+        return;
+    }
+    settle_step(edits, project, qymcad_i18n::tr("status-edit-joint"), false);
+    joint.edit_from = Some(EditFrom { joint: jid, before: Snapshot { project: project.clone() } });
+}
+
+/// CANCEL THE EDIT OF A JOINT: the document comes back as it stood when the joint was opened (`from`), and the steps the
+/// edit laid leave the history with it, so Ctrl+Z after Cancel undoes what came before the edit. Those steps are the
+/// ones down to the first that starts from the document remembered - `joint_edit_remember` laid what was pending, so
+/// the first step of the edit starts there.
+pub fn joint_edit_cancel(rc: &mut RebuildCtx, from: EditFrom) {
+    let key = doc_key(&from.before.project);
+    if rc.edits.open.is_some() {
+        close_edit(rc.edits, rc.project); // the values being typed close as a step, taken away below with the rest
+    }
+    settle_step(rc.edits, rc.project, qymcad_i18n::tr("status-edit-joint"), false);
+    if doc_key(rc.project) == key {
+        return;
+    }
+    while let Some(step) = rc.edits.undo.pop() {
+        if doc_key(&step.snap.project) == key {
+            break;
+        }
+    }
+    rc.edits.redo.clear();
+    rc.edits.baseline = from.before.clone();
+    let _ = restore(rc, from.before); // the window stays where the edit was made
+    rc.edits.committed_key = doc_key(rc.project);
 }
 
 /// The name of the PART that owns body `body` (for the anchor's label in the editing popup).
@@ -384,9 +424,27 @@ pub struct JointCtx<'a> {
     pub set: &'a Settings,
     pub workbench: Workbench,
     pub mode_3d: bool,
+    /// Where the view stands on screen: the words of the tool in hand lie in its corner.
+    pub canvas: egui::Rect,
+    /// Where a number of the bar keeps what is typed in it: the ratio of a relation.
+    pub bar_exprs: &'a mut std::collections::HashMap<&'static str, String>,
+    /// The rows held with the selection - the joints of the list picked with Shift or Ctrl - for a tool taken next.
+    pub held: &'a [Id],
+}
+
+/// THE FIELDS OF THE JOINT BOX, kept between frames: which joint they are of, and what is typed in them.
+#[derive(Clone, Default)]
+pub struct JointFields {
+    pub joint: Id,
+    pub fields: Vec<CmdParam>,
 }
 
 impl JointCtx<'_> {
+    /// Drawing, through this workbench's own fields - as in the part and the sketch.
+    pub fn draw(&self) -> DrawCtx<'_> {
+        DrawCtx { cam: self.cam, set: self.set, scheme: self.scheme, project: self.project, active_path: self.active_path }
+    }
+
     /// THE REBUILD, THROUGH THE ASSEMBLY'S OWN FIELDS. `mark_dirty_for_rebuild` and `commit_edit` are the
     /// commonest things this workbench does - twenty calls between them - and both take the rebuild
     /// context, which is built out of ten fields this record already holds. Composed rather than carried

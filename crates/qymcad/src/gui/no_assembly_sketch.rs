@@ -27,7 +27,7 @@ mod tests {
         // a datum, however, can be started: it works there (mirror, section)
         app.cancel_all_tools();
         app.assembly_hotkey(egui::Key::D);
-        assert_ne!(app.tools.armed.cmd_kind(), 0, "a datum must stay in an assembly: the mirror and the section consume it");
+        assert!(app.tools.armed.part_tool().is_some(), "a datum must stay in an assembly: the mirror and the section consume it");
 
         // THE PART: a sketch does start
         let body = app.project.mesh_id(0).expect("the body");

@@ -98,52 +98,26 @@ pub fn dim_expr_field_in(rc: &mut RebuildCtx, ui: &mut egui::Ui, id: Id, key: &s
         // behaviour: a buffer, a refusal that loses no letters, and the owner named.
         let target = qymcad_core::model::DimTarget::Feature { node: id, key: key.to_string() };
         let cur_name = rc.project.name_of_target(&target);
-        // THE NAME CHECK IS COMPUTED BEFORE THE EDIT. The closure holds `rc.project` while applying
-        // asks for `&mut self`: both cannot be borrowed at once, so the verdict is computed up front and
-        // the ready answer is what gets used further on.
         ui.label(qymcad_i18n::tr("sk-driver-label")).on_hover_text(qymcad_i18n::tr("sk-driver-name-hint"));
         let nid = if place.is_empty() { egui::Id::new(("featdrv", id, key)) } else { egui::Id::new(("featdrv", id, key, place)) };
-        // a name that would close a circle of formulas will not do either, and the line says the chain
-        let fits = |project: &qymcad_core::model::Project, nm: &str| {
-            nm.is_empty() || (qymcad_core::drivers::check_ident(nm).is_ok() && !project.driver_name_taken_by(nm, &target) && project.naming_closes_circle(&target, nm).is_none())
-        };
+        // THE NAME IS JUDGED AND GIVEN BY THE ONE DESCRIPTION OF A NAME (`tool_frame/names.rs`), as in every box: what will
+        // not do keeps its letters and says why under the field, whose it is when somebody holds it
         let rn = {
-            let ok = |nm: &str| fits(rc.project, nm);
+            let ok = |nm: &str| name_unfit(rc.project, Some(&target), nm.trim()).is_none();
             name_field(ui, rc.project, nid, &cur_name, 100.0, &qymcad_i18n::tr("sk-name-placeholder"), &ok)
         };
         let nm = rn.text.trim().to_string();
-        let name_ok = fits(rc.project, &nm);
-        if rn.committed && nm != cur_name.trim() {
-            begin_edit(rc.edits, rc.project, qymcad_i18n::tr("sk-driver-step"));
-            let old = cur_name.trim().to_string();
-            if !old.is_empty() && !nm.is_empty() {
-                let _ = rc.project.rename_driver(&old, &nm);
-            } else {
-                rc.project.name_dim(nm.clone(), target.clone());
-            }
+        if rn.committed && nm != cur_name.trim() && name_unfit(rc.project, Some(&target), &nm).is_none() {
+            begin_edit(rc.edits, rc.project, qymcad_i18n::tr("box-driver-step"));
+            give_name(rc.project, target.clone(), &nm);
             commit_edit(rc);
             if !nm.is_empty() {
                 rc.project.mark_param_dependents_dirty_for(&nm);
             }
             mark_dirty_for_rebuild(rc);
         }
-        if !nm.is_empty() && !name_ok {
-            // THE OWNER IS SOMEBODY ELSE: the number keeps its own name in the field, and a name of its own that will not
-            // do (`pi` from a document on disk) is unfit, not taken. The path is said in words, as the tree says it.
-            let other = rc.project.driver_name_taken_by(&nm, &target);
-            let who = rc.project.name_owner(&nm).filter(|_| other).map(|o| if o.path.is_empty() { qymcad_i18n::tr("par-owner-project") } else { crate::path_in_words(&o.path) });
-            // THE HINT GIVES THE SAME REASON AS THE LINE: "taken" only when somebody holds the name. Reported
-            // behaviour: over `pi`, which nobody holds, the hint said another dimension already used the name.
-            let unfit = match rc.project.naming_closes_circle(&target, &nm) {
-                Some(chain) => qymcad_i18n::error_words::expr_error_text(&qymcad_core::errors::ExprError::LeansOnItself(chain)),
-                None => qymcad_i18n::error_words::ident_refusal_text(&nm),
-            };
-            let hint = if who.is_some() { qymcad_i18n::tr("sk-driver-name-taken-hint") } else { unfit.clone() };
-            let msg = match who {
-                Some(w) => qymcad_i18n::tr2("par-name-taken", "name", &nm, "where", &w),
-                None => unfit,
-            };
-            crate::say(ui, &rc.scheme.pal, &crate::Notice::warning(msg), crate::NoticeSize::Small).on_hover_text(hint);
+        if let Some(u) = name_unfit(rc.project, Some(&target), &nm) {
+            crate::say(ui, &rc.scheme.pal, &crate::Notice::warning(u.said), crate::NoticeSize::Small).on_hover_text(u.hint);
         }
         let shown = o.text;
         if !shown.trim().is_empty() {
@@ -206,6 +180,17 @@ pub enum NameList {
 pub enum Focus {
     Takes,
     Waits,
+}
+
+impl Focus {
+    /// The focus a tool asked for once, the ask spent: the first field takes the keyboard in this frame alone.
+    pub fn take(asked: &mut bool) -> Focus {
+        if std::mem::take(asked) {
+            Focus::Takes
+        } else {
+            Focus::Waits
+        }
+    }
 }
 
 /// How a field treats what is typed into it: what it accepts, whether it offers names, whether it takes the keyboard.
@@ -552,123 +537,60 @@ pub const LIST_MAX_ROWS: usize = 8;
 /// THE KEY UNDER WHICH A FIELD SAYS "MY LIST IS OPEN RIGHT NOW".
 pub const LIST_OPEN: &str = "qym_expr_list_open";
 
-/// HOW A NUMBER IN THE OPTIONS BAR IS WRITTEN AND BOUNDED: the limits it is clamped to, whether it is
-/// whole, and the unit shown after it.
-///
-/// Four things about the SHAPE of the field, as opposed to its value, and they trailed twenty-nine call
-/// sites as four loose arguments, where `false` and `""` said nothing about which was which.
-#[derive(Clone, Copy)]
-pub struct NumFormat<'a> {
-    pub lo: f64,
-    pub hi: f64,
-    pub integer: bool,
-    pub suffix: &'a str,
-    /// Zero is no value for this field, though both signs are: an offset of 0 is the geometry itself.
-    pub nonzero: bool,
+/// A NUMBER OF A PANEL: the widget it is told apart by, the value it shows and takes, the formula it is written by when
+/// it keeps one - a dimension of a sketch in its list - and what it takes.
+pub struct PanelNumber<'a> {
+    pub id: egui::Id,
+    pub value: &'a mut f64,
+    pub formula: Option<&'a mut String>,
+    pub limits: Limits,
 }
 
-pub fn num_or_expr(p: &mut ExprBarCtx, ui: &mut egui::Ui, key: &'static str, cur: f64, fmt: NumFormat) -> f64 {
-    let NumFormat { lo, hi, integer, suffix, nonzero } = fmt;
-    let vars = p.project.param_map();
-    // THE TEXT IS BORROWED FOR A MOMENT. The drop-down list reads the whole document while the buffer
-    // sits in the same `self`, and both cannot be borrowed at once. We work on a copy and put it back.
-    let txt = p.bar_exprs.get(key).cloned().unwrap_or_else(|| if integer { format!("{cur:.0}") } else { qymcad_core::expr::fmt_num(cur) });
-    let w = (60.0 + suffix.len() as f32 * 6.0).min(96.0);
-    // ONE FIELD, AND IN THE FEATURES TOO, not only in sketches. This expression field is a single one
-    // for ALL the tool bars (see `expr_fields.rs`), so the list of drivers and the typing rules arrive
-    // everywhere at once: in extrude, fillet, chamfer, shell, hole, draft and pattern.
-    //
-    // A tool bar does not change the document — it shows a preview — so the text lives in `bar_exprs`
-    // and is read every frame; the rule that editing text is not editing the model holds by itself here.
-    let o = expr_field(ui, p.project, bar_field_id(key), &txt, w, &qymcad_i18n::tr("g-expr-placeholder"));
-    // ENTER IN A FIELD OF THE BAR IS THE ENTER THE BAR ASKS FOR: it leaves the field and is marked, so the tool
-    // applies at the same press instead of waiting for a second one (see `bar_enter_take`)
-    if o.committed && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-        let frame = ui.ctx().cumulative_pass_nr();
-        ui.data_mut(|d| d.insert_temp(egui::Id::new(BAR_ENTER), frame));
+/// A NUMBER OF A PANEL TYPED AS A FORMULA, as every field of a box at the geometry is: `50`, `w/2`, `len+5`, the example
+/// in the empty field and how a value is typed in the hint over it; a value the field cannot take - a broken formula,
+/// zero where zero is no value, past the limits - keeps the value and says why beside it; a formula says what it comes
+/// to. A number that keeps its formula keeps `w/2` as its formula, which follows `w`, and a plain number clears it. The
+/// panels used to drag a number with no formula at all. Answers whether the value or its formula changed.
+pub fn panel_number(ui: &mut egui::Ui, project: &Project, n: PanelNumber) -> bool {
+    let PanelNumber { id, value, formula, limits } = n;
+    let model = match formula.as_deref() {
+        Some(f) if !f.trim().is_empty() => f.to_string(),
+        _ => qymcad_core::expr::fmt_num(*value),
+    };
+    let o = expr_field(ui, project, id, &model, 74.0, &qymcad_i18n::tr("f-number-or-expr"));
+    o.resp.clone().on_hover_text(qymcad_i18n::tr("sk-enter-apply-expr"));
+    if let Some(unit) = limits.unit {
+        ui.label(egui::RichText::new(qymcad_i18n::tr(unit).trim().to_string()).weak());
     }
-    let txt = o.text;
-    p.bar_exprs.insert(key, txt.clone());
-    // A VALUE THAT CANNOT BE TAKEN is refused where it is typed: the reason on the mark beside the field, the old value
-    // kept, the Apply and Enter of the command closed (`bar_fields_valid`). It used to be pressed to the nearest limit
-    // or rounded and taken without a word: 521 copies became 512, 6.5 became 7.
-    let checked = qymcad_core::expr::eval(&txt, &vars).map_err(|e| qymcad_i18n::error_words::expr_error_text(&e)).and_then(|v| {
-        if nonzero && v.abs() < 1e-9 {
-            Err(qymcad_i18n::tr("cmd-value-zero"))
-        } else if integer && (v - v.round()).abs() > 1e-9 {
-            Err(qymcad_i18n::tr("cmd-value-whole"))
-        } else if v < lo - 1e-9 || v > hi + 1e-9 {
-            Err(qymcad_i18n::tr2("cmd-value-out-of-range", "lo", &qymcad_core::expr::fmt_num(lo), "hi", &qymcad_core::expr::fmt_num(hi)))
-        } else {
-            Ok(v)
+    let mut p = CmdParam::new("f-number-or-expr", "n", *value, *limits.range.start(), *limits.range.end());
+    p.number = limits.number;
+    p.nonzero = limits.zero == Zero::Refused;
+    p.txt = o.text.clone();
+    let judged = field_value(&p, &project.param_map());
+    let plain = p.txt.trim().parse::<f64>().is_ok();
+    match &judged {
+        Err(why) => {
+            tone_mark_in(ui, Tone::Refusal).on_hover_text(why);
         }
-    });
-    BAR_BAD_KEYS.with(|b| {
-        let mut b = b.borrow_mut();
-        if checked.is_err() {
-            b.insert(key);
-        } else {
-            b.remove(key);
+        Ok(v) if !plain => {
+            ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(*v, 3))).weak().small());
         }
-    });
-    let frame = ui.ctx().cumulative_pass_nr();
-    ui.data_mut(|d| {
-        let bad = d.get_temp_mut_or_default::<std::collections::HashMap<&'static str, u64>>(egui::Id::new(BAR_BAD));
-        if checked.is_err() {
-            bad.insert(key, frame);
-        } else {
-            bad.remove(key);
-        }
-    });
-    match checked {
-        Ok(v) => v,
-        Err(msg) => {
-            // the reason on the mark beside the field, as the fields at the geometry give it
-            crate::tone_mark(ui, &p.scheme.pal, crate::Tone::Refusal).on_hover_text(&msg);
-            cur
-        }
+        Ok(_) => {}
     }
-}
-
-/// The widget of the bar field under `key`: whoever shares its value asks it whether it is being typed in.
-pub fn bar_field_id(key: &'static str) -> egui::Id {
-    egui::Id::new(("bar_expr", key))
-}
-
-/// Where the fields of the tool bars keep which of them hold a value that cannot be taken, and in which frame.
-pub(crate) const BAR_BAD: &str = "bar_expr_bad";
-
-/// Where a field of a tool bar marks the frame its Enter was pressed in.
-pub(crate) const BAR_ENTER: &str = "bar_expr_enter";
-
-/// WAS ENTER PRESSED IN A FIELD OF THE BAR just now (this frame or the one before)? Taken once: the tool that
-/// applies on it clears the mark. The field keeps the keyboard in the frame of the press, so the tool's own check of
-/// Enter - which waits for the keyboard to be free - would not see it until a second press.
-pub fn bar_enter_take(ctx: &egui::Context) -> bool {
-    bar_enter_take_inner(ctx)
-}
-
-/// THE BAR'S APPLY BUTTON IS THE BAR'S ENTER: pressed, it marks the same Enter a field of the bar marks, so the tool
-/// applies by the one path it applies on from the keyboard (`bar_enter_take`).
-pub fn bar_apply_press(ctx: &egui::Context) {
-    let frame = ctx.cumulative_pass_nr();
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(BAR_ENTER), frame));
-}
-
-pub(crate) fn bar_enter_take_inner(ctx: &egui::Context) -> bool {
-    let now = ctx.cumulative_pass_nr();
-    let at: Option<u64> = ctx.data_mut(|d| d.remove_temp(egui::Id::new(BAR_ENTER)));
-    at.is_some_and(|f| f + 1 >= now) && bar_fields_valid(ctx)
-}
-
-/// DOES THE BAR FIELD `key` HOLD A VALUE THAT CANNOT BE TAKEN, as it was last drawn?
-pub fn bar_field_bad(key: &str) -> bool {
-    BAR_BAD_KEYS.with(|b| b.borrow().contains(key))
-}
-
-/// DO THE FIELDS OF THE TOOL BAR DRAWN NOW ALL HOLD VALUES THAT CAN BE TAKEN? A field refused in the frame just drawn
-/// (or the one before) closes Apply and Enter; a field of a bar no longer drawn does not count.
-pub fn bar_fields_valid(ctx: &egui::Context) -> bool {
-    let now = ctx.cumulative_pass_nr();
-    ctx.data(|d| d.get_temp::<std::collections::HashMap<&'static str, u64>>(egui::Id::new(BAR_BAD))).is_none_or(|bad| bad.values().all(|&f| f + 2 < now))
+    let Ok(v) = judged else { return false };
+    if !o.committed {
+        return false;
+    }
+    match formula {
+        Some(f) if o.text.trim() != model.trim() => {
+            *value = v;
+            *f = if plain { String::new() } else { o.text.trim().to_string() };
+            true
+        }
+        None if (v - *value).abs() > 1e-12 => {
+            *value = v;
+            true
+        }
+        _ => false,
+    }
 }

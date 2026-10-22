@@ -9,7 +9,11 @@
 //! Enter or Esc. It has nothing else — and that is its main property.
 
 #[cfg(test)]
+mod presses;
+#[cfg(test)]
 mod sketch_text;
+#[cfg(test)]
+pub(super) use presses::escape;
 
 /// A CARRY ON THE SCREEN: where the button goes down and where the hand holds it, the button still down.
 #[cfg(test)]
@@ -408,7 +412,8 @@ impl<'a> Hand<'a> {
     /// EVERY RUN OF WORDS THE NEXT FRAME PAINTS, with its place and its colour: a warning is told from information by
     /// the colour on screen, which is what a person sees, not by the field behind it.
     pub fn painted_words(&mut self) -> Vec<PaintedWords> {
-        self.frame(Vec::new());
+        // words laid in a plate that has just come up are laid unseen in its first frame and shown from the next
+        self.frame(Vec::new()).frame(Vec::new());
         painted_in(&self.win.shapes)
     }
 
@@ -494,16 +499,7 @@ impl<'a> Hand<'a> {
     /// PRESS WHERE `word` IS WRITTEN - the one nearest to `near` when the frame wrote it in several places.
     /// Answers whether the word was on screen.
     pub fn press_word(&mut self, word: &str, near: egui::Pos2) -> bool {
-        self.frame(Vec::new());
-        let Some(at) = self.win.drawn.iter().filter(|(t, _)| t == word).map(|(_, r)| r.center()).min_by(|a, b| a.distance(near).total_cmp(&b.distance(near))) else {
-            return false;
-        };
-        self.win.clock += 1.0;
-        self.frame(vec![egui::Event::PointerMoved(at)]);
-        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-        self.frame(vec![button(true)]);
-        self.frame(vec![button(false)]);
-        true
+        self.press_word_holding(word, near, egui::Modifiers::NONE)
     }
 
     /// WHAT THE TRIAL BUILD SAYS of the command as it stands, waited for the way a person waits for the preview: the
@@ -592,10 +588,10 @@ impl<'a> Hand<'a> {
     }
 
     /// PICK ITEMS OF THE SKETCH WITH THE MOUSE: the first with a click, every next one with Shift and a click, as
-    /// a person adds to a selection. An item is `(0, point)` or `(1, line)`. Answers whether a place to click was
+    /// a person adds to a selection. An item is a point or a curve. Answers whether a place to click was
     /// found for every one - found before the first click, so a hand that cannot reach the second item does not
     /// pick the first one either. The window closes after it.
-    pub fn select2d(&mut self, items: &[(u8, u64)]) -> bool {
+    pub fn select2d(&mut self, items: &[qymcad_ui_state::SketchItem]) -> bool {
         let places = self.places_on2d(items);
         let all: Vec<(f64, f64)> = places.iter().flatten().copied().collect();
         let n = all.len().max(1) as f64;
@@ -614,10 +610,10 @@ impl<'a> Hand<'a> {
         true
     }
 
-    /// A PLACE TO CLICK ON AN ITEM of the sketch (`(0, point)`, or `(1, line or circle)`), found as a person finds it: along
+    /// A PLACE TO CLICK ON AN ITEM of the sketch (a point, or a line or a circle), found as a person finds it: along
     /// the item until a click there would pick it. The view is aimed at the item first, at the scale of the
     /// sketch tools; the window closes after it.
-    pub fn spot2d(&mut self, item: (u8, u64)) -> Option<(f64, f64)> {
+    pub fn spot2d(&mut self, item: qymcad_ui_state::SketchItem) -> Option<(f64, f64)> {
         let places = self.places_on2d(&[item]).remove(0);
         let n = places.len().max(1) as f64;
         self.look2d(places.iter().fold((0.0, 0.0), |(sx, sy), (x, y)| (sx + x / n, sy + y / n)));
@@ -627,30 +623,30 @@ impl<'a> Hand<'a> {
         spot
     }
 
+    /// WHETHER A CLICK AT `place` WOULD PICK `item` - the hand looks where it is about to click and sees what lights up
+    /// under the pointer. The place is brought into view first.
+    pub fn would_pick2d(&mut self, place: (f64, f64), item: qymcad_ui_state::SketchItem) -> bool {
+        self.in_view2d(&[place]);
+        self.picks2d(place) == Some(item)
+    }
+
     /// The places along each item a hand would try: a point is its own place, a line is tried from the middle
     /// outwards.
-    fn places_on2d(&self, items: &[(u8, u64)]) -> Vec<Vec<(f64, f64)>> {
+    fn places_on2d(&self, items: &[qymcad_ui_state::SketchItem]) -> Vec<Vec<(f64, f64)>> {
         let Some(si) = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses) else { return items.iter().map(|_| Vec::new()).collect() };
         let sk = &self.app.project.sketches[si];
         let at = |id: u64| sk.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
         items
             .iter()
-            .map(|(kind, id)| match kind {
-                0 => at(*id).into_iter().collect(),
+            .map(|qymcad_ui_state::SketchItem { kind, id }| match kind {
+                qymcad_ui_state::ItemKind::Point => at(*id).into_iter().collect(),
                 _ => sk
                     .entities
                     .iter()
                     .find(|e| e.id == *id)
-                    .map(|e| match e.kind {
-                        qymcad_core::model::EntityKind::Line { a, b } => {
-                            at(a).zip(at(b)).map(|(u, v)| [0.5, 0.37, 0.63, 0.25, 0.75, 0.15, 0.85].iter().map(|t| (u.0 + (v.0 - u.0) * t, u.1 + (v.1 - u.1) * t)).collect()).unwrap_or_default()
-                        }
-                        // a circle along its rim, from the top round
-                        qymcad_core::model::EntityKind::Circle { center, r } => at(center)
-                            .map(|c| [90.0f64, 45.0, 135.0, 0.0, 180.0, 225.0, 315.0, 270.0].iter().map(|deg| (c.0 + r * deg.to_radians().cos(), c.1 + r * deg.to_radians().sin())).collect())
-                            .unwrap_or_default(),
-                        _ => Vec::new(),
-                    })
+                    // a curve of any kind tried from its middle outwards
+                    .and_then(|e| qymcad_core::model::curve::Curve::of(sk, e))
+                    .map(|c| [0.5, 0.37, 0.63, 0.25, 0.75, 0.15, 0.85, 0.05, 0.95].iter().map(|t| c.at(*t)).map(|p| (p.x, p.y)).collect())
                     .unwrap_or_default(),
             })
             .collect()
@@ -659,7 +655,7 @@ impl<'a> Hand<'a> {
     /// WHAT A CLICK AT A PLACE WOULD PICK, as the hand sees it light up under the pointer. A label, a note, a
     /// constraint glyph and a dimension caption take a click before the geometry does, in the order the window
     /// asks them; any of those answers "not the item".
-    fn picks2d(&mut self, place: (f64, f64)) -> Option<(u8, u64)> {
+    fn picks2d(&mut self, place: (f64, f64)) -> Option<qymcad_ui_state::SketchItem> {
         let si = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses)?;
         let (rect, pos) = (self.app.viewing.view_rect, self.screen2d(place));
         if qymcad_ui_state::text_at(&self.app.project, &self.app.viewing.view, rect, pos, si).is_some() || qymcad_ui_state::note_at(&self.app.project, &self.app.viewing.view, rect, pos, si).is_some()
@@ -696,8 +692,9 @@ impl<'a> Hand<'a> {
     /// WHERE THE BOX OF THE CORNER TOOLS STANDS on screen, as the last frame laid it out; `None` while it is not up. The
     /// box of a set of corners, or the one of "fillet all", which is opened for the whole shape (point 0).
     pub fn corner_box(&self) -> Option<egui::Rect> {
-        let si = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses)?;
-        [qymcad_ui_state::CORNER_SET, 0].into_iter().find_map(|pid| self.win.ctx.memory(|m| m.area_rect(egui::Id::new(("cornerinput", si, pid)))))
+        // the box of the set of corners is the box of the tool in hand, as every box of the frame is
+        self.app.tools.corner.at?;
+        self.tool_box_id().and_then(|id| self.area_rect(id))
     }
 
     /// Where a place of the sketch stands on screen, on the canvas as the last frame laid it out.
@@ -749,6 +746,8 @@ impl<'a> Hand<'a> {
 
     /// TYPE `text` on the keyboard, into whatever field holds the focus.
     pub fn type_text(&mut self, text: &str) -> &mut Self {
+        // a box opened by the last frame is laid unseen in it and takes the keys from the next, as a person sees it
+        self.frame(Vec::new());
         self.frame(vec![egui::Event::Text(text.to_string())])
     }
 
@@ -775,7 +774,7 @@ impl<'a> Hand<'a> {
     }
 
     /// Press a tool button in the panel.
-    pub fn tool(&mut self, kind: u8) -> &mut Self {
+    pub fn tool(&mut self, kind: qymcad_ui_state::PartTool) -> &mut Self {
         self.app.start_feat_cmd(kind);
         // WAIT FOR THE LIVE B-rep TO BE PREPARED, the way a person waits for it. After a file is
         // opened the kernel comes up in the background, and until then the body has neither edges nor
@@ -861,31 +860,26 @@ impl<'a> Hand<'a> {
         hand
     }
 
-    /// TAKE A SKETCHER TOOL BY ITS BUTTON in the panel: 0 the arrow, 1 line, 2 rectangle, 3 circle, 4 arc,
-    /// 5 point, 6 polygon, 7 slot, 8 ellipse, 9 spline, 10 circle through three points, 11 text. The button is
-    /// found by its hint and pressed, and it acts as a button does: a tool already in hand is put down by it. The
-    /// view is the flat canvas at the scale the sketch checks draw at.
+    /// TAKE DRAWING TOOL `t` OF A SKETCH by its button in the panel. The button is found by its hint and pressed, and it
+    /// acts as a button does: a tool already in hand is put down by it. The view is the flat canvas at the scale the
+    /// sketch checks draw at. The arrow that puts a tool down is `sk_select`.
     ///
     /// The panel holds the sketch tools only while a sketch is open for editing, so a check that has not opened
     /// one fails here, naming the hint it looked for.
-    pub fn sk_tool(&mut self, t: u8) -> &mut Self {
-        self.app.viewing.mode_3d = false;
-        self.app.viewing.view.scale = 6.0;
-        self.app.viewing.view.center = super::Vec2::new(0.0, 0.0);
-        self.app.viewing.view.initialized = true;
+    pub fn sk_tool(&mut self, t: qymcad_ui_state::SketchShape) -> &mut Self {
+        use qymcad_ui_state::SketchShape as S;
+        self.flat_canvas();
         let key = match t {
-            0 => "tb-select-hint",
-            1 => "tb-line-hint",
-            2 => "tb-rect-hint",
-            3 => "tb-circle-hint",
-            4 => "tb-arc-hint",
-            5 => "tb-point-hint",
-            6 => "tb-polygon-hint",
-            7 => "tb-slot-hint",
-            8 => "tb-ellipse-hint",
-            9 => "tb-spline-hint",
-            10 => "tb-circle-3pt",
-            _ => "tb-text-hint",
+            S::Line => "tb-line-hint",
+            S::Rect => "tb-rect-hint",
+            S::Circle => "tb-circle-hint",
+            S::Arc => "tb-arc-hint",
+            S::Point => "tb-point-hint",
+            S::Polygon => "tb-polygon-hint",
+            S::Slot => "tb-slot-hint",
+            S::Ellipse => "tb-ellipse-hint",
+            S::Spline => "tb-spline-hint",
+            S::Text => "tb-text-hint",
         };
         self.press_hint_or_fail(key)
     }
@@ -902,24 +896,37 @@ impl<'a> Hand<'a> {
     /// closes after it.
     pub fn click2d(&mut self, x: f64, y: f64) -> &mut Self {
         self.mouse2d(x, y);
+        // a box the click opened is drawn from the next frame, laid unseen in it and shown from the one after, as a
+        // person sees it
+        self.frame(Vec::new()).frame(Vec::new());
         self.close_window()
     }
 
-    /// SELECTION MODE in a sketch — the arrow of the panel, which puts down the drawing tool.
+    /// SELECTION MODE in a sketch — the arrow of the panel, which puts down the drawing tool. The view is the flat
+    /// canvas, as for every tool of the panel.
     pub fn sk_select(&mut self) -> &mut Self {
+        self.flat_canvas();
         self.press_hint_or_fail("tb-select-hint")
     }
 
-    /// TAKE THE MOVE TOOL by its button in the panel: 1 move, 2 copy, 3 rotate.
+    /// THE FLAT CANVAS at the scale the sketch checks draw at: the panel of a sketch is pressed over it.
+    fn flat_canvas(&mut self) {
+        self.app.viewing.mode_3d = false;
+        self.app.viewing.view.scale = 6.0;
+        self.app.viewing.view.center = super::Vec2::new(0.0, 0.0);
+        self.app.viewing.view.initialized = true;
+    }
+
+    /// TAKE THE MOVE TOOL by its button in the panel: move, copy or rotate.
     ///
     /// ITS DOOR IS CLICKS, NOT A DRAG: one click picks the shape, one sets the base point, one sets the
     /// target (for a rotation the angle is typed in the popup instead). A drag with this tool in hand is not its
     /// door: `drag2d` pulls a POINT, and the tool takes no part in it.
-    pub fn sk_move_tool(&mut self, op: u8) -> &mut Self {
+    pub fn sk_move_tool(&mut self, op: qymcad_ui_state::MoveKind) -> &mut Self {
         self.press_hint_or_fail(match op {
-            1 => "tb-move-hint",
-            2 => "tb-copy-hint",
-            _ => "tb-rotate-hint",
+            qymcad_ui_state::MoveKind::Move => "tb-move-hint",
+            qymcad_ui_state::MoveKind::Copy => "tb-copy-hint",
+            qymcad_ui_state::MoveKind::Rotate => "tb-rotate-hint",
         })
     }
 
@@ -966,7 +973,7 @@ impl<'a> Hand<'a> {
     /// TURN WHAT IS SELECTED ALREADY by `deg` about `centre`: the tool taken with the selection standing, the click that
     /// sets the centre, the angle typed into the popup and Enter.
     pub fn sk_rotate_selected(&mut self, centre: (f64, f64), deg: f64) -> &mut Self {
-        self.sk_move_tool(3);
+        self.sk_move_tool(qymcad_ui_state::MoveKind::Rotate);
         self.mouse2d(centre.0, centre.1);
         self.frame(Vec::new());
         self.type_text(&format!("{deg}"));
@@ -974,10 +981,10 @@ impl<'a> Hand<'a> {
         self.close_window()
     }
 
-    /// MOVE (op 1) OR COPY (op 2) THE SHAPE lying under `on`, from `from` to `to` - the tool, then its three
+    /// MOVE OR COPY THE SHAPE lying under `on`, from `from` to `to` - the tool, then its three
     /// clicks, in the order a person makes them and through the whole frame of the window.
-    pub fn sk_move(&mut self, op: u8, on: (f64, f64), from: (f64, f64), to: (f64, f64)) -> &mut Self {
-        self.sk_tool(0); // put down whatever was in hand: the canvas is in view and the sketch is the selection
+    pub fn sk_move(&mut self, op: qymcad_ui_state::MoveKind, on: (f64, f64), from: (f64, f64), to: (f64, f64)) -> &mut Self {
+        self.sk_select(); // put down whatever was in hand: the canvas is in view and the sketch is the selection
         self.look2d(((on.0 + to.0) / 2.0, (on.1 + to.1) / 2.0)); // the shape and where it goes, both in view
         self.drop_sketch_selection();
         self.sk_move_tool(op);
@@ -995,10 +1002,10 @@ impl<'a> Hand<'a> {
     /// field for the focus with its text selected; a frame gives it, the digits replace the text, and Enter in
     /// that field applies the rotation.
     pub fn sk_rotate(&mut self, on: (f64, f64), centre: (f64, f64), deg: f64) -> &mut Self {
-        self.sk_tool(0);
+        self.sk_select();
         self.look2d(((on.0 + centre.0) / 2.0, (on.1 + centre.1) / 2.0));
         self.drop_sketch_selection();
-        self.sk_move_tool(3);
+        self.sk_move_tool(qymcad_ui_state::MoveKind::Rotate);
         self.mouse2d(on.0, on.1); // pick what is being turned
         self.mouse2d(centre.0, centre.1); // the centre of the turn - the popup opens here
         self.frame(Vec::new()); // the field takes the focus
@@ -1016,13 +1023,13 @@ impl<'a> Hand<'a> {
     /// and its buttons take a click before a line does. Answers whether a place was found for all of them: a hand
     /// that cannot reach the third line must not have taken the tool either, since it would be standing over half
     /// a contour.
-    pub fn sk_corner_set(&mut self, key: &str, lines: &[(u8, u64)], value: f64) -> bool {
+    pub fn sk_corner_set(&mut self, key: &str, lines: &[qymcad_ui_state::SketchItem], value: f64) -> bool {
         self.sk_corner_set_in(key, None, lines, value)
     }
 
     /// THE SAME IN A MODE OF THE TOOL: after the tool is taken, the word of the mode on its bar is pressed - "two
     /// distances", "chord" - as a person picks it before naming the corners.
-    pub fn sk_corner_set_in(&mut self, key: &str, mode: Option<&str>, lines: &[(u8, u64)], value: f64) -> bool {
+    pub fn sk_corner_set_in(&mut self, key: &str, mode: Option<&str>, lines: &[qymcad_ui_state::SketchItem], value: f64) -> bool {
         if !self.sk_corner_typed(key, mode, lines, value) {
             return false;
         }
@@ -1033,11 +1040,11 @@ impl<'a> Hand<'a> {
 
     /// THE SAME UP TO THE VALUE TYPED, and no Enter: the tool stands with its set named and the value in its field,
     /// as a person looks at the preview before answering. The window stays open.
-    pub fn sk_corner_typed(&mut self, key: &str, mode: Option<&str>, lines: &[(u8, u64)], value: f64) -> bool {
+    pub fn sk_corner_typed(&mut self, key: &str, mode: Option<&str>, lines: &[qymcad_ui_state::SketchItem], value: f64) -> bool {
         let places = self.places_on2d(lines);
         let all: Vec<(f64, f64)> = places.iter().flatten().copied().collect();
         let n = all.len().max(1) as f64;
-        self.sk_tool(0); // the canvas is in view and the sketch is the selection, whatever was in hand
+        self.sk_select(); // the canvas is in view and the sketch is the selection, whatever was in hand
         self.look2d(all.iter().fold((0.0, 0.0), |(sx, sy), (x, y)| (sx + x / n, sy + y / n)));
         self.in_view2d(&all);
         if !lines.iter().zip(&places).all(|(item, places)| places.iter().any(|p| self.picks2d(*p) == Some(*item))) {
@@ -1090,6 +1097,8 @@ impl<'a> Hand<'a> {
     /// TYPE `text` INTO THE FIELD THAT STANDS RIGHT AFTER `word`, all of what it held replaced, with no Enter. Answers
     /// whether the word and a field after it were on screen.
     pub fn type_after_word(&mut self, word: &str, text: &str) -> bool {
+        // a box opened by the last frame is laid unseen in it and shown from the next, as a person sees it
+        self.frame(Vec::new());
         let Some(at) = self.written_at(word) else { return false };
         let field = |k: &super::window::Kind| matches!(k, super::window::Kind::TextField | super::window::Kind::Number);
         let Some(f) = self
@@ -1105,6 +1114,26 @@ impl<'a> Hand<'a> {
         self.press_screen(f.center());
         self.chord(egui::Modifiers::COMMAND, egui::Key::A);
         self.type_text(text);
+        true
+    }
+
+    /// TYPE `value` INTO THE FIELD SHOWING `hint` in grey while empty - the first such in reading order - all of what it
+    /// held replaced, with no Enter. Answers whether such a field was on screen.
+    pub fn type_into_hinted(&mut self, hint: &str, value: f64) -> bool {
+        self.frame(Vec::new());
+        let Some(f) = self
+            .win
+            .widgets
+            .iter()
+            .filter(|w| w.kind == super::window::Kind::TextField && w.placeholder == hint)
+            .map(|w| w.rect)
+            .min_by(|a, b| a.min.y.total_cmp(&b.min.y).then(a.min.x.total_cmp(&b.min.x)))
+        else {
+            return false;
+        };
+        self.press_screen(f.center());
+        self.chord(egui::Modifiers::COMMAND, egui::Key::A);
+        self.type_text(&format!("{value}"));
         true
     }
 
@@ -1175,24 +1204,9 @@ impl<'a> Hand<'a> {
         }
     }
 
-    /// PRESS A CONSTRAINT BUTTON of the panel, found by its hint: 0 coincidence, 1 horizontal, 2 vertical,
-    /// 3 parallel, 4 perpendicular, 5 equal, 6 fix, 7 collinear, 8 concentric, 9 tangent, 10 symmetry,
-    /// 11 midpoint.
-    pub fn constraint(&mut self, code: u8) -> &mut Self {
-        self.press_hint_or_fail(match code {
-            0 => "con-coincident-hint",
-            1 => "con-horizontal-hint",
-            2 => "con-vertical-hint",
-            3 => "con-parallel-hint",
-            4 => "con-perpendicular-hint",
-            5 => "con-equal",
-            6 => "con-fix",
-            7 => "con-collinear-hint",
-            8 => "con-concentric-hint",
-            9 => "con-tangent-hint",
-            10 => "con-symmetric-hint",
-            _ => "con-midpoint-hint",
-        })
+    /// PRESS A CONSTRAINT BUTTON of the panel, found by its hint - the hint its button carries.
+    pub fn constraint(&mut self, code: qymcad_ui_state::ConstraintKind) -> &mut Self {
+        self.press_hint_or_fail(qymcad_sketch::constraint_hint_key(code))
     }
 
     /// COPY THE SELECTION WITH Ctrl+C - egui turns the keys into a copy event, and that is what the window
@@ -1330,6 +1344,11 @@ impl<'a> Hand<'a> {
         self.win.ctx.memory(|m| m.area_rect(id))
     }
 
+    /// THE ID OF THE BOX OF THE TOOL IN HAND, as the frame of every tool lays it; none while the tool has no box.
+    pub fn tool_box_id(&self) -> Option<egui::Id> {
+        qymcad_ui_state::tool_box_id(&self.win.ctx)
+    }
+
     /// IS ANY TEXT OF A LABEL SELECTED after the last frame: what a drag across words leaves selected.
     pub fn text_selected(&self) -> bool {
         self.win.ctx.plugin_opt::<egui::text_selection::LabelSelectionState>().is_some_and(|h| h.lock().has_selection())
@@ -1446,7 +1465,7 @@ mod tests {
         let edge = app.project.regen_edges[&body].iter().filter(|e| (e.a[2] - e.b[2]).abs() < 1e-6).max_by(|x, y| x.mid[2].total_cmp(&y.mid[2])).cloned().expect("the top edge");
 
         let mut hand = Hand::new(&mut app);
-        hand.look_at([10.0, 10.0, 5.0], 9.0).tool(4).click(edge.mid).enter();
+        hand.look_at([10.0, 10.0, 5.0], 9.0).tool(qymcad_ui_state::PartTool::Fillet).click(edge.mid).enter();
 
         let made = app.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Fillet { .. }));
         assert!(made, "a click on an edge and Enter must create a fillet; status: {}", app.status);
@@ -1472,8 +1491,8 @@ mod tests {
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         let mut hand = Hand::new(&mut app);
         hand.app.enter_sketch_edit(si);
-        hand.sk_tool(2);
-        assert_eq!(hand.app.tools.armed.draw_kind(), 2, "the rectangle was not taken");
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect);
+        assert_eq!(hand.app.tools.armed.drawing(), Some(qymcad_ui_state::SketchShape::Rect), "the rectangle was not taken");
         neighbour.join().expect("the neighbour lets the kernel go");
     }
 }

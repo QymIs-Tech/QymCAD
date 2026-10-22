@@ -40,8 +40,9 @@ does not get a place on the list.
 A structure in the name table, written to the file; outwards it travels as a descriptor, an index into the table with
 a tag in the high bits.
 
-* **A face** (`GeoName`): the node that made it, its role (a cap, a wall, a blend, a seam, ...), its source and the
-  piece number when one source gave several faces. The source is what the person gave the node: the sketch entity a
+* **A face** (`GeoName`): the node that made it, its role (a cap, a wall, a blend, a seam, ...), its source and, when
+  one source gave several faces, what cut the piece off (`CutOff`) and its number among the pieces cut off alike. The
+  source is what the person gave the node: the sketch entity a
   wall was swept from, the contour picked for a region (its caps), the place in the pick of the edge a blend rounds -
   never the name of an element above, which changes when its own neighbours do (`ops::profile::name_sides`,
   `ops::blend::blend_roles`, `a_blend_is_named_after_the_edge_it_was_picked_on`); a corner patch, after the end of the edge of the lowest place
@@ -49,11 +50,35 @@ a tag in the high bits.
   an edit above merged into one - give its surface, and a corner where picked edges meet, to the pick holding its edge
   by its name before one translated onto it, then to the lower place. An edge a description gave (every edge of a
   face) has no place in a pick, and its blend is named after the edge.
-* **An edge** (`EdgeName`): the pair of faces it runs between and its number within the pair. An edge has no recipe of
-  its own; it is where two surfaces meet. A name carried through the history that names a face gone from the body - the
+* **An edge** (`EdgeName`): the pair of faces it runs between. An edge has no recipe of its own; it is where two
+  surfaces meet. The one edge of its pair is named by the pair alone: the faces at its ends change with any edit beside
+  it (told by them, 901 edges of the examples that did not move were renamed over the matrix of edits). Several edges of
+  one pair - the upper and the lower edge of a slot, the pieces of an edge a row of notches cut - are told apart by the
+  two smallest named faces at their ends, apart from their own two (`naming::ends_of`), never by their place in
+  an order of the pair: numbered within the pair as the first number free, an edit that took one of them away
+  renumbered the others, and a chamfer took the edge beside its own (`an_edge_keeps_its_name_when_its_twin_goes`). Only edges of one pair with the same ends carry a number,
+  by where they stand (`twins_with_the_same_ends_are_numbered_by_where_they_stand`); a number a neighbour wears through
+  the history passes to the next. A name carried through the history that names a face gone from the body - the
   two sides of a strip taken out, both "beside the strip" - is named again after the pair the edge runs between, the old
   name recorded as yielded to the new one (`naming::edges`, `an_edge_named_beside_a_face_gone_takes_the_name_of_its_pair`).
   A name of another pair whose faces are all in the body stays; a reference reads it through its pair.
+  **An edge with one face on both sides** - the seam where a round face closes, an edge lying inside a face - is numbered
+  by where it comes from and where it stands (`naming::edges_on_their_face`): the seam
+  where the surface closes along U from 0 (a revolution closes there, at the plane its profile starts on; a cylinder at
+  the start of its curve), along V from 1000, an edge inside the face from 2000; several of one kind in the order of
+  where they stand on the face (along the seam, then across it). Never by the order the kernel gives the edges in,
+  never as the first number free. A number a seam takes from an edge of another pair wearing it through the history is
+  that edge's to yield: it is named by its own pair (`a_seam_is_numbered_by_where_it_comes_from`,
+  `a_seam_keeps_its_name_whatever_order_the_edits_come_in`).
+  **Where the seam stands** on a round face an extrusion makes of a circle the lines of its sketch cut into arcs: in the
+  middle of the arc whose wall takes the smallest name - the order the model numbers walls in (the region, the sketch
+  entity, the piece) - never on a point where two arcs met, never by length or by the order the kernel hands the edges
+  in (`seams_inside_arcs`, `occt_bridge.cpp`). Those points are where the other lines touch the circle and where the
+  walls of later steps come to it; a seam on one ran straight on from the end of an edge there, and a rounding of that
+  edge was refused at any radius. A whole circle no line cut keeps its seam where its curve starts. An edit moving the
+  points moves the seam within its arc
+  (`the_seam_of_the_post_stands_inside_an_arc_and_the_edge_at_a_joint_is_rounded`,
+  `the_rounding_of_the_vacuum_cleaner_takes_all_eight_edges_after_an_edit`).
 * **A vertex** (`VertexName`): the three smallest descriptors of the edges meeting at it.
 
 ## How the bridge names a result
@@ -69,10 +94,25 @@ In `qym_result`, in this order:
    beats a role of the operation, a role beats a positional number, and of one rank the smaller descriptor wins
    (`a_merged_wall_keeps_the_name_of_the_base`). The order of a walk never decides. A name another element already
    wears - its source went on elsewhere too - is not in the draw: one name, one element.
-4. **A face split in pieces** keeps the name of the whole on one piece; a piece is told first by the faces the node
-   made beside it - what cut it - then by the other named faces beside it, in the order of the recipe
-   (`naming::pieces`, `a_split_face_is_told_by_what_cut_it`).
-5. **What the history was silent about** (`naming::silent`): the seams, in waves, after a named neighbour
+4. **A face split in pieces** (`naming::pieces`) keeps the name of the whole on one
+   piece: the first in the order of the recipe - the faces the node made beside it, then the faces of the node the split
+   face comes from beside it. The faces of other nodes beside a piece do not take part: an edit brought the walls of
+   another window beside the halves of a wall of the filter, and told by them the name of the whole went to the other
+   half (`the_whole_stays_on_its_half_whatever_borders_it`).
+   Every other piece is named after **what cut it off**: the face of the node beside it first in the order of its
+   recipe, and the side of that face it lies on (`qym_shape_piece_sides`: the normal of that face at the middle of an
+   edge between them, against the line to the centre of the piece) - and numbered among the pieces cut off by the same
+   face on the same side. Neither depends on how many other pieces there are: an edit that takes one piece away renames
+   no other (`a_piece_keeps_its_name_when_another_piece_goes`). A piece beside a piece of another face the same
+   operation split, still under a number, is beside that face: the lower halves of the walls of a window through a tube
+   border only one another. Pieces the recipe cannot tell apart - those two halves - come in the order of what cut them
+   off and of where they stand, never of the number the kernel gave them
+   (`the_halves_of_a_wall_are_named_by_where_they_stand`). A piece no face of the node stands beside is numbered among
+   such pieces by the same order. **A piece the history does not tell** - a face with no name on one surface of the
+   kernel with named faces all of one face, that face among them - is a piece of it (`naming::untold_pieces`): the pieces of a split face keep its surface, and on the filter the history of a
+   widened window told only the upper half of a wall (`a_piece_without_history_is_a_piece_of_its_surface`).
+5. **What the history was silent about** (`naming::silent`), read of the body in one walk before any face takes its
+   name (`qym_shape_naming_facts`, `naming::Facts`) and through what each face has become since: the seams, in waves, after a named neighbour
    (`naming::seams`); a face with no history and no named neighbour - a body brought in from a file or made of a mesh -
    by where it lies (`naming::placed`); the edges, after their pair of faces (`naming::edges`); the vertices after
    their edges (`naming::name_edge_ends`).
@@ -107,14 +147,20 @@ The document, not the bridge, resolves a reference, in this order (`qymcad_core:
 1. **The name**, as it is.
 2. **A recorded merge**: the name it yielded to; a piece returns to its whole, and the edge of the wholes follows the
    name it yielded to in turn (`a_reference_to_a_piece_follows_the_name_its_whole_yielded`) - but only while the face
-   is whole again: with another piece of it alive, the whole is the piece beside it, and the reference goes on to the
-   next steps (`NameTable::absorbed_target_among`, `a_piece_beside_the_whole_is_not_the_whole`).
-3. **The canonical pair** of an edge: its faces reduced to their wholes, when one edge has that pair.
+   is whole again: with another piece of it alive - numbered or named after what cut it off - the whole is the piece
+   beside it, and the reference goes on to the next steps (`NameTable::absorbed_target_among`,
+   `a_piece_beside_the_whole_is_not_the_whole`, `a_piece_named_after_its_cut_beside_the_whole_is_not_the_whole`).
+3. **The canonical pair** of an edge: its faces reduced to their wholes, when one edge has that pair - or, of several,
+   one edge has the same faces at its ends, reduced the same way.
 4. **The structure of the name** (`NameTable::same_recipe`): the one live face of the same node, role and source, or
    the one edge between two such faces; two candidates give none.
-5. **The place**, last: only the one element standing exactly where the reference saw it, to 1e-6 (`PLACE_EXACT`). The
+5. **The place**: only the one element standing exactly where the reference saw it, to 1e-6 (`PLACE_EXACT`). The
    step is then marked (`Project::placed_refs`): yellow, in words, in the file, until the person accepts it in its
    properties or picks the element again (`a_reference_found_by_place_waits_for_the_person`).
+6. **The other piece**, where no place was recorded (`NameTable::other_piece`): of the elements of the same recipe, the
+   one that is a piece where the reference is a piece and whole where it is whole - of two pieces of a face, one keeps
+   the name of the whole, and a reference to the other is the other
+   (`a_reference_to_the_other_piece_goes_to_the_other_piece`).
 
 A reference not found is said: the node goes red, or - a blend that took the rest - yellow with how many edges were
 left out. A node deleted hands its consumers to the body below it, and their references are translated to the one

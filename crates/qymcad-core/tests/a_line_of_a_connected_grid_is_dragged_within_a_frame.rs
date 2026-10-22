@@ -10,7 +10,7 @@
 //! A step is timed by its work (`time_budget::Cost`): the wall less the share its threads stood ready with no processor
 //! free, so the machine busy with other work beside the level of time does not read as a slow program.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{EntityKind, PatternKind, Project};
+use qymcad_core::model::{PatternKind, Project};
 use std::time::Duration;
 use qymcad_core::time_budget::{Doer, Meter};
 
@@ -71,8 +71,8 @@ fn line(p: &Project, way: Way, k: usize) -> Line {
         .entities
         .iter()
         .filter(|e| !e.construction)
-        .filter_map(|e| match e.kind {
-            EntityKind::Line { a, b } => {
+        .filter_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => {
                 let (pa, pb) = (at(a), at(b));
                 let across = pa.1 == pb.1;
                 matches!((way, across), (Way::Across, true) | (Way::Up, false)).then_some(Line { id: e.id, end: b, x: pb.0, y: pb.1 })

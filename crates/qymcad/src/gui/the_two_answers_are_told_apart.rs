@@ -33,7 +33,7 @@ mod tests {
         super::super::help_raster::shot_ui([900, 90], bg, |ui| {
             let ctx = &ui.ctx().clone();
             qymcad_ui_state::apply_theme(&mut app.scheme, &app.set, ctx);
-            app.feat_command_bar(ui);
+            crate::gui::panel_places::part_tool(app, ui);
         })
     }
 
@@ -45,7 +45,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1); // extrude
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude); // extrude
         app
     }
 

@@ -58,6 +58,7 @@ pub fn dim_caption(project: &Project, si: usize, c: &qymcad_core::model::Constra
         // the number alone for every length: which way it runs is plain from its line
         Constraint::Distance { d, .. } => format!("{d:.1}"),
         Constraint::EdgeDistance { d, .. } => format!("T {d:.1}"),
+        Constraint::CurveDistance { d, .. } => format!("{d:.1}"),
         Constraint::DistancePL { d, .. } => format!("{:.1}", d.abs()), // d is signed (it carries the side)
         Constraint::Diameter { d, diam, .. } => format!("{}{d:.1}", if diam { "Ø" } else { "R" }),
         // the number alone: the arc mark over it is drawn with the dimension, a letter said less
@@ -213,6 +214,15 @@ pub fn linear_dim_line(project: &Project, si: usize, c: &qymcad_core::model::Con
             let shift = 16.0 + off as f32 * sc;
             Some((sa + perp * shift, sb + perp * shift, if shift < 0.0 { -perp } else { perp }))
         }
+        // a distance to a curve of any kind: between the places the two come nearest, the line led off square to it
+        Constraint::CurveDistance { off, .. } => {
+            let [e1, e2] = project.curve_distance_ends(si, c)?;
+            let (sa, sb) = (sh.at(e1), sh.at(e2));
+            let dir = (sb - sa).normalized();
+            let perp = egui::vec2(-dir.y, dir.x);
+            let shift = 16.0 + off as f32 * sc;
+            Some((sa + perp * shift, sb + perp * shift, if shift < 0.0 { -perp } else { perp }))
+        }
         _ => None,
     }
 }
@@ -224,7 +234,7 @@ pub fn linear_text_of(project: &Project, si: usize, ci: usize, sh: &Sheet, set: 
     let (la, lb, perp) = linear_dim_line(project, si, c, sh)?;
     let size = dim_text_size(&dim_caption(project, si, c, set)?, set.dim_font);
     let at = match *c {
-        Constraint::Distance { at, .. } | Constraint::DistancePL { at, .. } | Constraint::EdgeDistance { at, .. } => at,
+        Constraint::Distance { at, .. } | Constraint::DistancePL { at, .. } | Constraint::EdgeDistance { at, .. } | Constraint::CurveDistance { at, .. } => at,
         _ => None,
     };
     Some((dim_text_place(la, lb, perp, size, at, set.dim_text == DimTextTurn::AlongLine), size))

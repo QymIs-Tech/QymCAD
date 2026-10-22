@@ -19,7 +19,7 @@ const THICKEN: PartTool = PartTool { hint: "tb-thicken-hint", caption: "f-thickn
 const SPLIT: PartTool = PartTool { hint: "tb-split-face-hint", caption: "f-offset", node: "SplitFace", counts: false };
 const REMOVE: PartTool = PartTool { hint: "tb-remove-face-hint", caption: "", node: "RemoveFace", counts: false };
 const DRAFT: PartTool = PartTool { hint: "tb-draft-hint", caption: "cmd-angle", node: "Draft", counts: false };
-const THREAD: PartTool = PartTool { hint: "tb-thread-hint", caption: "f-nominal-d", node: "Thread", counts: false };
+const THREAD: PartTool = PartTool { hint: "tb-thread-hint", caption: "th-nominal-d", node: "Thread", counts: false };
 
 /// Faces of the bodies, by a point on each and another point on it.
 const TOP: Spot = spot([20.0, 15.0, 10.0], [10.0, 8.0, 10.0]);

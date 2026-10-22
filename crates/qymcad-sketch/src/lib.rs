@@ -49,29 +49,11 @@ pub fn sketch_plane_words(project: &qymcad_core::model::Project, plane: qymcad_c
     }
 }
 
-/// THE LENGTH OF CURVE `eid` of sketch `si`, mm: a line end to end, an arc along its span, a circle and an ellipse round
-/// their circle (the ellipse by Ramanujan's formula).
+/// THE LENGTH OF CURVE `eid` of sketch `si`, mm: along the curve whatever its kind (`Curve::length`) - exact for a line
+/// and a round curve, along its laid out points otherwise.
 fn curve_length(project: &Project, si: usize, eid: Id) -> f64 {
-    use qymcad_core::model::EntityKind as EK;
     let Some(s) = project.sketches.get(si) else { return 0.0 };
-    let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).unwrap_or_default();
-    let dist = |p: (f64, f64), q: (f64, f64)| (q.0 - p.0).hypot(q.1 - p.1);
-    match s.entities.iter().find(|e| e.id == eid).map(|e| e.kind) {
-        Some(EK::Line { a, b }) => dist(at(a), at(b)),
-        Some(EK::Arc { center, a, b, ccw }) => {
-            let (c, pa, pb) = (at(center), at(a), at(b));
-            let (a0, a1) = ((pa.1 - c.1).atan2(pa.0 - c.0), (pb.1 - c.1).atan2(pb.0 - c.0));
-            let sweep = if ccw { (a1 - a0).rem_euclid(std::f64::consts::TAU) } else { (a0 - a1).rem_euclid(std::f64::consts::TAU) };
-            dist(c, pa) * sweep
-        }
-        Some(EK::Circle { r, .. }) => std::f64::consts::TAU * r,
-        Some(EK::Ellipse { c, ma, mi }) => {
-            let (x, y) = (dist(at(c), at(ma)), dist(at(c), at(mi)));
-            let h = ((x - y) / (x + y)).powi(2);
-            std::f64::consts::PI * (x + y) * (1.0 + 3.0 * h / (10.0 + (4.0 - 3.0 * h).sqrt()))
-        }
-        None => 0.0,
-    }
+    s.entities.iter().find(|e| e.id == eid).and_then(|e| qymcad_core::model::curve::Curve::of(s, e)).map_or(0.0, |c| c.length())
 }
 
 /// THE NAME OF A SKETCH ENTITY FOR A PERSON: "Line 3", "Circle 1".
@@ -79,17 +61,10 @@ fn curve_length(project: &Project, si: usize, eid: Id) -> f64 {
 /// The number is the ordinal among entities OF THE SAME kind rather than a running id: "Line 3" can be
 /// found by eye, while "Line 47" says nothing.
 pub fn sketch_entity_name(project: &qymcad_core::model::Project, si: usize, eid: Id) -> String {
-    use qymcad_core::model::EntityKind as EK;
     let Some(s) = project.sketches.get(si) else { return String::new() };
     let Some(e) = s.entities.iter().find(|e| e.id == eid) else { return String::new() };
-    let key = match e.kind {
-        EK::Line { .. } => "ent-line",
-        EK::Arc { .. } => "ent-arc",
-        EK::Circle { .. } => "ent-circle",
-        EK::Ellipse { .. } => "ent-ellipse",
-    };
-    let same = |k: &EK| std::mem::discriminant(k) == std::mem::discriminant(&e.kind);
-    let n = s.entities.iter().filter(|x| same(&x.kind)).position(|x| x.id == eid).unwrap_or(0) + 1;
+    let key = e.kind.name_key();
+    let n = s.entities.iter().filter(|x| x.kind.name_key() == key).position(|x| x.id == eid).unwrap_or(0) + 1;
     qymcad_i18n::tr2("ent-named", "what", &qymcad_i18n::tr(key), "n", &n.to_string())
 }
 
@@ -103,7 +78,7 @@ pub fn sketch_export_edges(project: &qymcad_core::model::Project, si: usize) -> 
         let Some(ci) = project.contour_index(*cid) else { continue };
         let c = &project.contours[ci];
         if !c.edges.is_empty() {
-            out.extend(c.edges.iter().copied());
+            out.extend(c.edges.iter().cloned());
         } else {
             let n = c.points.len();
             let last = if c.closed { n } else { n.saturating_sub(1) };
@@ -119,31 +94,11 @@ pub fn sketch_export_edges(project: &qymcad_core::model::Project, si: usize) -> 
 /// intersections). It tells "the same segment we already cut" from "the next one" - without it, dragging
 /// along one line would trim only its first piece.
 pub fn trim_span_key(project: &qymcad_core::model::Project, si: usize, eid: Id, x: f64, y: f64) -> u32 {
-    let inter = project.entity_intersections(si, eid);
     let Some(s) = project.sketches.get(si) else { return 0 };
-    let Some(kind) = s.entities.iter().find(|e| e.id == eid).map(|e| e.kind) else { return 0 };
-    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
-    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| (q.x, q.y));
-    match kind {
-        qymcad_core::model::EntityKind::Line { a, b } => {
-            let (Some((ax, ay)), Some((bx, by))) = (pt(a), pt(b)) else { return 0 };
-            let (dx, dy) = (bx - ax, by - ay);
-            let len2 = dx * dx + dy * dy;
-            if len2 < 1e-12 {
-                return 0;
-            }
-            let param = |px: f64, py: f64| ((px - ax) * dx + (py - ay) * dy) / len2;
-            let tc = param(x, y);
-            inter.iter().filter(|(ix, iy)| param(*ix, *iy) < tc).count() as u32
-        }
-        qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => {
-            let Some((cx, cy)) = pt(center) else { return 0 };
-            let ang = |px: f64, py: f64| (py - cy).atan2(px - cx).rem_euclid(std::f64::consts::TAU);
-            let ac = ang(x, y);
-            inter.iter().filter(|(ix, iy)| ang(*ix, *iy) < ac).count() as u32
-        }
-        _ => 0,
-    }
+    let Some(c) = s.entities.iter().find(|e| e.id == eid).and_then(|e| qymcad_core::model::curve::Curve::of(s, e)) else { return 0 };
+    // the span is told by how many crossings stand before the place of the point along the curve
+    let tc = c.nearest(Point2::new(x, y)).t;
+    project.crossings_on(si, eid).iter().filter(|x| x.t < tc).count() as u32
 }
 
 /// READ WHAT WAS TYPED INTO A SKETCH FIELD: a number OR an expression over the global variables.
@@ -171,7 +126,7 @@ pub const MAX_SKETCH_LENGTH: f64 = 10000.0;
 
 /// WHAT STANDS LIT UNDER THE CURSOR BEFORE A CLICK: the geometry, or else the glyph of a constraint.
 pub struct PreSelect {
-    pub sketch: Option<(u8, Id)>,
+    pub sketch: Option<qymcad_ui_state::SketchItem>,
     pub constraint: Option<usize>,
 }
 
@@ -182,33 +137,30 @@ pub fn pre_select(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, hover: Option
     let none = PreSelect { sketch: None, constraint: None };
     let (qymcad_ui_state::Sel::Sketch(si), Some(hp)) = (*sk.sel, hover) else { return none };
     let still = !dragged && sk.drag.pt().is_none() && sk.drag.mov().is_none();
-    if qymcad_ui_state::edit_si(sk.project, sk.sketch_ses) != Some(si) || sk.armed.draw_kind() != 0 || sk.armed.dim_kind() != 0 || !still {
+    if qymcad_ui_state::edit_si(sk.project, sk.sketch_ses) != Some(si) || sk.armed.drawing().is_some() || sk.armed.dimension().is_some() || !still {
         return none;
     }
-    let corner_tool = matches!(sk.armed.click_op(), 4 | 5);
+    let corner_tool = sk.armed.click_tool().is_some_and(qymcad_ui_state::ClickTool::of_corner);
     let construction = |id: Id| sk.project.sketches.get(si).is_some_and(|s| s.entities.iter().any(|e| e.id == id && e.construction));
-    let sketch = sketch_hit(&sk.pick(), rect, hp, si).filter(|&(k, id)| !(corner_tool && k == 1 && construction(id)));
+    let sketch = sketch_hit(&sk.pick(), rect, hp, si).filter(|&qymcad_ui_state::SketchItem { kind: k, id }| !(corner_tool && k == qymcad_ui_state::ItemKind::Curve && construction(id)));
     // the glyph of a constraint is lit only where no geometry is
     let constraint = if sketch.is_none() { constraint_glyph_at(sk, rect, hp, si) } else { None };
     PreSelect { sketch, constraint }
 }
 
-/// What is under the cursor in a sketch: (kind, Id). 0 is a point, 1 an entity (a line, an arc, a
-/// circle), 2 a primitive (a contour). Ordinary geometry takes priority over construction geometry.
-pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<(u8, Id)> {
+/// What is under the cursor in a sketch: a point, a curve or a contour. Ordinary geometry takes priority over
+/// construction geometry.
+pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<qymcad_ui_state::SketchItem> {
     // a system id of 0 means "not materialised yet" and must not match a real point
     let p_eq = |sys: Id, id: Id| sys != 0 && sys == id;
     let sh = qymcad_ui_state::Sheet { view: *pick.view, rect };
-    use qymcad_core::model::EntityKind;
     let s = pick.project.sketches.get(si)?;
-    // the points by id from a table: looked up along the list for both ends of every entity, a drawing of 70 000
-    // segments took 4 s a frame under the pointer
-    let at: std::collections::HashMap<Id, Point2> = s.points.iter().map(|p| (p.id, Point2::new(p.x, p.y))).collect();
-    let pt = |id: Id| at.get(&id).copied();
     // the ends of THE AXES are not picked as ordinary points (they mark infinite lines); the origin
     // deliberately STAYS pickable (it is needed for a coincidence with the origin) - hence `axis_pts`
     // rather than `system_ids`
     let is_axis_ref = |id: Id| s.axis_pts.contains(&id) || p_eq(s.frame, id);
+    // the nodes of a copy an offset holds are not taken: the copy is laid again from the curve offset
+    let held = s.held_copy_nodes();
     // 1) the nearest point.
     //
     // THE ORIGIN YIELDS TO ORDINARY GEOMETRY STANDING ON IT. Reported behaviour: "I cannot move the
@@ -221,7 +173,7 @@ pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: us
     let mut best_pt: Option<(f32, Id)> = None;
     let mut best_sys: Option<(f32, Id)> = None;
     for p in &s.points {
-        if is_axis_ref(p.id) {
+        if is_axis_ref(p.id) || held.contains(&p.id) {
             continue;
         }
         let d = sh.at(Point2::new(p.x, p.y)).distance(pos);
@@ -234,76 +186,10 @@ pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: us
         }
     }
     if let Some((_, id)) = best_pt.or(best_sys) {
-        return Some((0u8, id));
+        return Some(qymcad_ui_state::SketchItem::point(id));
     }
-    // 2) the nearest entity (an ordinary one takes priority over construction geometry)
-    let mut best_e: Option<(u8, f32, Id)> = None;
-    for e in &s.entities {
-        let d = match e.kind {
-            EntityKind::Line { a, b } => match (pt(a), pt(b)) {
-                (Some(pa), Some(pb)) => qymcad_ui_state::screen_dist_seg(pos, sh.at(pa), sh.at(pb)),
-                _ => f32::INFINITY,
-            },
-            EntityKind::Circle { center, r } => match pt(center) {
-                Some(c) => {
-                    let sc = sh.at(c);
-                    let rp = (sh.at(Point2::new(c.x + r, c.y)).x - sc.x).abs();
-                    (sc.distance(pos) - rp).abs()
-                }
-                None => f32::INFINITY,
-            },
-            EntityKind::Arc { center, a, b, ccw } => match (pt(center), pt(a), pt(b)) {
-                (Some(c), Some(pa), Some(pb)) => qymcad_pick::arc_screen_dist(&sh, pos, c, pa, pb, ccw),
-                _ => f32::INFINITY,
-            },
-            EntityKind::Ellipse { c, ma, mi } => match (pt(c), pt(ma), pt(mi)) {
-                (Some(pc), Some(pma), Some(pmi)) => {
-                    // the distance to the outline of the ellipse, measured over samples
-                    let major = ((pma.x - pc.x).powi(2) + (pma.y - pc.y).powi(2)).sqrt().max(1e-6);
-                    let minor = ((pmi.x - pc.x).powi(2) + (pmi.y - pc.y).powi(2)).sqrt().max(1e-6);
-                    let (ux, uy) = ((pma.x - pc.x) / major, (pma.y - pc.y) / major);
-                    let (vx, vy) = (-uy, ux);
-                    let (mut best, mut prev) = (f32::INFINITY, None::<Pos2>);
-                    for k in 0..=48 {
-                        let t = std::f64::consts::TAU * k as f64 / 48.0;
-                        let (ct, st) = (t.cos(), t.sin());
-                        let wp = Point2::new(pc.x + major * ct * ux + minor * st * vx, pc.y + major * ct * uy + minor * st * vy);
-                        let sp = sh.at(wp);
-                        if let Some(pp) = prev {
-                            best = best.min(qymcad_ui_state::screen_dist_seg(pos, pp, sp));
-                        }
-                        prev = Some(sp);
-                    }
-                    best
-                }
-                _ => f32::INFINITY,
-            },
-        };
-        if d <= qymcad_ui_state::grab::grab(pick.set, Grab::Curve) {
-            let tier = if e.construction { 1u8 } else { 0u8 };
-            if best_e.is_none_or(|(bt, bd, _)| (tier, d) < (bt, bd)) {
-                best_e = Some((tier, d, e.id));
-            }
-        }
-    }
-    if let Some((_, _, id)) = best_e {
-        return Some((1u8, id));
-    }
-    // 3) the nearest spline, by its curve: kept by its first node (`SEL_SPLINE`), as a spline has no id of its own
-    let mut best_sp: Option<(u8, f32, Id)> = None;
-    for (spi, sp) in s.splines.iter().enumerate() {
-        let Some(&first) = sp.points.first() else { continue };
-        let mut line: Vec<Pos2> = pick.project.spline_polyline(si, spi).into_iter().map(|p| sh.at(p)).collect();
-        if sp.closed {
-            line.extend(line.first().copied());
-        }
-        let d = line.windows(2).map(|w| qymcad_ui_state::screen_dist_seg(pos, w[0], w[1])).fold(f32::INFINITY, f32::min);
-        let tier = if sp.construction { 1u8 } else { 0u8 };
-        if d <= qymcad_ui_state::grab::grab(pick.set, Grab::Curve) && best_sp.is_none_or(|(bt, bd, _)| (tier, d) < (bt, bd)) {
-            best_sp = Some((tier, d, first));
-        }
-    }
-    best_sp.map(|(_, _, id)| (qymcad_ui_state::SEL_SPLINE, id))
+    // 2) the nearest curve, of whatever kind, a construction one yielding to an ordinary one as near (`curves_under`)
+    qymcad_pick::curves_under(pick, rect, pos, si).first().map(|&id| qymcad_ui_state::SketchItem::curve(id))
 }
 
 /// FINISH THE SPLINE - what a double click does.
@@ -349,7 +235,7 @@ fn same_place(sk: &qymcad_ui_state::SketchCtx, a: Point2, b: Point2) -> bool {
 /// Esc ON A CONSTRUCTION UNDER WAY. A spline has no last click - it is finished by a double click or by Esc, as
 /// its hint says - so Esc keeps the nodes clicked so far as a spline. Any other shape is broken off.
 pub fn end_construction(sk: &mut qymcad_ui_state::SketchCtx) {
-    if sk.armed.draw_kind() == 9 {
+    if sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Spline) {
         finish_spline(sk);
     } else {
         sk.tool.pts.clear();
@@ -407,32 +293,16 @@ pub fn begin_point_drag(
 /// The largest turn a rotation takes, in degrees: ten whole turns.
 const TEN_TURNS: f64 = 3600.0;
 
-/// THE ANGLE OF A TURN as typed, or in words why it cannot be taken: not a number, no turn at all, or past ten whole
-/// turns.
-fn angle_of(project: &Project, text: &str) -> Result<f64, String> {
-    match parse_num(project, text) {
-        None => Err(qymcad_i18n::tr("sk-angle-not-number")),
-        Some(v) if v.abs() < 1e-9 => Err(qymcad_i18n::tr("cmd-value-zero")),
-        Some(v) if v.abs() > TEN_TURNS => Err(qymcad_i18n::tr2("cmd-value-out-of-range", "lo", &(-TEN_TURNS).to_string(), "hi", &TEN_TURNS.to_string())),
-        Some(v) => Ok(v),
-    }
+/// THE FIELD OF THE BOX OF A TURN: the angle in degrees, neither nothing nor past ten turns.
+pub(crate) fn turn_field() -> qymcad_ui_state::CmdParam {
+    qymcad_ui_state::CmdParam::new("sk-angle-deg", "angle", 0.0, -TEN_TURNS, TEN_TURNS).nonzero()
 }
 
-/// The size of every line and circle of sketch `si`, in the order of its entities: a line's length, a circle's
-/// radius. Nothing for an arc or an ellipse, whose size its points hold.
+/// The size of every curve of sketch `si`, in the order of its entities: its length, of whatever kind it is - what a
+/// constraint must not take down to nothing.
 fn shape_sizes(project: &Project, si: usize) -> Vec<f64> {
-    use qymcad_core::model::EntityKind;
     let Some(s) = project.sketches.get(si) else { return Vec::new() };
-    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
-    let at = |id: Id| points_by_id.get(&id).copied().map(|p| (p.x, p.y));
-    s.entities
-        .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Line { a, b } => Some(at(a).zip(at(b)).map_or(0.0, |(a, b)| (a.0 - b.0).hypot(a.1 - b.1))),
-            EntityKind::Circle { r, .. } => Some(r),
-            _ => None,
-        })
-        .collect()
+    s.entities.iter().map(|e| qymcad_core::model::curve::Curve::of(s, e).map_or(0.0, |c| c.length())).collect()
 }
 
 /// Which way a line is turned to lie: level, or upright.
@@ -480,86 +350,51 @@ fn turn_to_level(project: &mut Project, si: usize, (a, b): (Id, Id), level: Leve
 /// "the centre above the middle of the line" is what is meant. Every other constraint takes the lines as lines, and so
 /// do Horizontal and Vertical on lines alone. Each such line is replaced in the selection by a point held at its middle
 /// (`materialize_ref`, the dimension tool's door), laid inside the constraint's own step of undo.
-fn middles_for(project: &mut Project, si: usize, sel_sk: &mut qymcad_ui_state::SketchSelection, code: u8) {
-    let with_points = sel_sk.items.iter().any(|(k, _)| *k == 0);
+fn middles_for(project: &mut Project, si: usize, sel_sk: &mut qymcad_ui_state::SketchSelection, code: qymcad_ui_state::ConstraintKind) {
+    let with_points = sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Point);
     let reads = match code {
-        0 => true,
-        1 | 2 => with_points,
+        qymcad_ui_state::ConstraintKind::Coincident => true,
+        qymcad_ui_state::ConstraintKind::Horizontal | qymcad_ui_state::ConstraintKind::Vertical => with_points,
         _ => false,
     };
     if !reads || sel_sk.at_middle.is_empty() {
         return;
     }
     for eid in std::mem::take(&mut sel_sk.at_middle) {
-        let Some(slot) = sel_sk.items.iter().position(|&it| it == (1, eid)) else { continue };
+        let Some(slot) = sel_sk.items.iter().position(|&it| it == qymcad_ui_state::SketchItem::curve(eid)) else { continue };
         let Some((a, b)) = line_ends_of(project, si, eid) else { continue };
-        sel_sk.items[slot] = (0, qymcad_ui_state::materialize_ref(project, si, qymcad_ui_state::SketchRef::Midpoint(a, b)));
+        sel_sk.items[slot] = qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Point, id: qymcad_ui_state::materialize_ref(project, si, qymcad_ui_state::SketchRef::Midpoint(a, b)) };
     }
 }
 
-/// WHERE A LINE MADE TANGENT TOUCHES THE CIRCLE, when that is a point of the line and not only of the straight line it
-/// lies on: the middle of a line picked at its middle (`at_middle`), held there so the line is carried onto the circle by
-/// it; or, where the foot of the centre falls off the line, the end nearer to it, so the line runs on to the circle.
-/// Tangency alone touches the circle with the straight line the segment lies on: a line apart from the circle turned to
-/// it and stayed apart. Reported behaviour: "the line is not lengthened; with the centre of the line picked, the line is
-/// not carried onto the circle by its middle". None where the foot already falls on the line.
-fn touch_point(project: &mut Project, si: usize, sel_sk: &qymcad_ui_state::SketchSelection, (a, b): (Id, Id), centre: Id) -> Option<Id> {
-    if sel_sk.at_middle.iter().any(|&e| line_ends_of(project, si, e) == Some((a, b))) {
-        return Some(qymcad_ui_state::materialize_ref(project, si, qymcad_ui_state::SketchRef::Midpoint(a, b)));
-    }
-    let (pa, pb, c) = (qymcad_ui_state::sketch_pt(project, si, a)?, qymcad_ui_state::sketch_pt(project, si, b)?, qymcad_ui_state::sketch_pt(project, si, centre)?);
-    let (dx, dy) = (pb.x - pa.x, pb.y - pa.y);
-    let len2 = dx * dx + dy * dy;
-    if len2 < 1e-18 {
-        return None;
-    }
-    let t = ((c.x - pa.x) * dx + (c.y - pa.y) * dy) / len2;
-    if t < 0.0 {
-        Some(a)
-    } else if t > 1.0 {
-        Some(b)
-    } else {
-        None
-    }
+/// THE MIDDLE OF A CURVE PICKED AT ITS MIDDLE (`at_middle`) for a tangency, and the other curve picked: the middle is
+/// held on the other, so the curve is carried onto it by its middle. Tangency alone touches the other with the straight
+/// line a segment lies on: a line apart from a circle turned to it and stayed apart. Reported behaviour: "with the centre
+/// of the line picked, the line is not carried onto the circle by its middle". `None` where no curve was picked at its
+/// middle.
+fn middle_touch(project: &mut Project, si: usize, sel_sk: &qymcad_ui_state::SketchSelection, picked: [Id; 2]) -> Option<qymcad_core::model::Constraint> {
+    let (mid, other) = picked.iter().enumerate().find_map(|(k, &eid)| {
+        let (a, b) = line_ends_of(project, si, eid)?;
+        sel_sk.at_middle.contains(&eid).then_some(((a, b), picked[1 - k]))
+    })?;
+    let p = qymcad_ui_state::materialize_ref(project, si, qymcad_ui_state::SketchRef::Midpoint(mid.0, mid.1));
+    let on = project.sketches[si].entity(other).map(qymcad_core::model::curve_ref_of)?;
+    Some(qymcad_core::model::Constraint::PointOnCurve { p, on })
 }
 
 /// Every point belonging to the current sketch selection: the points themselves plus the ends and
 /// centres of the picked entities. Used to move geometry as a whole.
 pub fn sketch_sel_points(project: &Project, sel_sk: &qymcad_ui_state::SketchSelection, si: usize) -> Vec<Id> {
-    use qymcad_core::model::EntityKind;
     let Some(s) = project.sketches.get(si) else { return vec![] };
     let mut ids: std::collections::HashSet<Id> = std::collections::HashSet::new();
-    for (k, id) in &sel_sk.items {
+    for qymcad_ui_state::SketchItem { kind: k, id } in &sel_sk.items {
         match k {
-            0 => {
+            qymcad_ui_state::ItemKind::Point => {
                 ids.insert(*id);
             }
-            &qymcad_ui_state::SEL_SPLINE => {
-                if let Some(sp) = s.splines.iter().find(|sp| sp.points.first() == Some(id)) {
-                    ids.extend(sp.points.iter().copied());
-                }
-            }
-            1 => {
+            qymcad_ui_state::ItemKind::Curve => {
                 if let Some(e) = s.entities.iter().find(|e| e.id == *id) {
-                    match e.kind {
-                        EntityKind::Line { a, b } => {
-                            ids.insert(a);
-                            ids.insert(b);
-                        }
-                        EntityKind::Circle { center, .. } => {
-                            ids.insert(center);
-                        }
-                        EntityKind::Arc { center, a, b, .. } => {
-                            ids.insert(center);
-                            ids.insert(a);
-                            ids.insert(b);
-                        }
-                        EntityKind::Ellipse { c, ma, mi } => {
-                            ids.insert(c);
-                            ids.insert(ma);
-                            ids.insert(mi);
-                        }
-                    }
+                    ids.extend(qymcad_core::model::entity_points(e));
                 }
             }
             _ => {}
@@ -698,40 +533,53 @@ pub fn sketch_ref_edges_2d_ids(sk: &mut qymcad_ui_state::SketchCtx, si: usize) -
 /// The table belongs to the sketch, not to the window: the window's job is to hear the key and to take the
 /// tool, and it had eleven lines of "this action means that number" written into it - one per tool, growing
 /// by one with every tool added.
-pub fn tool_for_action(action: &str) -> Option<u8> {
+pub fn tool_for_action(action: &str) -> Option<qymcad_ui_state::SketchShape> {
+    use qymcad_ui_state::SketchShape as S;
     Some(match action {
-        "sketch.line" => 1,
-        "sketch.rect" => 2,
-        "sketch.circle" => 3,
-        "sketch.arc" => 4,
-        "sketch.point" => 5,
-        "sketch.polygon" => 6,
-        "sketch.slot" => 7,
-        "sketch.ellipse" => 8,
-        "sketch.spline" => 9,
-        "sketch.text" => 11,
+        "sketch.line" => S::Line,
+        "sketch.rect" => S::Rect,
+        "sketch.circle" => S::Circle,
+        "sketch.arc" => S::Arc,
+        "sketch.point" => S::Point,
+        "sketch.polygon" => S::Polygon,
+        "sketch.slot" => S::Slot,
+        "sketch.ellipse" => S::Ellipse,
+        "sketch.spline" => S::Spline,
+        "sketch.text" => S::Text,
         _ => return None,
     })
 }
 
+/// WHAT THE STATUS LINE SAYS AS DRAWING TOOL `shape` IS TAKEN - or the arrow, with none.
+pub fn drawing_hint(shape: Option<qymcad_ui_state::SketchShape>) -> qymcad_ui_state::Notice {
+    use qymcad_ui_state::SketchShape as S;
+    qymcad_ui_state::Notice::info(qymcad_i18n::tr(match shape {
+        Some(S::Line) => "g-line-hint",
+        Some(S::Rect) => "g-rect-hint",
+        Some(S::Circle) => "g-circle-hint",
+        Some(S::Arc) => "g-arc-cse",
+        Some(S::Point) => "g-point-hint",
+        Some(S::Polygon) => "g-polygon-hint",
+        Some(S::Slot) => "g-slot-hint",
+        Some(S::Ellipse) => "g-ellipse-hint",
+        Some(S::Spline) => "g-spline-hint",
+        Some(S::Text) => "g-text-hint",
+        None => "g-select",
+    }))
+}
+
 /// The two ends of line `eid` of sketch `si`.
 fn line_ends_of(project: &Project, si: usize, eid: Id) -> Option<(Id, Id)> {
-    match project.sketches.get(si)?.entities.iter().find(|e| e.id == eid)?.kind {
-        qymcad_core::model::EntityKind::Line { a, b } => Some((a, b)),
-        _ => None,
-    }
+    project.sketches.get(si)?.entity(eid)?.kind.as_line().map(|l| (l.a, l.b))
 }
 
 /// The ends of the line of sketch `si` whose middle stands at `at`, where the snap put its triangle.
 fn line_with_middle_at(project: &Project, si: usize, at: Point2) -> Option<(Id, Id)> {
     let s = project.sketches.get(si)?;
     let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-    s.entities.iter().find_map(|e| match e.kind {
-        qymcad_core::model::EntityKind::Line { a, b } => {
-            let ((ax, ay), (bx, by)) = (pt(a)?, pt(b)?);
-            (((ax + bx) / 2.0 - at.x).abs() < 1e-9 && ((ay + by) / 2.0 - at.y).abs() < 1e-9).then_some((a, b))
-        }
-        _ => None,
+    s.entities.iter().filter_map(|e| e.kind.as_line()).find_map(|l| {
+        let ((ax, ay), (bx, by)) = (pt(l.a)?, pt(l.b)?);
+        (((ax + bx) / 2.0 - at.x).abs() < 1e-9 && ((ay + by) / 2.0 - at.y).abs() < 1e-9).then_some((l.a, l.b))
     })
 }
 
@@ -774,21 +622,17 @@ fn delete_selected_in(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
         }
         return;
     }
-    let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = sk.sel_sk.curves().collect();
     // system points (the origin and the axes) and DRIVEN ones (projections of a body) are not deleted one
     // by one
     let sys: std::collections::HashSet<Id> = sk.project.sketches[si].immovable_points();
-    let mut pids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
-    // a spline picked by its curve goes with its nodes, as a line goes with its ends
-    let s = &sk.project.sketches[si];
-    pids.extend(
-        sk.sel_sk
-            .items
-            .iter()
-            .filter(|(k, _)| *k == qymcad_ui_state::SEL_SPLINE)
-            .filter_map(|(_, id)| s.splines.iter().find(|sp| sp.points.first() == Some(id)))
-            .flat_map(|sp| sp.points.iter().copied()),
-    );
+    let pids: Vec<Id> = sk
+        .sel_sk
+        .items
+        .iter()
+        .filter(|qymcad_ui_state::SketchItem { kind: k, id }| *k == qymcad_ui_state::ItemKind::Point && !sys.contains(id))
+        .map(|qymcad_ui_state::SketchItem { id, .. }| *id)
+        .collect();
     if eids.is_empty() && pids.is_empty() {
         return;
     }
@@ -823,6 +667,12 @@ mod corners;
 pub use corners::*;
 mod popups;
 pub use popups::*;
+mod in_hand;
+pub use in_hand::in_hand;
+use in_hand::*;
+mod editors;
+
+use editors::*;
 mod ties;
 pub use ties::*;
 mod constraints;
@@ -841,3 +691,7 @@ mod drag;
 pub use drag::*;
 mod snap;
 pub use snap::*;
+mod commands;
+pub use commands::*;
+mod options;
+use options::*;

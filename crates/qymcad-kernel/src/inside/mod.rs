@@ -20,6 +20,7 @@ mod multiprofile;
 mod push_face;
 mod remove_faces;
 mod shares_geometry;
+mod two_operations_at_once;
 mod split_body;
 mod split_faces;
 mod step;

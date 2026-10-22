@@ -3,38 +3,19 @@
 use crate::Notice;
 use super::*;
 
-pub fn note_editor(annot: &mut AnnotEdit, inline: &mut InlineEdit, project: &mut Project, sel: Sel, view: View2d, ctx: &egui::Context, rect: Rect) {
-    let Sel::Sketch(si) = sel else {
-        inline.clear();
-        return;
-    };
-    let Some(ni) = inline.note() else { return };
-    let Some(at) = project.sketches.get(si).and_then(|s| s.notes.get(ni)).map(|n| (Sheet { view, rect }).at(Point2::new(n.x, n.y))) else {
-        inline.clear();
-        return;
-    };
-    let (mut apply, mut close) = (false, false);
-    egui::Area::new(egui::Id::new(("noteedit", si, ni))).fixed_pos(clamp_popup(at, rect) + egui::vec2(0.0, -28.0)).order(crate::AT_GEOMETRY).show(ctx, |ui| {
-        crate::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut annot.note_buf).desired_width(160.0));
-                if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    apply = true;
-                }
-                if ui.button(egui_phosphor::regular::CHECK).clicked() {
-                    apply = true;
-                }
-            });
-        });
-    });
-    if apply {
-        project.set_note_text(si, ni, annot.note_buf.clone());
-        close = true;
-    }
-    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        inline.clear(); // a note is not a label: no tool is in hand for it
-    }
+/// A NOTE OF A SKETCH: the sketch, and the note among its notes.
+#[derive(Clone, Copy)]
+pub struct NoteAt {
+    pub si: usize,
+    pub ni: usize,
+}
+
+/// OPEN THE EDITING OF NOTE `at`: what a double click on it does. Its box is the box of the tool of the
+/// sketch in hand, at the note, its words taking the keyboard.
+pub fn begin_note_edit(project: &Project, annot: &mut AnnotEdit, inline: &mut InlineEdit, at: NoteAt) {
+    *inline = InlineEdit::Note(at.ni);
+    annot.note_buf = project.sketches.get(at.si).and_then(|s| s.notes.get(at.ni)).map(|n| n.text.clone()).unwrap_or_default();
+    annot.note_focus = true;
 }
 
 /// CLOSE THE EDITING OF A LABEL and put the text tool down.
@@ -103,8 +84,6 @@ pub struct TextCtx<'a> {
 /// popup over the previous text.
 pub fn begin_text_edit(project: &Project, tools: &mut Tools, prefs: &mut SketchToolPrefs, si: usize, ti: usize) {
     let Some(t) = project.sketches.get(si).and_then(|s| s.texts.get(ti)) else { return };
-    tools.annot.text_buf = t.text.clone();
-    tools.annot.text_h = t.height;
     tools.annot.text = Some(ti);
     tools.annot.text_focus = true; // the caret lands in the field, so typing and Enter work straight away
     *tools.inline = InlineEdit::Text(ti);
@@ -119,11 +98,13 @@ pub fn begin_text_edit(project: &Project, tools: &mut Tools, prefs: &mut SketchT
     prefs.font = t.font.clone();
     // Not `select`, which TOGGLES: pressing the text tool twice puts it down, and opening an editor must
     // always end with the tool in hand.
-    *tools.armed = Armed::Draw(11);
+    *tools.armed = Armed::Draw(SketchShape::Text);
     tools.tool.pts.clear();
 }
 
-pub fn text_obj_editor(ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx, ctx: &egui::Context, rect: Rect) {
+/// A LABEL BEING EDITED THAT WENT FROM UNDER ITS BOX - the sketch left, the label deleted - ends its editing. The box of
+/// the label is the box of the text tool in hand (`text_edit_apply` applies it).
+pub fn text_obj_editor(ed: Editing, tc: &mut TextCtx) {
     // NO LABEL BEING EDITED, NOTHING TO END. This runs on every flat frame, and ending a text edit puts the tool in hand
     // down: asked first whether the sketch was selected, it put down whatever was in hand whenever it was not.
     // Reported behaviour: an extrusion opened for editing, "Pick contours" pressed - the view went flat with nothing to
@@ -133,60 +114,35 @@ pub fn text_obj_editor(ed: Editing, font_cache: &mut FontCache, tc: &mut TextCtx
         end_text_edit(tc);
         return;
     };
-    let Some((bx, _by, _, maxy)) = ed.project.sketch_text_bbox(si, ti) else {
-        end_text_edit(tc);
-        return;
-    };
-    let at = (Sheet { view: *ed.view, rect }).at(Point2::new(bx, maxy));
-    let (mut apply, mut close) = (false, false);
-    egui::Area::new(egui::Id::new(("textedit", si, ti))).fixed_pos(clamp_popup(at, rect) + egui::vec2(0.0, -34.0)).order(crate::AT_GEOMETRY).show(ctx, |ui| {
-        crate::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let want_focus = tc.annot.text_focus;
-                let r = focus_edit(ui, &mut tc.annot.text_buf, 160.0, "", want_focus);
-                if r.has_focus() {
-                    tc.annot.text_focus = false;
-                }
-                ui.label(qymcad_i18n::tr("g-height-short"));
-                ui.add(egui::DragValue::new(&mut tc.annot.text_h).speed(0.2).range(1.0..=1000.0).suffix(qymcad_i18n::tr("unit-mm-suffix")));
-                // WHICH FONT THIS LABEL IS IN. It is re-baked in that one, so it is the one to show; a label
-                // made before fonts were recorded says so instead, because its edit will be refused.
-                let of_label = ed.project.sketches[si].texts.get(ti).map(|t| t.font.clone()).unwrap_or_default();
-                if ui.button(font_label(&of_label, "sk-text-font-unknown-short")).on_hover_text(qymcad_i18n::tr("opt-pick-font")).clicked() {
-                    font_cache.picker.open = true;
-                    font_cache.picker.for_label = true; // what is chosen changes THIS label
-                }
-                if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button(egui_phosphor::regular::CHECK).clicked() {
-                    apply = true;
-                }
-            });
-        });
-    });
-    if apply {
-        // THE LABEL IS RE-BAKED IN ITS OWN FONT, not in whatever the application has in hand. A text that was
-        // written in one typeface and edited in another is a change nobody asked for and nobody is told
-        // about: measured, a label written in Liberation Sans came back in Cantarell after a reopen.
-        let (x, y, angle, font) = {
-            let t = &ed.project.sketches[si].texts[ti];
-            (t.x, t.y, t.angle, t.font.clone())
-        };
-        let (txt, h) = (tc.annot.text_buf.clone(), tc.annot.text_h);
-        // A label made before the font was recorded, or one whose font file is gone: the drawing stays as it
-        // is and the person is told why, rather than being handed a different typeface silently.
-        match font_cache.bytes(&font) {
-            Some(_) => {
-                let glyphs = bake_text_glyphs(font_cache, &font, GlyphPlace { at: Point2::new(x, y), height: h, angle }, &txt);
-                ed.project.set_sketch_text(si, ti, qymcad_core::model::TextSpec { at: qymcad_core::geom::Point2::new(x, y), height: h, angle, text: txt, glyphs, font });
-                invalidate(ed.regen);
-            }
-            None => {
-                *ed.status = Notice::warning(if font.family.is_empty() { qymcad_i18n::tr("sk-text-font-unknown") } else { qymcad_i18n::tr1("sk-text-font-gone", "name", &font.family) });
-            }
-        }
-        close = true;
-    }
-    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if ed.project.sketch_text_bbox(si, ti).is_none() {
         end_text_edit(tc);
     }
+}
+
+/// THE LABEL BEING EDITED TAKES WHAT ITS BOX HOLDS - the string and the height of the text tool - re-baked in its own
+/// font. Answers whether it was written.
+pub fn text_edit_apply(sk: &mut SketchCtx, si: usize) -> bool {
+    let Some(ti) = sk.inline.text() else { return false };
+    let Some(t) = sk.project.sketches.get(si).and_then(|s| s.texts.get(ti)) else { return false };
+    // THE LABEL IS RE-BAKED IN ITS OWN FONT, not in whatever the application has in hand. A text that was written in one
+    // typeface and edited in another is a change nobody asked for and nobody is told about: measured, a label written in
+    // Liberation Sans came back in Cantarell after a reopen.
+    let (at, angle, font) = (Point2::new(t.x, t.y), t.angle, t.font.clone());
+    let (txt, h) = (sk.tool_prefs.text.clone(), sk.tool_prefs.text_h);
+    // A label made before the font was recorded, or one whose font file is gone: the drawing stays as it is and the
+    // person is told why, rather than being handed a different typeface silently.
+    if sk.font_cache.bytes(&font).is_none() {
+        *sk.status = Notice::warning(if font.family.is_empty() { qymcad_i18n::tr("sk-text-font-unknown") } else { qymcad_i18n::tr1("sk-text-font-gone", "name", &font.family) });
+        return false;
+    }
+    let glyphs = bake_text_glyphs(sk.font_cache, &font, GlyphPlace { at, height: h, angle }, &txt);
+    sk.project.set_sketch_text(si, ti, qymcad_core::model::TextSpec { at: qymcad_core::geom::Point2::new(at.x, at.y), height: h, angle, text: txt, glyphs, font });
+    invalidate(sk.regen);
+    true
+}
+
+/// THE EDITING OF A LABEL ENDED from the box of the text tool: the tool put down.
+pub fn end_label_edit(sk: &mut SketchCtx) {
+    let SketchToolPrefs { text, font, text_h, text_note, .. } = &mut *sk.tool_prefs;
+    end_text_edit(&mut TextCtx { annot: sk.annot, inline: sk.inline, armed: sk.armed, tool: sk.tool, font, text, tool_text_height: *text_h, writes_note: *text_note });
 }

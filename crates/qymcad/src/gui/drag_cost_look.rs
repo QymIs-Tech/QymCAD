@@ -33,7 +33,7 @@ mod tests {
         // would measure an idle frame).
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 30.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 30.0);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         let sid = app.project.sketches[si].id;
@@ -85,7 +85,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
 
         let mut changed = 0usize;
         let mut per_step = 0.0;

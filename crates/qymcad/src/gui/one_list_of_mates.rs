@@ -94,7 +94,7 @@ mod tests {
         }
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), first);
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), second);
-        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx()).expect("the relation is made");
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let relation = app.project.relations.last().map(|r| r.id).expect("the relation was created");
         (first, group, relation)

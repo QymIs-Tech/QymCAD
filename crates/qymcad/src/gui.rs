@@ -91,13 +91,6 @@ pub(crate) struct App {
     /// ALL THE PROGRAM'S SETTINGS in one record (see `Settings`). The single owner of the values: the settings
     /// window edits it, the store saves it whole, and the program reads from it.
     set: Settings,
-    /// THE COMMAND DID NOT APPLY - a flag, not a guess from the status text.
-    ///
-    /// This used to be decided by searching the status line for a substring. While the interface was in one
-    /// language it worked; with a translation the status would stop matching, and a FAILED operation would land
-    /// silently in the undo history as a successful one. Checking text is always a lie about what happened: the
-    /// text is written for a person, while the decision is taken by the program.
-    cmd_failed: bool,
     /// THE SNAP HINT, derived from the cursor and recomputed every frame. It used to live inside the snap settings
     /// and got in the way of saving them whole; it is not a setting.
     snap_hint: Option<(Point2, u8)>,
@@ -293,6 +286,7 @@ impl App {
             regen: &mut self.regen,
             scheme: &mut self.scheme,
             section: &mut self.side.section,
+            held: &self.chosen.tree_sel.multi,
             sel: &mut self.chosen.sel,
             sel_sk: &mut self.tools.sel_sk,
             set: &mut self.set,
@@ -332,13 +326,13 @@ impl App {
                 BarAsk::FeatCmd(c) => self.start_feat_cmd(c),
                 BarAsk::PrimCmd(c) => crate::gui::commands::start_prim_cmd(&mut self.part_ctx(), c),
                 BarAsk::ToggleSection => self.toggle_section(),
-                BarAsk::MirrorPart(comp) => mirror_part_door(self, comp),
+                BarAsk::MirrorPart(comp) => crate::gui::assembly_tools::mirror_part_door(self, comp),
                 BarAsk::ToggleMeasure3d => self.toggle_measure_3d(),
                 BarAsk::EnterComponent(cid) => self.enter_component(cid),
                 BarAsk::CompArray(m) => self.start_comp_array(m),
                 BarAsk::CancelAllTools(then) => {
                     self.cancel_all_tools();
-                    then.take(&mut self.params.boolean, &mut self.status)
+                    then.take(&mut self.params.boolean, &mut self.tools.gsel.before, &mut self.status)
                 }
                 BarAsk::ToggleLibrary => toggle_parts_library(&mut self.parts, &mut self.win),
                 BarAsk::ToggleSketchPick => self.toggle_sketch_pick(),
@@ -429,6 +423,7 @@ impl App {
             regen: &mut self.regen,
             live: &mut self.live,
             params_seen: &mut self.params_seen,
+            held: &mut self.chosen.tree_sel.multi,
             sel: &mut self.chosen.sel,
             array: &mut self.side.array,
             boolean: &mut self.params.boolean,
@@ -470,6 +465,7 @@ impl App {
     pub(crate) fn painting(&self) -> Painting<'_> {
         Painting {
             armed: &self.tools.armed,
+            held: &self.chosen.tree_sel.multi,
             active_path: &self.active_path,
             arr: self.params.arr,
             body_giz: &self.dragged.body_giz,
@@ -579,6 +575,8 @@ impl App {
             rev: &mut self.params.rev,
             rot: &mut self.side.rot,
             sweep: &mut self.params.sweep,
+            bar_exprs: &mut self.bar_exprs,
+            canvas: self.viewing.view_rect,
         }
     }
 
@@ -616,7 +614,6 @@ impl App {
             boolean: &mut self.params.boolean,
             bar_exprs: &mut self.bar_exprs,
             rev: &mut self.params.rev,
-            cmd_failed: &mut self.cmd_failed,
             carr: &mut self.side.carr,
             view: &mut self.viewing.view,
             view_restore: &mut self.viewing.view_restore,
@@ -633,6 +630,8 @@ impl App {
             cache: &mut self.cache,
             sketch_ses: &mut self.sketch_ses,
             win: &mut self.win,
+            tree: &self.chosen.tree_sel,
+            canvas: self.viewing.view_rect,
         }
     }
     /// The one doorway into the rebuild: built in a single place so the borrows stay disjoint.
@@ -661,7 +660,6 @@ impl Default for App {
         project.new_document(); // the root assembly plus an active empty first Part right from the start
         let mut app = Self {
             set: Settings::default(),
-            cmd_failed: false,
             snap_hint: None,
             cache: Caches::default(),
             interference: Interference::default(),
@@ -711,7 +709,7 @@ impl Default for App {
             opts: FeatOptions { mirror_keep: true, ..Default::default() },
             deferred: DeferredUi::default(),
             sk_pat: SketchPattern { dx: 20.0, dy: 0.0, count: 3, dx2: 0.0, dy2: 20.0, count2: 1, angle: 360.0 },
-            tool_prefs: SketchToolPrefs { poly_n: 6, fillet: 3.0, offset: 3.0, text_h: 10.0, ..Default::default() },
+            tool_prefs: SketchToolPrefs::default(),
             font_cache: qymcad_ui_state::FontCache::default(),
             gpu_ok: false,
             joint_anim: None,
@@ -863,39 +861,24 @@ impl App {
         if let Some(s) = self.project.sketches.get(si) {
             // remember the viewpoint and mode, to bring them back on leaving the sketch (the drill-in stack)
             self.viewing.nav_stash.push((self.viewing.cam, self.viewing.view, self.viewing.mode_3d));
-            qymcad_ui_state::open_sketch_session(&mut self.sketch_ses, &self.project, s.id);
+            qymcad_ui_state::open_sketch_session(&mut self.sketch_ses, &mut self.disk.edits, &self.project, s.id);
             self.workbench = Workbench::Sketch;
             self.viewing.mode_3d = false;
             self.chosen.sel = Sel::Sketch(si);
             self.tools.sel_sk.clear(); // the selection, and whatever was waiting on it
-            self.tools.pending_import.draw_pts = None;
-            self.tools.armed = qymcad_ui_state::Armed::None;
             self.viewing.view.initialized = false; // fit the view to the sketch
             self.status = Notice::info(sketch_entry_status(&self.project, s));
         }
     }
 
     /// Pick a sketch drawing tool (entering a sketch first, if not in one yet).
-    pub(crate) fn set_sk_tool(&mut self, t: u8) {
+    pub(crate) fn set_sk_tool(&mut self, t: qymcad_ui_state::SketchShape) {
         if edit_si(&self.project, &self.sketch_ses).is_none() {
             self.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         }
-        qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), t);
+        qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), Some(t));
         self.viewing.mode_3d = false;
-        self.status = match self.tools.armed.draw_kind() {
-            1 => Notice::info(crate::i18n::tr("g-line-hint")),
-            2 => Notice::info(crate::i18n::tr("g-rect-hint")),
-            3 => Notice::info(crate::i18n::tr("g-circle-hint")),
-            4 => Notice::info(crate::i18n::tr("g-arc-cse")),
-            5 => Notice::info(crate::i18n::tr("g-point-hint")),
-            6 => Notice::info(crate::i18n::tr("g-polygon-hint")),
-            7 => Notice::info(crate::i18n::tr("g-slot-hint")),
-            8 => Notice::info(crate::i18n::tr("g-ellipse-hint")),
-            9 => Notice::info(crate::i18n::tr("g-spline-hint")),
-            10 => Notice::info(crate::i18n::tr("g-circle-3pt")),
-            11 => Notice::info(crate::i18n::tr("g-text-hint")),
-            _ => Notice::info(crate::i18n::tr("g-select")),
-        };
+        self.status = qymcad_sketch::drawing_hint(self.tools.armed.drawing());
     }
 
     /// Create a sketch on a given plane (World, Datum or Face) and enter its editing.
@@ -993,36 +976,10 @@ impl App {
         qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the scheduler does the computing
     }
 
-    /// Apply or update the pattern on Enter.
-    fn confirm_pattern(&mut self) {
-        begin_edit(&mut self.disk.edits, &self.project, crate::i18n::tr("g-sketch-array")); // THE OPERATION BOUNDARY
-        let Sel::Sketch(si) = self.chosen.sel else { return };
-        if let Some(pi) = self.tools.pat.edit {
-            let src = self.project.sketches.get(si).and_then(|s| s.patterns.get(pi)).map(|p| p.source.clone()).unwrap_or_default();
-            let kind = current_pattern_kind(&self.tools.armed, self.tools.pat, &self.project, self.sk_pat, si, &src);
-            self.project.update_pattern(si, pi, kind);
-            self.status = Notice::info(crate::i18n::tr("g-array-updated"));
-        } else {
-            let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
-            if eids.is_empty() {
-                self.status = Notice::info(crate::i18n::tr("g-select-for-array"));
-                return;
-            }
-            let kind = current_pattern_kind(&self.tools.armed, self.tools.pat, &self.project, self.sk_pat, si, &eids);
-            self.project.add_pattern(si, &eids, kind);
-            self.status = Notice::info(crate::i18n::tr("g-array-created"));
-        }
-        self.tools.armed = qymcad_ui_state::Armed::None;
-        self.tools.pat.edit = None;
-        self.tools.pat.center = None;
-        invalidate(&mut self.regen);
-        qymcad_ui_state::commit_edit(&mut self.rebuild_ctx());
-    }
-
     pub(crate) fn clipboard_copy(&mut self, cut: bool) {
         // while editing a sketch, the GEOMETRY is copied, whatever is selected in the tree
         if edit_si(&self.project, &self.sketch_ses).is_some() {
-            let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+            let eids: Vec<Id> = self.tools.sel_sk.curves().collect();
             if eids.is_empty() {
                 // A REFUSAL COSTS NOTHING. Nothing is selected, so there is no copy to make - and the tool
                 // stays in hand: taking a half-drawn shape away over a mis-press would punish the person for
@@ -1187,13 +1144,13 @@ impl App {
     /// Test facades for saving: a test must take the same path as Save does.
     #[cfg(test)]
     pub(crate) fn save_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
+        crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
         self.wait_bg();
     }
 
     #[cfg(test)]
     pub(crate) fn autosave_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
+        crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
         self.wait_bg();
     }
 
@@ -1496,18 +1453,13 @@ impl App {
         self.status = Notice::info(crate::i18n::tr("io-rebuilding-all"));
     }
 
-    /// Turn the plane pick for a new sketch on or off (the Sketch button and the K shortcut). It cancels
-    /// an active datum or command (`cancel_all_tools` clears the sketch-plane pick, so the target state is
-    /// remembered BEFORE the reset), so that two tools are never held at once.
+    /// Take the plane pick for a new sketch, every other tool put down first; taken again, `catalogue::again` puts it down.
     fn toggle_sketch_pick(&mut self) {
-        let turning_on = !self.tools.picking.is_sketch_plane();
         self.cancel_all_tools();
-        self.tools.picking = if turning_on { Picking::SketchPlane(None) } else { Picking::None }; // pressed again, the pencil is put down
-        if self.tools.picking.is_sketch_plane() {
-            self.viewing.mode_3d = true; // planes and faces are picked in 3D
-            self.chosen.sel = Sel::None;
-            self.status = Notice::info(crate::i18n::tr("g-sketch-pick-plane"));
-        }
+        self.tools.picking = Picking::SketchPlane(None);
+        self.viewing.mode_3d = true; // planes and faces are picked in 3D
+        self.chosen.sel = Sel::None;
+        self.status = Notice::info(crate::i18n::tr("g-sketch-pick-plane"));
     }
 
     /// Which gizmo axis is under the cursor (0 = X, 1 = Y, 2 = Z), if it is close enough (within 8 px).
@@ -1660,27 +1612,23 @@ impl App {
         let Some(action) = qymcad_ui_state::hotkey_action(&self.set, "part", key) else { return };
         match action {
             "part.sketch-pick" => self.toggle_sketch_pick(),
-            "part.datum-plane" => self.start_feat_cmd(20),
-            "part.extrude" => {
-                self.feat.op = 0;
-                self.start_feat_cmd(1);
+            // A CUT IS THE EXTRUSION with the operation of a cut, as its key says; the extrusion's own key adds
+            "part.extrude" | "part.cut" => {
+                self.feat.op = if action == "part.cut" { 2 } else { 0 };
+                if let Some(t) = crate::command_catalog::part_tool_of("part.extrude") {
+                    self.start_feat_cmd(t);
+                }
             }
-            "part.cut" => {
-                self.feat.op = 2;
-                self.start_feat_cmd(1);
-            }
-            "part.revolve" => self.start_feat_cmd(3),
-            "part.fillet" => self.start_feat_cmd(4),
-            "part.chamfer" => self.start_feat_cmd(5),
-            "part.shell" => self.start_feat_cmd(6),
-            "part.hole" => self.start_feat_cmd(7),
-            "part.mirror" => self.start_feat_cmd(16),
-            "part.box" => self.start_prim_cmd(10),
-            "part.cylinder" => self.start_prim_cmd(11),
             "part.measure" => self.toggle_measure_3d(),
             // go back to picking the contours of the active sketch command (extrude, revolve) from its 3D step
-            "part.contour-reselect" if matches!(self.tools.armed.cmd_kind(), 1 | 3) && self.tools.cmd.sketch.is_some() && self.viewing.mode_3d => {
+            "part.contour-reselect" if self.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && self.tools.cmd.sketch.is_some() && self.viewing.mode_3d => {
                 crate::gui::commands::enter_contour_reselect(&mut self.part_ctx())
+            }
+            // the tool of the row of the catalogue under the code of the action
+            "part.datum-plane" | "part.revolve" | "part.fillet" | "part.chamfer" | "part.shell" | "part.hole" | "part.mirror" | "part.box" | "part.cylinder" => {
+                if let Some(t) = crate::command_catalog::part_tool_of(action) {
+                    self.start_feat_cmd(t);
+                }
             }
             _ => {}
         }
@@ -1692,7 +1640,11 @@ impl App {
         let Some(action) = qymcad_ui_state::hotkey_action(&self.set, "assembly", key) else { return };
         match action {
             // there are NO sketch keys in an Assembly: a sketch is inert there (see `create_panel_common`)
-            "assembly.datum-plane" => self.start_feat_cmd(20),
+            "assembly.datum-plane" => {
+                if let Some(t) = crate::command_catalog::part_tool_of(crate::command_catalog::DATUM_PLANE) {
+                    self.start_feat_cmd(t);
+                }
+            }
             "assembly.new-part" => {
                 let id = self.project.add_part(self.project.free_part_name());
                 self.enter_component(id);
@@ -1876,19 +1828,6 @@ pub(crate) fn shade_tri_for_test(pal: &crate::palette::Palette, ghost_alpha: u8,
     qymcad_pick::shade_tri(pal, ghost_alpha, hot, ghost, base, n, lights)
 }
 
-/// A PNG out of a `ColorImage` (RGBA8) — for the `thumb.png` inside a `.qpart`. Uses `image` with its png feature.
-pub(crate) fn color_image_to_png(img: &egui::ColorImage) -> Option<Vec<u8>> {
-    use image::ImageEncoder;
-    let (w, h) = (img.size[0] as u32, img.size[1] as u32);
-    let mut rgba: Vec<u8> = Vec::with_capacity(img.pixels.len() * 4);
-    for p in &img.pixels {
-        rgba.extend_from_slice(&p.to_array());
-    }
-    let mut png = Vec::new();
-    image::codecs::png::PngEncoder::new(&mut png).write_image(&rgba, w, h, image::ExtendedColorType::Rgba8).ok()?;
-    Some(png)
-}
-
 /// VISIBILITY HAS CHANGED — DROP THE CACHE OF "WHAT WE SHOW".
 ///
 /// Reported behaviour: a part is hidden, it is gone from 3D, and yet its edges and faces hang in the
@@ -1990,25 +1929,6 @@ pub(crate) fn axis_from_face(active_path: &[Id], edges: &EdgeCache, live: &LiveG
 /// different components that are visible in the context are transformed into the context's frame ONCE,
 /// and then intersected pairwise for a common volume. It is expensive, so it runs only while
 /// `show_interference` is on, the scene is not being dragged, and the cache is stale.
-/// TAKE THE "MIRROR A WHOLE PART" TOOL, in the order that works: release the others FIRST.
-///
-/// The button used to push the release and set the field straight after. The release is carried out
-/// AFTER the frame, so it cleared the field again and the button did nothing - the same shape as the
-/// ruler that switched the measuring tool on and off within one frame.
-///
-/// Beside the application rather than on it: nothing here needs to see the whole of it.
-fn mirror_part_door(app: &mut App, comp: Option<Id>) {
-    // the button pressed again with the tool in hand puts it down, as every tool button does
-    let held = app.params.mirror.in_hand();
-    app.cancel_all_tools();
-    if held {
-        return;
-    }
-    // with no part picked before the button the tool is in hand all the same and waits for a click on one
-    (app.params.mirror.part, app.params.mirror.waiting) = (comp, comp.is_none());
-    app.status = Notice::info(crate::i18n::tr(if comp.is_some() { "tb-mirror-pick-plane" } else { "tb-mirror-pick-part" }));
-}
-
 pub(crate) fn refresh_interference(bv: qymcad_ui_state::BodyView, drag: qymcad_ui_state::SceneDrag, interference: &mut Interference, live: &LiveGeom, set: &Settings, workbench: Workbench) {
     if !set.show_interference || !matches!(workbench, Workbench::Assembly) {
         if !interference.pairs.is_empty() {
@@ -2176,6 +2096,7 @@ mod rebuilding_everything_asks_for_geometry_again;
 mod f1_answers_for_every_assembly_tool;
 mod no_raw_keys_on_the_assembly_screen;
 mod a_dead_mate_can_be_revived;
+mod a_selection_comes_to_the_tool;
 mod a_mate_takes_the_face_you_click;
 mod one_list_of_mates;
 mod the_mate_hud;
@@ -2406,6 +2327,8 @@ pub(crate) use file_doors::*;
 mod look;
 pub(crate) use look::*;
 mod gizmo_math;
+mod png;
+pub(crate) use png::color_image_to_png;
 pub(crate) use gizmo_math::*;
 mod view_anim;
 pub(crate) use view_anim::*;

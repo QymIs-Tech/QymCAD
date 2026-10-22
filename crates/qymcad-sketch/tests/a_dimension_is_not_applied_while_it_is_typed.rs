@@ -103,7 +103,10 @@ fn the_angle_between_lines_is_an_opening() {
     assert!(qymcad_sketch::set_dim_value(&mut p, si, ci, 30.0).is_ok(), "30 deg between two lines was refused");
 }
 
-/// THE RADIUS FIELD DOES NOT REBUILD THE CIRCLE ON EVERY LETTER.
+/// THE DIAMETER BEING ERASED REACHES THE DOCUMENT ONLY WITH Enter. Reported behaviour: "while you are erasing, 100
+/// becomes 1 - and at that moment the geometry gets thrown about": every letter was laid into the document and rebuilt.
+/// The circle now shows a good value at once - 10 and 1 on the way, a field left empty moving nothing - while the
+/// document and undo take only what Enter keeps, and the box closed by Esc leaves the circle as it was.
 ///
 /// Driven through the editor in real frames, because the whole complaint is about what happens BETWEEN
 /// keystrokes: a check that set the value and asked for the result would never see the states the report is
@@ -114,7 +117,7 @@ fn the_angle_between_lines_is_an_opening() {
 /// empty room. The tick button beside the field is the other door a person has, it needs no focus, and it
 /// is clicked here for real. What is typed is put into the field's own buffer, which is what typing does.
 #[test]
-fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
+fn erasing_the_diameter_reaches_the_document_only_with_enter() {
     let mut b = qymcad_ui_state::Bench::default();
     b.project.new_document();
     let si = b.project.new_sketch("S");
@@ -124,14 +127,16 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
     b.sketch_ses.editing = Some(sid);
     b.sel = qymcad_ui_state::Sel::Sketch(si);
     let eid = b.project.sketches[si].entities[0].id;
-    b.inline = qymcad_ui_state::InlineEdit::Circle(eid);
-    b.dim.focus = true;
+    b.place.reopen(qymcad_ui_state::PlacingShape::Round(eid));
+    b.place.focus = true;
     b.view = qymcad_ui_state::View2d { center: egui::Vec2::ZERO, scale: 4.0, initialized: true, fit: 4.0 };
 
-    let radius = |b: &qymcad_ui_state::Bench| match b.project.sketches[si].entities[0].kind {
-        qymcad_core::model::EntityKind::Circle { r, .. } => r,
+    let radius = |b: &qymcad_ui_state::Bench| match b.project.sketches[si].entities[0].kind.as_circle() {
+        Some(qymcad_core::model::CircleParts { r, .. }) => r,
         _ => f64::NAN,
     };
+    // what the field of the box holds, as typed
+    let typed = |b: &qymcad_ui_state::Bench| b.place.fields.first().map(|p| p.txt.trim().to_string()).unwrap_or_default();
     let ctx = egui::Context::default();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
     let frame = |b: &mut qymcad_ui_state::Bench, events: Vec<egui::Event>| -> Vec<(String, egui::Rect)> {
@@ -143,7 +148,7 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
             }
         }
         let raw = egui::RawInput { screen_rect: Some(rect), events, ..Default::default() };
-        let out = ctx.run_ui(raw, |ui| qymcad_sketch::dim_editor(&mut b.sketch_ctx(), ui.ctx(), rect));
+        let out = ctx.run_ui(raw, |ui| qymcad_ui_state::tool_in_hand(ui, rect, qymcad_sketch::in_hand(&mut b.sketch_ctx())));
         let mut texts = Vec::new();
         for cs in &out.shapes {
             walk(&cs.shape, &mut texts);
@@ -156,7 +161,7 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
     for _ in 0..3 {
         frame(&mut b, Vec::new());
     }
-    assert_eq!(b.dim.buf.trim(), "100", "GUARD: the field must open on the diameter, or what follows is about nothing");
+    assert_eq!(typed(&b), "100", "GUARD: the field must open on the diameter, or what follows is about nothing");
     assert!(ctx.memory(|m| m.focused()).is_some(), "GUARD: the field must hold the keyboard, or nothing below is really typed");
 
     // TYPED FOR REAL. On auto-focus the whole text is selected, so the first keystroke replaces it - which
@@ -165,14 +170,19 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
     let mut seen = Vec::new();
     for _ in 0..3 {
         frame(&mut b, vec![egui::Event::Key { key: egui::Key::Backspace, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
-        seen.push((b.dim.buf.clone(), radius(&b)));
+        seen.push((typed(&b), radius(&b)));
     }
     assert_eq!(seen.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), vec!["10", "1", ""], "GUARD: the erasing must really go through 10 and 1: {seen:?}");
-    let moved: Vec<String> = seen.iter().filter(|(_, r)| (r - 50.0).abs() > 1e-9).map(|(t, r)| format!("with \"{t}\" in the field the circle was already rebuilt to r = {r}")).collect();
-    assert!(moved.is_empty(), "the circle is rebuilt while the number is still being erased:\n{}", moved.join("\n"));
+    let shown: Vec<f64> = seen.iter().map(|(_, r)| *r).collect();
+    assert!(
+        (shown[0] - 5.0).abs() < 1e-9 && (shown[1] - 0.5).abs() < 1e-9 && (shown[2] - 0.5).abs() < 1e-9,
+        "the circle does not show 10 and 1 as they are typed, and keep 1 over an empty field: r = {shown:?}"
+    );
+    assert!(b.edits.undo.is_empty(), "the erasing left {} steps of undo before Enter", b.edits.undo.len());
 
     // AND WHAT IS FINISHED DOES GO IN.
     frame(&mut b, vec![egui::Event::Text("30".into())]);
     frame(&mut b, vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
     assert!((radius(&b) - 15.0).abs() < 1e-9, "Enter must apply what is in the field: the radius is {} and 30 as a diameter is 15", radius(&b));
+    assert_eq!(b.edits.undo.len(), 1, "the diameter kept by Enter is not one step of undo");
 }

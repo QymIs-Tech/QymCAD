@@ -29,7 +29,7 @@ fn rectangle(hold: Hold) -> (Project, usize) {
     p.new_document();
     let si = p.new_sketch("S");
     p.add_rect_entity(si, 20.0, 10.0, 80.0, 70.0, Purpose::Real);
-    let centre = p.sketches[si].rects[0].centre;
+    let centre = p.sketches[si].rects()[0].centre;
     match hold {
         Hold::Fixed => p.sketches[si].constraints.push(Constraint::Fixed { p: centre }),
         Hold::DimensionsToTheOrigin => {
@@ -51,7 +51,7 @@ fn at(p: &Project, si: usize, id: u64) -> (f64, f64) {
 /// The upper right corner (80, 70) dragged 10 right and 6 up in five frames, as `frame` solves them, then let go.
 fn dragged(hold: Hold, frame: Frame) -> (Project, usize) {
     let (mut p, si) = rectangle(hold);
-    let r = p.sketches[si].rects[0].clone();
+    let r = p.sketches[si].rects()[0].clone();
     let corner = *r.corners.iter().find(|&&k| at(&p, si, k) == (80.0, 70.0)).expect("the corner (80, 70)");
     for step in 1..=5 {
         let t = f64::from(step) / 5.0;
@@ -75,7 +75,7 @@ fn a_corner_dragged_resizes_a_rectangle_about_its_held_centre() {
     for hold in [Hold::Fixed, Hold::DimensionsToTheOrigin, Hold::Free] {
         for frame in [Frame::Session, Frame::Alone] {
             let (p, si) = dragged(hold, frame);
-            let r = &p.sketches[si].rects[0];
+            let r = &p.sketches[si].rects()[0];
             let corners: Vec<(f64, f64)> = r.corners.iter().map(|&k| at(&p, si, k)).collect();
             let has = |want: (f64, f64)| corners.iter().any(|&c| near(c, want));
             let centre = at(&p, si, r.centre);

@@ -45,6 +45,13 @@ pub fn private_sample(name: &str) -> Option<String> {
 
 /// DOES THE SKETCH SAY IT HOLDS MORE THAN IT NEEDS: the line of its panel that counts the redundant constraints whose
 /// values agree - the program's own word that they are kept as references, not an error.
+/// THE FIELDS OF VALUES ON SCREEN, the fields of the names of drivers beside them left out: a box lays its value and,
+/// in the same row, the name a formula reads it by - the name shows its own grey words.
+pub fn value_fields(s: &mut qymcad::Session) -> Vec<qymcad::Widget> {
+    let name = s.word("sk-name-placeholder");
+    s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField && w.placeholder != name).collect()
+}
+
 pub fn says_redundant(s: &mut qymcad::Session) -> bool {
     let line = s.word("sk-redundant-n");
     let lead = line.split('{').next().unwrap_or_default().trim().to_string();
@@ -182,13 +189,19 @@ pub mod build {
         // the row is sought beside the table's own button: the same name can stand elsewhere, in a field that uses it
         let add = s.word("par-add");
         let near = s.find(&add, pos2(640.0, 400.0)).map_or(pos2(640.0, 400.0), |r| r.center());
-        let row = s.find(name, near).unwrap_or_else(|| panic!("the table shows no parameter {name:?}; on screen: {:?}", s.words()));
-        let field = s
-            .widgets()
-            .into_iter()
-            .filter(|w| w.kind == qymcad::Kind::TextField && w.rect.center().y > row.min.y && w.rect.center().y < row.max.y && w.rect.min.x > row.max.x)
-            .min_by(|a, b| a.rect.min.x.total_cmp(&b.rect.min.x))
-            .unwrap_or_else(|| panic!("the row of {name:?} has no field to write an expression in; on screen: {:?}", s.words()));
+        // OF THE PLACES THE NAME IS WRITTEN, the one with a field after it on its line: the formula of a field of a box or
+        // of the properties may read the same name
+        let fields: Vec<qymcad::Widget> = s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField).collect();
+        let after = |row: &qymcad::Rect| {
+            fields.iter().filter(|w| w.rect.center().y > row.min.y && w.rect.center().y < row.max.y && w.rect.min.x > row.max.x).min_by(|a, b| a.rect.min.x.total_cmp(&b.rect.min.x)).cloned()
+        };
+        let rows: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(w, _)| w == name).map(|(_, r)| r).collect();
+        let field = rows
+            .iter()
+            .filter_map(|r| after(r).map(|f| (r.center().distance(near), f)))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, f)| f)
+            .unwrap_or_else(|| panic!("the table shows no parameter {name:?} with a field to write an expression in; on screen: {:?}", s.words()));
         s.click(field.rect.center()).chord(qymcad::Modifiers::COMMAND, Key::A).type_text(expr).key(Key::Enter);
         let title = s.word("win-params");
         s.close_window(&title);

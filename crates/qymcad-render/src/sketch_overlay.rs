@@ -6,132 +6,19 @@ use super::*;
 /// the move/copy preview (the selected entities shifted by cursor minus base) and by the pattern preview.
 pub fn draw_entity_xform(pick: &PickCtx, painter: &egui::Painter, rect: Rect, si: usize, eid: Id, f: &dyn Fn(f64, f64) -> (f64, f64), stroke: Stroke) {
     let sh = qymcad_ui_state::Sheet { view: *pick.view, rect };
-    use qymcad_core::model::EntityKind;
     let Some(s) = pick.project.sketches.get(si) else { return };
-    let Some(kind) = s.entities.iter().find(|e| e.id == eid).map(|e| e.kind) else { return };
-    let pt = |id: Id| {
-        s.points.iter().find(|q| q.id == id).map(|q| {
+    let Some(e) = s.entities.iter().find(|e| e.id == eid) else {
+        // a point that stands alone is a shape of its own: its ghost is a dot where the map takes it
+        if let Some(q) = s.points.iter().find(|q| q.id == eid) {
             let (x, y) = f(q.x, q.y);
-            Point2::new(x, y)
-        })
+            painter.circle_stroke(sh.at(Point2::new(x, y)), 3.5, stroke);
+        }
+        return;
     };
-    match kind {
-        EntityKind::Line { a, b } => {
-            if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
-                painter.line_segment([sh.at(pa), sh.at(pb)], stroke);
-            }
-        }
-        EntityKind::Circle { center, r } => {
-            if let (Some(c), Some(redge)) = (
-                pt(center),
-                s.points.iter().find(|q| q.id == center).map(|q| {
-                    let (x, y) = f(q.x + r, q.y);
-                    Point2::new(x, y)
-                }),
-            ) {
-                let sc = sh.at(c);
-                painter.circle_stroke(sc, sh.at(redge).distance(sc), stroke);
-            }
-        }
-        EntityKind::Arc { center, a, b, ccw } => {
-            if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) {
-                let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
-                let a0 = (pa.y - c.y).atan2(pa.x - c.x);
-                let mut a1 = (pb.y - c.y).atan2(pb.x - c.x);
-                if ccw && a1 < a0 {
-                    a1 += std::f64::consts::TAU;
-                } else if !ccw && a1 > a0 {
-                    a1 -= std::f64::consts::TAU;
-                }
-                let pts: Vec<Pos2> = (0..=40)
-                    .map(|k| {
-                        let a = a0 + (a1 - a0) * k as f64 / 40.0;
-                        sh.at(Point2::new(c.x + r * a.cos(), c.y + r * a.sin()))
-                    })
-                    .collect();
-                painter.add(egui::Shape::line(pts, stroke));
-            }
-        }
-        EntityKind::Ellipse { c, ma, mi } => {
-            if let (Some(pc), Some(pma), Some(pmi)) = (pt(c), pt(ma), pt(mi)) {
-                let major = ((pma.x - pc.x).powi(2) + (pma.y - pc.y).powi(2)).sqrt().max(1e-6);
-                let minor = ((pmi.x - pc.x).powi(2) + (pmi.y - pc.y).powi(2)).sqrt().max(1e-6);
-                let (ux, uy) = ((pma.x - pc.x) / major, (pma.y - pc.y) / major);
-                let (vx, vy) = (-uy, ux);
-                let pts: Vec<Pos2> = (0..=48)
-                    .map(|k| {
-                        let t = std::f64::consts::TAU * k as f64 / 48.0;
-                        let (ct, st) = (t.cos(), t.sin());
-                        sh.at(Point2::new(pc.x + major * ct * ux + minor * st * vx, pc.y + major * ct * uy + minor * st * vy))
-                    })
-                    .collect();
-                painter.add(egui::Shape::line(pts, stroke));
-            }
-        }
-    }
-}
-
-/// Light the angular span of a circle or arc that will be removed (for draw_trim_preview).
-/// THE ARC A TRIM CLICK LANDS ON: the circle it lies on, and the piece of it that exists. `None` for a
-/// span means the whole circle.
-#[derive(Clone, Copy)]
-pub struct TrimArc {
-    pub c: Point2,
-    pub r: f64,
-    pub span: Option<(f64, f64, bool)>,
-}
-
-pub fn draw_curve_trim_span(pick: &PickCtx, painter: &egui::Painter, rect: Rect, arc: TrimArc, angs: &mut [f64], cur: Point2, col: Color32) {
-    let TrimArc { c, r, span } = arc;
-    use std::f64::consts::TAU;
-    let click_ang = (cur.y - c.y).atan2(cur.x - c.x);
-    let arc_poly = |painter: &egui::Painter, g0: f64, g1: f64| {
-        let n = 24;
-        let pts: Vec<Pos2> = (0..=n)
-            .map(|k| {
-                let g = g0 + (g1 - g0) * k as f64 / n as f64;
-                (qymcad_ui_state::Sheet { view: *pick.view, rect }).at(Point2::new(c.x + r * g.cos(), c.y + r * g.sin()))
-            })
-            .collect();
-        painter.add(egui::Shape::line(pts, Stroke::new(3.0, col)));
-    };
-    match span {
-        None => {
-            // a circle: the span between neighbouring cut angles that contains the click
-            let mut a: Vec<f64> = angs.iter().map(|x| x.rem_euclid(TAU)).collect();
-            a.sort_by(|x, y| x.total_cmp(y));
-            a.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
-            if a.len() < 2 {
-                return;
-            }
-            let ca = click_ang.rem_euclid(TAU);
-            let n = a.len();
-            for i in 0..n {
-                let (a0, a1) = (a[i], if i + 1 < n { a[i + 1] } else { a[0] + TAU });
-                if (ca >= a0 - 1e-9 && ca < a1) || (ca + TAU >= a0 && ca + TAU < a1) {
-                    arc_poly(painter, a0, a1);
-                    return;
-                }
-            }
-        }
-        Some((a0, a1, ccw)) => {
-            let to_param = |ang: f64| if ccw { (ang - a0).rem_euclid(TAU) } else { (a0 - ang).rem_euclid(TAU) };
-            let sweep = if ccw { (a1 - a0).rem_euclid(TAU) } else { (a0 - a1).rem_euclid(TAU) };
-            let mut ps: Vec<f64> = angs.iter().map(|&x| to_param(x)).filter(|&v| v > 1e-6 && v < sweep - 1e-6).collect();
-            ps.push(0.0);
-            ps.push(sweep);
-            ps.sort_by(|x, y| x.total_cmp(y));
-            ps.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
-            let cp = to_param(click_ang);
-            for w in ps.windows(2) {
-                if cp > w[0] - 1e-9 && cp < w[1] + 1e-9 {
-                    let (g0, g1) = if ccw { (a0 + w[0], a0 + w[1]) } else { (a0 - w[0], a0 - w[1]) };
-                    arc_poly(painter, g0, g1);
-                    return;
-                }
-            }
-        }
-    }
+    // the curve laid out where it stands, each of its points taken through the map
+    let Some(curve) = qymcad_core::model::curve::Curve::of(s, e) else { return };
+    let line: Vec<Pos2> = curve.polyline().into_iter().map(|p| f(p.x, p.y)).map(|(x, y)| sh.at(Point2::new(x, y))).collect();
+    painter.add(egui::Shape::line(line, stroke));
 }
 
 pub fn active_sketch_contour_ids(armed: &qymcad_ui_state::Armed, cmd: &FeatCommand, project: &Project, sketch_ses: SketchSession) -> Option<std::collections::HashSet<Id>> {
@@ -200,7 +87,6 @@ pub fn draw_sketch_grid(scheme: &SchemeUi, set: &Settings, view: View2d, painter
 /// the clipboard data (the entities are not in the sketch yet).
 pub fn draw_clip_ghost(clip: &Clipboard, cursor: Option<Point2>, scheme: &SchemeUi, view: View2d, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view, rect };
-    use qymcad_core::model::EntityKind;
     if !clip.geom_place {
         return;
     }
@@ -210,55 +96,10 @@ pub fn draw_clip_ghost(clip: &Clipboard, cursor: Option<Point2>, scheme: &Scheme
     let col = scheme.pal.clip();
     let stroke = Stroke::new(1.4, col);
     let pt = |id: Id| clip.points.iter().find(|(pid, ..)| *pid == id).map(|(_, x, y)| Point2::new(x + ox, y + oy));
+    // each curve of the clipboard where it would land: its points shifted
     for e in &clip.entities {
-        match e.kind {
-            EntityKind::Line { a, b } => {
-                if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
-                    painter.line_segment([sh.at(pa), sh.at(pb)], stroke);
-                }
-            }
-            EntityKind::Circle { center, r } => {
-                if let Some(c) = pt(center) {
-                    let sc = sh.at(c);
-                    let redge = sh.at(Point2::new(c.x + r, c.y));
-                    painter.circle_stroke(sc, redge.distance(sc), stroke);
-                }
-            }
-            EntityKind::Arc { center, a, b, ccw } => {
-                if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) {
-                    let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
-                    let a0 = (pa.y - c.y).atan2(pa.x - c.x);
-                    let mut a1 = (pb.y - c.y).atan2(pb.x - c.x);
-                    if ccw && a1 < a0 {
-                        a1 += std::f64::consts::TAU;
-                    } else if !ccw && a1 > a0 {
-                        a1 -= std::f64::consts::TAU;
-                    }
-                    let pts: Vec<Pos2> = (0..=40)
-                        .map(|k| {
-                            let a = a0 + (a1 - a0) * k as f64 / 40.0;
-                            sh.at(Point2::new(c.x + r * a.cos(), c.y + r * a.sin()))
-                        })
-                        .collect();
-                    painter.add(egui::Shape::line(pts, stroke));
-                }
-            }
-            EntityKind::Ellipse { c, ma, mi } => {
-                if let (Some(pc), Some(pma), Some(pmi)) = (pt(c), pt(ma), pt(mi)) {
-                    let major = ((pma.x - pc.x).powi(2) + (pma.y - pc.y).powi(2)).sqrt().max(1e-6);
-                    let minor = ((pmi.x - pc.x).powi(2) + (pmi.y - pc.y).powi(2)).sqrt().max(1e-6);
-                    let (ux, uy) = ((pma.x - pc.x) / major, (pma.y - pc.y) / major);
-                    let (vx, vy) = (-uy, ux);
-                    let pts: Vec<Pos2> = (0..=48)
-                        .map(|k| {
-                            let t = std::f64::consts::TAU * k as f64 / 48.0;
-                            let (ct, st) = (t.cos(), t.sin());
-                            sh.at(Point2::new(pc.x + major * ct * ux + minor * st * vx, pc.y + major * ct * uy + minor * st * vy))
-                        })
-                        .collect();
-                    painter.add(egui::Shape::line(pts, stroke));
-                }
-            }
+        if let Some(curve) = qymcad_core::model::curve::Curve::of_placed(&pt, e) {
+            painter.add(egui::Shape::line(curve.polyline().into_iter().map(|p| sh.at(p)).collect(), stroke));
         }
     }
     painter.circle_filled(sh.at(cur), 3.0, col);
@@ -267,20 +108,93 @@ pub fn draw_clip_ghost(clip: &Clipboard, cursor: Option<Point2>, scheme: &Scheme
 /// THE TRIANGLES OF A REGION OF A SKETCH, in the sketch's plane: contour `cid` minus its direct children - the material
 /// an extrusion takes from it (`Project::feature_holes`). Regions told apart this way never overlap, so their fills do
 /// not add up where contours nest.
-pub fn region_triangles(project: &qymcad_core::model::Project, cid: Id) -> Vec<[Point2; 3]> {
-    let Some(ci) = project.contour_index(cid) else { return Vec::new() };
+pub fn region_triangles(project: &qymcad_core::model::Project, cid: Id) -> std::rc::Rc<[[Point2; 3]]> {
+    let Some(ci) = project.contour_index(cid) else { return std::rc::Rc::from(Vec::new()) };
     let outer = &project.contours[ci];
     if !outer.closed || outer.points.len() < 3 {
-        return Vec::new();
+        return std::rc::Rc::from(Vec::new());
     }
-    let holes: Vec<Vec<Point2>> = project
+    let holes: Vec<&[Point2]> = project
         .sketch_of_contour(cid)
         .map(|sid| project.feature_holes(sid, cid))
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|h| project.contour_index(h).map(|hi| project.contours[hi].points.clone()))
+        .filter_map(|h| project.contour_index(h).map(|hi| &project.contours[hi].points[..]))
         .collect();
-    qymcad_core::geom::triangulate_with_holes(&outer.points, &holes)
+    // THE TRIANGLES ARE REMEMBERED BY THE POINTS THEY ARE MADE OF: the fill of a picked region and of the one under the
+    // pointer is drawn every frame, and laid anew each frame a ring between a closed spline and its offset, 14 600 points,
+    // took 0.8 s a frame - the pointer over the sketch hung the picking of a region. The same outline answers the same
+    // triangles; the last few are kept.
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for ring in std::iter::once(&outer.points[..]).chain(holes.iter().copied()) {
+            ring.len().hash(&mut h);
+            for q in ring {
+                q.x.to_bits().hash(&mut h);
+                q.y.to_bits().hash(&mut h);
+            }
+        }
+        h.finish()
+    };
+    if let Some(tris) = REGION_TRIANGLES.with(|m| m.borrow().iter().find(|r| r.key == key).map(|r| r.tris.clone())) {
+        return tris;
+    }
+    // the fill is laid over points no farther apart than the eye tells: a ring laid out to 0.005 mm took 0.8 s to fill
+    // the first time, the cutting into triangles growing as the square of its points
+    let (lo, hi) = outer.points.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), q| ([lo[0].min(q.x), lo[1].min(q.y)], [hi[0].max(q.x), hi[1].max(q.y)]));
+    let tol = (0.02f64).max(1e-4 * (hi[0] - lo[0]).hypot(hi[1] - lo[1]));
+    let owned: Vec<Vec<Point2>> = holes.iter().map(|h| thinned(h, tol)).collect();
+    let tris: std::rc::Rc<[[Point2; 3]]> = std::rc::Rc::from(qymcad_core::geom::triangulate_with_holes(&thinned(&outer.points, tol), &owned));
+    REGION_TRIANGLES.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() >= REMEMBERED_REGIONS {
+            m.remove(0);
+        }
+        m.push(RememberedRegion { key, tris: tris.clone() });
+    });
+    tris
+}
+
+/// THE POINTS OF A RING THINNED TO `tol`: a point is kept where the points since the last one kept would stand farther
+/// than `tol` off the chord to the next.
+fn thinned(ring: &[Point2], tol: f64) -> Vec<Point2> {
+    let Some(&first) = ring.first() else { return Vec::new() };
+    let mut out = vec![first];
+    let mut since: Vec<Point2> = Vec::new();
+    for w in ring.windows(2) {
+        let (a, next) = (out[out.len() - 1], w[1]);
+        let (dx, dy) = (next.x - a.x, next.y - a.y);
+        let len = dx.hypot(dy).max(1e-12);
+        let off = since.iter().map(|q| ((q.x - a.x) * dy - (q.y - a.y) * dx).abs() / len).fold(0.0, f64::max);
+        if off > tol {
+            out.push(w[0]);
+            since.clear();
+        }
+        since.push(w[1]);
+    }
+    if let Some(&last) = ring.last() {
+        if out.last().is_none_or(|q| q.x != last.x || q.y != last.y) {
+            out.push(last);
+        }
+    }
+    if out.len() < 3 {
+        return ring.to_vec();
+    }
+    out
+}
+
+/// How many regions the triangles are remembered of: the picked ones and the one under the pointer.
+const REMEMBERED_REGIONS: usize = 16;
+
+/// THE TRIANGLES OF A REGION by the key of the points they are made of.
+struct RememberedRegion {
+    key: u64,
+    tris: std::rc::Rc<[[Point2; 3]]>,
+}
+
+thread_local! {
+    static REGION_TRIANGLES: std::cell::RefCell<Vec<RememberedRegion>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// FILL THE TRIANGLES OF A REGION, each corner placed on the screen by `at`.
@@ -407,7 +321,6 @@ pub fn draw_sketch_face_edges(pn: &Painting, painter: &egui::Painter, rect: Rect
 /// Highlighting the selected entities + the glyphs of the geometric constraints.
 pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rect, si: usize) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
-    use qymcad_core::model::EntityKind;
     let Some(s) = pn.project.sketches.get(si) else { return };
     // a table, built only when a point is looked for: with nothing hovered, selected or arguing, none is
     let points_by_id: std::cell::OnceCell<std::collections::HashMap<Id, &qymcad_core::model::SketchPoint>> = std::cell::OnceCell::new();
@@ -423,7 +336,7 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
         }
         // edges with both ends in the set are lit as a line
         for e in &s.entities {
-            if let EntityKind::Line { a, b } = e.kind {
+            if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() {
                 if pts.contains(&a) && pts.contains(&b) {
                     if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
                         painter.line_segment([sh.at(pa), sh.at(pb)], Stroke::new(2.0, hc));
@@ -434,60 +347,22 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
     }
     // highlighting the selected entities (white) and the hovered ones (blue, thinner)
     for e in &s.entities {
-        let sel = pn.sel_sk.items.contains(&(1, e.id));
-        let hov = pn.hover.sketch == Some((1, e.id));
+        let sel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::curve(e.id));
+        let hov = pn.hover.sketch == Some(qymcad_ui_state::SketchItem::curve(e.id));
         if !sel && !hov {
             continue;
         }
         let hl = if sel { Stroke::new(2.5, pn.scheme.pal.emphasis()) } else { Stroke::new(2.0, pn.scheme.pal.preview()) };
-        match e.kind {
-            EntityKind::Line { a, b } => {
-                if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
-                    painter.line_segment([sh.at(pa), sh.at(pb)], hl);
-                    // A LINE PICKED AT ITS MIDDLE SHOWS IT: a ring of the snap's colour round a dot of the selection's, at
-                    // the middle - lit as any picked line, the middle taken was not seen
-                    if sel && pn.sel_sk.at_middle.contains(&e.id) {
-                        let mid = sh.at(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0));
-                        painter.circle_stroke(mid, MIDDLE_RING, Stroke::new(1.6, pn.scheme.pal.snap_marker()));
-                        painter.circle_filled(mid, 2.5, pn.scheme.pal.emphasis());
-                    }
-                }
-            }
-            EntityKind::Circle { center, r } => {
-                if let Some(c) = pt(center) {
-                    let sc = sh.at(c);
-                    let rp = (sh.at(Point2::new(c.x + r, c.y)).x - sc.x).abs();
-                    painter.circle_stroke(sc, rp, hl);
-                }
-            }
-            EntityKind::Arc { center, a, b, ccw } => {
-                if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) {
-                    let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
-                    let a0 = (pa.y - c.y).atan2(pa.x - c.x);
-                    let a1 = (pb.y - c.y).atan2(pb.x - c.x);
-                    let arc = qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02);
-                    let sp: Vec<Pos2> = arc.iter().map(|p| sh.at(Point2::new(p.x, p.y))).collect();
-                    if sp.len() >= 2 {
-                        painter.add(egui::Shape::line(sp, hl));
-                    }
-                }
-            }
-            EntityKind::Ellipse { c, ma, mi } => {
-                if let (Some(pc), Some(pma), Some(pmi)) = (pt(c), pt(ma), pt(mi)) {
-                    let major = ((pma.x - pc.x).powi(2) + (pma.y - pc.y).powi(2)).sqrt().max(1e-6);
-                    let minor = ((pmi.x - pc.x).powi(2) + (pmi.y - pc.y).powi(2)).sqrt().max(1e-6);
-                    let (ux, uy) = ((pma.x - pc.x) / major, (pma.y - pc.y) / major);
-                    let (vx, vy) = (-uy, ux);
-                    let n = 72;
-                    let sp: Vec<Pos2> = (0..=n)
-                        .map(|k| {
-                            let t = std::f64::consts::TAU * k as f64 / n as f64;
-                            let (ct, st) = (t.cos(), t.sin());
-                            sh.at(Point2::new(pc.x + major * ct * ux + minor * st * vx, pc.y + major * ct * uy + minor * st * vy))
-                        })
-                        .collect();
-                    painter.add(egui::Shape::line(sp, hl));
-                }
+        // ONE HIGHLIGHT FOR EVERY KIND: the curve as the curve module lays it out
+        let Some(curve) = qymcad_core::model::curve::Curve::of(s, e) else { continue };
+        painter.add(egui::Shape::line(curve.polyline().into_iter().map(|p| sh.at(p)).collect(), hl));
+        // A LINE PICKED AT ITS MIDDLE SHOWS IT: a ring of the snap's colour round a dot of the selection's, at the middle -
+        // lit as any picked line, the middle taken was not seen
+        if let (Some(line), true) = (e.kind.as_line(), sel && pn.sel_sk.at_middle.contains(&e.id)) {
+            if let (Some(pa), Some(pb)) = (pt(line.a), pt(line.b)) {
+                let mid = sh.at(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0));
+                painter.circle_stroke(mid, MIDDLE_RING, Stroke::new(1.6, pn.scheme.pal.snap_marker()));
+                painter.circle_filled(mid, 2.5, pn.scheme.pal.emphasis());
             }
         }
     }
@@ -508,14 +383,11 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
             hot.extend(pn.project.sketch_constraint_points(si, ci));
         }
         for e in &s.entities {
-            // an edge wholly inside the set becomes a red line; otherwise only the participating points
-            let ends: Vec<Id> = match e.kind {
-                EntityKind::Line { a, b } => vec![a, b],
-                _ => Vec::new(),
-            };
-            if !ends.is_empty() && ends.iter().all(|id| hot.contains(id)) {
-                if let (Some(pa), Some(pb)) = (pt(ends[0]), pt(ends[1])) {
-                    painter.line_segment([sh.at(pa), sh.at(pb)], Stroke::new(2.2, cc));
+            // a curve wholly inside the set - all the points it stands on - is drawn red; otherwise only the participating
+            // points
+            if qymcad_core::model::entity_points(e).iter().all(|id| hot.contains(id)) {
+                if let Some(curve) = qymcad_core::model::curve::Curve::of(s, e) {
+                    painter.add(egui::Shape::line(curve.polyline().into_iter().map(|p| sh.at(p)).collect(), Stroke::new(2.2, cc)));
                 }
             }
         }
@@ -554,7 +426,7 @@ pub(crate) fn draw_offset_preview(pn: &Painting, painter: &egui::Painter, sh: &q
     // the side a click fixed, in the colour of a fixed corner; before the click, the side of the pointer
     let fixed = pn.sel_sk.offset.at;
     let (Some(si), Some(cur)) = (qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses), fixed.or(pn.cursor)) else { return };
-    let eids: Vec<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = pn.sel_sk.curves().collect();
     if eids.is_empty() {
         return;
     }

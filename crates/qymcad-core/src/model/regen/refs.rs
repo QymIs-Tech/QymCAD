@@ -3,6 +3,12 @@
 use super::*;
 use crate::model::refs::SketchFaceFix;
 
+/// THE FORMULAS OF A NODE and the values of the parameters they read.
+pub(crate) struct Formulas<'a> {
+    pub dims: Option<&'a std::collections::HashMap<String, String>>,
+    pub vars: &'a std::collections::HashMap<String, f64>,
+}
+
 impl Project {
     /// Whether sketch `sketch` sits on a face that the current rebuild of its body no longer has.
     ///
@@ -243,7 +249,7 @@ impl Project {
     /// Resolve a parametric datum axis: `TwoPoints{a,b}` gives origin = a and dir = norm(b - a), while
     /// `FromEdge` and `FromFace` bind associatively to an edge or a face axis through the kernel. `Manual` is
     /// left alone.
-    pub(crate) fn resolve_axis_into(&mut self, axis_id: Id, kernel: &dyn crate::feature::Kernel) {
+    pub(crate) fn resolve_axis_into(&mut self, axis_id: Id, by: &Formulas, kernel: &dyn crate::feature::Kernel) {
         let Some(ai) = self.datum_axes.iter().position(|d| d.id == axis_id) else { return };
         let set = |axes: &mut [DatumAxis], o: [f64; 3], d: [f64; 3]| {
             let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
@@ -272,7 +278,14 @@ impl Project {
                     set(&mut self.datum_axes, o, d);
                 }
             }
-            AxisDef::Manual { .. } => {}
+            // A MANUAL AXIS FOLLOWS THE FORMULAS OF ITS ORIGIN AND DIRECTION, as a manual point follows its own: typed as
+            // formulas in its box, they were taken once and lost
+            AxisDef::Manual { origin, dir } => {
+                let at = |key: &str, v: f64| eval_dim(by.dims, key, v, by.vars);
+                let o = [at("ox", origin[0]), at("oy", origin[1]), at("oz", origin[2])];
+                let d = [at("dx", dir[0]), at("dy", dir[1]), at("dz", dir[2])];
+                set(&mut self.datum_axes, o, d);
+            }
         }
     }
 

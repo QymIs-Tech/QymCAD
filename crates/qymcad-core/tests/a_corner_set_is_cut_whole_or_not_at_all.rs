@@ -3,7 +3,7 @@
 //!
 //! Reported behaviour: a set was cut on the corners that took the value and left whole on the one that did not.
 use qymcad_core::feature::{ChamferMode, Purpose};
-use qymcad_core::model::{ChamferLegs, CornerAt, CornerCut, EntityKind, Project};
+use qymcad_core::model::{ChamferLegs, CornerAt, CornerCut, Project};
 
 /// A quadrilateral with a short left side and a long right one: (0, 0), (40, 0), (40, 50), (0, 30). Answers the
 /// corners of its base, the right one first, each by the base and its side.
@@ -34,6 +34,6 @@ fn a_set_every_corner_of_which_takes_the_chamfer_is_cut_whole() {
     let (mut p, si, corners) = base_corners();
     let legs = ChamferLegs { mode: ChamferMode::TwoDist, first: 3.0, second: 20.0 };
     assert_eq!(p.cut_corner_set(si, &corners, CornerCut::Chamfer(legs), None), 2, "both corners take legs of 3 and 20");
-    let lines = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count();
+    let lines = p.sketches[si].entities.iter().filter(|e| e.kind.as_line().is_some()).count();
     assert_eq!(lines, 6, "four sides and two cuts");
 }

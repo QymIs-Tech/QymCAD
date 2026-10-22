@@ -13,14 +13,13 @@ use qymcad_core::model::{ChamferLegs, Constraint, Project};
 /// upright, the far ends pinned - so that a dimension of the chamfer changed afterwards moves the chamfer and not the
 /// corner; (project, sketch, the corner point).
 fn corner() -> (Project, usize, u64) {
-    use qymcad_core::model::EntityKind;
     let mut p = Project::default();
     p.new_document();
     let si = p.new_sketch("S");
     let l1 = p.add_line_entity(si, 30.0, 0.0, 0.0, 0.0, Purpose::Real);
     let l2 = p.add_line_entity(si, 0.0, 0.0, 0.0, 30.0, Purpose::Real);
-    let ends = |p: &Project, id| match p.sketches[si].entities.iter().find(|e| e.id == id).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) => (a, b),
+    let ends = |p: &Project, id| match p.sketches[si].entities.iter().find(|e| e.id == id).and_then(|e| e.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("a line"),
     };
     let ((a1, b1), (a2, b2)) = (ends(&p, l1), ends(&p, l2));

@@ -1,6 +1,7 @@
 # Break
 
-Click a line, an arc or a circle — it splits at the point of the click.
+Click a curve — a line, an arc, a circle, an ellipse or a spline — it splits at the point of the click; a closed one
+splits into two halves, at the click and opposite it.
 
 ![A whole segment and the same one broken at the intersection: from here each half is its own line.](img/sketch-break/)
 

@@ -161,7 +161,7 @@ impl HelpWin {
 
 /// One editable dimension of the active Part command: the label + the key (for `feat_dims`) + the current value +
 /// the input buffer (a number OR an expression like `w/2+3`). An on-screen field like the sketch dimensions have.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct CmdParam {
     /// A CATALOGUE KEY rather than a finished phrase: the field's label must follow a change of language by itself,
     /// without the command being recreated. The key is stable; the translation is taken at the moment of display.
@@ -177,11 +177,35 @@ pub struct CmdParam {
     pub hi: f64,
     /// ZERO IS NO VALUE for this field, though both signs are: a face pushed by 0 is the body unchanged.
     pub nonzero: bool,
+    /// WHAT KIND OF NUMBER IT TAKES: any, or a whole one - a count of copies, a number of sides.
+    pub number: Number,
     /// WHERE THIS FIELD LIVES IN SPACE. `None` means the command's shared popup; a point means a small window of
     /// its own at that place (a radius at a vertex is shown AT THE VERTEX, otherwise six identical fields in a
     /// column cannot be told apart).
     pub at: Option<[f64; 3]>,
+    /// WHOSE VALUE IT IS, where the caption alone does not tell: the anchor A or B an offset belongs to, the degree a
+    /// limit bounds. A catalogue key, said before the caption.
+    pub of: Option<LabelKey>,
+    /// THE UNIT ITS NUMBERS ARE IN, written after the field by the frame (`CmdParam::unit_key`).
+    pub unit: UnitOf,
+    /// What the caption alone does not say, by its catalogue key, shown over the caption: "0 takes the standard one".
+    pub hint: Option<&'static str>,
 }
+
+/// WHAT UNIT THE NUMBERS OF A FIELD ARE IN: as the kind of the value says, by a catalogue key, or none - a ratio.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UnitOf {
+    #[default]
+    ByKind,
+    Key(&'static str),
+    Bare,
+}
+
+/// THE MARKS OF THE KEY OF A LABEL OF AN ANGLE, in degrees: `f-angle`, `sec-tilt1`, `j-turn`, `giz-rotation-x`.
+const ANGLE_MARKS: [&str; 5] = ["angle", "tilt", "turn", "sharp", "rotation"];
+
+/// THE MARKS OF THE KEY OF A LABEL OF A BARE NUMBER: a count of copies, of sides, of rows, a component of a direction.
+const BARE_MARKS: [&str; 5] = ["copies", "sides", "count", "rows", "Dir."];
 
 impl CmdParam {
     /// The KEY of the field's label. The words are chosen by whoever draws it - a record of the
@@ -196,7 +220,56 @@ impl CmdParam {
     }
 
     pub fn new(label: &'static str, key: &str, val: f64, lo: f64, hi: f64) -> Self {
-        Self { label: LabelKey(label), key: key.to_string(), val, txt: format!("{val:.2}"), lo, hi, at: None, nonzero: false }
+        // ONE WAY OF WRITING A NUMBER for every field: "10", not "10.00" in a box of a part beside "40" in a box of a sketch
+        Self {
+            label: LabelKey(label),
+            key: key.to_string(),
+            val,
+            txt: qymcad_core::expr::fmt_num(val),
+            lo,
+            hi,
+            at: None,
+            nonzero: false,
+            number: Number::Real,
+            of: None,
+            unit: UnitOf::ByKind,
+            hint: None,
+        }
+    }
+
+    /// The same field with its numbers in the unit of catalogue key `unit`, written after it.
+    pub fn unit(mut self, unit: &'static str) -> Self {
+        self.unit = UnitOf::Key(unit);
+        self
+    }
+
+    /// The same field with what its caption does not say, by catalogue key `hint`, shown over the caption.
+    pub fn hint(mut self, hint: &'static str) -> Self {
+        self.hint = Some(hint);
+        self
+    }
+
+    /// THE UNIT THE NUMBERS OF THE FIELD ARE IN, by its catalogue key: as the field names it; none for a whole number
+    /// or a bare one; degrees for an angle; millimetres for every other value of a box - a length. A caption carried its
+    /// unit ("Angle, deg", "Simplify, mm") in some boxes and none in others, and a length stood with no unit at all.
+    pub fn unit_key(&self) -> Option<&'static str> {
+        let key = self.label.0;
+        match self.unit {
+            UnitOf::Key(u) => Some(u),
+            UnitOf::Bare => None,
+            UnitOf::ByKind if self.number == Number::Whole || BARE_MARKS.iter().any(|m| key.contains(m)) => None,
+            UnitOf::ByKind if ANGLE_MARKS.iter().any(|m| key.contains(m)) => Some("unit-deg-suffix"),
+            UnitOf::ByKind => Some("unit-mm-suffix"),
+        }
+    }
+
+    /// A field of a whole number: a count of copies, a number of sides - written without a fraction.
+    pub fn whole(mut self) -> Self {
+        self.number = Number::Whole;
+        if self.txt.trim().parse::<f64>().is_ok() {
+            self.txt = qymcad_core::expr::fmt_num(self.val.round()); // a formula stays a formula
+        }
+        self
     }
 
     /// A field AT THE GEOMETRY: the same thing, but with a place of its own in space.
@@ -205,11 +278,30 @@ impl CmdParam {
         self
     }
 
+    /// The same field told apart by whose value it is: the key of the anchor, the degree.
+    pub fn of(mut self, whose: &'static str) -> Self {
+        self.of = Some(LabelKey(whose));
+        self
+    }
+
+    /// The key of whose value it is, where the field has one.
+    pub fn of_key(&self) -> Option<&'static str> {
+        self.of.map(|k| k.0)
+    }
+
     /// A field for which zero is no value.
     pub fn nonzero(mut self) -> Self {
         self.nonzero = true;
         self
     }
+}
+
+/// THE KIND OF NUMBER A FIELD OF A COMMAND TAKES.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Number {
+    #[default]
+    Real,
+    Whole,
 }
 
 /// A READY PIECE OF THE SCENE BUFFER FOR ONE BODY.
@@ -283,6 +375,8 @@ pub enum ExtentMode {
     Symmetric,
     TwoSided, // two sides (the "down" field is active)
     Through,  // through all (operations on a body only)
+    /// through all to both sides of the sketch plane (operations on a body only)
+    ThroughBothWays,
 }
 
 impl ExtentMode {
@@ -293,11 +387,18 @@ impl ExtentMode {
         matches!(self, ExtentMode::TwoSided)
     }
     pub fn through(self) -> bool {
-        matches!(self, ExtentMode::Through)
+        matches!(self, ExtentMode::Through | ExtentMode::ThroughBothWays)
     }
-    /// Restore the mode from a saved feature's flags (through takes priority, then symmetry, then two-sided).
+    /// Does the tool go to both sides of the sketch plane: symmetric about it, or through all both ways.
+    pub fn both_ways(self) -> bool {
+        matches!(self, ExtentMode::Symmetric | ExtentMode::ThroughBothWays)
+    }
+    /// Restore the mode from a saved feature's flags (through takes priority, both ways or one, then symmetry, then
+    /// two-sided).
     pub fn from_extent(reach: qymcad_core::feature::Reach, down: f64, through: bool) -> Self {
-        if through {
+        if through && reach == qymcad_core::feature::Reach::BothWays {
+            ExtentMode::ThroughBothWays
+        } else if through {
             ExtentMode::Through
         } else if reach == qymcad_core::feature::Reach::BothWays {
             ExtentMode::Symmetric
@@ -320,20 +421,14 @@ pub enum TreeClip {
     Feature { nid: Id },
 }
 
-/// A reference for the dimension tool: a point or a straight line (a line or an axis). A dimension between two
-/// references: point to point, point to line (a perpendicular), line to a parallel line, or to an axis.
+/// A reference for the dimension tool: a point, a straight line (a line or an axis), or a curve of any other kind by its
+/// entity. A dimension between two references: point to point, point to line (a perpendicular), line to a parallel
+/// line, or to an axis, and the least distance to a curve.
 #[derive(Clone, Copy, PartialEq)]
 pub enum DimRef {
     Point(Id),
     Line(Id, Id),
-}
-
-/// A base edge for building tangents (a tangent arc or a tangent circle): either a straight line (with ends a
-/// and b) or a circle or arc (a centre plus a radius).
-#[derive(Clone, Copy, PartialEq)]
-pub enum EdgeRef {
-    Line { a: Id, b: Id },
-    Circle { center: Id, r: f64 },
+    Curve(Id),
 }
 
 /// The sketch's diagnostics in one piece: the degrees of freedom and the redundancy, the free points, THE ARGUING
@@ -389,6 +484,11 @@ pub enum PlacingShape {
     Poly(Id),
     /// an ellipse: the entity and its centre
     Ellipse(Id, Point2),
-    /// a rectangle reopened by a double click on a side: its width and height dimensions, edited in place
-    RectDims(qymcad_core::model::RectDims),
+    /// a rectangle reopened by a double click on a side: its width and height, typed into the dimensions it holds them by,
+    /// laid only once typed
+    RectSide(Id),
+    /// a slot drawn, or reopened by a double click on a side: a curve of it, its length and width typed in place
+    Slot(Id),
+    /// a circle or an arc drawn, or opened by a double click or by the radius tool: its diameter or radius typed in place
+    Round(Id),
 }

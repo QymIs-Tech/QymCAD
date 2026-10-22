@@ -36,7 +36,7 @@ pub static DIM_LINEAR: Tool = Tool {
     wrong_picks: &[],
     words: &[],
     fields: &[Field {
-        caption: "sk-expr-example",
+        caption: "f-number-or-expr",
         by_placeholder: true,
         when: When::After,
         class: Class::Length,
@@ -105,7 +105,7 @@ pub static DIM_RADIUS: Tool = Tool {
     words: &[],
     // 30 rather than the 20 the circle already has: typing what stands there changes nothing and proves nothing
     fields: &[Field {
-        caption: "sk-expr-example",
+        caption: "f-number-or-expr",
         by_placeholder: true,
         when: When::After,
         class: Class::Radius,
@@ -157,7 +157,7 @@ pub static DIM_ANGLE: Tool = Tool {
     pick_trial: &[],
     wrong_picks: &[],
     words: &[],
-    fields: &[Field { caption: "sk-expr-example", by_placeholder: true, when: When::After, class: Class::Angle, typical: 45.0, lo: 1.0, hi: 179.0, zero: false, negative: false, outcome: angle_of }],
+    fields: &[Field { caption: "f-number-or-expr", by_placeholder: true, when: When::After, class: Class::Angle, typical: 45.0, lo: 1.0, hi: 179.0, zero: false, negative: false, outcome: angle_of }],
     modes: &[],
     result: angle_of(45.0),
     node: "Sketch",

@@ -279,13 +279,24 @@ fn shape(doc: &Document) -> Shape {
     }
 }
 
-/// UNDO AND THEN REDO GIVE BACK THE SAME DOCUMENT.
+/// UNDO AND THEN REDO GIVE BACK THE SAME DOCUMENT. An undo that takes no step - at the first step of a sketch open for
+/// editing, whose history stops there - changes nothing, and no redo follows it: a redo then would bring back a step
+/// undone earlier in the chain, which is what redo is for.
 pub fn undo_redo(s: &mut Session) -> Result<(), String> {
     let before = s.document();
     if before.undo.is_empty() {
         return Ok(());
     }
-    s.chord(Modifiers::COMMAND, Key::Z).chord(Modifiers::COMMAND, Key::Y);
+    s.chord(Modifiers::COMMAND, Key::Z);
+    let undone = s.document();
+    if undone.undo == before.undo {
+        return if shape(&undone) == shape(&before) {
+            Ok(())
+        } else {
+            Err(format!("an undo that took no step changed the document: {:?} became {:?}", shape(&before), shape(&undone)))
+        };
+    }
+    s.chord(Modifiers::COMMAND, Key::Y);
     let after = s.document();
     if shape(&after) == shape(&before) && after.undo == before.undo {
         Ok(())

@@ -173,32 +173,93 @@ pub struct GeoName {
     /// The source entity of the recipe: a sketch edge or a body edge. Zero means the role stands alone, as
     /// for a cap.
     pub src: Id,
-    /// The piece number, when one source entity produced several faces through a split.
+    /// The piece number, when one source entity produced several faces through a split: among the pieces cut off by
+    /// the same face on the same side of it (`cut`).
     pub split: u16,
+    /// What cut a piece off its face, where a face of the node that split it stands beside it
+    /// (`crates/qymcad-kernel/NAMING.md`, "A face split in pieces").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut: Option<CutOff>,
 }
 
 impl GeoName {
     pub fn new(feature: Id, role: Role, src: Id) -> Self {
-        Self { feature, role, src, split: 0 }
+        Self { feature, role, src, split: 0, cut: None }
+    }
+
+    /// Whether this names a piece of a split face rather than a whole face.
+    pub fn is_piece(&self) -> bool {
+        self.split != 0 || self.cut.is_some()
+    }
+
+    /// The name of the whole face a piece was cut from.
+    pub fn whole(&self) -> GeoName {
+        GeoName { split: 0, cut: None, ..*self }
     }
 }
 
-/// The name of an edge is the pair of its faces. An edge has no recipe of its own: it is where two surfaces
-/// meet, and that is the only thing objectively known about it. The name is therefore derived from the face
-/// names, which are already sound, rather than from a traversal order. `index` separates several edges between
-/// the same pair of faces — within a pair the order is deterministic, and the pair itself does not depend on
-/// edits to neighbours.
+/// WHAT CUT A PIECE OFF ITS FACE: the face of the splitting node beside the piece that comes first in the order of its
+/// recipe, and the side of that face the piece lies on. Neither depends on how many other pieces there are: taking one
+/// piece away renames no other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CutOff {
+    pub feature: Id,
+    pub role: Role,
+    pub src: Id,
+    pub split: u16,
+    pub side: Side,
+}
+
+/// WHICH SIDE OF A FACE something lies on: the side its normal points to, the other, or neither to be told.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Side {
+    Front,
+    Back,
+    On,
+}
+
+/// The name of an edge is the pair of its faces and the faces at its ends. An edge has no recipe of its own: it is
+/// where two surfaces meet, and that is the only thing objectively known about it. The name is therefore derived from
+/// the face names, which are already sound, rather than from a traversal order. The one edge of its pair has no `ends`:
+/// the faces at its ends change with any edit beside it. Several edges between the same pair -
+/// the upper and the lower edge of a slot, the pieces of an edge a row of notches cut - are told apart by the named
+/// faces meeting at their ends (`ends`), not by a number: numbered within the pair, an edit that took one of them away
+/// renumbered the others (measured on the case example: a chamfer on "the wall with the end cap, 2" took the edge next
+/// to its own and refused). `index` is left to edges of one pair with the same ends, numbered by where they stand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EdgeName {
     /// descriptors of the two faces, sorted, so the name does not depend on which side it is seen from
     pub faces: [u32; 2],
+    /// the two smallest named faces meeting at the ends of the edge, apart from its own two: ascending, 0 where there
+    /// is none, last
+    #[serde(default)]
+    pub ends: [u32; 2],
     pub index: u16,
 }
 
 impl EdgeName {
     pub fn new(a: u32, b: u32, index: u16) -> Self {
-        Self { faces: [a.min(b), a.max(b)], index }
+        Self { faces: [a.min(b), a.max(b)], ends: [0, 0], index }
     }
+
+    /// The same name with the faces at its ends: put in order, so a name does not depend on the order they were told in.
+    pub fn at_ends(self, ends: [u32; 2]) -> Self {
+        let [c, d] = ends;
+        let ends = match (c, d) {
+            (0, _) => [d, 0],
+            (_, 0) => [c, 0],
+            _ => [c.min(d), c.max(d)],
+        };
+        Self { ends, ..self }
+    }
+}
+
+/// AN ELEMENT OF THE SAME RECIPE AS A REFERENCE: its descriptor, and whether it is a piece where the reference is a piece
+/// and whole where the reference is whole.
+#[derive(Clone, Copy)]
+struct RecipeHit {
+    id: u32,
+    alike: bool,
 }
 
 /// The name of a vertex is its edges. A vertex has no recipe of its own, just as an edge has none: it is where
@@ -416,7 +477,7 @@ impl NameTable {
         for _ in 0..8 {
             let next = self.absorbed.get(&cur).copied().or_else(|| {
                 let n = self.get(cur)?;
-                (n.split != 0).then(|| self.index.get(&GeoName { split: 0, ..n }).copied())?
+                n.is_piece().then(|| self.index.get(&n.whole()).copied())?
             });
             match next {
                 Some(d) if d != cur => cur = d,
@@ -443,12 +504,11 @@ impl NameTable {
             if let Some(&t) = self.absorbed.get(&desc) {
                 return Some(t);
             }
-            let a = self.absorbed_face(e.faces[0]).unwrap_or(e.faces[0]);
-            let b = self.absorbed_face(e.faces[1]).unwrap_or(e.faces[1]);
-            if a == e.faces[0] && b == e.faces[1] {
-                return None; // neither face was absorbed, so there is nothing to translate
+            let translated = self.translated_edge(e);
+            if translated == e {
+                return None; // no face of it was absorbed, so there is nothing to translate
             }
-            let t = *self.eindex.get(&EdgeName::new(a, b, e.index))?;
+            let t = *self.eindex.get(&translated)?;
             return Some(self.absorbed.get(&t).copied().unwrap_or(t));
         }
         self.absorbed_face(desc)
@@ -470,7 +530,7 @@ impl NameTable {
             None => vec![desc],
         };
         let whole_of = |n: GeoName| (n.feature, n.role, n.src);
-        let pieces: Vec<_> = faces.iter().filter(|f| !self.absorbed.contains_key(f)).filter_map(|f| self.get(*f)).filter(|n| n.split != 0).map(whole_of).collect();
+        let pieces: Vec<_> = faces.iter().filter(|f| !self.absorbed.contains_key(f)).filter_map(|f| self.get(*f)).filter(|n| n.is_piece()).map(whole_of).collect();
         if pieces.is_empty() {
             return Some(t);
         }
@@ -478,12 +538,14 @@ impl NameTable {
             Some(e) => e.faces.to_vec(),
             None => vec![*d],
         });
-        let split_still = live_faces.filter_map(|f| self.get(f)).any(|n| n.split != 0 && pieces.contains(&whole_of(n)));
+        // a piece named after what cut it off keeps `split` 0 (measured on the filter: "piece 1" went to the edge of the
+        // whole on the other side of the part)
+        let split_still = live_faces.filter_map(|f| self.get(f)).any(|n| n.is_piece() && pieces.contains(&whole_of(n)));
         (!split_still).then_some(t)
     }
 
-    /// The canonical form of an edge name: the pair of face names reduced to their wholes, plus the index
-    /// within the pair.
+    /// The canonical form of an edge name: the pair of face names and the faces at its ends reduced to their
+    /// wholes, plus the index.
     ///
     /// An edge is named by a pair of faces, and a face can be split by a later operation — the edge then lies
     /// between a piece and a neighbour and is named differently, although it is the same edge of the same body.
@@ -492,15 +554,24 @@ impl NameTable {
     ///
     /// This is a translation by the structure of the name, not a search for something nearby: there is not a
     /// single coordinate here.
-    pub fn canonical_edge(&self, desc: u32) -> Option<([u32; 2], u16)> {
-        let e = self.edge(desc)?;
-        // One rule for both sides. A piece used to be reduced only to its whole, and a whole only to its
-        // absorber, so "piece 177" and "177" were canonicalised differently and one and the same edge compared
-        // against itself as different. `absorbed_face` walks both rules to the end, so both sides arrive at the
-        // same point.
-        let whole = |d: u32| -> u32 { self.absorbed_face(d).unwrap_or(d) };
-        let (a, b) = (whole(e.faces[0]), whole(e.faces[1]));
-        Some(([a.min(b), a.max(b)], e.index))
+    pub fn canonical_edge(&self, desc: u32) -> Option<EdgeName> {
+        self.edge(desc).map(|e| self.translated_edge(e))
+    }
+
+    /// AN EDGE NAME WITH EVERY FACE OF IT - its pair and the faces at its ends - taken where it was absorbed.
+    ///
+    /// One rule for both sides. A piece used to be reduced only to its whole, and a whole only to its absorber, so
+    /// "piece 177" and "177" were canonicalised differently and one and the same edge compared against itself as
+    /// different. `absorbed_face` walks both rules to the end, so both sides arrive at the same point.
+    fn translated_edge(&self, e: EdgeName) -> EdgeName {
+        let whole = |d: u32| -> u32 {
+            if d == 0 {
+                0
+            } else {
+                self.absorbed_face(d).unwrap_or(d)
+            }
+        };
+        EdgeName::new(whole(e.faces[0]), whole(e.faces[1]), e.index).at_ends(e.ends.map(whole))
     }
 
     /// THE ONE LIVE ELEMENT OF THE SAME RECIPE among `live`: a face named by the same node, role and source as `desc` -
@@ -508,22 +579,46 @@ impl NameTable {
     /// structure of the name, not a search by place: taken only when exactly one element answers, since two pieces of
     /// one wall are two places, and a guess between them is worse than a reference said lost.
     pub fn same_recipe(&self, desc: u32, live: &[u32]) -> Option<u32> {
-        let like = |a: GeoName, b: GeoName| a.feature == b.feature && a.role == b.role && a.src == b.src;
-        let hits: Vec<u32> = if let Some(e) = self.edge(desc) {
-            let (Some(a), Some(b)) = (self.get(e.faces[0]), self.get(e.faces[1])) else { return None };
-            let pair = |x: EdgeName| match (self.get(x.faces[0]), self.get(x.faces[1])) {
-                (Some(p), Some(q)) => (like(p, a) && like(q, b)) || (like(p, b) && like(q, a)),
-                _ => false,
-            };
-            live.iter().copied().filter(|d| *d != desc && self.edge(*d).is_some_and(pair)).collect()
-        } else {
-            let g = self.get(desc)?;
-            live.iter().copied().filter(|d| *d != desc && self.get(*d).is_some_and(|n| like(n, g))).collect()
-        };
-        match hits.as_slice() {
-            [one] => Some(*one),
+        match self.recipe_hits(desc, live)?.as_slice() {
+            [one] => Some(one.id),
             _ => None,
         }
+    }
+
+    /// THE OTHER PIECE: of the live elements of the same recipe as `desc`, the one that is a piece where `desc` is a
+    /// piece and whole where it is whole. Of two pieces of a wall, one keeps the name of the whole, and a reference to
+    /// the other is the other: measured on the filter, an edit brought the walls of another window beside the halves of
+    /// a wall, the half named after what cut it off came under a number, and a rounding's references to it, with no
+    /// place recorded, were lost. Asked after the place, which witnesses better where it was recorded.
+    pub fn other_piece(&self, desc: u32, live: &[u32]) -> Option<u32> {
+        let hits = self.recipe_hits(desc, live)?;
+        let mut alike = hits.iter().filter(|h| h.alike);
+        match (alike.next(), alike.next()) {
+            (Some(one), None) => Some(one.id),
+            _ => None,
+        }
+    }
+
+    /// The live elements of the same recipe as `desc`, each with whether it is a piece where `desc` is a piece.
+    fn recipe_hits(&self, desc: u32, live: &[u32]) -> Option<Vec<RecipeHit>> {
+        let like = |a: GeoName, b: GeoName| a.feature == b.feature && a.role == b.role && a.src == b.src;
+        let alike = |a: GeoName, b: GeoName| a.is_piece() == b.is_piece();
+        if let Some(e) = self.edge(desc) {
+            let (Some(a), Some(b)) = (self.get(e.faces[0]), self.get(e.faces[1])) else { return None };
+            let pair = |x: EdgeName| -> Option<bool> {
+                let (p, q) = (self.get(x.faces[0])?, self.get(x.faces[1])?);
+                if like(p, a) && like(q, b) {
+                    Some(alike(p, a) && alike(q, b))
+                } else if like(p, b) && like(q, a) {
+                    Some(alike(p, b) && alike(q, a))
+                } else {
+                    None
+                }
+            };
+            return Some(live.iter().copied().filter(|d| *d != desc).filter_map(|d| self.edge(d).and_then(pair).map(|same| RecipeHit { id: d, alike: same })).collect());
+        }
+        let g = self.get(desc)?;
+        Some(live.iter().copied().filter(|d| *d != desc).filter_map(|d| self.get(d).filter(|n| like(*n, g)).map(|n| RecipeHit { id: d, alike: alike(n, g) })).collect())
     }
 
     /// IS THIS A NAME OF THIS DOCUMENT: a structural descriptor the table holds. The mark alone says a descriptor was
@@ -570,7 +665,9 @@ impl NameTable {
     pub fn describe(&self, desc: u32) -> String {
         if let Some(e) = self.edge(desc) {
             let tail = if e.index > 0 { format!(":{}", e.index) } else { String::new() };
-            return format!("edge[{} | {}]{tail}", self.describe(e.faces[0]), self.describe(e.faces[1]));
+            let ends = e.ends.iter().filter(|d| **d != 0).map(|d| self.describe(*d)).collect::<Vec<_>>().join(" | ");
+            let ends = if ends.is_empty() { ends } else { format!(" at[{ends}]") };
+            return format!("edge[{} | {}]{ends}{tail}", self.describe(e.faces[0]), self.describe(e.faces[1]));
         }
         match self.get(desc) {
             None => format!("pos {desc}"),
@@ -578,6 +675,9 @@ impl NameTable {
                 let mut s = format!("{} f{}", n.role.tag(), n.feature);
                 if n.src != 0 {
                     s.push_str(&format!(" src{}", n.src));
+                }
+                if let Some(c) = n.cut {
+                    s.push_str(&format!(" cut[{} f{} src{} p{} {:?}]", c.role.tag(), c.feature, c.src, c.split, c.side));
                 }
                 if n.split != 0 {
                     s.push_str(&format!(" p{}", n.split));

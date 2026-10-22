@@ -22,11 +22,11 @@ mod tests {
     }
 
     impl Tool {
-        fn button(self) -> u8 {
+        fn button(self) -> qymcad_ui_state::PartTool {
             match self {
-                Tool::Fillet => 4,
-                Tool::Chamfer => 5,
-                Tool::Patch => 32,
+                Tool::Fillet => qymcad_ui_state::PartTool::Fillet,
+                Tool::Chamfer => qymcad_ui_state::PartTool::Chamfer,
+                Tool::Patch => qymcad_ui_state::PartTool::Patch,
             }
         }
 
@@ -52,10 +52,10 @@ mod tests {
     /// its centre to its rim, the sketch finished, Extrude of 20.
     fn a_cylinder(hand: &mut Hand) {
         assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a sketch is started on XY");
-        hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0).key(egui::Key::Enter);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(10.0, 0.0).key(egui::Key::Enter);
         assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the sketch is finished");
         hand.close_window();
-        hand.look_at([0.0, 0.0, 10.0], 9.0).tool(1).set("height", 20.0).enter();
+        hand.look_at([0.0, 0.0, 10.0], 9.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 20.0).enter();
     }
 
     /// The node `tool` laid in the document.

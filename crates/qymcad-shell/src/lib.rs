@@ -25,9 +25,11 @@ use std::collections::BTreeMap;
 
 mod bar;
 mod draw;
+mod path;
 
 pub use bar::{note_button, noted_buttons, noted_more, plan_bar, BarAlign, BarCaption, BarItem, BarLines, BarLook, BarPlace, BarPlan, Button, Captions, MoreSlot};
 pub use draw::{clear_of_overs, keyed, laid_out};
+pub use path::{path_bar, Crumb, Drew, Leave, PathAsk, PathBar, Step, Switches};
 
 /// The kinds of place an interface has. Not a list of panels: a KIND, of which there may be many.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize)]

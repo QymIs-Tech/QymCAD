@@ -17,11 +17,11 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect);
         assert!(hand.press_word(&qymcad_i18n::tr(mode), egui::pos2(0.0, 0.0)), "no {mode} on the bar");
         hand.click2d(clicks[0].0, clicks[0].1).click2d(clicks[1].0, clicks[1].1).key(egui::Key::Enter);
-        Hand::new(&mut app).sk_tool(0);
-        assert_eq!(app.project.sketches[si].rects.len(), 1, "the rectangle was not drawn as one shape");
+        Hand::new(&mut app).sk_select();
+        assert_eq!(app.project.sketches[si].rects().len(), 1, "the rectangle was not drawn as one shape");
         (app, si)
     }
 
@@ -62,7 +62,7 @@ mod tests {
         }
         // drawn from its centre (20, 15): a corner dragged - the centre stays
         let (mut app, si) = a_rectangle("opt-rect-centre", [(20.0, 15.0), (40.0, 30.0)]);
-        let centre = app.project.sketches[si].rects[0].centre;
+        let centre = app.project.sketches[si].rects()[0].centre;
         Hand::new(&mut app).drag2d((40.0, 30.0), (46.0, 36.0));
         if let Some(why) = stayed(&app, si, centre, (20.0, 15.0)) {
             sins.push(format!("drawn from the centre, a corner dragged: the centre {why}"));
@@ -77,9 +77,9 @@ mod tests {
         let mut sins = Vec::new();
         for (mode, clicks) in [("opt-rect-2corners", [(10.0, 10.0), (50.0, 40.0)]), ("opt-rect-centre", [(30.0, 25.0), (50.0, 40.0)])] {
             let (mut app, si) = a_rectangle(mode, clicks);
-            let before: Vec<(f64, f64)> = app.project.sketches[si].rects[0].corners.iter().map(|c| point_near(&app, si, *c)).collect();
+            let before: Vec<(f64, f64)> = app.project.sketches[si].rects()[0].corners.iter().map(|c| point_near(&app, si, *c)).collect();
             Hand::new(&mut app).drag2d((30.0, 25.0), (42.0, 31.0));
-            let after: Vec<(f64, f64)> = app.project.sketches[si].rects[0].corners.iter().map(|c| point_near(&app, si, *c)).collect();
+            let after: Vec<(f64, f64)> = app.project.sketches[si].rects()[0].corners.iter().map(|c| point_near(&app, si, *c)).collect();
             if before.iter().zip(&after).any(|(b, a)| (a.0 - b.0 - 12.0).hypot(a.1 - b.1 - 6.0) > 0.5) {
                 sins.push(format!("{mode}: the centre dragged by (12, 6) moved the corners {before:?} -> {after:?}"));
             }
@@ -102,7 +102,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect);
         hand.click2d(10.0, 10.0).click2d(50.0, 40.0).type_text("60").key(egui::Key::Tab).type_text("35").key(egui::Key::Enter);
         let got = dims(&app, si);
         if got.len() != 2 || (got[0] - 35.0).abs() > 1e-6 || (got[1] - 60.0).abs() > 1e-6 {
@@ -127,7 +127,7 @@ mod tests {
         let mut dims: Vec<f64> = s.constraints.iter().filter_map(|c| if let qymcad_core::model::Constraint::Distance { d, .. } = c { Some(*d) } else { None }).collect();
         dims.sort_by(f64::total_cmp);
         let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a corner");
-        let [a, _, c, _] = s.rects[0].corners.map(at);
+        let [a, _, c, _] = s.rects()[0].corners.map(at);
         assert!(
             dims.len() == 2
                 && (dims[0] - 35.0).abs() < 1e-6
@@ -148,19 +148,19 @@ mod tests {
     fn the_centre_of_a_rectangle_takes_constraints() {
         let mut sins = Vec::new();
         let (mut app, si) = a_rectangle("opt-rect-2corners", [(10.0, 10.0), (50.0, 40.0)]);
-        Hand::new(&mut app).click2d(30.0, 25.0).shift_click2d(0.0, 0.0).constraint(0);
-        let c = point_near(&app, si, app.project.sketches[si].rects[0].centre);
+        Hand::new(&mut app).click2d(30.0, 25.0).shift_click2d(0.0, 0.0).constraint(qymcad_ui_state::ConstraintKind::Coincident);
+        let c = point_near(&app, si, app.project.sketches[si].rects()[0].centre);
         if c.0.hypot(c.1) > 1e-6 {
             sins.push(format!("the centre made coincident with the origin stands at {c:?}; status: {}", app.status));
         }
         let (mut app, si) = a_rectangle("opt-rect-2corners", [(10.0, 10.0), (50.0, 40.0)]);
-        Hand::new(&mut app).sk_tool(3).click2d(70.0, 60.0).click2d(75.0, 60.0).key(egui::Key::Enter);
-        Hand::new(&mut app).sk_tool(0).click2d(30.0, 25.0).shift_click2d(70.0, 60.0).constraint(2);
-        let c = point_near(&app, si, app.project.sketches[si].rects[0].centre);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(70.0, 60.0).click2d(75.0, 60.0).key(egui::Key::Enter);
+        Hand::new(&mut app).sk_select().click2d(30.0, 25.0).shift_click2d(70.0, 60.0).constraint(qymcad_ui_state::ConstraintKind::Vertical);
+        let c = point_near(&app, si, app.project.sketches[si].rects()[0].centre);
         let o = app.project.sketches[si]
             .entities
             .iter()
-            .find_map(|e| if let qymcad_core::model::EntityKind::Circle { center, .. } = e.kind { Some(point_near(&app, si, center)) } else { None })
+            .find_map(|e| if let Some(qymcad_core::model::CircleParts { center, .. }) = e.kind.as_circle() { Some(point_near(&app, si, center)) } else { None })
             .expect("the circle");
         if (c.0 - o.0).abs() > 1e-6 {
             sins.push(format!("the centre made vertical with a circle's centre {o:?} stands at {c:?}; status: {}", app.status));
@@ -176,7 +176,7 @@ mod tests {
         Hand::new(&mut app).sk_rotate((20.0, 0.0), (20.0, 15.0), 30.0);
         let s = &app.project.sketches[si];
         let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a corner");
-        let [a, b, _, d] = s.rects[0].corners.map(at);
+        let [a, b, _, d] = s.rects()[0].corners.map(at);
         let turn = (b.1 - a.1).atan2(b.0 - a.0).to_degrees();
         let square = (b.0 - a.0) * (d.0 - a.0) + (b.1 - a.1) * (d.1 - a.1);
         assert!((turn - 30.0).abs() < 1e-6 && square.abs() < 1e-6, "the rectangle turned to {turn:.3} deg, off square by {square:.2e}; status: {}", app.status);

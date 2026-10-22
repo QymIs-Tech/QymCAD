@@ -5,7 +5,7 @@
 //! moves it, and leaves every other part where it stood. The failures are gathered and reported together.
 mod sketch_kinds;
 
-use qymcad_core::model::{Constraint, EntityKind, Id, Project, SketchPoint};
+use qymcad_core::model::{Constraint, Id, Project, SketchPoint};
 use qymcad_core::solver::{self, RadiusVar};
 use sketch_kinds::{build, Kind, KINDS};
 
@@ -22,15 +22,13 @@ fn input(p: &Project) -> Input {
     let mut radii = Vec::new();
     let mut constraints = s.constraints.clone();
     for e in &s.entities {
-        match e.kind {
-            EntityKind::Circle { center, r } => radii.push(RadiusVar { center, value: r }),
-            EntityKind::Arc { center, a, b, .. } => {
-                let (c, q) = (at(center), at(a));
-                radii.push(RadiusVar { center, value: (q.0 - c.0).hypot(q.1 - c.1) });
-                constraints.push(Constraint::PointOnCircle { p: a, c: center });
-                constraints.push(Constraint::PointOnCircle { p: b, c: center });
-            }
-            _ => {}
+        if let Some(c) = e.kind.as_circle() {
+            radii.push(RadiusVar { center: c.center, value: c.r });
+        } else if let Some(qymcad_core::model::ArcParts { center, a, b, .. }) = e.kind.as_arc() {
+            let (c, q) = (at(center), at(a));
+            radii.push(RadiusVar { center, value: (q.0 - c.0).hypot(q.1 - c.1) });
+            constraints.push(Constraint::PointOnCircle { p: a, c: center });
+            constraints.push(Constraint::PointOnCircle { p: b, c: center });
         }
     }
     Input { points: s.points.clone(), radii, constraints }

@@ -3,7 +3,7 @@
 //! entities, closed or open, at the same place and size - and a loop far from the drag keeps its id.
 mod sketch_kinds;
 
-use qymcad_core::model::{EntityKind, Project, SketchEntity, SketchPoint};
+use qymcad_core::model::{Project, SketchEntity, SketchPoint};
 use sketch_kinds::{build, Kind};
 
 /// The loops of a sketch as a sorted list of what each is: closed, its entities, its centroid and area to 1e-6.
@@ -67,7 +67,7 @@ fn a_segment_dragged_across_a_rectangle_cuts_it_and_leaves_it_whole_again() {
     let (a, b) = (next, next + 1);
     s.points.push(SketchPoint { id: a, x: 5.0, y: -5.0 });
     s.points.push(SketchPoint { id: b, x: 5.0, y: -2.0 });
-    s.entities.push(SketchEntity { id: next + 2, kind: EntityKind::Line { a, b }, construction: false });
+    s.entities.push(SketchEntity { id: next + 2, kind: qymcad_core::model::LineParts { a, b }.into(), construction: false });
     p.regen_sketch(0);
     let mut failures = Vec::new();
     let path = [(5.0, 3.0), (5.0, 12.0), (5.0, 3.0), (5.0, -2.0)];
@@ -93,7 +93,7 @@ fn a_side_dragged_off_a_square_of_separate_lines_leaves_an_open_chain() {
         let (a, b, e) = (1000 + 3 * i as u64, 1001 + 3 * i as u64, 1002 + 3 * i as u64);
         s.points.push(SketchPoint { id: a, x: c[i].0, y: c[i].1 });
         s.points.push(SketchPoint { id: b, x: c[(i + 1) % 4].0, y: c[(i + 1) % 4].1 });
-        s.entities.push(SketchEntity { id: e, kind: EntityKind::Line { a, b }, construction: false });
+        s.entities.push(SketchEntity { id: e, kind: qymcad_core::model::LineParts { a, b }.into(), construction: false });
         if i == 0 {
             end = b;
         }

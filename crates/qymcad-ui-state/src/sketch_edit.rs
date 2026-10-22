@@ -10,33 +10,15 @@ pub fn select_all_sketch(annot: &mut AnnotEdit, gsel: &mut GeomSelection, projec
     let sys: std::collections::HashSet<Id> = s.system_ids().into_iter().collect();
     // points already taken by entities and primitives: they are not added as separate points
     let mut used: std::collections::HashSet<Id> = std::collections::HashSet::new();
-    let mut sel: Vec<(u8, Id)> = Vec::new();
+    let mut sel: Vec<crate::SketchItem> = Vec::new();
     for e in &s.entities {
-        sel.push((1, e.id));
-        match e.kind {
-            qymcad_core::model::EntityKind::Line { a, b } => {
-                used.insert(a);
-                used.insert(b);
-            }
-            qymcad_core::model::EntityKind::Circle { center, .. } => {
-                used.insert(center);
-            }
-            qymcad_core::model::EntityKind::Arc { center, a, b, .. } => {
-                used.insert(center);
-                used.insert(a);
-                used.insert(b);
-            }
-            qymcad_core::model::EntityKind::Ellipse { c, ma, mi } => {
-                used.insert(c);
-                used.insert(ma);
-                used.insert(mi);
-            }
-        }
+        sel.push(crate::SketchItem::curve(e.id));
+        used.extend(qymcad_core::model::entity_points(e));
     }
     // lone points (not part of an entity and not system ones)
     for p in &s.points {
         if !used.contains(&p.id) && !sys.contains(&p.id) {
-            sel.push((0, p.id));
+            sel.push(crate::SketchItem::point(p.id));
         }
     }
     let n = sel.len();
@@ -48,7 +30,7 @@ pub fn select_all_sketch(annot: &mut AnnotEdit, gsel: &mut GeomSelection, projec
 
 /// Delete the current sketch selection (entities, primitives and points, apart from the system ones).
 pub fn delete_sketch_sel(project: &mut Project, regen: &mut Rebuilding, sel_sk: &mut SketchSelection, status: &mut Notice, si: usize) {
-    let eids: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    let eids: Vec<Id> = sel_sk.curves().collect();
     let eids: Vec<Id> = {
         let s = &project.sketches[si];
         eids.into_iter().filter(|e| s.entities.iter().any(|x| x.id == *e)).collect()
@@ -57,7 +39,7 @@ pub fn delete_sketch_sel(project: &mut Project, regen: &mut Rebuilding, sel_sk: 
         let s = &project.sketches[si];
         s.immovable_points().into_iter().collect() // system and driven points: they are not deleted one by one
     };
-    let pids: Vec<Id> = sel_sk.items.iter().filter(|(k, id)| *k == 0 && !sys.contains(id)).map(|(_, id)| *id).collect();
+    let pids: Vec<Id> = sel_sk.items.iter().filter(|crate::SketchItem { kind: k, id }| *k == crate::ItemKind::Point && !sys.contains(id)).map(|crate::SketchItem { id, .. }| *id).collect();
     // A PIECE OF A PROJECTION DELETED cuts it: the rest is ordinary geometry held by what it plainly is
     // (`delete_sketch_curves`)
     if !eids.is_empty() {
@@ -139,6 +121,10 @@ pub fn constraint_label(c: &qymcad_core::model::Constraint) -> String {
         C::CircleTangent { external, .. } => qymcad_i18n::tr(if *external { "con-circle-tangent-out" } else { "con-circle-tangent-in" }),
         C::EdgeDistance { d, driven, expr, .. } => dim("con-name-edge-distance", value(qymcad_i18n::num(*d, 1), expr), *driven),
         C::PointOnCircle { .. } => qymcad_i18n::tr("con-point-on-circle"),
+        C::PointOnEllipse { .. } => qymcad_i18n::tr("con-point-on-ellipse"),
+        C::PointOnCurve { .. } => qymcad_i18n::tr("con-point-on-curve"),
+        C::CurveDistance { d, driven, expr, .. } => dim("con-name-distance", value(qymcad_i18n::num(*d, 1), expr), *driven),
+        C::TangentCurves { .. } => qymcad_i18n::tr("con-tangent"),
         C::Concentric { .. } => qymcad_i18n::tr("con-concentric"),
         C::Angle { deg, driven, .. } => dim("con-name-angle", format!("{}°", qymcad_i18n::num(*deg, 0)), *driven),
         C::AngleLines { deg, driven, expr, .. } => dim("con-name-angle", value(format!("{}°", qymcad_i18n::num(*deg, 0)), expr), *driven),
@@ -203,117 +189,41 @@ pub fn contour_under_3d(project: &Project, scr: &Screen, screen: Pos2, si: usize
     best.map(|(_, id)| id)
 }
 
-/// The geometry of the active sketch, for snapping: segments and circles (arcs count as circles).
-/// Returns (lines as [(A, B)], circles as [(centre, radius)]).
-/// THE EDGES OF A SKETCH READY FOR SNAPPING AND PICKING, told apart by their shape.
-///
-/// It was `(Vec<(Point2, Point2)>, Vec<(Point2, f64)>)` - which of the two is a segment and which a circle
-/// could only be worked out from the body of the function.
-pub struct ActiveEdges {
-    /// The straight ones, as their two endpoints.
-    pub lines: Vec<(Point2, Point2)>,
-    /// The round ones: circles whole, and arcs with the part of their circle they run over.
-    pub circles: Vec<Rim>,
-}
-
-/// THE RIM OF A CIRCLE OR AN ARC, as the cursor snaps to it.
-pub struct Rim {
-    pub centre: Point2,
-    pub radius: f64,
-    /// For an arc, the part of the circle it runs over; `None` for a whole circle.
-    pub arc: Option<RimArc>,
-}
-
-/// THE PART OF ITS CIRCLE AN ARC RUNS OVER: from its start to its end, counter-clockwise or not.
-pub struct RimArc {
+/// A CENTRE LINE OF A CIRCLE: a dashed axis through its centre, a quarter of the radius past the rim each way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CentreLine {
     pub from: Point2,
     pub to: Point2,
-    pub ccw: bool,
 }
 
-impl Rim {
-    /// WHETHER A POINT OF THE CIRCLE LIES ON THE RIM ITSELF: anywhere for a circle, within its sweep for an arc. A snap
-    /// on the rest of an arc's circle stood where nothing is drawn - beside a fillet R20, on the far side of its circle.
-    pub fn holds(&self, p: Point2) -> bool {
-        let Some(arc) = &self.arc else { return true };
-        let ang = |q: Point2| (q.y - self.centre.y).atan2(q.x - self.centre.x);
-        let (a0, a1, at) = (ang(arc.from), ang(arc.to), ang(p));
-        let tau = std::f64::consts::TAU;
-        let (start, sweep) = if arc.ccw { (a0, (a1 - a0).rem_euclid(tau)) } else { (a1, (a0 - a1).rem_euclid(tau)) };
-        (at - start).rem_euclid(tau) <= sweep + 1e-9
-    }
+/// THE CENTRE LINES OF THE CIRCLES OF SKETCH `si`: a horizontal and a vertical one through each centre, as every CAD
+/// draws them. The pointer is carried along them and snaps where they cross the lines of the sketch, so a line, a
+/// dimension or a tangent is laid off the axes of a circle.
+pub fn circle_centre_lines(project: &Project, si: usize) -> Vec<CentreLine> {
+    let Some(s) = project.sketches.get(si) else { return Vec::new() };
+    let rims = s.entities.iter().filter_map(|e| e.kind.as_circle()).filter_map(|k| sketch_pt(project, si, k.center).map(|c| CentreReach { centre: c, reach: k.r * 1.25 }));
+    rims.flat_map(|reach| {
+        let (c, r) = (reach.centre, reach.reach);
+        [CentreLine { from: Point2::new(c.x - r, c.y), to: Point2::new(c.x + r, c.y) }, CentreLine { from: Point2::new(c.x, c.y - r), to: Point2::new(c.x, c.y + r) }]
+    })
+    .collect()
 }
 
-pub fn active_edges(dc: &DrawCtx, si: usize) -> ActiveEdges {
-    use qymcad_core::model::EntityKind;
-    let mut lines = Vec::new();
-    let mut circs = Vec::new();
-    if let Some(s) = dc.project.sketches.get(si) {
-        let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
-        let pt = |id: Id| points_by_id.get(&id).copied().map(|p| Point2::new(p.x, p.y));
-        for e in &s.entities {
-            match e.kind {
-                EntityKind::Line { a, b } => {
-                    if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
-                        lines.push((pa, pb));
-                    }
-                }
-                EntityKind::Circle { center, r } => {
-                    if let Some(c) = pt(center) {
-                        circs.push(Rim { centre: c, radius: r, arc: None });
-                    }
-                }
-                EntityKind::Arc { center, a, b, ccw } => {
-                    if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) {
-                        circs.push(Rim { centre: c, radius: ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt(), arc: Some(RimArc { from: pa, to: pb, ccw }) });
-                    }
-                }
-                EntityKind::Ellipse { .. } => {} // drawn by its own outline (as a profile)
-            }
-        }
-    }
-    ActiveEdges { lines, circles: circs }
+/// How far the centre lines of a circle run from its centre: a quarter of its radius past the rim.
+struct CentreReach {
+    centre: Point2,
+    reach: f64,
 }
 
-/// The entity nearest to a screen point (within 12 px): for a line the distance to the segment, for
-/// a circle or an arc the distance to the rim.
+/// The curve nearest to a screen point (within 12 px), of whatever kind: the distance to the curve as it is drawn.
 pub fn entity_near(pick: &PickCtx, rect: Rect, pos: Pos2, si: usize) -> Option<Id> {
     let s = pick.project.sketches.get(si)?;
-    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
-    let scr = |id: Id| points_by_id.get(&id).copied().map(|q| (Sheet { view: *pick.view, rect }).at(Point2::new(q.x, q.y)));
-    let seg_d = |p: Pos2, a: Pos2, b: Pos2| -> f32 {
-        let (vx, vy) = (b.x - a.x, b.y - a.y);
-        let l2 = vx * vx + vy * vy;
-        if l2 < 1e-6 {
-            return p.distance(a);
-        }
-        let t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / l2;
-        let t = t.clamp(0.0, 1.0);
-        p.distance(Pos2::new(a.x + vx * t, a.y + vy * t))
+    let sh = Sheet { view: *pick.view, rect };
+    let off = |e: &qymcad_core::model::SketchEntity| {
+        let line: Vec<Pos2> = entity_outline(s, e).into_iter().map(|p| sh.at(p)).collect();
+        line.windows(2).map(|w| screen_dist_seg(pos, w[0], w[1])).fold(f32::INFINITY, f32::min)
     };
-    use qymcad_core::model::EntityKind;
-    let mut best: Option<(f32, Id)> = None;
-    for e in &s.entities {
-        let d = match e.kind {
-            EntityKind::Line { a, b } => match (scr(a), scr(b)) {
-                (Some(pa), Some(pb)) => seg_d(pos, pa, pb),
-                _ => continue,
-            },
-            EntityKind::Circle { center, r } => match scr(center) {
-                Some(c) => (pos.distance(c) - (r * pick.view.scale as f64) as f32).abs(),
-                _ => continue,
-            },
-            EntityKind::Arc { center, a, .. } => match (scr(center), scr(a)) {
-                (Some(c), Some(pa)) => (pos.distance(c) - c.distance(pa)).abs(),
-                _ => continue,
-            },
-            _ => continue,
-        };
-        if d < 12.0 && best.is_none_or(|(bd, _)| d < bd) {
-            best = Some((d, e.id));
-        }
-    }
-    best.map(|(_, id)| id)
+    s.entities.iter().map(|e| (off(e), e.id)).filter(|(d, _)| *d < 12.0).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, id)| id)
 }
 
 /// Store the picked contour `cid` into the sweep or loft slot.
@@ -392,39 +302,11 @@ pub fn lineage_of(project: &qymcad_core::model::Project, id: Option<Id>) -> Line
     Lineage { built_on, dependents: project.dependents_of(id).into_iter().map(name_of).collect() }
 }
 
-/// THE OUTLINE OF A SKETCH ENTITY as a polyline in sketch coordinates: a line its two ends, a circle, an arc and an
-/// ellipse 48 pieces of themselves - enough for a box to tell touched from missed at any zoom a box is drawn at.
-pub fn entity_outline(s: &qymcad_core::model::Sketch, kind: &qymcad_core::model::EntityKind) -> Vec<Point2> {
-    use qymcad_core::model::EntityKind;
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
-    let ring = |c: Point2, u: (f64, f64), v: (f64, f64), a0: f64, sweep: f64| -> Vec<Point2> {
-        (0..=48)
-            .map(|i| {
-                let t = a0 + sweep * i as f64 / 48.0;
-                Point2::new(c.x + u.0 * t.cos() + v.0 * t.sin(), c.y + u.1 * t.cos() + v.1 * t.sin())
-            })
-            .collect()
-    };
-    match *kind {
-        EntityKind::Line { a, b } => [pt(a), pt(b)].into_iter().flatten().collect(),
-        EntityKind::Circle { center, r } => pt(center).map(|c| ring(c, (r, 0.0), (0.0, r), 0.0, std::f64::consts::TAU)).unwrap_or_default(),
-        EntityKind::Arc { center, a, b, ccw } => match (pt(center), pt(a), pt(b)) {
-            (Some(c), Some(pa), Some(pb)) => {
-                let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
-                let (a0, a1) = ((pa.y - c.y).atan2(pa.x - c.x), (pb.y - c.y).atan2(pb.x - c.x));
-                let mut sweep = (a1 - a0).rem_euclid(std::f64::consts::TAU);
-                if !ccw {
-                    sweep -= std::f64::consts::TAU;
-                }
-                ring(c, (r, 0.0), (0.0, r), a0, sweep)
-            }
-            _ => Vec::new(),
-        },
-        EntityKind::Ellipse { c, ma, mi } => match (pt(c), pt(ma), pt(mi)) {
-            (Some(c), Some(pa), Some(pi)) => ring(c, (pa.x - c.x, pa.y - c.y), (pi.x - c.x, pi.y - c.y), 0.0, std::f64::consts::TAU),
-            _ => Vec::new(),
-        },
-    }
+/// THE OUTLINE OF A SKETCH ENTITY as a polyline in sketch coordinates: the points its curve is laid out by
+/// (`Curve::polyline`), within 0.005 mm of it - a line its two ends - enough for a box to tell touched from missed at any
+/// zoom, and for a curve to be drawn and picked where it lies.
+pub fn entity_outline(s: &qymcad_core::model::Sketch, e: &qymcad_core::model::SketchEntity) -> Vec<Point2> {
+    qymcad_core::model::curve::Curve::of(s, e).map(|c| c.polyline()).unwrap_or_default()
 }
 
 /// Does the segment p-q cross the box [x0, x1] x [y0, y1] (screen)? Tested against the four sides; an end inside is
@@ -453,7 +335,7 @@ pub fn box_select_sketch(ed: Editing, sel_sk: &mut SketchSelection, rect: Rect, 
         let Some(s) = ed.project.sketches.get(si) else { return };
         // THE SHAPE ITSELF IS TESTED, not its ends: a line that crosses the box with both ends outside is touched, and
         // a circle is inside only when all of it is, not its centre alone
-        let pts_of = |e: &qymcad_core::model::SketchEntity| -> Vec<Pos2> { entity_outline(s, &e.kind).into_iter().map(|p| sh.at(p)).collect() };
+        let pts_of = |e: &qymcad_core::model::SketchEntity| -> Vec<Pos2> { entity_outline(s, e).into_iter().map(|p| sh.at(p)).collect() };
         for e in &s.entities {
             let pts = pts_of(e);
             if pts.is_empty() {
@@ -475,13 +357,13 @@ pub fn box_select_sketch(ed: Editing, sel_sk: &mut SketchSelection, rect: Rect, 
         }
     }
     for id in add_ent {
-        if !sel_sk.items.contains(&(1, id)) {
-            sel_sk.items.push((1, id));
+        if !sel_sk.items.contains(&crate::SketchItem::curve(id)) {
+            sel_sk.items.push(crate::SketchItem::curve(id));
         }
     }
     for id in add_pt {
-        if !sel_sk.items.contains(&(0, id)) {
-            sel_sk.items.push((0, id));
+        if !sel_sk.items.contains(&crate::SketchItem::point(id)) {
+            sel_sk.items.push(crate::SketchItem::point(id));
         }
     }
     *ed.status = Notice::info(qymcad_i18n::tr1("g-selected-n", "n", &sel_sk.items.len().to_string()));

@@ -57,11 +57,13 @@ fn construction_spline_excluded_from_profile() {
     let mut p = Project::default();
     let si = p.new_sketch("s");
     let before = p.contours.len();
-    p.add_spline(si, vec![Point2::new(0.0, 0.0), Point2::new(5.0, 5.0), Point2::new(10.0, 0.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Construction); // construction
+    let sp = p
+        .add_spline(si, vec![Point2::new(0.0, 0.0), Point2::new(5.0, 5.0), Point2::new(10.0, 0.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Construction)
+        .expect("the spline"); // construction
     assert_eq!(p.contours.len(), before, "a construction spline added no contour");
-    assert!(p.sketches[si].splines.iter().any(|s| s.construction), "the spline is marked as construction");
+    assert!(p.sketches[si].entities.iter().any(|e| e.id == sp && e.construction), "the spline is marked as construction");
     // the polyline is still available, for drawing it dashed
-    assert!(p.spline_polyline(si, 0).len() >= 2, "the polyline of the spline tessellates");
+    assert!(p.spline_polyline(si, sp).len() >= 2, "the polyline of the spline tessellates");
     // an ordinary spline does add a contour
     p.add_spline(si, vec![Point2::new(0.0, 10.0), Point2::new(5.0, 15.0), Point2::new(10.0, 10.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real);
     assert_eq!(p.contours.len(), before + 1, "an ordinary spline produced a contour");

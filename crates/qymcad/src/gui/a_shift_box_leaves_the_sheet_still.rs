@@ -16,7 +16,7 @@ mod tests {
         assert_eq!(app.set.mouse_nav, qymcad_ui_state::MouseNav::QymCad, "setup: the QymCad layout is the default");
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape).click2d(0.0, 10.0).click2d(20.0, 10.0).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape).click2d(0.0, 10.0).click2d(20.0, 10.0).key(egui::Key::Escape);
         app
     }
 
@@ -28,12 +28,12 @@ mod tests {
     fn shift_with_a_left_drag_draws_the_box_and_the_sheet_stays_put() {
         let mut app = two_lines();
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         let before = hand.app.viewing.view.center;
         hand.drag2d_held(shift_drag(egui::PointerButton::Primary));
         let moved = app.viewing.view.center - before;
         assert!(moved.length() < 1e-6, "the sheet moved under a Shift and left drag by {moved:?}");
-        let lines = app.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).count();
+        let lines = app.tools.sel_sk.items.iter().filter(|it| it.kind == qymcad_ui_state::ItemKind::Curve).count();
         assert_eq!(lines, 2, "the box did not take the two lines it held: {:?}", app.tools.sel_sk.items);
     }
 
@@ -42,7 +42,7 @@ mod tests {
         for button in [egui::PointerButton::Middle, egui::PointerButton::Secondary] {
             let mut app = two_lines();
             let mut hand = Hand::new(&mut app);
-            hand.sk_tool(0);
+            hand.sk_select();
             let before = hand.app.viewing.view.center;
             hand.drag2d_held(shift_drag(button));
             assert!((app.viewing.view.center - before).length() > 1.0, "Shift with the {button:?} button did not move the sheet");

@@ -110,7 +110,7 @@ pub fn set_thread_params(cmd: &mut FeatCommand, thread: ThreadParams) {
             CmdParam::new("th-nominal-d", "nominal", d, 0.5, 1000.0),
             // 0 means the standard coarse pitch for this diameter (ISO 261 / ISO 2901), so choosing the
             // size is enough.
-            CmdParam::new("th-pitch-std", "pitch", 0.0, 0.0, 100.0),
+            CmdParam::new("th-pitch-std", "pitch", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
             CmdParam::new("th-length", "length", (d * 1.5).max(10.0), 0.1, 10000.0),
             // THE FIT CLEARANCE is what printed threads are made for: a bolt and a nut screw together.
             CmdParam::new("th-fit-clearance", "fit", 0.2, 0.0, 5.0),
@@ -118,8 +118,8 @@ pub fn set_thread_params(cmd: &mut FeatCommand, thread: ThreadParams) {
             CmdParam::new("th-lead-out", "lead_out", 1.5, 0.0, 10000.0),
             // FILLETS on both the crest and the root. 0 means follow the standard; a value of one's own
             // overrides the table — for printing the crest is rounded more, so the layers do not tear.
-            CmdParam::new("th-crest-fillet", "crest_r", 0.0, 0.0, 100.0),
-            CmdParam::new("th-root-fillet", "root_r", 0.0, 0.0, 100.0),
+            CmdParam::new("th-crest-fillet", "crest_r", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
+            CmdParam::new("th-root-fillet", "root_r", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
         ]
     };
     // A "custom" form is a profile NOT described by a standard, so the angle and the depth are given by
@@ -252,7 +252,7 @@ macro_rules! popup_tools {
 #[macro_export]
 macro_rules! popup_looks {
     ($x:expr) => {
-        $crate::PopupLooks { tool_prefs: &mut $x.tool_prefs, scheme: &$x.scheme, set: &$x.set }
+        $crate::PopupLooks { tool_prefs: &mut $x.tool_prefs, scheme: &$x.scheme, set: &$x.set, cam: &$x.viewing.cam }
     };
 }
 
@@ -531,7 +531,7 @@ pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPrevi
 /// the rebuild cannot come to different answers about the same two switches.
 pub fn cmd_reach(cmd: &FeatCommand, feat: FeatTarget) -> qymcad_core::feature::Reach {
     use qymcad_core::feature::Reach;
-    if cmd.extent.symmetric() {
+    if cmd.extent.both_ways() {
         Reach::BothWays
     } else if feat.flip {
         Reach::Backward
@@ -679,6 +679,23 @@ pub fn props_header(ui: &mut egui::Ui, icon: &str, kind_key: &str, name: NameSlo
     renamed
 }
 
+/// A WARNING OF STEP `node` IN ITS PROPERTIES - a reference found by place, edges left out, a blend a hair short - said
+/// in the voice's warning tone, as the tree says it; a reference found by place with the one button that accepts what
+/// was found, inside one undo step. One place for every kind of step: a feature and a sketch on a face both hold it.
+pub fn node_warning_props(pr: &mut PropsCtx, ui: &mut egui::Ui, node: Id) {
+    if let Some(warning) = pr.project.node_warning(node).filter(|_| !pr.project.regen_errors.contains_key(&node)) {
+        ui.separator();
+        let text = qymcad_i18n::error_words::error_text(&warning);
+        say(ui, &pr.scheme.pal, &Notice::warning(text), NoticeSize::Small);
+    }
+    let accept = format!("{} {}", egui_phosphor::regular::CHECK, qymcad_i18n::tr("props-accept-place"));
+    if pr.project.placed_refs.contains(&node) && ui.button(accept).on_hover_text(qymcad_i18n::tr("props-accept-place-hint")).clicked() {
+        begin_edit(pr.edits, pr.project, qymcad_i18n::tr("cmdname-accept-place")); // THE BOUNDARY OF AN OPERATION
+        pr.project.accept_found_by_place(node);
+        commit_edit(&mut pr.rebuild());
+    }
+}
+
 /// INSTALL THE FONTS INTO A CONTEXT — IN ONE PLACE.
 ///
 /// This used to be done right inside the application start-up, and the `qym-bold` family existed only
@@ -703,12 +720,6 @@ pub fn name_edit(ui: &mut egui::Ui, stored: &mut String) -> egui::Response {
         *stored = shown;
     }
     r
-}
-
-thread_local! {
-    /// The keys of the bar fields holding a value that cannot be taken, as last drawn - for the tools that act on a
-    /// click rather than on Enter, where no frame context is at hand (the offset of a sketch).
-    static BAR_BAD_KEYS: std::cell::RefCell<std::collections::HashSet<&'static str>> = std::cell::RefCell::new(std::collections::HashSet::new());
 }
 
 pub use icons::{forget_all_cad_icons, icon_button, icon_image, icon_label, icon_small_button, ResolvedIcon};
@@ -834,21 +845,6 @@ mod picking {
         // a nearer body is nearer, whatever it is
         assert!(super::nearer_hit(9.0, false, Some((10.0, true)), true), "what stands in front must be taken");
         assert!(!super::nearer_hit(11.0, true, Some((10.0, false)), true), "a sheet behind the face must not be reached through it");
-    }
-}
-
-#[cfg(test)]
-mod tool_buttons {
-    use super::{take_or_drop, BarAsk};
-
-    /// A TOOL BUTTON TAKES ITS TOOL WHEN THE HAND IS FREE OF IT AND PUTS IT DOWN WHEN IT IS HELD: a sketch tool back to
-    /// the arrow, a command cancelled.
-    #[test]
-    fn a_tool_button_takes_or_puts_down() {
-        assert!(matches!(take_or_drop(false, BarAsk::FeatCmd(4)), BarAsk::FeatCmd(4)), "a free hand takes the command");
-        assert!(matches!(take_or_drop(true, BarAsk::FeatCmd(4)), BarAsk::CancelAllTools(crate::Then::Nothing)), "a held command is put down");
-        assert!(matches!(take_or_drop(true, BarAsk::SketchTool(3)), BarAsk::SketchSelectMode), "a held sketch tool gives the arrow back");
-        assert!(matches!(take_or_drop(false, BarAsk::SketchTool(3)), BarAsk::SketchTool(3)), "a free hand takes the sketch tool");
     }
 }
 
@@ -1037,6 +1033,8 @@ mod rebuild;
 pub use rebuild::*;
 mod edits;
 pub use edits::*;
+mod sketch_history;
+pub use sketch_history::*;
 mod fields;
 pub use fields::*;
 mod fonts;
@@ -1049,8 +1047,13 @@ mod corners;
 pub use corners::*;
 mod tool_steps;
 pub use tool_steps::*;
+mod path_bar;
+pub use path_bar::*;
+pub use qymcad_shell::{Drew, Switches};
 mod voice;
 pub use voice::*;
+mod tool_frame;
+pub use tool_frame::*;
 mod faults;
 pub use faults::*;
 pub mod catalogue;

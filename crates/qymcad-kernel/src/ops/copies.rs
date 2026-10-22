@@ -25,7 +25,7 @@ pub fn instances(feature: Id, faces: &[u32], count: usize, roles: &mut Roles) ->
             if k == 0 {
                 return Vec::new();
             }
-            faces.iter().map(|&f| Rename { was: f, now: roles.give(GeoName { feature, role: Role::Instance, src: f as Id, split: k as u16 }) }).collect()
+            faces.iter().map(|&f| Rename { was: f, now: roles.give(GeoName { feature, role: Role::Instance, src: f as Id, split: k as u16, cut: None }) }).collect()
         })
         .collect()
 }

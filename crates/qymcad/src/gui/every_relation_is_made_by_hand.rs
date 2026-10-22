@@ -142,11 +142,11 @@ mod tests {
             if ja != jb {
                 qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), jb);
             }
-            qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+            let made = qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
             qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
             let Some(r) = app.project.relations.last().map(|r| r.id) else {
-                broken.push(format!("\"{name}\": the tool did not create a relation; status: {}", app.status));
+                broken.push(format!("\"{name}\": the tool did not create a relation: {made:?}"));
                 checked += 1;
                 continue;
             };

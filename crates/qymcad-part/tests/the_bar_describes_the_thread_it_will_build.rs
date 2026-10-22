@@ -36,7 +36,9 @@ fn texts(shapes: &[egui::epaint::ClippedShape]) -> Vec<String> {
 
 /// Set one of the command's fields, as typing into it does.
 fn typed(cmd: &mut qymcad_ui_state::FeatCommand, key: &str, v: f64) {
-    cmd.params.iter_mut().find(|p| p.key == key).unwrap_or_else(|| panic!("the command has no field {key}")).val = v;
+    // typed as a person types it: the words in the field, which its number is read from on every frame
+    let p = cmd.params.iter_mut().find(|p| p.key == key).unwrap_or_else(|| panic!("the command has no field {key}"));
+    (p.val, p.txt) = (v, qymcad_core::expr::fmt_num(v));
 }
 
 /// The thread command in hand, cut to a profile of one's own: Ø20 x 5, 40 degrees, 2.5 deep.
@@ -47,7 +49,7 @@ fn a_thread_of_ones_own() -> (Bench, qymcad_core::thread::ThreadSpec) {
     let mut b = Bench { mode_3d: true, ..Default::default() };
     b.thread.radius = 10.0; // the cylinder the thread sits on: Ø20
     b.thread.form = 5; // a profile of one's own
-    b.cmd.open(&mut b.armed, 24, true);
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Thread, true);
     qymcad_ui_state::set_thread_params(&mut b.cmd, b.thread);
     typed(&mut b.cmd, "pitch", 5.0);
     typed(&mut b.cmd, "angle", 40.0);
@@ -63,11 +65,18 @@ fn a_thread_of_ones_own() -> (Bench, qymcad_core::thread::ThreadSpec) {
 /// What the bar drew, as one string.
 fn what_the_bar_says(b: &mut Bench) -> String {
     let ctx = egui::Context::default();
-    let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(2000.0, 400.0));
-    let full = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-        qymcad_part::feat_command_bar(&mut b.part_ctx(), ui);
-    });
-    texts(&full.shapes).join(" | ")
+    let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(2000.0, 800.0));
+    // the bar, and its sentences on their plate in the corner of the view, as the window draws them; a plate over the view
+    // is laid out unseen the first frame it shows, so the second frame is read
+    let mut frame = || {
+        ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+            let mut pc = b.part_ctx();
+            let canvas = pc.canvas;
+            qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_part::in_hand(&mut pc));
+        })
+    };
+    frame();
+    texts(&frame().shapes).join(" | ")
 }
 
 /// THE HOLE THE BAR NAMES IS THE HOLE THE NUT NEEDS.
@@ -110,7 +119,7 @@ fn the_depth_field_opens_on_the_depth_that_will_be_cut() {
     let mut b = Bench::default();
     b.thread.radius = 10.0; // Ø20
     b.thread.form = 5; // a profile of one's own
-    b.cmd.open(&mut b.armed, 24, true);
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Thread, true);
     qymcad_ui_state::set_thread_params(&mut b.cmd, b.thread);
     // The pitch is left at zero - "the standard coarse pitch for this size" - which is what a person gets
     // without touching it.

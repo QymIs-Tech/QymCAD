@@ -43,6 +43,13 @@ impl std::ops::Add for Point2 {
     }
 }
 
+impl std::ops::Mul<f64> for Point2 {
+    type Output = Point2;
+    fn mul(self, k: f64) -> Point2 {
+        Point2::new(self.x * k, self.y * k)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Point3 {
     pub x: f64,
@@ -363,6 +370,7 @@ mod normal_tests {
     }
 }
 
+pub mod bspline;
 mod contour;
 pub use contour::*;
 mod mesh;

@@ -528,6 +528,10 @@ pub enum FeatureKind {
         /// Drill against the sketch normal instead of along it.
         #[serde(default)]
         flip: bool,
+        /// Where it stands on its face, as the shift from the face's centre along the axes of its frame - written by the
+        /// rebuild, which places the hole by its formulas when the shift has them.
+        #[serde(default)]
+        shift: [f64; 2],
         body: Id,
         /// The solids a cut or an intersection left, each a body of its own (see `CutPiece`); empty for one solid.
         #[serde(default)]
@@ -671,7 +675,7 @@ impl FeatureKind {
             FeatureKind::Sphere { r, .. } => vec![("r", r)],
             FeatureKind::Cone { r1, r2, h, .. } => vec![("r1", r1), ("r2", r2), ("h", h)],
             FeatureKind::Torus { major, minor, .. } => vec![("major", major), ("minor", minor)],
-            FeatureKind::Prism { r, h, .. } => vec![("r", r), ("h", h)],
+            FeatureKind::Prism { r, n, h, .. } => vec![("r", r), ("n", f64::from(n)), ("h", h)],
             FeatureKind::Fillet { radius, .. } => vec![("radius", radius)],
             FeatureKind::Chamfer { dist, d2, .. } => vec![("dist", dist), ("d2", d2)],
             FeatureKind::Shell { thickness, .. } => vec![("thickness", thickness)],
@@ -681,15 +685,59 @@ impl FeatureKind {
             FeatureKind::Stitch { tol, .. } => vec![("tol", tol)],
             FeatureKind::SplitFace { offset, .. } => vec![("offset", offset)],
             FeatureKind::SplitBody { offset, .. } => vec![("offset", offset)],
-            FeatureKind::CircularArray { angle, .. } => vec![("angle", angle)],
-            FeatureKind::LinearArray { dx, dy, dz, dx2, dy2, dz2, dx3, dy3, dz3, .. } => {
-                vec![("dx", dx), ("dy", dy), ("dz", dz), ("dx2", dx2), ("dy2", dy2), ("dz2", dz2), ("dx3", dx3), ("dy3", dy3), ("dz3", dz3)]
+            FeatureKind::CircularArray { angle, count, .. } => vec![("angle", angle), ("count", f64::from(count))],
+            FeatureKind::LinearArray { dx, dy, dz, count, dx2, dy2, dz2, count2, dx3, dy3, dz3, count3, .. } => {
+                // the step of a direction is the length of its vector: its formula stands on the component it runs along
+                let step = |x: f64, y: f64, z: f64| (x * x + y * y + z * z).sqrt();
+                vec![
+                    ("dx", dx),
+                    ("dy", dy),
+                    ("dz", dz),
+                    ("dx2", dx2),
+                    ("dy2", dy2),
+                    ("dz2", dz2),
+                    ("dx3", dx3),
+                    ("dy3", dy3),
+                    ("dz3", dz3),
+                    ("count", f64::from(count)),
+                    ("count2", f64::from(count2)),
+                    ("count3", f64::from(count3)),
+                    ("step", step(dx, dy, dz)),
+                    ("step2", step(dx2, dy2, dz2)),
+                    ("step3", step(dx3, dy3, dz3)),
+                ]
             }
-            FeatureKind::Hole { diameter, depth, dia2, depth2, .. } => {
-                vec![("diameter", diameter), ("depth", depth), ("dia2", dia2), ("depth2", depth2)]
+            FeatureKind::Hole { diameter, depth, dia2, depth2, shift, .. } => {
+                vec![("diameter", diameter), ("depth", depth), ("dia2", dia2), ("depth2", depth2), ("off_u", shift[0]), ("off_v", shift[1])]
             }
-            FeatureKind::Thread { length, lead_in, lead_out, .. } => vec![("length", length), ("lead_in", lead_in), ("lead_out", lead_out)],
-            FeatureKind::Auger { length, lead_in, lead_out, .. } => vec![("length", length), ("lead_in", lead_in), ("lead_out", lead_out)],
+            FeatureKind::Thread { ref spec, length, lead_in, lead_out, .. } => vec![
+                ("length", length),
+                ("lead_in", lead_in),
+                ("lead_out", lead_out),
+                ("nominal", spec.nominal_d),
+                ("pitch", spec.pitch),
+                ("fit", spec.fit),
+                ("crest_r", spec.crest_r.unwrap_or(0.0)),
+                ("root_r", spec.root_r.unwrap_or(0.0)),
+                ("angle", spec.custom_angle),
+                ("depth", spec.custom_depth),
+                ("starts", f64::from(spec.starts)),
+            ],
+            FeatureKind::Auger { ref spec, length, lead_in, lead_out, .. } => vec![
+                ("length", length),
+                ("lead_in", lead_in),
+                ("lead_out", lead_out),
+                ("outer", spec.outer_d),
+                ("pitch", spec.pitch),
+                ("thickness", spec.thickness),
+                ("edge_r", spec.edge_r),
+                ("starts", f64::from(spec.starts)),
+            ],
+            // the shift of a move is the translation of its transform, along the axes of the part
+            FeatureKind::Move { mat, .. } => vec![("dx", mat[3]), ("dy", mat[7]), ("dz", mat[11])],
+            FeatureKind::MeshRecognised { tol, sharp, simplify, .. } => vec![("tol", tol), ("sharp", sharp), ("simplify", simplify)],
+            FeatureKind::MeshSolid { simplify, .. } => vec![("simplify", simplify)],
+            FeatureKind::ComponentPattern { ref kind, .. } => kind.values().into_iter().map(|v| (v.key, v.value)).collect(),
             _ => Vec::new(),
         }
     }

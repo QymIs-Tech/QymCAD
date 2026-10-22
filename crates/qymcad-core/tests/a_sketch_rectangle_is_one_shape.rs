@@ -7,7 +7,7 @@
 //! deleting those constraints by hand, and a rectangle drawn from its centre kept no centre.
 use qymcad_core::feature::Purpose;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 
 /// The three ways a rectangle is drawn: two corners, a centre and a corner, three points (turned by 30 deg).
 fn drawn(way: usize) -> (Project, usize) {
@@ -39,7 +39,7 @@ struct Shape {
 }
 
 fn shape(p: &Project, si: usize) -> Shape {
-    let r = &p.sketches[si].rects[0];
+    let r = &p.sketches[si].rects()[0];
     let [a, b, _, d] = r.corners.map(|id| xy(p, si, id));
     let (u, v) = ((b.0 - a.0, b.1 - a.1), (d.0 - a.0, d.1 - a.1));
     let (lu, lv) = (u.0.hypot(u.1), v.0.hypot(v.1));
@@ -52,11 +52,11 @@ fn a_rectangle_is_held_by_its_shape_and_keeps_a_centre() {
     for (way, turn) in [(0, 0.0), (1, 0.0), (2, 30.0)] {
         let (p, si) = drawn(way);
         let s = &p.sketches[si];
-        if s.rects.len() != 1 {
-            sins.push(format!("way {way}: {} rectangle records, not one", s.rects.len()));
+        if s.rects().len() != 1 {
+            sins.push(format!("way {way}: {} rectangle records, not one", s.rects().len()));
             continue;
         }
-        let r = &s.rects[0];
+        let r = &s.rects()[0];
         // held by its shape and its turn, not by the axes
         if s.constraints.iter().any(|c| matches!(c, Constraint::Horizontal { .. } | Constraint::Vertical { .. })) {
             sins.push(format!("way {way}: the rectangle is still held Horizontal or Vertical"));
@@ -66,7 +66,7 @@ fn a_rectangle_is_held_by_its_shape_and_keeps_a_centre() {
         }
         // four sides; two construction diagonals for a rectangle drawn from its centre, none for one drawn by its corners;
         // the centre on the middle of both diagonals all the same
-        let lines = |construction: bool| s.entities.iter().filter(|e| e.construction == construction && matches!(e.kind, EntityKind::Line { .. })).count();
+        let lines = |construction: bool| s.entities.iter().filter(|e| e.construction == construction && e.kind.as_line().is_some()).count();
         let diagonals = if way == 1 { 2 } else { 0 };
         if lines(false) != 4 || lines(true) != diagonals {
             sins.push(format!("way {way}: {} sides and {} diagonals, not 4 and {diagonals}", lines(false), lines(true)));
@@ -83,7 +83,7 @@ fn a_rectangle_is_held_by_its_shape_and_keeps_a_centre() {
     }
     // the centre of a rectangle drawn from the centre is where the centre was clicked
     let (p, si) = drawn(1);
-    let m = xy(&p, si, p.sketches[si].rects[0].centre);
+    let m = xy(&p, si, p.sketches[si].rects()[0].centre);
     if (m.0 - 30.0).hypot(m.1 - 25.0) > 1e-9 {
         sins.push(format!("drawn from (30, 25): the centre stands at {m:?}"));
     }
@@ -96,7 +96,7 @@ fn a_dragged_corner_changes_the_size_and_not_the_turn() {
     for way in [0, 2] {
         let (mut p, si) = drawn(way);
         let before = shape(&p, si);
-        let corner = p.sketches[si].rects[0].corners[2];
+        let corner = p.sketches[si].rects()[0].corners[2];
         let (x, y) = xy(&p, si, corner);
         p.solve_sketch_drag(si, Some((corner, x + 7.0, y + 3.0)));
         p.solve_sketch(si);
@@ -114,12 +114,12 @@ fn a_dragged_corner_changes_the_size_and_not_the_turn() {
 #[test]
 fn a_rectangle_losing_a_side_is_four_plain_lines() {
     let (mut p, si) = drawn(1);
-    let side = p.sketches[si].rects[0].sides[0];
-    let centre = p.sketches[si].rects[0].centre;
+    let side = p.sketches[si].rects()[0].sides[0];
+    let centre = p.sketches[si].rects()[0].centre;
     p.delete_entities(si, &[side]);
     let s = &p.sketches[si];
     let mut sins = Vec::new();
-    if !s.rects.is_empty() {
+    if !s.rects().is_empty() {
         sins.push("the rectangle record stayed".to_string());
     }
     if s.entities.iter().any(|e| e.construction) {
@@ -131,7 +131,7 @@ fn a_rectangle_losing_a_side_is_four_plain_lines() {
     if let Some(c) = s.constraints.iter().find(|c| matches!(c, Constraint::Parallel { .. } | Constraint::Perpendicular { .. } | Constraint::Orientation { .. } | Constraint::Midpoint { .. })) {
         sins.push(format!("a constraint of the rectangle stayed: {c:?}"));
     }
-    if s.entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count() != 3 {
+    if s.entities.iter().filter(|e| e.kind.as_line().is_some()).count() != 3 {
         sins.push("the other three sides did not stay".to_string());
     }
     assert!(sins.is_empty(), "{}", sins.join("\n"));
@@ -140,11 +140,11 @@ fn a_rectangle_losing_a_side_is_four_plain_lines() {
 #[test]
 fn a_corner_of_a_rectangle_is_still_rounded() {
     let (mut p, si) = drawn(0);
-    let corner = p.sketches[si].rects[0].corners[0];
+    let corner = p.sketches[si].rects()[0].corners[0];
     assert!(p.fillet_at_vertex(si, corner, 3.0), "the corner of a rectangle with its diagonals refused a fillet");
     let resid = p.solve_sketch(si);
     assert!(resid < 1e-6, "the rounded rectangle is unsolved: {resid:e}");
-    assert!(p.sketches[si].rects.len() == 1, "rounding a corner broke the rectangle");
+    assert!(p.sketches[si].rects().len() == 1, "rounding a corner broke the rectangle");
 }
 
 /// A RECTANGLE CHANGES ITS SIZE FROM WHERE IT WAS DRAWN: drawn from the centre, the centre stays when a corner is
@@ -154,7 +154,7 @@ fn a_rectangle_grows_from_where_it_was_drawn() {
     let mut sins = Vec::new();
     // drawn from the centre: a corner dragged
     let (mut p, si) = drawn(1);
-    let r = p.sketches[si].rects[0].clone();
+    let r = p.sketches[si].rects()[0].clone();
     let (x, y) = xy(&p, si, r.corners[2]);
     p.solve_sketch_drag(si, Some((r.corners[2], x + 6.0, y + 4.0)));
     p.solve_sketch(si);
@@ -165,7 +165,7 @@ fn a_rectangle_grows_from_where_it_was_drawn() {
     // a width dimension changed, on a rectangle drawn from the centre and on one drawn by its corners
     for (way, keep) in [(1, "the centre"), (0, "the first corner")] {
         let (mut p, si) = drawn(way);
-        let r = p.sketches[si].rects[0].clone();
+        let r = p.sketches[si].rects()[0].clone();
         let kept = if way == 1 { r.centre } else { r.corners[0] };
         let before = xy(&p, si, kept);
         let w = shape(&p, si).width;
@@ -217,7 +217,7 @@ fn a_rectangle_dragged_by_its_centre_goes_as_a_whole() {
     let mut sins = Vec::new();
     for way in [0, 1] {
         let (mut p, si) = drawn(way);
-        let r = p.sketches[si].rects[0].clone();
+        let r = p.sketches[si].rects()[0].clone();
         let before: Vec<(f64, f64)> = r.corners.iter().map(|c| xy(&p, si, *c)).collect();
         let m = xy(&p, si, r.centre);
         for k in 1..=10 {
@@ -241,12 +241,12 @@ fn an_angle_dimension_on_a_side_turns_the_rectangle() {
     let (mut p, si) = drawn(0);
     // a fixed line from (0, 0) at -20 deg, the angle measured between it and the first side, both run from their meeting
     let a = p.add_line_entity(si, 0.0, 0.0, 30.0, -30.0 * 20f64.to_radians().tan(), Purpose::Real);
-    let line = match p.sketches[si].entities.iter().find(|e| e.id == a).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) => (a, b),
+    let line = match p.sketches[si].entities.iter().find(|e| e.id == a).and_then(|e| e.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("a line"),
     };
     p.sketches[si].constraints.extend([Constraint::Fixed { p: line.0 }, Constraint::Fixed { p: line.1 }]);
-    let r = p.sketches[si].rects[0].clone();
+    let r = p.sketches[si].rects()[0].clone();
     let dim = Constraint::AngleLines { a: line.0, b: line.1, c: r.corners[0], d: r.corners[1], deg: 20.0, expr: String::new(), driven: false, off: 0.0, at: None };
     p.give_rect_turn_to(si, &dim);
     p.sketches[si].constraints.push(dim);
@@ -268,7 +268,7 @@ fn an_angle_dimension_on_a_side_turns_the_rectangle() {
     assert!(p.delete_sketch_constraint(si, ci));
     let held = p.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::Orientation { .. })).count();
     let before = shape(&p, si).turn;
-    let corner = p.sketches[si].rects[0].corners[2];
+    let corner = p.sketches[si].rects()[0].corners[2];
     let (x, y) = xy(&p, si, corner);
     p.solve_sketch_drag(si, Some((corner, x + 5.0, y - 9.0)));
     p.solve_sketch(si);
@@ -284,12 +284,12 @@ fn an_angle_dimension_on_a_side_turns_the_rectangle() {
 #[test]
 fn a_rectangle_losing_a_constraint_of_its_own_is_four_plain_lines() {
     let (mut p, si) = drawn(1);
-    let centre = p.sketches[si].rects[0].centre;
+    let centre = p.sketches[si].rects()[0].centre;
     let ci = p.sketches[si].constraints.iter().position(|c| matches!(c, Constraint::Midpoint { .. })).expect("the centre's midpoint");
     assert!(p.delete_sketch_constraint(si, ci));
     let s = &p.sketches[si];
     let mut sins = Vec::new();
-    if !s.rects.is_empty() {
+    if !s.rects().is_empty() {
         sins.push("the rectangle record stayed".to_string());
     }
     if s.points.iter().any(|q| q.id == centre) || s.entities.iter().any(|e| e.construction) {

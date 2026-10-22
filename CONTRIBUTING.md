@@ -119,4 +119,7 @@ By making a contribution to this project, I certify that:
   acceptance probes) and every crate's own tests. Running the fast level before sending saves a round trip.
   When a check goes red, the job lists its name; what it said is in the `gate-logs-…` artifacts of the run.
 
-Building from source and packaging are described in [`packaging/README.md`](packaging/README.md).
+Building from source and packaging are described in [`packaging/README.md`](packaging/README.md). The kernel is
+OCCT 7.9.3 built from source with the `cmake` line given there ("The kernel"): the version the program is tested
+against, with `BUILD_RELEASE_DISABLE_EXCEPTIONS=OFF` so that OCCT's checks stay in, and with signals converted so that a
+fault inside OCCT becomes a refusal. Another version builds with a warning.

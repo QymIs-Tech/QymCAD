@@ -5,7 +5,7 @@
 //! Reported behaviour: Rotate of a rectangle 45 x 35 with its sizes, rounded R3 all round, was refused as held - the
 //! rectangle stood on the axes and every arc had flipped outward into three quarters of a circle.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 
 /// A rectangle 45 x 35 at (0, 0) with its width and height laid as dimensions, its four corners rounded R3.
 fn rounded() -> (Project, usize) {
@@ -13,7 +13,7 @@ fn rounded() -> (Project, usize) {
     p.new_document();
     let si = p.new_sketch("S");
     p.add_rect_entity(si, 0.0, 0.0, 45.0, 35.0, Purpose::Real);
-    let c = p.sketches[si].rects[0].corners;
+    let c = p.sketches[si].rects()[0].corners;
     let dim = |a, b, d| Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None };
     p.sketches[si].constraints.extend([dim(c[0], c[1], 45.0), dim(c[1], c[2], 35.0)]);
     p.solve_sketch(si);
@@ -27,8 +27,8 @@ fn sweeps(p: &Project, si: usize) -> Vec<f64> {
     let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a point of the arc");
     s.entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Arc { center, a, b, ccw } => {
+        .filter_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { center, a, b, ccw }) => {
                 let (c, pa, pb) = (at(center), at(a), at(b));
                 let (a0, a1) = ((pa.1 - c.1).atan2(pa.0 - c.0), (pb.1 - c.1).atan2(pb.0 - c.0));
                 Some(if ccw { (a1 - a0).rem_euclid(std::f64::consts::TAU) } else { (a0 - a1).rem_euclid(std::f64::consts::TAU) }.to_degrees())
@@ -45,12 +45,12 @@ fn worst(p: &Project, si: usize) -> f64 {
 #[test]
 fn a_rounded_rectangle_turns_by_its_sides() {
     let (mut p, si) = rounded();
-    let sides = p.sketches[si].rects[0].sides;
+    let sides = p.sketches[si].rects()[0].sides;
     p.rotate_entities(si, &sides, 22.5, 17.5, 30.0);
     let s = &p.sketches[si];
     let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a point");
-    let turn = s.entities.iter().find(|e| e.id == sides[0]).and_then(|e| match e.kind {
-        EntityKind::Line { a, b } => Some((at(b).1 - at(a).1).atan2(at(b).0 - at(a).0).to_degrees().rem_euclid(180.0)),
+    let turn = s.entities.iter().find(|e| e.id == sides[0]).and_then(|e| match e.kind.as_line() {
+        Some(qymcad_core::model::LineParts { a, b }) => Some((at(b).1 - at(a).1).atan2(at(b).0 - at(a).0).to_degrees().rem_euclid(180.0)),
         _ => None,
     });
     let arcs = sweeps(&p, si);
@@ -63,7 +63,7 @@ fn a_rounded_rectangle_turns_by_its_sides() {
 fn a_rounded_rectangle_moves_by_its_sides() {
     let (mut p, si) = rounded();
     let before: Vec<(u64, f64, f64)> = p.sketches[si].points.iter().map(|q| (q.id, q.x, q.y)).collect();
-    let sides = p.sketches[si].rects[0].sides;
+    let sides = p.sketches[si].rects()[0].sides;
     p.move_entities(si, &sides, 10.0, 5.0);
     let left: Vec<String> = before
         .iter()

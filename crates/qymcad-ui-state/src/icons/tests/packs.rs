@@ -335,6 +335,26 @@ fn custom_folder_with_special_id_is_still_directory_format() {
     assert!(pack.is_directory(), "a directory on disk must be recognized as directory regardless of ID");
 }
 
+/// THE ICONS OF THE CASCADE APPLIED AT START STAY AFTER THE FIRST ICON IS DRAWN: the cascade is applied with the palette of
+/// the person's scheme as the program starts, and the first icon drawn does not lay the default icons over it. Reported
+/// behaviour: the colours of a copied theme edited by hand were gone after a restart, the icons drawn by default, and came
+/// back once the theme was clicked again in the settings.
+#[test]
+fn the_icons_applied_at_start_stay_after_the_first_icon_is_drawn() {
+    let ctx = egui::Context::default();
+    let light = qymcad_scheme::light();
+    crate::icons::set_active_icon_stack(&ctx, Vec::new(), &light);
+    let ui = egui::Ui::new(ctx.clone(), egui::Id::new("an icon drawn"), egui::UiBuilder::new());
+    let _ = crate::icons::runtime::icon_image(&ui, IconId::SketchLine, 16.0);
+    let stack = crate::icons::get_active_icon_stack(&ctx);
+    let applied = crate::icons::resolve_icon(IconId::SketchLine, &stack, &light).data;
+    let laid = match ctx.try_load_bytes(IconId::SketchLine.uri()) {
+        Ok(egui::load::BytesPoll::Ready { bytes, .. }) => bytes.to_vec(),
+        _ => panic!("the icon is not in the loader"),
+    };
+    assert_eq!(laid, applied.to_vec(), "the first icon drawn laid other icons over the cascade applied at start");
+}
+
 #[test]
 fn ensure_cad_icons_installed_lazily_populates_context() {
     let ctx = egui::Context::default();

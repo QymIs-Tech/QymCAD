@@ -4,6 +4,10 @@ Click the edges of a body and they appear in the sketch as entities. The “Face
 takes the whole outline of the picked face at once instead of edge by edge. The body may be this
 part's own or another part of the assembly.
 
+Each edge comes in as its own curve: a straight one as a line, a circle seen square as a circle, an ellipse and a
+circle seen at an angle (a hole in an inclined face) as an ellipse, any other edge as a spline. Dimensions, a tangency
+and a point on a curve go on them as on curves drawn by hand.
+
 ![The outline and the hole circle are taken from the body: real sketch entities, not a backdrop.](img/sketch-project.png)
 
 ## What it is for

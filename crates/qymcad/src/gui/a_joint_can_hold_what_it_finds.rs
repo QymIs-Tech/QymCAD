@@ -41,16 +41,15 @@ mod tests {
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport());
+                crate::gui::panel_places::assembly_tool(&mut app, c);
             });
             texts.clear();
             for cs in &out.shapes {
                 super::super::screen_keys::tests::collect_text(&cs.shape, &mut texts);
             }
         }
-        // the twist field in the popup is captioned by the key of the slot itself, not by the
-        // angle caption from the creation bar
-        let want = crate::i18n::tr("j-angle-lower");
+        // the twist field in the popup is captioned by the slot itself, as the caption of its row
+        let want = crate::i18n::tr("j-row-angle");
         assert!(texts.iter().any(|t| t.contains(&want)), "the rigid joint has no twist field \"{want}\": drawn {texts:?}");
         // AND THE JOINT NAME IS A WORD, NOT A CATALOGUE CODE. This is where that surfaced: the popup
         // read "joint-kind-rigid 3", because the name was assembled as "key space number" while the
@@ -81,7 +80,7 @@ mod tests {
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport());
+                crate::gui::panel_places::assembly_tool(&mut app, c);
             });
             texts.clear();
             for cs in &out.shapes {

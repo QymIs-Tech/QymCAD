@@ -80,8 +80,7 @@ probe! {
         let body = s.face_at([20.0, 15.0, 10.0]);
         s.click(body);
         field(&mut s, "cmd-copies", "4");
-        let full = s.word("cmd-full-circle");
-        s.toggle(&full); // the four spread over the whole turn
+        // the angle the copies spread over stands at the whole turn as the box opens
         s.key(Key::Enter);
         let (volume, min, max) = all_of_it(&mut s);
         assert!((volume - 48000.0).abs() < 1.0, "four blocks hold 48000, and the part holds {volume}");
@@ -100,8 +99,6 @@ probe! {
         let body = s.face_at([20.0, 15.0, 10.0]);
         s.click(body);
         field(&mut s, "cmd-copies", "2");
-        let full = s.word("cmd-full-circle");
-        s.toggle(&full);
         let axis = s.word("cmd-axis-world-z");
         s.press_word(&axis); // the axis is picked in the view, not typed
         let edge = s.edge_at([40.0, 30.0, 5.0]);
@@ -124,8 +121,6 @@ probe! {
         let body = s.face_at([20.0, 15.0, 10.0]);
         s.click(body);
         field(&mut s, "cmd-copies", "2");
-        let full = s.word("cmd-full-circle");
-        s.toggle(&full);
         let axis = s.word("cmd-axis-world-z");
         s.press_word(&axis);
         for corner in [[40.0, 30.0, 10.0], [40.0, 30.0, 0.0]] {

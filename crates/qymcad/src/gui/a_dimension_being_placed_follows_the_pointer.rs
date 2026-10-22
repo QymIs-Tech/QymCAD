@@ -17,9 +17,9 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         assert!(hand.press_hint(&crate::i18n::tr("tb-dim-hint")), "the dimension tool");
         hand.click2d(20.0, 0.0);
         let ci = hand.app.tools.place.dim.expect("the dimension of the line is being placed");
@@ -37,9 +37,9 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(40.0, 0.0).key(egui::Key::Escape);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         assert!(hand.press_hint(&crate::i18n::tr("tb-dim-hint")), "the dimension tool");
         hand.click2d(20.0, 0.0);
         let ci = hand.app.tools.place.dim.expect("the dimension of the line is being placed");

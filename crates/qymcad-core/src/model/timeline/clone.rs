@@ -74,15 +74,17 @@ impl Project {
                 // `src` comes in two kinds: a sketch entity, whose id is the same in the clone, and the name of
                 // another face or edge (a fillet, a corner patch, a pattern image), which waits for its own
                 // mapping.
-                let nsrc = if gn.src <= u32::MAX as Id && crate::names::NameTable::is_named(gn.src as u32) {
-                    match nmap.get(&(gn.src as u32)) {
-                        Some(&v) => v as Id,
-                        None => continue,
+                let mapped_src = |src: Id| if src <= u32::MAX as Id && crate::names::NameTable::is_named(src as u32) { nmap.get(&(src as u32)).map(|&v| v as Id) } else { Some(src) };
+                let Some(nsrc) = mapped_src(gn.src) else { continue };
+                // what cut a piece off is a face of a node of the subtree too, mapped as the piece's own node and source
+                let cut = match gn.cut {
+                    None => None,
+                    Some(c) => {
+                        let (Some(&cf), Some(cs)) = (map.get(&c.feature), mapped_src(c.src)) else { continue };
+                        Some(crate::names::CutOff { feature: cf, src: cs, ..c })
                     }
-                } else {
-                    gn.src
                 };
-                let nd = dest.names.intern_face(crate::names::GeoName { feature: nfeat, role: gn.role, src: nsrc, split: gn.split });
+                let nd = dest.names.intern_face(crate::names::GeoName { feature: nfeat, role: gn.role, src: nsrc, split: gn.split, cut });
                 nmap.insert(desc, nd);
                 progress = true;
             }
@@ -92,7 +94,8 @@ impl Project {
                     continue;
                 }
                 let (Some(&a), Some(&b)) = (nmap.get(&en.faces[0]), nmap.get(&en.faces[1])) else { continue };
-                let nd = dest.names.intern_edge(crate::names::EdgeName::new(a, b, en.index));
+                let Some(ends) = en.ends.iter().map(|d| if *d == 0 { Some(0) } else { nmap.get(d).copied() }).collect::<Option<Vec<u32>>>() else { continue };
+                let nd = dest.names.intern_edge(crate::names::EdgeName::new(a, b, en.index).at_ends([ends[0], ends[1]]));
                 nmap.insert(desc, nd);
                 progress = true;
             }

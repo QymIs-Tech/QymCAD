@@ -52,12 +52,11 @@ fn rotate_turns_geometry_about_center() {
 /// refused.
 #[test]
 fn a_rectangle_turns_as_a_whole() {
-    use qymcad_core::model::EntityKind;
     let (mut p, si, eids) = rect_sketch();
     let side = |p: &Project, k: usize| {
         let at = |id: u64| p.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("the point exists");
-        match p.sketches[si].entities.iter().find(|e| e.id == eids[k]).map(|e| e.kind) {
-            Some(EntityKind::Line { a, b }) => (at(a), at(b)),
+        match p.sketches[si].entities.iter().find(|e| e.id == eids[k]).and_then(|e| e.kind.as_line()) {
+            Some(qymcad_core::model::LineParts { a, b }) => (at(a), at(b)),
             _ => panic!("a side"),
         }
     };
@@ -99,7 +98,7 @@ fn circular_array_makes_copies() {
 fn fillet_rounds_corner() {
     let (mut p, si, eids) = rect_sketch();
     // Two adjacent sides of the rectangle, sharing a vertex.
-    let ok = p.fillet_lines(si, eids[0], eids[1], 2.0);
+    let ok = p.fillet_at_pair(si, (eids[0], eids[1]), 2.0);
     assert!(ok, "the fillet must apply");
     // The contour stays closed and grows more complex: an arc appears, so there are more points.
     let c = &p.contours[p.contour_index(p.sketches[si].contour_ids[0]).unwrap()];
@@ -109,7 +108,7 @@ fn fillet_rounds_corner() {
 #[test]
 fn chamfer_cuts_corner() {
     let (mut p, si, eids) = rect_sketch();
-    let ok = p.chamfer_lines(si, eids[0], eids[1], qymcad_core::model::ChamferLegs::equal(2.0));
+    let ok = p.chamfer_lines_of_pair(si, (eids[0], eids[1]), qymcad_core::model::ChamferLegs::equal(2.0), None);
     assert!(ok, "the chamfer must apply");
     let c = &p.contours[p.contour_index(p.sketches[si].contour_ids[0]).unwrap()];
     assert!(c.closed && c.points.len() == 5, "five corners after a chamfer: {}", c.points.len());
@@ -135,7 +134,7 @@ fn trim_removes_middle_segment() {
     let hid = p.sketches[si].entities[0].id; // The horizontal line.
     let n_before = p.sketches[si].entities.len();
     // Trim the middle piece, picked at x = 15.
-    let ok = p.trim_line(si, hid, 15.0, 0.0);
+    let ok = p.trim_curve(si, hid, 15.0, 0.0);
     assert!(ok, "the trim must apply");
     // The horizontal line is replaced by two pieces (0..10 and 20..30), which is one entity more.
     assert_eq!(p.sketches[si].entities.len(), n_before + 1, "the middle piece is removed and two remain");
@@ -145,13 +144,13 @@ fn trim_removes_middle_segment() {
 #[test]
 fn fillet_radius_change_keeps_shape() {
     let (mut p, si, eids) = rect_sketch(); // A rectangle from 0 to 10.
-    p.fillet_lines(si, eids[0], eids[1], 2.0);
+    p.fillet_at_pair(si, (eids[0], eids[1]), 2.0);
     // Find the arc.
     let arc = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            qymcad_core::model::EntityKind::Arc { .. } => Some(e.id),
+        .find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { .. }) => Some(e.id),
             _ => None,
         })
         .unwrap();
@@ -166,9 +165,9 @@ fn fillet_radius_change_keeps_shape() {
 
 #[test]
 fn fillet_stays_tangent_after_dimensioning() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let (mut p, si, eids) = rect_sketch(); // From 0 to 10.
-    p.fillet_lines(si, eids[0], eids[1], 2.0);
+    p.fillet_at_pair(si, (eids[0], eids[1]), 2.0);
     // Stretch the left side to 20 mm; its corners are intact, since the filleted corner is at (10,0).
     let pts: Vec<(u64, f64, f64)> = p.sketches[si].points.iter().map(|q| (q.id, q.x, q.y)).collect();
     let bl = pts.iter().find(|(_, x, y)| x.abs() < 0.1 && y.abs() < 0.1).unwrap().0;
@@ -181,8 +180,8 @@ fn fillet_stays_tangent_after_dimensioning() {
         let (cen, a, _) = p.sketches[si]
             .entities
             .iter()
-            .find_map(|e| match e.kind {
-                EntityKind::Arc { center, a, b, .. } => Some((center, a, b)),
+            .find_map(|e| match e.kind.as_arc() {
+                Some(qymcad_core::model::ArcParts { center, a, b, .. }) => Some((center, a, b)),
                 _ => None,
             })
             .unwrap();
@@ -198,8 +197,8 @@ fn fillet_stays_tangent_after_dimensioning() {
     let arc_id = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Arc { .. } => Some(e.id),
+        .find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { .. }) => Some(e.id),
             _ => None,
         })
         .unwrap();
@@ -231,14 +230,13 @@ fn ellipse_axes_editable() {
 
 #[test]
 fn delete_ellipse_entity_removes_it() {
-    use qymcad_core::model::EntityKind;
     let mut p = Project::default();
     let si = p.new_sketch("e");
     p.add_ellipse_entity(si, Point2::new(0.0, 0.0), 5.0, 3.0, 0.0, qymcad_core::feature::Purpose::Real);
-    let eid = p.sketches[si].entities.iter().find_map(|e| matches!(e.kind, EntityKind::Ellipse { .. }).then_some(e.id)).unwrap();
+    let eid = p.sketches[si].entities.iter().find_map(|e| e.kind.as_ellipse().is_some().then_some(e.id)).unwrap();
     assert_eq!(p.sketches[si].contour_ids.len(), 1, "the ellipse must have a contour");
     p.delete_entities(si, &[eid]);
-    assert!(!p.sketches[si].entities.iter().any(|e| matches!(e.kind, EntityKind::Ellipse { .. })), "the ellipse entity must be deleted");
+    assert!(!p.sketches[si].entities.iter().any(|e| e.kind.as_ellipse().is_some()), "the ellipse entity must be deleted");
     assert!(p.sketches[si].contour_ids.is_empty(), "the contour must be removed");
 }
 
@@ -249,7 +247,7 @@ fn extend_reaches_crossing() {
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real); // A short horizontal line.
     p.add_line_entity(si, 20.0, -5.0, 20.0, 5.0, qymcad_core::feature::Purpose::Real); // A crossing line further out.
     let hid = p.sketches[si].entities[0].id;
-    assert!(p.extend_line(si, hid, 9.0, 0.0), "the extend must apply");
+    assert!(p.extend_curve(si, hid, 9.0, 0.0), "the extend must apply");
     // The right end reaches x = 20.
     let maxx = p.sketches[si].points.iter().map(|q| q.x).fold(f64::MIN, f64::max);
     assert!((maxx - 20.0).abs() < 1e-6, "it must extend to the crossing at x = 20: {maxx}");
@@ -261,8 +259,8 @@ fn break_splits_in_two() {
     let si = p.new_sketch("b");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     let id = p.sketches[si].entities[0].id;
-    assert!(p.break_line(si, id, 5.0, 0.0), "the break must apply");
-    let lines = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).count();
+    assert!(p.break_curve(si, id, 5.0, 0.0), "the break must apply");
+    let lines = p.sketches[si].entities.iter().filter(|e| e.kind.as_line().is_some()).count();
     assert_eq!(lines, 2, "the segment must be split in two");
 }
 
@@ -278,7 +276,6 @@ fn spline_makes_smooth_contour() {
 
 #[test]
 fn merge_close_points_stitches_split_corner() {
-    use qymcad_core::model::EntityKind;
     let mut p = Project::default();
     let si = p.new_sketch("s");
     // Two segments whose ends almost coincide, 0.05 apart: a corner that has come apart.
@@ -292,8 +289,8 @@ fn merge_close_points_stitches_split_corner() {
     let shared: Vec<u64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Line { a, b } => Some(vec![a, b]),
+        .filter_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => Some(vec![a, b]),
             _ => None,
         })
         .flatten()
@@ -305,7 +302,7 @@ fn merge_close_points_stitches_split_corner() {
 
 #[test]
 fn deleting_edge_drops_constraints_on_it() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("r");
     // A rectangle of four lines.
@@ -322,7 +319,7 @@ fn deleting_edge_drops_constraints_on_it() {
     // An equality between the right edge (br-tr) and the left one (tl-bl).
     p.sketches[si].constraints.push(Constraint::Equal { a: br, b: tr, c: tl, d: bl });
     // Find and delete the right edge (br-tr).
-    let right = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Line{a,b} if (a==br&&b==tr)||(a==tr&&b==br))).unwrap().id;
+    let right = p.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some_and(|l| (l.a == br && l.b == tr) || (l.a == tr && l.b == br))).unwrap().id;
     p.delete_entities(si, &[right]);
     // The equality that hung on the right edge must go; the points br and tr survive, being shared.
     assert!(p.sketches[si].points.iter().any(|q| q.id == br), "point br must survive, being shared with the bottom");
@@ -355,14 +352,14 @@ fn parametric_fillet_is_tangent_and_resizes_via_solver() {
     // A fillet is parametric: the arc is held by tangency to both walls plus a radius dimension. Checked here are
     // tangency right after creation, and that editing the radius through the dimension, that is through the solver,
     // preserves tangency at the new radius. Editing it used to blow the shape apart.
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("fil");
     p.add_line_entity(si, 0.0, 0.0, 12.0, 0.0, qymcad_core::feature::Purpose::Real); // Horizontal.
     p.add_line_entity(si, 0.0, 0.0, 0.0, 12.0, qymcad_core::feature::Purpose::Real); // Vertical, sharing the corner at (0,0).
     let e1 = p.sketches[si].entities[0].id;
     let e2 = p.sketches[si].entities[1].id;
-    assert!(p.fillet_lines(si, e1, e2, 2.0), "the fillet must apply");
+    assert!(p.fillet_at_pair(si, (e1, e2), 2.0), "the fillet must apply");
 
     // For every tangency constraint, check that the distance from the centre to the line equals the arc radius.
     fn check_tangent(p: &Project, si: usize, want_r: f64) {
@@ -373,8 +370,8 @@ fn parametric_fillet_is_tangent_and_resizes_via_solver() {
         let (cen, a) = p.sketches[si]
             .entities
             .iter()
-            .find_map(|e| match e.kind {
-                EntityKind::Arc { center, a, .. } => Some((center, a)),
+            .find_map(|e| match e.kind.as_arc() {
+                Some(qymcad_core::model::ArcParts { center, a, .. }) => Some((center, a)),
                 _ => None,
             })
             .unwrap();
@@ -400,7 +397,7 @@ fn parametric_fillet_is_tangent_and_resizes_via_solver() {
     check_tangent(&p, si, 2.0);
 
     // Editing the radius through the dimension: the solver rebuilds and tangency holds.
-    let arc = p.sketches[si].entities.iter().find_map(|e| matches!(e.kind, EntityKind::Arc { .. }).then_some(e.id)).unwrap();
+    let arc = p.sketches[si].entities.iter().find_map(|e| e.kind.as_arc().is_some().then_some(e.id)).unwrap();
     assert!(p.set_fillet_radius_dim(si, arc, 4.0), "the radius must be editable through the dimension");
     check_tangent(&p, si, 4.0);
 }
@@ -409,16 +406,16 @@ fn parametric_fillet_is_tangent_and_resizes_via_solver() {
 fn trim_circle_into_arc() {
     // A circle of r = 10 at (0,0) with a vertical cutting line at x = 0 gives two intersections, top and bottom.
     // A pick on the right (x > 0) removes the right arc and leaves the left one, so the circle becomes an arc.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("t");
     p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(si, 0.0, -15.0, 0.0, 15.0, qymcad_core::feature::Purpose::Real); // The cutting line along the Y axis.
-    let cid = p.sketches[si].entities.iter().find_map(|e| matches!(e.kind, EntityKind::Circle { .. }).then_some(e.id)).unwrap();
+    let cid = p.sketches[si].entities.iter().find_map(|e| e.kind.as_circle().is_some().then_some(e.id)).unwrap();
     assert!(p.trim_curve(si, cid, 10.0, 0.0), "the trim must apply for a pick on the right");
     // The circle is gone and arcs have appeared.
-    assert!(!p.sketches[si].entities.iter().any(|e| matches!(e.kind, EntityKind::Circle { .. })), "the circle must be removed");
-    let arcs = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    assert!(!p.sketches[si].entities.iter().any(|e| e.kind.as_circle().is_some()), "the circle must be removed");
+    let arcs = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     assert!(arcs >= 1, "at least one arc must appear: {arcs}");
     // The remaining geometry lies in the left half-plane, with the midpoint of the arc at x <= 0.
     let pt = |id: u64| {
@@ -426,7 +423,7 @@ fn trim_circle_into_arc() {
         (q.x, q.y)
     };
     for e in &p.sketches[si].entities {
-        if let EntityKind::Arc { center, a, b, ccw } = e.kind {
+        if let Some(qymcad_core::model::ArcParts { center, a, b, ccw }) = e.kind.as_arc() {
             let (cx, cy) = pt(center);
             let (ax, ay) = pt(a);
             let (bx, by) = pt(b);
@@ -445,18 +442,18 @@ fn trim_circle_into_arc() {
 fn trim_arc_shortens_it() {
     // A semicircular arc, the upper one from 0 to 180 degrees with r = 10; the cutting line at x = 0 meets it at
     // (0,10). A pick near 135 degrees removes the left part and leaves the right one, from 0 to about 90.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("ta");
     // An arc from (10,0) to (-10,0) counter-clockwise, the upper semicircle.
     p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(-10.0, 0.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(si, 0.0, -15.0, 0.0, 15.0, qymcad_core::feature::Purpose::Real); // The cutting line x = 0 meets the arc at (0,10).
-    let aid = p.sketches[si].entities.iter().find_map(|e| matches!(e.kind, EntityKind::Arc { .. }).then_some(e.id)).unwrap();
-    let n_before = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    let aid = p.sketches[si].entities.iter().find_map(|e| e.kind.as_arc().is_some().then_some(e.id)).unwrap();
+    let n_before = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     // A pick at the upper left, near 135 degrees, removes the left piece.
     let ok = p.trim_curve(si, aid, -7.0, 7.0);
     assert!(ok, "trimming the arc must apply");
-    let n_after = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    let n_after = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     assert_eq!(n_before, 1);
     assert!(n_after >= 1, "an arc must remain");
 }
@@ -464,7 +461,7 @@ fn trim_arc_shortens_it() {
 #[test]
 fn offset_circle_stays_circle() {
     // Offsetting a circle of r = 10 outwards by 3 gives a circle of r = 13, not a polygon.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("oc");
     p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
@@ -475,31 +472,31 @@ fn offset_circle_stays_circle() {
     let circles: Vec<f64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { r, .. } => Some(r),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
             _ => None,
         })
         .collect();
     assert_eq!(circles.len(), 2, "the original and the offset circle: {circles:?}");
     assert!(circles.iter().any(|r| (r - 13.0).abs() < 0.05), "a circle of about r = 13 must appear: {circles:?}");
     // No polygon lines appear, so the circle is not flattened.
-    assert!(!p.sketches[si].entities.iter().any(|e| matches!(e.kind, EntityKind::Line { .. })), "it must not turn into a polygon");
+    assert!(!p.sketches[si].entities.iter().any(|e| e.kind.as_line().is_some()), "it must not turn into a polygon");
 }
 
 #[test]
 fn offset_loop_with_arc_keeps_arcs() {
     // A loop of lines and arcs, a rounded rectangle: after an outward offset the arcs stay arcs.
-    use qymcad_core::model::EntityKind;
+
     let (mut p, si, eids) = rect_sketch(); // From 0 to 10.
                                            // Round one corner, which puts an arc into the loop.
-    p.fillet_lines(si, eids[0], eids[1], 2.0);
+    p.fillet_at_pair(si, (eids[0], eids[1]), 2.0);
     let loop_eids: Vec<u64> = p.sketches[si].entities.iter().filter(|e| !e.construction).map(|e| e.id).collect();
-    let arcs_before_offset = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    let arcs_before_offset = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     assert_eq!(arcs_before_offset, 1, "one fillet arc in the loop");
     let n = p.offset_entities(si, &loop_eids, 1.0);
     assert!(n >= 1, "an offset must be produced");
     // The newly added entities include an arc, so the offset preserved the curvature instead of flattening it.
-    let total_arcs = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    let total_arcs = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     assert!(total_arcs >= 2, "the offset must carry an arc too, preserving the curve: arcs={total_arcs}");
 }
 
@@ -528,20 +525,20 @@ fn spline_tangent_handle_changes_shape() {
     // handles. The tangent is automatic to begin with (Catmull-Rom); `set_spline_handle` makes it explicit.
     let mut p = Project::default();
     let si = p.new_sketch("s");
-    p.add_spline(si, vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(20.0, 0.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real);
+    let sp = p.add_spline(si, vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(20.0, 0.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real).expect("the spline");
     // There is one handle per knot.
-    let h = p.spline_handles(si, 0);
+    let h = p.spline_handles(si, sp);
     assert_eq!(h.len(), 3, "one handle per knot");
     // The height of the contour starts near zero, since the knots lie on a line.
     let cid = p.sketches[si].contour_ids[0];
     let h0 = p.contours[p.contour_index(cid).unwrap()].points.iter().map(|q| q.y.abs()).fold(0.0, f64::max);
     assert!(h0 < 0.5, "the spline must start flat, max|y| = {h0}");
     // Pull the handle of the middle knot sharply upwards, which bows the curve.
-    assert!(p.set_spline_handle(si, 0, 1, 10.0, 15.0), "the handle must be set");
+    assert!(p.set_spline_handle(si, sp, 1, Point2::new(10.0, 15.0)), "the handle must be set");
     let h1 = p.contours[p.contour_index(cid).unwrap()].points.iter().map(|q| q.y).fold(f64::MIN, f64::max);
     assert!(h1 > 1.0, "the tangent handle must bow the spline upwards, max y = {h1}");
     // Resetting to automatic returns it to flat.
-    assert!(p.reset_spline_handle(si, 0, 1));
+    assert!(p.reset_spline_handle(si, sp, 1));
     let h2 = p.contours[p.contour_index(cid).unwrap()].points.iter().map(|q| q.y.abs()).fold(0.0, f64::max);
     assert!(h2 < 0.5, "resetting the handle must make it flat again, max|y| = {h2}");
 }
@@ -552,7 +549,7 @@ fn fillet_has_single_radius_dim_no_linear() {
     // for the distance to the centre; a `Distance` used to be added as well.
     use qymcad_core::model::Constraint;
     let (mut p, si, eids) = rect_sketch();
-    p.fillet_lines(si, eids[0], eids[1], 3.0);
+    p.fillet_at_pair(si, (eids[0], eids[1]), 3.0);
     let rdims = p.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::Diameter { diam: false, .. })).count();
     let dists = p.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::Distance { .. })).count();
     assert_eq!(rdims, 1, "exactly one radius dimension");
@@ -579,18 +576,18 @@ fn fixed_point_resists_drag() {
 fn trim_split_pieces_stay_on_line() {
     // The pieces of a split line stay on one straight line: the inner cut points are held by `PointOnLine` against
     // the outer ones, so an edit or a drag cannot move them off it. Without this the pieces drifted apart.
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("c");
     p.add_line_entity(si, -10.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     p.add_circle_entity(si, 0.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real); // The cutting circle.
-    let lid = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Line { .. })).unwrap().id;
+    let lid = p.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some()).unwrap().id;
     let la = p.sketch_point_at(si, -10.0, 0.0, 1e-6);
     let lb = p.sketch_point_at(si, 10.0, 0.0, 1e-6);
     p.sketches[si].constraints.push(Constraint::Fixed { p: la });
     p.sketches[si].constraints.push(Constraint::Fixed { p: lb });
-    p.trim_line(si, lid, 0.0, 0.0); // Two segments; the inner ends at (±5,0) are held on the line la-lb.
-    assert_eq!(p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count(), 2, "two segments");
+    p.trim_curve(si, lid, 0.0, 0.0); // Two segments; the inner ends at (±5,0) are held on the line la-lb.
+    assert_eq!(p.sketches[si].entities.iter().filter(|e| e.kind.as_line().is_some()).count(), 2, "two segments");
     let onl = p.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::PointOnLine { .. })).count();
     assert_eq!(onl, 2, "both inner cut points must be held on the line");
     // Perturb the cut end near (5,0) upwards and solve: it must return to the line at y near zero.
@@ -605,7 +602,7 @@ fn trim_split_pieces_stay_on_line() {
 fn trim_both_orders_make_notch() {
     // Trimming works in both orders, circle then line and line then circle, giving an arc and two pieces of the
     // line.
-    use qymcad_core::model::EntityKind;
+
     let build = || {
         let mut p = Project::default();
         let si = p.new_sketch("n");
@@ -614,22 +611,22 @@ fn trim_both_orders_make_notch() {
         (p, si)
     };
     let counts = |p: &Project, si: usize| {
-        let a = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
-        let l = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count();
+        let a = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
+        let l = p.sketches[si].entities.iter().filter(|e| e.kind.as_line().is_some()).count();
         (a, l)
     };
     // Order one: the circle, then the line.
     let (mut p, si) = build();
-    let cid = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Circle { .. })).unwrap().id;
-    let lid = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Line { .. })).unwrap().id;
+    let cid = p.sketches[si].entities.iter().find(|e| e.kind.as_circle().is_some()).unwrap().id;
+    let lid = p.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some()).unwrap().id;
     assert!(p.trim_curve(si, cid, 0.0, 5.0), "the circle must be trimmed");
-    p.trim_line(si, lid, 0.0, 0.0);
+    p.trim_curve(si, lid, 0.0, 0.0);
     assert_eq!(counts(&p, si), (1, 2), "circle then line gives one arc and two pieces");
     // Order two: the line, then the circle.
     let (mut p, si) = build();
-    let cid = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Circle { .. })).unwrap().id;
-    let lid = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Line { .. })).unwrap().id;
-    p.trim_line(si, lid, 0.0, 0.0);
+    let cid = p.sketches[si].entities.iter().find(|e| e.kind.as_circle().is_some()).unwrap().id;
+    let lid = p.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some()).unwrap().id;
+    p.trim_curve(si, lid, 0.0, 0.0);
     assert!(p.trim_curve(si, cid, 0.0, 5.0), "the circle must be trimmed after the line");
     assert_eq!(counts(&p, si), (1, 2), "line then circle gives one arc and two pieces");
 }
@@ -638,7 +635,7 @@ fn trim_both_orders_make_notch() {
 fn slot_stays_parametric() {
     // A slot carries constraints — equal end radii plus tangencies — and holds its shape under the solver, so a
     // dimension on one end pulls the other along.
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("slot");
     p.add_slot_entity(si, Point2::new(0.0, 0.0), Point2::new(20.0, 0.0), 5.0, qymcad_core::feature::Purpose::Real);
@@ -646,7 +643,7 @@ fn slot_stays_parametric() {
     let n_tan = p.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::Tangent { .. })).count();
     assert_eq!(n_eq, 1, "the end radii must be equal");
     assert_eq!(n_tan, 4, "four tangencies of the flanks to the ends");
-    let centers: Vec<u64> = p.sketches[si].entities.iter().filter_map(|e| if let EntityKind::Arc { center, .. } = e.kind { Some(center) } else { None }).collect();
+    let centers: Vec<u64> = p.sketches[si].entities.iter().filter_map(|e| if let Some(qymcad_core::model::ArcParts { center, .. }) = e.kind.as_arc() { Some(center) } else { None }).collect();
     assert_eq!(centers.len(), 2, "two end arcs");
     let (c1, c2) = (centers[0], centers[1]);
     // A radius of 8 on one end; the other must follow.
@@ -654,7 +651,7 @@ fn slot_stays_parametric() {
     p.solve_sketch(si);
     let rad = |cid: u64| -> f64 {
         let c = p.sketches[si].points.iter().find(|q| q.id == cid).unwrap();
-        let a = p.sketches[si].entities.iter().find_map(|e| if let EntityKind::Arc { center, a, .. } = e.kind { (center == cid).then_some(a) } else { None }).unwrap();
+        let a = p.sketches[si].entities.iter().find_map(|e| if let Some(qymcad_core::model::ArcParts { center, a, .. }) = e.kind.as_arc() { (center == cid).then_some(a) } else { None }).unwrap();
         let pa = p.sketches[si].points.iter().find(|q| q.id == a).unwrap();
         ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt()
     };
@@ -665,7 +662,7 @@ fn slot_stays_parametric() {
 #[test]
 fn rect3_is_a_rectangle() {
     // A rotated rectangle from three points: four sides, the right perimeter and square corners.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("r3");
     let ids = p.add_rect3_entity(si, Point2::new(0.0, 0.0), Point2::new(6.0, 8.0), Point2::new(-8.0, 6.0), qymcad_core::feature::Purpose::Real); // Side (0,0)-(6,8) of length 10, height 10.
@@ -673,7 +670,7 @@ fn rect3_is_a_rectangle() {
     let mut per = 0.0;
     // the perimeter is the sides': the construction diagonals of the rectangle are none of it
     for e in p.sketches[si].entities.iter().filter(|e| !e.construction) {
-        if let EntityKind::Line { a, b } = e.kind {
+        if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() {
             let pa = p.sketches[si].points.iter().find(|q| q.id == a).unwrap();
             let pb = p.sketches[si].points.iter().find(|q| q.id == b).unwrap();
             per += ((pb.x - pa.x).powi(2) + (pb.y - pa.y).powi(2)).sqrt();
@@ -717,17 +714,17 @@ fn sketch_text_is_editable_object() {
 #[test]
 fn trim_uses_construction_as_boundary() {
     // Construction geometry is a valid trimming boundary.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("c");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(si, 5.0, -5.0, 5.0, 5.0, qymcad_core::feature::Purpose::Construction); // A construction vertical at x = 5.
     let eid = p.sketches[si].entities.iter().find(|e| !e.construction).unwrap().id;
-    assert!(p.trim_line(si, eid, 8.0, 0.0), "a trim against a construction boundary must work");
+    assert!(p.trim_curve(si, eid, 8.0, 0.0), "a trim against a construction boundary must work");
     // The left half (0,0)-(5,0) remains: exactly one non-construction line of length 5.
-    let lines: Vec<_> = p.sketches[si].entities.iter().filter(|e| !e.construction && matches!(e.kind, EntityKind::Line { .. })).collect();
+    let lines: Vec<_> = p.sketches[si].entities.iter().filter(|e| !e.construction && e.kind.as_line().is_some()).collect();
     assert_eq!(lines.len(), 1, "one line must remain");
-    if let EntityKind::Line { a, b } = lines[0].kind {
+    if let Some(qymcad_core::model::LineParts { a, b }) = lines[0].kind.as_line() {
         let pa = p.sketches[si].points.iter().find(|q| q.id == a).unwrap();
         let pb = p.sketches[si].points.iter().find(|q| q.id == b).unwrap();
         let len = ((pb.x - pa.x).powi(2) + (pb.y - pa.y).powi(2)).sqrt();
@@ -738,17 +735,17 @@ fn trim_uses_construction_as_boundary() {
 #[test]
 fn extend_curve_reaches_boundary_line() {
     // Extending an arc along its circle up to the intersection with a boundary line.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("e");
     // A quarter arc of r = 10 from (10,0) at 0 degrees counter-clockwise to (0,10) at 90 degrees.
     p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     // The boundary is a segment along y = 0 with x in [-15,-5], meeting the circle at (-10,0), 180 degrees.
     p.add_line_entity(si, -15.0, 0.0, -5.0, 0.0, qymcad_core::feature::Purpose::Real);
-    let arc_eid = p.sketches[si].entities.iter().find_map(|e| if matches!(e.kind, EntityKind::Arc { .. }) { Some(e.id) } else { None }).unwrap();
+    let arc_eid = p.sketches[si].entities.iter().find_map(|e| if e.kind.as_arc().is_some() { Some(e.id) } else { None }).unwrap();
     // Pull end b, near (0,10).
     assert!(p.extend_curve(si, arc_eid, 0.0, 10.0), "the arc must be extended");
-    let b = p.sketches[si].entities.iter().find_map(|e| if let EntityKind::Arc { b, .. } = e.kind { Some(b) } else { None }).unwrap();
+    let b = p.sketches[si].entities.iter().find_map(|e| if let Some(qymcad_core::model::ArcParts { b, .. }) = e.kind.as_arc() { Some(b) } else { None }).unwrap();
     let pb = p.sketches[si].points.iter().find(|q| q.id == b).unwrap();
     assert!((pb.x + 10.0).abs() < 1e-2 && pb.y.abs() < 1e-2, "the end of the arc must reach (-10,0): ({}, {})", pb.x, pb.y);
 }
@@ -756,7 +753,7 @@ fn extend_curve_reaches_boundary_line() {
 #[test]
 fn copy_and_move_entities_work() {
     // Interactive move and copy by a vector.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("cm");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
@@ -766,7 +763,7 @@ fn copy_and_move_entities_work() {
     let ids = p.copy_entities(si, &[eid], 0.0, 5.0);
     assert_eq!(ids.len(), 1, "one copy");
     assert_eq!(p.sketches[si].entities.len(), n0 + 1, "the entity count must grow");
-    if let Some(EntityKind::Line { a, .. }) = p.sketches[si].entities.iter().find(|e| e.id == ids[0]).map(|e| e.kind) {
+    if let Some(qymcad_core::model::LineParts { a, .. }) = p.sketches[si].entities.iter().find(|e| e.id == ids[0]).and_then(|e| e.kind.as_line()) {
         let pa = p.sketches[si].points.iter().find(|q| q.id == a).unwrap();
         assert!((pa.y - 5.0).abs() < 1e-9, "the copy must be offset by 5 along y: {}", pa.y);
     } else {
@@ -774,7 +771,7 @@ fn copy_and_move_entities_work() {
     }
     // Move the original by (3,0).
     p.move_entities(si, &[eid], 3.0, 0.0);
-    if let EntityKind::Line { a, .. } = p.sketches[si].entities.iter().find(|e| e.id == eid).unwrap().kind {
+    if let Some(qymcad_core::model::LineParts { a, .. }) = p.sketches[si].entities.iter().find(|e| e.id == eid).unwrap().kind.as_line() {
         let pa = p.sketches[si].points.iter().find(|q| q.id == a).unwrap();
         assert!((pa.x - 3.0).abs() < 1e-9, "the original must move by 3 along x: {}", pa.x);
     }
@@ -784,15 +781,19 @@ fn copy_and_move_entities_work() {
 fn fillet_curves_line_line() {
     // A general line-to-line fillet: an arc of r = 2 in the corner of the axes, centred at (2,2), touching at
     // (2,0) and (0,2).
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("ff");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(si, 0.0, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
     let e1 = p.sketches[si].entities[0].id;
     let e2 = p.sketches[si].entities[1].id;
-    assert!(p.fillet_curves(si, e1, e2, 2.0, 1.0, 1.0), "a line-to-line fillet must be built");
-    let (center, a) = p.sketches[si].entities.iter().find_map(|e| if let EntityKind::Arc { center, a, .. } = e.kind { Some((center, a)) } else { None }).expect("the fillet arc must exist");
+    assert!(p.fillet_at_pair(si, (e1, e2), 2.0), "a line-to-line fillet must be built");
+    let (center, a) = p.sketches[si]
+        .entities
+        .iter()
+        .find_map(|e| if let Some(qymcad_core::model::ArcParts { center, a, .. }) = e.kind.as_arc() { Some((center, a)) } else { None })
+        .expect("the fillet arc must exist");
     let c = p.sketches[si].points.iter().find(|q| q.id == center).unwrap();
     assert!((c.x - 2.0).abs() < 1e-2 && (c.y - 2.0).abs() < 1e-2, "the centre must be (2,2): ({}, {})", c.x, c.y);
     let pa = p.sketches[si].points.iter().find(|q| q.id == a).unwrap();
@@ -805,21 +806,21 @@ fn fillet_curves_line_arc_tangent() {
     // A line-to-arc fillet is tangent to the line, its centre at distance r, and to the arc, the distance between
     // centres being R ± r. The line runs along y = 0 and the arc lies on a circle centred at (5,5) with R = sqrt(50),
     // sharing the vertex (0,0).
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("fa");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     p.add_arc_entity(si, Point2::new(5.0, 5.0), Point2::new(0.0, 0.0), Point2::new(10.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
-    let e1 = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Line { .. })).unwrap().id;
-    let e2 = p.sketches[si].entities.iter().find(|e| matches!(e.kind, EntityKind::Arc { .. })).unwrap().id;
+    let e1 = p.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some()).unwrap().id;
+    let e2 = p.sketches[si].entities.iter().find(|e| e.kind.as_arc().is_some()).unwrap().id;
     let r = 1.5;
-    assert!(p.fillet_curves(si, e1, e2, r, 1.0, 1.0), "a line-to-arc fillet must be built");
+    assert!(p.fillet_at_pair(si, (e1, e2), r), "a line-to-arc fillet must be built");
     // The new fillet is the arc whose centre is not (5,5).
     let rad_big = (50.0_f64).sqrt();
     let fillet_cen = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| if let EntityKind::Arc { center, .. } = e.kind { Some(center) } else { None })
+        .filter_map(|e| if let Some(qymcad_core::model::ArcParts { center, .. }) = e.kind.as_arc() { Some(center) } else { None })
         .find_map(|cid| {
             let c = p.sketches[si].points.iter().find(|q| q.id == cid).unwrap();
             (((c.x - 5.0).powi(2) + (c.y - 5.0).powi(2)).sqrt() > 1.0).then_some((c.x, c.y))
@@ -834,34 +835,34 @@ fn fillet_curves_line_arc_tangent() {
 #[test]
 fn fillet_all_corners_rounds_rectangle() {
     // Filleting all four corners of a rectangle gives four arcs.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("rc");
     p.add_rect_entity(si, 0.0, 0.0, 20.0, 10.0, qymcad_core::feature::Purpose::Real);
     let n = p.fillet_all_corners(si, 2.0);
     assert_eq!(n, 4, "all four corners must be filleted");
-    let arcs = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    let arcs = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     assert_eq!(arcs, 4, "four fillet arcs");
 }
 
 #[test]
 fn fillet_at_vertex_picks_corner_edges() {
     // Picking a corner: a vertex with two edges is filleted.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("cv");
     p.add_line_entity(si, 0.0, 0.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(si, 10.0, 0.0, 10.0, 10.0, qymcad_core::feature::Purpose::Real);
     let pc = p.sketch_point_at(si, 10.0, 0.0, 1e-6);
     assert!(p.fillet_at_vertex(si, pc, 3.0), "the corner must be filleted from its vertex");
-    assert_eq!(p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count(), 1);
+    assert_eq!(p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count(), 1);
 }
 
 #[test]
 fn pattern_is_editable() {
     // A pattern is an editable feature: count = 3 gives two copies, editing it to 4 gives three, and deleting it
     // cleans up.
-    use qymcad_core::model::{EntityKind, PatternKind};
+    use qymcad_core::model::PatternKind;
     let mut p = Project::default();
     let si = p.new_sketch("pat");
     p.add_circle_entity(si, 0.0, 0.0, 1.0, qymcad_core::feature::Purpose::Real);
@@ -874,8 +875,17 @@ fn pattern_is_editable() {
     p.update_pattern(si, pi, PatternKind::Linear { dx: 5.0, dy: 0.0, count: 4, dx2: 0.0, dy2: 0.0, count2: 1 });
     assert_eq!(p.sketches[si].entities.len(), n0 + 3, "after editing the count to 4 there must be three copies");
     // The copies sit at x = 5, 10 and 15.
-    let xs: Vec<f64> =
-        p.sketches[si].entities.iter().filter_map(|e| if let EntityKind::Circle { center, .. } = e.kind { p.sketches[si].points.iter().find(|q| q.id == center).map(|q| q.x) } else { None }).collect();
+    let xs: Vec<f64> = p.sketches[si]
+        .entities
+        .iter()
+        .filter_map(|e| {
+            if let Some(qymcad_core::model::CircleParts { center, .. }) = e.kind.as_circle() {
+                p.sketches[si].points.iter().find(|q| q.id == center).map(|q| q.x)
+            } else {
+                None
+            }
+        })
+        .collect();
     assert!(xs.iter().any(|x| (x - 15.0).abs() < 1e-6), "a copy must sit at x = 15: {xs:?}");
     // Deleting the pattern removes the copies and leaves the source.
     p.delete_pattern(si, pi);
@@ -886,7 +896,7 @@ fn pattern_is_editable() {
 fn linear_pattern_2d_grid() {
     // A linear grid pattern of rows by columns: count = 3 by count2 = 2 gives six instances, that is five
     // copies.
-    use qymcad_core::model::{EntityKind, PatternKind};
+    use qymcad_core::model::PatternKind;
     let mut p = Project::default();
     let si = p.new_sketch("grid");
     p.add_circle_entity(si, 0.0, 0.0, 1.0, qymcad_core::feature::Purpose::Real);
@@ -896,10 +906,9 @@ fn linear_pattern_2d_grid() {
     assert_eq!(p.sketches[si].entities.len(), n0 + 5, "a 3 by 2 grid gives six instances, five copies");
     // There is a copy at the far corner of the grid, (10,4).
     let has = |x: f64, y: f64| {
-        p.sketches[si]
-            .entities
-            .iter()
-            .any(|e| matches!(e.kind, EntityKind::Circle { center, .. } if p.sketches[si].points.iter().any(|q| q.id == center && (q.x - x).abs() < 1e-6 && (q.y - y).abs() < 1e-6)))
+        p.sketches[si].entities.iter().any(|e| {
+            e.kind.as_circle().is_some_and(|qymcad_core::model::CircleParts { center, .. }| p.sketches[si].points.iter().any(|q| q.id == center && (q.x - x).abs() < 1e-6 && (q.y - y).abs() < 1e-6))
+        })
     };
     assert!(has(10.0, 4.0), "a copy must sit at the far corner of the grid, (10,4)");
     assert!(has(0.0, 4.0), "a copy must sit in the second row, (0,4)");
@@ -929,23 +938,22 @@ fn region_inner_contour_is_hole() {
 
 /// What lies under a point of the sketch: the distance to the nearest line, circle or arc, what it is, and its id.
 fn nearest_geometry(p: &Project, si: usize, x: f64, y: f64) -> (f64, String, u64) {
-    use qymcad_core::model::EntityKind;
     let sk = &p.sketches[si];
     let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a point of the sketch");
     let mut best = (f64::MAX, String::from("nothing"), 0);
     for e in &sk.entities {
-        let (d, what) = match e.kind {
-            EntityKind::Line { a, b } => {
+        let (d, what) = match (e.kind.as_line(), e.kind.as_circle(), e.kind.as_arc()) {
+            (Some(qymcad_core::model::LineParts { a, b }), _, _) => {
                 let (a, b) = (at(a), at(b));
                 let (dx, dy) = (b.0 - a.0, b.1 - a.1);
                 let t = (((x - a.0) * dx + (y - a.1) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
                 ((a.0 + dx * t - x).hypot(a.1 + dy * t - y), format!("the line {a:?}-{b:?}"))
             }
-            EntityKind::Circle { center, r } => {
+            (_, Some(qymcad_core::model::CircleParts { center, r }), _) => {
                 let c = at(center);
                 (((c.0 - x).hypot(c.1 - y) - r).abs(), format!("the circle at {c:?}"))
             }
-            EntityKind::Arc { center, a, b, ccw } => {
+            (_, _, Some(qymcad_core::model::ArcParts { center, a, b, ccw })) => {
                 let (c, pa, pb) = (at(center), at(a), at(b));
                 let r = (pa.0 - c.0).hypot(pa.1 - c.1);
                 let (a0, a1, ang) = ((pa.1 - c.1).atan2(pa.0 - c.0), (pb.1 - c.1).atan2(pb.0 - c.0), (y - c.1).atan2(x - c.0));
@@ -1054,8 +1062,7 @@ fn every_trim_click_removes_what_is_under_it() {
                 sins.push(format!("{name}: setup - nothing under ({x}, {y}) to click, the nearest is {what} {d:.4} away"));
                 break;
             }
-            let is_line = matches!(p.sketches[si].entities.iter().find(|e| e.id == eid).map(|e| &e.kind), Some(qymcad_core::model::EntityKind::Line { .. }));
-            let ok = if is_line { p.trim_line(si, eid, x, y) } else { p.trim_curve(si, eid, x, y) };
+            let ok = p.trim_curve(si, eid, x, y);
             let (d, what, _) = nearest_geometry(&p, si, x, y);
             if !ok || d < 1e-3 {
                 sins.push(format!("{name}: a click at ({x}, {y}) answered {ok} and left {what} {d:.4} from it"));

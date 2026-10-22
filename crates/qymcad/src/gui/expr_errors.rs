@@ -114,24 +114,24 @@ mod tests {
         assert!(texts.iter().any(|t| t.contains(&want)), "the feature dimension field says nothing about the error \"{want}\": {texts:?}");
     }
 
-    /// AND IN THE COMMAND POPUP — WITH THE NAME OF THE FIELD.
+    /// AND WHERE THE COMMAND SPEAKS - WITH THE NAME OF THE FIELD.
     ///
     /// A command can have four fields; "the expression was not evaluated" without the name of the field
-    /// forces one to check them one by one.
+    /// forces one to check them one by one. The field marks itself, and the words of the tool say which and why.
     #[test]
-    fn the_command_popup_names_the_field_and_the_reason() {
+    fn the_command_names_the_field_and_the_reason() {
         let mut app = super::super::screen_keys::tests::plate();
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         app.chosen.sel = super::super::Sel::Mesh(app.project.mesh_index(body).expect("the mesh"));
-        app.start_feat_cmd(7); // a hole: diameter + depth
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Hole); // a hole: diameter + depth
         let label = {
             let p = app.tools.cmd.params.first_mut().expect("a field of the command");
             p.txt = "10 /".into();
             crate::i18n::tr(p.label_key())
         };
-        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| a.viewport(c));
-        let shown = texts.iter().any(|t| t.contains(&label) && t.contains(':'));
-        assert!(shown, "the command popup did not name the field \"{label}\" with a reason: {texts:?}");
+        let said = super::super::hand::Hand::as_it_stands(&mut app).tool_says();
+        let named = said.iter().any(|n| n.tone == qymcad_ui_state::Tone::Refusal && n.words.contains(&label) && n.words.contains(':'));
+        assert!(named, "the command did not name the field \"{label}\" with a reason where it speaks: {said:?}");
     }
 
     /// THE END OF THE INPUT IS EXPLAINED IN WORDS RATHER THAN BY A DEBUG NAME.
@@ -185,12 +185,14 @@ mod tests {
     #[test]
     fn the_useless_catch_all_is_gone_from_the_expression_fields() {
         for (name, src) in [
-            ("the command and gizmo popup", crate::gui::sketch_source::PART),
+            // the boxes of the part - of a command and of the number at a gizmo - are the frame's: its field says the reason
+            ("the boxes of the part", crate::gui::sketch_source::PART),
+            ("the frame of a tool", include_str!("../../../qymcad-ui-state/src/tool_frame/mod.rs")),
             ("the parameters window", crate::gui::panels_source::PANELS),
             ("the sketch dimension popup", crate::gui::sketch_source::SKETCH),
         ] {
             assert!(!src.contains("cmd-expr-not-evaluated"), "{name}: the catch-all phrase is back instead of the reason");
-            assert!(src.contains("expr_error_text"), "{name}: the expression error is shown past the common door");
+            assert!(src.contains("expr_error_text") || name == "the boxes of the part", "{name}: the expression error is shown past the common door");
         }
     }
 }

@@ -39,12 +39,12 @@ impl Project {
             entities: Vec::new(),
             closed: false,
             constraints: Vec::new(),
-            splines: Vec::new(),
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
-            rects: Vec::new(),
+            figures: Vec::new(),
             projections: Vec::new(),
+            offsets: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
             axis_pts: [0, 0],
@@ -73,15 +73,36 @@ impl Project {
         let ma = self.sketch_point_at(si, cx + rx * ux, cy + rx * uy, 1e-6); // Endpoint of the major axis.
         let mi = self.sketch_point_at(si, cx - ry * uy, cy + ry * ux, 1e-6); // Endpoint of the minor axis, perpendicular to it.
         let id = self.alloc_id();
-        self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Ellipse { c, ma, mi }, construction });
+        self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::EllipseParts { c, ma, mi, span: None }.into(), construction });
         self.regen_sketch(si);
         c
+    }
+    /// ADD AN ARC OF AN ELLIPSE: the ellipse of `arc.centre`, semi-axes `arc.radii` (major, minor) turned by `arc.rot`, from
+    /// the eccentric angle `arc.angles[0]` to `arc.angles[1]` the way `arc.winding` goes. Its ends are points of the
+    /// sketch held on the ellipse. Answers its id.
+    pub fn add_ellipse_arc_entity(&mut self, si: usize, arc: EllipseArcSpec, purpose: crate::feature::Purpose) -> Id {
+        let (rx, ry) = (arc.radii.x.max(0.01), arc.radii.y.max(0.01));
+        let (u, v) = (crate::geom::Point2::new(rx * arc.rot.cos(), rx * arc.rot.sin()), crate::geom::Point2::new(-ry * arc.rot.sin(), ry * arc.rot.cos()));
+        let at = |t: f64| crate::geom::Point2::new(arc.centre.x + u.x * t.cos() + v.x * t.sin(), arc.centre.y + u.y * t.cos() + v.y * t.sin());
+        let c = self.sketch_point_at(si, arc.centre.x, arc.centre.y, 1e-6);
+        let ma = self.sketch_point_at(si, arc.centre.x + u.x, arc.centre.y + u.y, 1e-6);
+        let mi = self.sketch_point_at(si, arc.centre.x + v.x, arc.centre.y + v.y, 1e-6);
+        // the ends are points of their own, not glued to an end of an axis they may stand on
+        let (from, to) = (self.alloc_id(), self.alloc_id());
+        let (p0, p1) = (at(arc.angles[0]), at(arc.angles[1]));
+        self.sketches[si].points.push(SketchPoint { id: from, x: p0.x, y: p0.y });
+        self.sketches[si].points.push(SketchPoint { id: to, x: p1.x, y: p1.y });
+        let id = self.alloc_id();
+        let span = Some(EllipseSpan { from, to, winding: arc.winding });
+        self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::EllipseParts { c, ma, mi, span }.into(), construction: purpose == crate::feature::Purpose::Construction });
+        self.regen_sketch(si);
+        id
     }
     /// The major and minor semi-axes of an ellipse entity, by the id of its centre.
     pub fn ellipse_axes(&self, si: usize, center: Id) -> Option<(f64, f64)> {
         let s = self.sketches.get(si)?;
-        let (ma, mi) = s.entities.iter().find_map(|e| match e.kind {
-            EntityKind::Ellipse { c, ma, mi } if c == center => Some((ma, mi)),
+        let (ma, mi) = s.entities.iter().find_map(|e| match e.kind.as_ellipse() {
+            Some(crate::model::EllipseParts { c, ma, mi, .. }) if c == center => Some((ma, mi)),
             _ => None,
         })?;
         let p = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
@@ -92,10 +113,19 @@ impl Project {
     /// endpoints move along their current directions, so the rotation is preserved, and the solver keeps them
     /// perpendicular.
     pub fn set_ellipse_axes(&mut self, si: usize, center: Id, rx: f64, ry: f64) -> bool {
-        let (rx, ry) = (rx.max(0.01), ry.max(0.01));
+        if !self.ellipse_axes_points(si, center, [rx, ry]) {
+            return false;
+        }
+        self.solve_sketch(si);
+        true
+    }
+    /// The points of the axes of an ellipse set to semi-axes `rx`, `ry` along their directions, with no solve: the
+    /// evaluation of the parameters sets them before the solve that follows it.
+    pub(crate) fn ellipse_axes_points(&mut self, si: usize, center: Id, semi: [f64; 2]) -> bool {
+        let (rx, ry) = (semi[0].max(0.01), semi[1].max(0.01));
         let Some(s) = self.sketches.get(si) else { return false };
-        let Some((ma, mi)) = s.entities.iter().find_map(|e| match e.kind {
-            EntityKind::Ellipse { c, ma, mi } if c == center => Some((ma, mi)),
+        let Some((ma, mi)) = s.entities.iter().find_map(|e| match e.kind.as_ellipse() {
+            Some(crate::model::EllipseParts { c, ma, mi, .. }) if c == center => Some((ma, mi)),
             _ => None,
         }) else {
             return false;
@@ -113,7 +143,6 @@ impl Project {
                 q.y = y;
             }
         }
-        self.solve_sketch(si);
         true
     }
     /// Vertices of a parametric polygon: the points bound by `PointOnCircle` to the centre of its circumscribed
@@ -150,11 +179,9 @@ impl Project {
             // Without a dimension, the circle radius is edited directly and the solver keeps the vertices on
             // it.
             for e in s.entities.iter_mut() {
-                if let EntityKind::Circle { center: cc, r: er } = &mut e.kind {
-                    if *cc == center {
-                        *er = r;
-                        found = true;
-                    }
+                if e.kind.as_circle().is_some_and(|c| c.center == center) {
+                    e.kind.set_radius(r);
+                    found = true;
                 }
             }
         }
@@ -167,8 +194,8 @@ impl Project {
     pub fn polygon_circle(&self, si: usize, center: Id) -> Option<(f64, f64, f64)> {
         let s = self.sketches.get(si)?;
         let (cx, cy) = s.points.iter().find(|q| q.id == center).map(|q| (q.x, q.y))?;
-        let r = s.entities.iter().find_map(|e| match e.kind {
-            EntityKind::Circle { center: cc, r } if cc == center => Some(r),
+        let r = s.entities.iter().find_map(|e| match e.kind.as_circle() {
+            Some(crate::model::CircleParts { center: cc, r }) if cc == center => Some(r),
             _ => None,
         })?;
         Some((cx, cy, r))
@@ -216,7 +243,7 @@ impl Project {
             let a = points[k].id;
             let b = points[(k + 1) % n].id;
             let id = self.alloc_id();
-            entities.push(SketchEntity { id, kind: EntityKind::Line { a, b }, construction: false });
+            entities.push(SketchEntity { id, kind: crate::model::LineParts { a, b }.into(), construction: false });
         }
         let sid = self.alloc_id();
         let si = self.sketches.len();
@@ -229,12 +256,12 @@ impl Project {
             entities,
             closed,
             constraints: Vec::new(),
-            splines: Vec::new(),
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
-            rects: Vec::new(),
+            figures: Vec::new(),
             projections: Vec::new(),
+            offsets: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
             axis_pts: [0, 0],
@@ -262,12 +289,12 @@ impl Project {
             entities: Vec::new(),
             closed: false,
             constraints: Vec::new(),
-            splines: Vec::new(),
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
-            rects: Vec::new(),
+            figures: Vec::new(),
             projections: Vec::new(),
+            offsets: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
             axis_pts: [0, 0],
@@ -297,7 +324,7 @@ impl Project {
         let last = if closed { n } else { n - 1 };
         for k in 0..last {
             let id = self.alloc_id();
-            entities.push(SketchEntity { id, kind: EntityKind::Line { a: points[k].id, b: points[(k + 1) % n].id }, construction: false });
+            entities.push(SketchEntity { id, kind: crate::model::LineParts { a: points[k].id, b: points[(k + 1) % n].id }.into(), construction: false });
         }
         let s = &mut self.sketches[si];
         s.points.extend(points);
@@ -312,7 +339,7 @@ impl Project {
     /// fully constrained; a non-zero second value means there are redundant constraints.
     pub fn sketch_dof(&self, si: usize) -> (i32, i32) {
         let Some(s) = self.sketches.get(si) else { return (0, 0) };
-        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| !c.is_driven()).cloned().collect();
+        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| s.solves(c)).map(|c| s.as_solved(c)).collect();
         active.extend(self.entity_intrinsics(si)); // Arcs keep their endpoints on the circle: five degrees of
                                                    // freedom for a free arc.
         crate::solver::dof(&s.points, &self.entity_radii(si), &active)
@@ -334,14 +361,15 @@ impl Project {
                 | Some(Constraint::ArcLength { .. })
                 | Some(Constraint::Diameter { .. })
                 | Some(Constraint::EdgeDistance { .. })
+                | Some(Constraint::CurveDistance { .. })
         ) {
             return false;
         }
         let intr = self.entity_intrinsics(si);
-        let mut without: Vec<Constraint> = s.constraints.iter().enumerate().filter(|(i, c)| *i != ci && !c.is_driven()).map(|(_, c)| c.clone()).collect();
+        let mut without: Vec<Constraint> = s.constraints.iter().enumerate().filter(|(i, c)| *i != ci && s.solves(c)).map(|(_, c)| s.as_solved(c)).collect();
         without.extend(intr.iter().cloned());
         let mut with = without;
-        with.push(s.constraints[ci].clone());
+        with.push(s.as_solved(&s.constraints[ci]));
         // The rank did not grow, so the dimension constrains nothing.
         crate::solver::freedom_taken(&s.points, &self.entity_radii(si), &with, with.len() - 1) == 0
     }
@@ -354,8 +382,8 @@ impl Project {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         // the sketch's own constraints that constrain (not the reference ones), by their place in the sketch, then the
         // entities' own
-        let at: Vec<usize> = (0..s.constraints.len()).filter(|&ci| !s.constraints[ci].is_driven()).collect();
-        let mut active: Vec<Constraint> = at.iter().map(|&ci| s.constraints[ci].clone()).collect();
+        let at: Vec<usize> = (0..s.constraints.len()).filter(|&ci| s.solves(&s.constraints[ci])).collect();
+        let mut active: Vec<Constraint> = at.iter().map(|&ci| s.as_solved(&s.constraints[ci])).collect();
         active.extend(self.entity_intrinsics(si));
         crate::solver::redundant(&s.points, &self.entity_radii(si), &active, at.len()).into_iter().map(|k| at[k]).collect()
     }
@@ -366,10 +394,10 @@ impl Project {
         let Some(s) = self.sketches.get(si) else { return false };
         let intr = self.entity_intrinsics(si);
         let radii = self.entity_radii(si);
-        let mut active: Vec<Constraint> = s.constraints.iter().filter(|x| !x.is_driven()).cloned().collect();
+        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| s.solves(c)).map(|c| s.as_solved(c)).collect();
         active.extend(intr.iter().cloned());
         let mut with = active;
-        with.push(c.clone());
+        with.push(s.as_solved(&c));
         // JUDGED WHERE THE CONSTRAINTS HOLD, on a copy solved with the new one: at the geometry as clicked, nearly but not
         // quite satisfying what is laid, constraints that follow from each other read as independent. A U drawn with
         // Line, its corners squared, got a Parallel between its legs on top of the two Perpendiculars that imply it, and
@@ -388,7 +416,7 @@ impl Project {
     pub fn independent_of(&self, si: usize, new: Vec<Constraint>) -> Vec<Constraint> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         let radii = self.entity_radii(si);
-        let mut active: Vec<Constraint> = s.constraints.iter().filter(|x| !x.is_driven()).cloned().collect();
+        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| s.solves(c)).map(|c| s.as_solved(c)).collect();
         active.extend(self.entity_intrinsics(si));
         let mut kept = Vec::new();
         for c in new {
@@ -396,7 +424,7 @@ impl Project {
                 kept.push(c);
                 continue;
             }
-            active.push(c.clone());
+            active.push(s.as_solved(&c));
             if crate::solver::freedom_taken(&s.points, &radii, &active, active.len() - 1) > 0 {
                 kept.push(c);
             } else {
@@ -423,14 +451,14 @@ impl Project {
             )
         };
         let mut cs = s.constraints.clone();
-        let active = |cs: &[Constraint]| -> Vec<Constraint> { cs.iter().filter(|c| !c.is_driven()).cloned().chain(intr.iter().cloned()).collect() };
+        let active = |cs: &[Constraint]| -> Vec<Constraint> { cs.iter().filter(|c| s.solves(c)).map(|c| s.as_solved(c)).chain(intr.iter().cloned()).collect() };
         let mut gone = 0;
         for ci in (0..had.min(cs.len())).rev() {
             if !relation(&cs[ci]) || !constraint_point_ids(&cs[ci]).iter().all(|p| among.contains(p)) {
                 continue;
             }
             // the place of the relation among the active constraints: the reference ones before it are not there
-            let at = cs[..ci].iter().filter(|c| !c.is_driven()).count();
+            let at = cs[..ci].iter().filter(|c| s.solves(c)).count();
             if crate::solver::freedom_taken(&s.points, &radii, &active(&cs), at) == 0 {
                 cs.remove(ci);
                 gone += 1;
@@ -451,7 +479,8 @@ impl Project {
             | Constraint::DistancePL { driven, .. }
             | Constraint::Diameter { driven, .. }
             | Constraint::ArcLength { driven, .. }
-            | Constraint::EdgeDistance { driven, .. },
+            | Constraint::EdgeDistance { driven, .. }
+            | Constraint::CurveDistance { driven, .. },
         ) = self.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci))
         {
             *driven = true;
@@ -467,7 +496,8 @@ impl Project {
             | Constraint::Angle { driven, .. }
             | Constraint::DistancePL { driven, .. }
             | Constraint::Diameter { driven, .. }
-            | Constraint::ArcLength { driven, .. },
+            | Constraint::ArcLength { driven, .. }
+            | Constraint::CurveDistance { driven, .. },
         ) = self.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci))
         {
             *driven = !*driven;
@@ -481,8 +511,8 @@ impl Project {
     /// `sketch_free_points` and `sketch_redundant_constraints`.
     pub fn sketch_checks(&self, si: usize) -> crate::solver::Checks {
         let Some(s) = self.sketches.get(si) else { return crate::solver::Checks { dof: (0, 0), free: Vec::new(), redundant: Vec::new() } };
-        let at: Vec<usize> = (0..s.constraints.len()).filter(|&ci| !s.constraints[ci].is_driven()).collect();
-        let mut active: Vec<Constraint> = at.iter().map(|&ci| s.constraints[ci].clone()).collect();
+        let at: Vec<usize> = (0..s.constraints.len()).filter(|&ci| s.solves(&s.constraints[ci])).collect();
+        let mut active: Vec<Constraint> = at.iter().map(|&ci| s.as_solved(&s.constraints[ci])).collect();
         active.extend(self.entity_intrinsics(si));
         let radii = self.entity_radii(si);
         let mut checks = s.checked.with(|memo| crate::solver::checks_remembered(&s.points, &radii, &active, at.len(), memo));
@@ -491,7 +521,7 @@ impl Project {
     }
     pub fn sketch_free_points(&self, si: usize) -> Vec<bool> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
-        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| !c.is_driven()).cloned().collect();
+        let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| s.solves(c)).map(|c| s.as_solved(c)).collect();
         active.extend(self.entity_intrinsics(si));
         crate::solver::free_points(&s.points, &self.entity_radii(si), &active)
     }
@@ -599,81 +629,90 @@ impl Project {
         // Fallback bounding box when the glyphs are empty (a space, or a non-printing character).
         bb.or(Some((t.x, t.y, t.x + t.height * 0.5, t.y + t.height)))
     }
-    /// Add a spline (a smooth Catmull-Rom curve) through control points.
-    pub fn add_spline(&mut self, si: usize, pts: Vec<Point2>, ends: crate::feature::Ends, purpose: crate::feature::Purpose) {
-        let construction = purpose == crate::feature::Purpose::Construction;
-        let closed = ends == crate::feature::Ends::Closed;
+    /// ADD A SPLINE through `pts`, an entity like any curve: its nodes are points of the sketch, its tangents automatic.
+    /// Answers its id, or `None` for fewer than two points or no such sketch.
+    pub fn add_spline(&mut self, si: usize, pts: Vec<Point2>, ends: crate::feature::Ends, purpose: crate::feature::Purpose) -> Option<Id> {
         if pts.len() < 2 || si >= self.sketches.len() {
-            return;
+            return None;
         }
-        let ids: Vec<Id> = pts.iter().map(|_| self.alloc_id()).collect();
-        if let Some(s) = self.sketches.get_mut(si) {
-            for (id, p) in ids.iter().zip(&pts) {
-                s.points.push(SketchPoint { id: *id, x: p.x, y: p.y });
-            }
-            let nt = ids.len();
-            s.splines.push(Spline { points: ids, tangents: vec![None; nt], closed, construction });
+        // A NODE CLICKED ON A POINT STANDING THERE IS THAT POINT, as the end of a line is: a spline drawn on from the end
+        // of a line shares the point with it and makes a corner with it. Each node a point of its own, the end and the
+        // line were two points held together, and the corner tools found no corner there.
+        let mut ids: Vec<Id> = Vec::with_capacity(pts.len());
+        for p in &pts {
+            let id = self.sketch_point_at(si, p.x, p.y, 1e-6);
+            let id = if ids.contains(&id) {
+                let fresh = self.alloc_id();
+                self.sketches[si].points.push(SketchPoint { id: fresh, x: p.x, y: p.y });
+                fresh
+            } else {
+                id
+            };
+            ids.push(id);
         }
+        let eid = self.alloc_id();
+        let s = self.sketches.get_mut(si)?;
+        let handles = vec![Handle::default(); ids.len()];
+        s.entities.push(SketchEntity { id: eid, kind: EntityKind::spline(ids, handles, ends), construction: purpose == crate::feature::Purpose::Construction });
         self.regen_sketch(si);
+        Some(eid)
     }
-    /// Polyline of a spline (a cubic Hermite tessellation) in world coordinates, for drawing — including the
-    /// dashed rendering of a construction spline, which never reaches the contours.
-    pub fn spline_polyline(&self, si: usize, spi: usize) -> Vec<Point2> {
-        let Some(s) = self.sketches.get(si) else { return Vec::new() };
-        let Some(sp) = s.splines.get(spi) else { return Vec::new() };
-        let cps: Vec<Point2> = sp.points.iter().filter_map(|id| s.points.iter().find(|p| p.id == *id).map(|p| crate::geom::Point2::new(p.x, p.y))).collect();
-        if cps.len() < 2 {
-            return Vec::new();
-        }
-        tessellate_spline_hermite(&cps, &sp.tangents, sp.closed).points
+    /// THE NODES, HANDLES AND ENDS OF SPLINE `eid`, with its nodes where they stand; `None` when it is no spline of the
+    /// sketch or has lost a node.
+    fn spline_of(&self, si: usize, eid: Id) -> Option<SplineNow> {
+        let s = self.sketches.get(si)?;
+        let sp = s.entity(eid)?.kind.as_spline()?;
+        let at: Vec<Point2> = sp.nodes.iter().map(|id| s.point(*id).map(|p| crate::geom::Point2::new(p.x, p.y))).collect::<Option<_>>()?;
+        Some(SplineNow { at, handles: sp.handles.to_vec(), ends: sp.ends })
     }
-    /// Tangent handles of spline `spi`: for each node, its position and the end of its handle, in world
-    /// coordinates. A handle is the node plus its tangent, explicit or automatic. Used for drawing and
-    /// dragging.
-    pub fn spline_handles(&self, si: usize, spi: usize) -> Vec<(Point2, Point2)> {
-        let Some(s) = self.sketches.get(si) else { return Vec::new() };
-        let Some(sp) = s.splines.get(spi) else { return Vec::new() };
-        let pos = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| crate::geom::Point2::new(p.x, p.y));
-        let cps: Vec<Point2> = sp.points.iter().filter_map(|id| pos(*id)).collect();
-        let n = cps.len();
-        if n < 2 {
-            return Vec::new();
+    /// Polyline of spline `eid` in world coordinates, for drawing - including the dashed
+    /// rendering of a construction spline, which never reaches the contours.
+    pub fn spline_polyline(&self, si: usize, eid: Id) -> Vec<Point2> {
+        match self.spline_of(si, eid) {
+            Some(sp) if sp.at.len() >= 2 => crate::model::spline_line(&sp.at, &sp.handles, sp.ends),
+            _ => Vec::new(),
         }
-        (0..n)
+    }
+    /// Tangent handles of spline `eid`: for each node, its position and the end of its handle - the node plus the tangent
+    /// it leaves by, explicit or automatic - in world coordinates. Used for drawing and dragging.
+    pub fn spline_handles(&self, si: usize, eid: Id) -> Vec<SplineHandle> {
+        let Some(sp) = self.spline_of(si, eid).filter(|sp| sp.at.len() >= 2) else { return Vec::new() };
+        let tangents = crate::geom::bspline::node_tangents(&sp.at, &sp.handles, sp.ends);
+        (0..sp.at.len())
             .map(|i| {
-                let m = spline_tangent_at(&cps, &sp.tangents, i, sp.closed);
-                (cps[i], crate::geom::Point2::new(cps[i].x + m.x, cps[i].y + m.y))
+                let m = tangents[i].leave;
+                SplineHandle { node: sp.at[i], end: crate::geom::Point2::new(sp.at[i].x + m.x, sp.at[i].y + m.y) }
             })
             .collect()
     }
-    /// Set the tangent of node `ki` of spline `spi` from a dragged handle in world coordinates. This makes the
-    /// tangent explicit, pinning the shape at that node, and rebuilds the contour. Returns `false` when there is
-    /// no such node.
-    pub fn set_spline_handle(&mut self, si: usize, spi: usize, ki: usize, hx: f64, hy: f64) -> bool {
-        let Some(s) = self.sketches.get_mut(si) else { return false };
-        let Some(sp) = s.splines.get(spi) else { return false };
-        let Some(&kid) = sp.points.get(ki) else { return false };
-        let Some((kx, ky)) = s.points.iter().find(|p| p.id == kid).map(|p| (p.x, p.y)) else { return false };
-        let sp = &mut s.splines[spi];
-        if sp.tangents.len() != sp.points.len() {
-            sp.tangents = vec![None; sp.points.len()];
+    /// Set the tangent of node `ki` of spline `eid` from a dragged handle whose end is at `to`, in world coordinates. This
+    /// makes the tangent explicit - the same both ways, so the node stays smooth - pinning the shape at that node, and
+    /// rebuilds the contour. Returns `false` when there is no such node.
+    pub fn set_spline_handle(&mut self, si: usize, eid: Id, ki: usize, to: Point2) -> bool {
+        let Some(sp) = self.spline_of(si, eid) else { return false };
+        let Some(&node) = sp.at.get(ki) else { return false };
+        let v = [to.x - node.x, to.y - node.y];
+        if !self.with_handles(si, eid, |h| h[ki] = Handle { arrive: Some(v), leave: Some(v) }) {
+            return false;
         }
-        sp.tangents[ki] = Some([hx - kx, hy - ky]);
         self.regen_sketch(si);
         true
     }
-    /// Reset the tangent of a node to automatic (Catmull-Rom), so the handle follows the nodes again.
-    pub fn reset_spline_handle(&mut self, si: usize, spi: usize, ki: usize) -> bool {
-        let Some(s) = self.sketches.get_mut(si) else { return false };
-        let Some(sp) = s.splines.get_mut(spi) else { return false };
-        if ki >= sp.points.len() {
+    /// Reset the tangent of a node to automatic, so the handle follows the nodes again.
+    pub fn reset_spline_handle(&mut self, si: usize, eid: Id, ki: usize) -> bool {
+        let Some(sp) = self.spline_of(si, eid) else { return false };
+        if ki >= sp.at.len() || !self.with_handles(si, eid, |h| h[ki] = Handle::default()) {
             return false;
         }
-        if sp.tangents.len() != sp.points.len() {
-            sp.tangents = vec![None; sp.points.len()];
-        }
-        sp.tangents[ki] = None;
         self.regen_sketch(si);
+        true
+    }
+    /// The handles of spline `eid` given to `change`, one per node however many were kept. Answers whether it is a spline.
+    fn with_handles(&mut self, si: usize, eid: Id, change: impl FnOnce(&mut Vec<Handle>)) -> bool {
+        let Some(e) = self.sketches.get_mut(si).and_then(|s| s.entities.iter_mut().find(|e| e.id == eid)) else { return false };
+        let Some(sp) = e.kind.as_spline_mut() else { return false };
+        sp.handles.resize(sp.nodes.len(), Handle::default());
+        change(sp.handles);
         true
     }
     /// Add a construction polyline (a projection of part geometry into a sketch). Every segment is construction
@@ -691,11 +730,12 @@ impl Project {
                 s.points.push(SketchPoint { id: *id, x: p.x, y: p.y });
             }
             for (k, eid) in eids.into_iter().enumerate() {
-                s.entities.push(SketchEntity { id: eid, kind: EntityKind::Line { a: pids[k], b: pids[(k + 1) % n] }, construction: true });
+                s.entities.push(SketchEntity { id: eid, kind: crate::model::LineParts { a: pids[k], b: pids[(k + 1) % n] }.into(), construction: true });
             }
         }
     }
-    /// Unique points referenced by the given entities, centres included.
+    /// Unique points referenced by the given entities, centres included. An id naming a point stands for the point
+    /// itself: a point drawn alone is a shape of its own, which Move, Rotate, Copy, Mirror and the patterns take.
     pub fn entity_point_ids(&self, si: usize, eids: &[Id]) -> Vec<Id> {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         let mut out: Vec<Id> = Vec::new();
@@ -703,16 +743,15 @@ impl Project {
             if !eids.contains(&e.id) {
                 continue;
             }
-            let ids: Vec<Id> = match e.kind {
-                EntityKind::Line { a, b } => vec![a, b],
-                EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-                EntityKind::Circle { center, .. } => vec![center],
-                EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
-            };
-            for id in ids {
+            for id in entity_points(e) {
                 if !out.contains(&id) {
                     out.push(id);
                 }
+            }
+        }
+        for p in &s.points {
+            if eids.contains(&p.id) && !out.contains(&p.id) {
+                out.push(p.id);
             }
         }
         out
@@ -742,20 +781,9 @@ impl Project {
     /// `PointOnLine` or `PointOnCircle`, which dimensions are measured to) and any point carrying a
     /// dimension.
     pub fn prune_orphan_sketch_points(&mut self, si: usize) {
+        self.break_figures_of(si, &[]); // a figure whose curve a trim or a break replaced is a figure no more
         let Some(s) = self.sketches.get_mut(si) else { return };
-        let mut used: std::collections::HashSet<Id> = s
-            .entities
-            .iter()
-            .flat_map(|e| match e.kind {
-                EntityKind::Line { a, b } => vec![a, b],
-                EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-                EntityKind::Circle { center, .. } => vec![center],
-                EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
-            })
-            .collect();
-        for sp in &s.splines {
-            used.extend(sp.points.iter().copied());
-        }
+        let used: std::collections::HashSet<Id> = s.entities.iter().flat_map(entity_points).collect();
         let mut protected: std::collections::HashSet<Id> = s.system_ids().into_iter().collect();
         for c in &s.constraints {
             let keep = match c {
@@ -770,8 +798,7 @@ impl Project {
             }
         }
         s.points.retain(|p| used.contains(&p.id) || protected.contains(&p.id));
-        let alive: std::collections::HashSet<Id> = s.points.iter().map(|p| p.id).collect();
-        s.constraints.retain(|c| constraint_point_ids(c).iter().all(|id| alive.contains(id)));
+        s.drop_constraints_on_what_is_gone();
     }
     /// Delete the selected entities, together with the points they orphan, the constraints on those points,
     /// and the constraints that hung on the deleted lines by their pair of endpoints — even when those
@@ -780,17 +807,20 @@ impl Project {
         // A RECTANGLE LOSING A SIDE IS BROKEN: its diagonals go with the side, its centre with them, and the constraints
         // it held itself by - four plain lines are left, with nothing of the rectangle on them.
         let mut eids = eids.to_vec();
-        let before: Vec<crate::model::SketchRect> = self.sketches.get(si).map(|s| s.rects.clone()).unwrap_or_default();
+        let before: Vec<crate::model::SketchRect> = self.sketches.get(si).map(|s| s.rects()).unwrap_or_default();
         if let Some(s) = self.sketches.get_mut(si) {
-            let broken: Vec<crate::model::SketchRect> = s.rects.iter().filter(|r| r.sides.iter().chain(r.diagonals.iter().flatten()).any(|e| eids.contains(e))).cloned().collect();
-            s.rects.retain(|r| !broken.contains(r));
+            let broken: Vec<crate::model::SketchRect> = before.iter().filter(|r| r.sides.iter().chain(r.diagonals.iter().flatten()).any(|e| eids.contains(e))).cloned().collect();
+            s.drop_rects(|r| broken.contains(r));
             for r in &broken {
-                eids.extend(r.diagonals.into_iter().flatten());
+                // the centre is a point of the rectangle no curve stands on: named, it goes, as a point drawn alone does not
+                eids.extend(r.diagonals.into_iter().flatten().chain([r.centre]));
                 let [c0, c1, c2, c3] = r.corners;
                 let own = rect_own_constraints(c0, c1, c2, c3, r.centre, 0.0);
                 s.constraints.retain(|c| !own.iter().any(|o| same_rect_constraint(o, c)));
             }
         }
+        // A FIGURE LOSING A CURVE IS BROKEN the same way: the record and its own constraints go, plain curves are left.
+        self.break_figures_of(si, &eids);
         let eids = &eids[..];
         {
             let Some(s) = self.sketches.get_mut(si) else { return };
@@ -799,36 +829,34 @@ impl Project {
                 .entities
                 .iter()
                 .filter(|e| eids.contains(&e.id))
-                .filter_map(|e| match e.kind {
-                    EntityKind::Line { a, b } => Some((a, b)),
+                .filter_map(|e| match e.kind.as_line() {
+                    Some(crate::model::LineParts { a, b }) => Some((a, b)),
                     _ => None,
                 })
                 .collect();
-            s.entities.retain(|e| !eids.contains(&e.id));
+            // A POINT DRAWN ALONE STAYS unless it is named among what goes: it is no end that a deleted curve orphans.
+            // Swept with the orphans, a point drawn by the point tool went whenever any curve of the sketch was deleted.
+            // The middle of a line is a place on it, not a point drawn alone.
+            let lone_before: std::collections::HashSet<Id> = {
+                let middles = s.constraints.iter().filter_map(|c| if let Constraint::Midpoint { p, .. } = c { Some(*p) } else { None });
+                let used: std::collections::HashSet<Id> = s.entities.iter().flat_map(entity_points).chain(middles).collect();
+                s.points.iter().map(|p| p.id).filter(|id| !used.contains(id) && !eids.contains(id)).collect()
+            };
             // Drop the constraints attached to a deleted line (horizontal, vertical, parallel, perpendicular,
             // equal, collinear, tangent, midpoint — those referencing its pair of endpoints), or dangling
             // glyphs remain.
             if !dead_lines.is_empty() {
                 s.constraints.retain(|c| !constraint_uses_line(c, &dead_lines));
             }
-            let used: std::collections::HashSet<Id> = s
-                .entities
-                .iter()
-                .flat_map(|e| match e.kind {
-                    EntityKind::Line { a, b } => vec![a, b],
-                    EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-                    EntityKind::Circle { center, .. } => vec![center],
-                    EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
-                })
-                .collect();
+            s.entities.retain(|e| !eids.contains(&e.id));
+            let used: std::collections::HashSet<Id> = s.entities.iter().flat_map(entity_points).chain(lone_before).collect();
             // Protected free points: the system ones (origin and axes) and materialised midpoints. They must
             // not be dropped as orphaned endpoints, or the axes and the dimensions measured from them are
             // lost.
             let protected: std::collections::HashSet<Id> =
                 s.system_ids().into_iter().chain(s.constraints.iter().filter_map(|c| if let Constraint::Midpoint { p, .. } = c { Some(*p) } else { None })).collect();
             s.points.retain(|p| used.contains(&p.id) || protected.contains(&p.id));
-            let alive: std::collections::HashSet<Id> = s.points.iter().map(|p| p.id).collect();
-            s.constraints.retain(|c| constraint_point_ids(c).iter().all(|id| alive.contains(id)));
+            s.drop_constraints_on_what_is_gone();
         }
         self.regen_sketch(si);
         // the sides a broken rectangle leaves keep what they plainly have, as they do in a sketch of plain lines
@@ -839,8 +867,10 @@ impl Project {
     pub fn toggle_construction(&mut self, si: usize, eids: &[Id]) -> bool {
         let mut now_construction = false;
         if let Some(s) = self.sketches.get_mut(si) {
-            // The target state is the inverse of the first selected entity.
-            let target = !s.entities.iter().find(|e| eids.contains(&e.id)).is_some_and(|e| e.construction);
+            // ONE STATE FOR THE WHOLE SET: construction while any of it is ordinary, ordinary once all of it is construction.
+            // Taken as the inverse of the first one chosen, a polygon - six sides and its construction circle - turned
+            // ordinary or construction by the order it was picked in.
+            let target = s.entities.iter().filter(|e| eids.contains(&e.id)).any(|e| !e.construction);
             for e in s.entities.iter_mut() {
                 if eids.contains(&e.id) {
                     e.construction = target;
@@ -852,30 +882,42 @@ impl Project {
         now_construction
     }
     /// Delete the selected sketch points together with the entities incident to them and the constraints they
-    /// orphan. Every other point, the origin included, is kept.
+    /// orphan. The other points of those entities go with them where nothing else stands on them; every other point,
+    /// the origin included, is kept.
     pub fn delete_points(&mut self, si: usize, ids: &[Id]) {
         {
             let Some(s) = self.sketches.get_mut(si) else { return };
-            let set: std::collections::HashSet<Id> = ids.iter().copied().collect();
+            let mut set: std::collections::HashSet<Id> = ids.iter().copied().collect();
             // Entities incident to the deleted points go as well.
-            s.entities.retain(|e| {
-                let inc = match e.kind {
-                    EntityKind::Line { a, b } => set.contains(&a) || set.contains(&b),
-                    EntityKind::Arc { center, a, b, .. } => set.contains(&center) || set.contains(&a) || set.contains(&b),
-                    EntityKind::Circle { center, .. } => set.contains(&center),
-                    EntityKind::Ellipse { c, ma, mi } => set.contains(&c) || set.contains(&ma) || set.contains(&mi),
-                };
-                !inc
-            });
+            let incident = |e: &SketchEntity| entity_points(e).iter().any(|p| set.contains(p));
+            let going: Vec<SketchEntity> = s.entities.iter().filter(|e| incident(e)).cloned().collect();
+            s.entities.retain(|e| !incident(e));
+            // THE FAR END OF A CURVE TAKEN AWAY GOES WITH IT: kept, it stood as a point of its own that nobody drew, and
+            // the end of a line deleted left the other end behind as a dot.
+            let used: std::collections::HashSet<Id> = s.entities.iter().flat_map(entity_points).collect();
+            let protected: std::collections::HashSet<Id> =
+                s.system_ids().into_iter().chain(s.constraints.iter().filter_map(|c| if let Constraint::Midpoint { p, .. } = c { Some(*p) } else { None })).collect();
+            set.extend(going.iter().flat_map(entity_points).filter(|p| !used.contains(p) && !protected.contains(p)));
             s.points.retain(|p| !set.contains(&p.id));
-            let alive: std::collections::HashSet<Id> = s.points.iter().map(|p| p.id).collect();
-            s.constraints.retain(|c| constraint_point_ids(c).iter().all(|id| alive.contains(id)));
-            s.splines.retain(|sp| sp.points.iter().all(|id| alive.contains(id)));
+            s.drop_constraints_on_what_is_gone();
             if set.contains(&s.origin) {
                 s.origin = 0;
             }
         }
         self.regen_sketch(si);
+    }
+    /// THE FIGURES OF SKETCH `si` THAT HAVE LOST A CURVE, or are about to lose one of `going`, broken: the record and the
+    /// constraints the figure held itself by go, its other curves stay as plain curves.
+    pub(crate) fn break_figures_of(&mut self, si: usize, going: &[Id]) {
+        let Some(s) = self.sketches.get_mut(si) else { return };
+        let alive: std::collections::HashSet<Id> = s.entities.iter().map(|e| e.id).filter(|id| !going.contains(id)).collect();
+        // a rectangle is broken with its centre and its diagonals where a side is deleted (`delete_entities`)
+        let broken: Vec<SketchFigure> = s.shapes_not_rects().filter(|f| f.curves.iter().any(|c| !alive.contains(c))).cloned().collect();
+        if broken.is_empty() {
+            return;
+        }
+        s.figures.retain(|f| !broken.iter().any(|b| b.id == f.id));
+        s.constraints.retain(|c| !broken.iter().any(|f| f.holds(c)));
     }
     /// Find a sketch point near (x, y) within `eps`, or create one. Returns its id.
     pub fn sketch_point_at(&mut self, si: usize, x: f64, y: f64, eps: f64) -> Id {
@@ -908,7 +950,7 @@ impl Project {
         let a = self.sketch_point_at(si, ax, ay, 1e-6);
         let b = self.sketch_point_at(si, bx, by, 1e-6);
         let id = self.alloc_id();
-        self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Line { a, b }, construction });
+        self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::LineParts { a, b }.into(), construction });
         self.regen_sketch(si);
         id
     }
@@ -918,7 +960,7 @@ impl Project {
     /// A radius variable is keyed by centre id (see `solver::RadiusVar`), so two curves cannot share one centre
     /// node without their radii collapsing. Concentricity is a constraint, not a shared node.
     pub(crate) fn is_radius_center(&self, si: usize, pid: Id) -> bool {
-        self.sketches.get(si).is_some_and(|s| s.entities.iter().any(|e| matches!(e.kind, EntityKind::Circle { center, .. } | EntityKind::Arc { center, .. } if center == pid)))
+        self.sketches.get(si).is_some_and(|s| s.entities.iter().any(|e| e.kind.round_centre() == Some(pid)))
     }
     /// Centre node of a radius curve (circle, arc, polygon, slot) at (x, y).
     ///
@@ -940,7 +982,7 @@ impl Project {
         let construction = purpose == crate::feature::Purpose::Construction;
         let c = self.radius_center_at(si, cx, cy);
         let id = self.alloc_id();
-        self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Circle { center: c, r: r.max(0.01) }, construction });
+        self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::CircleParts { center: c, r: r.max(0.01) }.into(), construction });
         self.regen_sketch(si);
         id
     }
@@ -976,7 +1018,7 @@ impl Project {
         let mut sides = [0; 4];
         for (k, side) in sides.iter_mut().enumerate() {
             *side = self.alloc_id();
-            self.sketches[si].entities.push(SketchEntity { id: *side, kind: EntityKind::Line { a: pids[k], b: pids[(k + 1) % 4] }, construction });
+            self.sketches[si].entities.push(SketchEntity { id: *side, kind: crate::model::LineParts { a: pids[k], b: pids[(k + 1) % 4] }.into(), construction });
         }
         // A RECTANGLE DRAWN AS CONSTRUCTION IS A RECTANGLE all the same - its own constraints and its record - so its size
         // is typed and it is dragged by its corners whole. Reported behaviour: "a construction rectangle is just four
@@ -988,7 +1030,7 @@ impl Project {
             let mut d = [0; 2];
             for (id, (a, b)) in d.iter_mut().zip([(c0, c2), (c1, c3)]) {
                 *id = self.alloc_id();
-                self.sketches[si].entities.push(SketchEntity { id: *id, kind: EntityKind::Line { a, b }, construction: true });
+                self.sketches[si].entities.push(SketchEntity { id: *id, kind: crate::model::LineParts { a, b }.into(), construction: true });
             }
             d
         });
@@ -1001,7 +1043,7 @@ impl Project {
             DrawnFrom::Centre => crate::model::RectAnchor::Centre,
         };
         let id = self.alloc_id();
-        self.sketches[si].rects.push(crate::model::SketchRect { id, corners: [c0, c1, c2, c3], sides, centre, diagonals, anchor });
+        self.sketches[si].add_rect(&crate::model::SketchRect { id, corners: [c0, c1, c2, c3], sides, centre, diagonals, anchor });
         self.regen_sketch(si);
         sides.to_vec()
     }
@@ -1023,11 +1065,11 @@ impl Project {
             .collect();
         // The construction circumscribed circle is the parametric rim of the polygon.
         let circ = self.alloc_id();
-        self.sketches[si].entities.push(SketchEntity { id: circ, kind: EntityKind::Circle { center, r }, construction: true });
+        self.sketches[si].entities.push(SketchEntity { id: circ, kind: crate::model::CircleParts { center, r }.into(), construction: true });
         let mut eids = Vec::with_capacity(n);
         for k in 0..n {
             let id = self.alloc_id();
-            self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Line { a: pids[k], b: pids[(k + 1) % n] }, construction });
+            self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::LineParts { a: pids[k], b: pids[(k + 1) % n] }.into(), construction });
             eids.push(id);
         }
         // Parametric shape: the vertices sit on the circumscribed circle and every side is equal, which makes
@@ -1047,7 +1089,11 @@ impl Project {
         // usual way puts the "R20" label exactly on that vertex and the value becomes unreadable. Half a step
         // around the circle moves it into the gap and keeps it there for any number of sides and any rotation.
         // The sign is in screen space, where the canvas Y axis points down.
+        let own: Vec<Constraint> = s.constraints[s.constraints.len() - (2 * n - 1)..].to_vec();
         s.constraints.push(Constraint::Diameter { c: center, d: r, off: -a0 + std::f64::consts::PI / n as f64, expr: String::new(), driven: false, diam: false, at: None });
+        let id = self.alloc_id();
+        let curves = eids.iter().copied().chain([circ]).collect();
+        self.sketches[si].figures.push(SketchFigure { id, shape: FigureShape::Polygon, curves, own });
         self.regen_sketch(si);
         (center, eids)
     }
@@ -1069,25 +1115,29 @@ impl Project {
         let i2 = self.sketch_point_at(si, c2x + px * r, c2y + py * r, 1e-6);
         let i3 = self.sketch_point_at(si, c2x - px * r, c2y - py * r, 1e-6);
         let i4 = self.sketch_point_at(si, c1x - px * r, c1y - py * r, 1e-6);
+        let mut curves = Vec::with_capacity(4);
         let mut add = |kind| {
             let id = self.alloc_id();
             self.sketches[si].entities.push(SketchEntity { id, kind, construction });
+            curves.push(id);
         };
-        add(EntityKind::Line { a: i1, b: i2 });
-        add(EntityKind::Arc { center: c2, a: i3, b: i2, ccw: true });
-        add(EntityKind::Line { a: i3, b: i4 });
-        add(EntityKind::Arc { center: c1, a: i1, b: i4, ccw: true });
+        add(LineParts { a: i1, b: i2 }.into());
+        add(ArcParts { center: c2, a: i3, b: i2, ccw: true }.into());
+        add(LineParts { a: i3, b: i4 }.into());
+        add(ArcParts { center: c1, a: i1, b: i4, ccw: true }.into());
         // A parametric slot, or dragging and dimension edits spread its corners and arcs apart. The arc
         // endpoints already sit on the radius circles of their centres (the arc intrinsics). Added on top:
         // equal end radii plus tangency of both side lines to both ends (i1 to i4 are the tangency points).
         // That keeps the sides parallel to the centreline and tangentially smooth, so the slot holds its shape
         // under the solver.
-        let cs = &mut self.sketches[si].constraints;
-        cs.push(Constraint::EqualRadius { c1, c2 });
-        cs.push(Constraint::Tangent { a: i1, b: i2, c: c1, r });
-        cs.push(Constraint::Tangent { a: i1, b: i2, c: c2, r });
-        cs.push(Constraint::Tangent { a: i4, b: i3, c: c1, r });
-        cs.push(Constraint::Tangent { a: i4, b: i3, c: c2, r });
+        let mut own = vec![Constraint::EqualRadius { c1, c2 }];
+        // each side touches each end, by the touching their kinds take (`tangency`)
+        for pair in [[curves[0], curves[3]], [curves[0], curves[1]], [curves[2], curves[3]], [curves[2], curves[1]]] {
+            own.extend(self.tangency(si, pair));
+        }
+        self.sketches[si].constraints.extend(own.iter().cloned());
+        let id = self.alloc_id();
+        self.sketches[si].figures.push(SketchFigure { id, shape: FigureShape::Slot, curves, own });
         self.regen_sketch(si);
     }
     /// A rotated rectangle from three points: p1 to p2 gives one side and its direction, p3 gives the height as
@@ -1120,7 +1170,7 @@ impl Project {
         let a = self.sketch_point_at(si, ax, ay, 1e-6);
         let b = self.sketch_point_at(si, bx, by, 1e-6);
         let id = self.alloc_id();
-        self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Arc { center, a, b, ccw }, construction });
+        self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::ArcParts { center, a, b, ccw }.into(), construction });
         self.regen_sketch(si);
     }
     /// Create a sketch from a set of contours (a DXF or SVG import) and return its id.
@@ -1136,12 +1186,12 @@ impl Project {
             entities: Vec::new(),
             closed: false,
             constraints: Vec::new(),
-            splines: Vec::new(),
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
-            rects: Vec::new(),
+            figures: Vec::new(),
             projections: Vec::new(),
+            offsets: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
             axis_pts: [0, 0],
@@ -1173,13 +1223,16 @@ impl Project {
         // Endpoint deduplication cache: nearby endpoints of adjacent curves become one sketch point, which is
         // what makes the chain connected and closable.
         let mut cache = ImportPoints { welded: super::tess::Welded::new(IMPORT_WELD), ids: Vec::new() };
-        for e in &curves {
+        let mut k = 0;
+        while k < curves.len() {
+            let e = &curves[k];
+            k += 1;
             match *e {
                 ProfEdge::Line { a, b } => {
                     let (ai, bi) = (self.import_intern_pt(si, &mut cache, a.x, a.y), self.import_intern_pt(si, &mut cache, b.x, b.y));
                     if ai != bi {
                         let id = self.alloc_id();
-                        self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Line { a: ai, b: bi }, construction: false });
+                        self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::LineParts { a: ai, b: bi }.into(), construction: false });
                     }
                 }
                 ProfEdge::Arc { a, b, center, ccw } => {
@@ -1189,13 +1242,26 @@ impl Project {
                     let ci = self.alloc_id();
                     self.sketches[si].points.push(SketchPoint { id: ci, x: center.x, y: center.y });
                     let id = self.alloc_id();
-                    self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Arc { center: ci, a: ai, b: bi, ccw }, construction: false });
+                    self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::ArcParts { center: ci, a: ai, b: bi, ccw }.into(), construction: false });
                 }
                 ProfEdge::Circle { center, r } => {
                     let ci = self.alloc_id();
                     self.sketches[si].points.push(SketchPoint { id: ci, x: center.x, y: center.y });
                     let id = self.alloc_id();
-                    self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Circle { center: ci, r }, construction: false });
+                    self.sketches[si].entities.push(SketchEntity { id, kind: crate::model::CircleParts { center: ci, r }.into(), construction: false });
+                }
+                ProfEdge::Oval { .. } => {
+                    self.lay_curve(si, &crate::model::curve::Curve::of_edge(e), crate::model::LayAs::default());
+                }
+                // the pieces of a spline going on smoothly one into the next are one spline; a corner between two ends it
+                ProfEdge::Spline(_) => {
+                    let smooth = |a: &ProfEdge, b: &ProfEdge| matches!(b, ProfEdge::Spline(_)) && crate::model::curve::Curve::of_edge(a).goes_on_smoothly(&crate::model::curve::Curve::of_edge(b));
+                    let joined = curves[k - 1..].windows(2).take_while(|w| smooth(&w[0], &w[1])).count();
+                    let pieces = &curves[k - 1..k + joined];
+                    k += joined;
+                    if let Some(spline) = crate::model::curve::Curve::of_splines(pieces) {
+                        self.lay_curve(si, &spline, crate::model::LayAs::default());
+                    }
                 }
             }
         }

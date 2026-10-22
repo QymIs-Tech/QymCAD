@@ -5,7 +5,7 @@
 //!
 //! Reported behaviour: with the automatic constraints on, the typed radius did nothing - no arc, no step of undo, no word.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 
 /// The corner (30, 0) -> (0, 0) -> (0, 30) with its automatic constraints; (project, sketch, the corner point).
 fn corner() -> (Project, usize, u64) {
@@ -14,8 +14,8 @@ fn corner() -> (Project, usize, u64) {
     let si = p.new_sketch("S");
     let l1 = p.add_line_entity(si, 30.0, 0.0, 0.0, 0.0, Purpose::Real);
     let l2 = p.add_line_entity(si, 0.0, 0.0, 0.0, 30.0, Purpose::Real);
-    let ends = |p: &Project, id| match p.sketches[si].entities.iter().find(|e| e.id == id).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) => (a, b),
+    let ends = |p: &Project, id| match p.sketches[si].entities.iter().find(|e| e.id == id).and_then(|e| e.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("a line"),
     };
     let ((a1, b1), (a2, b2)) = (ends(&p, l1), ends(&p, l2));
@@ -26,8 +26,8 @@ fn corner() -> (Project, usize, u64) {
 
 fn counts(p: &Project, si: usize) -> (usize, usize, usize) {
     let s = &p.sketches[si];
-    let lines = s.entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count();
-    let arcs = s.entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    let lines = s.entities.iter().filter(|e| e.kind.as_line().is_some()).count();
+    let arcs = s.entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     let system = s.system_ids();
     (s.points.iter().filter(|q| !system.contains(&q.id)).count(), lines, arcs)
 }

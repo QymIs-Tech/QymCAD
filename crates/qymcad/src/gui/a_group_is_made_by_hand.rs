@@ -67,7 +67,7 @@ mod tests {
         assert_eq!(app.side.joint.group_pick.clone().unwrap_or_default().len(), 1, "a second click on a part must take it off the set");
         qymcad_assembly::group_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[1]);
 
-        qymcad_assembly::group_pick_confirm(&mut app.joint_ctx());
+        qymcad_assembly::group_pick_confirm(&mut app.joint_ctx()).expect("the group is made");
         assert_eq!(app.project.mate_constraints.len(), 1, "the group was not created");
         assert_eq!(app.project.mate_constraints[0].members.len(), 2, "the wrong parts ended up in the group: {:?}", app.project.mate_constraints[0].members);
         assert!(!app.side.joint.group_pick.is_some(), "the tool was not released after confirmation");
@@ -87,11 +87,11 @@ mod tests {
 
         app.start_group_pick();
         qymcad_assembly::group_pick_click(&app.active_path, &mut app.side.joint, &mut app.project, &mut app.status, bodies[0]);
-        qymcad_assembly::group_pick_confirm(&mut app.joint_ctx());
+        let refused = qymcad_assembly::group_pick_confirm(&mut app.joint_ctx());
 
         assert!(app.project.mate_constraints.is_empty(), "a group of one part was assembled — there is nothing in it to fasten");
         assert!(app.side.joint.group_pick.is_some(), "the tool was dropped instead of letting the second part be clicked");
-        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("j-group-need-two")), "the person was not told what is missing: {}", app.status);
+        assert_eq!(refused, Err(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("j-group-need-two"))), "the person was not told what is missing");
     }
 
     /// A GROUP CAN BE DELETED FROM THE PANEL — otherwise it is forever.

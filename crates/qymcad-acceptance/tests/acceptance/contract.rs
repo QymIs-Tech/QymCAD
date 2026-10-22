@@ -31,7 +31,6 @@ contract!(rect, qymcad_acceptance::tools::sketch::RECT);
 contract!(circle, qymcad_acceptance::tools::sketch::CIRCLE);
 contract!(point, qymcad_acceptance::tools::sketch::POINT);
 contract!(arc, qymcad_acceptance::tools::sketch::ARC);
-contract!(circle3, qymcad_acceptance::tools::sketch::CIRCLE3);
 contract!(polygon, qymcad_acceptance::tools::sketch::POLYGON);
 contract!(slot, qymcad_acceptance::tools::sketch::SLOT);
 contract!(ellipse, qymcad_acceptance::tools::sketch::ELLIPSE);
@@ -78,6 +77,7 @@ contract!(comp_linear_pattern, qymcad_acceptance::tools::assembly::COMP_LINEAR_P
 contract!(comp_circular_pattern, qymcad_acceptance::tools::assembly::COMP_CIRCULAR_PATTERN);
 contract!(mirror_part, qymcad_acceptance::tools::assembly::MIRROR_PART);
 contract!(menu_settings, qymcad_acceptance::tools::menus::SETTINGS);
+contract!(menu_command_search, qymcad_acceptance::tools::menus::COMMAND_SEARCH);
 contract!(menu_parts_library, qymcad_acceptance::tools::menus::PARTS_LIBRARY);
 contract!(menu_start_screen, qymcad_acceptance::tools::menus::START_SCREEN);
 contract!(menu_hotkeys, qymcad_acceptance::tools::menus::HOTKEYS);

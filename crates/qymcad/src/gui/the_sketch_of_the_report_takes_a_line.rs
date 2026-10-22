@@ -82,7 +82,7 @@ mod tests {
         });
         steps.push(Step { what: "a frame of the sketch", took, kind: Kind::Frame });
         let took = timed(|| {
-            hand.sk_tool(1);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         });
         steps.push(Step { what: "the Line tool taken", took, kind: Kind::Action });
         let took = timed(|| {
@@ -153,7 +153,7 @@ mod tests {
 
     /// The new lines of the sketch since `had` curves, in their order.
     fn new_lines(hand: &Hand, had: usize) -> Vec<u64> {
-        hand.app.project.sketches[0].entities[had..].iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).map(|e| e.id).collect()
+        hand.app.project.sketches[0].entities[had..].iter().filter(|e| e.kind.as_line().is_some()).map(|e| e.id).collect()
     }
 
     #[test]
@@ -220,21 +220,21 @@ mod tests {
         let _ = hand.worst_frame(); // the frames of the way in and of learning the panel are not a step
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(2).click2d(x0, 0.0).click2d(x0 + 40.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(x0, 0.0).click2d(x0 + 40.0, 30.0).key(egui::Key::Escape).key(egui::Key::Escape);
         });
         let rect = new_lines(&hand, had.curves);
         let ok = rect.len() == 4;
         held(&mut hand, "a rectangle drawn", took, ok, &mut failures);
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(3).click2d(x0 + 90.0, 20.0).click2d(x0 + 100.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(x0 + 90.0, 20.0).click2d(x0 + 100.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
         });
         let ok = count(&hand).curves == had.curves + 1;
         held(&mut hand, "a circle drawn", took, ok, &mut failures);
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(1).click2d(x0, 100.0).click2d(x0 + 30.0, 104.0).key(egui::Key::Escape).key(egui::Key::Escape);
-            hand.sk_tool(1).click2d(x0 + 5.0, 112.0).click2d(x0 + 33.0, 121.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(x0, 100.0).click2d(x0 + 30.0, 104.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(x0 + 5.0, 112.0).click2d(x0 + 33.0, 121.0).key(egui::Key::Escape).key(egui::Key::Escape);
         });
         let two = new_lines(&hand, had.curves);
         let ok = two.len() == 2;
@@ -242,24 +242,24 @@ mod tests {
         let (one, other) = (two.first().copied().unwrap_or(0), two.get(1).copied().unwrap_or(0));
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(0);
-            let picked = hand.select2d(&[(1, one), (1, other)]);
+            hand.sk_select();
+            let picked = hand.select2d(&[qymcad_ui_state::SketchItem::curve(one), qymcad_ui_state::SketchItem::curve(other)]);
             assert!(picked, "the two lines could not be picked");
-            hand.constraint(3);
+            hand.constraint(qymcad_ui_state::ConstraintKind::Parallel);
         });
         let ok = count(&hand).constraints > had.constraints;
         held(&mut hand, "Parallel laid by its button", took, ok, &mut failures);
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(0);
-            assert!(hand.select2d(&[(1, one)]), "the line could not be picked");
-            hand.constraint(1);
+            hand.sk_select();
+            assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(one)]), "the line could not be picked");
+            hand.constraint(qymcad_ui_state::ConstraintKind::Horizontal);
         });
         let ok = count(&hand).constraints > had.constraints;
         held(&mut hand, "Horizontal laid by its button", took, ok, &mut failures);
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(0);
+            hand.sk_select();
             assert!(hand.press_hint(&crate::i18n::tr("tb-dim-hint")), "the dimension tool");
             hand.click2d(x0 + 20.0, 0.0);
             hand.click2d(x0 + 20.0, -8.0);
@@ -268,7 +268,7 @@ mod tests {
         let ok = count(&hand).constraints > had.constraints;
         held(&mut hand, "a dimension laid", took, ok, &mut failures);
         let had = count(&hand);
-        let corners: Vec<(u8, u64)> = rect.iter().map(|&e| (1u8, e)).collect();
+        let corners: Vec<qymcad_ui_state::SketchItem> = rect.iter().map(|&e| qymcad_ui_state::SketchItem::curve(e)).collect();
         let took = timed(|| {
             assert!(hand.sk_corner_set("tb-fillet-sketch-hint", &corners, 3.0), "the corners of the rectangle could not be picked");
         });
@@ -276,8 +276,8 @@ mod tests {
         held(&mut hand, "the corners of the rectangle filleted", took, ok, &mut failures);
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(1).click2d(x0 + 75.0, 20.0).click2d(x0 + 115.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
-            hand.sk_tool(0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(x0 + 75.0, 20.0).click2d(x0 + 115.0, 20.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_select();
             assert!(hand.press_hint(&crate::i18n::tr("tb-trim-hint")), "the trim tool");
             hand.click2d(x0 + 90.0, 20.0).key(egui::Key::Escape);
         });
@@ -285,7 +285,7 @@ mod tests {
         held(&mut hand, "a line drawn across the circle and trimmed inside it", took, ok, &mut failures);
         let before: Vec<(f64, f64)> = hand.app.project.sketches[0].points.iter().map(|q| (q.x, q.y)).collect();
         let took = timed(|| {
-            hand.sk_move(1, (x0 + 19.0, 116.0), (x0 + 19.0, 116.0), (x0 + 19.0, 136.0));
+            hand.sk_move(qymcad_ui_state::MoveKind::Move, (x0 + 19.0, 116.0), (x0 + 19.0, 116.0), (x0 + 19.0, 136.0));
             hand.key(egui::Key::Escape);
         });
         let moved = hand.app.project.sketches[0].points.iter().map(|q| (q.x, q.y)).zip(&before).any(|(a, b)| a != *b);
@@ -293,18 +293,18 @@ mod tests {
         held(&mut hand, "a line moved", took, ok, &mut failures);
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(0);
-            assert!(hand.select2d(&[(1, other)]), "the line could not be picked");
+            hand.sk_select();
+            assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(other)]), "the line could not be picked");
             hand.key(egui::Key::Delete).key(egui::Key::Escape);
         });
         let ok = count(&hand).curves < had.curves;
         held(&mut hand, "a line deleted with Delete", took, ok, &mut failures);
         let had = count(&hand);
         let took = timed(|| {
-            hand.sk_tool(0);
-            assert!(hand.select2d(&[(1, one)]), "the line could not be picked");
+            hand.sk_select();
+            assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(one)]), "the line could not be picked");
             assert!(hand.press_hint(&crate::i18n::tr("tb-lin-array-hint")), "the linear pattern");
-            assert!(hand.type_after_word(&crate::i18n::tr("opt-count"), "5"), "the count of the pattern");
+            assert!(hand.type_after_word(&crate::i18n::tr("cmd-copies"), "5"), "the count of the pattern");
             assert!(hand.type_after_word(&crate::i18n::tr("opt-step-x"), "0"), "the step X");
             assert!(hand.type_after_word(&crate::i18n::tr("opt-step-y"), "6"), "the step Y");
             hand.key(egui::Key::Enter).key(egui::Key::Escape);

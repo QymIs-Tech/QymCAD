@@ -88,7 +88,7 @@ pub(in crate::gui) mod tests {
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), jb);
         assert_eq!(app.side.joint.relation_pick.as_ref().map_or(0, |p| p.picks.len()), 2, "after the second click the selection should hold two degrees");
 
-        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx()).expect("the relation is made");
         assert!(!app.side.joint.relation_pick.is_some(), "the tool was not released after confirmation");
         assert_eq!(app.project.relations.len(), 1, "the relation was not created");
         let r = app.project.relations[0].clone();

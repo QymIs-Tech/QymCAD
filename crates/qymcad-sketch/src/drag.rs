@@ -24,7 +24,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
     // A DRAWING TOOL IN HAND TAKES NO DRAG: picking up a point, a dimension or the selection, and the selection box, are
     // the work of selection mode. Reported behaviour (issue #33): with Line in hand a drag over empty space selected
     // what lay in the band, and a drag from a point moved it.
-    if sk.armed.draw_kind() != 0 {
+    if sk.armed.drawing().is_some() {
         return;
     }
     let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
@@ -64,6 +64,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
                             | Some(qymcad_core::model::Constraint::Diameter { .. })
                             | Some(qymcad_core::model::Constraint::ArcLength { .. })
                             | Some(qymcad_core::model::Constraint::EdgeDistance { .. })
+                            | Some(qymcad_core::model::Constraint::CurveDistance { .. })
                             | Some(qymcad_core::model::Constraint::Angle { .. })
                             | Some(qymcad_core::model::Constraint::AngleLines { .. })
                     ) {
@@ -81,17 +82,17 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
         if !sk.drag.active() && !ctrl {
             if let (qymcad_ui_state::Sel::Sketch(si), Some(pp)) = (*sk.sel, pp) {
                 if qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses) == Some(si) {
-                    let mut best: Option<(f32, usize, usize)> = None;
-                    for spi in qymcad_ui_state::splines_with_handles(&*sk.project, &*sk.sel_sk, si) {
-                        for (ki, (_knot, hend)) in sk.project.spline_handles(si, spi).into_iter().enumerate() {
-                            let d = sh.at(hend).distance(pp);
-                            if d <= qymcad_ui_state::grab::grab(sk.set, Grab::Point) && best.is_none_or(|(bd, _, _)| d < bd) {
-                                best = Some((d, spi, ki));
+                    let mut best: Option<(f32, qymcad_ui_state::HandleHeld)> = None;
+                    for spline in qymcad_ui_state::splines_with_handles(&*sk.project, &*sk.sel_sk, si) {
+                        for (node, h) in sk.project.spline_handles(si, spline).into_iter().enumerate() {
+                            let d = sh.at(h.end).distance(pp);
+                            if d <= qymcad_ui_state::grab::grab(sk.set, Grab::Point) && best.is_none_or(|(bd, _)| d < bd) {
+                                best = Some((d, qymcad_ui_state::HandleHeld { si, spline, node }));
                             }
                         }
                     }
-                    if let Some((_, spi, ki)) = best {
-                        *sk.drag = qymcad_ui_state::Dragging::Handle(si, spi, ki);
+                    if let Some((_, held)) = best {
+                        *sk.drag = qymcad_ui_state::Dragging::Handle(held);
                     }
                 }
             }
@@ -102,14 +103,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
                 if sk.project.is_typed_sketch(si) {
                     // the points of arcs (the centre, the tangencies of fillets) are not dragged, or
                     // the fillet breaks
-                    let mut arc_pts: std::collections::HashSet<Id> = sk.project.sketches[si]
-                        .entities
-                        .iter()
-                        .flat_map(|e| match e.kind {
-                            qymcad_core::model::EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-                            _ => vec![],
-                        })
-                        .collect();
+                    let mut arc_pts: std::collections::HashSet<Id> = sk.project.sketches[si].entities.iter().filter_map(|e| e.kind.as_arc()).flat_map(|arc| [arc.center, arc.a, arc.b]).collect();
                     // reference points (the origin, the axes, materialised midpoints) are not dragged
                     arc_pts.extend(sk.project.sketches[si].system_ids());
                     for c in &sk.project.sketches[si].constraints {
@@ -133,10 +127,10 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
                     // The centre of a fillet carries nothing and stays refused - the lines it touches hold it.
                     let s = &sk.project.sketches[si];
                     let centres: Vec<Id> = s
-                        .rects
-                        .iter()
+                        .rects()
+                        .into_iter()
                         .map(|r| r.centre)
-                        .chain(s.entities.iter().filter_map(|e| if let qymcad_core::model::EntityKind::Arc { center, .. } = e.kind { Some(center) } else { None }))
+                        .chain(s.entities.iter().filter_map(|e| if let Some(qymcad_core::model::ArcParts { center, .. }) = e.kind.as_arc() { Some(center) } else { None }))
                         .collect();
                     for c in centres {
                         if !pinned.contains(&c) && !s.carried_with(c).is_empty() {
@@ -201,7 +195,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
 /// cut once per drag - otherwise the same piece would keep being trimmed until its neighbours
 /// disappeared.
 pub fn power_trim_drag(sk: &mut qymcad_ui_state::SketchCtx, resp: &egui::Response, rect: Rect) {
-    if sk.armed.click_op() != 1 {
+    if sk.armed.click_tool() != Some(qymcad_ui_state::ClickTool::Trim) {
         return;
     }
     // THE LEFT BUTTON ONLY: the sheet is moved with the middle one (or the gesture of the scheme), and a move of the
@@ -239,15 +233,15 @@ pub fn power_trim_sweep(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, prev: P
         let t = k as f32 / steps as f32;
         let at = egui::pos2(prev.x + (now.x - prev.x) * t, prev.y + (now.y - prev.y) * t);
         let w = qymcad_ui_state::to_world(&*sk.view, rect, at);
-        let hit = qymcad_pick::nearest_line_eid(&sk.pick(), rect, at, si).map(|e| (e, true)).or_else(|| qymcad_pick::nearest_circle_entity(&sk.pick(), rect, at, si).map(|e| (e, false)));
-        let Some((eid, is_line)) = hit else { continue };
+        // the curve nearest the trail, of whatever kind, as a click takes it
+        let Some(eid) = qymcad_pick::edit_target(&sk.pick(), rect, at, si) else { continue };
         // ONE SPAN, ONE CUT PER DRAG: the key is the entity plus the span that was hit. Without it a
         // trembling cursor standing still would go on trimming the neighbouring pieces.
         let span = trim_span_key(&*sk.project, si, eid, w.x, w.y);
         if !sk.trim.done.insert((eid, span)) {
             continue;
         }
-        let ok = if is_line { sk.project.trim_line(si, eid, w.x, w.y) } else { sk.project.trim_curve(si, eid, w.x, w.y) };
+        let ok = sk.project.trim_curve(si, eid, w.x, w.y);
         if ok {
             cut += 1;
         }
@@ -281,7 +275,6 @@ pub fn translate_selected(sk: &mut qymcad_ui_state::SketchCtx, dx: f64, dy: f64)
 /// Used for dimensions and constraints between any geometry.
 pub fn resolve_sketch_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> Option<qymcad_ui_state::SketchRef> {
     let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
-    use qymcad_core::model::EntityKind;
     // 1) the nearest point (the centres of circles and arcs are points too)
     if let Some(id) = qymcad_pick::nearest_sketch_point(&sk.pick(), rect, pos, si) {
         return Some(qymcad_ui_state::SketchRef::Point(id));
@@ -290,7 +283,7 @@ pub fn resolve_sketch_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: 
     if let Some(s) = sk.project.sketches.get(si) {
         let mut best: Option<(f32, (Id, Id))> = None;
         for e in &s.entities {
-            if let EntityKind::Line { a, b } = e.kind {
+            if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() {
                 if let (Some(pa), Some(pb)) = (qymcad_ui_state::sketch_pt(&*sk.project, si, a), qymcad_ui_state::sketch_pt(&*sk.project, si, b)) {
                     let mid = Point2::new((pa.x + pb.x) * 0.5, (pa.y + pb.y) * 0.5);
                     let d = sh.at(mid).distance(pos);
@@ -320,22 +313,10 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     if let Some(id) = qymcad_pick::nearest_sketch_point(&sk.pick(), rect, pos, si) {
         return Some(qymcad_ui_state::DimRef::Point(id));
     }
-    // 2) a line entity under the cursor
-    if let Some((a, b)) = qymcad_pick::nearest_line_entity(&sk.pick(), rect, pos, si) {
-        return Some(qymcad_ui_state::DimRef::Line(a, b));
-    }
-    // 2b) a circle or arc under the cursor (a click on the rim) resolves to its CENTRE as a point
-    // reference, openly rather than silently: the dimension is taken from the centre. The status line
-    // says so.
-    if let Some(eid) = qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si) {
-        let center = sk.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == eid)).and_then(|e| match e.kind {
-            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some(center),
-            _ => None,
-        });
-        if let Some(c) = center {
-            *sk.status = Notice::info(qymcad_i18n::tr("g-dim-from-centre"));
-            return Some(qymcad_ui_state::DimRef::Point(c));
-        }
+    // 2) the curve under the cursor, of whatever kind: a line by its ends; a circle, an arc, an ellipse, a spline is the
+    // curve itself - a distance to it is the least one, to its rim, as the person sees it measured
+    if let Some(r) = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si).map(|eid| curve_ref(sk, si, eid)) {
+        return Some(r);
     }
     // 3) a coordinate axis
     let o = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(Point2::new(0.0, 0.0));
@@ -352,26 +333,6 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
         return Some(qymcad_ui_state::DimRef::Point(qymcad_ui_state::materialize_ref(&mut *sk.project, si, r)));
     }
     None
-}
-
-/// The base edge under a screen point (a line, a circle or an arc) — for a tangent circle.
-pub fn ref_edge_at(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> Option<qymcad_ui_state::EdgeRef> {
-    use qymcad_core::model::EntityKind;
-    let (k, eid) = sketch_hit(&sk.pick(), rect, pos, si)?;
-    if k != 1 {
-        return None;
-    }
-    let s = sk.project.sketches.get(si)?;
-    let e = s.entities.iter().find(|e| e.id == eid)?;
-    match e.kind {
-        EntityKind::Line { a, b } => Some(qymcad_ui_state::EdgeRef::Line { a, b }),
-        EntityKind::Circle { center, r } => Some(qymcad_ui_state::EdgeRef::Circle { center, r }),
-        EntityKind::Arc { center, a, .. } => {
-            let (pc, pa) = (qymcad_ui_state::sketch_pt(&*sk.project, si, center)?, qymcad_ui_state::sketch_pt(&*sk.project, si, a)?);
-            Some(qymcad_ui_state::EdgeRef::Circle { center, r: ((pa.x - pc.x).powi(2) + (pa.y - pc.y).powi(2)).sqrt() })
-        }
-        EntityKind::Ellipse { .. } => None,
-    }
 }
 
 pub fn power_trim_path_test(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, a: Pos2, b: Pos2) -> usize {
@@ -483,6 +444,16 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
                                 _ => 0.0,
                             }
                         }
+                        // a distance to a curve: `off` runs square to the line between the places it is measured at
+                        Some(c @ Constraint::CurveDistance { .. }) => {
+                            if let Some([p1, p2]) = sk.project.curve_distance_ends(si, &c) {
+                                let dir = (sh.at(p2) - sh.at(p1)).normalized();
+                                let perp = egui::vec2(-dir.y, dir.x);
+                                (dl.x * perp.x + dl.y * perp.y) as f64
+                            } else {
+                                0.0
+                            }
+                        }
                         // a tangent distance: `off` runs along the perpendicular to the line of centres c1-c2
                         Some(Constraint::EdgeDistance { c1, c2, .. }) => {
                             if let (Some(p1), Some(p2)) = (qymcad_ui_state::sketch_pt(&*sk.project, si, c1), qymcad_ui_state::sketch_pt(&*sk.project, si, c2)) {
@@ -499,8 +470,10 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
                                                             // THE TEXT GOES ALONG THE LINE TOO: the part of the move along the dimension line carries the text
                                                             // there, past an arrow onto a shelf, while the part across it moves the line
                     let led = qymcad_ui_state::linear_text_led(&*sk.project, si, ci, &sh, sk.set, dl);
-                    if let Some(Constraint::Distance { off, at, .. }) | Some(Constraint::DistancePL { off, at, .. }) | Some(Constraint::EdgeDistance { off, at, .. }) =
-                        sk.project.sketches[si].constraints.get_mut(ci)
+                    if let Some(Constraint::Distance { off, at, .. })
+                    | Some(Constraint::DistancePL { off, at, .. })
+                    | Some(Constraint::EdgeDistance { off, at, .. })
+                    | Some(Constraint::CurveDistance { off, at, .. }) = sk.project.sketches[si].constraints.get_mut(ci)
                     {
                         *off += dadd;
                         if led.is_some() {
@@ -516,12 +489,12 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
             sk.drag.clear();
             qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
         }
-    } else if let Some((si, spi, ki)) = sk.drag.handle() {
+    } else if let Some(held) = sk.drag.handle() {
         // dragging a tangent handle of a spline changes its shape (the tangent becomes explicit)
         if resp.dragged() {
             if let Some(pp) = resp.interact_pointer_pos() {
                 let w = qymcad_ui_state::to_world(&*sk.view, rect, pp);
-                sk.project.set_spline_handle(si, spi, ki, w.x, w.y);
+                sk.project.set_spline_handle(held.si, held.spline, held.node, Point2::new(w.x, w.y));
                 qymcad_ui_state::invalidate(&mut *sk.regen);
             }
         }
@@ -585,18 +558,18 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
                     sk.sel_sk.clear(); // the selection and whatever was waiting for it
                 }
                 qymcad_ui_state::box_select(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, *sk.sketch_ses, rect, a, b);
-                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
+                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Curve) {
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-offset-side"));
                     // what to do next, not how many were chosen
                 }
                 // the box chooses what the mirror reflects, in either of its steps, as its Shift + click does
-                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror) {
-                    qymcad_ui_state::mirror_takes_the_choice(&mut *sk.sel_sk, &mut *sk.status);
+                if let (Some(qymcad_ui_state::EditTool::Mirror), qymcad_ui_state::Sel::Sketch(si)) = (sk.sel_sk.modify, *sk.sel) {
+                    qymcad_ui_state::mirror_takes_the_choice(&*sk.project, si, &mut *sk.sel_sk, &mut *sk.status);
                 }
             }
             sk.tree_sel.box_start = None;
         }
-    } else if resp.dragged_by(egui::PointerButton::Primary) && sk.armed.draw_kind() == 0 {
+    } else if resp.dragged_by(egui::PointerButton::Primary) && sk.armed.drawing().is_none() {
         // the fallback pan is for the left button only, and not with a drawing tool in hand - the drawing would slide
         // away under the tool - a middle drag is served by the EXPLICIT
         // handler below (otherwise the middle button would pan twice, at double speed)
@@ -623,4 +596,12 @@ pub fn drag_point_to(sk: &mut qymcad_ui_state::SketchCtx, si: usize, pi: usize, 
         sk.project.solve_sketch_drag_fast(si, Some((id, w.x, w.y)));
     }
     qymcad_ui_state::invalidate(&mut *sk.regen);
+}
+
+/// A curve as a dimension refers to it: a line by its ends, a curve of any other kind by itself.
+pub(crate) fn curve_ref(sk: &qymcad_ui_state::SketchCtx, si: usize, eid: Id) -> qymcad_ui_state::DimRef {
+    match sk.project.sketches[si].entity(eid).and_then(|e| e.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => qymcad_ui_state::DimRef::Line(a, b),
+        None => qymcad_ui_state::DimRef::Curve(eid),
+    }
 }

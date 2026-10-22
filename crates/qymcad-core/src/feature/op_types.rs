@@ -44,7 +44,7 @@ impl Purpose {
 ///
 /// It used to be a bare `ccw` next to a bare `construction`, and `add_arc_entity(si, 0.0, 0.0, 5.0, 0.0,
 /// 0.0, 5.0, crate::feature::Winding::Ccw, crate::feature::Purpose::Real)` says which is which only to whoever wrote it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Winding {
     /// counter-clockwise, the positive direction of the sketch plane
     Ccw,
@@ -52,8 +52,18 @@ pub enum Winding {
     Cw,
 }
 
+impl Winding {
+    /// The other way round.
+    pub fn reversed(self) -> Self {
+        match self {
+            Winding::Ccw => Winding::Cw,
+            Winding::Cw => Winding::Ccw,
+        }
+    }
+}
+
 /// WHETHER A SPLINE CLOSES on itself.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Ends {
     /// the last point does not join the first
     Open,
@@ -354,6 +364,26 @@ pub struct EdgeFaces {
     pub faces: [u32; 2],
 }
 
+/// AN EDGE WITH ONE FACE ON BOTH SIDES, and what tells it from another such edge of the same face: where it comes from
+/// and where it stands on the face, in millionths of the face's range of parameters (along a seam and then across it;
+/// for an edge inside, along U and then V).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EdgeOnItsFace {
+    pub edge: u32,
+    pub kind: OnItsFace,
+    pub along: u32,
+    pub across: u32,
+}
+
+/// WHERE AN EDGE WITH ONE FACE ON BOTH SIDES COMES FROM: the seam where the surface closes along U - a revolution at
+/// the plane its profile starts on, a cylinder at the start of its curve - or along V, or an edge lying inside the face.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OnItsFace {
+    SeamAlongU,
+    SeamAlongV,
+    Inside,
+}
+
 /// AN EDGE AND THE TWO SMALLEST NAMED FACES MEETING AT ITS ENDS, apart from its own two (0 where there is none): what
 /// tells two edges between the same pair of faces apart by the recipe.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -369,6 +399,23 @@ pub struct FaceSplit {
     pub piece: u32,
     pub origin: u32,
     pub index: u32,
+}
+
+/// A FACE ON A SURFACE OF THE KERNEL ANOTHER FACE SHARES: the face, and the first face on that surface, which tells the
+/// surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OnOneSurface {
+    pub face: u32,
+    pub surface: u32,
+}
+
+/// WHICH SIDE OF A FACE BESIDE IT A PIECE OF A SPLIT FACE LIES ON: the side the normal of `beside` points to, at the
+/// middle of an edge between them, seen from the centre of the piece.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PieceSide {
+    pub piece: u32,
+    pub beside: u32,
+    pub side: crate::names::Side,
 }
 
 /// WHAT A RESULT IS NAMED BY WHERE ITS HISTORY WAS SILENT: the body, the node that made it, the faces the document
@@ -418,12 +465,15 @@ pub enum ToolEnds {
     OneSidedCut,
 }
 
-/// WHERE A SIDE FACE OF A PROFILE OPERATION COMES FROM: the sketch entity its edge was cut from, and the number of
-/// that piece along the entity (an entity cut by its neighbours gives several pieces, each a face of its own).
+/// WHERE A SIDE FACE OF A PROFILE OPERATION COMES FROM: the sketch entity its edge was cut from, and - an entity cut by
+/// its neighbours giving several pieces, each a face of its own - which piece: the entity crossing it at the start of
+/// the piece along the entity (`cut`, 0 for the piece holding the start of the entity), and its number among the
+/// pieces starting at a crossing of that entity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SideSource {
     pub src: Id,
     pub split: u16,
+    pub cut: Id,
 }
 
 /// THE RECIPE OF THE SIDE FACES OF A PROFILE OPERATION: the node, and the sources of its sides. A profile carries in

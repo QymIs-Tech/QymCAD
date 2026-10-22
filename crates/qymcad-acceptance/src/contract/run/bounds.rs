@@ -47,7 +47,8 @@ pub(crate) fn contexts(tool: &Tool) {
             Flow::Command => doc.features.iter().any(|f| f.kind == tool.node && f.error.is_none()),
             Flow::Drawing(..) | Flow::Action => matches(&mut s, &tool.result).is_ok(),
         };
-        if !made && s.status() == status {
+        // said in the status line, or where the tool in hand speaks
+        if !made && s.status() == status && refusals(&mut s).is_empty() {
             problems.push(format!("{label}: nothing was made and nothing was said"));
         }
     }
@@ -69,7 +70,8 @@ pub(crate) fn kernel_refusal(tool: &Tool) {
     if node_made && red.is_none() {
         problems.push(format!("{value} was applied as if it built: {:?}", doc.features));
     }
-    if !node_made && s.status() == status {
+    // said in the status line, or where the tool in hand speaks
+    if !node_made && s.status() == status && refusals(&mut s).is_empty() {
         problems.push(format!("{value}: nothing was made and nothing was said"));
     }
     if body.is_some() && the_body(&doc).map(|b| (b.volume, b.faces)).ok() != body {

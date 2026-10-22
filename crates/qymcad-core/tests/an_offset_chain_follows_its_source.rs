@@ -6,7 +6,7 @@
 //! Reported behaviour: the copy of a rectangle at a distance of 3 was lines of their own - resizing the rectangle
 //! left the copy where it was.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 
 /// A rectangle 30 x 20 with its width and height dimensioned: two freedoms left, where it stands. Answers the sketch,
 /// its lines and the two points of its bottom edge (the width).
@@ -14,8 +14,8 @@ fn a_dimensioned_rectangle(p: &mut Project) -> (usize, Vec<u64>, (u64, u64)) {
     p.new_document();
     let si = p.new_sketch("S");
     let lines = p.add_rect_entity(si, 0.0, 0.0, 30.0, 20.0, Purpose::Real);
-    let ends = |p: &Project, e: u64| match p.sketches[si].entities.iter().find(|x| x.id == e).map(|x| x.kind) {
-        Some(EntityKind::Line { a, b }) => (a, b),
+    let ends = |p: &Project, e: u64| match p.sketches[si].entities.iter().find(|x| x.id == e).and_then(|x| x.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("a line"),
     };
     let (a0, b0) = ends(p, lines[0]);
@@ -37,8 +37,8 @@ fn copy_width(p: &Project, si: usize, source: &[u64]) -> f64 {
         .entities
         .iter()
         .filter(|e| !source.contains(&e.id) && !e.construction)
-        .filter_map(|e| match e.kind {
-            EntityKind::Line { a, b } => Some([a, b]),
+        .filter_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => Some([a, b]),
             _ => None,
         })
         .flatten()
@@ -90,7 +90,7 @@ fn an_offset_rounded_rectangle_follows_its_source() {
     for dist in [3.0, -3.0] {
         let mut p = Project::default();
         let (si, lines, width) = a_dimensioned_rectangle(&mut p);
-        assert!(p.fillet_lines(si, lines[2], lines[3], 4.0), "setup: the top left corner rounded");
+        assert!(p.fillet_at_pair(si, (lines[2], lines[3]), 4.0), "setup: the top left corner rounded");
         p.solve_sketch(si);
         let chain: Vec<u64> = p.sketches[si].entities.iter().filter(|e| !e.construction).map(|e| e.id).collect();
         assert_eq!(p.offset_entities(si, &chain, dist), 1, "one copy at {dist}");
@@ -106,8 +106,8 @@ fn an_offset_rounded_rectangle_follows_its_source() {
         let arcs: Vec<((f64, f64), f64)> = s
             .entities
             .iter()
-            .filter_map(|e| match e.kind {
-                EntityKind::Arc { center, a, .. } => Some((at(center), (at(center).0 - at(a).0).hypot(at(center).1 - at(a).1))),
+            .filter_map(|e| match e.kind.as_arc() {
+                Some(qymcad_core::model::ArcParts { center, a, .. }) => Some((at(center), (at(center).0 - at(a).0).hypot(at(center).1 - at(a).1))),
                 _ => None,
             })
             .collect();

@@ -573,12 +573,12 @@ fn feed_sketch(s: &Sketch, h: &mut std::collections::hash_map::DefaultHasher) {
         entities,
         closed,
         constraints,
-        splines,
         notes: _, // counted with the placement, in `key_of`
         texts,
         patterns,
-        rects,
+        figures,
         projections,
+        offsets,
         plane,
         origin,
         axis_pts,
@@ -615,9 +615,10 @@ fn feed_sketch(s: &Sketch, h: &mut std::collections::hash_map::DefaultHasher) {
     // the lines, arcs and circles whole - a circle's radius, a line turned into construction - and what is
     // drawn over them
     feed(entities, h);
-    feed(splines, h);
     feed(patterns, h);
-    feed(rects, h);
+    feed(figures, h);
+    // the offsets held to their sources: which curve carries which copies
+    feed(offsets, h);
     // how many constraints there are, and the numbers of the dimensions, so an edited number is visible before
     // the solve runs
     constraints.len().hash(h);

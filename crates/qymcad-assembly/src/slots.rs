@@ -4,15 +4,30 @@ use super::*;
 
 /// THE NAME AND UNIT OF A SLOT for a given kind of joint - one definition for the whole interface.
 pub fn joint_slot_label(kind: qymcad_core::feature::JointKind, slot: usize) -> (String, String) {
+    let w = joint_slot_words(kind, slot);
+    (qymcad_i18n::tr(w.name), qymcad_i18n::tr(w.unit))
+}
+
+/// THE CATALOGUE KEYS OF A SLOT'S NAME AND UNIT: the name as it stands inside a sentence, and as the caption of a row.
+pub struct SlotWords {
+    pub name: &'static str,
+    pub row: &'static str,
+    pub unit: &'static str,
+}
+
+/// The keys of the name and the unit of slot `slot` of a joint of kind `kind`.
+pub fn joint_slot_words(kind: qymcad_core::feature::JointKind, slot: usize) -> SlotWords {
     use qymcad_core::feature::JointKind;
-    match (slot, kind) {
-        (0, _) => (qymcad_i18n::tr("j-angle-lower"), qymcad_i18n::tr("unit-deg-suffix")),
-        (1, JointKind::Ball) => (qymcad_i18n::tr("j-angle-x"), qymcad_i18n::tr("unit-deg-suffix")),
-        (1, JointKind::Planar) => (qymcad_i18n::tr("j-offset-x"), qymcad_i18n::tr("unit-mm-suffix")),
-        (1, JointKind::Rigid) => (qymcad_i18n::tr("j-gap"), qymcad_i18n::tr("unit-mm-suffix")),
-        (1, _) => (qymcad_i18n::tr("j-offset-lower"), qymcad_i18n::tr("unit-mm-suffix")),
-        (2, JointKind::Ball) => (qymcad_i18n::tr("j-angle-y"), qymcad_i18n::tr("unit-deg-suffix")),
-        _ => (qymcad_i18n::tr("j-offset-y"), qymcad_i18n::tr("unit-mm-suffix")),
+    let deg = |name, row| SlotWords { name, row, unit: "unit-deg-suffix" };
+    let mm = |name, row| SlotWords { name, row, unit: "unit-mm-suffix" };
+    match slot {
+        0 => deg("j-angle-lower", "j-row-angle"),
+        1 if kind == JointKind::Ball => deg("j-angle-x", "j-row-angle-x"),
+        1 if kind == JointKind::Planar => mm("j-offset-x", "j-row-offset-x"),
+        1 if kind == JointKind::Rigid => mm("j-gap", "j-row-gap"),
+        1 => mm("j-offset-lower", "j-row-offset"),
+        _ if kind == JointKind::Ball => deg("j-angle-y", "j-row-angle-y"),
+        _ => mm("j-offset-y", "j-row-offset-y"),
     }
 }
 
@@ -195,7 +210,8 @@ pub fn one_connector_controls(joint: &mut qymcad_ui_state::JointCommand, project
                     rot = (rot + 90.0).rem_euclid(360.0);
                     changed = true;
                 }
-                changed |= ui.add(egui::DragValue::new(&mut rot).speed(1.0).suffix(qymcad_i18n::tr("unit-deg-suffix"))).on_hover_text(qymcad_i18n::tr("j-roll-hint")).changed();
+                let deg = qymcad_ui_state::Limits { unit: Some("unit-deg-suffix"), ..qymcad_ui_state::Limits::between(-360.0..=360.0) };
+                changed |= qymcad_ui_state::panel_number(ui, &*project, qymcad_ui_state::PanelNumber { id: ui.id().with(("the roll of an anchor", cid)), value: &mut rot, formula: None, limits: deg });
             });
             // THE SECONDARY AXIS BY A PICK (the "second pick"). It is normally derived from the
             // geometry, but a square face has no long side at all and the answer is arbitrary - then an
@@ -214,10 +230,15 @@ pub fn one_connector_controls(joint: &mut qymcad_ui_state::JointCommand, project
             // anchor almost never coincides with the centre of a face exactly, and there was nothing to
             // move it sideways with - the part got moved at random instead.
             ui.horizontal(|ui| {
-                ui.label(qymcad_i18n::tr("j-offset-lower"));
+                ui.label(qymcad_i18n::tr("j-offset-lower")).on_hover_text(qymcad_i18n::tr("j-slide-hint"));
                 for (k, name) in ["X", "Y", "Z"].iter().enumerate() {
                     ui.label(*name);
-                    changed |= ui.add(egui::DragValue::new(&mut off[k]).speed(0.1).suffix(qymcad_i18n::tr("unit-mm-suffix"))).on_hover_text(qymcad_i18n::tr("j-slide-hint")).changed();
+                    let mm = qymcad_ui_state::Limits { unit: Some("unit-mm-suffix"), ..qymcad_ui_state::Limits::between(-100000.0..=100000.0) };
+                    changed |= qymcad_ui_state::panel_number(
+                        ui,
+                        &*project,
+                        qymcad_ui_state::PanelNumber { id: ui.id().with(("the slide of an anchor", cid, k)), value: &mut off[k], formula: None, limits: mm },
+                    );
                 }
             });
             if changed {
@@ -238,24 +259,4 @@ pub fn one_connector_controls(joint: &mut qymcad_ui_state::JointCommand, project
 /// the reading of the frame.
 pub fn joint_drag_active(joint: &qymcad_ui_state::JointCommand, part_pull: &Option<(Id, [f64; 3], [f64; 3])>) -> bool {
     joint.giz_drag.is_some() || part_pull.is_some()
-}
-
-/// TUNING THE ANCHORS OF A JOINT: where exactly they sit and how they are turned.
-///
-/// This brings into the interface what is done with a mate connector elsewhere: choose the attachment
-/// point (on a hole, the middle or an end face), turn the secondary axis, slide along the main one.
-/// Without these handles the only way to correct a position is to move the part at random.
-pub fn connector_controls(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui, jid: Id) -> bool {
-    let Some((ca, cb)) = jc.project.joints.iter().find(|j| j.id == jid).map(|j| (j.a, j.b)) else { return false };
-    let mut changed = false;
-    // EXPANDED BY DEFAULT. Tuning the anchors IS the answer to "why did the part end up in the wrong
-    // place": the attachment point, the turn, the offsets, the pick of an axis. Hidden behind a
-    // collapsed header, it is not found by whoever is in trouble - and they are exactly who looks for
-    // it.
-    egui::CollapsingHeader::new(qymcad_i18n::tr("j-anchors")).id_salt("joint_anchors").default_open(true).show(ui, |ui| {
-        for (tag, cid) in [("A", ca), ("B", cb)] {
-            changed |= one_connector_controls(jc.joint, jc.project, ui, tag, cid);
-        }
-    });
-    changed
 }

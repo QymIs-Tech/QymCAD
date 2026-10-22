@@ -212,7 +212,6 @@ Below is the complete dictionary of icons recognized across the 5 categories:
 | `sketch/line.svg` | **Line:** Draw straight line segments between two endpoints. |
 | `sketch/rect.svg` | **Rectangle:** Draw a 2-point corner-to-corner rectangular box. |
 | `sketch/circle.svg` | **Circle:** Draw a circle defined by center point and radius point. |
-| `sketch/circle_3pt.svg` | **3-Point Circle:** Draw a circle passing through three perimeter points. |
 | `sketch/arc.svg` | **Arc:** Draw a circular arc defined by three points (start, end, and curve point). |
 | `sketch/polygon.svg` | **Regular Polygon:** Create an inscribed regular polygon with a configurable number of sides. |
 | `sketch/slot.svg` | **Slot:** Draw an elongated racetrack slot (obround) with parallel sides and semicircular caps. |

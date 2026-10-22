@@ -5,7 +5,7 @@
 //! Reported behaviour: "if other geometry is tied to the projection by dimensions or constraints, the projection may
 //! fall apart when the model it came from is rebuilt".
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Constraint, EntityKind, FilletBy, FilletSize, Id, ProjSource, Project};
+use qymcad_core::model::{Constraint, FilletBy, FilletSize, Id, ProjSource, Project};
 use qymcad_kernel::OcctKernel;
 use std::collections::HashMap;
 
@@ -118,12 +118,12 @@ fn a_projection_keeps_the_ties_on_its_curves_when_its_face_changes_structure() {
         .entities
         .iter()
         .copied()
-        .find(|e| match live.p.sketches[si].entities.iter().find(|x| x.id == *e).map(|x| x.kind) {
-            Some(EntityKind::Line { a, b }) => at(&live.p, si, a).1.abs() < 1e-6 && at(&live.p, si, b).1.abs() < 1e-6,
+        .find(|e| match live.p.sketches[si].entities.iter().find(|x| x.id == *e).and_then(|x| x.kind.as_line()) {
+            Some(qymcad_core::model::LineParts { a, b }) => at(&live.p, si, a).1.abs() < 1e-6 && at(&live.p, si, b).1.abs() < 1e-6,
             _ => false,
         })
         .expect("the bottom side");
-    let Some(EntityKind::Line { a: ba, b: bb }) = live.p.sketches[si].entities.iter().find(|x| x.id == bottom).map(|x| x.kind) else { panic!("the bottom side is a line") };
+    let Some(qymcad_core::model::LineParts { a: ba, b: bb }) = live.p.sketches[si].entities.iter().find(|x| x.id == bottom).and_then(|x| x.kind.as_line()) else { panic!("the bottom side is a line") };
     let start = if at(&live.p, si, ba).0 < at(&live.p, si, bb).0 { ba } else { bb };
     let free = a_point(&mut live.p, si, 15.0, 0.0);
     live.p.sketches[si].constraints.push(Constraint::PointOnLine { p: free, a: ba, b: bb });
@@ -191,7 +191,7 @@ fn a_fillet_put_above_the_sketch_parts_the_corner_and_the_ties_keep_their_sides(
     // point held on the right side
     let (la, lb) = (a_point(&mut live.p, si, 55.0, 10.0), a_point(&mut live.p, si, 55.0, 30.0));
     let id = live.p.alloc_id();
-    live.p.sketches[si].entities.push(qymcad_core::model::SketchEntity { id, kind: EntityKind::Line { a: la, b: lb }, construction: false });
+    live.p.sketches[si].entities.push(qymcad_core::model::SketchEntity { id, kind: qymcad_core::model::LineParts { a: la, b: lb }.into(), construction: false });
     let on = a_point(&mut live.p, si, 60.0, 20.0);
     live.p.sketches[si].constraints.push(Constraint::Vertical { a: la, b: lb });
     live.p.sketches[si].constraints.push(Constraint::DistancePL { p: corner, a: la, b: lb, d: -5.0, off: 3.0, expr: String::new(), driven: false, at: None });
@@ -213,7 +213,7 @@ fn a_fillet_put_above_the_sketch_parts_the_corner_and_the_ties_keep_their_sides(
 
     let s = &live.p.sketches[si];
     let mut failures = Vec::new();
-    let arcs = s.entities.iter().filter(|e| s.projections[0].entities.contains(&e.id) && matches!(e.kind, EntityKind::Arc { .. })).count();
+    let arcs = s.entities.iter().filter(|e| s.projections[0].entities.contains(&e.id) && e.kind.as_arc().is_some()).count();
     if arcs != 1 {
         failures.push(format!("the rounded corner is {arcs} arcs of the projection, not one"));
     }

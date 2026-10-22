@@ -28,13 +28,18 @@ mod tests {
         app.viewing.view.initialized = true;
         let want = (app.viewing.mode_3d, app.viewing.cam.yaw, app.viewing.cam.pitch, app.viewing.cam.scale, app.viewing.cam.target, app.viewing.view.initialized);
 
-        // the tool leads into the flat half-sketcher — that is fine, it needs a flat view
+        // the sweep in hand leads into the flat half-sketcher to pick its profile - that is fine, it needs a flat view
+        app.chosen.sel = super::super::Sel::Sketch(si);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Sweep);
+        assert!(app.tools.armed.commanding(), "setup: the sweep is in hand");
         let sid = app.project.sketches[si].id;
         app.begin_contour_pick(ContourSlot::SweepProfile, sid);
         assert!(!app.viewing.mode_3d, "setup: the half-sketcher must be flat");
 
-        // Esc cancels the ACTION; the point of view must come back to the person's own
-        app.on_escape();
+        // Esc cancels the ACTION - pressed in whole frames, where the bar of the sweep reads it; the point of view
+        // must come back to the person's own
+        super::super::hand::escape(&mut app);
+        assert!(app.tools.armed.commanding(), "Esc in the pick of a profile put the whole sweep down");
         let got = (app.viewing.mode_3d, app.viewing.cam.yaw, app.viewing.cam.pitch, app.viewing.cam.scale, app.viewing.cam.target, app.viewing.view.initialized);
         assert_eq!(
             got, want,
@@ -71,13 +76,13 @@ mod tests {
         };
 
         // NEW commands: extrude, cut (the same one with a different operation), fillet, chamfer
-        for (kind, sel) in [(1u8, true), (4, false), (5, false)] {
+        for (kind, sel) in [(qymcad_ui_state::PartTool::Extrude, true), (qymcad_ui_state::PartTool::Fillet, false), (qymcad_ui_state::PartTool::Chamfer, false)] {
             setup(&mut app);
             app.chosen.sel = if sel { super::super::Sel::Sketch(si) } else { super::super::Sel::Mesh(mi) };
             app.start_feat_cmd(kind);
             app.on_escape();
-            assert!(app.viewing.mode_3d, "command {kind}: Esc threw the view into a flat one");
-            assert!(app.viewing.view.initialized, "command {kind}: Esc demanded a refit — the person's camera will be gone");
+            assert!(app.viewing.mode_3d, "command {kind:?}: Esc threw the view into a flat one");
+            assert!(app.viewing.view.initialized, "command {kind:?}: Esc demanded a refit — the person's camera will be gone");
         }
 
         // EDITING an existing feature with a double click
@@ -112,7 +117,7 @@ mod tests {
         let want = (app.viewing.mode_3d, app.viewing.cam.yaw, app.viewing.cam.scale, app.viewing.view.initialized);
 
         app.chosen.sel = super::super::Sel::Mesh(mi);
-        app.start_feat_cmd(4); // fillet
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // fillet
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {
             p.val = 2.0;
             p.txt = "2".into();

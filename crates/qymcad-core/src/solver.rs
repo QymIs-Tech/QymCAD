@@ -209,5 +209,7 @@ mod conflicts;
 pub use conflicts::*;
 mod jacobian;
 pub use jacobian::*;
+mod curve_rows;
+pub use curve_rows::{distance_ends, touching_places};
 mod freedom;
 pub use freedom::*;

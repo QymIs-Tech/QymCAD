@@ -25,8 +25,8 @@ fn collinear_pulls_the_rect_onto_the_reference_line() {
     let aux_pts = {
         let s = &p.sketches[si];
         let e = s.entities.iter().find(|e| e.id == aux).expect("the construction line");
-        match e.kind {
-            qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+        match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => (a, b),
             _ => panic!("not a line"),
         }
     };

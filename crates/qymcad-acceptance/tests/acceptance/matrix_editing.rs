@@ -2,7 +2,7 @@
 //! with its sides level and upright, a circle with its diameter. A corner rounded or cut, all corners rounded, a circle
 //! trimmed across its dimension, a contour offset, a dimensioned circle mirrored. Each must do what it says, and none
 //! may leave the sketch over-defined.
-use qymcad::{Key, Kind, Modifiers, Session};
+use qymcad::{Key, Modifiers, Session};
 use qymcad_acceptance::build::{circle, draw, into_the_first_part, line, pick};
 use qymcad_acceptance::probe;
 
@@ -53,7 +53,7 @@ fn take(s: &mut Session, hint: &str) {
 
 /// Type `text` into the little box nearest to `at` that the gesture popped up.
 fn into_the_box_near(s: &mut Session, at: qymcad::Pos2, text: &str) {
-    let fields: Vec<qymcad::Widget> = s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && w.rect.top() > 120.0).collect();
+    let fields: Vec<qymcad::Widget> = qymcad_acceptance::value_fields(s).into_iter().filter(|w| w.rect.top() > 120.0).collect();
     let field = fields.iter().min_by(|a, b| a.rect.center().distance(at).total_cmp(&b.rect.center().distance(at))).cloned().unwrap_or_else(|| panic!("no little box popped up near {at:?}"));
     s.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text(text);
     s.key(Key::Enter);

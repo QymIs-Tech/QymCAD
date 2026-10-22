@@ -86,7 +86,8 @@ fn a_real_body_cut_still_works() {
     assert!((now - was).abs() > 1.0, "the cut did not touch the material: was {was:.2}, now {now:.2}");
 }
 
-/// AND SO DOES A REAL CONTOUR CUT.
+/// AND SO DOES A REAL CONTOUR CUT - through all from the plane the brick stands on, up into it: through all keeps its
+/// direction (`a_cut_through_all_keeps_its_direction`), and down from that plane there is nothing to cut.
 #[test]
 fn a_real_contour_cut_still_works() {
     let mut p = Project::default();
@@ -102,7 +103,7 @@ fn a_real_contour_cut_still_works() {
         base,
         sid,
         c,
-        qymcad_core::model::CombineSpan { height: 20.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Backward }, fill: &[] },
+        qymcad_core::model::CombineSpan { height: 20.0, down: 0.0, extent: qymcad_core::feature::Extent { through: true, reach: qymcad_core::feature::Reach::Forward }, fill: &[] },
         0,
     );
     qymcad_testkit::regenerate(&mut p);

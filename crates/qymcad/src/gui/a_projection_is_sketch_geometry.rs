@@ -8,7 +8,7 @@
 mod tests {
     use super::super::hand::Hand;
     use super::super::{App, Sel};
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
 
     /// A part with a cube and a sketch on its top face, the outline of that face projected into it. Answers the sketch.
     fn a_projected_outline(app: &mut App) -> usize {
@@ -29,12 +29,12 @@ mod tests {
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
         app.chosen.sel = Sel::Sketch(si);
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6);
+        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Project);
         app.tools.tool.proj_face = true;
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         crate::gui::sketching::project_clicked_edge(&mut app.sketch_ctx(), si, rect, egui::pos2(450.0, 350.0));
         assert_eq!(app.project.sketches[si].projected_entities().len(), 4, "GUARD: the outline of the top face projected");
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6); // the tool put down
+        crate::gui::sketching::sketch_select_mode(&mut app.sketch_ctx()); // the tool put down
         si
     }
 
@@ -57,10 +57,10 @@ mod tests {
         let si = a_projected_outline(&mut app);
         let (corner, at) = projected_points(&app, si)[0];
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1).click2d(at.0, at.1).click2d(at.0 + 7.0, at.1 + 11.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(at.0, at.1).click2d(at.0 + 7.0, at.1 + 11.0).key(egui::Key::Escape).key(egui::Key::Escape);
         let s = &hand.app.project.sketches[si];
-        let drawn = s.entities.iter().rev().find_map(|e| match e.kind {
-            EntityKind::Line { a, .. } if !s.projected_entities().contains(&e.id) => Some(a),
+        let drawn = s.entities.iter().rev().find_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, .. }) if !s.projected_entities().contains(&e.id) => Some(a),
             _ => None,
         });
         let start = drawn.expect("a line was drawn");
@@ -74,15 +74,15 @@ mod tests {
             let si = a_projected_outline(&mut app);
             let s = &app.project.sketches[si];
             let side = s.entities.iter().find(|e| s.projected_entities().contains(&e.id)).expect("a projected side");
-            let EntityKind::Line { a, b } = side.kind else { panic!("the side is a line") };
+            let Some(qymcad_core::model::LineParts { a, b }) = side.kind.as_line() else { panic!("the side is a line") };
             let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("the end");
             let ((ax, ay), (bx, by)) = (at(a), at(b));
             let p = (ax + (bx - ax) * t, ay + (by - ay) * t);
             let mut hand = Hand::new(&mut app);
-            hand.sk_tool(1).click2d(p.0, p.1).click2d(p.0 + 9.0, p.1 + 13.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(p.0, p.1).click2d(p.0 + 9.0, p.1 + 13.0).key(egui::Key::Escape).key(egui::Key::Escape);
             let s = &hand.app.project.sketches[si];
-            let start = s.entities.iter().rev().find_map(|e| match e.kind {
-                EntityKind::Line { a, .. } if !s.projected_entities().contains(&e.id) => Some(a),
+            let start = s.entities.iter().rev().find_map(|e| match e.kind.as_line() {
+                Some(qymcad_core::model::LineParts { a, .. }) if !s.projected_entities().contains(&e.id) => Some(a),
                 _ => None,
             });
             let Some(start) = start else {
@@ -105,7 +105,7 @@ mod tests {
     fn a_projected_side(app: &App, si: usize) -> (u64, (f64, f64)) {
         let s = &app.project.sketches[si];
         let side = s.entities.iter().find(|e| s.projected_entities().contains(&e.id)).expect("a projected side");
-        let EntityKind::Line { a, b } = side.kind else { panic!("the side is a line") };
+        let Some(qymcad_core::model::LineParts { a, b }) = side.kind.as_line() else { panic!("the side is a line") };
         let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("the end");
         let ((ax, ay), (bx, by)) = (at(a), at(b));
         (side.id, ((ax + bx) / 2.0, (ay + by) / 2.0))
@@ -118,7 +118,7 @@ mod tests {
         let (side, mid) = a_projected_side(&app, si);
         let curves = app.project.sketches[si].entities.len();
         let mut hand = Hand::new(&mut app);
-        assert!(hand.select2d(&[(1, side)]), "the projected side could not be picked");
+        assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(side)]), "the projected side could not be picked");
         hand.right_click2d(mid.0, mid.1);
         assert!(hand.press_word(&crate::i18n::tr("sk-make-ordinary"), hand.on_screen2d(mid)), "no Make ordinary geometry in the menu of a projected side");
         let s = &hand.app.project.sketches[si];
@@ -134,13 +134,13 @@ mod tests {
     /// The first end of `side` and where it stands.
     fn projected_points_of(hand: &Hand, si: usize, side: u64) -> (u64, (f64, f64)) {
         let s = &hand.app.project.sketches[si];
-        let Some(EntityKind::Line { a, .. }) = s.entities.iter().find(|e| e.id == side).map(|e| e.kind) else { panic!("the side") };
+        let Some(qymcad_core::model::LineParts { a, .. }) = s.entity(side).and_then(|e| e.kind.as_line()) else { panic!("the side") };
         (a, s.points.iter().find(|q| q.id == a).map(|q| (q.x, q.y)).expect("the end"))
     }
 
     /// The construction toggle of the menu of the right button, over the side at `mid`.
     fn toggle_construction(hand: &mut Hand, side: u64, mid: (f64, f64)) {
-        assert!(hand.select2d(&[(1, side)]), "the projected side could not be picked");
+        assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(side)]), "the projected side could not be picked");
         hand.right_click2d(mid.0, mid.1);
         assert!(hand.press_word(&crate::i18n::tr("sk-construction-toggle"), hand.on_screen2d(mid)), "no construction toggle in the menu of a projected side");
     }
@@ -183,14 +183,14 @@ mod tests {
             // the side runs level when its ends stand at one height
             let level = {
                 let s = &app.project.sketches[si];
-                let Some(EntityKind::Line { a, b }) = s.entities.iter().find(|e| e.id == side).map(|e| e.kind) else { panic!("the side") };
+                let Some(qymcad_core::model::LineParts { a, b }) = s.entity(side).and_then(|e| e.kind.as_line()) else { panic!("the side") };
                 let y = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| q.y).unwrap_or_default();
                 (y(a) - y(b)).abs() < 1e-6
             };
             let mut hand = Hand::new(&mut app);
             match cut {
                 Cut::Delete => {
-                    assert!(hand.select2d(&[(1, side)]), "the side could not be picked");
+                    assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(side)]), "the side could not be picked");
                     hand.key(egui::Key::Delete);
                 }
                 Cut::Break => {
@@ -200,13 +200,17 @@ mod tests {
                 Cut::Trim => {
                     // a line of its own across the side, a little off its middle, and the shorter piece of the side trimmed
                     let s = &hand.app.project.sketches[si];
-                    let Some(EntityKind::Line { a, b }) = s.entities.iter().find(|e| e.id == side).map(|e| e.kind) else { panic!("the side") };
+                    let Some(qymcad_core::model::LineParts { a, b }) = s.entity(side).and_then(|e| e.kind.as_line()) else { panic!("the side") };
                     let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("the end");
                     let ((ax, ay), (bx, by)) = (at(a), at(b));
                     let cross = (ax + (bx - ax) * 0.25, ay + (by - ay) * 0.25);
                     let (nx, ny) = (-(by - ay), bx - ax);
                     let n = nx.hypot(ny);
-                    hand.sk_tool(1).click2d(cross.0 + nx / n * 6.0, cross.1 + ny / n * 6.0).click2d(cross.0 - nx / n * 6.0, cross.1 - ny / n * 6.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                    hand.sk_tool(qymcad_ui_state::SketchShape::Line)
+                        .click2d(cross.0 + nx / n * 6.0, cross.1 + ny / n * 6.0)
+                        .click2d(cross.0 - nx / n * 6.0, cross.1 - ny / n * 6.0)
+                        .key(egui::Key::Escape)
+                        .key(egui::Key::Escape);
                     assert!(hand.press_hint(&crate::i18n::tr("tb-trim-hint")), "no Trim button");
                     hand.click2d(ax + (bx - ax) * 0.1, ay + (by - ay) * 0.1).key(egui::Key::Escape);
                 }
@@ -232,8 +236,8 @@ mod tests {
                 .entities
                 .iter()
                 .filter(|e| !driven.contains(&e.id))
-                .filter_map(|e| match e.kind {
-                    EntityKind::Line { a, b } if along(at(a)) && along(at(b)) => Some((a, b)),
+                .filter_map(|e| match e.kind.as_line() {
+                    Some(qymcad_core::model::LineParts { a, b }) if along(at(a)) && along(at(b)) => Some((a, b)),
                     _ => None,
                 })
                 .collect();

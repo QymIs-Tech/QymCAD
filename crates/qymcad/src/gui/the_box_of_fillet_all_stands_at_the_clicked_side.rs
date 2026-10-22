@@ -16,9 +16,9 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(2).click2d(0.0, 0.0).click2d(40.0, 30.0).key(egui::Key::Enter);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 30.0).key(egui::Key::Enter);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.hover2d(20.0, 15.0);
         assert!(hand.press_hint(&crate::i18n::tr("tb-fillet-all-hint")), "the button of fillet all");
         hand.click2d(20.0, 0.0);

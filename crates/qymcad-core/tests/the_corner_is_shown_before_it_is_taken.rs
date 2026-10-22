@@ -4,7 +4,7 @@
 //! wants while typing the value is where the corner WILL go — the two ends the lines will be cut at and the arc or the
 //! straight cut that will stand between them — with the lines themselves left as they are.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 
 /// An L of two lines meeting at (20, 0). Answers the project, the sketch, the corner and the two edges at it.
 fn an_angle() -> (Project, usize, u64, (u64, u64)) {
@@ -32,7 +32,7 @@ fn the_chamfer_is_shown_as_the_cut_it_will_make() {
     assert!(near(b.ends[0], (15.0, 0.0)) && near(b.ends[1], (20.0, 5.0)), "a leg of 5 does not meet the lines at (15, 0) and (20, 5): {:?}", b.ends);
     assert!(b.arc.is_none(), "a chamfer is a straight cut and has no arc");
     // and the drawing is exactly as it was: the corner is still sharp
-    let lines = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count();
+    let lines = p.sketches[si].entities.iter().filter(|e| e.kind.as_line().is_some()).count();
     assert_eq!(lines, 2, "the preview changed the drawing: {lines} lines where there were two");
     assert!(p.sketches[si].points.iter().any(|q| q.id == corner), "the preview took the corner's point away");
 }

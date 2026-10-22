@@ -299,7 +299,8 @@ pub fn run(tool: &PartTool, case: &Case, round_trips: bool) -> Vec<String> {
         Expect::Refused => {
             let said = match &node {
                 Some(n) => n.error.as_deref().is_some_and(|e| !e.trim().is_empty()),
-                None => s.status() != status || !beside.is_empty() || said_at_the_click,
+                // said in the status line, beside the field, at the click, or where the tool in hand speaks
+                None => s.status() != status || !beside.is_empty() || said_at_the_click || s.tool_says().iter().any(|n| n.tone == qymcad::Tone::Refusal),
             };
             if !said {
                 problems.push(format!(

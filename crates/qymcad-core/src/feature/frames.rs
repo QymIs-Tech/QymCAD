@@ -261,3 +261,28 @@ impl SketchPlane {
         }
     }
 }
+
+/// A FACE AS A HOLE STANDS ON IT: its centre and its normal.
+#[derive(Clone, Copy, Debug)]
+pub struct FaceAt {
+    pub centre: [f64; 3],
+    pub normal: [f64; 3],
+}
+
+/// THE SHIFT OF POINT `at` FROM THE CENTRE OF FACE `face`, along the two axes of the face's own frame: where a hole
+/// stands on its face, as its box writes it.
+pub fn shift_on_face(face: FaceAt, at: [f64; 3]) -> [f64; 2] {
+    let c = face.centre;
+    let f = PlaneFrame::from_origin_normal(c, face.normal, 0.0);
+    let d = [at[0] - c[0], at[1] - c[1], at[2] - c[2]];
+    let dot = |a: [f64; 3]| a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
+    [dot(f.x), dot(f.y)]
+}
+
+/// THE POINT SHIFTED BY `shift` FROM THE CENTRE OF FACE `face` along the axes of its frame (`shift_on_face`).
+pub fn point_on_face(face: FaceAt, shift: [f64; 2]) -> [f64; 3] {
+    let c = face.centre;
+    let f = PlaneFrame::from_origin_normal(c, face.normal, 0.0);
+    let [u, v] = shift;
+    [c[0] + f.x[0] * u + f.y[0] * v, c[1] + f.x[1] * u + f.y[1] * v, c[2] + f.x[2] * u + f.y[2] * v]
+}

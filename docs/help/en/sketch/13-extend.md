@@ -4,10 +4,12 @@
 
 ## How to do it
 
-Select a line and press **Extend**, or press **Extend** and click the line. Point at what it should reach: the
-extension is drawn dashed up to that line, arc or circle, or up to the nearest one on that side. **Enter** or a click
-extends it; the tool stays in hand for the next line. **Both sides** in the top bar extends both ends at once, each to
-its own nearest geometry. **Esc** lets the line go; a second **Esc** puts the tool down.
+Select a line or a curve with ends — an arc, an arc of an ellipse, an open spline — and press **Extend**, or press
+**Extend** and click it. Point at what it should reach: the extension is drawn dashed up to that curve, or up to the
+nearest one on its way. A line goes along its straight, an arc round its circle, an arc of an ellipse round its
+ellipse, a spline by a straight span along the tangent of its end. **Enter** or a click extends it; the tool stays in
+hand for the next one. **Both sides** in the top bar extends both ends at once, each to its own nearest geometry.
+**Esc** lets the curve go; a second **Esc** puts the tool down.
 
 Trim and extend are one technique from two sides: draw roughly first, then remove what is extra and stretch what is
 short.

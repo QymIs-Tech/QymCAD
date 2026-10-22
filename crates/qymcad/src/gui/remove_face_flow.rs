@@ -37,8 +37,8 @@ mod tests {
 
         // THE BUTTON
         app.chosen.sel = Sel::Mesh(dmi);
-        app.start_feat_cmd(26);
-        assert_eq!(app.tools.armed.cmd_kind(), 26, "the remove-face command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::RemoveFace);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::RemoveFace), "the remove-face command must open");
 
         // A CLICK on the cylindrical face of the hole — through a real pick
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn the_tool_is_visible_everywhere_it_should_be() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(26), "part"), "the button in the panel");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::RemoveFace), "part"), "the button in the panel");
         assert!(crate::gui::render_source::has(panels, "FeatureKind::RemoveFace { ref faces, .. } =>"), "the row in the feature tree");
         let gui = concat!(
             include_str!("file_doors.rs"),
@@ -123,7 +123,7 @@ mod tests {
         assert!(crate::gui::render_source::has(gui, "FK::RemoveFace { .. } => ph::"), "the icon");
         assert!(!crate::i18n::tr("feat-name-remove-face").is_empty() && crate::i18n::tr("feat-name-remove-face") != "feat-name-remove-face", "the default feature name must have a translation");
         let render = crate::gui::render_source::RENDER;
-        assert!(crate::gui::render_source::has(render, "} else if pn.armed.cmd_kind() == 26 {"), "the highlight of the picked faces");
+        assert!(crate::gui::render_source::has(render, "} else if shows == qymcad_ui_state::Shows::FacesThatGo {"), "the highlight of the picked faces");
         let cmds = crate::gui::sketch_source::PART;
         assert!(crate::gui::render_source::has(cmds, "FeatureKind::RemoveFace { src, ref faces, .. } => {"), "reopening by double click");
         assert!(crate::gui::render_source::has(cmds, "FeatureKind::RemoveFace { faces, .. } => {"), "applying the edit");

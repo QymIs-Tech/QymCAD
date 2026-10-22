@@ -6,7 +6,6 @@ mod tests {
     use super::super::hand::Hand;
     use super::super::{App, Sel};
     use qymcad_core::feature::SketchPlane;
-    use qymcad_core::model::EntityKind;
 
     /// The two legs of the chamfer cut, measured from the sharp corner it was cut from: along the line drawn
     /// horizontally, and along the one drawn upright; `None` while the corner is not cut.
@@ -14,8 +13,8 @@ mod tests {
         let sk = &app.project.sketches[si];
         let at = |id: u64| sk.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
         let c = at(corner)?;
-        let cut = sk.entities.iter().skip(2).find_map(|e| match e.kind {
-            EntityKind::Line { a, b } => Some((at(a)?, at(b)?)),
+        let cut = sk.entities.iter().skip(2).find_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => Some((at(a)?, at(b)?)),
             _ => None,
         })?;
         let leg = |p: (f64, f64)| (p.0 - c.0).hypot(p.1 - c.1);
@@ -30,19 +29,19 @@ mod tests {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(1).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
         // the corner: the point both lines end at
         let ends: Vec<u64> = app.project.sketches[si]
             .entities
             .iter()
-            .flat_map(|e| match e.kind {
-                EntityKind::Line { a, b } => vec![a, b],
+            .flat_map(|e| match e.kind.as_line() {
+                Some(qymcad_core::model::LineParts { a, b }) => vec![a, b],
                 _ => Vec::new(),
             })
             .collect();
         let corner = *ends.iter().find(|&&p| ends.iter().filter(|&&q| q == p).count() == 2).expect("two lines meeting at a corner");
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(0); // the flat canvas at the scale the sketch checks draw at
+        hand.sk_select(); // the flat canvas at the scale the sketch checks draw at
         assert!(hand.press_hint(&qymcad_i18n::tr("tb-chamfer-sketch-hint")), "no sketch chamfer button");
         assert!(hand.press_word(&qymcad_i18n::tr(mode), egui::pos2(400.0, 0.0)), "no {mode} on the bar");
         hand.click2d(click.0, click.1).type_text(first).key(egui::Key::Tab).type_text(second).key(egui::Key::Enter);
@@ -57,25 +56,14 @@ mod tests {
             let mut app = App::default();
             let si = app.create_sketch_on(SketchPlane::default());
             app.chosen.sel = Sel::Sketch(si);
-            Hand::new(&mut app).sk_tool(1).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
+            Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
             let mut hand = Hand::new(&mut app);
-            hand.sk_tool(0);
+            hand.sk_select();
             assert!(hand.press_hint(&qymcad_i18n::tr("tb-chamfer-sketch-hint")), "no sketch chamfer button");
             assert!(hand.press_word(&qymcad_i18n::tr(mode), egui::pos2(400.0, 0.0)), "no {mode} on the bar");
-            // THE FIELDS OF ONE CHAMFER STAND TOGETHER on the bar, the modes before them: with the modes between them the
-            // two values of one cut were read as two settings
-            // by the right ends: a label in a wrapping row is laid out from the start of the row, so its left end says nothing
-            let first = hand.written_at(&qymcad_i18n::tr(captions[0])).map(|r| r.max.x);
-            for word in ["cmd-symmetric", "cmd-two-distances", "cmd-leg-angle"] {
-                let at = hand.written_at(&qymcad_i18n::tr(word)).map(|r| r.max.x);
-                if at.zip(first).is_none_or(|(at, first)| at > first) {
-                    sins.push(format!("{mode}: the mode {word} ends at {at:?}, not before the caption of the first field at {first:?}"));
-                }
-            }
-            for place in ["the bar", "the corner"] {
-                if place == "the corner" {
-                    hand.click2d(0.4, 0.1);
-                }
+            // the values of a corner clicked are typed in the box at the corner, not on the bar (as on main)
+            for place in ["the corner"] {
+                hand.click2d(0.4, 0.1);
                 for caption in captions.iter().filter(|c| !c.is_empty()) {
                     if !hand.shows(&qymcad_i18n::tr(caption)) {
                         sins.push(format!("{mode}: {place} does not show the caption {caption:?}"));

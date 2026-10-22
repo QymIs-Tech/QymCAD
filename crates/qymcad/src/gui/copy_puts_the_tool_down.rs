@@ -30,7 +30,7 @@ mod tests {
     fn select_all(app: &mut App, si: usize) {
         Hand::canvas(app).ctrl(egui::Key::A);
         let want = app.project.sketches[si].entities.len();
-        let got = app.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).count();
+        let got = app.tools.sel_sk.items.iter().filter(|it| it.kind == qymcad_ui_state::ItemKind::Curve).count();
         assert!(want > 0 && got == want, "setup: Ctrl+A selected {got} of the {want} entities to copy");
     }
 
@@ -40,14 +40,14 @@ mod tests {
         let (mut app, si) = sketch_with_a_rectangle();
         // A tool in hand and one vertex already put down: the line is half-built. Then everything selected with
         // Ctrl+A - after the tool, since taking a drawing tool drops the selection made before it.
-        Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 30.0);
         select_all(&mut app, si);
-        assert_ne!(app.tools.armed.draw_kind(), 0, "setup: the tool is not in hand — there is nothing to check");
+        assert_ne!(app.tools.armed.drawing(), None, "setup: the tool is not in hand — there is nothing to check");
         assert!(!app.tools.tool.pts.is_empty(), "setup: the tool holds nothing half-built — the check would prove nothing");
 
         Hand::canvas(&mut app).copy(); // Ctrl+C
 
-        assert_eq!(app.tools.armed.draw_kind(), 0, "the copy left the tool in hand: the next click has two claimants");
+        assert_eq!(app.tools.armed.drawing(), None, "the copy left the tool in hand: the next click has two claimants");
         assert!(app.tools.tool.pts.is_empty(), "a half-built shape was left on the canvas with nothing to finish it");
     }
 
@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn the_copy_still_waits_for_its_base_point() {
         let (mut app, si) = sketch_with_a_rectangle();
-        Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 30.0);
         select_all(&mut app, si); // after the tool: taking a drawing tool drops the selection made before it
 
         Hand::canvas(&mut app).copy(); // Ctrl+C
@@ -71,7 +71,7 @@ mod tests {
 
         Hand::canvas(&mut app).copy(); // Ctrl+C
         assert!(app.side.clip.geom_pending.is_some(), "the copy did not arm with no tool in hand either");
-        assert_eq!(app.tools.armed.draw_kind(), 0, "there was no tool, and one appeared");
+        assert_eq!(app.tools.armed.drawing(), None, "there was no tool, and one appeared");
     }
 
     /// NOTHING SELECTED: the tool stays in hand, because there was no copy to make.
@@ -81,11 +81,11 @@ mod tests {
     #[test]
     fn a_refused_copy_keeps_the_tool() {
         let (mut app, _si) = sketch_with_a_rectangle();
-        Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
-        let before = app.tools.armed.draw_kind();
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 30.0);
+        let before = app.tools.armed.drawing();
 
         Hand::canvas(&mut app).copy(); // Ctrl+C
-        assert_eq!(app.tools.armed.draw_kind(), before, "a copy with nothing selected took the tool away — a mis-press must not cost the drawing");
+        assert_eq!(app.tools.armed.drawing(), before, "a copy with nothing selected took the tool away — a mis-press must not cost the drawing");
         assert!(!app.side.clip.geom_pending.is_some(), "with nothing selected there is nothing to copy");
     }
 
@@ -95,7 +95,7 @@ mod tests {
         let (mut app, si) = sketch_with_a_rectangle();
         select_all(&mut app, si);
         let before = app.project.sketches[si].entities.len();
-        Hand::new(&mut app).sk_tool(1).click2d(30.0, 30.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 30.0);
 
         Hand::canvas(&mut app).copy(); // Ctrl+C
         assert_eq!(app.project.sketches[si].entities.len(), before, "putting the tool down deleted geometry");

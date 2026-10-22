@@ -1,5 +1,6 @@
 //! THE CONSTRAINTS of a sketch: laid, refused, offered on the bar.
 
+use qymcad_core::model::curve::kinds::CurveClass;
 use qymcad_ui_state::Notice;
 use super::*;
 
@@ -10,26 +11,14 @@ use super::*;
 /// exist but gives no way to find the one wanted. Highlighting on hover already existed, but it answers
 /// "where is this one" rather than "which one do I need".
 pub fn constraint_parts(dc: &qymcad_ui_state::DrawCtx, si: usize, c: &qymcad_core::model::Constraint) -> Vec<String> {
-    use qymcad_core::model::EntityKind as EK;
     let Some(s) = dc.project.sketches.get(si) else { return Vec::new() };
-    let owner = |pid: Id| -> Option<Id> {
-        s.entities
-            .iter()
-            .find(|e| match e.kind {
-                EK::Line { a, b } => a == pid || b == pid,
-                EK::Arc { center, a, b, .. } => center == pid || a == pid || b == pid,
-                EK::Circle { center, .. } => center == pid,
-                EK::Ellipse { c, ma, mi } => c == pid || ma == pid || mi == pid,
-            })
-            .map(|e| e.id)
-    };
+    let owner = |pid: Id| -> Option<Id> { s.entities.iter().find(|e| qymcad_core::model::entity_points(e).contains(&pid)).map(|e| e.id) };
     let mut out: Vec<String> = Vec::new();
-    for pid in c.points() {
-        if let Some(eid) = owner(pid) {
-            let name = sketch_entity_name(dc.project, si, eid);
-            if !name.is_empty() && !out.contains(&name) {
-                out.push(name);
-            }
+    // the curves it stands on by their points, and those it names by id
+    for eid in c.points().into_iter().filter_map(owner).chain(c.curve_ids()) {
+        let name = sketch_entity_name(dc.project, si, eid);
+        if !name.is_empty() && !out.contains(&name) {
+            out.push(name);
         }
     }
     out
@@ -41,7 +30,7 @@ pub fn try_constraint_inner(
     sel: qymcad_ui_state::Sel,
     sel_sk: &mut qymcad_ui_state::SketchSelection,
     status: &mut qymcad_ui_state::Notice,
-    code: u8,
+    code: qymcad_ui_state::ConstraintKind,
 ) -> bool {
     use qymcad_core::model::Constraint;
     let qymcad_ui_state::Sel::Sketch(si) = sel else { return false };
@@ -51,60 +40,83 @@ pub fn try_constraint_inner(
     // the lines drawn, before the axes join them: Vertical and Horizontal go on these, an axis already stands so
     let drawn = lines.clone();
     // coordinate axes picked as lines (kind 3): their straight lines are materialised and used as lines
-    let axes: Vec<u64> = sel_sk.items.iter().filter(|(k, _)| *k == 3).map(|(_, id)| *id).collect();
+    let axes: Vec<u64> = sel_sk.items.iter().filter(|it| it.kind == qymcad_ui_state::ItemKind::Axis).map(|qymcad_ui_state::SketchItem { id, .. }| *id).collect();
     for w in axes {
         let (o, d) = project.ensure_axis(si, w as usize);
         lines.push((o, d));
     }
+    // THE CURVES PICKED, read as what a constraint ties: the centres of the round ones and of the ellipses, the frames of
+    // the ellipses, the major axes as the straights of an ellipse - horizontal, vertical, parallel and square go on them
+    let picked: Vec<qymcad_core::model::SketchEntity> =
+        project.sketches[si].entities.iter().filter(|e| sel_sk.items.iter().any(|&qymcad_ui_state::SketchItem { kind: k, id }| k == qymcad_ui_state::ItemKind::Curve && id == e.id)).cloned().collect();
+    let centres: Vec<Id> = picked.iter().filter_map(qymcad_core::model::entity_centre).collect();
+    let frames: Vec<[Id; 3]> = picked.iter().filter_map(qymcad_core::model::ellipse_frame).collect();
+    let axes: Vec<[Id; 2]> = frames.iter().map(|&[c, ma, _]| [c, ma]).collect();
+    let straights: Vec<[Id; 2]> = lines.iter().map(|&(a, b)| [a, b]).chain(axes.iter().copied()).collect();
     let mut new: Vec<Constraint> = Vec::new();
     match code {
-        0 if pts.len() >= 2 => new.push(Constraint::Coincident { a: pts[0], b: pts[1] }),
+        qymcad_ui_state::ConstraintKind::Coincident if pts.len() >= 2 => new.push(Constraint::Coincident { a: pts[0], b: pts[1] }),
         // one point coincident with an entity: a circle or an arc gives point-on-circle (which takes
         // priority), otherwise a line or an axis gives point-on-line
-        0 if pts.len() == 1 => {
+        qymcad_ui_state::ConstraintKind::Coincident if pts.len() == 1 => {
             let cs = qymcad_ui_state::sel_circle_centers(project, sel_sk, si);
             if !cs.is_empty() {
                 new.push(Constraint::PointOnCircle { p: pts[0], c: cs[0] });
+            } else if let Some(&[c, ma, mi]) = frames.first() {
+                new.push(Constraint::PointOnEllipse { p: pts[0], c, ma, mi });
             } else if !lines.is_empty() {
                 new.push(Constraint::PointOnLine { p: pts[0], a: lines[0].0, b: lines[0].1 });
+            } else if let Some(e) = picked.first() {
+                // a spline, which has no equation of its own a point satisfies
+                new.push(Constraint::PointOnCurve { p: pts[0], on: qymcad_core::model::curve_ref_of(e) });
             }
         }
         // EVERY SELECTED LINE GETS IT, not the first alone; with no line selected, every point lines up with the first.
         // Reported behaviour (issue #34): with three lines selected Vertical turned one of them.
-        1 if !drawn.is_empty() => new.extend(drawn.iter().map(|&(a, b)| Constraint::Horizontal { a, b })),
-        1 if pts.len() >= 2 => new.extend(pts[1..].iter().map(|&b| Constraint::Horizontal { a: pts[0], b })),
-        2 if !drawn.is_empty() => new.extend(drawn.iter().map(|&(a, b)| Constraint::Vertical { a, b })),
-        2 if pts.len() >= 2 => new.extend(pts[1..].iter().map(|&b| Constraint::Vertical { a: pts[0], b })),
+        qymcad_ui_state::ConstraintKind::Horizontal if !drawn.is_empty() => new.extend(drawn.iter().map(|&(a, b)| Constraint::Horizontal { a, b })),
+        qymcad_ui_state::ConstraintKind::Horizontal if !axes.is_empty() => new.extend(axes.iter().map(|&[a, b]| Constraint::Horizontal { a, b })),
+        qymcad_ui_state::ConstraintKind::Horizontal if pts.len() >= 2 => new.extend(pts[1..].iter().map(|&b| Constraint::Horizontal { a: pts[0], b })),
+        qymcad_ui_state::ConstraintKind::Vertical if !drawn.is_empty() => new.extend(drawn.iter().map(|&(a, b)| Constraint::Vertical { a, b })),
+        qymcad_ui_state::ConstraintKind::Vertical if !axes.is_empty() => new.extend(axes.iter().map(|&[a, b]| Constraint::Vertical { a, b })),
+        qymcad_ui_state::ConstraintKind::Vertical if pts.len() >= 2 => new.extend(pts[1..].iter().map(|&b| Constraint::Vertical { a: pts[0], b })),
         // between lines: every further line is tied to the first one picked
-        3 if lines.len() >= 2 => new.extend(lines[1..].iter().map(|&(c, d)| Constraint::Parallel { a: lines[0].0, b: lines[0].1, c, d })),
-        4 if lines.len() >= 2 => new.push(Constraint::Perpendicular { a: lines[0].0, b: lines[0].1, c: lines[1].0, d: lines[1].1 }),
-        5 if lines.len() >= 2 => new.extend(lines[1..].iter().map(|&(c, d)| Constraint::Equal { a: lines[0].0, b: lines[0].1, c, d })),
-        5 => {
+        qymcad_ui_state::ConstraintKind::Parallel if straights.len() >= 2 => new.extend(straights[1..].iter().map(|&[c, d]| Constraint::Parallel { a: straights[0][0], b: straights[0][1], c, d })),
+        qymcad_ui_state::ConstraintKind::Perpendicular if straights.len() >= 2 => {
+            new.push(Constraint::Perpendicular { a: straights[0][0], b: straights[0][1], c: straights[1][0], d: straights[1][1] })
+        }
+        qymcad_ui_state::ConstraintKind::Equal if lines.len() >= 2 => new.extend(lines[1..].iter().map(|&(c, d)| Constraint::Equal { a: lines[0].0, b: lines[0].1, c, d })),
+        qymcad_ui_state::ConstraintKind::Equal => {
             // equal radii of two circles
             let cs = qymcad_ui_state::sel_circle_centers(project, sel_sk, si);
             if cs.len() >= 2 {
                 new.push(Constraint::EqualRadius { c1: cs[0], c2: cs[1] });
             }
         }
-        6 if !pts.is_empty() => new.extend(pts.iter().map(|p| Constraint::Fixed { p: *p })),
-        7 if lines.len() >= 2 => new.extend(lines[1..].iter().map(|&(c, d)| Constraint::Collinear { a: lines[0].0, b: lines[0].1, c, d })),
-        8 => {
-            // concentricity is A REAL kind with a glyph of its own, not a fake made of coincident centres
-            let centers = qymcad_ui_state::sel_circle_centers(project, sel_sk, si);
-            if centers.len() >= 2 {
-                new.push(Constraint::Concentric { c1: centers[0], c2: centers[1] });
+        qymcad_ui_state::ConstraintKind::Fix if !pts.is_empty() => new.extend(pts.iter().map(|p| Constraint::Fixed { p: *p })),
+        qymcad_ui_state::ConstraintKind::Collinear if lines.len() >= 2 => new.extend(lines[1..].iter().map(|&(c, d)| Constraint::Collinear { a: lines[0].0, b: lines[0].1, c, d })),
+        qymcad_ui_state::ConstraintKind::Concentric => {
+            // concentricity is A REAL kind with a glyph of its own, not a fake made of coincident centres; an ellipse has a
+            // centre as a circle has
+            if centres.len() >= 2 {
+                new.push(Constraint::Concentric { c1: centres[0], c2: centres[1] });
             }
         }
-        9 => {
-            // tangency: a line plus a circle, the line touching it at a point of its own (`touch_point`)
-            if let (Some((la, lb)), Some((cc, rr))) = (lines.first().copied(), qymcad_ui_state::sel_circle_cr(project, sel_sk, si)) {
-                new.push(Constraint::Tangent { a: la, b: lb, c: cc, r: rr });
-                if let Some(p) = touch_point(project, si, sel_sk, (la, lb), cc) {
-                    new.push(Constraint::PointOnCircle { p, c: cc });
+        qymcad_ui_state::ConstraintKind::Tangent => {
+            // tangency: two curves of any kind, the touching their kinds take (`tangency`) - a line and a circle, two round
+            // curves, an ellipse, a spline - an end put on the other curve where the touching would come past it
+            if let [one, other, ..] = &picked[..] {
+                let pair = [one.id, other.id];
+                let mut touch = project.tangency(si, pair);
+                // a line picked at its middle is carried onto the other by its middle, not by an end - where the two touch
+                // at all
+                if let Some(middle) = (!touch.is_empty()).then(|| middle_touch(project, si, sel_sk, pair)).flatten() {
+                    touch.retain(|c| !matches!(c, Constraint::PointOnCircle { .. } | Constraint::PointOnCurve { .. }));
+                    touch.push(middle);
                 }
+                new.extend(touch);
             }
         }
-        10 => {
+        qymcad_ui_state::ConstraintKind::Symmetric => {
             // symmetry: two points about an axis (the picked line)
             if pts.len() >= 2 {
                 if let Some((la, lb)) = lines.first().copied() {
@@ -112,9 +124,23 @@ pub fn try_constraint_inner(
                 }
             }
         }
-        11 if pts.len() == 1 && !lines.is_empty() => {
+        qymcad_ui_state::ConstraintKind::Midpoint if pts.len() == 1 && !lines.is_empty() => {
             // midpoint: the point at the middle of the picked line
             new.push(Constraint::Midpoint { p: pts[0], a: lines[0].0, b: lines[0].1 });
+        }
+        // the middle of an arc: on its circle and as far from both its ends
+        qymcad_ui_state::ConstraintKind::Midpoint if pts.len() == 1 => {
+            let arc = picked.iter().find_map(|e| e.kind.as_arc()).map(|k| [k.center, k.a, k.b]);
+            if let Some([c, a, b]) = arc {
+                new.push(Constraint::PointOnCircle { p: pts[0], c });
+                new.push(Constraint::Equal { a: pts[0], b: a, c: pts[0], d: b });
+                // the two hold at the middle of the arc and at the middle of the rest of its circle: the point is put at
+                // the middle of the arc first, and the solve keeps it there
+                let middle = picked.iter().find(|e| qymcad_core::model::entity_centre(e) == Some(c)).and_then(|e| qymcad_core::model::curve::Curve::of(&project.sketches[si], e)).map(|k| k.at(0.5));
+                if let (Some(m), Some(q)) = (middle, project.sketches[si].points.iter_mut().find(|q| q.id == pts[0])) {
+                    (q.x, q.y) = (m.x, m.y);
+                }
+            }
         }
         _ => {}
     }
@@ -145,6 +171,18 @@ pub fn try_constraint_inner(
         };
         turn_to_level(project, si, line, level);
     }
+    // AN ELLIPSE MADE HORIZONTAL OR VERTICAL IS TURNED TO IT FIRST, about its centre, whole: its axis turned alone would
+    // bend it out of its shape
+    for c in &new {
+        let (axis, level) = match *c {
+            Constraint::Horizontal { a, b } if axes.contains(&[a, b]) => ([a, b], Level::Horizontal),
+            Constraint::Vertical { a, b } if axes.contains(&[a, b]) => ([a, b], Level::Vertical),
+            _ => continue,
+        };
+        if let Some(e) = picked.iter().find(|e| qymcad_core::model::ellipse_frame(e).is_some_and(|[c, ma, _]| [c, ma] == axis)) {
+            turn_ellipse_to_level(project, si, e, level);
+        }
+    }
     // EQUAL ON TWO CIRCLES THAT EACH CARRY THEIR RADIUS: the second one's radius becomes a reference and follows the
     // first - one radius, not a contradiction. Reported behaviour: the circle tool gives each circle its dimension, and
     // Equal on two of them left the sketch over-defined (residual 2.89).
@@ -174,9 +212,9 @@ pub fn try_constraint_inner(
     qymcad_ui_state::invalidate(regen);
     // A CONSTRAINT THE SKETCH CANNOT MEET IS NOT KEPT, as a dimension that does not fit is not: parallel on two lines an
     // angle of 45 deg holds apart left both in the sketch, unsolved (residual 0.79), with nothing marked. It is taken
-    // back, the points return where they were, and the status line says why. 1e-2 mm is the threshold the dimension
-    // editor rolls back at: above the solver's noise, below any real conflict.
-    if resid > 1e-2 || shrunk {
+    // back, the points return where they were, and the status line says why, at the threshold the dimension editor rolls
+    // back at (`SKETCH_FITS`).
+    if resid > qymcad_core::model::SKETCH_FITS || shrunk {
         project.sketches[si].constraints.truncate(had);
         for &k in &referenced {
             if let Constraint::Diameter { driven, .. } = &mut project.sketches[si].constraints[k] {
@@ -200,10 +238,28 @@ pub fn try_constraint_inner(
     true
 }
 
-/// Apply a geometric constraint to the sketch selection. Returns true when it was applied.
-/// `code`: 0 coincident, 1 horizontal, 2 vertical, 3 parallel, 4 perpendicular, 5 equal, 6 fixed,
-/// 7 collinear, 8 concentric.
-pub fn try_constraint(sk: &mut qymcad_ui_state::SketchCtx, code: u8) -> bool {
+/// TURN ELLIPSE `e` WHOLE ABOUT ITS CENTRE until its major axis lies `level`, the nearer way round.
+fn turn_ellipse_to_level(project: &mut Project, si: usize, e: &qymcad_core::model::SketchEntity, level: Level) {
+    let Some([c, ma, _]) = qymcad_core::model::ellipse_frame(e) else { return };
+    let s = &mut project.sketches[si];
+    let at = |s: &qymcad_core::model::Sketch, id: Id| s.point(id).map(|q| Point2::new(q.x, q.y));
+    let (Some(pc), Some(pa)) = (at(s, c), at(s, ma)) else { return };
+    let now = (pa.y - pc.y).atan2(pa.x - pc.x);
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let want = match level {
+        Level::Horizontal => (now / (2.0 * quarter)).round() * 2.0 * quarter,
+        Level::Vertical => ((now - quarter) / (2.0 * quarter)).round() * 2.0 * quarter + quarter,
+    };
+    let (sin, cos) = (want - now).sin_cos();
+    let turned: Vec<Id> = qymcad_core::model::entity_points(e).into_iter().filter(|id| *id != c).collect();
+    for q in s.points.iter_mut().filter(|q| turned.contains(&q.id)) {
+        let (dx, dy) = (q.x - pc.x, q.y - pc.y);
+        (q.x, q.y) = (pc.x + dx * cos - dy * sin, pc.y + dx * sin + dy * cos);
+    }
+}
+
+/// Apply the geometric constraint `code` to the sketch selection. Returns true when it was applied.
+pub fn try_constraint(sk: &mut qymcad_ui_state::SketchCtx, code: qymcad_ui_state::ConstraintKind) -> bool {
     // THE BOUNDARY OF AN OPERATION: placing a constraint is a deliberate act and makes one undo step.
     qymcad_ui_state::begin_edit(sk.edits, sk.project, qymcad_i18n::tr("sk-constraint"));
     let ok = try_constraint_inner(sk.project, sk.regen, *sk.sel, sk.sel_sk, sk.status, code);
@@ -217,7 +273,7 @@ pub fn try_constraint(sk: &mut qymcad_ui_state::SketchCtx, code: u8) -> bool {
 
 /// The constraint button: if the selection is enough, apply it; otherwise go into waiting mode (the
 /// button lights up, the elements are picked, Esc cancels).
-pub fn constraint_button(sk: &mut qymcad_ui_state::SketchCtx, code: u8) {
+pub fn constraint_button(sk: &mut qymcad_ui_state::SketchCtx, code: qymcad_ui_state::ConstraintKind) {
     qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(sk));
     *sk.armed = qymcad_ui_state::Armed::None;
     sk.sel_sk.constraint = None;
@@ -241,20 +297,70 @@ pub fn constraint_button(sk: &mut qymcad_ui_state::SketchCtx, code: u8) {
     }
 }
 
-/// The words of a constraint's button - its name and what it ties - by its code.
-pub fn constraint_hint_key(code: u8) -> &'static str {
+/// WHAT A PICKED ITEM IS TO A CONSTRAINT: a point, a straight (a line or an axis), a round curve (a circle or an arc),
+/// an ellipse or an arc of one, or a curve of no other kind (a spline).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PickedAs {
+    Point,
+    Straight,
+    Round,
+    Oval,
+    Other,
+}
+
+/// WHETHER WHAT IS PICKED FOR CONSTRAINT `code` COULD TAKE IT, given more picks: every item of a kind the constraint
+/// ties. A level or an upright takes a straight, an ellipse or points; a parallel, a square or a collinear straights
+/// (and the axis of an ellipse); an equal curves of one class; a concentric round curves, ellipses or their centres; a
+/// tangency curves; a fix, a symmetry or a middle points and the line or curve they go on. A level spline can never take
+/// one, and the click is answered at once: waiting for more picks said nothing and left the person guessing.
+pub fn pick_could_take(project: &Project, si: usize, sel_sk: &qymcad_ui_state::SketchSelection, code: qymcad_ui_state::ConstraintKind) -> bool {
+    let Some(s) = project.sketches.get(si) else { return true };
+    let kinds: Vec<PickedAs> = sel_sk
+        .items
+        .iter()
+        .map(|&qymcad_ui_state::SketchItem { kind: k, id }| match k {
+            qymcad_ui_state::ItemKind::Point => PickedAs::Point,
+            qymcad_ui_state::ItemKind::Axis => PickedAs::Straight,
+            _ => match s.entity(id).map(|e| e.kind.class()) {
+                Some(CurveClass::Straight) => PickedAs::Straight,
+                Some(CurveClass::Round) => PickedAs::Round,
+                Some(CurveClass::Oval) => PickedAs::Oval,
+                _ => PickedAs::Other,
+            },
+        })
+        .collect();
+    let all = |ok: &[PickedAs]| kinds.iter().all(|k| ok.contains(k));
     match code {
-        0 => "con-coincident-hint",
-        1 => "con-horizontal-hint",
-        2 => "con-vertical-hint",
-        3 => "con-parallel-hint",
-        4 => "con-perpendicular-hint",
-        5 => "con-equal",
-        6 => "con-fix",
-        7 => "con-collinear-hint",
-        8 => "con-concentric-hint",
-        9 => "con-tangent-hint",
-        10 => "con-symmetric-hint",
+        qymcad_ui_state::ConstraintKind::Horizontal | qymcad_ui_state::ConstraintKind::Vertical => all(&[PickedAs::Point, PickedAs::Straight, PickedAs::Oval]),
+        qymcad_ui_state::ConstraintKind::Parallel | qymcad_ui_state::ConstraintKind::Perpendicular => all(&[PickedAs::Straight, PickedAs::Oval]),
+        qymcad_ui_state::ConstraintKind::Equal => {
+            let curves: Vec<&PickedAs> = kinds.iter().filter(|k| **k != PickedAs::Point).collect();
+            all(&[PickedAs::Straight, PickedAs::Round, PickedAs::Oval]) && curves.windows(2).all(|w| w[0] == w[1])
+        }
+        qymcad_ui_state::ConstraintKind::Fix => all(&[PickedAs::Point]),
+        qymcad_ui_state::ConstraintKind::Collinear => all(&[PickedAs::Straight]),
+        qymcad_ui_state::ConstraintKind::Concentric => all(&[PickedAs::Point, PickedAs::Round, PickedAs::Oval]),
+        // two straights do not touch
+        qymcad_ui_state::ConstraintKind::Tangent => all(&[PickedAs::Straight, PickedAs::Round, PickedAs::Oval, PickedAs::Other]) && kinds.iter().filter(|k| **k == PickedAs::Straight).count() < 2,
+        qymcad_ui_state::ConstraintKind::Symmetric => all(&[PickedAs::Point, PickedAs::Straight]),
+        _ => true,
+    }
+}
+
+/// The words of a constraint's button - its name and what it ties - by its code.
+pub fn constraint_hint_key(code: qymcad_ui_state::ConstraintKind) -> &'static str {
+    match code {
+        qymcad_ui_state::ConstraintKind::Coincident => "con-coincident-hint",
+        qymcad_ui_state::ConstraintKind::Horizontal => "con-horizontal-hint",
+        qymcad_ui_state::ConstraintKind::Vertical => "con-vertical-hint",
+        qymcad_ui_state::ConstraintKind::Parallel => "con-parallel-hint",
+        qymcad_ui_state::ConstraintKind::Perpendicular => "con-perpendicular-hint",
+        qymcad_ui_state::ConstraintKind::Equal => "con-equal",
+        qymcad_ui_state::ConstraintKind::Fix => "con-fix",
+        qymcad_ui_state::ConstraintKind::Collinear => "con-collinear-hint",
+        qymcad_ui_state::ConstraintKind::Concentric => "con-concentric-hint",
+        qymcad_ui_state::ConstraintKind::Tangent => "con-tangent-hint",
+        qymcad_ui_state::ConstraintKind::Symmetric => "con-symmetric-hint",
         _ => "con-midpoint-hint",
     }
 }

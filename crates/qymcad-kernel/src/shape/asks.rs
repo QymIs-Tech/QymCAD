@@ -100,9 +100,10 @@ impl Shape {
     pub fn shell_count(&self) -> u32 {
         unsafe { qym_shape_shell_count(self.ptr) as u32 }
     }
-    /// Whether this shape and `other` share a face or an edge - the same kernel sub-shape, not merely an equal one.
-    /// Two bodies that share one must not be meshed or healed on two threads at once, so the rebuild keeps them on
-    /// one thread (see `qymcad_core`'s `Kernel::shares` and the batch dispatch in `model/regen.rs`).
+    /// Whether this shape and `other` share an element - a face, an edge or a vertex that is one kernel sub-shape in
+    /// both, wherever each places it, not merely an equal one. Two bodies that share one must not be worked on two
+    /// threads at once, so the rebuild keeps them on one thread (see `qymcad_core`'s `Kernel::shares` and the batch
+    /// dispatch in `model/regen.rs`).
     pub fn shares_geometry(&self, other: &Shape) -> bool {
         unsafe { qym_shapes_share(self.ptr, other.ptr) != 0 }
     }
@@ -169,19 +170,36 @@ impl Shape {
     /// within that box. OCCT answers some limiting cases with a body that does neither and that its check calls valid:
     /// a rounding of R1.99999996 on the arc of an R10 rounding ending in the corners of two chamfers that ate their
     /// faces came back 3.6e6 mm^3 reaching 590 mm out of a block of 48,916 mm^3. Such a body is refused, in words.
+    ///
+    /// The two boxes are read off the poles first, which stand round the geometry by millimetres: a result whose poles
+    /// stand within a twentieth of the size of the body past its poles is taken, and the boxes of the geometry itself are
+    /// sought only past that - a search over every surface, which took most of a rounding of a side swept from a spline.
+    /// The bodies refused stand hundreds of millimetres past.
     pub(crate) fn blended(&self, got: Option<Shape>, reach: f64) -> Option<Shape> {
         let got = got?;
-        let (Some(a), Some(b)) = (self.bbox_exact(), got.bbox_exact()) else { return Some(got) };
-        let span = [a[3] - a[0], a[4] - a[1], a[5] - a[2]];
-        let diag = span.iter().map(|x| x * x).sum::<f64>().sqrt();
-        let past = (0..3).map(|i| (a[i] - b[i]).max(b[i + 3] - a[i + 3])).fold(0.0f64, f64::max);
-        if past > reach.abs() + 1e-3 * diag.max(1.0) {
-            return refuse("blend/check", &format!("the kernel gave a body standing {past:.1} mm past the body it blends"));
+        let past = |a: [f64; 6], b: [f64; 6]| (0..3).map(|i| (a[i] - b[i]).max(b[i + 3] - a[i + 3])).fold(0.0f64, f64::max);
+        let limit = |a: [f64; 6]| reach.abs() + 1e-3 * ((a[3] - a[0]).powi(2) + (a[4] - a[1]).powi(2) + (a[5] - a[2]).powi(2)).sqrt().max(1.0);
+        // the poles of a rounding stand out round it by millimetres; a body the kernel botched, by hundreds
+        let roomy = |a: [f64; 6]| limit(a) + 0.05 * ((a[3] - a[0]).powi(2) + (a[4] - a[1]).powi(2) + (a[5] - a[2]).powi(2)).sqrt();
+        let within = self.bbox().is_some_and(|a| got.bbox().is_some_and(|b| past(a, b) <= roomy(a)));
+        if !within {
+            if let Some(a) = self.bbox_exact() {
+                let beyond = got.bbox_exact().map_or(0.0, |b| past(a, b));
+                if beyond > limit(a) {
+                    return refuse("blend/check", &format!("the kernel gave a body standing {beyond:.1} mm past the body it blends"));
+                }
+            }
         }
-        let before = self.volume();
-        let after = got.volume();
-        // a sheet has no volume to keep
-        if before > 0.0 && (after <= 0.0 || after > span[0] * span[1] * span[2]) {
+        self.volume_kept(got)
+    }
+
+    /// THE BLEND OF A BODY KEEPS A VOLUME: above zero and within the box of the body it was made from. A sheet has no
+    /// volume to keep.
+    fn volume_kept(&self, got: Shape) -> Option<Shape> {
+        let Some(a) = self.bbox() else { return Some(got) };
+        let (before, after) = (self.volume(), got.volume());
+        let room = (a[3] - a[0]) * (a[4] - a[1]) * (a[5] - a[2]);
+        if before > 0.0 && (after <= 0.0 || after > room) {
             return refuse("blend/check", &format!("the kernel gave a body of {after:.1} mm^3 from one of {before:.1} mm^3"));
         }
         Some(got)

@@ -87,6 +87,14 @@ pub struct CornerAt {
     pub pair: (Id, Id),
 }
 
+impl CornerAt {
+    /// The corner the two edges `sides` make at `point`.
+    pub fn of(point: Id, [one, other]: [Id; 2]) -> Self {
+        let pair = (one, other);
+        Self { point, pair }
+    }
+}
+
 /// HOW A SKETCH FILLET IS GIVEN: by its radius, by its chord - the straight distance between the two points where it
 /// meets the lines - or by the length of its arc.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -143,10 +151,12 @@ pub(crate) fn rect_free_constraints(c0: Id, c1: Id, c2: Id, c3: Id) -> [Constrai
     ]
 }
 
-/// Is `c` one of the constraints rectangle `r` holds itself by, held by its turns or by its shape alone?
-fn is_rect_own(r: &crate::model::SketchRect, c: &Constraint) -> bool {
-    let [c0, c1, c2, c3] = r.corners;
-    rect_own_constraints(c0, c1, c2, c3, r.centre, 0.0).iter().chain(rect_free_constraints(c0, c1, c2, c3).iter()).any(|o| same_rect_constraint(o, c))
+impl crate::model::SketchRect {
+    /// Is `c` one of the constraints the rectangle holds itself by, held by its turns or by its shape alone?
+    pub fn holds(&self, c: &Constraint) -> bool {
+        let [c0, c1, c2, c3] = self.corners;
+        rect_own_constraints(c0, c1, c2, c3, self.centre, 0.0).iter().chain(rect_free_constraints(c0, c1, c2, c3).iter()).any(|o| same_rect_constraint(o, c))
+    }
 }
 
 /// Is `c` the constraint `own` a rectangle holds itself by - the same kind on the same points, whatever the turn held?
@@ -158,21 +168,6 @@ fn same_rect_constraint(own: &Constraint, c: &Constraint) -> bool {
         (Constraint::Midpoint { p, a, b }, Constraint::Midpoint { p: q, a: x, b: y }) => [p, a, b] == [q, x, y],
         _ => false,
     }
-}
-
-/// A PLACE A LINE CAN BE EXTENDED TO along its axis: `t` along it from its start (0) to its end (1), and the curve met
-/// there.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ExtendStop {
-    pub t: f64,
-    pub by: Id,
-}
-
-/// THE PLACES BEYOND EACH END OF A LINE, nearest first: before its start, past its end.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ExtendStops {
-    pub before_a: Vec<ExtendStop>,
-    pub past_b: Vec<ExtendStop>,
 }
 
 /// WHICH ENDS THE EXTEND TOOL TAKES: the nearer one, or both ("Both sides" in its bar).
@@ -190,29 +185,13 @@ pub struct ExtendAsk {
     pub sides: ExtendSides,
 }
 
-/// WHERE EACH END OF A LINE GOES along its axis (`ExtendStop::t`), or `None` where it stays, and whether an end that
-/// had somewhere to go was kept because it is joined to other geometry.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct LineExtension {
-    pub a: Option<f64>,
-    pub b: Option<f64>,
+/// HOW A CURVE GOES UNDER EXTEND: the curve as it will run, the ends of it that go, and whether an end asked for stayed
+/// because it is joined to other geometry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CurveExtension {
+    pub curve: crate::model::curve::Curve,
+    pub goes: Vec<crate::model::curve::End>,
     pub kept: EndKept,
-}
-
-/// A STRETCH OF A STRAIGHT OR OF A CIRCLE, from one parameter to the other: a length along a line, or angles taken
-/// counter-clockwise round a circle.
-#[derive(Clone, Copy)]
-pub(crate) struct Stretch {
-    from: f64,
-    to: f64,
-}
-
-/// A ROUND CURVE BY ITS CIRCLE: the centre, the radius, and the stretch of it an arc takes (none for a whole circle).
-#[derive(Clone, Copy)]
-pub(crate) struct OnCircle {
-    centre: (f64, f64),
-    r: f64,
-    span: Option<Stretch>,
 }
 
 /// WHERE TWO LINES CROSS: the two lines and the point of their crossing.
@@ -223,7 +202,7 @@ pub struct LinesCrossing {
     pub at: Point2,
 }
 
-/// WHY AN END OF A LINE STAYS WHERE IT IS under Extend.
+/// WHY AN END OF A CURVE STAYS WHERE IT IS under Extend.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum EndKept {
     /// nothing kept it: an end with nowhere to go stays, and so does the end the tool did not ask for
@@ -444,6 +423,16 @@ impl Project {
             _ => None,
         }
     }
+    /// WHAT A SKETCH STANDS ON THAT A REBUILD MAKES: the body of the face it is drawn on, or the datum plane it is drawn
+    /// on; `None` on a plane of the world.
+    pub fn sketch_support(&self, sketch: Id) -> Option<Id> {
+        let si = self.sketch_index(sketch)?;
+        match self.sketches[si].plane {
+            crate::feature::SketchPlane::Face(body, _) => Some(body),
+            crate::feature::SketchPlane::Datum(plane) => Some(plane),
+            _ => None,
+        }
+    }
     /// Settle the sketches before building: a body must not be built from geometry that does not yet satisfy
     /// its own constraints.
     ///
@@ -661,39 +650,6 @@ fn arc_label_angle(points: &[SketchPoint], arc: ArcEnds) -> f64 {
     -mid
 }
 
-/// A CIRCLE OR AN ARC READ AS ONE THING: the centre, the radius, and for an arc the angular range.
-///
-/// It used to be built twice, in two commands, as the same five-place tuple with the same comment beside it -
-/// and `Option<(f64, f64, bool)>` in a signature says nothing about what the three are.
-pub(crate) struct Round {
-    /// The point that is the centre.
-    center_id: Id,
-    /// The centre, in sketch coordinates.
-    cx: f64,
-    cy: f64,
-    /// The radius.
-    r: f64,
-    /// `None` for a circle. For an arc: the start angle, the end angle, and whether it runs anticlockwise.
-    span: Option<(f64, f64, bool)>,
-}
-
-/// Read a circle or an arc; anything else, or a missing point, gives `None`.
-fn round_entity(s: &crate::model::Sketch, e: &crate::model::SketchEntity) -> Option<Round> {
-    let p = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-    match e.kind {
-        EntityKind::Circle { center, r } => {
-            let (cx, cy) = p(center)?;
-            Some(Round { center_id: center, cx, cy, r, span: None })
-        }
-        EntityKind::Arc { center, a, b, ccw } => {
-            let ((cx, cy), (ax, ay), (bx, by)) = (p(center)?, p(a)?, p(b)?);
-            let r = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt();
-            Some(Round { center_id: center, cx, cy, r, span: Some(((ay - cy).atan2(ax - cx), (by - cy).atan2(bx - cx), ccw)) })
-        }
-        _ => None,
-    }
-}
-
 fn at_of(pts: &[SketchPoint], id: Id) -> Option<(f64, f64)> {
     pts.iter().find(|p| p.id == id).map(|p| (p.x, p.y))
 }
@@ -818,9 +774,10 @@ fn hold_offset(ids: &[Id], kinds: &[(EntityKind, OffsetSource)], dist: f64, shap
     }
     let mut held = Vec::new();
     for (kind, src) in kinds {
-        match (kind, src) {
-            (EntityKind::Arc { center, .. }, OffsetSource::Arc { center: sc, .. }) => held.push(Constraint::Concentric { c1: *sc, c2: *center }),
-            (EntityKind::Arc { center, .. }, OffsetSource::Corner(c)) => held.push(Constraint::Coincident { a: *c, b: *center }),
+        let Some(center) = kind.as_arc().map(|arc| arc.center) else { continue };
+        match src {
+            OffsetSource::Arc { center: sc, .. } => held.push(Constraint::Concentric { c1: *sc, c2: center }),
+            OffsetSource::Corner(c) => held.push(Constraint::Coincident { a: *c, b: center }),
             _ => {}
         }
     }
@@ -969,27 +926,9 @@ pub(super) fn measure_driven(c: &mut Constraint, pos: &std::collections::HashMap
 /// THE BOX OF A CURVE `[x0, y0, x1, y1]` where its points stand (`at`), widened past the welds of the loops (1e-3 mm)
 /// and by a millionth of its size: curves whose boxes so widened do not meet share no loop.
 pub(super) fn entity_box(e: &SketchEntity, at: &dyn Fn(Id) -> Option<(f64, f64)>) -> [f64; 4] {
-    let p = |id: Id| at(id).unwrap_or((f64::NAN, f64::NAN));
-    let [x0, y0, x1, y1] = match e.kind {
-        EntityKind::Line { a, b } => {
-            let (pa, pb) = (p(a), p(b));
-            [pa.0.min(pb.0), pa.1.min(pb.1), pa.0.max(pb.0), pa.1.max(pb.1)]
-        }
-        EntityKind::Circle { center, r } => {
-            let c = p(center);
-            [c.0 - r, c.1 - r, c.0 + r, c.1 + r]
-        }
-        EntityKind::Arc { center, a, .. } => {
-            let (c, pa) = (p(center), p(a));
-            let r = (pa.0 - c.0).hypot(pa.1 - c.1);
-            [c.0 - r, c.1 - r, c.0 + r, c.1 + r]
-        }
-        EntityKind::Ellipse { c, ma, mi } => {
-            let (pc, pa, pi) = (p(c), p(ma), p(mi));
-            let r = (pa.0 - pc.0).hypot(pa.1 - pc.1).max((pi.0 - pc.0).hypot(pi.1 - pc.1));
-            [pc.0 - r, pc.1 - r, pc.0 + r, pc.1 + r]
-        }
-    };
+    // a curve by the box of its laid out points: a spline leaves the box of its nodes where a handle pulls it out
+    let line = crate::model::curve::Curve::of_placed(&|id: Id| at(id).map(|(x, y)| Point2::new(x, y)), e).map(|c| c.polyline()).unwrap_or_default();
+    let [x0, y0, x1, y1] = line.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, q| [b[0].min(q.x), b[1].min(q.y), b[2].max(q.x), b[3].max(q.y)]);
     let m = 1e-2 + 1e-6 * (x1 - x0).max(y1 - y0);
     [x0 - m, y0 - m, x1 + m, y1 + m]
 }
@@ -1005,6 +944,8 @@ pub(crate) struct PieceKey {
 pub(crate) struct PieceAt {
     key: [i64; 2],
     along: f64,
+    /// The entity crossing the piece at its start, 0 for the piece holding the start of its entity.
+    cut: Id,
 }
 
 /// THE SOURCES OF THE PIECES OF A PROFILE, in their order, and the place (from 1) of every piece among them.
@@ -1034,6 +975,19 @@ mod edit;
 mod trim;
 mod corners;
 mod offset;
+mod offsets;
 mod solve;
 mod contours;
 mod profiles;
+mod pieces;
+mod crossings;
+mod blends;
+mod touch;
+mod copies;
+mod trial;
+pub use trial::{DimOf, ValueTrial};
+pub(crate) use copies::{copied_constraint, CopyMaps, Whole};
+pub(crate) use blends::{blend_of_arms, EdgeAt};
+pub use crossings::Crossing;
+pub use touch::Touching;
+pub use pieces::LayAs;

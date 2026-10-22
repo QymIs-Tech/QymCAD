@@ -51,7 +51,7 @@ mod tests {
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(34), "part"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::Trim), "part"), "without a button the tool does not exist for a person");
     }
 
     /// THE WHOLE PATH TO THE TIMELINE: what is cut + where to keep + what cuts -> a node with that
@@ -59,8 +59,8 @@ mod tests {
     #[test]
     fn what_is_picked_reaches_the_timeline() {
         let (mut app, sheet, tool) = plate_sheet_tool();
-        app.start_feat_cmd(34);
-        assert_eq!(app.tools.armed.cmd_kind(), 34, "the command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Trim);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Trim), "the command must open");
 
         let bb = bbox(&app, sheet);
         let keep = [bb[0] + 1.0, (bb[1] + bb[4]) * 0.5, bb[5]]; // by the left edge — the part that stays
@@ -90,13 +90,13 @@ mod tests {
     fn a_missing_input_is_refused_with_a_message() {
         let (mut app, sheet, _tool) = plate_sheet_tool();
         let before = app.project.timeline.len();
-        app.start_feat_cmd(34);
-        app.apply_feat_cmd();
-        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-trim-pick-sheet")), "without a surface the reason must be said out loud");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Trim);
+        let why = app.apply_feat_cmd();
+        assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-trim-pick-sheet"))), "without a surface the reason must be said out loud");
 
         app.side.trim.keep = Some((sheet, [0.0, 0.0, 0.0]));
-        app.apply_feat_cmd();
-        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-trim-pick-tool")), "without a tool it is a reason too, not silence");
+        let why = app.apply_feat_cmd();
+        assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-trim-pick-tool"))), "without a tool it is a reason too, not silence");
         assert_eq!(app.project.timeline.len(), before, "the feature must not be created without both inputs");
     }
 
@@ -104,12 +104,12 @@ mod tests {
     #[test]
     fn the_tool_shows_what_is_picked() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("} else if pn.armed.cmd_kind() == 34 {").expect("the trim must have a drawing block of its own");
-        let b = src[a..].find("} else if pn.armed.cmd_kind() == 33 {").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("} else if shows == qymcad_ui_state::Shows::SheetAndCutter {").expect("the trim must have a drawing block of its own");
+        let b = src[a..].find("} else if matches!(shows, qymcad_ui_state::Shows::Bodies | qymcad_ui_state::Shows::MeshAndWhatItFound) {").map(|i| a + i).unwrap_or(src.len());
         let blk = &src[a..b];
         assert!(blk.contains("egui::Mesh::default()"), "the picked bodies must be highlighted with a fill");
         assert!(blk.contains("circle_filled"), "the place of the click must be visible: it is what decides which piece stays");
-        assert!(crate::gui::sketch_source::PICK.contains("if self.tools.armed.cmd_kind() == 34 {"), "a click must pick something");
+        assert!(crate::gui::sketch_source::PART.contains("if tool == T::Trim {"), "a click must pick something");
     }
 
     /// The strings of the tool are translated.

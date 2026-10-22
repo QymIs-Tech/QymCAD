@@ -4,7 +4,7 @@
 //!
 //! Reported behaviour: a fillet taken by its chord or by its arc length showed an R beside it as well.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{EntityKind, FilletBy, FilletSize, Project};
+use qymcad_core::model::{FilletBy, FilletSize, Project};
 
 /// An L of two lines meeting at (20, 0), its corner rounded by `size`. Answers the project, the sketch and the centre
 /// of the arc.
@@ -17,8 +17,8 @@ fn rounded(size: FilletSize) -> (Project, usize, u64) {
     p.regen_sketch(si);
     let corner = p.sketches[si].points.iter().find(|q| (q.x - 20.0).abs() < 1e-9 && q.y.abs() < 1e-9).map(|q| q.id).expect("the corner");
     assert!(p.fillet_at_vertex_by(si, corner, size), "the corner was not rounded by {size:?}");
-    let centre = p.sketches[si].entities.iter().find_map(|e| match e.kind {
-        EntityKind::Arc { center, .. } => Some(center),
+    let centre = p.sketches[si].entities.iter().find_map(|e| match e.kind.as_arc() {
+        Some(qymcad_core::model::ArcParts { center, .. }) => Some(center),
         _ => None,
     });
     (p, si, centre.expect("the arc of the fillet"))
@@ -35,8 +35,8 @@ fn a_fillet_by_any_size_is_sized_and_a_bare_arc_is_not() {
     let si = p.new_sketch("S");
     let pt = qymcad_core::geom::Point2::new;
     p.add_arc_entity(si, pt(0.0, 0.0), pt(10.0, 0.0), pt(0.0, 10.0), qymcad_core::feature::Winding::Ccw, Purpose::Real);
-    let centre = p.sketches[si].entities.iter().find_map(|e| match e.kind {
-        EntityKind::Arc { center, .. } => Some(center),
+    let centre = p.sketches[si].entities.iter().find_map(|e| match e.kind.as_arc() {
+        Some(qymcad_core::model::ArcParts { center, .. }) => Some(center),
         _ => None,
     });
     assert!(!p.sketches[si].rim_sized(centre.expect("the arc")), "a bare arc is taken for one that carries a size");

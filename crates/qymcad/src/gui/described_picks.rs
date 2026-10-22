@@ -26,7 +26,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
@@ -44,7 +44,7 @@ mod tests {
         let face = app.project.regen_faces[&body].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
 
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
-        app.start_feat_cmd(4); // fillet
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // fillet
         app.tools.gsel.edges = [11, 12, 13, 14].into_iter().collect(); // as if the edges of the face had been collected
         app.tools.gsel.describe_edges_of_face(face);
         app.apply_feat_cmd();
@@ -71,7 +71,7 @@ mod tests {
     fn picking_edges_one_by_one_stays_a_list() {
         let (mut app, body) = plate();
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
-        app.start_feat_cmd(4);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
         app.tools.gsel.edges = [21, 22].into_iter().collect();
         app.tools.gsel.described = None; // the edges were picked one by one
         app.apply_feat_cmd();
@@ -119,7 +119,7 @@ mod tests {
         let face = app.project.regen_faces[&body].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
 
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
-        app.start_feat_cmd(4);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
         app.tools.gsel.edges = [11, 12].into_iter().collect();
         app.tools.gsel.describe_edges_of_face(face); // the face is picked, so a description suggests itself
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {

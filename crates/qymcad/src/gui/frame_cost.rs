@@ -78,7 +78,7 @@ mod tests {
         app.finish_sketch_edit();
         for _ in 0..12 {
             app.chosen.sel = Sel::Sketch(si);
-            app.start_feat_cmd(1);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
             if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 10.0;
                 p.txt = "10".into();

@@ -32,8 +32,8 @@ pub fn infer_hints(dc: &DrawCtx, si: usize, prev: Option<Point2>, p1: Point2, p2
             out.push((Gly::Parallel, mid));
         }
     }
-    // tangent to a circle or an arc
-    if nearest_tangent_circle(dc.project, si, p1, p2).is_some() {
+    // tangent to the curve of any kind the line nearly touches, as the automatic tangency makes it
+    if dc.project.nearly_touching(si, [p1, p2], Id::MAX).is_some() {
         out.push((Gly::Tangent, mid));
     }
     // equal in length to the nearest line
@@ -94,14 +94,16 @@ pub fn comp_gizmo_mode(pn: &Painting, comp: Id) -> CompGizmoMode {
 /// The glyph is the tie a click there lays (`tie_what_landed` in the sketcher): none while a drawing tool lays no ties.
 pub fn snap_infer_glyph(pn: &Painting) -> Option<(Gly, Point2)> {
     let (p, kind) = pn.snap_hint?;
-    if pn.armed.draw_kind() != 0 && !qymcad_ui_state::ties_laid(pn.tool, pn.set) {
+    if pn.armed.drawing().is_some() && !qymcad_ui_state::ties_laid(pn.tool, pn.set) {
         return None;
     }
     let g = match kind {
         0 | 3 | 4 => Gly::Coincident, // a vertex, a midpoint or a centre
         // where two curves cross the point is tied to both; on one, at a line of the grid, it is a point on that curve
         5 if curves_through(pn, p).total() >= 2 => Gly::Coincident,
-        5 | 6 if curves_through(pn, p).rims > 0 => Gly::PointOnCircle,
+        // a point of an ellipse or a spline: no tie is laid there, and none is promised
+        5 | 6 if curves_through(pn, p).total() == 0 => return None,
+        5 | 6 if curves_through(pn, p).curves > 0 => Gly::PointOnCircle,
         5 | 6 => Gly::PointOnLine,                        // on an edge
         2 if p.x == 0.0 && p.y == 0.0 => Gly::Coincident, // the origin, where the two axes meet
         2 => Gly::PointOnLine,                            // on an axis
@@ -110,29 +112,25 @@ pub fn snap_infer_glyph(pn: &Painting) -> Option<(Gly, Point2)> {
     Some((g, p))
 }
 
-/// HOW MANY CURVES OF THE SKETCH PASS A POINT a snap put on them: lines and the axes, and circles and arcs.
+/// HOW MANY CURVES OF THE SKETCH PASS A POINT a snap put on them: straights and the axes, and curves of any other kind.
 pub(crate) struct Through {
-    pub(crate) lines: usize,
-    pub(crate) rims: usize,
+    pub(crate) straights: usize,
+    pub(crate) curves: usize,
 }
 
 impl Through {
     pub(crate) fn total(&self) -> usize {
-        self.lines + self.rims
+        self.straights + self.curves
     }
 }
 
 /// The curves of the sketch being edited that `p` lies on, as a snap puts it on them - exactly, within 1e-6 mm.
 pub(crate) fn curves_through(pn: &Painting, p: Point2) -> Through {
-    let Some(si) = qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses) else { return Through { lines: 0, rims: 0 } };
-    let dc = DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path };
-    let qymcad_ui_state::ActiveEdges { lines, circles } = qymcad_ui_state::active_edges(&dc, si);
-    let on_line = |(a, b): &(Point2, Point2)| qymcad_ui_state::project_on_seg(p, *a, *b).is_some_and(|q| (q.x - p.x).hypot(q.y - p.y) < 1e-6);
+    let Some(s) = qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses).and_then(|si| pn.project.sketches.get(si)) else { return Through { straights: 0, curves: 0 } };
+    let on: Vec<qymcad_core::model::curve::Curve> = s.entities.iter().filter_map(|e| qymcad_core::model::curve::Curve::of(s, e)).filter(|c| c.nearest(p).off < 1e-6).collect();
     let axes = usize::from(p.x.abs() < 1e-6) + usize::from(p.y.abs() < 1e-6);
-    Through {
-        lines: lines.iter().filter(|l| on_line(l)).count() + axes,
-        rims: circles.iter().filter(|rim| ((p.x - rim.centre.x).hypot(p.y - rim.centre.y) - rim.radius).abs() < 1e-6 && rim.holds(p)).count(),
-    }
+    let straights = on.iter().filter(|c| c.straight()).count();
+    Through { straights: straights + axes, curves: on.len() - straights }
 }
 
 /// The contours of sketches that do NOT belong to the active context (its subtree) — they are hidden
@@ -273,7 +271,7 @@ pub fn constraint_glyphs(pick: &PickCtx, rect: Rect, si: usize) -> Vec<(usize, P
         }
     };
     let mut push = |out: &mut Vec<(usize, Pos2, Gly)>, ci: usize, p: Option<Pos2>, g: Gly| place(out, &mut seen, ci, p, g);
-    let holders = s.corner_holders(); // a cut corner's own constraints show no badge: the corner holds itself by them
+    let holders = s.held_by_shapes(); // the own constraints of a cut corner or a figure show no badge: the shape holds itself by them; the centre of a rectangle among them, whose glyph beside the point took the click meant for the point
     for (ci, c) in s.constraints.iter().enumerate().filter(|(ci, _)| !holders.contains(ci)) {
         match *c {
             Constraint::Horizontal { a, b } => push(&mut out, ci, mid(a, b), Gly::Horiz),
@@ -303,10 +301,6 @@ pub fn constraint_glyphs(pick: &PickCtx, rect: Rect, si: usize) -> Vec<(usize, P
             // as if it were breeding extra constraints).
             Constraint::Fixed { p } if !s.system_ids().contains(&p) => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::Fix),
             Constraint::PointOnLine { p, .. } => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::PointOnLine),
-            // THE CENTRE OF A RECTANGLE SHOWS NO MIDPOINT GLYPH: the rectangle holds it there itself, as it holds its
-            // turn, and the glyph beside the point took the click meant for the point - a constraint on the centre was
-            // refused, the centre never picked
-            Constraint::Midpoint { p, .. } if s.rects.iter().any(|r| r.centre == p) => {}
             Constraint::Midpoint { p, .. } => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::Midpoint),
             Constraint::EqualRadius { c1, c2 } => {
                 push(&mut out, ci, pt(c1).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::Equal);
@@ -314,6 +308,16 @@ pub fn constraint_glyphs(pick: &PickCtx, rect: Rect, si: usize) -> Vec<(usize, P
             }
             Constraint::PointOnCircle { p, .. } => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::PointOnCircle),
             Constraint::Concentric { c1, .. } => push(&mut out, ci, pt(c1).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::Concentric),
+            // a point on a curve of any kind shows as a point on a circle does; two curves touching show the sign of a
+            // touching at the end they touch at, or half way between the first points of the two, as two circles
+            // touching show it half way between their centres
+            Constraint::PointOnCurve { p, .. } | Constraint::PointOnEllipse { p, .. } => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::PointOnCircle),
+            Constraint::TangentCurves { end: Some(p), .. } => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, -8.0)), Gly::Tangent),
+            Constraint::TangentCurves { ref one, ref other, .. } => {
+                if let (Some(&a), Some(&b)) = (s.resolved(one).points().first(), s.resolved(other).points().first()) {
+                    push(&mut out, ci, mid(a, b), Gly::Tangent);
+                }
+            }
             _ => {}
         }
     }

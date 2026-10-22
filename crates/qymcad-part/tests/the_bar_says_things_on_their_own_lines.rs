@@ -18,11 +18,10 @@
 
 use qymcad_ui_state::Bench;
 
-/// A text the frame drew: what it says, where it landed, its colour and its size.
+/// A text the frame drew: what it says, where it landed and its size.
 struct Drawn {
     text: String,
     rect: egui::Rect,
-    colour: egui::Color32,
     size: f32,
 }
 
@@ -32,8 +31,7 @@ fn texts(shapes: &[egui::epaint::ClippedShape]) -> Vec<Drawn> {
         match s {
             egui::epaint::Shape::Text(t) => {
                 let fmt = t.galley.job.sections.first().map(|s| s.format.clone()).unwrap_or_default();
-                let colour = t.override_text_color.unwrap_or(fmt.color);
-                out.push(Drawn { text: t.galley.text().to_string(), rect: egui::Rect::from_min_size(t.pos, t.galley.size()), colour, size: fmt.font_id.size });
+                out.push(Drawn { text: t.galley.text().to_string(), rect: egui::Rect::from_min_size(t.pos, t.galley.size()), size: fmt.font_id.size });
             }
             egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
             _ => {}
@@ -62,36 +60,59 @@ fn rows(mut drawn: Vec<Drawn>) -> Vec<Vec<Drawn>> {
     out
 }
 
-/// The bench with the thread command open, and the rows its bar was drawn in.
+/// The bench with the thread command open, the rows its bar and its words were drawn in, and what it said.
 struct ThreadBar {
-    bench: Bench,
     rows: Vec<Vec<Drawn>>,
+    said: Vec<qymcad_ui_state::Notice>,
+}
+
+impl ThreadBar {
+    /// The rows holding a sentence the tool said in tone `tone`.
+    fn rows_of(&self, tone: qymcad_ui_state::Tone) -> Vec<usize> {
+        self.rows.iter().enumerate().filter(|(_, r)| r.iter().any(|t| self.said.iter().any(|n| n.tone == tone && drawn_of(t, n)))).map(|(i, _)| i).collect()
+    }
+
+    /// The texts drawn of every sentence the tool said.
+    fn sentences(&self) -> Vec<&Drawn> {
+        self.rows.iter().flatten().filter(|t| self.said.iter().any(|n| drawn_of(t, n))).collect()
+    }
+}
+
+/// Is text `t` the drawing of sentence `n`, or of a piece of it - a mark of its tone may stand in front of it.
+fn drawn_of(t: &Drawn, n: &qymcad_ui_state::Notice) -> bool {
+    let text = t.text.trim();
+    text.chars().count() > 3 && (text.contains(n.words.as_str()) || n.words.contains(text))
 }
 
 /// The thread command as a person meets it: opened, with the defaults of its own fields.
 fn the_thread_bar() -> ThreadBar {
     let mut b = Bench { mode_3d: true, ..Default::default() };
-    b.cmd.open(&mut b.armed, 24, true);
+    b.cmd.open(&mut b.armed, qymcad_ui_state::PartTool::Thread, true);
     qymcad_ui_state::set_thread_params(&mut b.cmd, b.thread);
 
     let ctx = egui::Context::default();
     let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1600.0, 800.0));
-    let full = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-        qymcad_part::feat_command_bar(&mut b.part_ctx(), ui);
-    });
-    let r = rows(texts(&full.shapes));
-    ThreadBar { bench: b, rows: r }
+    // the bar, and its sentences on their plate in the corner of the view, as the window draws them; a plate over the view
+    // is laid out unseen the first frame it shows, so the second frame is read
+    let mut frame = || {
+        ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+            let mut pc = b.part_ctx();
+            let canvas = pc.canvas;
+            qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_part::in_hand(&mut pc));
+        })
+    };
+    frame();
+    let r = rows(texts(&frame().shapes));
+    ThreadBar { rows: r, said: qymcad_ui_state::words_laid(&ctx) }
 }
 
 /// THE SENTENCES ARE NOT IN THE ROW OF CONTROLS, and the errors are not in the row of the sentences.
 #[test]
 fn the_information_and_the_errors_each_get_a_line() {
-    let ThreadBar { bench: b, rows } = the_thread_bar();
-    let (note, wrong) = (b.scheme.pal.hint(), b.scheme.pal.error_mild());
-
-    let row_of = |c: egui::Color32| rows.iter().enumerate().filter(|(_, r)| r.iter().any(|t| t.colour == c)).map(|(i, _)| i).collect::<Vec<_>>();
-    let notes = row_of(note);
-    let wrongs = row_of(wrong);
+    let bar = the_thread_bar();
+    let rows = &bar.rows;
+    let notes = bar.rows_of(qymcad_ui_state::Tone::Info);
+    let wrongs = bar.rows_of(qymcad_ui_state::Tone::Refusal);
     assert!(!notes.is_empty(), "GUARD: the thread bar must say something for there to be a line to place");
     assert!(!wrongs.is_empty(), "GUARD: the thread defaults must not build, or there is no error line to place");
 
@@ -106,9 +127,9 @@ fn the_information_and_the_errors_each_get_a_line() {
 /// is read, not glanced at, and it is written like the rest of the text.
 #[test]
 fn the_sentences_are_written_at_the_ordinary_size() {
-    let ThreadBar { bench: b, rows } = the_thread_bar();
-    let body = rows[0].iter().map(|t| t.size).fold(0.0f32, f32::max);
-    let said: Vec<_> = rows.iter().flatten().filter(|t| t.colour == b.scheme.pal.hint() || t.colour == b.scheme.pal.error_mild()).collect();
+    let bar = the_thread_bar();
+    let body = bar.rows[0].iter().map(|t| t.size).fold(0.0f32, f32::max);
+    let said = bar.sentences();
     assert!(!said.is_empty(), "GUARD: nothing was said, so nothing was measured");
 
     let small: Vec<_> = said.iter().filter(|t| t.size < body).map(|t| format!("{} at {} against {body}", t.text, t.size)).collect();

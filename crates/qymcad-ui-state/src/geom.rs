@@ -404,7 +404,7 @@ pub fn profile_axis_lines(project: &qymcad_core::model::Project, si: usize) -> V
     // Construction lines come FIRST: they are drawn precisely to serve as an axis, and that is the most
     // frequent choice.
     let Some(s) = project.sketches.get(si) else { return Vec::new() };
-    let lines = |constr: bool| s.entities.iter().filter(move |e| e.construction == constr && matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).map(|e| e.id);
+    let lines = |constr: bool| s.entities.iter().filter(move |e| e.construction == constr && e.kind.as_line().is_some()).map(|e| e.id);
     lines(true).chain(lines(false)).collect()
 }
 

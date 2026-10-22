@@ -45,10 +45,7 @@ pub(super) fn regions_round(ch: &Change) -> Vec<(Contour, Vec<Id>)> {
     // an end of a moved curve with nothing else of the sketch at it
     let free_end = |id: Id, p: Point2| -> bool {
         let Some(&k) = ch.moved.iter().find(|&&k| (ch.curve)(k).id == id) else { return false };
-        let is_end = match (ch.curve)(k).kind {
-            EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => [a, b].into_iter().filter_map(ch.at).any(|q| (q.x - p.x).hypot(q.y - p.y) < 1e-6),
-            _ => false,
-        };
+        let is_end = (ch.curve)(k).kind.straight_or_round_ends().is_some_and(|ends| ends.into_iter().filter_map(ch.at).any(|q| (q.x - p.x).hypot(q.y - p.y) < 1e-6));
         let spot = [p.x - 1e-3, p.y - 1e-3, p.x + 1e-3, p.y + 1e-3];
         is_end && (ch.near)(&spot).into_iter().all(|j| j == k || !meet(&ch.boxes[j], &spot))
     };
@@ -64,25 +61,25 @@ pub(super) fn regions_round(ch: &Change) -> Vec<(Contour, Vec<Id>)> {
             pts.push(SketchPoint { id: RIM_POINT - k as Id, x, y });
         }
         for side in 0..4 {
-            ents.push(SketchEntity { id: RIM_SIDE - side as Id, kind: EntityKind::Line { a: RIM_POINT - side as Id, b: RIM_POINT - ((side + 1) % 4) as Id }, construction: false });
+            ents.push(SketchEntity { id: RIM_SIDE - side as Id, kind: crate::model::LineParts { a: RIM_POINT - side as Id, b: RIM_POINT - ((side + 1) % 4) as Id }.into(), construction: false });
         }
         let mut out = Vec::new();
         // the sides a region running out of the window was found at: bottom, right, top, left
         let mut grow = [false; 4];
         let mut grew = false;
-        let faces = arrangement_faces(&pts, &ents, &[]); // a sketch with splines is never laid round (`regen_sketch`)
-                                                         // A PIECE OF THE DRAWING SEEN WHOLE IN THE WINDOW, clear of its sides, is walked round on its outside and not
-                                                         // made a region: a moved curve on that walk may close a region with what lies past the window. The window takes
-                                                         // the piece in, and the next laying reaches further along it - the half disc whose diameter was drawn last came
-                                                         // in a few segments a step
-        for walk in &faces.outer {
+        let super::tess::Faces { inner, outer, laid: curves } = arrangement_faces(&pts, &ents); // a sketch with splines is never laid round (`regen_sketch`)
+                                                                                                // A PIECE OF THE DRAWING SEEN WHOLE IN THE WINDOW, clear of its sides, is walked round on its outside and not
+                                                                                                // made a region: a moved curve on that walk may close a region with what lies past the window. The window takes
+                                                                                                // the piece in, and the next laying reaches further along it - the half disc whose diameter was drawn last came
+                                                                                                // in a few segments a step
+        for walk in &outer {
             let b = contour_box(walk);
             if !inside(&b, &w) && borders_a_moved_curve(walk, &moved, &free_end) {
                 w = union(w, b);
                 grew = true;
             }
         }
-        for (c, prov) in faces.inner {
+        for (c, prov) in inner {
             let b = contour_box(&c);
             if !ch.swept.iter().any(|s| meet(&b, s)) {
                 continue; // a region the change did not reach: the one of the sketch stands
@@ -95,6 +92,8 @@ pub(super) fn regions_round(ch: &Change) -> Vec<(Contour, Vec<Id>)> {
                     }
                 }
             } else if inside(&b, &w) {
+                let (mut c, mut prov) = (c, prov);
+                curves.finish(&mut c, &mut prov);
                 out.push((c, prov));
             } else if inside(&b, &rim) {
                 // between the window and its sides: a curve laid in neither may cut it, so the window takes it in
@@ -138,12 +137,7 @@ pub(super) struct Chains {
 
 /// The open chains of the curves joined end to end with `from` (by place), wherever the joins reach.
 pub(super) fn chains_round(ch: &Change, from: &[usize]) -> Chains {
-    let ends = |k: usize| -> Vec<(f64, f64)> {
-        match (ch.curve)(k).kind {
-            EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => [a, b].into_iter().filter_map(ch.at).map(|p| (p.x, p.y)).collect(),
-            _ => Vec::new(),
-        }
-    };
+    let ends = |k: usize| -> Vec<(f64, f64)> { (ch.curve)(k).kind.straight_or_round_ends().map(|ends| ends.into_iter().filter_map(ch.at).map(|p| (p.x, p.y)).collect()).unwrap_or_default() };
     let joined = |a: &[(f64, f64)], b: &[(f64, f64)]| a.iter().any(|p| b.iter().any(|q| (p.0 - q.0).powi(2) + (p.1 - q.1).powi(2) < 1e-6));
     let mut reached: HashSet<usize> = HashSet::new();
     let mut queue: Vec<usize> = Vec::new();
@@ -177,14 +171,11 @@ pub(super) fn chains_round(ch: &Change, from: &[usize]) -> Chains {
 /// of 200 by 200 took the whole grid, 0.25 s a frame.
 fn borders_a_moved_curve(c: &Contour, moved: &HashSet<Id>, free_end: &dyn Fn(Id, Point2) -> bool) -> bool {
     let key = |p: Point2| ((p.x * 1e6).round() as i64, (p.y * 1e6).round() as i64);
-    let ends = |e: &ProfEdge| match *e {
-        ProfEdge::Line { a, b } | ProfEdge::Arc { a, b, .. } => Some((a, b)),
-        ProfEdge::Circle { .. } => None,
-    };
-    let walked: HashSet<((i64, i64), (i64, i64))> = c.edges.iter().filter_map(ends).map(|(a, b)| (key(a), key(b))).collect();
+    let ends = |e: &ProfEdge| e.ends();
+    let walked: HashSet<((i64, i64), (i64, i64))> = c.edges.iter().filter_map(ends).map(|[a, b]| (key(a), key(b))).collect();
     c.edges.iter().zip(&c.edge_src).filter(|(_, id)| moved.contains(id)).any(|(e, &id)| match ends(e) {
         None => true,
-        Some((a, b)) => !walked.contains(&(key(b), key(a))) || !(free_end(id, a) || free_end(id, b)),
+        Some([a, b]) => !walked.contains(&(key(b), key(a))) || !(free_end(id, a) || free_end(id, b)),
     })
 }
 
@@ -288,12 +279,7 @@ pub(super) struct Changed {
 fn print_of(e: &SketchEntity, at: &dyn Fn(Id) -> Option<SketchPoint>) -> u64 {
     let mut h: u64 = 0;
     let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
-    let (tag, extra) = match e.kind {
-        EntityKind::Line { .. } => (1, 0),
-        EntityKind::Arc { ccw, .. } => (2, u64::from(ccw)),
-        EntityKind::Circle { r, .. } => (3, r.to_bits()),
-        EntityKind::Ellipse { .. } => (4, 0),
-    };
+    let [tag, extra] = e.kind.signature();
     mix(tag);
     mix(extra);
     for id in entity_points(e) {

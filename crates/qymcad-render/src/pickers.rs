@@ -11,7 +11,6 @@ use super::*;
 /// here at all.
 pub fn draw_projection_overlay(project: &Project, scheme: &SchemeUi, sel: Sel, view: View2d, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view, rect };
-    use qymcad_core::model::EntityKind;
     let Sel::Sketch(si) = sel else { return };
     let Some(s) = project.sketches.get(si) else { return };
     if s.projections.is_empty() {
@@ -27,21 +26,8 @@ pub fn draw_projection_overlay(project: &Project, scheme: &SchemeUi, sel: Sel, v
             // construction geometry drawn by hand
             let construction = e.construction;
             let stroke = if construction { Stroke::new(1.0, scheme.pal.sketch_driven_construction()) } else { stroke };
-            let path: Vec<Pos2> = match e.kind {
-                EntityKind::Line { a, b } => pt(a).zip(pt(b)).map(|(pa, pb)| vec![sh.at(pa), sh.at(pb)]).unwrap_or_default(),
-                EntityKind::Circle { center, r } => pt(center)
-                    .map(|c| qymcad_core::geom::tessellate_arc(c.x, c.y, r, 0.0, std::f64::consts::TAU, true, 0.02).iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect())
-                    .unwrap_or_default(),
-                EntityKind::Arc { center, a, b, ccw } => match (pt(center), pt(a), pt(b)) {
-                    (Some(c), Some(pa), Some(pb)) => {
-                        let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
-                        let (a0, a1) = ((pa.y - c.y).atan2(pa.x - c.x), (pb.y - c.y).atan2(pb.x - c.x));
-                        qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02).iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect()
-                    }
-                    _ => Vec::new(),
-                },
-                EntityKind::Ellipse { .. } => Vec::new(),
-            };
+            // the projected curve as it is drawn, an ellipse and a spline as any other
+            let path: Vec<Pos2> = qymcad_ui_state::entity_outline(s, e).iter().map(|p| sh.at(*p)).collect();
             if path.len() < 2 {
                 continue;
             }
@@ -74,8 +60,8 @@ pub fn draw_axes(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         return;
     }
     // the axes as reference geometry: X red, Y green; the selected one orange and thicker
-    let xsel = pn.sel_sk.items.contains(&(3, 0));
-    let ysel = pn.sel_sk.items.contains(&(3, 1));
+    let xsel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(0));
+    let ysel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(1));
     let xst = if xsel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_x()) };
     let yst = if ysel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_y()) };
     painter.line_segment([Pos2::new(rect.left(), o.y), Pos2::new(rect.right(), o.y)], xst);
@@ -145,15 +131,12 @@ pub fn draw_pick_plane(pn: &Painting, painter: &egui::Painter, rect: Rect, basis
 
 /// Highlighting the plane candidates while a sketch plane is being chosen (translucent squares, brighter under the cursor).
 pub fn draw_sketch_plane_picker(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    // active while choosing a sketch plane, while placing an import, in the MIRROR (16) / DATUM PLANE (20)
-    // / SPLIT (27) command, while picking a MIRRORED PART and while picking a SECTION - one click-pick for all
+    // active while choosing a sketch plane, while placing an import, in the MIRROR / DATUM PLANE
+    // / SPLIT command, while picking a MIRRORED PART and while picking a SECTION - one click-pick for all
     if !(pn.picking.is_sketch_plane()
         || pn.picking.replace_sketch().is_some()
         || pn.pending_import.curves.is_some()
-        || pn.armed.cmd_kind() == 16
-        || pn.armed.cmd_kind() == 20
-        || pn.armed.cmd_kind() == 27
-        || pn.armed.cmd_kind() == 29
+        || pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::aims_at_a_plane)
         || pn.mirror.in_hand()
         || pn.section.pick)
         || !pn.mode_3d
@@ -164,12 +147,7 @@ pub fn draw_sketch_plane_picker(pn: &Painting, painter: &egui::Painter, rect: Re
     // the plane ALREADY CHOSEN is lit PERMANENTLY (in blue), the candidate under the cursor in yellow.
     // That way both what is chosen (a FACE included) and what is under the cursor right now are visible -
     // before, a chosen face could not be seen at all.
-    let picked = match pn.armed.cmd_kind() {
-        16 => pn.mirror.plane,
-        20 => pn.datum.plane_pick,
-        27 | 29 => pn.split.plane,
-        _ => None,
-    };
+    let picked = qymcad_ui_state::plane_taken(pn);
     let hovered = painter.ctx().pointer_hover_pos().and_then(|p| qymcad_pick::pick_sketch_plane_at(pn, rect, p));
     // An earlier edition drew ALL the candidate planes PERMANENTLY (blue frames). Reported behaviour:
     // squares that cannot be selected, and planes lighting up that have nothing to do with anything -

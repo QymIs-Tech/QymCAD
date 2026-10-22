@@ -34,9 +34,13 @@ mod tests {
     #[test]
     fn pressing_extrude_without_a_sketch_asks_for_one() {
         let (mut app, _) = a_part_with_an_unselected_sketch();
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
 
-        assert_eq!(app.tools.picking.sketch_for(), Some(1), "the tool answered the click with a line in the status bar and nothing else: a person sees that they pressed and nothing happened");
+        assert_eq!(
+            app.tools.picking.sketch_for(),
+            Some(qymcad_ui_state::PartTool::Extrude),
+            "the tool answered the click with a line in the status bar and nothing else: a person sees that they pressed and nothing happened"
+        );
         assert!(!app.status.is_empty(), "and the waiting must say what it is waiting for");
     }
 
@@ -50,8 +54,8 @@ mod tests {
         let (mut app, si) = a_part_with_an_unselected_sketch();
         app.viewing.mode_3d = true;
         app.sync_workbench();
-        app.start_feat_cmd(1);
-        assert_eq!(app.tools.picking.sketch_for(), Some(1), "GUARD: the tool must be waiting");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
+        assert_eq!(app.tools.picking.sketch_for(), Some(qymcad_ui_state::PartTool::Extrude), "GUARD: the tool must be waiting");
 
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         crate::gui::fit3d(&mut app.viewing.cam, &app.project, rect);
@@ -60,7 +64,7 @@ mod tests {
         app.viewport_3d_click_at(on_outline, rect, &basis);
         qymcad_part::take_sketch_if_waiting(&mut app.part_ctx());
 
-        assert_eq!(app.tools.armed.cmd_kind(), 1, "a click on the sketch outline in the 3D view must open the command that was waiting for it");
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "a click on the sketch outline in the 3D view must open the command that was waiting for it");
     }
 
     /// Where a point of the sketch's outline lands on screen.
@@ -79,7 +83,7 @@ mod tests {
         let (mut app, si) = a_part_with_an_unselected_sketch();
         app.viewing.mode_3d = true;
         app.sync_workbench();
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         crate::gui::fit3d(&mut app.viewing.cam, &app.project, rect);
         let basis = app.viewing.cam.basis();
@@ -100,11 +104,11 @@ mod tests {
     #[test]
     fn all_four_tools_that_need_a_sketch_wait_for_one() {
         let mut missing = Vec::new();
-        for kind in [1u8, 3, 8, 9] {
+        for kind in [qymcad_ui_state::PartTool::Extrude, qymcad_ui_state::PartTool::Revolve, qymcad_ui_state::PartTool::Sweep, qymcad_ui_state::PartTool::Loft] {
             let (mut app, _) = a_part_with_an_unselected_sketch();
             app.start_feat_cmd(kind);
             if app.tools.picking.sketch_for() != Some(kind) {
-                missing.push(format!("{kind}: waiting for {:?}", app.tools.picking.sketch_for()));
+                missing.push(format!("{kind:?}: waiting for {:?}", app.tools.picking.sketch_for()));
             }
         }
         assert!(missing.is_empty(), "a tool that needs a sketch does not ask for one, so pressing it does nothing a person can see:\n{}", missing.join("\n"));
@@ -118,10 +122,10 @@ mod tests {
     fn with_the_sketch_already_selected_the_command_opens_at_once() {
         let (mut app, _) = a_part_with_an_unselected_sketch();
         app.chosen.sel = super::super::Sel::Sketch(0);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
 
         assert_eq!(app.tools.picking.sketch_for(), None, "there is nothing to wait for - the sketch is chosen");
-        assert_eq!(app.tools.armed.cmd_kind(), 1, "and the command is open");
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "and the command is open");
     }
 
     /// ESCAPE PUTS THE WAITING TOOL DOWN.
@@ -131,8 +135,8 @@ mod tests {
     #[test]
     fn escape_puts_the_waiting_tool_down() {
         let (mut app, _) = a_part_with_an_unselected_sketch();
-        app.start_feat_cmd(1);
-        assert_eq!(app.tools.picking.sketch_for(), Some(1), "GUARD: the tool must be waiting before Esc has anything to do");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
+        assert_eq!(app.tools.picking.sketch_for(), Some(qymcad_ui_state::PartTool::Extrude), "GUARD: the tool must be waiting before Esc has anything to do");
 
         app.on_escape();
         assert_eq!(app.tools.picking.sketch_for(), None, "Esc must put down a tool that is waiting for a sketch");

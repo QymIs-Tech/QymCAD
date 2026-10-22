@@ -29,7 +29,7 @@ fn feature_follows_its_loop_when_loops_swap_places() {
     let mut a_pts: std::collections::HashSet<u64> = std::collections::HashSet::new();
     for ent in &p.sketches[si].entities {
         if a_set.contains(&ent.id) {
-            if let qymcad_core::model::EntityKind::Line { a, b } = ent.kind {
+            if let Some(qymcad_core::model::LineParts { a, b }) = ent.kind.as_line() {
                 a_pts.insert(a);
                 a_pts.insert(b);
             }

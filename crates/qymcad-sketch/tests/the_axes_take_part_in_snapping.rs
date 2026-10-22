@@ -99,13 +99,15 @@ fn the_cursor_sticks_where_a_construction_line_crosses_the_y_axis() {
 /// AWAY FROM THE AXES NOTHING CHANGES: the circle still answers with a point on its edge.
 ///
 /// Without this the fix could be "always return an axis crossing", which would take the ordinary snap to
-/// the edge away.
+/// the edge away. The place is 45 deg round the circle: its top is where the vertical centre line of the circle crosses
+/// the rim, and answers as that crossing.
 #[test]
 fn away_from_the_axes_the_edge_still_answers() {
     let mut b = a_sketch_with_a_construction_circle();
-    let top = Point2::new(40.0, 25.0); // the top of the circle, far from both axes
-    let (p, ty) = snap_near(&mut b, top, (0.0, 0.5));
+    let h = 25.0 / 2f64.sqrt();
+    let at = Point2::new(40.0 + h, h); // 45 deg round the circle, far from both axes and its centre lines
+    let (p, ty) = snap_near(&mut b, at, (0.35, 0.35));
 
     assert_eq!(ty, Some(6), "away from the axes the circle must go on answering with a point on its edge");
-    assert!((p.y - 25.0).abs() < 0.2, "and that point is on the circle: y = {:.3} against 25", p.y);
+    assert!(((p.x - 40.0).hypot(p.y) - 25.0).abs() < 0.2, "and that point is on the circle: {:.3} from its centre against 25", (p.x - 40.0).hypot(p.y));
 }

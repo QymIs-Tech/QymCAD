@@ -45,7 +45,7 @@ or the other is done. Changed your mind after Accept — Ctrl+Z brings the mark 
 A fillet or chamfer whose size eats a face whole — a radius as high as the step it rounds — is built
 exactly where its edges are straight between flat faces. Elsewhere it is built a hair short of the
 size, by no more than 0.001%, and its row turns yellow with the words “built a hair short of its
-size”. The part is usable as it is. If the exact size matters, make it slightly smaller or larger
+size”. The part is usable as it is. If the exact size matters, make it slightly smaller
 than the face it eats, and the mark goes.
 
 ## Deleting a line

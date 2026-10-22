@@ -36,13 +36,13 @@ mod tests {
     #[test]
     fn taking_a_measuring_tool_does_not_move_the_view() {
         let mut bad: Vec<String> = Vec::new();
-        for k in 1u8..=3 {
+        for k in qymcad_ui_state::DimKind::ALL {
             let mut app = sketching_with_a_chosen_view();
             let before = view_of(&app);
             qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, k);
             let after = view_of(&app);
             if after != before {
-                bad.push(format!("  dimension tool {k}: {before:?} -> {after:?}"));
+                bad.push(format!("  dimension tool {k:?}: {before:?} -> {after:?}"));
             }
         }
         assert!(bad.is_empty(), "taking a measuring tool moved the view:\n{}", bad.join("\n"));
@@ -52,13 +52,13 @@ mod tests {
     #[test]
     fn pressing_a_constraint_does_not_move_the_view() {
         let mut bad: Vec<String> = Vec::new();
-        for code in 0u8..=11 {
+        for code in qymcad_ui_state::ConstraintKind::ALL {
             let mut app = sketching_with_a_chosen_view();
             let before = view_of(&app);
             crate::gui::sketching::constraint_button(&mut app.sketch_ctx(), code);
             let after = view_of(&app);
             if after != before {
-                bad.push(format!("  constraint {code}: {before:?} -> {after:?}"));
+                bad.push(format!("  constraint {code:?}: {before:?} -> {after:?}"));
             }
         }
         assert!(bad.is_empty(), "pressing a constraint moved the view:\n{}", bad.join("\n"));
@@ -79,13 +79,13 @@ mod tests {
     #[test]
     fn taking_a_drawing_tool_does_not_move_the_view() {
         let mut bad: Vec<String> = Vec::new();
-        for k in 1u8..=11 {
+        for k in qymcad_ui_state::SketchShape::ALL {
             let mut app = sketching_with_a_chosen_view();
             let before = view_of(&app);
             app.set_sk_tool(k);
             let after = view_of(&app);
             if after != before {
-                bad.push(format!("  drawing tool {k}: {before:?} -> {after:?}"));
+                bad.push(format!("  drawing tool {k:?}: {before:?} -> {after:?}"));
             }
         }
         assert!(bad.is_empty(), "taking a drawing tool moved the view:\n{}", bad.join("\n"));

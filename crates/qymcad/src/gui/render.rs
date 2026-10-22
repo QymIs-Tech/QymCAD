@@ -236,6 +236,10 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     draw_feat_cmd_preview(pn, painter, rect);
     draw_sketch_plane_picker(pn, painter, rect);
     draw_joint_pick_highlight(pn, painter, rect);
+    // where the model stands, for the boxes of the tools to stand off it - here, past the card and the raster alike
+    if let Some(model) = qymcad_ui_state::model_on_screen(pn, rect) {
+        qymcad_ui_state::keep_model_in_sight(painter.ctx(), model);
+    }
     draw_component_gizmo(pn, painter, rect);
     draw_body_gizmo(pn, painter, rect); // the body gizmo inside a Part
     draw_section_gizmo(pn, painter, rect); // the section plane + the offset arrow
@@ -243,7 +247,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     draw_grounded_glyphs(pn, painter, rect); // the anchor at the grounded parts
 
     // face highlighting happens ONLY under the Shell/Hole command (outside them a face is not pickable).
-    // Shell (6) lights EVERY face of the multi-selection by persistent id; Hole (7) lights one Sel::Face.
+    // Shell lights EVERY face of the multi-selection by persistent id; Hole lights one Sel::Face.
     let fill_face = |painter: &egui::Painter, face: &qymcad_core::geom::MeshFace, mesh: &qymcad_core::geom::Mesh| {
         let mut hm = egui::Mesh::default();
         for &ti in &face.triangles {
@@ -258,7 +262,8 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             painter.add(egui::Shape::mesh(hm));
         }
     };
-    if pn.armed.cmd_kind() == 6 {
+    let shows = pn.armed.part_tool().map_or(qymcad_ui_state::Shows::Nothing, qymcad_ui_state::PartTool::shows);
+    if shows == qymcad_ui_state::Shows::FaceSet {
         for (mi, faces) in pn.project.bodies.iter().map(|b| &b.faces).enumerate() {
             if pn.project.mesh_id(mi) != pn.gsel.faces_body {
                 continue; // only the target body's faces are lit (the ids are local to a body)
@@ -269,7 +274,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
-    } else if pn.armed.cmd_kind() == 7 {
+    } else if shows == qymcad_ui_state::Shows::FaceOfTheSelection {
         if pn.hole.mode == 1 {
             // the "from a sketch" mode: diameter circles at every isolated marker point of the sketch
             if let Some(sid) = pn.hole.sketch {
@@ -290,7 +295,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 fill_face(painter, face, mesh);
             }
         }
-    } else if pn.armed.cmd_kind() == 28 {
+    } else if shows == qymcad_ui_state::Shows::FaceAndPlate {
         // THICKEN: the selected face is lit + a PREVIEW of the plate - the face outline shifted by the
         // thickness. The sign is visible at once: whether the material goes outwards or inwards.
         let t = qymcad_ui_state::cmd_val(pn.cmd, "thickness");
@@ -325,8 +330,8 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
-    } else if matches!(pn.armed.cmd_kind(), 30 | 31 | 36) {
-        // COPY FACE (30) and REPLACE FACE (31): show the selection TO THE EYE, not only in the model.
+    } else if shows == qymcad_ui_state::Shows::FacesOfASurface {
+        // COPY FACE and REPLACE FACE: show the selection TO THE EYE, not only in the model.
         //
         // The first edition gathered faces silently - nothing changed on the screen, and that read, fairly,
         // as "no face gets selected at all". A tool without a preview is blind: a person sees neither what
@@ -334,7 +339,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         //
         // The colour carries the MEANING: for a copy it is "will be added" (a surface appears), for a
         // replacement "will go" (a sheet takes these faces' place). The sheet surface itself is lit separately.
-        let taken = if matches!(pn.armed.cmd_kind(), 30 | 36) { pn.scheme.pal.add() } else { pn.scheme.pal.remove() };
+        let taken = if pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::keeps_the_faces_it_takes) { pn.scheme.pal.add() } else { pn.scheme.pal.remove() };
         for (mi, body) in pn.project.bodies.iter().enumerate() {
             if pn.project.mesh_id(mi) != pn.gsel.faces_body {
                 continue;
@@ -355,7 +360,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.add(egui::Shape::mesh(hm));
             }
         }
-        // THE SELECTED SURFACE (31) whole, so that it is visible WHAT exactly will return to the body
+        // THE SELECTED SURFACE of a replacement whole, so that it is visible WHAT exactly will return to the body
         if let Some(surf) = pn.repl_surface {
             if let Some(mi) = pn.project.mesh_index(surf) {
                 let mesh = &pn.project.bodies[mi].mesh;
@@ -416,7 +421,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             }
             painter.add(egui::Shape::mesh(hm));
         }
-    } else if pn.armed.cmd_kind() == 34 {
+    } else if shows == qymcad_ui_state::Shows::SheetAndCutter {
         // TRIM: the sheet being kept in the "stays" colour, the tool in the "goes" colour.
         for (body, add) in [(pn.trim.keep.map(|(b, _)| b), true), (pn.trim.tool, false)] {
             let Some(mi) = body.and_then(|b| pn.project.mesh_index(b)) else { continue };
@@ -440,7 +445,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             let p = scr.at(at).0;
             painter.circle_filled(p, 5.0, pn.scheme.pal.add());
         }
-    } else if pn.armed.cmd_kind() == 33 || pn.armed.cmd_kind() == 35 {
+    } else if matches!(shows, qymcad_ui_state::Shows::Bodies | qymcad_ui_state::Shows::MeshAndWhatItFound) {
         // STITCH: the selected sheets filled in the "will be added" colour. A person must see WHAT
         // exactly will become one surface: clicking blind into an invisible set is not acceptable.
         // RECOGNISE: the same for the one mesh that is to become a body.
@@ -450,7 +455,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         for part in pn.stitch_parts.iter().chain(pn.recognise.src.iter()) {
             let Some(mi) = pn.project.mesh_index(*part) else { continue };
             let mesh = &pn.project.bodies[mi].mesh;
-            let kinds = found.as_ref().filter(|k| pn.armed.cmd_kind() == 35 && k.len() == mesh.tris.len());
+            let kinds = found.as_ref().filter(|k| shows == qymcad_ui_state::Shows::MeshAndWhatItFound && k.len() == mesh.tris.len());
             let mut hm = egui::Mesh::default();
             for ti in 0..mesh.tris.len() {
                 let t = mesh.triangle(ti);
@@ -468,7 +473,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.add(egui::Shape::mesh(hm));
             }
         }
-    } else if pn.armed.cmd_kind() == 26 {
+    } else if shows == qymcad_ui_state::Shows::FacesThatGo {
         // DELETE FACE: the selected faces filled in red (what will cease to exist).
         for (mi, body) in pn.project.bodies.iter().enumerate() {
             if pn.project.mesh_id(mi) != pn.gsel.faces_body {
@@ -490,7 +495,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.add(egui::Shape::mesh(hm));
             }
         }
-    } else if pn.armed.cmd_kind() == 25 {
+    } else if shows == qymcad_ui_state::Shows::FaceAndPush {
         // PUSH FACE: the selected face is lit + a PREVIEW of the result - the face outline shifted by the
         // given offset, with the edges of the future prism between them. Without this the tool was blind:
         // neither what was picked nor where it would move was clear.
@@ -533,7 +538,7 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 painter.circle_filled(b, 3.5, col);
             }
         }
-    } else if pn.armed.cmd_kind() == 23 {
+    } else if shows == qymcad_ui_state::Shows::FacesAndTheirNeutral {
         // Draft: the faces being tilted in orange (as for the shell), the neutral face in blue.
         let fill_col = |painter: &egui::Painter, face: &qymcad_core::geom::MeshFace, mesh: &qymcad_core::geom::Mesh, col: Color32| {
             let mut hm = egui::Mesh::default();

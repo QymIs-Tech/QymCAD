@@ -175,7 +175,7 @@ pub struct RollbackDrag {
 #[derive(Clone, Copy, Default)]
 pub struct Hover {
     /// sketch geometry, as (kind, Id)
-    pub sketch: Option<(u8, Id)>,
+    pub sketch: Option<crate::SketchItem>,
     /// a constraint in the sketch list or glyph
     pub constraint: Option<usize>,
     /// an assembly joint
@@ -300,7 +300,6 @@ pub struct PartCtx<'a> {
     pub boolean: &'a mut BoolCommand,
     pub bar_exprs: &'a mut std::collections::HashMap<&'static str, String>,
     pub rev: &'a mut RevolveParams,
-    pub cmd_failed: &'a mut bool,
     pub carr: &'a mut CompArrayCmd,
     pub view: &'a mut View2d,
     pub view_restore: &'a mut Option<(bool, Cam3, View2d)>,
@@ -327,9 +326,19 @@ pub struct PartCtx<'a> {
     pub cache: &'a mut Caches,
     pub sketch_ses: &'a mut SketchSession,
     pub win: &'a mut Windows,
+    /// THE ROWS PICKED IN THE TREE, read only: the sections of a loft and the profile and path of a sweep picked
+    /// before the tool.
+    pub tree: &'a TreeSelection,
+    /// Where the view stands on screen: the words of the tool in hand lie in its corner.
+    pub canvas: egui::Rect,
 }
 
 impl PartCtx<'_> {
+    /// Drawing, through this workbench's own fields - as in the sketch.
+    pub fn draw(&self) -> DrawCtx<'_> {
+        DrawCtx { cam: self.cam, set: self.set, scheme: self.scheme, project: self.project, active_path: self.active_path }
+    }
+
     /// The rebuild, through this workbench's own fields - as in the assembly. Composed rather than carried
     /// alongside: two contexts in one signature would let them drift apart.
     pub fn rebuild(&mut self) -> RebuildCtx<'_> {
@@ -403,7 +412,6 @@ pub struct Bench {
     pub boolean: BoolCommand,
     pub bar_exprs: std::collections::HashMap<&'static str, String>,
     pub rev: RevolveParams,
-    pub cmd_failed: bool,
     pub carr: CompArrayCmd,
     pub view: View2d,
     pub view_restore: Option<(bool, Cam3, View2d)>,
@@ -487,7 +495,6 @@ impl Default for Bench {
             boolean: BoolCommand::default(),
             bar_exprs: std::collections::HashMap::new(),
             rev: RevolveParams::default(),
-            cmd_failed: false,
             carr: CompArrayCmd::default(),
             view: View2d::default(),
             view_restore: None,
@@ -564,7 +571,6 @@ impl Bench {
             boolean: &mut self.boolean,
             bar_exprs: &mut self.bar_exprs,
             rev: &mut self.rev,
-            cmd_failed: &mut self.cmd_failed,
             carr: &mut self.carr,
             view: &mut self.view,
             view_restore: &mut self.view_restore,
@@ -577,10 +583,12 @@ impl Bench {
             workbench: self.workbench,
             sketch_ses: &mut self.sketch_ses,
             win: &mut self.win,
+            tree: &self.tree_sel,
             mode_3d: &mut self.mode_3d,
             body_giz: &mut self.body_giz,
             joint: &self.joint,
             cache: &mut self.cache,
+            canvas: BENCH_CANVAS,
         }
     }
 
@@ -636,6 +644,8 @@ impl Bench {
             rev: &mut self.rev,
             rot: &mut self.rot,
             sweep: &mut self.sweep,
+            bar_exprs: &mut self.bar_exprs,
+            canvas: BENCH_CANVAS,
         }
     }
 
@@ -661,9 +671,15 @@ impl Bench {
             set: &self.set,
             workbench: self.workbench,
             mode_3d: self.mode_3d,
+            canvas: BENCH_CANVAS,
+            bar_exprs: &mut self.bar_exprs,
+            held: &self.tree_sel.multi,
         }
     }
 }
+
+/// Where the view of a bench stands: a window 1280 x 800 points across with no panels round it.
+const BENCH_CANVAS: egui::Rect = egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2 { x: 1280.0, y: 800.0 } };
 
 /// WHAT THE SKETCH WORKBENCH TOUCHES.
 ///
@@ -718,6 +734,10 @@ pub struct SketchCtx<'a> {
     pub rev: &'a mut RevolveParams,
     pub rot: &'a mut RotInput,
     pub sweep: &'a mut SweepParams,
+    /// where the numbers of the bar keep their text while they are typed
+    pub bar_exprs: &'a mut std::collections::HashMap<&'static str, String>,
+    /// the view the sketch is drawn in, on the screen
+    pub canvas: egui::Rect,
 }
 
 impl SketchCtx<'_> {
@@ -888,6 +908,8 @@ pub struct BarCtx<'a> {
     pub regen: &'a mut Rebuilding,
     pub scheme: &'a mut SchemeUi,
     pub section: &'a mut SectionTool,
+    /// The rows picked of the tree and the bodies held by Shift, read only.
+    pub held: &'a [Id],
     pub sel: &'a mut Sel,
     pub sel_sk: &'a mut SketchSelection,
     pub set: &'a mut Settings,
@@ -991,10 +1013,10 @@ pub enum BarAsk {
     GotoPath(usize),
     ExitContext,
     /// Take up a sketch tool.
-    SketchTool(u8),
+    SketchTool(SketchShape),
     /// Start a feature command, or a primitive.
-    FeatCmd(u8),
-    PrimCmd(u8),
+    FeatCmd(crate::PartTool),
+    PrimCmd(crate::PartTool),
     /// The view switches that need more than a flag.
     ToggleSection,
     /// Start mirroring the whole part or subassembly named here: release every other tool, then wait for
@@ -1004,7 +1026,7 @@ pub enum BarAsk {
     /// Step into a component.
     EnterComponent(Id),
     /// Start an array of components.
-    CompArray(u8),
+    CompArray(crate::PatternKind),
     /// Put every tool down, then take up the one named (if any). A tool taken straight from the bar goes through
     /// here: set before the put-down runs, it would be put down with the rest, and set without one it stood beside
     /// the tool already in hand - two bars at once.
@@ -1016,7 +1038,7 @@ pub enum BarAsk {
     /// Put the sketch tools down and go back to picking with the arrow.
     SketchSelectMode,
     /// Apply a sketch constraint by its code.
-    Constraint(u8),
+    Constraint(crate::ConstraintKind),
     /// The assembly picks.
     JointPick,
     GroundPick,
@@ -1138,6 +1160,8 @@ pub struct PropsCtx<'a> {
     pub regen: &'a mut Rebuilding,
     pub live: &'a mut LiveGeom,
     pub params_seen: &'a mut std::collections::HashMap<String, f64>,
+    /// The rows held with the selection - joints of the list picked with Shift or Ctrl - for a tool taken next.
+    pub held: &'a mut Vec<Id>,
     pub sel: &'a mut Sel,
     /// The rest of the properties COLUMN, gathered as its panels came over: the tools a row can arm
     /// (array, boolean), the feature options, the caches a sketch row reads, the windows, the 2D view and

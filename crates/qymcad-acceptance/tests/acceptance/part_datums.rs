@@ -1,6 +1,6 @@
 //! THE DATUMS: a plane, an axis and a point, each made every way the program offers, and each read back from the
 //! document - where it stands and which way it looks.
-use qymcad::{Key, Session};
+use qymcad::{InRow, Key, Session};
 use qymcad_acceptance::build;
 use qymcad_acceptance::probe;
 
@@ -277,7 +277,8 @@ probe! {
         build::into_the_first_part(&mut s);
         take(&mut s, "g-datum-axis-hint");
         bar_word(&mut s, "cmd-manual");
-        field(&mut s, "O.x", "10");
+        let origin = s.word("box-origin");
+        s.fill_in_row(&InRow { row: &origin, tag: "X" }, "10");
         let (from, along) = (s.projected([10.0, 0.0, 0.0]), s.projected([11.0, 0.0, 0.0]));
         let way = (along - from).normalized();
         let grab = from + way * 30.0;
@@ -527,7 +528,10 @@ probe! {
 
                 take(&mut s, "g-datum-axis-hint");
                 bar_word(&mut s, "cmd-manual");
-                type_the_place(&mut s, ["O.x", "O.y", "O.z"], c);
+                let origin = s.word("box-origin");
+                for (tag, v) in ["X", "Y", "Z"].into_iter().zip(c) {
+                    s.fill_in_row(&InRow { row: &origin, tag }, &format!("{v:.3}"));
+                }
                 let (from, tips) = (s.projected(c), position_arrow_tips(&mut s, c));
                 let pts = handle_points(&mut s, c, from, &tips, Rings::Drawn);
                 let over = fields_over(&mut s, &pts);

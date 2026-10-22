@@ -19,6 +19,7 @@
 // Blob format: "QYMB" | ver:u32 | nf:u32 | ne:u32 | fids[nf] | fsplit_of[nf] | fsplit_idx[nf] |
 //              eids[ne] | ebeside[ne] (version 3) | the BRep body
 extern "C" unsigned char* qym_shape_to_brep(const QymShape* q, size_t* out_len) {
+    QYM_AS_HANDED(q, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!q || q->shape.IsNull() || !out_len) return nullptr;
@@ -111,10 +112,11 @@ extern "C" QymShape* qym_shape_from_brep(const unsigned char* data, size_t len) 
     return nullptr;
 }
 
-extern "C" void qym_shape_free(QymShape* s) { delete s; }
+extern "C" void qym_shape_free(QymShape* s) { QYM_AS_HANDED(s, "it deletes the body its owner hands back"); delete s; }
 
 // A rigid transformation of a shape by a 3x4 row-major matrix (the X, Y and N axes plus the origin).
 extern "C" QymShape* qym_shape_transform(const QymShape* s, const double* m) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
@@ -186,6 +188,7 @@ extern "C" QymShape* qym_shape_hole_stepped(const QymShape* s, int kind, const d
     if (!s || dia <= 0.0 || depth <= 0.0 || !pl) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         TopoDS_Shape tool = make_hole_tool(kind, dia, depth, dia2, depth2);
         gp_Trsf t;
         t.SetValues(pl[0], pl[1], pl[2], pl[3], pl[4], pl[5], pl[6], pl[7], pl[8], pl[9], pl[10], pl[11]);
@@ -212,6 +215,7 @@ extern "C" QymShape* qym_shape_holes_stepped(const QymShape* s, int kind, const 
     if (!s || dia <= 0.0 || depth <= 0.0 || !pls || n_holes == 0) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         TopoDS_Shape base_tool = make_hole_tool(kind, dia, depth, dia2, depth2);
         TopoDS_Shape all_tools;
         TopTools_DataMapOfShapeInteger tool_ids; // the wall names of EVERY hole, surviving through the unions
@@ -252,6 +256,7 @@ extern "C" QymShape* qym_shape_holes_stepped(const QymShape* s, int kind, const 
 
 // Mirror a solid about a plane through the origin (plane: 0 = XY, 1 = XZ, 2 = YZ) into a new shape.
 extern "C" QymShape* qym_shape_mirror(const QymShape* s, int plane) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
@@ -268,6 +273,7 @@ extern "C" QymShape* qym_shape_mirror(const QymShape* s, int plane) {
 
 // Mirror a solid about an ARBITRARY plane (origin[3] plus normal[3]) — a datum or a face.
 extern "C" QymShape* qym_shape_mirror_plane(const QymShape* s, const double* origin, const double* normal) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
@@ -352,22 +358,8 @@ static QymShape* off_seams_first(const QymShape* s, const uint32_t* idx, size_t 
 static QymShape* off_seams(const QymShape* s, const uint32_t* idx, size_t n, const std::function<QymShape*(const QymShape*)>& op);
 static std::vector<uint32_t> every_edge(const QymShape* s);
 
-// ONE BLEND AT A TIME in the process. Two chamfers of OCCT on two threads, each on a body of its own, clash: on the case
-// of the examples the chamfer 11963 came out invalid in 3 of 40 rebuilds, every time while a chamfer of 2 of another part
-// was being built on a neighbouring thread, and in none of 20 rebuilds on one thread. Recursive: a blend that moves the
-// seams off its edges asks itself again.
-static std::recursive_mutex& blend_lock() {
-    static std::recursive_mutex m;
-    return m;
-}
-
-// A BODY OF ITS OWN FOR A BLEND: a copy of `s` with every record of its names carried to the copy's elements. The chamfer
-// and the fillet of OCCT raise the tolerances of the edges and vertices of the body they are given (measured on the
-// case of the examples: a chamfer of 3, the sum of the tolerances of its body 0.0720624 -> 0.0744600), and those edges
-// and vertices are shared with the bodies before it and beside it in the cache. Written on one thread of the rebuild
-// while a neighbouring branch blended on another, the chamfer 11963 of the case came out invalid in 3 of 40 rebuilds,
-// and in none of 20 on one thread. The names are asked of what the body holds: the copy answers only of its own.
-static QymShape own_copy(const QymShape& s) {
+// The body of its own, said in `occt_common.hpp`.
+QymShape qym_own_copy(const QymShape& s) {
     BRepBuilderAPI_Copy copier(s.shape);
     QymShape out{copier.Shape(), {}, {}, {}, {}, s.absorbed, {}};
     auto carry = [&](TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& from, TopTools_DataMapOfShapeInteger& to) {
@@ -394,9 +386,7 @@ extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
         QYM_SIGNALS;
         const std::vector<uint32_t> every = every_edge(s);
         if (along_a_seam(s, every.data(), every.size())) return off_seams_first(s, every.data(), every.size(), [&](const QymShape* m) { return qym_shape_fillet_all(m, r); });
-        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
-        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
-        s = &own;
+        QYM_OWN_COPY(s); // after the seams are read: a copy loses them (`qym_own_copy`)
         BRepFilletAPI_MakeFillet mk(s->shape);
         TopTools_IndexedMapOfShape edges;
         TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
@@ -404,7 +394,7 @@ extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
         const TopTools_IndexedDataMapOfShapeListOfShape e2f = faces_of_edges(s->shape);
         for (int i = 1; i <= edges.Extent(); ++i)
             if (bladeable(TopoDS::Edge(edges(i)), e2f)) mk.Add(r, TopoDS::Edge(edges(i)));
-        mk.Build();
+        qym_build_alone(QymShared::Blend, mk);
         if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
             const std::vector<uint32_t> all = every_edge(s);
             if (QymShape* q = off_seams(s, all.data(), all.size(), [&](const QymShape* m) { return qym_shape_fillet_all(m, r); })) return q;
@@ -426,9 +416,7 @@ extern "C" QymShape* qym_shape_chamfer_all(const QymShape* s, double d) {
         QYM_SIGNALS;
         const std::vector<uint32_t> every = every_edge(s);
         if (along_a_seam(s, every.data(), every.size())) return off_seams_first(s, every.data(), every.size(), [&](const QymShape* m) { return qym_shape_chamfer_all(m, d); });
-        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
-        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
-        s = &own;
+        QYM_OWN_COPY(s); // after the seams are read: a copy loses them (`qym_own_copy`)
         BRepFilletAPI_MakeChamfer mk(s->shape);
         TopTools_IndexedMapOfShape edges;
         TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
@@ -436,7 +424,7 @@ extern "C" QymShape* qym_shape_chamfer_all(const QymShape* s, double d) {
         const TopTools_IndexedDataMapOfShapeListOfShape e2f = faces_of_edges(s->shape);
         for (int i = 1; i <= edges.Extent(); ++i)
             if (bladeable(TopoDS::Edge(edges(i)), e2f)) mk.Add(d, TopoDS::Edge(edges(i)));
-        mk.Build();
+        qym_build_alone(QymShared::Blend, mk);
         if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
             const std::vector<uint32_t> all = every_edge(s);
             if (QymShape* q = off_seams(s, all.data(), all.size(), [&](const QymShape* m) { return qym_shape_chamfer_all(m, d); })) return q;
@@ -455,6 +443,7 @@ extern "C" QymShape* qym_shape_shell(const QymShape* s, double offset, const uin
     if (!s || (offset > -1e-9 && offset < 1e-9) || n == 0) return why("shell/asked", "no body, a zero offset, or no face to open"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         std::map<int,int> walls;
         for (size_t i = 0; i < gn; ++i) walls[(int)gfrom[i]] = (int)gto[i];
 
@@ -694,6 +683,7 @@ extern "C" QymShape* qym_shape_shell_center(const QymShape* s, double t, const u
     if (!s || t < 1e-9 || n == 0) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         std::unique_ptr<QymShape> out(qym_shape_shell(s, t * 0.5, ids, n, nullptr, nullptr, 0));
         if (!out) return nullptr;
         std::unique_ptr<QymShape> in(qym_shape_shell(s, -t * 0.5, ids, n, nullptr, nullptr, 0));
@@ -714,6 +704,7 @@ extern "C" QymShape* qym_shape_shell_center(const QymShape* s, double t, const u
 // by click. Returns 1 plus the axis's origin and direction (in the solid's LOCAL coordinate system), or 0 if
 // the face was not found or is not round (a plane or a spline).
 extern "C" int qym_shape_face_axis(const QymShape* s, uint32_t face_id, double* origin, double* dir) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s || face_id == 0 || !origin || !dir) return 0;
     try {
         QYM_SIGNALS;
@@ -743,6 +734,7 @@ extern "C" int qym_shape_face_axis(const QymShape* s, uint32_t face_id, double* 
 // or chamfer. Writes up to `cap` ids into `out` and returns how many. 0 means the face was not found or has no
 // edges with ids.
 extern "C" size_t qym_shape_face_edge_ids(const QymShape* s, uint32_t face_id, uint32_t* out, size_t cap) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s || face_id == 0 || !out || cap == 0) return 0;
     size_t cnt = 0;
     try {
@@ -777,6 +769,27 @@ struct QymEdges {
                                            // the edge, the connector's secondary axis (zero = no neighbouring
                                            // face)
 };
+// WHERE THE MIDDLE OF AN EDGE STANDS ON A FACE OF IT, as (u, v) of the face's surface: off the edge's own curve on that
+// face, at the place `t` of its curve - the two run together on an edge of a body. Sought by projecting the point onto the
+// surface only where the edge has no such curve: projected, a grid of the surface searched for each of two faces of each
+// edge, the edges of a ring between a closed spline and its offset (900 edges on 303 faces) took most of the listing.
+static bool edge_mid_on_face(const TopoDS_Edge& ed, const TopoDS_Face& fc, Standard_Real t, const gp_Pnt& mid, Standard_Real& u, Standard_Real& v) {
+    Standard_Real pf, pl;
+    Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(ed, fc, pf, pl);
+    if (!pc.IsNull() && t >= std::min(pf, pl) - 1e-9 && t <= std::max(pf, pl) + 1e-9) {
+        const gp_Pnt2d uv = pc->Value(t);
+        u = uv.X();
+        v = uv.Y();
+        return true;
+    }
+    Handle(Geom_Surface) su = BRep_Tool::Surface(fc);
+    if (su.IsNull()) return false;
+    GeomAPI_ProjectPointOnSurf pj(mid, su);
+    if (!pj.IsDone() || pj.NbPoints() < 1) return false;
+    pj.LowerDistanceParameters(u, v);
+    return true;
+}
+
 // The edges of `s` as `qym_shape_edges` hands them out; an exception goes up to it.
 static std::unique_ptr<QymEdges> edges_of(const QymShape* s) {
     auto e = std::make_unique<QymEdges>();
@@ -797,7 +810,11 @@ static std::unique_ptr<QymEdges> edges_of(const QymShape* s) {
             QYM_SIGNALS;
             c = BRep_Tool::Curve(TopoDS::Edge(edges(i)), f, l);
             if (!c.IsNull()) {
-                const int n = 24;
+                // AN EDGE OF A B-SPLINE BY ITS SPANS: eight points a span between its knots, 24 at the least. Laid by 24
+                // points along the whole of it, the edge of a side swept from a closed spline of 38 nodes was drawn a
+                // polygon whose middle stood 0.55 mm off the edge
+                Handle(Geom_BSplineCurve) bs = Handle(Geom_BSplineCurve)::DownCast(c);
+                const int n = bs.IsNull() ? 24 : std::max(24, 8 * (bs->NbKnots() - 1));
                 for (int k = 0; k <= n; ++k) {
                     gp_Pnt p = c->Value(f + (l - f) * k / n);
                     pts.push_back(static_cast<float>(p.X()));
@@ -840,10 +857,8 @@ static std::unique_ptr<QymEdges> edges_of(const QymShape* s) {
                         const TopoDS_Face& fc = TopoDS::Face(it.Value());
                         Handle(Geom_Surface) su = BRep_Tool::Surface(fc);
                         if (su.IsNull()) break;
-                        GeomAPI_ProjectPointOnSurf pj(mid, su);
-                        if (!pj.IsDone() || pj.NbPoints() < 1) break;
                         Standard_Real u, v;
-                        pj.LowerDistanceParameters(u, v);
+                        if (!edge_mid_on_face(ed, fc, (f + l) * 0.5, mid, u, v)) break;
                         GeomLProp_SLProps pr(su, u, v, 1, 1e-6);
                         if (!pr.IsNormalDefined()) break;
                         gp_Dir n = pr.Normal();
@@ -887,10 +902,8 @@ static std::unique_ptr<QymEdges> edges_of(const QymShape* s) {
                 if (!pick.IsNull()) {
                     gp_Pnt mid = c->Value((f + l) * 0.5);
                     Handle(Geom_Surface) su = BRep_Tool::Surface(pick);
-                    GeomAPI_ProjectPointOnSurf pj(mid, su);
-                    if (!su.IsNull() && pj.IsDone() && pj.NbPoints() >= 1) {
-                        Standard_Real u, v;
-                        pj.LowerDistanceParameters(u, v);
+                    Standard_Real u, v;
+                    if (!su.IsNull() && edge_mid_on_face(ed, pick, (f + l) * 0.5, mid, u, v)) {
                         GeomLProp_SLProps pr(su, u, v, 1, 1e-6);
                         if (pr.IsNormalDefined()) {
                             gp_Dir n = pr.Normal();
@@ -910,6 +923,7 @@ static std::unique_ptr<QymEdges> edges_of(const QymShape* s) {
 // NOTHING ESCAPES THROUGH `extern "C"`: an exception that does aborts the whole program, and a stored body from a file
 // someone sent can hold a curve OCCT throws on. A failure gives no list, which the caller already reads as "no edges".
 extern "C" QymEdges* qym_shape_edges(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
@@ -923,6 +937,7 @@ extern "C" QymEdges* qym_shape_edges(const QymShape* s) {
 // meet at it, not by where it stands: two vertices a micrometre apart are two. Returns how many vertices there are;
 // nothing is written past `cap` of them.
 extern "C" size_t qym_shape_vertices(const QymShape* s, double* pts, uint32_t* ids, size_t cap) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return 0;
     try {
         QYM_SIGNALS;
@@ -951,6 +966,7 @@ extern "C" size_t qym_shape_vertices(const QymShape* s, double* pts, uint32_t* i
 // `ids[k]` and its vertices in `ends[2k]` and `ends[2k+1]` (first and last of the edge as it lies, no orientation
 // applied). Returns how many such edges there are; nothing is written past `cap` of them.
 extern "C" size_t qym_shape_edge_vertices(const QymShape* s, uint32_t* ids, uint32_t* ends, size_t cap) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return 0;
     try {
         QYM_SIGNALS;
@@ -1181,6 +1197,7 @@ static bool crack_face(const TopoDS_Shape& f, double width) {
 
 // How many faces of the body are cracks.
 extern "C" int qym_shape_sliver_count(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
@@ -1192,6 +1209,7 @@ extern "C" int qym_shape_sliver_count(const QymShape* s) {
 
 // `width`: the widest a crack is; 1e-5 where nothing tells more.
 extern "C" int qym_shape_drop_slivers(QymShape* s, double width) {
+    QYM_AS_HANDED(s, "the body is a result the door has not landed yet; no other thread holds it");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
@@ -1566,12 +1584,10 @@ extern "C" QymShape* qym_shape_fillet_edges(const QymShape* s, double r, const u
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_fillet_edges(m, r, idx, n, names, corners, all_names, n_all); });
-        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
-        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
-        s = &own;
+        QYM_OWN_COPY(s); // after the seams are read: a copy loses them (`qym_own_copy`)
         BRepFilletAPI_MakeFillet mk(s->shape);
         if (add_fillet_edges_by_id(mk, s, r, idx, n) == 0) return why_no_named_edges("fillet/edges", s, n), nullptr;
-        mk.Build();
+        qym_build_alone(QymShared::Blend, mk);
         // built but not whole is a failure too: the rounding against a seam that goes straight on from its end comes
         // back as a body the check refuses
         if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
@@ -1614,6 +1630,7 @@ extern "C" QymShape* qym_shape_fillet_at_vertices(const QymShape* s, double r_de
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_fillet_at_vertices(m, r_default, idx, n, vpts, vrads, m_count, tol, names, corners, all_names, n_all); });
+        QYM_OWN_COPY(s); // after the seams are read: a copy loses them (`qym_own_copy`)
         auto radius_at = [&](const gp_Pnt& p) -> double {
             double best = tol > 0.0 ? tol : 1e-6, out = r_default;
             for (size_t k = 0; k < m_count; ++k) {
@@ -1623,9 +1640,6 @@ extern "C" QymShape* qym_shape_fillet_at_vertices(const QymShape* s, double r_de
             }
             return out > 0.0 ? out : r_default;
         };
-        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
-        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
-        s = &own;
         BRepFilletAPI_MakeFillet mk(s->shape);
         int added = 0;
         for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
@@ -1641,7 +1655,7 @@ extern "C" QymShape* qym_shape_fillet_at_vertices(const QymShape* s, double r_de
             ++added;
         }
         if (added == 0) return why_no_named_edges("fillet/edges", s, n), nullptr;
-        mk.Build();
+        qym_build_alone(QymShared::Blend, mk);
         if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
             if (QymShape* q = off_seams(s, idx, n, [&](const QymShape* m) { return qym_shape_fillet_at_vertices(m, r_default, idx, n, vpts, vrads, m_count, tol, names, corners, all_names, n_all); })) return q;
             return why("fillet/build", "the kernel could not round these edges with the radii given at their vertices"), nullptr;
@@ -1668,9 +1682,7 @@ extern "C" QymShape* qym_shape_fillet_var(const QymShape* s, double r1, double r
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_fillet_var(m, r1, r2, idx, n); });
-        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
-        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
-        s = &own;
+        QYM_OWN_COPY(s); // after the seams are read: a copy loses them (`qym_own_copy`)
         BRepFilletAPI_MakeFillet mk(s->shape);
         int added = 0;
         for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
@@ -1681,7 +1693,7 @@ extern "C" QymShape* qym_shape_fillet_var(const QymShape* s, double r1, double r
             }
         }
         if (added == 0) return why_no_named_edges("fillet/edges", s, n), nullptr;
-        mk.Build();
+        qym_build_alone(QymShared::Blend, mk);
         if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
             if (QymShape* q = off_seams(s, idx, n, [&](const QymShape* m) { return qym_shape_fillet_var(m, r1, r2, idx, n); })) return q;
             return why("fillet/build", "the kernel could not round these edges with a radius running between the two ends"), nullptr;
@@ -1699,12 +1711,10 @@ extern "C" QymShape* qym_shape_chamfer_edges(const QymShape* s, double d, const 
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_chamfer_edges(m, d, idx, n, names, corners, all_names, n_all); });
-        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
-        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
-        s = &own;
+        QYM_OWN_COPY(s); // after the seams are read: a copy loses them (`qym_own_copy`)
         BRepFilletAPI_MakeChamfer mk(s->shape);
         if (add_chamfer_edges_by_id(mk, s, d, idx, n) == 0) return why_no_named_edges("chamfer/edges", s, n), nullptr;
-        mk.Build();
+        qym_build_alone(QymShared::Blend, mk);
         if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
             // the same seam as a rounding meets: moved off the ends of the edges, and the bevel tried once more
             if (QymShape* q = off_seams(s, idx, n, [&](const QymShape* m) { return qym_shape_chamfer_edges(m, d, idx, n, names, corners, all_names, n_all); })) return q;
@@ -1737,9 +1747,7 @@ extern "C" QymShape* qym_shape_chamfer_edges_asym(const QymShape* s, double a, d
     try {
         QYM_SIGNALS;
         if (along_a_seam(s, idx, n)) return off_seams_first(s, idx, n, [&](const QymShape* m) { return qym_shape_chamfer_edges_asym(m, a, b, mode, flip, ref_face, idx, n, names, corners, all_names, n_all); });
-        std::lock_guard<std::recursive_mutex> one_at_a_time(blend_lock());
-        const QymShape own = own_copy(*s); // the body handed stays as it was (`own_copy`)
-        s = &own;
+        QYM_OWN_COPY(s); // after the seams are read: a copy loses them (`qym_own_copy`)
         BRepFilletAPI_MakeChamfer mk(s->shape);
         TopTools_IndexedDataMapOfShapeListOfShape efMap;
         TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, efMap);
@@ -1780,7 +1788,7 @@ extern "C" QymShape* qym_shape_chamfer_edges_asym(const QymShape* s, double a, d
             ++added;
         }
         if (added == 0) return why_no_named_edges("fillet/edges", s, n), nullptr;
-        mk.Build();
+        qym_build_alone(QymShared::Blend, mk);
         if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
             if (QymShape* q = off_seams(s, idx, n, [&](const QymShape* m) { return qym_shape_chamfer_edges_asym(m, a, b, mode, flip, ref_face, idx, n, names, corners, all_names, n_all); })) return q;
             return why("chamfer/build", "the kernel could not bevel these edges with two setbacks"), nullptr;
@@ -1812,6 +1820,7 @@ extern "C" QymShape* qym_shape_draft(const QymShape* s, const uint32_t* ids, siz
     if (!pull || !np_origin || !np_normal) return why("draft/asked", "the pull direction or the neutral plane is missing"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         gp_Dir pdir(pull[0], pull[1], pull[2]);
         gp_Pln neutral(gp_Pnt(np_origin[0], np_origin[1], np_origin[2]), gp_Dir(np_normal[0], np_normal[1], np_normal[2]));
         double ang = angle_deg * M_PI / 180.0;
@@ -1944,6 +1953,7 @@ extern "C" QymShape* qym_shape_thicken_face(const QymShape* s, uint32_t fid, dou
     if (std::abs(thickness) < 1e-9) return why("thicken/asked", "the thickness is zero"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         TopoDS_Face face;
         BRepOffset_MakeOffset mk;
         TopoDS_Shape plate = thicken_plate(s, fid, thickness, face, mk);
@@ -1967,6 +1977,7 @@ extern "C" QymShape* qym_shape_thicken_face_join(const QymShape* s, uint32_t fid
     if (std::abs(thickness) < 1e-9) return why("thicken/asked", "the thickness is zero"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         // A SHEET IS THICKENED WHOLE AND UNIONED WITH NOTHING. A surface has no solid for the plate to be
         // joined to — it IS the result itself. And it is taken from the whole sheet rather than from one face:
         // on a surface sewn out of pieces, thickening face by face would give a stack of plates instead of a
@@ -2043,6 +2054,7 @@ extern "C" QymShape* qym_shape_thicken_face_join(const QymShape* s, uint32_t fid
 // A CYLINDRICAL FACE: the axis AND the radius. `qym_shape_face_axis` does not return the radius, and a
 // measurement needs exactly that: a person points at a hole's wall and expects a diameter.
 extern "C" int qym_shape_face_cylinder(const QymShape* s, uint32_t face_id, double* origin, double* dir, double* radius) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s || face_id == 0 || !origin || !dir || !radius) return 0;
     try {
         QYM_SIGNALS;
@@ -2077,6 +2089,7 @@ extern "C" QymShape* qym_shape_split_faces(const QymShape* s, const double* orig
     if (!origin || !normal) return why("split face/asked", "the cutting plane has no origin or no normal"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         gp_Pln pln(gp_Pnt(origin[0], origin[1], origin[2]), gp_Dir(normal[0], normal[1], normal[2]));
         BRepAlgoAPI_Section sec(s->shape, pln, Standard_False); // Standard_False: do not run it yet - the options come first
         qym_configure(sec);
@@ -2125,6 +2138,7 @@ extern "C" QymShapeList* qym_shape_split_by_plane(const QymShape* s, const doubl
     if (!s || !origin || !normal) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         gp_Pnt o(origin[0], origin[1], origin[2]);
         gp_Dir n(normal[0], normal[1], normal[2]);
         Bnd_Box bb;
@@ -2189,6 +2203,8 @@ extern "C" QymShape* qym_shape_trim(const QymShape* s, const QymShape* tool, con
     if (!keep) return why("trim/asked", "the side to keep was not given"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
+        QYM_OWN_COPY(tool);
         TopTools_ListOfShape args, tools;
         args.Append(s->shape);
         tools.Append(tool->shape);
@@ -2294,6 +2310,7 @@ extern "C" QymShape* qym_shape_remove_faces(const QymShape* s, const uint32_t* i
     if (!ids || n == 0) return why("remove face/asked", "not one face was named to remove"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         TopTools_ListOfShape faces;
         for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
             uint32_t fid = s->fids.IsBound(ex.Current()) ? static_cast<uint32_t>(s->fids.Find(ex.Current())) : 0u;
@@ -2380,6 +2397,7 @@ extern "C" QymShape* qym_shape_push_face(const QymShape* s, uint32_t fid, double
     if (std::abs(dist) < 1e-9) return why("push face/asked", "the distance is zero"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         TopoDS_Face target;
         for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
             uint32_t id = s->fids.IsBound(ex.Current()) ? static_cast<uint32_t>(s->fids.Find(ex.Current())) : 0u;
@@ -2558,9 +2576,10 @@ extern "C" void qym_shapelist_free(QymShapeList* l) {
 // B-rep). `mats` is n x 12 row-major 3x4 (or nullptr for identity). Units are mm. 0 means success, non-zero an
 // error.
 extern "C" int qym_step_write(const QymShape** shapes, const double* mats, size_t n, const char* path) {
+    QYM_AS_HANDED(shapes, "it only reads the bodies, one file at a time (QymShared::Exchange)");
     try {
         QYM_SIGNALS;
-        std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
+        const std::unique_lock<std::recursive_mutex> one_at_a_time = qym_alone(QymShared::Exchange);
         Interface_Static::SetCVal("write.step.unit", "MM");
         STEPControl_Writer writer;
         for (size_t i = 0; i < n; ++i) {
@@ -2581,22 +2600,24 @@ extern "C" int qym_step_write(const QymShape** shapes, const double* mats, size_
 }
 
 
-// WHETHER TWO SHAPES SHARE A FACE OR AN EDGE - the same kernel sub-shape (TShape), not merely an equal one. Two
-// bodies that share one cannot be meshed or healed on two threads at once: both would rewrite that sub-shape's
-// triangulation. The rebuild asks this to keep such bodies on one thread (see model/regen.rs). Faces and edges are
-// enough - those are what meshing and healing touch - and checking them is cheaper than every sub-shape.
+// WHETHER TWO SHAPES SHARE AN ELEMENT - a face, an edge or a vertex that is one kernel sub-shape (`TShape`) in both,
+// wherever each places it, not merely an equal one. Two bodies that share one cannot be worked on two threads at once:
+// meshing writes the triangulation of a shared face, and an algorithm writes the tolerances of a shared edge or vertex.
+// The rebuild asks this to keep such bodies on one thread (see model/regen.rs). By the element and not by its place: a
+// sub-shape under two locations (`IsSame` false) is still one sub-shape, its triangulation and tolerances one, and a
+// share check by `IsSame` let such bodies go to two threads.
 extern "C" int qym_shapes_share(const QymShape* a, const QymShape* b) {
+    QYM_AS_HANDED(a, "it only reads the body");
+    QYM_AS_HANDED(b, "it only reads the body");
     if (!a || !b) return 0;
     try {
         QYM_SIGNALS;
-        TopTools_IndexedMapOfShape m;
-        TopExp::MapShapes(a->shape, TopAbs_FACE, m);
-        TopExp::MapShapes(a->shape, TopAbs_EDGE, m);
-        for (TopAbs_ShapeEnum ty : {TopAbs_FACE, TopAbs_EDGE}) {
-            for (TopExp_Explorer ex(b->shape, ty); ex.More(); ex.Next()) {
-                if (m.Contains(ex.Current())) return 1;
-            }
-        }
+        std::unordered_set<const TopoDS_TShape*> own;
+        for (TopAbs_ShapeEnum ty : {TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX})
+            for (TopExp_Explorer ex(a->shape, ty); ex.More(); ex.Next()) own.insert(ex.Current().TShape().get());
+        for (TopAbs_ShapeEnum ty : {TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX})
+            for (TopExp_Explorer ex(b->shape, ty); ex.More(); ex.Next())
+                if (own.count(ex.Current().TShape().get())) return 1;
     } catch (...) {
         return 0;
     }

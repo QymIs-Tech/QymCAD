@@ -37,11 +37,11 @@ mod tests {
     /// the corner (0, 0, 12); Enter.
     fn a_plate_with_a_variable_fillet(hand: &mut Hand) {
         assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a sketch is started on XY");
-        hand.sk_tool(2).click2d(0.0, 0.0).click2d(60.0, 40.0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(60.0, 40.0);
         assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the sketch is finished");
         hand.close_window();
-        hand.look_at([30.0, 20.0, 6.0], 8.0).tool(1).set("height", 12.0).enter();
-        hand.tool(4).set("radius", 1.0);
+        hand.look_at([30.0, 20.0, 6.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 12.0).enter();
+        hand.tool(qymcad_ui_state::PartTool::Fillet).set("radius", 1.0);
         for mid in [[30.0, 0.0, 12.0], [60.0, 20.0, 12.0], [30.0, 40.0, 12.0], [0.0, 20.0, 12.0]] {
             hand.click(mid);
         }

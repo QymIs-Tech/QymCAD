@@ -5,7 +5,7 @@
 //!
 //! Reported behaviour: Extend on the shared side moved the whole drawing and extended nothing, with no word why; a line
 //! drawn after it from the end of the rounding made the lines of the left rectangle vanish and left the points.
-use qymcad::{Key, Kind, Modifiers, Picture, Pos2, Session, Widget};
+use qymcad::{Key, Modifiers, Picture, Pos2, Session, Widget};
 use qymcad_acceptance::build::{draw, into_the_first_part, open_project};
 use qymcad_acceptance::probe;
 
@@ -21,7 +21,7 @@ fn a_sketch() -> Session {
 /// The field on the sheet nearest to `at`.
 fn field_near(s: &mut Session, at: Pos2) -> Widget {
     let sheet = s.canvas();
-    let fields: Vec<Widget> = s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && sheet.contains(w.rect.center())).collect();
+    let fields: Vec<Widget> = qymcad_acceptance::value_fields(s).into_iter().filter(|w| sheet.contains(w.rect.center())).collect();
     fields.iter().min_by(|a, b| a.rect.center().distance(at).total_cmp(&b.rect.center().distance(at))).cloned().unwrap_or_else(|| panic!("no little box popped up near {at:?}"))
 }
 

@@ -190,3 +190,153 @@ fn regen_without_changes_is_noop() {
     assert_eq!(t.out.x, 0.0, "after the scene is built no nodes are dirty, so there is nothing to rebuild");
     within(what, &t, Duration::from_millis(50));
 }
+
+/// A sketch with a spline of 30 nodes rebuilds in tens of milliseconds, not in a second. Every edge of its loop asked
+/// for its place along the spline, and every such search laid the spline out to the sag afresh: measured 1.0 s a rebuild
+/// at 30 nodes, 276 ms at 15 - a drag of a node froze the window. Reported behaviour: "splines slow down terribly once
+/// they have more than 10-20 nodes".
+#[test]
+fn a_sketch_with_a_spline_of_thirty_nodes_rebuilds_quickly() {
+    let mut p = Project::default();
+    p.new_document();
+    let si = p.new_sketch("S");
+    let nodes: Vec<Point2> = (0..30).map(|k| Point2::new(k as f64 * 3.0, if k % 2 == 0 { 0.0 } else { 6.0 })).collect();
+    p.add_spline(si, nodes, qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real).expect("the spline");
+    let what = "a sketch with a spline of 30 nodes, rebuilt 5 times (a budget of 250 ms a rebuild)";
+    let t = timed(what, || {
+        for _ in 0..5 {
+            p.regen_sketch(si);
+        }
+    });
+    within(what, &t, Duration::from_millis(250) * 5);
+}
+
+/// A sketch of a large closed spline and its offset rebuilds within a frame of a drag: the loops of a spline of 39 nodes
+/// some 650 mm across and of its offset by 3, 5 000 segments each, placed along the curves and nested. Every rebuild of it
+/// took 1.34 s - the place of each segment sought along the whole curve, each point of one loop tried against every edge
+/// of the other - and a drag of a node of the spline rebuilt it every frame.
+#[test]
+fn a_sketch_of_a_large_spline_and_its_offset_rebuilds_quickly() {
+    let nodes: Vec<Point2> = [
+        [-62.0, 202.0],
+        [-125.0, 161.0],
+        [-159.0, 115.0],
+        [-85.0, 98.0],
+        [-163.0, 58.0],
+        [-256.0, 59.0],
+        [-228.0, -7.0],
+        [-139.0, 39.0],
+        [-136.0, -32.0],
+        [-167.0, -95.0],
+        [-83.0, -127.0],
+        [-66.0, -64.0],
+        [-26.0, -117.0],
+        [88.0, -88.0],
+        [48.0, -52.0],
+        [131.0, -41.0],
+        [158.0, -85.0],
+        [229.0, -24.0],
+        [132.0, 18.0],
+        [181.0, 55.0],
+        [112.0, 147.0],
+        [62.0, 105.0],
+        [60.0, 164.0],
+        [155.0, 186.0],
+        [83.0, 231.0],
+        [27.0, 182.0],
+        [21.0, 238.0],
+        [-58.0, 240.0],
+        [-174.0, 267.0],
+        [-299.0, 247.0],
+        [-422.0, 161.0],
+        [-378.0, 85.0],
+        [-304.0, 161.0],
+        [-284.0, 212.0],
+        [-197.0, 177.0],
+        [-277.0, 112.0],
+        [-196.0, 123.0],
+        [-169.0, 191.0],
+        [-98.0, 215.0],
+    ]
+    .iter()
+    .map(|q| Point2::new(q[0], q[1]))
+    .collect();
+    let mut p = Project::default();
+    p.new_document();
+    let si = p.new_sketch("S");
+    let spline = p.add_spline(si, nodes, qymcad_core::feature::Ends::Closed, qymcad_core::feature::Purpose::Real).expect("the spline");
+    assert!(p.offset_entities(si, &[spline], 3.0) > 0, "setup: the spline is not offset");
+    let what = "a sketch of a large spline and its offset, rebuilt 3 times (a budget of 400 ms a rebuild, 1.34 s before)";
+    let t = timed(what, || {
+        for _ in 0..3 {
+            p.regen_sketch(si);
+        }
+    });
+    within(what, &t, Duration::from_millis(400) * 3);
+}
+
+/// A DRAG OF A SKETCH WITH A SPLINE LAYS ITS LOOPS WHERE IT IS, FRAME BY FRAME: a node of a closed spline led 5 mm in
+/// five frames, the region of the spline is filled where the spline stands at each - as the full rebuild of the release
+/// lays it. A frame used to rebuild every loop of the sketch, 60 ms for a spline of 39 nodes and its offset; then none,
+/// and the fill stood where the drag began.
+#[test]
+fn a_drag_of_a_spline_lays_its_loops_where_it_is() {
+    let mut p = Project::default();
+    p.new_document();
+    let si = p.new_sketch("S");
+    let nodes: Vec<Point2> = [[0.0, 0.0], [40.0, -5.0], [55.0, 30.0], [20.0, 45.0], [-10.0, 25.0]].iter().map(|q| Point2::new(q[0], q[1])).collect();
+    let spline = p.add_spline(si, nodes, qymcad_core::feature::Ends::Closed, qymcad_core::feature::Purpose::Real).expect("the spline");
+    p.solve_sketch(si);
+    let area = |p: &Project| {
+        p.sketches[si]
+            .contour_ids
+            .iter()
+            .filter_map(|c| p.contour_profile_xy(*c))
+            .map(|xy| {
+                let pts: Vec<[f64; 2]> = xy.chunks(2).map(|q| [q[0], q[1]]).collect();
+                0.5 * (0..pts.len()).map(|k| pts[k][0] * pts[(k + 1) % pts.len()][1] - pts[(k + 1) % pts.len()][0] * pts[k][1]).sum::<f64>().abs()
+            })
+            .fold(0.0, f64::max)
+    };
+    let before = area(&p);
+    let node = p.sketches[si].entity(spline).and_then(|e| e.kind.as_spline()).map(|sp| sp.nodes[2]).expect("the node");
+    let q = *p.sketches[si].point(node).expect("its place");
+    timed("five frames of a drag of a node of a closed spline of 5 nodes", || {
+        for k in 1..=5 {
+            p.solve_sketch_drag_fast(si, Some((node, q.x + k as f64, q.y + k as f64)));
+        }
+    });
+    let during = area(&p);
+    p.solve_sketch(si);
+    let after = area(&p);
+    assert!(during > before + 1.0, "the region of the spline stood where the drag began: area {before:.3} -> {during:.3}");
+    assert!((during - after).abs() < 1e-6, "the region laid in the frames is not the one the release lays: area {during:.3} against {after:.3}");
+}
+
+/// A DRAG OF A NODE OF A SPLINE AMONG 300 RECTANGLES solves the part the node is in and lays the loops round it again:
+/// what a frame does no longer grows with what is drawn away from the spline. Without a session of the drag a sketch with
+/// a spline was solved and laid out whole every frame.
+#[test]
+fn a_drag_of_a_spline_among_many_shapes_works_its_part() {
+    let mut p = Project::default();
+    p.new_document();
+    let si = p.new_sketch("S");
+    for k in 0..300 {
+        let (x, y) = ((k % 20) as f64 * 12.0, (k / 20) as f64 * 12.0 + 100.0);
+        p.add_rect_entity(si, x, y, x + 8.0, y + 6.0, qymcad_core::feature::Purpose::Real);
+    }
+    let nodes: Vec<Point2> = (0..30).map(|k| Point2::new(k as f64 * 3.0, if k % 2 == 0 { 0.0 } else { 6.0 })).collect();
+    let spline = p.add_spline(si, nodes, qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real).expect("the spline");
+    p.solve_sketch(si);
+    let node = p.sketches[si].entity(spline).and_then(|e| e.kind.as_spline()).map(|sp| sp.nodes[15]).expect("the node");
+    let q = *p.sketches[si].point(node).expect("its place");
+    let what = "ten frames of a drag of a node of a spline among 300 rectangles (a budget of 30 ms a frame)";
+    let t = timed(what, || {
+        for k in 1..=10 {
+            p.solve_sketch_drag_fast(si, Some((node, q.x, q.y + k as f64 * 0.5)));
+        }
+    });
+    within(what, &t, Duration::from_millis(30) * 10);
+    let moved = p.sketches[si].point(node).map(|r| r.y - q.y).unwrap_or(0.0);
+    assert!((moved - 5.0).abs() < 1e-6, "the node was led 5 up and stands {moved:.4} up");
+}

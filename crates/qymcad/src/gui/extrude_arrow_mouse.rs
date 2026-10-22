@@ -14,11 +14,11 @@ mod tests {
         let part = app.project.add_part("Plate");
         app.enter_component(part);
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
-        Hand::new(&mut app).sk_tool(2).click2d(0.0, 0.0).click2d(60.0, 40.0);
+        Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(60.0, 40.0);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
         let mut h = Hand::new(&mut app);
-        h.look_at([30.0, 20.0, 10.0], 5.0).tool(1).set("height", 10.0);
+        h.look_at([30.0, 20.0, 10.0], 5.0).tool(qymcad_ui_state::PartTool::Extrude).set("height", 10.0);
         for _ in 0..3 {
             h.frame(Vec::new());
         }
@@ -109,7 +109,7 @@ mod tests {
         }
         let mut h = Hand::new(&mut app);
         h.look_at([10.0, 10.0, 5.0], 6.0).frame(Vec::new());
-        h.tool(25).click([10.0, 10.0, 10.0]);
+        h.tool(qymcad_ui_state::PartTool::PushFace).click([10.0, 10.0, 10.0]);
         for _ in 0..3 {
             h.frame(Vec::new());
         }

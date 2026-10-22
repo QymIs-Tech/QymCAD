@@ -68,12 +68,20 @@ pub fn note_at(project: &Project, view: &View2d, rect: Rect, pos: Pos2, si: usiz
 /// The handle of a polygon under the cursor is the centre of its circumscribed (construction)
 /// circle, when the cursor is close to that "rim". A circle counts as a rim when vertices hang on it
 /// (PointOnCircle towards its centre). Returns the Id of the centre (so the radius can be retyped).
+/// The centre of the circle of the polygon curve `eid` belongs to - a side or the circle itself.
+pub fn polygon_of_curve(project: &Project, si: usize, eid: Id) -> Option<Id> {
+    use qymcad_core::model::FigureShape;
+    let s = project.sketches.get(si)?;
+    let f = s.figures.iter().find(|f| f.shape == FigureShape::Polygon && f.curves.contains(&eid))?;
+    f.curves.iter().find_map(|c| s.entity(*c)?.kind.as_circle().map(|k| k.center))
+}
+
 pub fn polygon_under(project: &Project, view: &View2d, rect: Rect, pos: Pos2, si: usize) -> Option<Id> {
     let sh = Sheet { view: *view, rect };
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let s = project.sketches.get(si)?;
     for e in &s.entities {
-        let EntityKind::Circle { center, r } = e.kind else { continue };
+        let Some(qymcad_core::model::CircleParts { center, r }) = e.kind.as_circle() else { continue };
         if !e.construction {
             continue;
         }
@@ -110,18 +118,12 @@ pub fn line_screen_dir(project: &Project, view: &View2d, si: usize, a: Id, b: Id
 }
 
 pub fn sel_circle_centers(project: &Project, sel_sk: &SketchSelection, si: usize) -> Vec<Id> {
-    use qymcad_core::model::EntityKind;
     let Some(s) = project.sketches.get(si) else { return Vec::new() };
     sel_sk
         .items
         .iter()
-        .filter(|(k, _)| *k == 1)
-        .filter_map(|(_, eid)| {
-            s.entities.iter().find(|e| e.id == *eid).and_then(|e| match e.kind {
-                EntityKind::Circle { center, .. } | EntityKind::Arc { center, .. } => Some(center),
-                _ => None,
-            })
-        })
+        .filter(|it| it.kind == crate::ItemKind::Curve)
+        .filter_map(|crate::SketchItem { id: eid, .. }| s.entity(*eid).and_then(|e| qymcad_core::model::circle_of(s, e)).map(|c| c.center))
         .collect()
 }
 
@@ -155,23 +157,18 @@ pub fn center_radius(dc: &DrawCtx, si: usize, c: Id) -> Option<f64> {
 
 /// The radius of the circle or arc of sketch `si` centred at point `c`.
 pub fn radius_of(project: &Project, si: usize, c: Id) -> Option<f64> {
-    use qymcad_core::model::EntityKind;
     let s = project.sketches.get(si)?;
-    s.entities.iter().find_map(|e| match e.kind {
-        EntityKind::Circle { center, r } if center == c => Some(r),
-        EntityKind::Arc { center, a, .. } if center == c => sketch_pt(project, si, a).zip(sketch_pt(project, si, center)).map(|(pa, pc)| ((pa.x - pc.x).powi(2) + (pa.y - pc.y).powi(2)).sqrt()),
-        _ => None,
-    })
+    s.entities.iter().find_map(|e| qymcad_core::model::circle_of(s, e).filter(|k| k.center == c).map(|k| k.r))
 }
 
 /// TAKE DRAWING TOOL `kind` IN HAND: every other tool put down in one move (`exit_draw_tools`), whatever the one before
 /// had collected cleared (`SketchTool::select`), and the selection of the geometry dropped - a drawing tool works on
 /// nothing selected before it. Reported behaviour: a line selected, the circle taken and drawn, and the line stood
-/// selected the whole time and after. The arrow of selection (kind 0) keeps the selection.
-pub fn take_drawing_tool(t: &mut Tools, kind: u8) {
+/// selected the whole time and after. The arrow of selection (no shape) keeps the selection.
+pub fn take_drawing_tool(t: &mut Tools, kind: Option<SketchShape>) {
     exit_draw_tools(t);
     t.tool.select(t.armed, kind);
-    if t.armed.draw_kind() != 0 {
+    if t.armed.drawing().is_some() {
         t.sel_sk.clear();
     }
 }
@@ -189,12 +186,12 @@ pub fn exit_draw_tools(t: &mut Tools) {
     // being rounded, and with the mode gone there is nothing to show - they stood lit with nothing in hand, and the
     // next mode read a selection that was not its own. (The button that offers the corner of two lines already
     // chosen reads them while no mode is in hand, so this costs that nothing.)
-    if matches!(armed.click_op(), 4 | 5) {
+    if armed.click_tool().is_some_and(ClickTool::of_corner) {
         sel_sk.items.clear();
     }
     **armed = Armed::None; // ONE FIELD: letting go is saying that nothing is in hand
     tool.pts.clear();
-    tool.circ_tan = None;
+    tool.circ_tan.clear();
     sel_sk.constraint = None;
     sel_sk.modify = None;
     sel_sk.offset = OffsetAim::default();
@@ -220,23 +217,6 @@ pub fn exit_draw_tools(t: &mut Tools) {
     annot.text = None;
 }
 
-/// Attach a tangency constraint between a new circle or arc (centre `cen`, radius `r`, at (cx, cy)) and the base edge.
-pub fn add_tangent_to_edge(project: &mut Project, si: usize, eref: EdgeRef, cen: Id, cx: f64, cy: f64, r: f64) {
-    use qymcad_core::model::Constraint;
-    match eref {
-        EdgeRef::Line { a, b } => {
-            project.add_constraint_if_independent(si, Constraint::Tangent { a, b, c: cen, r });
-        }
-        EdgeRef::Circle { center, r: rr } => {
-            if let Some(pc) = sketch_pt(project, si, center) {
-                let dist = ((cx - pc.x).powi(2) + (cy - pc.y).powi(2)).sqrt();
-                let external = (dist - (rr + r)).abs() <= (dist - (rr - r).abs()).abs();
-                project.add_constraint_if_independent(si, Constraint::CircleTangent { c1: center, c2: cen, external });
-            }
-        }
-    }
-}
-
 pub fn sketch_pt(project: &qymcad_core::model::Project, si: usize, id: Id) -> Option<Point2> {
     project.sketches.get(si)?.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y))
 }
@@ -248,6 +228,8 @@ pub fn sketch_pt(project: &qymcad_core::model::Project, si: usize, id: Id) -> Op
 /// Copy types travel by value so that matching and comparison keep working; the rest by reference.
 pub struct Painting<'a> {
     pub armed: &'a Armed,
+    /// The rows picked of the tree and the bodies held by Shift: lit with the selection.
+    pub held: &'a [Id],
     pub boolean: &'a BoolCommand,
     pub active_path: &'a Vec<Id>,
     pub arr: ArrayParams,
@@ -916,7 +898,7 @@ pub fn path_into(path: &[Id], project: &Project, cid: Id) -> Vec<Id> {
 
 pub fn visible_mesh_items<'a>(pn: &'a Painting) -> Vec<SceneMesh<'a>> {
     // the selection highlight: a body highlights itself; a component highlights its whole subtree (the part or subassembly entire)
-    let hl = highlight_mesh_set(pn.project, &pn.sel);
+    let hl = highlight_mesh_set(pn.project, &pn.sel, pn.held);
     // every mesh carries the WORLD transform of its owning component: a body is built in the part's
     // local frame, and `world_transform` (composed up the assembly tree) places it into the world.
     // While a modifier feature (shell, hole, fillet, chamfer and so on) is being edited, the state
@@ -1001,8 +983,9 @@ pub fn compose12(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 /// The indices of the bodies highlighted as "selected" in 3D. Select a body and that body lights up;
 /// select a component (a part or a subassembly) in the tree or by a click in the assembly and its
 /// WHOLE subtree lights up, so that it is plain that this part or subassembly was selected entire.
-pub fn highlight_mesh_set(project: &Project, sel: &Sel) -> std::collections::HashSet<usize> {
-    let mut hl = std::collections::HashSet::new();
+pub fn highlight_mesh_set(project: &Project, sel: &Sel, held: &[Id]) -> std::collections::HashSet<usize> {
+    // the bodies held with the selection by Shift are lit with it
+    let mut hl: std::collections::HashSet<usize> = held.iter().filter_map(|id| project.mesh_index(*id)).collect();
     match *sel {
         Sel::Mesh(i) | Sel::Face(i, _) => {
             hl.insert(i);
@@ -1064,4 +1047,15 @@ pub fn body_snap_mm(set: &Settings) -> f64 {
 /// The snapping step for rotating a body (deg): the rotation field from the snapping panel.
 pub fn body_snap_deg(set: &Settings) -> f64 {
     set.snap.rot_deg.max(0.1)
+}
+
+/// THE PLANE THE TOOL OF A PART IN HAND HAS TAKEN, for the tool that aims at one: the mirror plane, the base of a datum
+/// plane, the cutting plane of a split.
+pub fn plane_taken(pn: &Painting) -> Option<qymcad_core::feature::SketchPlane> {
+    match pn.armed.part_tool()? {
+        crate::PartTool::Mirror => pn.mirror.plane,
+        crate::PartTool::DatumPlane => pn.datum.plane_pick,
+        t if t.splits() => pn.split.plane,
+        _ => None,
+    }
 }

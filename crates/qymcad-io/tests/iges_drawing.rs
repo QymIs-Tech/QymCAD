@@ -144,19 +144,18 @@ fn a_transform_moves_what_it_carries_and_keeps_arcs_arcs() {
     assert!(matches!(d.curves[2], ProfEdge::Arc { a, b, ccw: false, .. } if near(a.x, -5.0) && near(b.y, 5.0)), "the mirrored arc: {:?}", d.curves[2]);
 }
 
-/// A SPLINE IS LAID ALONG ITS CURVE: a rational quarter circle stays on its radius at every vertex.
+/// A SPLINE IS LAID AS A SPLINE ALONG ITS CURVE: a rational quarter circle comes in as one spline of the sketch, on its
+/// radius within 0.001 mm, from its start to its end.
 #[test]
 fn a_rational_spline_stays_on_its_circle() {
     let w = std::f64::consts::FRAC_1_SQRT_2;
     let text = iges((2, "MM"), &[E(126, 0, TOP, 0, format!("2,2,1,0,0,0,0.,0.,0.,1.,1.,1.,1.,{w},1.,5.,0.,0.,5.,5.,0.,0.,5.,0.,0.,1.,0.,0.,1."))]);
     let d = read("spline.igs", &text).expect("reads");
-    let l = lines(&d.curves);
-    assert!(l.len() >= 16, "a quarter circle laid down as {} pieces", l.len());
-    for s in &l {
-        for (x, y) in [(s[0], s[1]), (s[2], s[3])] {
-            assert!((x.hypot(y) - 5.0).abs() < 1e-9, "a vertex of the spline left its circle: ({x}, {y})");
-        }
-    }
+    let [ProfEdge::Spline(b)] = d.curves.as_slice() else { panic!("a quarter circle came in as {:?}, not one spline", d.curves) };
+    let off = (0..=1000).map(|k| b.at(k as f64 / 1000.0)).map(|q| (q.x.hypot(q.y) - 5.0).abs()).fold(0.0, f64::max);
+    assert!(off < 1e-3, "the spline stands up to {off:.5} off its circle");
+    let ends = [b.at(0.0), b.at(1.0)];
+    assert!(near(ends[0].x, 5.0) && near(ends[0].y, 0.0) && near(ends[1].x, 0.0) && near(ends[1].y, 5.0), "the spline does not run from (5, 0) to (0, 5): {ends:?}");
 }
 
 /// NOTES AND DIMENSIONS ARE COUNTED, NOT DRAWN - and a file of nothing else is refused by name.
@@ -164,11 +163,144 @@ fn a_rational_spline_stays_on_its_circle() {
 fn notes_are_counted_and_a_file_of_nothing_is_refused() {
     let note = E(212, 0, TOP, 0, "1,5,1.,1.,0.,0.,0,0,0.,0.,0.,5Hnote.".into());
     let d = read("note.igs", &iges((2, "MM"), &[note, E(110, 0, TOP, 0, "0.,0.,0.,1.,0.,0.".into())])).expect("reads");
-    assert_eq!(d.skipped, vec![(212, 1)], "the note was not counted");
+    assert_eq!(d.skipped, vec![qymcad_io::IgesCount { typ: 212, count: 1 }], "the note was not counted");
     assert_eq!(d.curves.len(), 1);
     let only = E(212, 0, TOP, 0, "1,5,1.,1.,0.,0.,0,0,0.,0.,0.,5Hnote.".into());
     assert_eq!(read("only-note.igs", &iges((2, "MM"), &[only])).err().as_deref(), Some("io-iges-no-curves"));
     assert_eq!(read("rubbish.igs", "not an IGES file\n").err().as_deref(), Some("io-iges-not-iges"));
+}
+
+/// A file of `tests/data`, read as the window reads an IGES with no surfaces.
+fn data(name: &str) -> qymcad_io::IgesDrawing {
+    read_iges_drawing(&format!("{}/tests/data/{name}", env!("CARGO_MANIFEST_DIR"))).expect("the drawing reads")
+}
+
+/// The lines of a drawing, ordered by their start, each rounded to 1e-9 so that a turn's -0 and 6e-17 read as 0.
+fn sorted_lines(d: &qymcad_io::IgesDrawing) -> Vec<[f64; 4]> {
+    let mut got: Vec<[f64; 4]> = lines(&d.curves).into_iter().map(|l| l.map(|v| (v * 1e9).round() / 1e9 + 0.0)).collect();
+    got.sort_by(|a, b| a.partial_cmp(b).expect("numbers"));
+    got
+}
+
+/// A NETWORK SUBFIGURE INSTANCE (420) IS MOVED BY ITS PARAMETERS 2-4 AND SCALED BY 5-7 (IGES 5.3, 4.140), as a singular
+/// one (408) is by 2-4 and 5. `net420.igs`: the line (0,0)-(10,0) of a 320 placed at (100,50) twice its size, beside an
+/// independent line (100,40)-(120,40). Reported behaviour: the instance came in from (2,2) to (1002,2) - scaled by
+/// (100,50) and moved by (2,2). `sub408.igs` is the same placement by a 408.
+#[test]
+fn a_network_instance_is_moved_by_its_translation_and_scaled_by_its_scale() {
+    let want = vec![[100.0, 40.0, 120.0, 40.0], [100.0, 50.0, 120.0, 50.0]];
+    assert_eq!(sorted_lines(&data("net420.igs")), want, "the 420 instance");
+    assert_eq!(sorted_lines(&data("sub408.igs")), want, "the 408 instance of the same placement");
+    // only XS given: YS and ZS are XS, not 1
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(110, 0, PART, 0, "0.,0.,0.,10.,10.,0.".into()),          // DE 1: the member, a diagonal
+            E(320, 0, "00000200", 0, "0,4HCELL,1,1,0,1HC,0,0".into()), // DE 3: the definition
+            E(420, 0, TOP, 0, "3,100.,50.,0.,2.".into()),              // DE 5: at (100,50), XS 2
+        ],
+    );
+    assert_eq!(sorted_lines(&read("net420-xs.igs", &text).expect("reads")), vec![[100.0, 50.0, 120.0, 70.0]], "a 420 with only XS given");
+}
+
+/// A RECTANGULAR ARRAY (412) DRAWS WHAT ITS DO/DON'T LIST SAYS (IGES 5.3, 4.136): parameter 11 the count of the list,
+/// 12 the flag (0 DO, 1 DON'T), 13 on the positions, counted from the lower left up each column, then up the next.
+/// `arr412.igs`: the line (0,0)-(4,0) in three columns 10 apart from (100,0), DON'T position 2. Reported behaviour: all
+/// three copies came in, the middle one at (110,0)-(114,0) too.
+#[test]
+fn a_rectangular_array_draws_what_its_do_dont_list_says() {
+    assert_eq!(sorted_lines(&data("arr412.igs")), vec![[100.0, 0.0, 104.0, 0.0], [120.0, 0.0, 124.0, 0.0]], "DON'T position 2 of three");
+    let array = |list: &str| {
+        let text = iges(
+            (2, "MM"),
+            &[
+                E(110, 0, "00010000", 0, "0.,0.,0.,4.,0.,0.".into()),                // DE 1: the base
+                E(412, 0, TOP, 0, format!("1,1.,100.,0.,0.,2,2,10.,20.,0.,{list}")), // DE 3: two columns of two rows
+            ],
+        );
+        sorted_lines(&read("arr412-list.igs", &text).expect("reads"))
+    };
+    // positions 1 (100,0), 2 (100,20), 3 (110,0), 4 (110,20): up the first column, then up the second
+    assert_eq!(array("1,0,2"), vec![[100.0, 20.0, 104.0, 20.0]], "DO position 2: only the upper one of the first column");
+    assert_eq!(array("2,1,1,4"), vec![[100.0, 20.0, 104.0, 20.0], [110.0, 0.0, 114.0, 0.0]], "DON'T positions 1 and 4");
+    assert_eq!(array("0"), vec![[100.0, 0.0, 104.0, 0.0], [100.0, 20.0, 104.0, 20.0], [110.0, 0.0, 114.0, 0.0], [110.0, 20.0, 114.0, 20.0]], "an empty list: all");
+}
+
+/// AN INSTANCE'S OWN MATRIX TURNS WHAT IT PLACES, NOT WHERE IT STANDS: scale, then the instance's own 124, then its
+/// X, Y, Z, which that matrix does not move (IGES 5.3, 3.6.2) - for a 408, a 420 and the corner of a 412 alike.
+/// `rot408.igs`: the line (0,0)-(10,0) placed at (100,0) by a 408 whose own matrix is a quarter turn, over a reference
+/// line (90,-5)-(110,-5). Reported behaviour: the quarter turn swung the position too, and the line came in at
+/// (0,100)-(0,110).
+#[test]
+fn an_instance_is_turned_by_its_own_matrix_where_it_stands() {
+    assert_eq!(sorted_lines(&data("rot408.igs")), vec![[90.0, -5.0, 110.0, -5.0], [100.0, 0.0, 100.0, 10.0]], "the 408");
+    const QUARTER: &str = "0.,-1.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.";
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(124, 0, "00010000", 0, QUARTER.into()),                  // DE 1: a quarter turn
+            E(110, 0, PART, 0, "0.,0.,0.,10.,0.,0.".into()),           // DE 3: the member
+            E(320, 0, "00000200", 0, "0,4HCELL,1,3,0,1HC,0,0".into()), // DE 5: the definition
+            E(420, 0, TOP, 1, "5,100.,0.,0.,1.".into()),               // DE 7: at (100,0), turned by DE 1
+        ],
+    );
+    assert_eq!(sorted_lines(&read("rot420.igs", &text).expect("reads")), vec![[100.0, 0.0, 100.0, 10.0]], "the 420");
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(124, 0, "00010000", 0, QUARTER.into()),                    // DE 1: a quarter turn
+            E(110, 0, "00010000", 0, "0.,0.,0.,4.,0.,0.".into()),        // DE 3: the base
+            E(412, 0, TOP, 1, "3,1.,100.,0.,0.,2,1,10.,0.,0.,0".into()), // DE 5: two columns from (100,0), turned by DE 1
+        ],
+    );
+    assert_eq!(sorted_lines(&read("rot412.igs", &text).expect("reads")), vec![[100.0, 0.0, 100.0, 4.0], [110.0, 0.0, 110.0, 4.0]], "the 412");
+}
+
+/// A MEMBER OF A GROUP IS DRAWN: subordinate switch 02, logically dependent, is an entity that "can exist alone" and
+/// is only gathered by a grouping entity such as a 402 (IGES 5.3, 2.2.4.4.9.2). `group402.igs`: a line at y 0 and two
+/// at y 20 and 40 in a 402. Reported behaviour: only the line at y 0 came in, and nothing was said. A drawing whose
+/// every line is in a group comes in too, not refused as one with no curves.
+#[test]
+fn a_member_of_a_group_is_drawn() {
+    let want = vec![[0.0, 0.0, 50.0, 0.0], [0.0, 20.0, 50.0, 20.0], [0.0, 40.0, 50.0, 40.0]];
+    assert_eq!(sorted_lines(&data("group402.igs")), want, "the grouped lines");
+    let grouped = "00020000";
+    let text = iges(
+        (2, "MM"),
+        &[
+            E(110, 0, grouped, 0, "0.,0.,0.,50.,0.,0.".into()),   // DE 1
+            E(110, 0, grouped, 0, "0.,20.,0.,50.,20.,0.".into()), // DE 3
+            E(402, 1, TOP, 0, "2,1,3".into()),                    // DE 5: the group
+        ],
+    );
+    let d = read("all-grouped.igs", &text).expect("a drawing of grouped lines reads");
+    assert_eq!(sorted_lines(&d), vec![[0.0, 0.0, 50.0, 0.0], [0.0, 20.0, 50.0, 20.0]], "every line in the group");
+    assert!(!d.definitions_only, "grouped lines are not a library");
+}
+
+/// A SPLINE WHOSE COUNTS MAKE NO CURVE IS LEFT OUT AND NAMED, the rest of the drawing comes in. A B-spline (126) is
+/// read by its upper index K, its degree M, K + M + 2 knots, K + 1 weights and points and its range V0 < V1 (IGES 5.3,
+/// 4.23); a broken file gives fewer. Found: K = 0 under M = 3 panicked in the reading ("slice index starts at 4 but
+/// ends at 1"), and a list too short for its K or an empty range was dropped with no word.
+#[test]
+fn a_spline_whose_counts_make_no_curve_is_left_out_and_named() {
+    let cases = [
+        E(126, 0, TOP, 0, "0,3,0,0,1,0,0.,0.,0.,1.,1.,1.,0.,0.,0.,0.,1.".into()),           // K below M
+        E(126, 0, TOP, 0, "1000,1,0,0,1,0,0.,0.,1.,1.".into()),                             // K past the list
+        E(126, 0, TOP, 0, "1,1,0,0,1,0,0.,0.,1.,1.,1.,1.,0.,0.,0.,10.,0.,0.,1.,1.".into()), // V0 = V1
+    ];
+    let mut failures = Vec::new();
+    for (k, bad) in cases.into_iter().enumerate() {
+        let text = iges((2, "MM"), &[E(110, 0, TOP, 0, "0.,0.,0.,10.,0.,0.".into()), bad]);
+        let got = std::panic::catch_unwind(|| read(&format!("spline-counts-{k}.igs"), &text));
+        match got {
+            Ok(Ok(d)) if sorted_lines(&d) == vec![[0.0, 0.0, 10.0, 0.0]] && d.curves.len() == 1 && d.invalid == vec![qymcad_io::IgesCount { typ: 126, count: 1 }] => {}
+            Ok(Ok(d)) => failures.push(format!("case {k}: curves {:?}, invalid {:?}", d.curves, d.invalid)),
+            Ok(Err(e)) => failures.push(format!("case {k}: refused {e}")),
+            Err(_) => failures.push(format!("case {k}: the reading panicked")),
+        }
+    }
+    assert!(failures.is_empty(), "a spline that makes no curve was not left out by name:\n{}", failures.join("\n"));
 }
 
 /// THE REPORTED FILE: a chip library cell, defined and placed nowhere. `QYM_IGES` names it.

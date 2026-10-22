@@ -29,7 +29,7 @@ mod tests {
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
@@ -58,7 +58,7 @@ mod tests {
 
         let before = app.project.timeline.len();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(3); // revolve
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve); // revolve
         app.tools.gsel.profiles.extend(cids.iter().copied()); // the contours clicked in the picker, as a person does
                                                               // OUT OF THE CONTOUR PICKER FIRST. Creating a feature over MORE THAN ONE contour now opens on
                                                               // the choice of contours, so the first Enter answers "these ones" and only the next one applies.
@@ -104,7 +104,7 @@ mod tests {
 
         let (si, cids) = two_contours(&mut app);
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(3);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve);
         app.tools.gsel.profiles.extend(cids.iter().copied()); // the contours clicked in the picker, as a person does
                                                               // OUT OF THE CONTOUR PICKER FIRST. Creating a feature over MORE THAN ONE contour now opens on
                                                               // the choice of contours, so the first Enter answers "these ones" and only the next one applies.
@@ -136,7 +136,7 @@ mod tests {
         plate(&mut app);
         let (si, cids) = two_contours(&mut app);
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(3);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve);
         app.tools.gsel.profiles.extend(cids.iter().copied()); // the contours clicked in the picker, as a person does
                                                               // OUT OF THE CONTOUR PICKER FIRST. Creating a feature over MORE THAN ONE contour now opens on
                                                               // the choice of contours, so the first Enter answers "these ones" and only the next one applies.

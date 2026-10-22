@@ -75,7 +75,7 @@ mod tests {
         let (mi, body) = part_with_cube(&mut app);
         let face = top_face(&app, mi);
         let h = app.project.bodies[mi].mesh.bounds().map(|b| b.max.z - b.min.z).expect("the height");
-        app.start_feat_cmd(27);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::SplitBody);
         app.viewing.mode_3d = true;
         app.params.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, face));
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {

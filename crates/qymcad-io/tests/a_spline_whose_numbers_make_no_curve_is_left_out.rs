@@ -62,13 +62,7 @@ fn spline() -> Vec<(String, usize)> {
 
 /// Every corner of every curve read.
 fn corners(s: &qymcad_io::ImportedSketch) -> Vec<(f64, f64)> {
-    s.curves
-        .iter()
-        .flat_map(|c| match c {
-            qymcad_core::geom::ProfEdge::Line { a, b } => vec![(a.x, a.y), (b.x, b.y)],
-            _ => Vec::new(),
-        })
-        .collect()
+    s.curves.iter().filter_map(|c| c.ends()).flatten().map(|p| (p.x, p.y)).collect()
 }
 
 #[test]
@@ -92,9 +86,10 @@ fn bad_knots_with_fit_points_run_through_the_fit_points() {
     let fit = vec![Point::new(0.0, 0.0, 0.0), Point::new(20.0, 0.0, 0.0), Point::new(40.0, 0.0, 0.0)];
     let p = drawing_of("backwards-fit.dxf", vec![1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0], fit);
     let got = import_dxf(&p).expect("the drawing is read");
-    let c = corners(&got);
+    let curves: Vec<qymcad_core::model::curve::Curve> = got.curves.iter().map(qymcad_core::model::curve::Curve::of_edge).collect();
     for (x, y) in [(0.0, 0.0), (20.0, 0.0), (40.0, 0.0)] {
-        assert!(c.iter().any(|q| (q.0 - x).abs() < 1e-9 && (q.1 - y).abs() < 1e-9), "the spline does not run through its fit point ({x}, {y})");
+        let off = curves.iter().map(|c| c.nearest(qymcad_core::geom::Point2::new(x, y)).off).fold(f64::MAX, f64::min);
+        assert!(off < 1e-9, "the spline does not run through its fit point ({x}, {y}): {off:e} off it");
     }
     assert_eq!(named(&got), Named { not_read: none(), invalid: none(), redrawn: spline() }, "a spline drawn through its fit points is not named once, as redrawn");
 }

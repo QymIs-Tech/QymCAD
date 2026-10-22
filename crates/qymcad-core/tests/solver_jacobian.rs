@@ -4,7 +4,8 @@
 //! available: the solution simply converges a little worse, which goes unnoticed until a part shows up where a
 //! 130 mm dimension came out as −129.99900 and a cut left a film across a wall. Every constraint is checked here
 //! on a non-degenerate configuration: the analytic form has to match a central difference.
-use qymcad_core::model::{Constraint, SketchPoint};
+use qymcad_core::feature::{Ends, Winding};
+use qymcad_core::model::{Constraint, CurveRef, SketchPoint};
 use qymcad_core::solver::{jacobian_mismatch, RadiusVar};
 
 fn pts() -> Vec<SketchPoint> {
@@ -54,6 +55,18 @@ fn every_constraint_has_correct_analytic_derivatives() {
     check("Diameter", Constraint::Diameter { c: 3, d: 4.0, diam: true, off: 0.0, expr: String::new(), driven: false, at: None });
     check("EqualRadius", Constraint::EqualRadius { c1: 3, c2: 4 });
     check("PointOnCircle", Constraint::PointOnCircle { p: 5, c: 3 });
+    check("PointOnEllipse", Constraint::PointOnEllipse { p: 5, c: 1, ma: 2, mi: 3 });
+    // the rows on curves of any kind, read at the places found on the curves
+    let spline = |nodes: Vec<u64>| CurveRef::SplineNow { nodes, handles: Vec::new(), ends: Ends::Open };
+    check("PointOnCurve (spline)", Constraint::PointOnCurve { p: 5, on: spline(vec![1, 2, 4, 3]) });
+    check("PointOnCurve (ellipse)", Constraint::PointOnCurve { p: 5, on: CurveRef::Oval { c: 1, ma: 2, mi: 3, span: None } });
+    check("TangentCurves (circle, spline)", Constraint::TangentCurves { one: CurveRef::Round { c: 3 }, other: spline(vec![1, 2, 4, 5]), near: None, end: None });
+    check("TangentCurves (line, ellipse)", Constraint::TangentCurves { one: CurveRef::Line { a: 1, b: 2 }, other: CurveRef::Oval { c: 3, ma: 4, mi: 5, span: None }, near: None, end: None });
+    let distance = |from: CurveRef, to: CurveRef| Constraint::CurveDistance { from, to, d: 1.5, off: 0.0, expr: String::new(), driven: false, at: None };
+    check("CurveDistance (point, spline)", distance(CurveRef::Point { p: 3 }, spline(vec![1, 2, 4, 5])));
+    check("CurveDistance (circle, spline)", distance(CurveRef::Round { c: 3 }, spline(vec![1, 2, 4, 5])));
+    check("CurveDistance (arc, ellipse)", distance(CurveRef::Arc { c: 4, a: 1, b: 2, winding: Winding::Ccw }, CurveRef::Oval { c: 3, ma: 5, mi: 1, span: None }));
+    check("TangentCurves (at an end)", Constraint::TangentCurves { one: CurveRef::Line { a: 1, b: 2 }, other: spline(vec![2, 4, 5]), near: None, end: Some(2) });
     check("ArcLength(ccw)", Constraint::ArcLength { c: 3, a: 1, b: 2, ccw: true, len: 5.0, off: 0.0, expr: String::new(), driven: false });
     check("ArcLength(cw)", Constraint::ArcLength { c: 3, a: 1, b: 2, ccw: false, len: 5.0, off: 0.0, expr: String::new(), driven: false });
 }

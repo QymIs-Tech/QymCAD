@@ -15,8 +15,8 @@ fn state(p: &Project) -> String {
     let circles: Vec<String> = s
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            qymcad_core::model::EntityKind::Circle { center, r } => Some(format!("{center}:{:x}", r.to_bits())),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, r }) => Some(format!("{center}:{:x}", r.to_bits())),
             _ => None,
         })
         .collect();
@@ -74,15 +74,15 @@ fn rectangles_drawn_by_the_tool_drag_through_the_session_as_alone() {
     }
     p.add_rect_from_centre(si, qymcad_core::geom::Point2::new(200.0, 0.0), qymcad_core::geom::Point2::new(210.0, 6.0), qymcad_core::feature::Purpose::Real);
     // a reference dimension across the first rectangle
-    let (a, b) = (p.sketches[si].rects[0].corners[0], p.sketches[si].rects[0].corners[2]);
+    let (a, b) = (p.sketches[si].rects()[0].corners[0], p.sketches[si].rects()[0].corners[2]);
     p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 1.0, off: 2.0, expr: String::new(), driven: true, axis: 0, at: None });
     p.solve_sketch(si);
     let mut failures = Vec::new();
-    let corner = p.sketches[si].rects[0].corners[2];
+    let corner = p.sketches[si].rects()[0].corners[2];
     let at = |id: u64| p.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a point");
     let (cx, cy) = at(corner);
     both_ways(&p, &(1..=5).map(|k| (corner, cx + k as f64, cy + k as f64 * 0.5)).collect::<Vec<_>>(), "a corner of a rectangle", &mut failures);
-    let centre = p.sketches[si].rects[12].centre;
+    let centre = p.sketches[si].rects()[12].centre;
     let (mx, my) = at(centre);
     both_ways(&p, &(1..=5).map(|k| (centre, mx - k as f64, my + k as f64)).collect::<Vec<_>>(), "a rectangle by its centre", &mut failures);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -124,12 +124,12 @@ fn loops_inside_loops_keep_their_nesting_through_the_session() {
     let mut failures = Vec::new();
     let at = |p: &Project, id: u64| p.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("a point");
     // a rectangle inside led out of the frame by its centre and back
-    let inner = p.sketches[si].rects[1].corners[0];
+    let inner = p.sketches[si].rects()[1].corners[0];
     let (x, y) = at(&p, inner);
     let out: Vec<(u64, f64, f64)> = [0.0, 20.0, 45.0, 70.0, 45.0, 0.0].iter().map(|dy| (inner, x, y + dy)).collect();
     both_ways(&p, &out, "a rectangle inside led out and back", &mut failures);
     // a corner of the frame drawn over the rectangles beside it
-    let corner = p.sketches[si].rects[0].corners[2];
+    let corner = p.sketches[si].rects()[0].corners[2];
     let (cx, cy) = at(&p, corner);
     let over: Vec<(u64, f64, f64)> = [10.0, 40.0, 80.0, 40.0].iter().map(|dx| (corner, cx + dx, cy)).collect();
     both_ways(&p, &over, "the frame drawn over the rectangles beside it", &mut failures);

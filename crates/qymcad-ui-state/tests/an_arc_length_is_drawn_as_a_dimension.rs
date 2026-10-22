@@ -6,7 +6,7 @@
 //! what it measured.
 use qymcad_core::feature::{Purpose, Winding};
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 use qymcad_ui_state::{arc_length_dim_geom, Settings, Sheet, View2d};
 
 /// A quarter arc of radius 10 about (0, 0) turning `winding`, with its length dimensioned. Answers the project, the
@@ -21,8 +21,8 @@ fn an_arc_with_its_length(winding: Winding) -> (Project, usize, usize) {
     };
     p.add_arc_entity(si, Point2::new(0.0, 0.0), a, b, winding, Purpose::Real);
     let s = &p.sketches[si];
-    let Some((c, a, b, ccw)) = s.entities.iter().find_map(|e| match e.kind {
-        EntityKind::Arc { center, a, b, ccw } => Some((center, a, b, ccw)),
+    let Some((c, a, b, ccw)) = s.entities.iter().find_map(|e| match e.kind.as_arc() {
+        Some(qymcad_core::model::ArcParts { center, a, b, ccw }) => Some((center, a, b, ccw)),
         _ => None,
     }) else {
         panic!("the arc")

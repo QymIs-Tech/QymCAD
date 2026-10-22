@@ -1,17 +1,17 @@
 //! A CORNER AT A CROSSING: two lines through each other share no point, yet they make four corners where they cross. A
-//! click of the sketch fillet or chamfer inside one of them, by the crossing, cuts both lines there, rounds or cuts that
-//! corner, and keeps the other two halves as lines.
+//! click of the sketch fillet or chamfer inside one of them, by the crossing, cuts both lines there and rounds or cuts
+//! that corner; its two sides keep their far ends, and the halves beyond the corner go.
 //!
 //! Reported behaviour: "a sketch fillet or chamfer cannot be put where two lines cross - a click at the crossing picks no
 //! corner, and nothing is made".
-use qymcad::{Key, Kind, Modifiers, Session, Widget};
+use qymcad::{Key, Modifiers, Session, Widget};
 use qymcad_acceptance::build::{empty_sketch, line};
 use qymcad_acceptance::probe;
 
 /// The field on the sheet nearest to `at`.
 fn field_near(s: &mut Session, at: qymcad::Pos2) -> Option<Widget> {
     let sheet = s.canvas();
-    s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && sheet.contains(w.rect.center())).min_by(|a, b| a.rect.center().distance(at).total_cmp(&b.rect.center().distance(at)))
+    qymcad_acceptance::value_fields(s).into_iter().filter(|w| sheet.contains(w.rect.center())).min_by(|a, b| a.rect.center().distance(at).total_cmp(&b.rect.center().distance(at)))
 }
 
 /// A CUT OF A CORNER as a person asks for it: the tool by its hint, the mode of a chamfer by its word on the bar, the
@@ -45,11 +45,14 @@ fn a_cross(o: (f64, f64)) -> Session {
 fn cut_in(cut: Cut, o: (f64, f64), quarter: (f64, f64)) -> Option<String> {
     let mut s = a_cross(o);
     cut_in_session(&mut s, cut, o, quarter).or_else(|| {
-        // the far ends of the cross stay where they were
+        // the far ends of the two sides stay where they were; those of the halves beyond the corner go with them
         let sk = s.document().sketches[0].clone();
-        let gone: Vec<(f64, f64)> =
-            [(-20.0, 0.0), (20.0, 0.0), (0.0, -20.0), (0.0, 20.0)].into_iter().filter(|&(x, y)| !sk.places.iter().any(|p| (p[0] - o.0 - x).abs() < 1e-3 && (p[1] - o.1 - y).abs() < 1e-3)).collect();
-        (!gone.is_empty()).then(|| format!("{} at {o:?} in the quarter {quarter:?}: the far ends of the cross are gone from {gone:?}", cut.hint))
+        let stands = |x: f64, y: f64| sk.places.iter().any(|p| (p[0] - o.0 - x).abs() < 1e-3 && (p[1] - o.1 - y).abs() < 1e-3);
+        let (qx, qy) = quarter;
+        let gone: Vec<[f64; 2]> = [[20.0 * qx, 0.0], [0.0, 20.0 * qy]].into_iter().filter(|p| !stands(p[0], p[1])).collect();
+        let left: Vec<[f64; 2]> = [[-20.0 * qx, 0.0], [0.0, -20.0 * qy]].into_iter().filter(|p| stands(p[0], p[1])).collect();
+        (!gone.is_empty() || !left.is_empty())
+            .then(|| format!("{} at {o:?} in the quarter {quarter:?}: the far ends of its sides are gone from {gone:?}, the ends beyond it still stand at {left:?}", cut.hint))
     })
 }
 
@@ -62,15 +65,14 @@ fn cut_in_session(s: &mut Session, cut: Cut, o: (f64, f64), quarter: (f64, f64))
         let word = s.word(mode);
         s.press_word_near(&word, qymcad::pos2(400.0, 0.0));
     }
+    // the pointer led into the quarter by the crossing, where the preview of that corner stands, and clicked off the
+    // point the crossing makes: the corner of the quarter is named at once
     let at = s.on_sketch(o.0 + quarter.0, o.1 + quarter.1);
+    s.move_to(at);
     s.click(at);
-    // the crossing has four corners to give: a second click in the quarter fixes the corner there
-    let fix = s.word("sk-corner-click-to-fix");
-    if s.status() != fix {
-        return Some(format!("{hint} at {o:?} in the quarter {quarter:?}: a click at the crossing did not ask for the side, the status says {:?}", s.status()));
+    if s.status() == s.word("sk-corner-click-to-fix") {
+        return Some(format!("{hint} at {o:?} in the quarter {quarter:?}: a click in the quarter asked for the side again"));
     }
-    let side = s.on_sketch(o.0 + 1.5 * quarter.0, o.1 + 1.5 * quarter.1);
-    s.click(side);
     if field_near(s, at).is_none() {
         return Some(format!("{hint} at {o:?} in the quarter {quarter:?}: no field opened, the status says {:?}", s.status()));
     }
@@ -82,18 +84,25 @@ fn cut_in_session(s: &mut Session, cut: Cut, o: (f64, f64), quarter: (f64, f64))
     s.key(Key::Enter);
     let sk = s.document().sketches[0].clone();
     let at = |x: f64, y: f64| sk.places.iter().any(|p| (p[0] - o.0 - x).abs() < 1e-3 && (p[1] - o.1 - y).abs() < 1e-3);
-    // the corner cut 5 along each of its lines, the other two halves meeting at the crossing
+    // the corner cut 5 along each of its lines, nothing left on the crossing
     let (qx, qy) = quarter;
-    let want = [(5.0 * qx, 0.0), (0.0, 5.0 * qy), (0.0, 0.0)];
+    let want = [(5.0 * qx, 0.0), (0.0, 5.0 * qy)];
     let missing: Vec<(f64, f64)> = want.into_iter().filter(|&(x, y)| !at(x, y)).collect();
-    (!missing.is_empty() || sk.arcs != arcs || sk.redundant != 0).then(|| {
-        format!("{hint} at {o:?} in the quarter {quarter:?}: nothing stands at {missing:?}, {} arcs, {} lines, {} redundant; the sketch shows {:?}", sk.arcs, sk.lines, sk.redundant, sk.places)
+    (!missing.is_empty() || at(0.0, 0.0) || sk.arcs != arcs || sk.redundant != 0).then(|| {
+        format!(
+            "{hint} at {o:?} in the quarter {quarter:?}: nothing stands at {missing:?}, a point on the crossing {}, {} arcs, {} lines, {} redundant; the sketch shows {:?}",
+            at(0.0, 0.0),
+            sk.arcs,
+            sk.lines,
+            sk.redundant,
+            sk.places
+        )
     })
 }
 
 probe! {
     /// A FILLET IN EACH QUARTER OF A CROSS: the click inside the quarter by the crossing, 5 typed - that corner is
-    /// rounded 5 on both lines, the far ends stay, and the other two halves still meet at the crossing.
+    /// rounded 5 on both lines, the far ends of its sides stay, and the halves beyond it go.
     fn a_fillet_is_put_in_each_corner_of_a_crossing() {
         let fillet = Cut { hint: "tb-fillet-sketch-hint", mode: None, first: "5", second: None, arcs: 1 };
         let failures: Vec<String> = AT.into_iter().flat_map(|o| QUARTERS.into_iter().filter_map(move |q| cut_in(fillet, o, q))).collect();
@@ -145,24 +154,16 @@ probe! {
     }
 }
 
-/// The fields of the bar of options, left to right.
-fn bar_fields(s: &mut Session) -> Vec<Widget> {
-    let mut fields: Vec<Widget> = s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && w.rect.top() < 120.0).collect();
-    fields.sort_by(|a, b| a.rect.left().total_cmp(&b.rect.left()));
-    fields
-}
-
 /// The line through (x, y) laid out three times by a linear pattern, `step` apart.
 fn three_of(s: &mut Session, at: (f64, f64), step: (f64, f64)) {
     qymcad_acceptance::build::pick(s, at.0, at.1, false);
     let hint = s.word("tb-lin-array-hint");
     s.press_hint(&hint);
-    let count = s.word("opt-count");
+    let count = s.word("cmd-copies");
     s.fill(&count, "3");
-    let fields = bar_fields(s);
-    for (field, v) in fields[1..3].iter().zip([step.0, step.1]) {
-        s.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text(&v.to_string());
-    }
+    // the steps are rows of the box of the pattern, by their captions
+    let (x, y) = (s.word("opt-step-x"), s.word("opt-step-y"));
+    s.fill(&x, &step.0.to_string()).fill(&y, &step.1.to_string());
     s.key(Key::Enter).key(Key::Enter);
     s.key(Key::Escape).key(Key::Escape);
 }
@@ -215,8 +216,8 @@ probe! {
                 s.key(Key::Enter);
                 let sk = s.document().sketches[0].clone();
                 let at = |x: f64, y: f64| sk.places.iter().any(|p| (p[0] - o.0 - x).abs() < 1e-3 && (p[1] - o.1 - y).abs() < 1e-3);
-                let missing: Vec<(f64, f64)> = [(5.0 * q.0, 0.0), (0.0, 5.0 * q.1), (0.0, 0.0)].into_iter().filter(|&(x, y)| !at(x, y)).collect();
-                if !missing.is_empty() || sk.arcs != arcs || sk.redundant != 0 {
+                let missing: Vec<(f64, f64)> = [(5.0 * q.0, 0.0), (0.0, 5.0 * q.1)].into_iter().filter(|&(x, y)| !at(x, y)).collect();
+                if !missing.is_empty() || at(0.0, 0.0) || sk.arcs != arcs || sk.redundant != 0 {
                     failures.push(format!("{hint}, the lines chosen with Shift, the pointer in the quarter {q:?}: nothing stands at {missing:?}, {} arcs, {} redundant; status {:?}; the sketch shows {:?}", sk.arcs, sk.redundant, s.status(), sk.places));
                 }
             }

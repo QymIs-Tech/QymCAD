@@ -243,7 +243,7 @@ fn a_mate_value_a_limit_and_as_built_are_part_of_the_document() {
 #[test]
 fn edits_the_key_used_to_miss_change_it() {
     use qymcad_core::feature::{AnchorRef, FaceKey, Purpose, SketchPlane};
-    use qymcad_core::model::{Constraint, Note, PlaneDef, Spline};
+    use qymcad_core::model::{Constraint, EntityKind, Handle, Note, PlaneDef, SketchEntity};
     let mut bad: Vec<String> = Vec::new();
     let mut check = |label: &str, p: &mut Project, f: &dyn Fn(&mut Project)| {
         let before = p.state_key();
@@ -273,18 +273,23 @@ fn edits_the_key_used_to_miss_change_it() {
     });
     check("the radius of a circle was changed", &mut p, &|p| {
         for e in &mut p.sketches[0].entities {
-            if let qymcad_core::model::EntityKind::Circle { r, .. } = &mut e.kind {
-                *r = 8.0;
-            }
+            e.kind.set_radius(8.0);
         }
     });
     check("a note was written in a sketch", &mut p, &|p| p.sketches[0].notes.push(Note { x: 1.0, y: 2.0, text: "check".into() }));
     check("a note was retyped", &mut p, &|p| p.sketches[0].notes[0].text = "checked".into());
     check("a spline was drawn", &mut p, &|p| {
         let pts: Vec<_> = p.sketches[0].points.iter().take(3).map(|q| q.id).collect();
-        p.sketches[0].splines.push(Spline { points: pts, tangents: vec![None; 3], closed: false, construction: false });
+        let kind = EntityKind::spline(pts, vec![Handle::default(); 3], qymcad_core::feature::Ends::Open);
+        p.sketches[0].entities.push(SketchEntity { id: 9_000_001, kind, construction: false });
     });
-    check("a tangent of a spline was set", &mut p, &|p| p.sketches[0].splines[0].tangents[1] = Some([1.0, 0.0]));
+    check("a tangent of a spline was set", &mut p, &|p| {
+        for e in &mut p.sketches[0].entities {
+            if let Some(sp) = e.kind.as_spline_mut() {
+                sp.handles[1].arrive = Some([1.0, 0.0]);
+            }
+        }
+    });
     check("two points were made level", &mut p, &|p| {
         let (pa, pb) = (p.sketches[0].points[0].id, p.sketches[0].points[1].id);
         p.sketches[0].constraints.push(Constraint::Horizontal { a: pa, b: pb });

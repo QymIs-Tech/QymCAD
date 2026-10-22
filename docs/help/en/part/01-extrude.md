@@ -26,7 +26,8 @@ In the bar above:
 
 - **Add** — material appears; **Cut** — it is removed; **Intersect** — only what is common with the body stays.
 - **To a length** — one way; **Symmetric** — equally both ways from the sketch; **Two sides** — a length of its own
-  each way, the second in the **Second side** field; for a cut through a body also **Through all**.
+  each way, the second in the **Second side** field; for a cut through a body also **Through all** (the way the arrow
+  points) and **Through all, both sides** (through the whole part on both sides of the sketch).
 - **Flip** — the other way from the sketch. The length is always positive: this button changes the side, not a sign.
 
 A cut that splits the body in two leaves both pieces bodies of the same part. To make a piece a part of its own —

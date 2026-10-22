@@ -1,60 +1,86 @@
-//! Exporting a sketch to DXF: a minimal ASCII R12 file with an ENTITIES section of LINE, CIRCLE and ARC.
+//! Exporting a sketch to DXF: an R2000 drawing with an ENTITIES section of LINE, CIRCLE, ARC, ELLIPSE and SPLINE, each
+//! curve the entity it is - R2000 is the first version a reader of the drawing takes an ELLIPSE and a SPLINE from as
+//! plainly as a LINE.
 //!
-//! DXF runs Y upwards as CAD does, so no inversion is needed. Arcs in DXF are always counter-clockwise, so a
-//! clockwise edge has its angles swapped.
-use qymcad_core::geom::ProfEdge;
-use std::fmt::Write as _;
-use std::io::Write as _;
+//! DXF runs Y upwards as CAD does, so no inversion is needed. Arcs and ellipses in DXF run counter-clockwise from their
+//! start to their end, so a clockwise edge has its ends swapped.
+use dxf::entities::{Arc, Circle, Ellipse, Entity, EntityType, Line, Spline};
+use dxf::enums::AcadVersion;
+use dxf::{Drawing, Point, Vector};
+use qymcad_core::geom::{Point2, ProfEdge};
 
 /// Write the curves of a sketch to DXF. An error means there was nothing to export, or the write failed.
 pub fn export_dxf(edges: &[ProfEdge], path: &str) -> Result<(), String> {
     if edges.is_empty() {
         return Err("io-dxf-empty-sketch".into());
     }
-    let mut s = String::new();
-    // a minimal preamble and the start of ENTITIES
-    s.push_str("0\nSECTION\n2\nENTITIES\n");
-    // helpers for the code and value pairs
-    let ln = |code: i32, val: &str, out: &mut String| {
-        let _ = write!(out, "{code}\n{val}\n");
-    };
-    for e in edges {
-        match *e {
-            ProfEdge::Line { a, b } => {
-                ln(0, "LINE", &mut s);
-                ln(8, "0", &mut s); // layer 0
-                ln(10, &format!("{:.6}", a.x), &mut s);
-                ln(20, &format!("{:.6}", a.y), &mut s);
-                ln(30, "0.0", &mut s);
-                ln(11, &format!("{:.6}", b.x), &mut s);
-                ln(21, &format!("{:.6}", b.y), &mut s);
-                ln(31, "0.0", &mut s);
-            }
-            ProfEdge::Circle { center, r } => {
-                ln(0, "CIRCLE", &mut s);
-                ln(8, "0", &mut s);
-                ln(10, &format!("{:.6}", center.x), &mut s);
-                ln(20, &format!("{:.6}", center.y), &mut s);
-                ln(30, "0.0", &mut s);
-                ln(40, &format!("{:.6}", r), &mut s);
-            }
+    let mut drawing = Drawing::new();
+    drawing.header.version = AcadVersion::R2000;
+    let at = |p: Point2| Point::new(p.x, p.y, 0.0);
+    let mut k = 0;
+    while k < edges.len() {
+        let specific = match edges[k] {
+            ProfEdge::Line { a, b } => EntityType::Line(Line::new(at(a), at(b))),
+            ProfEdge::Circle { center, r } => EntityType::Circle(Circle::new(at(center), r)),
             ProfEdge::Arc { a, b, center, ccw } => {
-                let r = ((a.x - center.x).powi(2) + (a.y - center.y).powi(2)).sqrt();
-                let deg = |p_x: f64, p_y: f64| (p_y - center.y).atan2(p_x - center.x).to_degrees().rem_euclid(360.0);
-                // DXF draws counter-clockwise from start to end; for a clockwise edge the same arc results
-                // from swapping them
-                let (start, end) = if ccw { (deg(a.x, a.y), deg(b.x, b.y)) } else { (deg(b.x, b.y), deg(a.x, a.y)) };
-                ln(0, "ARC", &mut s);
-                ln(8, "0", &mut s);
-                ln(10, &format!("{:.6}", center.x), &mut s);
-                ln(20, &format!("{:.6}", center.y), &mut s);
-                ln(30, "0.0", &mut s);
-                ln(40, &format!("{:.6}", r), &mut s);
-                ln(50, &format!("{:.6}", start), &mut s);
-                ln(51, &format!("{:.6}", end), &mut s);
+                let deg = |p: Point2| (p.y - center.y).atan2(p.x - center.x).to_degrees().rem_euclid(360.0);
+                // DXF draws counter-clockwise from start to end; for a clockwise edge the same arc results from swapping them
+                let (start, end) = if ccw { (deg(a), deg(b)) } else { (deg(b), deg(a)) };
+                EntityType::Arc(Arc::new(at(center), center.dist(a), start, end))
             }
-        }
+            ProfEdge::Oval { centre, major, minor, from, sweep } => EntityType::Ellipse(ellipse(OvalEdge { centre, major, minor, from, sweep })),
+            ProfEdge::Spline(ref b) => EntityType::Spline(spline(b)),
+        };
+        drawing.add_entity(Entity::new(specific));
+        k += 1;
     }
-    s.push_str("0\nENDSEC\n0\nEOF\n");
-    std::fs::File::create(path).and_then(|mut f| f.write_all(s.as_bytes())).map_err(|e| format!("io-dxf-write-failed#{e}"))
+    drawing.save_file(path).map_err(|e| format!("io-dxf-write-failed#{e}"))
+}
+
+/// AN ELLIPSE EDGE as a sketch gives it: its centre, its semi-axes as vectors, and the run of its angle.
+struct OvalEdge {
+    centre: Point2,
+    major: Point2,
+    minor: Point2,
+    from: f64,
+    sweep: f64,
+}
+
+/// The ELLIPSE of an ellipse edge. DXF holds the greater semi-axis as a vector, the lesser as its ratio to it turned a
+/// quarter counter-clockwise, and the angles from the start to the end counter-clockwise: an edge whose lesser axis is
+/// the greater, or runs a quarter clockwise, or which runs clockwise is turned round to that.
+fn ellipse(e: OvalEdge) -> Ellipse {
+    let OvalEdge { centre, mut major, mut minor, mut from, mut sweep } = e;
+    let len = |v: Point2| v.x.hypot(v.y);
+    // the lesser the greater: c + M cos t + N sin t = c + N cos u + (-M) sin u, u = t - pi/2
+    if len(minor) > len(major) {
+        (major, minor) = (minor, Point2::new(-major.x, -major.y));
+        from -= std::f64::consts::FRAC_PI_2;
+    }
+    // the lesser a quarter clockwise of the greater: c + M cos t + N sin t = c + M cos(-t) + (-N) sin(-t)
+    if major.x * minor.y - major.y * minor.x < 0.0 {
+        minor = Point2::new(-minor.x, -minor.y);
+        (from, sweep) = (-from, -sweep);
+    }
+    if sweep < 0.0 {
+        (from, sweep) = (from + sweep, -sweep);
+    }
+    let start = from.rem_euclid(std::f64::consts::TAU);
+    let whole = sweep >= std::f64::consts::TAU - 1e-12;
+    Ellipse {
+        center: Point::new(centre.x, centre.y, 0.0),
+        major_axis: Vector::new(major.x, major.y, 0.0),
+        minor_axis_ratio: len(minor) / len(major),
+        start_parameter: if whole { 0.0 } else { start },
+        end_parameter: if whole { std::f64::consts::TAU } else { start + sweep },
+        ..Default::default()
+    }
+}
+
+/// The SPLINE of a spline edge: its cubic B-spline as it is, its poles and its knots.
+fn spline(b: &qymcad_core::geom::bspline::BSpline) -> Spline {
+    let control_points = b.poles.iter().map(|p| Point::new(p.x, p.y, 0.0)).collect();
+    let mut out = Spline { degree_of_curve: 3, control_points, knot_values: b.knots.clone(), ..Default::default() };
+    out.set_is_planar(true);
+    out
 }

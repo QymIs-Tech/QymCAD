@@ -159,7 +159,7 @@ fn a_corner_named_at_a_point_is_taken_away_by_the_same_click() {
     assert!(read.0 == l[0] || read.1 == l[0], "the corner is not of the line it is read through: {read:?}");
     assert_eq!(set.click_at_point(&p, si, at, Some(read)), PointAct::PointAdded, "the click at the point did not name a corner");
     assert_eq!(set.points.len(), 1, "the corner named at the point is not in the set");
-    assert!(set.occupied(&p, si, at), "a point with a corner of its own is taken: it is one place, read once");
+    assert!(set.occupied(at), "a point with a corner of its own is taken: it is one place, read once");
     assert_eq!(set.read_at_point(&p, si, at, Some((10.0, 10.0))), None, "a point with a corner is read again as a free one");
     assert_eq!(set.click_at_point(&p, si, at, Some(read)), PointAct::PointRemoved, "the second click at the point did not take the corner away");
     assert!(set.points.is_empty(), "the corner named at the point is still there");
@@ -222,7 +222,7 @@ fn a_corner_put_away_goes_when_a_line_of_it_is_let_go() {
     set.follow_from(&p, si, &l, &[l[1], l[2]]);
     assert_eq!(pairs(&set).len(), 1, "only the corner of the two lines that stayed is left standing: {:?}", pairs(&set));
     assert!(set.hidden.is_empty(), "the corner put away outlived the line it was made of: {:?}", set);
-    assert!(!set.occupied(&p, si, points[0]), "the point of a corner whose line was let go still answers as taken");
+    assert!(!set.occupied(points[0]), "the point of a corner whose line was let go still answers as taken");
     // AND THE LINE CHOSEN AGAIN: the corner is made afresh, and it STANDS rather than being put away a second time.
     set.follow_from(&p, si, &[l[1], l[2]], &l);
     assert_eq!(pairs(&set).len(), 3, "three lines make three corners and the one that was let go and chosen again is one of them: {:?}", pairs(&set));

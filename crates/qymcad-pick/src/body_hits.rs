@@ -107,7 +107,7 @@ pub fn pick_contour(project: &Project, sel: &mut Sel, set: &Settings, view: View
 /// Among the selected ones only — a variable radius makes sense on the set being rounded, and offering
 /// the vertices of the whole part would clutter the aim with what will affect nothing anyway.
 pub fn fillet_vertex_at(scr: &Screen, armed: &qymcad_ui_state::Armed, edges: &EdgeCache, gsel: &GeomSelection, project: &mut Project, screen: Pos2) -> Option<(u32, [f64; 3])> {
-    if armed.cmd_kind() != 4 || gsel.edges.is_empty() {
+    if armed.part_tool() != Some(qymcad_ui_state::PartTool::Fillet) || gsel.edges.is_empty() {
         return None;
     }
     let body = edges.body?;
@@ -609,6 +609,12 @@ pub fn point_not_hidden(pn: &Painting, rect: Rect, w: [f64; 3]) -> bool {
 /// A RAY INTO A FACE WITH NO SIDE EFFECTS: (the body, the persistent id of the face, the point of the hit in the
 /// world). Picking a face for a command also changes the selection and the highlight; measuring and the right button
 /// need none of that and are harmed by it - measure a gap and lose the selection of the part.
+/// THE PLACE OF THE MODEL UNDER THE POINTER: the point of the face hit there, or of the edge or the vertex beside it
+/// where the pointer stands off every face. Projected back on the screen, it is the place a person clicked.
+pub fn place_under(pn: &Painting, rect: Rect, pos: Pos2) -> Option<[f64; 3]> {
+    pick_face_ray(pn, rect, pos).map(|(_, _, at)| at).or_else(|| pick_edge_point(pn, rect, pos)).or_else(|| pick_vertex_pos(pn, rect, pos))
+}
+
 pub fn pick_face_ray(pn: &Painting, rect: Rect, screen: Pos2) -> Option<(qymcad_core::model::Id, u32, [f64; 3])> {
     let basis = pn.cam.basis();
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };

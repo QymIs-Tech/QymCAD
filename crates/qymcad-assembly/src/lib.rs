@@ -21,3 +21,5 @@ mod popup;
 pub use popup::*;
 mod commands;
 pub use commands::*;
+mod in_hand;
+pub use in_hand::in_hand;

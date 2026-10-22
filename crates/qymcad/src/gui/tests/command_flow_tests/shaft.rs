@@ -16,8 +16,8 @@ fn revolve_axis_is_picked_by_clicking_not_from_a_dropdown() {
     app.project.regen_sketch(si);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(3);
-    assert_eq!(app.tools.armed.cmd_kind(), 3, "the revolve command started: {}", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Revolve), "the revolve command started: {}", app.status);
     let cands = qymcad_ui_state::profile_axis_lines(&app.project, si);
     assert!(cands.len() >= 2, "the sketch holds several candidate lines");
 
@@ -72,7 +72,7 @@ fn rebuild_everything_marks_the_whole_timeline_and_goes_background() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     app.apply_feat_cmd();
     assert!(!app.project.timeline.is_empty(), "the timeline has something to rebuild: {}", app.status);
     for n in app.project.timeline.iter_mut() {
@@ -99,7 +99,7 @@ fn datum_axis_built_inside_a_part_is_pickable_there() {
     assert!(qymcad_ui_state::datum_render_transform(&app.painting(), ax).is_some(), "the part's own axis is visible from inside the part");
 
     app.viewing.mode_3d = true;
-    app.tools.armed = qymcad_ui_state::Armed::Command(3);
+    app.tools.armed = qymcad_ui_state::Armed::Command(qymcad_ui_state::PartTool::Revolve);
     app.params.rev.pick_axis = true;
     let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0));
     let basis = app.viewing.cam.basis();
@@ -144,7 +144,7 @@ fn section_cap_covers_the_threaded_zone_too() {
         }
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the thread was built: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the thread was built: {}", app.status);
 
     // a section ALONG the axis: a plane through the axis with a +Y normal
     app.side.section.plane = Some(([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]));

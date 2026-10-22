@@ -11,7 +11,7 @@ fn a_picked_diagonal_makes_no_corner_with_a_side() {
     p.new_document();
     let si = p.new_sketch("S");
     p.add_rect_from_centre(si, Point2::new(20.0, 15.0), Point2::new(40.0, 30.0), Purpose::Real);
-    let r = p.sketches[si].rects[0].clone();
+    let r = p.sketches[si].rects()[0].clone();
     let diagonal = r.diagonals.expect("a rectangle drawn from its centre has its diagonals")[0];
     // the first side and the diagonal from its first corner, picked together; then the two sides of that corner
     let with_diagonal = p.corners_of_lines(si, &[r.sides[0], diagonal]);

@@ -48,8 +48,8 @@ fn reference_line_lands_exactly_on_its_dimension() {
     let aux = p.add_line_entity(si, -129.999, 25.0, -129.9993, -234.0, qymcad_core::feature::Purpose::Construction);
     p.add_rect_entity(si, -129.9991, -176.0, -124.999, -36.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(si);
-    let (a0, a1) = match p.sketches[si].entities.iter().find(|e| e.id == aux).unwrap().kind {
-        qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+    let (a0, a1) = match p.sketches[si].entities.iter().find(|e| e.id == aux).unwrap().kind.as_line() {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => unreachable!(),
     };
     // the left side of the rectangle, its own points only; the ends of the construction line must not enter

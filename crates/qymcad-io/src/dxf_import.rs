@@ -1,7 +1,8 @@
 //! Importing DXF into exact primitive curves — segments, arcs and circles — rather than a tessellation.
 //!
-//! Read: LINE, CIRCLE, ARC and polylines, including bulge arcs from fillets; ELLIPSE and SPLINE as runs of segments
-//! whose corners lie on the curve, fine enough that no chord strays from it by more than `CHORD` mm; INSERT as the
+//! Read: LINE, CIRCLE, ARC and polylines, including bulge arcs from fillets; ELLIPSE as the ellipse it is; a SPLINE of
+//! degree 3 with no weights of its own as the cubic spans it is made of, and any other as a run of segments whose corners
+//! lie on the curve, fine enough that no chord strays from it by more than `CHORD` mm; INSERT as the
 //! entities of its block, placed, turned and scaled, repeated over its rows and columns. A circle stays a circle and an
 //! arc stays an arc; they are not broken into segments, or importing a drawing would yield thousands of them. Every
 //! other entity is counted by its kind and named, not silently dropped: a drawing that lost its texts or hatches must
@@ -9,7 +10,9 @@
 
 use dxf::entities::{Entity, EntityType};
 use dxf::Drawing;
+use qymcad_core::geom::bspline::{Approximated, BSpline};
 use qymcad_core::geom::{Point2, ProfEdge};
+use qymcad_core::model::curve::Curve;
 
 use crate::ImportedSketch;
 
@@ -103,6 +106,27 @@ impl Place {
         }
     }
 
+    /// THE PLANE AN ENTITY IS DRAWN IN, from its extrusion direction (210/220/230) and its elevation: the centre of an ARC
+    /// or a CIRCLE, the vertices of a polyline and the place of an INSERT are given in this object coordinate system. Its X
+    /// axis comes by the arbitrary axis algorithm - for an extrusion within 1/64 of Z, the world's Y crossed with it -
+    /// and its Y axis is the extrusion crossed with X; for (0,0,-1), which mirrored arcs are written with, X is the
+    /// drawing's -X, and a turn counter-clockwise in the plane runs clockwise on the drawing. Reported behaviour: such an
+    /// arc came in mirrored about Y, and its slot open. `None` for a plane not parallel to the drawing's, which a sketch
+    /// cannot hold without drawing it flat; an extrusion that is not a number gives a place of no number, which leaves the
+    /// entity out as invalid.
+    fn ocs(normal: &dxf::Vector, elevation: f64) -> Option<Place> {
+        let len = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+        if normal.x.hypot(normal.y) > 1e-9 * len {
+            return None;
+        }
+        let n = [normal.x / len, normal.y / len, normal.z / len];
+        // X = (0,1,0) x N, Y = N x X
+        let k = n[2].hypot(n[0]);
+        let x = [n[2] / k, 0.0, -n[0] / k];
+        let y = [n[1] * x[2], n[2] * x[0] - n[0] * x[2], -n[1] * x[0]];
+        Some(Place { a: x[0], b: y[0], c: x[1], d: y[1], tx: n[0] * elevation, ty: n[1] * elevation })
+    }
+
     /// The scale when this place keeps circles circles - the same stretch both ways, square axes - and whether it mirrors.
     fn uniform(&self) -> Option<(f64, bool)> {
         let (sx, sy) = ((self.a * self.a + self.c * self.c).sqrt(), (self.b * self.b + self.d * self.d).sqrt());
@@ -123,9 +147,33 @@ struct Left {
     redrawn: Counts,
 }
 
+/// The kind of an entity as the file names it: `LINE`, `LWPOLYLINE`.
+fn kind(specific: &EntityType) -> String {
+    let name = format!("{specific:?}");
+    name.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("?").to_uppercase()
+}
+
 /// Read `entities` placed by `place` into `curves`, counting into `left` what did not come in as the file has it.
 fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, curves: &mut Vec<ProfEdge>, left: &mut Left) {
     for entity in entities {
+        let first = curves.len();
+        // the plane the entity is given in: its own for those written in their object coordinate system, the drawing's
+        // for a LINE, a SPLINE, a 3D polyline and an ELLIPSE, whose points are the drawing's; one not parallel to the
+        // drawing's is not read
+        let plane = match &entity.specific {
+            EntityType::Circle(c) => Place::ocs(&c.normal, c.center.z),
+            EntityType::Arc(a) => Place::ocs(&a.normal, a.center.z),
+            EntityType::LwPolyline(p) => Place::ocs(&p.extrusion_direction, entity.common.elevation),
+            EntityType::Polyline(p) if !p.is_3d_polyline() => Place::ocs(&p.normal, p.location.z),
+            EntityType::Insert(ins) => Place::ocs(&ins.extrusion_direction, ins.location.z),
+            EntityType::Ellipse(e) => Place::ocs(&e.normal, 0.0).map(|_| Place::IDENTITY),
+            _ => Some(Place::IDENTITY),
+        };
+        let Some(plane) = plane else {
+            *left.skipped.entry(kind(&entity.specific)).or_default() += 1;
+            continue;
+        };
+        let place = &place.then(&plane);
         match &entity.specific {
             EntityType::Line(line) => {
                 curves.push(ProfEdge::Line { a: place.at(line.p1.x, line.p1.y), b: place.at(line.p2.x, line.p2.y) });
@@ -158,13 +206,28 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                 placed_polyline(&verts, p.is_closed(), place, curves);
             }
             EntityType::Ellipse(e) => {
-                // the minor axis is the normal turned across the major one, shortened by the ratio
-                let (mx, my) = (e.major_axis.x, e.major_axis.y);
-                let turn = if e.normal.z < 0.0 { -1.0 } else { 1.0 };
-                let (nx, ny) = (-my * turn * e.minor_axis_ratio, mx * turn * e.minor_axis_ratio);
+                // the minor axis is the extrusion crossed with the major one, shortened by the ratio
+                let n = &e.normal;
+                let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
+                let (mx, my, mz) = (e.major_axis.x, e.major_axis.y, e.major_axis.z);
+                let k = e.minor_axis_ratio / len;
+                let (nx, ny) = ((n.y * mz - n.z * my) * k, (n.z * mx - n.x * mz) * k);
                 let (from, to) = (e.start_parameter, e.end_parameter);
                 let to = if to <= from { to + std::f64::consts::TAU } else { to };
-                run(|t| place.at(e.center.x + mx * t.cos() + nx * t.sin(), e.center.y + my * t.cos() + ny * t.sin()), from, to, curves);
+                let at = |t: f64| place.at(e.center.x + mx * t.cos() + nx * t.sin(), e.center.y + my * t.cos() + ny * t.sin());
+                // an ellipse placed by a turn and an even scale keeps its axes square; one stretched unevenly is the ellipse
+                // through its points, whose axes are its own
+                let oval = match place.uniform() {
+                    Some(_) => {
+                        let c = place.at(e.center.x, e.center.y);
+                        Some(ProfEdge::Oval { centre: c, major: at(0.0) - c, minor: at(std::f64::consts::FRAC_PI_2) - c, from, sweep: to - from })
+                    }
+                    None => Curve::oval_through(&(0..=48).map(|k| at(from + (to - from) * k as f64 / 48.0)).collect::<Vec<_>>()).and_then(|c| c.to_edges().into_iter().next()),
+                };
+                match oval {
+                    Some(o) if [e.center.x, e.center.y, mx, my, nx, ny, from, to].iter().all(|v| v.is_finite()) => curves.push(o),
+                    _ => run(at, from, to, curves),
+                }
             }
             EntityType::Spline(sp) => {
                 let under = match spline(sp, place, curves) {
@@ -182,6 +245,13 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                     *left.skipped.entry("INSERT".into()).or_default() += 1;
                     continue;
                 };
+                // the insert's own numbers: what it places is checked entity by entity, under their own kinds
+                let n = &ins.extrusion_direction;
+                let own = [ins.location.x, ins.location.y, ins.location.z, ins.x_scale_factor, ins.y_scale_factor, ins.rotation, ins.column_spacing, ins.row_spacing, n.x, n.y, n.z];
+                if !own.iter().all(|v| v.is_finite()) {
+                    *left.invalid.entry("INSERT".into()).or_default() += 1;
+                    continue;
+                }
                 let inner: Vec<&Entity> = block.entities.iter().collect();
                 let (sin, cos) = ins.rotation.to_radians().sin_cos();
                 for row in 0..ins.row_count.max(1) {
@@ -201,14 +271,20 @@ fn read(drawing: &Drawing, entities: &[&Entity], place: &Place, depth: usize, cu
                     }
                 }
             }
-            other => {
-                let name = format!("{other:?}");
-                let kind = name.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("?").to_uppercase();
-                *left.skipped.entry(kind).or_default() += 1;
-            }
+            other => *left.skipped.entry(kind(other)).or_default() += 1,
+        }
+        // A NUMBER THAT IS NOT A NUMBER LEAVES ITS ENTITY OUT, NAMED: the reader parses `nan`, `inf` and `1e400` as
+        // numbers, and a finite one can overflow under the place of a block. Reported behaviour: a LINE at x = nan came
+        // into the sketch as a NaN point with no word, and one at x = inf panicked in the weld of the sketch's ends.
+        if curves[first..].iter().any(|c| !c.is_finite()) {
+            curves.truncate(first);
+            *left.invalid.entry(kind(&entity.specific)).or_default() += 1;
         }
     }
 }
+
+/// How far a curve read from a drawing and laid as a cubic B-spline may stand from the curve of the file, in mm.
+const READ_TOLERANCE: f64 = 1e-3;
 
 /// A curve given by `at` over `[from, to]` as segments, halved wherever a chord's middle strays from the curve by more
 /// than `CHORD`; the corners lie on the curve.
@@ -227,7 +303,9 @@ fn run(at: impl Fn(f64) -> Point2, from: f64, to: f64, curves: &mut Vec<ProfEdge
     }
     for w in ts.windows(2) {
         let (p, q) = (at(w[0]), at(w[1]));
-        if p.dist(q) > 1e-12 {
+        // a length that is not a number keeps the segment, for the check of its entity's numbers to leave it out by name
+        let length = p.dist(q);
+        if length > 1e-12 || length.is_nan() {
             curves.push(ProfEdge::Line { a: p, b: q });
         }
     }
@@ -244,7 +322,7 @@ fn off_chord(p: Point2, q: Point2, m: Point2) -> f64 {
 }
 
 /// A SPLINE: the rational B-spline of its control points, knots and weights by de Boor's rule; one given only by the
-/// points it runs through goes through them as a Catmull-Rom curve, the way a sketch's own spline does.
+/// points it runs through goes through them as the sketch draws a spline through its nodes.
 ///
 /// THE NUMBERS COME FROM THE FILE. The range of the curve is its knots `p` and `n`, and `t.clamp(lo, hi)` panics when
 /// the low end is above the high one or either is not a number - from the UI thread, ending the program; a knot, a
@@ -272,7 +350,14 @@ fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>)
     // they are what the spline would be drawn by. A spline given by fit points alone is not invalid.
     let invalid = !made && (!ctrl.is_empty() || !knots.is_empty() || !fit_finite);
     let drawn = made || (sp.fit_points.len() >= 2 && fit_finite);
-    if made {
+    let even = w.iter().all(|v| (v - w[0]).abs() <= 1e-12 * w[0]);
+    if made && p == 3 && even {
+        // a cubic with no weights of its own is a spline of the sketch as it is: its poles placed - a place is an affine
+        // map - and its knots run from 0 to 1, clamped where the file leaves its ends free
+        let (lo, hi) = (knots[p], knots[ctrl.len()]);
+        let b = BSpline { knots: knots[..ctrl.len() + 4].iter().map(|k| (k - lo) / (hi - lo)).collect(), poles: ctrl.iter().map(|&(x, y)| place.at(x, y)).collect() };
+        curves.push(ProfEdge::Spline(b.piece([0.0, 1.0])));
+    } else if made {
         let (lo, hi) = (knots[p], knots[ctrl.len()]);
         let at = |t: f64| {
             let t = t.clamp(lo, hi);
@@ -299,20 +384,22 @@ fn spline(sp: &dxf::entities::Spline, place: &Place, curves: &mut Vec<ProfEdge>)
             let (x, y, wt) = d[p];
             place.at(x / wt, y / wt)
         };
-        run(at, lo, hi, curves);
+        // A RATIONAL SPLINE OR ONE OF ANOTHER DEGREE IS APPROXIMATED BY THE CUBIC B-SPLINE of the sketch within 0.001 mm
+        // (`BSpline::approximate`), its knots begun at the file's: laid out as segments, a curve of the drawing was a run of
+        // up to 65 536 lines a person could not drag, and a body had a face for each
+        let along = |u: f64| at(lo + (hi - lo) * u);
+        let bends: Vec<f64> = knots[p + 1..ctrl.len()].iter().map(|k| (k - lo) / (hi - lo)).collect();
+        let off = |q: Point2, u: f64| q.dist(along(u));
+        let fitted = BSpline::approximate(&Approximated { at: &along, bends: &bends, ends: qymcad_core::feature::Ends::Open, off: &off, tolerance: READ_TOLERANCE, through: None });
+        match fitted {
+            Some(b) => curves.push(ProfEdge::Spline(b)),
+            None => run(at, lo, hi, curves),
+        }
     } else if drawn {
-        let pts: Vec<(f64, f64)> = sp.fit_points.iter().map(|q| (q.x, q.y)).collect();
-        let n = pts.len();
-        for k in 0..n - 1 {
-            let p0 = pts[k.saturating_sub(1)];
-            let (p1, p2) = (pts[k], pts[k + 1]);
-            let p3 = pts[(k + 2).min(n - 1)];
-            let at = |t: f64| {
-                let (t2, t3) = (t * t, t * t * t);
-                let f = |a: f64, b: f64, c: f64, d: f64| 0.5 * (2.0 * b + (c - a) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2 + (3.0 * b - a - 3.0 * c + d) * t3);
-                place.at(f(p0.0, p1.0, p2.0, p3.0), f(p0.1, p1.1, p2.1, p3.1))
-            };
-            run(at, 0.0, 1.0, curves);
+        // through the fit points as the sketch draws a spline through its nodes, placed
+        let pts: Vec<Point2> = sp.fit_points.iter().map(|q| place.at(q.x, q.y)).collect();
+        if let Some(b) = BSpline::through(&pts, &[], qymcad_core::feature::Ends::Open) {
+            curves.push(ProfEdge::Spline(b));
         }
     }
     match (drawn, invalid) {
@@ -358,6 +445,13 @@ fn placed_polyline(verts: &[(Point2, f64)], closed: bool, place: &Place, curves:
             }
             (ProfEdge::Circle { center, r }, Some((k, _))) => curves.push(ProfEdge::Circle { center: place.at(center.x, center.y), r: r * k }),
             (ProfEdge::Circle { center, r }, None) => run(|t| place.at(center.x + r * t.cos(), center.y + r * t.sin()), 0.0, std::f64::consts::TAU, curves),
+            // a place is an affine map, which takes an ellipse to an ellipse and a spline to a spline: by their points
+            (ProfEdge::Oval { centre, major, minor, from, sweep }, _) => {
+                let c = place.at(centre.x, centre.y);
+                let axis = |v: Point2| place.at(centre.x + v.x, centre.y + v.y) - c;
+                curves.push(ProfEdge::Oval { centre: c, major: axis(major), minor: axis(minor), from, sweep });
+            }
+            (ProfEdge::Spline(b), _) => curves.push(ProfEdge::Spline(b.mapped(&|q| place.at(q.x, q.y)))),
         }
     }
 }
@@ -388,7 +482,8 @@ fn polyline_curves(verts: &[(Point2, f64)], closed: bool, out: &mut Vec<ProfEdge
         if p1.dist(p2) < 1e-9 {
             continue; // a degenerate edge
         }
-        out.push(if bulge.abs() > 1e-9 { bulge_arc(p1, p2, bulge) } else { ProfEdge::Line { a: p1, b: p2 } });
+        // a bulge that is not a number makes an arc of no number, which the reader leaves out, not a straight edge
+        out.push(if bulge.abs() > 1e-9 || bulge.is_nan() { bulge_arc(p1, p2, bulge) } else { ProfEdge::Line { a: p1, b: p2 } });
     }
 }
 

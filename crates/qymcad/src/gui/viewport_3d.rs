@@ -45,7 +45,7 @@ impl App {
             self.viewport_3d_drag_update(ctx, resp, rect, &basis3);
         }
         if scroll != 0.0 && resp.contains_pointer() {
-            let part = crate::gui::commands::cmd_anchor_screen(&mut self.part_ctx(), rect); // where the open command's fields stand
+            let part = crate::gui::commands::cmd_spot(&mut self.part_ctx(), rect); // where the open command's fields stand
             self.viewing.cam = crate::gui::look_at_point::wheeled(&self.painting(), rect, qymcad_ui_state::zoom_anchor(&self.set, rect, resp.hover_pos(), part), scroll);
         }
         if let Some(p) = crate::gui::look_at_point::look_at(&self.painting(), self.set.mouse_nav, resp, rect) {
@@ -76,8 +76,13 @@ impl App {
                 // AN EDGE UNDER THE CURSOR OUTRANKS A FACE: hover an edge and the menu asks about that
                 // edge ("the whole tangent chain"). Otherwise it would offer items about a face while a
                 // person was pointing at an edge.
-                let edge =
-                    matches!(self.tools.armed.cmd_kind(), 4 | 5).then(|| crate::gui::pick::edge_at(&self.active_path, self.viewing.cam, &self.edges, &self.project, &self.set, rect, pos)).flatten();
+                let edge = self
+                    .tools
+                    .armed
+                    .part_tool()
+                    .is_some_and(qymcad_ui_state::PartTool::blends_edges)
+                    .then(|| crate::gui::pick::edge_at(&self.active_path, self.viewing.cam, &self.edges, &self.project, &self.set, rect, pos))
+                    .flatten();
                 match (edge, self.edges.body) {
                     (Some(e), Some(b)) => {
                         self.tools.gsel.last_edge = Some((e, b));
@@ -137,12 +142,6 @@ impl App {
         crate::gui::refresh_interference(qymcad_ui_state::body_view_of!(self), qymcad_ui_state::scene_drag_of!(self), &mut self.interference, &self.live, &self.set, self.workbench); // recompute the intersections on the 3D path, where the assembly lives
         self.draw_3d(painter, rect);
         crate::gui::viewcube::draw(&self.cube_ctx(), painter, rect);
-        // the on-screen length field of the active command at the arrow tip (like the sketch dimensions)
-        crate::gui::commands::feat_cmd_popup(&mut self.part_ctx(), ctx, rect);
-        // the angle or offset of the SELECTED mate as an expression popup AT THE GEOMETRY (by its glyph), not only in the panel
-        qymcad_assembly::joint_popup(&mut self.joint_ctx(), ctx, rect);
-        // precise numeric entry at the body gizmo: a click on an axis or a ring opens a field at the geometry
-        crate::gui::commands::body_num_popup(&mut self.part_ctx(), ctx, rect, &basis3);
     }
 
     /// THE START OF A DRAG IN 3D: a priority chain of grabs - the active command's arrow, the section's offset
@@ -403,6 +402,13 @@ impl App {
     /// `else if`, where each link answers "is this click about me?". The chain is legitimate (the links are
     /// mutually exclusive), but while it had no name the order of its links could neither be seen nor checked.
     pub(super) fn viewport_3d_click(&mut self, resp: &egui::Response, rect: Rect, basis3: &([f64; 3], [f64; 3], [f64; 3])) {
+        // WHAT WAS PICKED BEFORE THE TOOL IS HANDED TO IT, as clicks of its own where those places stand on screen now
+        let held = crate::gui::panel_places::tool_in_hand(self);
+        let before: Vec<egui::Pos2> =
+            self.tools.gsel.before.hand_over(held).into_iter().map(|w| qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect, basis: basis3 }.at(w).0).collect();
+        for at in before {
+            self.viewport_3d_click_at(at, rect, basis3);
+        }
         if !resp.clicked() || !self.set.mouse_nav.click_takes(&resp.ctx) {
             return;
         }
@@ -411,7 +417,20 @@ impl App {
         if self.viewcube_click(qymcad_shell::clear_of_overs(&resp.ctx, rect), pos) {
             return;
         }
-        self.viewport_3d_click_at(pos, rect, basis3);
+        let was = self.chosen.sel;
+        let adding = if resp.ctx.input(|i| i.modifiers.shift) { qymcad_ui_state::Adding::Yes } else { qymcad_ui_state::Adding::No };
+        // SHIFT WITH NOTHING IN HAND ADDS WHAT IS UNDER THE POINTER to what is picked - the face under the gizmo of the
+        // part picked too, which a plain click there opens the numeric move of
+        match (held, adding) {
+            (qymcad_ui_state::InHand::Nothing, qymcad_ui_state::Adding::Yes) => self.pick_face_3d(rect, pos),
+            _ => self.viewport_3d_click_at(pos, rect, basis3),
+        }
+        // a click that opened the numeric entry of a gizmo is a click on the gizmo, not on the model under it
+        if held == qymcad_ui_state::InHand::Nothing && self.dragged.body_giz.num.is_none() {
+            self.tools.gsel.before.note(qymcad_pick::place_under(&self.painting(), rect, pos), adding);
+            let under = crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi));
+            qymcad_ui_state::hold_bodies(&self.project, was, under, &mut self.chosen, adding);
+        }
         qymcad_part::whole_body_on_double_click(&mut self.part_ctx(), resp.double_clicked());
         // the second click of two takes the body
     }
@@ -423,6 +442,7 @@ impl App {
     /// (what outranks what, which tool is open, what was hit). A test must touch the program in exactly the
     /// same way a person does, or it is not the program it checks.
     pub(super) fn viewport_3d_click_at(&mut self, pos: egui::Pos2, rect: Rect, basis3: &([f64; 3], [f64; 3], [f64; 3])) {
+        let aim = qymcad_part::aim(&self.part_ctx()); // what the tool of a part in hand aims at
         {
             {
                 // the numeric entry at the gizmo is open, so a click OUTSIDE the popup closes it (the
@@ -436,7 +456,7 @@ impl App {
                     qymcad_part::take_boolean_pick(&mut self.part_ctx(), hit);
                 }
                 // an extrusion or a revolution in hand: the click picks a contour - see `profile_click_3d`
-                else if matches!(self.tools.armed.cmd_kind(), 1 | 3) && self.tools.cmd.sketch.is_some() {
+                else if self.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && self.tools.cmd.sketch.is_some() {
                     qymcad_part::profile_click_3d(&mut self.part_ctx(), rect, pos);
                 }
                 // A WAITING TOOL: the click names the sketch. High in the chain - see `name_the_sketch`.
@@ -537,132 +557,60 @@ impl App {
                     } else {
                         self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane"));
                     }
-                } else if self.tools.armed.cmd_kind() == 16 {
-                    // MIRROR: the click picks the mirror PLANE, datum or face (Enter applies it)
-                    match crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos) {
-                        Some(sp) => {
-                            self.params.mirror.plane = (self.params.mirror.plane != Some(sp)).then_some(sp); // the same plane again lets it go
-                            self.status = Notice::info(crate::i18n::tr(if self.params.mirror.plane.is_some() { "vp-mirror-plane-picked" } else { "msg-mirror-pick" }));
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane-short")),
-                    }
-                } else if self.tools.armed.cmd_kind() == 27 || self.tools.armed.cmd_kind() == 29 {
-                    // SPLIT BODY: the click picks the cutting PLANE, datum or face (Enter applies it)
-                    match crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos) {
-                        Some(sp) => {
-                            self.params.split.plane = (self.params.split.plane != Some(sp)).then_some(sp); // the same plane again lets it go
-                            let src = qymcad_ui_state::op_target_body(&self.draw_ctx(), self.chosen.sel).unwrap_or(0);
-                            self.status = match crate::gui::commands::split_piece_count(&mut self.part_ctx(), src) {
-                                // how many pieces will come out is visible AT ONCE: otherwise "it cuts
-                                // nothing" would only be learnt on Enter, after a click and an offset
-                                // had already been spent
-                                Some(n) if n >= 2 => Notice::info(crate::i18n::tr1("vp-cut-plane-picked", "n", &n.to_string())),
-                                _ => Notice::refusal(crate::i18n::tr("vp-plane-cuts-nothing")),
-                            };
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane-short")),
-                    }
-                } else if self.tools.armed.cmd_kind() == 20 {
-                    // DATUM PLANE: the click picks the base plane, datum or face the offset is measured from
-                    match crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos) {
-                        Some(sp) => {
-                            self.side.datum.plane_pick = (self.side.datum.plane_pick != Some(sp)).then_some(sp); // the same plane again lets it go
-                            self.status = Notice::info(crate::i18n::tr(if self.side.datum.plane_pick.is_some() { "vp-ref-picked" } else { "hint-plane-offset" }));
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane-short")),
-                    }
-                } else if self.tools.armed.cmd_kind() == 21 && self.side.datum.pt_mode == 1 {
-                    // DATUM POINT, "at a vertex": a click on a vertex of the current part makes an ASSOCIATIVE reference
+                } else if aim == Some(qymcad_part::Aim::Plane) {
+                    // the mirror plane, the cutting plane, the base of a datum plane: a plane, datum or face
+                    let plane = crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos);
+                    qymcad_part::take_plane(&mut self.part_ctx(), plane);
+                } else if aim == Some(qymcad_part::Aim::VertexOfThePart) {
                     let ctx = qymcad_ui_state::current_ctx_id(&self.active_path, &self.project);
-                    match self.pick_vertex_any(rect, pos).filter(|(b, _, _)| self.project.body_owner(*b) == Some(ctx)) {
-                        Some((body, edge, end)) => {
-                            let at = crate::gui::vertex_local_pos(&self.live, body, edge, end).unwrap_or([0.0; 3]);
-                            self.side.datum.pt_vert = Some((body, edge, end, at));
-                            self.status = Notice::info(crate::i18n::tr("vp-vertex-picked"));
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-vertex-current")),
-                    }
-                } else if self.tools.armed.cmd_kind() == 21 {
+                    let vertex = self.pick_vertex_any(rect, pos).filter(|(b, _, _)| self.project.body_owner(*b) == Some(ctx)).map(|(body, edge, end)| qymcad_part::VertexAt {
+                        body,
+                        edge,
+                        end,
+                        at: crate::gui::vertex_local_pos(&self.live, body, edge, end).unwrap_or([0.0; 3]),
+                    });
+                    qymcad_part::take_vertex(&mut self.part_ctx(), vertex);
+                } else if aim == Some(qymcad_part::Aim::PointSnap) {
                     let hit = crate::gui::pick::pick_vertex_pos(&self.painting(), rect, pos);
                     qymcad_part::datum_point_snap(&mut self.part_ctx(), hit);
-                } else if self.tools.armed.cmd_kind() == 22 && self.side.datum.axis_mode == 0 {
-                    // DATUM AXIS: a click on a straight edge or a cylindrical face makes a reference (Enter creates it ASSOCIATIVELY)
-                    match crate::gui::pick::pick_axis_at(&self.painting(), rect, pos) {
-                        Some(h) => match crate::gui::axis_ref_world(&self.active_path, &self.edges, &self.live, &self.project, h) {
-                            Some(od) => {
-                                self.side.datum.axis_hit = (self.side.datum.axis_hit != Some(h)).then_some(h); // the same edge or face again lets it go
-                                self.side.datum.axis_ref = self.side.datum.axis_hit.map(|_| od);
-                                self.status = Notice::info(crate::i18n::tr(if self.side.datum.axis_hit.is_some() { "vp-axis-picked" } else { "msg-axis-pick" }));
-                            }
-                            None => self.status = Notice::refusal(crate::i18n::tr("vp-ref-gives-no-axis")),
-                        },
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-edge-or-cyl")),
-                    }
-                } else if self.tools.armed.cmd_kind() == 22 && self.side.datum.axis_mode == 2 {
-                    // DATUM AXIS BY TWO POINTS: two datum points or vertices are gathered; datum points make it parametric
+                } else if aim == Some(qymcad_part::Aim::Axis) {
+                    let axis = crate::gui::pick::pick_axis_at(&self.painting(), rect, pos).map(|hit| qymcad_part::AxisAt {
+                        hit,
+                        axis: crate::gui::axis_ref_world(&self.active_path, &self.edges, &self.live, &self.project, hit).map(|(origin, dir)| qymcad_part::Line { origin, dir }),
+                    });
+                    qymcad_part::take_axis(&mut self.part_ctx(), axis);
+                } else if aim == Some(qymcad_part::Aim::TwoPoints) {
                     let hit = crate::gui::pick::pick_datum_point_at(&self.painting(), rect, pos).or_else(|| crate::gui::pick::pick_vertex_pos(&self.painting(), rect, pos).map(|w| (0, w)));
-                    match hit {
-                        Some(pt) => {
-                            if self.side.datum.axis_pts.len() >= 2 {
-                                self.side.datum.axis_pts.clear();
-                            }
-                            self.side.datum.axis_pts.push(pt);
-                            if self.side.datum.axis_pts.len() == 2 {
-                                let (a, b) = (self.side.datum.axis_pts[0].1, self.side.datum.axis_pts[1].1);
-                                let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-                                let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-                                self.side.datum.axis_ref = (l > 1e-9).then(|| (a, [d[0] / l, d[1] / l, d[2] / l]));
-                                self.status = Notice::info(crate::i18n::tr("vp-two-points-set"));
-                            } else {
-                                self.status = Notice::info(crate::i18n::tr("vp-point1-set"));
-                            }
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-datum-point")),
-                    }
-                } else if (10..=15).contains(&self.tools.armed.cmd_kind()) && self.tools.cmd.edit.is_none() {
-                    // A PRIMITIVE: a click on a vertex, a datum point, a plane or a face places it (with an orientation)
-                    match crate::gui::pick::pick_place_frame_at(&self.painting(), rect, pos) {
-                        Some(m) => {
-                            self.params.prim.frame = Some(m);
-                            self.params.prim.place = Some([m[3], m[7], m[11]]);
-                            self.status = Notice::info(crate::i18n::tr("vp-placement-set"));
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-placement")),
-                    }
-                } else if (self.tools.armed.cmd_kind() == 18 || self.side.carr.mode == 2) && self.params.arr.axis_pick {
+                    qymcad_part::take_axis_point(&mut self.part_ctx(), hit.map(|(datum, at)| qymcad_part::PointAt { datum, at }));
+                } else if aim == Some(qymcad_part::Aim::Placement) {
+                    let frame = crate::gui::pick::pick_place_frame_at(&self.painting(), rect, pos);
+                    qymcad_part::take_placement(&mut self.part_ctx(), frame);
+                } else if aim == Some(qymcad_part::Aim::PatternAxis) || (self.side.carr.is_circular() && self.params.arr.axis_pick) {
                     // A CIRCULAR PATTERN, of bodies or of parts: the click picks the AXIS (`gui/array_axis.rs`)
                     let at = crate::gui::array_axis::aim(&self.painting(), rect, pos);
                     crate::gui::array_axis::take(&mut self.part_ctx(), at);
-                } else if self.tools.armed.cmd_kind() == 3 && self.params.rev.pick_axis {
+                } else if aim == Some(qymcad_part::Aim::RevolveAxis) {
                     // the REVOLVE axis by a click in 3D - in exactly the same place as the circular pattern's axis.
                     self.rev_axis_pick_click(rect, pos);
                 } else if let Some(jid) = qymcad_assembly::joint_glyph_at(&mut self.joint_ctx(), rect, pos) {
                     self.chosen.sel = Sel::Joint(jid); // a click on a mate glyph selects it
-                } else if self.tools.armed.cmd_kind() == 5 && self.params.chamfer.pick_ref && self.params.chamfer.mode != qymcad_core::feature::ChamferMode::Symmetric {
-                    // picking the chamfer's REFERENCE FACE: a click on a face sets chamfer_ref_face, and a
-                    // second click on the same face clears it. A miss changes nothing.
-                    match crate::gui::pick::pick_face_persist_id(&self.painting(), rect, pos) {
-                        Some(fid) => {
-                            self.params.chamfer.ref_face = if self.params.chamfer.ref_face == fid { 0 } else { fid };
-                            self.params.chamfer.pick_ref = false;
-                            self.status = Notice::info(if self.params.chamfer.ref_face != 0 { crate::i18n::tr("vp-chamfer-ref-set") } else { crate::i18n::tr("vp-chamfer-ref-cleared") });
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-body-face")),
-                    }
+                } else if aim == Some(qymcad_part::Aim::ReferenceFace) {
+                    let face = crate::gui::pick::pick_face_persist_id(&self.painting(), rect, pos);
+                    qymcad_part::take_reference_face(&mut self.part_ctx(), face);
                 } else if self.side.m3.on {
                     // MEASURING IN 3D: the click picks a vertex, an edge or a face; the second one computes
                     self.measure_3d_click(rect, pos);
-                } else if matches!(self.tools.armed.cmd_kind(), 4 | 5 | 32) && (self.pick_edge_3d(rect, pos) || self.pick_face_edges_fillet(rect, pos)) {
+                } else if aim == Some(qymcad_part::Aim::Edges) && (self.pick_edge_3d(rect, pos) || self.pick_face_edges_fillet(rect, pos)) {
                     // a click on an edge OR on a FACE (a face takes all of its edges) - ONLY under
                     // Chamfer/Fillet (otherwise an ordinary click would pick an edge or a face instead of a
                     // body, and leave a stray orange selection)
-                } else if self.tools.armed.cmd_kind() == 24 {
+                } else if aim == Some(qymcad_part::Aim::ThreadRim) {
                     // THREAD: a click on a cylindrical face gives the body and the rim (axis and radius) + inner/outer
                     self.pick_thread_target(rect, pos);
                 } else if let Some((on, ax, rot)) = crate::gui::gizmo_click_hit(&self.painting(), rect, pos, basis3) {
                     // A CLICK (with no drag) on the body gizmo's arrow or ring opens precise numeric entry at the geometry
                     self.dragged.body_giz.num = Some((on, ax, rot));
-                    self.dragged.body_giz.num_buf.clear();
+                    self.dragged.body_giz.num_field.clear();
                     self.dragged.body_giz.num_focus = true;
                 } else {
                     self.pick_face_3d(rect, pos);

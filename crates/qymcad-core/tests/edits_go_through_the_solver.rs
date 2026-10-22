@@ -8,7 +8,7 @@
 //! The move tool was repaired at its call site in the interface, which leaves the core method itself still
 //! able to lie to the next caller. These tests hold the rule at the layer where the edit lives: after the
 //! call, the constraints of the sketch are satisfied.
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 
 fn new_sketch() -> (Project, usize) {
     let mut p = Project::default();
@@ -24,8 +24,8 @@ fn line(p: &Project, si: usize) -> ((u64, f64, f64), (u64, f64, f64)) {
     let (a, b) = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Line { a, b } => Some((a, b)),
+        .find_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
             _ => None,
         })
         .expect("the sketch holds a line");
@@ -56,8 +56,8 @@ fn moving_a_shape_lifts_its_coincidence_with_a_point_left_behind() {
             .entities
             .iter()
             .find(|e| e.id == eid)
-            .and_then(|e| match e.kind {
-                EntityKind::Line { a, b } => Some((a, b)),
+            .and_then(|e| match e.kind.as_line() {
+                Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
                 _ => None,
             })
             .expect("the line is there")
@@ -127,8 +127,8 @@ fn no_editing_tool_leaves_a_constraint_unsatisfied() {
                 .entities
                 .iter()
                 .find(|e| e.id == eid)
-                .and_then(|e| match e.kind {
-                    EntityKind::Line { a, b } => Some((a, b)),
+                .and_then(|e| match e.kind.as_line() {
+                    Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
                     _ => None,
                 })
                 .expect("the line is there")
@@ -142,7 +142,7 @@ fn no_editing_tool_leaves_a_constraint_unsatisfied() {
         let s = &mut p.sketches[si];
         s.points.push(qymcad_core::model::SketchPoint { id: sa, x: 30.0, y: 0.0 });
         s.points.push(qymcad_core::model::SketchPoint { id: sb, x: 50.0, y: 0.0 });
-        s.entities.push(qymcad_core::model::SketchEntity { id: seid, kind: EntityKind::Line { a: sa, b: sb }, construction: false });
+        s.entities.push(qymcad_core::model::SketchEntity { id: seid, kind: qymcad_core::model::LineParts { a: sa, b: sb }.into(), construction: false });
         assert_ne!(mb, sa, "setup: the two ends have to be points of their own, not one shared node");
         p.sketches[si].constraints.push(Constraint::Coincident { a: mb, b: sa });
         (p, si, mover, mb, sa)
@@ -162,14 +162,14 @@ fn no_editing_tool_leaves_a_constraint_unsatisfied() {
         row("scale", |p, si, e| p.scale_entities(si, &[e], 10.0, 0.0, 2.0)),
         row("trim", |p, si, e| {
             p.add_line_entity(si, 20.0, -10.0, 20.0, 10.0, qymcad_core::feature::Purpose::Real); // the cutting line
-            p.trim_line(si, e, 25.0, 0.0);
+            p.trim_curve(si, e, 25.0, 0.0);
         }),
         row("extend", |p, si, e| {
             p.add_line_entity(si, 45.0, -10.0, 45.0, 10.0, qymcad_core::feature::Purpose::Real); // the line extended up to
-            p.extend_line(si, e, 29.0, 0.0);
+            p.extend_curve(si, e, 29.0, 0.0);
         }),
         row("break", |p, si, e| {
-            p.break_line(si, e, 20.0, 0.0);
+            p.break_curve(si, e, 20.0, 0.0);
         }),
     ];
 
@@ -223,8 +223,8 @@ fn an_editing_tool_leaves_a_pinned_point_where_it_is() {
             let (u, v) = p.sketches[si]
                 .entities
                 .iter()
-                .find_map(|e| match e.kind {
-                    EntityKind::Line { a, b } => Some((a, b)),
+                .find_map(|e| match e.kind.as_line() {
+                    Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
                     _ => None,
                 })
                 .expect("the line is there");
@@ -253,8 +253,8 @@ fn collinear_keeps_both_lines_whole() {
     let (mut p, si) = new_sketch();
     let l1 = p.add_line_entity(si, 0.0, 0.0, 5.0, 12.0, qymcad_core::feature::Purpose::Real);
     let l2 = p.add_line_entity(si, 20.0, 0.0, 29.0, 12.0, qymcad_core::feature::Purpose::Real);
-    let ends = |p: &Project, e: u64| match p.sketches[si].entities.iter().find(|x| x.id == e).map(|x| &x.kind) {
-        Some(EntityKind::Line { a, b }) => (*a, *b),
+    let ends = |p: &Project, e: u64| match p.sketches[si].entities.iter().find(|x| x.id == e).and_then(|x| x.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("a line"),
     };
     let ((a, b), (c, d)) = (ends(&p, l1), ends(&p, l2));
@@ -277,8 +277,8 @@ fn collinear_keeps_both_lines_whole() {
 #[test]
 fn a_held_relation_is_not_laid_again_and_an_implied_one_is_lifted() {
     let (mut p, si) = new_sketch();
-    let ends = |p: &Project, e: u64| match p.sketches[si].entities.iter().find(|x| x.id == e).map(|x| &x.kind) {
-        Some(EntityKind::Line { a, b }) => (*a, *b),
+    let ends = |p: &Project, e: u64| match p.sketches[si].entities.iter().find(|x| x.id == e).and_then(|x| x.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("a line"),
     };
     let l1 = p.add_line_entity(si, 0.0, 0.0, 0.0, 12.0, qymcad_core::feature::Purpose::Real);

@@ -5,6 +5,8 @@
 //! contours, decomposition of intersecting curves into regions, and Hermite tessellation of splines.
 
 use super::*;
+use crate::geom::ProfEdge;
+use crate::model::curve::Curve;
 
 /// The profile of a rectangle centred at the origin, for a box primitive; flat in XY.
 pub(super) fn rect_profile(dx: f64, dy: f64) -> Vec<f64> {
@@ -90,23 +92,27 @@ pub(super) fn arc_center_from_bulge(p0x: f64, p0y: f64, p1x: f64, p1y: f64, bulg
     (mx + nx * apo, my + ny * apo, bulge > 0.0)
 }
 
+/// A LINE OR AN ARC OF A CHAIN: its place among the entities, and the points at its two ends.
+#[derive(Clone, Copy)]
+struct Link {
+    entity: usize,
+    ends: [Id; 2],
+}
+
+/// The lines and arcs of `ents` drawn (not construction), each by its place and its ends: what loops and chains are
+/// stitched from.
+fn links(ents: &[SketchEntity]) -> Vec<Link> {
+    ents.iter().enumerate().filter(|(_, e)| !e.construction).filter_map(|(entity, e)| e.kind.straight_or_round_ends().map(|ends| Link { entity, ends })).collect()
+}
+
 /// Stitch lines and arcs into closed loops carrying bulge values, for an arc-aware offset. Each vertex is the
 /// start of a segment; the bulge is 0 for a line and `tan(θ/4)`, signed by the direction, for an arc.
 pub(super) fn entity_bulge_loops(pts: &[SketchPoint], ents: &[SketchEntity]) -> Vec<Vec<crate::offset::BVert>> {
     use std::f64::consts::TAU;
     let pt = |id: Id| pts.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
-    let segs: Vec<(usize, Id, Id)> = ents
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| !e.construction)
-        .filter_map(|(i, e)| match e.kind {
-            EntityKind::Line { a, b } => Some((i, a, b)),
-            EntityKind::Arc { a, b, .. } => Some((i, a, b)),
-            _ => None,
-        })
-        .collect();
+    let segs = links(ents);
     let mut adj: std::collections::HashMap<Id, Vec<usize>> = std::collections::HashMap::new();
-    for (k, &(_, a, b)) in segs.iter().enumerate() {
+    for (k, &Link { ends: [a, b], .. }) in segs.iter().enumerate() {
         adj.entry(a).or_default().push(k);
         adj.entry(b).or_default().push(k);
     }
@@ -116,17 +122,17 @@ pub(super) fn entity_bulge_loops(pts: &[SketchPoint], ents: &[SketchEntity]) -> 
         if used[start_k] {
             continue;
         }
-        let (_, sa, _) = segs[start_k];
+        let [sa, _] = segs[start_k].ends;
         let mut verts: Vec<crate::offset::BVert> = Vec::new();
         let (mut cur_pt, mut cur_k) = (sa, start_k);
         let mut closed = false;
         loop {
             used[cur_k] = true;
-            let (ei, a, b) = segs[cur_k];
+            let Link { entity: ei, ends: [a, b] } = segs[cur_k];
             let to = if cur_pt == a { b } else { a };
             let (Some((fx, fy)), Some((_tx, _ty))) = (pt(cur_pt), pt(to)) else { break };
-            let bulge = match ents[ei].kind {
-                EntityKind::Arc { center, a: aa, b: _bb, ccw } => {
+            let bulge = match ents[ei].kind.as_arc() {
+                Some(crate::model::ArcParts { center, a: aa, b: _bb, ccw }) => {
                     if let (Some((cx, cy)), Some((sx, sy)), Some((ex, ey))) = (pt(center), pt(cur_pt), pt(to)) {
                         let (sa_, ea_) = ((sy - cy).atan2(sx - cx), (ey - cy).atan2(ex - cx));
                         let dir_ccw = if cur_pt == aa { ccw } else { !ccw };
@@ -162,23 +168,15 @@ pub(super) fn entity_bulge_loops(pts: &[SketchPoint], ents: &[SketchEntity]) -> 
 pub(super) fn entity_bulge_chains(pts: &[SketchPoint], ents: &[SketchEntity]) -> Vec<Vec<crate::offset::BVert>> {
     use std::f64::consts::TAU;
     let pt = |id: Id| pts.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
-    let segs: Vec<(usize, Id, Id)> = ents
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| !e.construction)
-        .filter_map(|(i, e)| match e.kind {
-            EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => Some((i, a, b)),
-            _ => None,
-        })
-        .collect();
+    let segs = links(ents);
     let mut adj: std::collections::HashMap<Id, Vec<usize>> = std::collections::HashMap::new();
-    for (k, &(_, a, b)) in segs.iter().enumerate() {
+    for (k, &Link { ends: [a, b], .. }) in segs.iter().enumerate() {
         adj.entry(a).or_default().push(k);
         adj.entry(b).or_default().push(k);
     }
     // the free ends, in the order the curves were drawn: a chain starts where its first curve does
     let mut ends: Vec<Id> = Vec::new();
-    for &(_, a, b) in &segs {
+    for &Link { ends: [a, b], .. } in &segs {
         for p in [a, b] {
             if adj.get(&p).is_some_and(|v| v.len() == 1) && !ends.contains(&p) {
                 ends.push(p);
@@ -196,11 +194,11 @@ pub(super) fn entity_bulge_chains(pts: &[SketchPoint], ents: &[SketchEntity]) ->
         let (mut cur_pt, mut cur_k) = (start, first);
         loop {
             used[cur_k] = true;
-            let (ei, a, b) = segs[cur_k];
+            let Link { entity: ei, ends: [a, b] } = segs[cur_k];
             let to = if cur_pt == a { b } else { a };
             let Some((fx, fy)) = pt(cur_pt) else { break };
-            let bulge = match ents[ei].kind {
-                EntityKind::Arc { center, a: aa, ccw, .. } => match (pt(center), pt(cur_pt), pt(to)) {
+            let bulge = match ents[ei].kind.as_arc() {
+                Some(crate::model::ArcParts { center, a: aa, ccw, .. }) => match (pt(center), pt(cur_pt), pt(to)) {
                     (Some((cx, cy)), Some((sx, sy)), Some((ex, ey))) => {
                         let (sa_, ea_) = ((sy - cy).atan2(sx - cx), (ey - cy).atan2(ex - cx));
                         let dir_ccw = if cur_pt == aa { ccw } else { !ccw };
@@ -250,6 +248,38 @@ pub(super) fn ellipse_contour(pc: Point2, pma: Point2, pmi: Point2) -> Contour {
     Contour { points: pts, closed: true, edges: Vec::new(), edge_src: Vec::new() }
 }
 
+/// THE ECCENTRIC ANGLE OF POINT `p` on the ellipse of centre `pc`, major end `pma` and minor end `pmi`: the `t` of the
+/// point `c + a cos t u + b sin t v` the line from the centre through `p` meets.
+pub(crate) fn ellipse_angle(axes: [Point2; 3], p: Point2) -> f64 {
+    let [pc, pma, pmi] = axes;
+    let (a, b) = (pc.dist(pma).max(1e-9), pc.dist(pmi).max(1e-9));
+    let (u, v) = (pma - pc, pmi - pc);
+    let d = p - pc;
+    ((d.x * v.x + d.y * v.y) / (b * b)).atan2((d.x * u.x + d.y * u.y) / (a * a))
+}
+
+/// THE POINTS AN ARC OF AN ELLIPSE IS LAID OUT BY, from the eccentric angle of `from` to that of `to` the way `winding`
+/// goes, at the sag of the whole ellipse (`ellipse_contour`). The minor end need not stand square to the major one in
+/// the middle of a solve: the points follow the two ends as they stand.
+pub(crate) fn ellipse_arc_points(axes: [Point2; 3], ends: [Point2; 2], winding: crate::feature::Winding) -> Vec<Point2> {
+    let [pc, pma, pmi] = axes;
+    let (t0, t1) = (ellipse_angle(axes, ends[0]), ellipse_angle(axes, ends[1]));
+    let tau = std::f64::consts::TAU;
+    let sweep = match winding {
+        crate::feature::Winding::Ccw => (t1 - t0).rem_euclid(tau),
+        crate::feature::Winding::Cw => -(t0 - t1).rem_euclid(tau),
+    };
+    let whole = ellipse_contour(pc, pma, pmi).points.len().max(24);
+    let n = ((sweep.abs() / tau) * whole as f64).ceil().max(2.0) as usize;
+    let (u, v) = (pma - pc, pmi - pc);
+    (0..=n)
+        .map(|k| {
+            let t = t0 + sweep * k as f64 / n as f64;
+            crate::geom::Point2::new(pc.x + u.x * t.cos() + v.x * t.sin(), pc.y + u.y * t.cos() + v.y * t.sin())
+        })
+        .collect()
+}
+
 pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<Contour> {
     let at: std::collections::HashMap<Id, Point2> = points.iter().map(|p| (p.id, crate::geom::Point2::new(p.x, p.y))).collect();
     let pt = |id: Id| at.get(&id).copied();
@@ -259,7 +289,7 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
         if e.construction {
             continue;
         }
-        if let EntityKind::Circle { center, r } = e.kind {
+        if let Some(crate::model::CircleParts { center, r }) = e.kind.as_circle() {
             if let Some(c) = pt(center) {
                 let rr = r.max(0.01);
                 // a chord sag of about r/600 keeps the circle visually smooth at any radius
@@ -267,24 +297,22 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
                 out.push(crate::geom::circle_contour_from(c.x, c.y, rr, sag, e.id));
             }
         }
-        // an ellipse is a closed contour of its own: an analytic entity with adaptive tessellation
-        if let EntityKind::Ellipse { c, ma, mi } = e.kind {
-            if let (Some(pc), Some(pma), Some(pmi)) = (pt(c), pt(ma), pt(mi)) {
-                out.push(ellipse_contour(pc, pma, pmi));
+        // an ellipse is a closed contour of its own: an analytic entity with adaptive tessellation; an arc of one is an
+        // open chain of its own
+        if let Some(crate::model::EllipseParts { c, ma, mi, span }) = e.kind.as_ellipse() {
+            match (pt(c), pt(ma), pt(mi), span) {
+                (Some(pc), Some(pma), Some(pmi), None) => out.push(with_exact_edges(ellipse_contour(pc, pma, pmi), &pt, e)),
+                (Some(pc), Some(pma), Some(pmi), Some(s)) => {
+                    if let (Some(from), Some(to)) = (pt(s.from), pt(s.to)) {
+                        out.push(with_exact_edges(Contour::open(ellipse_arc_points([pc, pma, pmi], [from, to], s.winding)), &pt, e));
+                    }
+                }
+                _ => {}
             }
         }
     }
     // lines and arcs are gathered into loops by the connectivity of their endpoints
-    let segs: Vec<(usize, Id, Id)> = entities
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| !e.construction)
-        .filter_map(|(i, e)| match e.kind {
-            EntityKind::Line { a, b } => Some((i, a, b)),
-            EntityKind::Arc { a, b, .. } => Some((i, a, b)),
-            _ => None,
-        })
-        .collect();
+    let segs = links(entities);
     // Positional welding of a loop: endpoints within `WELD_TOL` count as one vertex. The profile then closes
     // even when adjacent lines end at different, unwelded nodes at the same position — a common case at a
     // corner sitting on the origin, which the "merge coincident points" command leaves alone as a system point.
@@ -296,7 +324,7 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
         // the anchors welded by a grid as wide as the tolerance (`Welded`), each node standing for the first id at it
         let mut anchors = Welded::new(1e-3);
         let mut representative: Vec<Id> = Vec::new();
-        let mut ids: Vec<Id> = segs.iter().flat_map(|&(_, a, b)| [a, b]).collect();
+        let mut ids: Vec<Id> = segs.iter().flat_map(|l| l.ends).collect();
         ids.sort_unstable();
         ids.dedup();
         for id in ids {
@@ -313,7 +341,7 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
     }
     let cl = |id: Id| rep.get(&id).copied().unwrap_or(id);
     let mut adj: std::collections::HashMap<Id, Vec<usize>> = std::collections::HashMap::new();
-    for (k, &(_, a, b)) in segs.iter().enumerate() {
+    for (k, &Link { ends: [a, b], .. }) in segs.iter().enumerate() {
         adj.entry(cl(a)).or_default().push(k);
         adj.entry(cl(b)).or_default().push(k);
     }
@@ -322,7 +350,7 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
         if used[start_k] {
             continue;
         }
-        let (_, sa, _) = segs[start_k];
+        let [sa, _] = segs[start_k].ends;
         let mut loop_pts: Vec<Point2> = Vec::new();
         let mut loop_edges: Vec<crate::geom::ProfEdge> = Vec::new(); // exact edges, lines and arcs, for the B-rep
         let mut loop_src: Vec<Id> = Vec::new(); // provenance of each edge: the id of the sketch entity
@@ -334,10 +362,10 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
         let mut closed = false;
         loop {
             used[cur_k] = true;
-            let (ei, a, b) = segs[cur_k];
+            let Link { entity: ei, ends: [a, b] } = segs[cur_k];
             let to = if cl(cur_pt) == cl(a) { b } else { a };
-            match entities[ei].kind {
-                EntityKind::Arc { center, a: aa, b: bb, ccw } => {
+            match entities[ei].kind.as_arc() {
+                Some(crate::model::ArcParts { center, a: aa, b: bb, ccw }) => {
                     if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(aa), pt(bb)) {
                         let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
                         let (from_pt, to_pt, dir) = if cl(cur_pt) == cl(aa) { (pa, pb, ccw) } else { (pb, pa, !ccw) };
@@ -375,7 +403,7 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
                 let back = (pp.y - pc.y).atan2(pp.x - pc.x); // the direction back, where we came from
                 cands.iter().copied().min_by(|&k1, &k2| {
                     let cw = |k: usize| -> f64 {
-                        let (_, a, b) = segs[k];
+                        let [a, b] = segs[k].ends;
                         let other = if cl(a) == cl(cur_pt) { b } else { a };
                         let po = pt(other).unwrap_or(pc);
                         let ang = (po.y - pc.y).atan2(po.x - pc.x);
@@ -435,43 +463,48 @@ pub(super) fn arr_intersect(x: ArrCurve, y: ArrCurve) -> Vec<(f64, f64)> {
     let on_seg = |a: (f64, f64), b: (f64, f64), t: f64| (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
     let arc_ok = |c: (f64, f64), a0: f64, a1: f64, ccw: bool, p: (f64, f64)| angle_in_arc((p.1 - c.1).atan2(p.0 - c.0), a0, a1, ccw);
     match (x, y) {
-        (Line { a, b }, Line { a: c, b: d }) => match seg_seg_t([a.0, a.1], [b.0, b.1], [c.0, c.1], [d.0, d.1]) {
-            Some(t) => vec![on_seg(a, b, t)],
-            None => {
-                // Collinear overlap, as with two rectangles sharing a side: there is no point intersection,
-                // but the segments lie on top of each other, so both are cut at the ends of the overlap.
-                // Otherwise the arrangement loses regions. Coincident sub-edges are deduplicated below, when
-                // the edges are assembled.
-                let (ux, uy) = (b.0 - a.0, b.1 - a.1);
-                let len2 = ux * ux + uy * uy;
-                if len2 < 1e-18 {
-                    return Vec::new();
-                }
-                let cross1 = ux * (c.1 - a.1) - uy * (c.0 - a.0);
-                let cross2 = ux * (d.1 - a.1) - uy * (d.0 - a.0);
-                let tol = 1e-6 * len2.sqrt();
-                if cross1.abs() > tol || cross2.abs() > tol {
-                    return Vec::new(); // parallel, but not on the same line
-                }
-                let mut out = Vec::new();
-                let mut push_in = |px: f64, py: f64, sa: (f64, f64), sb: (f64, f64)| {
-                    let (vx, vy) = (sb.0 - sa.0, sb.1 - sa.1);
-                    let l2 = vx * vx + vy * vy;
-                    if l2 < 1e-18 {
-                        return;
+        // a point inside either segment, on the other or at its end: an end of one segment lying on the other is where
+        // that one is cut, whichever of the two comes first - a line drawn before a rectangle, from side to side of it,
+        // or a line through a point of the segments of an ellipse drawn before it, cut nothing
+        (Line { a, b }, Line { a: c, b: d }) => {
+            match seg_seg_t([a.0, a.1], [b.0, b.1], [c.0, c.1], [d.0, d.1]).map(|t| on_seg(a, b, t)).or_else(|| seg_seg_t([c.0, c.1], [d.0, d.1], [a.0, a.1], [b.0, b.1]).map(|u| on_seg(c, d, u))) {
+                Some(q) => vec![q],
+                None => {
+                    // Collinear overlap, as with two rectangles sharing a side: there is no point intersection,
+                    // but the segments lie on top of each other, so both are cut at the ends of the overlap.
+                    // Otherwise the arrangement loses regions. Coincident sub-edges are deduplicated below, when
+                    // the edges are assembled.
+                    let (ux, uy) = (b.0 - a.0, b.1 - a.1);
+                    let len2 = ux * ux + uy * uy;
+                    if len2 < 1e-18 {
+                        return Vec::new();
                     }
-                    let t = ((px - sa.0) * vx + (py - sa.1) * vy) / l2;
-                    if t > 1e-9 && t < 1.0 - 1e-9 {
-                        out.push((px, py));
+                    let cross1 = ux * (c.1 - a.1) - uy * (c.0 - a.0);
+                    let cross2 = ux * (d.1 - a.1) - uy * (d.0 - a.0);
+                    let tol = 1e-6 * len2.sqrt();
+                    if cross1.abs() > tol || cross2.abs() > tol {
+                        return Vec::new(); // parallel, but not on the same line
                     }
-                };
-                push_in(c.0, c.1, a, b);
-                push_in(d.0, d.1, a, b);
-                push_in(a.0, a.1, c, d);
-                push_in(b.0, b.1, c, d);
-                out
+                    let mut out = Vec::new();
+                    let mut push_in = |px: f64, py: f64, sa: (f64, f64), sb: (f64, f64)| {
+                        let (vx, vy) = (sb.0 - sa.0, sb.1 - sa.1);
+                        let l2 = vx * vx + vy * vy;
+                        if l2 < 1e-18 {
+                            return;
+                        }
+                        let t = ((px - sa.0) * vx + (py - sa.1) * vy) / l2;
+                        if t > 1e-9 && t < 1.0 - 1e-9 {
+                            out.push((px, py));
+                        }
+                    };
+                    push_in(c.0, c.1, a, b);
+                    push_in(d.0, d.1, a, b);
+                    push_in(a.0, a.1, c, d);
+                    push_in(b.0, b.1, c, d);
+                    out
+                }
             }
-        },
+        }
         // The tolerance lives in one place, inside `seg_circle_t`. A second filter at ±1e-9 used to stand here
         // and discarded a tangency that had already been found: the parameter of the tangency point came out as
         // −3.3e-6, which is 5e-5 mm before the start of the segment. Two thresholds answering one question is
@@ -574,20 +607,268 @@ pub(super) fn meeting_boxes(boxes: &[[f64; 4]]) -> Vec<BoxPair> {
     pairs
 }
 
+/// THE CONTOUR OF ONE CURVE WITH ITS EXACT EDGES, from entity `e` with its points where `at` puts them: an ellipse one
+/// edge, an arc of one one edge, the kernel building the ellipse it is rather than the segments of its points.
+fn with_exact_edges(mut c: Contour, at: &dyn Fn(Id) -> Option<Point2>, e: &SketchEntity) -> Contour {
+    if let Some(curve) = Curve::of_placed(at, e) {
+        c.edges = curve.to_edges();
+        c.edge_src = vec![e.id; c.edges.len()];
+    }
+    c
+}
+
+/// THE PIECES OF A SPLINE OR AN ARC OF AN ELLIPSE IN A LOOP AS THE CURVE THEY ARE. The arrangement cuts such a curve as
+/// the segments of its points, and the kernel built a face of a body for every segment; a run of them along one curve
+/// now goes as the piece of that curve between the ends of the run - an arc of an ellipse one edge, a spline a cubic a
+/// span. A piece starts and ends where the run does, on the edges beside it: a crossing with a line lies on a segment of
+/// the points, up to 0.005 mm off the curve. An ellipse keeps its ends, held by its centre and axes, and the edges beside
+/// it are brought to them.
+/// A PLACE A SEGMENT OF THE ARRANGEMENT IS CUT AT: its share along the segment, and the point.
+#[derive(Clone, Copy)]
+struct Cut {
+    t: f64,
+    at: (f64, f64),
+}
+
+/// A SEGMENT OF THE ARRANGEMENT AS A PIECE OF A CURVE: the curve it lies along, and the piece of its layout it is.
+struct OnCurve {
+    curve: Curve,
+    piece: crate::model::curve::LaidPiece,
+}
+
+/// A SEGMENT OF THE LAYOUT OF A SPLINE OR AN ELLIPSE: the curve, and the piece of its layout it is.
+#[derive(Clone, Copy)]
+struct SegmentOf {
+    curve: Id,
+    piece: crate::model::curve::LaidPiece,
+}
+
+/// A RUN OF EDGES OF A REGION ALONG ONE CURVE: the entity, and the edges as the arrangement gave them.
+struct RunOf {
+    id: Id,
+    edges: Vec<ProfEdge>,
+}
+
+/// A POINT A CURVE IS LAID OUT AT, by the curve and the bits of the point.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct Spot {
+    curve: Id,
+    x: u64,
+    y: u64,
+}
+
+impl Spot {
+    fn of(curve: Id, p: Point2) -> Spot {
+        Spot { curve, x: p.x.to_bits(), y: p.y.to_bits() }
+    }
+}
+
+fn exact_runs(c: &mut Contour, exact: &std::collections::HashMap<Id, Curve>, spots: &std::collections::HashMap<Spot, f64>) {
+    let n = c.edges.len();
+    if n == 0 || c.edge_src.len() != n || !c.edge_src.iter().any(|id| exact.contains_key(id)) {
+        return;
+    }
+    // WHETHER EDGE k GOES ON FROM THE EDGE BEFORE IT along one curve: of the same curve, and at the same place of it - the
+    // point they share found from the middle of each. Where a curve crosses itself the two stand on two branches of it,
+    // and a lobe of a figure of eight, all of one spline, is a run from the crossing round to it.
+    // the place of the middle of every edge along its curve, found once: asked for each edge by itself and by the one
+    // after it, the search ran four times an edge
+    // EACH FROM THE PLACE OF THE EDGE BEFORE IT, where that is of the same curve: the edges of a run follow one another
+    // along it, and the middle of a segment stands within 0.005 mm of the curve. Sought along the whole curve for each,
+    // a loop of a spline of 276 nodes, 5 437 segments, took 1.2 s to rebuild, every frame of a drag.
+    // A POINT THE CURVE WAS LAID OUT AT IS READ OFF ITS PLACE (`Spot`); only a point it was cut at is sought.
+    let place = |id: Id, p: Point2| spots.get(&Spot::of(id, p)).copied();
+    let mut middles: Vec<Option<f64>> = Vec::with_capacity(n);
+    for k in 0..n {
+        let found = c.edges[k].ends().zip(exact.get(&c.edge_src[k])).map(|([a, b], curve)| {
+            if let (Some(ta), Some(tb)) = (place(c.edge_src[k], a), place(c.edge_src[k], b)) {
+                // a segment over the seam of a loop runs from near 1 to 0
+                return if curve.closed() && (ta - tb).abs() > 0.5 { ((ta + tb + 1.0) * 0.5).rem_euclid(1.0) } else { (ta + tb) * 0.5 };
+            }
+            let m = Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+            let before = k.checked_sub(1).filter(|p| c.edge_src[*p] == c.edge_src[k]).and_then(|p| middles[p]);
+            before.map(|t| curve.polish(m, t)).filter(|t| curve.at(*t).dist(m) < 0.02).unwrap_or_else(|| curve.nearest(m).t)
+        });
+        middles.push(found);
+    }
+    let joined = |k: usize| -> bool {
+        let p = (k + n - 1) % n;
+        if c.edge_src[p] != c.edge_src[k] {
+            return false;
+        }
+        let (Some(curve), Some([pa, pb]), Some([qa, qb]), Some(mp), Some(mk)) = (exact.get(&c.edge_src[k]), c.edges[p].ends(), c.edges[k].ends(), middles[p], middles[k]) else { return true };
+        // the walk turning back on the segment it came along, at the tip of a curve hanging into a region: the run out and
+        // the run back are two pieces, taken out of the region as a pair (`without_spikes`); joined, they were one piece
+        // from a point to itself
+        if pa.dist(qb) < 1e-12 && pb.dist(qa) < 1e-12 {
+            return false;
+        }
+        let id = c.edge_src[k];
+        let gap = match (place(id, pb), place(id, qa)) {
+            (Some(x), Some(y)) => (x - y).abs(),
+            _ => (curve.polish(pb, mp) - curve.polish(qa, mk)).abs(),
+        };
+        gap < 1e-6 || (curve.closed() && (gap - 1.0).abs() < 1e-6)
+    };
+    // the loop read from the start of a run, or from its first edge when it is one curve all round
+    let first = (0..n).find(|&k| !joined(k)).unwrap_or(0);
+    let at = |k: usize| (first + k) % n;
+    let mut runs: Vec<RunOf> = Vec::new();
+    let mut k = 0;
+    while k < n {
+        let id = c.edge_src[at(k)];
+        let len = 1 + (k + 1..n).take_while(|&j| joined(at(j))).count();
+        runs.push(RunOf { id, edges: (k..k + len).map(|j| c.edges[at(j)].clone()).collect() });
+        k += len;
+    }
+    // WHERE TWO RUNS OF TWO CURVES MEET IS WHERE THE CURVES MEET: the corner the segments crossed at, settled onto both
+    // curves at once by Newton's steps (`Curve::settle`). Laid from the crossing of their segments, each run ended at the
+    // foot of that crossing on its own curve - up to the sag off the true crossing, farther along a shallow one - and the
+    // two runs passed each other there: the wall of a region of a drawing of 386 splines was refused by the kernel as a
+    // wire crossing itself.
+    let curve_of = |r: &RunOf| exact.get(&r.id).cloned().or_else(|| (r.edges.len() == 1).then(|| Curve::of_edge(&r.edges[0])));
+    let found = |curve: &Curve, id: Id, p: Point2| place(id, p).unwrap_or_else(|| curve.nearest(p).t);
+    let m = runs.len();
+    let joints: Vec<Option<Point2>> = (0..m)
+        .map(|r| {
+            let (a, b) = (&runs[r], &runs[(r + 1) % m]);
+            let raw = a.edges.last()?.ends()?[1];
+            if m < 2 || a.id == b.id {
+                return Some(raw);
+            }
+            let (Some(ca), Some(cb)) = (curve_of(a), curve_of(b)) else { return Some(raw) };
+            let met = ca.settle(&cb, Point2::new(found(&ca, a.id, raw), found(&cb, b.id, raw))).filter(|met| met.at.dist(raw) < 0.1);
+            Some(met.map_or(raw, |met| met.at))
+        })
+        .collect();
+    let mut edges: Vec<ProfEdge> = Vec::with_capacity(n);
+    let mut src: Vec<Id> = Vec::with_capacity(n);
+    for (r, run) in runs.iter().enumerate() {
+        let (Some(first), Some(last)) = (run.edges.first().and_then(ProfEdge::ends), run.edges.last().and_then(ProfEdge::ends)) else { continue };
+        let ends = [joints[(r + m - 1) % m].unwrap_or(first[0]), joints[r].unwrap_or(last[1])];
+        let piece = exact.get(&run.id).and_then(|curve| run_as_curve(curve, &run.edges, &|p: Point2| place(run.id, p), ends));
+        let mut laid = piece.unwrap_or_else(|| run.edges.clone());
+        if let Some(e) = laid.first_mut() {
+            *e = e.clone().with_start(ends[0]);
+        }
+        if let Some(e) = laid.last_mut() {
+            *e = e.clone().with_end(ends[1]);
+        }
+        src.extend(std::iter::repeat_n(run.id, laid.len()));
+        edges.extend(laid);
+    }
+    // the edges beside an ellipse brought to its ends
+    let m = edges.len();
+    for k in 0..m {
+        if let (ProfEdge::Oval { .. }, Some([s, e])) = (&edges[k], edges[k].ends()) {
+            let (before, after) = ((k + m - 1) % m, (k + 1) % m);
+            edges[before] = edges[before].clone().with_end(s);
+            edges[after] = edges[after].clone().with_start(e);
+        }
+    }
+    c.edges = edges;
+    c.edge_src = src;
+}
+
+/// THE RUN OF SEGMENTS ALONG `curve` AS THE PIECE OF IT between the ends of the run, in the way the run goes. `None`
+/// when the run holds an edge that is no segment.
+///
+/// The place of each end is found from the place of the point next to it in the run: where a curve crosses itself, its
+/// two ends stand at one point on two branches of it - a lobe of a figure of eight was taken for the whole curve, and its
+/// area came out 0.008 mm^2 against the other lobe's 0.
+fn run_as_curve(curve: &Curve, run: &[ProfEdge], laid_at: &dyn Fn(Point2) -> Option<f64>, [start, end]: [Point2; 2]) -> Option<Vec<ProfEdge>> {
+    let [_, second] = run.first()?.ends()?;
+    let [last_but_one, _] = run.last()?.ends()?;
+    if !run.iter().all(|e| matches!(e, ProfEdge::Line { .. })) {
+        return None;
+    }
+    // a point the curve was laid out at by its place, any other sought
+    let place = |p: Point2| laid_at(p).unwrap_or_else(|| curve.nearest(p).t);
+    let (t0, t1) = (curve.polish(start, place(second)), curve.polish(end, place(last_but_one)));
+    // the way the run goes along the curve, told by its first segment; a closed curve run round from where it started is
+    // the whole of it
+    let v = curve.velocity(t0);
+    let forward = (second.x - start.x) * v.x + (second.y - start.y) * v.y >= 0.0;
+    let whole = curve.closed() && start.dist(end) < 1e-9 && ((t1 - t0).rem_euclid(1.0) < 1e-6 || (t0 - t1).rem_euclid(1.0) < 1e-6);
+    let span = |from: f64, to: f64| if curve.closed() { from + if whole { 1.0 } else { (to - from).rem_euclid(1.0) } } else { to };
+    let mut edges = if forward { curve.piece([t0, span(t0, t1)]).to_edges() } else { curve.piece([t1, span(t1, t0)]).to_edges() };
+    if !forward {
+        edges.reverse();
+        edges = edges.into_iter().map(ProfEdge::reversed).collect();
+    }
+    let last = edges.len().checked_sub(1)?;
+    edges[0] = edges[0].clone().with_start(start);
+    edges[last] = edges[last].clone().with_end(end);
+    Some(edges)
+}
+
 /// The planar arrangement of a sketch: every entity — lines, arcs, circles and splines — is intersected with every
 /// other, the curves are cut at the intersection points, and the minimal faces, that is the closed regions, are
 /// assembled. This is what turns the strip between two circles, cut by a line, into a selectable closed region.
-/// Returns the faces as contours, carrying exact `ProfEdge` edges for the B-rep; a spline as the segments of its
-/// tessellation. Ellipses are not cut: each is a region of its own.
-pub(super) fn arrangement_regions(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Vec<Contour> {
-    arrangement_regions_prov(points, entities, splines).into_iter().map(|(c, _)| c).collect()
+/// Returns the faces as contours, carrying exact `ProfEdge` edges for the B-rep: a spline, an ellipse and an arc of one
+/// are cut as the segments of their points and laid back as the curves they are.
+pub(super) fn arrangement_regions(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<Contour> {
+    arrangement_regions_prov(points, entities).into_iter().map(|(c, _)| c).collect()
 }
 
 /// As `arrangement_regions`, but each region carries its provenance: the sorted set of entity ids its boundary
 /// is stitched from. This is what keeps the identity of a contour stable across edits, so that loops which
 /// swapped places do not take over each other's ids.
-pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Vec<(Contour, Vec<Id>)> {
-    arrangement_faces(points, entities, splines).inner
+pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<(Contour, Vec<Id>)> {
+    let Faces { inner, laid, .. } = arrangement_faces(points, entities);
+    inner
+        .into_iter()
+        .map(|(mut c, mut prov)| {
+            laid.finish(&mut c, &mut prov);
+            (c, prov)
+        })
+        .collect()
+}
+
+/// A REGION WITHOUT THE LINES HANGING INTO IT: the walk round a face goes out along a line hanging into it and back, an
+/// edge and its twin side by side, and the region came with a spike of no width the kernel would not make a face of
+/// (measured on the case example: a chain of six lines hanging into the region of a base after an edit, the base refused
+/// to extrude). Such pairs are taken out, the inner first, until none is left; a bridge to an island stays, its two
+/// halves standing apart in the walk. Taken out of the region as it goes to the sketch, not out of the walks of the
+/// arrangement: the sketch, solved round a change, reads those to tell whether a region runs past its window, and with
+/// the hanging pieces gone it lost the region a last line closed (a hexagon side by side). The provenance is the
+/// entities left on the boundary. A spline and an arc of an ellipse hang in as their pieces do, out and back.
+pub(super) fn without_spikes(c: &mut Contour, prov: &mut Vec<Id>) {
+    use crate::geom::ProfEdge;
+    let n = c.edges.len();
+    let same = |p: Point2, q: Point2| (p.x - q.x).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9;
+    let back = |p: &ProfEdge, q: &ProfEdge| match (p, q) {
+        (ProfEdge::Line { a, b }, ProfEdge::Line { a: qa, b: qb }) => same(*a, *qb) && same(*b, *qa),
+        (ProfEdge::Arc { a, b, center, ccw }, ProfEdge::Arc { a: qa, b: qb, center: qc, ccw: qw }) => same(*a, *qb) && same(*b, *qa) && same(*center, *qc) && ccw != qw,
+        // a piece of an ellipse or of a spline and the same piece run back: the ends swapped, the middle one
+        (ProfEdge::Oval { .. }, ProfEdge::Oval { .. }) | (ProfEdge::Spline(_), ProfEdge::Spline(_)) => match (p.ends(), q.ends(), p.curve_at(0.5), q.curve_at(0.5)) {
+            (Some([a, b]), Some([qa, qb]), Some(m), Some(qm)) => same(a, qb) && same(b, qa) && same(m, qm),
+            _ => false,
+        },
+        _ => false,
+    };
+    let mut kept: Vec<usize> = Vec::with_capacity(n);
+    for k in 0..n {
+        if kept.last().is_some_and(|&l| back(&c.edges[l], &c.edges[k])) {
+            kept.pop();
+        } else {
+            kept.push(k);
+        }
+    }
+    while kept.len() >= 2 && back(&c.edges[kept[kept.len() - 1]], &c.edges[kept[0]]) {
+        kept.pop();
+        kept.remove(0);
+    }
+    if kept.len() == n || kept.len() < 2 {
+        return;
+    }
+    c.edges = kept.iter().map(|&k| c.edges[k].clone()).collect();
+    if c.edge_src.len() == n {
+        c.edge_src = kept.iter().map(|&k| c.edge_src[k]).collect();
+    }
+    c.points = c.points_from_edges();
+    let kept_src: std::collections::BTreeSet<Id> = c.edge_src.iter().copied().collect();
+    *prov = kept_src.into_iter().collect();
 }
 
 /// THE FACES OF AN ARRANGEMENT AND THE WALKS AROUND ITS PIECES: the regions of `arrangement_regions_prov`, and the walks
@@ -597,81 +878,115 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
 pub(super) struct Faces {
     pub inner: Vec<(Contour, Vec<Id>)>,
     pub outer: Vec<Contour>,
+    pub laid: LaidCurves,
 }
 
-pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Faces {
+/// THE CURVES THE SEGMENTS OF A SPLINE OR AN ELLIPSE STAND FOR in an arrangement, and the place along its curve of every
+/// point such a curve was laid out at (`Spot`): what a region is laid back as curves by when it goes to the sketch.
+pub(super) struct LaidCurves {
+    exact: std::collections::HashMap<Id, Curve>,
+    spots: std::collections::HashMap<Spot, f64>,
+}
+
+impl LaidCurves {
+    /// A REGION OF THE ARRANGEMENT AS IT GOES TO THE SKETCH: the walks out along a piece and back taken out of it
+    /// (`without_spikes`) while it is still segments - out and back the same segments - and then its runs along one
+    /// curve laid as that curve (`exact_runs`). Laid first, the way out ran on past the turn and the way back was a piece
+    /// of it, and the wall of the region crossed itself; taken out of the walk itself, the sketch solved round a change
+    /// lost the walk it reads a region running past its window by. The walks of the arrangement are left as they are.
+    pub(super) fn finish(&self, c: &mut Contour, prov: &mut Vec<Id>) {
+        without_spikes(c, prov);
+        exact_runs(c, &self.exact, &self.spots);
+    }
+}
+
+pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity]) -> Faces {
     use std::f64::consts::{PI, TAU};
     let at: std::collections::HashMap<Id, (f64, f64)> = points.iter().map(|p| (p.id, (p.x, p.y))).collect();
     let pt = |id: Id| at.get(&id).copied();
     let mut curves: Vec<ArrCurve> = Vec::new();
     let mut curve_eid: Vec<Id> = Vec::new(); // provenance of a curve, its entity id, parallel to `curves`
-    let mut out_ellipse: Vec<(Contour, Vec<Id>)> = Vec::new(); // ellipses are regions of their own, outside the arrangement graph
+                                             // the curves that enter the arrangement as the segments of their points, as the curves they are, to give the kernel
+    let exact: std::collections::HashMap<Id, Curve> = entities
+        .iter()
+        .filter(|e| !e.construction && (e.kind.as_spline().is_some() || e.kind.as_ellipse().is_some()))
+        .filter_map(|e| Curve::of_placed(&|id: Id| pt(id).map(|(x, y)| Point2::new(x, y)), e).map(|c| (e.id, c)))
+        .collect();
+    // THE PLACE ALONG ITS CURVE OF EVERY POINT A SPLINE OR AN ELLIPSE IS LAID OUT AT, by the bits of the point: what a run
+    // of segments goes back to its curve by (`exact_runs`). Sought again by Newton's steps for every segment, a sketch of
+    // two splines of 82 and 688 nodes took 0.27 s to rebuild in a release build, every step of a drag.
+    let mut spots: std::collections::HashMap<Spot, f64> = std::collections::HashMap::new();
+    // the curve and the places of it each segment of a spline or an ellipse stands between, parallel to `curves`
+    let mut laid_on: Vec<Option<SegmentOf>> = Vec::new();
     for e in entities {
         if e.construction {
             continue;
         }
-        match e.kind {
-            EntityKind::Line { a, b } => {
-                if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
-                    if (pa.0 - pb.0).hypot(pa.1 - pb.1) > 1e-9 {
-                        curves.push(ArrCurve::Line { a: pa, b: pb });
+        match exact.get(&e.id) {
+            Some(curve) => {
+                let places = curve.places();
+                let laid: Vec<Point2> = places.iter().map(|t| curve.at(*t)).collect();
+                for (t, q) in places.iter().zip(&laid) {
+                    spots.entry(Spot::of(e.id, *q)).or_insert(*t);
+                }
+                let xy = |p: Point2| (p.x, p.y);
+                for k in 0..laid.len().saturating_sub(1) {
+                    if laid[k].dist(laid[k + 1]) > 1e-9 {
+                        curves.push(ArrCurve::Line { a: xy(laid[k]), b: xy(laid[k + 1]) });
                         curve_eid.push(e.id);
+                        laid_on.push(Some(SegmentOf { curve: e.id, piece: crate::model::curve::LaidPiece { ends: [laid[k], laid[k + 1]], run: [places[k], places[k + 1]] } }));
                     }
                 }
             }
-            EntityKind::Circle { center, r } => {
-                if let Some(c) = pt(center) {
-                    curves.push(ArrCurve::Circle { c, r: r.max(1e-6) });
-                    curve_eid.push(e.id);
-                }
-            }
-            EntityKind::Arc { center, a, b, ccw } => {
-                if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) {
-                    let r = (pa.0 - c.0).hypot(pa.1 - c.1);
-                    if r > 1e-9 {
-                        curves.push(ArrCurve::Arc { c, r, a0: (pa.1 - c.1).atan2(pa.0 - c.0), a1: (pb.1 - c.1).atan2(pb.0 - c.0), ccw, pa, pb });
-                        curve_eid.push(e.id);
-                    }
-                }
-            }
-            EntityKind::Ellipse { c, ma, mi } => {
-                // an ellipse is a closed region of its own; its intersections are not part of the arrangement yet
-                if let (Some(pc), Some(pma), Some(pmi)) = (pt(c), pt(ma), pt(mi)) {
-                    out_ellipse.push((ellipse_contour(crate::geom::Point2::new(pc.0, pc.1), crate::geom::Point2::new(pma.0, pma.1), crate::geom::Point2::new(pmi.0, pmi.1)), vec![e.id]));
-                }
-            }
-        }
-    }
-    // A SPLINE ENTERS AS THE SEGMENTS OF ITS TESSELLATION, so it is cut by the lines and arcs and by itself, and a region
-    // closed partly by it, or by it crossing itself, is a face like any other. The kernel takes a spline as that same
-    // polyline (`ProfEdge` has no spline), so the face loses nothing the whole loop had. A spline has no id of its own:
-    // its pieces carry the id of its first node, an id no entity has, which keeps the provenance of its regions
-    // stable while the curve is edited.
-    for sp in splines.iter().filter(|sp| !sp.construction) {
-        let cps: Vec<Point2> = sp.points.iter().filter_map(|id| pt(*id)).map(|(x, y)| Point2::new(x, y)).collect();
-        let Some(&first) = sp.points.first().filter(|_| cps.len() >= 2) else { continue };
-        let line = tessellate_spline_hermite(&cps, &sp.tangents, sp.closed);
-        let n = line.points.len();
-        let spans = if sp.closed { n } else { n.saturating_sub(1) };
-        for k in 0..spans {
-            let (a, b) = (line.points[k], line.points[(k + 1) % n]);
-            if a.dist(b) > 1e-9 {
-                curves.push(ArrCurve::Line { a: (a.x, a.y), b: (b.x, b.y) });
-                curve_eid.push(first);
+            None => {
+                let placed = |id: Id| pt(id).map(|(x, y)| Point2::new(x, y));
+                let Some(curve) = Curve::of_placed(&placed, e) else { continue };
+                let pieces = curve.arranged();
+                curve_eid.extend(std::iter::repeat_n(e.id, pieces.len()));
+                laid_on.extend(std::iter::repeat_n(None, pieces.len()));
+                curves.extend(pieces);
             }
         }
     }
     let nc = curves.len();
-    let mut out: Vec<(Contour, Vec<Id>)> = std::mem::take(&mut out_ellipse);
+    let mut out: Vec<(Contour, Vec<Id>)> = Vec::new();
     let mut outer: Vec<Contour> = Vec::new();
     if nc == 0 {
-        return Faces { inner: out, outer };
+        return Faces { inner: out, outer, laid: LaidCurves { exact, spots } };
     }
     // Only the curves whose boxes meet are intersected (`meeting_pairs`), in the order of the pairs of every curve with
     // every other, so the cuts come in the order they always did. All pairs of 10 000 lines are 5e7 intersections.
     let mut cuts: Vec<Vec<(f64, f64)>> = vec![Vec::new(); nc];
+    // A SEGMENT OF A SPLINE OR AN ELLIPSE MEETS ANOTHER WHERE THE CURVES MEET (`Curve::meets_near`): a segment of a line
+    // stands for the line itself. Two curves nearly touching cross twice within a few hundredths of a millimetre, and
+    // the second crossing fell between the segments of their layouts: the region past the first ran over the second,
+    // and the kernel refused its wall as a wire crossing itself.
+    let as_curve = |k: usize| -> Option<OnCurve> {
+        match (&laid_on[k], curves[k]) {
+            (Some(s), _) => exact.get(&s.curve).map(|c| OnCurve { curve: c.clone(), piece: s.piece }),
+            (None, ArrCurve::Line { a, b }) => {
+                let (a, b) = (Point2::new(a.0, a.1), Point2::new(b.0, b.1));
+                Some(OnCurve { curve: Curve::of_segment([a, b]), piece: crate::model::curve::LaidPiece { ends: [a, b], run: [0.0, 1.0] } })
+            }
+            _ => None,
+        }
+    };
     for BoxPair { first, second } in meeting_pairs(&curves) {
-        for p in arr_intersect(curves[first], curves[second]) {
+        let by_curves = laid_on[first].is_some() || laid_on[second].is_some();
+        let met = match (by_curves, as_curve(first), as_curve(second)) {
+            (true, Some(OnCurve { curve: ca, piece: pa }), Some(OnCurve { curve: cb, piece: pb })) => {
+                // two segments of one curve next to each other share a point and meet nowhere else
+                let neighbours =
+                    laid_on[first].as_ref().zip(laid_on[second].as_ref()).is_some_and(|(x, y)| x.curve == y.curve && (x.piece.run[1] == y.piece.run[0] || y.piece.run[1] == x.piece.run[0]));
+                if neighbours {
+                    Vec::new()
+                } else {
+                    ca.meets_near(&cb, [pa, pb]).into_iter().map(|m| (m.at.x, m.at.y)).collect()
+                }
+            }
+            _ => arr_intersect(curves[first], curves[second]),
+        };
+        for p in met {
             cuts[first].push(p);
             cuts[second].push(p);
         }
@@ -697,16 +1012,18 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
             ArrCurve::Line { a, b } => {
                 let (dx, dy) = (b.0 - a.0, b.1 - a.1);
                 let len2 = dx * dx + dy * dy;
-                let mut ts: Vec<f64> = vec![0.0, 1.0];
+                // A CUT IS A NODE WHERE IT STANDS, ordered along the segment by its foot: the meeting of two curves stands
+                // on the curves, up to the sag off either segment of their layouts, and laid at its foot on each it was two
+                // nodes 0.005 mm apart that tied nothing together
+                let mut ts: Vec<Cut> = vec![Cut { t: 0.0, at: a }, Cut { t: 1.0, at: b }];
                 for &p in &cuts[ci] {
-                    ts.push(((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len2);
+                    ts.push(Cut { t: ((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len2, at: p });
                 }
-                ts.retain(|t| *t > -1e-9 && *t < 1.0 + 1e-9);
-                ts.sort_by(|x, y| x.total_cmp(y));
-                ts.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
+                ts.retain(|c| c.t > -1e-9 && c.t < 1.0 + 1e-9);
+                ts.sort_by(|x, y| x.t.total_cmp(&y.t));
+                ts.dedup_by(|x, y| (x.t - y.t).abs() < 1e-6);
                 for w in ts.windows(2) {
-                    let p0 = (a.0 + dx * w[0], a.1 + dy * w[0]);
-                    let p1 = (a.0 + dx * w[1], a.1 + dy * w[1]);
+                    let (p0, p1) = (w[0].at, w[1].at);
                     let (n0, n1) = (weld(&mut nodes, p0), weld(&mut nodes, p1));
                     // Collinearly overlapping pieces of two lines collapse into one and the same segment
                     // between the same nodes, and a duplicate breaks the twin pairing of the traversal. Only
@@ -785,7 +1102,7 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
     }
     let nodes = nodes.at;
     if edges.is_empty() {
-        return Faces { inner: out, outer };
+        return Faces { inner: out, outer, laid: LaidCurves { exact, spots } };
     }
     if std::env::var("QYM_ARR_DEBUG").is_ok() {
         eprintln!("[arr] curves={nc} nodes={} edges={}", nodes.len(), edges.len());
@@ -963,6 +1280,8 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
         cont.edges = cedges;
         cont.edge_src = csrc;
         if cont.signed_area() > 1e-3 {
+            // the walk as it is, its segments and its spikes: a region is laid as curves as it goes to the sketch
+            // (`LaidCurves::finish`)
             // provenance of a face: the set of entities whose pieces form its boundary, sorted and without
             // repeats
             let prov: std::collections::BTreeSet<Id> = face.iter().map(|&ei| curve_eid[edges[ei].ci]).collect();
@@ -971,91 +1290,7 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
             outer.push(cont);
         }
     }
-    Faces { inner: out, outer }
-}
-
-/// A smooth Catmull-Rom curve through the control points, as a contour.
-///
-/// The tangent, that is the Hermite vector dP/dt, at spline node `i`: taken explicitly when given, otherwise
-/// the automatic Catmull-Rom value `(p_{i+1} − p_{i-1})/2`, one-sided at the ends of an open spline. It governs
-/// the shape of the curve.
-pub(super) fn spline_tangent_at(pts: &[Point2], tangents: &[Option<[f64; 2]>], i: usize, closed: bool) -> Point2 {
-    if let Some(Some([x, y])) = tangents.get(i) {
-        return crate::geom::Point2::new(*x, *y);
-    }
-    let n = pts.len() as i64;
-    let get = |k: i64| -> Point2 {
-        if closed {
-            pts[((k % n + n) % n) as usize]
-        } else {
-            pts[k.clamp(0, n - 1) as usize]
-        }
-    };
-    let (a, b) = (get(i as i64 - 1), get(i as i64 + 1));
-    crate::geom::Point2::new((b.x - a.x) * 0.5, (b.y - a.y) * 0.5)
-}
-
-/// A point on a cubic Hermite segment: nodes p0 and p1 with tangents m0 and m1, at t ∈ [0,1].
-pub(super) fn hermite_pt(p0: Point2, m0: Point2, p1: Point2, m1: Point2, t: f64) -> Point2 {
-    let (t2, t3) = (t * t, t * t * t);
-    let (h00, h10, h01, h11) = (2.0 * t3 - 3.0 * t2 + 1.0, t3 - 2.0 * t2 + t, -2.0 * t3 + 3.0 * t2, t3 - t2);
-    crate::geom::Point2::new(h00 * p0.x + h10 * m0.x + h01 * p1.x + h11 * m1.x, h00 * p0.y + h10 * m0.y + h01 * p1.y + h11 * m1.y)
-}
-
-/// THE HERMITE SEGMENT ITSELF: the two ends and the tangent at each. Fixed while the segment is refined.
-#[derive(Clone, Copy)]
-pub(super) struct HermiteSeg {
-    pub p0: Point2,
-    pub m0: Point2,
-    pub p1: Point2,
-    pub m1: Point2,
-}
-
-/// WHEN TO STOP SPLITTING: how far the curve may stray from its chord, and how many splits are left.
-#[derive(Clone, Copy)]
-pub(super) struct SagLimit {
-    pub tol: f64,
-    pub depth: u8,
-}
-
-/// Adaptive tessellation of a Hermite segment, driven by chord sag as with Catmull-Rom.
-pub(super) fn hermite_seg_adaptive(seg: HermiteSeg, t0: f64, t1: f64, a: Point2, b: Point2, sag: SagLimit, out: &mut Vec<Point2>) {
-    let HermiteSeg { p0, m0, p1, m1 } = seg;
-    let SagLimit { tol, depth } = sag;
-    let tm = 0.5 * (t0 + t1);
-    let m = hermite_pt(p0, m0, p1, m1, tm);
-    let (dx, dy) = (b.x - a.x, b.y - a.y);
-    let len2 = dx * dx + dy * dy;
-    let dev = if len2 < 1e-18 { m.dist(a) } else { (dx * (m.y - a.y) - dy * (m.x - a.x)).abs() / len2.sqrt() };
-    if depth == 0 || dev <= tol {
-        out.push(b);
-    } else {
-        hermite_seg_adaptive(seg, t0, tm, a, m, SagLimit { tol, depth: depth - 1 }, out);
-        hermite_seg_adaptive(seg, tm, t1, m, b, SagLimit { tol, depth: depth - 1 }, out);
-    }
-}
-
-/// Tessellation of a spline as a cubic Hermite with tangents: a fit-point spline with handles.
-pub(super) fn tessellate_spline_hermite(pts: &[Point2], tangents: &[Option<[f64; 2]>], closed: bool) -> Contour {
-    let n = pts.len();
-    if n < 2 {
-        return if closed { Contour::closed(pts.to_vec()) } else { Contour::open(pts.to_vec()) };
-    }
-    let span: f64 = (0..n).map(|i| pts[i].dist(pts[(i + 1) % n])).sum::<f64>() / n as f64;
-    let tol = (span * 0.004).clamp(0.002, 0.2);
-    let seg = if closed { n } else { n - 1 };
-    let mut out: Vec<Point2> = vec![pts[0]];
-    for s in 0..seg {
-        let (p0, p1) = (pts[s], pts[(s + 1) % n]);
-        let (m0, m1) = (spline_tangent_at(pts, tangents, s, closed), spline_tangent_at(pts, tangents, (s + 1) % n, closed));
-        hermite_seg_adaptive(HermiteSeg { p0, m0, p1, m1 }, 0.0, 1.0, p0, p1, SagLimit { tol, depth: 10 }, &mut out);
-    }
-    if closed {
-        out.pop();
-        Contour::closed(out)
-    } else {
-        Contour::open(out)
-    }
+    Faces { inner: out, outer, laid: LaidCurves { exact, spots } }
 }
 
 #[cfg(test)]
@@ -1067,7 +1302,7 @@ mod tests {
     /// the lines of the left rectangle vanished from the sheet and its points stayed.
     #[test]
     fn a_line_touching_a_fillet_off_by_a_solve_keeps_the_face_of_the_rectangle() {
-        use crate::model::{EntityKind, SketchEntity, SketchPoint};
+        use crate::model::{SketchEntity, SketchPoint};
         let pts: Vec<SketchPoint> = [
             (5, 0.0, 0.0),
             (6, -125.0, 24.99999999357503),
@@ -1104,8 +1339,8 @@ mod tests {
         .iter()
         .map(|&(id, x, y)| SketchPoint { id, x, y })
         .collect();
-        let l = |id, a, b| SketchEntity { id, kind: EntityKind::Line { a, b }, construction: false };
-        let arc = |id, center, a, b, ccw| SketchEntity { id, kind: EntityKind::Arc { center, a, b, ccw }, construction: false };
+        let l = |id, a, b| SketchEntity { id, kind: crate::model::LineParts { a, b }.into(), construction: false };
+        let arc = |id, center, a, b, ccw| SketchEntity { id, kind: crate::model::ArcParts { center, a, b, ccw }.into(), construction: false };
         let all: Vec<SketchEntity> = vec![
             l(10, 6, 7),
             l(11, 7, 53),
@@ -1129,7 +1364,7 @@ mod tests {
         ];
         let before: Vec<SketchEntity> = all.iter().filter(|e| e.id != 138).cloned().collect();
         let faces = |ents: &[SketchEntity]| -> Vec<Vec<u64>> {
-            super::arrangement_regions_prov(&pts, ents, &[])
+            super::arrangement_regions_prov(&pts, ents)
                 .into_iter()
                 .map(|r| {
                     let mut ids = r.1;
@@ -1143,6 +1378,31 @@ mod tests {
         assert!(faces(&before).contains(&rounded), "GUARD: the rounded rectangle is a face before the line: {:?}", faces(&before));
         let after = faces(&all);
         assert!(after.contains(&rounded) && after.contains(&vec![23, 55, 138]), "the line along the top, touching the fillet at its end, lost the faces: {after:?}");
+    }
+
+    /// A LINE THAT ENDS INSIDE A REGION IS NO PART OF ITS EDGE. The walk round a face went out along a line hanging into
+    /// it and back, and the region came with a spike of no width that the kernel would not make a face of. Measured on
+    /// the case example: an angle of the outline of a base edited to 231 left a chain of six lines hanging into the
+    /// region of the base, walked out and back, and the base refused to extrude. A square 10 x 10 and a line from the
+    /// middle of its bottom 4 up into it: the square is one region of area 100, the hanging line no edge of it.
+    #[test]
+    fn a_line_hanging_into_a_region_is_no_edge_of_it() {
+        use crate::model::{SketchEntity, SketchPoint};
+        let pts = vec![
+            SketchPoint { id: 1, x: 0.0, y: 0.0 },
+            SketchPoint { id: 2, x: 10.0, y: 0.0 },
+            SketchPoint { id: 3, x: 10.0, y: 10.0 },
+            SketchPoint { id: 4, x: 0.0, y: 10.0 },
+            SketchPoint { id: 5, x: 5.0, y: 0.0 },
+            SketchPoint { id: 6, x: 5.0, y: 4.0 },
+        ];
+        let l = |id, a, b| SketchEntity { id, kind: crate::model::LineParts { a, b }.into(), construction: false };
+        let ents = vec![l(10, 1, 2), l(11, 2, 3), l(12, 3, 4), l(13, 4, 1), l(14, 5, 6)];
+        let regions = super::arrangement_regions_prov(&pts, &ents);
+        assert_eq!(regions.len(), 1, "the square is not one region: {}", regions.len());
+        let (contour, ids) = &regions[0];
+        assert!(!ids.contains(&14), "the line hanging into the square is an edge of its region: {ids:?}");
+        assert!((contour.area().abs() - 100.0).abs() < 1e-9, "the region of the square holds {}", contour.area());
     }
 
     use super::{arr_intersect, meeting_pairs, within_weld, ArrCurve, BoxPair, Welded, WELD};

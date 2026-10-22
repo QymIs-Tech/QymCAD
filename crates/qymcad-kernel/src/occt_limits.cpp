@@ -96,11 +96,13 @@ bool corner_of(const QymShape* s, const TopoDS_Edge& edge, const TopTools_Indexe
     return c.into_first.Dot(c.out_second) < -1e-9 && c.into_second.Dot(c.out_first) < -1e-9;
 }
 
-/// THE PRISM A BLEND TAKES OFF along the corner `c`: its section laid out from `near` on the first face to `far` on the
-/// second - straight for a chamfer, an arc for a fillet of `radius` through `centre` - and closed outside the body, the
+/// THE PRISM A BLEND TAKES OFF along the corner `c`: its section laid out from `on_first` on the first face to `on_second` on
+/// the second - straight for a chamfer, an arc for a fillet of `radius` through `centre` - and closed outside the body, the
 /// prism carried `past` beyond both ends. The face the section's blend side sweeps is given back in `surface`.
+// NOT `near` AND `far`: the headers of Windows define both as empty macros, and MSVC read `sec.near = ...` as
+// `sec. = ...` - the release build for Windows stopped on this file.
 struct Section {
-    gp_Vec near, far;
+    gp_Vec on_first, on_second;
     bool arc;
     gp_Vec centre;
     double radius;
@@ -109,8 +111,8 @@ struct Section {
 TopoDS_Shape prism_of(const Corner& c, const Section& sec, double past, TopoDS_Face& surface) {
     const gp_Pnt origin = c.start.Translated(gp_Vec(c.along) * -past);
     auto at = [&](const gp_Vec& v) { return origin.Translated(v); };
-    const double out = 2.0 * (sec.near.Magnitude() + sec.far.Magnitude()) + 1.0;
-    const gp_Vec p1 = sec.near, p2 = sec.near + c.out_first * out, p3 = (c.out_first + c.out_second) * out, p4 = sec.far + c.out_second * out, p5 = sec.far;
+    const double out = 2.0 * (sec.on_first.Magnitude() + sec.on_second.Magnitude()) + 1.0;
+    const gp_Vec p1 = sec.on_first, p2 = sec.on_first + c.out_first * out, p3 = (c.out_first + c.out_second) * out, p4 = sec.on_second + c.out_second * out, p5 = sec.on_second;
     BRepBuilderAPI_MakeWire wire;
     wire.Add(BRepBuilderAPI_MakeEdge(at(p1), at(p2)).Edge());
     wire.Add(BRepBuilderAPI_MakeEdge(at(p2), at(p3)).Edge());
@@ -140,18 +142,6 @@ TopoDS_Shape prism_of(const Corner& c, const Section& sec, double past, TopoDS_F
     return prism.Shape();
 }
 
-/// WHAT A COPY MADE OF THE BODY: the copy of each element of the body, and nothing of any other shape - the copying
-/// algorithm, asked of a shape it never copied (a face of a prism), throws.
-struct CopyHistory : QymHistory {
-    CopyHistory(BRepBuilderAPI_Copy& c, const TopoDS_Shape& of) : copier(c) { TopExp::MapShapes(of, own); }
-    const TopTools_ListOfShape& Modified(const TopoDS_Shape& s) override { return own.Contains(s) ? copier.Modified(s) : none; }
-    const TopTools_ListOfShape& Generated(const TopoDS_Shape&) override { return none; }
-    bool Removed(const TopoDS_Shape&) override { return false; }
-    BRepBuilderAPI_Copy& copier;
-    TopTools_IndexedMapOfShape own;
-    TopTools_ListOfShape none;
-};
-
 } // namespace
 
 /// WHAT BLEND THE PRISMS MAKE: a fillet (`kind` 0) of radius `a`, or a chamfer (`kind` 1) of legs `a` on the first face
@@ -179,20 +169,8 @@ extern "C" QymShape* qym_shape_blend_limit(const QymShape* s, const QymBlendLimi
         // with the body the door built stepped back - cut on the body itself, the strips of a rim that body leaves
         // were no longer told apart, and a pinched rim landed as one face (measured on the frame of
         // `face_is_one_island`)
-        BRepBuilderAPI_Copy copier(s->shape);
-        QymShape body{copier.Shape(), {}, {}, {}, {}, {}, {}};
-        // the names of the copy, asked of what the body holds: the record of names may keep shapes the body no longer
-        // has, and the copy is asked only of its own
-        auto name_copy = [&](TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& ids, TopTools_DataMapOfShapeInteger& out) {
-            TopTools_IndexedMapOfShape own;
-            TopExp::MapShapes(s->shape, ty, own);
-            for (int i = 1; i <= own.Extent(); ++i) {
-                if (!ids.IsBound(own(i))) continue;
-                for (TopTools_ListIteratorOfListOfShape c(copier.Modified(own(i))); c.More(); c.Next()) out.Bind(c.Value(), ids.Find(own(i)));
-            }
-        };
-        name_copy(TopAbs_FACE, s->fids, body.fids);
-        name_copy(TopAbs_EDGE, s->eids, body.eids);
+        QYM_OWN_COPY(s);
+        const QymShape& body = *s;
         TopTools_IndexedDataMapOfShapeListOfShape faces_of;
         TopExp::MapShapesAndAncestors(body.shape, TopAbs_EDGE, TopAbs_FACE, faces_of);
         TopTools_ListOfShape tools;
@@ -219,19 +197,19 @@ extern "C" QymShape* qym_shape_blend_limit(const QymShape* s, const QymBlendLimi
             if (!corner_of(&body, edge, faces_of, flip, ref_face, c)) return why("blend/limit", "an edge is not a straight line between planar faces meeting convexly"), nullptr;
             Section sec{};
             if (kind == 1) {
-                sec.near = c.into_first * a;
-                sec.far = c.into_second * b;
+                sec.on_first = c.into_first * a;
+                sec.on_second = c.into_second * b;
             } else {
                 // the circle touches each face where it lies `a` from the other: `a / tan(angle / 2)` from the edge
                 const double angle = c.into_first.Angle(c.into_second);
                 const double touch = a / std::tan(angle / 2.0);
-                sec.near = c.into_first * touch;
-                sec.far = c.into_second * touch;
+                sec.on_first = c.into_first * touch;
+                sec.on_second = c.into_second * touch;
                 sec.arc = true;
-                sec.centre = sec.near - c.out_first * a;
+                sec.centre = sec.on_first - c.out_first * a;
                 sec.radius = a;
             }
-            if (!lands_on(c, c.first, sec.near) || !lands_on(c, c.second, sec.far))
+            if (!lands_on(c, c.first, sec.on_first) || !lands_on(c, c.second, sec.on_second))
                 return why("blend/limit", "the blend reaches past a face it lies on"), nullptr;
             TopoDS_Face surface;
             TopoDS_Shape prism = prism_of(c, sec, 2.0 * (a + b) + 1.0, surface);
@@ -287,11 +265,9 @@ extern "C" QymShape* qym_shape_blend_limit(const QymShape* s, const QymBlendLimi
         if (res.IsNull() || !BRepCheck_Analyzer(res).IsValid()) return why("blend/limit", "the body with the prisms cut is not sound"), nullptr;
         // the surface of each blend named by its edge, as the blend names it; nothing else of a prism is left
         const QymShape cut{all, tool_ids, {}, {}, {}, {}, {}};
-        CopyHistory copied(copier, s->shape);
         QymBuilderHistory cutting(algo);
         QymToolsHistory merging(unify.History());
-        QymChainHistory copied_and_cut(copied, cutting);
-        QymChainHistory history(copied_and_cut, merging);
+        QymChainHistory history(cutting, merging);
         return qym_result(history, res, QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend/limit"}, QymOperand{&cut, QymCarry::RecipeOnly, "blend/limit/tool"}}});
     } QYM_WHY_CATCH("edge operation")
     return nullptr;

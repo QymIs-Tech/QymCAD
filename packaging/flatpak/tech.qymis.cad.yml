@@ -34,12 +34,15 @@ modules:
   # 7.9.3, and only the modelling modules: Draw and Visualization are off, the drawing here is our own in
   # egui and wgpu. The same version and the same module set as the Linux, Windows and macOS builds - one
   # kernel for every system beats four different ones.
+  # THE KERNEL IS OCCT 7.9.3 EXACTLY, built so on purpose (packaging/README.md, "The kernel"):
+  # - 7.9.3: the bridge is written and tested against this version and no other;
+  # - exceptions on (BUILD_RELEASE_DISABLE_EXCEPTIONS off): the checks of OCCT that throw stay in, the bridge refuses on them;
+  # - signals converted (OCC_CONVERT_SIGNALS, the default of OCCT off MSVC): a fault inside OCCT comes back as a refusal.
   - name: occt
     buildsystem: cmake-ninja
     config-opts:
-      # THE KERNEL DECLARES AN OLD MINIMUM. CMake 4 removed compatibility with anything below 3.5, and
-      # OCCT 7.8.1 still said `cmake_minimum_required(VERSION 3.1)`, and parts of 7.9.3's tree still say 3.2. Measured on the first build against
-      # the 25.08 SDK: "Compatibility with CMake < 3.5 has been removed from CMake" and the module stopped
+      # THE KERNEL DECLARES AN OLD MINIMUM. CMake 4 removed compatibility with anything below 3.5, and parts of
+      # 7.9.3's tree still say `cmake_minimum_required(VERSION 3.2)`. Measured on the first build against the 25.08 SDK: "Compatibility with CMake < 3.5 has been removed from CMake" and the module stopped
       # before configuring. This is CMake's own way out, and it belongs to the kernel's age rather than to
       # anything of ours - it goes when OCCT is updated.
       - -DCMAKE_POLICY_VERSION_MINIMUM=3.5

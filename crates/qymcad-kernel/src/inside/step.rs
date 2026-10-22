@@ -338,7 +338,7 @@ fn persistent_face_ids_survive_boolean_and_param_change() {
     let base_ids2: HashSet<u32> = sq(20.0).tessellate(0.5).remove(0).faces.iter().map(|f| f.id).collect();
     assert_eq!(base_ids, base_ids2, "the face ids are stable under a change of height");
     // cutting a hole: the base faces keep their ids and a new wall face appears
-    let circ = [1.0, 1.0, 2.0, 2.0, 0.0, 0.0, 0.0, 5.0, 5.0, 0.0]; // a circle of R = 2 at the centre
+    let circ = enc::prof(&[&[enc::circle(5.0, 5.0, 2.0)]]); // a circle of R = 2 at the centre
     let tool = Shape::extrude_profile(&circ, 10.0).expect("the tool");
     let cut = sq(10.0).boolean(&tool, 0).expect("the cut");
     let cut_ids: HashSet<u32> = cut.tessellate(0.2).remove(0).faces.iter().map(|f| f.id).collect();

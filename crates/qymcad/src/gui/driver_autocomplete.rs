@@ -13,21 +13,7 @@
 //! stated plainly: features must have all of this, not sketches alone.
 #[cfg(test)]
 mod tests {
-    use super::super::{current_token, insert_driver, App};
-    use qymcad_core::geom::Point2;
-    use qymcad_core::model::{Constraint, Id, Project};
-
-    /// A part with a sketch and a named driving dimension.
-    fn part_with_driver(p: &mut Project, part: &str, sketch: &str, driver: &str, len: f64) {
-        let comp = p.add_component(part);
-        p.set_active_component(Some(comp));
-        let sid = p.add_line_sketch(sketch, vec![Point2::new(0.0, 0.0), Point2::new(len, 0.0), Point2::new(len, 10.0), Point2::new(0.0, 10.0)], true);
-        let si = p.sketch_index(sid).unwrap();
-        p.add_sketch_node(sid, sketch);
-        let pts: Vec<Id> = p.sketches[si].points.iter().map(|q| q.id).collect();
-        p.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: len, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
-        assert!(p.add_named_dim(driver.into(), sid, vec![pts[0], pts[1]]));
-    }
+    use super::super::{current_token, insert_driver};
 
     /// The word under a caret standing at the end of the text — the commonest case.
     fn token_at_end(text: &str) -> &str {
@@ -95,64 +81,5 @@ mod tests {
         let text = "2*ши+длина";
         let caret = text.find('+').expect("the operator");
         assert_eq!(insert_driver(text, "ширина", caret).0, "2*ширина+длина");
-    }
-
-    /// THE FIELDS OF THE PART TOOLS OFFER DRIVERS TOO.
-    ///
-    /// The expression field in the tool bars is one for all of them (`num_or_expr`, see
-    /// `expr_fields.rs`), so the check goes through it: wired in one place, it works in the extrude,
-    /// the fillet, the chamfer, the shell, the hole, the draft and the pattern.
-    #[test]
-    fn the_tool_bar_field_offers_drivers_too() {
-        let mut app = App::default();
-        app.project.new_document();
-        part_with_driver(&mut app.project, "Housing", "Profile", "len", 20.0);
-        app.bar_exprs.insert("t_h", "le".into());
-
-        let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
-        let ctx = egui::Context::default();
-        super::super::install_fonts(&ctx);
-        let mut texts = Vec::new();
-        let mut field = egui::Rect::NOTHING;
-        // FOCUS IS GIVEN BY A CLICK ON A COORDINATE FROM THE FRAME, not by a guessed id: the first
-        // edition called `request_focus` on `ui.next_auto_id()`, the id did not match the real field,
-        // and the check reported "nothing was offered" while the window was sound. And the cursor is
-        // brought over FIRST: hovering reaches the field a frame later, and a click in the same frame
-        // is wasted.
-        for pass in 0..6 {
-            let mut input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
-            let at = field.center();
-            if pass == 2 {
-                input.events.push(egui::Event::PointerMoved(at));
-            }
-            if pass == 3 {
-                input.events.push(egui::Event::PointerMoved(at));
-                for pressed in [true, false] {
-                    input.events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
-                }
-            }
-            if pass == 4 {
-                input.events.push(egui::Event::Text("n".into()));
-            }
-            let out = ctx.run_ui(input, |ui| {
-                egui::CentralPanel::default().show(ui, |ui| {
-                    qymcad_ui_state::num_or_expr(
-                        &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme },
-                        ui,
-                        "t_h",
-                        10.0,
-                        qymcad_ui_state::NumFormat { lo: 0.0, hi: 100.0, integer: false, suffix: "mm", nonzero: false },
-                    );
-                });
-            });
-            if let Some(r) = ctx.read_response(egui::Id::new(("bar_expr", "t_h"))) {
-                field = r.rect;
-            }
-            texts.clear();
-            for cs in &out.shapes {
-                super::super::screen_keys::tests::collect_text(&cs.shape, &mut texts);
-            }
-        }
-        assert!(texts.iter().any(|t| t.contains("Housing") && t.contains("Profile")), "the field of a part tool did not offer a driver with its path: {texts:?}");
     }
 }

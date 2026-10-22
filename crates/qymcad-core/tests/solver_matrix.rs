@@ -13,8 +13,8 @@ fn line(p: &mut Project, si: usize, ax: f64, ay: f64, bx: f64, by: f64) -> (u64,
     let eid = p.add_line_entity(si, ax, ay, bx, by, qymcad_core::feature::Purpose::Real);
     let s = &p.sketches[si];
     let e = s.entities.iter().find(|e| e.id == eid).unwrap();
-    match e.kind {
-        qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+    match e.kind.as_line() {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => unreachable!(),
     }
 }
@@ -201,15 +201,15 @@ fn matrix_constraints() {
         let mut p = Project::default();
         let si = p.new_sketch("s");
         let e1 = p.add_circle_entity(si, 0.0, 0.0, 7.0, qymcad_core::feature::Purpose::Real);
-        let c1 = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind {
-            qymcad_core::model::EntityKind::Circle { center, .. } => center,
+        let c1 = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => center,
             _ => unreachable!(),
         };
         add(&mut p, si, Constraint::Fixed { p: c1 });
         add(&mut p, si, Constraint::Diameter { c: c1, d: 24.0, diam: true, off: 0.0, expr: String::new(), driven: false, at: None });
         p.solve_sketch(si);
-        let r = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind {
-            qymcad_core::model::EntityKind::Circle { r, .. } => r,
+        let r = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => r,
             _ => unreachable!(),
         };
         if (r - 12.0).abs() > 1e-4 {
@@ -221,8 +221,8 @@ fn matrix_constraints() {
         let si = p.new_sketch("s");
         let e1 = p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
         let (a, b) = line(&mut p, si, -20.0, 14.0, 20.0, 15.0);
-        let c1 = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind {
-            qymcad_core::model::EntityKind::Circle { center, .. } => center,
+        let c1 = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => center,
             _ => unreachable!(),
         };
         add(&mut p, si, Constraint::Fixed { p: c1 });
@@ -231,8 +231,8 @@ fn matrix_constraints() {
         let (ax, ay) = pt(&p, si, a);
         let (bx, by) = pt(&p, si, b);
         let (cx, cy) = pt(&p, si, c1);
-        let r = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind {
-            qymcad_core::model::EntityKind::Circle { r, .. } => r,
+        let r = match p.sketches[si].entities.iter().find(|e| e.id == e1).unwrap().kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => r,
             _ => unreachable!(),
         };
         let len = ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt().max(1e-9);

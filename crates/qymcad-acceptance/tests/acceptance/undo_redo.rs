@@ -77,13 +77,14 @@ probe! {
 
 probe! {
     /// EVERY KIND OF EDIT CAN BE TAKEN BACK AND PUT AGAIN: drawing, a dimension, a body, a parameter, a rename, a
-    /// deletion and the placing of a part - each one a step of its own, each one exact both ways.
+    /// deletion and the placing of a part - each one a step of its own, each one exact both ways. The edits of the
+    /// sketch are taken back inside it: finished, the sketch is one step.
     fn every_kind_of_edit_can_be_taken_back_and_put_again() {
         let mut s = Session::start();
         build::into_the_first_part(&mut s);
         let xy = s.word("plane-xy-table");
         s.press_word(&xy);
-        let edits: Vec<Edit> = vec![
+        let in_sketch: Vec<Edit> = vec![
             edit("drawing a rectangle", |s| {
                 let rect = s.word("tb-rect-hint");
                 s.press_hint(&rect);
@@ -95,13 +96,16 @@ probe! {
                 s.press_hint(&dim);
                 s.click_on_sketch(20.0, 0.0);
                 s.click_on_sketch(20.0, -10.0);
-                let field = s.word("sk-expr-example");
+                let field = s.word("f-number-or-expr");
                 s.fill_hinted(&field, "40").key(Key::Enter);
                 s.key(Key::Escape);
             }),
+        ];
+        let mut problems = each_taken_back_and_put_again(&mut s, in_sketch);
+        let finish = s.word("wb-finish");
+        s.press_word(&finish);
+        let edits: Vec<Edit> = vec![
             edit("a body", |s| {
-                let finish = s.word("wb-finish");
-                s.press_word(&finish);
                 let extrude = s.word("tb-extrude-hint");
                 s.press_hint(&extrude);
                 s.key(Key::Enter);
@@ -116,7 +120,7 @@ probe! {
                 s.chord(Modifiers::COMMAND, Key::A).type_text("Contour").key(Key::Enter);
             }),
         ];
-        let problems = each_taken_back_and_put_again(&mut s, edits);
+        problems.extend(each_taken_back_and_put_again(&mut s, edits));
         assert!(problems.is_empty(), "{}", problems.join("\n"));
     }
 }
@@ -343,5 +347,68 @@ probe! {
         s.menu(&[&edit, &rebuild]);
         let rebuilt = edges(&s.document());
         assert!(step == rebuilt, "the bodies after the sketch was deleted are {step:?} step by step and {rebuilt:?} rebuilt");
+    }
+}
+
+/// The lines of the sketch named `name`, none when it is not there.
+fn lines_of(doc: &Document, name: &str) -> Option<usize> {
+    doc.sketches.iter().find(|sk| sk.name == name).map(|sk| sk.lines)
+}
+
+probe! {
+    /// INSIDE A SKETCH UNDO WALKS THE SKETCH'S OWN STEPS, AND A FINISHED SKETCH IS ONE STEP: a block, a sketch on its
+    /// top, three lines - three Ctrl+Z take the lines back, a fourth leaves the document as it is and says why; three
+    /// Ctrl+Shift+Z bring the lines; Finish; one Ctrl+Z takes the whole sketch away, one Ctrl+Shift+Z brings it whole.
+    /// Reported behaviour: the fourth Ctrl+Z went on past the sketch and took the extrusion of the block back.
+    fn inside_a_sketch_undo_walks_its_own_steps_and_a_finished_sketch_is_one_step() {
+        let mut s = a_block();
+        let built = shape(&s.document());
+        let before: Vec<String> = s.document().sketches.iter().map(|sk| sk.name.clone()).collect();
+        build::sketch_on_face(&mut s, [20.0, 15.0, 10.0]);
+        let sketch = s.document().sketches.iter().map(|sk| sk.name.clone()).find(|n| !before.contains(n)).expect("a new sketch on the top of the block");
+        let opened = shape(&s.document());
+        for x in [5.0, 15.0, 25.0] {
+            build::line(&mut s, (x, 5.0), (x, 25.0));
+        }
+        let drawn = shape(&s.document());
+        assert!(lines_of(&s.document(), &sketch) == Some(3), "three lines were drawn and the sketch holds {:?}", lines_of(&s.document(), &sketch));
+        for left in [2, 1, 0] {
+            take_back(&mut s);
+            assert!(lines_of(&s.document(), &sketch) == Some(left), "a Ctrl+Z in the sketch left {:?} lines, {left} expected", lines_of(&s.document(), &sketch));
+        }
+        take_back(&mut s);
+        assert!(shape(&s.document()) == opened, "a Ctrl+Z past the first step of the sketch changed the document: {} instead of {opened}", shape(&s.document()));
+        let floor = s.word("g-sketch-undo-floor");
+        assert!(s.status() == floor, "a Ctrl+Z past the first step of the sketch said {:?}, not {floor:?}", s.status());
+        for _ in 0..3 {
+            s.chord(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+        }
+        assert!(shape(&s.document()) == drawn, "three Ctrl+Shift+Z in the sketch gave {} instead of {drawn}", shape(&s.document()));
+        let finish = s.word("wb-finish");
+        s.press_word(&finish);
+        let finished = shape(&s.document());
+        take_back(&mut s);
+        assert!(shape(&s.document()) == built, "one Ctrl+Z after Finish gave {} instead of the block before the sketch {built}", shape(&s.document()));
+        s.chord(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+        assert!(shape(&s.document()) == finished, "one Ctrl+Shift+Z after it gave {} instead of the whole sketch {finished}", shape(&s.document()));
+    }
+}
+
+probe! {
+    /// A SKETCH IN ONE PART DOES NOT UNDO A STEP OF ANOTHER: a block in part A, a new part B, a sketch in B with a line -
+    /// Ctrl+Z pressed four times takes the line back and nothing more; the block of A, part B and its sketch stand.
+    fn a_sketch_in_one_part_does_not_undo_a_step_of_another() {
+        let mut s = a_block();
+        build::into_a_new_part(&mut s);
+        let xy = s.word("plane-xy-table");
+        s.press_word(&xy);
+        let opened = shape(&s.document());
+        let sketch = s.document().editing.clone().expect("a sketch open in the new part");
+        build::line(&mut s, (0.0, 0.0), (20.0, 10.0));
+        assert!(lines_of(&s.document(), &sketch) == Some(1), "a line was drawn and the sketch holds {:?}", lines_of(&s.document(), &sketch));
+        for _ in 0..4 {
+            take_back(&mut s);
+        }
+        assert!(shape(&s.document()) == opened, "four Ctrl+Z in the sketch of part B gave {} instead of {opened}", shape(&s.document()));
     }
 }

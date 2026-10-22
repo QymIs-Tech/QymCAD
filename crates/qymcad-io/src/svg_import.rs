@@ -256,26 +256,17 @@ fn path_to_curves(p: &usvg::Path, h: f64, out: &mut Vec<ProfEdge>) {
                 line(last, q, out);
                 last = q;
             }
+            // A CURVE OF THE PATH IS A SPLINE, the Bezier it is exactly - a quadratic raised to the cubic it is - so a
+            // letter or a shape comes in as the curves it was drawn by, which a person drags and a body takes as one
+            // face each. Laid out as 12 and 16 segments, a page of text came in as thousands of lines.
             PathSegment::QuadTo(c, pt) => {
                 let (c, e) = (map(c.x, c.y), map(pt.x, pt.y));
-                let mut prev = last;
-                for k in 1..=12 {
-                    let tt = k as f64 / 12.0;
-                    let q = quad(last, c, e, tt);
-                    line(prev, q, out);
-                    prev = q;
-                }
+                bezier([last, last + (c - last) * (2.0 / 3.0), e + (c - e) * (2.0 / 3.0), e], out);
                 last = e;
             }
             PathSegment::CubicTo(c1, c2, pt) => {
                 let (c1, c2, e) = (map(c1.x, c1.y), map(c2.x, c2.y), map(pt.x, pt.y));
-                let mut prev = last;
-                for k in 1..=16 {
-                    let tt = k as f64 / 16.0;
-                    let q = cubic(last, c1, c2, e, tt);
-                    line(prev, q, out);
-                    prev = q;
-                }
+                bezier([last, c1, c2, e], out);
                 last = e;
             }
             PathSegment::Close => {
@@ -286,16 +277,9 @@ fn path_to_curves(p: &usvg::Path, h: f64, out: &mut Vec<ProfEdge>) {
     }
 }
 
-fn lerp(a: Point2, b: Point2, t: f64) -> Point2 {
-    Point2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
-}
-
-fn quad(p0: Point2, p1: Point2, p2: Point2, t: f64) -> Point2 {
-    lerp(lerp(p0, p1, t), lerp(p1, p2, t), t)
-}
-
-fn cubic(p0: Point2, p1: Point2, p2: Point2, p3: Point2, t: f64) -> Point2 {
-    let a = quad(p0, p1, p2, t);
-    let b = quad(p1, p2, p3, t);
-    lerp(a, b, t)
+/// A cubic Bezier as a piece of a spline; one whose four points stand on one, no curve, is skipped.
+fn bezier(points: [Point2; 4], out: &mut Vec<ProfEdge>) {
+    if points.iter().any(|q| q.dist(points[0]) > 1e-9) {
+        out.push(ProfEdge::Spline(qymcad_core::geom::bspline::BSpline::bezier(points)));
+    }
 }

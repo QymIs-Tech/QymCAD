@@ -39,7 +39,7 @@ fn drawn_curve_by_curve(from: &Project, what: &str, failures: &mut Vec<String>) 
     let _ = p.new_sketch("S");
     p.sketches[0].points = from.sketches[0].points.clone();
     for (k, e) in from.sketches[0].entities.iter().enumerate() {
-        p.sketches[0].entities.push(*e);
+        p.sketches[0].entities.push(e.clone());
         p.regen_sketch(0);
         let mut whole = p.clone();
         whole.regen_sketch_whole(0);

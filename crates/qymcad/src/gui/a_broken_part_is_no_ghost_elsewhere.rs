@@ -21,7 +21,7 @@ mod tests {
         let part = app.project.body_owner(body).expect("its part");
         app.enter_component(part);
         let edge = app.project.regen_edges[&body].iter().filter(|e| (e.a[2] - e.b[2]).abs() < 1e-6).max_by(|x, y| x.mid[2].total_cmp(&y.mid[2])).cloned().expect("the top edge");
-        Hand::new(app).look_at([10.0, 10.0, 5.0], 9.0).tool(4).click(edge.mid).enter();
+        Hand::new(app).look_at([10.0, 10.0, 5.0], 9.0).tool(qymcad_ui_state::PartTool::Fillet).click(edge.mid).enter();
         let fillet = app.project.timeline.iter().find(|n| matches!(n.kind, FeatureKind::Fillet { .. })).map(|n| n.id).expect("a fillet was made");
         app.exit_context();
         super::super::joint_flow::tests::add_part_at(app, 60.0);

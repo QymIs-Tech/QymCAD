@@ -69,8 +69,8 @@ fn a_face_outline_projects_as_four_straight_lines() {
     let ents = proj_entities(&live.p, si);
     assert_eq!(ents.len(), 4, "a square face has four edges, and it came out {}", ents.len());
     for e in &ents {
-        let kind = live.p.sketches[si].entities.iter().find(|x| x.id == *e).map(|x| x.kind).expect("the entity is there");
-        assert!(matches!(kind, qymcad_core::model::EntityKind::Line { .. }), "an edge of a box must land as a LINE, and it landed as {kind:?}");
+        let kind = live.p.sketches[si].entities.iter().find(|x| x.id == *e).map(|x| x.kind.clone()).expect("the entity is there");
+        assert!(kind.as_line().is_some(), "an edge of a box must land as a LINE, and it landed as {kind:?}");
     }
     // the geometry agrees: a 20x20 square in sketch coordinates
     let pts: Vec<[f64; 2]> = live.p.sketches[si].projections[0].points.iter().filter_map(|id| live.p.sketches[si].points.iter().find(|q| q.id == *id)).map(|q| [q.x, q.y]).collect();
@@ -171,8 +171,8 @@ fn a_circular_edge_projects_as_a_real_circle() {
     let circles: Vec<f64> = ents
         .iter()
         .filter_map(|e| live.p.sketches[si].entities.iter().find(|x| x.id == *e))
-        .filter_map(|e| match e.kind {
-            qymcad_core::model::EntityKind::Circle { r, .. } => Some(r),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
             _ => None,
         })
         .collect();

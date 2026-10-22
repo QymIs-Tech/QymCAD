@@ -205,7 +205,7 @@ fn rounding_every_corner_leaves_no_corner_point_behind() {
         let s = &p.sketches[si];
         // the corners of a rectangle kept as one shape stay as its virtual sharps, and its centre on their middle: points the
         // solver counts, not points left behind
-        let of_rect: Vec<u64> = s.rects.iter().flat_map(|r| r.corners.into_iter().chain([r.centre])).collect();
+        let of_rect: Vec<u64> = s.rects().iter().flat_map(|r| r.corners.into_iter().chain([r.centre])).collect();
         let used: std::collections::HashSet<_> = s.entities.iter().flat_map(qymcad_core::model::entity_points).chain(s.system_ids()).chain(of_rect).collect();
         let loose: Vec<_> = s.points.iter().filter(|q| !used.contains(&q.id)).map(|q| (q.id, q.x, q.y)).collect();
         if done != 4 || !loose.is_empty() {

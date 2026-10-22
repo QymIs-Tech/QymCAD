@@ -4,7 +4,7 @@
 //! Reported behaviour: after two chamfers on a cross the point was dragged, and the two lines of the first cut came
 //! loose from it - one turned, the cut swung round, and their constraints stood on nothing.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{ChamferLegs, Constraint, EntityKind, Project};
+use qymcad_core::model::{ChamferLegs, Constraint, Project};
 
 /// A cross of four lines from (0, 0), each held horizontal or vertical as the automatic constraints hold a line drawn
 /// along an axis. Answers the project, the sketch, the point at the middle and the lines: right, up, left, down.
@@ -17,7 +17,7 @@ fn a_cross() -> (Project, usize, u64, [u64; 4]) {
     p.regen_sketch(si);
     let middle = p.sketches[si].points.iter().find(|q| q.x.abs() < 1e-9 && q.y.abs() < 1e-9).map(|q| q.id).expect("the middle");
     for (k, &l) in lines.iter().enumerate() {
-        let Some(EntityKind::Line { a, b }) = p.sketches[si].entities.iter().find(|e| e.id == l).map(|e| e.kind) else { panic!("a line") };
+        let Some(qymcad_core::model::LineParts { a, b }) = p.sketches[si].entities.iter().find(|e| e.id == l).and_then(|e| e.kind.as_line()) else { panic!("a line") };
         p.sketches[si].constraints.push(if k % 2 == 0 { Constraint::Horizontal { a, b } } else { Constraint::Vertical { a, b } });
     }
     p.solve_sketch(si);
@@ -58,7 +58,7 @@ fn two_cuts_on_a_cross_keep_every_line_on_its_corner(cut: Cut) {
     let m = at(middle);
     let mut sins = Vec::new();
     for (k, &line) in l.iter().enumerate() {
-        let Some(EntityKind::Line { a, b }) = s.entities.iter().find(|e| e.id == line).map(|e| e.kind) else { panic!("a line") };
+        let Some(qymcad_core::model::LineParts { a, b }) = s.entities.iter().find(|e| e.id == line).and_then(|e| e.kind.as_line()) else { panic!("a line") };
         let (pa, pb) = (at(a), at(b));
         // the line, extended, runs through the middle point
         let off = ((pb.0 - pa.0) * (m.1 - pa.1) - (pb.1 - pa.1) * (m.0 - pa.0)).abs() / (pb.0 - pa.0).hypot(pb.1 - pa.1);

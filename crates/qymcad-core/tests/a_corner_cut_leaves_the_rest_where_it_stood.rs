@@ -6,7 +6,7 @@
 //! to 0. The equality had been carried onto the piece the cut left, 55 mm against 58, and the solver bent everything
 //! tied to the triangle to make them equal.
 use qymcad_core::feature::{ChamferMode, Purpose};
-use qymcad_core::model::{ChamferLegs, Constraint, EntityKind, Project};
+use qymcad_core::model::{ChamferLegs, Constraint, Project};
 
 /// A triangle of two equal sides, held equal: the base from (0, 0) to (60, 0), the apex at (30, 50).
 fn isosceles() -> (Project, usize, Vec<u64>) {
@@ -16,8 +16,8 @@ fn isosceles() -> (Project, usize, Vec<u64>) {
     let c = [(0.0, 0.0), (60.0, 0.0), (30.0, 50.0)];
     let sides: Vec<u64> = (0..3).map(|i| p.add_line_entity(si, c[i].0, c[i].1, c[(i + 1) % 3].0, c[(i + 1) % 3].1, Purpose::Real)).collect();
     p.regen_sketch(si);
-    let ends = |p: &Project, l: u64| match p.sketches[si].entities.iter().find(|e| e.id == l).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) => (a, b),
+    let ends = |p: &Project, l: u64| match p.sketches[si].entities.iter().find(|e| e.id == l).and_then(|e| e.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => panic!("the side {l} is a line"),
     };
     let ((a, b), (cc, d)) = (ends(&p, sides[1]), ends(&p, sides[2]));

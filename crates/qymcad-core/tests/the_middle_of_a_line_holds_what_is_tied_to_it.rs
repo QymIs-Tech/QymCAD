@@ -4,7 +4,7 @@
 //!
 //! Reported behaviour (#57): a constraint from the middle of a line needed a point put there by hand first.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{Constraint, EntityKind, Project, SketchPoint};
+use qymcad_core::model::{Constraint, Project, SketchPoint};
 
 /// A line from (0, 0) to (40, 0) with a point held at its middle, a circle about (25, 30) whose centre is held Vertical
 /// with the middle, and the line's length dimensioned. Answers the project, the sketch, the line, its middle, the centre
@@ -16,8 +16,8 @@ fn tied() -> (Project, usize, u64, u64, u64, usize) {
     let line = p.add_line_entity(si, 0.0, 0.0, 40.0, 0.0, Purpose::Real);
     p.add_circle_entity(si, 25.0, 30.0, 5.0, Purpose::Real);
     let s = &p.sketches[si];
-    let (a, b) = s.entities.iter().find_map(|e| if let EntityKind::Line { a, b } = e.kind { Some((a, b)) } else { None }).expect("the line");
-    let c = s.entities.iter().find_map(|e| if let EntityKind::Circle { center, .. } = e.kind { Some(center) } else { None }).expect("the circle");
+    let (a, b) = s.entities.iter().find_map(|e| if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() { Some((a, b)) } else { None }).expect("the line");
+    let c = s.entities.iter().find_map(|e| if let Some(qymcad_core::model::CircleParts { center, .. }) = e.kind.as_circle() { Some(center) } else { None }).expect("the circle");
     let mid = p.alloc_id();
     p.sketches[si].points.push(SketchPoint { id: mid, x: 20.0, y: 0.0 });
     p.sketches[si].constraints.push(Constraint::Midpoint { p: mid, a, b });
@@ -41,7 +41,7 @@ fn a_length_changed_moves_the_middle_and_what_is_tied_there() {
     p.solve_sketch(si);
     let (m, k) = (at(&p, si, mid).expect("the middle"), at(&p, si, c).expect("the centre"));
     let s = &p.sketches[si];
-    let (a, b) = s.entities.iter().find_map(|e| if let EntityKind::Line { a, b } = e.kind { Some((a, b)) } else { None }).expect("the line");
+    let (a, b) = s.entities.iter().find_map(|e| if let Some(qymcad_core::model::LineParts { a, b }) = e.kind.as_line() { Some((a, b)) } else { None }).expect("the line");
     let (pa, pb) = (at(&p, si, a).expect("an end"), at(&p, si, b).expect("an end"));
     assert!((pa.0 - pb.0).abs() > 59.999, "the length did not change: {pa:?}-{pb:?}");
     assert!((m.0 - (pa.0 + pb.0) / 2.0).abs() < 1e-6 && (m.0 - k.0).abs() < 1e-6, "middle {m:?} of {pa:?}-{pb:?}, centre {k:?}");

@@ -19,6 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # --- OCCT 7.9.3 from source -> /opt/occt (only the modules that are needed) ---
+# THE KERNEL IS OCCT 7.9.3 EXACTLY, built so on purpose (packaging/README.md, "The kernel"):
+# - 7.9.3: the bridge is written and tested against this version and no other;
+# - exceptions on (BUILD_RELEASE_DISABLE_EXCEPTIONS off): the checks of OCCT that throw stay in, the bridge refuses on them;
+# - signals converted (OCC_CONVERT_SIGNALS, the default of OCCT off MSVC): a fault inside OCCT comes back as a refusal.
 ARG OCCT_TAG=V7_9_3
 RUN wget -q "https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/${OCCT_TAG}.tar.gz" -O /tmp/occt.tar.gz \
     && tar xf /tmp/occt.tar.gz -C /tmp \

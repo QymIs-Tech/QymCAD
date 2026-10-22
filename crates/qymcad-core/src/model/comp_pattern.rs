@@ -41,12 +41,60 @@ pub enum CompPatternKind {
     },
 }
 
+/// ONE VALUE OF THE LAYOUT OF A PATTERN: the key its formula is kept under, and the number it holds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayoutValue {
+    pub key: &'static str,
+    pub value: f64,
+}
+
 /// The second and third directions of a linear pattern that has only its first.
 pub fn one_way() -> [([f64; 3], f64, u32); 2] {
     [([0.0, 1.0, 0.0], 0.0, 1), ([0.0, 0.0, 1.0], 0.0, 1)]
 }
 
 impl CompPatternKind {
+    /// THE VALUES OF THE LAYOUT, by the keys their formulas are kept under in `feat_dims` - the keys of the fields of its
+    /// box: the count and the step of each direction of a linear one, the count and the angle of a circular one.
+    pub fn values(&self) -> Vec<LayoutValue> {
+        let v = |key, value| LayoutValue { key, value };
+        match *self {
+            CompPatternKind::Linear { step, count, more, .. } => {
+                vec![
+                    v("count", f64::from(count)),
+                    v("cstep", step),
+                    v("count2", f64::from(more[0].2)),
+                    v("cstep2", more[0].1),
+                    v("count3", f64::from(more[1].2)),
+                    v("cstep3", more[1].1),
+                ]
+            }
+            CompPatternKind::Circular { angle, count, .. } => vec![v("count", f64::from(count)), v("cangle", angle)],
+        }
+    }
+
+    /// The same layout with value `key` set to `v`; a count is whole and at least one.
+    pub fn with_value(mut self, key: &str, v: f64) -> Self {
+        let whole = v.round().max(1.0) as u32;
+        match &mut self {
+            CompPatternKind::Linear { step, count, more, .. } => match key {
+                "count" => *count = whole,
+                "cstep" => *step = v,
+                "count2" => more[0].2 = whole,
+                "cstep2" => more[0].1 = v,
+                "count3" => more[1].2 = whole,
+                "cstep3" => more[1].1 = v,
+                _ => {}
+            },
+            CompPatternKind::Circular { angle, count, .. } => match key {
+                "count" => *count = whole,
+                "cangle" => *angle = v,
+                _ => {}
+            },
+        }
+        self
+    }
+
     /// A linear pattern along one direction.
     pub fn linear(dir: [f64; 3], step: f64, count: u32) -> Self {
         CompPatternKind::Linear { dir, step, count, more: one_way() }
@@ -153,6 +201,20 @@ impl Project {
         self.grow_copies(id);
         self.resolve_comp_patterns();
         true
+    }
+
+    /// THE FORMULAS OF THE VALUES OF EVERY PATTERN IMPOSED before the copies are placed: a count or a step read by a name
+    /// follows it, copies added or taken away as `set_comp_pattern` does when the count is typed.
+    pub(crate) fn impose_comp_pattern_values(&mut self, vars: &std::collections::HashMap<String, f64>) {
+        let laid: Vec<Id> = self.timeline.iter().filter(|n| matches!(n.kind, FeatureKind::ComponentPattern { .. })).map(|n| n.id).collect();
+        for id in laid {
+            let Some(kind) = self.comp_pattern(id).map(|p| p.kind) else { continue };
+            let Some(dims) = self.feat_dims.get(&id) else { continue };
+            let want = kind.values().into_iter().fold(kind, |k, v| k.with_value(v.key, crate::model::eval_dim(Some(dims), v.key, v.value, vars)));
+            if want != kind {
+                self.set_comp_pattern(id, want);
+            }
+        }
     }
 
     /// Delete a pattern: its node and the copies go, the source stays, being a part in its own right rather than a

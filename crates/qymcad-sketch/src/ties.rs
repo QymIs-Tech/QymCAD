@@ -47,12 +47,13 @@ pub(crate) fn tie_the_clicked_points(project: &mut Project, view: qymcad_ui_stat
 
 /// THE POINTS A DRAWING TOOL PUT DOWN, TIED TO WHAT THEY LANDED ON, whatever the tool. Of the points a click made
 /// (`made`), the one standing at each place clicked for the shape is tied as the snap there showed it: on a point of the
-/// sketch or on the origin - coincident; on a line - on it, or at its middle; on a circle or an arc - on it; on the X or
-/// Y axis - on the axis; where two of those cross - on both. A snap puts the point exactly on its target, so a point
+/// sketch or on the origin - coincident; on a line - on it, or at its middle; on a circle or an arc - on it; on a centre
+/// line of a circle - level or upright of its centre; on the X or Y axis - on the axis; where two of those cross - on
+/// both. A snap puts the point exactly on its target, so a point
 /// within half a pixel of a curve stands on it. Reported behaviour: the snap was shown and the point was put down where
 /// the pointer was, held by nothing - an end on a circle, a centre, the axes and the origin, for every tool but the line.
 pub(crate) fn tie_what_landed(project: &mut Project, view: qymcad_ui_state::View2d, si: usize, clicks: &[Point2], made: &std::collections::HashSet<Id>) {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let reach = 0.5 / f64::from(view.scale);
     for at in clicks {
         let Some(s) = project.sketches.get(si) else { return };
@@ -61,9 +62,9 @@ pub(crate) fn tie_what_landed(project: &mut Project, view: qymcad_ui_state::View
             // A SHAPE THAT PUT NO POINT THERE - a circle through three points runs through its clicks: a point of the
             // sketch clicked is held on the new circle
             let standing = s.points.iter().find(|q| !made.contains(&q.id) && near(Point2::new(q.x, q.y))).map(|q| q.id);
-            let rim = s.entities.iter().find_map(|e| match e.kind {
-                EntityKind::Circle { center, r } if made.contains(&center) => s.points.iter().find(|q| q.id == center).filter(|c| ((at.x - c.x).hypot(at.y - c.y) - r).abs() <= reach).map(|_| center),
-                _ => None,
+            let rim = s.entities.iter().filter_map(|e| e.kind.as_circle()).find_map(|k| {
+                let c = s.points.iter().find(|q| q.id == k.center && made.contains(&k.center))?;
+                (((at.x - c.x).hypot(at.y - c.y) - k.r).abs() <= reach).then_some(k.center)
             });
             if let Some(c) = rim {
                 let p = match standing {
@@ -93,28 +94,30 @@ pub(crate) fn tie_what_landed(project: &mut Project, view: qymcad_ui_state::View
         let s = &project.sketches[si];
         let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
         let mut ties: Vec<Constraint> = Vec::new();
+        // A POINT CLICKED ON A CURVE OF ANY KIND IS HELD ON IT - on a line at its middle when it stands there. An ellipse and
+        // a spline held nothing: a point snapped onto one was free to leave it.
         for e in s.entities.iter().filter(|e| !qymcad_core::model::entity_points(e).iter().any(|id| made.contains(id))) {
-            match e.kind {
-                EntityKind::Line { a, b } => {
-                    let (Some(pa), Some(pb)) = (pt(a), pt(b)) else { continue };
-                    if qymcad_ui_state::project_on_seg(*at, pa, pb).is_some_and(near) {
-                        let middle = near(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0));
-                        ties.push(if middle { Constraint::Midpoint { p: point, a, b } } else { Constraint::PointOnLine { p: point, a, b } });
-                    }
-                }
-                EntityKind::Circle { center, r } => {
-                    if pt(center).is_some_and(|c| ((at.x - c.x).hypot(at.y - c.y) - r).abs() <= reach) {
-                        ties.push(Constraint::PointOnCircle { p: point, c: center });
-                    }
-                }
-                EntityKind::Arc { center, a, b, ccw } => {
-                    let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) else { continue };
-                    let rim = qymcad_ui_state::Rim { centre: c, radius: (pa.x - c.x).hypot(pa.y - c.y), arc: Some(qymcad_ui_state::RimArc { from: pa, to: pb, ccw }) };
-                    if ((at.x - c.x).hypot(at.y - c.y) - rim.radius).abs() <= reach && rim.holds(*at) {
-                        ties.push(Constraint::PointOnCircle { p: point, c: center });
-                    }
-                }
-                EntityKind::Ellipse { .. } => {}
+            let Some(curve) = qymcad_core::model::curve::Curve::of(s, e) else { continue };
+            if !near(curve.nearest(*at).point) {
+                continue;
+            }
+            let middle = e.kind.as_line().and_then(|l| Some((l, pt(l.a)?, pt(l.b)?))).filter(|(_, pa, pb)| near(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0)));
+            ties.push(match middle {
+                Some((l, ..)) => Constraint::Midpoint { p: point, a: l.a, b: l.b },
+                None => qymcad_core::model::point_on(e, point),
+            });
+        }
+        // A POINT ON A CENTRE LINE OF A CIRCLE is held on it as on a line: level with the centre on the level one, upright
+        // of it on the upright one, where the centre line runs (`circle_centre_lines`, a quarter of the radius past the
+        // rim). Snapped there and held by nothing, the start of a line on a quadrant, held to the rim alone, slid along it
+        for k in s.entities.iter().filter(|e| !qymcad_core::model::entity_points(e).iter().any(|id| made.contains(id))).filter_map(|e| e.kind.as_circle()) {
+            let Some(c) = pt(k.center) else { continue };
+            let runs = k.r * 1.25;
+            if (at.y - c.y).abs() <= reach && (at.x - c.x).abs() <= runs && !near(c) {
+                ties.push(Constraint::Horizontal { a: k.center, b: point });
+            }
+            if (at.x - c.x).abs() <= reach && (at.y - c.y).abs() <= runs && !near(c) {
+                ties.push(Constraint::Vertical { a: k.center, b: point });
             }
         }
         for (axis, off) in [(0, at.y), (1, at.x)] {
@@ -167,9 +170,15 @@ pub fn infer_on_segment(project: &mut Project, view: qymcad_ui_state::View2d, si
             project.add_constraint_if_independent(si, Constraint::Parallel { a: la, b: lb, c: a, d: b });
         }
     }
-    // 2c) TANGENT to the nearest circle or arc that is almost tangent already
-    if let Some((cen, r)) = qymcad_pick::nearest_tangent_circle(project, si, p1, p2) {
-        project.add_constraint_if_independent(si, Constraint::Tangent { a, b, c: cen, r });
+    // 2c) TANGENT to the curve of any kind it nearly touches already, by the touching their kinds take (`tangency`) - where
+    // it touches on the line itself: an end the touching would come past is not pulled onto the curve, as the line drawn
+    // by hand did not ask for it; a line started at the crossing of two circles was carried 0.26 mm off it
+    let line = project.sketches[si].entities.iter().find(|e| e.kind.as_line().is_some_and(|l| (l.a == a && l.b == b) || (l.a == b && l.b == a))).map(|e| e.id);
+    if let Some(touch) = line.and_then(|l| project.nearly_touching(si, [p1, p2], l).map(|c| project.tangency(si, [l, c]))) {
+        let on_the_line = !touch.iter().any(|c| matches!(c, Constraint::PointOnCircle { .. } | Constraint::PointOnCurve { .. }));
+        for tie in touch.into_iter().filter(|_| on_the_line) {
+            project.add_constraint_if_independent(si, tie);
+        }
     }
     // 2d) EQUAL LENGTH to the nearest line of the same length
     if let Some((la, lb)) = qymcad_pick::nearest_equal_line(project, si, p1, p2, a, b) {
@@ -207,7 +216,7 @@ pub(crate) fn tie_the_rect_to_what_is_under(sk: &mut qymcad_ui_state::SketchCtx,
             }
         }
         RectPut::After => {
-            let own: Vec<Id> = sk.project.sketches[si].rects.last().map(|r| r.corners.iter().copied().chain([r.centre]).collect()).unwrap_or_default();
+            let own: Vec<Id> = sk.project.sketches[si].rects().last().map(|r| r.corners.iter().copied().chain([r.centre]).collect()).unwrap_or_default();
             tie_the_clicked_points(&mut *sk.project, *sk.view, si, clicks, &own);
         }
     }
@@ -221,7 +230,7 @@ pub(crate) fn tied(sk: &qymcad_ui_state::SketchCtx) -> bool {
 /// Where the two ends of line `seg` of sketch `si` stand, first end first.
 pub(crate) fn segment_ends(project: &Project, si: usize, seg: Id) -> Option<[Point2; 2]> {
     let s = project.sketches.get(si)?;
-    let qymcad_core::model::EntityKind::Line { a, b } = s.entities.iter().find(|e| e.id == seg)?.kind else { return None };
+    let line = s.entity(seg)?.kind.as_line()?;
     let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
-    Some([at(a)?, at(b)?])
+    Some([at(line.a)?, at(line.b)?])
 }

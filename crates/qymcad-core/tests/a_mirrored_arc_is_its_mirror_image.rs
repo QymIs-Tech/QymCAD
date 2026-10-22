@@ -4,13 +4,13 @@
 //! Reported behaviour: "mirroring an arc draws the wrong part of the arc on the copy".
 use qymcad_core::feature::{Purpose, Winding};
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 
 /// The middle of the arc `id` of sketch `si`, along the way it runs.
 fn middle(p: &Project, si: usize, id: u64) -> (f64, f64) {
     let s = &p.sketches[si];
     let at = |q: u64| s.points.iter().find(|x| x.id == q).map(|x| (x.x, x.y)).expect("the point");
-    let Some(EntityKind::Arc { center, a, b, ccw }) = s.entities.iter().find(|e| e.id == id).map(|e| e.kind) else { panic!("no arc {id}") };
+    let Some(qymcad_core::model::ArcParts { center, a, b, ccw }) = s.entities.iter().find(|e| e.id == id).and_then(|e| e.kind.as_arc()) else { panic!("no arc {id}") };
     let (c, pa, pb) = (at(center), at(a), at(b));
     let (a0, a1) = ((pa.1 - c.1).atan2(pa.0 - c.0), (pb.1 - c.1).atan2(pb.0 - c.0));
     let tau = std::f64::consts::TAU;

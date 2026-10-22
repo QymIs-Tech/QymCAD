@@ -65,6 +65,28 @@ pub(crate) fn drop_assembly_tools(jc: &mut qymcad_ui_state::JointCtx) {
 /// The axis pick and the re-pick have no door on the toolbar: they are switched on by a button IN THE POPUP
 /// of an existing joint, and outside that popup they cannot be taken. So a joint is built first and the same
 /// fields the popup sets are used.
+/// TAKE THE "MIRROR A WHOLE PART" TOOL, in the order that works: release the others FIRST.
+///
+/// The button used to push the release and set the field straight after. The release is carried out
+/// AFTER the frame, so it cleared the field again and the button did nothing - the same shape as the
+/// ruler that switched the measuring tool on and off within one frame.
+///
+/// Beside the application rather than on it: nothing here needs to see the whole of it.
+pub(crate) fn mirror_part_door(app: &mut App, comp: Option<qymcad_core::model::Id>) {
+    // the button pressed again with the tool in hand puts it down, as every tool button does
+    let held = app.params.mirror.in_hand();
+    app.cancel_all_tools();
+    if held {
+        return;
+    }
+    // with no part picked before the button the tool is in hand all the same and waits for a click on one
+    (app.params.mirror.part, app.params.mirror.waiting) = (comp, comp.is_none());
+    if comp.is_some() {
+        app.tools.gsel.before.spend_object();
+    }
+    app.status = qymcad_ui_state::Notice::info(crate::i18n::tr(if comp.is_some() { "tb-mirror-pick-plane" } else { "tb-mirror-pick-part" }));
+}
+
 #[cfg(test)]
 pub(crate) mod doors {
     use super::super::App;
@@ -88,12 +110,15 @@ pub(crate) mod doors {
             AssemblyTool::Tangent => app.start_tangent_pick(),
             AssemblyTool::Relation => app.start_relation_pick(),
             AssemblyTool::Ground => app.start_ground_pick(),
+            // the pick of an axis and the re-pick of an anchor are made in the edit of a joint, opened as its row opens it
             AssemblyTool::Axis => {
-                let (_, ca) = a_joint(app);
+                let (jid, ca) = a_joint(app);
+                crate::gui::enter_joint_edit(&mut app.side.joint, &mut app.chosen.sel, &mut app.status, jid);
                 app.side.joint.axis_pick = Some(ca);
             }
             AssemblyTool::Repick => {
                 let (jid, _) = a_joint(app);
+                crate::gui::enter_joint_edit(&mut app.side.joint, &mut app.chosen.sel, &mut app.status, jid);
                 app.side.joint.edit_repick = Some((jid, false));
             }
         }

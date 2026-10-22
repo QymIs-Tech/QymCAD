@@ -87,7 +87,7 @@ impl Laying {
         let t = c.tilt.to_radians();
         let a = self.point(c.x, c.y);
         let b = self.point(c.x + 10.0 * t.cos(), c.y + 10.0 * t.sin());
-        self.entity(EntityKind::Line { a, b });
+        self.entity(qymcad_core::model::LineParts { a, b }.into());
         self.constraint(Constraint::Horizontal { a, b });
     }
 
@@ -96,7 +96,7 @@ impl Laying {
         let center = self.point(c.x + 5.0, c.y);
         let a = self.point(c.x + 5.0 + 5.0 * t.cos(), c.y + 5.0 * t.sin());
         let b = self.point(c.x + 5.0 - 5.0 * t.cos(), c.y + 5.0 * t.sin() + 0.2);
-        self.entity(EntityKind::Arc { center, a, b, ccw: true });
+        self.entity(qymcad_core::model::ArcParts { center, a, b, ccw: true }.into());
         self.constraint(Constraint::Horizontal { a, b });
     }
 
@@ -104,7 +104,7 @@ impl Laying {
     fn rectangle(&mut self, c: Cell) -> [u64; 4] {
         let k = [self.point(c.x, c.y), self.point(c.x + 10.0, c.y), self.point(c.x + 10.0, c.y + 6.0), self.point(c.x, c.y + 6.0 + c.tilt * 0.1)];
         for i in 0..4 {
-            self.entity(EntityKind::Line { a: k[i], b: k[(i + 1) % 4] });
+            self.entity(qymcad_core::model::LineParts { a: k[i], b: k[(i + 1) % 4] }.into());
         }
         self.constraint(Constraint::Horizontal { a: k[0], b: k[1] });
         self.constraint(Constraint::Horizontal { a: k[3], b: k[2] });
@@ -120,7 +120,7 @@ impl Laying {
 
     fn circle(&mut self, c: Cell) {
         let center = self.point(c.x + 5.0, c.y + 5.0);
-        self.entity(EntityKind::Circle { center, r: 4.0 });
+        self.entity(qymcad_core::model::CircleParts { center, r: 4.0 }.into());
         self.constraint(Constraint::Diameter { c: center, d: 4.5, off: 0.0, expr: String::new(), driven: false, diam: false, at: None });
     }
 
@@ -133,7 +133,7 @@ impl Laying {
             })
             .collect();
         for i in 0..6 {
-            self.entity(EntityKind::Line { a: k[i], b: k[(i + 1) % 6] });
+            self.entity(qymcad_core::model::LineParts { a: k[i], b: k[(i + 1) % 6] }.into());
         }
         for i in 1..6 {
             self.constraint(Constraint::Equal { a: k[0], b: k[1], c: k[i], d: k[(i + 1) % 6] });
@@ -144,10 +144,10 @@ impl Laying {
     fn tangent(&mut self, c: Cell) {
         let t = c.tilt.to_radians();
         let center = self.point(c.x + 5.0, c.y + 5.0);
-        self.entity(EntityKind::Circle { center, r: 3.0 });
+        self.entity(qymcad_core::model::CircleParts { center, r: 3.0 }.into());
         let a = self.point(c.x, c.y + 1.5);
         let b = self.point(c.x + 10.0 * t.cos(), c.y + 1.5 + 10.0 * t.sin());
-        self.entity(EntityKind::Line { a, b });
+        self.entity(qymcad_core::model::LineParts { a, b }.into());
         self.constraint(Constraint::Tangent { a, b, c: center, r: 3.0 });
         self.constraint(Constraint::Horizontal { a, b });
     }

@@ -68,7 +68,8 @@ mod tests {
         }
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), first);
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), second);
-        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+        // the screen is looked at with the relation tool as it stands; whether the relation is made is not what is asked
+        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx()).ok();
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         first
     }
@@ -95,7 +96,7 @@ mod tests {
                 egui::Panel::right("props").show(c, |ui| app.joints_panel_for_test(ui));
                 {
                     app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                    qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport());
+                    crate::gui::panel_places::assembly_tool(&mut app, c);
                 }
             });
             texts.clear();

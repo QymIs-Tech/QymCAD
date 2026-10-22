@@ -21,11 +21,10 @@ fn fill_widget(s: &mut Session, w: &Widget, text: &str) {
     s.click(w.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text(text);
 }
 
-/// The fields of the bar of options, left to right.
-fn bar_fields(s: &mut Session) -> Vec<Widget> {
-    let mut fields: Vec<Widget> = s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && w.rect.top() < 120.0).collect();
-    fields.sort_by(|a, b| a.rect.left().total_cmp(&b.rect.left()));
-    fields
+/// Fill the row of the box captioned by the catalogue entry `caption`.
+fn step(s: &mut Session, caption: &str, value: f64) {
+    let word = s.word(caption);
+    s.fill(&word, &value.to_string());
 }
 
 /// THE FIELDS STANDING ON THE SHEET - the little boxes a gesture puts up - told apart from the fields of the bar and of
@@ -33,7 +32,7 @@ fn bar_fields(s: &mut Session) -> Vec<Widget> {
 /// the top of the sheet was taken for a field of the bar.
 fn sheet_fields(s: &mut Session) -> Vec<Widget> {
     let sheet = s.canvas();
-    s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && sheet.contains(w.rect.center())).collect()
+    qymcad_acceptance::value_fields(s).into_iter().filter(|w| sheet.contains(w.rect.center())).collect()
 }
 
 /// THE LITTLE BOX THAT POPPED UP BY THE GESTURE: the field on the sheet nearest to `at` - the radius at a corner, the
@@ -439,8 +438,8 @@ probe! {
         pick(&mut s, 10.0, 0.0, false);
         take(&mut s, "tb-rotate-hint");
         s.click_on_sketch(0.0, 0.0);
-        let angle = s.word("sk-angle-placeholder");
-        s.fill_hinted(&angle, "90").key(Key::Enter);
+        let angle = s.word("sk-angle-deg");
+        s.fill(&angle, "90").key(Key::Enter);
         assert!(counts(&mut s).0 == 1, "turning the line added geometry: {:?}", counts(&mut s));
         assert!(box_is(&mut s, [0.0, 0.0], [0.0, 20.0]), "the line did not turn a quarter about the origin: it runs {:?}", box_of(&mut s));
     }
@@ -454,19 +453,18 @@ probe! {
         line(&mut s, (0.0, 0.0), (5.0, 0.0));
         pick(&mut s, 2.5, 0.0, false);
         take(&mut s, "tb-lin-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "3");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "10");
-        fill_widget(&mut s, &fields[2], "0");
+        step(&mut s, "opt-step-x", 10.0);
+        step(&mut s, "opt-step-y", 0.0);
         s.key(Key::Enter).key(Key::Enter); // the first Enter only leaves the field - see the check below
         assert!(counts(&mut s).0 == 3, "three copies were asked for: {:?}", counts(&mut s));
         assert!(box_is(&mut s, [0.0, 0.0], [25.0, 0.0]), "the copies do not stand 10 apart along X: {:?}", box_of(&mut s));
-        // opened again by a double click on a copy: the bar comes back with the count that was set
+        // opened again by a double click on a copy: the box comes back with the count that was set
         let at = s.on_sketch(22.5, 0.0);
         s.double_click(at);
-        let again = bar_fields(&mut s);
-        assert!(again.first().map(|w| w.value.clone()).unwrap_or_default() == "3", "the pattern did not open again with its own count: the bar shows {:?}", again.iter().map(|w| w.value.clone()).collect::<Vec<_>>());
+        let again = s.field(&count);
+        assert!(again.value == "3", "the pattern did not open again with its own count: the box shows {:?}", again.value);
     }
 }
 
@@ -477,10 +475,9 @@ probe! {
         line(&mut s, (10.0, 0.0), (20.0, 0.0));
         pick(&mut s, 15.0, 0.0, false);
         take(&mut s, "tb-circ-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "4");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "360");
+        step(&mut s, "cmd-angle", 360.0);
         s.click_on_sketch(0.0, 0.0); // the centre to turn about
         s.key(Key::Enter).key(Key::Enter);
         assert!(counts(&mut s).0 == 4, "four copies were asked for: {:?}", counts(&mut s));
@@ -495,10 +492,9 @@ probe! {
         line(&mut s, (0.0, 0.0), (5.0, 0.0));
         pick(&mut s, 2.5, 0.0, false);
         take(&mut s, "tb-lin-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "3");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "10");
+        step(&mut s, "opt-step-x", 10.0);
         s.key(Key::Enter);
         assert!(counts(&mut s).0 == 3, "one Enter after the numbers did not make the pattern: {:?} instead of 3 lines; the status line says {:?}", counts(&mut s), s.status());
     }
@@ -658,10 +654,11 @@ probe! {
 }
 
 probe! {
-    /// ANY LEFT CLICK WITHOUT SHIFT IS A SINGLE SELECTION, AND A MULTI-SELECTION IS MADE WITH SHIFT. Reported: after
-    /// two lines had been chosen with Shift, a click without Shift on a line of its own cut the whole set with it, and
-    /// there was no way to take one line out of a set without giving the set up altogether. So the plain click is the
-    /// single one, and the set is begun and left with Shift held.
+    /// A LEFT CLICK WITHOUT SHIFT ON A SET IS A SINGLE SELECTION, AND A MULTI-SELECTION IS MADE WITH SHIFT. Reported:
+    /// after two lines had been chosen with Shift, a click without Shift on a line of its own cut the whole set with it,
+    /// and there was no way to take one line out of a set without giving the set up altogether. So the plain click on a
+    /// set is the single one - but the second curve of a pair, meeting the one chosen alone, is taken without Shift: a
+    /// click on each of two curves names their corner.
     fn a_click_without_shift_chooses_one_line_and_leaves_the_set() {
         let mut s = empty_sketch();
         line(&mut s, (0.0, 0.0), (60.0, 0.0));
@@ -674,10 +671,10 @@ probe! {
         // A CLICK WITHOUT SHIFT ON A THIRD LINE: only that line is chosen from here, and the set is that line's corners.
         s.click_on_sketch(15.0, 25.0);
         assert!(!s.status().contains('1'), "a click without Shift kept the corners the set had: {:?}", s.status());
-        // THE TWO LINES OF ONE CORNER CHOSEN AGAIN, and the corner they make:
-        s.click_on_sketch(30.0, 0.0); // a click without Shift: this line alone
-        pick_shift(&mut s, 45.0, 25.0); // and with Shift the second joins it
-        assert!(s.status().contains('1'), "setup: the two lines chosen make their corner again: {:?}", s.status());
+        // THE SECOND LINE OF A PAIR IS TAKEN WITHOUT SHIFT: the left line stands chosen alone and makes no corner, and a
+        // click on the bottom line it meets makes the pair and their corner - a click on each curve names a corner
+        s.click_on_sketch(30.0, 0.0);
+        assert!(s.status().contains('1'), "a click without Shift on the line meeting the one chosen alone did not make their corner: {:?}", s.status());
         // AND A CLICK WITHOUT SHIFT ON EMPTY SPACE LEAVES THE LINES CHOSEN AND SPEAKS ABOUT THE MODE ALONE.
         let empty = s.on_sketch(200.0, -200.0);
         s.click(empty);
@@ -721,17 +718,19 @@ probe! {
         pick(&mut s, 30.0, 40.0, true);
         pick(&mut s, 0.0, 20.0, true); // and the whole contour chosen, the last three with Shift
         take(&mut s, "tb-chamfer-sketch-hint");
-        // THE FIELD IS NOT UP YET - nothing has been pointed at - AND NO FIELD LIES OVER THE CONTOUR, which is what
-        // a box standing in the middle of the sheet does to the clicks meant for its own lines.
-        let before_click: Vec<Widget> = sheet_fields(&mut s);
-        assert!(before_click.is_empty(), "the chamfer stood with a field over the contour before anything was pointed at: {before_click:?}");
-        let empty = s.on_sketch(200.0, -200.0);
-        s.click(empty); // the first click opens the field and leaves the four chosen lines as the set
-        let field = field_near(&mut s, empty);
-        assert_eq!(field.kind, Kind::TextField, "the chamfer of a contour chosen before the tool opened no field: {}", s.status());
+        // THE LINES CHOSEN BEFORE THE TOOL OPEN ITS FIELD AT ONCE, as every tool takes what was chosen before it - AND
+        // THE FIELD DOES NOT LIE OVER THE CONTOUR, which is what a box standing in the middle of the sheet did to the
+        // clicks meant for its own lines: it stands beside a corner, outside
+        let fields: Vec<Widget> = sheet_fields(&mut s);
+        let [field] = &fields[..] else { panic!("the chamfer of a contour chosen before the tool opened no single field: {fields:?}; {}", s.status()) };
+        let (lo, hi) = (s.on_sketch(0.0, 40.0), s.on_sketch(60.0, 0.0));
+        let inside = qymcad::Rect::from_two_pos(lo, hi).shrink(2.0);
+        assert!(!inside.intersects(field.rect), "the field of the chamfer lies over the contour: {:?} over {inside:?}", field.rect);
+        let field = field.clone();
         fill_widget(&mut s, &field, "5");
         s.key(Key::Enter);
-        assert_eq!(counts(&mut s).0, 8, "the four corners of the chosen contour were not cut by one answer: {:?}", counts(&mut s));
+        let status = s.status();
+        assert_eq!(counts(&mut s).0, 8, "the four corners of the chosen contour were not cut by one answer: {:?}; the status line says {status:?}", counts(&mut s));
     }
 }
 
@@ -1114,11 +1113,12 @@ probe! {
         pick_shift(&mut s, 45.0, 25.0);
         pick_shift(&mut s, 15.0, 25.0);
         assert_eq!(lit(&mut s), 3, "setup: the three lines of the contour are not all chosen: {}", s.status());
-        assert_eq!(tool(&mut s), 4, "setup: the fillet is not in hand");
+        assert_eq!(tool(&mut s), Some(qymcad::ClickTool::Corner), "setup: the fillet is not in hand");
         let drawn = violet(&mut s);
         assert!(drawn > 40, "setup: no corner of the set is drawn in the colour of one that stands: {drawn} pixels of it");
-        s.key(Key::Escape);
-        assert_eq!(tool(&mut s), 0, "Esc left the fillet in hand: the tool says it is still working");
+        // the first Esc leaves the field of the radius the box opened with, the second puts the tool down
+        s.key(Key::Escape).key(Key::Escape);
+        assert_eq!(tool(&mut s), None, "Esc left the fillet in hand: the tool says it is still working");
         assert_eq!(lit(&mut s), 0, "{} lines are still lit after Esc took the corner tool down", lit(&mut s));
         let after = violet(&mut s);
         assert!(after + 40 < drawn, "the corners of the set are still drawn after Esc: {drawn} pixels of violet before, {after} after");

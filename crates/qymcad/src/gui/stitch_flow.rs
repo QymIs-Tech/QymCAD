@@ -63,15 +63,15 @@ mod tests {
     /// The button exists.
     #[test]
     fn the_tool_has_a_button() {
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(33), "part"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::Stitch), "part"), "without a button the tool does not exist for a person");
     }
 
     /// A CLICK ON A SHEET ADDS IT, A CLICK ON A SOLID SAYS THE REASON.
     #[test]
     fn clicking_a_sheet_picks_it_and_clicking_a_solid_says_why() {
         let (mut app, boxy, patch) = box_with_patch();
-        app.start_feat_cmd(33);
-        assert_eq!(app.tools.armed.cmd_kind(), 33, "the command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Stitch);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Stitch), "the command must open");
 
         let basis = app.viewing.cam.basis();
         let mi = app.project.mesh_index(patch).expect("the mesh of the patch");
@@ -112,7 +112,7 @@ mod tests {
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         app.chosen.sel = Sel::Mesh(0);
-        app.start_feat_cmd(33);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Stitch);
         app.params.stitch_parts = vec![a, b];
         app.apply_feat_cmd();
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
@@ -137,8 +137,8 @@ mod tests {
     #[test]
     fn the_tool_shows_what_is_picked() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("} else if pn.armed.cmd_kind() == 33 || pn.armed.cmd_kind() == 35 {").expect("the stitch must have a drawing block of its own");
-        let b = src[a..].find("} else if pn.armed.cmd_kind() == 26 {").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("} else if matches!(shows, qymcad_ui_state::Shows::Bodies | qymcad_ui_state::Shows::MeshAndWhatItFound) {").expect("the stitch must have a drawing block of its own");
+        let b = src[a..].find("} else if shows == qymcad_ui_state::Shows::FacesThatGo {").map(|i| a + i).unwrap_or(src.len());
         assert!(src[a..b].contains("egui::Mesh::default()"), "the picked sheets must be highlighted with a fill");
     }
 

@@ -111,6 +111,11 @@ impl Place {
     fn is(&self, other: &Place) -> bool {
         (0..3).all(|i| (self.0[i] - other.0[i]).abs() < SAME_PLACE)
     }
+
+    /// How far this place stands from `other`.
+    fn gap(&self, other: &Place) -> f64 {
+        (0..3).map(|i| (self.0[i] - other.0[i]).powi(2)).sum::<f64>().sqrt()
+    }
 }
 
 impl FaceMark {
@@ -121,6 +126,17 @@ impl FaceMark {
 }
 
 impl EdgeMark {
+    /// Running the same way as `other`, either way round, to a thousandth of a radian.
+    fn runs_as(&self, other: &EdgeMark) -> bool {
+        let way = |e: &EdgeMark| {
+            let d: Vec<f64> = (0..3).map(|i| e.b.0[i] - e.a.0[i]).collect();
+            let len = d.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-12);
+            d.into_iter().map(|v| v / len).collect::<Vec<f64>>()
+        };
+        let (a, b) = (way(self), way(other));
+        (0..3).map(|i| a[i] * b[i]).sum::<f64>().abs() > 1.0 - 1e-3
+    }
+
     /// Standing where `other` stood: the same middle and the same ends, either way round.
     fn stands_as(&self, other: &EdgeMark) -> bool {
         self.mid.is(&other.mid) && ((self.a.is(&other.a) && self.b.is(&other.b)) || (self.a.is(&other.b) && self.b.is(&other.a)))
@@ -183,6 +199,18 @@ fn moved_names(change: Change<'_>, p: &Project) -> Vec<String> {
             if let [only] = same.as_slice() {
                 if only.id == f.id {
                     still.insert(f.id);
+                } else if p.face_by_name(*b, only.id) == Some(f.id) {
+                    // A PIECE RENAMED THAT A REFERENCE STILL FINDS: the old name, asked as a reference asks it, goes to
+                    // this very face - the same place, normal and area - as the other piece of its face, and the step
+                    // holding it is marked for the person. Measured on the filter: the upper half of a wall, beside no
+                    // face of its node after an edit, is told from the other half by no recipe.
+                    eprintln!(
+                        "body {b}: a face that did not move was {} = {}, is {} = {}; a reference to it goes to it as the other piece",
+                        only.id,
+                        p.names.describe(only.id),
+                        f.id,
+                        p.names.describe(f.id)
+                    );
                 } else {
                     out.push(format!("body {b}: a face that did not move was {} = {}, is {} = {}", only.id, p.names.describe(only.id), f.id, p.names.describe(f.id)));
                 }
@@ -239,6 +267,24 @@ pub fn determinism(doc: &Doc) -> Vec<String> {
     let second = Marks::of(&o.project);
     eprintln!("{}: {} bodies, {} faces, {} edges", doc.name, first.bodies.len(), first.faces(), first.edges());
     let faults: Vec<String> = renamed(Change { was: &first, now: &second }, &o.project).into_iter().map(|r| format!("{}: a second rebuild renamed: {r}", doc.name)).collect();
+    if !faults.is_empty() {
+        trap(&o, &faults);
+    }
+    faults
+}
+
+/// ONE THREAD AND MANY GIVE THE SAME NAMES: `doc` opened as the window opens it, the nodes of a wave on threads of their
+/// own, then rebuilt whole on one thread. The kernel is left as it was found, on every core but one.
+pub fn one_thread_and_many(doc: &Doc) -> Vec<String> {
+    let mut o = open(doc);
+    let many = o.marks.clone();
+    step(format!("rebuild {} whole on one thread", doc.name));
+    qymcad_kernel::set_parallel(false, 1);
+    let shapes = crate::restore_import_shapes(&o.project);
+    let _ = crate::regenerate_with_shapes(&mut o.project, shapes);
+    qymcad_kernel::set_parallel(true, 0);
+    let one = Marks::of(&o.project);
+    let faults: Vec<String> = renamed(Change { was: &many, now: &one }, &o.project).into_iter().map(|r| format!("{}: one thread renamed what many named: {r}", doc.name)).collect();
     if !faults.is_empty() {
         trap(&o, &faults);
     }
@@ -361,7 +407,7 @@ pub fn edits(p: &Project) -> Vec<Edit> {
         })
         .collect();
     for s in p.sketches.iter().filter(|s| built_from.contains(&s.id)) {
-        let line = s.entities.iter().find(|e| !e.construction && matches!(e.kind, qymcad_core::model::EntityKind::Line { .. }));
+        let line = s.entities.iter().find(|e| !e.construction && e.kind.as_line().is_some());
         if let Some(e) = line {
             out.push(Edit::Break { sketch: s.id, line: e.id });
         }
@@ -369,8 +415,17 @@ pub fn edits(p: &Project) -> Vec<Edit> {
     out
 }
 
+/// WHAT BECAME OF AN EDIT: taken, or refused by the sketch it was typed into - the solver left the sketch `residual` from
+/// its constraints, and the dimension editor of the window takes such a value back (`SKETCH_FITS`). Measured on the case:
+/// a length of the outline of the base 231 in place of 210 left a residual of 0.366, an angle of it 160.1 in place of
+/// 145.5 one of 0.231, and the bodies were rebuilt from a sketch no person can make.
+enum Took {
+    Yes,
+    DoesNotFit { residual: f64 },
+}
+
 /// The edit `e` set to `value`, as the window writes it, with the document marked for the rebuild.
-fn apply(p: &mut Project, e: &Edit, value: f64) {
+fn apply(p: &mut Project, e: &Edit, value: f64) -> Took {
     match e {
         Edit::Feature { node, key, .. } => {
             p.set_dim_target_value(&DimTarget::Feature { node: *node, key: key.to_string() }, value);
@@ -382,21 +437,25 @@ fn apply(p: &mut Project, e: &Edit, value: f64) {
         }
         Edit::Break { sketch, line } => {
             let index = p.sketch_index(*sketch).expect("the sketch of the line");
-            let ends = match p.sketches[index].entities.iter().find(|e| e.id == *line).map(|e| e.kind) {
-                Some(qymcad_core::model::EntityKind::Line { a, b }) => [a, b].map(|k| p.point_xy(index, k)),
-                _ => [None, None],
+            let ends = match p.sketches[index].entities.iter().find(|e| e.id == *line).and_then(|e| e.kind.as_line()) {
+                Some(qymcad_core::model::LineParts { a, b }) => [a, b].map(|k| p.point_xy(index, k)),
+                None => [None, None],
             };
-            let [Some(a), Some(b)] = ends else { return };
-            p.break_line(index, *line, (a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+            let [Some(a), Some(b)] = ends else { return Took::Yes };
+            p.break_curve(index, *line, (a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
             p.mark_sketch_dirty(*sketch);
         }
         Edit::Sketch { sketch, refs, .. } => {
             let index = p.sketch_index(*sketch).expect("the sketch of the dimension");
             p.set_dim_target_value(&DimTarget::Sketch { sketch: *sketch, refs: refs.clone() }, value);
-            p.solve_sketch(index);
+            let residual = p.solve_sketch(index);
+            if residual > qymcad_core::model::SKETCH_FITS {
+                return Took::DoesNotFit { residual };
+            }
             p.mark_sketch_dirty(*sketch);
         }
     }
+    Took::Yes
 }
 
 /// A parameter changed: the values evaluated, the sketches over formulas solved, and what mentions the name marked.
@@ -436,11 +495,18 @@ struct Honest {
 /// THE HONEST REFUSALS OF THE DOCUMENTS, each with its reason. Anything else red after an edit is a fault.
 const HONEST: &[Honest] = &[
     Honest { doc: "Filter-v2.qcad", node: 26, code: "ThreadNotItsSize", why: "the thread of M40 stays on a shaft drawn 44 or 36" },
-    Honest { doc: "QymBoxPc-Case.qcad", node: 5001, code: "BrokenSolid", why: "the outline with one angle 10% wider crosses itself" },
     Honest { doc: "QymBoxPc-Case.qcad", node: 5008, code: "BodyInPieces", why: "the base 10% narrower is cut in two by its pockets" },
+    Honest { doc: "QymBoxPc-Case.qcad", node: 5128, code: "ChamferTooBig", why: "a chamfer of 2 on a step that holds it up to 2.01 as drawn; 10% lower leaves room for 1.51" },
     Honest { doc: "QymBoxPc-Case.qcad", node: 5180, code: "CutRemovedNothing", why: "the cut is drawn where the base no longer reaches" },
     Honest { doc: "QymBoxPc-Case.qcad", node: 5495, code: "CutRemovedNothing", why: "the cut is drawn where the wall no longer reaches" },
     Honest { doc: "QymBoxPc-Case.qcad", node: 5503, code: "CutRemovedNothing", why: "the cut is drawn where the wall no longer reaches" },
+    Honest {
+        doc: "QymBoxPc-Case.qcad",
+        node: 7637,
+        code: "CutRemovedNothing",
+        why: "the side wall the grid of vents is drawn on, 10106 mm^2 at x = 193, shrinks to a strip of 186 mm^2 when the outline is 10% longer",
+    },
+    Honest { doc: "QymBoxPc-Case.qcad", node: 11957, code: "BodyInPieces", why: "the base 10% longer leaves a block of 432 mm^3 standing apart from the body of 21562 after the cut" },
     Honest { doc: "QymBoxPc-Case.qcad", node: 11961, code: "ChamferTooBig", why: "a chamfer of 2 on a face the edit made narrower" },
     Honest { doc: "QymBoxPc-Case.qcad", node: 11966, code: "ChamferTooBig", why: "a chamfer of 2 on a step the edit made lower" },
     Honest { doc: "test_bridge_resize_body.qcad", node: 674, code: "OpFailed(ChamferAsym)", why: "a chamfer of 10 on a step 9 high" },
@@ -602,8 +668,44 @@ fn rebuild(o: &mut Opened, was: Option<&Marks>) -> Vec<String> {
         }
     }
     out.extend(report.rebinds.iter().map(|r| format!("node {} rebound in body {}: {}", r.node, r.body, r.what)));
+    if let (Some(was), 0) = (was, snaps) {
+        // every step marked, not only those this edit marked: a mark stays until the person accepts it
+        out.extend(o.project.placed_refs.iter().flat_map(|n| off_its_piece(&o.project, was, *n, picks_before.get(n))));
+    }
     if let Some(was) = was {
         out.extend(moved_names(Change { was, now: &Marks::of(&o.project) }, &o.project));
+    }
+    out
+}
+
+/// A STEP MARKED WITH NO REFERENCE FOUND BY PLACE took an edge as the other piece of its face: each picked edge that
+/// went so has to have gone to the same piece, told by its place - of the edges of the body running the same way, the
+/// one standing nearest to where the picked edge stood before the edit (`was`); an edit that moves the part moves the
+/// piece with it. Measured on the filter: an edit of a dimension of sketch 53 sent four references of the rounding 269
+/// to the other halves of two walls, each standing where the edge picked had stood.
+fn off_its_piece(p: &Project, was: &Marks, node: Id, picked: Option<&Vec<u32>>) -> Vec<String> {
+    use qymcad_core::feature::FeatureKind;
+    let src = match p.timeline.iter().find(|n| n.id == node).map(|n| &n.kind) {
+        Some(FeatureKind::Fillet { src, .. } | FeatureKind::Chamfer { src, .. }) => *src,
+        _ => return Vec::new(),
+    };
+    let (Some(before), Some(now)) = (was.bodies.get(&src), Marks::of(p).bodies.remove(&src)) else { return Vec::new() };
+    let live: Vec<u32> = now.edges.iter().map(|e| e.id).collect();
+    let mut out = Vec::new();
+    for d in picked.into_iter().flatten() {
+        let found = p.resolve_edge_ids(node, src, &[*d]);
+        let Some(&went) = found.first().filter(|f| **f != *d && p.names.other_piece(*d, &live) == Some(**f)) else { continue };
+        let Some(stood) = before.edges.iter().find(|e| e.id == *d) else { continue };
+        let nearest = now.edges.iter().filter(|e| e.runs_as(stood)).min_by(|a, b| a.mid.gap(&stood.mid).total_cmp(&b.mid.gap(&stood.mid))).map(|e| e.id);
+        if nearest == Some(went) {
+            eprintln!("node {node}: the edge {d} = {} went as the other piece to {went} = {}, the edge standing where it stood", p.names.describe(*d), p.names.describe(went));
+        } else {
+            out.push(format!(
+                "node {node}: the edge {d} = {} went as the other piece to {went} = {}, not to the edge standing where it stood ({nearest:?})",
+                p.names.describe(*d),
+                p.names.describe(went)
+            ));
+        }
     }
     out
 }
@@ -620,7 +722,11 @@ pub fn edit_and_back(o: &mut Opened, e: &Edit, factor: f64) -> Vec<String> {
     let mut out = Vec::new();
     let before = o.project.clone();
     step(says.clone());
-    apply(&mut o.project, e, value);
+    if let Took::DoesNotFit { residual } = apply(&mut o.project, e, value) {
+        eprintln!("{}: {says}: the sketch does not fit the value (residual {residual:.3}), and the window takes it back", o.doc.name);
+        o.project = before;
+        return out;
+    }
     let edited = rebuild(o, Some(&base));
     out.extend(edited.into_iter().map(|f| format!("{says}: {f}")));
     // undone, every name is to be the one the document opened with: what the edit renamed is renamed back, and that is

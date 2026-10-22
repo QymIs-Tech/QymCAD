@@ -18,9 +18,9 @@ mod tests {
         app.chosen.sel = Sel::Sketch(si);
         let o = (5.0, 10.0);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1).click2d(o.0 - 20.0, o.1).double_click2d(o.0 + 20.0, o.1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(o.0 - 20.0, o.1).double_click2d(o.0 + 20.0, o.1);
         hand.click2d(o.0, o.1 - 20.0).double_click2d(o.0, o.1 + 20.0);
-        hand.key(egui::Key::Escape).sk_tool(0);
+        hand.key(egui::Key::Escape).sk_select();
         assert!(hand.press_hint(&crate::i18n::tr("tb-chamfer-sketch-hint")), "no sketch chamfer button");
         hand.shift_click2d(o.0 - 12.0, o.1).shift_click2d(o.0, o.1 - 12.0);
         let (named, fixed) = (qymcad_sketch::corner_colour(&hand.app.scheme, false), qymcad_sketch::corner_colour(&hand.app.scheme, true));
@@ -32,7 +32,7 @@ mod tests {
                 (m.x - centre.x) * q.0 as f32 > 0.0 && (centre.y - m.y) * q.1 as f32 > 0.0
             })
         };
-        let fields = |hand: &Hand| hand.app.tools.corner.at.is_some() && hand.app.status != qymcad_ui_state::Notice::info(crate::i18n::tr("sk-corner-click-to-fix"));
+        let fields = |hand: &Hand| hand.corner_box().is_some();
         let mut failures = Vec::new();
         for q in [(1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
             hand.hover2d(o.0 + 2.0 * q.0, o.1 + 2.0 * q.1);

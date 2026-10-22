@@ -20,7 +20,7 @@ fn total_volume(app: &App) -> f64 {
 
 /// A cylinder of diameter `d` and height `h` through the primitive command (the full flow). Returns (the body, the id of the rim's circular edge).
 fn build_shaft(app: &mut App, d: f64, h: f64) -> (u64, u32) {
-    app.start_prim_cmd(11);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Cylinder);
     for (k, v) in [("r", d * 0.5), ("h", h)] {
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
             p.val = v;
@@ -63,7 +63,7 @@ fn thread_on_shaft(d: f64, h: f64, form: u8, params: &[(&str, f64)], auger: bool
         }
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the command finished: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the command finished: {}", app.status);
     (before - live_volume(&app), app)
 }
 
@@ -72,7 +72,7 @@ pub(super) fn build_cube(app: &mut App) -> u64 {
     let si = sketch_rect(app, 0.0, 0.0, 20.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 20.0;
         p.txt = "20".into();

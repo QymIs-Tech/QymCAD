@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// THE RESIDUAL A SKETCH THAT FITS IS SOLVED UNDER, in mm: above the noise of the solver, which converges to about 1e-6,
+/// and below any real conflict. A dimension or a constraint leaving the sketch above it does not fit and is taken back
+/// (the dimension editor and the constraints of the sketch workbench).
+pub const SKETCH_FITS: f64 = 1e-2;
+
 /// A sketch: a named group of contours (a tree node). It may be the result of an import, in which case
 /// `source` references the embedded original.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -26,9 +31,6 @@ pub struct Sketch {
     /// Geometric constraints and dimensions (solved by the sketch solver).
     #[serde(default)]
     pub constraints: Vec<Constraint>,
-    /// Splines (smooth curves through control points).
-    #[serde(default)]
-    pub splines: Vec<Spline>,
     /// Text notes and annotations. Not geometry: they never reach a profile or a toolpath.
     #[serde(default)]
     pub notes: Vec<Note>,
@@ -38,12 +40,16 @@ pub struct Sketch {
     /// Editable patterns: a source, the layout parameters and the ids of the derived copies.
     #[serde(default)]
     pub patterns: Vec<SketchPattern>,
-    /// The rectangles kept as one shape: their sides, corners, centre and construction diagonals, see `SketchRect`.
+    /// The figures kept as one shape - rectangles, regular polygons and slots: their curves and what holds them, see
+    /// `SketchFigure`; a rectangle is read as one through `Sketch::rects` (`SketchRect`).
     #[serde(default)]
-    pub rects: Vec<SketchRect>,
+    pub figures: Vec<SketchFigure>,
     /// Projections of body geometry (driven entities that reference their source).
     #[serde(default)]
     pub projections: Vec<SketchProjection>,
+    /// Curves offset from a curve of the sketch and held to it, see `SketchOffset`.
+    #[serde(default)]
+    pub offsets: Vec<SketchOffset>,
     /// Placement of the sketch in 3D (a plane, a face or a datum). The 2D geometry is lifted through this
     /// frame. Defaults to the global XY plane.
     #[serde(default)]
@@ -186,6 +192,17 @@ impl Sketch {
     ///
     /// One source of truth on purpose: spelled out by hand in six places the set drifts apart, some copies
     /// forgetting the origin and others the axes.
+    /// THE CONSTRAINTS THE SHAPES OF THE SKETCH HOLD THEMSELVES BY, by their index: those of a cut corner
+    /// (`corner_holders`), of a rectangle (`SketchRect::holds`: its turns or its parallel and square sides, and its
+    /// centre) and of a polygon or a slot (`SketchFigure::own`). One rule for every figure: none is listed nor badged.
+    pub fn held_by_shapes(&self) -> std::collections::HashSet<usize> {
+        let mut out = self.corner_holders();
+        if !self.figures.is_empty() {
+            let held = |c: &Constraint| self.figures.iter().any(|f| f.holds(c));
+            out.extend(self.constraints.iter().enumerate().filter(|(_, c)| held(c)).map(|(ci, _)| ci));
+        }
+        out
+    }
     /// THE CONSTRAINTS A CUT CORNER HOLDS ITSELF BY, by their index: the virtual sharp standing on the extension of each
     /// side (`PointOnLine` of a point no geometry ends at), the legs of a symmetric chamfer kept equal on it (`Equal` from
     /// the sharp to the two ends of the cut line), and the arc of a fillet touching the lines it ends on (`Tangent` of a
@@ -198,17 +215,8 @@ impl Sketch {
         if !self.constraints.iter().any(|c| matches!(c, Constraint::PointOnLine { .. } | Constraint::Equal { .. } | Constraint::Tangent { .. })) {
             return Default::default();
         }
-        let drawn: std::collections::HashSet<Id> = self
-            .entities
-            .iter()
-            .flat_map(|e| match e.kind {
-                EntityKind::Line { a, b } => vec![a, b],
-                EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-                EntityKind::Circle { center, .. } => vec![center],
-                EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
-            })
-            .collect();
-        let cut = |x: Id, y: Id| self.entities.iter().any(|e| matches!(e.kind, EntityKind::Line { a, b } if (a == x && b == y) || (a == y && b == x)));
+        let drawn: std::collections::HashSet<Id> = self.entities.iter().flat_map(entity_points).collect();
+        let cut = |x: Id, y: Id| self.entities.iter().any(|e| e.kind.as_line().is_some_and(|crate::model::LineParts { a, b }| (a == x && b == y) || (a == y && b == x)));
         let at = |id: Id| self.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
         // whether `p` lies on the line through `a` and `b` beyond its ends, by more than a millionth of its length
         let past_the_ends = |p: Id, a: Id, b: Id| match (at(p), at(a), at(b)) {
@@ -228,7 +236,7 @@ impl Sketch {
                 Constraint::PointOnLine { p, a, b } => !drawn.contains(&p) && !self.system_ids().contains(&p) && cut(a, b) && past_the_ends(p, a, b),
                 Constraint::Equal { a, b, c, d } => a == c && !drawn.contains(&a) && cut(b, d),
                 Constraint::Tangent { a, b, c, .. } => {
-                    self.entities.iter().any(|e| matches!(e.kind, EntityKind::Arc { center, a: x, b: y, .. } if center == c && [x, y].iter().any(|q| *q == a || *q == b)))
+                    self.entities.iter().any(|e| e.kind.as_arc().is_some_and(|crate::model::ArcParts { center, a: x, b: y, .. }| center == c && [x, y].iter().any(|q| *q == a || *q == b)))
                 }
                 _ => false,
             })
@@ -240,7 +248,8 @@ impl Sketch {
     /// or the chord between its two ends. Where it does, no passive radius is labelled beside it: a fillet sized by its
     /// chord or its arc length showed an R it does not hold by as well.
     pub fn rim_sized(&self, centre: Id) -> bool {
-        let chord = |x: Id, y: Id| self.entities.iter().any(|e| matches!(e.kind, EntityKind::Arc { center, a, b, .. } if center == centre && ((a == x && b == y) || (a == y && b == x))));
+        let chord =
+            |x: Id, y: Id| self.entities.iter().any(|e| e.kind.as_arc().is_some_and(|crate::model::ArcParts { center, a, b, .. }| center == centre && ((a == x && b == y) || (a == y && b == x))));
         self.constraints.iter().any(|c| match *c {
             Constraint::Diameter { c, .. } | Constraint::ArcLength { c, .. } => c == centre,
             Constraint::Distance { a, b, .. } => chord(a, b),
@@ -248,10 +257,26 @@ impl Sketch {
         })
     }
 
-    /// The points not drawn among the sketch's own: the frame of reference, drawn by the axis marker. The virtual sharp of
-    /// a cut corner is drawn, and picked, like any point.
+    /// The points not drawn among the sketch's own: the frame of reference, drawn by the axis marker, and the nodes of the
+    /// copies an offset holds (`held_copy_nodes`). The virtual sharp of a cut corner is drawn, and picked, like any point.
     pub fn unseen_points(&self) -> std::collections::HashSet<Id> {
-        self.system_ids().into_iter().collect()
+        let mut out: std::collections::HashSet<Id> = self.system_ids().into_iter().collect();
+        out.extend(self.held_copy_nodes());
+        out
+    }
+
+    /// THE NODES OF THE COPIES AN OFFSET HOLDS: laid again from the curve offset after every change of it, they are not
+    /// dragged and are not drawn as points to take, as a pro-CAD draws an offset curve - an open piece keeps its two ends,
+    /// the corners it meets other curves at. Drawn, the copy of a spline of 82 nodes offset 3 covered the drawing with 688
+    /// points. A copy cut loose from its offset is a spline of its own, its nodes drawn.
+    pub fn held_copy_nodes(&self) -> std::collections::HashSet<Id> {
+        let mut out = std::collections::HashSet::new();
+        for id in self.offsets.iter().flat_map(|o| o.copies.iter()) {
+            let Some(sp) = self.entity(*id).and_then(|e| e.kind.as_spline()) else { continue };
+            let inner = if sp.ends == crate::feature::Ends::Closed { sp.nodes } else { sp.nodes.get(1..sp.nodes.len().saturating_sub(1)).unwrap_or(&[]) };
+            out.extend(inner.iter().copied());
+        }
+        out
     }
 
     pub fn system_ids(&self) -> Vec<Id> {
@@ -318,7 +343,7 @@ impl Sketch {
 
     /// Driven entities (projections of a body).
     pub fn projected_entities(&self) -> std::collections::HashSet<Id> {
-        self.projections.iter().flat_map(|p| p.entities.iter().copied()).collect()
+        self.projections.iter().flat_map(|p| p.entities.iter().cloned()).collect()
     }
 
     /// Points that cannot be dragged: the system ones (origin and axes) plus the driven projections.
@@ -346,17 +371,17 @@ impl Sketch {
     /// The centre of a fillet - an arc touching its lines (`Tangent`) with no partner of one radius - carries nothing:
     /// the lines it touches hold it. Empty for any other point.
     pub fn carried_with(&self, centre: Id) -> Vec<Id> {
-        let rect: Vec<Id> = self.rects.iter().filter(|r| r.centre == centre).flat_map(|r| r.corners).collect();
+        let rect: Vec<Id> = self.rects().iter().filter(|r| r.centre == centre).flat_map(|r| r.corners).collect();
         if !rect.is_empty() {
             return rect;
         }
-        if let Some((ma, mi)) = self.entities.iter().find_map(|e| match e.kind {
-            EntityKind::Ellipse { c, ma, mi } if c == centre => Some((ma, mi)),
+        if let Some((ma, mi)) = self.entities.iter().find_map(|e| match e.kind.as_ellipse() {
+            Some(crate::model::EllipseParts { c, ma, mi, .. }) if c == centre => Some((ma, mi)),
             _ => None,
         }) {
             return vec![ma, mi];
         }
-        let Some(arc) = self.entities.iter().find(|e| matches!(e.kind, EntityKind::Arc { center, .. } if center == centre)) else { return Vec::new() };
+        let Some(arc) = self.entities.iter().find(|e| e.kind.as_arc().is_some_and(|crate::model::ArcParts { center, .. }| center == centre)) else { return Vec::new() };
         let touches = self.constraints.iter().any(|c| matches!(*c, Constraint::Tangent { c, .. } if c == centre));
         let partner = self.constraints.iter().find_map(|c| match *c {
             Constraint::EqualRadius { c1, c2 } if c1 == centre => Some(c2),
@@ -385,8 +410,8 @@ impl Sketch {
             // a fillet: held by the lines it touches
             (true, None) => Vec::new(),
             // an arc of its own: its two ends
-            (false, None) => match arc.kind {
-                EntityKind::Arc { a, b, .. } => vec![a, b],
+            (false, None) => match arc.kind.as_arc() {
+                Some(crate::model::ArcParts { a, b, .. }) => vec![a, b],
                 _ => Vec::new(),
             },
         }
@@ -511,11 +536,12 @@ pub enum PatternKind {
     },
 }
 
-/// A SKETCH RECTANGLE KEPT AS ONE SHAPE: four sides each held at its turn (`Constraint::Orientation`: the first and the
-/// third at the turn of the rectangle, the second and the fourth square to them), and a centre on the middle of its
-/// diagonal - drawn as two construction diagonals for a rectangle drawn from its centre. It stays a rectangle until it
-/// is broken - a side deleted - and then the record, the centre and the diagonals go and four plain lines are left.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// A SKETCH RECTANGLE KEPT AS ONE SHAPE, as it is read off its figure (`FigureShape::Rectangle`): four sides each held at
+/// its turn (`Constraint::Orientation`: the first and the third at the turn of the rectangle, the second and the fourth
+/// square to them), and a centre on the middle of its diagonal - drawn as two construction diagonals for a rectangle
+/// drawn from its centre. It stays a rectangle until it is broken - a side deleted - and then the record, the centre and
+/// the diagonals go and four plain lines are left.
+#[derive(Clone, Debug, PartialEq)]
 pub struct SketchRect {
     pub id: Id,
     /// The corners in order round the rectangle.
@@ -531,12 +557,106 @@ pub struct SketchRect {
     pub anchor: RectAnchor,
 }
 
+/// A FIGURE OF A SKETCH KEPT AS ONE SHAPE: a rectangle, a regular polygon or a slot - one record for every figure. Its
+/// curves, and the constraints it holds itself by - not listed, not badged: they are the figure's. A polygon and a slot
+/// keep theirs in `own`; a rectangle holds itself by its turn or by its shape, read off its corners (`SketchRect::holds`).
+/// It stays a figure until one of its curves is deleted; then the record and what holds it go, and plain curves are left.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SketchFigure {
+    pub id: Id,
+    pub shape: FigureShape,
+    pub curves: Vec<Id>,
+    pub own: Vec<Constraint>,
+}
+
+/// WHAT A FIGURE IS.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FigureShape {
+    /// a rectangle: its four sides (the curves of the figure, corner k to corner k + 1), and the rest of its frame
+    Rectangle(RectFrame),
+    /// a regular polygon: its sides and its construction circle, each corner on the circle and the sides equal
+    Polygon,
+    /// a slot: two straight sides and two end arcs of one radius, the sides touching both ends
+    Slot,
+}
+
+/// THE FRAME OF A RECTANGLE besides its sides: its corners in order round it, its centre, the construction diagonals of
+/// a rectangle drawn from its centre (corner 0 to 2, corner 1 to 3), and what a width or a height changed grows it from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RectFrame {
+    pub corners: [Id; 4],
+    pub centre: Id,
+    pub diagonals: Option<[Id; 2]>,
+    pub anchor: RectAnchor,
+}
+
+impl SketchFigure {
+    /// Is `c` one of the constraints the figure holds itself by - of its kind, on the same points in the same order?
+    pub fn holds(&self, c: &Constraint) -> bool {
+        match self.rect() {
+            Some(r) => r.holds(c),
+            None => self.own.iter().any(|o| std::mem::discriminant(o) == std::mem::discriminant(c) && constraint_point_ids(o) == constraint_point_ids(c)),
+        }
+    }
+
+    /// The rectangle the figure is, read as one; `None` for a polygon or a slot.
+    pub fn rect(&self) -> Option<SketchRect> {
+        let FigureShape::Rectangle(f) = self.shape else { return None };
+        let sides: [Id; 4] = self.curves.get(..4)?.try_into().ok()?;
+        Some(SketchRect { id: self.id, corners: f.corners, sides, centre: f.centre, diagonals: f.diagonals, anchor: f.anchor })
+    }
+}
+
+impl SketchRect {
+    /// The record of the rectangle, as a figure of its sketch.
+    pub fn figure(&self) -> SketchFigure {
+        let frame = RectFrame { corners: self.corners, centre: self.centre, diagonals: self.diagonals, anchor: self.anchor };
+        SketchFigure { id: self.id, shape: FigureShape::Rectangle(frame), curves: self.sides.to_vec(), own: Vec::new() }
+    }
+}
+
+impl Sketch {
+    /// THE RECTANGLES OF THE SKETCH, each read off its figure.
+    pub fn rects(&self) -> Vec<SketchRect> {
+        self.figures.iter().filter_map(SketchFigure::rect).collect()
+    }
+
+    /// The figures of the sketch other than rectangles: its polygons and slots.
+    pub fn shapes_not_rects(&self) -> impl Iterator<Item = &SketchFigure> {
+        self.figures.iter().filter(|f| f.rect().is_none())
+    }
+
+    /// Lay the record of rectangle `r` among the figures.
+    pub fn add_rect(&mut self, r: &SketchRect) {
+        self.figures.push(r.figure());
+    }
+
+    /// Take away the records of the rectangles `gone` picks.
+    pub fn drop_rects(&mut self, gone: impl Fn(&SketchRect) -> bool) {
+        self.figures.retain(|f| f.rect().is_none_or(|r| !gone(&r)));
+    }
+}
+
 /// THE WIDTH AND THE HEIGHT DIMENSIONS OF A RECTANGLE, as indices of its sketch's constraints: the first along its
 /// first side, the second along the side after it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RectDims {
     pub width: usize,
     pub height: usize,
+}
+
+/// THE SIZE A RECTANGLE IS GIVEN: its width along its first side, its height along the side after it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RectSize {
+    pub width: f64,
+    pub height: f64,
+}
+
+/// A SIZE OF A SLOT: its length between the centres of its ends, or its width across an end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SlotSize {
+    Length,
+    Width,
 }
 
 /// What stays put when the width or the height of a rectangle changes.
@@ -599,19 +719,89 @@ pub struct SketchProjection {
     pub edges: Vec<u32>,
 }
 
-/// A sketch spline: a smooth Catmull-Rom curve through control points.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Spline {
-    pub points: Vec<Id>,
-    /// Explicit tangent vector at each node; `None` means the automatic Catmull-Rom tangent, which follows
-    /// the nodes. Dragging a handle makes the tangent explicit, pinning the shape at that node.
-    #[serde(default)]
-    pub tangents: Vec<Option<[f64; 2]>>,
-    pub closed: bool,
-    /// A construction spline: drawn dashed and never reaching a profile or a toolpath.
-    #[serde(default)]
-    pub construction: bool,
+/// THE SIDE OF ITS SOURCE AN OFFSET LIES ON, looking along the source as `Curve` runs it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OffsetSide {
+    Left,
+    Right,
 }
+
+/// A CURVE OFFSET FROM A CURVE OF THE SKETCH AND HELD TO IT: an ellipse, an arc of one or a spline, whose offset is none
+/// of them - its copies are splines through points of the true offset (`Curve::offset`), laid again from the source
+/// after every solve at the distance its dimension holds: a `CurveDistance` from the source to the first copy, edited as
+/// any dimension. The copies are driven, as a projection is: their points are given to the solver, not unknowns.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SketchOffset {
+    pub id: Id,
+    /// the curve offset
+    pub source: Id,
+    pub side: OffsetSide,
+    /// the splines the offset is laid as: one, or more where loops of the true offset are cut away
+    pub copies: Vec<Id>,
+    /// where the copy meets the copy of a line of the same chain that crosses it: cut there, the end of the line on it
+    #[serde(default)]
+    pub cuts: Vec<OffsetCut>,
+}
+
+/// AN END OF AN OFFSET COPY CUT WHERE THE COPY OF A LINE OF THE CHAIN CROSSES IT: the end of the copy, the line, and the
+/// end of the line held at the crossing.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct OffsetCut {
+    pub end: CopyEnd,
+    pub line: Id,
+    pub point: Id,
+}
+
+/// WHICH END OF AN OFFSET COPY: of its first piece, or of its last.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CopyEnd {
+    Start,
+    Finish,
+}
+
+/// AN ARC OF AN ELLIPSE TO BE LAID: the centre, the semi-axes (major along X of `radii`, minor along Y) turned by `rot`
+/// radians, the eccentric angles of its ends and the way it goes from the first to the second.
+#[derive(Clone, Copy, Debug)]
+pub struct EllipseArcSpec {
+    pub centre: Point2,
+    pub radii: Point2,
+    pub rot: f64,
+    pub angles: [f64; 2],
+    pub winding: crate::feature::Winding,
+}
+
+/// A SPLINE AS IT STANDS: its nodes where they are, its handles and its ends.
+pub(crate) struct SplineNow {
+    pub at: Vec<Point2>,
+    pub handles: Vec<Handle>,
+    pub ends: crate::feature::Ends,
+}
+
+/// A HANDLE OF A SPLINE ON SCREEN: the node, and the end of the tangent drawn from it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SplineHandle {
+    pub node: Point2,
+    pub end: Point2,
+}
+
+/// THE FORMULA FIELD OF A DIMENSION, read or changed as `$c` is borrowed: the one list of the kinds of dimension that
+/// carry a formula, for `dim_expr`, `expr` and `expr_mut` alike.
+macro_rules! dimension_formula {
+    ($c:expr) => {
+        match $c {
+            Constraint::Distance { expr, .. }
+            | Constraint::Angle { expr, .. }
+            | Constraint::AngleLines { expr, .. }
+            | Constraint::Diameter { expr, .. }
+            | Constraint::DistancePL { expr, .. }
+            | Constraint::EdgeDistance { expr, .. }
+            | Constraint::CurveDistance { expr, .. }
+            | Constraint::ArcLength { expr, .. } => Some(expr),
+            _ => None,
+        }
+    };
+}
+pub(crate) use dimension_formula;
 
 /// A sketch constraint or dimension, expressed through point ids. Solved by the sketch solver.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -703,6 +893,24 @@ pub enum Constraint {
     /// centre). It also implicitly keeps the endpoints of an arc on its circle, which is what makes an arc
     /// a real entity.
     PointOnCircle { p: Id, c: Id },
+    /// Point `p` lies on the ellipse of centre `c`, major end `ma` and minor end `mi`. It keeps the ends of an arc of an
+    /// ellipse on its ellipse, as `PointOnCircle` keeps those of an arc of a circle.
+    PointOnEllipse { p: Id, c: Id, ma: Id, mi: Id },
+    /// Point `p` lies on curve `on`, any kind: a spline above all, which has no equation of its own a point satisfies.
+    PointOnCurve { p: Id, on: CurveRef },
+    /// Curves `one` and `other` touch: they meet at a place where they run the same way, on one side of each other.
+    /// `near` is where they touch, a place along each, as the last solve left it: the next takes the place of touching
+    /// nearest it, where two curves could touch at more places than one.
+    TangentCurves {
+        one: CurveRef,
+        other: CurveRef,
+        #[serde(default)]
+        near: Option<[f64; 2]>,
+        /// the end of one of them the two touch at, where they touch at an end: then the ways of the two there are held
+        /// alike, the end held on the other curve by a constraint of its own
+        #[serde(default)]
+        end: Option<Id>,
+    },
     /// Concentric: centres `c1` and `c2` coincide. A distinct kind with its own glyph, not to be confused
     /// with coincidence of ordinary points.
     Concentric { c1: Id, c2: Id },
@@ -782,6 +990,22 @@ pub enum Constraint {
         #[serde(default)]
         at: Option<f64>,
     },
+    /// THE LEAST DISTANCE between `from` - a point or a curve - and curve `to`, of any kind: to a line, to the whole
+    /// straight it lies on; between two curves, where they run the same way.
+    CurveDistance {
+        from: CurveRef,
+        to: CurveRef,
+        d: f64,
+        #[serde(default)]
+        off: f64,
+        #[serde(default)]
+        expr: String,
+        #[serde(default)]
+        driven: bool,
+        /// Where the text stands along the dimension line; see `Distance::at`.
+        #[serde(default)]
+        at: Option<f64>,
+    },
     /// Arc length dimension: the arc (centre `c`, endpoints `a` and `b`, direction `ccw`) has length `len`,
     /// equal to R * theta for radius R and swept angle theta. A driving one holds the length, a reference
     /// one measures it.
@@ -817,6 +1041,9 @@ impl Constraint {
             CircleTangent { c1, c2, .. } | EqualRadius { c1, c2 } | Concentric { c1, c2 } | EdgeDistance { c1, c2, .. } => vec![c1, c2],
             Symmetric { a, b, la, lb } => vec![a, b, la, lb],
             PointOnCircle { p, c } => vec![p, c],
+            PointOnEllipse { p, c, ma, mi } => vec![p, c, ma, mi],
+            PointOnCurve { p, ref on } => std::iter::once(p).chain(on.points()).collect(),
+            TangentCurves { ref one, ref other, .. } | CurveDistance { from: ref one, to: ref other, .. } => one.points().into_iter().chain(other.points()).collect(),
             Diameter { c, .. } => vec![c],
         }
     }
@@ -826,7 +1053,9 @@ impl Constraint {
     pub fn label_place(&self) -> Option<[f64; 3]> {
         match *self {
             Constraint::Distance { off, axis, at, .. } => Some([off, at.unwrap_or(f64::NAN), axis as f64]),
-            Constraint::DistancePL { off, at, .. } | Constraint::Diameter { off, at, .. } | Constraint::EdgeDistance { off, at, .. } => Some([off, at.unwrap_or(f64::NAN), 0.0]),
+            Constraint::DistancePL { off, at, .. } | Constraint::Diameter { off, at, .. } | Constraint::EdgeDistance { off, at, .. } | Constraint::CurveDistance { off, at, .. } => {
+                Some([off, at.unwrap_or(f64::NAN), 0.0])
+            }
             Constraint::ArcLength { off, .. } => Some([off, f64::NAN, 0.0]),
             Constraint::Angle { off, at, .. } | Constraint::AngleLines { off, at, .. } => Some([off, at.unwrap_or(f64::NAN), 0.0]),
             _ => None,
@@ -836,7 +1065,7 @@ impl Constraint {
     /// Numeric value of a dimensional constraint (for fingerprints and comparisons); `None` for the rest.
     pub fn dim_value(&self) -> Option<f64> {
         match *self {
-            Constraint::Distance { d, .. } | Constraint::DistancePL { d, .. } | Constraint::Diameter { d, .. } | Constraint::EdgeDistance { d, .. } => Some(d),
+            Constraint::Distance { d, .. } | Constraint::DistancePL { d, .. } | Constraint::Diameter { d, .. } | Constraint::EdgeDistance { d, .. } | Constraint::CurveDistance { d, .. } => Some(d),
             Constraint::Angle { deg, .. } | Constraint::AngleLines { deg, .. } => Some(deg),
             Constraint::ArcLength { len, .. } => Some(len),
             _ => None,
@@ -846,16 +1075,7 @@ impl Constraint {
     /// The formula a dimension is set by, as typed (empty when a number was typed); `None` for a constraint that is
     /// not a dimension.
     pub fn dim_expr(&self) -> Option<&str> {
-        match self {
-            Constraint::Distance { expr, .. }
-            | Constraint::Angle { expr, .. }
-            | Constraint::AngleLines { expr, .. }
-            | Constraint::Diameter { expr, .. }
-            | Constraint::DistancePL { expr, .. }
-            | Constraint::EdgeDistance { expr, .. }
-            | Constraint::ArcLength { expr, .. } => Some(expr),
-            _ => None,
-        }
+        dimension_formula!(self).map(String::as_str)
     }
 
     /// A reference (driven) dimension or angle: it does not constrain the geometry, only displays a value.
@@ -869,6 +1089,7 @@ impl Constraint {
                 | Constraint::AngleLines { driven: true, .. }
                 | Constraint::ArcLength { driven: true, .. }
                 | Constraint::EdgeDistance { driven: true, .. }
+                | Constraint::CurveDistance { driven: true, .. }
         )
     }
 }

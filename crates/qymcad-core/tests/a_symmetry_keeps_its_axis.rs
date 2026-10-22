@@ -3,7 +3,7 @@
 //! keeps its 40 mm. Reported behaviour: the symmetry was refused as shrinking a line to a point - the solve had brought
 //! the axis down to a point at (0, 0), where the residuals, times the length of the axis, were nought.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{Constraint, EntityKind, Id, Project};
+use qymcad_core::model::{Constraint, Id, Project};
 
 #[test]
 fn a_symmetry_about_a_line_held_on_an_axis_mirrors_the_pair_and_keeps_the_line() {
@@ -14,8 +14,8 @@ fn a_symmetry_about_a_line_held_on_an_axis_mirrors_the_pair_and_keeps_the_line()
     let si = p.sketch_index(sid).expect("the sketch is there");
     let pair = p.add_line_entity(si, 10.0, 5.0, 30.0, 25.0, Purpose::Real);
     let axis = p.add_line_entity(si, 0.0, -20.0, 0.0, 20.0, Purpose::Real);
-    let ends = |p: &Project, id: Id| match p.sketches[si].entities.iter().find(|e| e.id == id).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) => (a, b),
+    let ends = |p: &Project, id: Id| match p.sketches[si].entities.iter().find(|e| e.id == id).and_then(|e| e.kind.as_line()) {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         other => panic!("the line {id} is {other:?}"),
     };
     let ((a, b), (la, lb)) = (ends(&p, pair), ends(&p, axis));

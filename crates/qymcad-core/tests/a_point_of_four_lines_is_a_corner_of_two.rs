@@ -8,7 +8,7 @@
 //! And the other half of the same question: two lines lying along ONE straight line share a point and no angle, so
 //! they make no corner either - the search for one goes on rather than stopping on a pair that has nothing to round.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{ChamferLegs, EntityKind, Project};
+use qymcad_core::model::{ChamferLegs, Project};
 
 /// Two squares meeting in one point at (20, 20) - the first from 0 to 20, the second from 20 to 40. Returns the
 /// project, the sketch and the point they share.
@@ -46,7 +46,7 @@ fn all_points(p: &Project, si: usize) -> Vec<(f64, f64)> {
 
 /// How many arcs the sketch holds.
 fn arcs(p: &Project, si: usize) -> usize {
-    p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count()
+    p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count()
 }
 
 /// The edge at `pid` running out towards `to`.
@@ -54,8 +54,8 @@ fn edge_towards(p: &Project, si: usize, pid: u64, to: (f64, f64)) -> u64 {
     p.vertex_edges(si, pid)
         .into_iter()
         .find(|&e| {
-            let ends = match p.sketches[si].entities.iter().find(|x| x.id == e).map(|x| x.kind) {
-                Some(EntityKind::Line { a, b }) => Some((a, b)),
+            let ends = match p.sketches[si].entities.iter().find(|x| x.id == e).and_then(|x| x.kind.as_line()) {
+                Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
                 _ => None,
             };
             let Some((a, b)) = ends else { return false };

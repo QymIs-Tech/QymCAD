@@ -1,7 +1,7 @@
 //! THE KEYS OF THE STATUS CACHE ARE QUICK, AND TELL A SHAPE FROM A PLACE: the keys a frame takes several times over a
 //! sketch of 70 000 lines cost a little of a frame, a point moved changes where the sketch stands and not its shape, a
 //! constraint laid changes its shape.
-use qymcad_core::model::{Constraint, EntityKind, Project, SketchEntity, SketchPoint};
+use qymcad_core::model::{Constraint, Project, SketchEntity, SketchPoint};
 use std::time::Duration;
 
 /// A sketch of `n` separate lines, laid straight into its records.
@@ -17,7 +17,7 @@ fn lines(n: usize) -> Project {
         let (x, y) = ((k % 300) as f64 * 20.0, (k / 300) as f64 * 20.0);
         s.points.push(SketchPoint { id: a, x, y });
         s.points.push(SketchPoint { id: b, x: x + 10.0, y });
-        s.entities.push(SketchEntity { id: e, kind: EntityKind::Line { a, b }, construction: false });
+        s.entities.push(SketchEntity { id: e, kind: qymcad_core::model::LineParts { a, b }.into(), construction: false });
     }
     p
 }

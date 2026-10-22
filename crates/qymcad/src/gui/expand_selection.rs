@@ -163,8 +163,8 @@ impl super::App {
         Some((Picked::Face(f), n))
     }
 
-    /// WHAT THE ACTIVE COMMAND WILL ACCEPT: (are edges wanted?, will a set be accepted?). `None` means
-    /// there is NOTHING to open the menu on.
+    /// WHAT THE ACTIVE COMMAND WILL ACCEPT of a description, as the tool says it. `None` means there is NOTHING to
+    /// open the menu on.
     ///
     /// A description is a way of TELLING A COMMAND what to take. Outside a command there is nowhere to
     /// record it, and the menu becomes a button leading nowhere — it was reported that it could be
@@ -174,16 +174,11 @@ impl super::App {
     ///
     /// The count is part of the answer as well. Push-face and thicken take EXACTLY ONE face: offering
     /// them "all parallel" means offering what the command cannot accept.
-    pub(crate) fn expansion_accepts(&self) -> Option<(bool, bool)> {
-        if !matches!(self.workbench, super::Workbench::Part) || !self.tools.armed.commanding() {
+    pub(crate) fn expansion_accepts(&self) -> Option<qymcad_ui_state::TakesDescribed> {
+        if !matches!(self.workbench, super::Workbench::Part) {
             return None;
         }
-        match self.tools.armed.cmd_kind() {
-            4 | 5 => Some((true, true)),        // fillet, chamfer — a set of EDGES
-            6 | 23 | 26 => Some((false, true)), // shell, draft, remove face — a set of FACES
-            25 | 28 => Some((false, false)),    // push face, thicken — EXACTLY ONE face
-            _ => None,                          // the rest take no descriptions at all
-        }
+        self.tools.armed.part_tool()?.takes_described()
     }
 
     /// THE MENU ITEMS FOR THE CURRENT SELECTION. Empty means there is no menu to show.
@@ -197,7 +192,7 @@ impl super::App {
     /// not, and what is recorded right now is visible nowhere. A menu must show state, not only offer
     /// actions.
     pub(crate) fn expansion_menu_items(&self) -> Vec<(&'static str, Query)> {
-        let Some((want_edges, want_many)) = self.expansion_accepts() else { return Vec::new() };
+        let Some(takes) = self.expansion_accepts() else { return Vec::new() };
         let Some((picked, normal)) = self.expansion_target() else { return Vec::new() };
         let (on_face, on_edge) = match picked {
             Picked::Face(_) => (true, false),
@@ -206,8 +201,8 @@ impl super::App {
         EXPANSIONS
             .iter()
             .filter(|e| (e.on_face && on_face) || (e.on_edge && on_edge))
-            .filter(|e| e.gives_edges == want_edges)
-            .filter(|e| want_many || !e.gives_many)
+            .filter(|e| e.gives_edges == takes.edges())
+            .filter(|e| takes.many() || !e.gives_many)
             .filter_map(|e| self.expansion_query(e, picked, normal).map(|q| (e.key, q)))
             .collect()
     }

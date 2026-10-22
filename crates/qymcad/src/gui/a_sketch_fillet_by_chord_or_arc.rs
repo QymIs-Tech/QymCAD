@@ -6,7 +6,6 @@ mod tests {
     use super::super::hand::Hand;
     use super::super::{App, Sel};
     use qymcad_core::feature::SketchPlane;
-    use qymcad_core::model::EntityKind;
 
     /// The radius, the chord and the arc length of the fillet arc, `None` while there is none.
     struct Measured {
@@ -18,8 +17,8 @@ mod tests {
     fn measure(app: &App, si: usize) -> Option<Measured> {
         let s = &app.project.sketches[si];
         let at = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-        let (c, a, b) = s.entities.iter().find_map(|e| match e.kind {
-            EntityKind::Arc { center, a, b, .. } => Some((at(center)?, at(a)?, at(b)?)),
+        let (c, a, b) = s.entities.iter().find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { center, a, b, .. }) => Some((at(center)?, at(a)?, at(b)?)),
             _ => None,
         })?;
         let radius = (a.0 - c.0).hypot(a.1 - c.1);
@@ -32,9 +31,9 @@ mod tests {
     fn fillet_in_hand(app: &mut App, way: &str) -> usize {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(app).sk_tool(1).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
+        Hand::new(app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
         let mut hand = Hand::new(app);
-        hand.sk_tool(0);
+        hand.sk_select();
         assert!(hand.press_hint(&qymcad_i18n::tr("tb-fillet-sketch-hint")), "no sketch fillet button");
         // the mode, the leftmost of the words: the caption of the field after the modes says the same word, and a caption
         // in a wrapping row is laid out from the start of the row - its middle stood on the next mode, Chord

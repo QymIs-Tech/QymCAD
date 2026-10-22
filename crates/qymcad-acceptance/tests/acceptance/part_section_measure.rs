@@ -33,7 +33,7 @@ probe! {
         let mut now = s.document();
         now.section = before.section;
         assert!(now == before, "looking inside changed the document");
-        let off = s.word("sec-off");
+        let off = s.word("cmd-close-esc");
         s.press_word_near(&off, qymcad::pos2(640.0, 24.0));
         let back = s.snapshot();
         assert!(golden::same(&whole, &back), "the section was turned off and the window did not come back as it was: {:?} pixels differ; the status line says {:?}", golden::difference(&whole, &back), s.status());

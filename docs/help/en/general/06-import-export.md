@@ -87,6 +87,7 @@ visible bodies of that component.
 - An imported body lives in the timeline as its own feature: you can move, cut and drill it, but you
   cannot “go back to its sketch” — there never was one.
 - A sketch goes out as a flat drawing: the right button on the sketch in the tree -> **Export to SVG…**
-  or **Export to DXF…**.
+  or **Export to DXF…**. An ellipse and a spline go out as the curves they are — as ELLIPSE and SPLINE in DXF, as
+  elliptical arcs and Bezier curves in SVG — and come back from DXF as an ellipse and a spline.
 - To simplify an import there is the **Remove face** command: it takes away a hole or a pad that
   should not be in someone else's model.

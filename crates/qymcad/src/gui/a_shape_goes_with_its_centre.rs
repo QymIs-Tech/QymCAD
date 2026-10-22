@@ -9,13 +9,13 @@ mod tests {
     use super::super::hand::Hand;
     use super::super::{App, Sel};
     use qymcad_core::feature::SketchPlane;
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
 
     /// The drag every point of the shape is to follow.
     const BY: (f64, f64) = (12.0, 6.0);
 
     /// A sketch with the shape of the tool `tool` drawn by `clicks`, in the mode of the word `mode`.
-    fn drawn(tool: u8, mode: Option<&str>, clicks: &[(f64, f64)]) -> (App, usize) {
+    fn drawn(tool: qymcad_ui_state::SketchShape, mode: Option<&str>, clicks: &[(f64, f64)]) -> (App, usize) {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
@@ -42,7 +42,7 @@ mod tests {
     fn left_behind(app: &mut App, si: usize, centre: u64) -> Vec<String> {
         let before = points(app, si);
         let at = before.iter().find(|q| q.0 == centre).map(|q| (q.1, q.2)).expect("the centre is a point of the sketch");
-        Hand::new(app).sk_tool(0).drag2d(at, (at.0 + BY.0, at.1 + BY.1));
+        Hand::new(app).sk_select().drag2d(at, (at.0 + BY.0, at.1 + BY.1));
         let after = points(app, si);
         before
             .iter()
@@ -55,15 +55,7 @@ mod tests {
 
     /// The centre of the first arc of the sketch, or of its ellipse.
     fn centre_of(app: &App, si: usize) -> u64 {
-        app.project.sketches[si]
-            .entities
-            .iter()
-            .find_map(|e| match e.kind {
-                EntityKind::Arc { center, .. } => Some(center),
-                EntityKind::Ellipse { c, .. } => Some(c),
-                _ => None,
-            })
-            .expect("a shape with a centre")
+        app.project.sketches[si].entities.iter().find_map(|e| e.kind.as_arc().map(|a| a.center).or_else(|| e.kind.as_ellipse().map(|el| el.c))).expect("a shape with a centre")
     }
 
     #[test]
@@ -72,9 +64,9 @@ mod tests {
         for (what, tool, mode, clicks) in [
             // away from the axes and its centre on a node of the grid: a drag led to within a few pixels of an axis or of
             // a node snaps onto it, and the drag would not be (12, 6); a point put on an axis is held there
-            ("an arc by three points", 4, Some("opt-rect-3pt"), &[(10.0, 20.0), (30.0, 20.0), (20.0, 30.0)][..]),
-            ("a slot", 7, None, &[(10.0, 10.0), (40.0, 10.0), (40.0, 15.0)][..]),
-            ("an ellipse", 8, None, &[(10.0, 10.0), (30.0, 10.0), (10.0, 20.0)][..]),
+            ("an arc by three points", qymcad_ui_state::SketchShape::Arc, Some("opt-rect-3pt"), &[(10.0, 20.0), (30.0, 20.0), (20.0, 30.0)][..]),
+            ("a slot", qymcad_ui_state::SketchShape::Slot, None, &[(10.0, 10.0), (40.0, 10.0), (40.0, 15.0)][..]),
+            ("an ellipse", qymcad_ui_state::SketchShape::Ellipse, None, &[(10.0, 10.0), (30.0, 10.0), (10.0, 20.0)][..]),
         ] {
             let (mut app, si) = drawn(tool, mode, clicks);
             let centre = centre_of(&app, si);
@@ -88,16 +80,16 @@ mod tests {
 
     #[test]
     fn the_centre_of_a_fillet_is_not_taken() {
-        let (mut app, si) = drawn(1, None, &[(0.0, 30.0), (0.0, 0.0), (40.0, 0.0)]);
+        let (mut app, si) = drawn(qymcad_ui_state::SketchShape::Line, None, &[(0.0, 30.0), (0.0, 0.0), (40.0, 0.0)]);
         let s = &app.project.sketches[si];
-        let lines: Vec<(u8, u64)> = s.entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).map(|e| (1u8, e.id)).collect();
+        let lines: Vec<qymcad_ui_state::SketchItem> = s.entities.iter().filter(|e| e.kind.as_line().is_some()).map(|e| qymcad_ui_state::SketchItem::curve(e.id)).collect();
         assert!(Hand::new(&mut app).sk_corner_set("tb-fillet-sketch-hint", &lines, 5.0), "the corner rounded");
         let s = &app.project.sketches[si];
         assert!(s.constraints.iter().any(|c| matches!(c, Constraint::Tangent { .. })), "setup: the fillet touches its lines");
         let centre = centre_of(&app, si);
         let before = points(&app, si);
         let at = before.iter().find(|q| q.0 == centre).map(|q| (q.1, q.2)).expect("the centre of the fillet");
-        Hand::new(&mut app).sk_tool(0).drag2d(at, (at.0 + BY.0, at.1 + BY.1));
+        Hand::new(&mut app).sk_select().drag2d(at, (at.0 + BY.0, at.1 + BY.1));
         let after = points(&app, si);
         assert_eq!(before.len(), after.len());
         for (b, a) in before.iter().zip(&after) {

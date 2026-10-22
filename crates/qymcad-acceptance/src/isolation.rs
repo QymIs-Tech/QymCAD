@@ -106,6 +106,12 @@ fn in_a_process_of_its_own(module: &str, name: &str, budget: Duration, memory: u
     }
 }
 
+/// A VARIABLE OF THE ENVIRONMENT a check run apart is given.
+pub struct Setting<'a> {
+    pub name: &'a str,
+    pub value: String,
+}
+
 /// RUN THE CHECK AT `path` of this test binary in a process of its own, within `budget` and `memory` megabytes, with
 /// `env` set for it; answer what went wrong, in words, when anything did. For a check that runs other checks of its
 /// own - a chain shrunk by playing its shorter forms, each apart, so that one which runs the memory away or never
@@ -113,7 +119,7 @@ fn in_a_process_of_its_own(module: &str, name: &str, budget: Duration, memory: u
 ///
 /// # Errors
 /// The words of the failure: past the time, past the memory, failed with its own words, or ran no check at all.
-pub fn apart(path: &str, budget: Duration, memory: u64, env: &[(&str, String)]) -> Result<(), String> {
+pub fn apart(path: &str, budget: Duration, memory: u64, env: &[Setting]) -> Result<(), String> {
     static RUNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let exe = std::env::current_exe().expect("the test binary knows where it is");
     let out_dir = std::env::temp_dir();
@@ -122,8 +128,8 @@ pub fn apart(path: &str, budget: Duration, memory: u64, env: &[(&str, String)]) 
     let file = std::fs::File::create(&log).expect("the child's log opens");
     let mut command = std::process::Command::new(exe);
     command.args(["--exact", path, "--test-threads=1", "--nocapture"]).env(CHILD, "1");
-    for (k, v) in env {
-        command.env(k, v);
+    for v in env {
+        command.env(v.name, &v.value);
     }
     let mut child = command.stdout(file.try_clone().expect("the log is shared by both streams")).stderr(file).spawn().expect("the check's own process starts");
     let started = Instant::now();

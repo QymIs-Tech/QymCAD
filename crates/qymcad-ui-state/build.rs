@@ -25,9 +25,6 @@ fn variant_to_relative_path(var: &str) -> String {
     if var == "SketchPickPlane" {
         return "datum/sketch_pick_plane".to_string();
     }
-    if var == "SketchCircle3Pt" {
-        return "sketch/circle_3pt".to_string();
-    }
     for cat in &["Sketch", "Constraint", "Datum", "Part", "Assembly"] {
         if let Some(rest) = var.strip_prefix(cat) {
             let mut s = String::new();

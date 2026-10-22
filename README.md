@@ -41,9 +41,10 @@ A development build. The program works and is fit for real parts, but it is upda
 - **The CNC (CAM) module does not work.** The settings do carry a “Machining” tab (CAM) checkbox, but
   what is behind it is groundwork: part of the code came from an earlier version and is not
   maintained. The module returns for the stable alpha.
-- **The macOS build carries no Apple signature.** macOS marks a downloaded application as quarantined
-  and refuses to open it, saying it is damaged - it is not. The mark is cleared once, with one command,
-  written out step by step in the notes inside the archive.
+- **The macOS build is not signed by Apple.** It is signed and whole, but with a certificate Apple did not
+  issue, so on the first launch macOS says it cannot verify the app and refuses to open it. It is allowed
+  once, with the "Open Anyway" button in System Settings -> Privacy & Security; the steps are in the notes
+  beside the app.
 
 ## Features
 
@@ -81,10 +82,10 @@ chmod +x qymcad-*.AppImage
 ./qymcad-*.AppImage
 ```
 
-**macOS 12+** — `qymcad-*-macos-arm64.zip` for Apple Silicon (M1 and later), `qymcad-*-macos-x86_64.zip`
-for Intel. Unpack it and read `README.txt` lying beside
-the application: the build carries no Apple signature, so the quarantine mark has to be cleared once,
-before the first launch. It takes one command and is written out step by step.
+**macOS 12+** — for Apple Silicon (M1 and later) `qymcad-*-macos-arm64.dmg`, for Intel
+`qymcad-*-macos-x86_64.dmg`. Open the disk image and drag QymCAD onto Applications. The first launch is refused
+once, because the build is not signed by Apple: press "Open Anyway" in System Settings -> Privacy & Security.
+The `README` folder beside the app walks through it step by step, in every language of the program.
 
 ## Help
 
@@ -106,6 +107,13 @@ The script brings a document forward from any earlier version in one pass and is
 Linux — `just pkg-linux`, Docker required. Windows — MSVC with the kernel built from source. macOS — the
 kernel from source as well, then `packaging/macos/bundle.sh`. The details are in
 [`packaging/README.md`](packaging/README.md).
+
+The kernel is OCCT 7.9.3, built from source with the `cmake` line given in
+[`packaging/README.md`](packaging/README.md#the-kernel). A package of OCCT from a system may differ in three ways that
+matter: another version (the program is written and tested against 7.9.3; another one gets a warning at the build);
+`BUILD_RELEASE_DISABLE_EXCEPTIONS` left at `ON` (OCCT's own checks are compiled out, and a degenerate input is no longer
+refused); signals not converted (`OCC_CONVERT_SIGNALS`; a fault inside OCCT then closes the program instead of being
+refused).
 
 ## Contributing
 

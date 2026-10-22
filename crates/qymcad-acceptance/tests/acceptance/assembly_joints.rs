@@ -201,8 +201,9 @@ probe! {
     /// THE ANCHOR OF A MATE IS SWAPPED for another place, and the mate still holds.
     fn the_anchor_of_a_mate_is_swapped() {
         let mut s = a_mate_taken();
-        let swap = s.word("jt-swap-anchor");
-        s.press_word_near(&swap, qymcad::pos2(1100.0, 600.0));
+        // anchor A is picked anew by its switch on the bar of the mate, which names where it stands now
+        let side_a = s.words().into_iter().find(|w| w.starts_with("A: ")).unwrap_or_else(|| panic!("the bar of the mate names no anchor A; on screen: {:?}", s.words()));
+        s.press_word_near(&side_a, qymcad::pos2(640.0, 0.0));
         let a = s.vertex_at([40.0, 0.0, 10.0]);
         s.click(a);
         let joint = s.document().joints.last().cloned().expect("the mate");

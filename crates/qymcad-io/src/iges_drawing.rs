@@ -5,18 +5,28 @@
 //! kernel's reader passes over the network subfigures and arrays such files are built from. Measured on a
 //! reported file (a chip library cell): the kernel gave one 10 x 5 rectangle out of a cell of fourteen polylines
 //! and eight contacts. So the drawing side of IGES is read here, the way DXF is.
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
+use qymcad_core::geom::bspline::{Approximated, BSpline};
 use qymcad_core::geom::{Point2, ProfEdge};
 
 /// What a drawing gave: the curves, and what was passed over.
 #[derive(Debug, Default)]
 pub struct IgesDrawing {
     pub curves: Vec<ProfEdge>,
-    /// Entities of kinds that are not drawn (a note, a dimension, a surface), as (IGES type, how many).
-    pub skipped: Vec<(u32, usize)>,
+    /// Entities of kinds that are not drawn (a note, a dimension, a surface), by IGES type.
+    pub skipped: Vec<IgesCount>,
+    /// Entities left out because a number of theirs is not a finite number, by IGES type.
+    pub invalid: Vec<IgesCount>,
     /// The file places nothing and only defines subfigures - a library - so the definitions are what is shown.
     pub definitions_only: bool,
+}
+
+/// How many entities of one IGES type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IgesCount {
+    pub typ: u32,
+    pub count: usize,
 }
 
 /// Read the curves of an IGES drawing. The coordinates come out in millimetres whatever unit the file names.
@@ -38,9 +48,32 @@ struct Entity {
     /// The directory entry of a transformation (type 124), or 0.
     matrix: usize,
     blanked: bool,
-    independent: bool,
+    subordinate: Subordinate,
     annotation: bool,
     params: Vec<String>,
+}
+
+/// The subordinate entity switch of a directory entry, digits 3-4 of its status (IGES 5.3, 2.2.4.4.9.2).
+enum Subordinate {
+    /// 00: referred to by nothing, drawn on its own
+    Independent,
+    /// 01: exists only through the entity that refers to it - a member of a subfigure, a piece of a composite curve
+    Physically,
+    /// 02: exists on its own and is gathered by a grouping entity such as a 402, whose matrix does not move it
+    Logically,
+    /// 03: both
+    Both,
+}
+
+impl Subordinate {
+    fn of(digits: &str) -> Subordinate {
+        match digits {
+            "01" => Subordinate::Physically,
+            "02" => Subordinate::Logically,
+            "03" => Subordinate::Both,
+            _ => Subordinate::Independent,
+        }
+    }
 }
 
 struct File {
@@ -72,8 +105,10 @@ fn apply(m: &M, p: [f64; 3]) -> [f64; 3] {
     [0, 1, 2].map(|i| m[i * 4] * p[0] + m[i * 4 + 1] * p[1] + m[i * 4 + 2] * p[2] + m[i * 4 + 3])
 }
 
-fn place(x: f64, y: f64, z: f64, s: [f64; 3]) -> M {
-    [s[0], 0.0, 0.0, x, 0.0, s[1], 0.0, y, 0.0, 0.0, s[2], z]
+/// Where a subfigure instance (408, 420, or one position of a 412) puts what it places: its X, Y, Z and its scales.
+struct Instance {
+    at: [f64; 3],
+    scale: [f64; 3],
 }
 
 /// Split a parameter record into fields. A Hollerith string (`5HPADIN`) is one field whatever it holds, since
@@ -197,7 +232,7 @@ impl File {
                     form: int(&field(b, 4)) as u32,
                     matrix: int(&field(a, 6)).max(0) as usize,
                     blanked: &status[0..2] == "01",
-                    independent: &status[2..4] == "00",
+                    subordinate: Subordinate::of(&status[2..4]),
                     annotation: &status[4..6] == "01",
                     params,
                 },
@@ -222,10 +257,29 @@ impl File {
         mul(&self.own_matrix(e.matrix, depth + 1), &mine)
     }
 
+    /// The transform of instance `de` under `parent`: its scales first, then its own matrix, then its X, Y, Z, which
+    /// its own matrix does not move (IGES 5.3, 3.6.2). The matrix carries the turn of a placed symbol; applied after
+    /// the X, Y, Z it swung the position about the origin as well - a quarter turn took (100,0) to (0,100).
+    fn instance(&self, de: usize, parent: &M, inst: &Instance) -> M {
+        let [x, y, z] = inst.at;
+        let [sx, sy, sz] = inst.scale;
+        let shift = [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z];
+        let scale = [sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, sz, 0.0];
+        mul(parent, &mul(&shift, &mul(&self.own_matrix(de, 0), &scale)))
+    }
+
     fn draw(&self) -> IgesDrawing {
-        let mut out = Pen { to_mm: self.to_mm, curves: Vec::new(), skipped: HashMap::new() };
-        // what is drawn at the top: independent, visible, not an annotation
-        let tops: Vec<usize> = self.order.iter().copied().filter(|de| self.entities[de].independent && !self.entities[de].blanked).collect();
+        let mut out = Pen { to_mm: self.to_mm, curves: Vec::new(), skipped: BTreeMap::new(), invalid: BTreeMap::new() };
+        // WHAT IS DRAWN AT THE TOP: visible, not an annotation, and independent - or a member of a group that no
+        // subfigure, instance or composite curve places, since a group only gathers what exists on its own. Reported
+        // behaviour: two lines of a 402 did not come in, and a drawing of grouped lines only was refused as empty.
+        let placed: HashSet<usize> = self.order.iter().flat_map(|de| self.references(*de)).collect();
+        let on_its_own = |de: &usize| match self.entities[de].subordinate {
+            Subordinate::Independent => true,
+            Subordinate::Logically => !placed.contains(de),
+            Subordinate::Physically | Subordinate::Both => false,
+        };
+        let tops: Vec<usize> = self.order.iter().copied().filter(|de| on_its_own(de) && !self.entities[de].blanked).collect();
         let mut drawn_any = false;
         for &de in &tops {
             let e = &self.entities[&de];
@@ -241,17 +295,15 @@ impl File {
         // the cells, not the parts they are made of.
         let mut definitions_only = false;
         if !drawn_any && out.curves.is_empty() {
-            let used: HashSet<usize> = self.order.iter().flat_map(|de| self.references(*de)).collect();
             for &de in &self.order {
                 let e = &self.entities[&de];
-                if matches!(e.typ, 308 | 320) && !used.contains(&de) {
+                if matches!(e.typ, 308 | 320) && !placed.contains(&de) {
                     definitions_only |= self.entity(de, &ONE, &mut out, 0);
                 }
             }
         }
-        let mut skipped: Vec<(u32, usize)> = out.skipped.into_iter().collect();
-        skipped.sort();
-        IgesDrawing { curves: out.curves, skipped, definitions_only }
+        let counted = |m: BTreeMap<u32, usize>| m.into_iter().map(|(typ, count)| IgesCount { typ, count }).collect();
+        IgesDrawing { curves: out.curves, skipped: counted(out.skipped), invalid: counted(out.invalid), definitions_only }
     }
 
     /// The entities a subfigure or an instance refers to.
@@ -274,7 +326,16 @@ impl File {
         }
         let m = mul(parent, &self.own_matrix(de, 0));
         let v = |k: usize| e.params.get(k).map(|s| num(s)).unwrap_or(0.0);
+        let or = |k: usize, default: f64| if e.params.get(k).is_some_and(|x| !x.trim().is_empty()) { v(k) } else { default };
         let before = pen.curves.len();
+        // A NUMBER THAT IS NOT A NUMBER LEAVES ITS CURVE OUT, NAMED: `num` parses `NaN`, `inf` and `1.D400` as numbers, and
+        // a finite one can overflow under the transforms that place it. Reported behaviour: an arc whose centre was NaN
+        // came into the sketch as a NaN point with no word, and a line at x = inf panicked in the weld of its ends.
+        let curve = matches!(e.typ, 100 | 106 | 110 | 126);
+        if curve && !e.params.iter().skip(1).all(|s| num(s).is_finite()) {
+            *pen.invalid.entry(e.typ).or_insert(0) += 1;
+            return false;
+        }
         match e.typ {
             110 => pen.line(&m, [v(1), v(2), v(3)], [v(4), v(5), v(6)]),
             100 => pen.arc(&m, v(1), [v(2), v(3)], [v(4), v(5)], [v(6), v(7)]),
@@ -296,7 +357,11 @@ impl File {
                     pen.line(&m, pts[pts.len() - 1], pts[0]);
                 }
             }
-            126 => pen.spline(&m, &e.params),
+            126 => {
+                if pen.spline(&m, &e.params).is_err() {
+                    *pen.invalid.entry(126).or_insert(0) += 1;
+                }
+            }
             102 => {
                 for c in self.references(de) {
                     self.entity(c, &m, pen, depth + 1);
@@ -308,31 +373,45 @@ impl File {
                 }
             }
             408 => {
-                let s = if e.params.get(5).is_some_and(|x| !x.trim().is_empty()) { v(5) } else { 1.0 };
-                let at = mul(&m, &place(v(2), v(3), v(4), [s, s, s]));
+                // DE, X, Y, Z, the scale S (1 when not given)
+                let s = or(5, 1.0);
+                let at = self.instance(de, parent, &Instance { at: [v(2), v(3), v(4)], scale: [s, s, s] });
                 self.entity(int(&e.params[1]).max(0) as usize, &at, pen, depth + 1);
             }
             420 => {
-                let sc = |k: usize| if e.params.get(k).is_some_and(|x| !x.trim().is_empty()) { v(k) } else { 1.0 };
-                let at = mul(&m, &place(v(5), v(6), v(7), [sc(2), sc(3), sc(4)]));
+                // DE, X, Y, Z, the scales XS (1 when not given), YS and ZS (XS when not given)
+                let xs = or(5, 1.0);
+                let at = self.instance(de, parent, &Instance { at: [v(2), v(3), v(4)], scale: [xs, or(6, xs), or(7, xs)] });
                 self.entity(int(&e.params[1]).max(0) as usize, &at, pen, depth + 1);
             }
             412 => {
                 // base, scale, lower-left corner, columns, rows, column and row spacing, rotation
-                let s = if e.params.get(2).is_some_and(|x| !x.trim().is_empty()) { v(2) } else { 1.0 };
+                let s = or(2, 1.0);
                 let (cols, rows) = (v(6).max(1.0) as usize, v(7).max(1.0) as usize);
                 let (dc, dr, a) = (v(8), v(9), v(10));
                 let base = int(&e.params[1]).max(0) as usize;
+                // 11 the count of the DO/DON'T list (0: every position), 12 DO (0) or DON'T (1), 13 on the positions,
+                // numbered from 1 at the lower left up each column, then up the next (IGES 5.3, 4.136)
+                let at = |k: usize| e.params.get(k).map(|s| int(s)).unwrap_or(0);
+                let listed: HashSet<i64> = (0..(at(11).max(0) as usize).min(e.params.len())).map(|k| at(13 + k)).collect();
+                let dont = at(12) != 0;
                 for r in 0..rows {
                     for c in 0..cols {
+                        if !listed.is_empty() && listed.contains(&((c * rows + r + 1) as i64)) == dont {
+                            continue;
+                        }
                         let (lx, ly) = (c as f64 * dc, r as f64 * dr);
                         let (x, y) = (v(3) + lx * a.cos() - ly * a.sin(), v(4) + lx * a.sin() + ly * a.cos());
-                        self.entity(base, &mul(&m, &place(x, y, v(5), [s, s, s])), pen, depth + 1);
+                        self.entity(base, &self.instance(de, parent, &Instance { at: [x, y, v(5)], scale: [s, s, s] }), pen, depth + 1);
                     }
                 }
             }
             124 | 402 | 406 | 132 => {}
             other => *pen.skipped.entry(other).or_insert(0) += 1,
+        }
+        if curve && pen.curves[before..].iter().any(|c| !c.is_finite()) {
+            pen.curves.truncate(before);
+            *pen.invalid.entry(e.typ).or_insert(0) += 1;
         }
         pen.curves.len() > before
     }
@@ -342,8 +421,13 @@ impl File {
 struct Pen {
     to_mm: f64,
     curves: Vec<ProfEdge>,
-    skipped: HashMap<u32, usize>,
+    skipped: BTreeMap<u32, usize>,
+    invalid: BTreeMap<u32, usize>,
 }
+
+/// A curve its numbers do not make - its counts or its range do not fit, or placed, its numbers are not finite: it is
+/// left out and named.
+struct NoCurve;
 
 impl Pen {
     fn at(&self, m: &M, p: [f64; 3]) -> Point2 {
@@ -353,7 +437,9 @@ impl Pen {
 
     fn line(&mut self, m: &M, a: [f64; 3], b: [f64; 3]) {
         let (a, b) = (self.at(m, a), self.at(m, b));
-        if (a.x - b.x).hypot(a.y - b.y) > 1e-12 {
+        // a length that is not a number keeps the line, for the check of its numbers to leave it out by name
+        let length = (a.x - b.x).hypot(a.y - b.y);
+        if length > 1e-12 || length.is_nan() {
             self.curves.push(ProfEdge::Line { a, b });
         }
     }
@@ -399,17 +485,28 @@ impl Pen {
         }
     }
 
-    /// A rational B-spline curve (entity 126), laid down as a polyline of 16 pieces per span.
-    fn spline(&mut self, m: &M, p: &[String]) {
+    /// A rational B-spline curve (entity 126), placed and approximated by the cubic B-spline of the sketch within
+    /// 0.001 mm (`BSpline::approximate`), its knots begun at the file's: laid out as 16 segments a span, a curve of the
+    /// drawing was a run of lines a person could not drag, and a body had a face for each.
+    fn spline(&mut self, m: &M, p: &[String]) -> Result<(), NoCurve> {
         let at = |k: usize| p.get(k).map(|s| num(s)).unwrap_or(0.0);
         let (k, deg) = (at(1) as usize, at(2) as usize);
+        // THE COUNTS COME FROM THE FILE: the upper index K, the degree M, then K + M + 2 knots, K + 1 weights, K + 1
+        // points and the range V0, V1 (IGES 5.3, 4.23). K below M panicked in the slicing of the knots ("slice index
+        // starts at 4 but ends at 1"), and a K past the list, or an empty range, dropped the curve with no word. They are
+        // checked before anything is taken by them; a K or an M past the length of the list cannot overflow the sums.
+        // V1 stands at 14 + 5K + M: after the type, the six numbers of the head, the knots, the weights, the points, V0
+        if k < deg || k >= p.len() || 14 + 5 * k + deg >= p.len() {
+            return Err(NoCurve);
+        }
         let nk = k + deg + 2;
         let knots: Vec<f64> = (0..nk).map(|i| at(7 + i)).collect();
         let w: Vec<f64> = (0..=k).map(|i| at(7 + nk + i)).collect();
         let cp: Vec<[f64; 3]> = (0..=k).map(|i| [at(8 + nk + k + 3 * i), at(9 + nk + k + 3 * i), at(10 + nk + k + 3 * i)]).collect();
         let (v0, v1) = (at(8 + nk + k + 3 * (k + 1)), at(9 + nk + k + 3 * (k + 1)));
-        if knots.len() != nk || v1 <= v0 {
-            return;
+        // an empty range, or control points placed past the range of a number, make no curve to approximate
+        if v1 <= v0 || cp.iter().any(|q| apply(m, *q).iter().any(|v| !(v * self.to_mm).is_finite())) {
+            return Err(NoCurve);
         }
         let eval = |t: f64| -> [f64; 3] {
             // de Boor on homogeneous points
@@ -438,10 +535,20 @@ impl Pen {
             let h = dp[deg];
             [h[0] / h[3], h[1] / h[3], h[2] / h[3]]
         };
-        let n = 16 * (k + 1 - deg).max(1);
-        let pts: Vec<[f64; 3]> = (0..=n).map(|i| eval(v0 + (v1 - v0) * i as f64 / n as f64)).collect();
-        for s in pts.windows(2) {
-            self.line(m, s[0], s[1]);
+        let along = |u: f64| self.at(m, eval(v0 + (v1 - v0) * u));
+        let bends: Vec<f64> = knots[deg + 1..=k].iter().map(|x| (x - v0) / (v1 - v0)).collect();
+        let off = |q: Point2, u: f64| q.dist(along(u));
+        let curve = Approximated { at: &along, bends: &bends, ends: qymcad_core::feature::Ends::Open, off: &off, tolerance: 1e-3, through: None };
+        match BSpline::approximate(&curve) {
+            Some(b) => self.curves.push(ProfEdge::Spline(b)),
+            None => {
+                let n = 16 * (k + 1 - deg).max(1);
+                let pts: Vec<[f64; 3]> = (0..=n).map(|i| eval(v0 + (v1 - v0) * i as f64 / n as f64)).collect();
+                for s in pts.windows(2) {
+                    self.line(m, s[0], s[1]);
+                }
+            }
         }
+        Ok(())
     }
 }

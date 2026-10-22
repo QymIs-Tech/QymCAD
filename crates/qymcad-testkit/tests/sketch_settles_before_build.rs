@@ -35,8 +35,8 @@ fn body_is_built_from_the_solved_sketch_not_the_stale_points() {
     p.add_rect_entity(ci, -20.0, -5.0, -15.0, 5.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(ci);
 
-    let (a0, a1) = match p.sketches[ci].entities.iter().find(|e| e.id == aux).unwrap().kind {
-        qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+    let (a0, a1) = match p.sketches[ci].entities.iter().find(|e| e.id == aux).unwrap().kind.as_line() {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => unreachable!(),
     };
     let left: Vec<u64> = p.sketches[ci].points.iter().filter(|q| (q.x + 20.0).abs() < 1e-9 && q.y.abs() < 10.0).map(|q| q.id).collect();

@@ -8,14 +8,17 @@ pub(crate) use qymcad_ui_state::{comp_array_kind};
 #[allow(unused_imports)] // the checks reach it through this module, which is the address they know
 pub(crate) use qymcad_ui_state::try_modify;
 pub(crate) use qymcad_part::*;
+#[cfg(test)]
+use qymcad_ui_state::NotApplied;
+use qymcad_ui_state::PatternKind;
 use qymcad_ui_state::Notice;
 use super::*;
 
 impl App {
     /// A test facade: the checks apply a command the way the frame does, but they have no context to hand.
     #[cfg(test)]
-    pub(crate) fn apply_feat_cmd(&mut self) {
-        apply_feat_cmd(&mut self.part_ctx());
+    pub(crate) fn apply_feat_cmd(&mut self) -> Option<NotApplied> {
+        apply_feat_cmd(&mut self.part_ctx()).err()
     }
 
     /// A test facade: the axis candidates, refreshed the way the command bar refreshes them.
@@ -28,23 +31,6 @@ impl App {
     #[cfg(test)]
     pub(crate) fn begin_contour_pick(&mut self, slot: ContourSlot, sid: Id) {
         begin_contour_pick(&mut self.part_ctx(), slot, sid);
-    }
-
-    /// An array as A COMMAND: pick a body, then the top bar (the count, the direction, the axis), then the
-    /// STEP or ANGLE as an expression field AT THE GEOMETRY, then ghost previews of the copies, then Enter.
-    /// 17 is linear (a grid), 18 is circular.
-    pub(super) fn start_array_cmd(&mut self, cmd: u8) {
-        self.cancel_all_tools(); // exclusivity: the array drops the previous tool and its picks
-        start_array_cmd(&mut self.part_ctx(), cmd)
-    }
-
-    /// A primitive as A COMMAND: 10 box, 11 cylinder, 12 sphere, 13 cone, 14 torus, 15 prism. The sizes are
-    /// expression fields at the geometry (the popup) plus a wireframe PREVIEW; Enter creates, Esc cancels.
-    /// By default it sits at the origin; a click on a vertex, a datum point, a plane or a face PLACES it
-    /// (orienting the base along the normal of the plane).
-    pub(super) fn start_prim_cmd(&mut self, code: u8) {
-        self.cancel_all_tools(); // exclusivity: a new tool drops ANY previous one, picks and modes alike
-        start_prim_cmd(&mut self.part_ctx(), code)
     }
 
     /// Start RE-PLACING a sketch: turn on picking a new plane by click in the viewport.
@@ -140,7 +126,7 @@ impl App {
                     } else {
                         self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
                     }
-                    crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, p, auto);
+                    crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, p, auto);
                 }
             }
             JobResult::ImportShapes { shapes, regen } => {
@@ -172,109 +158,21 @@ impl App {
         }
     }
 
-    /// THE SINGLE entry point of a part command. 1 extrude, 3 revolve (from a sketch); 4 fillet, 5 chamfer
-    /// (on edges); 6 shell, 7 hole (on a face).
-    pub(super) fn start_feat_cmd(&mut self, cmd: u8) {
+    /// THE SINGLE entry point of a tool of a part: the tool in hand and its picks put down, then the tool taken.
+    pub(super) fn start_feat_cmd(&mut self, tool: qymcad_ui_state::PartTool) {
         self.cancel_all_tools(); // a new part or datum command CANCELS the previous tool or pick - never two at once
-                                 // A CLEAN SLATE BEFORE THE CHECKS: the state of the previous command must not seep into the new one.
-                                 // The command itself opens BELOW, and only if the checks passed (no contour means no command starts).
-        let prev_3d = self.viewing.mode_3d;
-        self.tools.cmd.close(&mut self.tools.armed);
-        qymcad_ui_state::clear_feat_picks(qymcad_ui_state::feat_picks_of!(self)); // a clean slate: the picks of the previous command do not travel into the new one
-                                                                                  // AND NEITHER DOES THE GEOMETRY SELECTION. The tools that take neither edges nor faces (extrude, the
-                                                                                  // cuts, the arrays, the datums) never cleared them: the selection from the previous command stayed
-                                                                                  // there and - what matters - stayed HIGHLIGHTED. What looks selected is something the new command
-                                                                                  // will not take.
-        self.tools.gsel.edges.clear();
-        self.tools.gsel.faces.clear();
-        self.tools.gsel.faces_body = None;
-        self.tools.gsel.described = None;
-        self.tools.cmd.prev_3d = prev_3d;
-        self.params.boolean.edit = None; // the edit mode of the boolean is not held over into another command
-        match cmd {
-            1 | 3 => start_sketch_cmd(&mut self.part_ctx(), cmd),
-            8 => start_sweep_cmd(&mut self.part_ctx()),
-            9 => start_loft_cmd(&mut self.part_ctx()),
-            4..=7 => start_body_cmd(&mut self.part_ctx(), cmd),
-            23 => start_draft_cmd(&mut self.part_ctx()),
-            25 => start_push_face_cmd(&mut self.part_ctx()),
-            26 => start_remove_face_cmd(&mut self.part_ctx()),
-            30 | 36 => start_face_copy_cmd(&mut self.part_ctx(), cmd),
-            31 => start_surface_replace_cmd(&mut self.part_ctx()),
-            32 => crate::gui::commands::start_patch_cmd(&mut self.part_ctx()),
-            33 => start_stitch_cmd(&mut self.part_ctx()),
-            35 => start_recognise_cmd(&mut self.part_ctx()),
-            34 => start_trim_cmd(&mut self.part_ctx()),
-            27 => start_split_cmd(&mut self.part_ctx()),
-            28 => start_thicken_cmd(&mut self.part_ctx()),
-            29 => start_split_face_cmd(&mut self.part_ctx()),
-            24 => start_thread_cmd(&mut self.part_ctx()),
-            16 => start_mirror_cmd(&mut self.part_ctx()),
-            17 | 18 => self.start_array_cmd(cmd),
-            20..=22 => self.start_datum_cmd(cmd),
-            _ => {}
-        }
-    }
-
-    /// A DATUM as A COMMAND: 20 plane, 21 point, 22 axis. The same frame as an extrude - the top bar plus
-    /// fields at the geometry (the offset or the coordinates, as expressions) plus picking references by
-    /// click plus a preview plus Enter/Esc.
-    pub(super) fn start_datum_cmd(&mut self, code: u8) {
-        self.cancel_all_tools(); // clears a stuck `pick_sketch_plane` and the like - otherwise, while placing
-                                 // a datum axis, the picker of base planes is on screen and a click starts a sketch instead
-        self.tools.cmd.open(&mut self.tools.armed, code, self.viewing.mode_3d); // a clean slate, then open
-
-        self.viewing.mode_3d = true;
-        self.side.datum.plane_pick = None;
-        self.side.datum.axis_ref = None;
-        self.side.datum.axis_hit = None;
-        self.side.datum.axis_mode = 0;
-        self.side.datum.axis_pts.clear();
-        match code {
-            20 => {
-                self.tools.cmd.params = qymcad_part::datum_plane_fields();
-                self.status = Notice::info(crate::i18n::tr("msg-plane-pick"));
-            }
-            21 => {
-                self.side.datum.pt_mode = 0;
-                self.side.datum.pt_vert = None;
-                self.tools.cmd.params = vec![CmdParam::new("X", "x", 0.0, -1e7, 1e7), CmdParam::new("Y", "y", 0.0, -1e7, 1e7), CmdParam::new("Z", "z", 0.0, -1e7, 1e7)];
-                self.status = Notice::info(crate::i18n::tr("msg-point-cmd"));
-            }
-            22 => {
-                refresh_axis_edges(&mut self.part_ctx()); // the straight edges of ALL visible bodies, for picking an axis
-                self.tools.cmd.params.clear();
-                self.status = Notice::info(crate::i18n::tr("msg-axis-pick"));
-            }
-            _ => {}
-        }
+        qymcad_part::start_tool(&mut self.part_ctx(), tool);
     }
 
     /// A COMPONENT ARRAY (in an assembly): pick a part, set the count and the direction on top, the step or
-    /// the angle in a field at the geometry, then Enter. `mode`: 1 linear, 2 circular.
+    /// the angle in a field at the geometry, then Enter. `mode`: linear or circular.
     ///
     /// A copy here is AN INSTANCE rather than the part inserted again: its body associatively repeats the
     /// active body of the source, and the array drives the placement. Edit the part and every copy follows.
-    pub(super) fn start_comp_array(&mut self, mode: u8) {
-        let src = match self.chosen.sel {
-            Sel::Component(ci) => self.project.components.get(ci).map(|c| c.id),
-            _ => qymcad_ui_state::selected_body(&self.project, &self.chosen.sel).and_then(|b| self.project.body_owner(b)),
-        };
-        let Some(src) = src.filter(|c| *c != self.project.root) else {
-            self.status = Notice::info(crate::i18n::tr("msg-pick-part-first"));
-            return;
-        };
-        if self.project.active_body(src).is_none() {
-            self.status = Notice::refusal(crate::i18n::tr("msg-part-no-body"));
-            return;
-        }
+    pub(super) fn start_comp_array(&mut self, mode: PatternKind) {
+        let src = qymcad_part::comp_array_source(&mut self.part_ctx()).ok();
         self.cancel_all_tools(); // exclusivity: the array drops the previous tool
-        self.side.carr = CompArrayCmd { mode, src, dir: 0, axis: 2, edit: 0 };
-        self.params.arr.count = if mode == 2 { 6 } else { 3 };
-        (self.params.arr.full, self.params.arr.two, self.params.arr.three, self.params.arr.axis) = (true, false, false, 0); // a full turn, one direction, the assembly's axis
-        self.viewing.mode_3d = true;
-        self.tools.cmd.params = if mode == 2 { vec![] } else { vec![CmdParam::new("f-pitch", "cstep", 30.0, 0.01, 100000.0)] };
-        self.status = Notice::info(if mode == 2 { crate::i18n::tr("msg-comp-circ-array") } else { crate::i18n::tr("msg-comp-lin-array") });
+        qymcad_part::take_comp_array(&mut self.part_ctx(), mode, src);
     }
 
     /// Reopen an EXISTING component array for editing (a double click in the tree).

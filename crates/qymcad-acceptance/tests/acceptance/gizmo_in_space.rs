@@ -109,10 +109,29 @@ probe! {
         let (was, _) = placed(&mut s, &second);
         let arm = gizmo(&mut s).arms[0];
         s.click(arm);
-        let label = s.word("cmd-offset-axis").replace("{ $axis }", "X").replace("{$axis}", "X");
+        let label = s.word("giz-offset-x");
         assert!(s.shows(&label), "a click on the arm of X asked for no {label:?}: there is no typing a number at the gizmo; on screen: {:?}", s.words());
         s.fill(&label, "25").key(Key::Enter);
         let (now, _) = placed(&mut s, &second);
         assert!((now[0] - was[0] - 25.0).abs() < 1e-3, "25 was typed at the arm of X and the part went from {was:?} to {now:?}");
+    }
+}
+
+probe! {
+    /// Esc AT THE GIZMO LEAVES THE FIELD FIRST, THE NUMBER NEXT: the box of the number stands in the frame of a tool,
+    /// and the body stays where it was.
+    fn escape_at_the_gizmo_leaves_the_field_then_the_number() {
+        let (mut s, second) = a_second_part_taken();
+        let (was, _) = placed(&mut s, &second);
+        let arm = gizmo(&mut s).arms[0];
+        s.click(arm);
+        let label = s.word("giz-offset-x");
+        assert!(s.shows(&label), "a click on the arm of X asked for no {label:?}; on screen: {:?}", s.words());
+        s.key(Key::Escape);
+        assert!(s.shows(&label), "the first Esc took the number away with the field it was typed in; on screen: {:?}", s.words());
+        s.key(Key::Escape);
+        assert!(!s.shows(&label), "the second Esc left the number at the gizmo; on screen: {:?}", s.words());
+        let (now, _) = placed(&mut s, &second);
+        assert!(now == was, "Esc moved the part from {was:?} to {now:?}");
     }
 }

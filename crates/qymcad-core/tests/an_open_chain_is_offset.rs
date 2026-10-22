@@ -7,7 +7,7 @@
 //! and then "the polyline has no fillets, and the copy is rounded".
 use qymcad_core::feature::Purpose;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 
 /// A sketch with the chain through `corners`, lines between them, joined end to end.
 fn chain(corners: &[(f64, f64)]) -> (Project, usize) {
@@ -27,7 +27,7 @@ fn stands(p: &Project, si: usize, x: f64, y: f64) -> bool {
 }
 
 fn arcs(p: &Project, si: usize) -> usize {
-    p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count()
+    p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count()
 }
 
 /// The point of the sketch standing at (x, y).

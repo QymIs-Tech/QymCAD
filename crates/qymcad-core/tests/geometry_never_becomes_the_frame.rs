@@ -7,7 +7,7 @@
 //!
 //! The repair that used to cover this, `detach_geometry_from_origin`, only fires once the origin has
 //! already wandered off zero; `pin_frame` now keeps it at zero, so it never fires.
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 
 fn new_sketch() -> (Project, usize) {
     let mut p = Project::default();
@@ -23,8 +23,8 @@ fn line_points(p: &Project, si: usize) -> (u64, u64) {
     p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Line { a, b } => Some((a, b)),
+        .find_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
             _ => None,
         })
         .expect("the sketch holds a line")
@@ -76,7 +76,7 @@ fn a_saved_sketch_whose_line_ends_on_the_origin_is_repaired_on_rebuild() {
     let eid = p.alloc_id();
     let s = &mut p.sketches[si];
     s.points.push(qymcad_core::model::SketchPoint { id: far, x: 30.0, y: 0.0 });
-    s.entities.push(qymcad_core::model::SketchEntity { id: eid, kind: EntityKind::Line { a: origin, b: far }, construction: false });
+    s.entities.push(qymcad_core::model::SketchEntity { id: eid, kind: qymcad_core::model::LineParts { a: origin, b: far }.into(), construction: false });
 
     p.regen_sketch(si);
 

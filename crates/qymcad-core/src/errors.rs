@@ -284,8 +284,8 @@ pub enum CoreError {
     ThreadNotItsSize { face: f64, nominal: f64 },
     /// A WARNING, not a failure: the blend was built, but `dropped` of the `asked` edges could not be taken.
     EdgesDropped { asked: usize, dropped: usize },
-    /// A WARNING, not a failure: a reference of the step was found by place, not by name, and the person has not yet
-    /// said the right element was taken.
+    /// A WARNING, not a failure: a reference of the step was not found by its name - by place, or as the other piece of
+    /// the face it was cut from - and the person has not yet said the right element was taken.
     RefFoundByPlace,
     /// A body brought in from a file failed the checks of the door and could not be repaired: it is kept as it came.
     ImportKeptAsItCame,

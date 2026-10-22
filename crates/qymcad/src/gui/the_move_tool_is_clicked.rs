@@ -9,7 +9,6 @@ mod tests {
     use super::super::hand::Hand;
     use super::super::{App, Sel};
     use qymcad_core::feature::{Purpose, SketchPlane};
-    use qymcad_core::model::EntityKind;
 
     /// A running window with a sketch open for editing and one free line in it, from (10,0) to (30,0).
     ///
@@ -35,8 +34,8 @@ mod tests {
         let mut out: Vec<[(f64, f64); 2]> = sk
             .entities
             .iter()
-            .filter_map(|e| match e.kind {
-                EntityKind::Line { a, b } => Some([at(a)?, at(b)?]),
+            .filter_map(|e| match e.kind.as_line() {
+                Some(qymcad_core::model::LineParts { a, b }) => Some([at(a)?, at(b)?]),
                 _ => None,
             })
             .map(|mut l| {
@@ -77,8 +76,8 @@ mod tests {
             let steps = app.disk.edits.undo.len();
             let mut hand = Hand::new(&mut app);
             match what {
-                "move" => hand.sk_move(1, (20.0, 0.0), (20.0, 0.0), (24.0, 4.0)),
-                "copy" => hand.sk_move(2, (20.0, 0.0), (20.0, 0.0), (24.0, 4.0)),
+                "move" => hand.sk_move(qymcad_ui_state::MoveKind::Move, (20.0, 0.0), (20.0, 0.0), (24.0, 4.0)),
+                "copy" => hand.sk_move(qymcad_ui_state::MoveKind::Copy, (20.0, 0.0), (20.0, 0.0), (24.0, 4.0)),
                 _ => hand.sk_rotate((20.0, 0.0), (20.0, 0.0), 90.0),
             };
             let got = lines(hand.app, si);
@@ -103,16 +102,16 @@ mod tests {
     fn the_top_bar_names_the_tool_in_hand() {
         use crate::gui::import_door::tests::frame;
         let mut problems = Vec::new();
-        for (op, key) in [(1u8, "tool-move"), (2, "tool-copy"), (3, "tool-rotate")] {
+        for (op, key) in [(qymcad_ui_state::MoveKind::Move, "tool-move"), (qymcad_ui_state::MoveKind::Copy, "tool-copy"), (qymcad_ui_state::MoveKind::Rotate, "tool-rotate")] {
             let (mut app, _si) = a_free_line();
             let ctx = egui::Context::default();
             crate::gui::install_fonts(&ctx);
-            Hand::new(&mut app).sk_tool(0).sk_move_tool(op);
+            Hand::new(&mut app).sk_select().sk_move_tool(op);
             frame(&mut app, &ctx, Vec::new());
             let texts = frame(&mut app, &ctx, Vec::new());
             let names: Vec<&str> = ["tool-move", "tool-copy", "tool-rotate"].into_iter().filter(|k| texts.iter().any(|(t, _)| *t == crate::i18n::tr(k))).collect();
             if names != [key] {
-                problems.push(format!("tool {op}: the bar says {:?}, it should say {:?}", names.iter().map(|k| crate::i18n::tr(k)).collect::<Vec<_>>(), crate::i18n::tr(key)));
+                problems.push(format!("tool {op:?}: the bar says {:?}, it should say {:?}", names.iter().map(|k| crate::i18n::tr(k)).collect::<Vec<_>>(), crate::i18n::tr(key)));
             }
         }
         assert!(problems.is_empty(), "the top bar misnames the tool in hand:\n{}", problems.join("\n"));

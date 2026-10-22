@@ -157,7 +157,7 @@ probe! {
 /// A DIMENSION BETWEEN TWO PARALLEL LINES laid by hand with the dimension tool: a click on each line, a click to put it
 /// down between them, the value typed, Enter, the tool put down.
 fn a_distance_between(s: &mut Session, one: (f64, f64), other: (f64, f64), value: &str) {
-    let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+    let (hint, field) = (s.word("tb-dim-hint"), s.word("f-number-or-expr"));
     s.press_hint(&hint);
     s.click_on_sketch(one.0, one.1);
     s.click_on_sketch(other.0, other.1);
@@ -213,7 +213,7 @@ fn a_block_of_parameters_and_a_sketch_of(whose: Whose) -> Session {
     s.key(Key::Escape);
     // the lower side given w, the right side given h, by the dimension tool
     for (on, off, value) in [((20.0, 0.0), (20.0, -10.0), "w"), ((40.0, 15.0), (50.0, 15.0), "h")] {
-        let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+        let (hint, field) = (s.word("tb-dim-hint"), s.word("f-number-or-expr"));
         s.press_hint(&hint);
         s.click_on_sketch(on.0, on.1);
         s.click_on_sketch(off.0, off.1);
@@ -304,7 +304,7 @@ fn the_first_sketch_given(s: &mut Session, sizes: &[(&str, &str)]) {
     for (label, value) in sizes {
         let at = s.find(label, qymcad::pos2(640.0, 400.0)).unwrap_or_else(|| panic!("no dimension {label:?} on the sheet; on screen: {:?}", s.words()));
         s.double_click(at.center());
-        let field = s.word("sk-expr-example");
+        let field = s.word("f-number-or-expr");
         s.fill_hinted(&field, value).key(Key::Enter);
     }
     let finish = s.word("wb-finish");

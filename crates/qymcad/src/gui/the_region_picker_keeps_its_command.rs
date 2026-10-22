@@ -17,12 +17,12 @@ mod tests {
         crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new());
-        assert_eq!(hand.app.tools.armed.cmd_kind(), 1, "setup: the extrusion is not reopened");
+        assert_eq!(hand.app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "setup: the extrusion is not reopened");
         assert!(hand.press_word(&crate::i18n::tr("cmd-pick-contours"), egui::pos2(640.0, 24.0)), "the button of the regions is not in the bar");
         hand.frame(Vec::new());
         let apply = hand.shows(&crate::i18n::tr("cmd-apply-enter"));
         assert!(!hand.app.viewing.mode_3d, "the button did not open the flat picker");
-        assert_eq!(hand.app.tools.armed.cmd_kind(), 1, "the picker put the extrusion down - the bare flat view of the report");
+        assert_eq!(hand.app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "the picker put the extrusion down - the bare flat view of the report");
         assert!(apply, "the picker shows no bar with Apply");
         assert!(matches!(hand.app.chosen.sel, qymcad_ui_state::Sel::Sketch(_)), "the picker shows no sketch to pick a region of");
         assert!(!hand.app.tools.gsel.profiles.is_empty(), "the regions of the extrusion are not picked in the picker");

@@ -11,12 +11,22 @@ pub struct CompGizmo {
     pub ring: Option<u8>,
 }
 
-/// TYPING A ROTATION ANGLE: the value, the buffer and the focus — one unfinished input.
+/// TYPING A ROTATION ANGLE: the value the preview turns by, the field of the box of the turn and its focus - one
+/// unfinished input.
 #[derive(Clone, Default)]
 pub struct RotInput {
     pub angle: f64,
-    pub buf: String,
+    pub field: Vec<CmdParam>,
     pub focus: bool,
+}
+
+/// A TANGENT HANDLE OF A SPLINE held by the pointer: the sketch by its index, the spline by its id, the node by its place
+/// among the nodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HandleHeld {
+    pub si: usize,
+    pub spline: Id,
+    pub node: usize,
 }
 
 /// WHAT IS BEING DRAGGED IN THE SKETCH RIGHT NOW.
@@ -30,8 +40,8 @@ pub enum Dragging {
     None,
     /// a sketch point, as (sketch index, point index)
     Point(usize, usize),
-    /// a spline handle, as (sketch, spline, node)
-    Handle(usize, usize, usize),
+    /// a tangent handle of a spline
+    Handle(HandleHeld),
     /// moving the whole selected geometry
     Move(usize, Vec<Id>),
     /// a dimension label / a note / a text
@@ -57,9 +67,9 @@ impl Dragging {
         }
     }
 
-    pub fn handle(&self) -> Option<(usize, usize, usize)> {
+    pub fn handle(&self) -> Option<HandleHeld> {
         match *self {
-            Dragging::Handle(a, b, c) => Some((a, b, c)),
+            Dragging::Handle(h) => Some(h),
             _ => None,
         }
     }
@@ -113,7 +123,8 @@ pub struct BodyGizmo {
     pub dragging: bool,
     /// typed input: (what the gizmo stands on, axis, is it a rotation?) plus its buffer and focus
     pub num: Option<(GizmoOf, u8, bool)>,
-    pub num_buf: String,
+    /// the field of the step typed at the gizmo, made as the box opens
+    pub num_field: Vec<crate::CmdParam>,
     pub num_focus: bool,
 }
 
@@ -126,7 +137,6 @@ pub enum InlineEdit {
     Note(usize),
     Text(usize),
     Dim(usize),
-    Circle(Id),
 }
 
 impl InlineEdit {
@@ -148,12 +158,6 @@ impl InlineEdit {
             _ => None,
         }
     }
-    pub fn circle(&self) -> Option<Id> {
-        match *self {
-            InlineEdit::Circle(i) => Some(i),
-            _ => None,
-        }
-    }
     pub fn clear(&mut self) {
         *self = InlineEdit::None;
     }
@@ -164,9 +168,9 @@ impl InlineEdit {
 pub struct AnnotEdit {
     pub note: Option<usize>,
     pub note_buf: String,
+    /// the field of a note just opened takes the keyboard, its words selected
+    pub note_focus: bool,
     pub text: Option<usize>,
-    pub text_buf: String,
-    pub text_h: f64,
     /// The text field of the popup has just been opened and asks for the caret.
     ///
     /// Without it the popup opened with the focus nowhere: a person had to click into the field before

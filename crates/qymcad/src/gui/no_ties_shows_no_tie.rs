@@ -17,7 +17,7 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         for (on, key) in [(construction, "opt-construction-short"), (free, "opt-no-ties-short")] {
             if on {
                 assert!(hand.press_word(&crate::i18n::tr(key), egui::pos2(0.0, 0.0)), "no {key} on the bar of the line tool");

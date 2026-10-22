@@ -19,11 +19,11 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.enter_sketch_edit(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(2).click2d(10.0, 10.0).click2d(50.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0);
-        let centre = hand.app.project.sketches[0].rects.first().map(|r| r.centre).expect("the rectangle drawn");
-        assert!(hand.select2d(&[(0, centre)]), "the centre of the rectangle could not be picked");
-        hand.constraint(6);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(10.0, 10.0).click2d(50.0, 40.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        hand.sk_select();
+        let centre = hand.app.project.sketches[0].rects().first().map(|r| r.centre).expect("the rectangle drawn");
+        assert!(hand.select2d(&[qymcad_ui_state::SketchItem::point(centre)]), "the centre of the rectangle could not be picked");
+        hand.constraint(qymcad_ui_state::ConstraintKind::Fix);
         hand.key(egui::Key::Escape);
         assert!(hand.app.project.sketches[0].constraints.iter().any(|c| matches!(c, qymcad_core::model::Constraint::Fixed { p } if *p == centre)), "GUARD: the centre is fixed");
 
@@ -41,7 +41,7 @@ mod tests {
         hand.drag2d((50.0, 40.0), (56.0, 44.0));
         let sk = &hand.app.project.sketches[0];
         let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("the point");
-        let r = sk.rects[0].clone();
+        let r = sk.rects()[0].clone();
         let now: Vec<(f64, f64)> = r.corners.iter().map(|&k| at(k)).collect();
         let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 0.6 && (a.1 - b.1).abs() < 0.6;
         assert!(near(at(r.centre), (30.0, 25.0)), "the fixed centre moved to {:?}", at(r.centre));

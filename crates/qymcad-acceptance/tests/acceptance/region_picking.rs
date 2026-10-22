@@ -60,15 +60,27 @@ probe! {
     }
 }
 
-/// The area between the spline the sketcher draws through three nodes and the chord of its ends: a Catmull-Rom curve,
-/// the tangent at a node half the step between its neighbours, one-sided at the ends - integrated in fine steps.
+/// The area between the spline the sketcher draws through three nodes and the chord of its ends: a cubic of continuous
+/// curvature through them, its spans by the lengths of their chords, natural (no curvature) at its ends - the
+/// derivatives by length at the nodes solved from the three equations of that, each span the Hermite cubic of its ends
+/// and their derivatives times its chord - integrated in fine steps.
 fn cap_of_a_spline_through(n: [(f64, f64); 3]) -> f64 {
-    let half = |a: (f64, f64), b: (f64, f64)| ((b.0 - a.0) / 2.0, (b.1 - a.1) / 2.0);
-    let m = [half(n[0], n[1]), half(n[0], n[2]), half(n[1], n[2])];
+    let chord = |a: (f64, f64), b: (f64, f64)| (b.0 - a.0).hypot(b.1 - a.1);
+    let h = [chord(n[0], n[1]), chord(n[1], n[2])];
+    // 2 m0 + m1 = 3 d0; m0 / h0 + 2 (1 / h0 + 1 / h1) m1 + m2 / h1 = 3 (d0 / h0 + d1 / h1); m1 + 2 m2 = 3 d1, with d the
+    // step over the chord of each span; by elimination, one coordinate at a time
+    let solve = |v: [f64; 3]| -> [f64; 3] {
+        let (d0, d1) = ((v[1] - v[0]) / h[0], (v[2] - v[1]) / h[1]);
+        let (a, b) = (1.0 / h[0], 1.0 / h[1]);
+        // m0 = (3 d0 - m1) / 2 and m2 = (3 d1 - m1) / 2 put into the middle equation
+        let m1 = (3.0 * (d0 * a + d1 * b) - 1.5 * d0 * a - 1.5 * d1 * b) / (2.0 * (a + b) - 0.5 * a - 0.5 * b);
+        [(3.0 * d0 - m1) / 2.0, m1, (3.0 * d1 - m1) / 2.0]
+    };
+    let (mx, my) = (solve([n[0].0, n[1].0, n[2].0]), solve([n[0].1, n[1].1, n[2].1]));
     let at = |s: usize, t: f64| {
         let (t2, t3) = (t * t, t * t * t);
-        let h = [2.0 * t3 - 3.0 * t2 + 1.0, t3 - 2.0 * t2 + t, -2.0 * t3 + 3.0 * t2, t3 - t2];
-        (h[0] * n[s].0 + h[1] * m[s].0 + h[2] * n[s + 1].0 + h[3] * m[s + 1].0, h[0] * n[s].1 + h[1] * m[s].1 + h[2] * n[s + 1].1 + h[3] * m[s + 1].1)
+        let w = [2.0 * t3 - 3.0 * t2 + 1.0, t3 - 2.0 * t2 + t, -2.0 * t3 + 3.0 * t2, t3 - t2];
+        (w[0] * n[s].0 + w[1] * mx[s] * h[s] + w[2] * n[s + 1].0 + w[3] * mx[s + 1] * h[s], w[0] * n[s].1 + w[1] * my[s] * h[s] + w[2] * n[s + 1].1 + w[3] * my[s + 1] * h[s])
     };
     let steps = 4000;
     let mut line: Vec<(f64, f64)> = (0..2).flat_map(|s| (0..steps).map(move |k| (s, k as f64 / steps as f64))).map(|(s, t)| at(s, t)).collect();

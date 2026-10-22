@@ -74,21 +74,21 @@ fn same_component_face_sketch_builds() {
 
 #[test]
 fn sweep_path_encoded_open_chain_carries_exact_edges() {
-    // The path of a sweep is an open contour of two segments, encoded as [1.0, 2.0, two edges of nine fields].
-    // The ninth field of an edge is its provenance, the id of the sketch entity, which the kernel uses to name
-    // the side faces so that a name follows the sketch line rather than the ordinal of an edge in the contour.
+    // The path of a sweep is an open contour of two segments, encoded as [1, 2, two edges]; an edge is [kind, the
+    // count of its numbers, its numbers, its name] (`geom::encode_edge`), the name naming the side face it makes.
     let mut p = part_project();
     let path = p.add_line_sketch("path", vec![Point2::new(0.0, 0.0), Point2::new(0.0, 10.0), Point2::new(5.0, 10.0)], false);
     let enc = p.sweep_path_encoded(path, 0).expect("an open path must encode");
     assert_eq!(enc[0], 1.0, "exactly one path contour");
     assert_eq!(enc[1], 2.0, "two exact edges; the contour is open, so there is no spurious end-to-start edge");
-    assert_eq!(enc.len(), 2 + 2 * qymcad_core::geom::EDGE_FIELDS, "one loop count, one edge count, two edges");
+    let slots = qymcad_core::geom::edge_slots(&enc, 1);
+    assert_eq!(slots.end, enc.len(), "one loop count, one edge count, two edges");
     // The first edge is the line from (0,0) to (0,10).
-    assert_eq!(&enc[2..10], &[0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0]);
-    // The ninth field is the name descriptor of the future face. A path has none and must have none: the side
+    assert_eq!(&enc[2..8], &[0.0, 4.0, 0.0, 0.0, 0.0, 10.0]);
+    // The last number is the name descriptor of the future face. A path has none and must have none: the side
     // faces of a sweep are produced by the profile edges, while the path only guides them, so there is nowhere
     // for a name to come from.
-    assert_eq!(enc[10], 0.0, "a path carries no names: {}", enc[10]);
+    assert!(slots.names.iter().all(|s| enc[*s] == 0.0), "a path carries no names: {:?}", slots.names.iter().map(|s| enc[*s]).collect::<Vec<_>>());
 }
 
 #[test]

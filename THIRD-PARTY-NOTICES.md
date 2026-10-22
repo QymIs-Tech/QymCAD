@@ -8,7 +8,7 @@ packages (the Windows zip and the Linux AppImage) as well as the repository.
 
 The geometric kernel — exact B-rep, the boolean operations, the fillets, STEP.
 
-- Version 7.8.1
+- Version 7.9.3
 - Copyright (c) Open CASCADE SAS
 - Licence: **LGPL-2.1 with an additional exception** (the "Open CASCADE Exception"), quoted at
   <https://dev.opencascade.org/resources/licensing>

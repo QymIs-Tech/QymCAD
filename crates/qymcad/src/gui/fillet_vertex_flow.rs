@@ -21,7 +21,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
@@ -31,7 +31,7 @@ mod tests {
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
 
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
-        app.start_feat_cmd(4);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
         crate::gui::commands::refresh_edges(&mut app.part_ctx());
         app.viewing.mode_3d = true;
         app.viewing.cam.init = true;

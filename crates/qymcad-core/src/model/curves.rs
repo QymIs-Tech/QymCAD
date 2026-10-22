@@ -2,24 +2,6 @@
 
 use super::*;
 
-/// Whether point `p` lies inside polygon `poly` (ray casting).
-pub(crate) fn point_in_poly(poly: &[Point2], p: Point2) -> bool {
-    let n = poly.len();
-    if n < 3 {
-        return false;
-    }
-    let mut inside = false;
-    let mut j = n - 1;
-    for i in 0..n {
-        let (a, b) = (poly[i], poly[j]);
-        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
-            inside = !inside;
-        }
-        j = i;
-    }
-    inside
-}
-
 /// Whether the contours touch: the inner one reached the boundary of the outer one.
 ///
 /// Such a contour is not a hole. An inner loop that touches the outer loop forms no face, and the whole
@@ -30,28 +12,78 @@ pub(crate) fn polys_touch(outer: &[Point2], inner: &[Point2]) -> bool {
     if outer.len() < 3 || inner.len() < 3 {
         return false;
     }
-    let (mut lo, mut hi) = (Point2::new(f64::MAX, f64::MAX), Point2::new(f64::MIN, f64::MIN));
-    for p in outer {
-        lo = Point2::new(lo.x.min(p.x), lo.y.min(p.y));
-        hi = Point2::new(hi.x.max(p.x), hi.y.max(p.y));
-    }
-    let tol = ((hi.x - lo.x).hypot(hi.y - lo.y) * 1e-6).max(1e-9);
-    for a in inner {
-        for i in 0..outer.len() {
+    let bands = Bands::of(outer);
+    let tol = bands.tol;
+    inner.iter().any(|a| {
+        bands.near(a.y).iter().any(|&i| {
             let (b, c) = (outer[i], outer[(i + 1) % outer.len()]);
             let (vx, vy) = (c.x - b.x, c.y - b.y);
             let l2 = vx * vx + vy * vy;
             let t = if l2 > 1e-18 { (((a.x - b.x) * vx + (a.y - b.y) * vy) / l2).clamp(0.0, 1.0) } else { 0.0 };
-            if (a.x - (b.x + t * vx)).hypot(a.y - (b.y + t * vy)) <= tol {
-                return true;
-            }
-        }
-    }
-    false
+            (a.x - (b.x + t * vx)).hypot(a.y - (b.y + t * vy)) <= tol
+        })
+    })
 }
 
+/// Whether every point of `inner` lies inside `outer`, by casting a ray from it along X and counting the edges it crosses.
 pub(crate) fn poly_contains(outer: &[Point2], inner: &[Point2]) -> bool {
-    !inner.is_empty() && inner.iter().all(|p| point_in_poly(outer, *p))
+    if inner.is_empty() || outer.len() < 3 {
+        return false;
+    }
+    let bands = Bands::of(outer);
+    let n = outer.len();
+    inner.iter().all(|p| {
+        let mut inside = false;
+        for &i in bands.near(p.y) {
+            let (a, b) = (outer[(i + 1) % n], outer[i]);
+            if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                inside = !inside;
+            }
+        }
+        inside
+    })
+}
+
+/// THE EDGES OF A POLYGON SORTED INTO BANDS ACROSS IT, by the height they span widened by the tolerance of a touch: a
+/// point is tried against the edges of its band alone. Tried against every edge, a loop of a spline nested in another,
+/// 5 000 points each, took 140 ms to place at every rebuild.
+struct Bands {
+    lo: f64,
+    step: f64,
+    tol: f64,
+    edges: Vec<Vec<usize>>,
+}
+
+impl Bands {
+    fn of(poly: &[Point2]) -> Bands {
+        let n = poly.len();
+        let (mut lo, mut hi) = (Point2::new(f64::MAX, f64::MAX), Point2::new(f64::MIN, f64::MIN));
+        for p in poly {
+            lo = Point2::new(lo.x.min(p.x), lo.y.min(p.y));
+            hi = Point2::new(hi.x.max(p.x), hi.y.max(p.y));
+        }
+        let tol = ((hi.x - lo.x).hypot(hi.y - lo.y) * 1e-6).max(1e-9);
+        let count = ((n as f64).sqrt().ceil() as usize).max(1);
+        let step = ((hi.y - lo.y) / count as f64).max(1e-12);
+        let mut edges = vec![Vec::new(); count];
+        let band = |y: f64| (((y - lo.y) / step).floor().max(0.0) as usize).min(count - 1);
+        for i in 0..n {
+            let (a, b) = (poly[i], poly[(i + 1) % n]);
+            for band_edges in &mut edges[band(a.y.min(b.y) - tol)..=band(a.y.max(b.y) + tol)] {
+                band_edges.push(i);
+            }
+        }
+        Bands { lo: lo.y, step, tol, edges }
+    }
+
+    /// The edges of the band height `y` falls in; none for a height outside the polygon.
+    fn near(&self, y: f64) -> &[usize] {
+        let top = self.lo + self.step * self.edges.len() as f64;
+        if y < self.lo - self.tol || y > top + self.tol {
+            return &[];
+        }
+        &self.edges[(((y - self.lo) / self.step).floor().max(0.0) as usize).min(self.edges.len() - 1)]
+    }
 }
 
 /// Orient `axis` from `center` towards the material: the side of the plane through `center` perpendicular
@@ -91,7 +123,7 @@ pub struct SketchPoint {
 }
 
 /// A typed sketch entity.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SketchEntity {
     pub id: Id,
     pub kind: EntityKind,
@@ -101,19 +133,37 @@ pub struct SketchEntity {
     pub construction: bool,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum EntityKind {
-    /// Segment between points `a` and `b`.
-    Line { a: Id, b: Id },
-    /// Arc around `center` from `a` to `b` (counter-clockwise when `ccw`).
-    Arc { center: Id, a: Id, b: Id, ccw: bool },
-    /// Circle around `center` with radius `r`.
-    Circle { center: Id, r: f64 },
-    /// Ellipse: centre `c`, endpoint of the major semi-axis `ma`, endpoint of the minor semi-axis `mi`.
-    /// The semi-axes are kept perpendicular by an implicit constraint; the major axis is |c-ma|, the minor
-    /// |c-mi|, and the rotation is the direction from `c` to `ma`. A real analytic entity with five degrees
-    /// of freedom, not a polygon.
-    Ellipse { c: Id, ma: Id, mi: Id },
+/// THE POINTS A SPLINE IS LAID OUT BY, in order along it, from its nodes where they stand (`at`): what it is drawn,
+/// picked and boxed by - its curve laid out to the sag of every curve (`Curve::polyline`), a loop without its start
+/// again at its end.
+pub fn spline_line(at: &[Point2], handles: &[Handle], ends: crate::feature::Ends) -> Vec<Point2> {
+    let mut line = crate::model::curve::Curve::spline(at.to_vec(), handles, ends).polyline();
+    if ends == crate::feature::Ends::Closed && line.len() > 2 {
+        line.pop();
+    }
+    line
+}
+
+/// THE POINTS AN ARC OF AN ELLIPSE IS LAID OUT BY, in order along it: the ellipse by its centre and the ends of its
+/// semi-axes (`axes`), the arc from `ends[0]` to `ends[1]` the way `winding` goes.
+pub fn ellipse_arc_line(axes: [Point2; 3], ends: [Point2; 2], winding: crate::feature::Winding) -> Vec<Point2> {
+    tess::ellipse_arc_points(axes, ends, winding)
+}
+
+/// THE TANGENTS OF A SPLINE AT A NODE, as the Hermite vector dP/dt of the spans on either side of it.
+///
+/// `arrive` is the tangent the span before the node ends with; `None` is the automatic Catmull-Rom tangent, which follows
+/// the neighbouring nodes. `leave` is the tangent the span after it starts with; `None` leaves by the arriving one, so a
+/// node is smooth unless told otherwise. A spline cut inside a span keeps its shape only with the two pieces of that
+/// span scaled apart - the piece before the cut ends with the tangent times the share it keeps, the piece after starts
+/// with the tangent times its own share - which is why a node may leave by a vector other than the one it arrives by.
+/// Dragging a handle sets both, so the node stays smooth.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Handle {
+    #[serde(default)]
+    pub arrive: Option<[f64; 2]>,
+    #[serde(default)]
+    pub leave: Option<[f64; 2]>,
 }
 
 /// Snapshot of sketch geometry for the clipboard (copy, cut and paste between sketches or within one).
@@ -133,6 +183,8 @@ pub struct GeomClip {
     /// Reference point, given at copy time.
     pub ref_x: f64,
     pub ref_y: f64,
+    /// The rectangles and the figures taken whole, laid again as figures on paste.
+    pub(crate) whole: crate::model::sketch::Whole,
 }
 
 impl GeomClip {
@@ -288,59 +340,6 @@ pub(crate) fn line_ellipse_roots(a: [f64; 2], b: [f64; 2], c: [f64; 2], u: [f64;
     vec![(-bb - sq) / (2.0 * aa), (-bb + sq) / (2.0 * aa)]
 }
 
-/// Parameters t along the segment `a-b`, within [0,1] plus an endpoint tolerance, where it crosses an
-/// ellipse.
-pub(crate) fn seg_ellipse_t(a: [f64; 2], b: [f64; 2], c: [f64; 2], u: [f64; 2], major: f64, minor: f64) -> Vec<f64> {
-    line_ellipse_roots(a, b, c, u, major, minor).into_iter().filter(|&t| t > -1e-9 && t < 1.0 + 1e-9).collect()
-}
-
-/// Intersection points of a circle (cx, cy, r) with an ellipse (centre ce, major-axis unit vector u,
-/// semi-axes `major` and `minor`).
-///
-/// There is no closed form (the equation is a quartic), so the roots of f(t) = |E(t) - c|^2 - r^2 are
-/// found numerically over the ellipse parameter, refining each sign-change interval by bisection. Up to
-/// four points.
-pub(crate) fn circle_ellipse_pts(c: [f64; 2], r: f64, ce: [f64; 2], u: [f64; 2], major: f64, minor: f64) -> Vec<(f64, f64)> {
-    let ([cx, cy], [cex, cey], [ux, uy]) = (c, ce, u);
-    use std::f64::consts::TAU;
-    let (vx, vy) = (-uy, ux);
-    let e = |th: f64| {
-        let (ct, st) = (th.cos(), th.sin());
-        (cex + major * ct * ux + minor * st * vx, cey + major * ct * uy + minor * st * vy)
-    };
-    let f = |th: f64| {
-        let (ex, ey) = e(th);
-        (ex - cx).powi(2) + (ey - cy).powi(2) - r * r
-    };
-    let n = 256;
-    let mut out: Vec<(f64, f64)> = Vec::new();
-    let mut prev_th = 0.0_f64;
-    let mut prev = f(0.0);
-    for k in 1..=n {
-        let th = TAU * k as f64 / n as f64;
-        let cur = f(th);
-        if prev == 0.0 {
-            out.push(e(prev_th));
-        } else if prev * cur < 0.0 {
-            let (mut lo, mut hi, mut flo) = (prev_th, th, prev);
-            for _ in 0..60 {
-                let mid = 0.5 * (lo + hi);
-                let fm = f(mid);
-                if flo * fm <= 0.0 {
-                    hi = mid;
-                } else {
-                    lo = mid;
-                    flo = fm;
-                }
-            }
-            out.push(e(0.5 * (lo + hi)));
-        }
-        prev_th = th;
-        prev = cur;
-    }
-    out
-}
-
 /// Intersection points of two circles (cx1, cy1, r1) and (cx2, cy2, r2): zero, one or two points.
 pub(crate) fn circle_circle_pts(cx1: f64, cy1: f64, r1: f64, cx2: f64, cy2: f64, r2: f64) -> Vec<(f64, f64)> {
     let (dx, dy) = (cx2 - cx1, cy2 - cy1);
@@ -376,32 +375,14 @@ impl Constraint {
     /// Expression of a dimensional constraint, when it has one; used to rebuild selectively by parameter
     /// name.
     pub fn expr(&self) -> Option<&str> {
-        match self {
-            Constraint::Distance { expr, .. }
-            | Constraint::DistancePL { expr, .. }
-            | Constraint::Diameter { expr, .. }
-            | Constraint::EdgeDistance { expr, .. }
-            | Constraint::Angle { expr, .. }
-            | Constraint::AngleLines { expr, .. }
-            | Constraint::ArcLength { expr, .. } => Some(expr).filter(|e| !e.is_empty()).map(|e| e.as_str()),
-            _ => None,
-        }
+        self.dim_expr().filter(|e| !e.is_empty())
     }
 
     /// Mutable access to a dimension expression. Renaming a driver needs it: sketch formulas reference
     /// names just as project parameters and feature parameters do, and skipping them would leave the
     /// document holding references to a name that no longer exists.
     pub fn expr_mut(&mut self) -> Option<&mut String> {
-        match self {
-            Constraint::Distance { expr, .. }
-            | Constraint::DistancePL { expr, .. }
-            | Constraint::Diameter { expr, .. }
-            | Constraint::EdgeDistance { expr, .. }
-            | Constraint::Angle { expr, .. }
-            | Constraint::AngleLines { expr, .. }
-            | Constraint::ArcLength { expr, .. } => Some(expr),
-            _ => None,
-        }
+        dimension_formula!(self)
     }
 }
 
@@ -442,6 +423,9 @@ pub fn constraint_point_ids(c: &Constraint) -> Vec<Id> {
         Constraint::EqualRadius { c1, c2 } => vec![c1, c2],
         Constraint::CircleTangent { c1, c2, .. } => vec![c1, c2],
         Constraint::PointOnCircle { p, c } => vec![p, c],
+        Constraint::PointOnEllipse { p, c, ma, mi } => vec![p, c, ma, mi],
+        Constraint::PointOnCurve { p, ref on } => std::iter::once(p).chain(on.points()).collect(),
+        Constraint::TangentCurves { ref one, ref other, .. } | Constraint::CurveDistance { from: ref one, to: ref other, .. } => one.points().into_iter().chain(other.points()).collect(),
         Constraint::Concentric { c1, c2 } => vec![c1, c2],
         Constraint::ArcLength { c, a, b, .. } => vec![c, a, b],
     }
@@ -452,42 +436,6 @@ pub fn constraint_point_ids(c: &Constraint) -> Vec<Id> {
 ///
 /// Needed by fillets and chamfers, where the corner point disappears and constraints that referenced it
 /// move to the tangency point. Non-point fields (radii, expressions) are left alone.
-/// The points an entity stands on.
-pub fn entity_points(e: &SketchEntity) -> Vec<Id> {
-    match e.kind {
-        EntityKind::Line { a, b } => vec![a, b],
-        EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-        EntityKind::Circle { center, .. } => vec![center],
-        EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
-    }
-}
-
-/// Re-point one entity from one point to another.
-pub fn remap_entity_point(e: &mut SketchEntity, from: Id, to: Id) {
-    let fix = |id: &mut Id| {
-        if *id == from {
-            *id = to;
-        }
-    };
-    match &mut e.kind {
-        EntityKind::Line { a, b } => {
-            fix(a);
-            fix(b);
-        }
-        EntityKind::Arc { center, a, b, .. } => {
-            fix(center);
-            fix(a);
-            fix(b);
-        }
-        EntityKind::Circle { center, .. } => fix(center),
-        EntityKind::Ellipse { c, ma, mi } => {
-            fix(c);
-            fix(ma);
-            fix(mi);
-        }
-    }
-}
-
 /// The same as `remap_constraint_point`, reachable from the sketch module.
 pub fn remap_constraint_point_pub(c: &mut Constraint, from: Id, to: Id) {
     remap_constraint_point(c, from, to);
@@ -539,6 +487,20 @@ pub(crate) fn remap_constraint_point(c: &mut Constraint, from: Id, to: Id) {
         Constraint::PointOnCircle { p, c } => {
             fix(p);
             fix(c);
+        }
+        Constraint::PointOnEllipse { p, c, ma, mi } => {
+            fix(p);
+            fix(c);
+            fix(ma);
+            fix(mi);
+        }
+        Constraint::PointOnCurve { p, on } => {
+            fix(p);
+            on.each_point_mut(fix);
+        }
+        Constraint::TangentCurves { one, other, .. } | Constraint::CurveDistance { from: one, to: other, .. } => {
+            one.each_point_mut(fix);
+            other.each_point_mut(fix);
         }
         Constraint::ArcLength { c, a, b, .. } => {
             fix(c);

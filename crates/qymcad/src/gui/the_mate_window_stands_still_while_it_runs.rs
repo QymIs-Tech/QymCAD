@@ -85,4 +85,28 @@ pub(in crate::gui) mod tests {
         assert!(spread(&glyphs) > 10.0, "GUARD: the glyph of the mate must travel with the run, and it travelled {:.1} px", spread(&glyphs));
         assert!(spread(&window) < 0.5, "the window of the mate must stand still while the mate runs, and it travelled {:.1} px", spread(&window));
     }
+
+    /// THE WINDOW OF A RUNNING MATE GOES WITH THE VIEW: the view moved by the mouse while the mate runs carries the
+    /// window as it carries a place of the scene that stands still. Reported behaviour: in a run of a cylindrical mate
+    /// the window stood on the screen while the view moved, and the mate went from under it.
+    #[test]
+    fn the_window_of_a_running_mate_goes_with_the_view() {
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let (_, at) = a_cylindrical_mate_with_its_window_open(&mut hand);
+        assert!(hand.press_word(&crate::i18n::tr("j-anim-offset"), at), "the window of a cylindrical mate has a button to run its travel");
+        let still = [30.0, 10.0, 5.0];
+        let window = hand.tool_box_id().expect("the box of the mate is drawn");
+        hand.frame(Vec::new());
+        assert!(hand.app.joint_anim.is_some(), "the travel of the mate runs");
+        let (window_was, still_was) = (hand.area_rect(window).expect("the window of the mate is drawn").min, hand.on_screen3d(still));
+        let from = hand.app.viewing.view_rect.left_center() + egui::vec2(60.0, 0.0);
+        let shift = super::super::hand::ViewDrag { button: egui::PointerButton::Secondary, modifiers: egui::Modifiers::SHIFT, from, to: from + egui::vec2(120.0, 40.0) };
+        hand.drag_view(shift);
+        assert!(hand.app.joint_anim.is_some(), "the travel of the mate runs on while the view moves");
+        let (window_now, still_now) = (hand.area_rect(window).expect("the window of the mate is drawn").min, hand.on_screen3d(still));
+        let (went, moved) = (still_now - still_was, window_now - window_was);
+        assert!(went.length() > 20.0, "GUARD: the view must move, and a place of the scene went {went:?}");
+        assert!((moved - went).length() < 6.0, "the window of a running mate stood apart from the view: the scene went {went:?}, the window {moved:?}");
+    }
 }

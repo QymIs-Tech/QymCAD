@@ -40,7 +40,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 12.0;
             p.txt = "12".into();
@@ -50,7 +50,7 @@ mod tests {
 
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
-        app.start_feat_cmd(4); // fillet
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // fillet
         crate::gui::commands::refresh_edges(&mut app.part_ctx());
         let edge = app.edges.ids.iter().copied().find(|e| *e != 0).expect("an edge");
         app.tools.gsel.edges.insert(edge);

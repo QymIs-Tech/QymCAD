@@ -162,25 +162,6 @@ pub fn body_giz_readout(body_giz: &BodyGizmo, set: &Settings, snap: bool) -> Opt
     }
 }
 
-/// The radius of a circle centred at `p` that touches the base edge (the perpendicular distance to a
-/// line, or |dist - R| to a circle).
-pub fn tangent_radius_to_edge(dc: &DrawCtx, si: usize, eref: EdgeRef, p: Point2) -> f64 {
-    match eref {
-        EdgeRef::Line { a, b } => match (sketch_pt(dc.project, si, a), sketch_pt(dc.project, si, b)) {
-            (Some(pa), Some(pb)) => {
-                let (dx, dy) = (pb.x - pa.x, pb.y - pa.y);
-                let len = (dx * dx + dy * dy).sqrt().max(1e-9);
-                ((dx * (p.y - pa.y) - dy * (p.x - pa.x)) / len).abs()
-            }
-            _ => 0.0,
-        },
-        EdgeRef::Circle { center, r } => match sketch_pt(dc.project, si, center) {
-            Some(pc) => (((p.x - pc.x).powi(2) + (p.y - pc.y).powi(2)).sqrt() - r).abs(),
-            None => 0.0,
-        },
-    }
-}
-
 /// The world (origin, normal) of the plane the command has picked — for the PREVIEW, without creating a
 /// datum (unlike `resolve_mirror_plane`). For a face, the local centroid and normal are taken into
 /// world space through the body's display transform.
@@ -336,7 +317,7 @@ pub fn view_key(pn: &Painting, rect: Rect, ppp: f32) -> u64 {
                                               // key - the one both drawing paths colour by (a body lights itself, a component its whole subtree), in a
                                               // fixed order, the set being a hash set. Without it a click on a part in the tree lit nothing on the
                                               // software picture until the camera moved.
-    let mut lit: Vec<usize> = highlight_mesh_set(pn.project, &pn.sel).into_iter().collect();
+    let mut lit: Vec<usize> = highlight_mesh_set(pn.project, &pn.sel, pn.held).into_iter().collect();
     lit.sort_unstable();
     lit.hash(&mut h);
     // a body switched off by its own tick is not drawn
@@ -440,7 +421,7 @@ pub fn gizmo_component(active_path: &[Id], project: &Project, sel: Sel, workbenc
 /// or the centroid of the selection).
 pub fn current_pattern_kind(armed: &Armed, pat: PatternTool, project: &Project, sk_pat: SketchPattern, si: usize, eids: &[Id]) -> qymcad_core::model::PatternKind {
     use qymcad_core::model::PatternKind;
-    if armed.pat_op() == 2 {
+    if armed.pattern() == Some(crate::PatternKind::Circular) {
         // the centre in order of priority: the one explicitly clicked, then the stored one (while editing), then the selection's centroid
         let (cx, cy) = if let Some(c) = pat.center {
             (c.x, c.y)
@@ -728,10 +709,10 @@ pub fn mesh_center(project: &qymcad_core::model::Project, mi: usize) -> [f64; 3]
 /// selects a batch of elements pointing in different directions: an arrow on one of them would show a
 /// direction the operation does not have — that is, it would lie.
 pub fn face_arrow_key(armed: &Armed) -> Option<&'static str> {
-    match armed.cmd_kind() {
-        20 | 25 => Some("dist"),
-        6 | 28 => Some("thickness"),
-        27 => Some("offset"),
+    match armed.part_tool() {
+        Some(crate::PartTool::DatumPlane) | Some(crate::PartTool::PushFace) => Some("dist"),
+        Some(crate::PartTool::Shell) | Some(crate::PartTool::Thicken) => Some("thickness"),
+        Some(crate::PartTool::SplitBody) => Some("offset"),
         _ => None,
     }
 }
@@ -802,15 +783,19 @@ pub fn scene_sphere_cached(pn: &Painting, scene_key: u64) -> Option<Sphere> {
 /// origin and normal of the chosen plane. Everything after that is shared: the drawing, the grabbing
 /// and the dragging.
 pub fn cmd_arrow_ref(pn: &Painting) -> Option<([f64; 3], [f64; 3])> {
-    match pn.armed.cmd_kind() {
-        6 | 25 | 28 => {
+    match pn.armed.part_tool() {
+        Some(crate::PartTool::Shell) | Some(crate::PartTool::PushFace) | Some(crate::PartTool::Thicken) => {
             let mi = pn.project.mesh_index(pn.gsel.faces_body?)?;
             let f = pn.project.bodies.get(mi)?.faces.iter().find(|f| pn.gsel.faces.contains(&f.id))?;
             Some(([f.centroid.x, f.centroid.y, f.centroid.z], f.normal))
         }
-        27 => pn.split.plane.as_ref().and_then(|sp| mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, sp)),
+        Some(crate::PartTool::SplitBody) => {
+            pn.split.plane.as_ref().and_then(|sp| mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, sp))
+        }
         // a datum plane: from the reference picked, along the side its offset goes to (`BasePlane::offset_direction`)
-        20 => pn.datum.plane_pick.as_ref().and_then(|sp| mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, sp)),
+        Some(crate::PartTool::DatumPlane) => {
+            pn.datum.plane_pick.as_ref().and_then(|sp| mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, sp))
+        }
         _ => None,
     }
 }

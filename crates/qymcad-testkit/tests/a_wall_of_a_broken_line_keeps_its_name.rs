@@ -3,7 +3,7 @@
 //! that was there. Measured on the case of the examples: breaking the first line of each of its 32 sketches renamed 59
 //! faces that did not move, the wall named after the new half, and every rounding and sketch on it went with the name.
 use qymcad_core::feature::{Purpose, Reach};
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 use qymcad_core::names::Role;
 
 #[test]
@@ -26,13 +26,10 @@ fn a_wall_of_a_line_broken_in_two_keeps_its_name() {
     let line = p.sketches[si]
         .entities
         .iter()
-        .find(|e| match e.kind {
-            EntityKind::Line { a, b } => [a, b].iter().all(|k| p.point_xy(si, *k).is_some_and(|q| q.1.abs() < 1e-9)),
-            _ => false,
-        })
+        .find(|e| e.kind.as_line().is_some_and(|l| [l.a, l.b].iter().all(|k| p.point_xy(si, *k).is_some_and(|q| q.1.abs() < 1e-9))))
         .map(|e| e.id)
         .expect("the bottom line");
-    assert!(p.break_line(si, line, 10.0, 0.0), "the line did not break");
+    assert!(p.break_curve(si, line, 10.0, 0.0), "the line did not break");
     p.mark_sketch_dirty(sketch);
     let (report, _) = qymcad_testkit::regenerate(&mut p);
     assert!(report.errors.is_empty(), "the block with a broken line does not build: {:?}", report.errors);

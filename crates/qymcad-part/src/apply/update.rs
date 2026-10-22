@@ -1,6 +1,6 @@
 //! A feature already in the timeline changed by its command: the datum and every other kind.
 
-use qymcad_ui_state::Notice;
+use qymcad_ui_state::NotApplied;
 use super::*;
 
 /// Update an existing DATUM with the parameters of the command (reopened by a double click): it edits
@@ -12,15 +12,14 @@ pub fn update_datum_feat(
     datum: &qymcad_ui_state::DatumCommand,
     edges: &qymcad_ui_state::EdgeCache,
     project: &mut Project,
-    status: &mut qymcad_ui_state::Notice,
     fid: Id,
-) -> Option<Id> {
+) -> Result<Id, NotApplied> {
     use qymcad_core::feature::SketchPlane;
     use qymcad_core::model::{AxisDef, PlaneDef};
-    match armed.cmd_kind() {
-        20 => {
+    match armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::DatumPlane) => {
             let dist = qymcad_ui_state::cmd_val(cmd, "dist");
-            let pi = project.planes.iter().position(|p| p.id == fid)?;
+            let pi = project.planes.iter().position(|p| p.id == fid).ok_or_else(op_failed)?;
             match datum.plane_pick {
                 Some(SketchPlane::World(bp)) => project.planes[pi].def = PlaneDef::OffsetBase { base: bp, dist },
                 Some(SketchPlane::Face(body, key)) => project.planes[pi].def = PlaneDef::OffsetFace { body, face: key, dist },
@@ -33,13 +32,13 @@ pub fn update_datum_feat(
             turn_datum_plane(cmd, project, fid);
             if let Err(e) = store_cmd_exprs(cmd, project, fid) {
                 // the offset, the tilts and the turn stay parametric
-                return say_formula_refused(status, &e);
+                return Err(formula_refused(&e));
             }
-            Some(fid)
+            Ok(fid)
         }
-        21 => {
+        Some(qymcad_ui_state::PartTool::DatumPoint) => {
             use qymcad_core::model::PointDef;
-            let pi = project.datum_points.iter().position(|p| p.id == fid)?;
+            let pi = project.datum_points.iter().position(|p| p.id == fid).ok_or_else(op_failed)?;
             if datum.pt_mode == 1 {
                 // "at a vertex" mode: picking another vertex makes a new associative reference; otherwise
                 // the previous one IS KEPT
@@ -47,19 +46,19 @@ pub fn update_datum_feat(
                     project.datum_points[pi].def = PointDef::AtVertex { body, edge, end };
                     project.datum_points[pi].at = at;
                 }
-                return Some(fid);
+                return Ok(fid);
             }
             let at = [qymcad_ui_state::cmd_val(cmd, "x"), qymcad_ui_state::cmd_val(cmd, "y"), qymcad_ui_state::cmd_val(cmd, "z")];
             project.datum_points[pi].at = at;
             project.datum_points[pi].def = PointDef::Manual; // back to hand-typed coordinates
             if let Err(e) = store_cmd_exprs(cmd, project, fid) {
                 // x, y and z stay parametric
-                return say_formula_refused(status, &e);
+                return Err(formula_refused(&e));
             }
-            Some(fid)
+            Ok(fid)
         }
-        22 => {
-            let ai = project.datum_axes.iter().position(|a| a.id == fid)?;
+        Some(qymcad_ui_state::PartTool::DatumAxis) => {
+            let ai = project.datum_axes.iter().position(|a| a.id == fid).ok_or_else(op_failed)?;
             match datum.axis_mode {
                 1 => {
                     // editing the coordinates by hand IS A CHANGE OF DEFINITION to a manual one rather than
@@ -67,6 +66,9 @@ pub fn update_datum_feat(
                     let o = [qymcad_ui_state::cmd_val(cmd, "ox"), qymcad_ui_state::cmd_val(cmd, "oy"), qymcad_ui_state::cmd_val(cmd, "oz")];
                     let dv = [qymcad_ui_state::cmd_val(cmd, "dx"), qymcad_ui_state::cmd_val(cmd, "dy"), qymcad_ui_state::cmd_val(cmd, "dz")];
                     project.datum_axes[ai].set_manual(o, dv);
+                    if let Err(e) = store_cmd_exprs(cmd, project, fid) {
+                        return Err(formula_refused(&e));
+                    }
                 }
                 2 => {
                     if datum.axis_pts.len() == 2 {
@@ -91,19 +93,19 @@ pub fn update_datum_feat(
                     _ => {} // nothing was re-picked, so the definition stays as it is
                 },
             }
-            Some(fid)
+            Ok(fid)
         }
-        _ => None,
+        _ => Err(op_failed()),
     }
 }
 
 /// Update existing feature `fid` with the parameters of the active command (edit mode).
-pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
+pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, NotApplied> {
     use qymcad_core::feature::FeatureKind;
     // THE DATUMS edit `project.planes`, `points` and `axes` plus the feature dims rather than
     // `node.kind`, so they take a separate path
-    if matches!(pc.armed.cmd_kind(), 20..=22) {
-        return update_datum_feat(pc.armed, pc.cmd, pc.datum, pc.edges, pc.project, pc.status, fid);
+    if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::is_a_datum) {
+        return update_datum_feat(pc.armed, pc.cmd, pc.datum, pc.edges, pc.project, fid);
     }
     // take everything out of the command state in advance, to avoid borrowing self twice
     let (h, ang, r, dist, th, dia, dep) = (
@@ -119,7 +121,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     let vtable: Vec<(qymcad_core::refs::Ref, f64)> =
         fillet_vertex_table(pc.cmd).into_iter().map(|(desc, val)| (qymcad_core::refs::Ref::one(desc, qymcad_core::refs::Fingerprint::default()), val)).collect();
     let dist_v = qymcad_ui_state::cmd_val(pc.cmd, "dist"); // "push a face": the offset, which may be an expression
-    let (rec_tol, rec_sharp) = (qymcad_ui_state::cmd_val(pc.cmd, "tol"), qymcad_ui_state::cmd_val(pc.cmd, "sharp")); // the recognition's tolerance and sharp edge
+    let (rec_tol, rec_sharp, rec_simplify) = (qymcad_ui_state::cmd_val(pc.cmd, "tol"), qymcad_ui_state::cmd_val(pc.cmd, "sharp"), qymcad_ui_state::cmd_val(pc.cmd, "simplify")); // the recognition: its tolerance, sharp edge and simplifying
     let ch_d2 = qymcad_ui_state::cmd_val(pc.cmd, "d2"); // the second leg or the angle of the chamfer, in degrees
     let (ch_mode, ch_flip) = (pc.chamfer.mode, pc.chamfer.flip); // the mode plus the side of the reference face
     let patch_tangent = pc.opts.patch_tangent; // a patch by position or smooth
@@ -149,8 +151,8 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     // borrowed; if it disagrees with the number of pieces the feature has, the edit is rejected below -
     // the bodies of the cut have already spread through the timeline (they are referred to and they are
     // visible), and their number cannot be changed in place.
-    let (split_resolved, split_pieces) = if pc.armed.cmd_kind() == 27 || pc.armed.cmd_kind() == 29 {
-        let n = (pc.armed.cmd_kind() == 27)
+    let (split_resolved, split_pieces) = if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::splits) {
+        let n = (pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::SplitBody))
             .then(|| {
                 qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel)
                     .and_then(|src| split_piece_count(pc, src))
@@ -164,14 +166,14 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     let split_offset = qymcad_ui_state::cmd_val(pc.cmd, "offset");
     let thickness_v = qymcad_ui_state::cmd_val(pc.cmd, "thickness"); // the thickening
                                                                      // the array: gather the vector, the angle and the count BEFORE the timeline is borrowed
-    let (a_dir, a_dir2, a_dir3, a_two, a_three, a_axis, a_full) = (pc.arr.dir, pc.arr.dir2, pc.arr.dir3, pc.arr.two, pc.arr.three, pc.arr.axis, pc.arr.full);
+    let (a_dir, a_dir2, a_dir3, a_two, a_three, a_axis) = (pc.arr.dir, pc.arr.dir2, pc.arr.dir3, pc.arr.two, pc.arr.three, pc.arr.axis);
     let (a_count, a_count2, a_count3) = (pc.arr.count.max(1), pc.arr.count2.max(1), pc.arr.count3.max(1));
     let (a_dx, a_dy, a_dz) = qymcad_ui_state::arr_vec(a_dir, qymcad_ui_state::cmd_val(pc.cmd, "step"));
     let (a_dx2, a_dy2, a_dz2) = if a_two { qymcad_ui_state::arr_vec(a_dir2, qymcad_ui_state::cmd_val(pc.cmd, "step2")) } else { (0.0, 0.0, 0.0) };
     let a_c2 = if a_two { a_count2 } else { 1 };
     let (a_dx3, a_dy3, a_dz3) = if a_two && a_three { qymcad_ui_state::arr_vec(a_dir3, qymcad_ui_state::cmd_val(pc.cmd, "step3")) } else { (0.0, 0.0, 0.0) };
     let a_c3 = if a_two && a_three { a_count3 } else { 1 };
-    let a_angle = if a_full { 360.0 } else { qymcad_ui_state::cmd_val(pc.cmd, "angle") };
+    let a_angle = qymcad_ui_state::cmd_val(pc.cmd, "angle");
     let (a_step_txt, a_step2_txt, a_step3_txt) = (cmd_txt(pc.cmd, "step"), cmd_txt(pc.cmd, "step2"), cmd_txt(pc.cmd, "step3"));
     // the primitives: values under the same keys the regen uses (radii)
     let (p_dx, p_dy, p_dz) = (qymcad_ui_state::cmd_val(pc.cmd, "dx"), qymcad_ui_state::cmd_val(pc.cmd, "dy"), qymcad_ui_state::cmd_val(pc.cmd, "dz"));
@@ -187,10 +189,33 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     // if ANOTHER face is picked while editing, it is updated on the feature. Only for the hole: the face
     // goes in by its persistent `FaceKey` (the shell is now a multiple selection by id - `faces_set`
     // above)
-    let hole_face: Option<(qymcad_core::feature::FaceKey, [f64; 3], [f64; 3])> = match *pc.sel {
-        qymcad_ui_state::Sel::Face(mi, fi) => pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map(|face| {
+    // THE FACE OF A HOLE REOPENED is its own face when no other is picked: the shifts typed in its box moved nothing until a
+    // face was clicked again, the selection being the row of the feature
+    let own_face = || {
+        let fid = pc.cmd.edit?;
+        let (src, face) = pc.project.timeline.iter().find(|n| n.id == fid).and_then(|n| match &n.kind {
+            qymcad_core::feature::FeatureKind::Hole { src, face, sketch: 0, .. } => Some((*src, face.clone())),
+            _ => None,
+        })?;
+        let key = qymcad_core::feature::FaceKey { index: 0, centroid: [0.0; 3], normal: [0.0, 0.0, 1.0], id: face_desc_of(&face)? };
+        qymcad_pick::resolve_face_sel(&*pc.project, src, &key)
+    };
+    let face_at = match *pc.sel {
+        qymcad_ui_state::Sel::Face(mi, fi) => Some((mi, fi)),
+        _ if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Hole) => own_face(),
+        _ => None,
+    };
+    let hole_face: Option<(qymcad_core::feature::FaceKey, [f64; 3], [f64; 3])> = match face_at {
+        Some((mi, fi)) => pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map(|face| {
             let k = qymcad_core::feature::FaceKey { index: fi as u32, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: face.id };
-            (k, hole_centre(k.centroid, k.normal, qymcad_ui_state::cmd_val(pc.cmd, "off_u"), qymcad_ui_state::cmd_val(pc.cmd, "off_v")), k.normal)
+            (
+                k,
+                qymcad_core::feature::point_on_face(
+                    qymcad_core::feature::FaceAt { centre: k.centroid, normal: k.normal },
+                    [qymcad_ui_state::cmd_val(pc.cmd, "off_u"), qymcad_ui_state::cmd_val(pc.cmd, "off_v")],
+                ),
+                k.normal,
+            )
         }),
         _ => None,
     };
@@ -322,9 +347,10 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
                 }
                 *side = shell_side; // which way the wall goes
             }
-            FeatureKind::MeshRecognised { tol, sharp, .. } => {
+            FeatureKind::MeshRecognised { tol, sharp, simplify, .. } => {
                 *tol = rec_tol;
                 *sharp = rec_sharp;
+                *simplify = rec_simplify;
             }
             FeatureKind::Thicken { face, thickness, .. } => {
                 *thickness = thickness_v;
@@ -506,7 +532,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
                 *n = p_n;
                 *h = p_ph;
             }
-            _ => return None,
+            _ => return Err(op_failed()),
         }
         node.dirty = true;
         true
@@ -514,53 +540,47 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
         false
     };
     if !found {
-        return None;
+        return Err(op_failed());
     }
     if let Some((got, had)) = bad_pieces {
         // the feature was left untouched - the edit was not applied AT ALL rather than half applied
-        *pc.status = Notice::warning(qymcad_i18n::tr2("cmd-split-count-changed", "got", &got.to_string(), "had", &had.to_string()));
-        return None;
+        return Err(NotApplied::Refused(qymcad_i18n::tr2("cmd-split-count-changed", "got", &got.to_string(), "had", &had.to_string())));
     }
+    // store or clear the dimension expressions - the counts, the logical steps and the angle included
     if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, fid) {
-        return formula_refused(pc, &e);
-    } // store or clear the dimension expressions (the logical step, step2 and angle included)
-    if matches!(pc.armed.cmd_kind(), 17 | 18) {
-        if let Err(e) = store_bar_counts(pc.bar_exprs, pc.project, fid) {
-            return formula_refused(pc, &e);
-        } // the counts typed in the bar, as the steps are
+        return Err(formula_refused(&e));
     }
-    // the array: the step expressions go onto the components of the vector (the regen reads those), and the
-    // angle is cleared for a full circle
-    match pc.armed.cmd_kind() {
-        17 => {
+    // the array: the step expressions go onto the components of the vector (the regen reads those)
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::LinearPattern) {
+        {
             if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx", "dy", "dz"], a_dir, a_step_txt.clone()) {
-                return formula_refused(pc, &e);
+                return Err(formula_refused(&e));
             }
             if a_two {
                 if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx2", "dy2", "dz2"], a_dir2, a_step2_txt.clone()) {
-                    return formula_refused(pc, &e);
+                    return Err(formula_refused(&e));
                 }
             } else {
-                for k in ["dx2", "dy2", "dz2"] {
+                for k in ["dx2", "dy2", "dz2", "count2", "step2"] {
                     pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: k });
                 }
             }
             if a_two && a_three {
                 if let Err(e) = qymcad_ui_state::store_arr_component(pc.project, fid, ["dx3", "dy3", "dz3"], a_dir3, a_step3_txt.clone()) {
-                    return formula_refused(pc, &e);
+                    return Err(formula_refused(&e));
                 }
             } else {
-                for k in ["dx3", "dy3", "dz3"] {
+                for k in ["dx3", "dy3", "dz3", "count3", "step3"] {
                     pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: k });
                 }
             }
         }
-        18 if a_full => {
-            pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: "angle" });
-        }
-        _ => {}
+    }
+    // A SECOND SIDE SWITCHED OFF takes its formula with it: left, the rebuild read it and the extrusion stayed two-sided
+    if !pc.cmd.extent.two_sided() {
+        pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: "down" });
     }
     // the step opened and applied again is the person's word on what it takes: a mark of a reference found by place goes
     pc.project.accept_found_by_place(fid);
-    Some(fid)
+    Ok(fid)
 }

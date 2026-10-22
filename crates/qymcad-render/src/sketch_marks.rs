@@ -94,12 +94,12 @@ pub fn draw_sketch_points(pn: &Painting, painter: &egui::Painter, rect: Rect, si
     let has_conflict = !diag.conflicts.is_empty();
     // the reference points and the virtual sharps of rectangles are not drawn as numbered geometry
     let unseen = s.unseen_points();
-    let selected: std::collections::HashSet<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 0).map(|(_, id)| *id).collect();
+    let selected: std::collections::HashSet<Id> = pn.sel_sk.points().collect();
     let sight = rect.expand(8.0);
     let in_sight: Vec<(usize, Pos2)> =
         s.points.iter().enumerate().filter(|(_, p)| !unseen.contains(&p.id)).map(|(pi, p)| (pi, sh.at(Point2::new(p.x, p.y)))).filter(|(_, sp)| sight.contains(*sp)).collect();
     // the points marked go first, so a plain point gives way to them and not they to it
-    let marked = |id: Id| selected.contains(&id) || pn.hover.sketch == Some((0, id)) || picked.contains(&id);
+    let marked = |id: Id| selected.contains(&id) || pn.hover.sketch == Some(qymcad_ui_state::SketchItem::point(id)) || picked.contains(&id);
     // stable, in two passes rather than a sort: 70 000 points in sight sorted every frame were part of 60 ms
     let in_sight = in_sight.iter().filter(|&&(pi, _)| marked(s.points[pi].id)).chain(in_sight.iter().filter(|&&(pi, _)| !marked(s.points[pi].id))).copied();
     let (mut dots, mut numbers) = (Dots::new(rect.expand(8.0)), Taken::new(24.0));
@@ -114,7 +114,7 @@ pub fn draw_sketch_points(pn: &Painting, painter: &egui::Painter, rect: Rect, si
         };
         let (col, r) = if selected.contains(&id) {
             (pn.scheme.pal.emphasis(), 5.0)
-        } else if pn.hover.sketch == Some((0, id)) {
+        } else if pn.hover.sketch == Some(qymcad_ui_state::SketchItem::point(id)) {
             (pn.scheme.pal.preview(), 5.0) // the pre-select highlight
         } else if picked.contains(&id) {
             (pn.scheme.pal.sketch_point(), 4.5)
@@ -137,7 +137,7 @@ pub fn draw_sketch_points(pn: &Painting, painter: &egui::Painter, rect: Rect, si
 /// Draw the associative dimensions and constraints of the selected sketch in the viewport.
 pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: usize) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let Some(s) = pn.project.sketches.get(si) else { return };
     let dim_col = pn.scheme.pal.dimension();
     let font = egui::FontId::proportional(pn.set.dim_font);
@@ -155,20 +155,6 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
     };
     // construction geometry is dashed
     let aux_col = pn.scheme.pal.sketch_construction();
-    // A SPLINE PICKED OR UNDER THE POINTER IS LIT along its curve, as a picked or hovered line is
-    for (spi, sp) in s.splines.iter().enumerate() {
-        let key = sp.points.first().map(|&id| (qymcad_ui_state::SEL_SPLINE, id));
-        let (sel, hov) = (key.is_some_and(|k| pn.sel_sk.items.contains(&k)), key.is_some() && pn.hover.sketch == key);
-        if !sel && !hov {
-            continue;
-        }
-        let hl = if sel { Stroke::new(2.5, pn.scheme.pal.emphasis()) } else { Stroke::new(2.0, pn.scheme.pal.preview()) };
-        let mut line: Vec<Pos2> = pn.project.spline_polyline(si, spi).iter().map(|p| sh.at(*p)).collect();
-        if sp.closed {
-            line.extend(line.first().copied());
-        }
-        painter.add(egui::Shape::line(line, hl));
-    }
     // THE TANGENT HANDLES of the splines picked (`splines_with_handles`): a line from the knot to the handle and a point
     // at its end to take it by. The one under the pointer is lit in the colour of what a click takes, and the one held by
     // the pressed button in the colour of what is being moved - the handle follows the pointer, so the one under it is
@@ -176,11 +162,11 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
     let hcol = pn.scheme.pal.dim_helper();
     let grab = qymcad_ui_state::grab::grab(pn.set, qymcad_ui_state::grab::Grab::Point);
     let pointer = painter.ctx().input(|i| i.pointer.hover_pos().map(|p| (p, i.pointer.primary_down())));
-    let handles: Vec<(Point2, Point2)> = qymcad_ui_state::splines_with_handles(pn.project, pn.sel_sk, si).into_iter().flat_map(|spi| pn.project.spline_handles(si, spi)).collect();
-    let under = pointer.and_then(|(p, _)| handles.iter().map(|(_, h)| sh.at(*h).distance(p)).enumerate().filter(|(_, d)| *d <= grab).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(k, _)| k));
+    let handles: Vec<qymcad_core::model::SplineHandle> = qymcad_ui_state::splines_with_handles(pn.project, pn.sel_sk, si).into_iter().flat_map(|eid| pn.project.spline_handles(si, eid)).collect();
+    let under = pointer.and_then(|(p, _)| handles.iter().map(|h| sh.at(h.end).distance(p)).enumerate().filter(|(_, d)| *d <= grab).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(k, _)| k));
     let held = pointer.is_some_and(|(_, down)| down);
-    for (k, (knot, hend)) in handles.into_iter().enumerate() {
-        let (sk, sh) = (sh.at(knot), sh.at(hend));
+    for (k, handle) in handles.into_iter().enumerate() {
+        let (sk, sh) = (sh.at(handle.node), sh.at(handle.end));
         let (col, r) = match under == Some(k) {
             true if held => (pn.scheme.pal.active(), 5.0),
             true => (pn.scheme.pal.preview(), 5.0),
@@ -190,64 +176,19 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
         painter.circle_filled(sh, r, col);
         painter.circle_stroke(sh, r, Stroke::new(1.0, pn.scheme.pal.dim_helper_ring()));
     }
-    // construction splines are dashed (they do not go into a profile)
-    for spi in 0..s.splines.len() {
-        if !s.splines[spi].construction {
-            continue;
-        }
-        let poly = pn.project.spline_polyline(si, spi);
-        if poly.len() >= 2 {
-            let pts: Vec<Pos2> = poly.iter().map(|p| sh.at(*p)).collect();
-            painter.add(egui::Shape::dashed_line(&pts, Stroke::new(1.0, aux_col), 6.0, 4.0));
-        }
-    }
-    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
-    let pt_of = |id: Id| points_by_id.get(&id).copied().map(|p| Point2::new(p.x, p.y));
     for e in &s.entities {
         if !e.construction {
             continue;
         }
-        match e.kind {
-            qymcad_core::model::EntityKind::Line { a, b } => {
-                if let (Some(pa), Some(pb)) = (pt_of(a), pt_of(b)) {
-                    let (sa, sb) = (sh.at(pa), sh.at(pb));
-                    painter.add(egui::Shape::dashed_line(&[sa, sb], Stroke::new(1.0, aux_col), 6.0, 4.0));
-                }
-            }
-            qymcad_core::model::EntityKind::Circle { center, r } => {
-                if let Some(c) = pt_of(center) {
-                    let sc = sh.at(c);
-                    let rp = (sh.at(Point2::new(c.x + r, c.y)).x - sc.x).abs();
-                    // a dashed circle, as segments
-                    let n = 48;
-                    let pts: Vec<Pos2> = (0..=n)
-                        .map(|k| {
-                            let a = std::f64::consts::TAU * k as f64 / n as f64;
-                            sc + egui::vec2((rp as f64 * a.cos()) as f32, (rp as f64 * a.sin()) as f32)
-                        })
-                        .collect();
-                    painter.add(egui::Shape::dashed_line(&pts, Stroke::new(1.0, aux_col), 6.0, 4.0));
-                }
-            }
-            qymcad_core::model::EntityKind::Arc { center, a, b, ccw } => {
-                if let (Some(c), Some(pa), Some(pb)) = (pt_of(center), pt_of(a), pt_of(b)) {
-                    let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
-                    let a0 = (pa.y - c.y).atan2(pa.x - c.x);
-                    let a1 = (pb.y - c.y).atan2(pb.x - c.x);
-                    let arc = qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02);
-                    let sp: Vec<Pos2> = arc.iter().map(|p| sh.at(Point2::new(p.x, p.y))).collect();
-                    if sp.len() >= 2 {
-                        painter.add(egui::Shape::dashed_line(&sp, Stroke::new(1.0, aux_col), 6.0, 4.0));
-                    }
-                }
-            }
-            qymcad_core::model::EntityKind::Ellipse { c, ma, mi } => {
-                let pts: Vec<Pos2> = qymcad_ui_state::ellipse_outline_world(pn.project, si, c, ma, mi).iter().map(|p| sh.at(*p)).collect();
-                if pts.len() >= 2 {
-                    painter.add(egui::Shape::dashed_line(&pts, Stroke::new(1.0, aux_col), 6.0, 4.0));
-                }
-            }
+        // a curve of construction geometry of any kind, dashed as it is drawn
+        let pts: Vec<Pos2> = qymcad_ui_state::entity_outline(s, e).iter().map(|p| sh.at(*p)).collect();
+        if pts.len() >= 2 {
+            painter.add(egui::Shape::dashed_line(&pts, Stroke::new(1.0, aux_col), 6.0, 4.0));
         }
+    }
+    // THE CENTRE LINES OF THE CIRCLES, dashed and faint: the axes a dimension, a line or a tangent is laid off
+    for cl in qymcad_ui_state::circle_centre_lines(pn.project, si) {
+        painter.add(egui::Shape::dashed_line(&[sh.at(cl.from), sh.at(cl.to)], Stroke::new(0.7, aux_col.gamma_multiply(0.7)), 7.0, 3.0));
     }
     // CONFLICTING dimensions (the value contradicts the geometry) are red
     let conflicts = qymcad_ui_state::sketch_diag(pn.cache, pn.project, si).conflicts;
@@ -306,20 +247,7 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
             Constraint::EdgeDistance { c1, c2, d, m1, m2, off: doff, .. } => {
                 // a tangent dimension: the dimension line runs between the RIMS of the circles (centre +/- radius along the line of centres)
                 let (Some(p1), Some(p2)) = (qymcad_ui_state::sketch_pt(pn.project, si, c1), qymcad_ui_state::sketch_pt(pn.project, si, c2)) else { continue };
-                let r_of = |cid: Id| -> f64 {
-                    for e in &s.entities {
-                        match e.kind {
-                            EntityKind::Circle { center, r } if center == cid => return r,
-                            EntityKind::Arc { center, a, .. } if center == cid => {
-                                if let (Some(pc), Some(pa)) = (qymcad_ui_state::sketch_pt(pn.project, si, center), qymcad_ui_state::sketch_pt(pn.project, si, a)) {
-                                    return ((pa.x - pc.x).powi(2) + (pa.y - pc.y).powi(2)).sqrt();
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    0.0
-                };
+                let r_of = |cid: Id| -> f64 { s.entities.iter().find_map(|e| qymcad_core::model::circle_of(s, e).filter(|k| k.center == cid)).map_or(0.0, |k| k.r) };
                 let (r1, r2) = (r_of(c1), r_of(c2));
                 let len = ((p2.x - p1.x).powi(2) + (p2.y - p1.y).powi(2)).sqrt().max(1e-9);
                 let (ux, uy) = ((p2.x - p1.x) / len, (p2.y - p1.y) / len);
@@ -340,6 +268,27 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
                     painter.line_segment([end.0, end.0 - t - perp * 2.5], Stroke::new(1.0, dim_col));
                 }
                 let _ = d;
+                linear_text(ci, label.clone(), dim_col);
+            }
+            Constraint::CurveDistance { off: doff, .. } => {
+                // a distance to a curve of any kind: between the places the two come nearest, led off square to it
+                let Some([e1, e2]) = pn.project.curve_distance_ends(si, c) else { continue };
+                let (sa, sb) = (sh.at(e1), sh.at(e2));
+                let dir = (sb - sa).normalized();
+                let perp = egui::vec2(-dir.y, dir.x);
+                let off = perp * (16.0 + doff as f32 * sc);
+                let (la, lb) = (sa + off, sb + off);
+                painter.line_segment([sa, la], Stroke::new(0.7, dim_col));
+                painter.line_segment([sb, lb], Stroke::new(0.7, dim_col));
+                painter.line_segment([la, lb], Stroke::new(1.2, dim_col));
+                let along = (lb - la).normalized();
+                let arrow = |at: egui::Pos2, way: egui::Vec2| {
+                    let t = way * 6.0;
+                    painter.line_segment([at, at - t + perp * 2.5], Stroke::new(1.0, dim_col));
+                    painter.line_segment([at, at - t - perp * 2.5], Stroke::new(1.0, dim_col));
+                };
+                arrow(la, along);
+                arrow(lb, -along);
                 linear_text(ci, label.clone(), dim_col);
             }
             Constraint::DistancePL { p, a, b, d, off: doff, .. } => {

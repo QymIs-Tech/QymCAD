@@ -325,7 +325,7 @@ fn the_tolerance_decides_what_counts_as_smooth() {
 #[test]
 fn a_lost_name_finds_the_one_piece_of_the_same_wall() {
     let mut names = NameTable::default();
-    let wall = |split: u16| GeoName { feature: 7, role: Role::Wall, src: 101, split };
+    let wall = |split: u16| GeoName { feature: 7, role: Role::Wall, src: 101, split, cut: None };
     let was = names.intern_face(wall(0));
     let cap = names.intern_face(GeoName::new(7, Role::CapEnd, 0));
     let piece = names.intern_face(wall(2));

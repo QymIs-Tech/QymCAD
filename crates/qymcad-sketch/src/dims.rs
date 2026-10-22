@@ -24,30 +24,22 @@ use super::*;
 pub fn set_dim_value(project: &mut Project, si: usize, ci: usize, v: f64) -> Result<(), &'static str> {
     use qymcad_core::model::Constraint as C;
     let Some(c) = project.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci)) else { return Err("sk-dim-gone") };
-    if !v.is_finite() {
-        return Err("sk-dim-must-be-positive");
+    if let Some(key) = dim_value_refusal(c, v) {
+        return Err(key);
     }
     match c {
-        // the angle between two lines is their opening, more than 0 and less than 180 deg; which side it is on is
-        // where the dimension stands, not a sign
-        C::AngleLines { .. } if v <= 0.0 || v >= HALF_TURN_DEG => Err("sk-angle-range"),
-        // three points go round the vertex, so the opening may pass 180 deg, but not a whole turn
-        C::Angle { .. } if v <= 0.0 || v >= 2.0 * HALF_TURN_DEG => Err("sk-angle-range-3pt"),
         C::Angle { deg, expr, .. } | C::AngleLines { deg, expr, .. } => {
             *deg = v;
             expr.clear();
             Ok(())
         }
-        _ if v <= 0.0 => Err("sk-dim-must-be-positive"),
-        // the lengths a sketch takes end where the fields of the bars end: 10 m
-        _ if v > MAX_SKETCH_LENGTH => Err("sk-dim-too-large"),
         // `DistancePL` keeps its own sign - it says which side of the line - and takes the magnitude typed
         C::DistancePL { d, expr, .. } => {
             *d = if *d < 0.0 { -v } else { v };
             expr.clear();
             Ok(())
         }
-        C::Distance { d, expr, .. } | C::Diameter { d, expr, .. } | C::EdgeDistance { d, expr, .. } => {
+        C::Distance { d, expr, .. } | C::Diameter { d, expr, .. } | C::EdgeDistance { d, expr, .. } | C::CurveDistance { d, expr, .. } => {
             *d = v;
             expr.clear();
             Ok(())
@@ -58,6 +50,27 @@ pub fn set_dim_value(project: &mut Project, si: usize, ci: usize, v: f64) -> Res
             Ok(())
         }
         _ => Err("sk-dim-gone"),
+    }
+}
+
+/// THE CATALOGUE KEY OF WHY dimension `c` cannot take value `v`, none when it can: asked by the box of the dimension
+/// while the value is typed, and by the door that writes it.
+pub fn dim_value_refusal(c: &qymcad_core::model::Constraint, v: f64) -> Option<&'static str> {
+    use qymcad_core::model::Constraint as C;
+    if !v.is_finite() {
+        return Some("sk-dim-must-be-positive");
+    }
+    match c {
+        // the angle between two lines is their opening, more than 0 and less than 180 deg; which side it is on is
+        // where the dimension stands, not a sign
+        C::AngleLines { .. } if v <= 0.0 || v >= HALF_TURN_DEG => Some("sk-angle-range"),
+        // three points go round the vertex, so the opening may pass 180 deg, but not a whole turn
+        C::Angle { .. } if v <= 0.0 || v >= 2.0 * HALF_TURN_DEG => Some("sk-angle-range-3pt"),
+        C::Angle { .. } | C::AngleLines { .. } => None,
+        _ if v <= 0.0 => Some("sk-dim-must-be-positive"),
+        // the lengths a sketch takes end where the fields of the bars end: 10 m
+        _ if v > MAX_SKETCH_LENGTH => Some("sk-dim-too-large"),
+        _ => None,
     }
 }
 
@@ -122,7 +135,7 @@ pub fn dim_label_box(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, si: usize,
     let c = sk.project.sketches.get(si)?.constraints.get(ci)?.clone();
     let size = qymcad_ui_state::dim_text_size(&qymcad_ui_state::dim_caption(sk.project, si, &c, sk.set)?, sk.set.dim_font);
     match c {
-        Constraint::Distance { .. } | Constraint::DistancePL { .. } | Constraint::EdgeDistance { .. } => {
+        Constraint::Distance { .. } | Constraint::DistancePL { .. } | Constraint::EdgeDistance { .. } | Constraint::CurveDistance { .. } => {
             qymcad_ui_state::linear_text_of(sk.project, si, ci, &sh, sk.set).map(|(place, size)| (place.center, size, place.angle))
         }
         // both angles: where the drawing puts the label, from the one geometry of an angular dimension
@@ -240,6 +253,26 @@ pub(crate) fn update_placing_dim(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect
                 put_angle_label(sk.project, si, ci, placed);
             }
         }
+        // the size of a circle or an arc picked first: its line turns to the pointer, as when its label is dragged
+        Some(Constraint::Diameter { .. }) => {
+            if let Some((ang, t)) = qymcad_ui_state::radial_text_follow(sk.project, si, ci, &sh, sc) {
+                if let Some(Constraint::Diameter { off, at, .. }) = sk.project.sketches[si].constraints.get_mut(ci) {
+                    (*off, *at) = (ang, t);
+                }
+            }
+        }
+        // a distance to a curve: its line stands off square to the way between the places it is measured at
+        Some(c @ Constraint::CurveDistance { .. }) => {
+            if let Some([e1, e2]) = sk.project.curve_distance_ends(si, &c) {
+                let (sa, sb) = (sh.at(e1), sh.at(e2));
+                let dir = (sb - sa).normalized();
+                let perp = egui::vec2(-dir.y, dir.x);
+                let off = (((sc - sa).x * perp.x + (sc - sa).y * perp.y) as f64 - 16.0) / sk.view.scale as f64;
+                if let Some(Constraint::CurveDistance { off: o, .. }) = sk.project.sketches[si].constraints.get_mut(ci) {
+                    *o = off;
+                }
+            }
+        }
         _ => {
             sk.place.dim = None;
         }
@@ -264,13 +297,27 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // A GREY EDGE OF THE BODY CLICKED IS TAKEN INTO THE SKETCH FIRST, as construction, and the dimension is laid on it:
     // a dimension from the edge of the face the sketch sits on holds what it measures to the body. The click went to
     // nothing, and the value typed after it was laid as the length of the line clicked next.
-    if sk.place.dim.is_none() && sk.armed.dim_kind() != 3 {
+    if sk.place.dim.is_none() && sk.armed.dimension() != Some(qymcad_ui_state::DimKind::Radial) {
         let w = qymcad_ui_state::to_world(&*sk.view, rect, pos);
         auto_project_under(sk, rect, si, Point2::new(w.x, w.y));
     }
     // the dimension follows the cursor: a click places it, OR (when it is a provisional length of a line
     // and a SECOND element was hit) switches it to a distance between the two.
     if let Some(ci) = sk.place.dim {
+        // THE SIZE OF A CURVE PICKED FIRST - a diameter, a radius, a half axis - turns into the least distance to the
+        // second item clicked, as the length of a line turns into a distance
+        if let Some(r1 @ qymcad_ui_state::DimRef::Curve(eid)) = sk.dim.first {
+            let r2 = resolve_dim_ref(sk, rect, pos, si).filter(|r| *r != qymcad_ui_state::DimRef::Curve(eid));
+            if let Some(r2) = r2 {
+                if let Some(before) = sk.dim.before.take() {
+                    sk.project.sketches[si] = *before; // the provisional size goes, and only it
+                }
+                sk.place.dim = None;
+                sk.dim.first = None;
+                make_between_dim(sk, si, r1, r2);
+                return true;
+            }
+        }
         if let Some(qymcad_ui_state::DimRef::Line(la, lb)) = sk.dim.first {
             // It switches to a distance ONLY on a click exactly on A VERTEX (not an end of this line) or
             // on AN AXIS. A click on the body of another line does NOT switch it - otherwise placing the
@@ -291,14 +338,19 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                     }
                 })
                 .or_else(|| {
-                    // a click on ANOTHER roughly parallel line gives the distance between the two lines (the
-                    // body of a line used to be ignored, and the gap between two parallels could not be
-                    // measured). Parallel ones only - a perpendicular edge of a square next to the leader does
-                    // NOT switch it, and a length is placed instead.
-                    qymcad_pick::nearest_line_entity(&sk.pick(), rect, pos, si)
-                        .filter(|&(a2, b2)| (a2, b2) != (la, lb) && (a2, b2) != (lb, la))
-                        .filter(|&(a2, b2)| qymcad_ui_state::lines_parallel(&sk.draw(), si, la, lb, a2, b2))
-                        .map(|(a2, b2)| qymcad_ui_state::DimRef::Line(a2, b2))
+                    // the curve under the pointer, of whatever kind: ANOTHER roughly parallel line gives the distance
+                    // between the two lines (the body of a line used to be ignored, and the gap between two parallels
+                    // could not be measured) - parallel ones only, a perpendicular edge of a square next to the leader
+                    // does NOT switch it, and a length is placed instead; a circle, an arc, an ellipse, a spline gives
+                    // the least distance from the line to it
+                    let eid = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si)?;
+                    match curve_ref(sk, si, eid) {
+                        qymcad_ui_state::DimRef::Line(a2, b2) => {
+                            let other = (a2, b2) != (la, lb) && (a2, b2) != (lb, la);
+                            (other && qymcad_ui_state::lines_parallel(&sk.draw(), si, la, lb, a2, b2)).then_some(qymcad_ui_state::DimRef::Line(a2, b2))
+                        }
+                        r => Some(r),
+                    }
                 });
             if let Some(r2) = r2 {
                 sk.project.sketches[si].constraints.remove(ci); // remove the provisional length
@@ -319,14 +371,13 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
         return true;
     }
     // a radius or a diameter: a circle entity (a diameter or radius dimension) or a circle primitive
-    if sk.armed.dim_kind() == 3 {
-        if let Some(eid) = qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si) {
+    if sk.armed.dimension() == Some(qymcad_ui_state::DimKind::Radial) {
+        let under = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si);
+        let round = |eid: &Id| sk.project.sketches[si].entity(*eid).is_some_and(|e| e.kind.as_circle().is_some() || e.kind.as_arc().is_some());
+        if let Some(eid) = under.filter(round) {
             // a circle gets a parametric diameter dimension (a Diameter constraint); an arc has its radius
             // edited
-            let center = sk.project.sketches[si].entities.iter().find(|e| e.id == eid).and_then(|e| match e.kind {
-                qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
-                _ => None,
-            });
+            let center = sk.project.sketches[si].entity(eid).and_then(|e| e.kind.as_circle()).map(|k| k.center);
             if let Some(c) = center {
                 let laid = sk.project.sketches[si].constraints.len();
                 if let Some(ci) = sk.project.ensure_diameter(si, c, true) {
@@ -341,11 +392,24 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-enter-diameter"));
                 }
             } else {
-                *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid); // an arc or a fillet
-                sk.dim.focus = true;
+                sk.place.reopen(qymcad_ui_state::PlacingShape::Round(eid)); // an arc or a fillet
+                sk.place.focus = true;
                 *sk.status = Notice::info(qymcad_i18n::tr("sk-enter-arc-radius"));
             }
             return true;
+        }
+        // an ellipse: its half axis, the major one, typed at once
+        if let Some(eid) = under {
+            if let Some(size @ Constraint::Distance { .. }) = curve_size(&*sk.project, si, eid) {
+                sk.project.sketches[si].constraints.push(size);
+                let ci = sk.project.sketches[si].constraints.len() - 1;
+                qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);
+                sk.dim.fresh = Some((ci, sk.edits.undo.len() + 1));
+                *sk.inline = qymcad_ui_state::InlineEdit::Dim(ci);
+                sk.dim.focus = true;
+                *sk.status = Notice::info(qymcad_i18n::tr("sk-dim-placed"));
+                return true;
+            }
         }
         // the circumscribed circle of a polygon has its radius edited, through its centre handle
         if let Some(cid) = qymcad_ui_state::polygon_under(&*sk.project, &*sk.view, rect, pos, si) {
@@ -361,7 +425,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // that follows the cursor, but a click on a second element switches it to a distance between them
     // (point to line, line to a parallel line, or to an axis). A single line and nothing else is a
     // length.
-    if sk.armed.dim_kind() == 1 {
+    if sk.armed.dimension() == Some(qymcad_ui_state::DimKind::Linear) {
         // the sketch before this pick: resolving it may make an axis of the sketch on demand, and Esc takes that back too
         let before = sk.dim.first.is_none().then(|| Box::new(sk.project.sketches[si].clone()));
         let Some(r) = resolve_dim_ref(sk, rect, pos, si) else {
@@ -394,6 +458,22 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                 qymcad_ui_state::DimRef::Point(_) => {
                     sk.dim.first = Some(r);
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-point-picked"));
+                }
+                // a curve: its size follows the cursor - a circle's diameter, an arc's radius, an ellipse's half axis -
+                // and a second item clicked makes it the least distance instead; a spline has no size and waits
+                qymcad_ui_state::DimRef::Curve(eid) => {
+                    sk.dim.first = Some(r);
+                    sk.dim.before = before;
+                    match curve_size(&*sk.project, si, eid) {
+                        Some(size) => {
+                            sk.project.sketches[si].constraints.push(size);
+                            let ci = sk.project.sketches[si].constraints.len() - 1;
+                            qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);
+                            sk.place.dim = Some(ci);
+                            *sk.status = Notice::info(qymcad_i18n::tr("sk-size-hint"));
+                        }
+                        None => *sk.status = Notice::info(qymcad_i18n::tr("sk-curve-picked")),
+                    }
                 }
             },
             Some(r1) => make_between_dim(sk, si, r1, r),
@@ -501,7 +581,22 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
             _ => 0.0,
         }
     };
+    // A CURVE ON EITHER SIDE: the least distance to it, measured where the solve would
+    let as_curve = |r: qymcad_ui_state::DimRef| match r {
+        qymcad_ui_state::DimRef::Point(p) => Some(qymcad_core::model::CurveRef::at_point(p)),
+        qymcad_ui_state::DimRef::Line(a, b) => Some(qymcad_core::model::CurveRef::line([a, b])),
+        qymcad_ui_state::DimRef::Curve(eid) => sk.project.sketches[si].entity(eid).map(qymcad_core::model::curve_ref_drawn),
+    };
+    let to_curve = matches!(r1, qymcad_ui_state::DimRef::Curve(_)) || matches!(r2, qymcad_ui_state::DimRef::Curve(_));
     let c: Option<Constraint> = match (r1, r2) {
+        _ if to_curve => as_curve(r1).zip(as_curve(r2)).and_then(|(from, to)| {
+            let mut c = Constraint::CurveDistance { from, to, d: 0.0, off: 0.0, expr: String::new(), driven: false, at: None };
+            let [a, b] = sk.project.curve_distance_ends(si, &c)?;
+            if let Constraint::CurveDistance { d, .. } = &mut c {
+                *d = a.dist(b);
+            }
+            Some(c)
+        }),
         (qymcad_ui_state::DimRef::Point(p1), qymcad_ui_state::DimRef::Point(p2)) => {
             let d = match (pt(&*sk.project, p1), pt(&*sk.project, p2)) {
                 (Some(a), Some(b)) => ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt(),
@@ -557,6 +652,8 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
                 }
             }
         }
+        // taken by the arm of a curve above
+        (qymcad_ui_state::DimRef::Curve(_), _) | (_, qymcad_ui_state::DimRef::Curve(_)) => None,
     };
     if let Some(c) = c {
         sk.project.give_rect_turn_to(si, &c); // an angle on a side of a rectangle turns it
@@ -570,4 +667,11 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
             Notice::info(if redundant { qymcad_i18n::tr("sk-driven-dim-hint") } else { qymcad_i18n::tr("sk-drag-dim-hint") })
         };
     }
+}
+
+/// THE SIZE OF A CURVE A DIMENSION TAKES FROM ONE CLICK: a circle's diameter, an arc's radius, an ellipse's major half
+/// axis (the distance from its centre to the end of that axis). `None` for a curve with no such size - a line, a spline.
+fn curve_size(project: &Project, si: usize, eid: Id) -> Option<qymcad_core::model::Constraint> {
+    let s = project.sketches.get(si)?;
+    qymcad_core::model::size_dimension(s, s.entity(eid)?)
 }

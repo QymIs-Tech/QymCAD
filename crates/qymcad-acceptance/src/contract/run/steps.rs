@@ -98,6 +98,18 @@ pub(crate) fn aim(s: &mut Session, pick: &Pick) {
 }
 
 pub(crate) fn click(s: &mut Session, pick: &Pick) {
+    click_adding(s, pick, Adding::No);
+}
+
+/// DOES A CLICK ADD TO WHAT IS PICKED - Shift held, a second thing beside the first - or pick anew?
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Adding {
+    Yes,
+    No,
+}
+
+/// CLICK `pick` where the window drew it, with Shift held when `add` says so.
+pub(crate) fn click_adding(s: &mut Session, pick: &Pick, add: Adding) {
     let at = match *pick {
         Pick::Face(p) => s.face_at(p),
         Pick::Edge(p) => s.edge_at(p),
@@ -128,7 +140,8 @@ pub(crate) fn click(s: &mut Session, pick: &Pick) {
             }
         }
     };
-    s.click(at);
+    let held = if add == Adding::Yes { Modifiers::SHIFT } else { Modifiers::default() };
+    s.click_with(at, qymcad::PointerButton::Primary, held);
 }
 
 /// The fixture, the tool taken, and everything done up to the step that finishes it: the ordinary picks of a command,
@@ -168,15 +181,19 @@ pub(crate) fn ready_after(tool: &Tool, prepare: impl FnOnce(&mut Session)) -> Se
         }
         Flow::Action => {}
     }
-    // A FIELD THE TOOL OPENS WITH THE ORDINARY VALUE IS LEFT ALONE - a person who takes a fillet and presses Enter
-    // gets the radius of 2 the field already holds. Where the ordinary value is another one, a person types it: a cut
-    // opens at an offset of 0, which is the picked face itself and cuts nothing.
+    fill_ordinary(&mut s, tool);
+    s
+}
+
+/// THE ORDINARY VALUES IN THE FIELDS. A FIELD THE TOOL OPENS WITH THE ORDINARY VALUE IS LEFT ALONE - a person who takes
+/// a fillet and presses Enter gets the radius of 2 the field already holds. Where the ordinary value is another one, a
+/// person types it: a cut opens at an offset of 0, which is the picked face itself and cuts nothing.
+pub(crate) fn fill_ordinary(s: &mut Session, tool: &Tool) {
     for f in tool.fields.iter().filter(|f| f.when == When::Before) {
-        if field_holds(&mut s, f) != Some(f.typical) {
-            type_into_field(&mut s, f, &fmt(f.typical));
+        if field_holds(s, f) != Some(f.typical) {
+            type_into_field(s, f, &fmt(f.typical));
         }
     }
-    s
 }
 
 /// The number a field holds now, as far as it can be read.
@@ -297,6 +314,12 @@ pub(crate) fn finish_with(s: &mut Session, tool: &Tool, field: &Field, text: &st
         type_into_field(s, field, text);
         enter_key(s);
     }
+}
+
+/// WHAT THE TOOL IN HAND REFUSES, said in the tone of a refusal where it speaks: a value or a pick that will not do,
+/// and the answer to an Enter it turned away.
+pub(crate) fn refusals(s: &mut Session) -> Vec<qymcad::Notice> {
+    s.tool_says().into_iter().filter(|n| n.tone == qymcad::Tone::Refusal).collect()
 }
 
 /// THE WORDS DRAWN IN THE BOX A FIELD STANDS IN, below the field itself: what the box says about the value in it.

@@ -4,9 +4,9 @@
 
 use crate::door::Roles;
 use qymcad_core::feature::Sides;
-use qymcad_core::geom::EDGE_FIELDS;
+use qymcad_core::geom::edge_slots;
 use qymcad_core::model::Id;
-use qymcad_core::names::{GeoName, Role};
+use qymcad_core::names::{CutOff, GeoName, Role, Side};
 
 /// PROFILES NAMED: the profiles with the numbers of their side roles in the slots of the names of their edges, the
 /// caps as the C++ side reads them (triples of [region key, start, end]), and the roles.
@@ -14,6 +14,13 @@ pub struct NamedSides {
     pub profiles: Vec<Vec<f64>>,
     pub caps: Vec<u32>,
     pub roles: Roles,
+}
+
+/// THE NAME OF A SIDE FACE FROM ITS SOURCE: the node, the role, the sketch entity and the piece of it - a piece starting
+/// at a crossing named after what crossed it (`SideSource::cut`).
+fn side_name(feature: Id, role: Role, s: qymcad_core::feature::SideSource) -> GeoName {
+    let cut = (s.cut != 0).then_some(CutOff { feature, role, src: s.cut, split: 0, side: Side::On });
+    GeoName { feature, role, src: s.src, split: s.split, cut }
 }
 
 /// THE SIDES AND CAPS OF A PROFILE OPERATION. A side face is `role` of the node from the source of its edge (`Wall`
@@ -40,11 +47,11 @@ pub fn name_sides(profiles: &[Vec<f64>], sides: Sides<'_>, role: Role) -> NamedS
         }
     }
     let mut order: Vec<usize> = (0..sides.sources.len()).collect();
-    order.sort_by_key(|&k| (owner[k], sides.sources[k].src, sides.sources[k].split));
+    order.sort_by_key(|&k| (owner[k], sides.sources[k].src, sides.sources[k].cut, sides.sources[k].split));
     let mut numbers: Vec<u32> = vec![0; sides.sources.len()];
     for k in order {
         let s = sides.sources[k];
-        numbers[k] = roles.give(GeoName { feature: sides.feature, role, src: s.src, split: s.split });
+        numbers[k] = roles.give(side_name(sides.feature, role, s));
     }
     let mut rewritten: Vec<Vec<f64>> = profiles.to_vec();
     let mut walls: Vec<u32> = Vec::new();
@@ -68,18 +75,15 @@ pub fn name_sides(profiles: &[Vec<f64>], sides: Sides<'_>, role: Role) -> NamedS
     NamedSides { profiles: rewritten, caps, roles }
 }
 
-/// The places of the sources in the slots of the edges of a profile - `[loops, then loop blocks of [n, n edges of
-/// EDGE_FIELDS]]` - counted from 1, 0 for an edge with no source.
+/// The places of the sources in the slots of the edges of a profile - `[loops, then loop blocks (`edge_slots`)]` -
+/// counted from 1, 0 for an edge with no source.
 fn loop_places(data: &[f64]) -> Vec<usize> {
     let mut out = Vec::new();
     let mut i = 1;
     for _ in 0..data.first().copied().unwrap_or(0.0) as usize {
-        let n = data.get(i).copied().unwrap_or(0.0) as usize;
-        i += 1;
-        for k in 0..n {
-            out.push(data.get(i + k * EDGE_FIELDS + EDGE_FIELDS - 1).copied().unwrap_or(0.0) as usize);
-        }
-        i += n * EDGE_FIELDS;
+        let block = edge_slots(data, i);
+        out.extend(block.names.iter().map(|s| data.get(*s).copied().unwrap_or(0.0) as usize));
+        i = block.end;
     }
     out
 }
@@ -94,7 +98,7 @@ pub struct NamedSections {
 /// The loop blocks of the sections one after another (`offsets` marks where each starts), their slots renamed.
 pub fn name_sections(data: &[f64], offsets: &[usize], sides: Sides<'_>) -> NamedSections {
     let mut roles = Roles::default();
-    let numbers: Vec<u32> = sides.sources.iter().map(|s| roles.give(GeoName { feature: sides.feature, role: Role::Lofted, src: s.src, split: s.split })).collect();
+    let numbers: Vec<u32> = sides.sources.iter().map(|s| roles.give(side_name(sides.feature, Role::Lofted, *s))).collect();
     let mut rewritten = data.to_vec();
     for start in offsets.iter().take(offsets.len().saturating_sub(1)) {
         rename_loops(&mut rewritten, *start, 1, &numbers);
@@ -103,16 +107,14 @@ pub fn name_sections(data: &[f64], offsets: &[usize], sides: Sides<'_>) -> Named
     NamedSections { data: rewritten, caps, roles }
 }
 
-/// Rename the slots of `loops` loop blocks starting at `at` - `[n, n edges of EDGE_FIELDS]` each - from the place of a
-/// source (from 1) to the number of its role, giving the numbers the edges took.
+/// Rename the slots of `loops` loop blocks starting at `at` (`edge_slots`) from the place of a source (from 1) to the
+/// number of its role, giving the numbers the edges took.
 fn rename_loops(data: &mut [f64], at: usize, loops: usize, numbers: &[u32]) -> Vec<u32> {
     let mut taken: Vec<u32> = Vec::new();
     let mut i = at;
     for _ in 0..loops {
-        let n = data.get(i).copied().unwrap_or(0.0) as usize;
-        i += 1;
-        for k in 0..n {
-            let slot = i + k * EDGE_FIELDS + EDGE_FIELDS - 1;
+        let block = edge_slots(data, i);
+        for slot in block.names {
             let Some(v) = data.get_mut(slot) else { continue };
             let place = *v as usize;
             let number = if place == 0 { 0 } else { numbers.get(place - 1).copied().unwrap_or(0) };
@@ -121,7 +123,7 @@ fn rename_loops(data: &mut [f64], at: usize, loops: usize, numbers: &[u32]) -> V
                 taken.push(number);
             }
         }
-        i += n * EDGE_FIELDS;
+        i = block.end;
     }
     taken
 }
@@ -201,9 +203,8 @@ mod tests {
     fn block(places: &[u32]) -> Vec<f64> {
         let mut v = vec![places.len() as f64];
         for p in places {
-            let mut e = vec![0.0; EDGE_FIELDS];
-            e[EDGE_FIELDS - 1] = *p as f64;
-            v.extend(e);
+            let line = qymcad_core::geom::ProfEdge::Line { a: qymcad_core::geom::Point2::new(0.0, 0.0), b: qymcad_core::geom::Point2::new(1.0, 0.0) };
+            v.extend(qymcad_core::geom::encode_edge(&line, *p));
         }
         v
     }
@@ -228,12 +229,12 @@ mod tests {
     /// walls numbered by their profile and then by their recipe; one region gets the plain caps of the node.
     #[test]
     fn caps_of_several_regions_are_named_after_their_profiles() {
-        let sources = [SideSource { src: 13, split: 0 }, SideSource { src: 11, split: 1 }, SideSource { src: 11, split: 0 }];
+        let sources = [SideSource { src: 13, split: 0, cut: 0 }, SideSource { src: 11, split: 1, cut: 0 }, SideSource { src: 11, split: 0, cut: 0 }];
         let one = name_sides(&[[vec![1.0], block(&[1, 2])].concat()], Sides { feature: 5, sources: &sources, regions: &[40] }, Role::Wall);
         assert_eq!(one.caps[0], 0, "one region has no key");
         // the profile of contour 40 holds sources 1 and 2 (13/0, 11/1), the profile of contour 30 holds source 3 (11/0)
         let two = name_sides(&[[vec![1.0], block(&[1, 2])].concat(), [vec![1.0], block(&[3])].concat()], Sides { feature: 5, sources: &sources, regions: &[40, 30] }, Role::Wall);
-        let walls_of = |p: &Vec<f64>| -> Vec<u32> { (0..p[1] as usize).map(|k| p[2 + k * EDGE_FIELDS + EDGE_FIELDS - 1] as u32).collect() };
+        let walls_of = |p: &Vec<f64>| -> Vec<u32> { edge_slots(p, 1).names.iter().map(|s| p[*s] as u32).collect() };
         let [first, second] = [&two.profiles[0], &two.profiles[1]].map(walls_of);
         assert!(second[0] < first[1] && first[1] < first[0], "the walls are not numbered by profile, then by recipe (30: 11/0; 40: 11/1, 13/0): {first:?} {second:?}");
         let named = |number: u32| two.roles.given.iter().find(|r| r.number == number).map(|r| r.recipe.clone());

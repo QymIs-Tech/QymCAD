@@ -7,19 +7,16 @@
 
 use qymcad_core::feature::{Ends, Purpose, Winding};
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{ChamferLegs, Constraint, CornerAt, CornerCut, EntityKind, FilletSize, Id, PatternKind, Project};
+use qymcad_core::model::{ChamferLegs, Constraint, CornerAt, CornerCut, FilletSize, Id, PatternKind, Project};
 
 /// The lines of the sketch, the first `n`.
 pub fn lines(p: &Project, n: usize) -> Vec<Id> {
-    p.sketches[0].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. }) && !e.construction).map(|e| e.id).take(n).collect()
+    p.sketches[0].entities.iter().filter(|e| e.kind.as_line().is_some() && !e.construction).map(|e| e.id).take(n).collect()
 }
 
 /// The ends of line `eid`.
 fn ends(p: &Project, eid: Id) -> (Id, Id) {
-    match p.sketches[0].entity(eid).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) | Some(EntityKind::Arc { a, b, .. }) => (a, b),
-        _ => (0, 0),
-    }
+    p.sketches[0].entity(eid).and_then(|e| e.kind.straight_or_round_ends()).map_or((0, 0), |[a, b]| (a, b))
 }
 
 /// Where point `id` stands.
@@ -81,13 +78,13 @@ pub fn lay_targets(p: &mut Project) -> Targets {
     let wall = p.add_line_entity(0, x0 + 60.0, 0.0, x0 + 60.0, 40.0, Purpose::Real);
     let short = p.add_line_entity(0, x0 + 45.0, 20.0, x0 + 55.0, 20.0, Purpose::Real);
     let circle_line = p.add_circle_entity(0, x0 + 90.0, 20.0, 10.0, Purpose::Real);
-    let circle = match p.sketches[0].entity(circle_line).map(|e| e.kind) {
-        Some(EntityKind::Circle { center, .. }) => center,
+    let circle = match p.sketches[0].entity(circle_line).and_then(|e| e.kind.as_circle()) {
+        Some(qymcad_core::model::CircleParts { center, .. }) => center,
         _ => 0,
     };
     let before: std::collections::HashSet<Id> = p.sketches[0].entities.iter().map(|e| e.id).collect();
     p.add_arc_entity(0, Point2::new(x0 + 130.0, 20.0), Point2::new(x0 + 140.0, 20.0), Point2::new(x0 + 130.0, 30.0), Winding::Ccw, Purpose::Real);
-    let arc = p.sketches[0].entities.iter().find(|e| !before.contains(&e.id) && matches!(e.kind, EntityKind::Arc { .. })).map(|e| e.id).unwrap_or(0);
+    let arc = p.sketches[0].entities.iter().find(|e| !before.contains(&e.id) && e.kind.as_arc().is_some()).map(|e| e.id).unwrap_or(0);
     let one = p.add_line_entity(0, x0, 100.0, x0 + 30.0, 103.0, Purpose::Real);
     let two = p.add_line_entity(0, x0 + 5.0, 110.0, x0 + 33.0, 118.0, Purpose::Real);
     p.solve_sketch(0);
@@ -114,7 +111,7 @@ pub enum Effect {
 /// Whether `after` shows the effect against `before`; the words where it does not.
 pub fn shows(effect: Effect, before: &Project, after: &Project) -> Option<String> {
     let (b, a) = (&before.sketches[0], &after.sketches[0]);
-    let curves = |s: &qymcad_core::model::Sketch| s.entities.len() + s.splines.len();
+    let curves = |s: &qymcad_core::model::Sketch| s.entities.len();
     let ok = match effect {
         Effect::Adds => curves(a) > curves(b),
         Effect::Removes => curves(a) < curves(b),
@@ -271,7 +268,7 @@ pub fn tools() -> Vec<Tool> {
             name: "a side of a rectangle trimmed",
             work: |p, t| {
                 let at = third_along(p, t.chain[1]);
-                let _ = p.trim_line(0, t.chain[1], at.x, at.y);
+                let _ = p.trim_curve(0, t.chain[1], at.x, at.y);
             },
             effect: Effect::Any,
         },
@@ -279,7 +276,7 @@ pub fn tools() -> Vec<Tool> {
             name: "a line broken",
             work: |p, t| {
                 let at = third_along(p, t.one);
-                let _ = p.break_line(0, t.one, at.x, at.y);
+                let _ = p.break_curve(0, t.one, at.x, at.y);
             },
             effect: Effect::Adds,
         },
@@ -288,7 +285,7 @@ pub fn tools() -> Vec<Tool> {
             work: |p, t| {
                 let (_, b) = ends(p, t.short);
                 let tip = at(p, b);
-                let _ = p.extend_line(0, t.short, tip.x - 1.0, tip.y);
+                let _ = p.extend_curve(0, t.short, tip.x - 1.0, tip.y);
             },
             effect: Effect::Moves,
         },
@@ -335,7 +332,9 @@ pub fn tools() -> Vec<Tool> {
         },
         Tool {
             name: "a spline drawn",
-            work: |p, _| p.add_spline(0, vec![Point2::new(-200.0, -100.0), Point2::new(-195.0, -92.0), Point2::new(-188.0, -98.0), Point2::new(-180.0, -90.0)], Ends::Open, Purpose::Real),
+            work: |p, _| {
+                p.add_spline(0, vec![Point2::new(-200.0, -100.0), Point2::new(-195.0, -92.0), Point2::new(-188.0, -98.0), Point2::new(-180.0, -90.0)], Ends::Open, Purpose::Real);
+            },
             effect: Effect::Adds,
         },
         Tool {

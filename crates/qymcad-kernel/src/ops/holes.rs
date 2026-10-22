@@ -38,13 +38,13 @@ pub fn turns(feature: Id, profile: &[f64], starts: u32, roles: &mut Roles) -> Tu
     let mut grooves = Vec::with_capacity(edges * starts.max(1) as usize);
     for start in 0..starts.max(1) {
         for e in 0..edges {
-            grooves.push(roles.give(GeoName { feature, role: Role::ThreadGroove, src: e as Id, split: start as u16 }));
+            grooves.push(roles.give(GeoName { feature, role: Role::ThreadGroove, src: e as Id, split: start as u16, cut: None }));
         }
     }
     let mut reliefs = Vec::with_capacity(16);
     for ring in 0..4u32 {
         for surface in 0..4u32 {
-            reliefs.push(roles.give(GeoName { feature, role: Role::ThreadRelief, src: ring as Id, split: surface as u16 }));
+            reliefs.push(roles.give(GeoName { feature, role: Role::ThreadRelief, src: ring as Id, split: surface as u16, cut: None }));
         }
     }
     Turns { grooves, reliefs }

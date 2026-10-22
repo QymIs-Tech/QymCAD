@@ -74,9 +74,7 @@ fn matrix_sketch_edit_rebuild() {
         check(&mut fails, "ring (before)", v0, PI * 300.0 * 10.0, 0.01);
         // edit the outer circle radius through the entity
         if let Some(ent) = p.sketches[si].entities.iter_mut().find(|e| e.id == outer) {
-            if let qymcad_core::model::EntityKind::Circle { r, .. } = &mut ent.kind {
-                *r = 25.0;
-            }
+            ent.kind.set_radius(25.0);
         }
         p.regen_sketch(si);
         p.mark_sketch_dirty(sid);

@@ -87,7 +87,7 @@ probe! {
         s.click_on_sketch(0.0, 0.0);
         s.click_on_sketch(40.0, 20.0);
         let sheet = s.canvas();
-        let fields = s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField && sheet.contains(w.rect.center())).count();
+        let fields = qymcad_acceptance::value_fields(&mut s).into_iter().filter(|w| sheet.contains(w.rect.center())).count();
         s.key(Key::Escape).key(Key::Escape);
         let arrow = s.word("tb-select-hint");
         s.press_hint(&arrow);

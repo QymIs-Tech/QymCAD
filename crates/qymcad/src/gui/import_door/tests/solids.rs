@@ -14,7 +14,7 @@ fn a_mesh_becomes_a_solid_by_its_tool() {
     crate::gui::a_component_stepped_into_is_not_lit::tests::double_click_at(&mut app, &ctx, at); // into the part
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
     let steps = app.disk.edits.undo.len();
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let texts = frame(&mut app, &ctx, Vec::new());
     let asis = spot(&texts, &crate::i18n::tr("cmd-recognise-asis")).unwrap_or_else(|| panic!("the bar offers no polyhedron: {:?}", names(&texts)));
     let _ = frame(&mut app, &ctx, click(asis));
@@ -55,7 +55,7 @@ fn a_mesh_turned_into_a_solid_is_looked_at() {
     let at = spot(&texts, &qymcad_i18n::name(&part)).unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     crate::gui::a_component_stepped_into_is_not_lit::tests::double_click_at(&mut app, &ctx, at); // into the part
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let texts = frame(&mut app, &ctx, Vec::new());
     let asis = spot(&texts, &crate::i18n::tr("cmd-recognise-asis")).unwrap_or_else(|| panic!("the bar offers no polyhedron: {:?}", names(&texts)));
     let _ = frame(&mut app, &ctx, click(asis));
@@ -140,7 +140,7 @@ fn a_recognised_body_takes_a_sketch_and_a_hole() {
     let at = spot(&texts, "worked").unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     crate::gui::a_component_stepped_into_is_not_lit::tests::double_click_at(&mut app, &ctx, at); // into the part
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35); // the recognition tool from the Part's bar
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise); // the recognition tool from the Part's bar
     let _ = frame(&mut app, &ctx, Vec::new());
     let basis = app.viewing.cam.basis();
     let on = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at([5.0, 5.0, 10.0]).0;
@@ -213,9 +213,9 @@ fn a_mesh_is_recognised_by_its_tool() {
     let at = spot(&texts, "bytool").unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     double_click_at(&mut app, &ctx, at); // into the part, as a person goes in
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(35), "part"), "without a button in the bar the tool does not exist for a person");
+    assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::Recognise), "part"), "without a button in the bar the tool does not exist for a person");
     let steps = app.disk.edits.undo.len();
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let _ = frame(&mut app, &ctx, Vec::new());
     let basis = app.viewing.cam.basis();
     let on = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at([5.0, 5.0, 10.0]).0;
@@ -250,7 +250,7 @@ fn the_recognise_tool_counts_what_it_found_before_enter() {
     double_click_at(&mut app, &ctx, at);
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
     let steps = app.disk.edits.undo.len();
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let _ = frame(&mut app, &ctx, Vec::new());
     let basis = app.viewing.cam.basis();
     let on = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at([5.0, 5.0, 10.0]).0;
@@ -285,7 +285,7 @@ fn what_the_recognise_tool_found_is_looked_at() {
     let at = spot(&texts, "cow").unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     double_click_at(&mut app, &ctx, at); // into the part
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let _ = frame(&mut app, &ctx, Vec::new());
     // at the middle of the mesh as it stands on the screen
     let mesh = &app.project.bodies.iter().find(|b| !b.mesh.tris.is_empty()).expect("the mesh came in").mesh;
@@ -296,10 +296,10 @@ fn what_the_recognise_tool_found_is_looked_at() {
     let _ = frame(&mut app, &ctx, click(on));
     assert!(
         app.params.recognise.src.is_some(),
-        "the click at {on:?} on the mesh about {mid:?} in {:?} took nothing ({} bodies, armed {}, workbench 3D {}): {}",
+        "the click at {on:?} on the mesh about {mid:?} in {:?} took nothing ({} bodies, armed {:?}, workbench 3D {}): {}",
         app.viewing.view_rect,
         app.project.bodies.len(),
-        app.tools.armed.cmd_kind(),
+        app.tools.armed.part_tool(),
         app.viewing.mode_3d,
         app.status
     );
@@ -344,7 +344,7 @@ fn a_recognised_node_reopens_its_tool() {
     let at = spot(&texts, "reopened").unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     double_click_at(&mut app, &ctx, at);
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let _ = frame(&mut app, &ctx, Vec::new());
     let basis = app.viewing.cam.basis();
     let on = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at([5.0, 5.0, 10.0]).0;
@@ -359,7 +359,7 @@ fn a_recognised_node_reopens_its_tool() {
     let row = texts.iter().find(|(t, _)| t.contains(&named)).map(|(_, r)| r.center()).unwrap_or_else(|| panic!("no row of the recognised body: {:?}", names(&texts)));
     double_click_at(&mut app, &ctx, row);
     let _ = frame(&mut app, &ctx, Vec::new());
-    assert_eq!(app.tools.armed.cmd_kind(), 35, "a double click on the recognised body opened no tool: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Recognise), "a double click on the recognised body opened no tool: {}", app.status);
     assert!(app.tools.cmd.edit.is_some(), "the tool did not open on the node, it opened a new one");
     let _ = frame(&mut app, &ctx, key(egui::Key::Enter));
     calm(&mut app, &ctx);

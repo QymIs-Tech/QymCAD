@@ -76,17 +76,22 @@ pub(crate) fn settle(app: &mut App, ctx: &egui::Context) {
 
 /// One line in IGES, in the fixed columns IGES is written in: a drawing, not a single surface in it.
 fn iges_line() -> String {
+    iges_lines(&["0.,0.,0.,10.,0.,0."])
+}
+
+/// Lines in IGES, each by its parameters: a drawing, not a single surface in it.
+fn iges_lines(lines: &[&str]) -> String {
     let g = "1H,,1H;,1Hc,1Hc,1Hc,1Hc,32,38,6,308,15,1Hc,1.,2,2HMM;";
-    [
-        format!("{:<72}S{:>7}", "a drawing for the check", 1),
-        format!("{:<72}G{:>7}", g, 1),
-        format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, 1, 0, 0, 0, 0, 0, 0, "00000000", 1),
-        format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, 0, 0, 1, 0, "", "", "", 0, 2),
-        format!("{:<64}{:>8}P{:>7}", "110,0.,0.,0.,10.,0.,0.;", 1, 1),
-        format!("S{:>7}G{:>7}D{:>7}P{:>7}{:<40}T{:>7}", 1, 1, 2, 1, "", 1),
-    ]
-    .join("\n")
-        + "\n"
+    let mut out = vec![format!("{:<72}S{:>7}", "a drawing for the check", 1), format!("{:<72}G{:>7}", g, 1)];
+    for k in 0..lines.len() {
+        out.push(format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, k + 1, 0, 0, 0, 0, 0, 0, "00000000", 2 * k + 1));
+        out.push(format!("{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}D{:>7}", 110, 0, 0, 1, 0, "", "", "", 0, 2 * k + 2));
+    }
+    for (k, params) in lines.iter().enumerate() {
+        out.push(format!("{:<64}{:>8}P{:>7}", format!("110,{params};"), 2 * k + 1, k + 1));
+    }
+    out.push(format!("S{:>7}G{:>7}D{:>7}P{:>7}{:<40}T{:>7}", 1, 1, 2 * lines.len(), lines.len(), "", 1));
+    out.join("\n") + "\n"
 }
 
 /// The folder the scale checks write their files into, under `target`.
@@ -230,7 +235,7 @@ fn a_hole_by_hand_in_a_mesh_solid(stem: &str) -> (App, egui::Context) {
     let at = spot(&texts, stem).unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     crate::gui::a_component_stepped_into_is_not_lit::tests::double_click_at(&mut app, &ctx, at); // into the part
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35); // the recognition tool from the Part's bar
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise); // the recognition tool from the Part's bar
     let texts = frame(&mut app, &ctx, Vec::new());
     // THE MESH AS IT IS - a polyhedron - is the tool's second choice, taken in its bar
     let asis = spot(&texts, &crate::i18n::tr("cmd-recognise-asis")).unwrap_or_else(|| panic!("the bar offers no polyhedron: {:?}", names(&texts)));
@@ -318,7 +323,7 @@ fn an_open_box_recognised(stem: &str) -> (App, egui::Context) {
     let at = spot(&texts, stem).unwrap_or_else(|| panic!("no row of the part: {:?}", names(&texts)));
     double_click_at(&mut app, &ctx, at);
     (0..40).for_each(|_| drop(frame(&mut app, &ctx, Vec::new())));
-    app.start_feat_cmd(35);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Recognise);
     let _ = frame(&mut app, &ctx, Vec::new());
     let basis = app.viewing.cam.basis();
     let on = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: app.viewing.view_rect, basis: &basis }.at([5.0, 0.0, 5.0]).0;

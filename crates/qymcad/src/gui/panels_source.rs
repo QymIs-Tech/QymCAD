@@ -39,18 +39,24 @@ pub(crate) const PANELS: &str = concat!(
         concat!(
             include_str!("../../../qymcad-part/src/bars/feat_bar.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars/options.rs"),
+            include_str!("../../../qymcad-sketch/src/options.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars/toolbar.rs"),
+            include_str!("../../../qymcad-ui-state/src/path_bar.rs"),
             file_break!(),
             include_str!("../../../qymcad-part/src/bars/commands.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars.rs")
+            include_str!("../../../qymcad-sketch/src/commands.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/bars.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/in_hand.rs")
         ),
         file_break!(),
         include_str!("../../../qymcad-part/src/params.rs"),
         file_break!(),
         include_str!("../../../qymcad-part/src/picks.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-part/src/aims.rs"),
         file_break!(),
         include_str!("../../../qymcad-part/src/popups.rs"),
         file_break!(),
@@ -82,6 +88,10 @@ pub(crate) const PANELS: &str = concat!(
         file_break!(),
         include_str!("../../../qymcad-sketch/src/popups.rs"),
         file_break!(),
+        include_str!("../../../qymcad-sketch/src/in_hand.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-sketch/src/editors.rs"),
+        file_break!(),
         include_str!("../../../qymcad-sketch/src/props.rs"),
         file_break!(),
         include_str!("../../../qymcad-sketch/src/snap.rs"),
@@ -93,6 +103,8 @@ pub(crate) const PANELS: &str = concat!(
     file_break!(),
     concat!(
         include_str!("../../../qymcad-assembly/src/bars.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-assembly/src/in_hand.rs"),
         file_break!(),
         include_str!("../../../qymcad-assembly/src/commands.rs"),
         file_break!(),
@@ -213,18 +225,24 @@ const WINDOW_OPENERS: &str = concat!(
         concat!(
             include_str!("../../../qymcad-part/src/bars/feat_bar.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars/options.rs"),
+            include_str!("../../../qymcad-sketch/src/options.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars/toolbar.rs"),
+            include_str!("../../../qymcad-ui-state/src/path_bar.rs"),
             file_break!(),
             include_str!("../../../qymcad-part/src/bars/commands.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars.rs")
+            include_str!("../../../qymcad-sketch/src/commands.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/bars.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/in_hand.rs")
         ),
         file_break!(),
         include_str!("../../../qymcad-part/src/params.rs"),
         file_break!(),
         include_str!("../../../qymcad-part/src/picks.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-part/src/aims.rs"),
         file_break!(),
         include_str!("../../../qymcad-part/src/popups.rs"),
         file_break!(),
@@ -309,18 +327,24 @@ const CTX_USERS: &str = concat!(
         concat!(
             include_str!("../../../qymcad-part/src/bars/feat_bar.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars/options.rs"),
+            include_str!("../../../qymcad-sketch/src/options.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars/toolbar.rs"),
+            include_str!("../../../qymcad-ui-state/src/path_bar.rs"),
             file_break!(),
             include_str!("../../../qymcad-part/src/bars/commands.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars.rs")
+            include_str!("../../../qymcad-sketch/src/commands.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/bars.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/in_hand.rs")
         ),
         file_break!(),
         include_str!("../../../qymcad-part/src/params.rs"),
         file_break!(),
         include_str!("../../../qymcad-part/src/picks.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-part/src/aims.rs"),
         file_break!(),
         include_str!("../../../qymcad-part/src/popups.rs"),
         file_break!(),
@@ -352,6 +376,10 @@ const CTX_USERS: &str = concat!(
         file_break!(),
         include_str!("../../../qymcad-sketch/src/popups.rs"),
         file_break!(),
+        include_str!("../../../qymcad-sketch/src/in_hand.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-sketch/src/editors.rs"),
+        file_break!(),
         include_str!("../../../qymcad-sketch/src/props.rs"),
         file_break!(),
         include_str!("../../../qymcad-sketch/src/snap.rs"),
@@ -363,6 +391,8 @@ const CTX_USERS: &str = concat!(
     file_break!(),
     concat!(
         include_str!("../../../qymcad-assembly/src/bars.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-assembly/src/in_hand.rs"),
         file_break!(),
         include_str!("../../../qymcad-assembly/src/commands.rs"),
         file_break!(),
@@ -475,6 +505,26 @@ const CTX_DECL: &str = concat!(
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/tool_steps.rs"),
     file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/bar.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/doors.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/fields.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/layout.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/names.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/opts.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/place.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/tool.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/words.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/mod.rs"),
+    file_break!(),
     include_str!("../../../qymcad-ui-state/src/tree.rs"),
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/lib.rs")
@@ -525,7 +575,7 @@ mod tests {
         // KEYED BY PATH, not by file name. Every workbench crate is a single `lib.rs`, so an exception
         // written as "lib.rs" would have quietly excused the Part, the sketcher and the assembly along with
         // the one file it was meant for.
-        const NOT_A_PANEL: [(&str, &str); 12] = [
+        const NOT_A_PANEL: [(&str, &str); 13] = [
             ("qymcad/src/gui/input.rs", "keyboard handling: it draws nothing, it only takes a frame's context to read keys from"),
             ("qymcad/src/gui/orbit_about.rs", "the centre of a turn of the view: it draws nothing, it only keeps the point of a turn in a frame's context memory"),
             ("qymcad-part/src/trial.rs", "the trial build of a command: it draws nothing, it only keeps its verdict in a frame's context memory"),
@@ -539,6 +589,7 @@ mod tests {
             ),
             ("qymcad-shell/src/draw.rs", "the shell drawn: the strips of each edge and the borders between their panels, containers again and no content"),
             ("qymcad-shell/src/bar.rs", "the plan of a bar of buttons: where each button lands, worked out from the room and the groups; it draws nothing"),
+            ("qymcad-shell/src/path.rs", "the bar of the path laid out: the steps, the button that leaves and the groups of switches, all given by the host; its words and switches stand in `qymcad-ui-state/src/path_bar.rs`, which a list reads"),
             ("qymcad-ui-state/src/icons/runtime.rs", "widgets for rendering icons into panels, reached through the panels that place them"),
             ("qymcad-ui-state/src/icons/manager.rs", "icon resolution and loader registration into egui::Context, not a panel"),
             ("qymcad-ui-state/src/icons/watcher.rs", "background directory watcher and polling thread, not a panel"),
@@ -761,10 +812,13 @@ mod tests {
     fn the_context_fields_held_by_value_are_the_reviewed_ones() {
         let seen: Vec<String> = fields_held_by_value().into_iter().map(|(c, f)| format!("{c}::{f}")).collect();
         let reviewed = [
+            "JointCtx::canvas",          // read: where the view stands, the words of the tool in hand laid in its corner
             "JointCtx::mode_3d",         // read: the glyphs are drawn only in 3D
             "JointCtx::workbench",       // read: which workbench is current
+            "PartCtx::canvas",           // read: where the view stands, the words of the tool in hand laid in its corner
             "PartCtx::workbench",        // read
             "PropsCtx::workbench",       // read
+            "SketchCtx::canvas",         // read: where the view stands, the box of the tool in hand laid in it
             "StatusCtx::cursor",         // read: where the pointer is, printed as two numbers and changed by nobody
             "StatusCtx::line",           // a pair of references: what the line says is written through them, not into a copy
             "TextCtx::tool_text_height", // read: the height the preview of the text tool is baked at

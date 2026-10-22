@@ -12,7 +12,7 @@ mod tests {
     use super::super::hand::Hand;
     use crate::gui::import_door::tests::running;
     use qymcad_core::feature::SketchPlane;
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
 
     /// HOW THE FIELD OF A SHAPE JUST DRAWN IS CLOSED.
     #[derive(Clone, Copy, Debug)]
@@ -75,10 +75,10 @@ mod tests {
     fn draw(hand: &mut Hand, tool: u8) {
         match tool {
             3 => {
-                hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(0.0, 0.0).click2d(10.0, 0.0);
             }
             _ => {
-                hand.sk_tool(4).click2d(40.0, 0.0).click2d(50.0, 0.0).click2d(40.0, 10.0);
+                hand.sk_tool(qymcad_ui_state::SketchShape::Arc).click2d(40.0, 0.0).click2d(50.0, 0.0).click2d(40.0, 10.0);
             }
         }
     }
@@ -91,7 +91,7 @@ mod tests {
                 let (mut app, _ctx) = a_sketch();
                 let mut hand = Hand::new(&mut app);
                 draw(&mut hand, tool);
-                if hand.app.tools.inline.circle().is_none() {
+                if hand.app.tools.place.round().is_none() {
                     failures.push(format!("the {name} drawn opened no field of its size"));
                     continue;
                 }
@@ -125,7 +125,7 @@ mod tests {
             hand.sk_select();
             assert!(sizes(&hand).is_empty(), "GUARD: the circle is free");
             hand.double_click2d(0.0, 10.0);
-            if hand.app.tools.inline.circle().is_none() && hand.app.tools.inline.dim().is_none() {
+            if hand.app.tools.place.round().is_none() && hand.app.tools.inline.dim().is_none() {
                 failures.push(format!("{how:?}: a double click on the circle opened no field"));
                 continue;
             }
@@ -186,7 +186,7 @@ mod tests {
                     hand.double_click2d(40.0 + 12.0 * half.cos(), 12.0 * half.sin());
                 }
             }
-            let open = hand.app.tools.inline.circle().is_some() || hand.app.tools.inline.dim().is_some();
+            let open = hand.app.tools.place.round().is_some() || hand.app.tools.inline.dim().is_some();
             if !open {
                 failures.push(format!("a double click on {by} opened no field; status {:?}, selected {:?}", hand.app.status, hand.app.tools.sel_sk.items));
                 continue;
@@ -197,8 +197,8 @@ mod tests {
             if got != vec![(false, want)] {
                 failures.push(format!("a double click on {by} and {value} typed: sizes {got:?}"));
             }
-            let radius = hand.app.project.sketches[0].entities.iter().find_map(|e| match e.kind {
-                EntityKind::Arc { center, a, .. } => {
+            let radius = hand.app.project.sketches[0].entities.iter().find_map(|e| match e.kind.as_arc() {
+                Some(qymcad_core::model::ArcParts { center, a, .. }) => {
                     let sk = &hand.app.project.sketches[0];
                     let at = |id| sk.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
                     at(center).zip(at(a)).map(|(c, p)| (p.0 - c.0).hypot(p.1 - c.1))
@@ -218,8 +218,8 @@ mod tests {
         let at = |id| sk.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
         sk.entities
             .iter()
-            .filter_map(|e| match e.kind {
-                EntityKind::Arc { center, a, .. } => at(center).zip(at(a)),
+            .filter_map(|e| match e.kind.as_arc() {
+                Some(qymcad_core::model::ArcParts { center, a, .. }) => at(center).zip(at(a)),
                 _ => None,
             })
             .min_by(|x, y| (x.0 .0 - centre_at.0).hypot(x.0 .1 - centre_at.1).total_cmp(&(y.0 .0 - centre_at.0).hypot(y.0 .1 - centre_at.1)))
@@ -237,8 +237,8 @@ mod tests {
 
     /// The corner (30, 0) -> (0, 0) -> (0, 30) rounded by 5 with the fillet tool, by hand.
     fn a_fillet(hand: &mut Hand) {
-        hand.sk_tool(1).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
-        hand.sk_tool(0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(30.0, 0.0).click2d(0.0, 0.0).double_click2d(0.0, 30.0);
+        hand.sk_select();
         assert!(hand.press_hint(&qymcad_i18n::tr("tb-fillet-sketch-hint")), "no sketch fillet button");
         hand.click2d(0.0, 0.0).type_text("5").key(egui::Key::Enter);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
@@ -246,7 +246,7 @@ mod tests {
 
     /// A slot from (0, 0) to (30, 0), 5 in radius.
     fn a_slot(hand: &mut Hand) {
-        hand.sk_tool(7).click2d(0.0, 0.0).click2d(30.0, 0.0).click2d(0.0, 5.0);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Slot).click2d(0.0, 0.0).click2d(30.0, 0.0).click2d(0.0, 5.0);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
     }
 
@@ -273,7 +273,7 @@ mod tests {
             // by the arc
             let (x, y) = (shape.middle)(r);
             hand.double_click2d(x, y);
-            if hand.app.tools.inline.circle().is_none() && hand.app.tools.inline.dim().is_none() {
+            if hand.app.tools.place.round().is_none() && hand.app.tools.inline.dim().is_none() {
                 failures.push(format!("{}: a double click on the arc opened no field; selected {:?}", shape.name, hand.app.tools.sel_sk.items));
                 continue;
             }
@@ -291,7 +291,7 @@ mod tests {
                 failures.push(format!("{}: no radius R7.0 to double-click: {labels:?}", shape.name));
                 continue;
             }
-            if hand.app.tools.inline.circle().is_none() && hand.app.tools.inline.dim().is_none() {
+            if hand.app.tools.place.round().is_none() && hand.app.tools.inline.dim().is_none() {
                 failures.push(format!("{}: a double click on its radius opened no field", shape.name));
                 continue;
             }
@@ -310,18 +310,18 @@ mod tests {
         let (mut app, _ctx) = a_sketch();
         let mut hand = Hand::new(&mut app);
         for x in [0.0, 30.0, 60.0] {
-            hand.sk_tool(3).click2d(x, 0.0).click2d(x + 10.0, 0.0);
+            hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(x, 0.0).click2d(x + 10.0, 0.0);
             close(&mut hand, Close::Escaped);
             hand.key(egui::Key::Escape).key(egui::Key::Escape);
         }
         hand.sk_select();
         assert!(sizes(&hand).is_empty(), "GUARD: no size laid on circles drawn without typing: {:?}", sizes(&hand));
-        let circles: Vec<u64> = hand.app.project.sketches[0].entities.iter().filter(|e| matches!(e.kind, EntityKind::Circle { .. })).map(|e| e.id).collect();
+        let circles: Vec<u64> = hand.app.project.sketches[0].entities.iter().filter(|e| e.kind.as_circle().is_some()).map(|e| e.id).collect();
         // the first and the second equal, the second and the third equal: tied as a person ties them, by hand
         for pair in circles.windows(2) {
-            let picked: Vec<(u8, u64)> = pair.iter().map(|&c| (1, c)).collect();
+            let picked: Vec<qymcad_ui_state::SketchItem> = pair.iter().map(|&c| qymcad_ui_state::SketchItem::curve(c)).collect();
             assert!(hand.select2d(&picked), "the two circles could not be picked");
-            hand.constraint(5);
+            hand.constraint(qymcad_ui_state::ConstraintKind::Equal);
         }
         let (checks, conflicts) = (hand.app.project.sketch_checks(0), hand.app.project.sketch_conflicts(0));
         assert!(checks.redundant.is_empty() && conflicts.is_empty(), "circles tied without typing: redundant {:?}, in conflict {conflicts:?}", checks.redundant);

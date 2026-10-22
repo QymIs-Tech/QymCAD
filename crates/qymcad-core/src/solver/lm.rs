@@ -462,8 +462,7 @@ pub(crate) fn dense_step(jrows: &[Vec<(usize, f64)>], grad: &[f64], fixed_var: &
 /// same sums, the same damping and the same free unknowns as `dense_step`, at the cost of the non-zeros instead of
 /// the cube of the unknowns. `None` where the matrix is not positive definite - singular, as the dense step says.
 pub(crate) fn sparse_step(jrows: &[Vec<(usize, f64)>], grad: &[f64], fixed_var: &[bool], lambda: f64) -> Option<Vec<f64>> {
-    use faer::linalg::solvers::Solve;
-    use faer::sparse::{SparseColMat, Triplet};
+    use faer::sparse::Triplet;
     let nv = grad.len();
     // the lower triangle of JᵀJ + lambda·I, every product as the dense matrix sums it, then summed by place
     let mut parts: Vec<Triplet<usize, usize, f64>> = (0..nv).map(|k| Triplet::new(k, k, lambda)).collect();
@@ -476,14 +475,7 @@ pub(crate) fn sparse_step(jrows: &[Vec<(usize, f64)>], grad: &[f64], fixed_var: 
             }
         }
     }
-    parts.sort_unstable_by_key(|e| (e.col, e.row));
-    let mut sums: Vec<Triplet<usize, usize, f64>> = Vec::with_capacity(parts.len());
-    for e in parts {
-        match sums.last_mut() {
-            Some(last) if last.row == e.row && last.col == e.col => last.val += e.val,
-            _ => sums.push(e),
-        }
-    }
+    let sums = crate::linalg::summed_by_place(parts);
     let mut diagonal = vec![0.0; nv];
     for e in sums.iter().filter(|e| e.row == e.col) {
         diagonal[e.row] = e.val;
@@ -496,14 +488,12 @@ pub(crate) fn sparse_step(jrows: &[Vec<(usize, f64)>], grad: &[f64], fixed_var: 
     }
     let own: Vec<Triplet<usize, usize, f64>> = sums.iter().filter(|e| place[e.row] != usize::MAX && place[e.col] != usize::MAX).map(|e| Triplet::new(place[e.row], place[e.col], e.val)).collect();
     let n = free.len();
-    let matrix = SparseColMat::<usize, f64>::try_new_from_triplets(n, n, &own).ok()?;
-    let factor = matrix.sp_cholesky(faer::Side::Lower).ok()?;
-    let d = factor.solve(faer::Mat::<f64>::from_fn(n, 1, |t, _| -grad[free[t]]));
+    let d = crate::linalg::solve_spd(n, &own, &[free.iter().map(|&k| -grad[k]).collect()])?;
     let mut full = vec![0.0; nv];
     for (t, &k) in free.iter().enumerate() {
-        full[k] = d[(t, 0)];
+        full[k] = d[0][t];
     }
-    full.iter().all(|v| v.is_finite()).then_some(full)
+    Some(full)
 }
 
 /// Direct solution of the linear system `a·x = b` by Gauss-Jordan elimination with partial pivoting.

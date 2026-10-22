@@ -27,23 +27,28 @@ pub static EXTRUDE: Tool = Tool {
     fields: &[Field { caption: "f-length", by_placeholder: false, when: When::Before, class: Class::Length, typical: 10.0, lo: 0.1, hi: 10000.0, zero: false, negative: false, outcome: extruded }],
     modes: &[
         &[
-            Mode { word: "cmd-add", clicks: None, outcome: Some(box_outcome(0.0, 10.0)) },
-            Mode { word: "cmd-cut", clicks: None, outcome: None },
-            Mode { word: "cmd-intersect", clicks: None, outcome: None },
+            Mode { word: "cmd-add", arg: None, clicks: None, outcome: Some(box_outcome(0.0, 10.0)) },
+            Mode { word: "cmd-cut", arg: None, clicks: None, outcome: None },
+            Mode { word: "cmd-intersect", arg: None, clicks: None, outcome: None },
         ],
         &[
-            Mode { word: "cmd-to-length", clicks: None, outcome: Some(box_outcome(0.0, 10.0)) },
-            Mode { word: "cmd-symmetric", clicks: None, outcome: Some(box_outcome(-5.0, 10.0)) },
-            Mode { word: "cmd-two-sides", clicks: None, outcome: Some(box_outcome(-0.1, 10.1)) },
+            Mode { word: "cmd-to-length", arg: None, clicks: None, outcome: Some(box_outcome(0.0, 10.0)) },
+            Mode { word: "cmd-symmetric", arg: None, clicks: None, outcome: Some(box_outcome(-5.0, 10.0)) },
+            Mode { word: "cmd-two-sides", arg: None, clicks: None, outcome: Some(box_outcome(-0.1, 10.1)) },
         ],
-        &[Mode { word: "cmd-flip", clicks: None, outcome: Some(box_outcome(-10.0, 10.0)) }],
+        &[Mode { word: "cmd-flip", arg: None, clicks: None, outcome: Some(box_outcome(-10.0, 10.0)) }],
     ],
     result: box_outcome(0.0, 10.0),
     node: "Extrude",
     undo: "f-extrusion",
     undo_steps: 1,
     stays: false,
-    upstream: Some(Upstream::SketchDimension { shown: "40", value: 50.0, then: Outcome::Body { volume: 15000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [50.0, 30.0, 10.0] } }),
+    upstream: Some(Upstream::SketchSize {
+        at: (20.0, 0.0),
+        caption: "sk-width",
+        value: 50.0,
+        then: Outcome::Body { volume: 15000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [50.0, 30.0, 10.0] },
+    }),
     dependency: Some(Node { kind: "Sketch", row: None }),
     contexts: &[Context::SecondPart, Context::AfterTool(&FILLET)],
     refusal: None,
@@ -110,9 +115,9 @@ pub static CHAMFER: Tool = Tool {
     words: &[],
     fields: &[Field { caption: "f-leg", by_placeholder: false, when: When::Before, class: Class::Radius, typical: 1.5, lo: 0.05, hi: 9.5, zero: false, negative: false, outcome: chamfered }],
     modes: &[&[
-        Mode { word: "cmd-symmetric", clicks: None, outcome: Some(chamfered(1.5)) },
-        Mode { word: "cmd-two-distances", clicks: None, outcome: Some(chamfered(1.5)) },
-        Mode { word: "cmd-leg-angle", clicks: None, outcome: Some(chamfered(1.5)) },
+        Mode { word: "cmd-symmetric", arg: None, clicks: None, outcome: Some(chamfered(1.5)) },
+        Mode { word: "cmd-two-distances", arg: None, clicks: None, outcome: Some(chamfered(1.5)) },
+        Mode { word: "cmd-leg-angle", arg: None, clicks: None, outcome: Some(chamfered(1.5)) },
     ]],
     result: chamfered(1.5),
     node: "Chamfer",
@@ -168,18 +173,20 @@ pub static HOLE: Tool = Tool {
     ],
     modes: &[
         // placement: by a face is the one the ordinary picks are made for; by a sketch must ask for a sketch in words
-        &[Mode { word: "cmd-by-face", clicks: None, outcome: Some(holed(6.0, 15.0)) }, Mode { word: "cmd-by-sketch", clicks: None, outcome: None }],
+        &[Mode { word: "cmd-by-face", arg: None, clicks: None, outcome: Some(holed(6.0, 15.0)) }, Mode { word: "cmd-by-sketch", arg: None, clicks: None, outcome: None }],
         // kind: a recess 12 across and 4 deep opens over the hole - a flat shoulder for a counterbore, a cone for a
         // countersink; each takes what the hole of 6 has not taken there already
         &[
-            Mode { word: "cmd-simple", clicks: None, outcome: Some(holed(6.0, 15.0)) },
+            Mode { word: "cmd-simple", arg: None, clicks: None, outcome: Some(holed(6.0, 15.0)) },
             Mode {
                 word: "cmd-counterbore",
+                arg: None,
                 clicks: None,
                 outcome: Some(Outcome::Body { volume: 12000.0 - PI * 9.0 * 10.0 - PI * (36.0 - 9.0) * 4.0, faces: 9, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] }),
             },
             Mode {
                 word: "cmd-countersink",
+                arg: None,
                 clicks: None,
                 outcome: Some(Outcome::Body {
                     volume: 12000.0 - PI * 9.0 * 10.0 - PI * 4.0 / 3.0 * (36.0 + 18.0 + 9.0) + PI * 9.0 * 4.0,
@@ -239,15 +246,15 @@ pub static SHELL: Tool = Tool {
     words: &[],
     fields: &[Field { caption: "f-thickness", by_placeholder: false, when: When::Before, class: Class::Radius, typical: 2.0, lo: 0.1, hi: 9.5, zero: false, negative: false, outcome: shelled }],
     modes: &[&[
-        Mode { word: "cmd-inwards", clicks: None, outcome: Some(shelled(2.0)) },
+        Mode { word: "cmd-inwards", arg: None, clicks: None, outcome: Some(shelled(2.0)) },
         // outwards the old surface becomes the cavity and the wall stands outside it, following the surface: each
         // face moves out by the wall, each edge between two of them becomes a quarter cylinder of that radius and
         // each corner an eighth of a sphere, so the body grows by area * t + length * pi t^2 / 4 + 4 * pi t^3 / 6.
         // The face left open neither moves nor rounds, so only the bottom corners round: 5200 + 180 pi + 16 pi / 3.
-        Mode { word: "cmd-outwards", clicks: None, outcome: Some(offset_wall(2.0, 12000.0)) },
+        Mode { word: "cmd-outwards", arg: None, clicks: None, outcome: Some(offset_wall(2.0, 12000.0)) },
         // centred: half the wall outside the surface, half inside - the outer side rounds the same way, and the
         // cavity is the block short of half the wall on every face but the open one
-        Mode { word: "cmd-centred", clicks: None, outcome: Some(offset_wall(1.0, 38.0 * 28.0 * 9.0)) },
+        Mode { word: "cmd-centred", arg: None, clicks: None, outcome: Some(offset_wall(1.0, 38.0 * 28.0 * 9.0)) },
     ]],
     result: shelled(2.0),
     node: "Shell",
@@ -309,20 +316,20 @@ pub static REVOLVE: Tool = Tool {
     modes: &[
         // a first body can only be added: there is nothing yet to cut from or to meet
         &[
-            Mode { word: "cmd-add", clicks: None, outcome: Some(whole_turn()) },
-            Mode { word: "cmd-cut", clicks: None, outcome: None },
-            Mode { word: "cmd-intersect", clicks: None, outcome: None },
+            Mode { word: "cmd-add", arg: None, clicks: None, outcome: Some(whole_turn()) },
+            Mode { word: "cmd-cut", arg: None, clicks: None, outcome: None },
+            Mode { word: "cmd-intersect", arg: None, clicks: None, outcome: None },
         ],
         // a whole turn comes out the same laid to one side, laid about the middle, or reversed
-        &[Mode { word: "cmd-one-side", clicks: None, outcome: Some(whole_turn()) }, Mode { word: "cmd-symmetric", clicks: None, outcome: Some(whole_turn()) }],
-        &[Mode { word: "cmd-flip-btn", clicks: None, outcome: Some(whole_turn()) }],
+        &[Mode { word: "cmd-one-side", arg: None, clicks: None, outcome: Some(whole_turn()) }, Mode { word: "cmd-symmetric", arg: None, clicks: None, outcome: Some(whole_turn()) }],
+        &[Mode { word: "cmd-flip-btn", arg: None, clicks: None, outcome: Some(whole_turn()) }],
     ],
     result: whole_turn(),
     node: "Revolve",
     undo: "f-revolution",
     undo_steps: 1,
     stays: false,
-    upstream: Some(Upstream::SketchDimension { shown: "40", value: 50.0, then: Outcome::Body { volume: PI * 900.0 * 50.0, faces: 3, edges: 3, min: [0.0, -30.0, -30.0], max: [50.0, 30.0, 30.0] } }),
+    upstream: Some(Upstream::SketchSize { at: (20.0, 0.0), caption: "sk-width", value: 50.0, then: Outcome::Body { volume: PI * 900.0 * 50.0, faces: 3, edges: 3, min: [0.0, -30.0, -30.0], max: [50.0, 30.0, 30.0] } }),
     dependency: Some(Node { kind: "Sketch", row: None }),
     contexts: &[Context::SecondPart],
     refusal: None,

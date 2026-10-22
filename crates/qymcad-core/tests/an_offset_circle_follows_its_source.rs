@@ -4,14 +4,14 @@
 //! Reported behaviour: the copy of a circle at a distance of 3 was a circle of its own, with a centre of its own - five
 //! freedoms instead of two, and moving or changing the source left the copy where it was.
 use qymcad_core::feature::Purpose;
-use qymcad_core::model::{Constraint, EntityKind, Project};
+use qymcad_core::model::{Constraint, Project};
 
 fn radii(p: &Project, si: usize) -> Vec<f64> {
     let mut r: Vec<f64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { r, .. } => Some(r),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
             _ => None,
         })
         .collect();
@@ -25,8 +25,8 @@ fn an_offset_circle_is_concentric_and_follows_the_source() {
     p.new_document();
     let si = p.new_sketch("S");
     let c = p.add_circle_entity(si, 5.0, 5.0, 10.0, Purpose::Real);
-    let centre = match p.sketches[si].entities.iter().find(|e| e.id == c).map(|e| e.kind) {
-        Some(EntityKind::Circle { center, .. }) => center,
+    let centre = match p.sketches[si].entities.iter().find(|e| e.id == c).and_then(|e| e.kind.as_circle()) {
+        Some(qymcad_core::model::CircleParts { center, .. }) => center,
         _ => panic!("the circle"),
     };
     p.sketches[si].constraints.push(Constraint::Diameter { c: centre, d: 20.0, off: 0.0, expr: String::new(), driven: false, diam: true, at: None });

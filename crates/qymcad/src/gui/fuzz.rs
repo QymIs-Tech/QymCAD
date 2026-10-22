@@ -43,14 +43,14 @@ mod random_session {
         // A LEFTOVER MODE: after cancelling everything, NOT ONE mode may stay active.
         // This is the very class that was reported three times, and never by an invented scenario.
         if what == "cancel everything" {
-            let tail = app.tools.armed.draw_kind() != 0
+            let tail = app.tools.armed.drawing().is_some()
                 || app.tools.armed.modify().is_some()
-                || app.tools.armed.dim_kind() != 0
+                || app.tools.armed.dimension().is_some()
                 || app.tools.armed.measuring()
                 || !app.tools.measure.pts.is_empty()
                 || app.tools.corner.at.is_some()
-                || app.tools.armed.pat_op() != 0
-                || app.tools.armed.move_op() != 0
+                || app.tools.armed.pattern().is_some()
+                || app.tools.armed.moving().is_some()
                 || app.tools.pending_import.draw_pts.is_some()
                 || app.tools.pending_import.curves.is_some()
                 || app.tools.armed.commanding();
@@ -84,7 +84,7 @@ mod random_session {
                         "circle sketch"
                     }
                     2 => {
-                        app.start_feat_cmd(1);
+                        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
                         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                             p.val = r.f(2.0, 20.0);
                             p.txt = format!("{}", p.val);
@@ -97,7 +97,7 @@ mod random_session {
                         "cancel everything"
                     }
                     4 => {
-                        app.set_sk_tool((r.pick(4) + 1) as u8);
+                        app.set_sk_tool(qymcad_ui_state::SketchShape::ALL[r.pick(4) + 1]);
                         "sketch tool"
                     }
                     5 => {
@@ -108,7 +108,7 @@ mod random_session {
                             app.chosen.sel,
                             app.sketch_ses,
                             &mut app.status,
-                            (r.pick(3) + 1) as u8,
+                            qymcad_ui_state::DimKind::ALL[r.pick(3)],
                         );
                         "dimension tool"
                     }
@@ -135,7 +135,7 @@ mod random_session {
                     9 => {
                         // SAVE AND OPEN: the document must survive a round trip through a file
                         let path = std::env::temp_dir().join(format!("qym_fuzz_{seed}.qcad")).to_string_lossy().to_string();
-                        crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path.clone(), false);
+                        crate::gui::io_jobs::spawn_save(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path.clone(), false);
                         app.wait_bg();
                         if let Ok(proj) = qymcad_io::load_project(&path) {
                             let before = app.project.bodies.len();

@@ -13,8 +13,8 @@ fn line_with_dim(k: f64, d: f64, driven: bool) -> (Project, usize, u64, u64) {
     let mut p = Project::default();
     let si = p.new_sketch("s");
     let eid = p.add_line_entity(si, 0.0, 0.0, 10.0 * k, 0.0, qymcad_core::feature::Purpose::Real);
-    let (a, b) = match p.sketches[si].entities.iter().find(|e| e.id == eid).unwrap().kind {
-        qymcad_core::model::EntityKind::Line { a, b } => (a, b),
+    let (a, b) = match p.sketches[si].entities.iter().find(|e| e.id == eid).unwrap().kind.as_line() {
+        Some(qymcad_core::model::LineParts { a, b }) => (a, b),
         _ => unreachable!(),
     };
     p.sketches[si].constraints.push(Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven, axis: 0, at: None });

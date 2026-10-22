@@ -248,8 +248,8 @@ pub static ROTATE: Tool = Tool {
     words: &[],
     // a turn of 0 turns nothing and must not lay a step; a whole turn either way is the most there is
     fields: &[Field {
-        caption: "sk-angle-placeholder",
-        by_placeholder: true,
+        caption: "sk-angle-deg",
+        by_placeholder: false,
         when: When::After,
         class: Class::Angle,
         typical: 90.0,

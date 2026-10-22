@@ -29,19 +29,27 @@ enum Curve2 {
         to: [f64; 2],
         ccw: bool,
     },
-    /// A polyline: everything that is neither a straight line nor a circle — elliptical arcs, splines,
-    /// intersection curves.
-    Poly(Vec<[f64; 2]>),
+    /// An ellipse, or an arc of one: a circle seen at an angle, an elliptical edge.
+    Oval {
+        centre: [f64; 2],
+        major_end: [f64; 2],
+        minor_end: [f64; 2],
+        arc: Option<OvalArc>,
+    },
+    /// A spline of the curve an edge is laid out by: an edge of no kind the sketch has - a spline of the body, a curve
+    /// where two faces meet - its nodes and the handles holding the curve at each.
+    Spline {
+        nodes: Vec<[f64; 2]>,
+        handles: Vec<crate::model::Handle>,
+        ends: crate::feature::Ends,
+    },
 }
 
-impl Curve2 {
-    /// How many entities the curve yields: a polyline has one segment fewer than it has points.
-    fn entity_count(&self) -> usize {
-        match self {
-            Curve2::Line(..) | Curve2::Circle(..) | Curve2::Arc { .. } => 1,
-            Curve2::Poly(p) => p.len().saturating_sub(1),
-        }
-    }
+/// THE ENDS OF AN ARC OF AN ELLIPSE, and the way it runs from the first to the second.
+struct OvalArc {
+    from: [f64; 2],
+    to: [f64; 2],
+    winding: crate::feature::Winding,
 }
 
 /// WHAT THE BODY SAYS OF THE SOURCE OF A PROJECTION: its curves, that it is gone, or nothing yet - the body is not live
@@ -276,8 +284,8 @@ impl Project {
                 }
             }
             for eid in &p.entities {
-                if let Some(EntityKind::Circle { r, .. }) = s.entities.iter().find(|x| x.id == *eid).map(|e| e.kind) {
-                    r.to_bits().hash(&mut h);
+                if let Some(c) = s.entity(*eid).and_then(|e| e.kind.as_circle()) {
+                    c.r.to_bits().hash(&mut h);
                 }
             }
         }
@@ -317,8 +325,9 @@ impl Project {
         }
     }
 
-    /// An edge becomes a sketch curve. A circle stays a circle and a straight edge stays a line; everything
-    /// else becomes a polyline.
+    /// An edge becomes a sketch curve. A circle seen square stays a circle, a straight edge a line, a flat circle or
+    /// ellipse seen from any side an ellipse (`Curve::oval_through`); any other edge becomes a spline through its
+    /// points.
     fn curve_to_2d(poly: &[[f64; 3]], circ: Option<([f64; 3], [f64; 3], f64)>, frame: &PlaneFrame) -> Curve2 {
         let to2 = |p: &[f64; 3]| {
             let q = frame.project(Point3::new(p[0], p[1], p[2]));
@@ -359,7 +368,34 @@ impl Project {
                 return Curve2::Line(a, b);
             }
         }
-        Curve2::Poly(pts)
+        let at = |p: crate::geom::Point2| [p.x, p.y];
+        let laid: Vec<crate::geom::Point2> = pts.iter().map(|p| crate::geom::Point2::new(p[0], p[1])).collect();
+        if let Some((oval, axes)) = crate::model::curve::Curve::oval_through(&laid).and_then(|c| c.oval_axes().map(|a| (c, a))) {
+            // the way the arc runs: counter-clockwise where it leaves its start turning left of the centre
+            let (from, way) = (oval.at(0.0) - axes.centre, oval.velocity(0.0));
+            let winding = if from.x * way.y - from.y * way.x > 0.0 { crate::feature::Winding::Ccw } else { crate::feature::Winding::Cw };
+            let arc = (!oval.closed()).then(|| OvalArc { from: at(oval.at(0.0)), to: at(oval.at(1.0)), winding });
+            return Curve2::Oval { centre: at(axes.centre), major_end: at(axes.centre + axes.major), minor_end: at(axes.centre + axes.minor), arc };
+        }
+        // a closed edge comes back to its first point: the spline is a loop through the others
+        let closed = (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-6;
+        let mut along: Vec<crate::geom::Point2> = (if closed { &laid[..laid.len() - 1] } else { &laid[..] }).to_vec();
+        along.dedup_by(|p, q| p.dist(*q) < 1e-9);
+        let ends = if closed { crate::feature::Ends::Closed } else { crate::feature::Ends::Open };
+        // THE CURVE THROUGH THE POINTS OF THE EDGE - they lie on it - AS FEW NODES AS ITS SHAPE NEEDS: the spline of the
+        // sketch through them, approximated within 0.001 mm (`BSpline::approximate`). Laid through every point the edge is
+        // laid out by, the projected spline of a body took a node a point, hundreds of them.
+        let through = crate::geom::bspline::BSpline::through(&along, &[], ends);
+        let fitted = through.as_ref().and_then(|b| {
+            let at = |u: f64| b.at(u);
+            let off = |q: crate::geom::Point2, u: f64| q.dist(b.at(u));
+            crate::geom::bspline::BSpline::approximate(&crate::geom::bspline::Approximated { at: &at, bends: &[], ends, off: &off, tolerance: 1e-3, through: None })
+        });
+        let Some(fitted) = fitted.or(through) else { return Curve2::Line(a, b) };
+        let h = fitted.hermite(ends);
+        let nodes = h.nodes.iter().map(|q| [q.x, q.y]).collect();
+        let handles = h.tangents.iter().map(|t| crate::model::Handle { arrive: Some([t.arrive.x, t.arrive.y]), leave: Some([t.leave.x, t.leave.y]) }).collect();
+        Curve2::Spline { nodes, handles, ends }
     }
 
     /// PLACE THE CURVES INTO THE SKETCH, each matched to the curve its edge gave before. A curve of an edge still there keeps
@@ -374,7 +410,7 @@ impl Project {
         let (old_ents, old_edges) = {
             let p = &self.sketches[si].projections[k];
             // a projection made before the edges were kept: taken in the order the edges come, as it was laid
-            let edges = if p.edges.len() == p.entities.len() { p.edges.clone() } else { curves.iter().flat_map(|(e, c)| std::iter::repeat_n(*e, c.entity_count())).collect() };
+            let edges = if p.edges.len() == p.entities.len() { p.edges.clone() } else { curves.iter().map(|(e, _)| *e).collect() };
             (p.entities.clone(), edges)
         };
         let mut by_edge: std::collections::HashMap<u32, Vec<Id>> = std::collections::HashMap::new();
@@ -386,16 +422,16 @@ impl Project {
         let (mut ents, mut edges, mut pts): (Vec<Id>, Vec<u32>, Vec<Id>) = (Vec::new(), Vec::new(), Vec::new());
         for (edge, c) in &curves {
             let olds = by_edge.remove(edge).unwrap_or_default();
-            let kinds: Vec<EntityKind> = olds.iter().filter_map(|id| self.sketches[si].entities.iter().find(|e| e.id == *id).map(|e| e.kind)).collect();
+            let kinds: Vec<EntityKind> = olds.iter().filter_map(|id| self.sketches[si].entities.iter().find(|e| e.id == *id).map(|e| e.kind.clone())).collect();
             match c {
                 Curve2::Line(a, b) => {
                     let old = match kinds.as_slice() {
-                        [EntityKind::Line { a, b }] => Some((olds[0], *a, *b)),
+                        [k] => k.as_line().map(|l| (olds[0], l.a, l.b)),
                         _ => None,
                     };
                     let pa = self.proj_point(si, &mut placing, old.map(|o| o.1), *a);
                     let pb = self.proj_point(si, &mut placing, old.map(|o| o.2), *b);
-                    let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::Line { a: pa, b: pb });
+                    let e = self.proj_entity(si, old.map(|o| o.0), crate::model::LineParts { a: pa, b: pb }.into());
                     if let Some((_, oa, ob)) = old.filter(|o| (o.1, o.2) != (pa, pb)) {
                         rehung.push(Rehung { from: Ends { a: oa, b: ob }, to: Ends { a: pa, b: pb } });
                     }
@@ -405,55 +441,69 @@ impl Project {
                 }
                 Curve2::Circle(c0, r) => {
                     let old = match kinds.as_slice() {
-                        [EntityKind::Circle { center, .. }] => Some((olds[0], *center)),
+                        [k] => k.as_circle().map(|c| (olds[0], c.center)),
                         _ => None,
                     };
                     // the centre of a circle is shared with nobody: it carries the radius variable of the solver
                     let pc = self.proj_centre(si, &mut placing, old.map(|o| o.1), *c0);
-                    let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::Circle { center: pc, r: *r });
+                    let e = self.proj_entity(si, old.map(|o| o.0), crate::model::CircleParts { center: pc, r: *r }.into());
                     ents.push(e);
                     edges.push(*edge);
                     pts.push(pc);
                 }
                 Curve2::Arc { centre, from, to, ccw } => {
                     let old = match kinds.as_slice() {
-                        [EntityKind::Arc { center, a, b, .. }] => Some((olds[0], *center, *a, *b)),
+                        [k] => k.as_arc().map(|arc| (olds[0], arc.center, arc.a, arc.b)),
                         _ => None,
                     };
                     let pc = self.proj_centre(si, &mut placing, old.map(|o| o.1), *centre);
                     let pa = self.proj_point(si, &mut placing, old.map(|o| o.2), *from);
                     let pb = self.proj_point(si, &mut placing, old.map(|o| o.3), *to);
-                    let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::Arc { center: pc, a: pa, b: pb, ccw: *ccw });
+                    let e = self.proj_entity(si, old.map(|o| o.0), crate::model::ArcParts { center: pc, a: pa, b: pb, ccw: *ccw }.into());
                     ents.push(e);
                     edges.push(*edge);
                     pts.extend([pc, pa, pb]);
                 }
-                Curve2::Poly(p) => {
-                    // the chain of points the old segments ran through, when they were as many lines as the new
-                    let chain: Option<Vec<Id>> = (kinds.len() + 1 == p.len() && kinds.iter().all(|k| matches!(k, EntityKind::Line { .. }))).then(|| {
-                        kinds
-                            .iter()
-                            .enumerate()
-                            .flat_map(|(n, k)| {
-                                if let EntityKind::Line { a, b } = k {
-                                    if n == 0 {
-                                        vec![*a, *b]
-                                    } else {
-                                        vec![*b]
-                                    }
-                                } else {
-                                    Vec::new()
-                                }
-                            })
-                            .collect()
+                Curve2::Oval { centre, major_end, minor_end, arc } => {
+                    let old = match kinds.as_slice() {
+                        [k] => k.as_ellipse().map(|e| (olds[0], e)),
+                        _ => None,
+                    };
+                    // the centre and the ends of the axes are shared with nobody
+                    let pc = self.proj_centre(si, &mut placing, old.map(|o| o.1.c), *centre);
+                    let pa = self.proj_centre(si, &mut placing, old.map(|o| o.1.ma), *major_end);
+                    let pi = self.proj_centre(si, &mut placing, old.map(|o| o.1.mi), *minor_end);
+                    let was = old.and_then(|o| o.1.span);
+                    let span = arc.as_ref().map(|arc| crate::model::EllipseSpan {
+                        from: self.proj_point(si, &mut placing, was.map(|s| s.from), arc.from),
+                        to: self.proj_point(si, &mut placing, was.map(|s| s.to), arc.to),
+                        winding: arc.winding,
                     });
-                    let ids: Vec<Id> = p.iter().enumerate().map(|(n, q)| self.proj_point(si, &mut placing, chain.as_ref().map(|c| c[n]), *q)).collect();
-                    for (n, w) in ids.windows(2).filter(|w| w[0] != w[1]).enumerate() {
-                        let old = chain.as_ref().and(olds.get(n).copied());
-                        let e = self.proj_entity(si, old, EntityKind::Line { a: w[0], b: w[1] });
-                        ents.push(e);
-                        edges.push(*edge);
+                    let e = self.proj_entity(si, old.map(|o| o.0), crate::model::EllipseParts { c: pc, ma: pa, mi: pi, span }.into());
+                    ents.push(e);
+                    edges.push(*edge);
+                    pts.extend([pc, pa, pi]);
+                    pts.extend(span.iter().flat_map(|s| [s.from, s.to]));
+                }
+                Curve2::Spline { nodes, handles, ends } => {
+                    if nodes.len() < 2 {
+                        continue;
                     }
+                    let old = match kinds.as_slice() {
+                        [k] => k.as_spline().filter(|s| s.nodes.len() == nodes.len()).map(|s| (olds[0], s.nodes.to_vec())),
+                        _ => None,
+                    };
+                    // the ends of an open spline are corners it shares with the curves it meets; its other nodes are its own
+                    let last = nodes.len() - 1;
+                    let open = *ends == crate::feature::Ends::Open;
+                    let mut ids = Vec::new();
+                    for (n, q) in nodes.iter().enumerate() {
+                        let was = old.as_ref().map(|o| o.1[n]);
+                        ids.push(if open && (n == 0 || n == last) { self.proj_point(si, &mut placing, was, *q) } else { self.proj_centre(si, &mut placing, was, *q) });
+                    }
+                    let e = self.proj_entity(si, old.map(|o| o.0), EntityKind::spline(ids.clone(), handles.clone(), *ends));
+                    ents.push(e);
+                    edges.push(*edge);
                     pts.extend(ids);
                 }
             }

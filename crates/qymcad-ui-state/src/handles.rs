@@ -72,9 +72,9 @@ pub fn handle_arrows(pn: &Painting) -> Vec<CmdArrow> {
         let len = (tip[0] - o[0]) * n[0] + (tip[1] - o[1]) * n[1] + (tip[2] - o[2]) * n[2];
         return vec![CmdArrow { base: o, dir: n, len, key }];
     }
-    let keys: Option<[&'static str; 3]> = match pn.armed.cmd_kind() {
-        21 if pn.datum.pt_mode == 0 => Some(["x", "y", "z"]),
-        22 if pn.datum.axis_mode == 1 => Some(["ox", "oy", "oz"]),
+    let keys: Option<[&'static str; 3]> = match pn.armed.part_tool() {
+        Some(crate::PartTool::DatumPoint) if pn.datum.pt_mode == 0 => Some(["x", "y", "z"]),
+        Some(crate::PartTool::DatumAxis) if pn.datum.axis_mode == 1 => Some(["ox", "oy", "oz"]),
         _ => None,
     };
     let Some(keys) = keys else { return Vec::new() };
@@ -100,7 +100,7 @@ pub struct DatumPlaneMade {
 /// The datum plane the command in hand will make, once its reference is picked.
 pub fn datum_plane_made(pn: &Painting) -> Option<DatumPlaneMade> {
     use qymcad_core::feature::{PlaneTilt, SketchPlane};
-    if pn.armed.cmd_kind() != 20 {
+    if pn.armed.part_tool() != Some(crate::PartTool::DatumPlane) {
         return None;
     }
     let sp = pn.datum.plane_pick.as_ref()?;
@@ -125,14 +125,14 @@ pub fn datum_plane_made(pn: &Painting) -> Option<DatumPlaneMade> {
 /// no rings, their direction was typed only.
 pub fn handle_rings(pn: &Painting) -> Vec<CmdRing> {
     let radius = DATUM_RING_PX / f64::from(pn.cam.scale).max(1e-9);
-    match pn.armed.cmd_kind() {
-        20 => {
+    match pn.armed.part_tool() {
+        Some(crate::PartTool::DatumPlane) => {
             let Some(m) = datum_plane_made(pn) else { return Vec::new() };
             let f = qymcad_core::feature::PlaneTilt::axes(m.untilted);
             let field = |axis: [f64; 3], key: &'static str| CmdRing { center: m.origin, axis, radius, key, turns: RingTurns::Field };
             vec![field(f.x, "tilt_x"), field(f.y, "tilt_y"), field(m.normal, "turn")]
         }
-        22 if pn.datum.axis_mode == 1 => {
+        Some(crate::PartTool::DatumAxis) if pn.datum.axis_mode == 1 => {
             let center = ["ox", "oy", "oz"].map(|k| cmd_val(pn.cmd, k));
             let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
             ["about_x", "about_y", "about_z"].iter().zip(axes).map(|(&key, axis)| CmdRing { center, axis, radius, key, turns: RingTurns::Direction }).collect()
@@ -221,36 +221,8 @@ pub fn drag_handle(cmd: &mut FeatCommand, regen: &mut Rebuilding, hs: &Handles, 
     invalidate(regen);
 }
 
-/// THE PLACE THE HANDLES OF THE COMMAND TOOK ON THE SCREEN in a frame, as they were drawn.
-#[derive(Clone, Copy)]
-pub(crate) struct HandlesSeen {
-    pub(crate) frame: u64,
-    pub(crate) rect: Rect,
-}
-
-pub(crate) fn handles_seen_id() -> egui::Id {
-    egui::Id::new("command_handles_seen")
-}
-
 /// The place `hs` take on the screen: their lines and the balls at the arrows' tips, none when there are no handles.
 pub fn handles_screen_rect(hs: &Handles, scr: &Screen) -> Option<Rect> {
     let pts = hs.arrows.iter().flat_map(|a| [a.base, a.tip()]).chain(hs.rings.iter().flat_map(|r| r.points())).map(|p| scr.at(p).0);
     pts.fold(None, |acc: Option<Rect>, p| Some(acc.map_or(Rect::from_min_max(p, p), |r| r.union(Rect::from_min_max(p, p))))).map(|r| r.expand(7.0))
-}
-
-/// Remember where the handles were drawn this frame (`handles_screen_rect`): the fields of the command stand clear of them.
-pub fn remember_handles(ctx: &egui::Context, rect: Option<Rect>) {
-    let frame = ctx.cumulative_frame_nr();
-    ctx.data_mut(|d| match rect {
-        Some(rect) => {
-            d.insert_temp(handles_seen_id(), HandlesSeen { frame, rect });
-        }
-        None => d.remove::<HandlesSeen>(handles_seen_id()),
-    });
-}
-
-/// Where the handles of the command were drawn, this frame or the one before; none when none were.
-pub fn handles_seen(ctx: &egui::Context) -> Option<Rect> {
-    let seen = ctx.data(|d| d.get_temp::<HandlesSeen>(handles_seen_id()))?;
-    (seen.frame + 1 >= ctx.cumulative_frame_nr()).then_some(seen.rect)
 }

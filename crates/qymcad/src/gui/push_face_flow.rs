@@ -22,8 +22,8 @@ mod tests {
         let v0: f64 = app.project.bodies[mi].mesh.volume();
 
         // THE BUTTON
-        app.start_feat_cmd(25);
-        assert_eq!(app.tools.armed.cmd_kind(), 25, "the push-face command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::PushFace);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::PushFace), "the push-face command must open");
         assert!(app.tools.cmd.params.iter().any(|p| p.key == "dist"), "the command must have an offset field");
 
         // A CLICK ON A FACE (the top one, normal +Z)
@@ -65,8 +65,8 @@ mod tests {
     #[test]
     fn the_tool_shows_what_is_selected_and_where_it_goes() {
         let src = crate::gui::render_source::RENDER;
-        let a = src.find("} else if pn.armed.cmd_kind() == 25 {").expect("the tool must have a drawing block of its own");
-        let b = src[a..].find("} else if pn.armed.cmd_kind() == 23 {").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("} else if shows == qymcad_ui_state::Shows::FaceAndPush {").expect("the tool must have a drawing block of its own");
+        let b = src[a..].find("} else if shows == qymcad_ui_state::Shows::FacesAndTheirNeutral {").map(|i| a + i).unwrap_or(src.len());
         let blk = &src[a..b];
         assert!(blk.contains("egui::Mesh::default()"), "the selected face must be highlighted with a fill");
         assert!(blk.contains("dashed_line"), "the offset outline must be shown as a preview");
@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn the_tool_has_a_button() {
         assert!(
-            crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(25), "part"),
+            crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::PushFace), "part"),
             "without a button the operation does not exist for a person, however much of it there is in the kernel"
         );
     }
@@ -192,7 +192,7 @@ mod tests {
         app.chosen.sel = Sel::Mesh(mi);
         let top = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap()).map(|f| f.id).expect("the top face");
 
-        app.start_feat_cmd(25);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::PushFace);
         app.tools.gsel.faces.insert(top);
         app.tools.gsel.faces_body = Some(body);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "dist") {
@@ -206,7 +206,7 @@ mod tests {
         // EDITING: a double click on the feature in the tree
         app.cancel_all_tools();
         crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
-        assert_eq!(app.tools.armed.cmd_kind(), 25, "a double click must reopen the push-face command");
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::PushFace), "a double click must reopen the push-face command");
         assert!(app.tools.gsel.faces.contains(&top), "editing must restore the selected face");
         let shown = app.tools.cmd.params.iter().find(|p| p.key == "dist").map(|p| p.val);
         assert_eq!(shown, Some(4.0), "the field must hold the former offset rather than the default value");
@@ -243,7 +243,7 @@ mod tests {
         }
         let mi = app.project.mesh_index(body).expect("the mesh");
         app.chosen.sel = Sel::Mesh(mi);
-        app.start_feat_cmd(25);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::PushFace);
         let top = app.project.bodies[mi].faces.iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap()).map(|f| f.id).expect("the top face");
         app.tools.gsel.faces.insert(top);
         app.tools.gsel.faces_body = Some(body);
@@ -307,7 +307,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 50.0;
             p.txt = "50".into();
@@ -318,7 +318,7 @@ mod tests {
 
         // A SHELL 2 mm THICK, OPEN AT BOTH ENDS: the top and the bottom are removed
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, boxy);
-        app.start_feat_cmd(6);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Shell);
         let mi = app.project.mesh_index(boxy).expect("the mesh");
         for f in app.project.bodies[mi].faces.clone().iter().filter(|f| f.normal[2].abs() > 0.9) {
             app.tools.gsel.faces.insert(f.id);
@@ -335,7 +335,7 @@ mod tests {
         // A FILLET R1 on the two front top edges — it eats the front strip of the rim right through and
         // the rim falls into two (see `face_is_one_island.rs` in the repro crate)
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, frame);
-        app.start_feat_cmd(4);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
         let front: Vec<u32> = app.project.regen_edges[&frame].iter().filter(|e| (e.a[2] - 50.0).abs() < 1e-6 && (e.b[2] - 50.0).abs() < 1e-6 && e.mid[1] < 2.5).map(|e| e.id).collect();
         assert_eq!(front.len(), 2, "setup: there are two edges at the front top, and {} were found", front.len());
         app.tools.gsel.edges = front.into_iter().collect();
@@ -349,7 +349,7 @@ mod tests {
 
         // A CHAMFER on the back top edge — it eats the back strip and the rim falls into two
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, filleted);
-        app.start_feat_cmd(5);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Chamfer);
         let back: Vec<u32> = app.project.regen_edges[&filleted].iter().filter(|e| (e.a[2] - 50.0).abs() < 1e-6 && (e.b[2] - 50.0).abs() < 1e-6 && e.mid[1] > 49.5).map(|e| e.id).collect();
         assert_eq!(back.len(), 1, "setup: there is one outer edge at the back top, and {} were found", back.len());
         app.tools.gsel.edges = back.into_iter().collect();
@@ -379,7 +379,7 @@ mod tests {
         // THE SECOND ONE IS PULLED — the one whose name is built up
         let strip = strips.pop().expect("the right-hand strip");
         qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, filleted);
-        app.start_feat_cmd(25);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::PushFace);
         app.tools.gsel.faces.clear();
         app.tools.gsel.faces.insert(strip.id);
         app.tools.gsel.faces_body = Some(filleted);

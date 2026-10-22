@@ -31,8 +31,8 @@ mod tests {
         let bodies_before = app.project.bodies.len();
 
         // THE BUTTON
-        app.start_feat_cmd(27);
-        assert_eq!(app.tools.armed.cmd_kind(), 27, "the split-a-body command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::SplitBody);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::SplitBody), "the split-a-body command must open");
         assert!(app.tools.cmd.params.iter().any(|p| p.key == "offset"), "the command must have an offset field");
 
         // A CLICK ON THE PLANE IN THE VIEWPORT — through a real pick rather than by assigning state:
@@ -89,7 +89,7 @@ mod tests {
         let mut app = App::default();
         let (mi, _body) = part_with_cube(&mut app);
         let before = app.project.timeline.len();
-        app.start_feat_cmd(27);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::SplitBody);
         app.viewing.mode_3d = true;
         let top = app.project.bodies[mi].faces.iter().find(|f| f.normal[2] > 0.9).map(|f| f.id).expect("the top");
         let key = app.project.bodies[mi]
@@ -104,9 +104,9 @@ mod tests {
             p.val = 50.0;
             p.txt = "50".into();
         }
-        app.apply_feat_cmd();
+        let why = app.apply_feat_cmd();
         assert_eq!(app.project.timeline.len(), before, "no feature must be created if the plane does not cut");
-        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-plane-cuts-nothing")), "the reason must be said out loud");
+        assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-plane-cuts-nothing"))), "the reason must be said out loud");
     }
 
     /// The tool has a preview: the cutting plane itself and the line of the section across the body.
@@ -125,11 +125,14 @@ mod tests {
     /// plane.
     #[test]
     fn the_tool_has_a_button_and_a_pick() {
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(27), "part"), "without a button the operation does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::SplitBody), "part"), "without a button the operation does not exist for a person");
         // WHITESPACE-BLIND. The condition is spread over several lines now, and a needle written as one
         // line can never match it however right the code is.
         use crate::gui::render_source::dense;
-        assert!(dense(crate::gui::render_source::RENDER).contains(&dense("pn.armed.cmd_kind() == 27 || pn.armed.cmd_kind() == 29")), "a click in the viewport must choose the cutting plane");
+        assert!(
+            dense(crate::gui::render_source::RENDER).contains(&dense("pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::splits)")),
+            "a click in the viewport must choose the cutting plane"
+        );
     }
 
     /// The feature is visible in the tree and reopens for editing — otherwise it is a one-shot.
@@ -171,7 +174,7 @@ mod tests {
             .max_by(|a, b| a.centroid.z.partial_cmp(&b.centroid.z).unwrap())
             .map(|f| qymcad_core::feature::FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id })
             .expect("the top face");
-        app.start_feat_cmd(27);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::SplitBody);
         app.viewing.mode_3d = true;
         app.params.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, top));
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
@@ -186,7 +189,7 @@ mod tests {
 
         // A DOUBLE CLICK IN THE TREE -> editing
         crate::gui::commands::start_feat_cmd_edit(&mut app.part_ctx(), fid);
-        assert_eq!(app.tools.armed.cmd_kind(), 27, "editing must open THE SAME command");
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::SplitBody), "editing must open THE SAME command");
         assert!(app.params.split.plane.is_some(), "the cutting plane must be restored while editing");
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
             p.val = -h * 0.25;
@@ -220,8 +223,8 @@ mod tests {
         let h = app.project.bodies[mi].mesh.bounds().map(|b| b.max.z - b.min.z).expect("the height");
         let bodies_before = app.project.bodies.len();
 
-        app.start_feat_cmd(29);
-        assert_eq!(app.tools.armed.cmd_kind(), 29, "the split-faces command must open");
+        app.start_feat_cmd(qymcad_ui_state::PartTool::SplitFace);
+        assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::SplitFace), "the split-faces command must open");
         app.viewing.mode_3d = true;
         app.params.split.plane = Some(qymcad_core::feature::SketchPlane::Face(body, face));
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "offset") {
@@ -244,7 +247,7 @@ mod tests {
     #[test]
     fn splitting_faces_has_its_own_button_and_row() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(29), "part"), "without a button the tool does not exist for a person");
+        assert!(crate::command_catalog::has_button(crate::command_catalog::Launch::Feat(qymcad_ui_state::PartTool::SplitFace), "part"), "without a button the tool does not exist for a person");
         assert!(crate::gui::render_source::has(panels, "FeatureKind::SplitFace { offset, .. } =>"), "the row in the tree");
         let _gui = concat!(
             include_str!("file_doors.rs"),

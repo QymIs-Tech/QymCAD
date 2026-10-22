@@ -14,9 +14,9 @@ mod tests {
     fn a_pattern_in_hand<'a>(app: &'a mut App, hint: &str) -> Hand<'a> {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(app).sk_tool(1).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape);
+        Hand::new(app).sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape);
         let mut hand = Hand::new(app);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.click2d(10.0, 0.0);
         assert!(hand.press_hint(&crate::i18n::tr(hint)), "the button of the pattern {hint}");
         hand
@@ -28,10 +28,12 @@ mod tests {
         let mut hand = a_pattern_in_hand(&mut app, "tb-lin-array-hint");
         let bare = hand.bar_fields_without_caption();
         assert!(bare.is_empty(), "fields of the linear pattern with no caption: {bare:?}");
-        assert!(hand.type_after_word(&crate::i18n::tr("opt-rows"), "2"), "the field of the rows");
+        let second = crate::i18n::tr1("box-direction-n", "n", "2");
+        assert!(hand.press_word(&second, egui::pos2(0.0, 0.0)), "the second direction, opened by its title");
         let bare = hand.bar_fields_without_caption();
-        assert!(bare.is_empty(), "fields of the linear pattern of two rows with no caption: {bare:?}");
-        assert!(hand.shows(&crate::i18n::tr("opt-row-step-x")), "two rows show no step of the rows");
+        assert!(bare.is_empty(), "fields of the linear pattern of two directions with no caption: {bare:?}");
+        let steps = hand.words_drawn().iter().filter(|(t, _)| *t == crate::i18n::tr("opt-step-x")).count();
+        assert_eq!(steps, 2, "the second direction opened shows no step of its own");
     }
 
     #[test]

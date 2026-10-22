@@ -60,12 +60,12 @@ impl Session {
                             SketchPlane::Face(body, _) => format!("face of {}", comp_name(p.body_owner(body)).unwrap_or_default()),
                         }
                     },
-                    lines: count(|k| matches!(k, EntityKind::Line { .. })),
+                    lines: count(|k| k.as_line().is_some()),
                     construction: sk.entities.iter().filter(|e| e.construction && !system.contains(&e.id)).count(),
-                    arcs: count(|k| matches!(k, EntityKind::Arc { .. })),
-                    circles: count(|k| matches!(k, EntityKind::Circle { .. })),
-                    ellipses: count(|k| matches!(k, EntityKind::Ellipse { .. })),
-                    splines: sk.splines.len(),
+                    arcs: count(|k| k.as_arc().is_some()),
+                    circles: count(|k| k.as_circle().is_some()),
+                    ellipses: count(|k| k.as_ellipse().is_some()),
+                    splines: count(|k| k.as_spline().is_some()),
                     texts: sk.texts.len(),
                     notes: sk.notes.len(),
                     text_fonts: sk.texts.iter().map(|t| qymcad_ui_state::font_label(&t.font, "opt-font")).collect(),
@@ -193,6 +193,27 @@ impl Session {
         self.app.status.words.chars().filter(|c| !('\u{e000}'..='\u{f8ff}').contains(c)).collect::<String>().trim().to_string()
     }
 
+    /// DOES THE STATUS LINE REFUSE: its words said in the tone of a refusal or of an error, the mark and the colour a
+    /// person reads before the words.
+    pub fn status_refuses(&mut self) -> bool {
+        self.settle();
+        matches!(self.app.status.tone, qymcad_ui_state::Tone::Refusal | qymcad_ui_state::Tone::Error)
+    }
+
+    /// WHERE THE WORDS OF THE TOOL IN HAND LIE OVER THE VIEW, if it says any: a plate of words, not a picture of the
+    /// model.
+    pub fn bar_words_over_the_view(&mut self) -> Option<Rect> {
+        self.settle();
+        self.win.ctx.memory(|m| m.area_rect(egui::Id::new(qymcad_ui_state::TOOL_WORDS)))
+    }
+
+    /// WHAT THE TOOL IN HAND SAYS on its plate, each sentence with its tone: what it tells, what it warns of, and the
+    /// answer to an Enter it refused. Empty when no tool speaks.
+    pub fn tool_says(&mut self) -> Vec<qymcad_ui_state::Notice> {
+        self.settle();
+        qymcad_ui_state::words_laid(&self.win.ctx)
+    }
+
     /// THE WINDOWS OPEN INSIDE THE PROGRAM, by their titles.
     pub fn windows(&mut self) -> Vec<String> {
         self.settle();
@@ -200,11 +221,16 @@ impl Session {
     }
 
     /// WHAT IS IN HAND, as the bars of options across the top say it: the words written in every bar a tool or a
-    /// command has put up. Empty when nothing is.
+    /// command has put up. Empty when nothing is. The bar stands empty with nothing in hand, and a hint of a button
+    /// beside it may come up over it: the words of the bar are the ones drawn clipped to the bar itself.
     pub fn in_hand(&mut self) -> Vec<String> {
         self.settle();
         let Some(bar) = qymcad_shell::laid_out(&self.win.ctx, "command_bar") else { return Vec::new() };
-        self.win.drawn.iter().filter(|(t, r)| !t.is_empty() && bar.contains(r.center())).map(|(t, _)| t.clone()).collect()
+        let mut out = Vec::new();
+        for s in self.win.shapes.iter().filter(|s| bar.expand(1.0).contains_rect(s.clip_rect)) {
+            super::super::window::words(&s.shape, &mut out);
+        }
+        out.into_iter().filter(|(t, r)| !t.is_empty() && bar.contains(r.center())).map(|(t, _)| t).collect()
     }
 
     /// EVERY WORD ON SCREEN AND WHERE IT STANDS, once the screen is at rest.
@@ -311,14 +337,19 @@ impl Session {
     }
 
     /// A BAR OF OPTIONS WITH NOTHING IN HAND: its words, while no tool, no pick, no sketch open, no section, no pattern
-    /// of components and no joint being edited stands behind it. `None` when there is no such bar.
+    /// of components, no joint being edited and no number typed at a gizmo stands behind it. `None` when there is no
+    /// such bar.
     pub fn bar_with_nothing_in_hand(&mut self) -> Option<Vec<String>> {
         let bar = self.in_hand();
         if bar.is_empty() || !self.waiting_for_a_click().is_empty() {
             return None;
         }
         let app = &self.app;
-        let behind = qymcad_ui_state::edit_si(&app.project, &app.sketch_ses).is_some() || app.side.section.plane.is_some() || app.side.carr.mode != 0 || app.side.joint.edit.is_some();
+        let behind = qymcad_ui_state::edit_si(&app.project, &app.sketch_ses).is_some()
+            || app.side.section.plane.is_some()
+            || app.side.carr.mode.is_some()
+            || app.side.joint.edit.is_some()
+            || app.dragged.body_giz.num.is_some();
         (!behind).then_some(bar)
     }
 

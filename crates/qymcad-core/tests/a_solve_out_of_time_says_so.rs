@@ -3,7 +3,7 @@
 //! solved within the time of a solve, without a panic, and a shape that came out a non-number spoils no other.
 mod sketch_kinds;
 
-use qymcad_core::model::{Constraint, EntityKind, SketchPoint};
+use qymcad_core::model::{Constraint, SketchPoint};
 use qymcad_core::solver::Budget;
 use sketch_kinds::{build, Kind, KINDS};
 use qymcad_core::time_budget::{cost_of, over, Doer};
@@ -37,12 +37,12 @@ fn degenerate(kind: Kind, n: usize) -> qymcad_core::model::Project {
     let at: std::collections::HashMap<u64, usize> = s.points.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
     let mut circles_before: Option<u64> = None;
     for (k, e) in s.entities.clone().iter().enumerate() {
-        match e.kind {
-            EntityKind::Line { a, b } if k % 2 == 0 => {
+        match (e.kind.as_line(), e.kind.as_circle()) {
+            (Some(qymcad_core::model::LineParts { a, b }), _) if k % 2 == 0 => {
                 let pa = s.points[at[&a]];
                 s.points[at[&b]] = SketchPoint { id: b, ..pa };
             }
-            EntityKind::Circle { center, .. } => {
+            (_, Some(qymcad_core::model::CircleParts { center, .. })) => {
                 if let Some(c) = circles_before.take() {
                     let pc = s.points[at[&c]];
                     s.points[at[&center]] = SketchPoint { id: center, ..pc };

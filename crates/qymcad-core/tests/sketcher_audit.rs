@@ -1,7 +1,7 @@
 //! An audit of the sketcher: reproduction tests that pin down the defects found in it.
 //!
 //! Every test states the expected, correct behaviour, so a failure here means the defect is real.
-use qymcad_core::model::{constraint_point_ids, Constraint, EntityKind, Project};
+use qymcad_core::model::{constraint_point_ids, Constraint, Project};
 
 fn new_sketch() -> (Project, usize) {
     let mut p = Project::default();
@@ -13,19 +13,12 @@ fn new_sketch() -> (Project, usize) {
 }
 
 fn centers(p: &Project, si: usize) -> Vec<u64> {
-    p.sketches[si]
-        .entities
-        .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } | EntityKind::Arc { center, .. } => Some(center),
-            _ => None,
-        })
-        .collect()
+    p.sketches[si].entities.iter().filter_map(|e| e.kind.round_centre()).collect()
 }
 
 fn circle_r(p: &Project, si: usize) -> Option<f64> {
-    p.sketches[si].entities.iter().find_map(|e| match e.kind {
-        EntityKind::Circle { r, .. } => Some(r),
+    p.sketches[si].entities.iter().find_map(|e| match e.kind.as_circle() {
+        Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
         _ => None,
     })
 }
@@ -61,8 +54,8 @@ fn polygon_concentric_with_circle_keeps_circle_radius() {
     let ec = p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
     p.add_polygon_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(5.0, 0.0), 6, qymcad_core::feature::Purpose::Real); // circumscribed circle of the polygon, r = 5 at (0,0)
     p.solve_sketch(si);
-    let r = p.sketches[si].entities.iter().find_map(|e| match e.kind {
-        EntityKind::Circle { center, r } if e.id == ec => Some((center, r)),
+    let r = p.sketches[si].entities.iter().find_map(|e| match e.kind.as_circle() {
+        Some(qymcad_core::model::CircleParts { center, r }) if e.id == ec => Some((center, r)),
         _ => None,
     });
     eprintln!("circle (centre, r): {r:?}, expecting r = 10");
@@ -75,8 +68,8 @@ fn slot_end_on_circle_center_keeps_circle_radius() {
     let ec = p.add_circle_entity(si, 0.0, 0.0, 8.0, qymcad_core::feature::Purpose::Real);
     p.add_slot_entity(si, qymcad_core::geom::Point2::new(0.0, 0.0), qymcad_core::geom::Point2::new(30.0, 0.0), 4.0, qymcad_core::feature::Purpose::Real); // the slot end, an arc of r = 4, at the circle centre
     p.solve_sketch(si);
-    let r = p.sketches[si].entities.iter().find_map(|e| match e.kind {
-        EntityKind::Circle { r, .. } if e.id == ec => Some(r),
+    let r = p.sketches[si].entities.iter().find_map(|e| match e.kind.as_circle() {
+        Some(qymcad_core::model::CircleParts { r, .. }) if e.id == ec => Some(r),
         _ => None,
     });
     eprintln!("circle r after the slot: {r:?}, expecting 8");
@@ -165,8 +158,8 @@ fn trim_circle_to_arc_keeps_center_point() {
     let center_before = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } if e.id == ec => Some(center),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) if e.id == ec => Some(center),
             _ => None,
         })
         .unwrap();
@@ -175,8 +168,8 @@ fn trim_circle_to_arc_keeps_center_point() {
     let ok = p.trim_curve(si, ec, 0.0, -10.0);
     eprintln!("trim ok={ok}");
     let has_center = p.sketches[si].points.iter().any(|q| q.id == center_before);
-    let arc_center = p.sketches[si].entities.iter().find_map(|e| match e.kind {
-        EntityKind::Arc { center, .. } => Some(center),
+    let arc_center = p.sketches[si].entities.iter().find_map(|e| match e.kind.as_arc() {
+        Some(qymcad_core::model::ArcParts { center, .. }) => Some(center),
         _ => None,
     });
     eprintln!("centre present={has_center}, arc centre={arc_center:?}, original={center_before}");
@@ -217,8 +210,8 @@ fn redundant_arclength_auto_drives() {
     let (arc_eid, center, a, b) = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Arc { center, a, b, .. } => Some((e.id, center, a, b)),
+        .find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { center, a, b, .. }) => Some((e.id, center, a, b)),
             _ => None,
         })
         .unwrap();
@@ -388,8 +381,8 @@ fn trim_anchors_cut_points_to_crossing_lines() {
     let ends: Vec<(f64, f64)> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Arc { a, b, .. } => Some((a, b)),
+        .filter_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { a, b, .. }) => Some((a, b)),
             _ => None,
         })
         .flat_map(|(a, b)| [a, b])
@@ -414,7 +407,7 @@ fn trim_one_sector_leaves_rest_as_single_arc() {
     p.add_line_entity(si, -15.0, -15.0, 15.0, 15.0, qymcad_core::feature::Purpose::Real);
     // click the arc between 0° and 45°, at about 20°, to remove that sector only
     assert!(p.trim_curve(si, ec, 10.0 * 0.94, 10.0 * 0.34), "remove a single sector");
-    let arcs = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).count();
+    let arcs = p.sketches[si].entities.iter().filter(|e| e.kind.as_arc().is_some()).count();
     eprintln!("arcs after removing one sector: {arcs}, expecting 1");
     assert_eq!(arcs, 1, "the remainder of the circle is one arc rather than many ({arcs})");
 }
@@ -431,23 +424,7 @@ fn trim_keeps_dims_and_geometry_associative() {
     p.add_line_entity(si, -4.0, -20.0, -4.0, 20.0, qymcad_core::feature::Purpose::Real);
     p.add_line_entity(si, 4.0, -20.0, 4.0, 20.0, qymcad_core::feature::Purpose::Real);
     p.solve_sketch(si);
-    let arc_or_circle_r = |p: &Project| -> f64 {
-        p.sketches[si]
-            .entities
-            .iter()
-            .find_map(|e| match e.kind {
-                EntityKind::Circle { r, .. } => Some(r),
-                EntityKind::Arc { center: c, a, .. } => {
-                    let g = |id| p.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-                    match (g(c), g(a)) {
-                        (Some((cx, cy)), Some((ax, ay))) => Some(((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt()),
-                        _ => None,
-                    }
-                }
-                _ => None,
-            })
-            .unwrap_or(0.0)
-    };
+    let arc_or_circle_r = |p: &Project| -> f64 { p.sketches[si].entities.iter().find_map(|e| qymcad_core::model::circle_of(&p.sketches[si], e).map(|c| c.r)).unwrap_or(0.0) };
     assert!(p.trim_curve(si, ec, 0.0, 10.0), "trim away the upper sector");
     p.solve_sketch(si);
     // the radius dimension survived with its value of 10

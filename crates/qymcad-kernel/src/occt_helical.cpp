@@ -39,6 +39,7 @@ extern "C" QymShape* qym_shape_helical_profile(const QymShape* base, const doubl
     if (nprof < 2) return why("helical profile/asked", "the profile has fewer than two points"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(base);
         gp_Pnt o(origin[0], origin[1], origin[2]);
         gp_Dir d(dir[0], dir[1], dir[2]);
         gp_Dir refx = (Abs(d.Dot(gp_Dir(1, 0, 0))) > 0.9) ? gp_Dir(0, 1, 0) : gp_Dir(1, 0, 0);
@@ -66,8 +67,17 @@ extern "C" QymShape* qym_shape_helical_profile(const QymShape* base, const doubl
             size_t nedges = (size_t)(*pp++);
             if (nedges < 2) return why("helix/profile", "the profile loop has fewer than two edges"), nullptr;
             for (size_t i = 0; i < nedges; ++i) {
-                double kind = pp[0], ax = pp[1], ay = pp[2], bx = pp[3], by = pp[4], cx = pp[5], cy = pp[6], ccw = pp[7];
-                pp += 9;
+                // [kind, m, m numbers, name] (`geom::encode_edge`): a segment and an arc a, b, c, ccw; a circle r, c
+                const double* v = pp + 2;
+                const size_t m = (size_t)pp[1];
+                auto num = [&](size_t k) { return k < m ? v[k] : 0.0; };
+                double kind = pp[0], ax = num(0), ay = num(1), bx = num(2), by = num(3), cx = num(4), cy = num(5), ccw = num(6);
+                if (kind == 2.0) {
+                    ax = num(0);
+                    cx = num(1);
+                    cy = num(2);
+                }
+                pp += qym_edge_len(pp);
                 if (kind == 1.0) {                                  // AN ARC becomes a polyline by sagitta
                     double r = std::hypot(ax - cx, ay - cy);
                     double t0 = atan2(ay - cy, ax - cx), t1 = atan2(by - cy, bx - cx);
@@ -636,6 +646,7 @@ extern "C" QymShape* qym_shape_thread(const QymShape* base, const double* origin
     if (depth <= 1e-6) return why("thread/asked", "the profile depth is zero: the thread would cut nothing"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(base);
         gp_Pnt o(origin[0], origin[1], origin[2]);
         gp_Dir d(dir[0], dir[1], dir[2]);
         gp_Dir refx = (Abs(d.Dot(gp_Dir(1, 0, 0))) > 0.9) ? gp_Dir(0, 1, 0) : gp_Dir(1, 0, 0);
@@ -712,6 +723,7 @@ extern "C" QymShape* qym_shape_thread(const QymShape* base, const double* origin
 // ONLY SOLIDS HOLD VOLUME: VolumeProperties of an open shell takes it as if it were closed - two faces of a block
 // 40 x 30 x 10 stitched along their shared edge weighed 2000 mm^3. A sheet, or the sheet part of a compound, weighs 0.
 extern "C" double qym_shape_volume(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return 0.0;
     try {
         QYM_SIGNALS;
@@ -733,6 +745,7 @@ extern "C" double qym_shape_volume(const QymShape* s) {
 // ABSORBED NAMES: pairs of "former name -> name of the shared face", two numbers per pair. Returns the number
 // of PAIRS, not of elements. `out == nullptr` asks for the size only.
 extern "C" size_t qym_shape_absorbed(const QymShape* s, unsigned* out, size_t max_pairs) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return 0;
     if (!out) return s->absorbed.size();
     size_t n = s->absorbed.size() < max_pairs ? s->absorbed.size() : max_pairs;
@@ -744,6 +757,7 @@ extern "C" size_t qym_shape_absorbed(const QymShape* s, unsigned* out, size_t ma
 }
 
 extern "C" int qym_shape_bbox(const QymShape* s, double* out) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull() || !out) return 0;
@@ -759,6 +773,7 @@ extern "C" int qym_shape_bbox(const QymShape* s, double* out) {
 
 // The box of the geometry itself (`AddOptimal`), not of the poles of its curves and surfaces.
 extern "C" int qym_shape_bbox_exact(const QymShape* s, double* out) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull() || !out) return 0;
@@ -781,6 +796,7 @@ extern "C" int qym_shape_bbox_exact(const QymShape* s, double* out) {
 // were taken apart. It sits in the common `finish` funnel, because ANY operation can leave a face like that,
 // not only the one it was caught on.
 extern "C" int qym_shape_heal_pinched_faces(QymShape* s) {
+    QYM_AS_HANDED(s, "the body is a result the door has not landed yet; no other thread holds it");
     if (!s) return 0;
     try {
         QYM_SIGNALS;
@@ -905,6 +921,8 @@ extern "C" QymShape* qym_shape_replace_faces(const QymShape* base, const uint32_
     if (!base || !surf || n == 0) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(base);
+        QYM_OWN_COPY(surf);
         const double t = tol > 0.0 ? tol : 1.0e-6;
         BRepBuilderAPI_Sewing sew(t);
         // the names of the faces kept; a face replaced leaves with its name, which the surface does not inherit
@@ -974,6 +992,7 @@ extern "C" QymShape* qym_shape_stitch(const QymShape* const* parts, size_t n, do
     if (!parts || n < 2) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPIES(parts, n);
         const double t = tol > 0.0 ? tol : 1.0e-6;
         BRepBuilderAPI_Sewing sew(t);
         int faces = 0;
@@ -1064,6 +1083,7 @@ extern "C" QymShape* qym_shape_patch(const QymShape* s, const uint32_t* idx, siz
     if (n == 0) return why("patch/asked", "not one edge was named as the boundary of the patch"), nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         BRepOffsetAPI_MakeFilling mf;
         int added = 0;
         TopoDS_Edge last;
@@ -1170,6 +1190,7 @@ void note_beside(const QymShape* s, const TopoDS_Shape& source, QymHistory& made
 // would travel into the source solid, bypassing the timeline. The copy's name is set by the caller (`names`):
 // its origin is known to the model, not to the kernel.
 extern "C" QymShape* qym_shape_copy_faces(const QymShape* s, const uint32_t* idx, const uint32_t* names, size_t n) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s || n == 0) return nullptr;
     try {
         QYM_SIGNALS;
@@ -1275,6 +1296,7 @@ struct SimpleOffset {
 // block - move apart, each a sheet of its own in one surface body, as the professional systems offset them. Null when no
 // face is found, or a face turns inside out (a cylinder of radius 10 moved in by 12).
 extern "C" QymShape* qym_shape_offset_faces(const QymShape* s, const uint32_t* idx, const uint32_t* names, size_t n, double dist) {
+    QYM_AS_HANDED(s, "it only reads the body");
     if (!s || n == 0) return nullptr;
     try {
         QYM_SIGNALS;
@@ -1360,6 +1382,7 @@ extern "C" QymShape* qym_shape_offset_faces(const QymShape* s, const uint32_t* i
 }
 
 extern "C" int qym_shape_kind(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
@@ -1374,6 +1397,7 @@ extern "C" int qym_shape_kind(const QymShape* s) {
 // needed to tell a person the truth: a wall thicker than that radius eats it whole when offset, and the shell
 // does not build. 0 means there are no round faces and hence no limit.
 extern "C" double qym_shape_min_round_radius(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
     double best = 0.0;
     try {
         QYM_SIGNALS;
@@ -1404,6 +1428,7 @@ extern "C" double qym_shape_min_round_radius(const QymShape* s) {
 // part is one solid", and that is what a person has to be told, not "broken solid": it is a different trouble
 // calling for different action.
 extern "C" int qym_shape_shell_count(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
@@ -1415,6 +1440,7 @@ extern "C" int qym_shape_shell_count(const QymShape* s) {
 }
 
 extern "C" int qym_shape_solid_count(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
@@ -1430,6 +1456,7 @@ extern "C" int qym_shape_solid_count(const QymShape* s) {
 // planes is one more cylinder, a cut one is one more plane: this is what tells a rounding that was made from one
 // that was dropped while the node stayed green.
 extern "C" int qym_shape_face_kinds(const QymShape* s, int* out) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull() || !out) return 0;
@@ -1459,6 +1486,7 @@ extern "C" int qym_shape_face_kinds(const QymShape* s, int* out) {
 extern "C" QymShape* qym_shape_heal(const QymShape* s) {
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         if (!s || s->shape.IsNull()) return nullptr;
         ShapeFix_Shape fx(s->shape);
         fx.Perform();
@@ -1483,6 +1511,7 @@ static std::string check_word(BRepCheck_Status st) {
 }
 
 extern "C" int qym_shape_is_valid(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body; the repair asked under QYM_WHY_INVALID works on a copy");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
@@ -1491,7 +1520,7 @@ extern "C" int qym_shape_is_valid(const QymShape* s) {
         if (getenv("QYM_WHY_INVALID")) {
             {   // TWO QUESTIONS AT ONCE: is the shape valid without the GEOMETRIC checks, and is it fixable.
                 BRepCheck_Analyzer bare(s->shape, Standard_False);
-                ShapeFix_Shape fx(s->shape);
+                ShapeFix_Shape fx(BRepBuilderAPI_Copy(s->shape).Shape()); // a repair writes into what it is given
                 fx.Perform();
                 TopoDS_Shape fixed = fx.Shape();
                 bool ok_fixed = false;
@@ -1569,6 +1598,8 @@ extern "C" int qym_shape_is_valid(const QymShape* s) {
 // an assembly reading that zero calls the parts clear of each other - the one mistake this function exists to
 // prevent.
 extern "C" int qym_shape_interference_volume(const QymShape* a, const QymShape* b, double* out) {
+    QYM_AS_HANDED(a, "the boolean is told to leave its arguments as they are (SetNonDestructive), and its result is only measured");
+    QYM_AS_HANDED(b, "the boolean is told to leave its arguments as they are (SetNonDestructive), and its result is only measured");
     if (!out) return 0;
     *out = 0.0;
     if (!a || !b) return 0;
@@ -1580,6 +1611,7 @@ extern "C" int qym_shape_interference_volume(const QymShape* a, const QymShape* 
         if (ba.IsVoid() || bb.IsVoid()) return 0; // no box means nothing can be said about the pair
         if (ba.IsOut(bb)) return 1;               // the boxes are apart, so there is no intersection: a measured nothing
         BRepAlgoAPI_Common common;
+        common.SetNonDestructive(Standard_True); // the bodies of the assembly stay as they are; only a volume is wanted
         qym_boolean(common, a->shape, b->shape);
         if (!common.IsDone()) return 0;
         TopoDS_Shape res = common.Shape();
@@ -1594,6 +1626,7 @@ extern "C" int qym_shape_interference_volume(const QymShape* a, const QymShape* 
     }
 }
 extern "C" QymDoc* qym_shape_tessellate(const QymShape* s, double defl) {
+    QYM_AS_HANDED(s, "it writes the triangulation into the body on purpose; bodies sharing a face stay on one thread (qym_shapes_share)");
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
@@ -1607,6 +1640,7 @@ extern "C" QymDoc* qym_shape_tessellate(const QymShape* s, double defl) {
 // `volumes[i]`, at most `max` of them. Returns how many there are (possibly more than `max`), 0 on failure. The order
 // is the one `qym_shape_solid_at` counts in.
 extern "C" int qym_shape_solids_info(const QymShape* s, double* centres, double* volumes, int max) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
@@ -1631,6 +1665,7 @@ extern "C" int qym_shape_solids_info(const QymShape* s, double* centres, double*
 // rebuilt, so every face and edge keeps its name: a fillet on a piece that became a body of its own still finds its
 // edges.
 extern "C" QymShape* qym_shape_solid_at(const QymShape* s, int index) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull() || index < 0) return nullptr;

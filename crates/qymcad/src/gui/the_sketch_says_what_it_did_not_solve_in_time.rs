@@ -16,19 +16,19 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         // a line laid nearly level takes a Horizontal of its own: a part with a constraint
         hand.click2d(10.0, 10.0).click2d(40.0, 10.5);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0);
+        hand.sk_select();
         hand.app.project.solve_sketch_within(si, Budget { time: Some(std::time::Duration::ZERO), ..Budget::FULL });
         let left = hand.app.project.sketches[si].left_unsolved;
         assert!(left > 0, "a solve with no time left nothing to say");
         let said = crate::i18n::tr1("sk-unsolved-left", "n", &left.to_string());
         assert!(hand.shows(&said), "the panel of the sketch does not say {said:?}");
         let s = &hand.app.project.sketches[si];
-        let b = s.entities.iter().find_map(|e| match e.kind {
-            qymcad_core::model::EntityKind::Line { b, .. } => Some(b),
+        let b = s.entities.iter().find_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { b, .. }) => Some(b),
             _ => None,
         });
         let end = s.points.iter().find(|q| Some(q.id) == b).map(|q| (q.x, q.y)).expect("the line has ends");

@@ -232,7 +232,7 @@ probe! {
             let spline_at = s.find_hint(&spline_hint).unwrap_or_else(|| panic!("{when}: the spline is neither on the bar nor in More"));
             assert!(!on_bar.contains(&spline_at), "{when}: the spline is still on the bar");
             s.click(spline_at);
-            assert_eq!(s.drawing_tool(), 9, "{when}: the spline pressed in More is not in hand");
+            assert_eq!(s.drawing_tool(), Some(qymcad::SketchShape::Spline), "{when}: the spline pressed in More is not in hand");
             s.key(Key::Escape);
         };
         check(&mut s, "set by hand");

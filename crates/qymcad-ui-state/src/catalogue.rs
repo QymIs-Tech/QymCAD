@@ -13,15 +13,15 @@ use crate::IconId;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Launch {
     /// A command of the feature timeline.
-    Feat(u8),
+    Feat(crate::PartTool),
     /// A primitive.
-    Prim(u8),
+    Prim(crate::PartTool),
     /// A drawing tool of a sketch.
-    SkTool(u8),
+    SkTool(crate::SketchShape),
     /// A dimension of a sketch.
-    Dim(u8),
+    Dim(crate::DimKind),
     /// A tool of a sketch acting on a click: trim, extend, break, the corner and its chamfer, the projection.
-    ClickOp(u8),
+    ClickOp(crate::ClickTool),
     /// Editing the selection of a sketch: delete, mirror, offset.
     Modify(crate::EditTool),
     /// The arrow of a sketch: every tool put down.
@@ -29,15 +29,15 @@ pub enum Launch {
     /// Construction geometry: what is selected is turned, or what is drawn next.
     Construction,
     /// A pattern of the selection of a sketch, linear or circular.
-    SkPattern(u8),
+    SkPattern(crate::PatternKind),
     /// Move, copy or rotate the selection of a sketch.
-    SkMove(u8),
+    SkMove(crate::MoveKind),
     /// Round every corner of a contour.
     FilletAll,
     /// Measure on the sheet of a sketch.
     Measure2d,
     /// A constraint of a sketch, by its code.
-    Constraint(u8),
+    Constraint(crate::ConstraintKind),
     /// A new sketch: the pick of its plane.
     SketchPick,
     /// The section of the view.
@@ -52,7 +52,7 @@ pub enum Launch {
     /// A component brought in from a file.
     InsertComponent,
     /// A pattern of components, linear or circular.
-    CompArray(u8),
+    CompArray(crate::PatternKind),
     /// A mirrored copy of a part or a subassembly.
     MirrorPart,
     /// The mates: a joint, grounding, a group, a width, a tangent, a relation.
@@ -95,6 +95,16 @@ pub struct Command {
     pub shelf: Shelf,
 }
 
+/// WHAT A WORKBENCH OFFERS THE SHELL: its rows, in the order of its bar, what a press of one of them does, and its
+/// switches on the bar of the path. The catalogue and the bar gather them from a list of workbenches and reach a row
+/// or a switch through the workbench that gave it, so they name no workbench and tell none apart.
+pub struct Offer {
+    pub rows: &'static [Command],
+    pub press: fn(Launch, &mut crate::BarCtx),
+    /// The groups of switches it lays on the bar of the path while they mean something; none otherwise.
+    pub switches: fn(&mut crate::BarCtx, &mut qymcad_shell::Switches),
+}
+
 impl Command {
     /// The workbench the command belongs to.
     pub fn home(&self) -> &'static str {
@@ -115,23 +125,23 @@ impl Command {
 pub fn pressed(launch: Launch, bc: &crate::BarCtx) -> bool {
     match launch {
         Launch::SketchSelect => crate::in_select_mode(bc.armed),
-        Launch::SkTool(n) => bc.armed.draw_kind() == n,
+        Launch::SkTool(n) => bc.armed.drawing() == Some(n),
         Launch::Construction => bc.tool.construction,
         Launch::Modify(tool) => bc.sel_sk.modify == Some(tool),
-        Launch::SkPattern(n) => bc.armed.pat_op() == n,
-        Launch::ClickOp(n) => bc.armed.click_op() == n,
+        Launch::SkPattern(n) => bc.armed.pattern() == Some(n),
+        Launch::ClickOp(n) => bc.armed.click_tool() == Some(n),
         Launch::FilletAll => bc.picking.fillet_all() || bc.corner.at.is_some_and(|(_, pid, _)| pid == 0),
-        Launch::SkMove(n) => bc.armed.move_op() == n,
-        Launch::Dim(n) => bc.armed.dim_kind() == n,
+        Launch::SkMove(n) => bc.armed.moving() == Some(n),
+        Launch::Dim(n) => bc.armed.dimension() == Some(n),
         Launch::Measure2d => bc.armed.measuring(),
         Launch::Constraint(n) => bc.sel_sk.constraint == Some(n),
         Launch::SketchPick => bc.picking.is_sketch_plane(),
-        Launch::Feat(n) => bc.armed.cmd_kind() == n || bc.picking.sketch_for() == Some(n),
-        Launch::Prim(n) => bc.armed.cmd_kind() == n,
+        Launch::Feat(n) => bc.armed.part_tool() == Some(n) || bc.picking.sketch_for() == Some(n),
+        Launch::Prim(n) => bc.armed.part_tool() == Some(n),
         Launch::Section => bc.section.pick || bc.section.plane.is_some(),
         Launch::Measure3d => bc.m3.on,
         Launch::Boolean => bc.boolean.pick.is_some(),
-        Launch::CompArray(n) => bc.carr.mode == n,
+        Launch::CompArray(n) => bc.carr.mode == Some(n),
         Launch::MirrorPart => bc.mirror.in_hand(),
         Launch::Joint => bc.joint.pick_faces,
         Launch::Ground => bc.joint.ground_pick,
@@ -141,6 +151,33 @@ pub fn pressed(launch: Launch, bc: &crate::BarCtx) -> bool {
         Launch::Relation => bc.joint.relation_pick.is_some(),
         Launch::NewPart | Launch::NewSubassembly | Launch::InsertComponent | Launch::PieceToPart => false,
     }
+}
+
+/// THE SAME COMMAND TAKEN AGAIN WHILE IT IS IN HAND PUTS IT DOWN: what that asks for - the arrow of a sketch for a tool
+/// of a sketch, every tool put down for the rest - or nothing when the command is not in hand. Its button, its row of
+/// "More", the search and its key all come here (`command_catalog::press`, `command_catalog::key_again`), so no tool
+/// answers a second press by itself.
+///
+/// Before it four keys of a sketch put their tool down - the dimension, the corner, the trim and the mirror, each by a
+/// comparison of its own - while a drawing tool pressed again was taken anew, its points dropped, and the commands of
+/// the part and the assembly were opened again over themselves.
+///
+/// A switch is no tool in hand and answers by itself: the arrow of a sketch, construction geometry, the section of the
+/// view - one applied stays on under any tool and is turned off only by its own button. The mirror of a sketch pressed
+/// again with geometry chosen is the way on to its axis, not the way out (`modify_button`).
+pub fn again(launch: Launch, bc: &crate::BarCtx) -> Option<crate::BarAsk> {
+    if matches!(launch, Launch::SketchSelect | Launch::Construction | Launch::Section) || !pressed(launch, bc) {
+        return None;
+    }
+    if launch == Launch::Modify(crate::EditTool::Mirror) && matches!(*bc.sel, crate::Sel::Sketch(si) if !crate::shapes_chosen(&*bc.project, si, &*bc.sel_sk).is_empty()) {
+        return None;
+    }
+    Some(match launch {
+        Launch::SkTool(_) | Launch::Dim(_) | Launch::ClickOp(_) | Launch::Modify(_) | Launch::SkPattern(_) | Launch::SkMove(_) | Launch::FilletAll | Launch::Measure2d | Launch::Constraint(_) => {
+            crate::BarAsk::SketchSelectMode
+        }
+        _ => crate::BarAsk::CancelAllTools(crate::Then::Nothing),
+    })
 }
 
 /// THE HINT OF A COMMAND'S BUTTON. The joint names the kind it will make, which is chosen on its bar: one button
@@ -198,10 +235,10 @@ mod tests {
 
     /// Four rows of one bench, in the catalogue's order a, b, c, d.
     static ROWS: [Command; 4] = [
-        Command { code: "x.a", benches: BENCH, launch: Launch::SkTool(1), name_key: "", icon: IconId::SketchLine, hint_key: "", group: "g", shelf: Shelf::Bar },
-        Command { code: "x.b", benches: BENCH, launch: Launch::SkTool(2), name_key: "", icon: IconId::SketchRect, hint_key: "", group: "g", shelf: Shelf::Bar },
-        Command { code: "x.c", benches: BENCH, launch: Launch::SkTool(3), name_key: "", icon: IconId::SketchCircle, hint_key: "", group: "g", shelf: Shelf::Bar },
-        Command { code: "x.d", benches: BENCH, launch: Launch::SkTool(4), name_key: "", icon: IconId::SketchArc, hint_key: "", group: "g", shelf: Shelf::Bar },
+        Command { code: "x.a", benches: BENCH, launch: Launch::SkTool(crate::SketchShape::Line), name_key: "", icon: IconId::SketchLine, hint_key: "", group: "g", shelf: Shelf::Bar },
+        Command { code: "x.b", benches: BENCH, launch: Launch::SkTool(crate::SketchShape::Rect), name_key: "", icon: IconId::SketchRect, hint_key: "", group: "g", shelf: Shelf::Bar },
+        Command { code: "x.c", benches: BENCH, launch: Launch::SkTool(crate::SketchShape::Circle), name_key: "", icon: IconId::SketchCircle, hint_key: "", group: "g", shelf: Shelf::Bar },
+        Command { code: "x.d", benches: BENCH, launch: Launch::SkTool(crate::SketchShape::Arc), name_key: "", icon: IconId::SketchArc, hint_key: "", group: "g", shelf: Shelf::Bar },
     ];
 
     fn rows() -> Vec<&'static Command> {

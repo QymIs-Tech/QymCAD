@@ -2,14 +2,17 @@
 //! the same for its button, its row of "More" and the search. The datums of its bar are rows of the part.
 
 use super::*;
-use qymcad_ui_state::catalogue::{Command, Launch, Shelf};
+use qymcad_ui_state::catalogue::{Command, Launch, Offer, Shelf};
 
 const ASSEMBLY: &[&str] = &["assembly"];
 const CREATE: &str = "tb-group-create";
 const MATES: &str = "tb-group-joint";
 
+/// THE COMMANDS OF AN ASSEMBLY offered to the shell: its rows, their press and its switches on the bar of the path.
+pub const OFFER: Offer = Offer { rows: ROWS, press, switches: path_switches };
+
 /// THE COMMANDS OF AN ASSEMBLY, in the order of its bar: the components, then the mates.
-pub const COMMANDS: &[Command] = &[
+const ROWS: &[Command] = &[
     // A NEW PART OR SUBASSEMBLY IS ONE STEP OF UNDO of its own name
     Command {
         code: "assembly.new-part",
@@ -45,7 +48,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         code: "assembly.pattern-linear",
         benches: ASSEMBLY,
-        launch: Launch::CompArray(1),
+        launch: Launch::CompArray(qymcad_ui_state::PatternKind::Linear),
         name_key: "cmdname-comp-pattern-linear",
         icon: IconId::AssemblyArrayLinear,
         hint_key: "tb-comp-lin-array-hint",
@@ -55,7 +58,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         code: "assembly.pattern-circular",
         benches: ASSEMBLY,
-        launch: Launch::CompArray(2),
+        launch: Launch::CompArray(qymcad_ui_state::PatternKind::Circular),
         name_key: "cmdname-comp-pattern-circular",
         icon: IconId::AssemblyArrayCircular,
         hint_key: "tb-comp-circ-array-hint",
@@ -134,7 +137,7 @@ pub fn press(launch: Launch, bc: &mut BarCtx) {
             bc.ask.push(BarAsk::EnterComponent(id));
         }
         Launch::InsertComponent => bc.ask.push(BarAsk::Import(Want::Part)),
-        Launch::CompArray(n) => bc.ask.push(take_or_drop(bc.carr.mode == n, BarAsk::CompArray(n))),
+        Launch::CompArray(n) => bc.ask.push(BarAsk::CompArray(n)),
         Launch::MirrorPart => {
             // both a PART and a SUBASSEMBLY are accepted (the whole subtree is mirrored); with the tool in hand the
             // press goes to the door as it is, which puts it down
@@ -149,7 +152,7 @@ pub fn press(launch: Launch, bc: &mut BarCtx) {
         }
         // ONE DOOR for the section: a copy of it here could not release the other tools
         Launch::Section => bc.ask.push(BarAsk::ToggleSection),
-        Launch::Joint => bc.ask.push(take_or_drop(bc.joint.pick_faces, BarAsk::JointPick)),
+        Launch::Joint => bc.ask.push(BarAsk::JointPick),
         // a click on a part fixes or releases it
         Launch::Ground => bc.ask.push(BarAsk::GroundPick),
         // a set of parts fastened to one another without pairwise joints
@@ -160,7 +163,12 @@ pub fn press(launch: Launch, bc: &mut BarCtx) {
         Launch::Tangent => bc.ask.push(BarAsk::TangentPick),
         // the degrees of freedom of two mates tied together
         Launch::Relation => bc.ask.push(BarAsk::RelationPick),
-        // the commands of the sketch and of the part, the datums of this bar among them, are pressed by the part
+        // the commands of the sketch and of the part, the datums of this bar among them, are pressed by their own workbenches
         _ => {}
     }
+}
+
+/// THE SWITCHES OF THE ASSEMBLY on the bar of the path: the snap of the gizmo in 3D.
+pub fn path_switches(bc: &mut qymcad_ui_state::BarCtx, row: &mut qymcad_ui_state::Switches) {
+    qymcad_ui_state::gizmo_snap_switches(bc, row, qymcad_ui_state::Workbench::Assembly);
 }

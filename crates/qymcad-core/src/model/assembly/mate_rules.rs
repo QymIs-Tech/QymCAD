@@ -127,9 +127,10 @@ impl Project {
 
     /// A spherical face in full: centre and radius.
     ///
-    /// Found by least squares over the face vertices, but not as a sphere fitted to anything at all: two
-    /// guards are required, or a plane and a cylinder would pass as spheres too.
+    /// Found by least squares over the face vertices, but not as a sphere fitted to anything at all: the guards
+    /// below are required, or a plane and a cylinder would pass as spheres too.
     ///
+    /// * The face is not flat: its vertices do not all lie on one plane. A round rim lies on endless spheres.
     /// * The fit has to be tight: every vertex lies at exactly the radius from the centre, within 2 per cent.
     ///   The vertices of a cylinder spread along its axis and fail this check.
     /// * The face has to be commensurate with the radius. A flat patch is approximated beautifully by a huge
@@ -164,6 +165,15 @@ impl Project {
         }
         if pts.len() < 12 {
             return None; // Too few vertices to tell a sphere from anything else.
+        }
+        // A FLAT FACE IS NO SPHERE. Every circle lies on endless spheres, so a flat face with a round rim fits one tightly
+        // and passes every check below: a flat disk of radius 100 came back as a sphere of radius 368, its centre 354
+        // under the disk, and the normal equations of a plane are singular only up to the noise of their sums. Vertices
+        // all within 1e-7 of the span of the face from the plane of its normal through its centroid lie on that plane.
+        let span = pts.iter().map(|p| ((p[0] - f.centroid.x).powi(2) + (p[1] - f.centroid.y).powi(2) + (p[2] - f.centroid.z).powi(2)).sqrt()).fold(0.0f64, f64::max);
+        let off_plane = pts.iter().map(|p| ((p[0] - f.centroid.x) * f.normal[0] + (p[1] - f.centroid.y) * f.normal[1] + (p[2] - f.centroid.z) * f.normal[2]).abs()).fold(0.0f64, f64::max);
+        if off_plane <= 1e-7 * span {
+            return None;
         }
         // Normal equations, 4 by 4, for the unknowns (cx, cy, cz, k).
         let mut m = [[0.0f64; 5]; 4];
@@ -208,7 +218,6 @@ impl Project {
         if worst > 0.02 * r {
             return None; // The fit is loose: not a sphere.
         }
-        let span = pts.iter().map(|p| ((p[0] - f.centroid.x).powi(2) + (p[1] - f.centroid.y).powi(2) + (p[2] - f.centroid.z).powi(2)).sqrt()).fold(0.0f64, f64::max);
         if span < 0.1 * r {
             return None; // The face is far smaller than the fitted radius: a plane, not a piece of a sphere.
         }

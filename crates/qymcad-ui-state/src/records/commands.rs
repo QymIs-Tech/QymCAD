@@ -102,11 +102,17 @@ pub struct Placing {
     pub shape: PlacingShape,
     /// the dimension is following the cursor and has not been placed yet (the constraint's index)
     pub dim: Option<usize>,
-    /// the dimension input fields and the focus within them
-    pub buf: [String; 2],
+    /// THE FIELDS OF THE BOX OF THE SHAPE, in the frame of every tool: filled from the shape as the box opens, read back
+    /// into it as they are typed
+    pub fields: Vec<CmdParam>,
+    /// how the box of the shape was opened: by drawing the shape, or again by a double click on it
+    pub opened: Opened,
+    /// the first field of the box of the shape takes the keyboard
     pub focus: bool,
     /// a value was typed into the fields: closing them with Enter then lays the dimensions typed
     pub typed: bool,
+    /// what was asked of the dimensions the box lays on Enter: a reference, a driver name
+    pub asks: DimAsks,
 }
 
 impl Placing {
@@ -127,10 +133,10 @@ impl Placing {
         }
     }
 
-    /// A rectangle reopened for its width and height: the indices of those dimensions.
-    pub fn rect_dims(&self) -> Option<qymcad_core::model::RectDims> {
+    /// A slot drawn or reopened for its length and width: a curve of it.
+    pub fn slot(&self) -> Option<Id> {
         match &self.shape {
-            PlacingShape::RectDims(d) => Some(*d),
+            PlacingShape::Slot(curve) => Some(*curve),
             _ => None,
         }
     }
@@ -139,6 +145,14 @@ impl Placing {
     pub fn rect_center(&self) -> Option<(Point2, Point2, Vec<Id>)> {
         match &self.shape {
             PlacingShape::RectCenter { center, corner, ids } => Some((*center, *corner, ids.clone())),
+            _ => None,
+        }
+    }
+
+    /// A circle or an arc in the box of its size.
+    pub fn round(&self) -> Option<Id> {
+        match self.shape {
+            PlacingShape::Round(id) => Some(id),
             _ => None,
         }
     }
@@ -160,21 +174,64 @@ impl Placing {
     /// Start or update the shape. The previous one disappears - it is no longer being drawn.
     pub fn set(&mut self, shape: PlacingShape) {
         self.shape = shape;
+        self.fields.clear(); // the box of the shape before is not this one's
+        self.asks = DimAsks::default();
+        self.opened = Opened::ByDrawing;
     }
+
+    /// The box of a shape opened again, by a double click on the shape: the select tool in hand, no tool of its own.
+    pub fn reopen(&mut self, shape: PlacingShape) {
+        self.set(shape);
+        self.opened = Opened::Again;
+    }
+
+    /// DOES THE BOX OF THE SHAPE STAND WITH `armed` IN HAND: the box of a shape just drawn goes with its drawing tool, the
+    /// box of a rectangle reopened for its sizes with any tool taken. Reported behaviour (issue #271): the box of a
+    /// rectangle stayed after the Select tool was taken, and a value typed into it later rebuilt the rectangle at its old
+    /// size, throwing away the dimensions laid since.
+    pub fn stands_with(&self, armed: &Armed) -> bool {
+        let tool = match self.shape {
+            // no box: a dimension being placed is kept here, and goes with its own tool
+            PlacingShape::None => return true,
+            // A BOX OPENED AGAIN EDITS WHAT STANDS: it lives until it is closed, whatever tool is taken - what is typed
+            // goes into the dimensions the shape holds, not into a shape rebuilt from where it was drawn
+            _ if self.opened == Opened::Again => return true,
+            PlacingShape::RectSide(_) => return true,
+            PlacingShape::Rect { .. } | PlacingShape::RectCenter { .. } => crate::SketchShape::Rect,
+            PlacingShape::Poly(_) => crate::SketchShape::Polygon,
+            PlacingShape::Ellipse(..) => crate::SketchShape::Ellipse,
+            PlacingShape::Slot(_) => crate::SketchShape::Slot,
+            PlacingShape::Round(_) => return matches!(armed.drawing(), Some(crate::SketchShape::Circle | crate::SketchShape::Arc)),
+        };
+        armed.drawing() == Some(tool)
+    }
+}
+
+/// HOW THE BOX OF A SHAPE WAS OPENED.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub enum Opened {
+    /// By drawing the shape: it goes with the drawing tool.
+    #[default]
+    ByDrawing,
+    /// Again, by a double click on the shape: it goes with any tool taken.
+    Again,
 }
 
 /// THE DRAWING TOOLS' PREFERENCES: each has a mode and numbers of its own. This is NOT the state of the current
 /// action (that lives in `Placing`) but preferences proper: they survive a change of tool, as in any grown-up CAD -
 /// come back to the polygon and the number of sides is the one left there.
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct SketchToolPrefs {
     /// the polygon: the number of sides and how its two clicks are read (see `polygon_from_clicks`)
     pub poly_n: u32,
     pub poly_mode: u8,
-    /// the construction modes: an arc (by three points or by a centre), a rectangle (corners or centre), a circle
+    /// the construction modes: an arc (by three points or by a centre), a rectangle (corners or centre), a circle (a
+    /// centre and a radius, two points, touching two curves, three points)
     pub arc_mode: u8,
     pub rect_mode: u8,
     pub circ_mode: u8,
+    /// THE RADIUS OF A CIRCLE TOUCHING TWO CURVES, laid at the pointer once both are picked
+    pub circ_r: f64,
     /// EXTEND TAKES BOTH ENDS of its line, each to the nearest geometry on its side ("Both sides" in its bar)
     pub extend_both: bool,
     /// the corner fillet's radius - the first leg of a chamfer - and the offset's distance
@@ -195,6 +252,31 @@ pub struct SketchToolPrefs {
     /// A setting of the tool, not a thing the application owns: the top bar shows the family here beside the
     /// height, and the label made by the next click keeps it. Empty until a font is chosen or found.
     pub font: qymcad_core::model::FontRef,
+}
+
+impl Default for SketchToolPrefs {
+    /// What a new window offers: a hexagon, a fillet, a chamfer leg and an offset of 3 mm, a text 10 mm high, a circle
+    /// touching two curves of radius 5 mm; every mode its first.
+    fn default() -> Self {
+        Self {
+            poly_n: 6,
+            poly_mode: 0,
+            arc_mode: 0,
+            rect_mode: 0,
+            circ_mode: 0,
+            circ_r: 5.0,
+            extend_both: false,
+            fillet: 3.0,
+            offset: 3.0,
+            chamfer_mode: Default::default(),
+            chamfer_second: 0.0,
+            fillet_by: Default::default(),
+            text: String::new(),
+            text_h: 10.0,
+            text_note: false,
+            font: Default::default(),
+        }
+    }
 }
 
 /// THE SKETCH PATTERN'S PARAMETERS: two directions with a step and a count each, plus the circular variant.
@@ -248,8 +330,9 @@ pub struct SketchTool {
     /// THE LINE EXTEND HOLDS: taken with the tool from the selection made before it, or picked by the first click; its
     /// extension is previewed up to what the pointer is over, and Enter or a click applies it
     pub extend: Option<Id>,
-    /// the tangent edge given for a circle (picked with THIS tool rather than globally)
-    pub circ_tan: Option<EdgeRef>,
+    /// THE CURVES A CIRCLE IS TO TOUCH, picked with the circle tool one after the other: two of them, and the circle of
+    /// the radius of the bar follows the pointer between them
+    pub circ_tan: Vec<Id>,
     /// THE STRING OF THE TEXT TOOL AS OUTLINES at the origin, for the preview at the pointer: baked once when the
     /// string, its height or its font change (the fonts are not at hand where the canvas is drawn) - (the string,
     /// the height, the font, the outlines)
@@ -257,14 +340,24 @@ pub struct SketchTool {
     /// letters of the string were taken out because the font cannot write them: a click on the empty string names
     /// the font rather than blaming the string
     pub text_refused: bool,
+    /// the tool finished its work by a click - a text placed, a move made: the frame puts it down as after an Apply
+    pub finished: Finished,
+}
+
+/// HAS THE TOOL IN HAND FINISHED ITS WORK BY A CLICK in the view, since the frame last asked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Finished {
+    #[default]
+    Not,
+    ByClick,
 }
 
 impl SketchTool {
     /// Choose a tool: whatever was clicked with the previous one MUST disappear - it has nothing to do
-    /// with the new one - and WHAT IS IN HAND changes with it. Clicking the tool already in hand puts it
-    /// down, which is why the old value is read before the new one is written.
-    pub fn select(&mut self, armed: &mut Armed, kind: u8) {
-        *armed = if armed.draw_kind() == kind { Armed::None } else { Armed::Draw(kind) };
+    /// with the new one - and WHAT IS IN HAND changes with it. The tool already in hand taken again is put
+    /// down before it gets here (`catalogue::again`).
+    pub fn select(&mut self, armed: &mut Armed, kind: Option<SketchShape>) {
+        *armed = kind.map_or(Armed::None, Armed::Draw);
         self.pts.clear();
     }
 }
@@ -300,12 +393,9 @@ impl FeatCommand {
     /// Open command `kind`: the previous state MUST disappear entirely, and WHAT IS IN HAND changes
     /// with it. The two travel together because they are one act - taking this command means letting
     /// whatever was in hand go, and `Armed` is a single field, so it cannot say both.
-    pub fn open(&mut self, armed: &mut Armed, kind: u8, prev_3d: bool) {
+    pub fn open(&mut self, armed: &mut Armed, kind: PartTool, prev_3d: bool) {
         *self = Self { prev_3d, focus: true, ..Default::default() };
-        // KIND ZERO IS NOT A COMMAND. While the kind lived in a field, "open command 0" was how the
-        // apply path SAID "close", and the two readings of one number went unnoticed. The enum has a
-        // name for "nothing in hand", and a command numbered zero is not it.
-        *armed = if kind == 0 { Armed::None } else { Armed::Command(kind) };
+        *armed = Armed::Command(kind);
     }
 
     /// Close the command (applied or cancelled).
@@ -330,16 +420,14 @@ pub struct CornerInput {
     pub set: CornerSet,
     /// where on the canvas the input field stands
     pub pos: Option<Pos2>,
-    pub buf: String,
-    /// the second value of a chamfer of two legs or of a leg and an angle, typed beside the first
-    pub buf2: String,
+    /// THE FIELDS OF THE BOX OF THE SET: the value, and the second value of a chamfer of two legs or of a leg and an
+    /// angle; made as the box opens
+    pub fields: Vec<CmdParam>,
     pub focus: bool,
     /// where the corner was clicked, on the sheet: the line it stands nearer to is the first of a chamfer
     pub near: Option<qymcad_core::geom::Point2>,
     /// restrict the corners to this set (rounding THE SELECTED corners rather than all of them)
     pub only: Option<std::collections::HashSet<Id>>,
-    /// why the value in the field was refused, said beside it
-    pub why: Option<String>,
     /// HOW NEAR THE POINT THE CURSOR COUNTS, in pixels, remembered when the popup was opened: `Grab::Corner` read
     /// with the pick precision of the person. Farther than that the cursor is over the rest of the sheet and says
     /// nothing about which of the corners at the point is meant, so the corner does not follow the pointer across
@@ -398,6 +486,11 @@ pub enum CrossingCut {
 }
 
 impl CornerInput {
+    /// The value field `key` of the box of the set holds, as typed.
+    pub fn value(&self, key: &str) -> Option<f64> {
+        self.fields.iter().find(|p| p.key == key).map(|p| p.val)
+    }
+
     /// THE TOOL PUT DOWN: all of the input goes, and lines it cut at a crossing for a corner never cut are left to be
     /// made whole again.
     pub fn put_down(&mut self) {
@@ -435,22 +528,42 @@ pub struct BoolCommand {
     pub b: Option<Id>,
     /// an existing boolean node is being edited (its index in the timeline)
     pub edit: Option<usize>,
+    /// the kind the node being edited had when it was reopened: cancelling the edit puts it back
+    pub was: u8,
 }
 
 /// What a bar takes up once every other tool is put down.
 #[derive(Clone, Copy, Debug)]
 pub enum Then {
     Nothing,
-    /// The body boolean, with body A when one was selected before the button.
-    Boolean(Option<Id>),
+    /// The body boolean, with the bodies selected before the button: body A, and body B held with it by Shift.
+    Boolean(BoolBodies),
+}
+
+/// THE BODIES OF A BOOLEAN SELECTED BEFORE ITS BUTTON: A, and B held with it.
+#[derive(Clone, Copy, Debug)]
+pub struct BoolBodies {
+    pub a: Option<Id>,
+    pub b: Option<Id>,
 }
 
 impl Then {
-    pub fn take(self, boolean: &mut BoolCommand, status: &mut Notice) {
-        if let Then::Boolean(a) = self {
+    pub fn take(self, boolean: &mut BoolCommand, before: &mut PickedBefore, status: &mut Notice) {
+        if let Then::Boolean(BoolBodies { a, b }) = self {
+            match (a, b) {
+                // both bodies are the selection: no click of it is left for the tool
+                (Some(_), Some(_)) => before.places.clear(),
+                (Some(_), None) => before.spend_object(), // body A is the selection, not a click of the tool
+                _ => {}
+            }
             boolean.pick = a.map(|a| (a, 0));
-            boolean.b = None;
-            *status = Notice::info(qymcad_i18n::tr(if a.is_some() { "tb-bool-pick-b" } else { "tb-pick-body-a-first" }));
+            boolean.b = b.filter(|_| a.is_some());
+            let words = match (a, b) {
+                (None, _) => "tb-pick-body-a-first",
+                (Some(_), None) => "tb-bool-pick-b",
+                (Some(_), Some(_)) => "tb-bool-ready",
+            };
+            *status = Notice::info(qymcad_i18n::tr(words));
         }
     }
 }
@@ -565,8 +678,8 @@ impl Default for Settings {
 /// that editing one silently changes the other.
 #[derive(Clone, Debug)]
 pub struct CompArrayCmd {
-    /// which command is open: 0 none, 1 linear, 2 circular
-    pub mode: u8,
+    /// which command is open, linear or circular; none when none is
+    pub mode: Option<crate::PatternKind>,
     /// the source component (chosen before the start or by a click)
     pub src: Id,
     /// linear: the direction, 0 for X, 1 for Y, 2 for Z
@@ -577,9 +690,16 @@ pub struct CompArrayCmd {
     pub edit: Id,
 }
 
+impl CompArrayCmd {
+    /// Is the pattern of components in hand a circular one?
+    pub fn is_circular(&self) -> bool {
+        self.mode == Some(crate::PatternKind::Circular)
+    }
+}
+
 impl Default for CompArrayCmd {
     fn default() -> Self {
-        Self { mode: 0, src: 0, dir: 0, axis: 2, edit: 0 }
+        Self { mode: None, src: 0, dir: 0, axis: 2, edit: 0 }
     }
 }
 
@@ -649,8 +769,8 @@ impl EditTool {
 pub struct OffsetAim {
     /// where the click fixed the side, on the sheet; none while the copy follows the pointer
     pub at: Option<qymcad_core::geom::Point2>,
-    /// the distance as typed in the box
-    pub buf: String,
+    /// the field of the distance in the box, as typed
+    pub field: Vec<CmdParam>,
     /// the box takes the keyboard on the frame it opens
     pub focus: bool,
 }
@@ -678,6 +798,46 @@ impl AxisPoint {
     }
 }
 
+/// THE SECOND OR THE THIRD DIRECTION OF A LINEAR PATTERN, by the key of the title of its section.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoreDirection {
+    Second,
+    Third,
+}
+
+impl MoreDirection {
+    /// The direction the title `key` of its section switches: `dir3_on` the third, any other the second.
+    pub fn of(key: &str) -> MoreDirection {
+        if key == "dir3_on" {
+            MoreDirection::Third
+        } else {
+            MoreDirection::Second
+        }
+    }
+}
+
+/// THE SECOND OR THIRD DIRECTION OF A LINEAR PATTERN SWITCHED as its section is opened or folded. Switched on, it runs
+/// along an axis the directions before it do not, so opening it makes a grid at once; the third goes with the second.
+pub fn switch_direction(arr: &mut ArrayParams, first: u8, which: MoreDirection) {
+    match which {
+        MoreDirection::Second => {
+            arr.two = !arr.two;
+            if arr.two && arr.dir2 == first {
+                arr.dir2 = (first + 1) % 3;
+            }
+        }
+        MoreDirection::Third => {
+            arr.three = !arr.three && arr.two;
+            if arr.three {
+                arr.dir3 = 3 - first.min(2) - arr.dir2.min(2);
+            }
+        }
+    }
+    if !arr.two {
+        arr.three = false;
+    }
+}
+
 /// THE PART PATTERN'S PARAMETERS: up to three linear directions, or a circular one about an axis.
 /// Eleven fields described ONE intention, and "two directions" could end up switched on with a count of 1, or an
 /// axis chosen for a linear pattern.
@@ -693,9 +853,9 @@ pub struct ArrayParams {
     pub three: bool,
     pub count3: u32,
     pub dir3: u8,
-    /// a circular pattern about an axis: the axis itself, whether it is a full turn, and whether the axis is being picked by a click
+    /// a circular pattern about an axis: the axis itself, and whether the axis is being picked by a click; the angle it
+    /// spans is a field of its box, 360 a full turn
     pub axis: Id,
-    pub full: bool,
     pub axis_pick: bool,
     /// the first of two points an axis is being picked through, until the second comes
     pub axis_first: Option<AxisPoint>,
@@ -726,8 +886,13 @@ pub struct DimTool {
     /// the first reference pointed at, and what has been clicked
     pub first: Option<DimRef>,
     pub pick: Vec<Id>,
-    /// typing the value: buffer, focus, editing an existing dimension
-    pub buf: String,
+    /// THE FIELD OF THE BOX OF A DIMENSION, or of the size of a circle, as it is typed: empty while no box is up
+    pub field: Vec<CmdParam>,
+    /// the text last tried on the dimension in its box, so a value is tried once, not in every frame
+    pub tried: Option<String>,
+    /// THE PART OF THE SKETCH THE VALUE TRIED HOLDS, found with the first figure: each figure takes back that part alone
+    /// and solves it alone (`Project::value_trial`)
+    pub trial: Option<qymcad_core::model::ValueTrial>,
     pub focus: bool,
     /// THE FIELD OF THE SIZE OF A CIRCLE OR AN ARC WAS TYPED IN since it opened: only a value typed is laid as a
     /// dimension, as the width and the height of a rectangle are (`Placing::typed`)
@@ -742,13 +907,62 @@ pub struct DimTool {
     pub before: Option<Box<qymcad_core::model::Sketch>>,
 }
 
+impl DimTool {
+    /// The box of a dimension put away: nothing typed into it stays.
+    pub fn put_away(&mut self) {
+        self.field.clear();
+        self.tried = None;
+        self.focus = false;
+        self.typed = false;
+    }
+}
+
+/// IS A DIMENSION OF A CIRCLE SHOWN AS ITS RADIUS OR ITS DIAMETER.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Shown {
+    Radius,
+    #[default]
+    Diameter,
+}
+
+/// WHAT A PERSON ASKED OF ONE DIMENSION A BOX WILL LAY ON Enter beyond its name and its reference, which the frame keeps:
+/// for a circle, whether it is shown as its radius.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DimAsk {
+    /// shown as its radius or its diameter; none - as the dimension is laid by its shape
+    pub shown: Option<Shown>,
+}
+
+/// WHAT WAS ASKED OF THE DIMENSIONS A BOX WILL LAY, by the key of the field of each.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DimAsks {
+    pub rows: std::collections::BTreeMap<String, DimAsk>,
+}
+
+impl DimAsks {
+    /// What was asked of the dimension of field `key`; nothing asked yet answers the defaults.
+    pub fn of(&self, key: &str) -> DimAsk {
+        self.rows.get(key).cloned().unwrap_or_default()
+    }
+
+    /// What was asked of the dimension of field `key`, to be changed.
+    pub fn at(&mut self, key: &str) -> &mut DimAsk {
+        self.rows.entry(key.to_string()).or_default()
+    }
+
+    /// Was the radius or the diameter of the dimension of field `key` asked.
+    pub fn touched(&self, key: &str) -> bool {
+        self.rows.get(key).is_some_and(|a| a.shown.is_some())
+    }
+}
+
 /// THE JOINT COMMAND: what has been pointed at, with which anchor, and whether an existing one is being edited.
 #[derive(Clone)]
 pub struct JointCommand {
     /// parameters of the joint being created
     pub new_kind: qymcad_core::feature::JointKind,
-    pub new_offset: f64,
-    pub new_angle: f64,
+    /// The fields of the box of the joint being edited, as they are typed.
+    pub fields: crate::JointFields,
     /// KEEP IT WHERE IT STANDS RIGHT AT CREATION (an "as-built" joint).
     ///
     /// A "keep it where it stands" button in the joint's properties comes TOO LATE: the joint has
@@ -767,6 +981,8 @@ pub struct JointCommand {
     /// the joint in `edit` is the one just made by the second pick, still inside its open operation: Apply or Enter
     /// keeps it as one step, Esc, Cancel or another tool takes it away as if it had never been
     pub creating: bool,
+    /// the document as it stood when the joint in `edit` was opened for editing: Cancel and Esc put it back
+    pub edit_from: Option<EditFrom>,
     pub edit_repick: Option<(Id, bool)>,
     /// THE SURFACES BEING POINTED AT FOR A TANGENT CONDITION.
     ///
@@ -806,6 +1022,13 @@ pub struct JointCommand {
     pub giz_handle: Option<(u8, bool)>,
 }
 
+/// THE DOCUMENT AS IT STOOD WHEN JOINT `joint` WAS OPENED FOR EDITING.
+#[derive(Clone)]
+pub struct EditFrom {
+    pub joint: Id,
+    pub before: Snapshot,
+}
+
 impl JointCommand {
     /// Take the rigid mate and wait for the two faces.
     pub fn start_rigid_pick(&mut self) {
@@ -818,8 +1041,7 @@ impl Default for JointCommand {
     fn default() -> Self {
         Self {
             new_kind: qymcad_core::feature::JointKind::Rigid,
-            new_offset: 0.0,
-            new_angle: 0.0,
+            fields: crate::JointFields::default(),
             new_as_built: false,
             pick_faces: false,
             ground_pick: false,
@@ -827,6 +1049,7 @@ impl Default for JointCommand {
             pick_first: None,
             edit: None,
             creating: false,
+            edit_from: None,
             edit_repick: None,
             axis_pick: None,
             conn_pick: false,
@@ -853,6 +1076,8 @@ pub struct SectionTool {
     /// the gizmo arrow is being dragged; the drag anchor
     pub drag: bool,
     pub drag_anchor: Option<(f64, Pos2)>,
+    /// The offset and the tilts as they are typed at the plane - formulas - each value written into `offset` and `rot`.
+    pub fields: Vec<CmdParam>,
 }
 
 impl SectionTool {

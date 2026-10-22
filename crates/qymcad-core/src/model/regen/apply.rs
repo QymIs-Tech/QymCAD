@@ -226,20 +226,24 @@ impl Project {
         let n = [pl[2], pl[6], pl[10]];
         let o = [pl[3], pl[7], pl[11]];
         if extent.through {
-            // Span the whole of body `src` along the normal, both ways: the bounding box gives a start below it
-            // and a length of the span plus margins.
-            let kept = |start: f64, length: f64| crate::feature::ToolSpan { start, length, ends: crate::feature::ToolEnds::Kept };
-            return match self.body_span_along(src, o, n) {
-                Some((tmin, tmax)) => {
-                    let margin = ((tmax - tmin).abs() * 0.1).max(1.0);
-                    kept(tmin - margin, (tmax - tmin) + 2.0 * margin)
-                }
-                // Fallback: the mesh of `src` has no bounding box (the body is not tessellated yet, or the mesh
-                // is empty). "Through all" has to stay a through cut rather than degenerate into a blind pocket
-                // of nominal depth.
-                None => {
-                    let reach = (h.abs() * 100.0).max(1000.0);
-                    kept(-reach, 2.0 * reach)
+            // THROUGH ALL KEEPS ITS DIRECTION: from the sketch plane to past the far side of body `src` along the normal,
+            // or against it, and both ways only when it is symmetric. Reported behaviour: a sketch lying inside a part,
+            // cut through all one way, lost metal on the other side too - the tool spanned the body both ways whatever
+            // the direction held. The bounding box gives the span; a body with no mesh yet (no box) is spanned far
+            // enough that "through all" stays a through cut rather than a blind pocket of nominal depth.
+            let (tmin, tmax) = self.body_span_along(src, o, n).unwrap_or_else(|| {
+                let reach = (h.abs() * 100.0).max(1000.0);
+                (-reach, reach)
+            });
+            let margin = ((tmax - tmin).abs() * 0.1).max(1.0);
+            // one way, the end on the sketch plane is met with the body as a one-sided cut's is (`ToolEnds::OneSidedCut`)
+            let ends = if op == 0 { crate::feature::ToolEnds::OneSidedCut } else { crate::feature::ToolEnds::Kept };
+            return match extent.reach {
+                crate::feature::Reach::BothWays => crate::feature::ToolSpan { start: tmin - margin, length: (tmax - tmin) + 2.0 * margin, ends: crate::feature::ToolEnds::Kept },
+                crate::feature::Reach::Forward => crate::feature::ToolSpan { start: 0.0, length: (tmax + margin).max(margin), ends },
+                crate::feature::Reach::Backward => {
+                    let start = (tmin - margin).min(-margin);
+                    crate::feature::ToolSpan { start, length: -start, ends }
                 }
             };
         }

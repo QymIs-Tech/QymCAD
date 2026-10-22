@@ -10,7 +10,7 @@ mod tests {
     use super::super::hand::Hand;
     use crate::gui::import_door::tests::running;
     use qymcad_core::feature::SketchPlane;
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
 
     #[test]
     fn a_dimension_past_its_field_is_left_as_it_stands() {
@@ -18,9 +18,9 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         let mut hand = Hand::new(&mut app);
         hand.app.enter_sketch_edit(si);
-        hand.sk_tool(1).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
-        let line = hand.app.project.sketches[si].entities.iter().find_map(|e| match e.kind {
-            EntityKind::Line { a, b } => Some((a, b)),
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line).click2d(0.0, 0.0).click2d(20.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        let line = hand.app.project.sketches[si].entities.iter().find_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
             _ => None,
         });
         let (a, b) = line.expect("the line drawn");

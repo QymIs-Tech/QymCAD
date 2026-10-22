@@ -326,6 +326,26 @@ pub(crate) fn stop_all_discovery_workers() {
     }
 }
 
+/// THE THEMES OF THIS FRAME: one reading of the themes found per frame, shared by every place that draws them - the
+/// settings and the manager - so the list changes between frames and not within one, whenever the worker of the
+/// discovery writes what it found.
+pub(crate) fn themes_of_the_frame(ctx: &egui::Context, dirs: &[PathBuf]) -> DiscoveredThemes {
+    #[derive(Clone)]
+    struct Read {
+        frame: u64,
+        dirs: Vec<PathBuf>,
+        themes: DiscoveredThemes,
+    }
+    let id = egui::Id::new("the themes read for this frame");
+    let frame = ctx.cumulative_frame_nr();
+    if let Some(read) = ctx.data(|d| d.get_temp::<Read>(id)).filter(|r| r.frame == frame && r.dirs == dirs) {
+        return read.themes;
+    }
+    let themes = discover_all_theme_packs(dirs);
+    ctx.data_mut(|d| d.insert_temp(id, Read { frame, dirs: dirs.to_vec(), themes: themes.clone() }));
+    themes
+}
+
 /// Discovers all icon theme packs across given directories.
 /// Fast path: reads directly from in-memory cache with zero filesystem IO on the UI thread.
 /// Updates from disk are handled asynchronously by the background discovery worker.

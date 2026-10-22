@@ -3,14 +3,14 @@
 //! Merging coincident points (`merge_close_points`, called automatically after a trim or a cut) must not
 //! collapse those centres into one node: the radius variables would fuse and the sketch would break, with the
 //! radii drifting.
-use qymcad_core::model::{EntityKind, Project};
+use qymcad_core::model::Project;
 
 fn circle_centers(p: &Project, si: usize) -> Vec<u64> {
     let mut cs: Vec<u64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .collect();
@@ -48,8 +48,8 @@ fn merge_close_points_keeps_concentric_circle_centers_distinct() {
     let mut radii: Vec<f64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { r, .. } => Some(r),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
             _ => None,
         })
         .collect();

@@ -144,8 +144,8 @@ fn arc_intrinsics_are_part_of_the_analyzed_system() {
         qymcad_core::feature::Winding::Ccw,
         qymcad_core::feature::Purpose::Real,
     );
-    let (c, a) = match p.sketches[si].entities[0].kind {
-        qymcad_core::model::EntityKind::Arc { center, a, .. } => (center, a),
+    let (c, a) = match p.sketches[si].entities[0].kind.as_arc() {
+        Some(qymcad_core::model::ArcParts { center, a, .. }) => (center, a),
         _ => unreachable!("an arc"),
     };
     let s = &mut p.sketches[si];

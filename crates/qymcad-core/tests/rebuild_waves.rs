@@ -79,6 +79,38 @@ fn a_mixture_puts_the_independent_parts_together_and_the_chain_apart() {
     assert_eq!(shape_of(&waves), vec![3, 1], "the mixture came out as {:?}", shape_of(&waves));
 }
 
+/// One more cut on top of `body`, sketched on a face of `body`.
+fn a_cut_on_its_face(p: &mut Project, body: u64, x: f64) -> u64 {
+    let si = p.new_sketch("cut on the face");
+    p.sketches[si].plane = qymcad_core::feature::SketchPlane::Face(body, qymcad_core::feature::FaceKey::default());
+    let sid = p.sketches[si].id;
+    p.add_sketch_node(sid, "cut on the face");
+    p.add_rect_entity(si, x + 2.0, 2.0, x + 8.0, 8.0, qymcad_core::feature::Purpose::Real);
+    p.regen_sketch(si);
+    p.add_combine(body, sid, 20.0, 0)
+}
+
+/// A CUT SKETCHED ON A FACE OF ITS OWN BODY STANDS IN THE WAVE AFTER THE BODY. The node of a sketch waited for the body
+/// under it, and the cut for the sketch: every link of a chain of cuts on faces took two waves, the body, the sketch,
+/// the cut (seven waves of one for this chain). Measured on the case example: the parts that rebuilt side by side in 11
+/// waves of 2-5 nodes came in 29 waves of one, and the case on 19 threads took 9.1 s of work against 6.0. A sketch is
+/// solved in its own plane, wherever the plane stands: the cut reads what the sketch stands on, the sketch does not.
+#[test]
+fn a_chain_of_cuts_on_faces_makes_a_wave_a_cut() {
+    let mut p = Project::default();
+    p.new_document();
+    let body = a_part(&mut p, 0.0);
+    let a = a_cut_on_its_face(&mut p, body, 0.0);
+    let b = a_cut_on_its_face(&mut p, a, 2.0);
+    let c = a_cut_on_its_face(&mut p, b, 4.0);
+    let waves = p.rebuild_waves();
+    // the extrude, then the three cuts one after another; the sketches, drawn and solved, are not rebuilt
+    assert_eq!(shape_of(&waves), vec![1, 1, 1, 1], "a chain of three cuts on faces came out as {:?}", shape_of(&waves));
+    let order: Vec<u64> = waves.iter().flatten().copied().collect();
+    let at = |id: u64| order.iter().position(|x| *x == id).expect("the node is in the waves");
+    assert!(at(a) < at(b) && at(b) < at(c), "the chain came out in the wrong order");
+}
+
 /// THE WAVES SAY WHEN, NEVER WHETHER: their union is exactly what a sequential pass would rebuild.
 #[test]
 fn the_waves_hold_the_same_nodes_as_the_plan() {

@@ -150,7 +150,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = h;
             p.txt = format!("{h}");
@@ -376,7 +376,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 6.0;
             p.txt = "6".into();
@@ -398,7 +398,7 @@ mod tests {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = super::super::Sel::Sketch(si);
-        app.start_feat_cmd(3); // revolve, through the same command a person uses
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Revolve); // revolve, through the same command a person uses
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "angle") {
             p.val = 270.0;
             p.txt = "270".into();
@@ -627,7 +627,7 @@ mod tests {
             save("sketch-trim/00.png", &shot_sketch_fixed(&mut app, si, 6.0));
             let ids: Vec<qymcad_core::model::Id> = app.project.sketches[si].entities.iter().map(|e| e.id).collect();
             if let Some(first) = ids.first() {
-                app.project.trim_line(si, *first, 25.0, 0.0); // clicked on the tail to the right of the crossing
+                app.project.trim_curve(si, *first, 25.0, 0.0); // clicked on the tail to the right of the crossing
             }
             save("sketch-trim/01.png", &shot_sketch_fixed(&mut app, si, 6.0));
         }
@@ -664,7 +664,7 @@ mod tests {
         // program takes: a cylinder as a primitive, the round rim as an edge, the thread command.
         {
             let mut app = App::default();
-            app.start_prim_cmd(11);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Cylinder);
             for (k, v) in [("r", 15.0), ("h", 60.0)] {
                 if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == k) {
                     p.val = v;
@@ -736,7 +736,7 @@ mod tests {
             if let Some(mi) = a2.project.timeline.iter().rev().find_map(|n| n.kind.body()).and_then(|b| a2.project.mesh_index(b)) {
                 a2.chosen.sel = super::super::Sel::Mesh(mi);
             }
-            a2.start_feat_cmd(32);
+            a2.start_feat_cmd(qymcad_ui_state::PartTool::Patch);
             crate::gui::commands::refresh_edges(&mut a2.part_ctx());
             for id in rim(&a2) {
                 a2.tools.gsel.edges.insert(id);
@@ -909,7 +909,7 @@ mod tests {
                     };
                     {
                         let mut asks = Vec::new();
-                        crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), ui);
+                        qymcad_ui_state::path_bar(&mut a.bar_ctx(&mut asks), ui, &crate::command_catalog::BENCHES);
                         let c = ui.ctx().clone();
                         a.do_bar_asks(asks, &c);
                     };
@@ -942,7 +942,7 @@ mod tests {
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
             app.chosen.sel = super::super::Sel::Sketch(si);
-            app.start_feat_cmd(1);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
             if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = h;
                 p.txt = format!("{h}");
@@ -1005,7 +1005,7 @@ mod tests {
             let short = app.project.add_line_entity(si, -30.0, 0.0, -16.0, 0.0, qymcad_core::feature::Purpose::Real);
             std::fs::create_dir_all(img_dir().join("sketch-extend")).expect("the frame directory");
             save("sketch-extend/00.png", &shot_sketch_fixed(&mut app, si, 6.5));
-            app.project.extend_line(si, short, -16.0, 0.0); // pulled by the right-hand end
+            app.project.extend_curve(si, short, -16.0, 0.0); // pulled by the right-hand end
             save("sketch-extend/01.png", &shot_sketch_fixed(&mut app, si, 6.5));
         }
 
@@ -1085,7 +1085,7 @@ mod tests {
             app.project.regen_sketch(si);
             app.finish_sketch_edit();
             app.chosen.sel = super::super::Sel::Sketch(si);
-            app.start_feat_cmd(1);
+            app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
             if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
                 p.val = 14.0;
                 p.txt = "14".into();
@@ -1111,7 +1111,7 @@ mod tests {
                     };
                     {
                         let mut asks = Vec::new();
-                        crate::gui::panels_bars::toolbar(&mut a.bar_ctx(&mut asks), ui);
+                        qymcad_ui_state::path_bar(&mut a.bar_ctx(&mut asks), ui, &crate::command_catalog::BENCHES);
                         let c = ui.ctx().clone();
                         a.do_bar_asks(asks, &c);
                     };
@@ -1363,7 +1363,7 @@ mod tests {
             app.project.regen_sketch(si);
             std::fs::create_dir_all(img_dir().join("sketch-delete")).expect("the frame directory");
             save("sketch-delete/00.png", &shot_sketch_fixed(&mut app, si, 4.2));
-            let circle = app.project.sketches[si].entities.iter().find(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).map(|e| e.id).expect("the circle in the sketch");
+            let circle = app.project.sketches[si].entities.iter().find(|e| e.kind.as_circle().is_some()).map(|e| e.id).expect("the circle in the sketch");
             app.project.delete_entities(si, &[circle]);
             app.project.regen_sketch(si);
             save("sketch-delete/01.png", &shot_sketch_fixed(&mut app, si, 4.2));
@@ -1407,7 +1407,7 @@ mod tests {
             app.project.add_line_entity(si, 0.0, -18.0, 0.0, 18.0, qymcad_core::feature::Purpose::Real);
             std::fs::create_dir_all(img_dir().join("sketch-break")).expect("the frame directory");
             save("sketch-break/00.png", &shot_sketch_fixed(&mut app, si, 5.5));
-            assert!(app.project.break_line(si, line, 0.0, 0.0), "the segment must split - otherwise the frames are identical");
+            assert!(app.project.break_curve(si, line, 0.0, 0.0), "the segment must split - otherwise the frames are identical");
             save("sketch-break/01.png", &shot_sketch_fixed(&mut app, si, 5.5));
         }
 

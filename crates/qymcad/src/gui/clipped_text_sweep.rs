@@ -65,13 +65,8 @@ mod tests {
                 let c = c.ctx().clone();
                 a.do_bar_asks(asks, &c);
             }),
-            surface("tool bar", |a, c| {
-                let mut asks = Vec::new();
-                crate::gui::panels_bars::tool_options_bar(&mut a.bar_ctx(&mut asks), c);
-                let c = c.ctx().clone();
-                a.do_bar_asks(asks, &c);
-            }),
-            surface("command bar", |a, c| a.feat_command_bar(c)),
+            surface("tool bar", crate::gui::panel_places::sketch_tool),
+            surface("command bar", crate::gui::panel_places::part_tool),
             surface("settings", |a, c| {
                 let mut asks = Vec::new();
                 crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c);

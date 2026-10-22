@@ -29,7 +29,7 @@ fn sketch_groups_and_removes_contours() {
     assert_eq!(p.contour_index(loose), Some(0));
 }
 
-/// A SKETCH OF SPLINES ALONE IS TYPED: its nodes are points the sketcher edits, though a spline is not an entity.
+/// A SKETCH OF SPLINES ALONE IS TYPED: its nodes are points the sketcher edits, a spline an entity like any curve.
 #[test]
 fn a_sketch_of_splines_alone_is_typed() {
     let mut p = Project::default();
@@ -39,7 +39,6 @@ fn a_sketch_of_splines_alone_is_typed() {
     let si = p.sketch_index(sid).unwrap();
     assert!(!p.is_typed_sketch(si), "an empty sketch has nothing to edit");
     p.add_spline(si, vec![Point2::new(0.0, 0.0), Point2::new(20.0, 10.0), Point2::new(40.0, 0.0)], qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real);
-    assert!(p.sketches[si].entities.is_empty(), "setup: a spline is not an entity");
     assert!(p.is_typed_sketch(si), "a sketch holding a spline alone is not taken for one the sketcher edits");
 }
 
@@ -67,7 +66,7 @@ fn typed_sketch_point_edit_regens() {
 fn import_sketch_keeps_circle_and_dedups_shared_corners() {
     use qymcad_core::feature::{BasePlane, SketchPlane};
     use qymcad_core::geom::{Point2, ProfEdge};
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     p.new_document();
     let root = p.root;
@@ -95,12 +94,12 @@ fn import_sketch_keeps_circle_and_dedups_shared_corners() {
     assert_eq!(p.sketches[si].plane, SketchPlane::World(BasePlane::XZ));
 
     // 3) the circle stays a circle entity and is not turned into a polygon
-    let circles = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Circle { .. })).count();
+    let circles = p.sketches[si].entities.iter().filter(|e| e.kind.as_circle().is_some()).count();
     assert_eq!(circles, 1, "the circle is imported as a circle entity");
 
     // 4) the four segments share their corners, giving four contour points plus the circle centre: five in
     // total, so the deduplication worked
-    let lines = p.sketches[si].entities.iter().filter(|e| matches!(e.kind, EntityKind::Line { .. })).count();
+    let lines = p.sketches[si].entities.iter().filter(|e| e.kind.as_line().is_some()).count();
     assert_eq!(lines, 4, "the square is four segments");
     assert_eq!(p.sketches[si].points.len(), 5, "four shared corners plus the circle centre, endpoints deduplicated");
     assert!(p.is_typed_sketch(si), "the sketch is typed, points plus entities, so it can be edited in the sketcher");
@@ -115,15 +114,15 @@ fn import_sketch_keeps_circle_and_dedups_shared_corners() {
 /// the contour id is preserved - which is what anything referring to that contour depends on.
 #[test]
 fn entity_circle_regen_keeps_contour_id() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.drawing_sketch();
     p.add_circle_entity(si, 0.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real);
     let center = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .unwrap();
@@ -230,7 +229,7 @@ fn p1_migrate_reparents_floating_nodes() {
 fn copy_paste_sketch_geometry_between_sketches() {
     // Copy geometry out of a sketch into a clipboard together with a base point, then paste it into another
     // sketch offset from that base point to the target: new ids, references remapped, contour reproduced.
-    use qymcad_core::model::{EntityKind, Project};
+    use qymcad_core::model::Project;
     let mut p = Project::default();
     p.new_document();
 
@@ -257,7 +256,7 @@ fn copy_paste_sketch_geometry_between_sketches() {
     assert_eq!(p.sketches[src].entities.len(), 5, "the source is intact");
 
     // the circle in the target moved to (105,105) with r = 2
-    let csel: Vec<_> = p.sketches[dst].entities.iter().filter_map(|e| if let EntityKind::Circle { center, r } = e.kind { Some((center, r)) } else { None }).collect();
+    let csel: Vec<_> = p.sketches[dst].entities.iter().filter_map(|e| if let Some(qymcad_core::model::CircleParts { center, r }) = e.kind.as_circle() { Some((center, r)) } else { None }).collect();
     assert_eq!(csel.len(), 1);
     let (cc, cr) = csel[0];
     let cp = p.sketches[dst].points.iter().find(|q| q.id == cc).unwrap();

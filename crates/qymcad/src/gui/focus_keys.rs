@@ -68,7 +68,7 @@ mod tests {
         // not open (`kind` stays 0), and the test would be checking emptiness.
         app.chosen.sel = super::super::Sel::Sketch(0);
         app.viewing.mode_3d = true; // "re-pick the contour" exists exactly in the 3D step of the command
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         assert!(app.tools.armed.commanding() && app.tools.cmd.sketch.is_some(), "the scene did not open the extrude — there is nothing to check");
         app
     }
@@ -77,9 +77,15 @@ mod tests {
     #[test]
     fn a_bare_letter_works_when_nothing_is_focused() {
         let mut app = extruding();
-        assert!(!(matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d), "the half-sketcher must not be open in advance");
+        assert!(
+            !(app.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d),
+            "the half-sketcher must not be open in advance"
+        );
         press(&mut app, Key::U, Modifiers::NONE, false);
-        assert!((matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d), "a bare U with the focus free did not open the contour re-pick");
+        assert!(
+            (app.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d),
+            "a bare U with the focus free did not open the contour re-pick"
+        );
     }
 
     /// INSIDE A FIELD A BARE LETTER DOES NOT RUN A COMMAND — it is typed.
@@ -91,7 +97,7 @@ mod tests {
         let mut app = extruding();
         press(&mut app, Key::U, Modifiers::NONE, true);
         assert!(
-            !(matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d),
+            !(app.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d),
             "a letter from a field ran a command — `len` can no longer be written into a formula"
         );
     }
@@ -102,7 +108,7 @@ mod tests {
         let mut app = extruding();
         press(&mut app, Key::U, Modifiers::ALT, true);
         assert!(
-            (matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d),
+            (app.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d),
             "Alt+U from a field did not open the contour re-pick — the hand still reaches for the mouse"
         );
     }
@@ -111,13 +117,19 @@ mod tests {
     ///
     /// Esc in a field used to take down the whole command along with the picked geometry: a person
     /// meant to erase a half-typed number and lost the selection.
+    ///
+    /// Walked through the whole window: the field is the extrude's own, taking the keyboard as the command opens.
     #[test]
     fn escape_leaves_the_field_first_and_cancels_second() {
         let mut app = extruding();
-        press(&mut app, Key::Escape, Modifiers::NONE, true);
-        assert!(app.tools.armed.commanding(), "the first Esc from a field cancelled the whole command");
-        press(&mut app, Key::Escape, Modifiers::NONE, false);
-        assert!(!app.tools.armed.commanding(), "the second Esc, already without focus, did not cancel the command");
+        let mut hand = super::super::hand::Hand::as_it_stands(&mut app);
+        hand.frame(Vec::new());
+        assert!(hand.typing(), "setup: the field of the extrude does not hold the keyboard as the command opens");
+        hand.key(Key::Escape);
+        assert!(hand.app.tools.armed.commanding(), "the first Esc from a field cancelled the whole command");
+        assert!(!hand.typing(), "the first Esc did not leave the field");
+        hand.key(Key::Escape);
+        assert!(!hand.app.tools.armed.commanding(), "the second Esc, already without focus, did not cancel the command");
     }
 
     /// THE HINT CHANGES ALONG WITH THE RULE.
@@ -233,7 +245,7 @@ mod tests {
 
     /// Is the contour re-pick open - the half-sketcher of the extrude command, in 2D?
     fn repicking(app: &App) -> bool {
-        matches!(app.tools.armed.cmd_kind(), 1 | 3) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d
+        app.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && app.tools.cmd.sketch.is_some() && !app.viewing.mode_3d
     }
 
     /// A KEY OUTSIDE THE FACTORY LETTERS IS HEARD once something is bound to it.

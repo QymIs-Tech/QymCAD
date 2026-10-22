@@ -9,14 +9,14 @@ fn empty_part_extrude_flow() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 30.0, 30.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0; // the Extrude button
-    app.start_feat_cmd(1);
-    assert_eq!(app.tools.armed.cmd_kind(), 1, "the command started: {}", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "the command started: {}", app.status);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the command finished (Enter worked): {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the command finished (Enter worked): {}", app.status);
     let v = total_volume(&app);
     assert!((v - 9000.0).abs() < 90.0, "a 30x30x10 body was built, V={v:.0}; status: {}", app.status);
 }
@@ -29,7 +29,7 @@ fn stale_through_extent_does_not_leak() {
     app.tools.cmd.extent = super::super::ExtentMode::Through; // the "previous command" left "through all" behind
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     assert!(matches!(app.tools.cmd.extent, super::super::ExtentMode::Length), "the extent is reset when the command starts");
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
@@ -50,7 +50,7 @@ fn cut_5x5_through_a_5mm_plate_leaves_no_wall() {
         let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
         app.chosen.sel = Sel::Sketch(si);
         app.feat.op = 0;
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 5.0;
             p.txt = "5".into();
@@ -63,14 +63,14 @@ fn cut_5x5_through_a_5mm_plate_leaves_no_wall() {
         let si2 = sketch_rect(&mut app, 5.0, 5.0, 10.0, 10.0);
         app.chosen.sel = Sel::Sketch(si2);
         app.feat.op = 2; // Cut
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         app.tools.cmd.extent = extent;
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = depth;
             p.txt = format!("{depth}");
         }
         app.apply_feat_cmd();
-        assert_eq!(app.tools.armed.cmd_kind(), 0, "{nm}: the cut finished: {}", app.status);
+        assert_eq!(app.tools.armed.part_tool(), None, "{nm}: the cut finished: {}", app.status);
         let v = live_volume(&app);
         eprintln!("{nm}: V before {base:.1} -> after {v:.1} (removed {:.1}, expected 125)", base - v);
         assert!((base - v - 125.0).abs() < 1.5, "{nm}: {:.1} mm^3 removed instead of 125 - the wall stayed. Status: {}", base - v, app.status);
@@ -88,7 +88,7 @@ fn picking_a_sketch_plane_prepares_the_brep_for_origin_snap() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 30.0, 30.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();
@@ -128,7 +128,7 @@ fn deleting_a_feature_does_not_silently_eat_the_cut_below() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 40.0, 40.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 20.0;
         p.txt = "20".into();
@@ -139,7 +139,7 @@ fn deleting_a_feature_does_not_silently_eat_the_cut_below() {
     let si2 = sketch_rect(&mut app, 2.0, 2.0, 10.0, 10.0);
     app.chosen.sel = Sel::Sketch(si2);
     app.feat.op = 2;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 3.0;
         p.txt = "3".into();
@@ -151,7 +151,7 @@ fn deleting_a_feature_does_not_silently_eat_the_cut_below() {
     let si3 = sketch_rect(&mut app, 25.0, 25.0, 30.0, 30.0);
     app.chosen.sel = Sel::Sketch(si3);
     app.feat.op = 2;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 20.0;
         p.txt = "20".into();
@@ -178,9 +178,9 @@ fn cut_in_empty_part_gives_message() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 2; // the Cut button
-    app.start_feat_cmd(1);
-    app.apply_feat_cmd();
-    assert!(app.status.words.contains(&crate::i18n::tr("cmd-cut-needs-body")), "a clear status rather than silence: \"{}\"", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
+    let why = app.apply_feat_cmd();
+    assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("cmd-cut-needs-body"))), "a clear refusal rather than silence");
     assert!(total_volume(&app) < 1e-6, "no body appeared");
 }
 
@@ -191,7 +191,7 @@ fn extrude_then_cut_flow() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 20.0;
         p.txt = "20".into();
@@ -202,14 +202,14 @@ fn extrude_then_cut_flow() {
     let s2 = sketch_rect(&mut app, 5.0, 5.0, 15.0, 15.0);
     app.chosen.sel = Sel::Sketch(s2);
     app.feat.op = 2;
-    app.start_feat_cmd(1);
-    assert_eq!(app.tools.armed.cmd_kind(), 1, "the cut started: {}", app.status);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
+    assert_eq!(app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::Extrude), "the cut started: {}", app.status);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 5.0;
         p.txt = "5".into();
     }
     app.apply_feat_cmd();
-    assert_eq!(app.tools.armed.cmd_kind(), 0, "the cut was applied: {}", app.status);
+    assert_eq!(app.tools.armed.part_tool(), None, "the cut was applied: {}", app.status);
     // the consumed bodies are hidden; what is measured is the volume of THE RESULT (the last live body)
     let consumed = qymcad_ui_state::consumed_bodies(&app.project);
     let v: f64 = app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum();
@@ -224,7 +224,7 @@ fn two_extrudes_make_one_body() {
     let si = sketch_rect(&mut app, 0.0, 0.0, 20.0, 20.0);
     app.chosen.sel = Sel::Sketch(si);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();
@@ -234,7 +234,7 @@ fn two_extrudes_make_one_body() {
     let s2 = sketch_rect(&mut app, 10.0, 0.0, 30.0, 20.0);
     app.chosen.sel = Sel::Sketch(s2);
     app.feat.op = 0;
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();

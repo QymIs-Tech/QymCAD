@@ -15,6 +15,8 @@ pub(crate) fn shell(set: &Settings) -> qymcad_shell::Shell {
     let mut s = qymcad_shell::Shell::default();
     s.put(Place::new("menubar", Slot::Menu));
     s.put(Place::new("toolbar", Slot::Top));
+    // THE BAR OF THE COMMAND STANDS ALWAYS, AT ONE HEIGHT: empty with nothing in hand, so taking a tool or putting it
+    // down moves neither the view nor the panels
     s.put(Place::new("command_bar", Slot::Top).framed().never_hidden());
     // THE STATUS LINE STAYS AT THE BOTTOM AND IN SIGHT, as the menu stays at the top: a person looks for it there, and
     // it is where the program says what it waits for
@@ -41,9 +43,74 @@ pub(crate) fn keep_panel_size(set: &mut Settings, key: &str, size: qymcad_shell:
 }
 
 /// THE BARS OF WHAT IS IN HAND, the first live one shown in the one place of the command bar. A command taken puts
-/// down the one held before, so two of them are not in hand at once; the bar of the view's section is the last, as
-/// the section stays on under any command.
-const COMMAND_BARS: [&str; 7] = ["feat_cmd_bar", "bool_tool_bar", "comp_array_bar", "joint_edit_bar", "joint_tool_bar", "sk_tool_opts", "section_bar"];
+/// down the one held before, so two of them are not in hand at once; a step typed at a gizmo comes before the bar of the
+/// view's section, which is the last, as the section stays on under any command.
+const COMMAND_BARS: [&str; 5] = ["part_tool", "assembly_tool", "sk_tool_opts", "gizmo_number", "section_bar"];
+
+/// THE BARS THAT STAND FOR A TOOL IN HAND - every bar of the command place but the sketch's own, which stands while a
+/// sketch is open, and the section's, which stands while a section is on.
+const TOOL_BARS: [&str; 2] = ["part_tool", "assembly_tool"];
+
+/// DOES THE BAR OF THE SECTION STAND FOR A TOOL IN HAND - a section being placed, or one of the tools that share its
+/// place: a mirrored copy of a part, a pencil or a command waiting for its plane or sketch, the measure.
+fn section_bar_holds_a_tool(app: &App) -> bool {
+    app.side.section.pick || app.params.mirror.in_hand() || app.tools.picking.is_sketch_plane() || app.tools.picking.sketch_for().is_some() || app.side.m3.on
+}
+
+/// IS A TOOL OF THE PART OR THE ASSEMBLY IN HAND: what a click on the model is given to, rather than to the selection.
+pub(crate) fn tool_in_hand(app: &App) -> qymcad_ui_state::InHand {
+    use qymcad_shell::Fills;
+    if TOOL_BARS.iter().any(|k| app.live(k)) || section_bar_holds_a_tool(app) {
+        qymcad_ui_state::InHand::Tool
+    } else {
+        qymcad_ui_state::InHand::Nothing
+    }
+}
+
+/// THE TOOL OF A PART IN HAND, through the one entry of the frame: its bar here, its box over the view.
+pub(crate) fn part_tool(app: &mut App, ui: &mut egui::Ui) {
+    let canvas = app.viewing.view_rect;
+    qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_part::in_hand(&mut app.part_ctx()));
+}
+
+/// THE TOOL OF THE SKETCH OPEN FOR EDITING - with nothing in hand, the selection - through the one entry of the frame.
+pub(crate) fn sketch_tool(app: &mut App, ui: &mut egui::Ui) {
+    let canvas = app.viewing.view_rect;
+    qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_sketch::in_hand(&mut app.sketch_ctx()));
+}
+
+/// THE TOOL OF AN ASSEMBLY IN HAND - a joint made or reopened, or a tool that picks - through the one entry of the frame.
+pub(crate) fn assembly_tool(app: &mut App, ui: &mut egui::Ui) {
+    let canvas = app.viewing.view_rect;
+    qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_assembly::in_hand(&mut app.joint_ctx()));
+}
+
+/// THE TOOL OF THE PLACE OF THE SECTION IN HAND - the measure, a command waiting for its sketch, the pencil, the mirrored
+/// copy of a part, the section - through the one entry of the frame.
+pub(crate) fn plane_tool(app: &mut App, ui: &mut egui::Ui) {
+    let canvas = app.viewing.view_rect;
+    let pb = &mut qymcad_part::PlaneBarCtx {
+        regen: &mut app.regen,
+        section: &mut app.side.section,
+        mirror: &mut app.params.mirror,
+        picking: &mut app.tools.picking,
+        project: &mut app.project,
+        edits: &mut app.disk.edits,
+        active_path: &app.active_path,
+        status: &mut app.status,
+        m3: &mut app.side.m3,
+        scheme: &app.scheme,
+        cam: &app.viewing.cam,
+        set: &app.set,
+        canvas,
+    };
+    qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_part::plane_in_hand(pb));
+}
+
+/// DOES THE FRAME OF A TOOL TAKE Esc: a tool in hand, or the numeric entry at a gizmo - its box answers the key itself.
+pub(crate) fn frame_takes_esc(app: &App) -> bool {
+    tool_in_hand(app) == qymcad_ui_state::InHand::Tool || app.dragged.body_giz.num.is_some() || edit_si(&app.project, &app.sketch_ses).is_some()
+}
 
 impl qymcad_shell::Fills for App {
     /// IS THE PLACE WANTED THIS FRAME. Each of these used to be a `return` at the top of the panel - which
@@ -51,24 +118,15 @@ impl qymcad_shell::Fills for App {
     /// one still eats a strip of the window, so the question is asked before opening rather than inside.
     fn live(&self, key: &'static str) -> bool {
         match key {
-            "command_bar" => COMMAND_BARS.iter().any(|k| self.live(k)),
-            "section_bar" => {
-                self.side.section.plane.is_some()
-                    || self.side.section.pick
-                    || self.params.mirror.in_hand()
-                    || self.tools.picking.is_sketch_plane()
-                    || self.tools.picking.sketch_for().is_some()
-                    || self.side.m3.on
-            }
-            "comp_array_bar" => self.side.carr.mode != 0,
-            "feat_cmd_bar" => self.tools.armed.commanding(),
+            "command_bar" => true,
+            "section_bar" => self.side.section.plane.is_some() || section_bar_holds_a_tool(self),
+            "part_tool" => self.tools.armed.commanding() || self.params.boolean.pick.is_some() || self.params.boolean.edit.is_some() || self.side.carr.mode.is_some(),
+            "gizmo_number" => self.dragged.body_giz.num.is_some(),
             "sk_tool_opts" => edit_si(&self.project, &self.sketch_ses).is_some(),
-            "bool_tool_bar" => self.params.boolean.pick.is_some() || self.params.boolean.edit.is_some(),
             // THE ASSEMBLY BARS: each is one of several by what is being picked, and the shell now owns
             // their places. The conditions used to live at the top of each bar as an early return - which
             // meant the place existed even when nothing was drawn in it.
-            "joint_tool_bar" => matches!(self.workbench, Workbench::Assembly) && self.viewing.mode_3d && qymcad_assembly::joint_picking(&self.side.joint),
-            "joint_edit_bar" => self.side.joint.edit.is_some() && matches!(self.workbench, Workbench::Assembly) && self.viewing.mode_3d,
+            "assembly_tool" => matches!(self.workbench, Workbench::Assembly) && self.viewing.mode_3d && (self.side.joint.edit.is_some() || qymcad_assembly::joint_picking(&self.side.joint)),
             // while a sketch is being edited the tree on the left is not needed - only the tools
             "tree" => edit_si(&self.project, &self.sketch_ses).is_none(),
             _ => true,
@@ -81,6 +139,10 @@ impl qymcad_shell::Fills for App {
         let (mut bar_asks, mut win_asks) = (Vec::new(), Vec::new());
         match key {
             "command_bar" => {
+                // ONE ROW TALL AT LEAST, empty or not, in every workbench, so taking a tool or putting it down moves
+                // neither the view nor the panels; a sketch's own bar grows past it by its rows. Without it the
+                // outlined Apply and Cancel of a pattern of a sketch stood the bar 1 point taller than the arrow did.
+                ui.set_min_height(qymcad_ui_state::command_bar_row(ui));
                 if let Some(k) = COMMAND_BARS.into_iter().find(|k| self.live(k)) {
                     // ONE ID FOR THE PLACE, whatever bar stands in it: one bar of a command giving way to another lays its
                     // widgets where the last one's stood, and under the key of each bar egui marked the whole strip with a
@@ -89,27 +151,11 @@ impl qymcad_shell::Fills for App {
                 }
             }
             "menubar" => crate::gui::panels_bars::menu_bar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "toolbar" => crate::gui::panels_bars::toolbar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "section_bar" => crate::gui::panels_bars::section_bar(
-                &mut qymcad_part::PlaneBarCtx {
-                    regen: &mut self.regen,
-                    section: &mut self.side.section,
-                    mirror: &mut self.params.mirror,
-                    picking: &mut self.tools.picking,
-                    project: &mut self.project,
-                    edits: &mut self.disk.edits,
-                    active_path: &self.active_path,
-                    status: &mut self.status,
-                    m3: &mut self.side.m3,
-                },
-                ui,
-            ),
-            "comp_array_bar" => crate::gui::panels_bars::comp_array_bar(&mut self.part_ctx(), ui),
-            "feat_cmd_bar" => self.feat_command_bar(ui),
-            "sk_tool_opts" => crate::gui::panels_bars::tool_options_bar(&mut self.bar_ctx(&mut bar_asks), ui),
-            "bool_tool_bar" => crate::gui::commands::bool_tool_bar(&mut self.part_ctx(), ui),
-            "joint_tool_bar" => qymcad_assembly::joint_tool_bar(&mut self.joint_ctx(), ui),
-            "joint_edit_bar" => qymcad_assembly::joint_edit_bar(&mut self.joint_ctx(), ui),
+            "toolbar" => qymcad_ui_state::path_bar(&mut self.bar_ctx(&mut bar_asks), ui, &crate::command_catalog::BENCHES),
+            "section_bar" => plane_tool(self, ui),
+            "part_tool" | "gizmo_number" => part_tool(self, ui),
+            "sk_tool_opts" => sketch_tool(self, ui),
+            "assembly_tool" => assembly_tool(self, ui),
             "status" => crate::gui::panels_bars::status_bar(
                 &mut qymcad_ui_state::StatusCtx {
                     cache: &self.cache,

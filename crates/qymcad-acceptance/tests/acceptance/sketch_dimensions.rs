@@ -51,14 +51,14 @@ fn pick(s: &mut Session, x: f64, y: f64, add: bool) {
 fn type_into_dimension(s: &mut Session, label: &str, text: &str) {
     let at = s.find(label, SHEET).unwrap_or_else(|| panic!("the dimension {label:?} is not on the sheet; on screen: {:?}", s.words()));
     s.double_click(at.center());
-    let field = s.word("sk-expr-example");
+    let field = s.word("f-number-or-expr");
     s.fill_hinted(&field, text).key(Key::Enter);
 }
 
 /// A 40 x 30 rectangle with the length of its lower side set to 50 by a dimension, the arrow back in hand.
 fn rectangle_with_a_dimension(s: &mut Session) {
     let hint = s.word("tb-dim-hint");
-    let field = s.word("sk-expr-example");
+    let field = s.word("f-number-or-expr");
     s.press_hint(&hint);
     s.click_on_sketch(20.0, 0.0);
     s.click_on_sketch(20.0, -10.0);
@@ -119,7 +119,8 @@ probe! {
         let at = s.find("50.0", SHEET).expect("the dimension is on the sheet");
         s.double_click(at.center());
         let word = s.word("sk-ref-short");
-        s.press_word_near(&word, at.center());
+        // the switch of the box of the dimension, kept by Enter as every value of a box is
+        s.press_word_near(&word, at.center()).key(Key::Enter);
         let now = s.document().sketches[0].clone();
         assert!(now.dof == driving.dof + 1, "a reference dimension holds no degree of freedom: {} became {}", driving.dof, now.dof);
         assert!(s.find("(50.0)", SHEET).is_some(), "a reference dimension is not marked as one on the sheet; on screen: {:?}", s.words());
@@ -168,7 +169,7 @@ probe! {
     /// and Ctrl+Z puts the label back where the last drag took it from.
     fn the_label_of_an_angle_is_dragged_aside() {
         let mut s = Fixture::TwoLinesInSketch.start();
-        let (hint, field) = (s.word("tb-dim-angle-hint"), s.word("sk-expr-example"));
+        let (hint, field) = (s.word("tb-dim-angle-hint"), s.word("f-number-or-expr"));
         s.press_hint(&hint);
         s.click_on_sketch(20.0, 0.0);
         s.click_on_sketch(14.14, 14.14);
@@ -200,7 +201,7 @@ probe! {
 /// The right side of the rectangle of the fixture given a height by the formula `text`, its dimension line led out to
 /// x = 50; the arrow back in hand. Answers where on the screen the dimension line runs.
 fn right_side_with_a_height(s: &mut Session, text: &str) -> f32 {
-    let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+    let (hint, field) = (s.word("tb-dim-hint"), s.word("f-number-or-expr"));
     s.press_hint(&hint);
     s.click_on_sketch(40.0, 15.0);
     s.click_on_sketch(50.0, 15.0);
@@ -330,7 +331,7 @@ probe! {
         // corner to corner: the side is 50 and the height 30, so the diagonal is 58.3 and 10 is impossible. The rectangle
         // was drawn from (0, 0) and grew from there to 50: its corners stand at (0, 0) and (50, 30)
         let hint = s.word("tb-dim-hint");
-        let field = s.word("sk-expr-example");
+        let field = s.word("f-number-or-expr");
         s.press_hint(&hint);
         s.click_on_sketch(0.0, 0.0);
         s.click_on_sketch(50.0, 30.0);
@@ -375,5 +376,39 @@ probe! {
             !lines_parallel || way_out || said.contains(&s.word("sk-dim-conflict")) || said.contains(&s.word("sk-length-conflict")) || said.contains(&s.word("sk-angle-conflict")),
             "the angle of 45 degrees and the parallel constraint are both in the sketch, nothing is marked as conflicting and there is no way out offered; the status line says {said:?}"
         );
+    }
+}
+
+probe! {
+    /// ENTER PUTS DOWN A DIMENSION TOOL THAT MEASURED NOTHING, as Esc does: the radius taken and nothing clicked, Enter
+    /// leaves nothing in hand waiting for a click with no bar saying so, and lays nothing.
+    fn enter_puts_down_the_radius_that_measured_nothing() {
+        let mut s = Fixture::CircleInSketch.start();
+        s.key(Key::Escape).key(Key::Escape);
+        let (before, bar) = (s.document().sketches[0].constraint_kinds.clone(), s.in_hand());
+        let hint = s.word("tb-dim-radius-hint");
+        s.press_hint(&hint);
+        assert_ne!(s.in_hand(), bar, "setup: the radius is not in hand");
+        s.key(Key::Enter);
+        assert_eq!(s.in_hand(), bar, "Enter left the radius in hand: the bar says {:?}", s.in_hand());
+        assert_eq!(s.document().sketches[0].constraint_kinds, before, "Enter on the radius that measured nothing laid something");
+    }
+}
+
+probe! {
+    /// ENTER PUTS A DIMENSION BEGUN WHERE THE POINTER IS: the side of a rectangle picked by the linear dimension, the pointer
+    /// moved below it, and Enter lays the dimension there, as the click that places it does.
+    fn enter_puts_a_dimension_begun_where_the_pointer_is() {
+        let mut s = Fixture::RectangleInSketch.start();
+        s.key(Key::Escape).key(Key::Escape);
+        let before = s.document().sketches[0].constraint_kinds.len();
+        let hint = s.word("tb-dim-hint");
+        s.press_hint(&hint);
+        s.click_on_sketch(20.0, 0.0);
+        let below = s.on_sketch(20.0, -10.0);
+        s.move_to(below);
+        s.key(Key::Enter);
+        let after = s.document().sketches[0].constraint_kinds.len();
+        assert_eq!(after, before + 1, "Enter after the side was picked laid {} constraints, not the one dimension; the status line says {:?}", after - before, s.status());
     }
 }

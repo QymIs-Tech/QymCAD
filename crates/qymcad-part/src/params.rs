@@ -30,8 +30,8 @@ pub fn axis_of(d: [f64; 3]) -> u8 {
 /// normal), otherwise it would cut the void. It is a derived value, so it is computed FROM THE CURRENT
 /// parameters of the command rather than remembered when the command opens: the operation is chosen in
 /// the bar, after opening.
-pub fn smart_flip(cmd: u8, op: u8, plane: &qymcad_core::feature::SketchPlane) -> bool {
-    cmd == 1 && op == 2 && matches!(plane, qymcad_core::feature::SketchPlane::Face(..))
+pub fn smart_flip(cmd: qymcad_ui_state::PartTool, op: u8, plane: &qymcad_core::feature::SketchPlane) -> bool {
+    cmd == qymcad_ui_state::PartTool::Extrude && op == 2 && matches!(plane, qymcad_core::feature::SketchPlane::Face(..))
 }
 
 /// A command parameter taken from a feature dimension: the text is the expression if there is one, or
@@ -118,28 +118,28 @@ pub fn fillet_vertex_table(cmd: &qymcad_ui_state::FeatCommand) -> Vec<(u32, f64)
 
 /// The name of the operation for the undo step - the same one shown on the button.
 pub fn feat_cmd_name(armed: &qymcad_ui_state::Armed, feat: qymcad_ui_state::FeatTarget) -> String {
-    match armed.cmd_kind() {
-        1 => match feat.op {
+    match armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Extrude) => match feat.op {
             2 => qymcad_i18n::tr("f-cut"),
             3 => qymcad_i18n::tr("f-intersection"),
             _ => qymcad_i18n::tr("f-extrusion"),
         },
-        3 => qymcad_i18n::tr("f-revolution"),
-        4 => qymcad_i18n::tr("f-fillet"),
-        5 => qymcad_i18n::tr("f-chamfer"),
-        6 => qymcad_i18n::tr("f-shell"),
-        8 => qymcad_i18n::tr("f-sweep"),
-        9 => qymcad_i18n::tr("f-loft"),
-        16 => qymcad_i18n::tr("f-mirror"),
-        23 => qymcad_i18n::tr("f-draft"),
-        25 => qymcad_i18n::tr("f-push-face"),
-        26 => qymcad_i18n::tr("f-remove-face"),
-        30 => qymcad_i18n::tr("f-face-copy"),
-        36 => qymcad_i18n::tr("feat-name-offset-surface"),
-        31 => qymcad_i18n::tr("f-surface-replace"),
-        32 => qymcad_i18n::tr("f-patch"),
-        24 => qymcad_i18n::tr("f-thread"),
-        35 => qymcad_i18n::tr("f-recognise"),
+        Some(qymcad_ui_state::PartTool::Revolve) => qymcad_i18n::tr("f-revolution"),
+        Some(qymcad_ui_state::PartTool::Fillet) => qymcad_i18n::tr("f-fillet"),
+        Some(qymcad_ui_state::PartTool::Chamfer) => qymcad_i18n::tr("f-chamfer"),
+        Some(qymcad_ui_state::PartTool::Shell) => qymcad_i18n::tr("f-shell"),
+        Some(qymcad_ui_state::PartTool::Sweep) => qymcad_i18n::tr("f-sweep"),
+        Some(qymcad_ui_state::PartTool::Loft) => qymcad_i18n::tr("f-loft"),
+        Some(qymcad_ui_state::PartTool::Mirror) => qymcad_i18n::tr("f-mirror"),
+        Some(qymcad_ui_state::PartTool::Draft) => qymcad_i18n::tr("f-draft"),
+        Some(qymcad_ui_state::PartTool::PushFace) => qymcad_i18n::tr("f-push-face"),
+        Some(qymcad_ui_state::PartTool::RemoveFace) => qymcad_i18n::tr("f-remove-face"),
+        Some(qymcad_ui_state::PartTool::FaceCopy) => qymcad_i18n::tr("f-face-copy"),
+        Some(qymcad_ui_state::PartTool::OffsetSurface) => qymcad_i18n::tr("feat-name-offset-surface"),
+        Some(qymcad_ui_state::PartTool::SurfaceReplace) => qymcad_i18n::tr("f-surface-replace"),
+        Some(qymcad_ui_state::PartTool::Patch) => qymcad_i18n::tr("f-patch"),
+        Some(qymcad_ui_state::PartTool::Thread) => qymcad_i18n::tr("f-thread"),
+        Some(qymcad_ui_state::PartTool::Recognise) => qymcad_i18n::tr("f-recognise"),
         _ => qymcad_i18n::tr("f-operation"),
     }
 }
@@ -163,11 +163,11 @@ pub fn sync_custom_params(cmd: &mut qymcad_ui_state::FeatCommand, thread: qymcad
     let custom = !thread.auger && qymcad_ui_state::thread_standard(thread.form) == qymcad_core::thread::ThreadStandard::Custom;
     let has = cmd.params.iter().any(|p| p.key == "angle");
     if custom && !has {
-        cmd.params.push(qymcad_ui_state::CmdParam::new("f-profile-angle", "angle", 60.0, 5.0, 170.0));
+        cmd.params.push(qymcad_ui_state::CmdParam::new("th-profile-angle", "angle", 60.0, 5.0, 170.0));
         // The depth opens on the one that will be cut, not on zero: zero here means "nothing was typed" and
         // the core cuts 0.6 of the pitch, so a field at 0.00 stood over a groove 1.50 deep.
         let depth = thread_spec(cmd, thread).geometry().depth;
-        cmd.params.push(qymcad_ui_state::CmdParam::new("f-thread-depth", "depth", depth, 0.0, 1000.0));
+        cmd.params.push(qymcad_ui_state::CmdParam::new("th-depth", "depth", depth, 0.0, 1000.0));
     } else if !custom && has {
         cmd.params.retain(|p| p.key != "angle" && p.key != "depth");
     }
@@ -208,7 +208,7 @@ pub fn thread_spec(cmd: &qymcad_ui_state::FeatCommand, thread: qymcad_ui_state::
 /// The diameter and depth fields of the RECESS (a counterbore or a countersink) at the geometry - they
 /// appear for any hole type other than the plain one.
 pub fn sync_hole_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_state::FeatCommand, hole: qymcad_ui_state::HoleCommand, project: &Project) {
-    if armed.cmd_kind() != 7 {
+    if armed.part_tool() != Some(qymcad_ui_state::PartTool::Hole) {
         return;
     }
     let want = hole.kind != 0;
@@ -228,7 +228,7 @@ pub fn sync_hole_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_stat
 /// A datum POINT: the X, Y and Z fields at the geometry in coordinate mode, removed in "at a vertex"
 /// mode.
 pub fn sync_datum_point_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_state::FeatCommand, datum: &qymcad_ui_state::DatumCommand) {
-    if armed.cmd_kind() != 21 {
+    if armed.part_tool() != Some(qymcad_ui_state::PartTool::DatumPoint) {
         return;
     }
     let want_coords = datum.pt_mode == 0;
@@ -247,7 +247,7 @@ pub fn sync_datum_point_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_
 /// Synchronise the axis fields at the geometry with the mode (a click on an edge or a face against a
 /// hand-typed origin and direction).
 pub fn sync_datum_axis_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_state::FeatCommand, datum: &qymcad_ui_state::DatumCommand) {
-    if armed.cmd_kind() != 22 {
+    if armed.part_tool() != Some(qymcad_ui_state::PartTool::DatumAxis) {
         return;
     }
     let want_manual = datum.axis_mode == 1;
@@ -270,8 +270,24 @@ pub fn sync_datum_axis_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_u
 /// array with a second direction, and an angle for a circular one that is NOT a full circle (the same way
 /// `sync_dir_cmd_params` handles the second side of an extrude).
 pub fn sync_array_params(arr: qymcad_ui_state::ArrayParams, armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_state::FeatCommand, project: &Project) {
-    match armed.cmd_kind() {
-        17 => {
+    match armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::LinearPattern) => {
+            let counts = [
+                MoreCount { wanted: arr.two, key: "count2", label: "f-copies2", now: arr.count2 },
+                MoreCount { wanted: arr.two && arr.three, key: "count3", label: "f-copies3", now: arr.count3 },
+            ];
+            for c in counts {
+                let has = cmd.params.iter().any(|p| p.key == c.key);
+                if c.wanted && !has {
+                    let prm = match cmd.edit {
+                        Some(fid) => cmd_param_from(project, fid, c.label, c.key, f64::from(c.now.max(2)), 1.0, 512.0),
+                        None => qymcad_ui_state::CmdParam::new(c.label, c.key, f64::from(c.now.max(2)), 1.0, 512.0),
+                    };
+                    cmd.params.push(prm.whole());
+                } else if !c.wanted && has {
+                    cmd.params.retain(|p| p.key != c.key);
+                }
+            }
             let has2 = cmd.params.iter().any(|p| p.key == "step2");
             if arr.two && !has2 {
                 let prm = match cmd.edit {
@@ -293,20 +309,59 @@ pub fn sync_array_params(arr: qymcad_ui_state::ArrayParams, armed: &qymcad_ui_st
                 cmd.params.retain(|p| p.key != "step3");
             }
         }
-        18 => {
+        Some(qymcad_ui_state::PartTool::CircularPattern) => {
             let has_ang = cmd.params.iter().any(|p| p.key == "angle");
-            if !arr.full && !has_ang {
+            if !has_ang {
                 let prm = match cmd.edit {
                     Some(fid) => cmd_param_from(project, fid, "f-angle", "angle", 360.0, 1.0, 360.0),
                     None => qymcad_ui_state::CmdParam::new("f-angle", "angle", 360.0, 1.0, 360.0),
                 };
                 cmd.params.push(prm);
-            } else if arr.full && has_ang {
-                cmd.params.retain(|p| p.key != "angle");
             }
         }
         _ => {}
     }
+}
+
+/// THE COUNT OF A SECOND OR THIRD DIRECTION OF A PATTERN: whether its field is wanted, its key and caption, and the count
+/// the pattern holds now.
+struct MoreCount {
+    wanted: bool,
+    key: &'static str,
+    label: &'static str,
+    now: u32,
+}
+
+/// THE COUNTS OF THE COMMAND IN HAND TAKEN FROM ITS FIELDS: the copies of a pattern, the sides of a prism - read by its
+/// preview and its apply.
+pub fn take_counts(armed: &qymcad_ui_state::Armed, cmd: &qymcad_ui_state::FeatCommand, counts: Counts) {
+    match armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Prism) => {
+            if let Some(v) = count_of(cmd, "n", 3) {
+                counts.prim.n = v;
+            }
+        }
+        Some(qymcad_ui_state::PartTool::LinearPattern) | Some(qymcad_ui_state::PartTool::CircularPattern) => take_array_counts(cmd, counts.arr),
+        _ => {}
+    }
+}
+
+/// THE COUNTS OF A PATTERN TAKEN FROM ITS FIELDS - of bodies or of parts alike.
+pub fn take_array_counts(cmd: &qymcad_ui_state::FeatCommand, arr: &mut qymcad_ui_state::ArrayParams) {
+    arr.count = count_of(cmd, "count", 1).unwrap_or(arr.count);
+    arr.count2 = count_of(cmd, "count2", 1).unwrap_or(arr.count2);
+    arr.count3 = count_of(cmd, "count3", 1).unwrap_or(arr.count3);
+}
+
+/// The whole number field `key` of a command holds, `at_least` at the least; none where the command has no such field.
+fn count_of(cmd: &qymcad_ui_state::FeatCommand, key: &str, at_least: u32) -> Option<u32> {
+    cmd.params.iter().find(|p| p.key == key).map(|p| (p.val.round().max(f64::from(at_least))) as u32)
+}
+
+/// WHERE THE COUNTS OF A COMMAND ARE KEPT: the pattern's and the prism's own.
+pub struct Counts<'a> {
+    pub arr: &'a mut qymcad_ui_state::ArrayParams,
+    pub prim: &'a mut qymcad_ui_state::PrimParams,
 }
 
 /// Store the dimensions of a command on feature `body` through the one door of a feature's number
@@ -319,28 +374,15 @@ pub fn store_cmd_exprs(cmd: &qymcad_ui_state::FeatCommand, project: &mut Project
     Ok(())
 }
 
-/// A FORMULA THE DOCUMENT REFUSED AS A COMMAND WROTE IT, said on the status line; the command stays open. The command
-/// asks the same door before Enter ([`field_refused_by_document`]), so this is the backstop of the write.
-pub(crate) fn say_formula_refused(status: &mut qymcad_ui_state::Notice, e: &qymcad_core::errors::ExprError) -> Option<Id> {
-    *status = qymcad_ui_state::Notice::refusal(qymcad_i18n::error_words::expr_error_text(e));
-    None
-}
-
-/// The same where the command holds the operation: the operation is rolled back as well and leaves no trace.
-pub(crate) fn formula_refused(pc: &mut qymcad_ui_state::PartCtx, e: &qymcad_core::errors::ExprError) -> Option<Id> {
-    *pc.cmd_failed = true;
-    say_formula_refused(pc.status, e)
-}
-
 /// THE TUBE OF A TORUS STAYS THINNER THAN ITS RING: the tube field's upper limit follows the ring field, so a tube as
 /// thick as the ring or thicker is refused beside the field, in words, before Enter. Reported behaviour: a ring of 12
 /// took a tube of 120 and stood green as a body passing through itself.
 pub fn sync_torus_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_state::FeatCommand, project: &Project) {
-    if armed.cmd_kind() != 14 {
+    if armed.part_tool() != Some(qymcad_ui_state::PartTool::Torus) {
         return;
     }
     let vars = project.param_map();
-    let Some(ring) = cmd.params.iter().find(|p| p.key == "major").and_then(|p| field_value(p, &vars).ok()) else { return };
+    let Some(ring) = cmd.params.iter().find(|p| p.key == "major").and_then(|p| qymcad_ui_state::field_value(p, &vars).ok()) else { return };
     if let Some(tube) = cmd.params.iter_mut().find(|p| p.key == "minor") {
         tube.hi = (ring - 1e-3).max(tube.lo);
     }
@@ -353,7 +395,7 @@ pub fn sync_torus_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_sta
 /// (`cmd_param_from`). The height is already a field - so every distance of a command is edited at the
 /// geometry rather than by drag values in the top bar.
 pub fn sync_dir_cmd_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_state::FeatCommand, project: &Project) {
-    if armed.cmd_kind() != 1 {
+    if armed.part_tool() != Some(qymcad_ui_state::PartTool::Extrude) {
         return;
     }
     let want_down = cmd.extent.two_sided();
@@ -378,7 +420,7 @@ pub fn sync_dir_cmd_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_s
 /// be applied silently. This gates Apply (both Enter and the buttons) and marks the field in the popup.
 pub fn cmd_exprs_valid(cmd: &qymcad_ui_state::FeatCommand, project: &Project) -> bool {
     let vars = project.param_map();
-    cmd.params.iter().all(|p| field_value(p, &vars).is_ok() && field_refused_by_document(p, project, cmd.edit).is_none())
+    cmd.params.iter().all(|p| qymcad_ui_state::field_value(p, &vars).is_ok() && field_refused_by_document(p, project, cmd.edit).is_none())
 }
 
 /// WHAT THE DOCUMENT WOULD REFUSE OF A FIELD OF A COMMAND OPENED ON NODE `edit`, in words - the question of the door the
@@ -391,39 +433,6 @@ pub fn field_refused_by_document(p: &qymcad_ui_state::CmdParam, project: &Projec
     project.check_feat_text(&at, &p.txt).err().map(|e| qymcad_i18n::error_words::expr_error_text(&e))
 }
 
-/// WHAT THE DOCUMENT WOULD REFUSE OF THE COUNTS TYPED IN THE BAR of an array opened on node `edit`, in words, asked of
-/// the same door as the fields at the geometry: `n+1` typed for the count named `n`.
-pub fn bar_counts_refused(bar_exprs: &std::collections::HashMap<&'static str, String>, project: &Project, edit: Option<Id>) -> Option<String> {
-    let node = edit?;
-    BAR_COUNTS.iter().find_map(|c| {
-        let text = bar_exprs.get(c.bar).map(String::as_str).unwrap_or_default();
-        project.check_feat_text(&qymcad_core::model::FeatNumber { node, key: c.key }, text).err().map(|e| qymcad_i18n::error_words::expr_error_text(&e))
-    })
-}
-
-/// A COUNT OF AN ARRAY TYPED IN THE BAR: the field of the bar and the number of the node it is kept as.
-struct BarCount {
-    bar: &'static str,
-    key: &'static str,
-}
-
-/// The counts of an array in the bar, the first, the second and the third direction.
-const BAR_COUNTS: [BarCount; 3] = [BarCount { bar: "arr_count", key: "count" }, BarCount { bar: "arr_count2", key: "count2" }, BarCount { bar: "arr_count3", key: "count3" }];
-
-/// WHAT A FIELD OF A COMMAND HOLDS: its expression worked out, or in words why it cannot be taken - an expression that
-/// does not work out, or a value past the field's limits. A value past the limits used to be pressed to the nearest
-/// one and applied without a word: a fillet of 0 came in green with a radius of 0.05.
-pub fn field_value(p: &qymcad_ui_state::CmdParam, vars: &std::collections::HashMap<String, f64>) -> Result<f64, String> {
-    let v = qymcad_core::expr::eval(&p.txt, vars).map_err(|e| qymcad_i18n::error_words::expr_error_text(&e))?;
-    if p.nonzero && v.abs() < 1e-9 {
-        return Err(qymcad_i18n::tr("cmd-value-zero"));
-    }
-    if v < p.lo - 1e-9 || v > p.hi + 1e-9 {
-        return Err(qymcad_i18n::tr2("cmd-value-out-of-range", "lo", &qymcad_core::expr::fmt_num(p.lo), "hi", &qymcad_core::expr::fmt_num(p.hi)));
-    }
-    Ok(v)
-}
-
 /// The "what to pick" hint for the active command, while nothing has been picked yet.
 /// WHAT THE COMMAND HAS TAKEN, named in its bar: the edges or the faces picked, the plane a split is made along. A pick
 /// counted only in the status line leaves the bar the same before the click and after it.
@@ -432,11 +441,11 @@ pub(crate) fn taken_line(pc: &qymcad_ui_state::PartCtx) -> Option<String> {
         Some(qymcad_i18n::tr1("cmd-taken-edges", "n", &pc.gsel.edges.len().to_string()))
     } else if !pc.gsel.faces.is_empty() {
         Some(qymcad_i18n::tr1("cmd-taken-faces", "n", &pc.gsel.faces.len().to_string()))
-    } else if matches!(pc.armed.cmd_kind(), 27 | 29) && pc.split.plane.is_some() {
+    } else if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::splits) && pc.split.plane.is_some() {
         Some(qymcad_i18n::tr("cmd-taken-plane"))
-    } else if pc.armed.cmd_kind() == 33 && !pc.stitch_parts.is_empty() {
+    } else if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Stitch) && !pc.stitch_parts.is_empty() {
         Some(qymcad_i18n::tr1("cmd-taken-sheets", "n", &pc.stitch_parts.len().to_string()))
-    } else if let (17 | 18, qymcad_ui_state::Sel::Mesh(mi)) = (pc.armed.cmd_kind(), *pc.sel) {
+    } else if let (true, qymcad_ui_state::Sel::Mesh(mi)) = (pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::is_a_pattern), *pc.sel) {
         let name = pc.project.bodies.get(mi).map(|b| qymcad_i18n::name(&b.name)).unwrap_or_default();
         Some(qymcad_i18n::tr1("cmd-taken-body", "name", &name))
     } else {
@@ -445,32 +454,33 @@ pub(crate) fn taken_line(pc: &qymcad_ui_state::PartCtx) -> Option<String> {
 }
 
 pub fn cmd_hint(armed: &qymcad_ui_state::Armed, gsel: &qymcad_ui_state::GeomSelection, trim: &qymcad_ui_state::TrimTool) -> String {
-    match armed.cmd_kind() {
-        1 | 3 => qymcad_i18n::tr("hint-closed-contour"),
-        8 => qymcad_i18n::tr("hint-path-sketch"),
-        9 => qymcad_i18n::tr("hint-loft-sections"),
-        4 | 5 => qymcad_i18n::tr("hint-body-edges"),
-        6 => qymcad_i18n::tr("hint-faces-thickness"),
-        7 => qymcad_i18n::tr("hint-body-face"),
-        24 => qymcad_i18n::tr("hint-cyl-or-hole"),
-        23 => qymcad_i18n::tr("hint-draft-faces"),
-        25 => qymcad_i18n::tr("hint-flat-face-offset"),
-        30 => qymcad_i18n::tr("hint-face-copy"),
-        36 => qymcad_i18n::tr("msg-offset-surface"),
-        32 => qymcad_i18n::tr("hint-patch"),
-        33 => qymcad_i18n::tr("hint-stitch"),
-        35 => qymcad_i18n::tr("hint-recognise"),
-        34 => qymcad_i18n::tr(if trim.keep.is_none() { "hint-trim" } else { "hint-trim-tool" }),
-        31 => qymcad_i18n::tr(if gsel.faces.is_empty() { "hint-surface-replace" } else { "hint-surface-replace-pick" }),
-        27 => qymcad_i18n::tr("hint-cut-plane"),
-        29 => qymcad_i18n::tr("hint-split-face-plane"),
-        28 => qymcad_i18n::tr("hint-face-thickness"),
-        26 => qymcad_i18n::tr("hint-feature-faces"),
-        16 => qymcad_i18n::tr("hint-mirror-plane"),
-        17 => qymcad_i18n::tr("hint-count-dir-step"),
-        18 => qymcad_i18n::tr("hint-count-axis-angle"),
-        20 => qymcad_i18n::tr("hint-plane-offset"),
-        22 => qymcad_i18n::tr("hint-edge-or-manual"),
+    match armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Extrude) | Some(qymcad_ui_state::PartTool::Revolve) => qymcad_i18n::tr("hint-closed-contour"),
+        Some(qymcad_ui_state::PartTool::Sweep) => qymcad_i18n::tr("hint-path-sketch"),
+        Some(qymcad_ui_state::PartTool::Loft) => qymcad_i18n::tr("hint-loft-sections"),
+        Some(qymcad_ui_state::PartTool::Fillet) | Some(qymcad_ui_state::PartTool::Chamfer) => qymcad_i18n::tr("hint-body-edges"),
+        Some(qymcad_ui_state::PartTool::Shell) => qymcad_i18n::tr("hint-faces-thickness"),
+        Some(qymcad_ui_state::PartTool::Hole) => qymcad_i18n::tr("hint-body-face"),
+        Some(qymcad_ui_state::PartTool::Thread) => qymcad_i18n::tr("hint-cyl-or-hole"),
+        Some(qymcad_ui_state::PartTool::Draft) => qymcad_i18n::tr("hint-draft-faces"),
+        Some(qymcad_ui_state::PartTool::PushFace) => qymcad_i18n::tr("hint-flat-face-offset"),
+        Some(qymcad_ui_state::PartTool::FaceCopy) => qymcad_i18n::tr("hint-face-copy"),
+        Some(qymcad_ui_state::PartTool::OffsetSurface) => qymcad_i18n::tr("msg-offset-surface"),
+        Some(qymcad_ui_state::PartTool::Patch) => qymcad_i18n::tr("hint-patch"),
+        Some(qymcad_ui_state::PartTool::Stitch) => qymcad_i18n::tr("hint-stitch"),
+        Some(qymcad_ui_state::PartTool::Recognise) => qymcad_i18n::tr("hint-recognise"),
+        Some(qymcad_ui_state::PartTool::Trim) => qymcad_i18n::tr(if trim.keep.is_none() { "hint-trim" } else { "hint-trim-tool" }),
+        Some(qymcad_ui_state::PartTool::SurfaceReplace) => qymcad_i18n::tr(if gsel.faces.is_empty() { "hint-surface-replace" } else { "hint-surface-replace-pick" }),
+        Some(qymcad_ui_state::PartTool::SplitBody) => qymcad_i18n::tr("hint-cut-plane"),
+        Some(qymcad_ui_state::PartTool::SplitFace) => qymcad_i18n::tr("hint-split-face-plane"),
+        Some(qymcad_ui_state::PartTool::Thicken) => qymcad_i18n::tr("hint-face-thickness"),
+        Some(qymcad_ui_state::PartTool::RemoveFace) => qymcad_i18n::tr("hint-feature-faces"),
+        Some(qymcad_ui_state::PartTool::Mirror) => qymcad_i18n::tr("hint-mirror-plane"),
+        Some(qymcad_ui_state::PartTool::LinearPattern) => qymcad_i18n::tr("hint-count-dir-step"),
+        Some(qymcad_ui_state::PartTool::CircularPattern) => qymcad_i18n::tr("hint-count-axis-angle"),
+        Some(qymcad_ui_state::PartTool::DatumPlane) => qymcad_i18n::tr("hint-plane-offset"),
+        Some(qymcad_ui_state::PartTool::DatumPoint) => qymcad_i18n::tr("cmd-pick-vertex"),
+        Some(qymcad_ui_state::PartTool::DatumAxis) => qymcad_i18n::tr("hint-edge-or-manual"),
         _ => String::new(),
     }
 }
@@ -504,77 +514,58 @@ pub(crate) fn turn_datum_plane(cmd: &qymcad_ui_state::FeatCommand, project: &mut
     }
 }
 
-/// THE COUNTS OF AN ARRAY TYPED AS EXPRESSIONS IN THE BAR are dimensions of its node, as the fields at the geometry are:
-/// a count typed as `k` follows `k`. Reported behaviour (found by the contract): a circular array of `k` = 6 copies
-/// stayed at 6 when `k` became 12 - the bar gave its number once and kept the text to itself.
-///
-/// Written through the one door of a feature's number (`Project::write_feat_formula`); the first refusal is handed back.
-pub fn store_bar_counts(bar_exprs: &std::collections::HashMap<&'static str, String>, project: &mut Project, body: Id) -> Result<(), qymcad_core::errors::ExprError> {
-    for c in &BAR_COUNTS {
-        let text = bar_exprs.get(c.bar).map(String::as_str).unwrap_or_default();
-        project.write_feat_formula(&qymcad_core::model::FeatNumber { node: body, key: c.key }, text, qymcad_core::model::PlainNumber::ClearsFormula)?;
-    }
-    Ok(())
-}
-
-/// THE COUNTS BACK INTO THE BAR on reopening an array: the text of an expression, where one was typed.
-pub fn restore_bar_counts(bar_exprs: &mut std::collections::HashMap<&'static str, String>, project: &Project, fid: Id) {
-    for c in &BAR_COUNTS {
-        match project.feat_dim(fid, c.key).filter(|t| !t.trim().is_empty()) {
-            Some(t) => {
-                bar_exprs.insert(c.bar, t.to_string());
-            }
-            None => {
-                bar_exprs.remove(c.bar);
-            }
-        }
-    }
-}
-
 /// Whether the command is ready to apply (the required selection exists) - for highlighting the button
 /// and the field.
 pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
     // A FILLET AND A CHAMFER ROUND THE EDGES PICKED, an edited one too: one whose edges were all lost opens with none, and
     // to the kernel an empty list is every edge - its preview lit the whole part green, and Enter would have rounded it
-    if pc.cmd.edit.is_some() && matches!(pc.armed.cmd_kind(), 4 | 5) {
+    if pc.cmd.edit.is_some() && pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::blends_edges) {
         return !pc.gsel.edges.is_empty();
     }
     if pc.cmd.edit.is_some() {
         return true; // editing an existing feature - the input is already valid
     }
-    match pc.armed.cmd_kind() {
-        1 | 3 => !pc.gsel.profiles.is_empty() || pc.cmd.sketch.map(|si| qymcad_ui_state::sketch_closed_contours(pc.project, si).len() == 1).unwrap_or(false),
-        8 => pc.sweep.prof_sid != 0 && pc.sweep.path_sid != 0, // sweep: a profile and a path
-        9 => pc.loft.sids.len() >= 2,                          // loft: at least two sections
+    match pc.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Extrude) | Some(qymcad_ui_state::PartTool::Revolve) => {
+            !pc.gsel.profiles.is_empty() || pc.cmd.sketch.map(|si| qymcad_ui_state::sketch_closed_contours(pc.project, si).len() == 1).unwrap_or(false)
+        }
+        Some(qymcad_ui_state::PartTool::Sweep) => pc.sweep.prof_sid != 0 && pc.sweep.path_sid != 0, // sweep: a profile and a path
+        Some(qymcad_ui_state::PartTool::Loft) => pc.loft.sids.len() >= 2,                           // loft: at least two sections
         // a fillet and a chamfer round the edges PICKED: Enter with none picked used to round every edge of the body
         // without a word
-        4 | 5 => !pc.gsel.edges.is_empty(),
-        6 => !pc.gsel.faces.is_empty(),                           // shell: a multiple selection of faces
-        23 => !pc.gsel.faces.is_empty() && pc.draft.neutral != 0, // draft: faces plus the neutral face
-        25 | 26 | 28 | 30 | 36 => !pc.gsel.faces.is_empty(),      // push, remove, thicken, copy or offset a face
+        Some(qymcad_ui_state::PartTool::Fillet) | Some(qymcad_ui_state::PartTool::Chamfer) => !pc.gsel.edges.is_empty(),
+        Some(qymcad_ui_state::PartTool::Shell) => !pc.gsel.faces.is_empty(), // shell: a multiple selection of faces
+        Some(qymcad_ui_state::PartTool::Draft) => !pc.gsel.faces.is_empty() && pc.draft.neutral != 0, // draft: faces plus the neutral face
+        Some(qymcad_ui_state::PartTool::PushFace)
+        | Some(qymcad_ui_state::PartTool::RemoveFace)
+        | Some(qymcad_ui_state::PartTool::Thicken)
+        | Some(qymcad_ui_state::PartTool::FaceCopy)
+        | Some(qymcad_ui_state::PartTool::OffsetSurface) => !pc.gsel.faces.is_empty(), // push, remove, thicken, copy or offset a face
         // surface replace: BOTH the faces of the base AND the surface are needed - a node without either
         // makes no sense
-        31 => !pc.gsel.faces.is_empty() && pc.repl_surface.is_some(),
-        32 => pc.edges.body.is_some_and(|b| patch_boundary(&*pc.project, b, &*pc.gsel)), // patch: a boundary of edges
-        33 => pc.stitch_parts.len() >= 2,                                                // stitch: at least two sheets
-        35 => pc.recognise.src.is_some(),                                                // recognise: one mesh piece is picked
-        34 => pc.trim.keep.is_some() && pc.trim.tool.is_some(),                          // trim: what is cut and what cuts it
-        24 => pc.thread.edge != 0,                                                       // thread: the rim of a cylinder or a hole is picked
+        Some(qymcad_ui_state::PartTool::SurfaceReplace) => !pc.gsel.faces.is_empty() && pc.repl_surface.is_some(),
+        Some(qymcad_ui_state::PartTool::Patch) => pc.edges.body.is_some_and(|b| patch_boundary(&*pc.project, b, &*pc.gsel)), // patch: a boundary of edges
+        Some(qymcad_ui_state::PartTool::Stitch) => pc.stitch_parts.len() >= 2,                                               // stitch: at least two sheets
+        Some(qymcad_ui_state::PartTool::Recognise) => pc.recognise.src.is_some(),                                            // recognise: one mesh piece is picked
+        Some(qymcad_ui_state::PartTool::Trim) => pc.trim.keep.is_some() && pc.trim.tool.is_some(),                           // trim: what is cut and what cuts it
+        Some(qymcad_ui_state::PartTool::Thread) => pc.thread.edge != 0,                                                      // thread: the rim of a cylinder or a hole is picked
 
         // hole: "by face" needs a face picked; "by sketch" needs a body plus a sketch with isolated points
-        7 if pc.hole.mode == 1 => {
+        Some(qymcad_ui_state::PartTool::Hole) if pc.hole.mode == 1 => {
             qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel).is_some()
                 && pc.hole.sketch.map(|sid| !pc.project.sketch_isolated_points(sid).is_empty()).unwrap_or(false)
         }
-        7 => matches!(pc.sel, qymcad_ui_state::Sel::Face(..)),
-        10..=15 => true,                     // primitives: the sizes are in fields, no selection is needed
-        16 => pc.mirror.plane.is_some(),     // mirror: a plane is picked by click
-        27 | 29 => pc.split.plane.is_some(), // splitting a body or dividing faces: a plane is picked
+        Some(qymcad_ui_state::PartTool::Hole) => matches!(pc.sel, qymcad_ui_state::Sel::Face(..)),
+        Some(k) if k.is_a_primitive() => true,                                // primitives: the sizes are in fields, no selection is needed
+        Some(qymcad_ui_state::PartTool::Mirror) => pc.mirror.plane.is_some(), // mirror: a plane is picked by click
+        Some(qymcad_ui_state::PartTool::SplitBody) | Some(qymcad_ui_state::PartTool::SplitFace) => pc.split.plane.is_some(), // splitting a body or dividing faces: a plane is picked
         // a pattern repeats the body PICKED: Enter with nothing picked used to repeat the part's body without a click
-        17 | 18 => matches!(pc.sel, qymcad_ui_state::Sel::Face(..)) || qymcad_ui_state::selected_body(pc.project, pc.sel).is_some(),
-        20 => pc.datum.plane_pick.is_some(),                       // datum plane: a reference is picked by click
-        21 => pc.datum.pt_mode == 0 || pc.datum.pt_vert.is_some(), // coordinates in fields, or a vertex picked
-        22 => pc.datum.axis_mode == 1 || (pc.datum.axis_mode == 2 && pc.datum.axis_pts.len() == 2) || pc.datum.axis_ref.is_some(),
+        Some(qymcad_ui_state::PartTool::LinearPattern) | Some(qymcad_ui_state::PartTool::CircularPattern) => {
+            matches!(pc.sel, qymcad_ui_state::Sel::Face(..)) || qymcad_ui_state::selected_body(pc.project, pc.sel).is_some()
+        }
+        Some(qymcad_ui_state::PartTool::DatumPlane) => pc.datum.plane_pick.is_some(), // datum plane: a reference is picked by click
+        Some(qymcad_ui_state::PartTool::DatumPoint) => pc.datum.pt_mode == 0 || pc.datum.pt_vert.is_some(), // coordinates in fields, or a vertex picked
+        Some(qymcad_ui_state::PartTool::DatumAxis) => pc.datum.axis_mode == 1 || (pc.datum.axis_mode == 2 && pc.datum.axis_pts.len() == 2) || pc.datum.axis_ref.is_some(),
         _ => false,
     }
 }

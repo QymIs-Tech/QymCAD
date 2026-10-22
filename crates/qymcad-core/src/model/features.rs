@@ -8,9 +8,18 @@ impl Project {
         if let Some(idx) = self.mesh_index(id) {
             self.bodies[idx].mesh = m;
         } else {
-            let name = format!("name-body#{}", self.bodies.len() + 1);
+            let name = self.carried_body_name(id).unwrap_or_else(|| format!("name-body#{}", self.bodies.len() + 1));
             self.bodies.push(Body { id, name, mesh: m, faces: Vec::new(), visible: true, sheet: false });
         }
+    }
+
+    /// THE NAME A BODY CARRIES ON: a feature that takes a body and gives it back changed - a fillet, a shell, a cut -
+    /// puts its result under a new id, and to the person it is the same body. The first body of the node takes the name
+    /// of the body it consumed, the way a colour stays with the lineage root. Reported behaviour: a body renamed
+    /// "Housing" read "Body 2" after a fillet.
+    fn carried_body_name(&self, id: Id) -> Option<String> {
+        let src = self.timeline.iter().find(|n| n.kind.body() == Some(id))?.kind.consumed_body()?;
+        self.mesh_index(src).map(|i| self.bodies[i].name.clone())
     }
 
     /// Extrude the first closed contour of a sketch. Returns the id of the resulting body.

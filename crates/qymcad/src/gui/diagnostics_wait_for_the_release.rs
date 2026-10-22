@@ -16,10 +16,10 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
-        hand.sk_tool(1);
+        hand.sk_tool(qymcad_ui_state::SketchShape::Line);
         hand.click2d(10.0, 10.0).click2d(40.0, 25.0);
         hand.key(egui::Key::Escape).key(egui::Key::Escape);
-        hand.sk_tool(0);
+        hand.sk_select();
         let place = |app: &App| qymcad_ui_state::sketch_place_key(&app.project, si);
         let computed_at = |app: &App| app.cache.sk_status.borrow().as_ref().filter(|st| st.si == si).map(|st| st.place);
         hand.drag2d_begun((40.0, 25.0), (50.0, 35.0));

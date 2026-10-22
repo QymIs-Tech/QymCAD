@@ -6,6 +6,8 @@
 
 /// The name of the C++ runtime to link, chosen by target - shared with `build.rs`.
 pub mod cxx_runtime;
+/// The version of OCCT the bridge is written against - shared with `build.rs`.
+pub mod occt_version;
 pub mod door;
 pub mod ask;
 pub mod imports;

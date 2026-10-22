@@ -24,7 +24,7 @@ pub use dxf_export::export_dxf;
 pub use dxf_import::import_dxf;
 pub use formats::{Format, Lands};
 pub use gltf::{export_glb, export_glb_tree, import_gltf};
-pub use iges_drawing::{read_iges_drawing, IgesDrawing};
+pub use iges_drawing::{read_iges_drawing, IgesCount, IgesDrawing};
 pub use obj::{export_obj, import_obj};
 pub use ply::{export_ply, import_ply, import_ply_coloured};
 pub use part_file::{load_part, load_part_bytes, load_part_manifest, load_part_manifest_bytes, load_part_thumb, load_part_thumb_bytes, save_part, LoadedPart};

@@ -37,16 +37,6 @@ pub fn enter_not_ready(ctx: &egui::Context, status: &mut Notice, ask: &str) {
     }
 }
 
-/// WHAT A TOOL BUTTON ASKS FOR: its tool when the hand is free of it, the hand put down when that tool is already in
-/// it - a sketch tool back to the arrow, a command cancelled - as the button of every tool of a professional CAD does.
-pub fn take_or_drop(held: bool, ask: BarAsk) -> BarAsk {
-    match (held, ask) {
-        (false, ask) => ask,
-        (true, BarAsk::SketchTool(_)) => BarAsk::SketchSelectMode,
-        (true, _) => BarAsk::CancelAllTools(Then::Nothing),
-    }
-}
-
 pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bool {
     let img = icon_image(ui, icon, 22.0);
     let btn = egui::Button::image(img).selected(active);
@@ -231,49 +221,6 @@ pub fn comp_giz_accum(comp_giz: &CompGizmo, set: &Settings, snap: bool) -> Optio
     }
 }
 
-/// The screen anchor of the active command (where to stick the input field): for extrude and revolve
-/// it is at the tip of the arrow; for a fillet or a chamfer at the first selected edge; for a shell
-/// or a hole at the centre of the face.
-/// The screen anchor of a command popup TO THE SIDE of body `b`: the top-right corner of its
-/// projected bounding box, plus a margin. The popup used to be anchored at the CENTRE of the box, so
-/// it covered the part and what was needed could not be picked behind it. Now it grows to the right
-/// of the body rather than on top of it.
-pub fn body_side_anchor(dc: &DrawCtx, b: Id, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) -> Option<Pos2> {
-    let mi = dc.project.mesh_index(b)?;
-    let bb = dc.project.bodies[mi].mesh.bounds()?;
-    // where the body is DRAWN: through its placement in the context (an imported part stands where it was put)
-    let wt = dc.project.body_display_transform(b, current_ctx_id(dc.active_path, dc.project));
-    let mut body = Rect::NOTHING;
-    for &x in &[bb.min.x, bb.max.x] {
-        for &y in &[bb.min.y, bb.max.y] {
-            for &z in &[bb.min.z, bb.max.z] {
-                body.extend_with(Screen { cam: dc.cam, set: dc.set, rect, basis }.at(qymcad_core::feature::apply12(&wt, [x, y, z])).0);
-            }
-        }
-    }
-    if !body.is_positive() {
-        return None;
-    }
-    // BESIDE THE BODY, WHERE THE POPUP FITS CLEAR OF IT: right, left, above, below - the first place where a popup of
-    // about 240 x 140 (a caption, a field or four and a button) stands wholly inside the view and off the body. Right
-    // of the body used to be the only place, pulled back over the body when it filled the view: the popup covered the
-    // face the next hole had to be clicked on. Where no place is clear, right of it as before.
-    const W: f32 = 240.0;
-    const H: f32 = 140.0;
-    let view = rect.shrink(4.0);
-    let places = [
-        Pos2::new(body.max.x + 14.0, body.min.y.max(view.min.y + 32.0)),
-        Pos2::new(body.min.x - 14.0 - W, body.min.y.max(view.min.y + 32.0)),
-        Pos2::new(body.min.x, body.min.y - 14.0 - H),
-        Pos2::new(body.min.x, body.max.y + 14.0),
-    ];
-    let clear = |p: &Pos2| {
-        let r = Rect::from_min_size(*p + egui::vec2(10.0, -10.0), egui::vec2(W, H));
-        view.contains_rect(r) && !r.intersects(body)
-    };
-    Some(places.into_iter().find(clear).unwrap_or(places[0]))
-}
-
 /// Restore a thread operation's axis and radius from a circular edge while the feature is being EDITED
 /// (a double click). The axis is oriented into the body, because the kernel gives a rim an arbitrary normal.
 pub fn restore_thread_axis(project: &mut Project, thread: &mut ThreadParams, src: Id, edge: u32) {
@@ -360,12 +307,6 @@ pub fn doc_touched_without_undo(edits: &mut Edits, project: &Project) {
     edits.baseline.project.active_component = project.active_component;
 }
 
-/// The command did not apply: say so and record the fact, so the operation can be rolled back.
-pub fn cmd_fail(cmd_failed: &mut bool, status: &mut Notice, text: String) {
-    *status = Notice::error(text);
-    *cmd_failed = true;
-}
-
 /// Make sure the active context path is sound: it starts at the root and holds no deleted nodes.
 pub fn ensure_active_path(active_path: &mut Vec<Id>, project: &mut Project) {
     let root = project.ensure_root();
@@ -377,14 +318,6 @@ pub fn ensure_active_path(active_path: &mut Vec<Id>, project: &mut Project) {
     if active_path.is_empty() {
         *active_path = vec![root];
     }
-}
-
-/// WHAT A NUMBER FIELD IN A TOOL BAR NEEDS: the text being typed, the document it may name parameters
-/// from, and the colours. Three fields - and the field was a method of `App` only because the buffer is.
-pub struct ExprBarCtx<'a> {
-    pub bar_exprs: &'a mut std::collections::HashMap<&'static str, String>,
-    pub project: &'a qymcad_core::model::Project,
-    pub scheme: &'a SchemeUi,
 }
 
 /// THE LOOK OF A SCHEME FOR THE PANELS, whatever theme the system says it is in. egui keeps a look for its dark theme
@@ -422,7 +355,7 @@ pub fn apply_theme(scheme: &mut SchemeUi, set: &Settings, ctx: &egui::Context) {
 /// Whether there is anything to copy right now (used to enable the Edit menu items).
 pub fn clipboard_can_copy(project: &Project, sel: Sel, sel_sk: &SketchSelection, sketch_ses: SketchSession) -> bool {
     if edit_si(project, &sketch_ses).is_some() {
-        return sel_sk.items.iter().any(|(k, _)| *k == 1);
+        return sel_sk.items.iter().any(|it| it.kind == crate::ItemKind::Curve);
     }
     match sel {
         Sel::Sketch(_) => true,
@@ -432,10 +365,10 @@ pub fn clipboard_can_copy(project: &Project, sel: Sel, sel_sk: &SketchSelection,
 }
 
 /// Fillet ALL the corners of the current sketch's contour with the `sk_fillet` radius.
-pub fn fillet_all_corners(project: &Project, corner: &mut CornerInput, picking: &mut Picking, sel: Sel, sel_sk: &SketchSelection, status: &mut Notice, tool_prefs: &SketchToolPrefs) {
+pub fn fillet_all_corners(project: &Project, corner: &mut CornerInput, picking: &mut Picking, sel: Sel, sel_sk: &SketchSelection, status: &mut Notice) {
     // A COMMAND. With a selection, the popup opens on it straight away; without one, the mode becomes "click a shape".
     if let Sel::Sketch(si) = sel {
-        let only: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+        let only: Vec<Id> = sel_sk.curves().collect();
         // the tool is held either way: after Enter it waits for the next shape, as a tool of the sketch stays in hand
         *picking = Picking::FilletAll;
         if only.is_empty() {
@@ -445,7 +378,7 @@ pub fn fillet_all_corners(project: &Project, corner: &mut CornerInput, picking: 
             // this command is the same act as naming the lines with Shift, said in one word.
             corner.at = Some((si, 0, false));
             corner.pos = None; // the centre of the canvas
-            corner.buf = format!("{}", (tool_prefs.fillet * 1000.0).round() / 1000.0);
+            corner.fields.clear(); // the box makes them of the values of the bar as it opens
             corner.focus = true;
             corner.shifted = false;
             corner.set.follow(project, si, &only);
@@ -591,8 +524,8 @@ impl Sheet {
 
 pub fn needs_live_brep(d: Doing, project: &Project, set: &Settings) -> bool {
     let Doing { armed, cmd: _, gsel, joint, picking, sketch_ses, workbench } = d;
-    // chamfer (4), fillet (5) and thread (24) work by edges and by face axes
-    if matches!(armed.cmd_kind(), 4 | 5 | 24) || !gsel.edges.is_empty() {
+    // the fillet, the chamfer and the thread work by edges and by face axes
+    if armed.part_tool().is_some_and(crate::PartTool::reads_the_live_brep) || !gsel.edges.is_empty() {
         return true;
     }
     // the interference check computes the volume of the common part through the kernel - without a live B-rep no pairs can be found

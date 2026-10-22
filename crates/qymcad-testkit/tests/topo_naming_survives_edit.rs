@@ -105,8 +105,8 @@ fn wall_names_follow_sketch_entities_not_edge_order() {
     let bottom = p.sketches[si]
         .entities
         .iter()
-        .find(|e| match e.kind {
-            qymcad_core::model::EntityKind::Line { a, b } => {
+        .find(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => {
                 let (pa, pb) = (p.sketches[si].points.iter().find(|q| q.id == a), p.sketches[si].points.iter().find(|q| q.id == b));
                 matches!((pa, pb), (Some(x), Some(y)) if x.y.abs() < 1e-9 && y.y.abs() < 1e-9)
             }
@@ -151,7 +151,7 @@ fn a_hole_wall_keeps_its_name_when_the_sketch_gains_entities() {
     let (_r, _s) = qymcad_testkit::regenerate(&mut p);
     // the hole wall is looked up BY NAME: the name is derived from the recipe (1000 + sketch entity
     // id), so it can be predicted in advance — that is the whole point of topological names.
-    let circle_eid = p.sketches[si].entities.iter().find(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).map(|e| e.id).expect("circle in the sketch");
+    let circle_eid = p.sketches[si].entities.iter().find(|e| e.kind.as_circle().is_some()).map(|e| e.id).expect("circle in the sketch");
     // the name is PREDICTABLE from the recipe: "wall of feature `body` from entity `circle_eid`"
     let expect = p.names.intern_face(qymcad_core::names::GeoName::new(body, qymcad_core::names::Role::Wall, circle_eid));
     let has = |p: &Project, id: u32| p.regen_faces.get(&body).is_some_and(|fs| fs.iter().any(|f| f.id == id));
@@ -235,7 +235,7 @@ fn a_boolean_keeps_the_tool_names_instead_of_renumbering_them() {
     let tsi = p.sketch_index(tool_sid).unwrap();
     p.add_circle_entity(tsi, 20.0, 15.0, 5.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(tsi);
-    let circle_eid = p.sketches[tsi].entities.iter().find(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).map(|e| e.id).expect("circle");
+    let circle_eid = p.sketches[tsi].entities.iter().find(|e| e.kind.as_circle().is_some()).map(|e| e.id).expect("circle");
     // the tool is a SEPARATE body (finish_base_body would glue it to the base at once), then it cuts
     let tool = p.add_extrude_multi(tool_sid, Vec::new(), 20.0, qymcad_core::feature::Reach::Forward, 5.0, Vec::new());
     let cut = p.add_body_boolean(base_body, tool, 0);

@@ -43,3 +43,26 @@ fn the_rounding_of_the_vacuum_cleaner_takes_all_eight_edges() {
         assert!(!p.regen_warnings.contains_key(&node), "the rounding {node} still leaves edges out: {:?}", p.regen_warnings.get(&node));
     }
 }
+
+/// AND AFTER AN EDIT: a width of the sample 49 -> 53.9 (the dimension [80, 81] of sketch 3) moved the seam of a round post
+/// onto the end of an edge the rounding 177 picked - the seam stood where two arcs of the circle met, and the edit took one
+/// of those points away - and R8.6 left that edge out at any radius. The seam stands inside an arc.
+#[test]
+fn the_rounding_of_the_vacuum_cleaner_takes_all_eight_edges_after_an_edit() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../samples/vacuumCleaner.qcad");
+    if !std::path::Path::new(path).exists() {
+        eprintln!("PASSED OVER: the private sample vacuumCleaner.qcad is not in this tree");
+        return;
+    }
+    let mut p = qymcad_io::load_project(path).expect("the sample opens");
+    let shapes = qymcad_testkit::restore_import_shapes(&p);
+    let (_, shapes) = qymcad_testkit::regenerate_with_shapes(&mut p, shapes);
+    assert!(!p.regen_warnings.contains_key(&177), "setup: the rounding 177 leaves edges out as drawn: {:?}", p.regen_warnings.get(&177));
+    let si = p.sketch_index(3).expect("setup: the sketch of the width");
+    p.set_dim_target_value(&qymcad_core::model::DimTarget::Sketch { sketch: 3, refs: vec![80, 81] }, 53.9);
+    assert!(p.solve_sketch(si) < qymcad_core::model::SKETCH_FITS, "setup: the sketch does not fit the width 53.9");
+    p.mark_sketch_dirty(3);
+    let (report, _) = qymcad_testkit::regenerate_dirty_with_shapes(&mut p, shapes);
+    assert!(!report.errors.iter().any(|(id, _)| *id == 177), "the rounding 177 went red after the edit: {:?}", report.errors);
+    assert!(!p.regen_warnings.contains_key(&177), "the rounding 177 leaves edges out after the edit: {:?}", p.regen_warnings.get(&177));
+}

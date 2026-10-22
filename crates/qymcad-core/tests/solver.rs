@@ -406,15 +406,15 @@ fn horizontal_vertical_distance_variants() {
 
 #[test]
 fn diameter_dimension_drives_circle() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("circ");
     p.add_circle_entity(si, 0.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real); // a circle of r = 5
     let center = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .unwrap();
@@ -427,8 +427,8 @@ fn diameter_dimension_drives_circle() {
     let r = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { r, .. } => Some(r),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
             _ => None,
         })
         .unwrap();
@@ -496,7 +496,7 @@ fn angle_change_preserves_line_length() {
 
 #[test]
 fn tangent_solves_circle_radius() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("t");
     // a circle centred at (0,0) with an arbitrary r = 5, and a horizontal line along y = 8
@@ -504,8 +504,8 @@ fn tangent_solves_circle_radius() {
     let center = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .unwrap();
@@ -521,8 +521,8 @@ fn tangent_solves_circle_radius() {
     let r = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { r, .. } => Some(r),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { r, .. }) => Some(r),
             _ => None,
         })
         .unwrap();
@@ -531,7 +531,7 @@ fn tangent_solves_circle_radius() {
 
 #[test]
 fn equal_radius_links_circles() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("eq");
     p.add_circle_entity(si, 0.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real);
@@ -539,8 +539,8 @@ fn equal_radius_links_circles() {
     let centers: Vec<u64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .collect();
@@ -552,8 +552,8 @@ fn equal_radius_links_circles() {
     let radii: Vec<f64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { center, r } => Some((center, r)),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, r }) => Some((center, r)),
             _ => None,
         })
         .map(|(_, r)| r)
@@ -564,15 +564,15 @@ fn equal_radius_links_circles() {
 
 #[test]
 fn circle_radius_counts_in_dof() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("d");
     p.add_circle_entity(si, 0.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real);
     let center = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .unwrap();
@@ -591,15 +591,15 @@ fn arc_endpoints_stay_on_one_circle() {
     // An arc is a real entity: its endpoints are held intrinsically on a circle of radius R. Here the
     // endpoints start at different radii, 10 and 5; anchoring the centre and the endpoint a at r = 10 has to
     // pull the endpoint b out to radius 10 rather than leave it at 5, keeping its angle at about 90°.
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("arc");
     p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 5.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
     let (center, a, b) = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Arc { center, a, b, .. } => Some((center, a, b)),
+        .find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { center, a, b, .. }) => Some((center, a, b)),
             _ => None,
         })
         .unwrap();
@@ -620,11 +620,11 @@ fn arc_endpoints_stay_on_one_circle() {
 fn free_arc_has_five_dof() {
     // A free arc: centre (2) + a (2) + b (2) + radius (1) minus the two intrinsic constraints leaves five
     // degrees of freedom and no redundancy.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("arc");
     p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real);
-    assert!(matches!(p.sketches[si].entities[0].kind, EntityKind::Arc { .. }));
+    assert!(p.sketches[si].entities[0].kind.as_arc().is_some());
     assert_eq!(p.sketch_dof(si), (5, 0), "a free arc has five degrees of freedom");
 }
 
@@ -632,15 +632,15 @@ fn free_arc_has_five_dof() {
 fn tangent_line_to_arc_drives_arc_radius() {
     // Tangency of a line to an arc uses the live radius of the arc, exactly as for a circle, so the arc
     // adjusts its radius.
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("ta");
     p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(5.0, 0.0), Point2::new(0.0, 5.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre (0,0), r = 5
     let center = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Arc { center, .. } => Some(center),
+        .find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { center, .. }) => Some(center),
             _ => None,
         })
         .unwrap();
@@ -656,8 +656,8 @@ fn tangent_line_to_arc_drives_arc_radius() {
     let aend = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Arc { a, .. } => Some(a),
+        .find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { a, .. }) => Some(a),
             _ => None,
         })
         .unwrap();
@@ -669,15 +669,15 @@ fn tangent_line_to_arc_drives_arc_radius() {
 
 #[test]
 fn point_on_circle_constraint() {
-    use qymcad_core::model::{Constraint, EntityKind, SketchPoint};
+    use qymcad_core::model::{Constraint, SketchPoint};
     let mut p = Project::default();
     let si = p.new_sketch("poc");
     p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
     let center = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .unwrap();
@@ -694,7 +694,7 @@ fn point_on_circle_constraint() {
 
 #[test]
 fn concentric_aligns_centers() {
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("conc");
     p.add_circle_entity(si, 0.0, 0.0, 10.0, qymcad_core::feature::Purpose::Real);
@@ -702,8 +702,8 @@ fn concentric_aligns_centers() {
     let cs: Vec<u64> = p.sketches[si]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Circle { center, .. } => Some(center),
+        .filter_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center, .. }) => Some(center),
             _ => None,
         })
         .collect();
@@ -721,7 +721,7 @@ fn parametric_polygon_stays_regular() {
     // A regular polygon is a parametric group: vertices on a circumscribed circle plus equal sides. After a
     // perturbation and a solve it stays regular — all sides equal, all vertices at one radius — and the
     // circumscribed circle carries the dimension.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("hex");
     let (center, sides) = p.add_polygon_param(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
@@ -739,7 +739,7 @@ fn parametric_polygon_stays_regular() {
     };
     let mut lens = Vec::new();
     for &e in &sides {
-        if let EntityKind::Line { a, b } = p.sketches[si].entities.iter().find(|x| x.id == e).unwrap().kind {
+        if let Some(qymcad_core::model::LineParts { a, b }) = p.sketches[si].entities.iter().find(|x| x.id == e).unwrap().kind.as_line() {
             let ((ax, ay), (bx, by)) = (pt(a), pt(b));
             lens.push(((ax - bx).powi(2) + (ay - by).powi(2)).sqrt());
         }
@@ -753,13 +753,13 @@ fn parametric_polygon_stays_regular() {
     let r = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Circle { center: cc, r } if cc == center => Some(r),
+        .find_map(|e| match e.kind.as_circle() {
+            Some(qymcad_core::model::CircleParts { center: cc, r }) if cc == center => Some(r),
             _ => None,
         })
         .unwrap();
     for &e in &sides {
-        if let EntityKind::Line { a, .. } = p.sketches[si].entities.iter().find(|x| x.id == e).unwrap().kind {
+        if let Some(qymcad_core::model::LineParts { a, .. }) = p.sketches[si].entities.iter().find(|x| x.id == e).unwrap().kind.as_line() {
             let (ax, ay) = pt(a);
             let dr = ((ax - cx).powi(2) + (ay - cy).powi(2)).sqrt();
             assert!((dr - r).abs() < 0.05, "the vertex is on the circumscribed circle R={r}, dr={dr}");
@@ -773,7 +773,7 @@ fn parametric_ellipse_axes_perpendicular_and_sized() {
     // An ellipse is a real entity: a centre plus the endpoints of its semi-axes, which an implicit constraint
     // keeps perpendicular. A free ellipse has five degrees of freedom, and editing the semi-axes preserves both
     // the perpendicularity and the rotation.
-    use qymcad_core::model::EntityKind;
+
     let mut p = Project::default();
     let si = p.new_sketch("ell");
     // an ellipse rotated by 30°, with semi-axes of 10 and 4
@@ -783,8 +783,8 @@ fn parametric_ellipse_axes_perpendicular_and_sized() {
     let (ma, mi) = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Ellipse { c, ma, mi } if c == center => Some((ma, mi)),
+        .find_map(|e| match e.kind.as_ellipse() {
+            Some(qymcad_core::model::EllipseParts { c, ma, mi, .. }) if c == center => Some((ma, mi)),
             _ => None,
         })
         .unwrap();
@@ -866,15 +866,15 @@ fn arc_length_dimension_drives_arc() {
     // An arc length dimension. A quarter arc of r = 10 is about 15.7 long. Anchoring the centre and the
     // endpoint a, which sets R = 10 and the start angle, and asking for a length of 10 gives a swept angle of
     // θ = L/R = 1 rad, and the endpoint b moves accordingly.
-    use qymcad_core::model::{Constraint, EntityKind};
+    use qymcad_core::model::Constraint;
     let mut p = Project::default();
     let si = p.new_sketch("al");
     p.add_arc_entity(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(0.0, 10.0), qymcad_core::feature::Winding::Ccw, qymcad_core::feature::Purpose::Real); // centre (0,0), a (10,0), b (0,10), ccw
     let (c, a, b) = p.sketches[si]
         .entities
         .iter()
-        .find_map(|e| match e.kind {
-            EntityKind::Arc { center, a, b, .. } => Some((center, a, b)),
+        .find_map(|e| match e.kind.as_arc() {
+            Some(qymcad_core::model::ArcParts { center, a, b, .. }) => Some((center, a, b)),
             _ => None,
         })
         .unwrap();

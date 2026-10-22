@@ -11,7 +11,10 @@ menu IS the directory.
    string by them.
 3. Be sure to translate `language-name`: that is how the language is named in the menu, in the language
    itself ("Deutsch", not "German").
-4. Build the program - the catalogue is compiled into the binary.
+4. Translate `macos/README.txt` and rename it into your language (`LÉAME.txt`, `LIESMICH.txt`): it is the note
+   a mac user reads before the first launch, and the disk image carries it under that name. Keep `{ $machine }`
+   as it is - the build writes the processor there - and the system's button names in English in brackets.
+5. Build the program - the catalogue is compiled into the binary.
 
 ## What you may leave untranslated
 
@@ -76,3 +79,4 @@ window of a program.
 |---|---|
 | `main.ftl` | the CAD interface: menus, windows, tools, messages |
 | `errors.ftl` | what the program answers when an operation refuses |
+| `macos/<name>.txt` | the note in the macOS disk image, named in the language itself |

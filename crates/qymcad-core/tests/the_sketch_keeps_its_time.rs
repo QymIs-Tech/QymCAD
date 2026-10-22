@@ -363,8 +363,8 @@ fn a_contradiction_in_a_big_part_is_solved_without_a_run_for_nothing() {
     let sides: Vec<(u64, u64)> = p.sketches[0]
         .entities
         .iter()
-        .filter_map(|e| match e.kind {
-            qymcad_core::model::EntityKind::Line { a, b } => Some((a, b)),
+        .filter_map(|e| match e.kind.as_line() {
+            Some(qymcad_core::model::LineParts { a, b }) => Some((a, b)),
             _ => None,
         })
         .take(2)

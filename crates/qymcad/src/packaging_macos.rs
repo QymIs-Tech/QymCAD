@@ -6,10 +6,14 @@
 //! `grep` matched no library naming the build machine, `grep` returns 1 when it matches nothing, and
 //! `set -o pipefail` turned that into the end of the script.
 //!
-//! `install_name_tool` and `otool` exist only on macOS. They are replaced by two stubs on PATH - one
-//! records what it was asked to do and remembers which files it rewrote, the other prints a dependency
-//! list in the real format and answers according to those marks. Everything the mistakes were actually in
-//! - the copying, the loops, the sentinel, the archive - is ordinary shell and runs anywhere.
+//! `install_name_tool`, `otool` and `codesign` exist only on macOS, `rcodesign` and `dmgbuild` only where they are
+//! installed.
+//! They are replaced by stubs on PATH - one records what it was asked to do and remembers which files it
+//! rewrote, another prints a dependency list in the real format and answers according to those marks, the
+//! signing two record their calls and seal the bundle, `codesign --verify` answers by that seal, and `dmgbuild`
+//! records every file and link in the folder it was given and writes the image file.
+//! Everything the mistakes were actually in - the copying, the loops, the sentinel, the order of signing,
+//! the disk image's folder - is ordinary shell and runs anywhere.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -28,10 +32,58 @@ enum Deps {
     Stubborn,
 }
 
+/// What signing the bundle does to it, as `codesign --verify` sees it afterwards.
+#[derive(Clone, Copy, PartialEq)]
+enum Seal {
+    /// Signing the `.app` seals it, and the check passes - what the real tools do.
+    Holds,
+    /// The `.app` is signed and still does not verify - the state the CI package was shipped in.
+    Breaks,
+}
+
+/// Who signs the bundle.
+#[derive(Clone, Copy, PartialEq)]
+enum Signer {
+    /// No certificate given: `codesign`, ad hoc.
+    AdHoc,
+    /// A .p12 and its password file given: `rcodesign`.
+    Certificate,
+}
+
+/// One language of the program: its folder under `i18n/` and the notes of the disk image found in its `macos/`.
+struct Language {
+    code: String,
+    notes: Vec<PathBuf>,
+}
+
+/// The repository's `i18n/`.
+fn repo_i18n() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../i18n")
+}
+
+/// Every language under an `i18n/` folder - each folder in it is one - with its notes, sorted by code.
+fn languages(i18n: &Path) -> Vec<Language> {
+    let mut found: Vec<Language> = fs::read_dir(i18n)
+        .expect("i18n/ is readable")
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| {
+            let notes = fs::read_dir(e.path().join("macos")).map(|d| d.flatten().map(|n| n.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect()).unwrap_or_default();
+            Language { code: e.file_name().to_string_lossy().into_owned(), notes }
+        })
+        .collect();
+    found.sort_by(|a, b| a.code.cmp(&b.code));
+    found
+}
+
+fn file_name(p: &Path) -> String {
+    p.file_name().expect("a file name").to_string_lossy().into_owned()
+}
+
 /// A tree that looks enough like the repository for the script: the binary, the icon, the licence, the
 /// notices, a manifest with a version, and an OCCT installation of two modules under three names each -
 /// `libTKernel.dylib` -> `libTKernel.7.8.dylib` -> `libTKernel.7.8.1.dylib`, exactly as OCCT installs.
-fn sandbox(case: &str, deps: Deps) -> PathBuf {
+fn sandbox(case: &str, deps: Deps, seal: Seal) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("qym_macos_bundle_{case}"));
     let _ = fs::remove_dir_all(&dir);
     let write = |rel: &str, text: &str| {
@@ -48,8 +100,19 @@ fn sandbox(case: &str, deps: Deps) -> PathBuf {
     write("assets/icons/macos/qymcad.icns", "icns\n");
     executable(&write("target/release/qymcad", "the program\n"));
 
+    // The notes of the image as the repository holds them, one per language: the script reads `i18n/` from the
+    // folder it runs in, and a probe that wrote its own texts would test those instead of the shipped ones.
+    // A language without a note comes over as its bare folder, so the script meets it as it would in the tree.
+    for language in languages(&repo_i18n()) {
+        fs::create_dir_all(dir.join("i18n").join(&language.code)).expect("the sandbox is writable");
+        for note in &language.notes {
+            let text = fs::read_to_string(note).expect("a note is readable");
+            write(&format!("i18n/{}/macos/{}", language.code, file_name(note)), &text);
+        }
+    }
+
     // As OCCT installs them: one real file per module and two links to it. The chain matters - a `cp` that
-    // follows links writes three full copies of every module, which is how an 80 MB archive was measured.
+    // follows links writes three full copies of every module, which is how an 80 MB package was measured.
     for module in ["libTKernel", "libTKMath"] {
         write(&format!("occt/lib/{module}.7.8.1.dylib"), "a library\n");
         std::os::unix::fs::symlink(format!("{module}.7.8.1.dylib"), dir.join(format!("occt/lib/{module}.7.8.dylib"))).expect("the link is made");
@@ -91,48 +154,127 @@ fn sandbox(case: &str, deps: Deps) -> PathBuf {
             before = before
         ),
     ));
+
+    // THE SIGNING TOOLS share one log and one seal. Signing the `.app` itself is what seals it, as with the
+    // real tools; `codesign --verify` passes only on a sealed bundle and otherwise says what the CI package
+    // said. Signing a library leaves the seal alone - only the order is checked, from the log.
+    let (signs, sealed) = (dir.join("signs.txt"), dir.join("sealed"));
+    let seals = if seal == Seal::Holds { format!(": > {}", sealed.display()) } else { ":".to_string() };
+    executable(&write(
+        "bin/codesign",
+        &format!(
+            "#!/usr/bin/env bash
+printf 'codesign %s\\n' \"$*\" >> {signs}
+\
+             case \" $* \" in *' --verify '*)
+  [ -e {sealed} ] && exit 0
+  \
+             echo 'QymCAD.app: code has no resources but signature indicates they must be present' >&2
+  exit 1 ;;
+esac
+\
+             case \"${{@: -1}}\" in *.app) {seals} ;; esac
+exit 0
+",
+            signs = signs.display(),
+            sealed = sealed.display(),
+            seals = seals
+        ),
+    ));
+    executable(&write(
+        "bin/rcodesign",
+        &format!(
+            "#!/usr/bin/env bash
+printf 'rcodesign %s\\n' \"$*\" >> {signs}
+case \"${{@: -1}}\" in *.app) {seals} ;; esac
+exit 0
+",
+            signs = signs.display(),
+            seals = seals
+        ),
+    ));
+
+    // `dmgbuild -s SETTINGS -D stage=DIR -D art=DIR VOLUME FILE` lays the staged folder out by the settings
+    // file and writes the image. The stub writes down what the staged folder held at the moment of the call -
+    // the script removes it afterwards - refuses a settings file that is not there, and logs the call beside
+    // the signing ones, so its place after the check is visible.
+    executable(&write(
+        "bin/dmgbuild",
+        &format!(
+            "#!/usr/bin/env bash
+printf 'dmgbuild %s\\n' \"$*\" >> {signs}
+\
+             settings=; stage=; prev=
+for a in \"$@\"; do
+  [ \"$prev\" = -s ] && settings=$a
+  \
+             [ \"$prev\" = -D ] && case \"$a\" in stage=*) stage=${{a#stage=}} ;; esac
+  prev=$a
+done
+\
+             [ -f \"$settings\" ] || {{ echo \"no settings file: $settings\" >&2; exit 1; }}
+\
+             (cd \"$stage\" && ls -1) > {held}
+\
+             (cd \"$stage\" && find . -type f | sed 's|^\\./|f |'; find . -type l | sed 's|^\\./|l |') > {tree}
+: > \"${{@: -1}}\"
+exit 0
+",
+            signs = signs.display(),
+            held = dir.join("dmg-held.txt").display(),
+            tree = dir.join("dmg-tree.txt").display()
+        ),
+    ));
     dir
 }
 
 /// Run the real script over the sandbox, packing for Apple Silicon. HOME is moved inside it as well: the
 /// script asks git to trust the directory it is in, and that must not reach the settings of whoever runs
 /// the tests.
-fn bundle(dir: &Path) -> Output {
-    bundle_for(dir, "arm64")
+fn bundle(dir: &Path, signer: Signer) -> Output {
+    bundle_for(dir, "arm64", signer)
 }
 
-/// The same, for a named processor. It is always named: left to `uname -m` the archive would be called
+/// The same, for a named processor. It is always named: left to `uname -m` the image would be called
 /// after whatever machine runs the tests.
-fn bundle_for(dir: &Path, arch: &str) -> Output {
+fn bundle_for(dir: &Path, arch: &str, signer: Signer) -> Output {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/bundle.sh");
     let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap_or_default());
-    Command::new("bash")
-        .arg(&script)
+    let mut run = Command::new("bash");
+    run.arg(&script)
         .current_dir(dir)
         .env("PATH", path)
         .env("HOME", dir)
         .env("OCCT_ROOT", dir.join("occt"))
         .env("MACOS_ARCH", arch)
         .env_remove("QYMCAD_VERSION")
-        .output()
-        .expect("bash runs the packaging script")
+        .env_remove("MACOS_SIGN_P12")
+        .env_remove("MACOS_SIGN_P12_PASSWORD_FILE");
+    if signer == Signer::Certificate {
+        run.env("MACOS_SIGN_P12", dir.join("signing.p12")).env("MACOS_SIGN_P12_PASSWORD_FILE", dir.join("signing.pw"));
+    }
+    run.output().expect("bash runs the packaging script")
+}
+
+/// What the signing tools were asked to do, one call per line, in order.
+fn signs(dir: &Path) -> Vec<String> {
+    fs::read_to_string(dir.join("signs.txt")).unwrap_or_default().lines().map(str::to_string).collect()
 }
 
 fn said(out: &Output) -> String {
     format!("--- stdout ---\n{}--- stderr ---\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
 }
 
-/// What the archive holds, one entry per line.
-fn archive(dir: &Path) -> String {
-    listing(dir, "-Z1")
+/// The disk image the script makes.
+fn disk_image(dir: &Path) -> PathBuf {
+    dir.join("dist/qymcad-0.1.0-macos-arm64.dmg")
 }
 
-/// The same, in the long form where the first column tells a link from a file.
-fn listing(dir: &Path, form: &str) -> String {
-    let zip = dir.join("dist/qymcad-0.1.0-macos-arm64.zip");
-    assert!(zip.exists(), "the archive was not made: {}", zip.display());
-    let out = Command::new("unzip").arg(form).arg(&zip).output().expect("unzip reads the archive");
-    String::from_utf8_lossy(&out.stdout).into_owned()
+/// What went into the disk image, one entry per line: `f QymCAD.app/...` for a file, `l QymCAD.app/...` for a
+/// link, as the stub `dmgbuild` found the folder it was given at the moment of the call.
+fn image(dir: &Path) -> String {
+    assert!(disk_image(dir).exists(), "the disk image was not made: {}", disk_image(dir).display());
+    fs::read_to_string(dir.join("dmg-tree.txt")).expect("dmgbuild was called")
 }
 
 /// THE CASE THAT KILLED THE SECOND RUN. OCCT built by CMake announces itself through `@rpath` already, so
@@ -140,23 +282,21 @@ fn listing(dir: &Path, form: &str) -> String {
 /// returning 1, and under `set -o pipefail` that ended the script in silence, six minutes in.
 #[test]
 fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
-    let dir = sandbox("rpath", Deps::Rpath);
-    let out = bundle(&dir);
+    let dir = sandbox("rpath", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused although every path was already @rpath:\n{}", said(&out));
 
-    let held = archive(&dir);
+    let held = image(&dir);
     for entry in [
         "QymCAD.app/Contents/MacOS/qymcad",
         "QymCAD.app/Contents/Info.plist",
         "QymCAD.app/Contents/Resources/qymcad.icns",
         "QymCAD.app/Contents/Resources/LICENSE.txt",
         "QymCAD.app/Contents/Resources/THIRD-PARTY-NOTICES.md",
-        "README.txt",
+        "README/README.txt",
     ] {
-        assert!(held.contains(entry), "the archive does not hold {entry}:\n{held}");
+        assert!(held.contains(entry), "the image does not hold {entry}:\n{held}");
     }
-    // Both notes travel, in both languages; the second is named in an alphabet this file does not spell out.
-    assert_eq!(held.lines().filter(|l| l.ends_with(".txt") && !l.contains("Contents/")).count(), 2, "both notes must be in the archive:\n{held}");
 
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(calls.contains("-add_rpath @executable_path/../Frameworks"), "the bundle was not pointed at its own Frameworks:\n{calls}");
@@ -168,14 +308,14 @@ fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
 /// 33 and 35 for the other two systems. Only the name written into the dependencies is ever loaded.
 #[test]
 fn every_library_travels_once_and_its_other_names_are_links() {
-    let dir = sandbox("weight", Deps::Rpath);
-    let out = bundle(&dir);
+    let dir = sandbox("weight", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains(">>> libraries: 2, links to them: 4"), "the two modules were not counted apart from their links:\n{}", said(&out));
 
-    let long = listing(&dir, "-Z");
-    let links = long.lines().filter(|l| l.starts_with('l') && l.contains(".dylib")).count();
-    let files = long.lines().filter(|l| l.starts_with('-') && l.contains(".dylib")).count();
+    let long = image(&dir);
+    let links = long.lines().filter(|l| l.starts_with("l ") && l.contains(".dylib")).count();
+    let files = long.lines().filter(|l| l.starts_with("f ") && l.contains(".dylib")).count();
     assert_eq!((files, links), (2, 4), "each module must travel once, its other two names as links:\n{long}");
 
     // The id is set on the file, never through a link: writing through one would leave the real file
@@ -187,41 +327,41 @@ fn every_library_travels_once_and_its_other_names_are_links() {
 /// The case the script was written for: paths name the build machine and are rewritten to `@rpath`.
 #[test]
 fn paths_naming_the_build_machine_are_rewritten() {
-    let dir = sandbox("rewritten", Deps::BuildMachine);
-    let out = bundle(&dir);
+    let dir = sandbox("rewritten", Deps::BuildMachine, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused although every path was rewritten:\n{}", said(&out));
 
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(calls.contains("-change ") && calls.contains(" @rpath/libTKernel.7.8.dylib "), "no path was rewritten to @rpath:\n{calls}");
     assert!(calls.contains("MacOS/qymcad"), "the program itself was left naming the build machine:\n{calls}");
-    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
+    assert!(image(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
 }
 
 /// THE SENTINEL MUST STILL FIRE. One path left naming the build machine means a program that starts here
 /// and nowhere else, and says so only on somebody else's computer - so that must fail the build, loudly.
 #[test]
 fn a_path_left_naming_the_build_machine_fails_the_bundle() {
-    let dir = sandbox("stubborn", Deps::Stubborn);
-    let out = bundle(&dir);
+    let dir = sandbox("stubborn", Deps::Stubborn, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
     assert!(!out.status.success(), "a library still named the build machine and the script was happy:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("still points at the build machine"), "the refusal did not say what was wrong:\n{}", said(&out));
-    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that cannot start");
+    assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that cannot start");
 }
 
 /// TWO PACKAGES GO UP SIDE BY SIDE, and the file name is all a person has to choose between them. The
 /// Intel build must be named for Intel and say so in both notes; a note still promising Apple Silicon
-/// inside an Intel archive sends its reader to the wrong download.
+/// inside an Intel image sends its reader to the wrong download.
 #[test]
 fn an_intel_build_is_named_and_described_as_one() {
-    let dir = sandbox("intel", Deps::Rpath);
-    let out = bundle_for(&dir, "x86_64");
+    let dir = sandbox("intel", Deps::Rpath, Seal::Holds);
+    let out = bundle_for(&dir, "x86_64", Signer::AdHoc);
     assert!(out.status.success(), "the script refused an Intel build:\n{}", said(&out));
-    assert!(dir.join("dist/qymcad-0.1.0-macos-x86_64.zip").exists(), "the Intel archive is not named for its processor:\n{}", said(&out));
-    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an Intel build was packed under the Apple Silicon name");
+    assert!(dir.join("dist/qymcad-0.1.0-macos-x86_64.dmg").exists(), "the Intel disk image is not named for its processor:\n{}", said(&out));
+    assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.dmg").exists(), "the Intel build made its disk image under the Apple Silicon name");
 
-    // every note beside the archive: the English one and the Russian one
-    let notes: Vec<std::path::PathBuf> = fs::read_dir(dir.join("dist")).expect("the dist folder").flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
-    assert_eq!(notes.len(), 2, "the Intel build carries {} notes, not the two: {notes:?}", notes.len());
+    // every note the image is made with, one per language of the program
+    let notes = written_notes(&dir);
+    assert_eq!(notes.len(), languages(&repo_i18n()).len(), "the Intel build carries {} notes, not one per language: {notes:?}", notes.len());
     for note in notes {
         let text = fs::read_to_string(&note).expect("the note is written");
         assert!(text.contains("Intel") && !text.contains("Apple Silicon"), "{} does not describe an Intel build:\n{text}", note.display());
@@ -231,8 +371,425 @@ fn an_intel_build_is_named_and_described_as_one() {
 /// A processor the script does not know is refused, not packed under a name nobody will look for.
 #[test]
 fn an_unknown_processor_is_refused() {
-    let dir = sandbox("unknown_arch", Deps::Rpath);
-    let out = bundle_for(&dir, "ppc");
+    let dir = sandbox("unknown_arch", Deps::Rpath, Seal::Holds);
+    let out = bundle_for(&dir, "ppc", Signer::AdHoc);
     assert!(!out.status.success(), "the script packed a build for a processor it does not know:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("unknown macOS architecture"), "the refusal did not say what was wrong:\n{}", said(&out));
+}
+
+/// THE BUNDLE IS SEALED, INSIDE OUT. The CI package carried only the linker's signature on the program and
+/// none on the bundle, and macOS called the download damaged. Each library is signed before the bundle,
+/// because sealing the bundle records the signatures of the code inside it; links are not signed twice
+/// through their other names; the bundle is verified before it is packed.
+#[test]
+fn the_bundle_is_signed_after_its_libraries_and_verified() {
+    let dir = sandbox("signed", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let calls = signs(&dir);
+    let signing = |c: &&String| c.starts_with("codesign ") && c.contains("--sign -");
+    let libraries: Vec<&str> = calls.iter().filter(signing).flat_map(|c| c.split_whitespace()).filter(|w| w.ends_with(".dylib")).collect();
+    assert_eq!(libraries.len(), 2, "each module must be signed once, through its file and not its links:\n{calls:#?}");
+    assert!(libraries.iter().all(|l| l.ends_with(".7.8.1.dylib")), "a link was signed instead of the file:\n{calls:#?}");
+
+    let at = |test: &dyn Fn(&String) -> bool| calls.iter().position(test);
+    let lib = at(&|c| signing(&c) && c.contains(".dylib"));
+    let app = at(&|c| signing(&c) && c.ends_with("QymCAD.app"));
+    let verify = at(&|c| c.starts_with("codesign --verify") && c.ends_with("QymCAD.app"));
+    assert!(matches!((lib, app, verify), (Some(l), Some(a), Some(v)) if l < a && a < v), "the libraries, then the bundle, then the check - in that order:\n{calls:#?}");
+    assert!(image(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
+}
+
+/// A CERTIFICATE SIGNS THROUGH `rcodesign`. `codesign` refuses a self-signed certificate the system does not
+/// trust, so with a .p12 given the whole bundle goes to `rcodesign`, with the file and its password file.
+#[test]
+fn a_certificate_signs_the_bundle_through_rcodesign() {
+    let dir = sandbox("certificate", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::Certificate);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let calls = signs(&dir);
+    let p12 = dir.join("signing.p12");
+    let pw = dir.join("signing.pw");
+    let wanted = format!("--p12-file {} --p12-password-file {}", p12.display(), pw.display());
+    assert!(calls.iter().any(|c| c.starts_with("rcodesign sign ") && c.contains(&wanted) && c.ends_with("QymCAD.app")), "the bundle was not signed with the certificate:\n{calls:#?}");
+    assert!(!calls.iter().any(|c| c.contains("--sign")), "codesign signed besides the certificate:\n{calls:#?}");
+    assert!(calls.iter().any(|c| c.starts_with("codesign --verify")), "the signed bundle was not verified:\n{calls:#?}");
+}
+
+/// A BUNDLE THAT DOES NOT VERIFY IS NOT SHIPPED. That is the "damaged" message, found by whoever downloads
+/// the package; the build must stop on it instead.
+#[test]
+fn a_bundle_that_does_not_verify_is_not_packed() {
+    let dir = sandbox("broken", Deps::Rpath, Seal::Breaks);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(!out.status.success(), "a bundle that does not verify was let through:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("code has no resources"), "the refusal did not say what was wrong:\n{}", said(&out));
+    assert!(!disk_image(&dir).exists(), "a disk image was made out of a bundle that does not verify");
+}
+
+/// THE DISK IMAGE IS THE ONE PACKAGE. It holds the program and the folder of notes, laid out by the settings file
+/// beside the script, and it is made from the bundle only after that bundle verified. The staging folder is
+/// gone afterwards, and no zip of the same bundle lies beside the image: `dist/` holds the image, the bundle and
+/// the notes, nothing half-made and nothing to choose between.
+#[test]
+fn a_disk_image_holds_the_verified_bundle_and_the_notes() {
+    let dir = sandbox("dmg", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+    assert!(disk_image(&dir).exists(), "the disk image was not made:\n{}", said(&out));
+    let zips: Vec<String> = fs::read_dir(dir.join("dist")).expect("dist/ is readable").flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".zip")).collect();
+    assert!(zips.is_empty(), "a zip was packed beside the image: {zips:?}");
+
+    let held = fs::read_to_string(dir.join("dmg-held.txt")).expect("dmgbuild was called");
+    assert_eq!(held.lines().collect::<Vec<_>>(), ["QymCAD.app", "README"], "the image's folder holds the program and the folder of notes, nothing else:\n{held}");
+
+    let calls = signs(&dir);
+    let verify = calls.iter().position(|c| c.starts_with("codesign --verify"));
+    let image = calls.iter().position(|c| c.starts_with("dmgbuild -s ") && c.contains("/dmg/settings.py") && c.ends_with(" QymCAD dist/qymcad-0.1.0-macos-arm64.dmg"));
+    assert!(matches!((verify, image), (Some(v), Some(i)) if v < i), "the image must be made from the bundle after it verified:\n{calls:#?}");
+    assert!(!dir.join("dist/dmg").exists(), "the staging folder was left in dist/");
+}
+
+/// THE FIRST LAUNCH GOES THROUGH SYSTEM SETTINGS. With a signature that verifies, macOS refuses the first
+/// launch and then offers "Open Anyway" under Privacy & Security; the notes lead there. Reported behaviour:
+/// the notes sent the reader to Terminal and `xattr -cr`, the way round a broken signature, now outdated.
+#[test]
+fn the_notes_lead_to_open_anyway_not_to_a_terminal() {
+    let dir = sandbox("notes", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let en = fs::read_to_string(dir.join("dist/README/README.txt")).expect("the English note is written");
+    for step in ["Privacy & Security", "Open Anyway", "Applications"] {
+        assert!(en.contains(step), "the English note does not name {step:?}:\n{en}");
+    }
+    // The other three are named and written in alphabets this file does not spell out, so each is held to the
+    // English one's shape: the same four steps, Touch ID, the menu path written with `->`, and the system's
+    // button names in English beside its own words - the note's language says nothing of the system's.
+    let notes: Vec<String> = written_notes(&dir).iter().map(|p| fs::read_to_string(p).expect("a note is readable")).collect();
+    assert_eq!(notes.len(), languages(&repo_i18n()).len(), "a note per language of the program");
+    for text in &notes {
+        for step in ["  1. ", "  2. ", "  3. ", "  4. ", "Touch ID", " -> ", "Privacy & Security", "Open Anyway"] {
+            assert!(text.contains(step), "a note lacks {step:?}:\n{text}");
+        }
+        assert!(!text.contains("xattr") && !text.contains("Terminal"), "a note still sends the reader to a terminal:\n{text}");
+        // The disk image is the one package, so the note installs from it and names no archive.
+        assert!(text.contains("(.dmg)") && !text.contains(".zip"), "a note does not install from the disk image alone:\n{text}");
+        assert!(text.contains("Apple Silicon") && !text.contains("{ $"), "a note was written with its processor left unsaid:\n{text}");
+    }
+}
+
+/// The notes the script wrote into `dist/README/`, the folder that goes into the image.
+fn written_notes(dir: &Path) -> Vec<PathBuf> {
+    fs::read_dir(dir.join("dist/README")).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default()
+}
+
+/// EVERY LANGUAGE OF THE PROGRAM CARRIES ITS NOTE. The first launch is refused on every mac, and a person who
+/// reads only their own language must find the steps in it: each folder of `i18n/` holds one note for the disk
+/// image in its `macos/`, named in its own language, with the processor left to the script. No two languages
+/// share a name - the notes lie side by side in one folder.
+#[test]
+fn every_language_has_a_note_for_the_disk_image() {
+    let found = languages(&repo_i18n());
+    assert!(found.len() >= 4, "i18n/ holds {} languages", found.len());
+    let mut names = Vec::new();
+    for language in &found {
+        assert_eq!(language.notes.len(), 1, "i18n/{}/macos/ must hold one note, it holds {:?}", language.code, language.notes);
+        let text = fs::read_to_string(&language.notes[0]).expect("the note is readable");
+        assert!(text.contains("{ $machine }"), "i18n/{}/macos/ does not name the processor through {{ $machine }}:\n{text}", language.code);
+        names.push(file_name(&language.notes[0]));
+    }
+    let mut unique = names.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), names.len(), "two languages name their notes alike: {names:?}");
+}
+
+/// THE FOLDER OF NOTES HOLDS ONE PER LANGUAGE, named as the language names it. The window shows one folder
+/// however many languages there are; what is inside it is what `i18n/` holds, note for note.
+#[test]
+fn the_readme_folder_holds_a_note_per_language() {
+    let dir = sandbox("readme", Deps::Rpath, Seal::Holds);
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    let mut held: Vec<String> = image(&dir).lines().filter_map(|l| l.strip_prefix("f README/")).map(str::to_string).collect();
+    held.sort();
+    let mut wanted: Vec<String> = languages(&repo_i18n()).iter().flat_map(|l| l.notes.iter().map(|n| file_name(n))).collect();
+    wanted.sort();
+    assert_eq!(held, wanted, "the README folder of the image is not the notes of i18n/");
+}
+
+/// A NEW LANGUAGE BRINGS ITS NOTE BY ITSELF. A translation that adds `i18n/<code>/macos/<name>.txt` finds its note
+/// in the image with the processor written in, and nothing in the script, the layout or the picture is edited.
+#[test]
+fn a_language_added_to_i18n_brings_its_note() {
+    let dir = sandbox("new_language", Deps::Rpath, Seal::Holds);
+    let note = "QymCAD - macOS ({ $machine }).\n\nAbra la imagen de disco (.dmg).\n";
+    fs::create_dir_all(dir.join("i18n/es/macos")).expect("the sandbox is writable");
+    fs::write(dir.join("i18n/es/macos/LÉAME.txt"), note).expect("the note is written");
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+
+    assert!(image(&dir).lines().any(|l| l == "f README/LÉAME.txt"), "the new language's note is not in the image:\n{}", image(&dir));
+    let text = fs::read_to_string(dir.join("dist/README/LÉAME.txt")).expect("the new note is written");
+    assert_eq!(text, "QymCAD - macOS (Apple Silicon).\n\nAbra la imagen de disco (.dmg).\n", "the note did not come over as written, with the processor in");
+}
+
+/// A LANGUAGE WITHOUT ITS NOTE STOPS THE BUILD, in words. A release with a language whose reader finds nothing
+/// to read is the one the notes exist to prevent; so is a language with two, of which the window shows both.
+#[test]
+fn a_language_without_one_note_is_refused() {
+    let dir = sandbox("no_note", Deps::Rpath, Seal::Holds);
+    fs::create_dir_all(dir.join("i18n/es")).expect("the sandbox is writable");
+    let out = bundle(&dir, Signer::AdHoc);
+    assert!(!out.status.success(), "a language without a note was packed:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("i18n/es/"), "the refusal did not name the language:\n{}", said(&out));
+    assert!(!disk_image(&dir).exists(), "a disk image was made with a language left unexplained");
+}
+
+/// How `make-signing-cert.sh` gets the password of the .p12.
+#[derive(Clone, Copy, PartialEq)]
+enum Password {
+    /// `P12_PASSWORD` set in the environment, the way a script calling it would.
+    Environment,
+    /// Typed at the two prompts, the way a person runs it.
+    Typed,
+}
+
+/// What `openssl pkcs12 -export` does.
+#[derive(Clone, Copy, PartialEq)]
+enum Export {
+    /// The real tool writes the .p12.
+    Works,
+    /// A stub in front of the real tool refuses, after the key has been written by `openssl req`.
+    Fails,
+}
+
+/// A place to run `make-signing-cert.sh`: `tree/` is a git working tree standing for the repository, `home/` the
+/// person's home folder, `bin/` stubs for the two clipboard tools - the script copies the base64 to the clipboard
+/// when it finds one, and a probe must not leave that in the clipboard of whoever runs the tests.
+fn cert_sandbox(case: &str, export: Export) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("qym_macos_cert_{case}"));
+    let _ = fs::remove_dir_all(&dir);
+    for sub in ["tree", "home", "bin"] {
+        fs::create_dir_all(dir.join(sub)).expect("the sandbox is writable");
+    }
+    let git = Command::new("git").args(["init", "-q"]).current_dir(dir.join("tree")).env("HOME", dir.join("home")).output().expect("git runs");
+    assert!(git.status.success(), "git init failed:\n{}", said(&git));
+
+    let stub = |name: &str, text: &str| {
+        let p = dir.join("bin").join(name);
+        fs::write(&p, text).expect("the stub is written");
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("the bit is set");
+    };
+    stub("xclip", "#!/usr/bin/env bash\ncat > /dev/null\n");
+    stub("pbcopy", "#!/usr/bin/env bash\ncat > /dev/null\n");
+    if export == Export::Fails {
+        let which = Command::new("bash").args(["-c", "command -v openssl"]).output().expect("bash runs");
+        let real = String::from_utf8_lossy(&which.stdout).trim().to_string();
+        assert!(!real.is_empty(), "openssl is not installed");
+        stub("openssl", &format!("#!/usr/bin/env bash\nif [ \"$1 $2\" = 'pkcs12 -export' ]; then echo 'stub: the export fails' >&2; exit 1; fi\nexec {real} \"$@\"\n"));
+    }
+    dir
+}
+
+/// Run the real `make-signing-cert.sh` from the sandbox's working tree, as its instructions say to run it from the
+/// repository's root. `out` is `OUT`, left unset when `None`.
+fn make_cert(dir: &Path, out: Option<&Path>, password: Password) -> Output {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/make-signing-cert.sh");
+    let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap_or_default());
+    let mut run = Command::new("bash");
+    run.arg(&script)
+        .current_dir(dir.join("tree"))
+        .env("PATH", path)
+        .env("HOME", dir.join("home"))
+        .env_remove("OUT")
+        .env_remove("P12_PASSWORD")
+        .env_remove("CN_NAME")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    if let Some(out) = out {
+        run.env("OUT", out);
+    }
+    if password == Password::Environment {
+        run.env("P12_PASSWORD", "a probe's password");
+    }
+    let mut child = run.spawn().expect("bash runs the certificate script");
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().expect("the script's input");
+        if password == Password::Typed {
+            stdin.write_all(b"a probe's password\na probe's password\n").expect("the password is typed");
+        }
+    }
+    child.wait_with_output().expect("the certificate script finishes")
+}
+
+/// The names of the files `make-signing-cert.sh` leaves in a folder, sorted.
+fn cert_files(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> =
+        fs::read_dir(dir).map(|entries| entries.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.starts_with("qymcad-signing")).collect()).unwrap_or_default();
+    names.sort();
+    names
+}
+
+/// A KEY WRITTEN INTO THE REPOSITORY IS ONE `git add` AWAY FROM BEING PUBLISHED. Asked to write into a folder of a
+/// git working tree, the script refuses in words and writes nothing - not the certificate, not the key.
+#[test]
+fn a_certificate_is_not_written_into_a_working_tree() {
+    let dir = cert_sandbox("into_tree", Export::Works);
+    let tree = dir.join("tree");
+    let out = make_cert(&dir, Some(&tree), Password::Environment);
+    assert!(!out.status.success(), "the certificate was written into a git working tree:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("inside a git working tree"), "the refusal did not say what was wrong:\n{}", said(&out));
+    assert_eq!(cert_files(&tree), Vec::<String>::new(), "files were left in the working tree:\n{}", said(&out));
+}
+
+/// RUN FROM THE REPOSITORY'S ROOT, the script writes into a folder of the home directory, closed to everyone but
+/// its owner, and leaves the tree clean. The bare key is gone; the .p12 holds it.
+#[test]
+fn a_certificate_goes_outside_the_tree_by_default() {
+    let dir = cert_sandbox("default", Export::Works);
+    let out = make_cert(&dir, None, Password::Environment);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+    assert_eq!(cert_files(&dir.join("tree")), Vec::<String>::new(), "files were left in the working tree:\n{}", said(&out));
+
+    let kept = dir.join("home/.qymcad-signing");
+    assert_eq!(cert_files(&kept), ["qymcad-signing.crt", "qymcad-signing.p12", "qymcad-signing.p12.b64"], "the folder does not hold what the secrets are made of:\n{}", said(&out));
+    let mode = |p: &Path| fs::metadata(p).expect("the file is there").permissions().mode() & 0o777;
+    assert_eq!(mode(&kept), 0o700, "the folder is open to other users of the machine");
+    assert_eq!(mode(&kept.join("qymcad-signing.p12")) & 0o077, 0, "the .p12 is readable by other users of the machine");
+}
+
+/// THE PASSWORD TYPED AT THE PROMPT REACHES `openssl`. Reported behaviour: the first run by hand stopped with "No
+/// environment variable P12_PASSWORD" after the key was written, and left that key unencrypted beside the
+/// certificate - the prompt filled a shell variable, and `-passout env:` reads the environment.
+#[test]
+fn a_typed_password_reaches_openssl() {
+    let dir = cert_sandbox("typed", Export::Works);
+    let out = make_cert(&dir, None, Password::Typed);
+    assert!(out.status.success(), "the typed password did not reach openssl:\n{}", said(&out));
+    let kept = dir.join("home/.qymcad-signing");
+    assert_eq!(cert_files(&kept), ["qymcad-signing.crt", "qymcad-signing.p12", "qymcad-signing.p12.b64"], "the .p12 was not made:\n{}", said(&out));
+}
+
+/// THE BARE KEY GOES ON ANY EXIT. `openssl req` writes it unencrypted, and the .p12 is what holds it afterwards;
+/// a script that stops between the two must not leave it lying beside the certificate.
+#[test]
+fn a_failed_export_leaves_no_bare_key() {
+    let dir = cert_sandbox("export_fails", Export::Fails);
+    // The folder exists beforehand, so the key has somewhere to be written and to stay.
+    let kept = dir.join("home/kept");
+    fs::create_dir_all(&kept).expect("the sandbox is writable");
+    let out = make_cert(&dir, Some(&kept), Password::Environment);
+    assert!(!out.status.success(), "the stub refused the export and the script was happy:\n{}", said(&out));
+    assert!(!kept.join("qymcad-signing.key").exists(), "the unencrypted key was left behind:\n{}", said(&out));
+}
+
+/// The width and height a PNG file declares in its header, in pixels.
+#[derive(Debug, PartialEq)]
+struct PngSize {
+    width: u32,
+    height: u32,
+}
+
+/// The size a PNG file declares in its header.
+fn png_size(path: &Path) -> PngSize {
+    let bytes = fs::read(path).unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
+    assert_eq!(&bytes[1..4], b"PNG", "{} is not a PNG", path.display());
+    let at = |i: usize| u32::from_be_bytes(bytes[i..i + 4].try_into().expect("four bytes"));
+    PngSize { width: at(16), height: at(20) }
+}
+
+/// One icon of the window, as the settings file places it.
+struct Placed {
+    name: String,
+    x: f64,
+    y: f64,
+}
+
+/// THE PICTURE AND THE PLACES AGREE. The background is painted around the icons - the arrow between the
+/// program and Applications, the card beside the folder of notes - from the numbers in settings.py. A picture of the
+/// wrong size is stretched by nobody and cropped by Finder; an icon moved off its place sits on the arrow.
+/// The settings file is executed by python3 the way dmgbuild executes it.
+///
+/// A file is matched to its place by its name as HFS+ stores it, decomposed (NFD): the probe prints the files
+/// decomposed and the places as written, so a place keyed by a composed letter with a breve finds no file -
+/// as the Ukrainian note found none on the screen. The picture runs on under the status bar's strip, so it is that much taller.
+#[test]
+fn the_window_layout_fits_its_background() {
+    let art = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/dmg");
+    let probe = "import sys\n\
+                 scope = {'defines': {'stage': 'S', 'art': sys.argv[2]}}\n\
+                 exec(compile(open(sys.argv[1], encoding='utf-8').read(), 'settings.py', 'exec'), scope, scope)\n\
+                 import unicodedata\n\
+                 print(scope['WIDTH'], scope['HEIGHT'], scope['STATUS_BAR'], scope['icon_size'])\n\
+                 for n, (x, y) in scope['icon_locations'].items(): print(n, x, y, sep='\\t')\n\
+                 print('files', *(unicodedata.normalize('NFD', f) for f in scope['files']), sep='\\t')\n\
+                 print('symlinks', *scope['symlinks'], sep='\\t')\n";
+    let out = Command::new("python3").arg("-c").arg(probe).arg(art.join("settings.py")).arg(&art).output().expect("python3 runs");
+    assert!(out.status.success(), "settings.py does not execute:\n{}", said(&out));
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let mut lines = text.lines();
+    let size: Vec<f64> = lines.next().expect("the window size").split(' ').map(|v| v.parse().expect("a number")).collect();
+    let (width, height, strip, icon) = (size[0], size[1], size[2], size[3]);
+    let mut placed = Vec::new();
+    let mut shown = Vec::new();
+    for line in lines {
+        let cells: Vec<&str> = line.split('\t').collect();
+        match cells[0] {
+            "files" => shown.extend(cells[1..].iter().map(|f| f.trim_start_matches("S/").to_string())),
+            "symlinks" => shown.extend(cells[1..].iter().map(|s| s.to_string())),
+            _ => placed.push(Placed { name: cells[0].to_string(), x: cells[1].parse().expect("x"), y: cells[2].parse().expect("y") }),
+        }
+    }
+
+    let picture = PngSize { width: width as u32, height: (height + strip) as u32 };
+    assert_eq!(png_size(&art.join("background.png")), picture, "background.png is not the window's size");
+    let twice = PngSize { width: 2 * picture.width, height: 2 * picture.height };
+    assert_eq!(png_size(&art.join("background@2x.png")), twice, "background@2x.png is not twice the window's size");
+
+    for name in &shown {
+        assert!(placed.iter().any(|p| &p.name == name), "{name} goes into the image with no place in the window:\n{text}");
+    }
+    // The program, Applications and the folder of notes - however many languages the folder holds.
+    shown.sort();
+    assert_eq!(shown, ["Applications", "QymCAD.app", "README"], "the window does not show the three icons:\n{text}");
+    assert_eq!(placed.len(), 3, "the window places other icons than its three:\n{text}");
+    let half = icon / 2.0;
+    for p in &placed {
+        // The label hangs under the icon, about 20 points of 13-point text.
+        assert!(p.x - half >= 0.0 && p.x + half <= width && p.y - half >= 0.0 && p.y + half + 20.0 <= height, "{} runs off the window:\n{text}", p.name);
+    }
+    for (i, a) in placed.iter().enumerate() {
+        for b in &placed[i + 1..] {
+            assert!((a.x - b.x).abs() >= icon || (a.y - b.y).abs() >= icon + 20.0, "{} and {} overlap:\n{text}", a.name, b.name);
+        }
+    }
+}
+
+/// THE HEADER STANDS ON THE WINDOW'S CENTRE. The logo, the name and the line under it are one group above the
+/// icons; centred on the name alone, the group stood 22 points right of the centre, the line under the name
+/// being wider. Measured here on the picture itself: the columns holding anything darker than the pale ground,
+/// above the icons' row, must be centred within a point.
+#[test]
+fn the_header_is_centred_in_the_window() {
+    let art = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/macos/dmg");
+    let probe = "scope = {'defines': {'stage': '', 'art': ''}}\n\
+                 exec(compile(open(__import__('sys').argv[1], encoding='utf-8').read(), 'settings.py', 'exec'), scope, scope)\n\
+                 print(scope['APP'][1] - scope['icon_size'] / 2)\n";
+    let out = Command::new("python3").arg("-c").arg(probe).arg(art.join("settings.py")).output().expect("python3 runs");
+    assert!(out.status.success(), "settings.py does not execute:\n{}", said(&out));
+    let icons_top: f64 = String::from_utf8_lossy(&out.stdout).trim().parse().expect("the top of the icons' row");
+
+    let picture = image::open(art.join("background@2x.png")).expect("background@2x.png decodes").to_rgb8();
+    let band = (icons_top * 2.0) as u32 - 20;
+    let inked: Vec<u32> = (0..picture.width()).filter(|&x| (0..band).any(|y| picture.get_pixel(x, y).0.iter().any(|&c| c < 200))).collect();
+    let (first, last) = (inked.first().copied().expect("the header has ink"), inked.last().copied().expect("the header has ink"));
+    let off = (f64::from(first + last) / 2.0 - f64::from(picture.width()) / 2.0) / 2.0;
+    assert!(off.abs() <= 1.0, "the header is {off:.1} points off the window's centre: ink from {first} to {last} of {} pixels", picture.width());
 }

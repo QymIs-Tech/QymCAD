@@ -11,7 +11,7 @@ mod tests {
     use qymcad_ui_state::catalogue::Shelf;
 
     /// The timeline feature commands from the catalogue.
-    fn feat_kinds() -> Vec<(&'static str, u8)> {
+    fn feat_kinds() -> Vec<(&'static str, qymcad_ui_state::PartTool)> {
         all()
             .filter_map(|c| match c.launch {
                 Launch::Feat(k) => Some((c.code, k)),
@@ -32,29 +32,24 @@ mod tests {
     /// EVERY COMMAND HAS A PREVIEW OF ITS OWN, or a named reason why it does not.
     #[test]
     fn every_command_draws_what_it_is_doing() {
-        let excused: &[(u8, &str)] = &[
-            (1, "extrude draws a height gizmo"),
-            (3, "revolve draws an angle gizmo"),
-            (8, "sweep highlights its sketches in the tree"),
-            (9, "loft highlights its sections in the tree"),
-            (10, "primitives: the shape is drawn by the prim branch"),
-            (11, "primitives: the same"),
-            (12, "primitives: the same"),
-            (13, "primitives: the same"),
-            (14, "primitives: the same"),
-            (15, "primitives: the same"),
-            (20, "datums draw their own branch"),
-            (21, "datums: the same"),
-            (22, "datums: the same"),
+        let excused: &[(qymcad_ui_state::PartTool, &str)] = &[
+            (qymcad_ui_state::PartTool::Extrude, "extrude draws a height gizmo"),
+            (qymcad_ui_state::PartTool::Revolve, "revolve draws an angle gizmo"),
+            (qymcad_ui_state::PartTool::Sweep, "sweep highlights its sketches in the tree"),
+            (qymcad_ui_state::PartTool::Loft, "loft highlights its sections in the tree"),
+            (qymcad_ui_state::PartTool::Box, "primitives: the shape is drawn by the prim branch"),
+            (qymcad_ui_state::PartTool::Cylinder, "primitives: the same"),
+            (qymcad_ui_state::PartTool::Sphere, "primitives: the same"),
+            (qymcad_ui_state::PartTool::Cone, "primitives: the same"),
+            (qymcad_ui_state::PartTool::Torus, "primitives: the same"),
+            (qymcad_ui_state::PartTool::Prism, "primitives: the same"),
+            (qymcad_ui_state::PartTool::DatumPlane, "datums draw their own branch"),
+            (qymcad_ui_state::PartTool::DatumPoint, "datums: the same"),
+            (qymcad_ui_state::PartTool::DatumAxis, "datums: the same"),
         ];
-        let render = crate::gui::render_source::RENDER;
-        let drawn: std::collections::HashSet<u8> = render
-            .lines()
-            .filter(|l| l.contains("armed.cmd_kind()"))
-            .flat_map(|l| l.split(|c: char| !c.is_ascii_digit()).filter(|t| !t.is_empty()).filter_map(|t| t.parse::<u8>().ok()).collect::<Vec<u8>>())
-            .collect();
+        let drawn = crate::gui::render_source::tools_the_drawing_names(crate::gui::render_source::RENDER);
         let missing: Vec<String> =
-            feat_kinds().into_iter().filter(|(_, k)| !excused.iter().any(|(e, _)| e == k)).filter(|(_, k)| !drawn.contains(k)).map(|(code, k)| format!("{code} (kind {k})")).collect();
+            feat_kinds().into_iter().filter(|(_, k)| !excused.iter().any(|(e, _)| e == k)).filter(|(_, k)| !drawn.contains(k)).map(|(code, k)| format!("{code} ({k:?})")).collect();
         assert!(missing.is_empty(), "these commands draw nothing, so to a person they \"do not work\": {}", missing.join(", "));
     }
 }

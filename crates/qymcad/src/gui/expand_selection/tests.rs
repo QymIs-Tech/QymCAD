@@ -19,7 +19,7 @@ fn plate() -> (App, qymcad_core::model::Id) {
     app.project.regen_sketch(si);
     app.finish_sketch_edit();
     app.chosen.sel = super::super::Sel::Sketch(si);
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 12.0;
         p.txt = "12".into();
@@ -31,7 +31,7 @@ fn plate() -> (App, qymcad_core::model::Id) {
 }
 
 /// Open a command that WILL ACCEPT a description — otherwise the menu (rightly) stays silent.
-fn in_command(app: &mut App, kind: u8, body: qymcad_core::model::Id) {
+fn in_command(app: &mut App, kind: qymcad_ui_state::PartTool, body: qymcad_core::model::Id) {
     qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
     app.start_feat_cmd(kind);
 }
@@ -65,7 +65,7 @@ fn every_menu_item_speaks_the_users_language() {
 #[test]
 fn the_menu_is_empty_until_something_is_picked() {
     let (mut app, body) = plate();
-    in_command(&mut app, 6, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::Shell, body);
     assert!(app.expansion_menu_items().is_empty(), "nothing is selected — there is nothing to offer");
     pick_top_face(&mut app, body);
     assert!(!app.expansion_menu_items().is_empty(), "a face is selected — the items must appear");
@@ -82,7 +82,7 @@ fn outside_a_command_there_is_no_menu() {
     let (mut app, body) = plate();
     pick_top_face(&mut app, body);
     app.tools.gsel.last_face = Some((body as u32, body)); // and what was pointed at is there too
-    assert!(app.tools.armed.cmd_kind() == 0 || !app.tools.armed.commanding(), "setup: there is no command");
+    assert!(app.tools.armed.part_tool().is_none() || !app.tools.armed.commanding(), "setup: there is no command");
     assert!(app.expansion_menu_items().is_empty(), "outside a command a description has nowhere to go — there is nothing to open the menu on");
 }
 
@@ -94,7 +94,7 @@ fn outside_a_command_there_is_no_menu() {
 #[test]
 fn in_an_assembly_there_is_no_menu() {
     let (mut app, body) = plate();
-    in_command(&mut app, 6, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::Shell, body);
     pick_top_face(&mut app, body);
     assert!(!app.expansion_menu_items().is_empty(), "setup: inside a Part the menu is there");
 
@@ -111,7 +111,7 @@ fn in_an_assembly_there_is_no_menu() {
 fn each_tool_is_offered_only_what_it_can_take() {
     // THE FILLET — only items that yield edges
     let (mut app, body) = plate();
-    in_command(&mut app, 4, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::Fillet, body);
     pick_top_face(&mut app, body);
     let keys: Vec<&str> = app.expansion_menu_items().iter().map(|(k, _)| *k).collect();
     assert!(keys.contains(&"expand-face-edges"), "the fillet wants the edges of a face: {keys:?}");
@@ -120,7 +120,7 @@ fn each_tool_is_offered_only_what_it_can_take() {
 
     // THE SHELL — only items that yield faces
     let (mut app, body) = plate();
-    in_command(&mut app, 6, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::Shell, body);
     pick_top_face(&mut app, body);
     let keys: Vec<&str> = app.expansion_menu_items().iter().map(|(k, _)| *k).collect();
     assert!(keys.contains(&"expand-parallel") && keys.contains(&"expand-feature-faces"), "the shell wants faces: {keys:?}");
@@ -129,7 +129,7 @@ fn each_tool_is_offered_only_what_it_can_take() {
 
     // PUSH FACE — only items that yield ONE face
     let (mut app, body) = plate();
-    in_command(&mut app, 25, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::PushFace, body);
     pick_top_face(&mut app, body);
     let keys: Vec<&str> = app.expansion_menu_items().iter().map(|(k, _)| *k).collect();
     assert!(keys.contains(&"expand-topmost") && keys.contains(&"expand-largest"), "push-face can be told \"the topmost one\": {keys:?}");
@@ -145,7 +145,7 @@ fn each_tool_is_offered_only_what_it_can_take() {
 #[test]
 fn the_feature_query_is_built_from_the_name_not_from_the_table() {
     let (mut app, body) = plate();
-    in_command(&mut app, 6, body); // the shell — takes A SET OF FACES
+    in_command(&mut app, qymcad_ui_state::PartTool::Shell, body); // the shell — takes A SET OF FACES
     let face = pick_top_face(&mut app, body);
     let name = app.project.names.get(face).expect("the face has a structural name");
     let items = app.expansion_menu_items();
@@ -163,7 +163,7 @@ fn the_feature_query_is_built_from_the_name_not_from_the_table() {
 #[test]
 fn choosing_an_item_makes_the_feature_store_a_description() {
     let (mut app, body) = plate();
-    in_command(&mut app, 4, body); // the fillet — takes A SET OF EDGES
+    in_command(&mut app, qymcad_ui_state::PartTool::Fillet, body); // the fillet — takes A SET OF EDGES
     let face = pick_top_face(&mut app, body);
     let items = app.expansion_menu_items();
     let (key, q) = items.into_iter().find(|(k, _)| *k == "expand-face-edges").expect("the item about the edges of a face");
@@ -190,7 +190,7 @@ fn choosing_an_item_makes_the_feature_store_a_description() {
 #[test]
 fn parallel_uses_the_normal_of_the_face_that_was_picked() {
     let (mut app, body) = plate();
-    in_command(&mut app, 6, body); // the shell — takes A SET OF FACES
+    in_command(&mut app, qymcad_ui_state::PartTool::Shell, body); // the shell — takes A SET OF FACES
     pick_top_face(&mut app, body);
     let items = app.expansion_menu_items();
     let (_, q) = items.iter().find(|(k, _)| *k == "expand-parallel").expect("the item about parallel ones");
@@ -241,7 +241,7 @@ fn the_command_bar_says_words_when_the_pick_is_described() {
 #[test]
 fn the_menu_opens_in_the_fillet_command_where_only_edges_are_selected() {
     let (mut app, body) = plate();
-    in_command(&mut app, 4, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::Fillet, body);
     let face = app.project.regen_faces[&body].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
 
     // as after a click on a face in the fillet: EDGES are collected, the set of faces is empty
@@ -263,7 +263,7 @@ fn the_menu_opens_in_the_fillet_command_where_only_edges_are_selected() {
 #[test]
 fn the_chosen_item_stays_in_the_menu_so_it_can_be_marked() {
     let (mut app, body) = plate();
-    in_command(&mut app, 4, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::Fillet, body);
     let face = pick_top_face(&mut app, body);
     app.tools.gsel.describe_edges_of_face(face);
 
@@ -288,7 +288,7 @@ fn shell_then_fillet_on_its_face_does_not_crash() {
     app.project.regen_sketch(si);
     app.finish_sketch_edit();
     app.chosen.sel = super::super::Sel::Sketch(si);
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 20.0;
         p.txt = "20".into();
@@ -300,7 +300,7 @@ fn shell_then_fillet_on_its_face_does_not_crash() {
     // THE SHELL through the command
     let top = app.project.regen_faces[&base].iter().max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top").id;
     qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, base);
-    app.start_feat_cmd(6);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Shell);
     app.tools.gsel.faces.insert(top);
     app.tools.gsel.faces_body = Some(base);
     app.apply_feat_cmd();
@@ -310,7 +310,7 @@ fn shell_then_fillet_on_its_face_does_not_crash() {
 
     // THE FILLET on a face of the shell — through the command, refreshing the edges as the program does
     qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, shell);
-    app.start_feat_cmd(4);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
     crate::gui::commands::refresh_edges(&mut app.part_ctx());
     let f = app.project.regen_faces[&shell].iter().max_by(|a, b| a.area.total_cmp(&b.area)).expect("the face").id;
     let eids: Vec<u32> =
@@ -356,7 +356,7 @@ fn the_tree_says_how_the_set_was_defined() {
 fn plate_in_fillet() -> (App, qymcad_core::model::Id) {
     let (mut app, body) = plate();
     qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, body);
-    app.start_feat_cmd(4);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet);
     crate::gui::commands::refresh_edges(&mut app.part_ctx());
     (app, body)
 }
@@ -481,7 +481,7 @@ fn a_description_picks_up_an_edge_that_appeared_after_a_sketch_edit() {
     app.project.regen_sketch(si);
     app.finish_sketch_edit();
     app.chosen.sel = super::super::Sel::Sketch(si);
-    app.start_feat_cmd(1);
+    app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
         p.val = 10.0;
         p.txt = "10".into();
@@ -491,7 +491,7 @@ fn a_description_picks_up_an_edge_that_appeared_after_a_sketch_edit() {
     let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
 
     // A FILLET BY DESCRIPTION: the top face was clicked -> "all the edges of this face"
-    in_command(&mut app, 4, body);
+    in_command(&mut app, qymcad_ui_state::PartTool::Fillet, body);
     let top = app.project.regen_faces[&body].iter().filter(|f| f.normal[2] > 0.9).max_by(|a, b| a.centroid.z.total_cmp(&b.centroid.z)).expect("the top face").id;
     app.tools.gsel.last_face = Some((top, body));
     let (key, q) = app.expansion_menu_items().into_iter().find(|(k, _)| *k == "expand-face-edges").expect("the item \"all the edges of this face\"");

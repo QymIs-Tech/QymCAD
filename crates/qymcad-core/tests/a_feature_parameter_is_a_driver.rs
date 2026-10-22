@@ -199,3 +199,50 @@ fn two_parameters_of_one_feature_are_told_apart() {
     assert_eq!(p.name_of_target(&DimTarget::Feature { node, key: "height".into() }), "vysota");
     assert_eq!(p.name_of_target(&DimTarget::Feature { node, key: "down".into() }), "vniz");
 }
+
+/// Two parts joined by a slider in an assembly. Returns the joint.
+fn a_slider(p: &mut Project) -> Id {
+    use qymcad_core::feature::{AnchorRef, BasePlane, JointKind};
+    p.new_document();
+    let root = p.root;
+    p.set_active_component(Some(root));
+    let a = p.add_part("Base");
+    let b = p.add_part("Carriage");
+    p.set_grounded(a, true);
+    let ca = p.add_connector(a, AnchorRef::BasePlane(BasePlane::YZ));
+    let cb = p.add_connector(b, AnchorRef::BasePlane(BasePlane::YZ));
+    p.add_joint(ca, cb, JointKind::Slider)
+}
+
+/// A VALUE OF A JOINT IS A DRIVER AS A FEATURE'S NUMBER IS: the offset of a slider, kept as the formula of the joint
+/// (`feat_dims[joint]["offset"]`, which the box of the joint writes), named `gap`, is read by that name in another
+/// formula and follows when the offset is typed anew.
+#[test]
+fn a_named_value_of_a_joint_works_in_formulas() {
+    use qymcad_core::model::{FeatNumber, PlainNumber};
+    let mut p = Project::default();
+    let joint = a_slider(&mut p);
+    let offset = FeatNumber { node: joint, key: "offset" };
+    p.write_feat_formula(&offset, "15", PlainNumber::Stands).expect("the offset of the joint is typed");
+    assert!(p.add_named_feat_dim("gap".into(), joint, "offset"), "the offset of a joint has to be nameable");
+    assert_eq!(p.param_map().get("gap"), Some(&15.0), "the named offset of the joint is not visible in formulas");
+    assert_eq!(p.eval_expr("gap*2").ok(), Some(30.0), "a formula over the offset of the joint does not evaluate");
+    p.write_feat_formula(&offset, "25", PlainNumber::Stands).expect("the offset of the joint is typed anew");
+    assert_eq!(p.eval_expr("gap*2").ok(), Some(50.0), "the formula did not follow the offset of the joint");
+}
+
+/// A VALUE OF A JOINT WITH NO FORMULA IS READ AS IT STANDS IN THE JOINT: the offset a slider holds as a number - pinned
+/// by its lock, never typed - named `gap`, gives that number to a formula, as a feature's number with no formula gives
+/// the number kept in its node.
+#[test]
+fn a_named_value_of_a_joint_with_no_formula_works_in_formulas() {
+    let mut p = Project::default();
+    let joint = a_slider(&mut p);
+    let pin = |p: &mut Project, v: f64| p.joints.iter_mut().filter(|j| j.id == joint).for_each(|j| j.drive[1] = Some(v));
+    pin(&mut p, 15.0);
+    assert!(p.add_named_feat_dim("gap".into(), joint, "offset"), "the offset of a joint has to be nameable");
+    assert_eq!(p.param_map().get("gap"), Some(&15.0), "the named offset of the joint is not visible in formulas");
+    assert_eq!(p.eval_expr("gap*2").ok(), Some(30.0), "a formula over the offset of the joint does not evaluate");
+    pin(&mut p, 25.0);
+    assert_eq!(p.eval_expr("gap*2").ok(), Some(50.0), "the formula did not follow the offset of the joint");
+}

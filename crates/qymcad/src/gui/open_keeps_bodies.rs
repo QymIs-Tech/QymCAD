@@ -54,7 +54,7 @@ mod tests {
         app.project.eval_parameters();
 
         app.chosen.sel = Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "h".into();
@@ -63,7 +63,7 @@ mod tests {
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("setup: the plate is built");
 
         app.chosen.sel = Sel::Mesh(app.project.mesh_index(body).expect("setup: the plate has a mesh"));
-        app.start_feat_cmd(4); // fillet
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // fillet
         app.tools.gsel.edges = crate::gui::pick::body_edges_cached(&app.cache, &app.live, &app.regen, body).map(|e| e.ids.iter().copied().filter(|&i| i != 0).collect()).unwrap_or_default();
         app.edges.body = Some(body);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "radius") {

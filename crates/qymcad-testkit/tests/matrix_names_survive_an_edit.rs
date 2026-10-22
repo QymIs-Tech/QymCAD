@@ -411,8 +411,8 @@ fn left_lines(p: &Project, sketch: u64) -> (usize, Vec<u64>) {
     let si = p.sketch_index(sketch).expect("the sketch");
     let s = &p.sketches[si];
     let x_of = |id: u64| s.points.iter().find(|q| q.id == id).map(|q| q.x).unwrap_or(f64::MAX);
-    let lines = s.entities.iter().filter_map(|e| match e.kind {
-        qymcad_core::model::EntityKind::Line { a, b } if x_of(a) <= 1e-9 && x_of(b) <= 1e-9 => Some(e.id),
+    let lines = s.entities.iter().filter_map(|e| match e.kind.as_line() {
+        Some(qymcad_core::model::LineParts { a, b }) if x_of(a) <= 1e-9 && x_of(b) <= 1e-9 => Some(e.id),
         _ => None,
     });
     (si, lines.collect())
@@ -465,7 +465,7 @@ const EDITS: [Edit; 7] = [
         left: Left::Straight,
         apply: |mut p, laid| {
             let (si, lines) = left_lines(&p, laid.base.sketch);
-            assert!(p.break_line(si, lines[0], 0.0, 15.0), "the left side did not break");
+            assert!(p.break_curve(si, lines[0], 0.0, 15.0), "the left side did not break");
             if let Some(q) = p.sketches[si].points.iter_mut().find(|q| q.x.abs() < 1e-9 && (q.y - 15.0).abs() < 1e-6) {
                 q.x = -5.0;
             }

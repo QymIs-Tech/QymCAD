@@ -38,33 +38,34 @@ mod tests {
         }
     }
 
-    /// The whole reason is inside the popup at the geometry too.
+    /// The whole reason is said where the tool speaks too, and painted inside the screen.
     ///
-    /// This one already behaved when the guard was written - the popup widens to fit the line and shows it
-    /// under the fields. It is held here because the rule is the same rule, and the parameter window proved
-    /// that one place can quietly stop obeying it while the other goes on being right.
+    /// The rule is the same rule as the parameter window's, and that window proved that one place can quietly stop
+    /// obeying it while the other goes on being right.
     #[test]
-    fn the_reason_is_painted_whole_in_the_popup_at_the_geometry_as_well() {
+    fn the_reason_is_said_whole_where_the_tool_speaks_as_well() {
         let mut app = App::default();
         let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         app.project.add_rect_entity(si, 0.0, 0.0, 60.0, 40.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = qymcad_ui_state::Sel::Sketch(si);
-        app.start_feat_cmd(1); // an extrude: its height is an expression field
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude); // an extrude: its height is an expression field
         if let Some(f) = app.tools.cmd.params.first_mut() {
             f.txt = "10 /".into();
         }
         // THE EXPECTED WORDS COME FROM THE CATALOGUE, not from a literal: a literal would be one language's
         // and would quietly stop matching in the other.
         let whole = crate::gui::error_words::expr_error_text(&app.project.eval_expr("10 /").expect_err("the expression is broken"));
-        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
-        let texts = painted(&mut app, |a, ctx| crate::gui::commands::feat_cmd_popup(&mut a.part_ctx(), ctx, rect));
-        // NOT "if it drew nothing, there is nothing to check": a guard that passes by drawing no reason at all
-        // is the blindness this file was rewritten to escape. The field holds a broken expression, so the
-        // reason MUST be on the screen.
-        let (text, r, clip) = texts.into_iter().find(|(t, _, _)| t.contains(&whole)).expect("the popup must show the reason while the field holds a broken expression");
-        assert!(r.max.x <= clip.max.x + 0.5, "the reason in the popup is painted past the edge it is clipped to: text {text:?} ends at x={:.1}, the clip ends at x={:.1}", r.max.x, clip.max.x);
+        let mut hand = super::super::hand::Hand::as_it_stands(&mut app);
+        // NOT "if it said nothing, there is nothing to check": a guard that passes by saying no reason at all is the
+        // blindness this file was rewritten to escape. The field holds a broken expression, so the reason MUST be said.
+        let said = hand.tool_says();
+        assert!(said.iter().any(|n| n.words.contains(&whole)), "the tool must say the reason while the field holds a broken expression: {said:?}");
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, hand.screen());
+        let painted: Vec<egui::Rect> = hand.words_drawn().iter().filter(|(t, _)| t.contains(&whole)).map(|(_, r)| *r).collect();
+        assert!(!painted.is_empty(), "the reason is said and not painted");
+        assert!(painted.iter().all(|r| screen.contains_rect(*r)), "the reason is painted past the edge of the screen: {painted:?} on {screen:?}");
     }
 
     /// The whole reason is inside the window, not running off its edge.

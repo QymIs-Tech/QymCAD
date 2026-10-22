@@ -635,10 +635,10 @@ pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleT
 mod tess;
 mod timeline;
 mod sketch;
-pub use sketch::{LoftEncoded, LoftSectionsEncoded};
+pub use sketch::{Crossing, LayAs, LoftEncoded, LoftSectionsEncoded, DimOf, ValueTrial};
 mod drag;
 mod round;
-pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, ExtendAsk, ExtendSides, ExtendStop, ExtendStops, EndKept, FilletBy, FilletSize, LineExtension, LinesCrossing, TextSpec};
+pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, CurveExtension, ExtendAsk, ExtendSides, EndKept, FilletBy, FilletSize, LinesCrossing, TextSpec, Touching};
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
@@ -655,23 +655,7 @@ fn remap_point_id(s: &mut Sketch, from: Id, to: Id) {
         }
     };
     for e in &mut s.entities {
-        match &mut e.kind {
-            EntityKind::Line { a, b } => {
-                r(a);
-                r(b);
-            }
-            EntityKind::Arc { center, a, b, .. } => {
-                r(center);
-                r(a);
-                r(b);
-            }
-            EntityKind::Circle { center, .. } => r(center),
-            EntityKind::Ellipse { c, ma, mi } => {
-                r(c);
-                r(ma);
-                r(mi);
-            }
-        }
+        e.kind.each_point_mut(r);
     }
     for c in &mut s.constraints {
         match c {
@@ -734,6 +718,20 @@ fn remap_point_id(s: &mut Sketch, from: Id, to: Id) {
                 r(p);
                 r(c);
             }
+            Constraint::PointOnEllipse { p, c, ma, mi } => {
+                r(p);
+                r(c);
+                r(ma);
+                r(mi);
+            }
+            Constraint::PointOnCurve { p, on } => {
+                r(p);
+                on.each_point_mut(&r);
+            }
+            Constraint::TangentCurves { one, other, .. } | Constraint::CurveDistance { from: one, to: other, .. } => {
+                one.each_point_mut(&r);
+                other.each_point_mut(&r);
+            }
             Constraint::Concentric { c1, c2 } => {
                 r(c1);
                 r(c2);
@@ -749,11 +747,6 @@ fn remap_point_id(s: &mut Sketch, from: Id, to: Id) {
                 r(c);
                 r(d);
             }
-        }
-    }
-    for sp in &mut s.splines {
-        for id in &mut sp.points {
-            r(id);
         }
     }
 }
@@ -880,22 +873,11 @@ mod rot_axis_tests {
 
 #[cfg(test)]
 mod ellipse_intersect_tests {
-    use super::{circle_ellipse_pts, ellipse_axes, line_ellipse_roots, seg_ellipse_t};
+    use super::{ellipse_axes, line_ellipse_roots};
 
     // Ellipse: centre (0,0), major semi-axis 4 along +X, minor semi-axis 2 along +Y.
     fn axes() -> (f64, f64, f64, f64) {
         ellipse_axes(0.0, 0.0, 4.0, 0.0, 0.0, 2.0)
-    }
-
-    #[test]
-    fn horizontal_line_through_center_hits_major_vertices() {
-        let (ux, uy, ma, mi) = axes();
-        // The line y = 0, x = t*10 - 5, where t in 0..1 covers x in [-5,5].
-        let mut ts = seg_ellipse_t([-5.0, 0.0], [5.0, 0.0], [0.0, 0.0], [ux, uy], ma, mi);
-        ts.sort_by(|a, b| a.total_cmp(b));
-        assert_eq!(ts.len(), 2, "two intersection points");
-        let xs: Vec<f64> = ts.iter().map(|t| -5.0 + t * 10.0).collect();
-        assert!((xs[0] + 4.0).abs() < 1e-6 && (xs[1] - 4.0).abs() < 1e-6, "vertices at plus and minus a: {xs:?}");
     }
 
     #[test]
@@ -909,14 +891,6 @@ mod ellipse_intersect_tests {
     }
 
     #[test]
-    fn tangent_and_miss() {
-        let (ux, uy, ma, mi) = axes();
-        // The tangent y = 2 gives a double root (the discriminant is near zero); y = 3 misses entirely.
-        let far = seg_ellipse_t([-5.0, 3.0], [5.0, 3.0], [0.0, 0.0], [ux, uy], ma, mi);
-        assert!(far.is_empty(), "y = 3 must not intersect the ellipse");
-    }
-
-    #[test]
     fn rotated_ellipse_major_axis_45deg() {
         // Major axis along (1,1) with its endpoint at (3,3), so major = sqrt(18); the minor axis is perpendicular, length 1.
         let (ux, uy, ma, mi) = ellipse_axes(0.0, 0.0, 3.0, 3.0, -0.5_f64.sqrt(), 0.5_f64.sqrt());
@@ -925,25 +899,6 @@ mod ellipse_intersect_tests {
         roots.sort_by(|a, b| a.total_cmp(b));
         assert_eq!(roots.len(), 2, "two vertices: {roots:?}");
         assert!((roots[0] - 0.125).abs() < 1e-6 && (roots[1] - 0.875).abs() < 1e-6, "vertices at plus and minus (3,3): {roots:?}");
-    }
-
-    #[test]
-    fn circle_ellipse_four_points() {
-        let (ux, uy, ma, mi) = axes(); // a=4,b=2
-                                       // A circle of radius 3 at the centre: |E(t)| = 3 when 16*cos^2 + 4*sin^2 = 9, that is 12*cos^2 = 5, giving four symmetric points.
-        let pts = circle_ellipse_pts([0.0, 0.0], 3.0, [0.0, 0.0], [ux, uy], ma, mi);
-        assert_eq!(pts.len(), 4, "a circle of r = 3 must meet the ellipse four times: {pts:?}");
-        for (x, y) in &pts {
-            assert!(((x * x + y * y).sqrt() - 3.0).abs() < 1e-4, "the point must lie on the circle r = 3");
-            assert!((x * x / 16.0 + y * y / 4.0 - 1.0).abs() < 1e-4, "the point must lie on the ellipse");
-        }
-    }
-
-    #[test]
-    fn circle_ellipse_no_intersection() {
-        let (ux, uy, ma, mi) = axes();
-        // A circle of r = 1 lies entirely inside (the minor semi-axis is 2), so there are no intersections.
-        assert!(circle_ellipse_pts([0.0, 0.0], 1.0, [0.0, 0.0], [ux, uy], ma, mi).is_empty());
     }
 }
 
@@ -1431,9 +1386,14 @@ mod name_map_tests {
 mod sketch_types;
 pub use sketch_types::*;
 mod curves;
+pub mod curve;
+pub use crate::geom::bspline::NodeTangents;
+pub use curve::kinds::*;
+pub use curve::refs::*;
 pub use curves::*;
 mod sketch_ops;
 mod params;
+mod item_values;
 mod formulas;
 pub use formulas::{FeatNumber, FeatText, NamedFormula, PlainNumber, Renamed};
 mod bodies;

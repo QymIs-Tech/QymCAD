@@ -27,14 +27,14 @@ mod arc_pick {
         let _ = p.add_line_entity(si, -20.0, 0.0, 20.0, 0.0, Purpose::Real);
         p.regen_sketch(si);
         assert!(p.trim_curve(si, c, 0.0, -10.0), "the lower half of the circle trimmed");
-        let arc = p.sketches[si].entities.iter().find(|e| matches!(e.kind, qymcad_core::model::EntityKind::Arc { .. })).map(|e| e.id).expect("the upper arc");
+        let arc = p.sketches[si].entities.iter().find(|e| e.kind.as_arc().is_some()).map(|e| e.id).expect("the upper arc");
         let (set, view) = (qymcad_ui_state::Settings::default(), qymcad_ui_state::View2d::default());
         let pick = qymcad_ui_state::PickCtx { project: &p, set: &set, view: &view };
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
         let sh = qymcad_ui_state::Sheet { view, rect };
         let at = |x: f64, y: f64| sh.at(qymcad_core::geom::Point2::new(x, y));
-        assert_eq!(super::nearest_circle_entity(&pick, rect, at(0.0, 10.0), si), Some(arc), "the top of the arc");
-        assert_eq!(super::nearest_circle_entity(&pick, rect, at(0.0, -10.0), si), None, "where the cut half had been");
+        assert_eq!(super::curve_or_caption_under(&pick, rect, at(0.0, 10.0), si), Some(arc), "the top of the arc");
+        assert_eq!(super::curve_or_caption_under(&pick, rect, at(0.0, -10.0), si), None, "where the cut half had been");
     }
 }
 

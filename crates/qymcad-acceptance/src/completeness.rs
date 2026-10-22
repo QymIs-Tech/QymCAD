@@ -196,8 +196,8 @@ mod tests {
             }
             let mut seen = Vec::new();
             for (point, why) in t.not_applicable {
-                if !(1..=19).contains(point) || seen.contains(point) || why.trim().is_empty() {
-                    problems.push(format!("{}: point {point} is left out wrongly (outside 1-19, twice, or without why)", t.id));
+                if !crate::contract::POINTS.iter().any(|(n, _)| n == point) || seen.contains(point) || why.trim().is_empty() {
+                    problems.push(format!("{}: point {point} is left out wrongly (not a point of the contract, twice, or without why)", t.id));
                 }
                 seen.push(*point);
             }
