@@ -193,7 +193,7 @@ impl Project {
         let vars = self.param_map();
         self.impose_comp_pattern_values(&vars);
         // the values of the items of sketches and the ratios of the relations of mates follow their formulas too
-        self.impose_item_values(&vars, &mut Vec::new());
+        self.impose_item_values(&vars);
         let feat_dims = self.feat_dims.clone();
         let limit = self.rollback.unwrap_or(usize::MAX); // Rollback bar: build only the first N nodes.
                                                          // Component patterns come before bodies: the copies have to be in place by the time their bodies are

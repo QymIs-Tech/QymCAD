@@ -737,7 +737,7 @@ impl FeatureKind {
             FeatureKind::Move { mat, .. } => vec![("dx", mat[3]), ("dy", mat[7]), ("dz", mat[11])],
             FeatureKind::MeshRecognised { tol, sharp, simplify, .. } => vec![("tol", tol), ("sharp", sharp), ("simplify", simplify)],
             FeatureKind::MeshSolid { simplify, .. } => vec![("simplify", simplify)],
-            FeatureKind::ComponentPattern { ref kind, .. } => kind.values(),
+            FeatureKind::ComponentPattern { ref kind, .. } => kind.values().into_iter().map(|v| (v.key, v.value)).collect(),
             _ => Vec::new(),
         }
     }

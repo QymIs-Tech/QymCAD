@@ -9,6 +9,12 @@ use super::*;
 /// The keys of the values of a pattern of a sketch.
 const PATTERN_KEYS: [&str; 7] = ["count", "dx", "dy", "count2", "dx2", "dy2", "angle"];
 
+/// A FORMULA OF A VALUE OF AN ITEM THAT CANNOT BE WORKED OUT: the formula, and why.
+pub(crate) struct ItemFault {
+    pub formula: String,
+    pub error: crate::errors::ExprError,
+}
+
 /// What a value of an item is imposed with: the item, the key, and the number.
 struct Imposed<'a> {
     id: Id,
@@ -115,9 +121,9 @@ impl Project {
     fn ellipse_turn(&self, si: usize, c: Id) -> Option<f64> {
         let s = self.sketches.get(si)?;
         let ma = s.entities.iter().find_map(|e| e.kind.as_ellipse().filter(|el| el.c == c).map(|el| el.ma))?;
-        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-        let ((cx, cy), (x, y)) = (at(c)?, at(ma)?);
-        Some((y - cy).atan2(x - cx))
+        let o = s.points.iter().find(|q| q.id == c)?;
+        let m = s.points.iter().find(|q| q.id == ma)?;
+        Some((m.y - o.y).atan2(m.x - o.x))
     }
 
     /// The items of sketch `si` that hold a formula of a value of theirs.
@@ -129,21 +135,24 @@ impl Project {
     /// THE FORMULAS OF THE ITEMS IMPOSED: each value with a formula takes what it comes to; a value already standing at it
     /// is left alone, so a pattern is laid anew and a polygon rebuilt only when its count changed. The words of a formula
     /// that cannot be worked out go into `errs`.
-    pub(crate) fn impose_item_values(&mut self, vars: &std::collections::HashMap<String, f64>, errs: &mut Vec<(String, crate::errors::ExprError)>) {
+    pub(crate) fn impose_item_values(&mut self, vars: &std::collections::HashMap<String, f64>) -> Vec<ItemFault> {
+        let mut faults = Vec::new();
         // the nodes of the timeline read their own formulas as they are built; a mate reads those of its slots as it is
         // solved, and `item_value` answers only its limits
         let own: std::collections::HashSet<Id> = self.timeline.iter().map(|n| n.id).collect();
-        let held: Vec<(Id, std::collections::HashMap<String, String>)> = self.feat_dims.iter().filter(|(id, _)| !own.contains(id)).map(|(id, m)| (*id, m.clone())).collect();
-        for (id, dims) in held {
+        let held: Vec<Id> = self.feat_dims.keys().filter(|id| !own.contains(id)).copied().collect();
+        for id in held {
+            let Some(dims) = self.feat_dims.get(&id).cloned() else { continue };
             for (key, expr) in dims.iter().filter(|(_, e)| !e.trim().is_empty()) {
                 let Some(now) = self.item_value(id, key) else { continue };
                 match crate::expr::eval(expr, vars) {
                     Ok(v) if (v - now).abs() > 1e-9 => self.impose(&Imposed { id, key, value: v }),
                     Ok(_) => {}
-                    Err(e) => errs.push((expr.clone(), e)),
+                    Err(error) => faults.push(ItemFault { formula: expr.clone(), error }),
                 }
             }
         }
+        faults
     }
 
     /// Item value `i` set to its number, the item laid anew where its shape depends on it.
@@ -204,7 +213,7 @@ impl Project {
             "w" | "h" => {
                 if let Some((rx, ry)) = self.ellipse_axes(si, i.id) {
                     let (rx, ry) = if i.key == "w" { (i.value / 2.0, ry) } else { (rx, i.value / 2.0) };
-                    self.ellipse_axes_points(si, i.id, rx, ry);
+                    self.ellipse_axes_points(si, i.id, [rx, ry]);
                 }
             }
             _ => {}
@@ -224,17 +233,31 @@ impl Project {
         }
     }
 
+    /// THE ELLIPSE ABOUT CENTRE `c` TURNED to angle `a` (radians) - its major axis along it - and the sketch solved.
+    /// Answers whether there is such an ellipse.
+    pub fn set_ellipse_turn(&mut self, si: usize, c: Id, a: f64) -> bool {
+        if self.ellipse_value(si, c, "turn").is_none() {
+            return false;
+        }
+        self.turn_ellipse_points(si, c, a);
+        self.solve_sketch(si);
+        true
+    }
+
     /// The axes of the ellipse about centre `c` turned to angle `a` (radians), with no solve.
     fn turn_ellipse_points(&mut self, si: usize, c: Id, a: f64) {
         let Some((rx, ry)) = self.ellipse_axes(si, c) else { return };
         let Some((ma, mi)) = self.sketches[si].entities.iter().find_map(|e| e.kind.as_ellipse().filter(|el| el.c == c).map(|el| (el.ma, el.mi))) else { return };
         let Some((cx, cy)) = self.sketches[si].points.iter().find(|q| q.id == c).map(|q| (q.x, q.y)) else { return };
         let half = std::f64::consts::FRAC_PI_2;
-        for (pid, r, ang) in [(ma, rx, a), (mi, ry, a + half)] {
+        let mut put = |pid: Id, r: f64, ang: f64| {
             if let Some(q) = self.sketches[si].points.iter_mut().find(|q| q.id == pid) {
-                (q.x, q.y) = (cx + r * ang.cos(), cy + r * ang.sin());
+                q.x = cx + r * ang.cos();
+                q.y = cy + r * ang.sin();
             }
-        }
+        };
+        put(ma, rx, a);
+        put(mi, ry, a + half);
     }
 
     /// THE SIDES OF THE POLYGON ABOUT CENTRE `c` MADE `n`: its vertices and sides laid anew on its circle, at its radius

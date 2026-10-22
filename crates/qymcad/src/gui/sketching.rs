@@ -101,8 +101,7 @@ impl App {
                 } else if let Some(ti) = qymcad_ui_state::text_at(&self.project, &self.viewing.view, rect, pos, si) {
                     qymcad_ui_state::begin_text_edit(&self.project, &mut qymcad_ui_state::tools_of!(self), &mut self.tool_prefs, si, ti);
                 } else if let Some(ni) = qymcad_ui_state::note_at(&self.project, &self.viewing.view, rect, pos, si) {
-                    self.tools.inline = InlineEdit::Note(ni);
-                    self.tools.annot.note_buf = self.project.sketches[si].notes.get(ni).map(|n| n.text.clone()).unwrap_or_default();
+                    qymcad_ui_state::begin_note_edit(&self.project, &mut self.tools.annot, &mut self.tools.inline, qymcad_ui_state::NoteAt { si, ni });
                 } else if let Some(ci) = dim_at(&mut self.sketch_ctx(), rect, pos, si) {
                     open_dim_box(&mut self.sketch_ctx(), ci);
                 } else {
@@ -291,7 +290,6 @@ impl App {
                 painter.rect_filled(r, 0.0, crate::palette::a(self.scheme.pal.select_window(), 20));
             }
         }
-        qymcad_ui_state::note_editor(&mut self.tools.annot, &mut self.tools.inline, &mut self.project, self.chosen.sel, self.viewing.view, ctx, rect); // editing the text of a note
         let asks = qymcad_ui_state::text_popups(qymcad_ui_state::editing_of!(self), &mut self.font_cache, &mut qymcad_ui_state::text_ctx_of!(self), ctx); // the label editor and the list of fonts
         self.do_bar_asks(asks, ctx);
         place_input_popup(qymcad_ui_state::editing_of!(self), qymcad_ui_state::popup_tools!(self), qymcad_ui_state::popup_looks!(self), ctx, rect); // typing the sizes right after a shape is built

@@ -41,6 +41,13 @@ pub enum CompPatternKind {
     },
 }
 
+/// ONE VALUE OF THE LAYOUT OF A PATTERN: the key its formula is kept under, and the number it holds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayoutValue {
+    pub key: &'static str,
+    pub value: f64,
+}
+
 /// The second and third directions of a linear pattern that has only its first.
 pub fn one_way() -> [([f64; 3], f64, u32); 2] {
     [([0.0, 1.0, 0.0], 0.0, 1), ([0.0, 0.0, 1.0], 0.0, 1)]
@@ -49,12 +56,20 @@ pub fn one_way() -> [([f64; 3], f64, u32); 2] {
 impl CompPatternKind {
     /// THE VALUES OF THE LAYOUT, by the keys their formulas are kept under in `feat_dims` - the keys of the fields of its
     /// box: the count and the step of each direction of a linear one, the count and the angle of a circular one.
-    pub fn values(&self) -> Vec<(&'static str, f64)> {
+    pub fn values(&self) -> Vec<LayoutValue> {
+        let v = |key, value| LayoutValue { key, value };
         match *self {
             CompPatternKind::Linear { step, count, more, .. } => {
-                vec![("count", f64::from(count)), ("cstep", step), ("count2", f64::from(more[0].2)), ("cstep2", more[0].1), ("count3", f64::from(more[1].2)), ("cstep3", more[1].1)]
+                vec![
+                    v("count", f64::from(count)),
+                    v("cstep", step),
+                    v("count2", f64::from(more[0].2)),
+                    v("cstep2", more[0].1),
+                    v("count3", f64::from(more[1].2)),
+                    v("cstep3", more[1].1),
+                ]
             }
-            CompPatternKind::Circular { angle, count, .. } => vec![("count", f64::from(count)), ("cangle", angle)],
+            CompPatternKind::Circular { angle, count, .. } => vec![v("count", f64::from(count)), v("cangle", angle)],
         }
     }
 
@@ -191,17 +206,11 @@ impl Project {
     /// THE FORMULAS OF THE VALUES OF EVERY PATTERN IMPOSED before the copies are placed: a count or a step read by a name
     /// follows it, copies added or taken away as `set_comp_pattern` does when the count is typed.
     pub(crate) fn impose_comp_pattern_values(&mut self, vars: &std::collections::HashMap<String, f64>) {
-        let laid: Vec<(Id, CompPatternKind)> = self
-            .timeline
-            .iter()
-            .filter_map(|n| match &n.kind {
-                FeatureKind::ComponentPattern { kind, .. } => Some((n.id, *kind)),
-                _ => None,
-            })
-            .collect();
-        for (id, kind) in laid {
+        let laid: Vec<Id> = self.timeline.iter().filter(|n| matches!(n.kind, FeatureKind::ComponentPattern { .. })).map(|n| n.id).collect();
+        for id in laid {
+            let Some(kind) = self.comp_pattern(id).map(|p| p.kind) else { continue };
             let Some(dims) = self.feat_dims.get(&id) else { continue };
-            let want = kind.values().into_iter().fold(kind, |k, (key, now)| k.with_value(key, crate::model::eval_dim(Some(dims), key, now, vars)));
+            let want = kind.values().into_iter().fold(kind, |k, v| k.with_value(v.key, crate::model::eval_dim(Some(dims), v.key, v.value, vars)));
             if want != kind {
                 self.set_comp_pattern(id, want);
             }

@@ -85,7 +85,7 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
     let (o, d) = qymcad_ui_state::screen_ray(pc.cam, rect, screen);
     let (lo, ld) = (qymcad_core::feature::apply12(&inv, o), qymcad_core::feature::apply12_dir(&inv, d));
     let Some(local) = qymcad_ui_state::ray_plane(lo, ld, c, n) else { return };
-    let [u, v] = qymcad_core::feature::shift_on_face(c, n, local);
+    let [u, v] = qymcad_core::feature::shift_on_face(qymcad_core::feature::FaceAt { centre: c, normal: n }, local);
     // the same face clicked where the hole already stands (within 0.5 mm) lets it go; anywhere else on it moves the
     // hole there
     let here = (u - qymcad_ui_state::cmd_val(pc.cmd, "off_u")).hypot(v - qymcad_ui_state::cmd_val(pc.cmd, "off_v")) < 0.5;

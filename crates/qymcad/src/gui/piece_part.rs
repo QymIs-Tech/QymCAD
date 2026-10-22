@@ -61,7 +61,7 @@ pub(crate) fn menu(pn: &qymcad_ui_state::Painting, resp: &Response, rect: Rect) 
     // Cancel under them, Enter and Esc as everywhere
     use qymcad_ui_state::{Focus, Opt, OptKey, Row, Section};
     let focus = if std::mem::take(&mut a.fresh) { Focus::Takes } else { Focus::Waits };
-    let text = Opt::Text { key: OptKey::of("piece-name"), text: a.name.clone(), placeholder: String::new(), unfit: None, hint: Some(crate::i18n::tr("piece-part-name-hint")), focus };
+    let text = Opt::Text { key: OptKey::of("piece_name"), text: a.name.clone(), placeholder: String::new(), unfit: None, hint: Some(crate::i18n::tr("piece-part-name-hint")), focus };
     let layout = qymcad_ui_state::Layout { sections: vec![Section::plain(vec![Row::new(crate::i18n::tr("piece-part-name")).opt(text)])], foot: Vec::new() };
     let gate = qymcad_ui_state::Gate::Open;
     let the_box = qymcad_ui_state::FieldsBox {

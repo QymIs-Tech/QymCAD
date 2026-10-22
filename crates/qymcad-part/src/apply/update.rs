@@ -208,7 +208,14 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     let hole_face: Option<(qymcad_core::feature::FaceKey, [f64; 3], [f64; 3])> = match face_at {
         Some((mi, fi)) => pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map(|face| {
             let k = qymcad_core::feature::FaceKey { index: fi as u32, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: face.id };
-            (k, qymcad_core::feature::point_on_face(k.centroid, k.normal, [qymcad_ui_state::cmd_val(pc.cmd, "off_u"), qymcad_ui_state::cmd_val(pc.cmd, "off_v")]), k.normal)
+            (
+                k,
+                qymcad_core::feature::point_on_face(
+                    qymcad_core::feature::FaceAt { centre: k.centroid, normal: k.normal },
+                    [qymcad_ui_state::cmd_val(pc.cmd, "off_u"), qymcad_ui_state::cmd_val(pc.cmd, "off_v")],
+                ),
+                k.normal,
+            )
         }),
         _ => None,
     };

@@ -308,9 +308,12 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-diameter", "diameter", diameter, 0.1, 10000.0), cmd_param_from(&*pc.project, fid, "f-depth", "depth", depth, 0.1, 10000.0)];
             // where it stands on its face, as the two shifts from the face centre the fields hold
             let [u, v] = match *pc.sel {
-                qymcad_ui_state::Sel::Face(mi, fi) if sketch == 0 => {
-                    pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map_or([0.0, 0.0], |f| qymcad_core::feature::shift_on_face([f.centroid.x, f.centroid.y, f.centroid.z], f.normal, point))
-                }
+                qymcad_ui_state::Sel::Face(mi, fi) if sketch == 0 => pc
+                    .project
+                    .bodies
+                    .get(mi)
+                    .and_then(|b| b.faces.get(fi))
+                    .map_or([0.0, 0.0], |f| qymcad_core::feature::shift_on_face(qymcad_core::feature::FaceAt { centre: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal }, point)),
                 _ => [0.0, 0.0],
             };
             pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-u", "off_u", u, -100000.0, 100000.0).hint("f-hole-shift-hint"));

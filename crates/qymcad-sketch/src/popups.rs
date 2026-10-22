@@ -109,13 +109,19 @@ pub(crate) fn shape_now(project: &Project, place: &qymcad_ui_state::Placing, si:
         PlacingShape::None => None,
         PlacingShape::Ellipse(handle, centre) => {
             let (rx, ry) = project.ellipse_axes(si, *handle)?;
+            // its turn as the polygon's: the direction of its major axis, written to a hundredth of a degree
+            let deg = project.kept_number(*handle, "turn").unwrap_or(0.0);
+            let mut turn = qymcad_ui_state::CmdParam::new("sk-angle", "turn", deg, -360.0, 360.0).unit("unit-deg-suffix");
+            turn.txt = qymcad_core::expr::fmt_num((deg * 100.0).round() / 100.0);
             let fields = vec![
                 as_dimension(qymcad_ui_state::CmdParam::new("sk-width", "w", 2.0 * rx, 0.02, MAX_SKETCH_LENGTH)),
                 as_dimension(qymcad_ui_state::CmdParam::new("sk-height", "h", 2.0 * ry, 0.02, MAX_SKETCH_LENGTH)),
+                turn,
             ];
-            let free = |key| Size { key, kind: Kind::Length, held: Held::Free };
+            let free = |key, kind| Size { key, kind, held: Held::Free };
             let hi = Point2::new(centre.x + rx, centre.y + ry);
-            Some(ShapeNow { fields, sizes: vec![free("w"), free("h")], at: hi, around: corners(qymcad_core::geom::Bbox { min: Point2::new(centre.x - rx, centre.y - ry), max: hi }) })
+            let sizes = vec![free("w", Kind::Length), free("h", Kind::Length), free("turn", Kind::Angle)];
+            Some(ShapeNow { fields, sizes, at: hi, around: corners(qymcad_core::geom::Bbox { min: Point2::new(centre.x - rx, centre.y - ry), max: hi }) })
         }
         PlacingShape::Rect { a, b, .. } => Some(rect_now([*a, *b])),
         PlacingShape::RectCenter { center, corner, .. } => Some(rect_now([Point2::new(2.0 * center.x - corner.x, 2.0 * center.y - corner.y), *corner])),
@@ -261,6 +267,10 @@ pub(crate) fn follow_typed(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
                 if let Some(h) = h {
                     sk.project.set_ellipse_axes(si, handle, w / 2.0, h / 2.0);
                 }
+            }
+            // the turn typed turns it, the axes kept
+            if let Some(t) = field(sk.place, "turn").filter(|t| sk.project.kept_number(handle, "turn").is_some_and(|now| (now - t).abs() > 1e-9)) {
+                sk.project.set_ellipse_turn(si, handle, t.to_radians());
             }
         }
         PlacingShape::Rect { a, b, ids } => {
@@ -450,6 +460,15 @@ pub fn open_shape_size(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
             sk.place.reopen(PlacingShape::Poly(centre));
             sk.place.focus = true;
             return true;
+        }
+        // AN ELLIPSE OPENS ITS AXES AND ITS TURN, as a polygon opens its radius and turn: it opened nothing
+        let ellipse = sk.project.sketches[si].entity(eid).and_then(|e| e.kind.as_ellipse()).map(|el| el.c);
+        if let Some(c) = ellipse {
+            if let Some(at) = qymcad_ui_state::sketch_pt(&*sk.project, si, c) {
+                sk.place.reopen(PlacingShape::Ellipse(c, at));
+                sk.place.focus = true;
+                return true;
+            }
         }
         // a straight side of a slot: an end of it is an arc, which opens its own radius below
         let straight = sk.project.sketches[si].entity(eid).is_some_and(|e| e.kind.as_line().is_some());

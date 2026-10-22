@@ -168,6 +168,8 @@ impl InlineEdit {
 pub struct AnnotEdit {
     pub note: Option<usize>,
     pub note_buf: String,
+    /// the field of a note just opened takes the keyboard, its words selected
+    pub note_focus: bool,
     pub text: Option<usize>,
     /// The text field of the popup has just been opened and asks for the caret.
     ///

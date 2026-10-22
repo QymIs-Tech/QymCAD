@@ -382,8 +382,9 @@ impl Project {
     pub(crate) fn prep_move(&mut self, p: &mut Pass, src: Id, mat: [f64; 12], body: Id) -> crate::feature::KernelJob {
         // THE SHIFT FOLLOWS ITS FORMULAS, typed at the gizmo or named: the translation of the transform, axis by axis
         let mut mat = mat;
-        for (at, key) in [(3, "dx"), (7, "dy"), (11, "dz")] {
-            mat[at] = p.dim(key, mat[at]);
+        for k in 0..3 {
+            let at = 3 + 4 * k;
+            mat[at] = p.dim(["dx", "dy", "dz"][k], mat[at]);
         }
         // A BODY MADE OF A MESH MOVES IN THE DOCUMENT: it has no B-rep for the kernel to move - its mesh and the faces found
         // on it are moved as they are, and nothing is found on it again

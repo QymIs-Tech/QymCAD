@@ -20,7 +20,7 @@ pub fn in_hand<'a>(sk: &'a mut qymcad_ui_state::SketchCtx<'_>) -> Option<Box<dyn
     if let Some(e) = editor_open(sk) {
         return Some(editor_tool(sk, e));
     }
-    Some(Box::new(InSketch { sk, boxed: Boxed::Nothing, seen: Vec::new(), ctx: None, gate: Gate::Open, asks: Vec::new(), kept: &[], item: None }))
+    Some(Box::new(InSketch { sk, boxed: Boxed::Nothing, seen: Vec::new(), ctx: None, gate: Gate::Open, asks: Vec::new(), keeping: Keeping::NONE }))
 }
 
 /// WHAT HOLDS THE HAND OF A SKETCH beyond its tool: FILLET ALL, waiting for the shape to round; a copy, a cut or an insert,
@@ -44,6 +44,8 @@ enum Boxed {
     Turn,
     /// a label of the sketch edited: its string, font and height
     Label,
+    /// a note of the sketch edited: its words
+    Note,
     Nothing,
 }
 
@@ -57,10 +59,21 @@ struct InSketch<'a, 'b> {
     gate: Gate,
     /// what the frame kept of the names and references of the rows of the box of a shape
     asks: Vec<qymcad_ui_state::FieldAsk>,
-    /// the values of the box an item keeps - the sides and turn of a polygon, the counts of a pattern, the height of a
-    /// label - and the item, where it stands already
+    /// the values of the box an item keeps, and the item
+    keeping: Keeping,
+}
+
+/// THE VALUES OF THE BOX AN ITEM KEEPS - the sides and the turn of a polygon, the counts of a pattern, the height of a
+/// label - and the item, where it stands already.
+#[derive(Clone, Copy)]
+struct Keeping {
     kept: &'static [KeptBy],
     item: Option<Id>,
+}
+
+impl Keeping {
+    /// No value an item keeps.
+    const NONE: Keeping = Keeping { kept: &[], item: None };
 }
 
 /// A VALUE OF THE BOX OF THE SKETCH AN ITEM KEEPS: the field of the box, and the key the item keeps it under.
@@ -114,21 +127,21 @@ impl InSketch<'_, '_> {
     /// are named once they stand. The distance of an offset names the dimension it lays.
     fn name_kept_values(&mut self, d: &mut Described) {
         let sk = &*self.sk;
-        if self.kept.is_empty() {
+        if self.keeping.kept.is_empty() {
             if sk.armed.pattern().is_some() {
                 let pattern = sk.pat.edit.and_then(|pi| qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses).and_then(|si| sk.project.sketches[si].patterns.get(pi)).map(|p| p.id));
-                (self.kept, self.item) = (&PATTERN_KEPT[..], pattern);
+                self.keeping = Keeping { kept: &PATTERN_KEPT, item: pattern };
             } else if sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Text) {
                 let label = sk.inline.text().and_then(|ti| qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses).and_then(|si| sk.project.sketches[si].texts.get(ti)).map(|t| t.id));
-                (self.kept, self.item) = (&TEXT_KEPT[..], label);
+                self.keeping = Keeping { kept: &TEXT_KEPT, item: label };
             }
         }
         let Some(spec) = d.boxed.as_mut() else { return };
         let numbers: Vec<&str> = d.bar.iter().filter_map(|o| if let Opt::Number { key, .. } = o { Some(key.name) } else { None }).collect();
         let held = |field: &str| sk.place.fields.iter().any(|p| p.key == field) || numbers.contains(&field);
-        for k in self.kept.iter().filter(|k| held(k.field)) {
+        for k in self.keeping.kept.iter().filter(|k| held(k.field)) {
             if !spec.names.iter().any(|n| n.field == k.field) {
-                spec.names.push(qymcad_ui_state::item_field_name(&*sk.project, k.field, self.item, k.key));
+                spec.names.push(qymcad_ui_state::item_field_name(&*sk.project, k.field, self.keeping.item, k.key));
             }
         }
         if numbers.contains(&"sk_offset") {
@@ -152,10 +165,10 @@ impl InSketch<'_, '_> {
             let shape = shape_box(sk.place, &now);
             spec.layout = shape.layout;
             spec.names = shape.names;
-            (self.kept, self.item) = match sk.place.shape {
-                qymcad_ui_state::PlacingShape::Poly(c) => (&POLYGON_KEPT[..], Some(c)),
-                qymcad_ui_state::PlacingShape::Ellipse(c, _) => (&ELLIPSE_KEPT[..], Some(c)),
-                _ => (&[][..], None),
+            self.keeping = match sk.place.shape {
+                qymcad_ui_state::PlacingShape::Poly(c) => Keeping { kept: &POLYGON_KEPT, item: Some(c) },
+                qymcad_ui_state::PlacingShape::Ellipse(c, _) => Keeping { kept: &ELLIPSE_KEPT, item: Some(c) },
+                _ => Keeping::NONE,
             };
             self.boxed = Boxed::Shape;
             self.seen = sk.place.fields.iter().map(|p| p.val).collect();
@@ -186,15 +199,15 @@ impl InSketch<'_, '_> {
 fn pattern_box(armed: &qymcad_ui_state::Armed, pat: &qymcad_ui_state::SketchPattern) -> Option<qymcad_ui_state::BoxSpec> {
     use qymcad_ui_state::{AsLit, OptKey, Row, Section};
     let kind = armed.pattern()?;
-    let rows = |keys: &[(&str, &str)]| keys.iter().map(|(c, k)| Row::new(qymcad_i18n::tr(c)).field(k)).collect::<Vec<Row>>();
+    let rows = |of: &[PatternRow]| of.iter().map(|r| Row::new(qymcad_i18n::tr(r.caption)).field(r.field)).collect::<Vec<Row>>();
     let direction = |n: usize| qymcad_i18n::tr1("box-direction-n", "n", &n.to_string());
     let sections = if kind == qymcad_ui_state::PatternKind::Linear {
         vec![
-            Section::titled(direction(1), qymcad_ui_state::Folded::No, rows(&[("cmd-copies", "skpat_count"), ("opt-step-x", "skpat_dx"), ("opt-step-y", "skpat_dy")])),
-            Section::switched(direction(2), OptKey::of(SECOND_DIRECTION), (pat.count2 > 1).lit(), rows(&[("cmd-copies", "skpat_count2"), ("opt-step-x", "skpat_dx2"), ("opt-step-y", "skpat_dy2")])),
+            Section::titled(direction(1), qymcad_ui_state::Folded::No, rows(&FIRST_DIRECTION)),
+            Section::switched(direction(2), OptKey::of(SECOND_DIRECTION), (pat.count2 > 1).lit(), rows(&SECOND_DIRECTION_ROWS)),
         ]
     } else {
-        vec![Section::plain(rows(&[("cmd-copies", "skpat_count"), ("cmd-angle", "skpat_angle")]))]
+        vec![Section::plain(rows(&AROUND))]
     };
     let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::close_by(qymcad_ui_state::By::ViewCorner));
     spec.layout.sections = sections;
@@ -233,6 +246,45 @@ fn text_box(sk: &mut qymcad_ui_state::SketchCtx) -> Option<qymcad_ui_state::BoxS
     Some(spec)
 }
 
+/// ONE ROW OF THE BOX OF A PATTERN: its caption by its catalogue key, and the key of its field.
+struct PatternRow {
+    caption: &'static str,
+    field: &'static str,
+}
+
+/// The rows of the first direction of a linear pattern.
+const FIRST_DIRECTION: [PatternRow; 3] = [
+    PatternRow { caption: "cmd-copies", field: "skpat_count" },
+    PatternRow { caption: "opt-step-x", field: "skpat_dx" },
+    PatternRow { caption: "opt-step-y", field: "skpat_dy" },
+];
+/// The rows of the second direction of a linear pattern.
+const SECOND_DIRECTION_ROWS: [PatternRow; 3] = [
+    PatternRow { caption: "cmd-copies", field: "skpat_count2" },
+    PatternRow { caption: "opt-step-x", field: "skpat_dx2" },
+    PatternRow { caption: "opt-step-y", field: "skpat_dy2" },
+];
+/// The rows of a circular pattern.
+const AROUND: [PatternRow; 2] = [PatternRow { caption: "cmd-copies", field: "skpat_count" }, PatternRow { caption: "cmd-angle", field: "skpat_angle" }];
+
+/// The key of the field of the words of a note edited.
+const NOTE_TEXT: &str = "note_text";
+
+/// THE BOX OF A NOTE EDITED, at the note: its words, taking the keyboard, Apply and Cancel as every box. A note had a
+/// small field of its own over the sheet.
+fn note_box(sk: &mut qymcad_ui_state::SketchCtx) -> Option<qymcad_ui_state::BoxSpec> {
+    use qymcad_ui_state::{Opt, OptKey, Row, Section};
+    let ni = sk.inline.note()?;
+    let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return None };
+    let n = sk.project.sketches.get(si)?.notes.get(ni)?;
+    let at = qymcad_ui_state::Sheet { view: *sk.view, rect: sk.canvas }.at(Point2::new(n.x, n.y));
+    let focus = qymcad_ui_state::Focus::take(&mut sk.annot.note_focus);
+    let words = Opt::Text { key: OptKey::of(NOTE_TEXT), text: sk.annot.note_buf.clone(), placeholder: String::new(), unfit: None, hint: None, focus };
+    let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::sheet_spot(at, &[at])));
+    spec.layout.sections = vec![Section::plain(vec![Row::new(qymcad_i18n::tr("opt-note")).opt(words)])];
+    Some(spec)
+}
+
 /// The key of the title of the second direction of a linear pattern of a sketch: opened, the direction is on.
 pub(crate) const SECOND_DIRECTION: &str = "skpat_dir2";
 
@@ -241,7 +293,7 @@ impl FramedTool for InSketch<'_, '_> {
         self.ctx = Some(ctx.clone());
         self.boxed = Boxed::Nothing;
         self.gate = Gate::Open;
-        (self.kept, self.item) = (&[], None);
+        self.keeping = Keeping::NONE;
         let sk = &mut *self.sk;
         let head = |name: String, ends| Head { icon: ph::PENCIL_SIMPLE, name, ends, after: AfterApply::Stays };
         match now(sk) {
@@ -276,12 +328,16 @@ impl FramedTool for InSketch<'_, '_> {
                 if text_laid.is_some() && sk.inline.text().is_some() {
                     self.boxed = Boxed::Label;
                 }
-                let boxed = self.box_now().or(pattern_laid).or(text_laid);
+                let note_laid = note_box(sk);
+                if note_laid.is_some() {
+                    self.boxed = Boxed::Note;
+                }
+                let boxed = self.box_now().or(pattern_laid).or(text_laid).or(note_laid);
                 let ends = match self.boxed {
                     Boxed::Turn => Ends::ApplyCancel,
                     // THE BOX OF A SHAPE ENDS AS EVERY BOX DOES: Apply lays what was typed, Cancel - as Esc - leaves the shape as
                     // it stands without it
-                    Boxed::Shape | Boxed::Label => Ends::ApplyCancel,
+                    Boxed::Shape | Boxed::Label | Boxed::Note => Ends::ApplyCancel,
                     Boxed::Nothing if pattern => Ends::ApplyCancel,
                     Boxed::Nothing if empty => Ends::Nothing,
                     Boxed::Nothing => Ends::Close,
@@ -304,7 +360,7 @@ impl FramedTool for InSketch<'_, '_> {
     fn fields(&mut self) -> &mut Vec<qymcad_ui_state::CmdParam> {
         match self.boxed {
             Boxed::Turn => &mut self.sk.rot.field,
-            Boxed::Shape | Boxed::Label | Boxed::Nothing => &mut self.sk.place.fields,
+            Boxed::Shape | Boxed::Label | Boxed::Note | Boxed::Nothing => &mut self.sk.place.fields,
         }
     }
 
@@ -327,6 +383,12 @@ impl FramedTool for InSketch<'_, '_> {
 
     /// An option of a row of a size of the shape in the box - kept until Enter lays it - or of the bar.
     fn took(&mut self, did: Did) {
+        if let Did::Retyped { key, text } = &did {
+            if key.name == NOTE_TEXT {
+                self.sk.annot.note_buf = text.clone();
+                return;
+            }
+        }
         if let (Boxed::Shape, qymcad_ui_state::Sel::Sketch(si)) = (self.boxed, *self.sk.sel) {
             if shape_took(self.sk, si, &did) {
                 return;
@@ -344,7 +406,7 @@ impl FramedTool for InSketch<'_, '_> {
             // ENTER IN THE BOX OF A SHAPE: its sizes laid - once more over the document as the box found it, for a shape
             // laid anew - and kept as one step with what was tried on it; the box goes, the tool stays
             Boxed::Shape => {
-                let (kept, item) = (self.kept, self.item);
+                let Keeping { kept, item } = self.keeping;
                 let named = |sk: &mut qymcad_ui_state::SketchCtx| {
                     shape_lay(sk, si, &self.asks);
                     if let Some(c) = item {
@@ -379,11 +441,21 @@ impl FramedTool for InSketch<'_, '_> {
             Boxed::Label => {
                 qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-text"));
                 qymcad_ui_state::text_edit_apply(sk, si);
-                if let Some(t) = self.item {
-                    qymcad_ui_state::keep_item_values(sk.project, &self.asks, &item_values(self.kept, t));
+                if let Some(t) = self.keeping.item {
+                    qymcad_ui_state::keep_item_values(sk.project, &self.asks, &item_values(self.keeping.kept, t));
                 }
                 qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
                 qymcad_ui_state::end_label_edit(sk);
+                return Ok(());
+            }
+            // ENTER IN THE BOX OF A NOTE: the note takes its words, as one step; the editing ends
+            Boxed::Note => {
+                if let Some(ni) = sk.inline.note() {
+                    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("opt-note"));
+                    sk.project.set_note_text(si, ni, sk.annot.note_buf.clone());
+                    qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
+                }
+                sk.inline.clear();
                 return Ok(());
             }
             Boxed::Nothing => {}
@@ -439,6 +511,7 @@ impl FramedTool for InSketch<'_, '_> {
                 }
                 Boxed::Turn => self.put_down(),
                 Boxed::Label => qymcad_ui_state::end_label_edit(sk),
+                Boxed::Note => sk.inline.clear(),
                 Boxed::Nothing => {
                     if sk.armed.pattern().is_some() {
                         self.put_down();
@@ -482,6 +555,10 @@ impl FramedTool for InSketch<'_, '_> {
     /// ONE STEP OF THE Esc OF A SKETCH (`escape_step`). The box of the sizes of a shape is a step of its own: it goes, the
     /// tool that drew the shape stays for the next, and the next Esc puts the tool down.
     fn back(&mut self) -> Stepped {
+        if self.boxed == Boxed::Note {
+            self.sk.inline.clear();
+            return Stepped::Back;
+        }
         if self.boxed == Boxed::Shape {
             trial_dropped(self.sk);
             self.sk.place.clear();
@@ -530,7 +607,7 @@ impl FramedTool for InSketch<'_, '_> {
                 }
             }
             Boxed::Turn => sk.rot.angle = sk.rot.field.first().map_or(0.0, |p| p.val),
-            Boxed::Label | Boxed::Nothing => {}
+            Boxed::Label | Boxed::Note | Boxed::Nothing => {}
         }
     }
 }

@@ -3,38 +3,19 @@
 use crate::Notice;
 use super::*;
 
-pub fn note_editor(annot: &mut AnnotEdit, inline: &mut InlineEdit, project: &mut Project, sel: Sel, view: View2d, ctx: &egui::Context, rect: Rect) {
-    let Sel::Sketch(si) = sel else {
-        inline.clear();
-        return;
-    };
-    let Some(ni) = inline.note() else { return };
-    let Some(at) = project.sketches.get(si).and_then(|s| s.notes.get(ni)).map(|n| (Sheet { view, rect }).at(Point2::new(n.x, n.y))) else {
-        inline.clear();
-        return;
-    };
-    let (mut apply, mut close) = (false, false);
-    egui::Area::new(egui::Id::new(("noteedit", si, ni))).fixed_pos(clamp_popup(at, rect) + egui::vec2(0.0, -28.0)).order(crate::AT_GEOMETRY).show(ctx, |ui| {
-        crate::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut annot.note_buf).desired_width(160.0));
-                if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    apply = true;
-                }
-                if ui.button(egui_phosphor::regular::CHECK).clicked() {
-                    apply = true;
-                }
-            });
-        });
-    });
-    if apply {
-        project.set_note_text(si, ni, annot.note_buf.clone());
-        close = true;
-    }
-    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        inline.clear(); // a note is not a label: no tool is in hand for it
-    }
+/// A NOTE OF A SKETCH: the sketch, and the note among its notes.
+#[derive(Clone, Copy)]
+pub struct NoteAt {
+    pub si: usize,
+    pub ni: usize,
+}
+
+/// OPEN THE EDITING OF NOTE `at`: what a double click on it does. Its box is the box of the tool of the
+/// sketch in hand, at the note, its words taking the keyboard.
+pub fn begin_note_edit(project: &Project, annot: &mut AnnotEdit, inline: &mut InlineEdit, at: NoteAt) {
+    *inline = InlineEdit::Note(at.ni);
+    annot.note_buf = project.sketches.get(at.si).and_then(|s| s.notes.get(at.ni)).map(|n| n.text.clone()).unwrap_or_default();
+    annot.note_focus = true;
 }
 
 /// CLOSE THE EDITING OF A LABEL and put the text tool down.

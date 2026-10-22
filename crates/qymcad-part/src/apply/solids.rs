@@ -65,7 +65,10 @@ pub fn apply_hole_cmd(cmd: &qymcad_ui_state::FeatCommand, hole: qymcad_ui_state:
     let face = project.bodies.get(mi).and_then(|b| b.faces.get(fi)).ok_or_else(|| refused("msg-pick-face-centre"))?;
     // the face is referred to by its persistent id, so the hole holds on to it through a rebuild
     let key = qymcad_core::feature::FaceKey { index: fi as u32, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: face.id };
-    let at = qymcad_core::feature::point_on_face(key.centroid, key.normal, [qymcad_ui_state::cmd_val(cmd, "off_u"), qymcad_ui_state::cmd_val(cmd, "off_v")]);
+    let at = qymcad_core::feature::point_on_face(
+        qymcad_core::feature::FaceAt { centre: key.centroid, normal: key.normal },
+        [qymcad_ui_state::cmd_val(cmd, "off_u"), qymcad_ui_state::cmd_val(cmd, "off_v")],
+    );
     let body = project.add_hole_at(
         src,
         key,

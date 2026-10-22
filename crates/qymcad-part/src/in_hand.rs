@@ -38,8 +38,14 @@ struct CommandTool<'a, 'b> {
     kept: Vec<qymcad_ui_state::ItemValue<'static>>,
 }
 
-/// THE NUMBERS OF THE BAR A FEATURE KEEPS, by the key of the bar and the key of the feature: the starts of a thread.
-const BAR_NUMBERS_KEPT: [(&str, &str); 1] = [("thread_starts", "starts")];
+/// A NUMBER OF THE BAR A FEATURE KEEPS: its key in the bar, and the key the feature keeps it under.
+struct BarKept {
+    field: &'static str,
+    key: &'static str,
+}
+
+/// The numbers of the bar a feature keeps: the starts of a thread.
+const BAR_NUMBERS_KEPT: [BarKept; 1] = [BarKept { field: "thread_starts", key: "starts" }];
 
 impl CommandTool<'_, '_> {
     /// Does Enter take an extrusion or a revolution from the flat choice of its contours, the contours picked, into 3D.
@@ -56,9 +62,9 @@ impl FramedTool for CommandTool<'_, '_> {
         // A NUMBER OF THE BAR THE FEATURE KEEPS is named through the feature, as its fields are
         self.kept.clear();
         let numbers: Vec<&'static str> = d.bar.iter().filter_map(|o| if let qymcad_ui_state::Opt::Number { key, .. } = o { Some(key.name) } else { None }).collect();
-        for (field, key) in BAR_NUMBERS_KEPT.iter().filter(|(f, _)| numbers.contains(f)) {
-            self.kept.push(qymcad_ui_state::ItemValue { field, node: self.pc.cmd.edit.unwrap_or(0), key });
-            let name = qymcad_ui_state::item_field_name(&*self.pc.project, field, self.pc.cmd.edit, key);
+        for b in BAR_NUMBERS_KEPT.iter().filter(|b| numbers.contains(&b.field)) {
+            self.kept.push(qymcad_ui_state::ItemValue { field: b.field, node: self.pc.cmd.edit.unwrap_or(0), key: b.key });
+            let name = qymcad_ui_state::item_field_name(&*self.pc.project, b.field, self.pc.cmd.edit, b.key);
             d.boxed.get_or_insert_with(|| qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::close_by(qymcad_ui_state::By::ViewCorner))).names.push(name);
         }
         // Enter in the flat choice of the contours takes the command into 3D, not out of the hand

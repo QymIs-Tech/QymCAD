@@ -6,12 +6,18 @@
 use qymcad_core::geom::Point2;
 use qymcad_core::model::{DimTarget, FeatNumber, Param, PatternKind, PlainNumber, Project};
 
-/// A document with one sketch open, and its index.
-fn sketch() -> (Project, usize) {
+/// A document with one sketch, and the index of the sketch.
+struct Drawn {
+    p: Project,
+    si: usize,
+}
+
+/// A document with one sketch.
+fn sketch() -> Drawn {
     let mut p = Project::default();
     p.new_document();
     let si = p.new_sketch("S");
-    (p, si)
+    Drawn { p, si }
 }
 
 /// Parameter `name` given the number `v`, the formulas over it worked out.
@@ -30,7 +36,7 @@ fn value(p: &Project, node: u64, key: &str) -> f64 {
 
 #[test]
 fn the_sides_of_a_polygon_follow_a_formula_and_are_read_by_a_name() {
-    let (mut p, si) = sketch();
+    let Drawn { mut p, si } = sketch();
     let (c, _) = p.add_polygon_param(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
     assert_eq!(value(&p, c, "sides"), 6.0, "a hexagon is read as six sides");
     // named, the count is read by another formula
@@ -48,7 +54,7 @@ fn the_sides_of_a_polygon_follow_a_formula_and_are_read_by_a_name() {
 
 #[test]
 fn the_axes_and_the_turn_of_an_ellipse_follow_their_formulas() {
-    let (mut p, si) = sketch();
+    let Drawn { mut p, si } = sketch();
     p.add_ellipse_entity(si, Point2::new(0.0, 0.0), 20.0, 10.0, 0.0, qymcad_core::feature::Purpose::Real);
     let c = p.sketches[si].entities.iter().find_map(|e| e.kind.as_ellipse().map(|el| el.c)).expect("the centre of the ellipse");
     assert!((value(&p, c, "w") - 40.0).abs() < 1e-6, "the width of an ellipse of semi-axis 20 is not 40: {}", value(&p, c, "w"));
@@ -65,7 +71,7 @@ fn the_axes_and_the_turn_of_an_ellipse_follow_their_formulas() {
 
 #[test]
 fn the_count_of_a_pattern_of_a_sketch_follows_a_name() {
-    let (mut p, si) = sketch();
+    let Drawn { mut p, si } = sketch();
     let line = p.add_line_entity(si, 0.0, 0.0, 5.0, 0.0, qymcad_core::feature::Purpose::Real);
     let id = p.add_pattern(si, &[line], PatternKind::Linear { dx: 10.0, dy: 0.0, count: 3, dx2: 0.0, dy2: 0.0, count2: 1 });
     let copies = |p: &Project| p.sketches[si].patterns.iter().find(|q| q.id == id).map(|q| q.instances.len()).unwrap_or(0);
@@ -84,7 +90,7 @@ fn the_count_of_a_pattern_of_a_sketch_follows_a_name() {
 
 #[test]
 fn the_height_of_a_text_follows_its_formula() {
-    let (mut p, si) = sketch();
+    let Drawn { mut p, si } = sketch();
     p.add_sketch_text(
         si,
         qymcad_core::model::TextSpec {
@@ -108,7 +114,7 @@ fn the_height_of_a_text_follows_its_formula() {
 
 #[test]
 fn a_named_value_of_an_item_is_one_name_of_the_document() {
-    let (mut p, si) = sketch();
+    let Drawn { mut p, si } = sketch();
     let (c, _) = p.add_polygon_param(si, Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), 6, qymcad_core::feature::Purpose::Real);
     assert!(p.add_named_feat_dim("n".into(), c, "sides"));
     let target = DimTarget::Feature { node: c, key: "sides".into() };

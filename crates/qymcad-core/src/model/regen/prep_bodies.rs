@@ -331,12 +331,13 @@ impl Project {
                             let on = [point[0] - off * c.normal[0], point[1] - off * c.normal[1], point[2] - off * c.normal[2]];
                             // THE SHIFT FROM THE CENTRE OF THE FACE follows its formulas, typed in the box or named; with
                             // none the hole holds its place. What it comes to is kept on the node, where a name reads it
-                            let held = crate::feature::shift_on_face(c.centroid, c.normal, on);
+                            let face = crate::feature::FaceAt { centre: c.centroid, normal: c.normal };
+                            let held = crate::feature::shift_on_face(face, on);
                             let shift = [p.dim("off_u", held[0]), p.dim("off_v", held[1])];
                             if let Some(FeatureKind::Hole { shift: kept, .. }) = self.timeline.iter_mut().find(|n| n.id == p.node).map(|n| &mut n.kind) {
                                 *kept = shift;
                             }
-                            (if shift == held { on } else { crate::feature::point_on_face(c.centroid, c.normal, shift) }, c.normal)
+                            (if shift == held { on } else { crate::feature::point_on_face(face, shift) }, c.normal)
                         }
                         Err(_) => (point, normal),
                     };

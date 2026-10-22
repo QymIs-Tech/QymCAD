@@ -406,7 +406,7 @@ impl Project {
                 }
             }
         }
-        self.impose_item_values(&vars, &mut errs);
+        errs.extend(self.impose_item_values(&vars).into_iter().map(|f| (f.formula, f.error)));
         errs
     }
 
