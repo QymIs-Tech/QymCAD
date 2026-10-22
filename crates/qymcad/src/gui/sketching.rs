@@ -275,20 +275,9 @@ impl App {
             painter.rect_filled(Rect::from_center_size(hs, egui::vec2(10.0, 10.0)), 2.0, col);
             painter.circle_stroke(hs, 14.0, Stroke::new(1.0, col));
         }
-        // the selection box on top: left to right is A WINDOW (solid blue, only what is wholly
-        // inside), right to left is A CROSSING (dashed green, anything touched)
-        if let (Some(a), Some(b)) = (self.chosen.tree_sel.box_start, resp.interact_pointer_pos()) {
-            let r = Rect::from_two_pos(a, b);
-            if b.x < a.x {
-                let st = Stroke::new(1.2, self.scheme.pal.select_cross());
-                for seg in [[r.left_top(), r.right_top()], [r.right_top(), r.right_bottom()], [r.right_bottom(), r.left_bottom()], [r.left_bottom(), r.left_top()]] {
-                    painter.add(egui::Shape::dashed_line(&seg, st, 5.0, 4.0));
-                }
-                painter.rect_filled(r, 0.0, crate::palette::a(self.scheme.pal.select_cross(), 20));
-            } else {
-                painter.rect_stroke(r, 0.0, Stroke::new(1.2, self.scheme.pal.select_window()), egui::StrokeKind::Middle);
-                painter.rect_filled(r, 0.0, crate::palette::a(self.scheme.pal.select_window(), 20));
-            }
+        if let (Some(from), Some(to)) = (self.chosen.tree_sel.box_start, resp.interact_pointer_pos()) {
+            crate::gui::frame_select::paint_box(painter, &self.scheme.pal, qymcad_ui_state::ScreenBox { from, to });
+            // the selection box on top
         }
         let asks = qymcad_ui_state::text_popups(qymcad_ui_state::editing_of!(self), &mut self.font_cache, &mut qymcad_ui_state::text_ctx_of!(self), ctx); // the label editor and the list of fonts
         self.do_bar_asks(asks, ctx);

@@ -1,4 +1,5 @@
 use super::*;
+use crate::gui::hand::Carry;
 
 /// The width and the height of the rectangle with side `side` of sketch `si`, as it stands.
 struct Sized {
@@ -21,10 +22,42 @@ fn parameter(app: &mut App, name: &str, value: f64) {
     app.project.eval_parameters();
 }
 
+/// THE PROFILE OF THE EXTRUSION IN HAND LET GO AND TAKEN AGAIN BY BOXES: a crossing drawn right to left over empty space
+/// lets it go, a window drawn left to right round the contours of sketch `si` takes them back. Answers what did not work.
+fn profile_boxed(hand: &mut Hand, si: usize) -> Option<String> {
+    let points: Vec<qymcad_core::geom::Point2> = qymcad_ui_state::sketch_closed_contours(&hand.app.project, si)
+        .into_iter()
+        .filter_map(|id| hand.app.project.contour_index(id))
+        .flat_map(|ci| hand.app.project.contours[ci].points.clone())
+        .collect();
+    if points.is_empty() {
+        return Some("the sketch has no closed contour".into());
+    }
+    // the person looks at the sketch first: the middle of its contours
+    let lo = points.iter().fold(qymcad_core::geom::Point2::new(f64::MAX, f64::MAX), |m, p| qymcad_core::geom::Point2::new(m.x.min(p.x), m.y.min(p.y)));
+    let hi = points.iter().fold(qymcad_core::geom::Point2::new(f64::MIN, f64::MIN), |m, p| qymcad_core::geom::Point2::new(m.x.max(p.x), m.y.max(p.y)));
+    let mid = qymcad_core::geom::Point2::new((lo.x + hi.x) * 0.5, (lo.y + hi.y) * 0.5);
+    hand.look_at([mid.x, mid.y, 0.0], 6.0);
+    let mut round = egui::Rect::NOTHING;
+    for p in &points {
+        round.extend_with(hand.on_screen3d([p.x, p.y, 0.0]));
+    }
+    let round = round.expand(20.0);
+    // left of the contours: the box of the length stands by the arrow
+    let empty = round.left_top() - egui::vec2(10.0, 0.0);
+    hand.carry(Carry { from: empty, to: empty + egui::vec2(-30.0, 20.0) }).let_go(empty + egui::vec2(-30.0, 20.0));
+    if !hand.app.tools.gsel.profiles.is_empty() {
+        return Some(format!("a crossing over empty space at {empty:?} (the contours within {round:?}) left {} profiles in the extrusion", hand.app.tools.gsel.profiles.len()));
+    }
+    hand.carry(Carry { from: round.left_top(), to: round.right_bottom() }).let_go(round.right_bottom());
+    let taken = hand.app.tools.gsel.profiles.len();
+    (taken != 1).then(|| format!("a window round the rectangle took {taken} profiles into the extrusion, 1 expected"))
+}
+
 /// ONE GESTURE IN A TOOL OF EVERY WORKBENCH, the frame of a tool being one: the box at the geometry takes a formula over
 /// the parameter `fw`, Tab goes on to the next field, Enter keeps it, Esc puts the tool down, a double click opens the
 /// box again with the formula in it, the key of a tool pressed again puts it down - in a rectangle of a sketch, in the
-/// extrusion of a part and in the pattern of a part in the assembly - and `fw` changed, what was given it follows.
+/// extrusion of a part (its profile let go and taken back by boxes) and in the pattern of a part in the assembly - and `fw` changed, what was given it follows.
 pub(super) fn one_gesture_in_every_workbench(app: &mut App, problems: &mut Vec<String>) {
     let step = "the frame of a tool";
     app.exit_context();
@@ -87,6 +120,9 @@ pub(super) fn one_gesture_in_every_workbench(app: &mut App, problems: &mut Vec<S
     app.chosen.sel = crate::gui::Sel::Sketch(si);
     let mut hand = Hand::new(app);
     hand.press_hint(&crate::i18n::tr("tb-extrude-hint"));
+    if let Some(why) = profile_boxed(&mut hand, si) {
+        problems.push(format!("[{step}] {why}"));
+    }
     if !hand.type_after_word(&crate::i18n::tr("f-length"), "fw/5") {
         problems.push(format!("[{step}] the extrusion opened no box with its length"));
     }

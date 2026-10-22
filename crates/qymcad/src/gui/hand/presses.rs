@@ -30,6 +30,12 @@ impl<'a> Hand<'a> {
         qymcad_ui_state::words_laid(&self.win.ctx)
     }
 
+    /// LET THE PRIMARY BUTTON GO at `at` with `modifiers` held, after `carry`: a key pressed at the end of a drag, as Shift
+    /// pressed before the release of a box adds what it takes.
+    pub fn let_go_holding(&mut self, at: egui::Pos2, modifiers: egui::Modifiers) -> &mut Self {
+        self.frame_holding(modifiers, vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers }])
+    }
+
     /// THE SAME PRESS with `modifiers` held - Shift or Ctrl adding a row to what is picked.
     pub fn press_word_holding(&mut self, word: &str, near: egui::Pos2, modifiers: egui::Modifiers) -> bool {
         self.frame(Vec::new());

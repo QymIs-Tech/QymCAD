@@ -148,45 +148,129 @@ pub fn constraint_label(c: &qymcad_core::model::Constraint) -> String {
     }
 }
 
-/// The closed contour of sketch `si` under a screen point (point-in-polygon; the smaller area wins).
-pub fn contour_under_2d(project: &Project, view: &View2d, rect: Rect, screen: Pos2, si: usize) -> Option<Id> {
+/// A CLOSED CONTOUR OF A SKETCH LAID ON THE SCREEN: its id and its outline, closed back to the first point.
+struct ContourOnScreen {
+    id: Id,
+    outline: Vec<Pos2>,
+}
+
+/// The closed contours of sketch `si` laid onto the screen by `at` (a point of the sketch -> a point of the screen).
+fn contours_on_screen(project: &Project, si: usize, at: impl Fn(Point2) -> Pos2) -> Vec<ContourOnScreen> {
+    let mut out = Vec::new();
+    for id in sketch_closed_contours(project, si) {
+        let Some(ci) = project.contour_index(id) else { continue };
+        let mut outline: Vec<Pos2> = project.contours[ci].points.iter().map(|p| at(*p)).collect();
+        if let Some(first) = outline.first().copied() {
+            outline.push(first);
+        }
+        out.push(ContourOnScreen { id, outline });
+    }
+    out
+}
+
+/// The contour under the screen point `screen` (point-in-polygon); of nested ones the smaller area wins.
+fn contour_under(contours: Vec<ContourOnScreen>, screen: Pos2) -> Option<Id> {
     let mut best: Option<(f64, Id)> = None;
-    for cid in sketch_closed_contours(project, si) {
-        let ci = project.contour_index(cid)?;
-        let pts: Vec<Pos2> = project.contours[ci].points.iter().map(|p| (Sheet { view: *view, rect }).at(*p)).collect();
-        if pts.len() >= 3 && point_in_poly(screen, &pts) {
-            let area = poly_area(&pts);
+    for c in contours {
+        if c.outline.len() >= 4 && point_in_poly(screen, &c.outline) {
+            let area = poly_area(&c.outline);
             if best.is_none_or(|(ba, _)| area < ba) {
-                best = Some((area, cid));
+                best = Some((area, c.id));
             }
         }
     }
     best.map(|(_, id)| id)
 }
 
-/// The closed contour of sketch `si` under a screen point of the 3D view: each contour lifted into the world by the
-/// sketch's frame - as the command's arrow is - and laid onto the screen; the smaller area wins, as on the sheet.
+/// The contours of sketch `si` on the sheet: the sketch as the flat view lays it out.
+fn contours_on_sheet(project: &Project, view: &View2d, rect: Rect, si: usize) -> Vec<ContourOnScreen> {
+    let sh = Sheet { view: *view, rect };
+    contours_on_screen(project, si, |p| sh.at(p))
+}
+
+/// The contours of sketch `si` in the 3D view: each lifted into the world by the sketch's frame - as the command's arrow
+/// is - and laid onto the screen.
+fn contours_in_3d(project: &Project, scr: &Screen, si: usize) -> Vec<ContourOnScreen> {
+    let Some(frame) = project.sketch_frame(si) else { return Vec::new() };
+    contours_on_screen(project, si, |p| {
+        let w = frame.lift(p);
+        scr.at([w.x, w.y, w.z]).0
+    })
+}
+
+/// The closed contour of sketch `si` under a screen point of the sheet; the smaller area wins.
+pub fn contour_under_2d(project: &Project, view: &View2d, rect: Rect, screen: Pos2, si: usize) -> Option<Id> {
+    contour_under(contours_on_sheet(project, view, rect, si), screen)
+}
+
+/// The closed contour of sketch `si` under a screen point of the 3D view; the smaller area wins, as on the sheet.
 pub fn contour_under_3d(project: &Project, scr: &Screen, screen: Pos2, si: usize) -> Option<Id> {
-    let frame = project.sketch_frame(si)?;
-    let mut best: Option<(f64, Id)> = None;
-    for cid in sketch_closed_contours(project, si) {
-        let Some(ci) = project.contour_index(cid) else { continue };
-        let pts: Vec<Pos2> = project.contours[ci]
-            .points
-            .iter()
-            .map(|p| {
-                let w = frame.lift(*p);
-                scr.at([w.x, w.y, w.z]).0
-            })
-            .collect();
-        if pts.len() >= 3 && point_in_poly(screen, &pts) {
-            let area = poly_area(&pts);
-            if best.is_none_or(|(ba, _)| area < ba) {
-                best = Some((area, cid));
-            }
+    contour_under(contours_in_3d(project, scr, si), screen)
+}
+
+/// HOW A BOX DRAWN ON SCREEN TAKES: left to right it is a window and takes only what lies wholly inside it; right to left
+/// it is a crossing and takes anything it touches - the usual CAD convention, the same for curves of a sketch and for
+/// the contours a command takes as profiles.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BoxRule {
+    Window,
+    Crossing,
+}
+
+/// A BOX DRAWN ON SCREEN from where the button went down to where the pointer is.
+#[derive(Clone, Copy, Debug)]
+pub struct ScreenBox {
+    pub from: Pos2,
+    pub to: Pos2,
+}
+
+impl ScreenBox {
+    /// The rule by the direction it is drawn in.
+    pub fn rule(&self) -> BoxRule {
+        if self.to.x < self.from.x {
+            BoxRule::Crossing
+        } else {
+            BoxRule::Window
         }
     }
-    best.map(|(_, id)| id)
+
+    pub fn rect(&self) -> Rect {
+        Rect::from_two_pos(self.from, self.to)
+    }
+
+    /// Does the box take the outline `pts`, a polyline on screen, by its rule?
+    pub fn takes(&self, pts: &[Pos2]) -> bool {
+        let r = self.rect();
+        match self.rule() {
+            BoxRule::Window => !pts.is_empty() && pts.iter().all(|p| r.contains(*p)),
+            BoxRule::Crossing => pts.iter().any(|p| r.contains(*p)) || pts.windows(2).any(|w| segment_crosses_box(w[0], w[1], r.min.x, r.max.x, r.min.y, r.max.y)),
+        }
+    }
+}
+
+/// The closed contours of sketch `si` a box on the sheet takes.
+pub fn contours_in_box_2d(project: &Project, view: &View2d, rect: Rect, bx: ScreenBox, si: usize) -> Vec<Id> {
+    contours_on_sheet(project, view, rect, si).into_iter().filter(|c| bx.takes(&c.outline)).map(|c| c.id).collect()
+}
+
+/// The closed contours of sketch `si` a box in the 3D view takes, by their outlines laid on the screen.
+pub fn contours_in_box_3d(project: &Project, scr: &Screen, bx: ScreenBox, si: usize) -> Vec<Id> {
+    contours_in_3d(project, scr, si).into_iter().filter(|c| bx.takes(&c.outline)).map(|c| c.id).collect()
+}
+
+/// THE SKETCH WHOSE CONTOURS THE TOOL IN HAND TAKES AS PROFILES: an extrusion or a revolution with its sketch named.
+pub fn profile_sketch(armed: &Armed, cmd: &FeatCommand) -> Option<usize> {
+    cmd.sketch.filter(|_| armed.part_tool().is_some_and(PartTool::picks_profiles))
+}
+
+/// THE PROFILES A BOX TOOK, put into the command: without Shift they replace what was gathered, with it they are added -
+/// as the box of a sketch does with its curves.
+pub fn take_profiles(gsel: &mut GeomSelection, status: &mut Notice, took: Vec<Id>, adding: Adding) {
+    if adding == Adding::No {
+        gsel.profiles.clear();
+    }
+    gsel.profiles.extend(took);
+    *status = Notice::info(qymcad_i18n::tr1("msg-profiles-n", "n", &gsel.profiles.len().to_string()));
 }
 
 /// A CENTRE LINE OF A CIRCLE: a dashed axis through its centre, a quarter of the radius past the rim each way.
@@ -325,33 +409,21 @@ pub(crate) fn segment_crosses_box(p: Pos2, q: Pos2, x0: f32, x1: f32, y0: f32, y
 /// left means crossing (merely touched) — the usual CAD convention.
 pub fn box_select_sketch(ed: Editing, sel_sk: &mut SketchSelection, rect: Rect, a: Pos2, b: Pos2, si: usize) {
     let sh = Sheet { view: *ed.view, rect };
-    let crossing = b.x < a.x;
-    let (x0, x1) = (a.x.min(b.x), a.x.max(b.x));
-    let (y0, y1) = (a.y.min(b.y), a.y.max(b.y));
-    let inside = |p: Pos2| p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
+    let bx = ScreenBox { from: a, to: b };
     // gather the hits first (`s` holds a borrow of self, so they are pushed afterwards)
     let (mut add_ent, mut add_pt): (Vec<Id>, Vec<Id>) = (Vec::new(), Vec::new());
     {
         let Some(s) = ed.project.sketches.get(si) else { return };
         // THE SHAPE ITSELF IS TESTED, not its ends: a line that crosses the box with both ends outside is touched, and
         // a circle is inside only when all of it is, not its centre alone
-        let pts_of = |e: &qymcad_core::model::SketchEntity| -> Vec<Pos2> { entity_outline(s, e).into_iter().map(|p| sh.at(p)).collect() };
         for e in &s.entities {
-            let pts = pts_of(e);
-            if pts.is_empty() {
-                continue;
-            }
-            let hit = if crossing {
-                pts.iter().any(|p| inside(*p)) || pts.windows(2).any(|w| segment_crosses_box(w[0], w[1], x0, x1, y0, y1))
-            } else {
-                pts.iter().all(|p| inside(*p))
-            };
-            if hit {
+            let pts: Vec<Pos2> = entity_outline(s, e).into_iter().map(|p| sh.at(p)).collect();
+            if bx.takes(&pts) {
                 add_ent.push(e.id);
             }
         }
         for p in &s.points {
-            if inside(sh.at(Point2::new(p.x, p.y))) {
+            if bx.rect().contains(sh.at(Point2::new(p.x, p.y))) {
                 add_pt.push(p.id);
             }
         }

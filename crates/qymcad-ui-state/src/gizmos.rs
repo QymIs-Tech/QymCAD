@@ -520,13 +520,17 @@ pub fn feat_cmd_arrows(cmd: &FeatCommand, gsel: &GeomSelection, project: &Projec
 /// the value from there: a drag is not a click, and the field kept the caret and wrote its own text back over the
 /// arrow on every frame. Answers whether an arrow was taken.
 pub fn grab_cmd_arrow(ctx: &egui::Context, cmd: &mut FeatCommand, gsel: &GeomSelection, project: &Project, flip: bool, scr: &Screen, at: Pos2) -> bool {
-    let arrows = feat_cmd_arrows(cmd, gsel, project, flip);
-    let hit = arrows.iter().map(|a| (a.key, scr.at(a.tip()).0.distance(at))).filter(|(_, d)| *d <= 14.0).min_by(|a, b| a.1.total_cmp(&b.1));
-    cmd.drag = hit.map(|(k, _)| k);
+    cmd.drag = cmd_arrow_at(&feat_cmd_arrows(cmd, gsel, project, flip), scr, at);
     if cmd.drag.is_some() {
         ctx.memory_mut(|m| m.stop_text_input());
     }
     cmd.drag.is_some()
+}
+
+/// THE ARROW OF THE COMMAND UNDER `at`, of `arrows` (`feat_cmd_arrows`): the one whose tip is within 14 px of it, the
+/// nearest first.
+pub fn cmd_arrow_at(arrows: &[CmdArrow], scr: &Screen, at: Pos2) -> Option<&'static str> {
+    arrows.iter().map(|a| (a.key, scr.at(a.tip()).0.distance(at))).filter(|(_, d)| *d <= 14.0).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(k, _)| k)
 }
 
 /// A PRESS ON THE ARROW AT A FACE takes the value of field `key` as it stands, and the field lets go of the keyboard -
