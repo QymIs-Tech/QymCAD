@@ -1,31 +1,8 @@
 //! The bar of a feature command, described as data, tool by tool: its modes, switches, the references it picks and what
-//! it says. The frame draws it (`qymcad_ui_state::tool_bar`); what was touched comes back here (`act`).
+//! it says. The frame draws it (`qymcad_ui_state::tool_in_hand`); what was touched comes back here (`act`).
 
 use qymcad_ui_state::{AsLit, Mode, Did, Notice, Opt, OptKey};
 use super::*;
-
-pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
-    // the top row of the active Part command: the options + Apply/Cancel.
-    // The SIZE itself is set on the canvas (the gizmo arrow or a field at the geometry), not here.
-    let Some(kind) = pc.armed.part_tool() else { return };
-    let ctx = ui.ctx().clone();
-    command_step(pc, &ctx);
-    let tool = describe(pc, &ctx, kind);
-    let answer = part_bar(pc, ui, &tool);
-    for d in answer.did {
-        act(pc, d);
-    }
-    qymcad_ui_state::go_through(&ctx, &tool.gate, answer.verdict, &mut FeatDoors { pc });
-    // after the bar (the extent mode is chosen) the "second side" field at the geometry is synced
-    sync_dir_cmd_params(&*pc.armed, &mut *pc.cmd, &*pc.project);
-    sync_torus_params(&*pc.armed, &mut *pc.cmd, &*pc.project); // the tube thinner than the ring
-                                                               // the pattern: a second step when there is a second direction, and an angle when it is not a full circle
-    sync_array_params(*pc.arr, &*pc.armed, &mut *pc.cmd, &*pc.project);
-    // the datum axis: the origin and direction fields in manual mode
-    sync_datum_axis_params(&*pc.armed, &mut *pc.cmd, &*pc.datum);
-    sync_hole_params(&*pc.armed, &mut *pc.cmd, *pc.hole, &*pc.project); // the recess fields for a counterbore or a countersink
-    take_counts(&*pc.armed, &*pc.cmd, Counts { arr: &mut *pc.arr, prim: &mut *pc.prim });
-}
 
 /// The name the bar gives the command `kind`.
 fn command_title(kind: qymcad_ui_state::PartTool) -> String {
@@ -69,7 +46,7 @@ fn command_title(kind: qymcad_ui_state::PartTool) -> String {
 
 /// WHAT THE COMMAND IN HAND FOLLOWS EVERY FRAME, apart from what is touched in its bar: the side a cut goes to, the path
 /// or the sections picked in the tree, the sketch of a hole, what a recognition found.
-fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
+pub(crate) fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
     match pc.armed.part_tool() {
         Some(qymcad_ui_state::PartTool::Extrude) => {
             // THE BUTTON SHOWS AND TURNS THE DIRECTION IN FORCE. A cut on a face goes into the body by itself, worked out
@@ -123,7 +100,7 @@ fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context) {
 }
 
 /// THE COMMAND IN HAND AS ITS BAR DESCRIBES IT.
-fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, kind: qymcad_ui_state::PartTool) -> qymcad_ui_state::Described {
+pub(crate) fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, kind: qymcad_ui_state::PartTool) -> qymcad_ui_state::Described {
     let mut says = Vec::new();
     let bar = match kind {
         qymcad_ui_state::PartTool::Extrude => extrude_opts(pc, &mut says, ctx),
@@ -168,7 +145,7 @@ fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, kind: qymcad
         }
     };
     let gate = command_gate(pc, ctx).with_fields(&pc.cmd.params, pc.project);
-    qymcad_ui_state::Described { head: qymcad_ui_state::Head { icon: ph::CUBE, name: command_title(kind), ends: qymcad_ui_state::Ends::ApplyCancel }, bar, gate, says }
+    qymcad_ui_state::Described { head: qymcad_ui_state::Head { icon: ph::CUBE, name: command_title(kind), ends: qymcad_ui_state::Ends::ApplyCancel }, bar, gate, says, boxed: None }
 }
 
 /// The sides a shell's wall goes to, in the order its bar shows them.
@@ -455,7 +432,7 @@ fn thread_opts(pc: &qymcad_ui_state::PartCtx, says: &mut Vec<Notice>) -> Vec<Opt
         Opt::Modes { key: OptKey::of("thread_kind"), caption: Some(qymcad_i18n::tr("cmd-kind")), choices: kind, current: Some(usize::from(pc.thread.internal)) },
         // The number of starts is a dimension of the part as well, and it must be parametric: a two-start thread driven
         // by a global variable is an ordinary thing.
-        Opt::Number { key: OptKey::of("thread_starts"), caption: qymcad_i18n::tr("cmd-starts"), value: f64::from(pc.thread.starts.max(1)), lo: 1.0, hi: 12.0 },
+        Opt::Number { key: OptKey::of("thread_starts"), caption: qymcad_i18n::tr("cmd-starts"), value: f64::from(pc.thread.starts.max(1)), limits: qymcad_ui_state::Limits::between(1.0..=12.0) },
         Opt::switch(OptKey::of("left"), format!("{} {}", ph::ARROWS_COUNTER_CLOCKWISE, qymcad_i18n::tr("cmd-left-thread")), pc.thread.left.lit()).hint(qymcad_i18n::tr("cmd-thread-left")),
         // THE MODE: a thread (a groove) or an AUGER (a helical ribbon outwards)
         Opt::Modes {
@@ -637,7 +614,7 @@ fn datum_axis_opts(pc: &qymcad_ui_state::PartCtx, says: &mut Vec<Notice>) -> Vec
 }
 
 /// WHAT WAS DONE TO AN OPTION OF THE COMMAND IN HAND, done to the command.
-pub(super) fn act(pc: &mut qymcad_ui_state::PartCtx, did: Did) {
+pub(crate) fn act(pc: &mut qymcad_ui_state::PartCtx, did: Did) {
     match did {
         Did::Chose { key, index } => chose(pc, key, index),
         Did::Switched { key } => switched(pc, key),
@@ -648,6 +625,8 @@ pub(super) fn act(pc: &mut qymcad_ui_state::PartCtx, did: Did) {
                 pc.thread.starts = (value.round() as u32).max(1);
             }
         }
+        // no command of a part has a text typed
+        Did::Retyped { .. } | Did::Entered { .. } => {}
     }
 }
 

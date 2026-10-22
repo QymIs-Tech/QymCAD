@@ -1289,7 +1289,6 @@ f-rotation-centre = the centre of rotation
 f-number-or-expr = a number or w/2
 
 # --- SKETCHER ---
-sk-expr-example = 50 or w/2
 sk-enter-apply-expr = Enter applies it · ƒ accepts w/2, len+5, pi
 sk-face-outline-only = “Face outline” works for a sketch ON A face — otherwise click the edges
 sk-tangent-base-picked = Select the second curve the circle touches
@@ -1371,7 +1370,6 @@ sk-spline = Spline
 sk-driven-hint = A reference (driven) dimension — it only shows the value, it does not drive the geometry
 sk-driven-angle = A reference angle — the geometry is already defined
 sk-projected-hint = Projected: the geometry is driven — it follows the part and cannot be dragged
-sk-dim-value-empty = Type the value of the dimension, or press Esc to leave it as it is
 sk-angle-range = The angle between two lines is more than 0 and less than 180 degrees
 sk-angle-range-3pt = The angle through three points is more than 0 and less than 360 degrees
 sk-dim-too-large = A dimension of a sketch is no longer than { $max } mm
@@ -2335,7 +2333,6 @@ sk-move-dim-label = Moving a dimension label
 sk-click-shape-line = Click ON A line of the shape (or press Esc to cancel)
 sk-distance-dxdy = Distance: { $d } mm (Δx { $dx }, Δy { $dy })
 sk-click-corner = Click a line or the corner vertex (hold Shift to choose several)
-sk-no-corner-here = There is no corner here: the lines do not meet at an angle
 sk-corner-set-n = Corners in the set: { $n } (Enter rounds them all together)
 sk-corner-set-off = Corner put away — the same click brings it back
 sk-corner-set-taken = A corner of the lines already stands at that point

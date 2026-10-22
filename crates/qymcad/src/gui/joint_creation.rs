@@ -110,6 +110,8 @@ mod tests {
         let bar = concat!(
             include_str!("../../../qymcad-assembly/src/bars.rs"),
             "\n",
+            include_str!("../../../qymcad-assembly/src/in_hand.rs"),
+            "\n",
             include_str!("../../../qymcad-assembly/src/commands.rs"),
             "\n",
             include_str!("../../../qymcad-assembly/src/gizmo.rs"),
@@ -122,7 +124,7 @@ mod tests {
             "\n",
             include_str!("../../../qymcad-assembly/src/lib.rs")
         );
-        let head = &bar[bar.find("fn joint_tool_bar").expect("the command bar")..];
+        let head = &bar[bar.find("fn asm_tool_described").expect("the command bar")..];
         for k in ["Rigid", "Revolute", "Slider", "Cylindrical", "Planar", "Ball", "PinSlot"] {
             assert!(head.contains(k), "the kind \"{k}\" is gone from the command bar");
         }

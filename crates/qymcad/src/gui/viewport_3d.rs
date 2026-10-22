@@ -142,12 +142,6 @@ impl App {
         crate::gui::refresh_interference(qymcad_ui_state::body_view_of!(self), qymcad_ui_state::scene_drag_of!(self), &mut self.interference, &self.live, &self.set, self.workbench); // recompute the intersections on the 3D path, where the assembly lives
         self.draw_3d(painter, rect);
         crate::gui::viewcube::draw(&self.cube_ctx(), painter, rect);
-        // the on-screen length field of the active command at the arrow tip (like the sketch dimensions)
-        crate::gui::commands::feat_cmd_popup(&mut self.part_ctx(), ctx, rect);
-        // the angle or offset of the SELECTED mate as an expression popup AT THE GEOMETRY (by its glyph), not only in the panel
-        qymcad_assembly::joint_popup(&mut self.joint_ctx(), ctx, rect);
-        // precise numeric entry at the body gizmo: a click on an axis or a ring opens a field at the geometry
-        crate::gui::commands::body_num_popup(&mut self.part_ctx(), ctx, rect, &basis3);
     }
 
     /// THE START OF A DRAG IN 3D: a priority chain of grabs - the active command's arrow, the section's offset
@@ -616,7 +610,7 @@ impl App {
                 } else if let Some((on, ax, rot)) = crate::gui::gizmo_click_hit(&self.painting(), rect, pos, basis3) {
                     // A CLICK (with no drag) on the body gizmo's arrow or ring opens precise numeric entry at the geometry
                     self.dragged.body_giz.num = Some((on, ax, rot));
-                    self.dragged.body_giz.num_buf.clear();
+                    self.dragged.body_giz.num_field.clear();
                     self.dragged.body_giz.num_focus = true;
                 } else {
                     self.pick_face_3d(rect, pos);

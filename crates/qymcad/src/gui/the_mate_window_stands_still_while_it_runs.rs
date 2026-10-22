@@ -96,7 +96,7 @@ pub(in crate::gui) mod tests {
         let (_, at) = a_cylindrical_mate_with_its_window_open(&mut hand);
         assert!(hand.press_word(&crate::i18n::tr("j-anim-offset"), at), "the window of a cylindrical mate has a button to run its travel");
         let still = [30.0, 10.0, 5.0];
-        let window = egui::Id::new("joint_edit_popup");
+        let window = hand.tool_box_id().expect("the box of the mate is drawn");
         hand.frame(Vec::new());
         assert!(hand.app.joint_anim.is_some(), "the travel of the mate runs");
         let (window_was, still_was) = (hand.area_rect(window).expect("the window of the mate is drawn").min, hand.on_screen3d(still));

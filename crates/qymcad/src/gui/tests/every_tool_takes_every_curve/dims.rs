@@ -329,7 +329,7 @@ fn sized(case: &Case) -> Result<(), String> {
     hand.frame(Vec::new());
     if hand.typing() {
         hand.chord(egui::Modifiers::COMMAND, egui::Key::A).type_text(&value);
-    } else if !hand.type_into_hinted(&crate::i18n::tr("sk-expr-example"), case.value) {
+    } else if !hand.type_into_hinted(&crate::i18n::tr("f-number-or-expr"), case.value) {
         return Err(format!("no field of a dimension came up; the status line says {:?}", hand.app.status));
     }
     hand.key(egui::Key::Enter);

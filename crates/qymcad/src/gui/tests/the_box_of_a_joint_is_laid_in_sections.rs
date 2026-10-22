@@ -35,7 +35,7 @@ pub(crate) mod tests {
         a_hinge_edited(&mut app);
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new()).frame(Vec::new());
-        let area = hand.area_rect(egui::Id::new("joint_edit_popup")).expect("the box of the joint is drawn");
+        let area = hand.tool_box_id().and_then(|id| hand.area_rect(id)).expect("the box of the joint is drawn");
         let title = |hand: &Hand, tag: &str| {
             hand.words_drawn().iter().filter(|(t, r)| t.starts_with(&crate::i18n::tr2("box-part-of", "tag", tag, "name", "")) && area.contains_rect(*r)).map(|(_, r)| *r).next()
         };
@@ -53,7 +53,7 @@ pub(crate) mod tests {
         // the title unfolds its section: the field of the lower limit comes up under it
         hand.press_word(&limits, folded.center());
         hand.frame(Vec::new());
-        let area = hand.area_rect(egui::Id::new("joint_edit_popup")).expect("the box of the joint is drawn");
+        let area = hand.tool_box_id().and_then(|id| hand.area_rect(id)).expect("the box of the joint is drawn");
         let fields = hand.fields_in(area);
         assert!(fields.len() > shown, "a click on the title of the limits showed no field: {shown} before, {} after", fields.len());
         assert!(fields.iter().any(|f| f.top() > folded.top()), "the field of the limit does not stand under its title: {fields:?}");
@@ -66,7 +66,7 @@ pub(crate) mod tests {
         a_hinge_edited(&mut app);
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new()).frame(Vec::new());
-        let area = hand.area_rect(egui::Id::new("joint_edit_popup")).expect("the box of the joint is drawn");
+        let area = hand.tool_box_id().and_then(|id| hand.area_rect(id)).expect("the box of the joint is drawn");
         let apply = written_in(&hand, &crate::i18n::tr("cmd-apply-enter"), area);
         let cancel = written_in(&hand, &crate::i18n::tr("cmd-cancel-esc"), area);
         assert!(apply.is_some() && cancel.is_some(), "the box does not end with Apply and Cancel: Apply {apply:?}, Cancel {cancel:?}");
@@ -107,7 +107,7 @@ pub(crate) mod tests {
         assert!(hand.type_after_word(&crate::i18n::tr("j-row-angle"), "37"), "the angle of the hinge has no field in its box");
         hand.frame(Vec::new()).frame(Vec::new());
         assert_ne!(qymcad_ui_state::doc_key(&hand.app.project), key_was, "the angle typed did not reach the joint");
-        let area = hand.area_rect(egui::Id::new("joint_edit_popup")).expect("the box of the joint is drawn");
+        let area = hand.tool_box_id().and_then(|id| hand.area_rect(id)).expect("the box of the joint is drawn");
         match how {
             Leave::Cancel => assert!(hand.press_word(&crate::i18n::tr("cmd-cancel-esc"), area.center()), "no Cancel in the box"),
             Leave::Apply => assert!(hand.press_word(&crate::i18n::tr("cmd-apply-enter"), area.center()), "no Apply in the box"),
@@ -155,12 +155,11 @@ pub(crate) mod tests {
                 app.project.set_connector_anchor(cid, owner, qymcad_core::feature::AnchorRef::FaceCenter(body, key));
             }
         }
-        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0));
         let bg = app.scheme.pal.viewport_bg();
         let img = crate::gui::help_raster::shot_ui([900, 700], bg, |ui| {
             let ctx = ui.ctx().clone();
             qymcad_ui_state::apply_theme(&mut app.scheme, &app.set, &ctx);
-            qymcad_assembly::joint_popup(&mut app.joint_ctx(), &ctx, rect);
+            crate::gui::panel_places::assembly_tool(&mut app, ui);
         });
         let png = crate::gui::color_image_to_png(&img).expect("the picture encodes");
         let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/joint-box.png");

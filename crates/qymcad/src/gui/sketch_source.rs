@@ -35,7 +35,9 @@ pub(crate) const SKETCH: &str = concat!(
         crate::gui::panels_source::file_break!(),
         include_str!("../../../qymcad-sketch/src/popups.rs"),
         crate::gui::panels_source::file_break!(),
-        include_str!("../../../qymcad-sketch/src/shape_box.rs"),
+        include_str!("../../../qymcad-sketch/src/in_hand.rs"),
+        crate::gui::panels_source::file_break!(),
+        include_str!("../../../qymcad-sketch/src/editors.rs"),
         crate::gui::panels_source::file_break!(),
         include_str!("../../../qymcad-sketch/src/props.rs"),
         crate::gui::panels_source::file_break!(),
@@ -92,7 +94,9 @@ pub(crate) const PART: &str = concat!(
             crate::gui::panels_source::file_break!(),
             include_str!("../../../qymcad-sketch/src/commands.rs"),
             crate::gui::panels_source::file_break!(),
-            include_str!("../../../qymcad-part/src/bars.rs")
+            include_str!("../../../qymcad-part/src/bars.rs"),
+            crate::gui::panels_source::file_break!(),
+            include_str!("../../../qymcad-part/src/in_hand.rs")
         ),
         crate::gui::panels_source::file_break!(),
         include_str!("../../../qymcad-part/src/params.rs"),

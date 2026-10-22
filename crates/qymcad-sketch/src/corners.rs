@@ -53,7 +53,7 @@ pub fn corner_colour(scheme: &qymcad_ui_state::SchemeUi, fixed: bool) -> egui::C
 /// has to see where they are all going before answering. `fixed` says which is which: the corners IN the set are
 /// drawn in the accent colour of the scheme, and the one the cursor is pointing at but has not yet named is amber.
 ///
-/// **THE VALUE IS GIVEN, AND NOT READ OUT OF THE TOOL.** It used to be read from `corner.buf`, and the field had
+/// **THE VALUE IS GIVEN, AND NOT READ OUT OF THE TOOL.** It used to be read from the text of the field, and the field had
 /// already taken the buffer out of the tool by the time the preview was drawn - so the read found an empty string,
 /// the value could not be read, and nothing was drawn at all. The preview showed nothing whatever the radius was,
 /// amber or violet.
@@ -124,7 +124,7 @@ pub(crate) fn corner_cut(cc: &qymcad_ui_state::CornerCtx, chamfer: bool, value: 
     if !chamfer {
         return qymcad_core::model::CornerCut::Fillet(qymcad_core::model::FilletSize { by: cc.tool_prefs.fillet_by, value });
     }
-    let second = parse_num(cc.project, &cc.corner.buf2).unwrap_or(cc.tool_prefs.chamfer_second);
+    let second = cc.corner.value("r2").unwrap_or(cc.tool_prefs.chamfer_second);
     qymcad_core::model::CornerCut::Chamfer(qymcad_core::model::ChamferLegs { mode: cc.tool_prefs.chamfer_mode, first: value, second })
 }
 
@@ -220,17 +220,12 @@ pub(crate) fn draw_the_corner_preview(cc: &qymcad_ui_state::CornerCtx, ctx: &egu
 
 /// THE VALUE THE PREVIEW IS DRAWN WITH: what is in the field, or the radius of the bar where there is no field yet.
 pub(crate) fn value_for_preview(cc: &qymcad_ui_state::CornerCtx) -> f64 {
-    parse_num(cc.project, &cc.corner.buf).unwrap_or(cc.tool_prefs.fillet)
+    cc.corner.value("r").unwrap_or(cc.tool_prefs.fillet)
 }
 
-/// WHERE THE BOX OF THE SET STANDS: beside its first corner, on the outside of it - away from the middle of the cut
-/// towards the corner and on past it by `CORNER_BOX_GAP` - and growing that way, so the corner, the two ends the lines
-/// are cut at and the arc between them stay in sight. It stood on the place clicked, which is on the corner or on one
-/// of its lines: measured on a rectangle 40 x 30, the box covered the corner, both cut ends and the middle of the arc.
-///
-/// The corner of the box nearest the corner is placed by the size the box had the frame before (`size`). An area given
-/// a pivot instead is measured on its first frame and drawn on none: the box did not show at all in the frame it opened.
-pub(crate) fn corner_box_place(cc: &qymcad_ui_state::CornerCtx, rect: Rect, si: usize, first: Option<(Id, (Id, Id))>, chamfer: bool, size: egui::Vec2) -> Option<Pos2> {
+/// WHERE THE BOX OF THE SET STANDS: by its first corner, clear of the corner, the two ends the lines are cut at and the
+/// arc between them (`BoxSpot`). None with no corner to stand by.
+pub(crate) fn corner_box_spot(cc: &qymcad_ui_state::CornerCtx, rect: Rect, si: usize, first: Option<(Id, (Id, Id))>, chamfer: bool) -> Option<BoxSpot> {
     let (pid, pair) = first?;
     // a value too big for the corner draws no preview, and the side of the corner is the same at any value
     let v = value_for_preview(cc);
@@ -238,23 +233,85 @@ pub(crate) fn corner_box_place(cc: &qymcad_ui_state::CornerCtx, rect: Rect, si: 
     let sh = qymcad_ui_state::Sheet { view: *cc.view, rect };
     let at = |p: [f64; 2]| sh.at(qymcad_core::geom::Point2::new(p[0], p[1]));
     let corner = at(b.vertex);
-    let out = corner - at([(b.ends[0][0] + b.ends[1][0]) / 2.0, (b.ends[0][1] + b.ends[1][1]) / 2.0]);
-    let out = if out.length() > 1e-3 { out.normalized() } else { egui::vec2(1.0, -1.0).normalized() };
-    let near = corner + out * CORNER_BOX_GAP;
-    // OUTWARD WHERE THERE IS ROOM, and across the corner's other side where there is not: a box at the top of the sheet
-    // stood under the bar and read as a field of it
-    let side = |grow: f32, at: f32, len: f32, lo: f32, hi: f32| if (grow >= 0.0 && at + len <= hi) || (grow < 0.0 && at - len < lo) { at } else { at - len };
-    let left = side(out.x, near.x, size.x, rect.left(), rect.right());
-    let top = side(out.y, near.y, size.y, rect.top(), rect.bottom());
-    Some(egui::pos2(left.clamp(rect.left(), (rect.right() - size.x).max(rect.left())), top.clamp(rect.top(), (rect.bottom() - size.y).max(rect.top()))))
+    Some(BoxSpot { at: corner, around: vec![corner, at(b.ends[0]), at(b.ends[1])] })
 }
-
-/// The size of the box of the corner tools on the frame it first opens, before egui has measured it, in points: one row
-/// of a label, a field and two buttons, and the line that counts the set.
-pub(crate) const CORNER_BOX_GUESS: egui::Vec2 = egui::vec2(320.0, 56.0);
-
-/// How far the box of the corner tools stands off the corner, in pixels.
-pub(crate) const CORNER_BOX_GAP: f32 = 16.0;
 
 /// The size a corner is read at for the side the box stands on, where the value typed draws no preview, in mm.
 pub(crate) const CORNER_BOX_PROBE: f64 = 1e-3;
+
+/// THE CORNERS OF A SET A VALUE CUTS: the sketch, the point the box belongs to - none for every corner of a shape - and
+/// whether they are chamfered rather than filleted.
+pub(crate) struct CornerOf {
+    pub(crate) si: usize,
+    pub(crate) pid: Id,
+    pub(crate) chamfer: bool,
+}
+
+/// ENTER IN THE BOX OF THE SET: the value of the box cuts every corner of the set, as one step of undo named after the
+/// tool - a person naming four corners of a shape meant one act. The lines cut at a crossing to name the corner are the
+/// start of this step: the cut joins it, and one undo takes back the whole of it. A value the corners cannot take keeps
+/// the box open with it, the reason said.
+pub(crate) fn corner_apply(cc: &mut qymcad_ui_state::CornerCtx, of: CornerOf) -> Result<(), qymcad_ui_state::NotApplied> {
+    let CornerOf { si, pid, chamfer } = of;
+    let r = cc.corner.value("r").unwrap_or(0.0);
+    let joins = cc.corner.crossing == qymcad_ui_state::CrossingCut::Cut;
+    if !joins {
+        qymcad_ui_state::begin_edit(&mut *cc.edits, &*cc.project, qymcad_i18n::tr(if chamfer { "tool-chamfer" } else { "tool-fillet" }));
+    }
+    if r <= 1e-6 {
+        // a size of nothing cuts nothing: the lines cut at a crossing for it are whole again
+        if joins {
+            qymcad_ui_state::take_back_last_step(&mut *cc.edits, &mut *cc.project, &mut *cc.regen);
+        } else {
+            qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
+        }
+        cc.corner.clear();
+        return Ok(());
+    }
+    cc.tool_prefs.fillet = r; // sticky: the next corner offers the same value
+                              // THE SIZE AS IT WAS GIVEN, not only as a radius: a fillet taken by the length of its arc or by the chord between its
+                              // ends is a different drawing, and a chamfer of two legs is two numbers
+    let size = qymcad_core::model::FilletSize { by: cc.tool_prefs.fillet_by, value: r };
+    if let Some(v) = cc.corner.value("r2").filter(|_| chamfer) {
+        cc.tool_prefs.chamfer_second = v;
+    }
+    let standing = cc.corner.set.standing();
+    let cut: usize = if pid == 0 {
+        // "ROUND EVERY CORNER" OF A SHAPE, which is one command about a whole set of lines rather than about the corners
+        // the set happens to name: it is the only corner cut left to the drawing to find
+        let only = cc.corner.only.take().or_else(|| {
+            let sel: std::collections::HashSet<Id> = cc.sel_sk.curves().collect();
+            (!sel.is_empty()).then_some(sel)
+        });
+        cc.project.fillet_all_corners_by(si, size, only.as_ref())
+    } else {
+        // ONE ANSWER CUTS THE WHOLE SET, OR NOTHING: the core cuts every corner by the size as the bar gives it, the same
+        // cut the preview drew, and leaves the sketch as it was where one corner does not take it
+        let corners: Vec<qymcad_core::model::CornerAt> = standing.iter().map(|&(point, pair)| qymcad_core::model::CornerAt { point, pair }).collect();
+        let cut = corner_cut(cc, chamfer, r);
+        let done = cc.project.cut_corner_set(si, &corners, cut, cc.corner.near);
+        // a corner of a crossing leaves its two sides alone: the halves beyond it go
+        if done > 0 && joins {
+            for c in &corners {
+                cc.project.drop_halves_beyond_corner(si, *c);
+            }
+        }
+        done
+    };
+    if joins {
+        qymcad_ui_state::fold_into_last_step(&mut *cc.edits, &*cc.project);
+    } else {
+        qymcad_ui_state::close_edit(&mut *cc.edits, &*cc.project);
+    }
+    if cut == 0 {
+        return Err(qymcad_ui_state::NotApplied::Refused(qymcad_i18n::tr("sk-fillet-too-big")));
+    }
+    // THE CHOSEN LINES THAT THE KNIFE HAS CONSUMED GO OUT OF THE SELECTION: a line that is no longer there cannot stand
+    // lit; what is left is what a further click would work on
+    cc.sel_sk.items.retain(|&qymcad_ui_state::SketchItem { id, .. }| qymcad_ui_state::pick_still_stands(&*cc.project, si, id));
+    qymcad_ui_state::invalidate(cc.regen);
+    // MORE THAN ONE CORNER CUT AT ONCE IS SAID AS MANY: "done" would read as the one corner the pointer was on
+    *cc.status = if pid != 0 && cut > 1 { Notice::info(qymcad_i18n::tr1("sk-filleted-n", "n", &cut.to_string())) } else { Notice::info(qymcad_i18n::tr("sk-done")) };
+    cc.corner.clear(); // ALL of the input, so nothing of this set travels into the next call
+    Ok(())
+}

@@ -54,7 +54,7 @@ pub fn lay_words(ctx: &egui::Context, canvas: egui::Rect, pal: &qymcad_scheme::P
     let frame = ctx.cumulative_frame_nr();
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(TOOL_WORDS), Laid { words: words.to_vec(), frame }));
     // a view not laid out yet - a bar drawn alone, before its window - lends the plate the whole screen
-    let canvas = if canvas.is_finite() && canvas.is_positive() { canvas } else { ctx.content_rect() };
+    let canvas = view_or_window(ctx, canvas);
     if words.is_empty() {
         return;
     }
@@ -72,4 +72,14 @@ pub fn lay_words(ctx: &egui::Context, canvas: egui::Rect, pal: &qymcad_scheme::P
 pub fn words_laid(ctx: &egui::Context) -> Vec<Notice> {
     let laid: Option<Laid> = ctx.data(|d| d.get_temp(egui::Id::new(TOOL_WORDS)));
     laid.filter(|l| ctx.cumulative_frame_nr() <= l.frame + 1).map(|l| l.words).unwrap_or_default()
+}
+
+/// THE VIEW A TOOL STANDS IN: `canvas`, or the window while no view is laid yet - the first frames, a check drawing a bar
+/// alone.
+pub(crate) fn view_or_window(ctx: &egui::Context, canvas: egui::Rect) -> egui::Rect {
+    if canvas.is_finite() && canvas.is_positive() {
+        canvas
+    } else {
+        ctx.content_rect()
+    }
 }

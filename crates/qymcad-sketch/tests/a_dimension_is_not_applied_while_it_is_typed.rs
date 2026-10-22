@@ -132,6 +132,8 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
         Some(qymcad_core::model::CircleParts { r, .. }) => r,
         _ => f64::NAN,
     };
+    // what the field of the box holds, as typed
+    let typed = |b: &qymcad_ui_state::Bench| b.dim.field.first().map(|p| p.txt.trim().to_string()).unwrap_or_default();
     let ctx = egui::Context::default();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
     let frame = |b: &mut qymcad_ui_state::Bench, events: Vec<egui::Event>| -> Vec<(String, egui::Rect)> {
@@ -143,7 +145,7 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
             }
         }
         let raw = egui::RawInput { screen_rect: Some(rect), events, ..Default::default() };
-        let out = ctx.run_ui(raw, |ui| qymcad_sketch::dim_editor(&mut b.sketch_ctx(), ui.ctx(), rect));
+        let out = ctx.run_ui(raw, |ui| qymcad_ui_state::tool_in_hand(ui, rect, qymcad_sketch::in_hand(&mut b.sketch_ctx())));
         let mut texts = Vec::new();
         for cs in &out.shapes {
             walk(&cs.shape, &mut texts);
@@ -156,7 +158,7 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
     for _ in 0..3 {
         frame(&mut b, Vec::new());
     }
-    assert_eq!(b.dim.buf.trim(), "100", "GUARD: the field must open on the diameter, or what follows is about nothing");
+    assert_eq!(typed(&b), "100", "GUARD: the field must open on the diameter, or what follows is about nothing");
     assert!(ctx.memory(|m| m.focused()).is_some(), "GUARD: the field must hold the keyboard, or nothing below is really typed");
 
     // TYPED FOR REAL. On auto-focus the whole text is selected, so the first keystroke replaces it - which
@@ -165,7 +167,7 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
     let mut seen = Vec::new();
     for _ in 0..3 {
         frame(&mut b, vec![egui::Event::Key { key: egui::Key::Backspace, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
-        seen.push((b.dim.buf.clone(), radius(&b)));
+        seen.push((typed(&b), radius(&b)));
     }
     assert_eq!(seen.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), vec!["10", "1", ""], "GUARD: the erasing must really go through 10 and 1: {seen:?}");
     let moved: Vec<String> = seen.iter().filter(|(_, r)| (r - 50.0).abs() > 1e-9).map(|(t, r)| format!("with \"{t}\" in the field the circle was already rebuilt to r = {r}")).collect();

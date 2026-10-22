@@ -33,6 +33,10 @@ fn a_centre_drawn_rectangle() -> (Bench, usize, Point2) {
     b.view = qymcad_ui_state::View2d { center: egui::Vec2::ZERO, scale: 4.0, initialized: true, fit: 4.0 };
     b.place.set(qymcad_ui_state::PlacingShape::RectCenter { center, corner, ids });
     b.place.focus = true;
+    // the rectangle tool in hand on the sketch open for editing, as a person has it right after drawing
+    b.armed = qymcad_ui_state::Armed::Draw(qymcad_ui_state::SketchShape::Rect);
+    b.sel = qymcad_ui_state::Sel::Sketch(si);
+    b.sketch_ses.editing = Some(b.project.sketches[si].id);
     (b, si, center)
 }
 
@@ -42,15 +46,9 @@ fn held(b: &Bench) -> Vec<f64> {
 }
 
 /// The width-by-height popup, driven through real frames: what typing does.
-fn frame(b: &mut Bench, ctx: &egui::Context, rect: egui::Rect, si: usize, events: Vec<egui::Event>) {
+fn frame(b: &mut Bench, ctx: &egui::Context, rect: egui::Rect, events: Vec<egui::Event>) {
     let raw = egui::RawInput { screen_rect: Some(rect), events, ..Default::default() };
-    let (scheme, set, cam) = (qymcad_ui_state::SchemeUi::default(), qymcad_ui_state::Settings::default(), qymcad_ui_state::Cam3::default());
-    let mut prefs = qymcad_ui_state::SketchToolPrefs::default();
-    let _ = ctx.run_ui(raw, |ui| {
-        let mut place = qymcad_ui_state::PlaceCtx { place: &mut b.place, project: &mut b.project, view: &b.view, regen: &mut b.regen };
-        let looks = qymcad_ui_state::PopupLooks { tool_prefs: &mut prefs, scheme: &scheme, set: &set, cam: &cam };
-        qymcad_sketch::rect_input_popup(&mut place, &looks, ui.ctx(), rect, si);
-    });
+    let _ = ctx.run_ui(raw, |ui| qymcad_ui_state::tool_in_hand(ui, rect, qymcad_sketch::in_hand(&mut b.sketch_ctx())));
 }
 
 /// The corners of the rectangle as it actually stands, over the rectangle's own points rather than
@@ -109,16 +107,16 @@ fn typing_the_width_keeps_the_centre() {
     // A COUPLE OF FRAMES: an `Area` places itself a frame late, and the field asks for the focus
     // until it gets it.
     for _ in 0..3 {
-        frame(&mut b, &ctx, rect, si, Vec::new());
+        frame(&mut b, &ctx, rect, Vec::new());
     }
     assert_eq!(held(&b), [40.0, 60.0], "GUARD: the fields must open on the full 40 by 60, or what follows is about nothing");
     assert!(ctx.memory(|m| m.focused()).is_some(), "GUARD: the width field must hold the keyboard, or nothing below is really typed");
 
     // TYPED FOR REAL. On auto-focus the whole text is selected, so the keystroke replaces it - which
     // is exactly what a person gets.
-    frame(&mut b, &ctx, rect, si, vec![egui::Event::Text("25".into())]);
+    frame(&mut b, &ctx, rect, vec![egui::Event::Text("25".into())]);
     for _ in 0..3 {
-        frame(&mut b, &ctx, rect, si, Vec::new());
+        frame(&mut b, &ctx, rect, Vec::new());
     }
     assert_eq!(held(&b)[0], 25.0, "GUARD: \"25\" must really be in the width field: {:?}", held(&b));
 
@@ -157,17 +155,21 @@ fn typing_the_width_keeps_the_first_corner() {
     b.view = qymcad_ui_state::View2d { center: egui::Vec2::ZERO, scale: 4.0, initialized: true, fit: 4.0 };
     b.place.set(qymcad_ui_state::PlacingShape::Rect { a, b: corner, ids });
     b.place.focus = true;
+    // the rectangle tool in hand on the sketch open for editing, as a person has it right after drawing
+    b.armed = qymcad_ui_state::Armed::Draw(qymcad_ui_state::SketchShape::Rect);
+    b.sel = qymcad_ui_state::Sel::Sketch(si);
+    b.sketch_ses.editing = Some(b.project.sketches[si].id);
     let ctx = egui::Context::default();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
 
     for _ in 0..3 {
-        frame(&mut b, &ctx, rect, si, Vec::new());
+        frame(&mut b, &ctx, rect, Vec::new());
     }
     assert_eq!(held(&b), [40.0, 60.0], "GUARD: the fields must open on 40 by 60: {:?}", held(&b));
 
-    frame(&mut b, &ctx, rect, si, vec![egui::Event::Text("25".into())]);
+    frame(&mut b, &ctx, rect, vec![egui::Event::Text("25".into())]);
     for _ in 0..3 {
-        frame(&mut b, &ctx, rect, si, Vec::new());
+        frame(&mut b, &ctx, rect, Vec::new());
     }
 
     let bounds = rect_corners(&b.project, si);

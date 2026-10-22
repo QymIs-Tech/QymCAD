@@ -306,13 +306,11 @@ impl App {
                 painter.rect_filled(r, 0.0, crate::palette::a(self.scheme.pal.select_window(), 20));
             }
         }
-        // the in-place dimension editor (a double click on a dimension)
-        dim_editor(&mut self.sketch_ctx(), ctx, rect);
         qymcad_ui_state::note_editor(&mut self.tools.annot, &mut self.tools.inline, &mut self.project, self.chosen.sel, self.viewing.view, ctx, rect); // editing the text of a note
         let asks = qymcad_ui_state::text_popups(qymcad_ui_state::editing_of!(self), &mut self.font_cache, &mut qymcad_ui_state::text_ctx_of!(self), ctx, rect); // the label editor and the list of fonts
         self.do_bar_asks(asks, ctx);
         place_input_popup(qymcad_ui_state::editing_of!(self), qymcad_ui_state::popup_tools!(self), qymcad_ui_state::popup_looks!(self), ctx, rect); // typing the sizes right after a shape is built
-        sketch_tool_keys(&mut self.sketch_ctx(), ctx, rect); // the angle of a turn, Enter of Extend
+        corner_crossing_upkeep(&mut self.sketch_ctx()); // lines cut at a crossing for no corner are whole again
     }
 }
 

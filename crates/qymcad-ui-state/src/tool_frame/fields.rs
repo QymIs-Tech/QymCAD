@@ -20,6 +20,16 @@ pub struct FieldsBox<'a> {
     pub ends: Ends,
     /// Who takes Esc: the bar of its tool, or the box itself.
     pub esc: EscBy,
+    /// How its fields and options are laid: rows, sections, the buttons of its foot.
+    pub layout: &'a Layout,
+    /// The tool's own word on whether it can be applied: the picks, the trial build. The fields are judged by the frame.
+    pub gate: &'a Gate,
+}
+
+/// The id of field `key` of the box of tool `tool`: the field keeps what is typed into it under it, and a check reaches
+/// the field by it.
+pub fn field_id(tool: u64, key: &str) -> egui::Id {
+    egui::Id::new(("cmdparam", tool, key.to_string()))
 }
 
 /// WHO TAKES Esc FOR A BOX: the bar of its tool, or the box itself where its tool has no bar - the numeric entry at a
@@ -31,8 +41,8 @@ pub enum EscBy {
 }
 
 /// WHAT A BOX OF FIELDS IS DRAWN WITH: the document its formulas read, the colours, and the view the fields standing at
-/// a point of their own are placed on.
-pub struct BoxLook<'a> {
+/// a point of their own are placed on - made by the frame of what every workbench draws with (`DrawCtx`).
+pub(crate) struct BoxLook<'a> {
     pub project: &'a Project,
     pub pal: &'a qymcad_scheme::Palette,
     pub screen: Screen<'a>,
@@ -52,13 +62,29 @@ pub(crate) fn field_input(ui: &mut egui::Ui, look: &BoxLook, p: &mut CmdParam, i
     let o = expr_field_autofocus(ui, look.project, id, &p.txt, 74.0, &qymcad_i18n::tr("f-number-or-expr"), focus == Focus::Takes);
     p.txt = o.text;
     let enter = o.resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    FieldSays { value: field_value(p, &look.project.param_map()), enter }
+    let mut did = Vec::new();
+    if o.resp.changed() {
+        did.push(FieldDid::Typed);
+    }
+    if o.cancelled {
+        did.push(FieldDid::LeftByEsc);
+    }
+    FieldSays { value: field_value(p, &look.project.param_map()), enter, did }
 }
 
-/// WHAT A FIELD SAID IN A FRAME: its value or why it has none, and whether Enter was pressed in it.
+/// WHAT A FIELD SAID IN A FRAME: its value or why it has none, whether Enter was pressed in it, and what else it did.
 pub(crate) struct FieldSays {
     value: Result<f64, String>,
     enter: bool,
+    did: Vec<FieldDid>,
+}
+
+/// WHAT A FIELD OF A BOX DID in a frame besides its value, told to its tool: it was typed into - a value typed equal to
+/// the one it held is typed all the same - or it gave the keyboard up by Esc, the field taking Esc first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldDid {
+    Typed,
+    LeftByEsc,
 }
 
 /// WHAT A FIELD COMES TO, its value taken into it: a value it cannot take - by its own form and limits, or the
@@ -76,7 +102,7 @@ pub(crate) fn judge(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, p: &mut Cmd
         tone_mark(ui, pal, Tone::Refusal).on_hover_text(&why);
         Refusal { key: p.key.clone(), field: field_caption(p), why }
     });
-    Typed { refused, enter: if said.enter { Enter::Pressed } else { Enter::Not } }
+    Typed { refused, enter: if said.enter { Enter::Pressed } else { Enter::Not }, did: said.did }
 }
 
 /// WHAT THE FIELDS OF A BOX CAME TO TOGETHER: the first value refused, and whether Enter was pressed in one of them.
@@ -84,6 +110,7 @@ pub(crate) fn judge(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, p: &mut Cmd
 pub(crate) struct Typed {
     refused: Option<Refusal>,
     enter: Enter,
+    did: Vec<FieldDid>,
 }
 
 impl Typed {
@@ -94,6 +121,7 @@ impl Typed {
         if field.enter == Enter::Pressed {
             self.enter = Enter::Pressed;
         }
+        self.did.extend(field.did);
     }
 }
 
@@ -101,9 +129,14 @@ impl Typed {
 /// at that point, the rest in one box by `b.place` as its `layout` lays them - rows of a caption and a value, in sections -
 /// the buttons of its foot and the ends of its tool at the bottom.
 /// Enter in a field applies through the gate; a field refusing its value marks itself with why and shuts the gate, and
-/// a refused Enter is said with the words of the tool. `gate` is the tool's own - the picks and the trial build; the
-/// fields are judged here, as they are typed.
-pub fn tool_box(ctx: &egui::Context, b: &FieldsBox, look: &BoxLook, fields: &mut [CmdParam], layout: &Layout, gate: &Gate) -> Answer {
+/// a refused Enter is said with the words of the tool. `b.gate` is the tool's own - the picks and the trial build; the
+/// fields are judged here, as they are typed. The box stands in the view `rect` of what `draw` draws.
+pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &FieldsBox, fields: &mut [CmdParam]) -> Answer {
+    let basis = draw.cam.basis();
+    let here = current_ctx_id(draw.active_path, draw.project);
+    let look = &BoxLook { project: draw.project, pal: &draw.scheme.pal, screen: Screen { cam: draw.cam, set: draw.set, rect, basis: &basis }, here };
+    let layout = b.layout;
+    let gate = b.gate;
     // asked before a field of the box is drawn: a field takes Esc and gives the keyboard up in this frame
     let typing = ctx.egui_wants_keyboard_input();
     let trial = match gate {
@@ -121,7 +154,7 @@ pub fn tool_box(ctx: &egui::Context, b: &FieldsBox, look: &BoxLook, fields: &mut
             at_geometry_ui(ui);
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let said = field_row(ui, look, p, egui::Id::new(("cmdparam", b.tool, p.key.clone())), Focus::Waits);
+                    let said = field_row(ui, look, p, field_id(b.tool, &p.key), Focus::Waits);
                     seen.add(judge(ui, look.pal, p, said, trial.as_ref()));
                 });
             });
@@ -148,7 +181,7 @@ pub fn tool_box(ctx: &egui::Context, b: &FieldsBox, look: &BoxLook, fields: &mut
     let esc = b.esc == EscBy::Box && !typing && ctx.input(|i| i.key_pressed(egui::Key::Escape) && !i.modifiers.any());
     let keys = Keys { enter: seen.enter, esc: if esc { Esc::Pressed } else { Esc::Not } };
     let verdict = verdict(ctx, pressed, keys, &shut_by(gate, &seen, ctx));
-    Answer { verdict, did }
+    Answer { verdict, did, fields: seen.did }
 }
 
 /// THE ENDS OF A BOX, under a line of their own and centred across it. Reported behaviour: Apply and Cancel stood
@@ -165,7 +198,10 @@ fn box_ends(ui: &mut egui::Ui, b: &FieldsBox, pal: &qymcad_scheme::Palette, can:
     ui.horizontal(|ui| {
         ui.add_space(((across - was.unwrap_or(across)) / 2.0).max(0.0));
         let laid = ui.horizontal(|ui| pressed = the_ends(pal, ui, b.ends, can)).response.rect.width();
-        if was != Some(laid) {
+        // THE WIDEST THE ENDS WERE LAID IS KEPT: by a box pulled against the edge of the view the offset that centres them
+        // narrows the row it measures, and a width kept as last measured swung 203.7 <-> 201.7 every frame, asking for a
+        // frame each time - the window never came to rest
+        if was.is_none_or(|w| laid > w + 0.5) {
             ui.ctx().data_mut(|d| d.insert_temp(id, laid));
             ui.ctx().request_repaint();
         }
@@ -188,7 +224,7 @@ fn moved_by_hand(ctx: &egui::Context, id: egui::Id, r: &egui::Response) {
 /// so what is typed takes its place: "60", Tab, "35" made a height of 30.0035 of the 30.00 the field held.
 fn tab_round(ctx: &egui::Context, b: &FieldsBox, fields: &[CmdParam], layout: &Layout) {
     let keys: Vec<String> = shown_keys(ctx, fields, b, layout).into_iter().chain(fields.iter().filter(|p| p.at.is_some()).map(|p| p.key.clone())).collect();
-    let ids: Vec<egui::Id> = keys.iter().map(|key| egui::Id::new(("cmdparam", b.tool, key.clone()))).collect();
+    let ids: Vec<egui::Id> = keys.iter().map(|key| field_id(b.tool, key)).collect();
     let Some(i) = ctx.memory(|m| m.focused()).and_then(|f| ids.iter().position(|id| *id == f)) else { return };
     let back = ctx.input(|i| i.modifiers.shift);
     let held = if back { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };

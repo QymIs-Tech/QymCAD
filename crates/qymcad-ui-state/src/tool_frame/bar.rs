@@ -9,6 +9,8 @@ pub struct Described {
     pub bar: Vec<Opt>,
     pub gate: Gate,
     pub says: Vec<Notice>,
+    /// Its box at the geometry, when it has one now.
+    pub boxed: Option<BoxSpec>,
 }
 
 /// WHAT THE BAR IS DRAWN WITH: the colours, the document a number's formula reads and where its text is kept - a bar
@@ -24,6 +26,8 @@ pub struct BarLook<'a> {
 pub struct Answer {
     pub verdict: Verdict,
     pub did: Vec<Did>,
+    /// What the fields of a box did besides their values; a bar has no such fields.
+    pub fields: Vec<FieldDid>,
 }
 
 /// THE BAR OF THE TOOL IN HAND, drawn from its description, and its words laid in the corner of the view. Enter - on the
@@ -41,7 +45,7 @@ pub fn tool_bar(ui: &mut egui::Ui, look: &mut BarLook, tool: &Described) -> Answ
         ui.label(egui::RichText::new(format!("{} {}", tool.head.icon, tool.head.name)).strong());
         ui.separator();
         let mut numbers = look.bar_exprs.as_deref_mut().map(|bar_exprs| ExprBarCtx { bar_exprs, project: look.project, scheme: look.scheme });
-        did = draw_opts(ui, &tool.bar, numbers.as_mut());
+        did = draw_opts(ui, pal, &tool.bar, numbers.as_mut());
         let can = if tool.gate.open() && bar_fields_valid(ui.ctx()) { Can::Yes } else { Can::No };
         pressed = end_of_bar(ui, |ui| the_ends(pal, ui, tool.head.ends, can)).inner;
     });
@@ -61,5 +65,5 @@ pub fn tool_bar(ui: &mut egui::Ui, look: &mut BarLook, tool: &Described) -> Answ
     words.extend(remembered_refusal(&ctx, &gate).filter(|r| Some(r) != standing.as_ref()));
     words.extend(tool.says.iter().cloned());
     lay_words(&ctx, look.canvas, pal, &words);
-    Answer { verdict, did }
+    Answer { verdict, did, fields: Vec::new() }
 }

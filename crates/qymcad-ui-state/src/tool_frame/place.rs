@@ -254,7 +254,7 @@ fn size_of(ctx: &egui::Context, id: egui::Id) -> egui::Vec2 {
 
 /// THE CORNER OF A BOX `id` STANDING BY `place` IN THIS FRAME: where a person put it, if they did since its tool was
 /// taken; otherwise by the rule (`place_by_the_rule`) in the view `look` draws.
-pub fn box_corner(ctx: &egui::Context, id: egui::Id, place: Place, look: &BoxLook) -> egui::Pos2 {
+pub(crate) fn box_corner(ctx: &egui::Context, id: egui::Id, place: Place, look: &BoxLook) -> egui::Pos2 {
     let frame = ctx.cumulative_frame_nr();
     let stood_id = id.with("where the box stood");
     // a box not drawn the frame before is a box opened anew: where it was put before goes with the tool put down

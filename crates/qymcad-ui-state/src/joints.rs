@@ -440,6 +440,11 @@ pub struct JointFields {
 }
 
 impl JointCtx<'_> {
+    /// Drawing, through this workbench's own fields - as in the part and the sketch.
+    pub fn draw(&self) -> DrawCtx<'_> {
+        DrawCtx { cam: self.cam, set: self.set, scheme: self.scheme, project: self.project, active_path: self.active_path }
+    }
+
     /// THE REBUILD, THROUGH THE ASSEMBLY'S OWN FIELDS. `mark_dirty_for_rebuild` and `commit_edit` are the
     /// commonest things this workbench does - twenty calls between them - and both take the rebuild
     /// context, which is built out of ten fields this record already holds. Composed rather than carried

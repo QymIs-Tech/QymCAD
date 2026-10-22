@@ -383,7 +383,7 @@ pub fn clipboard_can_copy(project: &Project, sel: Sel, sel_sk: &SketchSelection,
 }
 
 /// Fillet ALL the corners of the current sketch's contour with the `sk_fillet` radius.
-pub fn fillet_all_corners(project: &Project, corner: &mut CornerInput, picking: &mut Picking, sel: Sel, sel_sk: &SketchSelection, status: &mut Notice, tool_prefs: &SketchToolPrefs) {
+pub fn fillet_all_corners(project: &Project, corner: &mut CornerInput, picking: &mut Picking, sel: Sel, sel_sk: &SketchSelection, status: &mut Notice) {
     // A COMMAND. With a selection, the popup opens on it straight away; without one, the mode becomes "click a shape".
     if let Sel::Sketch(si) = sel {
         let only: Vec<Id> = sel_sk.curves().collect();
@@ -396,7 +396,7 @@ pub fn fillet_all_corners(project: &Project, corner: &mut CornerInput, picking: 
             // this command is the same act as naming the lines with Shift, said in one word.
             corner.at = Some((si, 0, false));
             corner.pos = None; // the centre of the canvas
-            corner.buf = format!("{}", (tool_prefs.fillet * 1000.0).round() / 1000.0);
+            corner.fields.clear(); // the box makes them of the values of the bar as it opens
             corner.focus = true;
             corner.shifted = false;
             corner.set.follow(project, si, &only);

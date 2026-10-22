@@ -51,14 +51,14 @@ fn pick(s: &mut Session, x: f64, y: f64, add: bool) {
 fn type_into_dimension(s: &mut Session, label: &str, text: &str) {
     let at = s.find(label, SHEET).unwrap_or_else(|| panic!("the dimension {label:?} is not on the sheet; on screen: {:?}", s.words()));
     s.double_click(at.center());
-    let field = s.word("sk-expr-example");
+    let field = s.word("f-number-or-expr");
     s.fill_hinted(&field, text).key(Key::Enter);
 }
 
 /// A 40 x 30 rectangle with the length of its lower side set to 50 by a dimension, the arrow back in hand.
 fn rectangle_with_a_dimension(s: &mut Session) {
     let hint = s.word("tb-dim-hint");
-    let field = s.word("sk-expr-example");
+    let field = s.word("f-number-or-expr");
     s.press_hint(&hint);
     s.click_on_sketch(20.0, 0.0);
     s.click_on_sketch(20.0, -10.0);
@@ -168,7 +168,7 @@ probe! {
     /// and Ctrl+Z puts the label back where the last drag took it from.
     fn the_label_of_an_angle_is_dragged_aside() {
         let mut s = Fixture::TwoLinesInSketch.start();
-        let (hint, field) = (s.word("tb-dim-angle-hint"), s.word("sk-expr-example"));
+        let (hint, field) = (s.word("tb-dim-angle-hint"), s.word("f-number-or-expr"));
         s.press_hint(&hint);
         s.click_on_sketch(20.0, 0.0);
         s.click_on_sketch(14.14, 14.14);
@@ -200,7 +200,7 @@ probe! {
 /// The right side of the rectangle of the fixture given a height by the formula `text`, its dimension line led out to
 /// x = 50; the arrow back in hand. Answers where on the screen the dimension line runs.
 fn right_side_with_a_height(s: &mut Session, text: &str) -> f32 {
-    let (hint, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+    let (hint, field) = (s.word("tb-dim-hint"), s.word("f-number-or-expr"));
     s.press_hint(&hint);
     s.click_on_sketch(40.0, 15.0);
     s.click_on_sketch(50.0, 15.0);
@@ -330,7 +330,7 @@ probe! {
         // corner to corner: the side is 50 and the height 30, so the diagonal is 58.3 and 10 is impossible. The rectangle
         // was drawn from (0, 0) and grew from there to 50: its corners stand at (0, 0) and (50, 30)
         let hint = s.word("tb-dim-hint");
-        let field = s.word("sk-expr-example");
+        let field = s.word("f-number-or-expr");
         s.press_hint(&hint);
         s.click_on_sketch(0.0, 0.0);
         s.click_on_sketch(50.0, 30.0);

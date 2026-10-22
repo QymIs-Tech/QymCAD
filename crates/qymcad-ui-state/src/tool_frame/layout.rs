@@ -190,7 +190,7 @@ pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam],
     }
     if !layout.foot.is_empty() {
         ui.separator();
-        ui.horizontal_wrapped(|ui| drawn.did.extend(draw_opts(ui, &layout.foot, None)));
+        ui.horizontal_wrapped(|ui| drawn.did.extend(draw_opts(ui, d.look.pal, &layout.foot, None)));
     }
     drawn
 }
@@ -214,11 +214,11 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
                             if let Some(tag) = tag {
                                 ui.label(egui::RichText::new(tag.as_str()).weak());
                             }
-                            let said = field_input(ui, d.look, p, egui::Id::new(("cmdparam", d.b.tool, p.key.clone())), drawn.focus);
+                            let said = field_input(ui, d.look, p, field_id(d.b.tool, &p.key), drawn.focus);
                             drawn.focus = Focus::Waits;
                             drawn.typed.add(judge(ui, d.look.pal, p, said, d.trial));
                         }
-                        Cell::Opt(o) => drawn.did.extend(draw_opts(ui, std::slice::from_ref(o), None)),
+                        Cell::Opt(o) => drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o), None)),
                     }
                     if Some(n) == last {
                         if let Some(unit) = &row.unit {

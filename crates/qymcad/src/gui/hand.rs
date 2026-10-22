@@ -412,7 +412,8 @@ impl<'a> Hand<'a> {
     /// EVERY RUN OF WORDS THE NEXT FRAME PAINTS, with its place and its colour: a warning is told from information by
     /// the colour on screen, which is what a person sees, not by the field behind it.
     pub fn painted_words(&mut self) -> Vec<PaintedWords> {
-        self.frame(Vec::new());
+        // words laid in a plate that has just come up are laid unseen in its first frame and shown from the next
+        self.frame(Vec::new()).frame(Vec::new());
         painted_in(&self.win.shapes)
     }
 
@@ -744,6 +745,8 @@ impl<'a> Hand<'a> {
 
     /// TYPE `text` on the keyboard, into whatever field holds the focus.
     pub fn type_text(&mut self, text: &str) -> &mut Self {
+        // a box opened by the last frame is laid unseen in it and takes the keys from the next, as a person sees it
+        self.frame(Vec::new());
         self.frame(vec![egui::Event::Text(text.to_string())])
     }
 
@@ -892,6 +895,9 @@ impl<'a> Hand<'a> {
     /// closes after it.
     pub fn click2d(&mut self, x: f64, y: f64) -> &mut Self {
         self.mouse2d(x, y);
+        // a box the click opened is drawn from the next frame, laid unseen in it and shown from the one after, as a
+        // person sees it
+        self.frame(Vec::new()).frame(Vec::new());
         self.close_window()
     }
 
@@ -1090,6 +1096,8 @@ impl<'a> Hand<'a> {
     /// TYPE `text` INTO THE FIELD THAT STANDS RIGHT AFTER `word`, all of what it held replaced, with no Enter. Answers
     /// whether the word and a field after it were on screen.
     pub fn type_after_word(&mut self, word: &str, text: &str) -> bool {
+        // a box opened by the last frame is laid unseen in it and shown from the next, as a person sees it
+        self.frame(Vec::new());
         let Some(at) = self.written_at(word) else { return false };
         let field = |k: &super::window::Kind| matches!(k, super::window::Kind::TextField | super::window::Kind::Number);
         let Some(f) = self
@@ -1333,6 +1341,11 @@ impl<'a> Hand<'a> {
     /// WHERE THE AREA `id` STANDS, as the last frame laid it out: a window or a box of fields at the geometry.
     pub fn area_rect(&self, id: egui::Id) -> Option<egui::Rect> {
         self.win.ctx.memory(|m| m.area_rect(id))
+    }
+
+    /// THE ID OF THE BOX OF THE TOOL IN HAND, as the frame of every tool lays it; none while the tool has no box.
+    pub fn tool_box_id(&self) -> Option<egui::Id> {
+        qymcad_ui_state::tool_box_id(&self.win.ctx)
     }
 
     /// IS ANY TEXT OF A LABEL SELECTED after the last frame: what a drag across words leaves selected.

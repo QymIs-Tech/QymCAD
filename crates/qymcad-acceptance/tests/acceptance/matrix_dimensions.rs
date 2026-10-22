@@ -21,7 +21,7 @@ fn dimension(s: &mut Session, x: f64, y: f64, value: &str) {
     s.click_on_sketch(x, y);
     // a dimension's field shows an example expression while empty; the arc's own radius opens a field holding its
     // number - either is the field a person types into
-    let example = s.word("sk-expr-example");
+    let example = s.word("f-number-or-expr");
     let field = s.widgets().into_iter().find(|w| w.placeholder == example || (w.kind == qymcad::Kind::TextField && w.value.trim().parse::<f64>().is_ok())).unwrap_or_else(|| {
         let fields: Vec<(String, String)> = s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField).map(|w| (w.placeholder, w.value)).collect();
         panic!("the radius opens no field; the status line says {:?}; the fields on screen: {fields:?}", s.status())
@@ -142,7 +142,7 @@ probe! {
         let hint = s.word("tb-dim-hint");
         s.press_hint(&hint);
         s.click_on_sketch(20.0, 0.0).click_on_sketch(20.0, -10.0);
-        let example = s.word("sk-expr-example");
+        let example = s.word("f-number-or-expr");
         let field = s.widgets().into_iter().find(|w| w.placeholder == example).unwrap_or_else(|| panic!("the length opens no field; the status line says {:?}", s.status()));
         s.click(field.rect.center()).chord(qymcad::Modifiers::COMMAND, Key::A).type_text("50").key(Key::Enter);
         let after = held(&mut s);

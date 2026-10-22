@@ -161,10 +161,10 @@ mod tests {
                     if popup {
                         {
                             app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                            qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport());
+                            crate::gui::panel_places::assembly_tool(&mut app, c);
                         }
                     } else {
-                        qymcad_assembly::joint_tool_bar(&mut app.joint_ctx(), c);
+                        crate::gui::panel_places::assembly_tool(&mut app, c);
                     }
                 });
                 texts.clear();

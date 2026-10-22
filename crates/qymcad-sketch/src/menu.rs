@@ -3,24 +3,88 @@
 use qymcad_ui_state::Notice;
 use super::*;
 
-/// THE KEYS OF THE SKETCH TOOLS IN HAND, each frame: Enter makes the extension Extend previews, as a click does; and
-/// the field of the rotation angle at its centre (`sketch_rotate_popup`).
-pub fn sketch_tool_keys(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
-    offset_on_enter(sk, ctx, rect);
-    // LINES A CORNER TOOL CUT AT A CROSSING, the tool put down with no corner cut, are whole again
+/// LINES A CORNER TOOL CUT AT A CROSSING, the tool put down with no corner cut, are whole again: looked at every frame.
+pub fn corner_crossing_upkeep(sk: &mut qymcad_ui_state::SketchCtx) {
     if sk.corner.crossing == qymcad_ui_state::CrossingCut::Left {
         qymcad_ui_state::take_back_last_step(&mut *sk.edits, &mut *sk.project, &mut *sk.regen);
         sk.corner.crossing = qymcad_ui_state::CrossingCut::None;
     }
-    sketch_rotate_popup(sk, ctx, rect);
-    let (Some(held), qymcad_ui_state::Sel::Sketch(si)) = (sk.tool.extend, *sk.sel) else { return };
-    if sk.armed.click_tool() != Some(qymcad_ui_state::ClickTool::Extend) || ctx.egui_wants_keyboard_input() || !ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-        return;
+}
+
+/// THE ESC LADDER: THE INNERMOST state is cancelled, and only at the very bottom is the selection let go. The order
+/// matters - reports arrive exactly when some rung is missing and Esc "falls through" (the measure tool and the selected
+/// elements were two such rungs). While a sketch is open the frame of the tool in hand takes Esc and steps down by it;
+/// with no sketch open the window does.
+pub fn escape_step(sk: &mut qymcad_ui_state::SketchCtx) {
+    let mut said = tools_said(sk);
+    let t = &mut said.tools;
+    if t.inline.dim().is_some() || t.inline.circle().is_some() {
+        // the popup for editing a dimension is open (a double click on a dimension or a circle) - Esc cancels ONLY the
+        // popup rather than closing the whole sketch
+        t.inline.clear();
+        t.dim.put_away();
+    } else if t.pending_import.curves.is_some() {
+        t.pending_import.curves = None;
+        *said.status = Notice::info(qymcad_i18n::tr("in-import-cancelled"));
+    } else if let Some(k) = t.picking.cancel_key() {
+        t.picking.clear(); // the modes Esc simply puts down; the words come from the mode itself
+        *said.status = Notice::info(qymcad_i18n::tr(k));
+    } else if t.picking.plane_face().is_some() {
+        t.picking.set_plane_face(None);
+        *said.status = Notice::info(qymcad_i18n::tr("in-plane-face-cancelled"));
+    } else if t.sel_sk.constraint.is_some() || t.sel_sk.modify.is_some() {
+        qymcad_ui_state::escape_waiting_tool(t, said.status);
+    } else if t.leave_click_tool(said.status) {
+    } else if t.armed.pattern().is_some() {
+        *t.armed = qymcad_ui_state::Armed::None;
+        t.pat.edit = None;
+        t.pat.center = None;
+        *said.status = Notice::info(qymcad_i18n::tr("in-array-cancelled"));
+    } else if t.armed.moving().is_some() {
+        *t.armed = qymcad_ui_state::Armed::None;
+        t.tool.move_base = None;
+        *said.status = Notice::info(qymcad_i18n::tr("in-move-cancelled"));
+    } else {
+        escape_lower_step(sk);
     }
-    let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
-    qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("tool-extend"));
-    extend_apply(sk, ExtendAt { rect, pos, si, curve: None }, held);
-    qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
+    // the selection let go takes what it held from the next tool
+    sk.gsel.before.note(None, qymcad_ui_state::Adding::No);
+}
+
+/// THE LOWER RUNGS OF THE ESC LADDER: a copy or an insert waiting, a dimension being placed, its first reference, a
+/// construction under way, the tool in hand, the points of an import, the selection, and at the bottom what is chosen.
+fn escape_lower_step(sk: &mut qymcad_ui_state::SketchCtx) {
+    if sk.clip.geom_place {
+        sk.clip.geom_place = false;
+        *sk.status = Notice::info(qymcad_i18n::tr("in-insert-cancelled"));
+    } else if sk.clip.geom_pending.is_some() {
+        sk.clip.geom_pending = None;
+        *sk.status = Notice::info(qymcad_i18n::tr("in-copy-cancelled"));
+    } else if sk.place.dim.is_some() {
+        cancel_placing_dim(sk); // a provisional length goes without a trace
+    } else if sk.dim.first.is_some() {
+        sk.dim.first = None; // cancel the first reference (the point)
+    } else if !sk.tool.pts.is_empty() {
+        end_construction(sk); // a spline is finished, anything else broken off
+    } else if let Some(msg) = qymcad_ui_state::release_armed_sketch_tool(&mut tools_said(sk).tools) {
+        // ONE RUNG FOR EVERY SKETCH TOOL IN HAND, and the tool itself says what to clear. There used to be a rung per
+        // family here and none for the editing tools, so mirror, offset, fillet, chamfer and the arrays could not be put
+        // down at all - reported on the mirror, true of all of them.
+        *sk.status = Notice::info(qymcad_i18n::tr(msg));
+    } else if sk.pending_import.draw_pts.is_some() {
+        sk.pending_import.draw_pts = None;
+    } else if sk.sketch_ses.editing.is_some() && (!sk.sel_sk.items.is_empty() || sk.annot.text.is_some() || sk.annot.note.is_some()) {
+        // With elements SELECTED, Esc first clears the selection - as in any grown-up CAD. The selection used to take no
+        // part in the ladder, and the very first Esc closed the sketch.
+        sk.sel_sk.clear(); // the selection and whatever was waiting for it
+        sk.annot.text = None;
+        sk.annot.note = None;
+        *sk.status = Notice::info(qymcad_i18n::tr("in-selection-cleared"));
+    } else {
+        // THE LADDER ENDS HERE: Esc gives things back, it does not finish a context. Leaving the sketch was the rung
+        // below; it is Ctrl+Enter now - see `the_sketch_is_left_by_ctrl_enter.rs`.
+        *sk.sel = qymcad_ui_state::Sel::None;
+    }
 }
 
 /// THE MENU OF THE RIGHT BUTTON ON A SKETCH OPEN FOR EDITING, over what is selected: delete, construction, a projection

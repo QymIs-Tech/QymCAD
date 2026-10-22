@@ -87,7 +87,7 @@ mod tests {
         crate::gui::tests::the_box_of_a_joint_is_laid_in_sections::tests::a_hinge_edited(&mut app);
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new()).frame(Vec::new());
-        let area = hand.area_rect(egui::Id::new("joint_edit_popup")).expect("the box of the mate is drawn");
+        let area = hand.tool_box_id().and_then(|id| hand.area_rect(id)).expect("the box of the mate is drawn");
         assert!(hand.press_word(&crate::i18n::tr("j-axis-pick"), area.center()), "the box of the mate has no button to pick an axis");
         assert!(hand.app.side.joint.axis_pick.is_some(), "setup: picking the axis did not begin");
         hand.key(egui::Key::Escape);

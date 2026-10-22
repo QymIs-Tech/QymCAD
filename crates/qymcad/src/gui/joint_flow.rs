@@ -276,6 +276,8 @@ pub(in crate::gui) mod tests {
         let src = concat!(
             include_str!("../../../qymcad-assembly/src/bars.rs"),
             "\n",
+            include_str!("../../../qymcad-assembly/src/in_hand.rs"),
+            "\n",
             include_str!("../../../qymcad-assembly/src/commands.rs"),
             "\n",
             include_str!("../../../qymcad-assembly/src/gizmo.rs"),
@@ -574,7 +576,7 @@ pub(in crate::gui) mod tests {
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(rect), ..Default::default() }, |c| {
                 app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, rect);
+                crate::gui::panel_places::assembly_tool(&mut app, c);
             });
             at = None;
             for cs in &out.shapes {
@@ -586,7 +588,7 @@ pub(in crate::gui) mod tests {
         for events in [vec![egui::Event::PointerMoved(at)], vec![egui::Event::PointerMoved(at), btn(true)], vec![btn(false)]] {
             let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(rect), events, ..Default::default() }, |c| {
                 app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, rect);
+                crate::gui::panel_places::assembly_tool(&mut app, c);
             });
         }
         assert_eq!(app.side.joint.axis_pick, Some(ca), "the point-at-the-axis button did not take the tool: {:?}", app.side.joint.axis_pick);

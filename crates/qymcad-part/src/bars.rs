@@ -3,29 +3,22 @@
 use qymcad_ui_state::{Described, Did, Ends, Gate, Head, Notice, Opt, OptKey};
 use super::*;
 
-/// THE BAR OF THE TOOL IN HAND of the part, drawn by the frame from its description.
-pub(crate) fn part_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui, tool: &qymcad_ui_state::Described) -> qymcad_ui_state::Answer {
-    let scheme = pc.scheme;
-    let canvas = pc.canvas;
-    qymcad_ui_state::tool_bar(ui, &mut qymcad_ui_state::BarLook { scheme, project: &*pc.project, bar_exprs: Some(&mut *pc.bar_exprs), canvas }, tool)
-}
-
 /// The kinds of a body boolean, as a group of the bar, `op` in force.
 fn bool_kinds(op: u8) -> Opt {
     Opt::modes(OptKey::of("bool_kind"), Some("f-kind"), &["f-cut-ab", "f-union", "f-intersect"], usize::from(op.min(2)))
 }
 
 /// The kind of a body boolean chosen at place `index` of its group.
-fn bool_kind_at(index: usize) -> u8 {
+pub(crate) fn bool_kind_at(index: usize) -> u8 {
     u8::try_from(index).unwrap_or(2).min(2)
 }
 
-/// THE BAR OF A BODY-TO-BODY BOOLEAN, in the frame of every tool: the kind of operation, the bodies taken, Apply and
-/// Cancel. Making one, body A is picked and body B is awaited (`bool_pick`); a node reopened by a double click changes
-/// its kind here, and Cancel puts back the kind it had.
-pub fn bool_tool_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
+/// A BODY-TO-BODY BOOLEAN AS ITS BAR DESCRIBES IT: the kind of operation, the bodies taken. Making one, body A is picked
+/// and body B is awaited (`bool_pick`); a node reopened by a double click changes its kind here, and Cancel puts back the
+/// kind it had.
+pub(crate) fn bool_described(pc: &qymcad_ui_state::PartCtx) -> Described {
     use qymcad_core::feature::FeatureKind;
-    let head = || Head { icon: ph::INTERSECT, name: qymcad_i18n::tr("bool-bodies-btn"), ends: Ends::ApplyCancel };
+    let head = Head { icon: ph::INTERSECT, name: qymcad_i18n::tr("bool-bodies-btn"), ends: Ends::ApplyCancel };
     // CREATING: body A is picked, the click on B and the choice of kind are awaited
     if let Some((a, op)) = pc.boolean.pick {
         let a_name = pc.project.mesh_index(a).map(|mi| qymcad_i18n::name(&pc.project.mesh_name(mi))).unwrap_or_else(|| "?".into());
@@ -36,34 +29,19 @@ pub fn bool_tool_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
         };
         // Enter before body B is taken has nothing to make
         let gate = if b_name.is_some() { Gate::Open } else { Gate::Waiting(qymcad_i18n::tr("tb-bool-pick-b")) };
-        let tool = Described { head: head(), bar: vec![bool_kinds(op), Opt::Readout(said)], gate, says: vec![] };
-        let answer = part_bar(pc, ui, &tool);
-        for d in answer.did {
-            if let Did::Chose { index, .. } = d {
-                pc.boolean.pick = Some((a, bool_kind_at(index)));
-            }
-        }
-        qymcad_ui_state::go_through(ui.ctx(), &tool.gate, answer.verdict, &mut BoolPickDoors { pc });
-        return;
+        return Described { head, bar: vec![bool_kinds(op), Opt::Readout(said)], gate, says: vec![], boxed: None };
     }
     // EDITING: a double click on the boolean node changes its KIND in the bar (as reopening the command does for an
     // extrude)
-    let Some(ti) = pc.boolean.edit else { return };
-    let Some(FeatureKind::BodyBoolean { op, .. }) = pc.project.timeline.get(ti).map(|n| n.kind.clone()) else {
-        pc.boolean.edit = None;
-        return;
+    let op = match pc.boolean.edit.and_then(|ti| pc.project.timeline.get(ti)).map(|n| &n.kind) {
+        Some(FeatureKind::BodyBoolean { op, .. }) => *op,
+        _ => 0,
     };
-    let answer = part_bar(pc, ui, &Described { head: head(), bar: vec![bool_kinds(op)], gate: Gate::Open, says: vec![] });
-    for d in answer.did {
-        if let Did::Chose { index, .. } = d {
-            set_bool_kind(pc, ti, bool_kind_at(index));
-        }
-    }
-    qymcad_ui_state::go_through(ui.ctx(), &Gate::Open, answer.verdict, &mut BoolEditDoors { pc });
+    Described { head, bar: vec![bool_kinds(op)], gate: Gate::Open, says: vec![], boxed: None }
 }
 
 /// THE KIND OF BOOLEAN NODE `ti` SET TO `op`: one step of undo, like any edit of a node.
-fn set_bool_kind(pc: &mut qymcad_ui_state::PartCtx, ti: usize, op: u8) {
+pub(crate) fn set_bool_kind(pc: &mut qymcad_ui_state::PartCtx, ti: usize, op: u8) {
     use qymcad_core::feature::FeatureKind;
     qymcad_ui_state::begin_edit(&mut *pc.edits, &*pc.project, qymcad_i18n::tr("f-operation"));
     if let Some(FeatureKind::BodyBoolean { op: o, .. }) = pc.project.timeline.get_mut(ti).map(|n| &mut n.kind) {
@@ -116,7 +94,7 @@ pub(crate) enum PlaneTool {
 
 impl PlaneTool {
     /// The tool of the place in hand now; none when the place is empty.
-    fn of(pb: &PlaneBarCtx) -> Option<PlaneTool> {
+    pub(crate) fn of(pb: &PlaneBarCtx) -> Option<PlaneTool> {
         if pb.m3.on {
             Some(PlaneTool::Measure)
         } else if let Some(kind) = pb.picking.sketch_for() {
@@ -133,30 +111,19 @@ impl PlaneTool {
     }
 }
 
-/// THE BAR OF THE PLACE OF THE SECTION, and the box of the section at its plane.
-pub fn section_bar(pb: &mut PlaneBarCtx, ui: &mut egui::Ui) {
-    let Some(tool) = PlaneTool::of(pb) else { return };
-    let described = plane_tool_described(pb, &tool);
-    let answer = qymcad_ui_state::tool_bar(ui, &mut qymcad_ui_state::BarLook { scheme: pb.scheme, project: &*pb.project, bar_exprs: None, canvas: pb.canvas }, &described);
-    for d in answer.did {
-        if matches!(d, Did::Pressed { key } if key.name == "flip") {
-            section_flip(pb.section);
-        }
-    }
-    let ctx = ui.ctx().clone();
-    qymcad_ui_state::go_through(&ctx, &described.gate, answer.verdict, &mut PlaneDoors { pb, tool });
-    if matches!(tool, PlaneTool::Section) && PlaneTool::of(pb) == Some(PlaneTool::Section) {
-        let verdict = section_box(pb, &ctx, described.head.ends);
-        qymcad_ui_state::go_through(&ctx, &described.gate, verdict, &mut PlaneDoors { pb, tool });
+impl PlaneBarCtx<'_> {
+    /// Drawing, through this workbench's own fields - as in the part and the sketch.
+    pub fn draw(&self) -> qymcad_ui_state::DrawCtx<'_> {
+        qymcad_ui_state::DrawCtx { cam: self.cam, set: self.set, scheme: self.scheme, project: self.project, active_path: self.active_path }
     }
 }
 
 /// THE TOOL OF THE PLACE OF THE SECTION AS ITS BAR DESCRIBES IT. Each of them waited with only the status line saying
 /// so, and the bar stood empty over a tool held.
-fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Described {
+pub(crate) fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Described {
     let head = |icon, name: &str, ends| Head { icon, name: qymcad_i18n::tr(name), ends };
     // what is pointed at, not typed: Enter before it has nothing to do
-    let waiting = |head: Head, ask: String| Described { head, bar: vec![Opt::Readout(ask.clone())], gate: Gate::Waiting(ask), says: vec![] };
+    let waiting = |head: Head, ask: String| Described { head, bar: vec![Opt::Readout(ask.clone())], gate: Gate::Waiting(ask), says: vec![], boxed: None };
     match tool {
         // the measure: its name, what is taken, the answer, the way out; the answer comes with the second element
         PlaneTool::Measure => {
@@ -167,7 +134,7 @@ fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Described {
                 return d;
             }
             let taken: Vec<String> = pb.m3.picks.iter().map(|p| p.what.clone()).collect();
-            Described { head, bar: vec![Opt::Readout(taken.join(" - ")), Opt::Readout(pb.status.words.clone())], gate: Gate::Open, says: vec![] }
+            Described { head, bar: vec![Opt::Readout(taken.join(" - ")), Opt::Readout(pb.status.words.clone())], gate: Gate::Open, says: vec![], boxed: None }
         }
         PlaneTool::SketchFor(kind) => {
             let name = match kind {
@@ -184,7 +151,7 @@ fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Described {
             let head = head(ph::FLIP_HORIZONTAL, "mp-title", Ends::ApplyCancel);
             let name = pb.mirror.part.and_then(|src| pb.project.components.iter().find(|c| c.id == src)).map(|c| qymcad_i18n::name(&c.name));
             match (name, pb.mirror.at.is_some()) {
-                (Some(name), true) => Described { head, bar: vec![Opt::Readout(qymcad_i18n::tr1("mp-plane-taken-of", "name", &name))], gate: Gate::Open, says: vec![] },
+                (Some(name), true) => Described { head, bar: vec![Opt::Readout(qymcad_i18n::tr1("mp-plane-taken-of", "name", &name))], gate: Gate::Open, says: vec![], boxed: None },
                 (Some(name), false) => waiting(head, qymcad_i18n::tr1("mp-pick", "name", &name)),
                 (None, _) => waiting(head, qymcad_i18n::tr("tb-mirror-pick-part")),
             }
@@ -199,47 +166,35 @@ fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Described {
                 return waiting(head, qymcad_i18n::tr("tb-section-pick"));
             }
             let flip = Opt::press(OptKey::of("flip"), format!("{} {}", ph::ARROWS_DOWN_UP, qymcad_i18n::tr("sec-flip-btn"))).hint(qymcad_i18n::tr("sec-flip-hint"));
-            Described { head, bar: vec![flip], gate: Gate::Open, says: vec![] }
+            Described { head, bar: vec![flip], gate: Gate::Open, says: vec![], boxed: None }
         }
     }
 }
 
 /// The other half of the section shown: the plane turned over, its offset with it.
-fn section_flip(section: &mut qymcad_ui_state::SectionTool) {
+pub(crate) fn section_flip(section: &mut qymcad_ui_state::SectionTool) {
     if let Some((_, n)) = &mut section.plane {
         *n = [-n[0], -n[1], -n[2]];
         section.offset = -section.offset;
     }
 }
 
-/// What the fields of the section are told apart by from the fields of the commands, numbered by their kind below 256.
-const SECTION_FIELDS: u64 = 257;
-
-/// THE BOX OF THE SECTION AT ITS PLANE: the offset and the two tilts, formulas as every field of a tool. They stood in
-/// the bar as numbers dragged by the mouse, with no formula and no place by the plane they move.
-fn section_box(pb: &mut PlaneBarCtx, ctx: &egui::Context, ends: Ends) -> qymcad_ui_state::Verdict {
-    let Some((o, _)) = qymcad_ui_state::section_eff(pb.section) else { return qymcad_ui_state::Verdict::Stay };
-    section_fields_follow(pb.section);
-    let basis = pb.cam.basis();
-    let screen = qymcad_ui_state::Screen { cam: pb.cam, set: pb.set, rect: pb.canvas, basis: &basis };
-    let place = qymcad_ui_state::Place::by(qymcad_ui_state::By::Point(o)); // its arrow is kept clear of as every handle (`keep_in_sight`)
-    let the_box =
-        qymcad_ui_state::FieldsBox { id: egui::Id::new("section_box"), tool: SECTION_FIELDS, place, focus: qymcad_ui_state::Focus::Waits, hidden: &[], ends, esc: qymcad_ui_state::EscBy::Bar };
-    let here = qymcad_ui_state::current_ctx_id(pb.active_path, pb.project);
-    let look = qymcad_ui_state::BoxLook { project: &*pb.project, pal: &pb.scheme.pal, screen, here };
-    let answer = qymcad_ui_state::tool_box(ctx, &the_box, &look, &mut pb.section.fields, &section_layout(), &Gate::Open);
-    let was = (pb.section.offset, pb.section.rot);
+/// THE SECTION TAKES THE VALUES TYPED at its plane: the offset and the two tilts, formulas as every field of a tool. They
+/// stood in the bar as numbers dragged by the mouse, with no formula and no place by the plane they move.
+pub(crate) fn section_takes_fields(pb: &mut PlaneBarCtx) {
     let v = |key: &str| pb.section.fields.iter().find(|p| p.key == key).map_or(0.0, |p| p.val);
-    (pb.section.offset, pb.section.rot) = (v("offset"), [v("tilt1"), v("tilt2")]);
-    if was != (pb.section.offset, pb.section.rot) {
+    let offset = v("offset");
+    let rot = [v("tilt1"), v("tilt2")];
+    if offset != pb.section.offset || rot != pb.section.rot {
+        pb.section.offset = offset;
+        pb.section.rot = rot;
         qymcad_ui_state::invalidate(pb.regen);
     }
-    answer.verdict
 }
 
 /// THE FIELDS OF THE SECTION FOLLOW ITS VALUES: made the first time, and a value changed elsewhere - the arrow dragged,
 /// the plane turned over or picked anew - written into its field; a formula typed stays while its value holds.
-fn section_fields_follow(section: &mut qymcad_ui_state::SectionTool) {
+pub(crate) fn section_fields_follow(section: &mut qymcad_ui_state::SectionTool) {
     use qymcad_ui_state::CmdParam;
     if section.fields.is_empty() {
         section.fields = vec![
@@ -296,24 +251,10 @@ pub fn begin_comp_array(pc: &mut qymcad_ui_state::PartCtx, mode: qymcad_ui_state
     *pc.status = Notice::info(qymcad_i18n::tr(if mode == qymcad_ui_state::PatternKind::Circular { "msg-comp-circ-array" } else { "msg-comp-lin-array" }));
 }
 
+/// A PATTERN OF COMPONENTS AS ITS BAR DESCRIBES IT: the part repeated, then the options of a pattern of bodies.
 /// THE TOP BAR OF A COMPONENT PATTERN (in an assembly) - the same bar as the pattern of bodies, described by the same
 /// options: the direction or the axis here; the counts, the step or the angle in fields at the geometry; Enter applies.
-pub fn comp_array_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
-    if pc.carr.mode.is_none() {
-        return;
-    }
-    let tool = comp_array_described(pc);
-    let answer = part_bar(pc, ui, &tool);
-    for d in answer.did {
-        comp_array_act(pc, d);
-    }
-    sync_comp_array_params(*pc.arr, pc.carr.mode, pc.cmd);
-    take_array_counts(pc.cmd, pc.arr);
-    qymcad_ui_state::go_through(ui.ctx(), &tool.gate, answer.verdict, &mut CompArrayDoors { pc });
-}
-
-/// A PATTERN OF COMPONENTS AS ITS BAR DESCRIBES IT: the part repeated, then the options of a pattern of bodies.
-fn comp_array_described(pc: &qymcad_ui_state::PartCtx) -> Described {
+pub(crate) fn comp_array_described(pc: &qymcad_ui_state::PartCtx) -> Described {
     let name = pc.project.components.iter().find(|c| c.id == pc.carr.src).map(|c| qymcad_i18n::name(&c.name)).unwrap_or_default();
     let source = Some(qymcad_i18n::tr1("cmd-source", "name", &name));
     let mut says = Vec::new();
@@ -327,7 +268,7 @@ fn comp_array_described(pc: &qymcad_ui_state::PartCtx) -> Described {
         ("cmd-comp-lin-array", linear_array_opts(&*pc.arr, pc.carr.dir, source, &mut says))
     };
     let head = Head { icon: ph::STACK, name: qymcad_i18n::tr(title), ends: Ends::ApplyCancel };
-    Described { head, bar, gate: comp_array_gate(pc), says }
+    Described { head, bar, gate: comp_array_gate(pc), says, boxed: None }
 }
 
 /// CAN THE PATTERN OF COMPONENTS BE APPLIED: the source is picked before the tool is taken, so what shuts the gate is a
@@ -345,7 +286,7 @@ pub(crate) fn comp_array_gate(pc: &qymcad_ui_state::PartCtx) -> Gate {
 
 /// WHAT WAS DONE TO AN OPTION OF A PATTERN OF COMPONENTS: its direction and axis are its own, the rest is the pattern
 /// of bodies'. A direction ticked on runs along the next axis, so the tick itself makes a grid.
-fn comp_array_act(pc: &mut qymcad_ui_state::PartCtx, did: Did) {
+pub(crate) fn comp_array_act(pc: &mut qymcad_ui_state::PartCtx, did: Did) {
     let axis = |index: usize| u8::try_from(index).unwrap_or(2).min(2);
     match did {
         Did::Chose { key, index } if key.name == "dir" => pc.carr.dir = axis(index),
@@ -447,6 +388,6 @@ pub(crate) fn tool_is_taken(bc: &qymcad_ui_state::BarCtx, kind: qymcad_ui_state:
 }
 
 mod feat_bar;
-pub use feat_bar::*;
+pub(crate) use feat_bar::*;
 mod commands;
 pub use commands::*;

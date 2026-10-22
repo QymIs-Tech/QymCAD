@@ -31,7 +31,7 @@ mod tests {
         hand.wheel3d(view.left_center() + egui::vec2(80.0, 0.0), 3);
         hand.frame(Vec::new()).frame(Vec::new());
         let mate = the_mate_on_screen(&mut hand, jid);
-        let the_box = hand.area_rect(egui::Id::new("joint_edit_popup")).expect("the box of the mate is drawn");
+        let the_box = hand.tool_box_id().and_then(|id| hand.area_rect(id)).expect("the box of the mate is drawn");
         assert!(view.contains(mate), "the hinge went out of the view: {mate:?} of {view:?}");
         assert!(!the_box.expand(4.0).contains(mate), "the box of the mate lies over it: the mate at {mate:?}, the box {the_box:?}");
         assert!(view.contains_rect(the_box), "the box of the mate runs out of the view: {the_box:?} of {view:?}");
@@ -45,7 +45,7 @@ mod tests {
         let jid = crate::gui::tests::the_box_of_a_joint_is_laid_in_sections::tests::a_hinge_edited(&mut app);
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new()).frame(Vec::new());
-        let id = egui::Id::new("joint_edit_popup");
+        let id = hand.tool_box_id().expect("the box of the mate is drawn");
         let by_rule = hand.area_rect(id).expect("the box of the mate is drawn");
         let caption = hand.words_drawn().iter().find(|(t, r)| *t == crate::i18n::tr("box-turn") && by_rule.contains_rect(*r)).map(|(_, r)| *r).expect("the caption of the turn is in the box");
         let pull = egui::vec2(-200.0, 100.0);
@@ -97,7 +97,10 @@ mod tests {
                 hand.click([side.centroid.x, side.centroid.y, side.centroid.z]);
             }
             hand.frame(Vec::new()).frame(Vec::new()).frame(Vec::new());
-            let id = egui::Id::new("feat_cmd_popup");
+            let Some(id) = hand.tool_box_id() else {
+                wrong.push(format!("tool {kind:?}: GUARD - it drew no box"));
+                continue;
+            };
             if hand.kept_in_sight().is_empty() {
                 wrong.push(format!("tool {kind:?}: GUARD - it drew no handles to keep clear of"));
             }
@@ -110,7 +113,7 @@ mod tests {
         crate::gui::tests::the_box_of_a_joint_is_laid_in_sections::tests::a_hinge_edited(&mut app);
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new()).frame(Vec::new()).frame(Vec::new());
-        let id = egui::Id::new("joint_edit_popup");
+        let id = hand.tool_box_id().expect("the box of the mate is drawn");
         if hand.kept_in_sight().is_empty() {
             wrong.push("the mate: GUARD - no gizmo of its freedoms drawn".to_string());
         }

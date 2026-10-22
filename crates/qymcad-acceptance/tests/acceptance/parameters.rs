@@ -90,7 +90,7 @@ probe! {
         s.press_hint(&dim);
         s.click_on_sketch(20.0, 0.0);
         s.click_on_sketch(20.0, -10.0);
-        let field = s.word("sk-expr-example");
+        let field = s.word("f-number-or-expr");
         s.fill_hinted(&field, "w").key(Key::Enter);
         s.key(Key::Escape);
         let finish = s.word("wb-finish");

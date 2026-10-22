@@ -407,16 +407,14 @@ pub struct CornerInput {
     pub set: CornerSet,
     /// where on the canvas the input field stands
     pub pos: Option<Pos2>,
-    pub buf: String,
-    /// the second value of a chamfer of two legs or of a leg and an angle, typed beside the first
-    pub buf2: String,
+    /// THE FIELDS OF THE BOX OF THE SET: the value, and the second value of a chamfer of two legs or of a leg and an
+    /// angle; made as the box opens
+    pub fields: Vec<CmdParam>,
     pub focus: bool,
     /// where the corner was clicked, on the sheet: the line it stands nearer to is the first of a chamfer
     pub near: Option<qymcad_core::geom::Point2>,
     /// restrict the corners to this set (rounding THE SELECTED corners rather than all of them)
     pub only: Option<std::collections::HashSet<Id>>,
-    /// why the value in the field was refused, said beside it
-    pub why: Option<String>,
     /// HOW NEAR THE POINT THE CURSOR COUNTS, in pixels, remembered when the popup was opened: `Grab::Corner` read
     /// with the pick precision of the person. Farther than that the cursor is over the rest of the sheet and says
     /// nothing about which of the corners at the point is meant, so the corner does not follow the pointer across
@@ -475,6 +473,11 @@ pub enum CrossingCut {
 }
 
 impl CornerInput {
+    /// The value field `key` of the box of the set holds, as typed.
+    pub fn value(&self, key: &str) -> Option<f64> {
+        self.fields.iter().find(|p| p.key == key).map(|p| p.val)
+    }
+
     /// THE TOOL PUT DOWN: all of the input goes, and lines it cut at a crossing for a corner never cut are left to be
     /// made whole again.
     pub fn put_down(&mut self) {
@@ -753,8 +756,8 @@ impl EditTool {
 pub struct OffsetAim {
     /// where the click fixed the side, on the sheet; none while the copy follows the pointer
     pub at: Option<qymcad_core::geom::Point2>,
-    /// the distance as typed in the box
-    pub buf: String,
+    /// the field of the distance in the box, as typed
+    pub field: Vec<CmdParam>,
     /// the box takes the keyboard on the frame it opens
     pub focus: bool,
 }
@@ -830,8 +833,10 @@ pub struct DimTool {
     /// the first reference pointed at, and what has been clicked
     pub first: Option<DimRef>,
     pub pick: Vec<Id>,
-    /// typing the value: buffer, focus, editing an existing dimension
-    pub buf: String,
+    /// THE FIELD OF THE BOX OF A DIMENSION, or of the size of a circle, as it is typed: empty while no box is up
+    pub field: Vec<CmdParam>,
+    /// the name of the dimension as typed so far; none while the box shows the name the dimension has
+    pub name: Option<String>,
     pub focus: bool,
     /// THE FIELD OF THE SIZE OF A CIRCLE OR AN ARC WAS TYPED IN since it opened: only a value typed is laid as a
     /// dimension, as the width and the height of a rectangle are (`Placing::typed`)
@@ -844,6 +849,16 @@ pub struct DimTool {
     /// THE SKETCH AS IT WAS before a provisional length was put on a picked line: Esc puts it back whole, the
     /// points the length brought with it (an axis of the sketch made on demand) as well.
     pub before: Option<Box<qymcad_core::model::Sketch>>,
+}
+
+impl DimTool {
+    /// The box of a dimension put away: nothing typed into it stays.
+    pub fn put_away(&mut self) {
+        self.field.clear();
+        self.name = None;
+        self.focus = false;
+        self.typed = false;
+    }
 }
 
 /// THE JOINT COMMAND: what has been pointed at, with which anchor, and whether an existing one is being edited.

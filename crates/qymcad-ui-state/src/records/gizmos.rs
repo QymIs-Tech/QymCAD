@@ -123,7 +123,8 @@ pub struct BodyGizmo {
     pub dragging: bool,
     /// typed input: (what the gizmo stands on, axis, is it a rotation?) plus its buffer and focus
     pub num: Option<(GizmoOf, u8, bool)>,
-    pub num_buf: String,
+    /// the field of the step typed at the gizmo, made as the box opens
+    pub num_field: Vec<crate::CmdParam>,
     pub num_focus: bool,
 }
 

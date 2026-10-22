@@ -37,7 +37,7 @@ probe! {
         let mut s = build::empty_sketch();
         // away from the origin, which is a place to snap to as well and would answer instead of a corner
         build::draw(&mut s, "tb-rect-hint", &[(10.0, 10.0), (50.0, 40.0)]);
-        let (dim, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+        let (dim, field) = (s.word("tb-dim-hint"), s.word("f-number-or-expr"));
         s.press_hint(&dim);
         s.click_on_sketch(30.0, 10.0);
         s.click_on_sketch(30.0, 4.0); // not on the X axis, which would be taken as a second reference

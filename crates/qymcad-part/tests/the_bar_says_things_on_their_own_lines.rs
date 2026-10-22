@@ -96,7 +96,9 @@ fn the_thread_bar() -> ThreadBar {
     // is laid out unseen the first frame it shows, so the second frame is read
     let mut frame = || {
         ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-            qymcad_part::feat_command_bar(&mut b.part_ctx(), ui);
+            let mut pc = b.part_ctx();
+            let canvas = pc.canvas;
+            qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_part::in_hand(&mut pc));
         })
     };
     frame();

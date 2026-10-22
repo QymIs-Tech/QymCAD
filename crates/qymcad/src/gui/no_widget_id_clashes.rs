@@ -96,7 +96,7 @@ mod tests {
                 egui::Panel::right("props").show(c, |ui| app.joints_panel_for_test(ui));
                 {
                     app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                    qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport());
+                    crate::gui::panel_places::assembly_tool(&mut app, c);
                 }
             });
             texts.clear();

@@ -50,7 +50,9 @@ fn the_revolve_bar_on(plane: qymcad_core::feature::BasePlane) -> Vec<String> {
     let ctx = egui::Context::default();
     let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(2000.0, 400.0));
     let full = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-        qymcad_part::feat_command_bar(&mut b.part_ctx(), ui);
+        let mut pc = b.part_ctx();
+        let canvas = pc.canvas;
+        qymcad_ui_state::tool_in_hand(ui, canvas, qymcad_part::in_hand(&mut pc));
     });
     texts(&full.shapes)
 }

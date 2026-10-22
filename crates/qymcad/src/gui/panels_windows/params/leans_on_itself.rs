@@ -69,7 +69,8 @@ mod tests {
         hand.app.project.solve_sketch(si);
         hand.app.project.solve_sketch(si);
         assert_eq!(diameter(hand.app, si), Some(20.0), "dia + 1 written for dia moved the diameter");
-        let said = hand.status_painted().into_iter().find(|w| w.text.contains(&leans_on("dia")));
+        // the refusal is said where the tool speaks, as the frame of every tool says it
+        let said = hand.painted_words().into_iter().find(|w| w.text.contains(&leans_on("dia")));
         assert!(said.as_ref().is_some_and(|w| w.colour == pal.error_mild()), "the popup does not refuse dia + 1 in the tone of a refusal: {:?}", said.map(|w| (w.text, w.colour)));
     }
 

@@ -47,7 +47,9 @@ pub(crate) const PANELS: &str = concat!(
             file_break!(),
             include_str!("../../../qymcad-sketch/src/commands.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars.rs")
+            include_str!("../../../qymcad-part/src/bars.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/in_hand.rs")
         ),
         file_break!(),
         include_str!("../../../qymcad-part/src/params.rs"),
@@ -86,7 +88,9 @@ pub(crate) const PANELS: &str = concat!(
         file_break!(),
         include_str!("../../../qymcad-sketch/src/popups.rs"),
         file_break!(),
-        include_str!("../../../qymcad-sketch/src/shape_box.rs"),
+        include_str!("../../../qymcad-sketch/src/in_hand.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-sketch/src/editors.rs"),
         file_break!(),
         include_str!("../../../qymcad-sketch/src/props.rs"),
         file_break!(),
@@ -99,6 +103,8 @@ pub(crate) const PANELS: &str = concat!(
     file_break!(),
     concat!(
         include_str!("../../../qymcad-assembly/src/bars.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-assembly/src/in_hand.rs"),
         file_break!(),
         include_str!("../../../qymcad-assembly/src/commands.rs"),
         file_break!(),
@@ -227,7 +233,9 @@ const WINDOW_OPENERS: &str = concat!(
             file_break!(),
             include_str!("../../../qymcad-sketch/src/commands.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars.rs")
+            include_str!("../../../qymcad-part/src/bars.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/in_hand.rs")
         ),
         file_break!(),
         include_str!("../../../qymcad-part/src/params.rs"),
@@ -327,7 +335,9 @@ const CTX_USERS: &str = concat!(
             file_break!(),
             include_str!("../../../qymcad-sketch/src/commands.rs"),
             file_break!(),
-            include_str!("../../../qymcad-part/src/bars.rs")
+            include_str!("../../../qymcad-part/src/bars.rs"),
+            file_break!(),
+            include_str!("../../../qymcad-part/src/in_hand.rs")
         ),
         file_break!(),
         include_str!("../../../qymcad-part/src/params.rs"),
@@ -366,7 +376,9 @@ const CTX_USERS: &str = concat!(
         file_break!(),
         include_str!("../../../qymcad-sketch/src/popups.rs"),
         file_break!(),
-        include_str!("../../../qymcad-sketch/src/shape_box.rs"),
+        include_str!("../../../qymcad-sketch/src/in_hand.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-sketch/src/editors.rs"),
         file_break!(),
         include_str!("../../../qymcad-sketch/src/props.rs"),
         file_break!(),
@@ -379,6 +391,8 @@ const CTX_USERS: &str = concat!(
     file_break!(),
     concat!(
         include_str!("../../../qymcad-assembly/src/bars.rs"),
+        file_break!(),
+        include_str!("../../../qymcad-assembly/src/in_hand.rs"),
         file_break!(),
         include_str!("../../../qymcad-assembly/src/commands.rs"),
         file_break!(),
@@ -502,6 +516,8 @@ const CTX_DECL: &str = concat!(
     include_str!("../../../qymcad-ui-state/src/tool_frame/opts.rs"),
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/tool_frame/place.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/tool.rs"),
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/tool_frame/words.rs"),
     file_break!(),
@@ -800,6 +816,7 @@ mod tests {
             "PartCtx::canvas",           // read: where the view stands, the words of the tool in hand laid in its corner
             "PartCtx::workbench",        // read
             "PropsCtx::workbench",       // read
+            "SketchCtx::canvas",         // read: where the view stands, the box of the tool in hand laid in it
             "StatusCtx::cursor",         // read: where the pointer is, printed as two numbers and changed by nobody
             "StatusCtx::line",           // a pair of references: what the line says is written through them, not into a copy
             "TextCtx::tool_text_height", // read: the height the preview of the text tool is baked at

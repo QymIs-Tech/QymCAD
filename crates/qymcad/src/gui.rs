@@ -575,6 +575,8 @@ impl App {
             rev: &mut self.params.rev,
             rot: &mut self.side.rot,
             sweep: &mut self.params.sweep,
+            bar_exprs: &mut self.bar_exprs,
+            canvas: self.viewing.view_rect,
         }
     }
 
@@ -974,32 +976,6 @@ impl App {
         crate::gui::io_jobs::ensure_brep(&mut self.rebuild_ctx()); // the kernel rebuilds the consumers' geometry, so a live B-rep is needed
         self.project.mark_datum_consumers_dirty();
         qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the scheduler does the computing
-    }
-
-    /// Apply or update the pattern on Enter.
-    fn confirm_pattern(&mut self) {
-        begin_edit(&mut self.disk.edits, &self.project, crate::i18n::tr("g-sketch-array")); // THE OPERATION BOUNDARY
-        let Sel::Sketch(si) = self.chosen.sel else { return };
-        if let Some(pi) = self.tools.pat.edit {
-            let src = self.project.sketches.get(si).and_then(|s| s.patterns.get(pi)).map(|p| p.source.clone()).unwrap_or_default();
-            let kind = current_pattern_kind(&self.tools.armed, self.tools.pat, &self.project, self.sk_pat, si, &src);
-            self.project.update_pattern(si, pi, kind);
-            self.status = Notice::info(crate::i18n::tr("g-array-updated"));
-        } else {
-            let eids = shapes_chosen(&self.project, si, &self.tools.sel_sk);
-            if eids.is_empty() {
-                self.status = Notice::info(crate::i18n::tr("g-select-for-array"));
-                return;
-            }
-            let kind = current_pattern_kind(&self.tools.armed, self.tools.pat, &self.project, self.sk_pat, si, &eids);
-            self.project.add_pattern(si, &eids, kind);
-            self.status = Notice::info(crate::i18n::tr("g-array-created"));
-        }
-        self.tools.armed = qymcad_ui_state::Armed::None;
-        self.tools.pat.edit = None;
-        self.tools.pat.center = None;
-        invalidate(&mut self.regen);
-        qymcad_ui_state::commit_edit(&mut self.rebuild_ctx());
     }
 
     pub(crate) fn clipboard_copy(&mut self, cut: bool) {

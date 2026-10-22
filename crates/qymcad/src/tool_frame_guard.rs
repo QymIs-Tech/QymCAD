@@ -25,19 +25,7 @@ mod tests {
     }
 
     /// Why each drawing tool of the sketch is allowed its own box.
-    const NOT_YET: &str = "a box of a drawing tool of the sketch, with its own Enter and Esc, kept until the sketch comes onto the frame of a tool";
-
-    const ALLOWED: [Allowed; 5] = [
-        Allowed { path: "qymcad-sketch/src/popups.rs", function: "corner_input_popup", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/popups.rs", function: "dim_editor", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/offset.rs", function: "offset_box", why: NOT_YET },
-        Allowed { path: "qymcad-sketch/src/offset.rs", function: "offset_on_enter", why: NOT_YET },
-        Allowed {
-            path: "qymcad-sketch/src/menu.rs",
-            function: "sketch_tool_keys",
-            why: "Enter that ends the modification of a sketch in hand - a drawing tool of the sketch, kept until the sketch comes onto the frame of a tool",
-        },
-    ];
+    const ALLOWED: [Allowed; 0] = [];
 
     /// One place a tool does what the frame does: the file, the function it stands in and what it does.
     struct Found {

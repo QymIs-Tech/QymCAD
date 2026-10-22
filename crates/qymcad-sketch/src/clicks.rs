@@ -612,7 +612,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         sk.corner.set.follow(&*sk.project, si, &lines);
                         sk.corner.pos = Some(pos);
                         sk.corner.shifted = false;
-                        sk.corner.buf = qymcad_core::expr::fmt_num(sk.tool_prefs.fillet);
+                        sk.corner.fields.clear(); // the box makes them of the values of the bar as it opens
                         sk.corner.focus = true; // the tool stays held: after Enter it waits for the next shape
                     } else {
                         *sk.status = Notice::refusal(qymcad_i18n::tr("sk-click-shape-line"));
@@ -772,8 +772,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         // instead. The set is whole wherever its field stands, and a field over the drawing
                         // takes clicks away from it.
                         sk.corner.pos = Some(pos);
-                        sk.corner.buf = qymcad_core::expr::fmt_num(sk.tool_prefs.fillet);
-                        sk.corner.buf2 = qymcad_core::expr::fmt_num(sk.tool_prefs.chamfer_second);
+                        sk.corner.fields.clear(); // the box makes them of the values of the bar as it opens
                         sk.corner.focus = true;
                     }
                     // **THE FIELD KEEPS THE CARET WHILE THE SET IS NAMED.** The focus is asked for again with

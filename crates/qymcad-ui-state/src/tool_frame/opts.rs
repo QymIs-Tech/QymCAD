@@ -88,8 +88,49 @@ pub enum Opt {
     Press { key: OptKey, word: String, hint: Option<String> },
     /// Words shown as they are: what is taken, how many, what was found.
     Readout(String),
-    /// A number of the bar, an expression, for a tool with no place in the view to set it at - the ratio of a relation.
-    Number { key: OptKey, caption: String, value: f64, lo: f64, hi: f64 },
+    /// A number of the bar, an expression, for a tool with no place in the view to set it at - the ratio of a relation,
+    /// the sides of a polygon to draw.
+    Number { key: OptKey, caption: String, value: f64, limits: Limits },
+    /// A line of text typed - the name a formula reads a value by, the words of a text drawn: the text as typed so far,
+    /// kept by the tool, what the empty field shows, and why it will not do. A text that will not do keeps the keyboard
+    /// on Enter, its words under the field.
+    Text { key: OptKey, text: String, placeholder: String, unfit: Option<Unfit>, hint: Option<String> },
+}
+
+/// WHAT A NUMBER OF THE BAR TAKES: its limits, whether it is whole, whether zero is a value, and the catalogue key of
+/// its unit written after it, none for a plain count.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Limits {
+    pub range: std::ops::RangeInclusive<f64>,
+    pub number: Number,
+    pub zero: Zero,
+    pub unit: Option<&'static str>,
+}
+
+impl Limits {
+    /// Any number of `range`, zero among them, with no unit.
+    pub fn between(range: std::ops::RangeInclusive<f64>) -> Limits {
+        Limits { range, number: Number::Real, zero: Zero::Takes, unit: None }
+    }
+}
+
+/// IS ZERO A VALUE of a number of the bar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Zero {
+    Takes,
+    Refused,
+}
+
+/// WHY A TEXT WILL NOT DO: the line said under it, and the longer explanation its hover shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unfit {
+    pub said: String,
+    pub hint: String,
+}
+
+/// The id of the field of text option `key`: a check reaches the field by it.
+pub fn text_field_id(key: OptKey) -> egui::Id {
+    egui::Id::new(("a text typed into a tool", key.name, key.at))
 }
 
 impl Opt {
@@ -116,7 +157,7 @@ impl Opt {
     /// The same option with the longer explanation the hover shows - a switch, a pick or a button.
     pub fn hint(mut self, text: impl Into<String>) -> Opt {
         match &mut self {
-            Opt::Switch { hint, .. } | Opt::Pick { hint, .. } | Opt::Press { hint, .. } => *hint = Some(text.into()),
+            Opt::Switch { hint, .. } | Opt::Pick { hint, .. } | Opt::Press { hint, .. } | Opt::Text { hint, .. } => *hint = Some(text.into()),
             Opt::Modes { .. } | Opt::Readout(_) | Opt::Number { .. } => {}
         }
         self
@@ -136,6 +177,10 @@ pub enum Did {
     Cleared { key: OptKey },
     /// A number of the bar was given a value it can take.
     Typed { key: OptKey, value: f64 },
+    /// A text was typed into, and holds this now.
+    Retyped { key: OptKey, text: String },
+    /// Enter was pressed in a name that will do.
+    Entered { key: OptKey, text: String },
 }
 
 /// The most choices a group shows in a row; more are a list.
@@ -143,7 +188,7 @@ const ROW_OF_CHOICES: usize = 6;
 
 /// DRAW THE OPTIONS in a row of the bar or of a box, a separator between them, and answer what was done to them.
 /// `numbers` is where a number of the bar keeps its text; a box has none, and shows a number as a readout.
-pub(crate) fn draw_opts(ui: &mut egui::Ui, opts: &[Opt], mut numbers: Option<&mut ExprBarCtx>) -> Vec<Did> {
+pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &[Opt], mut numbers: Option<&mut ExprBarCtx>) -> Vec<Did> {
     let mut did = Vec::new();
     for (i, o) in opts.iter().enumerate() {
         if i > 0 {
@@ -201,11 +246,13 @@ pub(crate) fn draw_opts(ui: &mut egui::Ui, opts: &[Opt], mut numbers: Option<&mu
             Opt::Readout(words) => {
                 ui.label(words.as_str());
             }
-            Opt::Number { key, caption, value, lo, hi } => {
+            Opt::Number { key, caption, value, limits } => {
                 ui.label(caption.as_str());
                 match numbers.as_deref_mut() {
                     Some(n) => {
-                        let v = num_or_expr(n, ui, key.name, *value, NumFormat { lo: *lo, hi: *hi, integer: false, suffix: "", nonzero: false });
+                        let unit = limits.unit.map(qymcad_i18n::tr).unwrap_or_default();
+                        let format = NumFormat { lo: *limits.range.start(), hi: *limits.range.end(), integer: limits.number == Number::Whole, suffix: &unit, nonzero: limits.zero == Zero::Refused };
+                        let v = num_or_expr(n, ui, key.name, *value, format);
                         if (v - value).abs() > 1e-12 {
                             did.push(Did::Typed { key: *key, value: v });
                         }
@@ -215,6 +262,43 @@ pub(crate) fn draw_opts(ui: &mut egui::Ui, opts: &[Opt], mut numbers: Option<&mu
                     }
                 }
             }
+            Opt::Text { key, text, placeholder, unfit, hint } => did.extend(text_opt(ui, pal, TextOpt { key: *key, text, placeholder, unfit: unfit.as_ref(), hint })),
+        }
+    }
+    did
+}
+
+/// A TEXT OPTION AS IT IS DRAWN: its key, the text the tool keeps, what the empty field shows, why it will not do, and
+/// the longer explanation its hover shows.
+struct TextOpt<'a> {
+    key: OptKey,
+    text: &'a str,
+    placeholder: &'a str,
+    unfit: Option<&'a Unfit>,
+    hint: &'a Option<String>,
+}
+
+/// THE FIELD OF A TEXT: the text the tool keeps, no list of names - a name is not a formula, and the list would take the
+/// Enter the name is given with. A text that will not do keeps the keyboard and its letters on Enter, and the line under
+/// it says why.
+fn text_opt(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, o: TextOpt) -> Vec<Did> {
+    let mut did = Vec::new();
+    let mut typed = o.text.to_string();
+    let r = ui.vertical(|ui| {
+        let r = hinted(ui.add(egui::TextEdit::singleline(&mut typed).id(text_field_id(o.key)).desired_width(110.0).hint_text(o.placeholder)), o.hint);
+        if let Some(u) = o.unfit {
+            say(ui, pal, &Notice::warning(u.said.clone()), NoticeSize::Small).on_hover_text(&u.hint);
+        }
+        r
+    });
+    let r = r.inner;
+    if typed != o.text {
+        did.push(Did::Retyped { key: o.key, text: typed.clone() });
+    }
+    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        match o.unfit {
+            Some(_) => r.request_focus(),
+            None => did.push(Did::Entered { key: o.key, text: typed }),
         }
     }
     did

@@ -263,7 +263,7 @@ pub(crate) mod tests {
                 }
                 let out = ctx.run_ui(input, |c| {
                     egui::CentralPanel::default().show(c, |_ui| {});
-                    crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), c, rect);
+                    crate::gui::panel_places::part_tool(&mut app, c);
                 });
                 texts.clear();
                 for cs in &out.shapes {

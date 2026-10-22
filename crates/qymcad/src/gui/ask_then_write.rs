@@ -53,7 +53,9 @@ mod tests {
                     "\n",
                     include_str!("../../../qymcad-sketch/src/commands.rs"),
                     "\n",
-                    include_str!("../../../qymcad-part/src/bars.rs")
+                    include_str!("../../../qymcad-part/src/bars.rs"),
+                    "\n",
+                    include_str!("../../../qymcad-part/src/in_hand.rs")
                 ),
                 "\n",
                 include_str!("../../../qymcad-part/src/params.rs"),
@@ -94,7 +96,9 @@ mod tests {
                 "\n",
                 include_str!("../../../qymcad-sketch/src/popups.rs"),
                 "\n",
-                include_str!("../../../qymcad-sketch/src/shape_box.rs"),
+                include_str!("../../../qymcad-sketch/src/in_hand.rs"),
+                "\n",
+                include_str!("../../../qymcad-sketch/src/editors.rs"),
                 "\n",
                 include_str!("../../../qymcad-sketch/src/props.rs"),
                 "\n",
@@ -109,6 +113,8 @@ mod tests {
             "Assembly",
             concat!(
                 include_str!("../../../qymcad-assembly/src/bars.rs"),
+                "\n",
+                include_str!("../../../qymcad-assembly/src/in_hand.rs"),
                 "\n",
                 include_str!("../../../qymcad-assembly/src/commands.rs"),
                 "\n",
@@ -283,7 +289,9 @@ mod tests {
             "\n",
             include_str!("../../../qymcad-sketch/src/popups.rs"),
             "\n",
-            include_str!("../../../qymcad-sketch/src/shape_box.rs"),
+            include_str!("../../../qymcad-sketch/src/in_hand.rs"),
+            "\n",
+            include_str!("../../../qymcad-sketch/src/editors.rs"),
             "\n",
             include_str!("../../../qymcad-sketch/src/props.rs"),
             "\n",
@@ -317,7 +325,9 @@ mod tests {
                 "\n",
                 include_str!("../../../qymcad-sketch/src/commands.rs"),
                 "\n",
-                include_str!("../../../qymcad-part/src/bars.rs")
+                include_str!("../../../qymcad-part/src/bars.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/in_hand.rs")
             ),
             "\n",
             include_str!("../../../qymcad-part/src/params.rs"),
@@ -338,6 +348,8 @@ mod tests {
         ),
         concat!(
             include_str!("../../../qymcad-assembly/src/bars.rs"),
+            "\n",
+            include_str!("../../../qymcad-assembly/src/in_hand.rs"),
             "\n",
             include_str!("../../../qymcad-assembly/src/commands.rs"),
             "\n",

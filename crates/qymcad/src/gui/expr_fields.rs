@@ -14,7 +14,7 @@ mod tests {
     #[test]
     fn the_tool_bars_have_no_number_only_fields() {
         let src = crate::gui::panels_source::PANELS;
-        for fname in ["fn tool_options_bar", "fn feat_command_bar"] {
+        for fname in ["fn drawing_opts(", "fn describe(pc: &mut qymcad_ui_state::PartCtx"] {
             let a = src.find(fname).expect("the bar is there");
             // The bar's body ends at the NEXT function of any shape. Ending it only at `    pub(super) fn `
             // was right while every function in the file was a method; once helpers were lifted out to the
@@ -139,8 +139,9 @@ mod tests {
 
     /// Where the box of fields of the command in hand stands: the one beside the arrow or the one of the rest.
     fn the_box(hand: &super::super::hand::Hand) -> egui::Rect {
-        let at_arrow = (0..4).find_map(|i| hand.area_rect(egui::Id::new("feat_cmd_popup").with(("at", i))));
-        at_arrow.or_else(|| hand.area_rect(egui::Id::new("feat_cmd_popup"))).expect("the box of fields of the extrusion is drawn")
+        let id = hand.tool_box_id().expect("the box of fields of the extrusion is drawn");
+        let at_arrow = (0..4).find_map(|i| hand.area_rect(id.with(("at", i))));
+        at_arrow.or_else(|| hand.area_rect(id)).expect("the box of fields of the extrusion is drawn")
     }
 
     /// A window opened from the menu: the heading of the menu, the item in it, the id of the window.

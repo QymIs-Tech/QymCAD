@@ -43,10 +43,6 @@ pub(crate) fn popup_place(ctx: &egui::Context, jc: &qymcad_ui_state::JointCtx, j
     Some(if running { place.held() } else { place })
 }
 
-/// What the fields of a joint are told apart by from the fields of the commands of the part, numbered by their kind
-/// below 256.
-const JOINT_FIELDS: u64 = 258;
-
 /// The keys of the fields of the three slots of a joint, in the order of the slots.
 const SLOT_KEYS: [&str; 3] = ["angle", "offset", "offset2"];
 
@@ -59,54 +55,14 @@ struct AnchorTag {
     prefix: &'static str,
 }
 
-/// THE BOX OF A JOINT AT THE GEOMETRY (a double click on the glyph): its values - the angle, the offset and the second
-/// offset - as fields that take a formula, each pinned or let go by its lock; the side, driving from the root, the run
-/// of a degree, "keep as it stands"; the anchors - the attachment point, the turn, the axis, the offsets; the limits of
-/// the free degrees. In the frame of every tool: Enter and Apply keep what was done, Esc and Cancel take it away - a joint
-/// just made, or what was changed in one reopened. Anchors A
-/// and B are re-picked in the bar (`joint_edit_bar`). A single click does NOT open the box - it only shows the gizmo
-/// of the freedoms.
-pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect: Rect) {
-    let Some(jid) = jc.joint.edit else { return };
-    if !matches!(jc.workbench, qymcad_ui_state::Workbench::Assembly) || !jc.mode_3d {
-        return;
-    }
-    let Some(j) = jc.project.joints.iter().find(|x| x.id == jid).cloned() else {
-        jc.joint.edit = None; // the joint is gone (deleted) - leave the edit
-        return;
-    };
-    let place = popup_place(ctx, jc, &j).unwrap_or(qymcad_ui_state::Place::by(qymcad_ui_state::By::ViewCorner));
-    joint_fields_follow(ctx, jc.project, jc.joint, &j);
-    let layout = joint_layout(jc, &j);
-    let before = jc.project.joints.clone();
-    let the_box = qymcad_ui_state::FieldsBox {
-        id: egui::Id::new("joint_edit_popup"),
-        tool: JOINT_FIELDS,
-        place,
-        focus: qymcad_ui_state::Focus::Waits,
-        hidden: &[],
-        ends: qymcad_ui_state::Ends::ApplyCancel,
-        esc: qymcad_ui_state::EscBy::Bar,
-    };
-    let scheme = jc.scheme;
-    let basis = jc.cam.basis();
-    let here = qymcad_ui_state::current_ctx_id(jc.active_path, jc.project);
-    let look = qymcad_ui_state::BoxLook { project: &*jc.project, pal: &scheme.pal, screen: qymcad_ui_state::Screen { cam: jc.cam, set: jc.set, rect, basis: &basis }, here };
-    let answer = qymcad_ui_state::tool_box(ctx, &the_box, &look, &mut jc.joint.fields.fields, &layout, &qymcad_ui_state::Gate::Open);
-    joint_typing_marks(ctx, &jc.joint.fields.fields);
-    let taken = joint_fields_take(jc.project, &jc.joint.fields.fields, &j);
-    if let Some(e) = &taken.refused {
-        *jc.status = Notice::refusal(qymcad_i18n::error_words::expr_error_text(e));
-    }
-    let mut changed = taken.changed;
-    for d in answer.did {
-        changed |= joint_opt_act(jc, &j, d);
-    }
-    joint_values_step(ctx, jc.edits, jc.project, before, changed);
-    if changed {
-        qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
-    }
-    qymcad_ui_state::go_through(ctx, &qymcad_ui_state::Gate::Open, answer.verdict, &mut JointEditDoors { jc });
+/// THE BOX OF A JOINT AT THE GEOMETRY (a double click on the glyph), as the frame knows it: the joint, and the head of its
+/// bar the frame tells the fields of its box apart by. Its values - the angle, the offset and the second offset - are
+/// fields that take a formula, each pinned or let go by its lock; the side, driving from the root, the run of a degree,
+/// "keep as it stands"; the anchors - the attachment point, the turn, the axis, the offsets; the limits of the free
+/// degrees. A single click does NOT open the box - it only shows the gizmo of the freedoms.
+pub(crate) struct JointBox<'a> {
+    pub(crate) j: &'a qymcad_core::feature::Joint,
+    pub(crate) head: &'a qymcad_ui_state::Head,
 }
 
 /// The slots of joint `j` shown in its box: a rigid joint has an angle as well - no freedom, but the turn about its
@@ -171,15 +127,11 @@ fn field_of(p: qymcad_ui_state::CmdParam, whose: &'static str) -> qymcad_ui_stat
     p
 }
 
-/// The id of field `key` of the box of a joint, as the frame gives it.
-fn field_id(key: &str) -> egui::Id {
-    egui::Id::new(("cmdparam", JOINT_FIELDS, key.to_string()))
-}
-
 /// THE FIELDS OF THE BOX FOLLOW THE JOINT: made anew for another joint, and a value changed elsewhere - the solve, a
 /// drag of the gizmo, a run - written into its field; a field being typed in, or holding the value the joint holds,
 /// keeps its text - a formula stays a formula.
-fn joint_fields_follow(ctx: &egui::Context, project: &Project, joint: &mut qymcad_ui_state::JointCommand, j: &qymcad_core::feature::Joint) {
+pub(crate) fn joint_fields_follow(ctx: &egui::Context, project: &Project, joint: &mut qymcad_ui_state::JointCommand, at: &JointBox) {
+    let j = at.j;
     let want = joint_fields(project, j);
     let mine = joint.fields.joint == j.id;
     let focused = ctx.memory(|m| m.focused());
@@ -189,7 +141,7 @@ fn joint_fields_follow(ctx: &egui::Context, project: &Project, joint: &mut qymca
         fields: want
             .into_iter()
             .map(|w| match kept.iter().find(|p| mine && p.key == w.key) {
-                Some(p) if focused == Some(field_id(&p.key)) || p.txt.trim() == w.txt.trim() => p.clone(),
+                Some(p) if focused == Some(qymcad_ui_state::tool_field_id(at.head, &p.key)) || p.txt.trim() == w.txt.trim() => p.clone(),
                 _ => w,
             })
             .collect(),
@@ -198,9 +150,9 @@ fn joint_fields_follow(ctx: &egui::Context, project: &Project, joint: &mut qymca
 
 /// WHERE THE TYPING IN THE BOX BEGINS AND ENDS - a field taking the keyboard and giving it up - is where its step of
 /// undo opens and closes (`joint_values_step`): the field writes the value while it is typed.
-fn joint_typing_marks(ctx: &egui::Context, fields: &[qymcad_ui_state::CmdParam]) {
+pub(crate) fn joint_typing_marks(ctx: &egui::Context, fields: &[qymcad_ui_state::CmdParam], head: &qymcad_ui_state::Head) {
     let focused = ctx.memory(|m| m.focused());
-    let now = fields.iter().any(|p| focused == Some(field_id(&p.key)));
+    let now = fields.iter().any(|p| focused == Some(qymcad_ui_state::tool_field_id(head, &p.key)));
     let id = egui::Id::new("a field of the joint box holds the keyboard");
     let was = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     ctx.data_mut(|d| d.insert_temp(id, now));
@@ -216,7 +168,7 @@ fn joint_typing_marks(ctx: &egui::Context, fields: &[qymcad_ui_state::CmdParam])
 /// a parameter drives it later; an anchor moves; a limit is set. Only a field whose text differs from what the joint
 /// holds is written: the number a field shows is rounded, and taking it back would pin a free degree where the solve
 /// left it, a hair off, every frame.
-fn joint_fields_take(project: &mut Project, fields: &[qymcad_ui_state::CmdParam], j: &qymcad_core::feature::Joint) -> Taken {
+pub(crate) fn joint_fields_take(project: &mut Project, fields: &[qymcad_ui_state::CmdParam], j: &qymcad_core::feature::Joint) -> Taken {
     let held = joint_fields(project, j);
     let vars = project.param_map();
     let typed = |key: &str| {
@@ -260,9 +212,9 @@ fn joint_fields_take(project: &mut Project, fields: &[qymcad_ui_state::CmdParam]
 
 /// WHAT THE FIELDS OF THE BOX OF A JOINT CAME TO IN A FRAME: whether the joint changed, and the first formula the
 /// document refused.
-struct Taken {
-    changed: bool,
-    refused: Option<qymcad_core::errors::ExprError>,
+pub(crate) struct Taken {
+    pub(crate) changed: bool,
+    pub(crate) refused: Option<qymcad_core::errors::ExprError>,
 }
 
 /// A VALUE TYPED INTO A FIELD OF THE BOX: what it works out to, and the text it was typed as.
@@ -286,7 +238,7 @@ fn set_limit(limit: &mut Option<f64>, typed: Option<&Typed>) -> bool {
 /// lock - with the side and driving from the root; a section for each part - where its anchor sits, its axis, its turn,
 /// its offset along X, Y and Z on one line; the limits of the free degrees, folded; at the foot the run of a degree and
 /// "keep as it stands".
-fn joint_layout(jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint) -> qymcad_ui_state::Layout {
+pub(crate) fn joint_layout(jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint) -> qymcad_ui_state::Layout {
     use qymcad_core::feature::{AnchorRef, JointKind};
     use qymcad_ui_state::{AsLit, Folded, Opt, OptKey, Row, Section};
     let project = &*jc.project;
@@ -386,7 +338,7 @@ const ATTACH_POINTS: [qymcad_core::asm::connector::AttachPoint; 3] =
     [qymcad_core::asm::connector::AttachPoint::Middle, qymcad_core::asm::connector::AttachPoint::Start, qymcad_core::asm::connector::AttachPoint::End];
 
 /// WHAT WAS DONE TO AN OPTION OF THE BOX OF JOINT `j`, done to the joint; whether the document changed.
-fn joint_opt_act(jc: &mut qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint, did: qymcad_ui_state::Did) -> bool {
+pub(crate) fn joint_opt_act(jc: &mut qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint, did: qymcad_ui_state::Did) -> bool {
     use qymcad_ui_state::Did;
     let anchor = |i: usize| [j.a, j.b][i.min(1)];
     match did {

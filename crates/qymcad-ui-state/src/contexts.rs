@@ -334,6 +334,11 @@ pub struct PartCtx<'a> {
 }
 
 impl PartCtx<'_> {
+    /// Drawing, through this workbench's own fields - as in the sketch.
+    pub fn draw(&self) -> DrawCtx<'_> {
+        DrawCtx { cam: self.cam, set: self.set, scheme: self.scheme, project: self.project, active_path: self.active_path }
+    }
+
     /// The rebuild, through this workbench's own fields - as in the assembly. Composed rather than carried
     /// alongside: two contexts in one signature would let them drift apart.
     pub fn rebuild(&mut self) -> RebuildCtx<'_> {
@@ -639,6 +644,8 @@ impl Bench {
             rev: &mut self.rev,
             rot: &mut self.rot,
             sweep: &mut self.sweep,
+            bar_exprs: &mut self.bar_exprs,
+            canvas: BENCH_CANVAS,
         }
     }
 
@@ -727,6 +734,10 @@ pub struct SketchCtx<'a> {
     pub rev: &'a mut RevolveParams,
     pub rot: &'a mut RotInput,
     pub sweep: &'a mut SweepParams,
+    /// where the numbers of the bar keep their text while they are typed
+    pub bar_exprs: &'a mut std::collections::HashMap<&'static str, String>,
+    /// the view the sketch is drawn in, on the screen
+    pub canvas: egui::Rect,
 }
 
 impl SketchCtx<'_> {

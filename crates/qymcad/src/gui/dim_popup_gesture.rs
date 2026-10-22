@@ -21,6 +21,7 @@ mod tests {
         app.project.sketches[si].constraints.push(Constraint::Distance { a: pts[0], b: pts[1], d: 40.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
         let ci = app.project.sketches[si].constraints.len() - 1;
         app.chosen.sel = Sel::Sketch(si);
+        app.sketch_ses.editing = Some(sid); // the sketch open for editing, its dimension double-clicked
         app.tools.inline = InlineEdit::Dim(ci);
         (si, ci)
     }
@@ -40,9 +41,9 @@ mod tests {
             Self { ctx, rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0)), events: Vec::new(), drawn: Vec::new(), name_rect: egui::Rect::NOTHING }
         }
 
-        fn frame(&mut self, app: &mut App, si: usize, ci: usize) -> &mut Self {
+        fn frame(&mut self, app: &mut App) -> &mut Self {
+            app.viewing.view_rect = self.rect; // the view the sketch and its dimension are drawn in
             let input = egui::RawInput { screen_rect: Some(self.rect), events: std::mem::take(&mut self.events), ..Default::default() };
-            let rect = self.rect;
             let out = self.ctx.run_ui(input, |ui| {
                 // The frame hands in the root `Ui` now; the context comes from it.
                 let ctx = &ui.ctx().clone();
@@ -52,9 +53,9 @@ mod tests {
                 // does not exist - and it was exactly this omission that made an Escape check green while a
                 // person saw the operation cancelled.
                 app.handle_key_commands(ctx);
-                crate::gui::sketching::dim_editor(&mut app.sketch_ctx(), ctx, rect);
+                crate::gui::panel_places::sketch_tool(app, ui);
             });
-            if let Some(r) = self.ctx.read_response(egui::Id::new(("dimdrv", si, ci))) {
+            if let Some(r) = self.ctx.read_response(qymcad_ui_state::text_field_id(qymcad_sketch::DIM_NAME)) {
                 self.name_rect = r.rect;
             }
             self.drawn.clear();
@@ -85,11 +86,11 @@ mod tests {
         /// the first few frames the view is still being fitted to the sketch — the field moves from
         /// [350,340] to [588,404]. A click on the stale rectangle landed in empty space, and that was
         /// an error of aim in the check, not a broken popup.
-        fn enter_driver_field(&mut self, app: &mut App, si: usize, ci: usize) -> &mut Self {
+        fn enter_driver_field(&mut self, app: &mut App) -> &mut Self {
             let mut still = 0;
             for _ in 0..20 {
                 let was = self.name_rect;
-                self.frame(app, si, ci);
+                self.frame(app);
                 still = if self.name_rect == was { still + 1 } else { 0 };
                 if still >= 2 {
                     break;
@@ -98,12 +99,12 @@ mod tests {
             let at = self.name_rect.center();
             assert!(self.name_rect.is_positive(), "the frame has no driver name field — the dimension popup did not draw it");
             self.events.push(egui::Event::PointerMoved(at));
-            self.frame(app, si, ci);
+            self.frame(app);
             self.events.push(egui::Event::PointerMoved(at));
             for pressed in [true, false] {
                 self.events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
             }
-            self.frame(app, si, ci)
+            self.frame(app)
         }
 
         fn shows(&self, what: &str) -> bool {
@@ -113,13 +114,14 @@ mod tests {
         /// THE SAME WAY IN, BUT INTO THE VALUE FIELD — the one holding the expression, where the list of
         /// drivers lives. Waiting for the popup to settle matters just as much: it is anchored to the
         /// dimension on screen and moves while the view is being fitted.
-        fn enter_value_field(&mut self, app: &mut App, si: usize, ci: usize) -> &mut Self {
-            let id = egui::Id::new(("dimval", si, ci));
+        fn enter_value_field(&mut self, app: &mut App) -> &mut Self {
             let mut rect = egui::Rect::NOTHING;
             let mut still = 0;
             for _ in 0..20 {
                 let was = rect;
-                self.frame(app, si, ci);
+                self.frame(app);
+                // the field of the value in the box of the dimension, as the frame names it once the box is drawn
+                let id = qymcad_ui_state::tool_box_id(&self.ctx).map_or(egui::Id::NULL, |b| qymcad_ui_state::field_id(b.value(), "value"));
                 rect = self.ctx.read_response(id).map(|r| r.rect).unwrap_or(egui::Rect::NOTHING);
                 still = if rect == was { still + 1 } else { 0 };
                 if still >= 2 {
@@ -129,12 +131,12 @@ mod tests {
             assert!(rect.is_positive(), "the frame has no value field — the dimension popup did not draw it");
             let at = rect.center();
             self.events.push(egui::Event::PointerMoved(at));
-            self.frame(app, si, ci);
+            self.frame(app);
             self.events.push(egui::Event::PointerMoved(at));
             for pressed in [true, false] {
                 self.events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
             }
-            self.frame(app, si, ci)
+            self.frame(app)
         }
     }
 
@@ -150,17 +152,20 @@ mod tests {
     fn escape_closes_the_list_and_leaves_the_popup_open() {
         let mut app = App::default();
         app.project.parameters.push(qymcad_core::model::Param { name: "width".into(), expr: "50".into(), value: 50.0 });
-        let (si, ci) = sketch_with_dim(&mut app);
+        sketch_with_dim(&mut app);
         let mut p = Popup::new();
-        p.enter_value_field(&mut app, si, ci);
-        p.type_text("wid").frame(&mut app, si, ci);
-        p.frame(&mut app, si, ci);
+        p.enter_value_field(&mut app);
+        // the field opens on the value it holds: a person erases it first
+        p.key(egui::Key::Backspace).key(egui::Key::Backspace).frame(&mut app);
+        // the list of names is laid unseen in its first frame and shown from the next
+        p.type_text("wid").frame(&mut app).frame(&mut app);
+        p.frame(&mut app);
         assert!(p.shows("width"), "setup: the list must be open before Escape, drawn: {:?}", p.drawn);
 
-        p.key(egui::Key::Escape).frame(&mut app, si, ci);
+        p.key(egui::Key::Escape).frame(&mut app);
         assert!(matches!(app.tools.inline, InlineEdit::Dim(_)), "Escape with the list open closed the whole dimension popup instead of the list — the edit is lost");
 
-        p.frame(&mut app, si, ci);
+        p.frame(&mut app);
         assert!(!p.shows("width"), "the list stayed open after Escape: {:?}", p.drawn);
     }
 
@@ -169,15 +174,18 @@ mod tests {
     fn escape_after_the_list_still_closes_the_popup() {
         let mut app = App::default();
         app.project.parameters.push(qymcad_core::model::Param { name: "width".into(), expr: "50".into(), value: 50.0 });
-        let (si, ci) = sketch_with_dim(&mut app);
+        sketch_with_dim(&mut app);
         let mut p = Popup::new();
-        p.enter_value_field(&mut app, si, ci);
-        p.type_text("wid").frame(&mut app, si, ci);
-        p.frame(&mut app, si, ci);
+        p.enter_value_field(&mut app);
+        // the field opens on the value it holds: a person erases it first
+        p.key(egui::Key::Backspace).key(egui::Key::Backspace).frame(&mut app);
+        // the list of names is laid unseen in its first frame and shown from the next
+        p.type_text("wid").frame(&mut app).frame(&mut app);
+        p.frame(&mut app);
 
-        p.key(egui::Key::Escape).frame(&mut app, si, ci); // the list
-        p.key(egui::Key::Escape).frame(&mut app, si, ci); // out of the field
-        p.key(egui::Key::Escape).frame(&mut app, si, ci); // the popup
+        p.key(egui::Key::Escape).frame(&mut app); // the list
+        p.key(egui::Key::Escape).frame(&mut app); // out of the field
+        p.key(egui::Key::Escape).frame(&mut app); // the popup
         assert!(matches!(app.tools.inline, InlineEdit::None), "with the list closed Escape no longer closes the popup");
     }
 
@@ -189,15 +197,15 @@ mod tests {
     fn typing_a_driver_name_does_not_rebuild_anything() {
         let mut app = App::default();
         app.project.new_document();
-        let (si, ci) = sketch_with_dim(&mut app);
+        sketch_with_dim(&mut app);
 
         let mut p = Popup::new();
-        p.enter_driver_field(&mut app, si, ci);
+        p.enter_driver_field(&mut app);
         let key_before = qymcad_ui_state::doc_key(&app.project);
         let undo_before = app.disk.edits.undo.len();
 
         for c in "dlina".chars() {
-            p.type_text(&c.to_string()).frame(&mut app, si, ci);
+            p.type_text(&c.to_string()).frame(&mut app);
             assert_eq!(qymcad_ui_state::doc_key(&app.project), key_before, "the document changed on the letter \"{c}\" — the edit goes into the model under the fingers");
         }
         assert_eq!(app.disk.edits.undo.len(), undo_before, "typing bred undo steps");
@@ -209,13 +217,13 @@ mod tests {
     fn enter_names_the_dimension_once() {
         let mut app = App::default();
         app.project.new_document();
-        let (si, ci) = sketch_with_dim(&mut app);
+        sketch_with_dim(&mut app);
 
         let mut p = Popup::new();
-        p.enter_driver_field(&mut app, si, ci);
+        p.enter_driver_field(&mut app);
         let undo_before = app.disk.edits.undo.len();
-        p.type_text("dlina").frame(&mut app, si, ci);
-        p.key(egui::Key::Enter).frame(&mut app, si, ci);
+        p.type_text("dlina").frame(&mut app);
+        p.key(egui::Key::Enter).frame(&mut app);
 
         assert_eq!(app.project.named_dims.len(), 1, "the dimension did not get a name on Enter: {:?}", app.project.named_dims);
         assert_eq!(app.project.named_dims[0].name, "dlina");
@@ -240,16 +248,17 @@ mod tests {
         assert!(app.project.add_named_dim("len".into(), sid0, pts));
 
         // The second sketch — that is where the typing happens.
-        let (si, ci) = sketch_with_dim(&mut app);
+        sketch_with_dim(&mut app);
         let mut p = Popup::new();
-        p.enter_driver_field(&mut app, si, ci);
-        p.type_text("len").frame(&mut app, si, ci);
+        p.enter_driver_field(&mut app);
+        // the tool judges the name typed from the frame after the letters, as a person sees it
+        p.type_text("len").frame(&mut app).frame(&mut app);
 
         // THE LETTERS ARE INTACT while the name is being typed.
         assert!(p.shows("len"), "the typed name vanished from the field: {:?}", p.drawn);
         assert!(p.shows("Housing.Profile"), "it is not said whose name this is: {:?}", p.drawn);
 
-        p.key(egui::Key::Enter).frame(&mut app, si, ci);
+        p.key(egui::Key::Enter).frame(&mut app);
         assert_eq!(app.project.named_dims.len(), 1, "a taken name was applied after all — the project holds two \"len\": {:?}", app.project.named_dims);
     }
 
@@ -259,14 +268,15 @@ mod tests {
     fn the_name_of_a_constant_is_refused_in_the_popup() {
         let mut app = App::default();
         app.project.new_document();
-        let (si, ci) = sketch_with_dim(&mut app);
+        sketch_with_dim(&mut app);
         let mut p = Popup::new();
-        p.enter_driver_field(&mut app, si, ci);
-        p.type_text("tau").frame(&mut app, si, ci);
+        p.enter_driver_field(&mut app);
+        // the tool judges the name typed from the frame after the letters, as a person sees it
+        p.type_text("tau").frame(&mut app).frame(&mut app);
 
         let said = crate::i18n::tr1("par-name-constant", "name", "tau");
         assert!(p.shows(&said), "it is not said the name is a constant: expected \"{said}\", in the frame {:?}", p.drawn);
-        p.key(egui::Key::Enter).frame(&mut app, si, ci);
+        p.key(egui::Key::Enter).frame(&mut app);
         assert!(app.project.named_dims.is_empty(), "the name of a constant was applied: {:?}", app.project.named_dims);
     }
 
@@ -289,13 +299,16 @@ mod tests {
         assert!(hand.type_after_word(&crate::i18n::tr("sk-driver-label"), "tau"), "the popup of the dimension has no field for its name");
 
         let line = crate::i18n::tr1("par-name-constant", "name", "tau");
-        hand.frame(Vec::new());
-        let at = hand.words_drawn().iter().find(|(t, _)| t.contains(&line)).map(|(_, r)| r.center());
-        let at = at.unwrap_or_else(|| panic!("the popup does not say the name is a constant: {:?}", hand.words_drawn()));
-        // TWO RESTS AT MOST: measured, the first rest right after typing into the field raises no hint, the second does
-        let mut hint = hand.hint_at(at);
-        if hint.is_empty() {
+        // the line under the field is looked up anew before each rest: the box grows by it and stands again by the rule
+        let mut hint = Vec::new();
+        for _ in 0..3 {
+            hand.frame(Vec::new());
+            let at = hand.words_drawn().iter().find(|(t, _)| t.contains(&line)).map(|(_, r)| r.center());
+            let at = at.unwrap_or_else(|| panic!("the popup does not say the name is a constant: {:?}", hand.words_drawn()));
             hint = hand.hint_at(at);
+            if !hint.is_empty() {
+                break;
+            }
         }
         let taken = crate::i18n::tr("sk-driver-name-taken-hint");
         assert!(!hint.contains(&taken), "the hint over `tau` says the name is taken, and nobody holds it: {hint:?}");
@@ -322,21 +335,21 @@ mod tests {
         qymcad_ui_state::open_sketch_session(&mut app.sketch_ses, &app.project, sid);
 
         let mut p = Popup::new();
-        p.enter_driver_field(&mut app, si, ci);
-        p.type_text("dlina").frame(&mut app, si, ci);
-        p.key(egui::Key::Enter).frame(&mut app, si, ci);
+        p.enter_driver_field(&mut app);
+        p.type_text("dlina").frame(&mut app);
+        p.key(egui::Key::Enter).frame(&mut app);
         assert_eq!(app.project.param_map().get("dlina"), Some(&40.0), "setup: the dimension did not take the name");
         let asked = |app: &App| app.regen.wanted || app.regen.pending || app.regen.busy.is_some();
         assert!(!asked(&app), "naming a dimension asked for a rebuild while the sketch is open");
 
         app.tools.inline = InlineEdit::Dim(ci);
-        p.enter_value_field(&mut app, si, ci);
+        p.enter_value_field(&mut app);
         for _ in 0..4 {
             p.key(egui::Key::Backspace);
         }
-        p.type_text("50").frame(&mut app, si, ci);
-        p.key(egui::Key::Enter).frame(&mut app, si, ci);
-        p.frame(&mut app, si, ci);
+        p.type_text("50").frame(&mut app);
+        p.key(egui::Key::Enter).frame(&mut app);
+        p.frame(&mut app);
         assert_eq!(app.project.param_map().get("dlina"), Some(&50.0), "setup: the dimension did not take the value 50");
         assert!(!asked(&app), "a driver given another value asked for a rebuild while its sketch is open");
 

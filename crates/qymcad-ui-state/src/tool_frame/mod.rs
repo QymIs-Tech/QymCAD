@@ -27,6 +27,8 @@ mod opts;
 pub use opts::*;
 mod place;
 pub use place::*;
+mod tool;
+pub use tool::*;
 mod words;
 pub use words::*;
 
@@ -46,6 +48,8 @@ pub enum Ends {
     /// grounding takes its clicks as they come. Pressed, it is the cancel of the tool. A plain button, not the tone of a
     /// refusal: nothing is refused by putting such a tool down.
     Close,
+    /// No button: a hand with nothing in it - the selection of a sketch - has nothing to apply or put down.
+    Nothing,
 }
 
 /// A VALUE THE TOOL CANNOT TAKE: the key of its field, the field's caption and why.
@@ -263,7 +267,7 @@ fn the_ends(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, ends: Ends, can: Ca
     match ends {
         Ends::ApplyCancel => the_two_buttons(pal, ui, can),
         Ends::Close if ui.button(format!("{} {}", ph::X, qymcad_i18n::tr("cmd-close-esc"))).clicked() => Pressed::Cancel,
-        Ends::Close => Pressed::Nothing,
+        Ends::Close | Ends::Nothing => Pressed::Nothing,
     }
 }
 

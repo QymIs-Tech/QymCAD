@@ -59,7 +59,7 @@ fn an_offset_of_an_ellipse_follows_it_and_comes_back_with_undo() {
     if hand.typing() {
         hand.chord(egui::Modifiers::COMMAND, egui::Key::A).type_text("15");
     } else {
-        assert!(hand.type_into_hinted(&crate::i18n::tr("sk-expr-example"), 15.0), "no field of a dimension came up; the status line says {:?}", hand.app.status);
+        assert!(hand.type_into_hinted(&crate::i18n::tr("f-number-or-expr"), 15.0), "no field of a dimension came up; the status line says {:?}", hand.app.status);
     }
     hand.key(egui::Key::Enter);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);

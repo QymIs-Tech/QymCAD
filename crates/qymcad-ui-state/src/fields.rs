@@ -208,6 +208,17 @@ pub enum Focus {
     Waits,
 }
 
+impl Focus {
+    /// The focus a tool asked for once, the ask spent: the first field takes the keyboard in this frame alone.
+    pub fn take(asked: &mut bool) -> Focus {
+        if std::mem::take(asked) {
+            Focus::Takes
+        } else {
+            Focus::Waits
+        }
+    }
+}
+
 /// How a field treats what is typed into it: what it accepts, whether it offers names, whether it takes the keyboard.
 pub struct FieldRules<'a> {
     pub valid: &'a dyn Fn(&str) -> bool,

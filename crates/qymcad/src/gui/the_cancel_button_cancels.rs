@@ -46,7 +46,7 @@ mod tests {
         let out = ctx.run_ui(input, |ui| {
             let ctx = &ui.ctx().clone();
             app.handle_key_commands(ctx);
-            crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), ctx, RECT);
+            crate::gui::panel_places::part_tool(app, ui);
         });
         let mut texts = Vec::new();
         for cs in &out.shapes {

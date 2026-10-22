@@ -6,7 +6,8 @@ use super::*;
 
 /// Every kind of joint, in the order the bars offer them. THERE IS ONE SET OF KINDS: a joint states the degrees of
 /// freedom, and that is all; the rigid one is among them.
-const JOINT_KINDS: [JointKind; 8] = [JointKind::Rigid, JointKind::Revolute, JointKind::Slider, JointKind::Cylindrical, JointKind::Planar, JointKind::Ball, JointKind::PinSlot, JointKind::Parallel];
+pub(crate) const JOINT_KINDS: [JointKind; 8] =
+    [JointKind::Rigid, JointKind::Revolute, JointKind::Slider, JointKind::Cylindrical, JointKind::Planar, JointKind::Ball, JointKind::PinSlot, JointKind::Parallel];
 
 /// Every kind of relation, in the order its bar offers them.
 const RELATION_KINDS: [RelationKind; 4] = [RelationKind::Gear, RelationKind::RackPinion, RelationKind::Screw, RelationKind::Linear];
@@ -24,40 +25,25 @@ fn anchor_inferred() -> Opt {
     Opt::Readout(format!("{}: {}", qymcad_i18n::tr("j-anchor"), qymcad_i18n::tr("j-anchor-inferred")))
 }
 
-/// THE BAR OF THE ASSEMBLY TOOL IN HAND, drawn by the frame from its description.
-fn joint_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui, tool: &Described) -> qymcad_ui_state::Answer {
-    let canvas = jc.canvas;
-    qymcad_ui_state::tool_bar(ui, &mut qymcad_ui_state::BarLook { scheme: jc.scheme, project: &*jc.project, bar_exprs: Some(&mut *jc.bar_exprs), canvas }, tool)
+/// The name the bar of JOINT EDIT MODE gives joint `j`; the frame tells the fields of its box apart by it.
+pub(crate) fn joint_edit_head(j: &qymcad_core::feature::Joint) -> Head {
+    // a joint being made or reopened is a command, as every tool is: Apply keeps what was done, Cancel and Esc take it away
+    Head { icon: ph::LINK, name: qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name)), ends: Ends::ApplyCancel }
 }
 
 /// The top bar of JOINT EDIT MODE (a double click on the glyph): the joint's name, its kind, the anchors A and B - each
 /// re-picked on the fly - and the console that flips the axis and swaps the roles. The values (angle, offset, limits,
-/// side) live in the box at the glyph (`joint_popup`).
-pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
-    qymcad_ui_state::joint_edit_remember(jc.edits, jc.project, jc.joint);
-    let Some(jid) = jc.joint.edit else { return };
-    if !matches!(jc.workbench, qymcad_ui_state::Workbench::Assembly) || !jc.mode_3d {
-        return;
-    }
-    let Some(j) = jc.project.joints.iter().find(|x| x.id == jid).cloned() else {
-        jc.joint.edit = None;
-        return;
-    };
-    let desc = |cid: Id| {
-        jc.project
-            .connector(cid)
-            .map(|c| qymcad_ui_state::anchor_desc(&qymcad_ui_state::DrawCtx { cam: jc.cam, set: jc.set, scheme: jc.scheme, project: jc.project, active_path: jc.active_path }, &c.anchor))
-            .unwrap_or_default()
-    };
-    let (desc_a, desc_b) = (desc(j.a), desc(j.b));
+/// side) live in its box at the glyph.
+pub(crate) fn joint_edit_described(jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint) -> Described {
+    let desc = |cid: Id| jc.project.connector(cid).map(|c| qymcad_ui_state::anchor_desc(&jc.draw(), &c.anchor)).unwrap_or_default();
+    let desc_a = desc(j.a);
+    let desc_b = desc(j.b);
     let repick = jc.joint.edit_repick.map(|(_, is_b)| usize::from(is_b));
-    // a joint being made or reopened is a command, as every tool is: Apply keeps what was done, Cancel and Esc take it away
-    let head = Head { icon: ph::LINK, name: qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name)), ends: Ends::ApplyCancel };
     let mut says = Vec::new();
     // A JOINT WITHOUT AN ANCHOR SAYS SO OUT LOUD. The solver drops such joints from the problem: the assembly looks
     // assembled and the parts do not move. The reason comes from the single source (`joint_faults`) the solver report
     // and the list of joints speak from as well.
-    if let Some((_, why)) = jc.project.joint_faults().iter().find(|(id, _)| *id == jid) {
+    if let Some((_, why)) = jc.project.joint_faults().iter().find(|(id, _)| *id == j.id) {
         says.push(Notice::error(format!("{} {}", qymcad_i18n::tr(why), qymcad_i18n::tr(&format!("{why}-hint")))));
     }
     if let Some(side) = repick {
@@ -74,24 +60,7 @@ pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         Opt::press(OptKey::of("flip_axis"), format!("{} {}", ph::ARROWS_DOWN_UP, qymcad_i18n::tr("jt-flip-axis"))).hint(qymcad_i18n::tr("jt-flip-axis-hint")),
         Opt::press(OptKey::of("swap_roles"), format!("{} {}", ph::SWAP, qymcad_i18n::tr("jt-swap-roles"))).hint(qymcad_i18n::tr("jt-swap-roles-hint")),
     ];
-    let answer = joint_bar(jc, ui, &Described { head, bar, gate: Gate::Open, says });
-    let verdict = answer.verdict;
-    for d in answer.did {
-        match d {
-            Did::Chose { index, .. } => {
-                if qymcad_ui_state::change_joint_kind(jc.project, jc.status, jid, JOINT_KINDS[index.min(JOINT_KINDS.len() - 1)]) {
-                    qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
-                }
-            }
-            Did::Switched { key } if key.name == "repick" => {
-                jc.joint.edit_repick = if repick == Some(key.at) { None } else { Some((jid, key.at == 1)) };
-            }
-            Did::Pressed { key } if key.name == "flip_axis" => joint_hud_flip_axis(jc, jid),
-            Did::Pressed { key } if key.name == "swap_roles" => joint_hud_swap_roles(jc, jid),
-            _ => {}
-        }
-    }
-    qymcad_ui_state::go_through(ui.ctx(), &Gate::Open, verdict, &mut JointEditDoors { jc });
+    Described { head: joint_edit_head(j), bar, gate: Gate::Open, says, boxed: None }
 }
 
 /// FINISH A JOINT JUST MADE: kept, its open operation closes as one step «Joint»; not kept, the operation is rolled back
@@ -149,7 +118,7 @@ pub(crate) enum AsmTool {
 
 impl AsmTool {
     /// The tool of the assembly in hand now; none when nothing is.
-    fn of(joint: &qymcad_ui_state::JointCommand) -> Option<AsmTool> {
+    pub(crate) fn of(joint: &qymcad_ui_state::JointCommand) -> Option<AsmTool> {
         if joint.tangent_pick.is_some() {
             Some(AsmTool::Tangent)
         } else if joint.width_pick.is_some() {
@@ -170,25 +139,15 @@ impl AsmTool {
     }
 }
 
-pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
-    let Some(tool) = AsmTool::of(jc.joint) else { return };
-    let described = asm_tool_described(jc, &tool);
-    let answer = joint_bar(jc, ui, &described);
-    for d in answer.did {
-        asm_tool_act(jc, d);
-    }
-    qymcad_ui_state::go_through(ui.ctx(), &described.gate, answer.verdict, &mut AsmToolDoors { jc, tool });
-}
-
 /// THE ASSEMBLY TOOL AS ITS BAR DESCRIBES IT: what it asks for, what it has taken, its options.
-fn asm_tool_described(jc: &qymcad_ui_state::JointCtx, tool: &AsmTool) -> Described {
+pub(crate) fn asm_tool_described(jc: &qymcad_ui_state::JointCtx, tool: &AsmTool) -> Described {
     let head = |icon, name: &str, ends| Head { icon, name: qymcad_i18n::tr(name), ends };
     // what is pointed at, not typed: Enter before it has nothing to make
     let asking = |head: Head, mut bar: Vec<Opt>, ask: String| {
         bar.push(Opt::Readout(ask.clone()));
-        Described { head, bar, gate: Gate::Waiting(ask), says: vec![] }
+        Described { head, bar, gate: Gate::Waiting(ask), says: vec![], boxed: None }
     };
-    let open = |head: Head, bar: Vec<Opt>| Described { head, bar, gate: Gate::Open, says: vec![] };
+    let open = |head: Head, bar: Vec<Opt>| Described { head, bar, gate: Gate::Open, says: vec![], boxed: None };
     match tool {
         // what to pick; once the second surface is picked the condition stands as a preview, and Apply keeps it
         AsmTool::Tangent => {
@@ -244,7 +203,7 @@ fn asm_tool_described(jc: &qymcad_ui_state::JointCtx, tool: &AsmTool) -> Describ
             let caption = qymcad_i18n::tr(if pick.kind.value_is_per_turn() { "j-relation-per-turn" } else { "j-relation-ratio" });
             let bar = vec![
                 Opt::modes(OptKey::of("relation_kind"), Some("j-kind"), &words, RELATION_KINDS.iter().position(|k| *k == pick.kind).unwrap_or(0)),
-                Opt::Number { key: OptKey::of("relation_ratio"), caption, value: pick.value, lo: -10000.0, hi: 10000.0 },
+                Opt::Number { key: OptKey::of("relation_ratio"), caption, value: pick.value, limits: qymcad_ui_state::Limits::between(-10000.0..=10000.0) },
                 Opt::switch(OptKey::of("relation_reverse"), qymcad_i18n::tr("j-relation-reverse"), pick.reversed.lit()),
             ];
             let head = head(ph::GEAR_SIX, "j-relation-btn", Ends::ApplyCancel);
@@ -276,7 +235,7 @@ fn asm_tool_described(jc: &qymcad_ui_state::JointCtx, tool: &AsmTool) -> Describ
 }
 
 /// WHAT WAS DONE TO AN OPTION OF THE ASSEMBLY TOOL IN HAND, done to the tool.
-fn asm_tool_act(jc: &mut qymcad_ui_state::JointCtx, did: Did) {
+pub(crate) fn asm_tool_act(jc: &mut qymcad_ui_state::JointCtx, did: Did) {
     match did {
         Did::Chose { key, index } if key.name == "joint_kind" => {
             // THE SORT OF ANCHOR IS NOT CHOSEN BY THE KIND: a change of kind used to move it silently, and the next click
@@ -309,9 +268,4 @@ fn asm_tool_act(jc: &mut qymcad_ui_state::JointCtx, did: Did) {
         },
         _ => {}
     }
-}
-
-/// The assembly tool bar in one call - a door for checks that look AT A FRAME.
-pub fn joint_tool_bar_for_test(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
-    joint_tool_bar(jc, ui);
 }

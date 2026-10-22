@@ -1,4 +1,4 @@
-//! THE FIELDS AT THE GEOMETRY: where the popup of a command stands, and the popups themselves.
+//! THE FIELDS AT THE GEOMETRY: where the box of a command stands, what shuts its gate, and the step typed at a gizmo.
 
 use qymcad_ui_state::Notice;
 use super::*;
@@ -120,82 +120,13 @@ pub(crate) fn command_gate(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Contex
     qymcad_ui_state::Gate::of(ask, &trial, &pc.cmd.params)
 }
 
-/// THE FIELDS OF THE COMMAND IN HAND AT THE GEOMETRY, in the box of the frame: a number OR an expression such as
-/// `w/2+3`, beside what they size. Enter applies, Esc cancels; one mechanism for every part tool.
-pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, rect: Rect) {
-    if pc.carr.mode.is_some() {
-        comp_array_popup(pc, ctx, rect); // a pattern of components takes its values at the geometry as every tool does
-        return;
-    }
-    if pc.armed.part_tool().is_none() || pc.cmd.params.is_empty() || !*pc.mode_3d {
-        return;
-    }
-    let Some(place) = cmd_place(pc) else { return };
-    // A PATTERN OR A HOLE SIZES WHAT IS PICKED: before the pick there is nothing to size, and a box beside the body would
-    // lie over the very place to be clicked - the centre of the face a hole is put on
-    if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::sizes_what_is_picked) && !cmd_ready(pc) {
-        return;
-    }
-    let gate = command_gate(pc, ctx);
-    let id = egui::Id::new("feat_cmd_popup");
-    // in a symmetric chamfer the d2 field (the second leg or the angle) takes no part, so it is hidden
-    let hidden: &[&str] = if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Chamfer) && pc.chamfer.mode == qymcad_core::feature::ChamferMode::Symmetric { &["d2"] } else { &[] };
-    // a one-shot focus of the first field: Enter works straight away, what it holds selected
-    let focus = if std::mem::take(&mut pc.cmd.focus) { qymcad_ui_state::Focus::Takes } else { qymcad_ui_state::Focus::Waits };
-    let the_box =
-        qymcad_ui_state::FieldsBox { id, tool: pc.armed.part_tool().map_or(0, |t| t as u64 + 1), place, focus, hidden, ends: qymcad_ui_state::Ends::ApplyCancel, esc: qymcad_ui_state::EscBy::Bar };
-    let basis = pc.cam.basis();
-    let scheme = pc.scheme;
-    let here = qymcad_ui_state::current_ctx_id(pc.active_path, pc.project);
-    let look = qymcad_ui_state::BoxLook { project: &*pc.project, pal: &scheme.pal, screen: qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis }, here };
-    let layout = command_layout(pc);
-    let answer = qymcad_ui_state::tool_box(ctx, &the_box, &look, &mut pc.cmd.params, &layout, &gate);
-    qymcad_ui_state::go_through(ctx, &gate, answer.verdict, &mut FeatDoors { pc });
-}
-
-/// What the field of the numeric entry at a gizmo is told apart by from the fields of the commands, numbered by their
-/// kind below 256.
-const GIZMO_FIELD: u64 = 259;
-
-/// The catalogue keys of the field at a gizmo: a turn about an axis, or a shift along it - X, Y, Z.
-const GIZMO_TURNS: [&str; 3] = ["giz-rotation-x", "giz-rotation-y", "giz-rotation-z"];
-const GIZMO_SHIFTS: [&str; 3] = ["giz-offset-x", "giz-offset-y", "giz-offset-z"];
-
-/// EXACT NUMERIC INPUT AT THE GIZMO of a body or a part, in the box of the frame: a formula at the geometry - millimetres
-/// along an axis or degrees about it - and Enter applies a PARAMETRIC move; Esc leaves the field first, the box next.
-pub fn body_num_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) {
-    let Some((on, ax, rot)) = pc.body_giz.num else { return };
-    let (o, _) = match on {
-        qymcad_ui_state::GizmoOf::Body(mi) => qymcad_ui_state::body_gizmo_geometry(&*pc.body_giz, *pc.cam, &*pc.project, pc.set, mi),
-        qymcad_ui_state::GizmoOf::Part(comp) => qymcad_ui_state::gizmo_geometry(*pc.cam, *pc.comp_giz, &*pc.project, comp),
-    };
-    let screen = qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis };
-    let place = qymcad_ui_state::Place::by(qymcad_ui_state::By::Point(o)); // its gizmo is kept clear of as every one (`keep_in_sight`)
-    let label = if rot { GIZMO_TURNS } else { GIZMO_SHIFTS }[(ax as usize).min(2)];
-    // the text typed lives with the gizmo; the field is made of it every frame, and zero moves nothing
-    let mut field = qymcad_ui_state::CmdParam::new(label, "giz", 0.0, -100000.0, 100000.0).nonzero();
-    field.txt = pc.body_giz.num_buf.clone();
-    let focus = if std::mem::take(&mut pc.body_giz.num_focus) { qymcad_ui_state::Focus::Takes } else { qymcad_ui_state::Focus::Waits };
-    let the_box =
-        qymcad_ui_state::FieldsBox { id: egui::Id::new("body_num"), tool: GIZMO_FIELD, place, focus, hidden: &[], ends: qymcad_ui_state::Ends::ApplyCancel, esc: qymcad_ui_state::EscBy::Box };
-    let scheme = pc.scheme;
-    let here = qymcad_ui_state::current_ctx_id(pc.active_path, pc.project);
-    let look = qymcad_ui_state::BoxLook { project: &*pc.project, pal: &scheme.pal, screen, here };
-    let mut fields = [field];
-    let answer = qymcad_ui_state::tool_box(ctx, &the_box, &look, &mut fields, &qymcad_ui_state::Layout::default(), &qymcad_ui_state::Gate::Open);
-    let [field] = fields;
-    pc.body_giz.num_buf = field.txt;
-    let step = GizmoStep { ax, rot, by: field.val, at: o };
-    qymcad_ui_state::go_through(ctx, &qymcad_ui_state::Gate::Open, answer.verdict, &mut GizmoNumDoors { pc, on, step });
-}
-
 /// A STEP OF A GIZMO typed as a number: about or along axis `ax` (a turn when `rot`), by `by`, about the point `at`.
 #[derive(Clone, Copy)]
 pub(crate) struct GizmoStep {
-    ax: u8,
-    rot: bool,
-    by: f64,
-    at: [f64; 3],
+    pub(crate) ax: u8,
+    pub(crate) rot: bool,
+    pub(crate) by: f64,
+    pub(crate) at: [f64; 3],
 }
 
 /// THE BODY OR THE PART MOVED by a step typed at its gizmo: a parametric move of a body, or the part moved in the
@@ -221,39 +152,3 @@ pub(crate) fn gizmo_move(pc: &mut qymcad_ui_state::PartCtx, on: qymcad_ui_state:
         }
     }
 }
-
-/// THE POPUP OF A PATTERN OF COMPONENTS, beside its source: the counts, the step or the angle typed at the geometry, in the box of
-/// the frame; Enter applies the pattern. Reported behaviour: the step of a linear pattern of parts could not be set - it
-/// stood in the command with no field to type it into.
-pub(crate) fn comp_array_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, rect: Rect) {
-    if pc.cmd.params.is_empty() || !*pc.mode_3d {
-        return;
-    }
-    let here = qymcad_ui_state::current_ctx_id(pc.active_path, pc.project);
-    let basis = pc.cam.basis();
-    let screen = qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis };
-    // THE BOX STANDS CLEAR OF THE SOURCE PART: its edges are what the axis is picked on, and a box laid over them took the
-    // click meant for one
-    let id = egui::Id::new("comp_array_popup");
-    let place = qymcad_ui_state::Place::by(qymcad_ui_state::By::Part(pc.carr.src));
-    let the_box = qymcad_ui_state::FieldsBox {
-        id,
-        tool: COMP_PATTERN_FIELDS,
-        place,
-        focus: qymcad_ui_state::Focus::Waits,
-        hidden: &[],
-        ends: qymcad_ui_state::Ends::ApplyCancel,
-        esc: qymcad_ui_state::EscBy::Bar,
-    };
-    let scheme = pc.scheme;
-    let look = qymcad_ui_state::BoxLook { project: &*pc.project, pal: &scheme.pal, screen, here };
-    let gate = comp_array_gate(pc);
-    let layout = comp_array_layout(pc);
-    let answer = qymcad_ui_state::tool_box(ctx, &the_box, &look, &mut pc.cmd.params, &layout, &gate);
-    take_array_counts(pc.cmd, pc.arr);
-    qymcad_ui_state::go_through(ctx, &gate, answer.verdict, &mut CompArrayDoors { pc });
-}
-
-/// What the fields of a pattern of components are told apart by from the fields of a command of the part, numbered by
-/// its kind below 256.
-const COMP_PATTERN_FIELDS: u64 = 256;

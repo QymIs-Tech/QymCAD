@@ -1339,7 +1339,7 @@ mod tests {
             {
                 let count = |a: &App| a.project.sketches[si].entities.len() + a.project.sketches[si].points.len();
                 let before = count(&app);
-                crate::gui::fillet_all_corners(&app.project, &mut app.tools.corner, &mut app.tools.picking, app.chosen.sel, &app.tools.sel_sk, &mut app.status, &app.tool_prefs);
+                crate::gui::fillet_all_corners(&app.project, &mut app.tools.corner, &mut app.tools.picking, app.chosen.sel, &app.tools.sel_sk, &mut app.status);
                 app.project.regen_sketch(si);
                 if count(&app) == before && app.status.words.trim().is_empty() {
                     problems.push("sketch: \"round every corner\" silently did nothing".into());

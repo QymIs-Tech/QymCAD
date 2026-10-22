@@ -90,7 +90,9 @@ mod tests {
                 "\n",
                 include_str!("../../../qymcad-sketch/src/commands.rs"),
                 "\n",
-                include_str!("../../../qymcad-part/src/bars.rs")
+                include_str!("../../../qymcad-part/src/bars.rs"),
+                "\n",
+                include_str!("../../../qymcad-part/src/in_hand.rs")
             ),
             "\n",
             include_str!("../../../qymcad-part/src/params.rs"),

@@ -42,7 +42,7 @@ fn a_square_and_a_tall_shape() -> Session {
 fn a_rectangle_off_the_grid() -> Session {
     let mut s = build::empty_sketch();
     build::draw(&mut s, "tb-rect-hint", &[(10.0, 10.0), (50.0, 40.0)]);
-    let (dim, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+    let (dim, field) = (s.word("tb-dim-hint"), s.word("f-number-or-expr"));
     s.press_hint(&dim);
     s.click_on_sketch(30.0, 10.0);
     s.click_on_sketch(30.0, 4.0);

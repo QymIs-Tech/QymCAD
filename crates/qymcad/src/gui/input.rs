@@ -5,7 +5,6 @@
 //! closed the sketch straight away". While the handlers lay in the middle of `update`, the order was
 //! neither visible nor checkable.
 
-use qymcad_ui_state::Notice;
 use super::*;
 
 impl App {
@@ -40,10 +39,6 @@ impl App {
             // F1 types nothing: a field holding the keyboard does not stop it
             let a = self.help_for_context();
             self.open_help(a);
-        }
-        // Enter confirms an array if one is active and the focus is not in a text field
-        if self.tools.armed.pattern().is_some() && ((!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))) || qymcad_ui_state::bar_enter_take(ctx)) {
-            self.confirm_pattern();
         }
         // Enter of a Part command and of a pattern of components is the frame's: their bars take it (`tool_bar`).
         // Ctrl+Enter finishes the current context (leaving a sketch, a part or a subassembly one level
@@ -82,7 +77,6 @@ impl App {
                 });
             } else {
                 self.on_escape();
-                self.tools.gsel.before.note(None, qymcad_ui_state::Adding::No); // the selection let go takes what it held from the next tool
             }
         }
         // F2 renames whatever is selected - the key every tree a person has used renames by
@@ -147,69 +141,9 @@ impl App {
         }
     }
 
-    /// THE ESC LADDER: THE INNERMOST state is cancelled, and only at the very bottom is the sketch left.
-    /// The order matters — reports arrive exactly when some rung is missing and ESC "falls through" to
-    /// closing the sketch (the measure tool and the selected elements were two such rungs).
+    /// THE ESC LADDER of the window, with no tool of a frame in hand: one step of it (`qymcad_sketch::escape_step`).
     pub(super) fn on_escape(&mut self) {
-        if self.tools.inline.dim().is_some() || self.tools.inline.circle().is_some() {
-            // the popup for editing a dimension is open (a double click on a dimension or a circle) —
-            // ESC cancels ONLY the popup rather than closing the whole sketch. Otherwise the chain
-            // reached `finish_sketch_edit`.
-            self.tools.inline.clear();
-            self.tools.dim.buf.clear();
-            self.tools.dim.focus = false;
-        } else if self.tools.pending_import.curves.is_some() {
-            self.tools.pending_import.curves = None;
-            self.status = Notice::info(crate::i18n::tr("in-import-cancelled"));
-        } else if let Some(k) = self.tools.picking.cancel_key() {
-            self.tools.picking.clear(); // the modes Escape simply puts down; the words come from the mode itself
-            self.status = Notice::info(crate::i18n::tr(k));
-        } else if self.tools.picking.plane_face().is_some() {
-            self.tools.picking.set_plane_face(None);
-            self.status = Notice::info(crate::i18n::tr("in-plane-face-cancelled"));
-        } else if self.tools.sel_sk.constraint.is_some() || self.tools.sel_sk.modify.is_some() {
-            qymcad_ui_state::escape_waiting_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.status);
-        } else if qymcad_ui_state::tools_of!(self).leave_click_tool(&mut self.status) {
-        } else if self.tools.armed.pattern().is_some() {
-            self.tools.armed = qymcad_ui_state::Armed::None;
-            self.tools.pat.edit = None;
-            self.tools.pat.center = None;
-            self.status = Notice::info(crate::i18n::tr("in-array-cancelled"));
-        } else if self.tools.armed.moving().is_some() {
-            self.tools.armed = qymcad_ui_state::Armed::None;
-            self.tools.tool.move_base = None;
-            self.status = Notice::info(crate::i18n::tr("in-move-cancelled"));
-        } else if self.side.clip.geom_place {
-            self.side.clip.geom_place = false;
-            self.status = Notice::info(crate::i18n::tr("in-insert-cancelled"));
-        } else if self.side.clip.geom_pending.is_some() {
-            self.side.clip.geom_pending = None;
-            self.status = Notice::info(crate::i18n::tr("in-copy-cancelled"));
-        } else if self.tools.place.dim.is_some() {
-            qymcad_sketch::cancel_placing_dim(&mut self.sketch_ctx()); // a provisional length goes without a trace
-        } else if self.tools.dim.first.is_some() {
-            self.tools.dim.first = None; // cancel the first reference (the point)
-        } else if !self.tools.tool.pts.is_empty() {
-            crate::gui::sketching::end_construction(&mut self.sketch_ctx()); // a spline is finished, anything else broken off
-        } else if let Some(msg) = qymcad_ui_state::release_armed_sketch_tool(&mut qymcad_ui_state::tools_of!(self)) {
-            // ONE RUNG FOR EVERY SKETCH TOOL IN HAND, and the tool itself says what to clear. There used to
-            // be a rung per family here and none for the editing tools, so mirror, offset, fillet, chamfer
-            // and the arrays could not be put down at all - reported on the mirror, true of all of them.
-            self.status = Notice::info(crate::i18n::tr(msg));
-        } else if self.tools.pending_import.draw_pts.is_some() {
-            self.tools.pending_import.draw_pts = None;
-        } else if self.sketch_ses.editing.is_some() && (!self.tools.sel_sk.items.is_empty() || self.tools.annot.text.is_some() || self.tools.annot.note.is_some()) {
-            // With elements SELECTED, ESC first clears the selection — as in any grown-up CAD. The
-            // selection used to take no part in the ladder, and the very first ESC closed the sketch.
-            self.tools.sel_sk.clear(); // the selection and whatever was waiting for it
-            self.tools.annot.text = None;
-            self.tools.annot.note = None;
-            self.status = Notice::info(crate::i18n::tr("in-selection-cleared"));
-        } else {
-            // THE LADDER ENDS HERE: Esc gives things back, it does not finish a context. Leaving the
-            // sketch was the rung below; it is Ctrl+Enter now - see `the_sketch_is_left_by_ctrl_enter.rs`.
-            self.chosen.sel = Sel::None;
-        }
+        qymcad_sketch::escape_step(&mut self.sketch_ctx());
     }
 
     /// The tool hotkeys, as in grown-up CAD. The context decides the layout: editing a sketch gives drawing,

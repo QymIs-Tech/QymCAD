@@ -113,8 +113,8 @@ pub(in crate::gui) mod tests {
                 // TWO PASSES: an `Area` learns its size only after the first layout, and on the first
                 // frame the popup is not yet in place. The second one is what is looked at — the one a
                 // person sees.
-                let _ = ctx.run_ui(input.clone(), |ctx| crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), ctx, screen));
-                let out = ctx.run_ui(input, |ctx| crate::gui::commands::feat_cmd_popup(&mut app.part_ctx(), ctx, screen));
+                let _ = ctx.run_ui(input.clone(), |ui| crate::gui::panel_places::part_tool(&mut app, ui));
+                let out = ctx.run_ui(input, |ui| crate::gui::panel_places::part_tool(&mut app, ui));
                 let mut texts = Vec::new();
                 for cs in &out.shapes {
                     collect_text(&cs.shape, &mut texts);
@@ -209,39 +209,19 @@ pub(in crate::gui) mod tests {
                     a.sketch_ses.editing = Some(s.id); // the tool bar belongs to an open sketch
                 }
                 a.tools.armed = qymcad_ui_state::Armed::Draw(qymcad_ui_state::SketchShape::Line);
-                let mut asks = Vec::new();
-                qymcad_sketch::tool_options_bar(&mut a.bar_ctx(&mut asks), c);
-                let c = c.ctx().clone();
-                a.do_bar_asks(asks, &c);
+                crate::gui::panel_places::sketch_tool(a, c);
             }),
             surface("command bar", |a, c| {
                 a.start_feat_cmd(qymcad_ui_state::PartTool::Fillet); // a fillet: a command with fields, so the bar has something to show
-                a.feat_command_bar(c);
+                crate::gui::panel_places::part_tool(a, c);
             }),
             surface("section bar", |a, c| {
                 a.side.section.plane = Some(([0.0; 3], [0.0, 0.0, 1.0]));
-                crate::gui::panels_bars::section_bar(
-                    &mut qymcad_part::PlaneBarCtx {
-                        regen: &mut a.regen,
-                        section: &mut a.side.section,
-                        mirror: &mut a.params.mirror,
-                        picking: &mut a.tools.picking,
-                        project: &mut a.project,
-                        edits: &mut a.disk.edits,
-                        active_path: &a.active_path,
-                        status: &mut a.status,
-                        m3: &mut a.side.m3,
-                        scheme: &a.scheme,
-                        cam: &a.viewing.cam,
-                        set: &a.set,
-                        canvas: a.viewing.view_rect,
-                    },
-                    c,
-                );
+                crate::gui::panel_places::plane_tool(a, c);
             }),
             surface("component pattern bar", |a, c| {
                 a.side.carr.mode = Some(qymcad_ui_state::PatternKind::Linear);
-                crate::gui::panels_bars::comp_array_bar(&mut a.part_ctx(), c);
+                crate::gui::panel_places::part_tool(a, c);
             }),
             surface("settings", |a, c| {
                 let mut asks = Vec::new();

@@ -440,7 +440,7 @@ pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
             let held = qymcad_ui_state::catalogue::pressed(launch, bc);
             qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(bc));
             if !held {
-                qymcad_ui_state::fillet_all_corners(&*bc.project, &mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status, &*bc.tool_prefs);
+                qymcad_ui_state::fillet_all_corners(&*bc.project, &mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status);
             }
         }
         Launch::SkMove(n) => start_move_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, n),

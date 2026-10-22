@@ -120,7 +120,7 @@ mod tests {
         for _ in 0..2 {
             let out = ctx.run_ui(egui::RawInput { screen_rect: Some(viewport()), ..Default::default() }, |c| {
                 app.side.joint.edit = app.side.joint.edit.or_else(|| app.project.joints.first().map(|j| j.id));
-                qymcad_assembly::joint_popup(&mut app.joint_ctx(), c, viewport());
+                crate::gui::panel_places::assembly_tool(&mut app, c);
             });
             texts.clear();
             for cs in &out.shapes {

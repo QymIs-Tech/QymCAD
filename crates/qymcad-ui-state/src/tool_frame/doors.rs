@@ -46,8 +46,11 @@ pub trait Doors {
     fn apply(&mut self) -> Result<(), NotApplied>;
     /// Put the tool down, what it made on the way taken away.
     fn cancel(&mut self);
-    /// Esc with no field holding the keyboard: let go of one thing, or say there is nothing left to let go of.
-    fn back(&mut self) -> Stepped;
+    /// Esc with no field holding the keyboard: let go of one thing, or say there is nothing left to let go of - a tool
+    /// that picks nothing along the way has nothing, and Esc puts it down.
+    fn back(&mut self) -> Stepped {
+        Stepped::NothingLeft
+    }
 }
 
 /// GO THROUGH THE DOOR THE ANSWER OF THE FRAME NAMES: Apply applies, and a refusal is said where the tool speaks, while
