@@ -126,7 +126,7 @@ impl App {
                     } else {
                         self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
                     }
-                    crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, p, auto);
+                    crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, p, auto);
                 }
             }
             JobResult::ImportShapes { shapes, regen } => {

@@ -633,7 +633,6 @@ crates/qymcad/src/gui/dof_line.rs 0 1 0
 crates/qymcad/src/gui/drag_cost_look.rs 0 5 0
 crates/qymcad/src/gui/dragging_a_joint_does_not_flicker_the_rebuild_modal.rs 0 1 0
 crates/qymcad/src/gui/dragging_a_part_pulls_the_whole_chain.rs 0 1 0
-crates/qymcad/src/gui/driver_autocomplete.rs 1 0 0
 crates/qymcad/src/gui/edit_keeps_body.rs 0 1 0
 crates/qymcad/src/gui/every_kind_is_made_by_hand.rs 0 2 0
 crates/qymcad/src/gui/expand_selection.rs 0 3 0

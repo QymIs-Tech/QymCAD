@@ -195,7 +195,7 @@ impl App {
                 // write leave the project dirty. But it is APPLIED only after a successful write, otherwise a
                 // failed save silently marked the project clean and leaving never asked about unsaved work.
                 self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
-                spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
+                spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
             }
             None => self.save_project_as(),
         }
@@ -207,7 +207,7 @@ impl App {
             let path = path.to_string_lossy().into_owned();
             crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
             app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx())); // confirmed once the write actually succeeds
-            spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path, false);
+            spawn_save(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path, false);
             // the write goes to the background
         });
     }
@@ -1090,7 +1090,8 @@ pub(crate) fn export_base_name(project: &Project, project_path: &Option<String>,
     }
 }
 
-pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut qymcad_ui_state::Notice, path: String, autosave: bool) {
+pub(crate) fn spawn_save(disk: &mut OnDisk, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut qymcad_ui_state::Notice, path: String, autosave: bool) {
+    let io = &mut disk.io;
     // two writes of one file at once are a tmp+rename race. While the first is running, the LAST
     // request is remembered and started when the first reports back (see the JobResult::Saved handler).
     if regen.bg.iter().any(|b| b.kind == BgKind::Save) {
@@ -1102,7 +1103,9 @@ pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Proj
     if !autosave && project.meta.created.is_empty() {
         project.meta.created = crate::gui::now_iso8601();
     }
-    let mut proj = project.clone();
+    // A VALUE BEING TRIED IN A BOX IS NOT THE DOCUMENT YET: only Enter keeps it, so a save while it is tried writes the
+    // document as it was before the trial
+    let mut proj = qymcad_ui_state::project_kept(&disk.edits, project).clone();
     proj.regen_faces.clear(); // derived from the faces of the bundle - not duplicated
     proj.regen_edges.clear();
     // LIVE BODIES GO INTO THE FILE. Without them opening shows the model instantly, but the very first

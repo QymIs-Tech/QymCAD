@@ -196,14 +196,18 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
             let drawn = draw_rows(ui, &drawing, fields, layout, b.focus);
             seen.add(drawn.typed);
             did = drawn.did;
-            let can = if shut_by(gate, &seen, ui.ctx()).open() { Can::Yes } else { Can::No };
+            let can = if shut_by(gate, &seen).open() { Can::Yes } else { Can::No };
+            if seen.refused.is_some() {
+                let frame = ui.ctx().cumulative_frame_nr();
+                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(BOX_REFUSES), frame));
+            }
             pressed = box_ends(ui, b, look.pal, can);
         });
     });
     moved_by_hand(ctx, b.id, &shown.response);
     let esc = b.esc == EscBy::Box && !typing && ctx.input(|i| i.key_pressed(egui::Key::Escape) && !i.modifiers.any());
     let keys = Keys { enter: seen.enter, esc: if esc { Esc::Pressed } else { Esc::Not } };
-    let verdict = verdict(ctx, pressed, keys, &shut_by(gate, &seen, ctx));
+    let verdict = verdict(ctx, pressed, keys, &shut_by(gate, &seen));
     Answer { verdict, did, fields: seen.did }
 }
 
@@ -266,10 +270,20 @@ fn tab_round(ctx: &egui::Context, b: &FieldsBox, fields: &[CmdParam], layout: &L
 
 /// The gate as the fields of a box leave it: a value refused there first, a field of the bar refusing its value next,
 /// the tool's own gate otherwise.
-fn shut_by(gate: &Gate, typed: &Typed, ctx: &egui::Context) -> Gate {
+fn shut_by(gate: &Gate, typed: &Typed) -> Gate {
     match (&typed.refused, gate) {
         (Some(r), _) => Gate::Refused(r.clone()),
-        (None, Gate::Open) if !bar_fields_valid(ctx) => Gate::BarField,
         (None, g) => g.clone(),
     }
+}
+
+/// Where the frame marks the frame a box of a tool held a value it cannot take in.
+const BOX_REFUSES: &str = "a box holds a value it cannot take";
+
+/// DOES THE BOX OF THE TOOL IN HAND HOLD A VALUE IT CANNOT TAKE, as it was drawn this frame or the one before: a click
+/// that makes a shape with the values of the box stops on it as Enter does - the shape would take the last value the
+/// field held, not what is written in it.
+pub fn box_refuses(ctx: &egui::Context) -> bool {
+    let now = ctx.cumulative_frame_nr();
+    ctx.data(|d| d.get_temp::<u64>(egui::Id::new(BOX_REFUSES))).is_some_and(|f| f + 1 >= now)
 }

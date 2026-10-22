@@ -235,10 +235,8 @@ impl FramedTool for InSketch<'_, '_> {
             extend_apply(sk, ExtendAt { rect: sk.canvas, pos, si, curve: None }, held);
             qymcad_ui_state::commit_edit_if_changed(&mut sk.rebuild());
         } else if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.offset.at.is_none() && !offset_curves(sk.sel_sk).is_empty() {
-            // THE OFFSET MADE BY ENTER before a click has fixed the side: on the side of the pointer, by the distance of the bar
-            if qymcad_ui_state::bar_field_bad("sk_offset") {
-                return Err(NotApplied::Refused(qymcad_i18n::tr("sk-offset-field-bad")));
-            }
+            // THE OFFSET MADE BY ENTER before a click has fixed the side: on the side of the pointer, by the distance of its
+            // box - a distance refused there shuts the gate before it comes here
             let at = pointer.map(|p| qymcad_ui_state::to_world(&*sk.view, sk.canvas, p));
             let dist = sk.tool_prefs.offset;
             offset_make(

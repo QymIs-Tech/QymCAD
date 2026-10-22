@@ -618,9 +618,9 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         *sk.status = Notice::refusal(qymcad_i18n::tr("sk-click-shape-line"));
                     }
                 }
-            } else if sk.armed.drawing().is_some() && !qymcad_ui_state::bar_fields_valid(ctx) {
-                // A FIELD OF THE BAR THAT CANNOT BE TAKEN stops the click as it stops Enter: the shape would
-                // be made with the last value the field held, not with what is written in it
+            } else if sk.armed.drawing().is_some() && qymcad_ui_state::box_refuses(ctx) {
+                // A FIELD OF THE BOX THAT CANNOT BE TAKEN stops the click as it stops Enter: the shape would be made
+                // with the last value the field held, not with what is written in it
                 *sk.status = Notice::refusal(qymcad_i18n::tr("sk-fix-bar-field"));
             } else if sk.armed.drawing().is_some() {
                 sketch_tool_click(sk, rect, pos);

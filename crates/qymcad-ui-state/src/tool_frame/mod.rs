@@ -92,8 +92,6 @@ pub enum Gate {
     Checking,
     /// A value cannot be taken.
     Refused(Refusal),
-    /// A field of the bar holds a value it cannot take.
-    BarField,
 }
 
 impl Gate {
@@ -142,7 +140,6 @@ impl Gate {
             Gate::Wrong(why) => Some(Notice::refusal(why.clone())),
             Gate::Checking => Some(Notice::info(qymcad_i18n::tr("cmd-trial-checking"))),
             Gate::Refused(r) => Some(Notice::refusal(format!("{}: {}", r.field, r.why))),
-            Gate::BarField => Some(Notice::refusal(qymcad_i18n::tr("sk-fix-bar-field"))),
         }
     }
 }

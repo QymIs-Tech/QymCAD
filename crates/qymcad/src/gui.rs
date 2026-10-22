@@ -1146,13 +1146,13 @@ impl App {
     /// Test facades for saving: a test must take the same path as Save does.
     #[cfg(test)]
     pub(crate) fn save_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
+        crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, false);
         self.wait_bg();
     }
 
     #[cfg(test)]
     pub(crate) fn autosave_for_test(&mut self, path: String) {
-        crate::gui::io_jobs::spawn_save(&mut self.disk.io, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
+        crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, path, true);
         self.wait_bg();
     }
 

@@ -267,3 +267,12 @@ pub fn restore(rc: &mut RebuildCtx, snap: Snapshot) -> Vec<Id> {
     let worked_in = rc.project.active_component.filter(|&c| rc.project.components.iter().any(|x| x.id == c));
     worked_in.map_or_else(|| rc.active_path.clone(), |c| context_path_to(rc.project, c))
 }
+
+/// THE DOCUMENT AS IT IS KEPT: the one in the window, or - while a value is tried in a box at the geometry
+/// (`OpenEdit::Trying`) - the one as it stood before the trial, which only Enter replaces. What is written to a file is this.
+pub fn project_kept<'a>(edits: &'a Edits, project: &'a Project) -> &'a Project {
+    match &edits.open {
+        Some((_, before)) if edits.open_kind == OpenEdit::Trying => &before.project,
+        _ => project,
+    }
+}

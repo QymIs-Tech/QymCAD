@@ -320,14 +320,6 @@ pub fn ensure_active_path(active_path: &mut Vec<Id>, project: &mut Project) {
     }
 }
 
-/// WHAT A NUMBER FIELD IN A TOOL BAR NEEDS: the text being typed, the document it may name parameters
-/// from, and the colours. Three fields - and the field was a method of `App` only because the buffer is.
-pub struct ExprBarCtx<'a> {
-    pub bar_exprs: &'a mut std::collections::HashMap<&'static str, String>,
-    pub project: &'a qymcad_core::model::Project,
-    pub scheme: &'a SchemeUi,
-}
-
 /// THE LOOK OF A SCHEME FOR THE PANELS, whatever theme the system says it is in. egui keeps a look for its dark theme
 /// and one for its light, follows the system's between them, and `set_visuals` fills only the one in use: Windows
 /// telling its light theme on the first frames turned a dark scheme's panels into the factory light look. Reported

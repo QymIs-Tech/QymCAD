@@ -722,12 +722,6 @@ pub fn name_edit(ui: &mut egui::Ui, stored: &mut String) -> egui::Response {
     r
 }
 
-thread_local! {
-    /// The keys of the bar fields holding a value that cannot be taken, as last drawn - for the tools that act on a
-    /// click rather than on Enter, where no frame context is at hand (the offset of a sketch).
-    static BAR_BAD_KEYS: std::cell::RefCell<std::collections::HashSet<&'static str>> = std::cell::RefCell::new(std::collections::HashSet::new());
-}
-
 pub use icons::{forget_all_cad_icons, icon_button, icon_image, icon_label, icon_small_button, ResolvedIcon};
 
 /// The six, taken from a CONTEXT, where the fields are already borrows.

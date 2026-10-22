@@ -61,11 +61,6 @@ pub(crate) fn try_modify_in(ed: Editing, sel_sk: &mut SketchSelection, sk_pat: S
                 true
             }
         }
-        // the distance field refusing its value refuses the offset too: the last good distance is not what was typed
-        EditTool::Offset if bar_field_bad("sk_offset") => {
-            *ed.status = Notice::refusal(qymcad_i18n::tr("sk-offset-field-bad"));
-            false
-        }
         EditTool::Offset => ed.project.offset_entities(si, &eids, tool_prefs.offset) > 0,
     };
     if ok {

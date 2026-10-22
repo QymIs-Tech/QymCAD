@@ -2367,7 +2367,6 @@ sk-moved = Moved
 sk-miss-line = Missed — click a sketch line (Esc cancels)
 sk-contour-picked = The contour is picked — Enter builds it; Esc cancels
 msg-miss-contour = Missed — click a contour (Esc cancels)
-sk-offset-field-bad = Offset: the distance cannot be taken - see the mark beside its field
 sk-offset-takes = Offset takes curves: choose a curve, a chain or a contour (Esc cancels)
 sk-offset-side = Point to the side of the copy and click there to fix it; Enter offsets, Esc cancels. A click on a curve adds it
 sk-offset-type = Type the distance beside the copy; Enter offsets, Esc frees the side

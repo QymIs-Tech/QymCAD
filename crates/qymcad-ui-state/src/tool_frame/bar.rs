@@ -45,14 +45,13 @@ pub fn tool_bar(ui: &mut egui::Ui, look: &mut BarLook, tool: &Described) -> Answ
         ui.label(egui::RichText::new(format!("{} {}", tool.head.icon, tool.head.name)).strong());
         ui.separator();
         did = draw_opts(ui, pal, &tool.bar);
-        let can = if tool.gate.open() && bar_fields_valid(ui.ctx()) { Can::Yes } else { Can::No };
+        let can = if tool.gate.open() { Can::Yes } else { Can::No };
         pressed = end_of_bar(ui, |ui| the_ends(pal, ui, tool.head.ends, can)).inner;
     });
-    let enter = bar_enter_marked(&ctx) || (!typing && ctx.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.command));
+    let enter = !typing && ctx.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.command);
     let esc = !typing && ctx.input(|i| i.key_pressed(egui::Key::Escape) && !i.modifiers.any());
     let keys = Keys { enter: if enter { Enter::Pressed } else { Enter::Not }, esc: if esc { Esc::Pressed } else { Esc::Not } };
-    // a field of the bar that holds a value it cannot take shuts the gate the tool answered
-    let gate = if tool.gate.open() && !bar_fields_valid(&ctx) { Gate::BarField } else { tool.gate.clone() };
+    let gate = tool.gate.clone();
     let verdict = verdict(&ctx, pressed, keys, &gate);
     // A VALUE REFUSED OR A PICK THAT WILL NOT DO is said while it stands, not only when Enter is pressed: the field marks
     // itself, the words say which and why; the answer to a refused Enter follows, unless it says the same

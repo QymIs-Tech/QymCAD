@@ -32,61 +32,6 @@ mod tests {
         }
     }
 
-    /// The field really does evaluate an expression over a global variable and rounds integers.
-    #[test]
-    fn a_bar_field_evaluates_a_global_variable() {
-        let mut app = App::default();
-        app.project.parameters.push(qymcad_core::model::Param { name: "n".into(), expr: "3".into(), value: 3.0 });
-        app.project.parameters.push(qymcad_core::model::Param { name: "w".into(), expr: "8".into(), value: 8.0 });
-        let ctx = egui::Context::default();
-
-        let mut got_int = 0.0;
-        let mut got_real = 0.0;
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                app.bar_exprs.insert("t_count", "n*2".into());
-                got_int = qymcad_ui_state::num_or_expr(
-                    &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme },
-                    ui,
-                    "t_count",
-                    1.0,
-                    qymcad_ui_state::NumFormat { lo: 1.0, hi: 512.0, integer: true, suffix: "", nonzero: false },
-                );
-                app.bar_exprs.insert("t_rad", "w/2 + 0.5".into());
-                got_real = qymcad_ui_state::num_or_expr(
-                    &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme },
-                    ui,
-                    "t_rad",
-                    1.0,
-                    qymcad_ui_state::NumFormat { lo: 0.01, hi: 10000.0, integer: false, suffix: " mm", nonzero: false },
-                );
-            });
-        });
-        assert_eq!(got_int, 6.0, "an integer field: \"n*2\" with n=3 must give 6 (evaluate and round)");
-        assert_eq!(got_real, 4.5, "a real field: \"w/2 + 0.5\" with w=8 must give 4.5");
-    }
-
-    /// A broken expression does NOT change the value — no rubbish travels into the model.
-    #[test]
-    fn a_broken_expression_keeps_the_previous_value() {
-        let mut app = App::default();
-        let ctx = egui::Context::default();
-        let mut got = 0.0;
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                app.bar_exprs.insert("t_bad", "1/0".into());
-                got = qymcad_ui_state::num_or_expr(
-                    &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut app.bar_exprs, project: &app.project, scheme: &app.scheme },
-                    ui,
-                    "t_bad",
-                    7.0,
-                    qymcad_ui_state::NumFormat { lo: 0.0, hi: 100.0, integer: false, suffix: "", nonzero: false },
-                );
-            });
-        });
-        assert_eq!(got, 7.0, "a broken expression must leave the previous value instead of substituting rubbish");
-    }
-
     /// The dimension fields AFTER DRAWING accept an expression, not a bare number alone.
     ///
     /// Entering the width and height of a rectangle and an ellipse, the radius and angle of a polygon,
