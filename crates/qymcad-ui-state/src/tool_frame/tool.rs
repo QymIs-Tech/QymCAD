@@ -90,10 +90,10 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
     }
     let mut fields = std::mem::take(tool.fields());
     let mut texts = tool.bar_texts().map(std::mem::take);
-    let moved = numbers_into_the_box(&ctx, &mut described, texts.as_ref());
+    let look = tool.look();
+    let moved = numbers_into_the_box(&ctx, &mut described, &Kept { texts: texts.as_ref(), project: look.project });
     let own = fields.len();
     fields.extend(moved.iter().map(|m| m.field.clone()));
-    let look = tool.look();
     // A VALUE THE BOX CANNOT TAKE SHUTS THE BAR TOO: Apply of the bar stood lit over an angle of "abc" refused in the box
     // - only the fields the box shows: a field hidden now takes no part, as the second leg of a fillet takes none
     if let Some(spec) = &described.boxed {
@@ -163,6 +163,13 @@ struct Moved {
     field: CmdParam,
 }
 
+/// WHAT THE NUMBERS OF THE BAR ARE WRITTEN WITH in the box: the texts the bar keeps, and the document their formulas
+/// read.
+struct Kept<'a> {
+    texts: Option<&'a std::collections::HashMap<&'static str, String>>,
+    project: &'a Project,
+}
+
 /// THE BAR HOLDS WHAT IS SWITCHED AND PRESSED, THE BOX WHAT IS TYPED: a number a tool describes for its bar - the sides of
 /// a polygon, the count and the steps of a pattern, the height of a text - is a field of its box at the geometry, the
 /// same as the field of a length: a formula with its limits and unit, what it comes to or why it is refused said under
@@ -170,10 +177,10 @@ struct Moved {
 /// text typed is kept where the bar kept it (`bar_texts`); a value taken goes to the tool as the bar gave it
 /// (`Did::Typed`). One place for every tool of every workbench: no tool lays a field in its bar.
 ///
-/// A VALUE SET FROM ELSEWHERE REACHES A FIELD NOBODY IS TYPING IN: the text kept is the field's only while it holds the
-/// keyboard. Kept for a field at rest, a height of 10 typed for one text stood over the 20 of a label opened for editing,
-/// and went back to the tool as typed.
-fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, texts: Option<&std::collections::HashMap<&'static str, String>>) -> Vec<Moved> {
+/// A VALUE SET FROM ELSEWHERE REACHES A FIELD NOBODY IS TYPING IN: the text kept is the field's while it holds the
+/// keyboard, or while it is what the value comes to. Kept for a field at rest whatever it read, a height of 10 typed for
+/// one text stood over the 20 of a label opened for editing, and went back to the tool as typed.
+fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, kept: &Kept) -> Vec<Moved> {
     let tool = box_id(&described.head).value();
     let mut moved = Vec::new();
     let mut rows = Vec::new();
@@ -195,8 +202,11 @@ fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, texts: O
         let mut p = CmdParam::new(label, key.name, *value, *limits.range.start(), *limits.range.end());
         p.number = limits.number;
         p.nonzero = limits.zero == Zero::Refused;
+        // THE TEXT TYPED STAYS while it is what the number comes to: a formula typed in the sides of a polygon came back a
+        // number once the keyboard went to the driver beside it, and the polygon took no formula
         let typing = ctx.memory(|m| m.has_focus(field_id(tool, key.name)));
-        p.txt = texts.filter(|_| typing).and_then(|t| t.get(key.name).cloned()).unwrap_or_else(|| qymcad_core::expr::fmt_num(*value));
+        let holds = |t: &String| typing || kept.project.eval_expr(t).is_ok_and(|v| (v - *value).abs() < 1e-9);
+        p.txt = kept.texts.and_then(|t| t.get(key.name)).filter(|t| holds(t)).cloned().unwrap_or_else(|| qymcad_core::expr::fmt_num(*value));
         // the bar names the unit of its number, or none: a ratio is not a length
         p.unit = limits.unit.map_or(UnitOf::Bare, UnitOf::Key);
         if !laid.iter().any(|k| k == key.name) {

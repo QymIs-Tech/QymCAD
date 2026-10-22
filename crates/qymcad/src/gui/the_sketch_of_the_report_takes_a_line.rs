@@ -304,7 +304,7 @@ mod tests {
             hand.sk_select();
             assert!(hand.select2d(&[qymcad_ui_state::SketchItem::curve(one)]), "the line could not be picked");
             assert!(hand.press_hint(&crate::i18n::tr("tb-lin-array-hint")), "the linear pattern");
-            assert!(hand.type_after_word(&crate::i18n::tr("opt-count"), "5"), "the count of the pattern");
+            assert!(hand.type_after_word(&crate::i18n::tr("cmd-copies"), "5"), "the count of the pattern");
             assert!(hand.type_after_word(&crate::i18n::tr("opt-step-x"), "0"), "the step X");
             assert!(hand.type_after_word(&crate::i18n::tr("opt-step-y"), "6"), "the step Y");
             hand.key(egui::Key::Enter).key(egui::Key::Escape);

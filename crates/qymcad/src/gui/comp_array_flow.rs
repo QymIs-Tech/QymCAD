@@ -74,12 +74,12 @@ pub(super) mod tests {
         assert!(hand.press_word(&name, egui::pos2(0.0, 0.0)), "setup: the part {name:?} is picked in the tree");
         assert!(hand.press_hint(&qymcad_i18n::tr("tb-comp-lin-array-hint")), "the button of a linear component array");
         assert_eq!(hand.app.side.carr.src, comp, "the command took another source; the status line: {}", hand.app.status);
-        // the copies of each direction lead the row of the direction in the box at the geometry
-        let direction = |n: &str| qymcad_i18n::tr1("box-direction-n", "n", n);
-        assert!(hand.type_after_word(&direction("1"), "101"), "the field of the copies at the geometry");
-        assert!(hand.press_word(&qymcad_i18n::tr("cmd-dir2"), egui::pos2(0.0, 0.0)), "the switch of the second direction, pressed on its word");
-        assert!(hand.type_after_word(&direction("2"), "100"), "the field of the copies of the second direction at the geometry");
-        hand.set("cstep", 30.0).set("cstep2", 30.0); // the steps: the fields at the geometry
+        // the copies of the first direction are its first row in the box at the geometry; the second direction is opened by
+        // its title, which switches it on
+        assert!(hand.type_after_word(&qymcad_i18n::tr("cmd-copies"), "101"), "the field of the copies at the geometry");
+        let second = qymcad_i18n::tr1("box-direction-n", "n", "2");
+        assert!(hand.press_word(&second, egui::pos2(0.0, 0.0)), "the second direction, opened by its title");
+        hand.set("count2", 100.0).set("cstep", 30.0).set("cstep2", 30.0); // the fields of the second direction at the geometry
         hand.key(egui::Key::Enter); // the command is asked to apply
         assert!(hand.app.project.comp_pattern_of(comp).is_none(), "a grid past the limit was made; the status line: {}", hand.app.status);
         let limit = qymcad_core::feature::MAX_PATTERN_INSTANCES.to_string();
@@ -88,15 +88,21 @@ pub(super) mod tests {
         assert!(refused, "the refusal does not name the grid and the limit where the tool speaks: {said:?}");
     }
 
-    /// With no part selected the command does not start and says why.
+    /// WITH NO PART SELECTED THE COMMAND WAITS FOR ONE and says what to pick, as every tool waits for what it works on;
+    /// the part picked then is taken at once.
     #[test]
-    fn without_a_part_the_command_refuses() {
+    fn without_a_part_the_command_waits_for_one() {
         let mut app = App::default();
-        assembly_with_part(&mut app);
+        let comp = assembly_with_part(&mut app);
         app.chosen.sel = Sel::None;
         app.start_comp_array(qymcad_ui_state::PatternKind::Linear);
-        assert_eq!(app.side.carr.mode, None, "the command must not open without a source");
-        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-pick-part-first")), "the reason must be said out loud");
+        assert_eq!(app.side.carr.mode, Some(qymcad_ui_state::PatternKind::Linear), "the command did not stay in hand without a source");
+        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-pick-part-first")), "what to pick is not said");
+        let name = app.project.components.iter().find(|c| c.id == comp).map(|c| qymcad_i18n::name(&c.name)).expect("the part");
+        let mut hand = super::super::hand::Hand::new(&mut app);
+        assert!(hand.press_word(&name, egui::pos2(0.0, 0.0)), "the part {name:?} is picked in the tree");
+        hand.frame(Vec::new());
+        assert_eq!(hand.app.side.carr.src, comp, "the part picked was not taken; the status line: {}", hand.app.status);
     }
 
     /// Esc cancels without a trace.

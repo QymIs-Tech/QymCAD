@@ -15,8 +15,10 @@ impl Hand<'_> {
             if self.app.tools.armed.drawing() != Some(qymcad_ui_state::SketchShape::Text) {
                 self.sk_tool(qymcad_ui_state::SketchShape::Text);
             }
+            // the box of the tool names the font: laid unseen in the frame it opens, shown from the next
+            self.frame(Vec::new()).frame(Vec::new());
             let named = qymcad_ui_state::font_label(&self.app.tool_prefs.font, "opt-font");
-            assert!(self.press_word(&named, egui::Pos2::new(700.0, 0.0)), "the top bar named no font {named:?} to open the list with");
+            assert!(self.press_word(&named, egui::Pos2::new(700.0, 0.0)), "the box of the text tool named no font {named:?} to open the list with");
         }
         let (tx, rx) = std::sync::mpsc::channel();
         self.app.arm_file_ask(rx, crate::gui::pick::font_answer);
@@ -38,9 +40,10 @@ impl Hand<'_> {
             if self.app.tools.armed.drawing() != Some(qymcad_ui_state::SketchShape::Text) {
                 self.sk_tool(qymcad_ui_state::SketchShape::Text); // not twice: the button of a tool in hand puts the tool down
             }
+            self.frame(Vec::new()).frame(Vec::new());
             let named = qymcad_ui_state::font_label(&self.app.tool_prefs.font, "opt-font");
             if !self.press_word(&named, egui::Pos2::ZERO) {
-                return false; // the bar named no font: there is nothing to open the list with
+                return false; // the box named no font: there is nothing to open the list with
             }
         }
         // THE LIST ARRIVES FROM A THREAD, so the hand waits for it exactly as a person waits for "Looking for
@@ -78,8 +81,8 @@ impl Hand<'_> {
         false
     }
 
-    /// TYPE THE TEXT into the top bar and ITS HEIGHT into the box of the tool, with the text tool taken by its button
-    /// first - unless it is in hand already, where its button would put it down. The click that follows places the text.
+    /// TYPE THE TEXT AND ITS HEIGHT into the box of the tool, with the text tool taken by its button first - unless it is
+    /// in hand already, where its button would put it down. The click that follows places the text.
     ///
     /// Each field is clicked just right of the word that names it, its text is selected with Ctrl+A and typed
     /// over. Tab leaves the height, so the next click on the canvas is not a click out of a field.
@@ -87,15 +90,10 @@ impl Hand<'_> {
         if self.app.tools.armed.drawing() != Some(qymcad_ui_state::SketchShape::Text) {
             self.sk_tool(qymcad_ui_state::SketchShape::Text);
         }
-        self.frame(Vec::new());
-        let word =
-            |hand: &Self, w: &str, near: egui::Pos2| hand.win.drawn.iter().filter(|(t, _)| t == w).map(|(_, r)| *r).min_by(|a, b| a.center().distance(near).total_cmp(&b.center().distance(near)));
-        let named = word(self, &qymcad_i18n::tr("tool-text"), egui::Pos2::new(700.0, 0.0)).expect("the top bar of the text tool names no string field");
-        self.press_screen(egui::pos2(named.right() + 24.0, named.center().y));
-        self.chord(egui::Modifiers::COMMAND, egui::Key::A);
-        self.type_text(text);
+        self.frame(Vec::new()).frame(Vec::new());
+        self.type_text_row(text);
         // the height is a field of the box of the tool, found right of its caption there
-        assert!(self.type_after_word(&qymcad_i18n::tr("opt-height-short"), &format!("{height}")), "the box of the text tool names no height");
+        assert!(self.type_after_word(&qymcad_i18n::tr("sk-height"), &format!("{height}")), "the box of the text tool names no height");
         self.key(egui::Key::Tab);
         self.close_window()
     }
@@ -110,13 +108,20 @@ impl Hand<'_> {
         if !self.sk_open_text_edit(at) {
             return false;
         }
-        let Some(si) = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses) else { return false };
-        let Some(ti) = self.app.tools.inline.text() else { return false };
-        let font = self.app.project.sketches[si].texts[ti].font.clone();
-        let named = qymcad_ui_state::font_label(&font, "sk-text-font-unknown-short");
-        if !self.press_word(&named, self.screen2d(at)) {
+        // the button of the row "Font" of the box at the label names the font it is written in
+        self.frame(Vec::new()).frame(Vec::new());
+        let Some(caption) = self.written_at(&qymcad_i18n::tr("box-font")) else { return false };
+        let Some(button) = self
+            .win
+            .widgets
+            .iter()
+            .filter(|w| w.kind == crate::gui::window::Kind::Button && w.rect.left() >= caption.right() - 1.0 && (w.rect.center().y - caption.center().y).abs() < 6.0)
+            .map(|w| w.rect)
+            .min_by(|a, b| a.left().total_cmp(&b.left()))
+        else {
             return false;
-        }
+        };
+        self.press_screen(button.center());
         self.pick_font_from_list(query)
     }
 
@@ -130,21 +135,34 @@ impl Hand<'_> {
         self.app.tools.inline.text().is_some()
     }
 
-    /// EDIT THE TEXT LYING AT `at` and apply the change: the double click, the string typed, Tab on to the
-    /// height, the height typed, Shift+Tab back to the string and Enter - as a person does it from the keyboard.
-    ///
-    /// Each field selects its text as it takes the focus, so typing replaces what was there; the height is
-    /// taken as its field lets the focus go.
+    /// EDIT THE TEXT LYING AT `at` and apply the change: the double click, the string typed into the row "Text" of
+    /// the box at the label, the height into its row "Height", and Enter.
     pub fn sk_edit_text(&mut self, at: (f64, f64), text: &str, height: f64) -> &mut Self {
         if !self.sk_open_text_edit(at) {
             return self;
         }
-        self.frame(Vec::new()); // the string field takes the focus
-        self.type_text(text);
-        self.key(egui::Key::Tab);
-        self.type_text(&format!("{height}"));
-        self.chord(egui::Modifiers::SHIFT, egui::Key::Tab);
+        self.frame(Vec::new()).frame(Vec::new());
+        self.type_text_row(text);
+        assert!(self.type_after_word(&qymcad_i18n::tr("sk-height"), &format!("{height}")), "the box at the label names no height");
         self.key(egui::Key::Enter);
         self.close_window()
+    }
+
+    /// TYPE `text` INTO THE ROW OF THE BOX CAPTIONED "Text", over what it holds: of the places the word is written -
+    /// the name of the tool in the bar too - the one with a field after it on its line.
+    fn type_text_row(&mut self, text: &str) {
+        let caption = qymcad_i18n::tr("tool-text");
+        let field = self
+            .win
+            .drawn
+            .iter()
+            .filter(|(t, _)| *t == caption)
+            .find_map(|(_, r)| {
+                self.win.widgets.iter().find(|w| w.kind == crate::gui::window::Kind::TextField && w.rect.left() >= r.right() - 1.0 && (w.rect.center().y - r.center().y).abs() < 6.0).map(|w| w.rect)
+            })
+            .expect("the box of the text has no field for its string");
+        self.press_screen(field.center());
+        self.chord(egui::Modifiers::COMMAND, egui::Key::A);
+        self.type_text(text);
     }
 }

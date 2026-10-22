@@ -513,6 +513,8 @@ const CTX_DECL: &str = concat!(
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/tool_frame/layout.rs"),
     file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/names.rs"),
+    file_break!(),
     include_str!("../../../qymcad-ui-state/src/tool_frame/opts.rs"),
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/tool_frame/place.rs"),

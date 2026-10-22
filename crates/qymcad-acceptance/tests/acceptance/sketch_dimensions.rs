@@ -119,7 +119,8 @@ probe! {
         let at = s.find("50.0", SHEET).expect("the dimension is on the sheet");
         s.double_click(at.center());
         let word = s.word("sk-ref-short");
-        s.press_word_near(&word, at.center());
+        // the switch of the box of the dimension, kept by Enter as every value of a box is
+        s.press_word_near(&word, at.center()).key(Key::Enter);
         let now = s.document().sketches[0].clone();
         assert!(now.dof == driving.dof + 1, "a reference dimension holds no degree of freedom: {} became {}", driving.dof, now.dof);
         assert!(s.find("(50.0)", SHEET).is_some(), "a reference dimension is not marked as one on the sheet; on screen: {:?}", s.words());

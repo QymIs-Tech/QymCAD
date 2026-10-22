@@ -11,8 +11,11 @@ fn pattern(hint: &str, count: &str, dir: Option<&str>) -> Session {
     let mut s = Fixture::BlockInAssemblyPicked.start();
     let hint = s.word(hint);
     s.press_hint(&hint);
+    // the direction is a choice of the row "Axis" of the box; the properties beside the view name X, Y and Z too
     if let Some(d) = dir {
-        s.press_word_near(d, qymcad::pos2(0.0, 0.0));
+        let axis = s.word("box-axis");
+        let row = s.find(&axis, qymcad::pos2(0.0, 0.0)).unwrap_or_else(|| panic!("the box names no axis; on screen: {:?}", s.words()));
+        s.press_word_near(d, row.center());
     }
     let copies = s.word("cmd-copies");
     s.fill(&copies, count);

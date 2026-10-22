@@ -68,7 +68,8 @@ pub static JOINT: Tool = Tool {
     node: "",
     undo: "jt-joint-btn",
     undo_steps: 1,
-    stays: true,
+    // a joint applied leaves the selection in hand, as every command of an assembly does
+    stays: false,
     upstream: None,
     dependency: None,
     contexts: &[],
@@ -201,8 +202,9 @@ pub static COMP_LINEAR_PATTERN: Tool = Tool {
         negative: false,
         outcome: a_row_along_x,
     }],
-    // a second direction ticked makes a grid: three along X, two along the next axis 30 apart - six parts
-    modes: &[&[Mode { word: "cmd-dir2", clicks: None, outcome: Some(Outcome::Parts { parts: 6, grounded: 0, joints: 0, assemblies: 0 }) }]],
+    // the second direction switched on by the title of its section makes a grid: three along X, two along the next axis
+    // 30 apart - six parts
+    modes: &[&[Mode { word: "box-direction-n", arg: Some(qymcad::Arg { name: "n", value: "2" }), clicks: None, outcome: Some(Outcome::Parts { parts: 6, grounded: 0, joints: 0, assemblies: 0 }) }]],
     result: Outcome::Row { parts: 3, step: [30.0, 0.0, 0.0] },
     // one operation, one node: the pattern as a whole, as the professional systems keep it
     node: "ComponentPattern",

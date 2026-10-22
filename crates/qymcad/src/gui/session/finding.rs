@@ -387,7 +387,11 @@ impl Session {
         let inputs: Vec<Widget> = self.win.widgets.iter().filter(|w| matches!(w.kind, Kind::TextField | Kind::Number)).cloned().collect();
         let in_rows = tags.iter().filter(|t| rows.iter().any(|r| on_the_line(r, t) && t.min.x >= r.max.x - 1.0));
         let after = |t: &Rect| inputs.iter().filter(|w| on_the_line(&w.rect, t) && w.rect.min.x >= t.max.x - 1.0).map(|w| (w.rect.min.x - t.max.x, w)).min_by(|a, b| a.0.total_cmp(&b.0));
+        // A ROW OF VALUES EACH WITH ITS DRIVER stands as its caption on a line of its own and a value a line under it, the
+        // tag for its caption: the nearest tag under the caption, within the lines of the values of one row
+        let under = |t: &&Rect| rows.iter().any(|r| t.min.y >= r.max.y - 1.0 && t.min.y - r.max.y < 4.0 * r.height() && (t.min.x - r.min.x).abs() < r.height());
         let best = in_rows.filter_map(after).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, w)| w.clone());
+        let best = best.or_else(|| tags.iter().filter(under).filter_map(after).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, w)| w.clone()));
         let fields: Vec<Rect> = inputs.iter().map(|w| w.rect).collect();
         best.unwrap_or_else(|| panic!("nothing to fill stands after {tag:?} in the row {row:?} (the row at {rows:?}, the tag at {tags:?}); fields at {fields:?}"))
     }

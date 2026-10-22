@@ -101,8 +101,8 @@ pub static RECOGNISE: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "cmd-recognise-exact", clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] }) },
-        Mode { word: "cmd-recognise-asis", clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 }) },
+        Mode { word: "cmd-recognise-exact", arg: None, clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] }) },
+        Mode { word: "cmd-recognise-asis", arg: None, clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 }) },
     ]],
     result: Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 },
     node: "MeshRecognised", // the node of the timeline is named by what it holds: a mesh recognised

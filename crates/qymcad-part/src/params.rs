@@ -163,11 +163,11 @@ pub fn sync_custom_params(cmd: &mut qymcad_ui_state::FeatCommand, thread: qymcad
     let custom = !thread.auger && qymcad_ui_state::thread_standard(thread.form) == qymcad_core::thread::ThreadStandard::Custom;
     let has = cmd.params.iter().any(|p| p.key == "angle");
     if custom && !has {
-        cmd.params.push(qymcad_ui_state::CmdParam::new("f-profile-angle", "angle", 60.0, 5.0, 170.0));
+        cmd.params.push(qymcad_ui_state::CmdParam::new("th-profile-angle", "angle", 60.0, 5.0, 170.0));
         // The depth opens on the one that will be cut, not on zero: zero here means "nothing was typed" and
         // the core cuts 0.6 of the pitch, so a field at 0.00 stood over a groove 1.50 deep.
         let depth = thread_spec(cmd, thread).geometry().depth;
-        cmd.params.push(qymcad_ui_state::CmdParam::new("f-thread-depth", "depth", depth, 0.0, 1000.0));
+        cmd.params.push(qymcad_ui_state::CmdParam::new("th-depth", "depth", depth, 0.0, 1000.0));
     } else if !custom && has {
         cmd.params.retain(|p| p.key != "angle" && p.key != "depth");
     }

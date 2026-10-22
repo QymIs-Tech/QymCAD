@@ -21,11 +21,10 @@ fn fill_widget(s: &mut Session, w: &Widget, text: &str) {
     s.click(w.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text(text);
 }
 
-/// The fields of the bar of options, left to right.
-fn bar_fields(s: &mut Session) -> Vec<Widget> {
-    let mut fields: Vec<Widget> = s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && w.rect.top() < 120.0).collect();
-    fields.sort_by(|a, b| a.rect.left().total_cmp(&b.rect.left()));
-    fields
+/// Fill the row of the box captioned by the catalogue entry `caption`.
+fn step(s: &mut Session, caption: &str, value: f64) {
+    let word = s.word(caption);
+    s.fill(&word, &value.to_string());
 }
 
 /// THE FIELDS STANDING ON THE SHEET - the little boxes a gesture puts up - told apart from the fields of the bar and of
@@ -33,7 +32,7 @@ fn bar_fields(s: &mut Session) -> Vec<Widget> {
 /// the top of the sheet was taken for a field of the bar.
 fn sheet_fields(s: &mut Session) -> Vec<Widget> {
     let sheet = s.canvas();
-    s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && sheet.contains(w.rect.center())).collect()
+    qymcad_acceptance::value_fields(s).into_iter().filter(|w| sheet.contains(w.rect.center())).collect()
 }
 
 /// THE LITTLE BOX THAT POPPED UP BY THE GESTURE: the field on the sheet nearest to `at` - the radius at a corner, the
@@ -454,19 +453,18 @@ probe! {
         line(&mut s, (0.0, 0.0), (5.0, 0.0));
         pick(&mut s, 2.5, 0.0, false);
         take(&mut s, "tb-lin-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "3");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "10");
-        fill_widget(&mut s, &fields[2], "0");
+        step(&mut s, "opt-step-x", 10.0);
+        step(&mut s, "opt-step-y", 0.0);
         s.key(Key::Enter).key(Key::Enter); // the first Enter only leaves the field - see the check below
         assert!(counts(&mut s).0 == 3, "three copies were asked for: {:?}", counts(&mut s));
         assert!(box_is(&mut s, [0.0, 0.0], [25.0, 0.0]), "the copies do not stand 10 apart along X: {:?}", box_of(&mut s));
-        // opened again by a double click on a copy: the bar comes back with the count that was set
+        // opened again by a double click on a copy: the box comes back with the count that was set
         let at = s.on_sketch(22.5, 0.0);
         s.double_click(at);
-        let again = bar_fields(&mut s);
-        assert!(again.first().map(|w| w.value.clone()).unwrap_or_default() == "3", "the pattern did not open again with its own count: the bar shows {:?}", again.iter().map(|w| w.value.clone()).collect::<Vec<_>>());
+        let again = s.field(&count);
+        assert!(again.value == "3", "the pattern did not open again with its own count: the box shows {:?}", again.value);
     }
 }
 
@@ -477,10 +475,9 @@ probe! {
         line(&mut s, (10.0, 0.0), (20.0, 0.0));
         pick(&mut s, 15.0, 0.0, false);
         take(&mut s, "tb-circ-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "4");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "360");
+        step(&mut s, "cmd-angle", 360.0);
         s.click_on_sketch(0.0, 0.0); // the centre to turn about
         s.key(Key::Enter).key(Key::Enter);
         assert!(counts(&mut s).0 == 4, "four copies were asked for: {:?}", counts(&mut s));
@@ -495,10 +492,9 @@ probe! {
         line(&mut s, (0.0, 0.0), (5.0, 0.0));
         pick(&mut s, 2.5, 0.0, false);
         take(&mut s, "tb-lin-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "3");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "10");
+        step(&mut s, "opt-step-x", 10.0);
         s.key(Key::Enter);
         assert!(counts(&mut s).0 == 3, "one Enter after the numbers did not make the pattern: {:?} instead of 3 lines; the status line says {:?}", counts(&mut s), s.status());
     }
@@ -1120,7 +1116,8 @@ probe! {
         assert_eq!(tool(&mut s), Some(qymcad::ClickTool::Corner), "setup: the fillet is not in hand");
         let drawn = violet(&mut s);
         assert!(drawn > 40, "setup: no corner of the set is drawn in the colour of one that stands: {drawn} pixels of it");
-        s.key(Key::Escape);
+        // the first Esc leaves the field of the radius the box opened with, the second puts the tool down
+        s.key(Key::Escape).key(Key::Escape);
         assert_eq!(tool(&mut s), None, "Esc left the fillet in hand: the tool says it is still working");
         assert_eq!(lit(&mut s), 0, "{} lines are still lit after Esc took the corner tool down", lit(&mut s));
         let after = violet(&mut s);

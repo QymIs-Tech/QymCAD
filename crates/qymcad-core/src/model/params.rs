@@ -355,6 +355,10 @@ impl Project {
         // THE VALUES ARE WORKED OUT FROM THE FORMULAS ALONE, in the order they read each other (`work_out_names`). They
         // used to start from the values before and go round up to eight times: `a = b+1` with `b = a+1` grew on every
         // evaluation (28 / 29, 60 / 61, 76 / 77), and an undo, evaluating once more, kept the grown numbers.
+        // THE VALUES OF THE ITEMS ARE IMPOSED FIRST, and the names worked out again over them: a parameter reading the
+        // count of a pattern driven by another parameter read the count before the pattern took it, a step behind
+        let first = self.work_out_names();
+        errs.extend(self.impose_item_values(&first.values).into_iter().map(|f| (f.formula, f.error)));
         let worked = self.work_out_names();
         for p in &mut self.parameters {
             if p.name.is_empty() {
@@ -406,7 +410,6 @@ impl Project {
                 }
             }
         }
-        errs.extend(self.impose_item_values(&vars).into_iter().map(|f| (f.formula, f.error)));
         errs
     }
 

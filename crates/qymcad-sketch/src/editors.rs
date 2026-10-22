@@ -870,7 +870,7 @@ impl FramedTool for CornerEdit<'_, '_> {
         corner_apply(&mut corner_ctx(self.sk), CornerOf { si, pid, chamfer: chamfer == Cut::Chamfer })?;
         for p in &values {
             if let Some(ask) = asks.iter().find(|a| a.field == p.key) {
-                name_what_was_laid(self.sk, Laying { si, since: before, value: p.val.abs() }, &ask.name);
+                name_what_was_laid(self.sk, Laying { si, since: before, value: p.val.abs() }, ask);
             }
         }
         Ok(())
@@ -923,22 +923,35 @@ pub(crate) struct Laying {
     pub(crate) value: f64,
 }
 
-/// ONE NAME DRIVES WHAT ONE VALUE LAID: the first dimension the value laid - the radius of the first corner of a set, the
-/// distance of the first copy of an offset - takes name `nm`, every other one reads it, as one value made them all.
-pub(crate) fn name_what_was_laid(sk: &mut qymcad_ui_state::SketchCtx, at: Laying, nm: &str) {
-    let nm = nm.trim().to_string();
-    if nm.is_empty() {
+/// ONE VALUE DRIVES WHAT IT LAID: the first dimension the value laid - the radius of the first corner of a set, the
+/// distance of the first copy of an offset - takes the formula of its field and the name of its driver, every other one
+/// reads that name, or the formula where there is none, as one value made them all. The dimensions took the number
+/// alone, and a radius typed as a parameter stood still when the parameter changed.
+pub(crate) fn name_what_was_laid(sk: &mut qymcad_ui_state::SketchCtx, at: Laying, ask: &qymcad_ui_state::FieldAsk) {
+    let nm = ask.name.trim().to_string();
+    let formula = ask.formula.trim().to_string();
+    let is_formula = !formula.is_empty() && formula.parse::<f64>().is_err();
+    if nm.is_empty() && !is_formula {
         return;
     }
     let Laying { si, since, value } = at;
     let laid: Vec<usize> =
         (since..sk.project.sketches[si].constraints.len()).filter(|&ci| sk.project.sketches[si].constraints[ci].dim_value().is_some_and(|v| (v.abs() - value).abs() < 1e-6)).collect();
     let Some(&first) = laid.first() else { return };
-    name_dimension(sk, Dim { si, ci: first }, &nm);
-    for &ci in &laid[1..] {
+    let set_expr = |sk: &mut qymcad_ui_state::SketchCtx, ci: usize, text: &str| {
         if let Some(e) = sk.project.sketches[si].constraints.get_mut(ci).and_then(Constraint::expr_mut) {
-            *e = nm.clone();
+            *e = text.to_string();
         }
+    };
+    if is_formula {
+        set_expr(sk, first, &formula);
+    }
+    if !nm.is_empty() {
+        name_dimension(sk, Dim { si, ci: first }, &nm);
+    }
+    let read = if nm.is_empty() { formula } else { nm };
+    for &ci in &laid[1..] {
+        set_expr(sk, ci, &read);
     }
 }
 
@@ -1009,7 +1022,7 @@ impl FramedTool for OffsetEdit<'_, '_> {
     fn apply(&mut self) -> Result<(), NotApplied> {
         let sk = &mut *self.sk;
         let d = sk.tool_prefs.offset;
-        let name = self.asks.first().map(|a| a.name.clone()).unwrap_or_default();
+        let ask = self.asks.first().cloned();
         let before = sk.project.sketches[self.at.si].constraints.len();
         offset_make(
             OffsetCtx { project: &mut *sk.project, edits: &mut *sk.edits, regen: &mut *sk.regen, sel_sk: &mut *sk.sel_sk, status: &mut *sk.status, tool_prefs: &mut *sk.tool_prefs },
@@ -1017,7 +1030,9 @@ impl FramedTool for OffsetEdit<'_, '_> {
             d,
             Some(self.at.at),
         );
-        name_what_was_laid(sk, Laying { si: self.at.si, since: before, value: d.abs() }, &name);
+        if let Some(ask) = &ask {
+            name_what_was_laid(sk, Laying { si: self.at.si, since: before, value: d.abs() }, ask);
+        }
         Ok(())
     }
 

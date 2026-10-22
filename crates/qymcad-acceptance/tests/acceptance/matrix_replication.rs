@@ -74,12 +74,8 @@ fn row_cases() -> Vec<Case> {
 /// A RING of copies about the upright axis through the origin, spread over the whole turn: four blocks a quarter turn
 /// apart touch along their sides and make one body of four blocks' volume.
 fn ring_cases() -> Vec<Case> {
-    // the count first, then the switch that spreads the copies over the whole turn
-    let ring = |copies: f64, expect: Expect, what: &str| {
-        let mut c = case(&BLOCK, vec![Pick::Face(TOP)], copies, &[], expect, what);
-        c.after = vec![Pick::Toggle("cmd-full-circle")];
-        c
-    };
+    // the count; the angle the copies spread over stands at the whole turn as the box opens
+    let ring = |copies: f64, expect: Expect, what: &str| case(&BLOCK, vec![Pick::Face(TOP)], copies, &[], expect, what);
     vec![
         ring(4.0, Expect::Built { change: 36000.0, tol: tol(48000.0), added: None }, "four over the whole turn: touching, one body"),
         ring(6.0, Expect::Whole, "six over the whole turn: overlapping about the axis"),

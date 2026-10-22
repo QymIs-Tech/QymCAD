@@ -287,7 +287,7 @@ probe! {
         take(&mut s, "tb-thread-hint");
         let side = the_side_of_the_shaft(&mut s, 10.0, 10.0);
         s.click(side);
-        field(&mut s, "f-nominal-d", "20");
+        field(&mut s, "th-nominal-d", "20");
         field(&mut s, "f-length", "10");
         s.key(Key::Enter);
         let now = body(&mut s);
@@ -311,7 +311,7 @@ probe! {
             take(&mut s, "tb-thread-hint");
             let side = the_side_of_the_shaft(&mut s, 10.0, 10.0);
             s.click(side);
-            field(&mut s, "f-nominal-d", "20");
+            field(&mut s, "th-nominal-d", "20");
             field(&mut s, "f-length", "10");
             s.key(Key::Enter);
             before - body(&mut s).volume
@@ -321,9 +321,9 @@ probe! {
         take(&mut s, "tb-thread-hint");
         let side = the_side_of_the_shaft(&mut s, 10.0, 10.0);
         s.click(side);
-        field(&mut s, "f-nominal-d", "20");
+        field(&mut s, "th-nominal-d", "20");
         field(&mut s, "f-length", "10");
-        field(&mut s, "f-pitch-std", "4");
+        field(&mut s, "th-pitch-std", "4");
         s.key(Key::Enter);
         let mine = before - body(&mut s).volume;
         assert!(mine > 0.0, "the thread of one's own pitch took nothing off");

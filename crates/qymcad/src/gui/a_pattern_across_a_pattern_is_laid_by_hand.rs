@@ -29,7 +29,7 @@ mod tests {
             hand.sk_select();
             hand.click2d(middle.0, middle.1);
             assert!(hand.press_hint(&crate::i18n::tr("tb-lin-array-hint")), "the linear pattern");
-            assert!(hand.type_after_word(&crate::i18n::tr("opt-count"), &n.to_string()), "the count of the pattern");
+            assert!(hand.type_after_word(&crate::i18n::tr("cmd-copies"), &n.to_string()), "the count of the pattern");
             assert!(hand.type_after_word(&crate::i18n::tr("opt-step-x"), step[0]), "the step X");
             assert!(hand.type_after_word(&crate::i18n::tr("opt-step-y"), step[1]), "the step Y");
             // the work of the pattern, not the share of the machine it was given (`time_budget::Cost`): the solve of the

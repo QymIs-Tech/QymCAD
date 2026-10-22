@@ -168,8 +168,8 @@ mod tests {
         assert_eq!(said, qymcad_i18n::tr("opt-font"), "with nothing chosen the button keeps its own word");
         assert_ne!(said, "opt-font", "the code of the word leaked into the interface instead of the word");
 
-        // AND BOTH PLACES ASK THROUGH IT. Read out of the source: a copy of "family, or else a word" in one
-        // of them drifts from the other, and both answer the same question.
+        // AND THE BOX OF THE TEXT ASKS THROUGH IT, for a text placed and a label edited alike. Read out of the source: a
+        // copy of "family, or else a word" drifts from the one asked.
         let bar = concat!(
             concat!(
                 include_str!("../../../qymcad-part/src/apply/copies.rs"),
@@ -186,7 +186,7 @@ mod tests {
             concat!(
                 include_str!("../../../qymcad-part/src/bars/feat_bar.rs"),
                 "\n",
-                include_str!("../../../qymcad-sketch/src/options.rs"),
+                include_str!("../../../qymcad-sketch/src/in_hand.rs"),
                 "\n",
                 include_str!("../../../qymcad-ui-state/src/path_bar.rs"),
                 "\n",
@@ -282,8 +282,9 @@ mod tests {
             "\n",
             include_str!("../../../qymcad-ui-state/src/lib.rs")
         );
-        assert!(bar.contains("font_label(&prefs.font"), "the bar names the font of the tool some other way");
-        assert!(state.contains("font_label(&of_label"), "the editor of a label names its font some other way");
+        // ONE BOX FOR A TEXT PLACED AND A LABEL EDITED: the font named is the tool's, which a label edited takes up
+        assert!(bar.contains("font_label(&prefs.font"), "the box of the text names the font some other way");
+        assert!(!state.contains("font_label(&of_label"), "the editor of a label names its font apart from the box of the text");
     }
 
     /// A FONT WITHOUT THE LETTERS SAYS SO WHEN THE LABEL IS PLACED, and not "the text is empty".

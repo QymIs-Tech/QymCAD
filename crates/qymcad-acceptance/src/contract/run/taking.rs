@@ -106,6 +106,25 @@ pub(crate) fn describe(e: &Entry) -> String {
     }
 }
 
+/// The words of the switch of `mode`, as the program writes them.
+fn mode_word(s: &Session, mode: &crate::contract::Mode) -> String {
+    match mode.arg {
+        Some(arg) => s.word_with(mode.word, arg),
+        None => s.word(mode.word),
+    }
+}
+
+/// PRESS THE SWITCH WRITTEN `word`, nearest the top: a button of the bar, or the title of a section of the box, which
+/// a mark of open or folded stands before.
+fn press_switch(s: &mut Session, word: &str) {
+    let titled = format!(" {word}");
+    let title = s.words_at().into_iter().filter(|(w, _)| w.ends_with(&titled)).map(|(w, _)| w).next();
+    match title {
+        Some(t) if s.find(word, TOP).is_none() => s.press_word_near(&t, TOP),
+        _ => s.press_word_near(word, TOP),
+    };
+}
+
 /// 2. EVERY MODE OF THE BAR MAKES WHAT IT IS DESCRIBED TO MAKE - or refuses in words - and going through a group
 ///    and back leaves no mode hanging.
 pub(crate) fn bar(tool: &Tool) {
@@ -115,8 +134,8 @@ pub(crate) fn bar(tool: &Tool) {
         // drawing again
         let mut s = tool.fixture.start();
         take(&mut s, tool);
-        let (word, status, before) = (s.word(mode.word), s.status(), shape_of(&s.document()));
-        s.press_word_near(&word, TOP);
+        let (word, status, before) = (mode_word(&s, mode), s.status(), shape_of(&s.document()));
+        press_switch(&mut s, &word);
         work(&mut s, tool, mode.clicks);
         for f in tool.fields.iter().filter(|f| f.when == When::After) {
             if field_if_there(&mut s, f).is_some() {
@@ -146,14 +165,14 @@ pub(crate) fn bar(tool: &Tool) {
         let mut s = tool.fixture.start();
         take(&mut s, tool);
         for mode in group.iter().skip(1) {
-            let word = s.word(mode.word);
-            s.press_word_near(&word, TOP);
+            let word = mode_word(&s, mode);
+            press_switch(&mut s, &word);
         }
         // a switch goes back with a second press; an option of a group, with its first option
-        let word = s.word(group[0].word);
-        s.press_word_near(&word, TOP);
+        let word = mode_word(&s, &group[0]);
+        press_switch(&mut s, &word);
         if group.len() == 1 {
-            s.press_word_near(&word, TOP);
+            press_switch(&mut s, &word);
         }
         work(&mut s, tool, None);
         for f in tool.fields.iter().filter(|f| f.when == When::After) {

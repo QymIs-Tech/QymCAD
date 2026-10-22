@@ -14,7 +14,7 @@ use qymcad::Key;
 pub type Word = &'static str;
 
 /// THE POINTS OF THE CONTRACT, by number, as the checks are named.
-pub const POINTS: [(u8, &str); 26] = [
+pub const POINTS: [(u8, &str); 27] = [
     (1, "entry"),
     (2, "bar"),
     (3, "picks"),
@@ -41,6 +41,7 @@ pub const POINTS: [(u8, &str); 26] = [
     (24, "enter_waits"),
     (25, "bar_stays"),
     (26, "formula_kept"),
+    (27, "every_field"),
 ];
 
 /// A tool described.
@@ -228,6 +229,8 @@ pub struct Words {
 pub struct Mode {
     /// The word of its switch.
     pub word: Word,
+    /// The one argument the word is written with - the number of a direction in the title of its section.
+    pub arg: Option<qymcad::Arg<'static>>,
     /// The clicks this mode takes, when they are not the ordinary ones - a rectangle by three points takes three.
     pub clicks: Option<&'static [(f64, f64)]>,
     /// What it makes of the ordinary picks and values; `None` when it must refuse them in words.
@@ -238,9 +241,9 @@ pub struct Mode {
 pub enum Upstream {
     /// The node of this kind reopened with a double click on its row, the field under this caption set to a value.
     Reopen { node: Node, caption: Word, value: f64, then: Outcome },
-    /// The sketch reopened with a double click on its row, the dimension written as `shown` double-clicked and set to
-    /// a value, the sketch finished.
-    SketchDimension { shown: &'static str, value: f64, then: Outcome },
+    /// The sketch reopened with a double click on its row, the shape whose side passes through `at` double-clicked,
+    /// the field of its size under `caption` set to a value, the sketch finished.
+    SketchSize { at: (f64, f64), caption: Word, value: f64, then: Outcome },
 }
 
 /// A node of the timeline, by its kind, and how its row in the tree is found.
@@ -353,7 +356,7 @@ pub const EMPTY_SKETCH: Outcome =
     Outcome::Sketch { points: 0, lines: 0, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: None, dof: None, box_of: None, size_of: None, under: &[] };
 
 /// EVERY POINT OF THE CONTRACT OF A TOOL AS A CHECK OF ITS OWN, in a module named for it:
-/// `contract!(extrude, qymcad_acceptance::tools::part::EXTRUDE);` gives `extrude::b01_entry` to `extrude::b26_formula_kept`.
+/// `contract!(extrude, qymcad_acceptance::tools::part::EXTRUDE);` gives `extrude::b01_entry` to `extrude::b27_every_field`.
 #[macro_export]
 macro_rules! contract {
     ($module:ident, $tool:path) => {
@@ -384,6 +387,7 @@ macro_rules! contract {
             $crate::probe! { fn b24_enter_waits() { $crate::contract::run::point(&$tool, 24) } }
             $crate::probe! { fn b25_bar_stays() { $crate::contract::run::point(&$tool, 25) } }
             $crate::probe! { fn b26_formula_kept() { $crate::contract::run::point(&$tool, 26) } }
+            $crate::probe! { budget = 900; fn b27_every_field() { $crate::contract::run::point(&$tool, 27) } }
         }
     };
 }

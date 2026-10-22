@@ -28,10 +28,12 @@ mod tests {
         let mut hand = a_pattern_in_hand(&mut app, "tb-lin-array-hint");
         let bare = hand.bar_fields_without_caption();
         assert!(bare.is_empty(), "fields of the linear pattern with no caption: {bare:?}");
-        assert!(hand.type_after_word(&crate::i18n::tr("opt-rows"), "2"), "the field of the rows");
+        let second = crate::i18n::tr1("box-direction-n", "n", "2");
+        assert!(hand.press_word(&second, egui::pos2(0.0, 0.0)), "the second direction, opened by its title");
         let bare = hand.bar_fields_without_caption();
-        assert!(bare.is_empty(), "fields of the linear pattern of two rows with no caption: {bare:?}");
-        assert!(hand.shows(&crate::i18n::tr("opt-row-step-x")), "two rows show no step of the rows");
+        assert!(bare.is_empty(), "fields of the linear pattern of two directions with no caption: {bare:?}");
+        let steps = hand.words_drawn().iter().filter(|(t, _)| *t == crate::i18n::tr("opt-step-x")).count();
+        assert_eq!(steps, 2, "the second direction opened shows no step of its own");
     }
 
     #[test]

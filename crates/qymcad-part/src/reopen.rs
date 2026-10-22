@@ -332,25 +332,31 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.thread.edge = edge;
             pc.thread.auger = false;
             pc.thread.internal = spec.internal;
-            pc.thread.starts = spec.starts.max(1);
+            // what the starts come to as the rebuild takes them, the formula included
+            pc.thread.starts = (pc.project.feat_dim_value(fid, "starts", f64::from(spec.starts), &pc.project.param_map()).round() as u32).max(1);
+            // the starts typed as a formula come back as typed: the node keeps it, the bar number shows it
+            match pc.project.feat_dim(fid, "starts").filter(|f| !f.trim().is_empty()) {
+                Some(f) => pc.bar_exprs.insert("thread_starts", f.to_string()),
+                None => pc.bar_exprs.remove("thread_starts"),
+            };
             pc.thread.left = spec.left;
             pc.thread.form = qymcad_ui_state::thread_standard_idx(spec.standard);
             qymcad_ui_state::restore_thread_axis(&mut *pc.project, &mut *pc.thread, src, edge);
             // THE SET OF FIELDS IS THE SAME AS AT CREATION. The fillets were missing here entirely: they
             // could be set only when the feature was first built, and on editing they vanished silently.
             pc.cmd.params = vec![
-                cmd_param_from(&*pc.project, fid, "f-nominal-d", "nominal", spec.nominal_d, 0.5, 1000.0),
-                cmd_param_from(&*pc.project, fid, "f-pitch-std", "pitch", spec.pitch, 0.0, 100.0),
-                cmd_param_from(&*pc.project, fid, "f-length", "length", length, 0.1, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-fit-clearance", "fit", spec.fit, 0.0, 5.0),
-                cmd_param_from(&*pc.project, fid, "f-lead-in", "lead_in", lead_in, 0.0, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-lead-out", "lead_out", lead_out, 0.0, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-crest-fillet", "crest_r", spec.crest_r.unwrap_or(0.0), 0.0, 100.0),
-                cmd_param_from(&*pc.project, fid, "f-root-fillet", "root_r", spec.root_r.unwrap_or(0.0), 0.0, 100.0),
+                cmd_param_from(&*pc.project, fid, "th-nominal-d", "nominal", spec.nominal_d, 0.5, 1000.0),
+                cmd_param_from(&*pc.project, fid, "th-pitch-std", "pitch", spec.pitch, 0.0, 100.0).hint("th-std-zero-hint"),
+                cmd_param_from(&*pc.project, fid, "th-length", "length", length, 0.1, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-fit-clearance", "fit", spec.fit, 0.0, 5.0),
+                cmd_param_from(&*pc.project, fid, "th-lead-in", "lead_in", lead_in, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-lead-out", "lead_out", lead_out, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-crest-fillet", "crest_r", spec.crest_r.unwrap_or(0.0), 0.0, 100.0).hint("th-std-zero-hint"),
+                cmd_param_from(&*pc.project, fid, "th-root-fillet", "root_r", spec.root_r.unwrap_or(0.0), 0.0, 100.0).hint("th-std-zero-hint"),
             ];
             if spec.standard == qymcad_core::thread::ThreadStandard::Custom {
-                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-profile-angle", "angle", spec.custom_angle, 5.0, 170.0));
-                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-thread-depth", "depth", spec.custom_depth, 0.0, 1000.0));
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "th-profile-angle", "angle", spec.custom_angle, 5.0, 170.0));
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "th-depth", "depth", spec.custom_depth, 0.0, 1000.0));
             }
         }
         // AN AUGER - the same command, a mode of the timeline
@@ -360,17 +366,23 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.thread.src = Some(src);
             pc.thread.edge = edge;
             pc.thread.auger = true;
-            pc.thread.starts = spec.starts.max(1);
+            // what the starts come to as the rebuild takes them, the formula included
+            pc.thread.starts = (pc.project.feat_dim_value(fid, "starts", f64::from(spec.starts), &pc.project.param_map()).round() as u32).max(1);
+            // the starts typed as a formula come back as typed: the node keeps it, the bar number shows it
+            match pc.project.feat_dim(fid, "starts").filter(|f| !f.trim().is_empty()) {
+                Some(f) => pc.bar_exprs.insert("thread_starts", f.to_string()),
+                None => pc.bar_exprs.remove("thread_starts"),
+            };
             pc.thread.left = spec.left;
             qymcad_ui_state::restore_thread_axis(&mut *pc.project, &mut *pc.thread, src, edge);
             pc.cmd.params = vec![
-                cmd_param_from(&*pc.project, fid, "f-outer-d", "outer", spec.outer_d, 0.5, 2000.0),
-                cmd_param_from(&*pc.project, fid, "f-pitch", "pitch", spec.pitch, 0.1, 1000.0),
-                cmd_param_from(&*pc.project, fid, "f-length", "length", length, 0.1, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-flight-thickness", "thickness", spec.thickness, 0.1, 100.0),
-                cmd_param_from(&*pc.project, fid, "f-edge-fillet", "edge_r", spec.edge_r, 0.0, 50.0),
-                cmd_param_from(&*pc.project, fid, "f-taper-in", "lead_in", lead_in, 0.0, 10000.0),
-                cmd_param_from(&*pc.project, fid, "f-taper-out", "lead_out", lead_out, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-outer-d", "outer", spec.outer_d, 0.5, 2000.0),
+                cmd_param_from(&*pc.project, fid, "th-pitch", "pitch", spec.pitch, 0.1, 1000.0),
+                cmd_param_from(&*pc.project, fid, "th-length", "length", length, 0.1, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-flight-thickness", "thickness", spec.thickness, 0.1, 100.0),
+                cmd_param_from(&*pc.project, fid, "th-edge-fillet", "edge_r", spec.edge_r, 0.0, 50.0),
+                cmd_param_from(&*pc.project, fid, "th-taper-in", "lead_in", lead_in, 0.0, 10000.0),
+                cmd_param_from(&*pc.project, fid, "th-taper-out", "lead_out", lead_out, 0.0, 10000.0),
             ];
         }
         // A MIRROR: a double click reopens the command; the plane is clicked in the viewport again

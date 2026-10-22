@@ -485,7 +485,7 @@ impl FramedTool for InSketch<'_, '_> {
             );
             // its driver names the distance it laid, as the box of an offset names it
             if let Some(a) = self.asks.iter().find(|a| a.field == "sk_offset") {
-                name_what_was_laid(sk, Laying { si, since: before, value: dist.abs() }, &a.name);
+                name_what_was_laid(sk, Laying { si, since: before, value: dist.abs() }, a);
             }
         }
         Ok(())

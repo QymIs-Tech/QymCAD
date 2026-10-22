@@ -98,7 +98,7 @@ pub static THREAD: Tool = Tool {
     pick_trial: &[Pick::Face([27.071, 7.929, 5.0])],
     wrong_picks: &[],
     words: &[
-        Words { caption: "f-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
+        Words { caption: "th-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-fit-clearance", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-in", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-out", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
@@ -149,13 +149,13 @@ pub static THREAD_OWN_PITCH: Tool = Tool {
     pick_trial: &[Pick::Face([27.071, 7.929, 5.0])],
     wrong_picks: &[],
     words: &[
-        Words { caption: "f-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
+        Words { caption: "th-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-fit-clearance", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-in", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-out", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "f-length", by_placeholder: false, typical: "10", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
     ],
-    fields: &[Field { caption: "f-pitch-std", by_placeholder: false, when: When::Before, class: Class::Length, typical: 4.0, lo: 1.0, hi: 5.0, zero: true, negative: false, outcome: threaded_at }],
+    fields: &[Field { caption: "th-pitch-std", by_placeholder: false, when: When::Before, class: Class::Length, typical: 4.0, lo: 1.0, hi: 5.0, zero: true, negative: false, outcome: threaded_at }],
     modes: &[],
     // pi * 100 * 10 - 722.52 (the ISO profile drawn at a pitch of 4 over 10, by Pappus)
     result: Outcome::Volume { volume: 2419.076, tol: 8.23, min: [10.0, 5.0, 0.0], max: [30.0, 25.0, 10.0] },

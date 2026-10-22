@@ -4,14 +4,14 @@
 //!
 //! Reported behaviour: "a sketch fillet or chamfer cannot be put where two lines cross - a click at the crossing picks no
 //! corner, and nothing is made".
-use qymcad::{Key, Kind, Modifiers, Session, Widget};
+use qymcad::{Key, Modifiers, Session, Widget};
 use qymcad_acceptance::build::{empty_sketch, line};
 use qymcad_acceptance::probe;
 
 /// The field on the sheet nearest to `at`.
 fn field_near(s: &mut Session, at: qymcad::Pos2) -> Option<Widget> {
     let sheet = s.canvas();
-    s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && sheet.contains(w.rect.center())).min_by(|a, b| a.rect.center().distance(at).total_cmp(&b.rect.center().distance(at)))
+    qymcad_acceptance::value_fields(s).into_iter().filter(|w| sheet.contains(w.rect.center())).min_by(|a, b| a.rect.center().distance(at).total_cmp(&b.rect.center().distance(at)))
 }
 
 /// A CUT OF A CORNER as a person asks for it: the tool by its hint, the mode of a chamfer by its word on the bar, the
@@ -154,24 +154,16 @@ probe! {
     }
 }
 
-/// The fields of the bar of options, left to right.
-fn bar_fields(s: &mut Session) -> Vec<Widget> {
-    let mut fields: Vec<Widget> = s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && w.rect.top() < 120.0).collect();
-    fields.sort_by(|a, b| a.rect.left().total_cmp(&b.rect.left()));
-    fields
-}
-
 /// The line through (x, y) laid out three times by a linear pattern, `step` apart.
 fn three_of(s: &mut Session, at: (f64, f64), step: (f64, f64)) {
     qymcad_acceptance::build::pick(s, at.0, at.1, false);
     let hint = s.word("tb-lin-array-hint");
     s.press_hint(&hint);
-    let count = s.word("opt-count");
+    let count = s.word("cmd-copies");
     s.fill(&count, "3");
-    let fields = bar_fields(s);
-    for (field, v) in fields[1..3].iter().zip([step.0, step.1]) {
-        s.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text(&v.to_string());
-    }
+    // the steps are rows of the box of the pattern, by their captions
+    let (x, y) = (s.word("opt-step-x"), s.word("opt-step-y"));
+    s.fill(&x, &step.0.to_string()).fill(&y, &step.1.to_string());
     s.key(Key::Enter).key(Key::Enter);
     s.key(Key::Escape).key(Key::Escape);
 }

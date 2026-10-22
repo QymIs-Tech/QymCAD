@@ -22,7 +22,7 @@ pub static MIRROR: Tool = Tool {
     words: &[],
     fields: &[],
     // the original is kept by default; the switch turned off leaves the reflection alone, standing where it was
-    modes: &[&[Mode { word: "cmd-with-original", clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [40.0, 0.0, 0.0], max: [80.0, 30.0, 10.0] }) }]],
+    modes: &[&[Mode { word: "cmd-with-original", arg: None, clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [40.0, 0.0, 0.0], max: [80.0, 30.0, 10.0] }) }]],
     result: doubled(),
     node: "Mirror",
     undo: "f-mirror",
@@ -121,9 +121,7 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     wrong_picks: &[],
     words: &[],
     fields: &[Field { caption: "cmd-copies", by_placeholder: false, when: When::Before, class: Class::Count, typical: 6.0, lo: 2.0, hi: 52.0, zero: false, negative: false, outcome: ring_of }],
-    // the whole circle switched off puts an angle field at the geometry, and 180 degrees over six copies still leaves
-    // them 30 degrees apart - the same six pieces, standing over half the turn
-    modes: &[&[Mode { word: "cmd-full-circle", clicks: None, outcome: Some(ring_of(6.0)) }]],
+    modes: &[],
     result: ring_of(6.0),
     node: "CircularArray",
     undo: "f-operation",
@@ -135,5 +133,8 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     refusal: None,
     budget: (30, 2000),
     help: "part/18-circular-array",
-    not_applicable: &[(17, "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed")],
+    not_applicable: &[
+        (2, "the box of the pattern holds its count, its axis and the angle the copies spread over - fields, not modes that put each other down"),
+        (17, "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed"),
+    ],
 };

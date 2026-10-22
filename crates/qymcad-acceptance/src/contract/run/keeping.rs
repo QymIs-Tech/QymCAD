@@ -102,7 +102,7 @@ pub(crate) fn upstream(tool: &Tool) {
     finish_all(&mut s, tool);
     let (node, then) = match change {
         Upstream::Reopen { node, then, .. } => (*node, then),
-        Upstream::SketchDimension { then, .. } => (Node { kind: "Sketch", row: None }, then),
+        Upstream::SketchSize { then, .. } => (Node { kind: "Sketch", row: None }, then),
     };
     let row = row_of(&mut s, tool, &node);
     s.double_click(row);
@@ -112,11 +112,11 @@ pub(crate) fn upstream(tool: &Tool) {
             s.fill(&caption, &fmt(*value));
             enter_key(&mut s);
         }
-        Upstream::SketchDimension { shown, value, .. } => {
-            let canvas = s.canvas();
-            let label = s.words_at().into_iter().find(|(w, r)| w == shown && canvas.contains(r.center())).map(|(_, r)| r.center());
-            let label = label.unwrap_or_else(|| panic!("{}: the dimension {shown:?} is not on the sketch; on screen: {:?}", tool.id, s.words()));
-            s.double_click(label).chord(Modifiers::COMMAND, Key::A).type_text(&fmt(*value)).key(Key::Enter);
+        Upstream::SketchSize { at, caption, value, .. } => {
+            let side = s.on_sketch(at.0, at.1);
+            s.double_click(side);
+            let caption = s.word(caption);
+            s.fill(&caption, &fmt(*value)).key(Key::Enter);
             let finish = s.word("wb-finish");
             s.press_word_near(&finish, TOP);
         }

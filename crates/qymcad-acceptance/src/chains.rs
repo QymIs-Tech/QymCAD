@@ -474,7 +474,7 @@ const APART_SECONDS: u64 = 240;
 /// other failure - and so can be shrunk like any other.
 fn hold_apart(seed: u64, len: usize, scene: Scene, keep: &[usize]) -> Result<(), String> {
     let given = format!("{seed} {len} {scene:?} {}", keep.iter().map(usize::to_string).collect::<Vec<_>>().join(","));
-    crate::isolation::apart(CHAIN_PROBE, std::time::Duration::from_secs(APART_SECONDS), 2048, &[(CHAIN_VAR, given)])
+    crate::isolation::apart(CHAIN_PROBE, std::time::Duration::from_secs(APART_SECONDS), 2048, &[crate::isolation::Setting { name: CHAIN_VAR, value: given }])
 }
 
 /// PLAY THE CHAIN GIVEN BY [`CHAIN_VAR`], if one is: the probe [`CHAIN_PROBE`] calls this, and with nothing given it

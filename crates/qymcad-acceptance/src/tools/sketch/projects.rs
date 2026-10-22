@@ -65,8 +65,8 @@ pub static PROJECT_BODY: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-edge", clicks: None, outcome: Some(PROJECTED_EDGE) },
-        Mode { word: "opt-face-outline", clicks: Some(&[(20.0, 15.0)]), outcome: Some(PROJECTED_FACE) },
+        Mode { word: "opt-edge", arg: None, clicks: None, outcome: Some(PROJECTED_EDGE) },
+        Mode { word: "opt-face-outline", arg: None, clicks: Some(&[(20.0, 15.0)]), outcome: Some(PROJECTED_FACE) },
     ]],
     result: PROJECTED_EDGE,
     node: "Sketch",

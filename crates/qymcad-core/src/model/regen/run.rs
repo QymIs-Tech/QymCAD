@@ -759,6 +759,9 @@ impl Project {
         // never even asked, and Cancel cancelled nothing.
         report.cancelled |= watch.stopped();
         self.mark_found_by_place();
+        // THE PARAMETERS READING A VALUE OF A NODE take what the rebuild made of it: a count typed on a pattern reopened
+        // stood in the formula reading its name at the count before
+        self.eval_parameters();
         report
     }
 }

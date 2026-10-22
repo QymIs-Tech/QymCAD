@@ -40,6 +40,7 @@ pub fn point(tool: &Tool, n: u8) {
         24 => enter_waits(tool),
         25 => bar_stays(tool),
         26 => formula_kept(tool),
+        27 => every_field(tool),
         _ => panic!("the contract has no point {n}; it has {:?}", POINTS),
     }
 }
@@ -63,3 +64,5 @@ mod bounds;
 pub(crate) use bounds::*;
 mod framing;
 pub(crate) use framing::*;
+mod every_field;
+pub(crate) use every_field::*;

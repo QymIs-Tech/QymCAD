@@ -55,12 +55,12 @@ fn the_height_of_a_text_is_judged_in_the_box() {
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = super::super::hand::Hand::new(&mut app);
     hand.sk_tool(qymcad_ui_state::SketchShape::Text);
-    let label = crate::i18n::tr("opt-height-short");
+    let label = crate::i18n::tr("sk-height");
     let was = hand.app.tool_prefs.text_h;
     for case in [Case { typed: "abc" }, Case { typed: "-5" }, Case { typed: "w/0" }, Case { typed: "0" }] {
         assert!(hand.type_after_word(&label, case.typed), "the box has no field of {label:?}: {:?}", hand.words_drawn());
         hand.frame(Vec::new());
-        let why = refusal("opt-height-short", qymcad_ui_state::Number::Real, 0.1..=1000.0, case.typed, &hand.app.project).unwrap_or_else(|| panic!("{:?} is not refused by the field", case.typed));
+        let why = refusal("sk-height", qymcad_ui_state::Number::Real, 0.1..=1000.0, case.typed, &hand.app.project).unwrap_or_else(|| panic!("{:?} is not refused by the field", case.typed));
         assert!(hand.words_drawn().iter().any(|(t, _)| t.contains(&why)), "{:?}: the box does not say {why:?} under the field: {:?}", case.typed, hand.words_drawn());
         assert!((hand.app.tool_prefs.text_h - was).abs() < 1e-12, "{:?} was taken as the height of the text", case.typed);
     }

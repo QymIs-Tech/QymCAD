@@ -36,12 +36,12 @@ probe! {
         let title = s.word("pk-font");
         assert!(!s.windows().contains(&title), "the list stayed open after a font was clicked; on screen: {:?}", s.words());
         let named = s.word("opt-font");
-        let bar = s.in_hand();
-        let chosen = bar.iter().find(|w| **w != named && !w.is_empty()).cloned().unwrap_or_default();
+        // the button of the row "Font" of the box of the tool names the font taken
+        let shown = s.words();
         s.click_on_sketch(0.0, 0.0);
         let fonts = s.document().sketches.first().map(|k| k.text_fonts.clone()).unwrap_or_default();
         assert!(!fonts.is_empty() && fonts.iter().all(|f| *f != named), "the text is written in {fonts:?}: no font was taken from the list");
-        assert!(bar.iter().any(|w| fonts.contains(w)), "the bar says {bar:?} (it named {chosen:?}) and the text is written in {fonts:?}");
+        assert!(shown.iter().any(|w| fonts.contains(w)), "the box names no font the text is written in ({fonts:?}); on screen: {shown:?}");
     }
 }
 

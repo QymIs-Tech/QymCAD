@@ -33,7 +33,8 @@ probe! {
         let mut s = Session::start();
         build::into_the_first_part(&mut s);
         build::rectangle_on_xy(&mut s);
-        s.key(Key::Escape);
+        // the first Esc ends the box of the sizes of the rectangle, the second puts the tool that drew it down
+        s.key(Key::Escape).key(Key::Escape);
         s.drag_on_sketch((40.0, 30.0), (50.0, 45.0));
         assert_eq!(s.sketch_under(50.0, 45.0), Some(SketchPick::Point { at: (50.0, 45.0) }), "the corner dragged from (40, 30) is not at (50, 45)");
         assert_eq!(s.sketch_under(40.0, 30.0), None, "the corner is still where the drag began");

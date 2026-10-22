@@ -337,14 +337,19 @@ impl Session {
     }
 
     /// A BAR OF OPTIONS WITH NOTHING IN HAND: its words, while no tool, no pick, no sketch open, no section, no pattern
-    /// of components and no joint being edited stands behind it. `None` when there is no such bar.
+    /// of components, no joint being edited and no number typed at a gizmo stands behind it. `None` when there is no
+    /// such bar.
     pub fn bar_with_nothing_in_hand(&mut self) -> Option<Vec<String>> {
         let bar = self.in_hand();
         if bar.is_empty() || !self.waiting_for_a_click().is_empty() {
             return None;
         }
         let app = &self.app;
-        let behind = qymcad_ui_state::edit_si(&app.project, &app.sketch_ses).is_some() || app.side.section.plane.is_some() || app.side.carr.mode.is_some() || app.side.joint.edit.is_some();
+        let behind = qymcad_ui_state::edit_si(&app.project, &app.sketch_ses).is_some()
+            || app.side.section.plane.is_some()
+            || app.side.carr.mode.is_some()
+            || app.side.joint.edit.is_some()
+            || app.dragged.body_giz.num.is_some();
         (!behind).then_some(bar)
     }
 
