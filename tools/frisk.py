@@ -41,15 +41,28 @@ BINARY = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".icns", ".ttf", ".otf", ".wo
           ".xz", ".msi", ".exe", ".dll", ".so", ".a", ".bin", ".qcad", ".qpart", ".glb", ".3mf", ".stl"}
 
 
+def main_checkout(root):
+    """The folder of the main checkout: `root` itself, or for a worktree the checkout its git folder belongs to. A
+    worktree stands elsewhere, and the file beside `root` was not found from it - the personal list went unread and the
+    search said nothing was found."""
+    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root, capture_output=True, text=True)
+    if common.returncode != 0:
+        return root
+    return os.path.dirname(common.stdout.strip().rstrip("/"))
+
+
+PERSONAL_WORD = "a word named in the personal list"
+
+
 def extra_patterns(root):
-    path = os.environ.get("QYMCAD_FRISK_EXTRA") or os.path.join(root, "..", "qymcad-internal", "frisk-extra.txt")
+    path = os.environ.get("QYMCAD_FRISK_EXTRA") or os.path.join(main_checkout(root), "..", "qymcad-internal", "frisk-extra.txt")
     if not os.path.exists(path):
         return []
     out = []
     for line in open(path, encoding="utf-8"):
         line = line.strip()
         if line and not line.startswith("#"):
-            out.append((re.compile(line, re.I), "a word named in the personal list", None))
+            out.append((re.compile(line, re.I), PERSONAL_WORD, None))
     return out
 
 
@@ -71,6 +84,11 @@ def tracked_files(root):
 # Files that never belong in the tree, whatever they hold.
 NEVER_TRACKED = {"CLAUDE.local.md", "frisk-extra.txt"}
 
+# FILES THAT NAME THE AUTHOR ON PURPOSE: the pages to support the author carry the author's handle in their addresses.
+# The words of the personal list pass there; the general shapes - a home directory, a personal mail address - are
+# searched as everywhere. Only these files: the same handle anywhere else is still caught.
+NAMES_THE_AUTHOR = {"assets/support/support.ron"}
+
 
 def search_files(root, patterns):
     found = []
@@ -86,7 +104,8 @@ def search_files(root, patterns):
             continue
         if b"\0" in data:
             continue
-        found += search(data.decode("utf-8", "replace"), rel, patterns)
+        here = [p for p in patterns if p[1] != PERSONAL_WORD] if rel in NAMES_THE_AUTHOR else patterns
+        found += search(data.decode("utf-8", "replace"), rel, here)
     return found
 
 
@@ -145,6 +164,20 @@ def self_test():
         os.environ["QYMCAD_FRISK_EXTRA"] = extra
         if not search("author: somelogin", "case", extra_patterns(d)):
             bad.append("a word of the personal list was not caught")
+        # the support list passes the personal words and nothing else; any other file is searched for them
+        subprocess.run(["git", "init", "-q", d], check=True)
+        os.makedirs(os.path.join(d, "assets", "support"))
+        open(os.path.join(d, "assets", "support", "support.ron"), "w").write("url: \"https://pages.invalid/somelogin\"\n")
+        open(os.path.join(d, "other.txt"), "w").write("somelogin\n")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True)
+        held = search_files(d, GENERAL + extra_patterns(d))
+        if any(h.startswith("assets/support/support.ron") for h in held):
+            bad.append("the handle in the support list was caught")
+        if not any(h.startswith("other.txt") for h in held):
+            bad.append("the handle outside the support list went through")
+        open(os.path.join(d, "assets", "support", "support.ron"), "w").write("/home/alice/x\n")
+        if not any(h.startswith("assets/support/support.ron") for h in search_files(d, GENERAL + extra_patterns(d))):
+            bad.append("a home directory in the support list went through")
     if bad:
         print("the search is blind:\n  " + "\n  ".join(bad))
         return 1
