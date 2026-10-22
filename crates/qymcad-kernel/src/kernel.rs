@@ -628,9 +628,13 @@ impl qymcad_core::feature::Kernel for OcctKernel {
             // A cut that only touches the body is nothing either: a square on the top cut 5 up, away from the block,
             // took 0.1 mm^3 of a tool of 500 along the face it stood on and cut the top into 11 faces. Less than a
             // thousandth of the tool is a touch, not a cut.
-            let removed = src_shape.volume() - out.volume();
-            if op == 0 && src_shape.volume() > 1e-9 && removed <= (tool.volume().abs() * 1e-3).max(1e-6) {
-                return Err(qymcad_core::errors::CoreError::CutRemovedNothing);
+            // told from the volumes to a percent where they leave no doubt, from the exact ones near a touch
+            let volumes = crate::ops::profile::CutVolumes { before: src_shape.rough_volume(), after: out.rough_volume(), tool: tool.rough_volume() };
+            if op == 0 && crate::ops::profile::cut_told(volumes) == crate::ops::profile::CutTold::NearATouch {
+                let removed = src_shape.volume() - out.volume();
+                if src_shape.volume() > 1e-9 && removed <= (tool.volume().abs() * 1e-3).max(1e-6) {
+                    return Err(qymcad_core::errors::CoreError::CutRemovedNothing);
+                }
             }
             Ok(out)
         })

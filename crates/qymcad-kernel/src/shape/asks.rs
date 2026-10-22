@@ -23,8 +23,9 @@ impl Shape {
     pub(crate) fn state(&self) -> u64 {
         unsafe { qym_shape_state(self.ptr) }
     }
-    /// THE VOLUME TO A PERCENT, for the checks that a result holds any and fits the box it came from - the exact one where
-    /// it was counted already. What a person reads (properties, mass) is `volume`.
+    /// THE VOLUME TO A PERCENT, for the checks that a result holds any and fits the box it came from, and for what a cut
+    /// took: to a percent always, so that two bodies compared are read to one precision. What a person reads
+    /// (properties, mass) is `volume`.
     pub(crate) fn rough_volume(&self) -> f64 {
         unsafe { qym_shape_volume_rough(self.ptr) }
     }

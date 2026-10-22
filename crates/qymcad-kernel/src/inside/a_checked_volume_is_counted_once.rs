@@ -1,4 +1,5 @@
-//! THE VOLUME A CHECK ASKS FOR IS TO A PERCENT, THE ONE A PERSON READS IS EXACT, and neither is counted twice. Integrated
+//! THE VOLUME A CHECK ASKS FOR IS TO A PERCENT, THE ONE A PERSON READS IS EXACT, and neither is counted twice; the one
+//! to a percent stays to a percent once the exact one is known, so that two bodies compared are read to one precision. Integrated
 //! over spline faces the exact volume took 1.3-1.6 s a time on a propeller of 80 faces, and every node built on it counted
 //! it three times - its source again, its result twice - for checks asking only whether a result holds any volume and fits
 //! the box it came from. Reported behaviour: a chamfer of 34 edges took 7 s to rebuild, 4.2 s of it volumes.
@@ -20,5 +21,5 @@ fn the_volume_read_is_exact_and_the_volume_checked_is_to_a_percent() {
     assert!((rough - want).abs() <= 0.01 * want, "the volume checked is {rough}, more than a percent off {want}");
     let exact = rounded.volume();
     assert!((exact - want).abs() < 1e-6 * want, "the volume read is {exact}, not the exact {want}");
-    assert_eq!(rounded.rough_volume(), exact, "the volume checked once the exact one is known is not that one");
+    assert_eq!(rounded.rough_volume(), rough, "the volume checked is another once the exact one is known: two bodies compared are read to one precision");
 }

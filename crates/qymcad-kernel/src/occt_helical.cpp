@@ -741,12 +741,12 @@ extern "C" double qym_shape_volume(const QymShape* s) {
     }
 }
 
-// THE VOLUME TO A PERCENT, for a check that asks only whether a body holds any and whether it fits the box it came from:
-// one pass of the integration with no refinement. The exact one is taken where it is already known.
+// THE VOLUME TO A PERCENT, for a check that asks only whether a body holds any and whether it fits the box it came from,
+// or what a cut took of it: one pass of the integration with no refinement, the same for every body - a cut is told
+// from the volumes of the body before and after it, and two read to the same precision are compared on one footing.
 extern "C" double qym_shape_volume_rough(const QymShape* s) {
     QYM_AS_HANDED(s, "it only reads the body");
     if (!s) return 0.0;
-    if (s->volume_memo >= 0.0) return s->volume_memo;
     try {
         QYM_SIGNALS;
         double v = 0.0;
