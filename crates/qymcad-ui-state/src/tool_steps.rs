@@ -231,49 +231,6 @@ pub fn comp_giz_accum(comp_giz: &CompGizmo, set: &Settings, snap: bool) -> Optio
     }
 }
 
-/// The screen anchor of the active command (where to stick the input field): for extrude and revolve
-/// it is at the tip of the arrow; for a fillet or a chamfer at the first selected edge; for a shell
-/// or a hole at the centre of the face.
-/// The screen anchor of a command popup TO THE SIDE of body `b`: the top-right corner of its
-/// projected bounding box, plus a margin. The popup used to be anchored at the CENTRE of the box, so
-/// it covered the part and what was needed could not be picked behind it. Now it grows to the right
-/// of the body rather than on top of it.
-pub fn body_side_anchor(dc: &DrawCtx, b: Id, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) -> Option<Pos2> {
-    let mi = dc.project.mesh_index(b)?;
-    let bb = dc.project.bodies[mi].mesh.bounds()?;
-    // where the body is DRAWN: through its placement in the context (an imported part stands where it was put)
-    let wt = dc.project.body_display_transform(b, current_ctx_id(dc.active_path, dc.project));
-    let mut body = Rect::NOTHING;
-    for &x in &[bb.min.x, bb.max.x] {
-        for &y in &[bb.min.y, bb.max.y] {
-            for &z in &[bb.min.z, bb.max.z] {
-                body.extend_with(Screen { cam: dc.cam, set: dc.set, rect, basis }.at(qymcad_core::feature::apply12(&wt, [x, y, z])).0);
-            }
-        }
-    }
-    if !body.is_positive() {
-        return None;
-    }
-    // BESIDE THE BODY, WHERE THE POPUP FITS CLEAR OF IT: right, left, above, below - the first place where a popup of
-    // about 240 x 140 (a caption, a field or four and a button) stands wholly inside the view and off the body. Right
-    // of the body used to be the only place, pulled back over the body when it filled the view: the popup covered the
-    // face the next hole had to be clicked on. Where no place is clear, right of it as before.
-    const W: f32 = 240.0;
-    const H: f32 = 140.0;
-    let view = rect.shrink(4.0);
-    let places = [
-        Pos2::new(body.max.x + 14.0, body.min.y.max(view.min.y + 32.0)),
-        Pos2::new(body.min.x - 14.0 - W, body.min.y.max(view.min.y + 32.0)),
-        Pos2::new(body.min.x, body.min.y - 14.0 - H),
-        Pos2::new(body.min.x, body.max.y + 14.0),
-    ];
-    let clear = |p: &Pos2| {
-        let r = Rect::from_min_size(*p + egui::vec2(10.0, -10.0), egui::vec2(W, H));
-        view.contains_rect(r) && !r.intersects(body)
-    };
-    Some(places.into_iter().find(clear).unwrap_or(places[0]))
-}
-
 /// Restore a thread operation's axis and radius from a circular edge while the feature is being EDITED
 /// (a double click). The axis is oriented into the body, because the kernel gives a rim an arbitrary normal.
 pub fn restore_thread_axis(project: &mut Project, thread: &mut ThreadParams, src: Id, edge: u32) {
@@ -358,12 +315,6 @@ pub fn doc_touched_without_undo(edits: &mut Edits, project: &Project) {
     // the context stood in is part of the state a step puts again: a redo of "New part" is taken from this baseline,
     // and one left in the assembly put the part back with the window outside it
     edits.baseline.project.active_component = project.active_component;
-}
-
-/// The command did not apply: say so and record the fact, so the operation can be rolled back.
-pub fn cmd_fail(cmd_failed: &mut bool, status: &mut Notice, text: String) {
-    *status = Notice::error(text);
-    *cmd_failed = true;
 }
 
 /// Make sure the active context path is sound: it starts at the root and holds no deleted nodes.

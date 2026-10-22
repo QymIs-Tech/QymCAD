@@ -15,6 +15,8 @@ pub(crate) fn shell(set: &Settings) -> qymcad_shell::Shell {
     let mut s = qymcad_shell::Shell::default();
     s.put(Place::new("menubar", Slot::Menu));
     s.put(Place::new("toolbar", Slot::Top));
+    // THE BAR OF THE COMMAND STANDS ALWAYS, AT ONE HEIGHT: empty with nothing in hand, so taking a tool or putting it
+    // down moves neither the view nor the panels
     s.put(Place::new("command_bar", Slot::Top).framed().never_hidden());
     // THE STATUS LINE STAYS AT THE BOTTOM AND IN SIGHT, as the menu stays at the top: a person looks for it there, and
     // it is where the program says what it waits for
@@ -45,21 +47,39 @@ pub(crate) fn keep_panel_size(set: &mut Settings, key: &str, size: qymcad_shell:
 /// the section stays on under any command.
 const COMMAND_BARS: [&str; 7] = ["feat_cmd_bar", "bool_tool_bar", "comp_array_bar", "joint_edit_bar", "joint_tool_bar", "sk_tool_opts", "section_bar"];
 
+/// THE BARS THAT STAND FOR A TOOL IN HAND - every bar of the command place but the sketch's own, which stands while a
+/// sketch is open, and the section's, which stands while a section is on.
+const TOOL_BARS: [&str; 5] = ["feat_cmd_bar", "bool_tool_bar", "comp_array_bar", "joint_edit_bar", "joint_tool_bar"];
+
+/// DOES THE BAR OF THE SECTION STAND FOR A TOOL IN HAND - a section being placed, or one of the tools that share its
+/// place: a mirrored copy of a part, a pencil or a command waiting for its plane or sketch, the measure.
+fn section_bar_holds_a_tool(app: &App) -> bool {
+    app.side.section.pick || app.params.mirror.in_hand() || app.tools.picking.is_sketch_plane() || app.tools.picking.sketch_for().is_some() || app.side.m3.on
+}
+
+/// IS A TOOL OF THE PART OR THE ASSEMBLY IN HAND: what a click on the model is given to, rather than to the selection.
+pub(crate) fn tool_in_hand(app: &App) -> qymcad_ui_state::InHand {
+    use qymcad_shell::Fills;
+    if TOOL_BARS.iter().any(|k| app.live(k)) || section_bar_holds_a_tool(app) {
+        qymcad_ui_state::InHand::Tool
+    } else {
+        qymcad_ui_state::InHand::Nothing
+    }
+}
+
+/// DOES THE FRAME OF A TOOL TAKE Esc: a tool in hand, or the numeric entry at a gizmo - its box answers the key itself.
+pub(crate) fn frame_takes_esc(app: &App) -> bool {
+    tool_in_hand(app) == qymcad_ui_state::InHand::Tool || app.dragged.body_giz.num.is_some()
+}
+
 impl qymcad_shell::Fills for App {
     /// IS THE PLACE WANTED THIS FRAME. Each of these used to be a `return` at the top of the panel - which
     /// worked only while the panel opened its own container. Now the container is opened first, and an empty
     /// one still eats a strip of the window, so the question is asked before opening rather than inside.
     fn live(&self, key: &'static str) -> bool {
         match key {
-            "command_bar" => COMMAND_BARS.iter().any(|k| self.live(k)),
-            "section_bar" => {
-                self.side.section.plane.is_some()
-                    || self.side.section.pick
-                    || self.params.mirror.in_hand()
-                    || self.tools.picking.is_sketch_plane()
-                    || self.tools.picking.sketch_for().is_some()
-                    || self.side.m3.on
-            }
+            "command_bar" => true,
+            "section_bar" => self.side.section.plane.is_some() || section_bar_holds_a_tool(self),
             "comp_array_bar" => self.side.carr.mode != 0,
             "feat_cmd_bar" => self.tools.armed.commanding(),
             "sk_tool_opts" => edit_si(&self.project, &self.sketch_ses).is_some(),
@@ -81,6 +101,11 @@ impl qymcad_shell::Fills for App {
         let (mut bar_asks, mut win_asks) = (Vec::new(), Vec::new());
         match key {
             "command_bar" => {
+                // ONE ROW TALL, empty or not, in the part and the assembly, so taking a tool or putting it down moves
+                // neither the view nor the panels; a sketch's own bar grows by its rows
+                if edit_si(&self.project, &self.sketch_ses).is_none() {
+                    ui.set_min_height(qymcad_ui_state::command_bar_row(ui));
+                }
                 if let Some(k) = COMMAND_BARS.into_iter().find(|k| self.live(k)) {
                     // ONE ID FOR THE PLACE, whatever bar stands in it: one bar of a command giving way to another lays its
                     // widgets where the last one's stood, and under the key of each bar egui marked the whole strip with a
@@ -101,6 +126,10 @@ impl qymcad_shell::Fills for App {
                     active_path: &self.active_path,
                     status: &mut self.status,
                     m3: &mut self.side.m3,
+                    scheme: &self.scheme,
+                    cam: &self.viewing.cam,
+                    set: &self.set,
+                    canvas: self.viewing.view_rect,
                 },
                 ui,
             ),

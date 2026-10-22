@@ -8,6 +8,7 @@ pub fn gizmo_at(dc: &DrawCtx, painter: &egui::Painter, rect: Rect, o: [f64; 3], 
     let basis = dc.cam.basis();
     let scr = qymcad_ui_state::Screen { cam: dc.cam, set: dc.set, rect, basis: &basis };
     let s0 = scr.at(o).0;
+    let mut took = Rect::from_center_size(s0, egui::Vec2::ZERO);
     let cols = [dc.scheme.pal.axis(0), dc.scheme.pal.axis(1), dc.scheme.pal.axis(2)];
     // the rotation rings (under the arrows). THE INDEX IS AN AXIS NUMBER: it picks the ring's plane and
     // its colour, so it is the value the loop is about.
@@ -22,6 +23,7 @@ pub fn gizmo_at(dc: &DrawCtx, painter: &egui::Painter, rect: Rect, o: [f64; 3], 
                 scr.at(p).0
             })
             .collect();
+        pts.iter().for_each(|p| took.extend_with(*p));
         painter.add(egui::Shape::line(pts, Stroke::new(if hot { 2.8 } else { 1.3 }, cols[ax])));
     }
     // the axis arrows (over the rings)
@@ -32,7 +34,9 @@ pub fn gizmo_at(dc: &DrawCtx, painter: &egui::Painter, rect: Rect, o: [f64; 3], 
         let hot = hot_axis == Some(ax as u8);
         painter.line_segment([s0, s1], Stroke::new(if hot { 4.0 } else { 2.5 }, cols[ax]));
         painter.circle_filled(s1, if hot { 7.5 } else { 5.0 }, cols[ax]);
+        took.extend_with(s1);
     }
+    qymcad_ui_state::keep_in_sight(painter.ctx(), took.expand(8.0)); // the box of a tool stands clear of the gizmo
 }
 
 /// Draw the body gizmo: 3 axes + rings at the selected body + a readout of the value during a drag.
@@ -60,6 +64,7 @@ pub fn draw_joint_gizmo(pn: &Painting, painter: &egui::Painter, rect: Rect, jid:
     let l = 60.0 / pn.cam.scale as f64;
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };
     let s0 = scr.at(o).0;
+    let mut took = Rect::from_center_size(s0, egui::vec2(6.0, 6.0));
     let hot = pn.joint.giz_handle;
     let col_ring = pn.scheme.pal.active(); // yellow means "a joint freedom" (matching the selected joint)
     let col_arr = pn.scheme.pal.preview();
@@ -77,6 +82,7 @@ pub fn draw_joint_gizmo(pn: &Painting, painter: &egui::Painter, rect: Rect, jid:
                 scr.at(p).0
             })
             .collect();
+        pts.iter().for_each(|p| took.extend_with(*p));
         painter.add(egui::Shape::line(pts, Stroke::new(if is_hot { 3.2 } else { 1.8 }, col_ring)));
     }
     // the arrows
@@ -88,11 +94,13 @@ pub fn draw_joint_gizmo(pn: &Painting, painter: &egui::Painter, rect: Rect, jid:
         let s1 = scr.at([o[0] + dir[0] * l, o[1] + dir[1] * l, o[2] + dir[2] * l]).0;
         painter.line_segment([s0, s1], Stroke::new(if is_hot { 4.0 } else { 2.5 }, col_arr));
         painter.circle_filled(s1, if is_hot { 7.5 } else { 5.0 }, col_arr);
+        took.extend_with(s1);
     }
-    // THE LIMITS ARE VISIBLE. The range of a degree of freedom is held by the solver and stops the drag,
-    // but it used to exist only in the min/max fields: a person dragged the handle and hit an invisible
-    // wall with no idea where it came from. Now a limited degree has its range drawn - dashed from the
-    // minimum to the maximum - with cross ticks marking the stops at the ends.
+    qymcad_ui_state::keep_in_sight(painter.ctx(), took.expand(8.0)); // the box of a tool stands clear of the gizmo
+                                                                     // THE LIMITS ARE VISIBLE. The range of a degree of freedom is held by the solver and stops the drag,
+                                                                     // but it used to exist only in the min/max fields: a person dragged the handle and hit an invisible
+                                                                     // wall with no idea where it came from. Now a limited degree has its range drawn - dashed from the
+                                                                     // minimum to the maximum - with cross ticks marking the stops at the ends.
     joint_limits(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, painter, rect, jid, o, l, &hs);
     // THE PICKED AXIS IS VISIBLE. A person pointed at an edge and must see WHAT exactly they pointed at.
     // Otherwise "specify the axis" turns into an act of faith: something was picked, the part moved
@@ -158,6 +166,8 @@ pub fn draw_section_gizmo(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     painter.add(egui::Shape::convex_polygon(vec![b, b - dirv * 12.0 + nn * 5.0, b - dirv * 12.0 - nn * 5.0], edge, Stroke::NONE));
     let hot = pn.section.drag;
     painter.circle_filled(b, if hot { 7.0 } else { 5.5 }, if hot { pn.scheme.pal.active() } else { edge });
+    // the box of the section stands clear of its arrow; the plane runs across the scene and cannot be kept clear of
+    qymcad_ui_state::keep_in_sight(painter.ctx(), Rect::from_two_pos(a, b).expand(10.0));
 }
 
 /// A HANDLE AT A FACE: an arrow along the normal that the mouse drags. It is visible for as long as
@@ -167,7 +177,7 @@ pub fn draw_section_gizmo(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// One drawing for every handle of a command (`handles`): the arrow of a value along a direction of a face pushed,
 /// thickened or shelled, a split or a datum plane's offset, the three arrows of a datum point's or axis's position, and
 /// the rings of a datum plane's tilts and turn and of a datum axis's direction. Where they stand is remembered for the
-/// fields of the command to stand clear of them (`remember_handles`).
+/// fields of the command to stand clear of them (`keep_in_sight`).
 pub fn draw_face_arrow(pn: &Painting, painter: &egui::Painter, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) {
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis };
     let hs = qymcad_ui_state::handles(pn);
@@ -185,5 +195,7 @@ pub fn draw_face_arrow(pn: &Painting, painter: &egui::Painter, rect: Rect, basis
         painter.add(egui::Shape::line_segment([a, b], Stroke::new(if hot { 3.5 } else { 2.5 }, col)));
         painter.circle_filled(b, if hot { 6.0 } else { 5.0 }, col);
     }
-    qymcad_ui_state::remember_handles(painter.ctx(), qymcad_ui_state::handles_screen_rect(&hs, &scr));
+    if let Some(took) = qymcad_ui_state::handles_screen_rect(&hs, &scr) {
+        qymcad_ui_state::keep_in_sight(painter.ctx(), took);
+    }
 }

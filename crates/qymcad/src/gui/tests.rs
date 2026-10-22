@@ -38,6 +38,18 @@ mod sketch_plane_pick_frames_tests;
 mod faces_part_in_light;
 
 #[cfg(test)]
+mod the_box_of_a_joint_is_laid_in_sections;
+
+#[cfg(test)]
+mod a_box_follows_what_it_sizes;
+
+#[cfg(test)]
+mod a_tool_with_nothing_to_apply_closes_plainly;
+
+#[cfg(test)]
+mod the_doors_of_a_tool;
+
+#[cfg(test)]
 mod the_floor_fades_round_the_view;
 
 #[cfg(test)]

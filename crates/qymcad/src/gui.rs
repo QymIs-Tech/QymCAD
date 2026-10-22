@@ -91,13 +91,6 @@ pub(crate) struct App {
     /// ALL THE PROGRAM'S SETTINGS in one record (see `Settings`). The single owner of the values: the settings
     /// window edits it, the store saves it whole, and the program reads from it.
     set: Settings,
-    /// THE COMMAND DID NOT APPLY - a flag, not a guess from the status text.
-    ///
-    /// This used to be decided by searching the status line for a substring. While the interface was in one
-    /// language it worked; with a translation the status would stop matching, and a FAILED operation would land
-    /// silently in the undo history as a successful one. Checking text is always a lie about what happened: the
-    /// text is written for a person, while the decision is taken by the program.
-    cmd_failed: bool,
     /// THE SNAP HINT, derived from the cursor and recomputed every frame. It used to live inside the snap settings
     /// and got in the way of saving them whole; it is not a setting.
     snap_hint: Option<(Point2, u8)>,
@@ -293,6 +286,7 @@ impl App {
             regen: &mut self.regen,
             scheme: &mut self.scheme,
             section: &mut self.side.section,
+            held: &self.chosen.tree_sel.multi,
             sel: &mut self.chosen.sel,
             sel_sk: &mut self.tools.sel_sk,
             set: &mut self.set,
@@ -332,13 +326,13 @@ impl App {
                 BarAsk::FeatCmd(c) => self.start_feat_cmd(c),
                 BarAsk::PrimCmd(c) => crate::gui::commands::start_prim_cmd(&mut self.part_ctx(), c),
                 BarAsk::ToggleSection => self.toggle_section(),
-                BarAsk::MirrorPart(comp) => mirror_part_door(self, comp),
+                BarAsk::MirrorPart(comp) => crate::gui::assembly_tools::mirror_part_door(self, comp),
                 BarAsk::ToggleMeasure3d => self.toggle_measure_3d(),
                 BarAsk::EnterComponent(cid) => self.enter_component(cid),
                 BarAsk::CompArray(m) => self.start_comp_array(m),
                 BarAsk::CancelAllTools(then) => {
                     self.cancel_all_tools();
-                    then.take(&mut self.params.boolean, &mut self.status)
+                    then.take(&mut self.params.boolean, &mut self.tools.gsel.before, &mut self.status)
                 }
                 BarAsk::ToggleLibrary => toggle_parts_library(&mut self.parts, &mut self.win),
                 BarAsk::ToggleSketchPick => self.toggle_sketch_pick(),
@@ -429,6 +423,7 @@ impl App {
             regen: &mut self.regen,
             live: &mut self.live,
             params_seen: &mut self.params_seen,
+            held: &mut self.chosen.tree_sel.multi,
             sel: &mut self.chosen.sel,
             array: &mut self.side.array,
             boolean: &mut self.params.boolean,
@@ -470,6 +465,7 @@ impl App {
     pub(crate) fn painting(&self) -> Painting<'_> {
         Painting {
             armed: &self.tools.armed,
+            held: &self.chosen.tree_sel.multi,
             active_path: &self.active_path,
             arr: self.params.arr,
             body_giz: &self.dragged.body_giz,
@@ -616,7 +612,6 @@ impl App {
             boolean: &mut self.params.boolean,
             bar_exprs: &mut self.bar_exprs,
             rev: &mut self.params.rev,
-            cmd_failed: &mut self.cmd_failed,
             carr: &mut self.side.carr,
             view: &mut self.viewing.view,
             view_restore: &mut self.viewing.view_restore,
@@ -633,6 +628,8 @@ impl App {
             cache: &mut self.cache,
             sketch_ses: &mut self.sketch_ses,
             win: &mut self.win,
+            tree: &self.chosen.tree_sel,
+            canvas: self.viewing.view_rect,
         }
     }
     /// The one doorway into the rebuild: built in a single place so the borrows stay disjoint.
@@ -661,7 +658,6 @@ impl Default for App {
         project.new_document(); // the root assembly plus an active empty first Part right from the start
         let mut app = Self {
             set: Settings::default(),
-            cmd_failed: false,
             snap_hint: None,
             cache: Caches::default(),
             interference: Interference::default(),
@@ -1875,19 +1871,6 @@ pub(crate) fn shade_tri_for_test(pal: &crate::palette::Palette, ghost_alpha: u8,
     qymcad_pick::shade_tri(pal, ghost_alpha, hot, ghost, base, n, lights)
 }
 
-/// A PNG out of a `ColorImage` (RGBA8) — for the `thumb.png` inside a `.qpart`. Uses `image` with its png feature.
-pub(crate) fn color_image_to_png(img: &egui::ColorImage) -> Option<Vec<u8>> {
-    use image::ImageEncoder;
-    let (w, h) = (img.size[0] as u32, img.size[1] as u32);
-    let mut rgba: Vec<u8> = Vec::with_capacity(img.pixels.len() * 4);
-    for p in &img.pixels {
-        rgba.extend_from_slice(&p.to_array());
-    }
-    let mut png = Vec::new();
-    image::codecs::png::PngEncoder::new(&mut png).write_image(&rgba, w, h, image::ExtendedColorType::Rgba8).ok()?;
-    Some(png)
-}
-
 /// VISIBILITY HAS CHANGED — DROP THE CACHE OF "WHAT WE SHOW".
 ///
 /// Reported behaviour: a part is hidden, it is gone from 3D, and yet its edges and faces hang in the
@@ -1989,25 +1972,6 @@ pub(crate) fn axis_from_face(active_path: &[Id], edges: &EdgeCache, live: &LiveG
 /// different components that are visible in the context are transformed into the context's frame ONCE,
 /// and then intersected pairwise for a common volume. It is expensive, so it runs only while
 /// `show_interference` is on, the scene is not being dragged, and the cache is stale.
-/// TAKE THE "MIRROR A WHOLE PART" TOOL, in the order that works: release the others FIRST.
-///
-/// The button used to push the release and set the field straight after. The release is carried out
-/// AFTER the frame, so it cleared the field again and the button did nothing - the same shape as the
-/// ruler that switched the measuring tool on and off within one frame.
-///
-/// Beside the application rather than on it: nothing here needs to see the whole of it.
-fn mirror_part_door(app: &mut App, comp: Option<Id>) {
-    // the button pressed again with the tool in hand puts it down, as every tool button does
-    let held = app.params.mirror.in_hand();
-    app.cancel_all_tools();
-    if held {
-        return;
-    }
-    // with no part picked before the button the tool is in hand all the same and waits for a click on one
-    (app.params.mirror.part, app.params.mirror.waiting) = (comp, comp.is_none());
-    app.status = Notice::info(crate::i18n::tr(if comp.is_some() { "tb-mirror-pick-plane" } else { "tb-mirror-pick-part" }));
-}
-
 pub(crate) fn refresh_interference(bv: qymcad_ui_state::BodyView, drag: qymcad_ui_state::SceneDrag, interference: &mut Interference, live: &LiveGeom, set: &Settings, workbench: Workbench) {
     if !set.show_interference || !matches!(workbench, Workbench::Assembly) {
         if !interference.pairs.is_empty() {
@@ -2175,6 +2139,7 @@ mod rebuilding_everything_asks_for_geometry_again;
 mod f1_answers_for_every_assembly_tool;
 mod no_raw_keys_on_the_assembly_screen;
 mod a_dead_mate_can_be_revived;
+mod a_selection_comes_to_the_tool;
 mod a_mate_takes_the_face_you_click;
 mod one_list_of_mates;
 mod the_mate_hud;
@@ -2405,6 +2370,8 @@ pub(crate) use file_doors::*;
 mod look;
 pub(crate) use look::*;
 mod gizmo_math;
+mod png;
+pub(crate) use png::color_image_to_png;
 pub(crate) use gizmo_math::*;
 mod view_anim;
 pub(crate) use view_anim::*;

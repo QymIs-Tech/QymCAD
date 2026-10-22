@@ -223,6 +223,8 @@ pub fn sketch_pt(project: &qymcad_core::model::Project, si: usize, id: Id) -> Op
 /// Copy types travel by value so that matching and comparison keep working; the rest by reference.
 pub struct Painting<'a> {
     pub armed: &'a Armed,
+    /// The rows picked of the tree and the bodies held by Shift: lit with the selection.
+    pub held: &'a [Id],
     pub boolean: &'a BoolCommand,
     pub active_path: &'a Vec<Id>,
     pub arr: ArrayParams,
@@ -891,7 +893,7 @@ pub fn path_into(path: &[Id], project: &Project, cid: Id) -> Vec<Id> {
 
 pub fn visible_mesh_items<'a>(pn: &'a Painting) -> Vec<SceneMesh<'a>> {
     // the selection highlight: a body highlights itself; a component highlights its whole subtree (the part or subassembly entire)
-    let hl = highlight_mesh_set(pn.project, &pn.sel);
+    let hl = highlight_mesh_set(pn.project, &pn.sel, pn.held);
     // every mesh carries the WORLD transform of its owning component: a body is built in the part's
     // local frame, and `world_transform` (composed up the assembly tree) places it into the world.
     // While a modifier feature (shell, hole, fillet, chamfer and so on) is being edited, the state
@@ -976,8 +978,9 @@ pub fn compose12(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 /// The indices of the bodies highlighted as "selected" in 3D. Select a body and that body lights up;
 /// select a component (a part or a subassembly) in the tree or by a click in the assembly and its
 /// WHOLE subtree lights up, so that it is plain that this part or subassembly was selected entire.
-pub fn highlight_mesh_set(project: &Project, sel: &Sel) -> std::collections::HashSet<usize> {
-    let mut hl = std::collections::HashSet::new();
+pub fn highlight_mesh_set(project: &Project, sel: &Sel, held: &[Id]) -> std::collections::HashSet<usize> {
+    // the bodies held with the selection by Shift are lit with it
+    let mut hl: std::collections::HashSet<usize> = held.iter().filter_map(|id| project.mesh_index(*id)).collect();
     match *sel {
         Sel::Mesh(i) | Sel::Face(i, _) => {
             hl.insert(i);

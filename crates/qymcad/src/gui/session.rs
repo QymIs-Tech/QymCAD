@@ -14,6 +14,7 @@ use super::App;
 
 pub use crate::system::Chooser;
 pub use egui::{pos2, vec2, Key, Modifiers, PointerButton, Pos2, Rect, Vec2};
+pub use qymcad_ui_state::{Notice, Tone};
 
 /// THE MACHINE THE PROGRAM IS STARTED ON.
 pub struct Machine {
@@ -332,6 +333,13 @@ pub struct JointInfo {
     pub kind: String,
     /// Held apart from what it asks for.
     pub violated: bool,
+}
+
+/// A FIELD IN A ROW OF SEVERAL: the caption of the row and the tag before the field - "Origin" and "X".
+#[derive(Clone, Copy, Debug)]
+pub struct InRow<'a> {
+    pub row: &'a str,
+    pub tag: &'a str,
 }
 
 /// A RUN OF WORDS ON SCREEN and where it stands.

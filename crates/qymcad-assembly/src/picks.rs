@@ -143,6 +143,13 @@ pub fn start_conn_pick_armed(jc: &mut qymcad_ui_state::JointCtx, on: bool) {
 pub fn start_relation_pick_armed(jc: &mut qymcad_ui_state::JointCtx, on: bool) {
     jc.joint.relation_pick = on.then(qymcad_ui_state::RelationPick::default);
     *jc.status = Notice::info(qymcad_i18n::tr(if on { "j-relation-pick" } else { "j-relation-off" }));
+    // THE JOINTS HELD IN THE LIST BEFORE THE TOOL are its first picks, in the order they were picked
+    let held: Vec<Id> = jc.held.iter().copied().filter(|id| jc.project.joints.iter().any(|j| j.id == *id)).collect();
+    if on {
+        for jid in held {
+            relation_pick_click(jc, jid);
+        }
+    }
 }
 
 /// TAKE A PICK FOR THE SECONDARY AXIS: a click on an edge or a face sets the axis of the connector.
@@ -261,13 +268,12 @@ pub fn set_joint_anchor_mode_for_test(jc: &mut qymcad_ui_state::JointCtx, mode: 
 }
 
 /// Confirm the picks and create the relation.
-pub fn relation_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) {
-    let Some(pick) = jc.joint.relation_pick.clone() else { return };
+pub fn relation_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) -> Result<(), NotApplied> {
+    let pick = jc.joint.relation_pick.clone().ok_or_else(|| NotApplied::Refused(qymcad_i18n::tr("j-relation-pick")))?;
     let need = relation_picks_needed(pick.kind);
     let have = if need == 1 { pick.picks.len() / 2 } else { pick.picks.len() };
     if have < need || pick.picks.len() < 2 {
-        *jc.status = Notice::info(qymcad_i18n::tr2("j-relation-picked", "n", &have.to_string(), "need", &need.to_string()));
-        return;
+        return Err(NotApplied::Refused(qymcad_i18n::tr2("j-relation-picked", "n", &have.to_string(), "need", &need.to_string())));
     }
     let ((ja, sa), (jb, sb)) = (pick.picks[0], pick.picks[1]);
     qymcad_ui_state::begin_edit(jc.edits, jc.project, qymcad_i18n::tr("j-relation-made")); // THE BOUNDARY OF AN OPERATION
@@ -287,6 +293,7 @@ pub fn relation_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) {
     *jc.status = Notice::info(qymcad_i18n::tr("j-relation-made-ok"));
     qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
     qymcad_ui_state::commit_edit(&mut jc.rebuild());
+    Ok(())
 }
 
 /// A click on A JOINT while the relation tool is active: take its degree of the required sort.
@@ -338,13 +345,9 @@ pub fn delete_connector_asked(jc: &mut qymcad_ui_state::JointCtx, cid: Id) {
 }
 
 /// Confirm the width set: two walls and the piece between them.
-pub fn width_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) {
-    let Some(sel) = jc.joint.width_pick.clone() else { return };
-    if sel.len() < 3 {
-        // NO SILENT REFUSAL: some of the anchors have already been shown and a result is expected.
-        *jc.status = Notice::refusal(qymcad_i18n::tr("j-width-need-three"));
-        return;
-    }
+pub fn width_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) -> Result<(), NotApplied> {
+    // NO SILENT REFUSAL: some of the anchors have already been shown and a result is expected
+    let sel = jc.joint.width_pick.clone().filter(|s| s.len() >= 3).ok_or_else(|| NotApplied::Refused(qymcad_i18n::tr("j-width-need-three")))?;
     qymcad_ui_state::begin_edit(jc.edits, jc.project, qymcad_i18n::tr("j-width-made")); // THE BOUNDARY OF AN OPERATION
     let ids: Vec<Id> = sel.iter().map(|(owner, a)| jc.project.add_connector(*owner, a.clone())).collect();
     jc.project.add_width(&[ids[0], ids[1]], ids[2]);
@@ -352,6 +355,7 @@ pub fn width_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) {
     *jc.status = Notice::info(qymcad_i18n::tr("j-width-made-ok"));
     joint_console_settle(jc); // the tab goes halfway now, not on some later solve
     qymcad_ui_state::commit_edit(&mut jc.rebuild());
+    Ok(())
 }
 
 /// A click on a face while the tangency tool is active.
@@ -419,19 +423,16 @@ pub fn tangent_finish(jc: &mut qymcad_ui_state::JointCtx, keep: bool) {
 }
 
 /// Confirm the set and make a group of it. Fewer than two parts leaves nothing to fasten.
-pub fn group_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) {
-    let Some(sel) = jc.joint.group_pick.clone() else { return };
-    if sel.len() < 2 {
-        // NO SILENT REFUSAL: a part has already been clicked and a result is expected.
-        *jc.status = Notice::refusal(qymcad_i18n::tr("j-group-need-two"));
-        return;
-    }
+pub fn group_pick_confirm(jc: &mut qymcad_ui_state::JointCtx) -> Result<(), NotApplied> {
+    // NO SILENT REFUSAL: a part has already been clicked and a result is expected
+    let sel = jc.joint.group_pick.clone().filter(|s| s.len() >= 2).ok_or_else(|| NotApplied::Refused(qymcad_i18n::tr("j-group-need-two")))?;
     qymcad_ui_state::begin_edit(jc.edits, jc.project, qymcad_i18n::tr("j-group-made")); // THE BOUNDARY OF AN OPERATION
     jc.project.add_group(&sel);
     jc.joint.group_pick = None;
     *jc.status = Notice::info(qymcad_i18n::tr1("j-group-made-n", "n", &sel.len().to_string()));
     qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
     qymcad_ui_state::commit_edit(&mut jc.rebuild());
+    Ok(())
 }
 
 /// A CLICK OF THE GROUNDING TOOL: on a part it fixes or releases it, past every part it says so.
@@ -560,11 +561,8 @@ pub fn joint_pick_anchor_click(jc: &mut qymcad_ui_state::JointCtx, owner: Id, an
             let ca = jc.project.add_connector(place_a, anchor_a);
             let cb = jc.project.add_connector(place_b, anchor);
             let jid = jc.project.add_joint(ca, cb, jc.joint.new_kind);
-            // The values from the tool bar are A DRIVER, not a reading. Untouched fields (zero) do not
-            // count as a driver: a joint is born with free degrees, and they can be pinned with the
-            // lock in the popup at the glyph.
-            jc.project.set_joint_drive(jid, 1, (jc.joint.new_offset != 0.0).then_some(jc.joint.new_offset));
-            jc.project.set_joint_drive(jid, 0, (jc.joint.new_angle != 0.0).then_some(jc.joint.new_angle));
+            // a joint is born with free degrees: they are pinned by their fields in the box at the glyph, which opens
+            // on the joint just made
             // "AS IT STANDS" IS TAKEN BEFORE THE FIRST SOLVE, while the parts are still where they
             // were placed. After a solve there is nothing left to take: the joint mates the anchors and
             // drags the part away.

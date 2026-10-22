@@ -45,7 +45,7 @@ impl App {
             self.viewport_3d_drag_update(ctx, resp, rect, &basis3);
         }
         if scroll != 0.0 && resp.contains_pointer() {
-            let part = crate::gui::commands::cmd_anchor_screen(&mut self.part_ctx(), rect); // where the open command's fields stand
+            let part = crate::gui::commands::cmd_spot(&mut self.part_ctx(), rect); // where the open command's fields stand
             self.viewing.cam = crate::gui::look_at_point::wheeled(&self.painting(), rect, qymcad_ui_state::zoom_anchor(&self.set, rect, resp.hover_pos(), part), scroll);
         }
         if let Some(p) = crate::gui::look_at_point::look_at(&self.painting(), self.set.mouse_nav, resp, rect) {
@@ -403,6 +403,13 @@ impl App {
     /// `else if`, where each link answers "is this click about me?". The chain is legitimate (the links are
     /// mutually exclusive), but while it had no name the order of its links could neither be seen nor checked.
     pub(super) fn viewport_3d_click(&mut self, resp: &egui::Response, rect: Rect, basis3: &([f64; 3], [f64; 3], [f64; 3])) {
+        // WHAT WAS PICKED BEFORE THE TOOL IS HANDED TO IT, as clicks of its own where those places stand on screen now
+        let held = crate::gui::panel_places::tool_in_hand(self);
+        let before: Vec<egui::Pos2> =
+            self.tools.gsel.before.hand_over(held).into_iter().map(|w| qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect, basis: basis3 }.at(w).0).collect();
+        for at in before {
+            self.viewport_3d_click_at(at, rect, basis3);
+        }
         if !resp.clicked() || !self.set.mouse_nav.click_takes(&resp.ctx) {
             return;
         }
@@ -411,7 +418,20 @@ impl App {
         if self.viewcube_click(qymcad_shell::clear_of_overs(&resp.ctx, rect), pos) {
             return;
         }
-        self.viewport_3d_click_at(pos, rect, basis3);
+        let was = self.chosen.sel;
+        let adding = if resp.ctx.input(|i| i.modifiers.shift) { qymcad_ui_state::Adding::Yes } else { qymcad_ui_state::Adding::No };
+        // SHIFT WITH NOTHING IN HAND ADDS WHAT IS UNDER THE POINTER to what is picked - the face under the gizmo of the
+        // part picked too, which a plain click there opens the numeric move of
+        match (held, adding) {
+            (qymcad_ui_state::InHand::Nothing, qymcad_ui_state::Adding::Yes) => self.pick_face_3d(rect, pos),
+            _ => self.viewport_3d_click_at(pos, rect, basis3),
+        }
+        // a click that opened the numeric entry of a gizmo is a click on the gizmo, not on the model under it
+        if held == qymcad_ui_state::InHand::Nothing && self.dragged.body_giz.num.is_none() {
+            self.tools.gsel.before.note(qymcad_pick::place_under(&self.painting(), rect, pos), adding);
+            let under = crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi));
+            qymcad_ui_state::hold_bodies(&self.project, was, under, &mut self.chosen, adding);
+        }
         qymcad_part::whole_body_on_double_click(&mut self.part_ctx(), resp.double_clicked());
         // the second click of two takes the body
     }

@@ -224,6 +224,10 @@ pub(in crate::gui) mod tests {
                         active_path: &a.active_path,
                         status: &mut a.status,
                         m3: &mut a.side.m3,
+                        scheme: &a.scheme,
+                        cam: &a.viewing.cam,
+                        set: &a.set,
+                        canvas: a.viewing.view_rect,
                     },
                     c,
                 );

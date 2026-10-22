@@ -1,14 +1,40 @@
-//! THE BARS OF A JOINT: editing it, making it, the tool bar.
+//! THE BARS OF A JOINT: editing it, making it, the tool bar - each described as data and drawn by the frame.
 
-use qymcad_ui_state::Notice;
+use qymcad_core::feature::{JointKind, RelationKind};
+use qymcad_ui_state::{AsLit, Described, Did, Ends, Gate, Head, Notice, Opt, OptKey};
 use super::*;
 
-/// The top bar of JOINT EDIT MODE (a double click on the glyph), in the style of the tool bars: the
-/// joint's name, the kind of anchor, and a "swap anchor" button that drops down A and B for picking a
-/// new face, edge or vertex on the fly. The parameters (angle, offset, limits, flip, global) live in
-/// the popup at the glyph (`joint_popup`). One tool-command experience, with no trips to the right-hand
-/// panel.
+/// Every kind of joint, in the order the bars offer them. THERE IS ONE SET OF KINDS: a joint states the degrees of
+/// freedom, and that is all; the rigid one is among them.
+const JOINT_KINDS: [JointKind; 8] = [JointKind::Rigid, JointKind::Revolute, JointKind::Slider, JointKind::Cylindrical, JointKind::Planar, JointKind::Ball, JointKind::PinSlot, JointKind::Parallel];
+
+/// Every kind of relation, in the order its bar offers them.
+const RELATION_KINDS: [RelationKind; 4] = [RelationKind::Gear, RelationKind::RackPinion, RelationKind::Screw, RelationKind::Linear];
+
+/// The kinds of joint as a group of the bar, `now` in force.
+fn joint_kinds(key: OptKey, now: JointKind) -> Opt {
+    let words: Vec<&str> = JOINT_KINDS.iter().map(|k| k.label()).collect();
+    Opt::modes(key, Some("j-kind"), &words, JOINT_KINDS.iter().position(|k| *k == now).unwrap_or(0))
+}
+
+/// THE SORT OF ANCHOR IS INFERRED UNDER THE CURSOR, and the bar says so: a face gives its centre, an edge its midpoint.
+/// A professional CAD has no switches of face, edge and vertex - while the sort was declared in advance, a click
+/// regularly produced an anchor other than the one intended.
+fn anchor_inferred() -> Opt {
+    Opt::Readout(format!("{}: {}", qymcad_i18n::tr("j-anchor"), qymcad_i18n::tr("j-anchor-inferred")))
+}
+
+/// THE BAR OF THE ASSEMBLY TOOL IN HAND, drawn by the frame from its description.
+fn joint_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui, tool: &Described) -> qymcad_ui_state::Answer {
+    let canvas = jc.canvas;
+    qymcad_ui_state::tool_bar(ui, &mut qymcad_ui_state::BarLook { scheme: jc.scheme, project: &*jc.project, bar_exprs: Some(&mut *jc.bar_exprs), canvas }, tool)
+}
+
+/// The top bar of JOINT EDIT MODE (a double click on the glyph): the joint's name, its kind, the anchors A and B - each
+/// re-picked on the fly - and the console that flips the axis and swaps the roles. The values (angle, offset, limits,
+/// side) live in the box at the glyph (`joint_popup`).
 pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
+    qymcad_ui_state::joint_edit_remember(jc.edits, jc.project, jc.joint);
     let Some(jid) = jc.joint.edit else { return };
     if !matches!(jc.workbench, qymcad_ui_state::Workbench::Assembly) || !jc.mode_3d {
         return;
@@ -17,122 +43,55 @@ pub fn joint_edit_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
         jc.joint.edit = None;
         return;
     };
-    let desc_a = jc
-        .project
-        .connector(j.a)
-        .map(|c| qymcad_ui_state::anchor_desc(&qymcad_ui_state::DrawCtx { cam: jc.cam, set: jc.set, scheme: jc.scheme, project: jc.project, active_path: jc.active_path }, &c.anchor))
-        .unwrap_or_default();
-    let desc_b = jc
-        .project
-        .connector(j.b)
-        .map(|c| qymcad_ui_state::anchor_desc(&qymcad_ui_state::DrawCtx { cam: jc.cam, set: jc.set, scheme: jc.scheme, project: jc.project, active_path: jc.active_path }, &c.anchor))
-        .unwrap_or_default();
-    let repick = jc.joint.edit_repick;
-    let (creating, mut finish) = (jc.joint.creating, None::<bool>);
-    let mut done = false;
-    let mut set_repick: Option<Option<(Id, bool)>> = None;
-    let mut set_kind: Option<qymcad_core::feature::JointKind> = None;
-    let (mut flip_axis, mut swap_roles) = (false, false);
-    // THE PLACE BELONGS TO THE SHELL. This used to open its own top panel, and the frame order was
-    // then held by the order of lines rather than written down anywhere.
-    {
-        let ui = &mut *ui;
-        use qymcad_core::feature::JointKind;
-        ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(format!("{} {}", ph::LINK, qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name)))).strong());
-            // A JOINT WITHOUT AN ANCHOR SAYS SO OUT LOUD. The solver silently drops such joints from
-            // the problem: the assembly looks assembled, the parts do not move, and there is no
-            // explanation. That was reported as parts not moving with the direction being wrong no
-            // matter what was picked.
-            // The reason comes from A SINGLE source (`joint_faults`), which also speaks through the
-            // solver report and the list of joints: two places with the same words and different
-            // truths is a thing already been through.
-            if let Some((_, why)) = jc.project.joint_faults().iter().find(|(id, _)| *id == jid) {
-                qymcad_ui_state::say(ui, &jc.scheme.pal, &qymcad_ui_state::Notice::error(qymcad_i18n::tr(why)), qymcad_ui_state::NoticeSize::Line)
-                    .on_hover_text(qymcad_i18n::tr(&format!("{why}-hint")));
-            }
-            ui.separator();
-            // changing the KIND of a joint right in the edit bar (the anchors are kept).
-            ui.label(qymcad_i18n::tr("j-kind"));
-            let mut nk = j.kind;
-            egui::ComboBox::from_id_salt("joint_edit_kind").selected_text(qymcad_i18n::tr(j.kind.label())).show_ui(ui, |ui| {
-                for kk in [JointKind::Rigid, JointKind::Revolute, JointKind::Slider, JointKind::Cylindrical, JointKind::Planar, JointKind::Ball, JointKind::PinSlot, JointKind::Parallel] {
-                    ui.selectable_value(&mut nk, kk, qymcad_i18n::tr(kk.label()));
-                }
-            });
-            if nk != j.kind {
-                set_kind = Some(nk);
-            }
-            ui.separator();
-            ui.label(qymcad_i18n::tr("j-anchor"));
-            ui.label(egui::RichText::new(qymcad_i18n::tr("j-anchor-inferred")).weak()).on_hover_text(qymcad_i18n::tr("j-anchor-inferred-hint"));
-            ui.separator();
-            ui.menu_button(format!("{} {}", ph::MAGNET, qymcad_i18n::tr("jt-swap-anchor")), |ui| {
-                if ui.button(format!("A: {desc_a}")).clicked() {
-                    set_repick = Some(Some((jid, false)));
-                    ui.close();
-                }
-                if ui.button(format!("B: {desc_b}")).clicked() {
-                    set_repick = Some(Some((jid, true)));
-                    ui.close();
-                }
-            });
-            // THE JOINT CONSOLE: flip the main axis, and swap the roles of the parts.
-            //
-            // Both handles fix what almost never comes out right the first time and used to be
-            // correctable only by recreating the joint - along with its drivers, its limits and its
-            // name.
-            ui.separator();
-            if ui.button(format!("{} {}", ph::ARROWS_DOWN_UP, qymcad_i18n::tr("jt-flip-axis"))).on_hover_text(qymcad_i18n::tr("jt-flip-axis-hint")).clicked() {
-                flip_axis = true;
-            }
-            if ui.button(format!("{} {}", ph::SWAP, qymcad_i18n::tr("jt-swap-roles"))).on_hover_text(qymcad_i18n::tr("jt-swap-roles-hint")).clicked() {
-                swap_roles = true;
-            }
-            if let Some((_, is_b)) = repick {
-                let t = qymcad_i18n::tr("j-place-lower");
-                ui.label(egui::RichText::new(qymcad_i18n::tr2("jt-click-new", "what", &t, "side", if is_b { "B" } else { "A" })).color(jc.scheme.pal.hint()));
-            }
-            qymcad_ui_state::end_of_bar(ui, |ui| {
-                if !creating {
-                    if ui.button(qymcad_i18n::tr("j-done-esc")).clicked() {
-                        done = true;
-                    }
-                } else {
-                    if ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked() {
-                        finish = Some(false);
-                    }
-                    if ui.button(qymcad_i18n::tr("cmd-apply-enter")).clicked() {
-                        finish = Some(true);
-                    }
-                }
-            });
-        });
+    let desc = |cid: Id| {
+        jc.project
+            .connector(cid)
+            .map(|c| qymcad_ui_state::anchor_desc(&qymcad_ui_state::DrawCtx { cam: jc.cam, set: jc.set, scheme: jc.scheme, project: jc.project, active_path: jc.active_path }, &c.anchor))
+            .unwrap_or_default()
+    };
+    let (desc_a, desc_b) = (desc(j.a), desc(j.b));
+    let repick = jc.joint.edit_repick.map(|(_, is_b)| usize::from(is_b));
+    // a joint being made or reopened is a command, as every tool is: Apply keeps what was done, Cancel and Esc take it away
+    let head = Head { icon: ph::LINK, name: qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name)), ends: Ends::ApplyCancel };
+    let mut says = Vec::new();
+    // A JOINT WITHOUT AN ANCHOR SAYS SO OUT LOUD. The solver drops such joints from the problem: the assembly looks
+    // assembled and the parts do not move. The reason comes from the single source (`joint_faults`) the solver report
+    // and the list of joints speak from as well.
+    if let Some((_, why)) = jc.project.joint_faults().iter().find(|(id, _)| *id == jid) {
+        says.push(Notice::error(format!("{} {}", qymcad_i18n::tr(why), qymcad_i18n::tr(&format!("{why}-hint")))));
     }
-    let ctx = ui.ctx().clone();
-    if creating && ((!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))) || qymcad_ui_state::bar_enter_take(&ctx)) {
-        finish = Some(true);
+    if let Some(side) = repick {
+        let t = qymcad_i18n::tr("j-place-lower");
+        says.push(Notice::info(qymcad_i18n::tr2("jt-click-new", "what", &t, "side", ["A", "B"][side])));
     }
-    if let Some(v) = set_repick {
-        jc.joint.edit_repick = v;
-    }
-    if let Some(k) = set_kind {
-        if qymcad_ui_state::change_joint_kind(jc.project, jc.status, jid, k) {
-            qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
+    // THE JOINT CONSOLE: flip the main axis, and swap the roles of the parts. Both fix what almost never comes out right
+    // the first time and used to be correctable only by recreating the joint - with its drivers, limits and name.
+    let bar = vec![
+        joint_kinds(OptKey::of("kind"), j.kind),
+        anchor_inferred(),
+        Opt::switch(OptKey::at("repick", 0), format!("{} A: {desc_a}", ph::MAGNET), (repick == Some(0)).lit()).hint(qymcad_i18n::tr("jt-swap-anchor")),
+        Opt::switch(OptKey::at("repick", 1), format!("{} B: {desc_b}", ph::MAGNET), (repick == Some(1)).lit()).hint(qymcad_i18n::tr("jt-swap-anchor")),
+        Opt::press(OptKey::of("flip_axis"), format!("{} {}", ph::ARROWS_DOWN_UP, qymcad_i18n::tr("jt-flip-axis"))).hint(qymcad_i18n::tr("jt-flip-axis-hint")),
+        Opt::press(OptKey::of("swap_roles"), format!("{} {}", ph::SWAP, qymcad_i18n::tr("jt-swap-roles"))).hint(qymcad_i18n::tr("jt-swap-roles-hint")),
+    ];
+    let answer = joint_bar(jc, ui, &Described { head, bar, gate: Gate::Open, says });
+    let verdict = answer.verdict;
+    for d in answer.did {
+        match d {
+            Did::Chose { index, .. } => {
+                if qymcad_ui_state::change_joint_kind(jc.project, jc.status, jid, JOINT_KINDS[index.min(JOINT_KINDS.len() - 1)]) {
+                    qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
+                }
+            }
+            Did::Switched { key } if key.name == "repick" => {
+                jc.joint.edit_repick = if repick == Some(key.at) { None } else { Some((jid, key.at == 1)) };
+            }
+            Did::Pressed { key } if key.name == "flip_axis" => joint_hud_flip_axis(jc, jid),
+            Did::Pressed { key } if key.name == "swap_roles" => joint_hud_swap_roles(jc, jid),
+            _ => {}
         }
     }
-    if flip_axis {
-        joint_hud_flip_axis(jc, jid);
-    }
-    if swap_roles {
-        joint_hud_swap_roles(jc, jid);
-    }
-    if done {
-        qymcad_ui_state::exit_joint_edit(jc.joint, jc.status);
-    }
-    if let Some(keep) = finish {
-        joint_create_finish(jc, keep);
-    }
+    qymcad_ui_state::go_through(ui.ctx(), &Gate::Open, verdict, &mut JointEditDoors { jc });
 }
 
 /// FINISH A JOINT JUST MADE: kept, its open operation closes as one step «Joint»; not kept, the operation is rolled back
@@ -154,346 +113,201 @@ pub fn joint_create_finish(jc: &mut qymcad_ui_state::JointCtx, keep: bool) {
     }
 }
 
-/// Esc WITH THE JOINT CONSOLE OPEN: a joint just made is taken away, an edited one is left as edited.
-pub fn joint_edit_leave(jc: &mut qymcad_ui_state::JointCtx) {
+/// APPLY WITH THE JOINT CONSOLE OPEN: a joint just made is kept as one step, an edited one is left as edited.
+pub fn joint_edit_keep(jc: &mut qymcad_ui_state::JointCtx) {
     if jc.joint.creating {
-        joint_create_finish(jc, false);
+        joint_create_finish(jc, true);
     } else {
         qymcad_ui_state::exit_joint_edit(jc.joint, jc.status);
     }
 }
 
-/// THE ONE PLACE OF THE BARS OF A PICK (tangency, width, group, ground, connector, relation): one stands at a time,
-/// where the last one stood, and under a name of each egui took the bar giving way to another for a widget that changed
-/// its id and marked it with a red frame.
-const BAR_OF_A_PICK: &str = "the bar of a pick in an assembly";
+/// Esc OR CANCEL WITH THE JOINT CONSOLE OPEN: a joint just made is taken away, an edited one comes back as it stood when
+/// it was opened.
+pub fn joint_edit_leave(jc: &mut qymcad_ui_state::JointCtx) {
+    if jc.joint.creating {
+        joint_create_finish(jc, false);
+        return;
+    }
+    if let Some(from) = jc.joint.edit_from.take().filter(|f| Some(f.joint) == jc.joint.edit) {
+        qymcad_ui_state::joint_edit_cancel(&mut jc.rebuild(), from);
+    }
+    qymcad_ui_state::exit_joint_edit(jc.joint, jc.status);
+}
+
+/// THE ASSEMBLY TOOL IN HAND as its bar describes it, and how it is put down.
+#[derive(Clone, Copy)]
+pub(crate) enum AsmTool {
+    Tangent,
+    Width,
+    Group,
+    Ground,
+    Anchor,
+    Relation,
+    Joint,
+}
+
+impl AsmTool {
+    /// The tool of the assembly in hand now; none when nothing is.
+    fn of(joint: &qymcad_ui_state::JointCommand) -> Option<AsmTool> {
+        if joint.tangent_pick.is_some() {
+            Some(AsmTool::Tangent)
+        } else if joint.width_pick.is_some() {
+            Some(AsmTool::Width)
+        } else if joint.group_pick.is_some() {
+            Some(AsmTool::Group)
+        } else if joint.ground_pick {
+            Some(AsmTool::Ground)
+        } else if joint.conn_pick {
+            Some(AsmTool::Anchor)
+        } else if joint.relation_pick.is_some() {
+            Some(AsmTool::Relation)
+        } else if joint.pick_faces {
+            Some(AsmTool::Joint)
+        } else {
+            None
+        }
+    }
+}
 
 pub fn joint_tool_bar(jc: &mut qymcad_ui_state::JointCtx, ui: &mut egui::Ui) {
-    // The panel lives inside a `Ui` now; the context is still wanted for windows,
-    // input and viewport commands, and it comes from the same place.
-    let ctx = &ui.ctx().clone();
-    use qymcad_core::feature::JointKind;
-    // the tangency tool bar - a hint and a way out; once the second surface is picked the condition stands as a preview,
-    // and the bar offers Apply and Cancel
-    if let Some(sel) = jc.joint.tangent_pick.clone() {
-        let made = sel.len() >= 2;
-        let (mut cancel, mut apply) = (false, false);
-        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::CIRCLE_HALF_TILT, qymcad_i18n::tr("j-tangent-made"))).strong());
-                ui.separator();
-                let hint = if made {
-                    qymcad_i18n::tr("j-tangent-made-ok")
-                } else if sel.is_empty() {
-                    qymcad_i18n::tr("j-tangent-pick")
-                } else {
-                    qymcad_i18n::tr("j-tangent-second")
-                };
-                ui.label(egui::RichText::new(hint).color(jc.scheme.pal.hint()));
-                qymcad_ui_state::end_of_bar(ui, |ui| {
-                    if made {
-                        if ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked() {
-                            cancel = true;
-                        }
-                        if ui.button(qymcad_i18n::tr("cmd-apply-enter")).clicked() {
-                            apply = true;
-                        }
-                    } else if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
-                        cancel = true;
-                    }
-                });
-            });
-        });
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            cancel = true;
-        }
-        if made {
-            apply |= (!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))) || qymcad_ui_state::bar_enter_take(ctx);
-        } else {
-            // the tangent is made by its second pick: Enter before it has nothing to make
-            qymcad_ui_state::enter_not_ready(ctx, jc.status, &qymcad_i18n::tr(if sel.is_empty() { "j-tangent-pick" } else { "j-tangent-second" }));
-        }
-        if made && (apply || cancel) {
-            tangent_finish(jc, apply && !cancel);
-        } else if cancel {
-            jc.joint.tangent_pick = None;
-            *jc.status = Notice::info(qymcad_i18n::tr("j-tangent-off"));
-        }
-        return;
+    let Some(tool) = AsmTool::of(jc.joint) else { return };
+    let described = asm_tool_described(jc, &tool);
+    let answer = joint_bar(jc, ui, &described);
+    for d in answer.did {
+        asm_tool_act(jc, d);
     }
-    // the width tool bar - how many anchors are shown, a "make it" button and a way out.
-    if let Some(sel) = jc.joint.width_pick.clone() {
-        let (mut make, mut cancel) = (false, false);
-        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::ARROWS_OUT_LINE_HORIZONTAL, qymcad_i18n::tr("j-width-made"))).strong());
-                ui.separator();
-                ui.label(egui::RichText::new(qymcad_i18n::tr1("j-width-picked", "n", &sel.len().to_string())).color(jc.scheme.pal.hint()));
-                qymcad_ui_state::end_of_bar(ui, |ui| {
-                    if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
-                        cancel = true;
-                    }
-                    if ui.button(qymcad_i18n::tr("cmd-apply-enter")).clicked() {
-                        make = true;
-                    }
-                });
-            });
-        });
-        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            make = true;
+    qymcad_ui_state::go_through(ui.ctx(), &described.gate, answer.verdict, &mut AsmToolDoors { jc, tool });
+}
+
+/// THE ASSEMBLY TOOL AS ITS BAR DESCRIBES IT: what it asks for, what it has taken, its options.
+fn asm_tool_described(jc: &qymcad_ui_state::JointCtx, tool: &AsmTool) -> Described {
+    let head = |icon, name: &str, ends| Head { icon, name: qymcad_i18n::tr(name), ends };
+    // what is pointed at, not typed: Enter before it has nothing to make
+    let asking = |head: Head, mut bar: Vec<Opt>, ask: String| {
+        bar.push(Opt::Readout(ask.clone()));
+        Described { head, bar, gate: Gate::Waiting(ask), says: vec![] }
+    };
+    let open = |head: Head, bar: Vec<Opt>| Described { head, bar, gate: Gate::Open, says: vec![] };
+    match tool {
+        // what to pick; once the second surface is picked the condition stands as a preview, and Apply keeps it
+        AsmTool::Tangent => {
+            let sel = jc.joint.tangent_pick.as_deref().unwrap_or_default();
+            let head = head(ph::CIRCLE_HALF_TILT, "j-tangent-made", Ends::ApplyCancel);
+            match sel.len() {
+                0 => asking(head, vec![], qymcad_i18n::tr("j-tangent-pick")),
+                1 => asking(head, vec![], qymcad_i18n::tr("j-tangent-second")),
+                _ => open(head, vec![Opt::Readout(qymcad_i18n::tr("j-tangent-made-ok"))]),
+            }
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            cancel = true;
+        // how many are taken; Enter before enough of them are asks for what is missing - two walls and the part between
+        // them, two parts at least to fasten
+        AsmTool::Width => {
+            let n = jc.joint.width_pick.as_ref().map_or(0, |s| s.len());
+            let head = head(ph::ARROWS_OUT_LINE_HORIZONTAL, "j-width-made", Ends::ApplyCancel);
+            let taken = vec![Opt::Readout(qymcad_i18n::tr1("j-width-picked", "n", &n.to_string()))];
+            if n < 3 {
+                asking(head, taken, qymcad_i18n::tr("j-width-need-three"))
+            } else {
+                open(head, taken)
+            }
         }
-        if make {
-            width_pick_confirm(jc);
-        } else if cancel {
-            jc.joint.width_pick = None;
-            *jc.status = Notice::info(qymcad_i18n::tr("j-width-off"));
+        AsmTool::Group => {
+            let n = jc.joint.group_pick.as_ref().map_or(0, |s| s.len());
+            let head = head(ph::SELECTION_ALL, "j-group-made", Ends::ApplyCancel);
+            let taken = vec![Opt::Readout(qymcad_i18n::tr1("j-group-picked", "n", &n.to_string()))];
+            if n < 2 {
+                asking(head, taken, qymcad_i18n::tr("j-group-need-two"))
+            } else {
+                open(head, taken)
+            }
         }
-        return;
+        // grounding is done by the click itself, so Enter has nothing to make; Done puts it down. What the clicks have
+        // grounded is named in the bar and not only in the status line.
+        AsmTool::Ground => {
+            let project = &*jc.project;
+            let grounded: Vec<String> = project.components.iter().filter(|c| c.parent.is_some() && project.is_grounded(c.id)).map(|c| qymcad_i18n::name(&c.name)).collect();
+            let bar = if grounded.is_empty() { vec![] } else { vec![Opt::Readout(qymcad_i18n::tr1("j-grounded-list", "names", &grounded.join(", ")))] };
+            asking(head(ph::ANCHOR, "jt-ground-btn", Ends::Close), bar, qymcad_i18n::tr("j-ground-click"))
+        }
+        // the anchor is laid by the click
+        AsmTool::Anchor => asking(head(ph::CROSSHAIR, "j-conn-new", Ends::ApplyCancel), vec![anchor_inferred()], qymcad_i18n::tr("j-conn-pick")),
+        // the kind, the number, the direction; Apply once the mates it needs are picked
+        AsmTool::Relation => {
+            let pick = jc.joint.relation_pick.clone().unwrap_or_default();
+            let need = relation_picks_needed(pick.kind);
+            let have = if need == 1 { pick.picks.len() / 2 } else { pick.picks.len() };
+            let picked = qymcad_i18n::tr2("j-relation-picked", "n", &have.to_string(), "need", &need.to_string());
+            let words: Vec<&str> = RELATION_KINDS.iter().map(|k| k.label()).collect();
+            // THE NUMBER MEANS DIFFERENT THINGS FOR DIFFERENT KINDS, and the caption must say so: for gears and linear
+            // relations it is a ratio, for a rack and a screw it is the travel per turn in millimetres
+            let caption = qymcad_i18n::tr(if pick.kind.value_is_per_turn() { "j-relation-per-turn" } else { "j-relation-ratio" });
+            let bar = vec![
+                Opt::modes(OptKey::of("relation_kind"), Some("j-kind"), &words, RELATION_KINDS.iter().position(|k| *k == pick.kind).unwrap_or(0)),
+                Opt::Number { key: OptKey::of("relation_ratio"), caption, value: pick.value, lo: -10000.0, hi: 10000.0 },
+                Opt::switch(OptKey::of("relation_reverse"), qymcad_i18n::tr("j-relation-reverse"), pick.reversed.lit()),
+            ];
+            let head = head(ph::GEAR_SIX, "j-relation-btn", Ends::ApplyCancel);
+            if have >= need {
+                let mut d = open(head, bar);
+                d.bar.push(Opt::Readout(picked));
+                d
+            } else {
+                asking(head, bar, picked)
+            }
+        }
+        // WHAT IS BEING ASKED FOR is A PLACE ON THE PART: the sort of anchor is inferred under the cursor. BY ORIGINS is
+        // a fourth sort of anchor, a toggle of the bar - the same picking by a click, the same cancel. "KEEP AS IT
+        // STANDS" is chosen here rather than after creation (`new_as_built`). The values of the joint are typed in
+        // the box at the joint just made.
+        AsmTool::Joint => {
+            let target = qymcad_i18n::tr(if jc.joint.anchor_mode == 3 { "j-origin-lower" } else { "j-place-lower" });
+            let ask = qymcad_i18n::tr1(if jc.joint.pick_first.is_some() { "jt-click-b" } else { "jt-click-a" }, "what", &target);
+            let bar = vec![
+                joint_kinds(OptKey::of("joint_kind"), jc.joint.new_kind),
+                anchor_inferred(),
+                Opt::switch(OptKey::of("by_origin"), qymcad_i18n::tr("j-origin"), (jc.joint.anchor_mode == 3).lit()).hint(qymcad_i18n::tr("j-origin-hint")),
+                Opt::switch(OptKey::of("as_built"), qymcad_i18n::tr("j-as-built"), jc.joint.new_as_built.lit()).hint(qymcad_i18n::tr("jt-as-built-hint")),
+            ];
+            // a joint is laid by its second pick: Enter before it has nothing to make
+            asking(head(ph::MAGNET, "jt-joint-btn", Ends::ApplyCancel), bar, ask)
+        }
     }
-    // the group tool bar - how many are picked, a "group them" button and a way out. The same shape
-    // as every other tool: the hint on top, Enter confirms, Esc cancels.
-    if let Some(sel) = jc.joint.group_pick.clone() {
-        let (mut make, mut cancel) = (false, false);
-        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::SELECTION_ALL, qymcad_i18n::tr("j-group-made"))).strong());
-                ui.separator();
-                ui.label(egui::RichText::new(qymcad_i18n::tr1("j-group-picked", "n", &sel.len().to_string())).color(jc.scheme.pal.hint()));
-                qymcad_ui_state::end_of_bar(ui, |ui| {
-                    if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
-                        cancel = true;
-                    }
-                    if ui.button(qymcad_i18n::tr("cmd-apply-enter")).clicked() {
-                        make = true;
-                    }
-                });
-            });
-        });
-        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            make = true;
+}
+
+/// WHAT WAS DONE TO AN OPTION OF THE ASSEMBLY TOOL IN HAND, done to the tool.
+fn asm_tool_act(jc: &mut qymcad_ui_state::JointCtx, did: Did) {
+    match did {
+        Did::Chose { key, index } if key.name == "joint_kind" => {
+            // THE SORT OF ANCHOR IS NOT CHOSEN BY THE KIND: a change of kind used to move it silently, and the next click
+            // landed somewhere other than where it was aimed
+            jc.joint.new_kind = JOINT_KINDS[index.min(JOINT_KINDS.len() - 1)];
+            jc.joint.anchor_mode = 0;
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            cancel = true;
+        Did::Chose { key, index } if key.name == "relation_kind" => {
+            if let Some(p) = jc.joint.relation_pick.as_mut() {
+                let value = p.value;
+                p.set(RELATION_KINDS[index.min(RELATION_KINDS.len() - 1)], value);
+            }
         }
-        if make {
-            group_pick_confirm(jc);
-        } else if cancel {
-            jc.joint.group_pick = None;
-            *jc.status = Notice::info(qymcad_i18n::tr("j-group-off"));
+        Did::Typed { key, value } if key.name == "relation_ratio" => {
+            if let Some(p) = jc.joint.relation_pick.as_mut() {
+                let kind = p.kind;
+                p.set(kind, value);
+            }
         }
-        return;
-    }
-    // the grounding tool bar - a hint and a way out
-    if jc.joint.ground_pick {
-        let mut cancel = false;
-        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::ANCHOR, qymcad_i18n::tr("jt-ground-btn"))).strong());
-                ui.separator();
-                ui.label(egui::RichText::new(qymcad_i18n::tr("j-ground-click")).color(jc.scheme.pal.hint()));
-                // what the clicks have grounded, named in the bar and not only in the status line
-                let grounded: Vec<String> = jc.project.components.iter().filter(|c| c.parent.is_some() && jc.project.is_grounded(c.id)).map(|c| qymcad_i18n::name(&c.name)).collect();
-                if !grounded.is_empty() {
-                    ui.separator();
-                    ui.label(qymcad_i18n::tr1("j-grounded-list", "names", &grounded.join(", ")));
-                }
-                qymcad_ui_state::end_of_bar(ui, |ui| {
-                    if ui.button(qymcad_i18n::tr("j-done-esc")).clicked() {
-                        cancel = true;
-                    }
-                });
-            });
-        });
-        // grounding is done by the click itself: Enter has nothing to make
-        qymcad_ui_state::enter_not_ready(ui.ctx(), jc.status, &qymcad_i18n::tr("j-ground-click"));
-        if cancel {
-            jc.joint.ground_pick = false;
-            *jc.status = Notice::info(qymcad_i18n::tr("j-ground-off"));
-        }
-        return;
-    }
-    // THE ANCHOR TOOL BAR: the kind of anchor and a hint about where to click.
-    if jc.joint.conn_pick {
-        let mut cancel = false;
-        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::CROSSHAIR, qymcad_i18n::tr("j-conn-new"))).strong());
-                ui.separator();
-                ui.label(qymcad_i18n::tr("j-anchor"));
-                ui.label(egui::RichText::new(qymcad_i18n::tr("j-anchor-inferred")).weak()).on_hover_text(qymcad_i18n::tr("j-anchor-inferred-hint"));
-                ui.separator();
-                ui.label(egui::RichText::new(qymcad_i18n::tr("j-conn-pick")).color(jc.scheme.pal.hint()));
-                qymcad_ui_state::end_of_bar(ui, |ui| {
-                    if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
-                        cancel = true;
-                    }
-                });
-            });
-        });
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            cancel = true;
-        }
-        if cancel {
-            jc.joint.conn_pick = false;
-            *jc.status = Notice::info(qymcad_i18n::tr("j-conn-off"));
-        }
-        return;
-    }
-    // THE RELATION TOOL BAR: the kind, the number, the direction, Enter/Esc.
-    if jc.joint.relation_pick.is_some() {
-        let (mut cancel, mut done) = (false, false);
-        let pick = jc.joint.relation_pick.clone().unwrap_or_default();
-        let need = relation_picks_needed(pick.kind);
-        let have = if need == 1 { pick.picks.len() / 2 } else { pick.picks.len() };
-        egui::Panel::top(BAR_OF_A_PICK).frame(qymcad_ui_state::tool_bar_frame(jc.scheme)).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(format!("{} {}", ph::GEAR_SIX, qymcad_i18n::tr("j-relation-btn"))).strong());
-                ui.separator();
-                ui.label(qymcad_i18n::tr("j-kind"));
-                let mut k = pick.kind;
-                egui::ComboBox::from_id_salt("relation_bar_kind").selected_text(qymcad_i18n::tr(k.label())).show_ui(ui, |ui| {
-                    for kk in [
-                        qymcad_core::feature::RelationKind::Gear,
-                        qymcad_core::feature::RelationKind::RackPinion,
-                        qymcad_core::feature::RelationKind::Screw,
-                        qymcad_core::feature::RelationKind::Linear,
-                    ] {
-                        ui.selectable_value(&mut k, kk, qymcad_i18n::tr(kk.label()));
-                    }
-                });
-                ui.separator();
-                // THE NUMBER MEANS DIFFERENT THINGS FOR DIFFERENT KINDS, and the caption must say so:
-                // for gears and linear relations it is a ratio, for a rack and a screw it is the travel
-                // per turn in millimetres.
-                ui.label(qymcad_i18n::tr(if pick.kind.value_is_per_turn() { "j-relation-per-turn" } else { "j-relation-ratio" }));
-                let mut v = pick.value;
-                ui.add(egui::DragValue::new(&mut v).speed(0.05));
-                let mut rev = pick.reversed;
-                ui.checkbox(&mut rev, qymcad_i18n::tr("j-relation-reverse"));
-                ui.separator();
-                ui.label(egui::RichText::new(qymcad_i18n::tr2("j-relation-picked", "n", &have.to_string(), "need", &need.to_string())).color(jc.scheme.pal.hint()));
-                qymcad_ui_state::end_of_bar(ui, |ui| {
-                    if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
-                        cancel = true;
-                    }
-                    if ui.add_enabled(have >= need, egui::Button::new(qymcad_i18n::tr("cmd-apply-enter"))).clicked() {
-                        done = true;
-                    }
-                });
+        Did::Switched { key } => match key.name {
+            "relation_reverse" => {
                 if let Some(p) = jc.joint.relation_pick.as_mut() {
-                    p.set(k, v);
-                    p.reversed = rev;
+                    p.reversed = !p.reversed;
                 }
-            });
-        });
-        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            done = true;
-        }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            cancel = true;
-        }
-        if cancel {
-            jc.joint.relation_pick = None;
-            *jc.status = Notice::info(qymcad_i18n::tr("j-relation-off"));
-        } else if done {
-            relation_pick_confirm(jc);
-        }
-        return;
-    }
-    if !jc.joint.pick_faces {
-        return;
-    }
-    // WHAT IS BEING ASKED FOR. This used to name the chosen mode - face, edge, vertex: the sort of
-    // anchor was declared first and the hint merely repeated that choice back. Now the sort is inferred
-    // under the cursor, and what must be asked for is exactly A PLACE ON THE PART.
-    let target = if jc.joint.anchor_mode == 3 { qymcad_i18n::tr("j-origin-lower") } else { qymcad_i18n::tr("j-place-lower") };
-    let target = &target;
-    let hint = if jc.joint.pick_first.is_some() { qymcad_i18n::tr1("jt-click-b", "what", target) } else { qymcad_i18n::tr1("jt-click-a", "what", target) };
-    // a joint is laid by its second pick: Enter before it has nothing to make
-    qymcad_ui_state::enter_not_ready(ctx, jc.status, &hint);
-    let mut cancel = false;
-    // THE PLACE BELONGS TO THE SHELL. This used to open its own top panel, and the frame order was
-    // then held by the order of lines rather than written down anywhere.
-    {
-        let ui = &mut *ui;
-        ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(format!("{} {}", ph::MAGNET, qymcad_i18n::tr("jt-joint-btn"))).strong());
-            ui.separator();
-            ui.label(qymcad_i18n::tr("j-kind"));
-            let mut k = jc.joint.new_kind;
-            egui::ComboBox::from_id_salt("joint_bar_kind").selected_text(qymcad_i18n::tr(k.label())).show_ui(ui, |ui| {
-                // THERE IS ONE SET OF KINDS: a joint states the degrees of freedom, and that is all.
-                // The former "assembly mates" duplicated the mechanical ones (a mate equals planar,
-                // concentricity equals cylindrical) but were solved along another path and behaved
-                // differently.
-                // ALL OF THE KINDS ARE HERE. The rigid one used to be missing: it was created only by
-                // its own button in the workbench panel, and removing the buttons would have made that
-                // kind unreachable altogether.
-                for kk in [JointKind::Rigid, JointKind::Revolute, JointKind::Slider, JointKind::Cylindrical, JointKind::Planar, JointKind::Ball, JointKind::PinSlot, JointKind::Parallel] {
-                    ui.selectable_value(&mut k, kk, qymcad_i18n::tr(kk.label()));
-                }
-            });
-            if k != jc.joint.new_kind {
-                jc.joint.new_kind = k;
-                // THE SORT OF ANCHOR IS NO LONGER CHOSEN IN ADVANCE - neither by a person nor on their
-                // behalf by the kind of joint. This used to read "coaxial kinds prefer an edge, the rest
-                // a face", and changing the kind silently moved the mode: the next click landed
-                // somewhere other than where it was aimed.
-                jc.joint.anchor_mode = 0;
             }
-            ui.separator();
-            ui.label(qymcad_i18n::tr("j-anchor"));
-            // THE SORT OF ANCHOR IS INFERRED UNDER THE CURSOR.
-            //
-            // There used to be three switches here - face, edge, vertex. A professional CAD has none:
-            // the anchor point is derived from the geometry under the cursor, and that is not a
-            // convenience but a condition of working at all - while the sort was declared in advance, a
-            // click regularly produced an anchor other than the one intended.
-            ui.label(egui::RichText::new(qymcad_i18n::tr("j-anchor-inferred")).weak()).on_hover_text(qymcad_i18n::tr("j-anchor-inferred-hint"));
-            // BY ORIGINS IS A FOURTH SORT OF ANCHOR, NOT A SEPARATE BUTTON IN THE PROPERTIES PANEL.
-            //
-            // This way of working used to live in the right-hand panel: two drop-down lists for A and B
-            // and a create button. It went around everything that makes a command a command - picking
-            // by click, a preview, Enter/Esc - and taught the wrong habits. It is a useful way (parts
-            // with no convenient faces, a quick rough assembly), so it was not thrown out but moved
-            // HERE: the same picking by clicking a part, the same bar, the same cancel.
-            // A TOGGLE, NOT A ONE-WAY CHOICE: it used to be possible to enter this and impossible to
-            // leave - the way back was the "face" button, and that button is gone.
-            let mut by_origin = jc.joint.anchor_mode == 3;
-            if ui.toggle_value(&mut by_origin, qymcad_i18n::tr("j-origin")).on_hover_text(qymcad_i18n::tr("j-origin-hint")).changed() {
-                jc.joint.anchor_mode = if by_origin { 3 } else { 0 };
-            }
-            // The value of a joint is set through its free degrees: an angle for those that turn, an
-            // offset for those that slide. A value left unset leaves the degree free.
-            if matches!(jc.joint.new_kind, JointKind::Rigid | JointKind::Revolute | JointKind::Cylindrical | JointKind::PinSlot) {
-                ui.separator();
-                ui.label(qymcad_i18n::tr("j-angle-deg"));
-                ui.add(egui::DragValue::new(&mut jc.joint.new_angle).speed(1.0).range(-360.0..=360.0));
-            }
-            if matches!(jc.joint.new_kind, JointKind::Rigid | JointKind::Slider | JointKind::Cylindrical) {
-                ui.separator();
-                ui.label(qymcad_i18n::tr("j-offset-mm"));
-                ui.add(egui::DragValue::new(&mut jc.joint.new_offset).speed(0.2));
-            }
-            // "KEEP AS IT STANDS" belongs here rather than after creation: see `new_as_built`.
-            ui.separator();
-            ui.checkbox(&mut jc.joint.new_as_built, qymcad_i18n::tr("j-as-built")).on_hover_text(qymcad_i18n::tr("jt-as-built-hint"));
-            ui.separator();
-            ui.label(egui::RichText::new(hint).color(jc.scheme.pal.hint()));
-            qymcad_ui_state::end_of_bar(ui, |ui| {
-                if ui.button(qymcad_i18n::tr("j-cancel-esc")).clicked() {
-                    cancel = true;
-                }
-            });
-        });
-    }
-    if cancel {
-        jc.joint.pick_faces = false;
-        jc.joint.pick_first = None;
-        *jc.status = Notice::info(qymcad_i18n::tr("j-cancelled"));
+            // A TOGGLE, NOT A ONE-WAY CHOICE: it used to be possible to enter this and impossible to leave
+            "by_origin" => jc.joint.anchor_mode = if jc.joint.anchor_mode == 3 { 0 } else { 3 },
+            "as_built" => jc.joint.new_as_built = !jc.joint.new_as_built,
+            _ => {}
+        },
+        _ => {}
     }
 }
 

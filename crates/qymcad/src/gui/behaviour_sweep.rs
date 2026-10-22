@@ -62,6 +62,12 @@ mod tests {
                 app.start_feat_cmd(1);
                 app.apply_feat_cmd();
                 qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+                // BACK IN THE ASSEMBLY: the second part was drawn inside itself, and the tools of the assembly are taken
+                // where they are worked - in the assembly, in space, where their bars stand
+                while qymcad_ui_state::current_ctx_id(&app.active_path, &app.project) != app.project.root {
+                    app.exit_context();
+                }
+                app.viewing.mode_3d = true;
                 app
             }
             _ => part_app(),
@@ -81,10 +87,15 @@ mod tests {
         matches!(launch, Launch::Modify(_) | Launch::Construction | Launch::NewPart | Launch::NewSubassembly | Launch::PieceToPart)
     }
 
-    /// A COMMAND ITS OWN BAR PUTS DOWN ON Esc, in the frame: the mirrored copy of a part reads the key on its bar, and the
-    /// ladder of Esc a bare check calls has no rung for it.
-    fn put_down_by_its_bar(launch: Launch) -> bool {
-        launch == Launch::MirrorPart
+    /// Esc AS A PERSON PRESSES IT TO PUT A TOOL DOWN, in whole frames of the window: once more first where a field of the
+    /// tool took the keyboard as it opened - the field gives the keyboard up, the tool goes next.
+    fn escape_out(app: &mut App) {
+        let mut hand = super::super::hand::Hand::as_it_stands(app);
+        hand.frame(Vec::new());
+        if hand.typing() {
+            hand.key(egui::Key::Escape);
+        }
+        hand.key(egui::Key::Escape);
     }
 
     /// THE COMMANDS SWEPT. The component from a file is left out: its press opens the system's file chooser, which a
@@ -132,10 +143,10 @@ mod tests {
     #[test]
     fn escape_switches_off_whatever_was_started() {
         let mut stuck: Vec<String> = Vec::new();
-        for c in swept().filter(|c| !put_down_by_its_bar(c.launch)) {
+        for c in swept() {
             let mut app = stage(c.home());
             app.run_command(c.code, &egui::Context::default());
-            app.on_escape();
+            escape_out(&mut app);
             let t = tail(&mut app);
             if !t.is_empty() {
                 stuck.push(format!("{}: {} is left after Esc", c.code, t.join(", ")));
@@ -161,7 +172,7 @@ mod tests {
             let mut app = stage(c.home());
             let before = qymcad_ui_state::edit_key(&app.draw_ctx());
             app.run_command(c.code, &egui::Context::default());
-            app.on_escape();
+            escape_out(&mut app);
             if qymcad_ui_state::edit_key(&app.draw_ctx()) != before {
                 dirty.push(c.code.to_string());
             }
@@ -173,16 +184,14 @@ mod tests {
     /// now.
     ///
     /// It used to be: pressing Enter a second time does not apply the command until the tick button is
-    /// pressed. The cause is the same as with the unreachable `U`: the key handler of the frame began
-    /// with a refusal if a field held the keyboard — Enter never reached the command at all, and one
-    /// had to aim at the tick with the mouse.
+    /// pressed. The key handler of the frame began with a refusal if a field held the keyboard — Enter never
+    /// reached the command at all, and one had to aim at the tick with the mouse.
     ///
-    /// Now ONE Enter is enough: `egui` releases a single-line field by itself, and the command receives
-    /// it in the same frame. The value has already been accepted by then — the field writes into its own
-    /// variable before the program gets to the key.
+    /// Now ONE Enter is enough: the field of the command takes it, gives the keyboard up, and the frame of the
+    /// tool applies the command in the same frame - the value already written into the field.
     ///
-    /// The frames are real, with a real field: a fake "as if there were focus" would check somebody's
-    /// own invention, while the question is exactly what `egui` does.
+    /// The frames are the whole window's, the field the command's own, taking the keyboard as the command opens:
+    /// a field of a probe "as if there were focus" would check somebody's own invention.
     #[test]
     fn enter_from_a_focused_field_applies_the_command() {
         let mut app = stage("part");
@@ -192,33 +201,14 @@ mod tests {
         assert!(app.tools.armed.commanding(), "the scene did not open the command — there is nothing to check");
         let feats_before = app.project.timeline.len();
 
-        let ctx = egui::Context::default();
-        super::super::install_fonts(&ctx);
-        let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
-        let step = |app: &mut App, enter: bool, grab: bool| {
-            let mut input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
-            if enter {
-                input.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE });
-            }
-            let mut buf = String::from("12");
-            let _ = ctx.run_ui(input, |c| {
-                egui::Area::new(egui::Id::new("probe_field")).show(c, |ui| {
-                    let r = ui.text_edit_singleline(&mut buf);
-                    if grab {
-                        r.request_focus();
-                    }
-                });
-                app.handle_key_commands(c);
-            });
-        };
+        let mut hand = super::super::hand::Hand::as_it_stands(&mut app);
+        hand.frame(Vec::new());
+        assert!(hand.typing(), "the field did not take the focus — this is not the scene the complaint was about");
+        assert!(hand.app.tools.armed.commanding(), "the command closed by itself, without a single key");
 
-        step(&mut app, false, true);
-        assert!(ctx.egui_wants_keyboard_input(), "the field did not take the focus — this is not the scene the complaint was about");
-        assert!(app.tools.armed.commanding(), "the command closed by itself, without a single key");
-
-        step(&mut app, true, false);
-        assert!(!ctx.egui_wants_keyboard_input(), "Enter must release the field");
-        assert!(!app.tools.armed.commanding(), "Enter from a field did not apply the command — one will have to aim at the tick with the mouse");
-        assert!(app.project.timeline.len() > feats_before, "the command \"applied\" and no feature appeared in the timeline");
+        hand.key(egui::Key::Enter);
+        assert!(!hand.typing(), "Enter must release the field");
+        assert!(!hand.app.tools.armed.commanding(), "Enter from a field did not apply the command — one will have to aim at the tick with the mouse");
+        assert!(hand.app.project.timeline.len() > feats_before, "the command \"applied\" and no feature appeared in the timeline");
     }
 }

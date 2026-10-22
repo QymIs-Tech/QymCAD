@@ -33,6 +33,13 @@ pub fn point(tool: &Tool, n: u8) {
         17 => kernel_refusal(tool),
         18 => budget(tool),
         19 => help(tool),
+        20 => taken_before(tool),
+        21 => at_geometry(tool),
+        22 => tab(tool),
+        23 => esc_steps(tool),
+        24 => enter_waits(tool),
+        25 => bar_stays(tool),
+        26 => formula_kept(tool),
         _ => panic!("the contract has no point {n}; it has {:?}", POINTS),
     }
 }
@@ -54,3 +61,5 @@ mod keeping;
 pub(crate) use keeping::*;
 mod bounds;
 pub(crate) use bounds::*;
+mod framing;
+pub(crate) use framing::*;

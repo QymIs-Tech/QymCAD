@@ -367,6 +367,31 @@ impl Session {
         self.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_over(text)
     }
 
+    /// TYPE `text` INTO THE FIELD `at` NAMES, all of what it held replaced: a row of a box holding several fields -
+    /// "Origin X [ ] Y [ ] Z [ ]" - where the same tag stands in the row under it as well.
+    pub fn fill_in_row(&mut self, at: &InRow, text: &str) -> &mut Self {
+        let field = self.field_in_row(at);
+        self.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_over(text)
+    }
+
+    /// The field `at` names: of every place the caption of its row is written - a tree may write it too - the one with the
+    /// tag on its line, right of it, and a field right after the tag; the field nearest the tag.
+    ///
+    /// # Panics
+    /// When no row of that caption holds the tag with a field after it.
+    pub fn field_in_row(&mut self, at: &InRow) -> Widget {
+        let InRow { row, tag } = *at;
+        let rows = self.places_of(row);
+        let tags = self.places_of(tag);
+        let on_the_line = |a: &Rect, b: &Rect| (a.center().y - b.center().y).abs() < a.height().max(b.height()) / 2.0;
+        let inputs: Vec<Widget> = self.win.widgets.iter().filter(|w| matches!(w.kind, Kind::TextField | Kind::Number)).cloned().collect();
+        let in_rows = tags.iter().filter(|t| rows.iter().any(|r| on_the_line(r, t) && t.min.x >= r.max.x - 1.0));
+        let after = |t: &Rect| inputs.iter().filter(|w| on_the_line(&w.rect, t) && w.rect.min.x >= t.max.x - 1.0).map(|w| (w.rect.min.x - t.max.x, w)).min_by(|a, b| a.0.total_cmp(&b.0));
+        let best = in_rows.filter_map(after).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, w)| w.clone());
+        let fields: Vec<Rect> = inputs.iter().map(|w| w.rect).collect();
+        best.unwrap_or_else(|| panic!("nothing to fill stands after {tag:?} in the row {row:?} (the row at {rows:?}, the tag at {tags:?}); fields at {fields:?}"))
+    }
+
     /// TYPE `text` OVER WHAT IS SELECTED - nothing typed clears it, as Backspace does: typing no letters over a
     /// selection leaves it standing, which is not what a person emptying a field does.
     pub(crate) fn type_over(&mut self, text: &str) -> &mut Self {

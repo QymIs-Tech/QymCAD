@@ -3,32 +3,70 @@
 use qymcad_ui_state::Notice;
 use super::*;
 
-/// Where the window of mate `jid` was placed last, kept between frames.
+/// Where the anchors of a mate stood in the world when the box was laid last, kept between frames.
 #[derive(Clone, Copy)]
 pub(crate) struct PopupPin {
     pub(crate) joint: Id,
-    pub(crate) at: Pos2,
+    pub(crate) anchors: Anchors,
 }
 
-/// WHERE THE WINDOW OF MATE `jid` STANDS: by the mate (`by_mate`), except while `anim` runs that same mate - then where
-/// it stood when the run began. The window follows the view, not the motion it causes itself: a run of the travel of
-/// a cylindrical mate carries anchor B along the axis, the midpoint of the anchors goes with it, and the window
-/// travelled 21-41 px over one second of the run, the button that stops the run riding along under the pointer.
-pub(crate) fn popup_place(ctx: &egui::Context, jid: Id, anim: Option<&qymcad_ui_state::JointAnim>, by_mate: Pos2) -> Pos2 {
+/// THE TWO ANCHORS OF A MATE in the world, in the context worked in.
+#[derive(Clone, Copy)]
+pub(crate) struct Anchors {
+    pub(crate) a: [f64; 3],
+    pub(crate) b: [f64; 3],
+}
+
+/// Where the anchors of mate `j` stand in the world, in the context worked in.
+fn anchors_of(jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint) -> Option<Anchors> {
+    let here = qymcad_ui_state::current_ctx_id(jc.active_path, jc.project);
+    let at = |cid: Id| {
+        let conn = jc.project.connector(cid)?;
+        let fr = jc.project.connector_frame(conn)?;
+        Some(qymcad_core::feature::apply12(&jc.project.relative_transform(conn.owner, here), fr.origin))
+    };
+    Some(Anchors { a: at(j.a)?, b: at(j.b)? })
+}
+
+/// WHAT THE BOX OF MATE `j` STANDS BY: its two anchors - except while the run of that same mate goes on: then the anchors
+/// as they stood in the world when the run began, its side held. The box follows the view, not the motion it causes
+/// itself: a run of the travel of a cylindrical mate carries anchor B along the axis, and a box by the moving anchors
+/// travelled 21-41 px over one second of the run, the button that stops the run riding along under the pointer. Pinned
+/// on the screen instead, it stood still while the view moved, and the mate went from under it.
+pub(crate) fn popup_place(ctx: &egui::Context, jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint) -> Option<qymcad_ui_state::Place> {
     let id = egui::Id::new("joint_edit_popup_pin");
-    let pinned = ctx.data(|d| d.get_temp::<PopupPin>(id)).filter(|p| p.joint == jid && anim.is_some_and(|a| a.joint == jid));
-    let at = pinned.map_or(by_mate, |p| p.at);
-    ctx.data_mut(|d| d.insert_temp(id, PopupPin { joint: jid, at }));
-    at
+    let running = jc.joint_anim.as_ref().is_some_and(|a| a.joint == j.id);
+    let pinned = ctx.data(|d| d.get_temp::<PopupPin>(id)).filter(|p| p.joint == j.id && running).map(|p| p.anchors);
+    let anchors = pinned.or_else(|| anchors_of(jc, j))?;
+    ctx.data_mut(|d| d.insert_temp(id, PopupPin { joint: j.id, anchors }));
+    let place = qymcad_ui_state::Place::by(qymcad_ui_state::By::Pair { a: anchors.a, b: anchors.b });
+    Some(if running { place.held() } else { place })
 }
 
-/// The joint EDIT popup AT THE GEOMETRY (a double click on the glyph): EVERY parameter of the joint -
-/// the angle, the offset and the second offset as drag values, the `f=` expressions over global
-/// variables, flipping the side, driving from the root, and the min/max limits. Anchors A and B are
-/// edited in the TOP bar `joint_edit_bar` ("swap anchor"). One tool-command experience. A single click
-/// does NOT open the popup - it only shows the gizmo of the freedoms.
+/// What the fields of a joint are told apart by from the fields of the commands of the part, numbered by their kind
+/// below 256.
+const JOINT_FIELDS: u64 = 258;
+
+/// The keys of the fields of the three slots of a joint, in the order of the slots.
+const SLOT_KEYS: [&str; 3] = ["angle", "offset", "offset2"];
+
+/// The two anchors of a joint as its box names them: the key of the tag and the prefix of the keys of their fields.
+const ANCHORS: [AnchorTag; 2] = [AnchorTag { tag: "j-tag-a", prefix: "a" }, AnchorTag { tag: "j-tag-b", prefix: "b" }];
+
+/// ONE ANCHOR OF A JOINT in its box: the catalogue key of its tag, and the prefix of the keys of its fields.
+struct AnchorTag {
+    tag: &'static str,
+    prefix: &'static str,
+}
+
+/// THE BOX OF A JOINT AT THE GEOMETRY (a double click on the glyph): its values - the angle, the offset and the second
+/// offset - as fields that take a formula, each pinned or let go by its lock; the side, driving from the root, the run
+/// of a degree, "keep as it stands"; the anchors - the attachment point, the turn, the axis, the offsets; the limits of
+/// the free degrees. In the frame of every tool: Enter and Apply keep what was done, Esc and Cancel take it away - a joint
+/// just made, or what was changed in one reopened. Anchors A
+/// and B are re-picked in the bar (`joint_edit_bar`). A single click does NOT open the box - it only shows the gizmo
+/// of the freedoms.
 pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect: Rect) {
-    use qymcad_core::feature::{AnchorRef, JointKind};
     let Some(jid) = jc.joint.edit else { return };
     if !matches!(jc.workbench, qymcad_ui_state::Workbench::Assembly) || !jc.mode_3d {
         return;
@@ -37,175 +75,390 @@ pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect
         jc.joint.edit = None; // the joint is gone (deleted) - leave the edit
         return;
     };
-    let basis = jc.cam.basis();
-    let mid = qymcad_ui_state::joint_endpoints(&qymcad_ui_state::DrawCtx { cam: jc.cam, set: jc.set, scheme: jc.scheme, project: jc.project, active_path: jc.active_path }, &j, rect, &basis)
-        .map(|(a, b)| Pos2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5))
-        .unwrap_or_else(|| rect.center());
-    let face_rigid = matches!(j.kind, JointKind::Rigid)
-        && jc.project.connector(j.a).is_some_and(|c| matches!(c.anchor, AnchorRef::FaceCenter(..)))
-        && jc.project.connector(j.b).is_some_and(|c| matches!(c.anchor, AnchorRef::FaceCenter(..)));
-    let nested = jc.project.joint_home(&j).is_some_and(|h| h != jc.project.root);
-    // A RIGID JOINT ALSO SHOWS AN ANGLE: it has no freedom, but it has two parameters - the gap and
-    // the ROTATION about the axis of the joint. While the field was missing, there was nothing to turn
-    // a fastened part with.
-    let has_angle = matches!(j.kind, JointKind::Rigid | JointKind::Revolute | JointKind::Cylindrical | JointKind::PinSlot | JointKind::Ball | JointKind::Planar);
-    let has_off = matches!(j.kind, JointKind::Rigid | JointKind::Slider | JointKind::Cylindrical | JointKind::PinSlot | JointKind::Planar | JointKind::Ball);
-    let has_off2 = matches!(j.kind, JointKind::Planar | JointKind::Ball);
-    // the slot captions come from one definition (`joint_slot_label`) rather than from a copy per place
-    let (off_lbl, off2_lbl) = (joint_slot_label(j.kind, 1).0, joint_slot_label(j.kind, 2).0);
-    let free = j.kind.free_slots();
-    let mut changed = false;
-    let mut close = false;
+    let place = popup_place(ctx, jc, &j).unwrap_or(qymcad_ui_state::Place::by(qymcad_ui_state::By::ViewCorner));
+    joint_fields_follow(ctx, jc.project, jc.joint, &j);
+    let layout = joint_layout(jc, &j);
     let before = jc.project.joints.clone();
-    let vars = jc.project.param_map();
-    let mut exprs = Vec::new();
-    let at = popup_place(ctx, jid, jc.joint_anim.as_ref(), qymcad_ui_state::clamp_popup(mid, rect) + egui::vec2(12.0, -12.0));
-    egui::Area::new(egui::Id::new("joint_edit_popup")).fixed_pos(at).order(qymcad_ui_state::AT_GEOMETRY).show(ctx, |ui| {
-        qymcad_ui_state::at_geometry_ui(ui);
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_max_width(260.0);
-            ui.horizontal(|ui| {
-                // THE NAME GOES THROUGH THE NAME TRANSLATOR. The name of a joint is stored as a
-                // catalogue key with a number (`name-joint-kind-rigid-n#3`), and printed as it is it
-                // shows a service code. That is exactly what an earlier screenshot about the list of
-                // kinds was about.
-                ui.label(egui::RichText::new(format!("{} {}", ph::LINK, qymcad_i18n::name(&j.name))).strong());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button(ph::X).on_hover_text(qymcad_i18n::tr("j-done-esc")).clicked() {
-                        close = true;
-                    }
-                });
-            });
-            ui.separator();
-            // the direct drag values plus the toggles for the side and for driving from the root
-            if let Some(jj) = jc.project.joints.iter_mut().find(|x| x.id == jid) {
-                ui.horizontal_wrapped(|ui| {
-                    if has_angle {
-                        changed |= joint_slot_drag(ui, jj, 0, 1.0, &vars, &mut exprs);
-                    }
-                    if has_off {
-                        changed |= joint_slot_drag(ui, jj, 1, 0.5, &vars, &mut exprs);
-                    }
-                    if has_off2 {
-                        changed |= joint_slot_drag(ui, jj, 2, 0.5, &vars, &mut exprs);
-                    }
-                });
-                if nested {
-                    changed |= ui.checkbox(&mut jj.global, qymcad_i18n::tr("j-drive-from-root")).on_hover_text(qymcad_i18n::tr("j-expose-hint")).changed();
-                }
-            }
-            // THE SIDE OF THE JOINT GOES THROUGH THE CORE'S DOOR, NOT THROUGH EDITING A FIELD.
-            //
-            // The tick box sat straight on the `flip` field, and the solver overwrites that same field
-            // with its own answer: tick it, and the next solve saw "no side chosen", took the nearest
-            // one (the same one) and silently cleared the tick. What is shown is the side IN EFFECT,
-            // and a click asks for the opposite one.
-            if face_rigid {
-                let mut on = jc.project.joint_side_flipped(jid);
-                if ui.checkbox(&mut on, qymcad_i18n::tr("j-flip-side")).on_hover_text(qymcad_i18n::tr("j-coplanar-hint")).changed() {
-                    jc.project.flip_joint_side(jid);
-                    changed = true;
-                }
-            }
-            // RUNNING A DEGREE THROUGH (an animation): once a mechanism is assembled, it can be watched
-            // moving. Numbers do not show this, and dragging a part by mouse to make sure it reaches the
-            // end is guesswork, not a check.
-            let anim_on = jc.joint_anim.as_ref().is_some_and(|a| a.joint == jid);
-            ui.horizontal(|ui| {
-                if anim_on {
-                    if ui.button(format!("{} {}", ph::STOP, qymcad_i18n::tr("j-anim-stop"))).clicked() {
-                        stop_joint_anim(jc);
-                    }
-                } else {
-                    for slot in 0..3 {
-                        if jc.project.joint_anim_range(jid, slot).is_none() {
-                            continue; // this degree has nowhere to run - so it gets no button
-                        }
-                        let label = qymcad_i18n::tr(match slot {
-                            0 => "j-anim-angle",
-                            1 => "j-anim-offset",
-                            _ => "j-anim-offset2",
-                        });
-                        if ui.button(format!("{} {label}", ph::PLAY)).on_hover_text(qymcad_i18n::tr("j-anim-hint")).clicked() {
-                            qymcad_ui_state::start_joint_anim(jc.joint_anim, jc.project, jid, slot);
-                        }
-                    }
-                    // A "LIMITS REQUIRED" NOTICE USED TO STAND HERE. A slider with no bounds had
-                    // nowhere to run, and the reason was explained - but the reason was made up: a
-                    // rotation did have a default range (a full turn), it is only travel that has no
-                    // "full turn". Now default travel is MEASURED off the part itself
-                    // (`joint_anim_range`), and there is nothing to explain: the run button is always
-                    // there.
-                }
-            });
-            // "KEEP AS IT STANDS" (as built): the joint declares THE CURRENT placement to be its own.
-            // Needed where the parts already stand as they should - placed by hand or arrived by import:
-            // there is no point mating them, the joint is there only to keep them from drifting apart.
-            let as_built_now = jc.project.joints.iter().find(|x| x.id == jid).and_then(|x| x.as_built).is_some();
-            ui.horizontal(|ui| {
-                if ui.button(qymcad_i18n::tr(if as_built_now { "j-as-built-again" } else { "j-as-built" })).on_hover_text(qymcad_i18n::tr("j-as-built-hint")).clicked() {
-                    if jc.project.set_joint_as_built(jid) {
-                        *jc.status = Notice::info(qymcad_i18n::tr("j-as-built-ok"));
-                        changed = true;
-                    } else {
-                        // NO SILENT REFUSAL: the anchor may have failed to resolve, and that must be
-                        // learned here rather than from a part that does not move.
-                        *jc.status = Notice::error(qymcad_i18n::tr("j-as-built-failed"));
-                    }
-                }
-                if as_built_now && ui.button(qymcad_i18n::tr("j-as-built-off")).clicked() {
-                    jc.project.clear_joint_as_built(jid);
-                    *jc.status = Notice::info(qymcad_i18n::tr("j-as-built-cleared"));
-                    changed = true;
-                }
-            });
-            // THE ANCHORS OF A JOINT - tuning them IS the answer to "why did the part end up in the
-            // wrong place". The attachment point on a cylinder and the turn of the secondary axis solve
-            // that directly, and without them there is nothing to correct a wrong guess with.
-            changed |= connector_controls(jc, ui, jid);
-            // the parametric expression fields (global variables, `f=`) work like sketch dimensions
-            if has_angle {
-                ui.horizontal(|ui| {
-                    ui.label(qymcad_i18n::tr("j-angle-expr"));
-                    dim_expr_field_in(&mut jc.rebuild(), ui, jid, "angle", "joint_popup");
-                });
-            }
-            if has_off {
-                ui.horizontal(|ui| {
-                    ui.label(format!("ƒ {off_lbl}"));
-                    dim_expr_field_in(&mut jc.rebuild(), ui, jid, "offset", "joint_popup");
-                });
-            }
-            if has_off2 {
-                ui.horizontal(|ui| {
-                    ui.label(format!("ƒ {off2_lbl}"));
-                    dim_expr_field_in(&mut jc.rebuild(), ui, jid, "offset2", "joint_popup");
-                });
-            }
-            // the min/max limits over the free slots - always expanded
-            if free.iter().any(|&f| f) {
-                ui.separator();
-                ui.label(egui::RichText::new(qymcad_i18n::tr("j-limits")).strong());
-                if let Some(jj) = jc.project.joints.iter_mut().find(|x| x.id == jid) {
-                    // THE INDEX IS AN ARGUMENT: `joint_slot_limits` needs the slot's number to know which
-                    // of the three it is editing. Walking `free` by value would hide it.
-                    for (slot, _) in free.iter().enumerate().filter(|(_, f)| **f) {
-                        changed |= joint_slot_limits(ui, jj, slot);
-                    }
-                }
-            }
-        });
-    });
-    if let Err(e) = keep_slot_exprs(jc.project, jid, exprs) {
-        *jc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::error_words::expr_error_text(&e));
+    let the_box = qymcad_ui_state::FieldsBox {
+        id: egui::Id::new("joint_edit_popup"),
+        tool: JOINT_FIELDS,
+        place,
+        focus: qymcad_ui_state::Focus::Waits,
+        hidden: &[],
+        ends: qymcad_ui_state::Ends::ApplyCancel,
+        esc: qymcad_ui_state::EscBy::Bar,
+    };
+    let scheme = jc.scheme;
+    let basis = jc.cam.basis();
+    let here = qymcad_ui_state::current_ctx_id(jc.active_path, jc.project);
+    let look = qymcad_ui_state::BoxLook { project: &*jc.project, pal: &scheme.pal, screen: qymcad_ui_state::Screen { cam: jc.cam, set: jc.set, rect, basis: &basis }, here };
+    let answer = qymcad_ui_state::tool_box(ctx, &the_box, &look, &mut jc.joint.fields.fields, &layout, &qymcad_ui_state::Gate::Open);
+    joint_typing_marks(ctx, &jc.joint.fields.fields);
+    let taken = joint_fields_take(jc.project, &jc.joint.fields.fields, &j);
+    if let Some(e) = &taken.refused {
+        *jc.status = Notice::refusal(qymcad_i18n::error_words::expr_error_text(e));
+    }
+    let mut changed = taken.changed;
+    for d in answer.did {
+        changed |= joint_opt_act(jc, &j, d);
     }
     joint_values_step(ctx, jc.edits, jc.project, before, changed);
     if changed {
         qymcad_ui_state::mark_dirty_for_rebuild(&mut jc.rebuild()); // the document is marked; the planner does the counting
     }
-    if close {
-        joint_create_finish(jc, true); // the popup's Done keeps a joint just made
-        qymcad_ui_state::exit_joint_edit(jc.joint, jc.status);
+    qymcad_ui_state::go_through(ctx, &qymcad_ui_state::Gate::Open, answer.verdict, &mut JointEditDoors { jc });
+}
+
+/// The slots of joint `j` shown in its box: a rigid joint has an angle as well - no freedom, but the turn about its
+/// axis is a value of it, and without the field there was nothing to turn a fastened part with.
+fn shown_slots(j: &qymcad_core::feature::Joint) -> Vec<usize> {
+    use qymcad_core::feature::JointKind;
+    let has = [
+        matches!(j.kind, JointKind::Rigid | JointKind::Revolute | JointKind::Cylindrical | JointKind::PinSlot | JointKind::Ball | JointKind::Planar),
+        matches!(j.kind, JointKind::Rigid | JointKind::Slider | JointKind::Cylindrical | JointKind::PinSlot | JointKind::Planar | JointKind::Ball),
+        matches!(j.kind, JointKind::Planar | JointKind::Ball),
+    ];
+    (0..3).filter(|s| has[*s]).collect()
+}
+
+/// The value slot `slot` of joint `j` holds: what drives it, or - free - where the part ended up.
+fn slot_value(j: &qymcad_core::feature::Joint, slot: usize) -> f64 {
+    j.drive[slot].unwrap_or(match slot {
+        0 => j.angle,
+        1 => j.offset,
+        _ => j.offset2,
+    })
+}
+
+/// THE FIELDS OF JOINT `j` AS THE DOCUMENT HOLDS THEM: its slots - with their formulas - the turn and the offsets of
+/// both anchors, and the limits switched on of its free degrees.
+fn joint_fields(project: &Project, j: &qymcad_core::feature::Joint) -> Vec<qymcad_ui_state::CmdParam> {
+    use qymcad_ui_state::CmdParam;
+    let mut v = Vec::new();
+    for slot in shown_slots(j) {
+        let w = joint_slot_words(j.kind, slot);
+        let value = slot_value(j, slot);
+        let mut p = CmdParam::new(w.name, SLOT_KEYS[slot], value, -100000.0, 100000.0);
+        p.txt = project.feat_dim(j.id, SLOT_KEYS[slot]).filter(|t| !t.is_empty()).map_or_else(|| qymcad_core::expr::fmt_num(value), str::to_string);
+        v.push(p);
+    }
+    // THE ANCHORS OF A JOINT - tuning them IS the answer to "why did the part end up in the wrong place": the turn of the
+    // secondary axis and an offset along all three axes, as an anchor almost never sits at the centre of a face exactly
+    for (a, cid) in ANCHORS.iter().zip([j.a, j.b]) {
+        let Some(c) = project.connector(cid) else { continue };
+        v.push(field_of(CmdParam::new("j-turn", &format!("{}-turn", a.prefix), c.rot_deg, -3600.0, 3600.0), a.tag));
+        for (k, label) in ["j-offset-x", "j-offset-y", "j-offset-z"].into_iter().enumerate() {
+            v.push(field_of(CmdParam::new(label, &format!("{}-{k}", a.prefix), c.offset_xyz[k], -100000.0, 100000.0), a.tag));
+        }
+    }
+    let free = j.kind.free_slots();
+    for slot in (0..3).filter(|s| free[*s]) {
+        let name = joint_slot_words(j.kind, slot).name;
+        if let Some(v0) = j.limit_min[slot] {
+            v.push(field_of(CmdParam::new("j-min", &format!("min{slot}"), v0, -100000.0, 100000.0), name));
+        }
+        if let Some(v1) = j.limit_max[slot] {
+            v.push(field_of(CmdParam::new("j-max", &format!("max{slot}"), v1, -100000.0, 100000.0), name));
+        }
+    }
+    v
+}
+
+/// A field told apart by whose value it is, its number written plainly.
+fn field_of(p: qymcad_ui_state::CmdParam, whose: &'static str) -> qymcad_ui_state::CmdParam {
+    let mut p = p.of(whose);
+    p.txt = qymcad_core::expr::fmt_num(p.val);
+    p
+}
+
+/// The id of field `key` of the box of a joint, as the frame gives it.
+fn field_id(key: &str) -> egui::Id {
+    egui::Id::new(("cmdparam", JOINT_FIELDS, key.to_string()))
+}
+
+/// THE FIELDS OF THE BOX FOLLOW THE JOINT: made anew for another joint, and a value changed elsewhere - the solve, a
+/// drag of the gizmo, a run - written into its field; a field being typed in, or holding the value the joint holds,
+/// keeps its text - a formula stays a formula.
+fn joint_fields_follow(ctx: &egui::Context, project: &Project, joint: &mut qymcad_ui_state::JointCommand, j: &qymcad_core::feature::Joint) {
+    let want = joint_fields(project, j);
+    let mine = joint.fields.joint == j.id;
+    let focused = ctx.memory(|m| m.focused());
+    let kept = std::mem::take(&mut joint.fields.fields);
+    joint.fields = qymcad_ui_state::JointFields {
+        joint: j.id,
+        fields: want
+            .into_iter()
+            .map(|w| match kept.iter().find(|p| mine && p.key == w.key) {
+                Some(p) if focused == Some(field_id(&p.key)) || p.txt.trim() == w.txt.trim() => p.clone(),
+                _ => w,
+            })
+            .collect(),
+    };
+}
+
+/// WHERE THE TYPING IN THE BOX BEGINS AND ENDS - a field taking the keyboard and giving it up - is where its step of
+/// undo opens and closes (`joint_values_step`): the field writes the value while it is typed.
+fn joint_typing_marks(ctx: &egui::Context, fields: &[qymcad_ui_state::CmdParam]) {
+    let focused = ctx.memory(|m| m.focused());
+    let now = fields.iter().any(|p| focused == Some(field_id(&p.key)));
+    let id = egui::Id::new("a field of the joint box holds the keyboard");
+    let was = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    ctx.data_mut(|d| d.insert_temp(id, now));
+    let mark = match (was, now) {
+        (false, true) => "joint_values_began",
+        (true, false) => "joint_values_ended",
+        _ => return,
+    };
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(mark), true));
+}
+
+/// THE VALUES TYPED INTO THE BOX, written into the joint: a slot typed is pinned at its value and keeps its formula, as
+/// a parameter drives it later; an anchor moves; a limit is set. Only a field whose text differs from what the joint
+/// holds is written: the number a field shows is rounded, and taking it back would pin a free degree where the solve
+/// left it, a hair off, every frame.
+fn joint_fields_take(project: &mut Project, fields: &[qymcad_ui_state::CmdParam], j: &qymcad_core::feature::Joint) -> Taken {
+    let held = joint_fields(project, j);
+    let vars = project.param_map();
+    let typed = |key: &str| {
+        let p = fields.iter().find(|p| p.key == key)?;
+        let shown = held.iter().find(|w| w.key == key)?;
+        (p.txt.trim() != shown.txt.trim()).then(|| qymcad_ui_state::field_value(p, &vars).ok()).flatten().map(|v| Typed { value: v, text: p.txt.trim().to_string() })
+    };
+    let (mut changed, mut refused) = (false, None);
+    for slot in shown_slots(j) {
+        let Some(t) = typed(SLOT_KEYS[slot]) else { continue };
+        // WRITTEN THROUGH THE ONE DOOR OF A FEATURE'S NUMBER, a plain number standing as the number: the last thing typed
+        // drives, a formula as a parameter drives it later. What the door refuses - a formula coming back to the name of
+        // this very number - pins nothing and is said.
+        let at = qymcad_core::model::FeatNumber { node: j.id, key: SLOT_KEYS[slot] };
+        if let Err(e) = project.write_feat_formula(&at, &t.text, qymcad_core::model::PlainNumber::Stands) {
+            refused.get_or_insert(e);
+            continue;
+        }
+        project.set_joint_drive(j.id, slot, Some(t.value));
+        changed = true;
+    }
+    for (a, cid) in ANCHORS.iter().zip([j.a, j.b]) {
+        let Some(c) = project.connector(cid).cloned() else { continue };
+        let rot = typed(&format!("{}-turn", a.prefix));
+        let off: [Option<Typed>; 3] = std::array::from_fn(|k| typed(&format!("{}-{k}", a.prefix)));
+        if rot.is_some() || off.iter().any(Option::is_some) {
+            let offset: [f64; 3] = std::array::from_fn(|k| off[k].as_ref().map_or(c.offset_xyz[k], |t| t.value));
+            changed |= project.set_connector_placement(cid, c.point, rot.map_or(c.rot_deg, |t| t.value), offset);
+        }
+    }
+    let min: Vec<Option<Typed>> = (0..3).map(|s| typed(&format!("min{s}"))).collect();
+    let max: Vec<Option<Typed>> = (0..3).map(|s| typed(&format!("max{s}"))).collect();
+    if let Some(jj) = project.joints.iter_mut().find(|x| x.id == j.id) {
+        for slot in 0..3 {
+            changed |= set_limit(&mut jj.limit_min[slot], min[slot].as_ref());
+            changed |= set_limit(&mut jj.limit_max[slot], max[slot].as_ref());
+        }
+    }
+    Taken { changed, refused }
+}
+
+/// WHAT THE FIELDS OF THE BOX OF A JOINT CAME TO IN A FRAME: whether the joint changed, and the first formula the
+/// document refused.
+struct Taken {
+    changed: bool,
+    refused: Option<qymcad_core::errors::ExprError>,
+}
+
+/// A VALUE TYPED INTO A FIELD OF THE BOX: what it works out to, and the text it was typed as.
+struct Typed {
+    value: f64,
+    text: String,
+}
+
+/// A limit switched on takes the value typed in its field; whether it changed.
+fn set_limit(limit: &mut Option<f64>, typed: Option<&Typed>) -> bool {
+    match (limit.as_mut(), typed) {
+        (Some(v), Some(t)) => {
+            *v = t.value;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// THE LAYOUT OF THE BOX OF JOINT `j`, as a mate dialog lays it: at the top the degrees of the joint - the value and its
+/// lock - with the side and driving from the root; a section for each part - where its anchor sits, its axis, its turn,
+/// its offset along X, Y and Z on one line; the limits of the free degrees, folded; at the foot the run of a degree and
+/// "keep as it stands".
+fn joint_layout(jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint) -> qymcad_ui_state::Layout {
+    use qymcad_core::feature::{AnchorRef, JointKind};
+    use qymcad_ui_state::{AsLit, Folded, Opt, OptKey, Row, Section};
+    let project = &*jc.project;
+    let mut top = Vec::new();
+    // A VALUE IS PINNED OR FREE: free, the field shows where the part ended up; typed, the degree is pinned; the lock
+    // lets it go again
+    for slot in shown_slots(j) {
+        let w = joint_slot_words(j.kind, slot);
+        let (icon, hint) = if j.drive[slot].is_some() { (ph::LOCK, "j-value-set") } else { (ph::LOCK_OPEN, "j-value-free") };
+        let lock = Opt::switch(OptKey::at("drive", slot), icon, j.drive[slot].is_some().lit()).hint(qymcad_i18n::tr(hint));
+        top.push(Row::new(qymcad_i18n::tr(w.row)).field(SLOT_KEYS[slot]).unit(w.unit).opt(lock));
+    }
+    if project.joint_home(j).is_some_and(|h| h != project.root) {
+        top.push(Row::new("").opt(Opt::switch(OptKey::of("global"), qymcad_i18n::tr("j-drive-from-root"), j.global.lit()).hint(qymcad_i18n::tr("j-expose-hint"))));
+    }
+    // THE SIDE OF THE JOINT GOES THROUGH THE CORE'S DOOR: what is shown is the side IN EFFECT, and a click asks for the
+    // opposite one. A tick on the field itself was cleared by the next solve, which writes its own answer there.
+    let face = |cid| project.connector(cid).is_some_and(|c| matches!(c.anchor, AnchorRef::FaceCenter(..)));
+    if matches!(j.kind, JointKind::Rigid) && face(j.a) && face(j.b) {
+        top.push(Row::new("").opt(Opt::switch(OptKey::of("flip_side"), qymcad_i18n::tr("j-flip-side"), project.joint_side_flipped(j.id).lit()).hint(qymcad_i18n::tr("j-coplanar-hint"))));
+    }
+    let mut sections = vec![Section::plain(top)];
+    for (i, (a, cid)) in ANCHORS.iter().zip([j.a, j.b]).enumerate() {
+        let Some(c) = project.connector(cid) else { continue };
+        let part = project.components.iter().find(|p| p.id == c.owner).map(|p| qymcad_i18n::name(&p.name)).unwrap_or_default();
+        let title = qymcad_i18n::tr2("box-part-of", "tag", &qymcad_i18n::tr(a.tag), "name", &part);
+        let mut rows = Vec::new();
+        // an attachment point means something only where the geometry has a length along its axis
+        if matches!(c.anchor, AnchorRef::FaceCenter(..) | AnchorRef::EdgeMid(..)) {
+            let words: Vec<&str> = ATTACH_POINTS.iter().map(|p| p.label()).collect();
+            rows.push(Row::new(qymcad_i18n::tr("box-point")).opt(Opt::modes(OptKey::at("attach", i), None, &words, ATTACH_POINTS.iter().position(|p| *p == c.point).unwrap_or(0))));
+        }
+        // THE SECONDARY AXIS BY A PICK: derived from the geometry, but a square face has no long side, and an edge is
+        // pointed at by hand then; the turn by a quarter is the common case of the turn
+        let armed = jc.joint.axis_pick == Some(cid);
+        let mut axis = Row::new(qymcad_i18n::tr("box-axis"))
+            .opt(Opt::pick(OptKey::at("conn_axis", i), qymcad_i18n::tr("j-axis-pick"), None, armed.lit()).hint(qymcad_i18n::tr("j-axis-pick-hint")))
+            .opt(Opt::press(OptKey::at("roll", i), format!("{} 90{}", ph::ARROW_CLOCKWISE, qymcad_i18n::tr("unit-deg-suffix"))).hint(qymcad_i18n::tr("j-roll-hint")));
+        if c.axis_ref.is_some() {
+            axis = axis.opt(Opt::press(OptKey::at("conn_axis_auto", i), qymcad_i18n::tr("j-axis-auto")).hint(qymcad_i18n::tr("j-axis-auto-hint")));
+        }
+        rows.push(axis);
+        rows.push(Row::new(qymcad_i18n::tr("box-turn")).field(&format!("{}-turn", a.prefix)).unit("unit-deg-suffix"));
+        let mut offset = Row::new(qymcad_i18n::tr("box-offset")).unit("unit-mm-suffix");
+        for (k, tag) in ["X", "Y", "Z"].into_iter().enumerate() {
+            offset = offset.tagged(tag, &format!("{}-{k}", a.prefix));
+        }
+        rows.push(offset);
+        sections.push(Section::titled(title, Folded::No, rows));
+    }
+    // the limits of the free degrees, each switched on by its tick and typed in its field - folded as the box opens
+    let free = j.kind.free_slots();
+    let limits: Vec<Row> = (0..3)
+        .filter(|s| free[*s])
+        .map(|slot| {
+            let w = joint_slot_words(j.kind, slot);
+            let end = |key: &'static str, end: &str, on: bool| Opt::switch(OptKey::at(key, slot), qymcad_i18n::tr(end), on.lit());
+            Row::new(qymcad_i18n::tr(w.row))
+                .opt(end("limit_min", "j-min", j.limit_min[slot].is_some()))
+                .field(&format!("min{slot}"))
+                .opt(end("limit_max", "j-max", j.limit_max[slot].is_some()))
+                .field(&format!("max{slot}"))
+                .unit(w.unit)
+        })
+        .collect();
+    if !limits.is_empty() {
+        sections.push(Section::titled(qymcad_i18n::tr("box-limits"), Folded::Yes, limits));
+    }
+    qymcad_ui_state::Layout { sections, foot: joint_foot(jc, j) }
+}
+
+/// THE FOOT OF THE BOX OF A JOINT: the run of a degree - an assembled mechanism watched moving, a degree with nowhere to
+/// run getting no button - and "keep as it stands": the joint declares the current placement its own, for parts placed
+/// by hand or imported where they belong.
+fn joint_foot(jc: &qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint) -> Vec<qymcad_ui_state::Opt> {
+    use qymcad_ui_state::{Opt, OptKey};
+    let project = &*jc.project;
+    let mut v = Vec::new();
+    if jc.joint_anim.as_ref().is_some_and(|a| a.joint == j.id) {
+        v.push(Opt::press(OptKey::of("anim_stop"), format!("{} {}", ph::STOP, qymcad_i18n::tr("j-anim-stop"))));
+    } else {
+        for slot in (0..3).filter(|s| project.joint_anim_range(j.id, *s).is_some()) {
+            let word = qymcad_i18n::tr(["j-anim-angle", "j-anim-offset", "j-anim-offset2"][slot]);
+            v.push(Opt::press(OptKey::at("anim", slot), format!("{} {word}", ph::PLAY)).hint(qymcad_i18n::tr("j-anim-hint")));
+        }
+    }
+    let as_built = j.as_built.is_some();
+    v.push(Opt::press(OptKey::of("as_built"), qymcad_i18n::tr(if as_built { "j-as-built-again" } else { "j-as-built" })).hint(qymcad_i18n::tr("j-as-built-hint")));
+    if as_built {
+        v.push(Opt::press(OptKey::of("as_built_off"), qymcad_i18n::tr("j-as-built-off")));
+    }
+    v
+}
+
+/// The points an anchor sits at along its axis, in the order the box offers them.
+const ATTACH_POINTS: [qymcad_core::asm::connector::AttachPoint; 3] =
+    [qymcad_core::asm::connector::AttachPoint::Middle, qymcad_core::asm::connector::AttachPoint::Start, qymcad_core::asm::connector::AttachPoint::End];
+
+/// WHAT WAS DONE TO AN OPTION OF THE BOX OF JOINT `j`, done to the joint; whether the document changed.
+fn joint_opt_act(jc: &mut qymcad_ui_state::JointCtx, j: &qymcad_core::feature::Joint, did: qymcad_ui_state::Did) -> bool {
+    use qymcad_ui_state::Did;
+    let anchor = |i: usize| [j.a, j.b][i.min(1)];
+    match did {
+        Did::Switched { key } => match key.name {
+            "drive" => {
+                let slot = key.at.min(2);
+                jc.project.set_joint_drive(j.id, slot, j.drive[slot].is_none().then(|| slot_value(j, slot)));
+                true
+            }
+            "global" => {
+                if let Some(jj) = jc.project.joints.iter_mut().find(|x| x.id == j.id) {
+                    jj.global = !jj.global;
+                }
+                true
+            }
+            "flip_side" => {
+                jc.project.flip_joint_side(j.id);
+                true
+            }
+            "conn_axis" => {
+                let cid = anchor(key.at);
+                jc.joint.axis_pick = if jc.joint.axis_pick == Some(cid) { None } else { Some(cid) };
+                false
+            }
+            "limit_min" | "limit_max" => {
+                let slot = key.at.min(2);
+                if let Some(jj) = jc.project.joints.iter_mut().find(|x| x.id == j.id) {
+                    let limit = if key.name == "limit_min" { &mut jj.limit_min[slot] } else { &mut jj.limit_max[slot] };
+                    *limit = if limit.is_some() { None } else { Some(0.0) };
+                }
+                true
+            }
+            _ => false,
+        },
+        Did::Pressed { key } => match key.name {
+            "anim_stop" => {
+                stop_joint_anim(jc);
+                false
+            }
+            "anim" => {
+                qymcad_ui_state::start_joint_anim(jc.joint_anim, jc.project, j.id, key.at.min(2));
+                false
+            }
+            "as_built" => {
+                if jc.project.set_joint_as_built(j.id) {
+                    *jc.status = Notice::info(qymcad_i18n::tr("j-as-built-ok"));
+                    true
+                } else {
+                    // NO SILENT REFUSAL: the anchor may have failed to resolve, and that is learned here rather than from
+                    // a part that does not move
+                    *jc.status = Notice::error(qymcad_i18n::tr("j-as-built-failed"));
+                    false
+                }
+            }
+            "as_built_off" => {
+                jc.project.clear_joint_as_built(j.id);
+                *jc.status = Notice::info(qymcad_i18n::tr("j-as-built-cleared"));
+                true
+            }
+            // THE TURN by a quarter, the common case; any other turn is typed in its field
+            "roll" => match jc.project.connector(anchor(key.at)).cloned() {
+                Some(c) => jc.project.set_connector_placement(c.id, c.point, (c.rot_deg + 90.0).rem_euclid(360.0), c.offset_xyz),
+                None => false,
+            },
+            "conn_axis_auto" => jc.project.set_connector_axis_ref(anchor(key.at), None),
+            _ => false,
+        },
+        Did::Chose { key, index } if key.name == "attach" => match jc.project.connector(anchor(key.at)).cloned() {
+            Some(c) => jc.project.set_connector_placement(c.id, ATTACH_POINTS[index.min(2)], c.rot_deg, c.offset_xyz),
+            None => false,
+        },
+        _ => false,
     }
 }
 

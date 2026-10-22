@@ -236,6 +236,10 @@ pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     draw_feat_cmd_preview(pn, painter, rect);
     draw_sketch_plane_picker(pn, painter, rect);
     draw_joint_pick_highlight(pn, painter, rect);
+    // where the model stands, for the boxes of the tools to stand off it - here, past the card and the raster alike
+    if let Some(model) = qymcad_ui_state::model_on_screen(pn, rect) {
+        qymcad_ui_state::keep_model_in_sight(painter.ctx(), model);
+    }
     draw_component_gizmo(pn, painter, rect);
     draw_body_gizmo(pn, painter, rect); // the body gizmo inside a Part
     draw_section_gizmo(pn, painter, rect); // the section plane + the offset arrow

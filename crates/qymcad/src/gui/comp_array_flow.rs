@@ -46,7 +46,7 @@ pub(super) mod tests {
             p.val = 30.0;
             p.txt = "30".into();
         }
-        crate::gui::commands::apply_comp_array(&mut app.part_ctx());
+        crate::gui::commands::apply_comp_array(&mut app.part_ctx()).expect("the array is made");
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
 
         let pat = app.project.comp_pattern_of(comp).expect("the array is created");
@@ -74,15 +74,18 @@ pub(super) mod tests {
         assert!(hand.press_word(&name, egui::pos2(0.0, 0.0)), "setup: the part {name:?} is picked in the tree");
         assert!(hand.press_hint(&qymcad_i18n::tr("tb-comp-lin-array-hint")), "the button of a linear component array");
         assert_eq!(hand.app.side.carr.src, comp, "the command took another source; the status line: {}", hand.app.status);
-        assert!(hand.type_after_word(&qymcad_i18n::tr("cmd-copies"), "101"), "the field of the copies");
-        assert!(hand.press_word(&qymcad_i18n::tr("cmd-dir2"), egui::pos2(0.0, 0.0)), "the tick of the second direction, pressed on its word");
-        assert!(hand.type_after_word(&qymcad_i18n::tr("cmd-dir2"), "100"), "the field of the second direction");
+        // the copies of each direction lead the row of the direction in the box at the geometry
+        let direction = |n: &str| qymcad_i18n::tr1("box-direction-n", "n", n);
+        assert!(hand.type_after_word(&direction("1"), "101"), "the field of the copies at the geometry");
+        assert!(hand.press_word(&qymcad_i18n::tr("cmd-dir2"), egui::pos2(0.0, 0.0)), "the switch of the second direction, pressed on its word");
+        assert!(hand.type_after_word(&direction("2"), "100"), "the field of the copies of the second direction at the geometry");
         hand.set("cstep", 30.0).set("cstep2", 30.0); // the steps: the fields at the geometry
-        hand.key(egui::Key::Enter); // the typing in the field ends
-        hand.key(egui::Key::Enter); // the command applies
+        hand.key(egui::Key::Enter); // the command is asked to apply
         assert!(hand.app.project.comp_pattern_of(comp).is_none(), "a grid past the limit was made; the status line: {}", hand.app.status);
         let limit = qymcad_core::feature::MAX_PATTERN_INSTANCES.to_string();
-        assert!(hand.app.status.words.contains("10100") && hand.app.status.words.contains(&limit), "the refusal does not name the grid and the limit: {}", hand.app.status);
+        let said = hand.tool_says();
+        let refused = said.iter().any(|n| n.tone == qymcad_ui_state::Tone::Refusal && n.words.contains("10100") && n.words.contains(&limit));
+        assert!(refused, "the refusal does not name the grid and the limit where the tool speaks: {said:?}");
     }
 
     /// With no part selected the command does not start and says why.
@@ -104,7 +107,7 @@ pub(super) mod tests {
         let ci = app.project.components.iter().position(|c| c.id == comp).expect("the index");
         app.chosen.sel = Sel::Component(ci);
         app.start_comp_array(1);
-        app.on_escape();
+        super::super::hand::escape(&mut app);
         assert_eq!(app.side.carr.mode, 0, "the command is closed");
         assert!(app.project.comp_patterns().is_empty(), "nothing was created");
     }
@@ -166,7 +169,7 @@ pub(super) mod tests {
         assert!((qymcad_ui_state::cmd_val(&app.tools.cmd, "cstep") - 30.0).abs() < 1e-9, "the step must be restored");
 
         app.params.arr.count = 5;
-        crate::gui::commands::apply_comp_array(&mut app.part_ctx());
+        crate::gui::commands::apply_comp_array(&mut app.part_ctx()).expect("the array is edited");
         assert_eq!(app.project.comp_patterns().len(), 1, "a second array must not appear");
         let after = app.project.comp_pattern_of(comp).expect("the array").copies.clone();
         assert_eq!(after.len(), 4, "there are 5 instances now");

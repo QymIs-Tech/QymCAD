@@ -48,9 +48,8 @@ mod tests {
                 super::super::screen_keys::tests::collect_text(&cs.shape, &mut texts);
             }
         }
-        // the twist field in the popup is captioned by the key of the slot itself, not by the
-        // angle caption from the creation bar
-        let want = crate::i18n::tr("j-angle-lower");
+        // the twist field in the popup is captioned by the slot itself, as the caption of its row
+        let want = crate::i18n::tr("j-row-angle");
         assert!(texts.iter().any(|t| t.contains(&want)), "the rigid joint has no twist field \"{want}\": drawn {texts:?}");
         // AND THE JOINT NAME IS A WORD, NOT A CATALOGUE CODE. This is where that surfaced: the popup
         // read "joint-kind-rigid 3", because the name was assembled as "key space number" while the

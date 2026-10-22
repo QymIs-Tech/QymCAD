@@ -33,7 +33,9 @@ fn a_plate_cut_through(hand: &mut Hand, extent: &str) -> Id {
     hand.close_window();
     hand.look_at([20.0, 20.0, 0.0], 8.0).tool(1);
     assert!(hand.press_word(&qymcad_i18n::tr("cmd-symmetric"), egui::pos2(0.0, 0.0)), "setup: the bar offers symmetric");
-    hand.set("height", 20.0).enter();
+    // the rebuild of the plate waited for, as a person waits for its barrier to lift before the next sketch: pressed under
+    // it, the plane XY was taken by the barrier - 3 frames of 4 ms each against a rebuild of 30 ms
+    hand.set("height", 20.0).enter().close_window();
     assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a second sketch is started on XY");
     hand.sk_tool(2).click2d(15.0, 15.0).click2d(25.0, 25.0);
     assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the second sketch is finished");

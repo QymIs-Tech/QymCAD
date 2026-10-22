@@ -221,36 +221,8 @@ pub fn drag_handle(cmd: &mut FeatCommand, regen: &mut Rebuilding, hs: &Handles, 
     invalidate(regen);
 }
 
-/// THE PLACE THE HANDLES OF THE COMMAND TOOK ON THE SCREEN in a frame, as they were drawn.
-#[derive(Clone, Copy)]
-pub(crate) struct HandlesSeen {
-    pub(crate) frame: u64,
-    pub(crate) rect: Rect,
-}
-
-pub(crate) fn handles_seen_id() -> egui::Id {
-    egui::Id::new("command_handles_seen")
-}
-
 /// The place `hs` take on the screen: their lines and the balls at the arrows' tips, none when there are no handles.
 pub fn handles_screen_rect(hs: &Handles, scr: &Screen) -> Option<Rect> {
     let pts = hs.arrows.iter().flat_map(|a| [a.base, a.tip()]).chain(hs.rings.iter().flat_map(|r| r.points())).map(|p| scr.at(p).0);
     pts.fold(None, |acc: Option<Rect>, p| Some(acc.map_or(Rect::from_min_max(p, p), |r| r.union(Rect::from_min_max(p, p))))).map(|r| r.expand(7.0))
-}
-
-/// Remember where the handles were drawn this frame (`handles_screen_rect`): the fields of the command stand clear of them.
-pub fn remember_handles(ctx: &egui::Context, rect: Option<Rect>) {
-    let frame = ctx.cumulative_frame_nr();
-    ctx.data_mut(|d| match rect {
-        Some(rect) => {
-            d.insert_temp(handles_seen_id(), HandlesSeen { frame, rect });
-        }
-        None => d.remove::<HandlesSeen>(handles_seen_id()),
-    });
-}
-
-/// Where the handles of the command were drawn, this frame or the one before; none when none were.
-pub fn handles_seen(ctx: &egui::Context) -> Option<Rect> {
-    let seen = ctx.data(|d| d.get_temp::<HandlesSeen>(handles_seen_id()))?;
-    (seen.frame + 1 >= ctx.cumulative_frame_nr()).then_some(seen.rect)
 }

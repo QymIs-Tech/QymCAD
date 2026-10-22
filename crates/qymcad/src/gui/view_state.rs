@@ -28,13 +28,18 @@ mod tests {
         app.viewing.view.initialized = true;
         let want = (app.viewing.mode_3d, app.viewing.cam.yaw, app.viewing.cam.pitch, app.viewing.cam.scale, app.viewing.cam.target, app.viewing.view.initialized);
 
-        // the tool leads into the flat half-sketcher — that is fine, it needs a flat view
+        // the sweep in hand leads into the flat half-sketcher to pick its profile — that is fine, it needs a flat view
+        app.chosen.sel = super::super::Sel::Sketch(si);
+        app.start_feat_cmd(8);
+        assert!(app.tools.armed.commanding(), "setup: the sweep is in hand");
         let sid = app.project.sketches[si].id;
         app.begin_contour_pick(ContourSlot::SweepProfile, sid);
         assert!(!app.viewing.mode_3d, "setup: the half-sketcher must be flat");
 
-        // Esc cancels the ACTION; the point of view must come back to the person's own
-        app.on_escape();
+        // Esc cancels the ACTION - pressed in whole frames, where the bar of the sweep reads it; the point of view
+        // must come back to the person's own
+        super::super::hand::escape(&mut app);
+        assert!(app.tools.armed.commanding(), "Esc in the pick of a profile put the whole sweep down");
         let got = (app.viewing.mode_3d, app.viewing.cam.yaw, app.viewing.cam.pitch, app.viewing.cam.scale, app.viewing.cam.target, app.viewing.view.initialized);
         assert_eq!(
             got, want,

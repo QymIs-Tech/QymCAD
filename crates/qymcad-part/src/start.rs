@@ -334,20 +334,12 @@ pub fn start_face_copy_cmd(pc: &mut qymcad_ui_state::PartCtx, kind: u8) {
         *pc.status = Notice::refusal(qymcad_i18n::tr("msg-no-body"));
         return;
     }
-    let picked = match *pc.sel {
-        qymcad_ui_state::Sel::Face(mi, fi) if kind == 36 => pc.project.mesh_id(mi).zip(pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map(|f| f.id)),
-        _ => None,
-    };
     pc.cmd.open(pc.armed, kind, *pc.mode_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore);
     *pc.mode_3d = true;
     pc.gsel.edges.clear();
     pc.gsel.faces.clear();
-    pc.gsel.faces_body = None;
-    if let Some((b, fid)) = picked {
-        pc.gsel.faces.insert(fid);
-        pc.gsel.faces_body = Some(b);
-    }
+    pc.gsel.faces_body = None; // a face selected before the tool comes to it as a click of its own (`PickedBefore`)
     pc.cmd.params = if kind == 36 { vec![qymcad_ui_state::CmdParam::new("f-distance", "dist", 5.0, -10000.0, 10000.0)] } else { vec![] };
     *pc.status = Notice::info(qymcad_i18n::tr(if kind == 36 { "msg-offset-surface" } else { "msg-face-copy" }));
 }
@@ -449,7 +441,11 @@ pub fn start_prim_cmd(pc: &mut qymcad_ui_state::PartCtx, code: u8) {
             qymcad_ui_state::CmdParam::new("f-height", "h", 20.0, 0.1, 100000.0),
         ],
         14 => vec![qymcad_ui_state::CmdParam::new("f-ring-r", "major", 12.0, 0.1, 100000.0), qymcad_ui_state::CmdParam::new("f-tube-r", "minor", 4.0, 0.1, 100000.0)],
-        15 => vec![qymcad_ui_state::CmdParam::new("f-radius-circ", "r", 10.0, 0.1, 100000.0), qymcad_ui_state::CmdParam::new("f-height", "h", 20.0, 0.1, 100000.0)],
+        15 => vec![
+            qymcad_ui_state::CmdParam::new("f-radius-circ", "r", 10.0, 0.1, 100000.0),
+            qymcad_ui_state::CmdParam::new("f-height", "h", 20.0, 0.1, 100000.0),
+            qymcad_ui_state::CmdParam::new("cmd-sides", "n", 6.0, 3.0, 64.0).whole(),
+        ],
         _ => vec![],
     };
     *pc.status = Notice::info(qymcad_i18n::tr("msg-primitive"));
@@ -477,11 +473,13 @@ pub fn start_loft_cmd(pc: &mut qymcad_ui_state::PartCtx) {
     pc.cmd.open(pc.armed, 9, *pc.mode_3d); // a clean slate, then open
 
     pc.cmd.sketch = Some(si);
-    pc.loft.sids = vec![pc.project.sketches[si].id];
-    pc.loft.cids = vec![0];
+    // THE SECTIONS PICKED IN THE TREE BEFORE THE TOOL, in their order, are its sections; one alone is the first
+    let picked: Vec<Id> = picked_sketches(pc).into_iter().filter(|sid| !pc.project.sweep_profile_contours(*sid).is_empty()).collect();
+    pc.loft.sids = if picked.len() >= 2 { picked } else { vec![pc.project.sketches[si].id] };
+    pc.loft.cids = vec![0; pc.loft.sids.len()];
     pc.loft.ruled = false;
     pc.loft.pick = true; // the next sections are expected to be added by clicking in the tree
-    pc.loft.pick_last = Some(pc.project.sketches[si].id); // the first section is already in the set - no duplicate
+    pc.loft.pick_last = pc.loft.sids.last().copied(); // the sections taken are already in the set - no duplicate
     pc.loft.result = 0; // by default a separate new body
     pc.cmd.params.clear();
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore); // the view is borrowed for the command and returned on exit - no refitting
@@ -489,13 +487,27 @@ pub fn start_loft_cmd(pc: &mut qymcad_ui_state::PartCtx) {
     *pc.status = Notice::info(qymcad_i18n::tr("msg-loft-pick"));
 }
 
+/// THE SKETCHES PICKED IN THE TREE, the one picked first (the anchor of the run Shift picks) first, the rest in the
+/// order the tree shows them.
+fn picked_sketches(pc: &qymcad_ui_state::PartCtx) -> Vec<Id> {
+    let mut picked: Vec<Id> = pc.tree.multi.iter().copied().filter(|id| pc.project.sketches.iter().any(|s| s.id == *id)).collect();
+    if let Some(i) = pc.tree.anchor.and_then(|a| picked.iter().position(|id| *id == a)) {
+        let first = picked.remove(i);
+        picked.insert(0, first);
+    }
+    picked
+}
+
 /// SWEEP - a profile (the selected sketch with a closed contour) along a path (a second sketch, picked
 /// in the tree). The profile usually lies on a plane at the start of the path, roughly perpendicular
 /// to it.
 pub fn start_sweep_cmd(pc: &mut qymcad_ui_state::PartCtx) {
-    // the profile is the sketch selected in the tree (or the one captured earlier)
-    let si = match *pc.sel {
-        qymcad_ui_state::Sel::Sketch(si) => Some(si),
+    // the profile is the sketch selected in the tree (or the one captured earlier); with two picked in the tree before the
+    // tool, the first is the profile and the second the path
+    let picked = picked_sketches(pc);
+    let first = picked.first().filter(|_| picked.len() >= 2).and_then(|sid| pc.project.sketches.iter().position(|s| s.id == *sid));
+    let si = match (first, *pc.sel) {
+        (Some(si), _) | (None, qymcad_ui_state::Sel::Sketch(si)) => Some(si),
         _ => pc.cmd.sketch,
     };
     let Some(si) = si.filter(|&si| si < pc.project.sketches.len()) else {
@@ -514,6 +526,9 @@ pub fn start_sweep_cmd(pc: &mut qymcad_ui_state::PartCtx) {
     pc.sweep.prof_sid = pc.project.sketches[si].id;
     pc.sweep.path_sid = 0;
     pc.sweep.pick_path = true; // the path pick is expected straight away
+    if let [_, path, ..] = picked[..] {
+        (pc.sweep.path_sid, pc.sweep.pick_path) = (path, false);
+    }
     pc.cmd.params.clear();
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore); // the view is borrowed for the command and returned on exit - no refitting
     *pc.mode_3d = true;
@@ -529,6 +544,7 @@ pub fn start_array_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
         return;
     }
     pc.cmd.open(pc.armed, cmd, *pc.mode_3d); // a clean slate, then open
+    pc.gsel.before.spend_object(); // the body picked is the pattern's object, not a click of it
 
     *pc.mode_3d = true;
     pc.arr.count = if cmd == 18 { 6 } else { 3 };
@@ -542,8 +558,10 @@ pub fn start_array_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
     pc.arr.axis = 0;
     pc.arr.full = true;
     pc.arr.axis_pick = false;
-    // a full circular array asks no angle (the sync adds the field once "full" is switched off)
-    pc.cmd.params = if cmd == 18 { vec![] } else { vec![qymcad_ui_state::CmdParam::new("f-pitch", "step", 25.0, 0.01, 100000.0)] };
+    // the count and the step are fields at the geometry; a full circular array asks no angle (the sync adds the field once
+    // "full" is switched off)
+    let count = qymcad_ui_state::CmdParam::new("cmd-copies", "count", f64::from(pc.arr.count), 2.0, 512.0).whole();
+    pc.cmd.params = if cmd == 18 { vec![count] } else { vec![count, qymcad_ui_state::CmdParam::new("f-pitch", "step", 25.0, 0.01, 100000.0)] };
     *pc.status = Notice::info(if cmd == 18 { qymcad_i18n::tr("msg-circ-array") } else { qymcad_i18n::tr("msg-lin-array") });
 }
 

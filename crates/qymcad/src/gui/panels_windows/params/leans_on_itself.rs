@@ -78,18 +78,17 @@ mod tests {
     #[test]
     fn a_feature_reopened_refuses_a_formula_of_its_own_name() {
         let mut app = App::default();
-        let pal = app.scheme.pal.clone();
         let mut hand = Hand::new(&mut app);
         let Plate { ti, node } = plate_named_depth(&mut hand);
 
         let label = crate::gui::panels_tree::feature_row_label(&hand.app.project, ti);
         assert!(hand.double_click_word(&label), "the tree shows the extrusion as {label:?}");
         assert!(hand.app.tools.cmd.edit.is_some(), "the extrusion did not open to be edited; the program says {:?}", hand.app.status);
-        hand.formula(Typed { field: "height", text: "depth*2" }).enter();
+        hand.formula(Typed { field: "height", text: "depth*2" }).key(egui::Key::Enter);
         assert_eq!(hand.app.project.feat_dim(node, "height"), None, "depth*2 was written for depth");
         assert_eq!(hand.app.project.param_map().get("depth"), Some(&12.0), "the height named depth lost its value");
-        let said = hand.status_painted().into_iter().find(|w| w.text.contains(&leans_on("depth")));
-        assert!(said.as_ref().is_some_and(|w| w.colour == pal.error_mild()), "the extrusion does not refuse depth*2 in the tone of a refusal: {:?}", said.map(|w| (w.text, w.colour)));
+        let said = hand.tool_says().into_iter().find(|n| n.words.contains(&leans_on("depth")));
+        assert!(said.as_ref().is_some_and(|n| n.tone == qymcad_ui_state::Tone::Refusal), "the extrusion does not refuse depth*2 in the tone of a refusal: {said:?}");
     }
 
     /// THE FIELD OF A FEATURE'S NUMBER IN ITS PROPERTIES. The extrusion picked by a click on its row in the tree, `depth*2`
@@ -136,7 +135,6 @@ mod tests {
     #[test]
     fn an_array_reopened_refuses_a_count_reading_a_circle() {
         let mut app = App::default();
-        let pal = app.scheme.pal.clone();
         let mut hand = Hand::new(&mut app);
         plate_named_depth(&mut hand);
         let array = array_of_the_plate(&mut hand);
@@ -145,11 +143,12 @@ mod tests {
         hand.app.project.eval_parameters();
         reopen(&mut hand, &array);
         assert!(hand.type_after_word(&crate::i18n::tr("cmd-copies"), "a"), "the count of the array is not in the bar: {:?}", hand.words_drawn());
-        hand.enter();
+        hand.key(egui::Key::Enter);
         assert_eq!(hand.app.project.feat_dim(array.node, "count"), None, "a count reading the circle a -> b -> a was written");
         let why = crate::gui::error_words::expr_error_text(&ExprError::NameWithoutValue("a".into()));
-        let said = hand.status_painted().into_iter().find(|w| w.text.contains(&why));
-        assert!(said.as_ref().is_some_and(|w| w.colour == pal.error_mild()), "the count reading a circle is not refused in words: {:?}", said.map(|w| (w.text, w.colour)));
+        let says = hand.tool_says();
+        let said = says.iter().find(|n| n.words.contains(&why));
+        assert!(said.is_some_and(|n| n.tone == qymcad_ui_state::Tone::Refusal), "the count reading a circle is not refused in words {why:?}: {says:?}");
     }
 
     /// THE STEP OF AN ARRAY TYPED AT THE GEOMETRY COMES BACK TO ITS OWN NAME: the step along X of the array named `s`, and
@@ -158,15 +157,14 @@ mod tests {
     #[test]
     fn an_array_reopened_refuses_a_step_of_its_own_name() {
         let mut app = App::default();
-        let pal = app.scheme.pal.clone();
         let mut hand = Hand::new(&mut app);
         plate_named_depth(&mut hand);
         let array = array_of_the_plate(&mut hand);
         assert!(hand.app.project.add_named_feat_dim("s".into(), array.node, "dx"), "setup: the step along X is named");
         reopen(&mut hand, &array);
-        hand.formula(Typed { field: "step", text: "s*2" }).enter();
+        hand.formula(Typed { field: "step", text: "s*2" }).key(egui::Key::Enter);
         assert_eq!(hand.app.project.feat_dim(array.node, "dx"), None, "s*2 was written for the step named s");
-        let said = hand.status_painted().into_iter().find(|w| w.text.contains(&leans_on("s")));
-        assert!(said.as_ref().is_some_and(|w| w.colour == pal.error_mild()), "the step s*2 is not refused in words: {:?}", said.map(|w| (w.text, w.colour)));
+        let said = hand.tool_says().into_iter().find(|n| n.words.contains(&leans_on("s")));
+        assert!(said.as_ref().is_some_and(|n| n.tone == qymcad_ui_state::Tone::Refusal), "the step s*2 is not refused in words: {said:?}");
     }
 }

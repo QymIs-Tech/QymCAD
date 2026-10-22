@@ -135,8 +135,9 @@ pub(crate) fn bar(tool: &Tool) {
                 if shape_of(&doc) != before {
                     problems.push(format!("mode {word:?} must refuse and changed the document: {:?}", shape_of(&doc)));
                 }
-                if s.status() == status {
-                    problems.push(format!("mode {word:?} must refuse in words and the status line still says {status:?}"));
+                // in the status line, or where the tool in hand speaks
+                if s.status() == status && refusals(&mut s).is_empty() {
+                    problems.push(format!("mode {word:?} must refuse in words and the status line still says {status:?}, the tool says {:?}", s.tool_says()));
                 }
             }
         }

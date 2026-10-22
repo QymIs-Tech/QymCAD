@@ -149,8 +149,8 @@ pub fn mirror_part_apply(
     regen: &mut qymcad_ui_state::Rebuilding,
     active_path: &[qymcad_core::model::Id],
     status: &mut qymcad_ui_state::Notice,
-) {
-    let (Some(src), Some((o, n))) = (mirror.part, mirror.at) else { return };
+) -> Result<(), qymcad_ui_state::NotApplied> {
+    let (Some(src), Some((o, n))) = (mirror.part, mirror.at) else { return Err(refused("tb-mirror-pick-part")) };
     qymcad_ui_state::begin_edit(edits, project, qymcad_i18n::tr("mp-title"));
     let cwt = project.world_transform(qymcad_ui_state::current_ctx_id(active_path, project));
     let (wo, wn) = (qymcad_core::feature::apply12(&cwt, o), qymcad_core::feature::apply12_dir(&cwt, n));
@@ -159,4 +159,5 @@ pub fn mirror_part_apply(
     regen.pending = true; // the scheduler builds the copy once the operation is closed
     *status = Notice::info(qymcad_i18n::tr1("vp-mirror-created", "n", &cnt.to_string()));
     qymcad_ui_state::close_edit(edits, project);
+    Ok(())
 }

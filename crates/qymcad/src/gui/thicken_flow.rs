@@ -143,9 +143,9 @@ mod tests {
             p.val = 0.0;
             p.txt = "0".into();
         }
-        app.apply_feat_cmd();
+        let why = app.apply_feat_cmd();
         assert_eq!(app.project.timeline.len(), before, "no feature must be created at a thickness of zero");
-        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-zero-thickness")), "the reason must be said out loud");
+        assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-zero-thickness"))), "the reason must be said out loud");
     }
 
     /// The tool shows what is selected and where the material will go.
@@ -208,8 +208,7 @@ mod tests {
         app.pick_face_3d(rect, qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }.at(c).0);
         assert!(app.tools.gsel.faces.contains(&fid), "the face must get selected by a click");
 
-        let anchor =
-            crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).expect("the command must have an anchor for the popup — otherwise there is nowhere to show the thickness field");
+        let anchor = crate::gui::commands::cmd_spot(&mut app.part_ctx(), rect).expect("the command must have an anchor for the popup — otherwise there is nowhere to show the thickness field");
         assert!(rect.contains(anchor), "the anchor must be inside the viewport, and it is {anchor:?}");
         // and it is at THE FACE ITSELF rather than in some random corner
         let face = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }.at(c).0;
@@ -291,10 +290,10 @@ mod tests {
                 }
             }
             let bbox = bbox.expect("the face is visible on screen");
-            let anchor = crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).expect("the anchor of the popup must exist");
-            assert!(!bbox.contains(anchor), "command {kind}: the popup lay on the selected face — the very thing aimed at next (the face {bbox:?}, the anchor {anchor:?})");
-            assert!(rect.contains(anchor), "command {kind}: the anchor must be inside the viewport, and it is {anchor:?}");
-            assert!(anchor.distance(bbox.center()) < 400.0, "command {kind}: the anchor must stay AT THE GEOMETRY, and it is {:.0} px from the face", anchor.distance(bbox.center()));
+            let the_box = crate::gui::tool_popup_sweep::tests::box_by_the_rule(&mut app, rect).expect("the box of the popup must have a place");
+            assert!(!the_box.intersects(bbox), "command {kind}: the popup lay on the selected face — the very thing aimed at next (the face {bbox:?}, the box {the_box:?})");
+            assert!(rect.contains_rect(the_box), "command {kind}: the box must be inside the viewport, and it is {the_box:?}");
+            assert!(the_box.center().distance(bbox.center()) < 400.0, "command {kind}: the box must stay AT THE GEOMETRY, and it is {:.0} px from the face", the_box.center().distance(bbox.center()));
         }
     }
 }

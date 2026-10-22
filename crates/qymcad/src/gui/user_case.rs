@@ -99,6 +99,7 @@ mod tests {
                 .map(|e| e.mid)
         };
 
+        let mut refused: Option<qymcad_ui_state::NotApplied> = None; // why a step was not applied, where it is asked
         match kind {
             4 | 5 => {
                 // THE SIZE FOLLOWS THE STATE OF THE PART, as it does by hand: on a solid body the fillet is
@@ -257,12 +258,13 @@ mod tests {
                 let mut hand = Hand::new(app);
                 hand.look_at(c, scale).tool(27);
                 let Some((t, _)) = face(hand.app, [0.0, 0.0, 1.0]) else { return false };
-                hand.click(t).set("offset", -half).enter();
+                refused = hand.click(t).set("offset", -half).enter_answered();
             }
             33 => {
                 // STITCHING: two sheets grow into one. The sheets are taken as copies of ADJACENT faces - they
                 // share an edge, otherwise there is nothing to stitch and the core legitimately refuses.
-                for dir in [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0]] {
+                // the top and the front: the faces a person sees from the front, meeting at an edge
+                for dir in [[0.0, 0.0, 1.0], [0.0, -1.0, 0.0]] {
                     let mut hand = Hand::new(app);
                     hand.look_at(c, scale).tool(30);
                     let Some((t, _)) = face(hand.app, dir) else { return false };
@@ -299,21 +301,17 @@ mod tests {
                 qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             }
             34 => {
-                // TRIMMING: a sheet is cut by a body, and the piece at THE POINT OF THE CLICK remains. The
-                // sheet comes from a face copy. A REAL TOOL BODY IS REQUIRED: the part itself will not do - the
-                // copy lies on it, and there is nothing to cut with (the core refuses, and rightly so). The
-                // recipe is waiting for its place in an order: after a body split, when a second piece
-                // legitimately appears in the part and does the cutting. It is not written into the orders
-                // yet.
+                // TRIMMING: a sheet is cut by a body, and the piece at THE POINT OF THE CLICK remains. The tool body
+                // CROSSES the sheet: a face copy lies on the part and its split pieces, nothing cuts it (the core
+                // refuses, rightly). So the sheet is the front face offset 5 into the part, upright through the whole
+                // height, and the upper piece of the split at half the height crosses it. Measured: a copy of the top
+                // face was cut in one order of five, by whatever happened to stick out above the top there.
                 let mut hand = Hand::new(app);
-                hand.look_at(c, scale).tool(30);
-                let Some((t, _)) = face(hand.app, [0.0, 0.0, 1.0]) else { return false };
-                hand.click(t).enter();
+                hand.look_at(c, scale).tool(36);
+                let Some((t, _)) = face(hand.app, [0.0, -1.0, 0.0]) else { return false };
+                hand.click(t).set("dist", -5.0).enter();
                 let sheet = app.project.timeline.iter().rev().filter(|n| n.parent == Some(here)).filter_map(|n| n.kind.body()).find(|b| app.project.bodies.iter().any(|x| x.id == *b && x.sheet));
                 let Some(sheet) = sheet else { return false };
-                let Some(f) = app.project.regen_faces.get(&sheet).and_then(|fs| fs.first().cloned()) else { return false };
-                app.start_feat_cmd(34);
-                app.side.trim.keep = Some((sheet, [f.centroid.x, f.centroid.y, f.centroid.z]));
                 // THE CUTTING IS DONE BY THE SECOND PIECE rather than by the part itself: after a split a part
                 // legitimately holds two bodies, and one of them is a real tool that crosses the sheet. The
                 // part itself will not do: the face copy lies on it, and there is nothing to cut with.
@@ -332,6 +330,8 @@ mod tests {
                     (r[0] <= r[3]).then_some(r)
                 };
                 let sb = bb(sheet);
+                // the piece kept is the lower quarter of the sheet, below the plane of the split: clear of the cut
+                let Some(keep) = sb.map(|r| [0.5 * (r[0] + r[3]), 0.5 * (r[1] + r[4]), r[2] + 0.25 * (r[5] - r[2])]) else { return false };
                 let cutter = app
                     .project
                     .timeline
@@ -361,7 +361,7 @@ mod tests {
                 for cut in cands.into_iter().take(4) {
                     let before_n = app.project.timeline.len();
                     app.start_feat_cmd(34);
-                    app.side.trim.keep = Some((sheet, [f.centroid.x, f.centroid.y, f.centroid.z]));
+                    app.side.trim.keep = Some((sheet, keep));
                     app.side.trim.tool = Some(cut);
                     app.apply_feat_cmd();
                     qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
@@ -436,7 +436,7 @@ mod tests {
         // NO height at all - not "the plane was chosen badly" but the shape being what it is. A person backs
         // off at that point and does it another way; demanding a node from a tool the core refused in words
         // means demanding the impossible.
-        let named_refusal = app.status == qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-plane-cuts-nothing"));
+        let named_refusal = refused == Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-plane-cuts-nothing")));
         if !made && named_refusal {
             return false; // the refusal was named - the step did not happen, but the document is not broken
         }
@@ -445,7 +445,7 @@ mod tests {
             // worked on: "the tool did not fire" without that is as empty a complaint as any.
             let fs: Vec<String> =
                 app.project.regen_faces.get(&body).map(|v| v.iter().map(|f| format!("[{:.2},{:.2},{:.2}]S{:.0}", f.normal[0], f.normal[1], f.normal[2], f.area)).collect()).unwrap_or_default();
-            problems.push(format!("[{part}] tool {kind} created no node: body {body}, {} faces picked, the faces of the body: {}; status: {}", app.tools.gsel.faces.len(), fs.join(" "), app.status));
+            problems.push(format!("[{part}] tool {kind} laid no node: body {body}, {} faces picked, its faces: {}; refused: {refused:?}", app.tools.gsel.faces.len(), fs.join(" ")));
         }
         // A NAMED LIMIT OF THE CORE IS NOT A FAULT. The program said in words what it cannot do ("the body is
         // assembled from copies", "the offset fails inside the core"); a person then cancels the step and does
@@ -948,11 +948,11 @@ mod tests {
                     let before = app.project.comp_pattern(lin).map(|p| p.copies).unwrap_or_default();
                     app.start_comp_array_edit(lin);
                     app.params.arr.count = 4;
-                    crate::gui::commands::apply_comp_array(&mut app.part_ctx());
+                    let grown = crate::gui::commands::apply_comp_array(&mut app.part_ctx());
                     qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                     let after = app.project.comp_pattern(lin).map(|p| p.copies).unwrap_or_default();
                     if after.len() != 3 || after[..before.len().min(3)] != before[..before.len().min(3)] {
-                        problems.push(format!("the linear array of parts grown to four holds the copies {after:?}, having held {before:?}"));
+                        problems.push(format!("the linear array of parts grown to four holds the copies {after:?}, having held {before:?}: {grown:?}"));
                     }
                     check_all(&mut app, "the linear array of parts grown to four", &mut problems);
                     // THE SOURCE EDITED IN THE MIDDLE: a feature of the part made taller, and every copy follows
@@ -2984,10 +2984,10 @@ mod tests {
             }
             qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), hinge_a);
             qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), hinge_b);
-            qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+            let made = qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
             qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
             if app.project.relations.is_empty() {
-                problems.push(format!("[assembly] the relation was not created; status: {}", app.status));
+                problems.push(format!("[assembly] the relation was not created: {made:?}"));
             }
             check_all(&mut app, "assembly: the gear relation", &mut problems);
 

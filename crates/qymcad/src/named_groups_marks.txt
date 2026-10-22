@@ -86,11 +86,11 @@ crates/qymcad-acceptance/tests/acceptance/targets.rs 0 1 0
 crates/qymcad-acceptance/tests/acceptance/tree_group_delete.rs 1 0 0
 crates/qymcad-acceptance/tests/acceptance/undo_redo.rs 0 6 0
 crates/qymcad-acceptance/tests/acceptance/view_and_mouse.rs 1 1 2
-crates/qymcad-assembly/src/bars.rs 0 1 1
+crates/qymcad-assembly/src/bars.rs 0 0 1
 crates/qymcad-assembly/src/gizmo.rs 0 3 1
 crates/qymcad-assembly/src/picks.rs 0 1 7
 crates/qymcad-assembly/src/popup.rs 0 0 1
-crates/qymcad-assembly/src/slots.rs 1 5 1
+crates/qymcad-assembly/src/slots.rs 1 4 1
 crates/qymcad-core/src/asm/bridge.rs 3 13 2
 crates/qymcad-core/src/asm/connector.rs 1 0 0
 crates/qymcad-core/src/asm/decompose.rs 1 2 0
@@ -377,12 +377,10 @@ crates/qymcad-meshfit/tests/regions_measured.rs 0 1 0
 crates/qymcad-part/src/apply/faces.rs 0 1 0
 crates/qymcad-part/src/apply/solids.rs 0 1 0
 crates/qymcad-part/src/apply/update.rs 0 5 0
-crates/qymcad-part/src/bars.rs 0 2 0
-crates/qymcad-part/src/bars/feat_bar.rs 0 5 0
+crates/qymcad-part/src/bars/feat_bar.rs 0 3 0
 crates/qymcad-part/src/bars/toolbar.rs 0 1 0
 crates/qymcad-part/src/params.rs 2 1 1
 crates/qymcad-part/src/picks.rs 2 2 2
-crates/qymcad-part/src/popups.rs 2 2 1
 crates/qymcad-part/src/reopen.rs 0 1 0
 crates/qymcad-part/src/start.rs 1 0 3
 crates/qymcad-part/src/topology.rs 0 1 3

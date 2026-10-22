@@ -317,7 +317,7 @@ pub fn view_key(pn: &Painting, rect: Rect, ppp: f32) -> u64 {
                                               // key - the one both drawing paths colour by (a body lights itself, a component its whole subtree), in a
                                               // fixed order, the set being a hash set. Without it a click on a part in the tree lit nothing on the
                                               // software picture until the camera moved.
-    let mut lit: Vec<usize> = highlight_mesh_set(pn.project, &pn.sel).into_iter().collect();
+    let mut lit: Vec<usize> = highlight_mesh_set(pn.project, &pn.sel, pn.held).into_iter().collect();
     lit.sort_unstable();
     lit.hash(&mut h);
     // a body switched off by its own tick is not drawn

@@ -501,6 +501,8 @@ impl Project {
         if !above_zero(&[r, h]) {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
         }
+        // the number of sides is a dimension of the node as the radius is: sides typed as `k` follow `k`
+        let n = p.dim("n", f64::from(n)).round().max(3.0) as u32;
         self.named_prism_job(p.node, &polygon_profile(r, n), h, body)
     }
 

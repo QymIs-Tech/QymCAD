@@ -107,7 +107,22 @@ pub enum Fixture {
     TwoCirclesInSketch,
 }
 
+/// THE FIXTURES THAT LEAVE SOMETHING SELECTED, the last click of each picking it.
+const SELECTING: [Fixture; 6] = [
+    Fixture::BlockInAssemblyPicked,
+    Fixture::OverlappingPiecesUpperPicked,
+    Fixture::RectangleSidePicked,
+    Fixture::LineAndAxisPicked,
+    Fixture::SweepStraight,
+    Fixture::LoftSquares,
+];
+
 impl Fixture {
+    /// Does the fixture leave something selected - a part, a piece, a line, a sketch - that a tool takes as its object?
+    pub fn selects(self) -> bool {
+        SELECTING.contains(&self)
+    }
+
     /// Build it in the part open for editing - the first part, unless the check went into another.
     pub fn build_here(self, s: &mut Session) {
         match self {

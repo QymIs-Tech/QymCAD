@@ -69,15 +69,19 @@ mod tests {
 
     /// THE KEY CLOSES THE COMMAND. Without this the check below would pass against a program in which
     /// nothing closes anything.
+    ///
+    /// The key is pressed in whole frames of the window, where the bar of the command reads it; a field of the command
+    /// holding the keyboard takes the first Esc and gives the keyboard up.
     #[test]
     fn the_key_closes_the_command() {
-        let ctx = egui::Context::default();
-        super::super::install_fonts(&ctx);
         let mut app = extruding();
-        let _ = frame(&mut app, &ctx, vec![]);
-        let key = |pressed| egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed, repeat: false, modifiers: Default::default() };
-        let _ = frame(&mut app, &ctx, vec![key(true), key(false)]);
-        assert!(!app.tools.armed.commanding(), "setup: Escape did not close the command, so the button cannot be compared with it");
+        let mut hand = super::super::hand::Hand::as_it_stands(&mut app);
+        hand.frame(Vec::new());
+        if hand.typing() {
+            hand.key(egui::Key::Escape);
+        }
+        hand.key(egui::Key::Escape);
+        assert!(!hand.app.tools.armed.commanding(), "setup: Escape did not close the command, so the button cannot be compared with it");
     }
 
     /// THE BUTTON CLOSES IT THE SAME WAY. Exactly the reported complaint.

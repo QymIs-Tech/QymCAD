@@ -154,6 +154,8 @@ mod tests {
     /// Where the requests are carried out, and where the functions they delegate to live.
     const HANDLERS: [&str; 16] = [
         concat!(
+            include_str!("assembly_tools.rs"),
+            "\n",
             include_str!("file_doors.rs"),
             "\n",
             include_str!("gizmo_math.rs"),

@@ -148,7 +148,7 @@ fn sweep_with_operation_flow() {
         app.params.sweep.prof_sid = prof_sid;
         app.params.sweep.path_sid = path_sid;
         app.feat.op = op;
-        crate::gui::commands::apply_sweep_cmd(app.feat, &mut app.project, &mut app.status, app.params.sweep);
+        crate::gui::commands::apply_sweep_cmd(app.feat, &mut app.project, app.params.sweep).expect("the sweep's node was laid");
         qymcad_ui_state::regenerate_all(&mut app.rebuild_ctx());
         let consumed = qymcad_ui_state::consumed_bodies(&app.project);
         app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.volume()).sum()

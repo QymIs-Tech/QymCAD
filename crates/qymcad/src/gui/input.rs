@@ -45,28 +45,7 @@ impl App {
         if self.tools.armed.pat_op() != 0 && ((!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))) || qymcad_ui_state::bar_enter_take(ctx)) {
             self.confirm_pattern();
         }
-        // Enter confirms A COMPONENT ARRAY (in an assembly)
-        if self.side.carr.mode != 0 && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            crate::gui::commands::apply_comp_array(&mut self.part_ctx());
-        }
-        // Returning to the choice of contours of an active sketch command goes by the "U" key through
-        // `part_hotkey` (not "C": C is the circle in a sketch and the chamfer in a Part, and it clashed
-        // while editing a feature).
-        // Enter inside a Part command - and in a field of its bar (sides, copies), that field keeping the keyboard. For
-        // a sketch command in 2D the first Enter CONFIRMS the choice and takes one into 3D to set the dimension (the
-        // gizmo or the field), the second applies it.
-        if self.tools.armed.commanding() && ((!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))) || qymcad_ui_state::bar_enter_take(ctx)) {
-            let sketch_cmd = matches!(self.tools.armed.cmd_kind(), 1 | 3);
-            if self.tools.picking.contour().is_some() {
-                // in the half-sketcher of choosing the contour of a slot a CLICK on the contour is
-                // awaited — Enter does NOT apply the feature
-            } else if sketch_cmd && !self.viewing.mode_3d && !self.tools.gsel.profiles.is_empty() {
-                self.viewing.mode_3d = true; // the choice is ready -> into 3D to enter the height or angle
-                self.status = Notice::info(crate::i18n::tr("in-drag-or-type"));
-            } else if qymcad_ui_state::bar_fields_valid(ctx) {
-                crate::gui::commands::apply_feat_cmd(&mut self.part_ctx());
-            }
-        }
+        // Enter of a Part command and of a pattern of components is the frame's: their bars take it (`tool_bar`).
         // Ctrl+Enter finishes the current context (leaving a sketch, a part or a subassembly one level
         // up) without the mouse. Only when no command or array is active — otherwise Enter applies
         // those.
@@ -93,6 +72,8 @@ impl App {
             // list, and everything downstream sees nothing.
             if list_was_open {
                 // the list takes it
+            } else if super::panel_places::frame_takes_esc(self) {
+                // the frame takes it: a field gives the keyboard up first, the tool steps back next
             } else if ctx.egui_wants_keyboard_input() {
                 ctx.memory_mut(|m| {
                     if let Some(id) = m.focused() {
@@ -101,6 +82,7 @@ impl App {
                 });
             } else {
                 self.on_escape();
+                self.tools.gsel.before.note(None, qymcad_ui_state::Adding::No); // the selection let go takes what it held from the next tool
             }
         }
         // F2 renames whatever is selected - the key every tree a person has used renames by
@@ -176,77 +158,12 @@ impl App {
             self.tools.inline.clear();
             self.tools.dim.buf.clear();
             self.tools.dim.focus = false;
-        } else if self.params.arr.axis_pick {
-            self.params.arr.axis_pick = false; // the axis-pick sub-mode is left first, the command is NOT cancelled
-            self.status = Notice::info(crate::i18n::tr("in-axis-pick-cancelled"));
-        } else if self.params.rev.pick_axis || self.params.rev.pick_line {
-            // the sub-mode of picking the axis of revolution is left, the command is NOT cancelled
-            if self.params.rev.pick_line {
-                return_view(&mut self.part_ctx()); // cancelling an action does not touch the camera
-            }
-            self.params.rev.pick_axis = false;
-            self.params.rev.pick_line = false;
-            self.status = Notice::info(crate::i18n::tr("in-axis-pick-cancelled"));
-        } else if self.side.carr.mode != 0 {
-            self.side.carr = CompArrayCmd::default(); // a component array is cancelled without a trace
-            self.tools.cmd.params.clear();
-            self.status = Notice::info(crate::i18n::tr("in-comp-array-cancelled"));
-        } else if self.side.m3.on {
-            // THE MEASURING TOOL: Esc first drops WHAT WAS CLICKED, and only when that is empty does it
-            // leave the tool. That way a miss does not throw one out of measuring (things usually need
-            // measuring several times in a row).
-            if self.side.m3.picks.is_empty() {
-                self.side.m3.on = false;
-                self.status = Notice::info(crate::i18n::tr("in-measure-off"));
-            } else {
-                self.side.m3.picks.clear();
-                self.status = Notice::info(crate::i18n::tr("in-measure-hint"));
-            }
-        } else if self.params.boolean.pick.is_some() {
-            self.params.boolean.pick = None;
-            self.status = Notice::info(crate::i18n::tr("in-bool-cancelled"));
-        } else if self.params.boolean.edit.is_some() {
-            self.params.boolean.edit = None;
-            self.status = Notice::info(crate::i18n::tr("in-bool-done"));
-        } else if self.tools.picking.contour().is_some() {
-            // ONLY the choice of the contour of a slot is cancelled (returning to 3D); the sweep or
-            // loft command is NOT closed
-            self.tools.picking.clear();
-            return_view(&mut self.part_ctx()); // cancelling an action does not touch the camera
-            self.status = Notice::info(crate::i18n::tr("in-contour-cancelled"));
-        } else if self.tools.armed.commanding() {
-            cancel_feat_cmd(&mut self.part_ctx());
-        } else if self.side.joint.edit_repick.is_some() {
-            self.side.joint.edit_repick = None; // the pick of a new anchor is cancelled first, the editing is NOT left
-            self.status = Notice::info(crate::i18n::tr("in-anchor-swap-cancelled"));
-        } else if self.side.joint.edit.is_some() {
-            qymcad_assembly::joint_edit_leave(&mut self.joint_ctx());
-        } else if self.side.joint.ground_pick {
-            self.side.joint.ground_pick = false;
-            self.status = Notice::info(crate::i18n::tr("in-ground-off"));
-        } else if self.side.joint.pick_faces {
-            self.side.joint.pick_faces = false;
-            self.side.joint.pick_first = None;
-            self.status = Notice::info(crate::i18n::tr("in-joint-faces-cancelled"));
-        }
-        // THE REST OF THE ASSEMBLY TOOLS GO BY Esc AS WELL.
-        //
-        // Only two of the nine were named here: collecting a joint and grounding. A standalone anchor, a
-        // group, a width, a tangency and a relation WERE NOT RELEASED by Esc — one presses, believes one
-        // has left, and the next click goes somewhere else. Found by the guard
-        // `escape_drops_every_assembly_tool`, and it is the same disease that already produced a class of
-        // troubles with the highlight: the modes are enumerated by name and a new one is forgotten.
-        else if !self.armed_assembly_tools().is_empty() {
-            crate::gui::assembly_tools::drop_assembly_tools(&mut self.joint_ctx());
-            self.status = Notice::info(crate::i18n::tr("in-assembly-tool-cancelled"));
         } else if self.tools.pending_import.curves.is_some() {
             self.tools.pending_import.curves = None;
             self.status = Notice::info(crate::i18n::tr("in-import-cancelled"));
         } else if let Some(k) = self.tools.picking.cancel_key() {
             self.tools.picking.clear(); // the modes Escape simply puts down; the words come from the mode itself
             self.status = Notice::info(crate::i18n::tr(k));
-        } else if self.side.section.pick {
-            self.status = Notice::info(qymcad_part::section_escape(&mut self.side.section, &mut self.regen));
         } else if self.tools.picking.plane_face().is_some() {
             self.tools.picking.set_plane_face(None);
             self.status = Notice::info(crate::i18n::tr("in-plane-face-cancelled"));

@@ -104,9 +104,9 @@ mod tests {
             p.val = 50.0;
             p.txt = "50".into();
         }
-        app.apply_feat_cmd();
+        let why = app.apply_feat_cmd();
         assert_eq!(app.project.timeline.len(), before, "no feature must be created if the plane does not cut");
-        assert_eq!(app.status, qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-plane-cuts-nothing")), "the reason must be said out loud");
+        assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-plane-cuts-nothing"))), "the reason must be said out loud");
     }
 
     /// The tool has a preview: the cutting plane itself and the line of the section across the body.

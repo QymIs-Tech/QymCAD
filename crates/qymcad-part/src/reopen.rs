@@ -407,13 +407,16 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         FeatureKind::Prism { r, n, h, .. } => {
             pc.cmd.open(pc.armed, 15, was_3d);
             pc.prim.n = n;
-            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-radius-circ", "r", r, 0.1, 100000.0), cmd_param_from(&*pc.project, fid, "f-height", "h", h, 0.1, 100000.0)];
+            pc.cmd.params = vec![
+                cmd_param_from(&*pc.project, fid, "f-radius-circ", "r", r, 0.1, 100000.0),
+                cmd_param_from(&*pc.project, fid, "f-height", "h", h, 0.1, 100000.0),
+                cmd_param_from(&*pc.project, fid, "cmd-sides", "n", f64::from(n), 3.0, 64.0).whole(),
+            ];
         }
         // AN ARRAY: a double click reopens the command; the count, the direction and the axis live in the
         // bar, the step and the angle at the geometry
         FeatureKind::LinearArray { src, dx, dy, dz, count, dx2, dy2, dz2, count2, dx3, dy3, dz3, count3, .. } => {
             pc.cmd.open(pc.armed, 17, was_3d);
-            restore_bar_counts(pc.bar_exprs, pc.project, fid);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             let (dir, step) = qymcad_ui_state::arr_dir_of(dx, dy, dz);
             pc.arr.dir = dir;
@@ -430,25 +433,32 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.arr.count3 = count3.max(1);
             // the step is the expression text from the logical key (`store_cmd_exprs`); the numeric
             // fallback is the magnitude of the component
-            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-pitch", "step", step, 0.01, 100000.0)];
+            pc.cmd.params = vec![
+                cmd_param_from(&*pc.project, fid, "cmd-copies", "count", f64::from(count.max(1)), 1.0, 512.0).whole(),
+                cmd_param_from(&*pc.project, fid, "f-pitch", "step", step, 0.01, 100000.0),
+            ];
             // the second and third steps are added AT ONCE with the right magnitude as a fallback (the sync
             // does not know the value)
             if two {
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-copies2", "count2", f64::from(count2.max(1)), 1.0, 512.0).whole());
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-pitch2", "step2", s2, 0.01, 100000.0));
             }
             if three {
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-copies3", "count3", f64::from(count3.max(1)), 1.0, 512.0).whole());
                 pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-pitch3", "step3", s3, 0.01, 100000.0));
             }
         }
         FeatureKind::CircularArray { src, count, angle, axis, .. } => {
             pc.cmd.open(pc.armed, 18, was_3d);
-            restore_bar_counts(pc.bar_exprs, pc.project, fid);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             pc.arr.count = count.max(1);
             pc.arr.axis = axis;
             pc.arr.full = angle.abs() >= 359.9;
             pc.arr.two = false;
-            pc.cmd.params = if pc.arr.full { vec![] } else { vec![cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, 1.0, 360.0)] };
+            pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "cmd-copies", "count", f64::from(count.max(1)), 1.0, 512.0).whole()];
+            if !pc.arr.full {
+                pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, 1.0, 360.0));
+            }
         }
         // THE DATUMS: a double click reopens the command - a plane, a point or an axis is edited in place
         FeatureKind::Plane { plane } => {
@@ -532,10 +542,11 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
                 }
             }
         }
-        FeatureKind::BodyBoolean { .. } => {
+        FeatureKind::BodyBoolean { op, .. } => {
             // a body boolean has no dimension popup - its KIND is edited in the top bar (the edit mode of
             // `bool_tool_bar`)
             pc.boolean.edit = pc.project.timeline.iter().position(|n| n.id == fid);
+            pc.boolean.was = op;
             if let Some(ti) = pc.boolean.edit {
                 *pc.sel = qymcad_ui_state::Sel::Feature(ti);
             }

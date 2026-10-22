@@ -433,9 +433,14 @@ pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
                 // pressed again with the tool in hand: put down, as every tool button does
                 bc.ask.push(BarAsk::CancelAllTools(qymcad_ui_state::Then::Nothing));
             } else {
-                // taking the boolean puts down the tool in hand first, or both bars stood at once
-                let a = qymcad_ui_state::selected_body(&*bc.project, &*bc.sel);
-                bc.ask.push(BarAsk::CancelAllTools(qymcad_ui_state::Then::Boolean(a)));
+                // taking the boolean puts down the tool in hand first, or both bars stood at once; two bodies held by
+                // Shift are its A and B, one body selected is its A
+                let held: Vec<Id> = bc.held.iter().copied().filter(|id| bc.project.mesh_index(*id).is_some()).collect();
+                let bodies = match held.as_slice() {
+                    [a, b, ..] => qymcad_ui_state::BoolBodies { a: Some(*a), b: Some(*b) },
+                    _ => qymcad_ui_state::BoolBodies { a: qymcad_ui_state::selected_body(&*bc.project, &*bc.sel), b: None },
+                };
+                bc.ask.push(BarAsk::CancelAllTools(qymcad_ui_state::Then::Boolean(bodies)));
             }
         }
         // the commands of the assembly and the one with no button are pressed elsewhere

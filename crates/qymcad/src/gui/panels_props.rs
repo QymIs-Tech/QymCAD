@@ -302,7 +302,7 @@ pub(crate) fn joints_panel(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui
         // element is called in conversation and searched for by; the kind is what it does. Hiding the name in
         // a tooltip took away the only way of telling one joint from another just like it.
         let parts: Vec<String> = e.touches.iter().map(|m| comp_name(pr.project, *m)).collect();
-        let selected = matches!(e.item, MateItem::Joint) && *pr.sel == Sel::Joint(e.id);
+        let selected = matches!(e.item, MateItem::Joint) && (*pr.sel == Sel::Joint(e.id) || pr.held.contains(&e.id));
         ui.horizontal(|ui| {
             let in_relation = pr.joint.relation_pick.as_ref().is_some_and(|p| p.picks.iter().any(|(id, _)| *id == e.id));
             let resp = ui.selectable_label(selected || in_relation, format!("{icon} {}", crate::i18n::name(&e.name)));
@@ -319,7 +319,8 @@ pub(crate) fn joints_panel(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui
                 if pr.joint.relation_pick.is_some() {
                     pr.ask.push(qymcad_ui_state::PropsAsk::RelationPick(e.id));
                 } else {
-                    *pr.sel = Sel::Joint(e.id);
+                    let adding = if ui.input(|i| i.modifiers.shift || i.modifiers.command) { qymcad_ui_state::Adding::Yes } else { qymcad_ui_state::Adding::No };
+                    qymcad_ui_state::hold_joint(pr.project, pr.sel, pr.held, e.id, adding);
                 }
             }
             if resp.hovered() && matches!(e.item, MateItem::Joint) {

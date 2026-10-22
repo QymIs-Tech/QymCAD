@@ -272,6 +272,22 @@ pub fn sync_datum_axis_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_u
 pub fn sync_array_params(arr: qymcad_ui_state::ArrayParams, armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_state::FeatCommand, project: &Project) {
     match armed.cmd_kind() {
         17 => {
+            let counts = [
+                MoreCount { wanted: arr.two, key: "count2", label: "f-copies2", now: arr.count2 },
+                MoreCount { wanted: arr.two && arr.three, key: "count3", label: "f-copies3", now: arr.count3 },
+            ];
+            for c in counts {
+                let has = cmd.params.iter().any(|p| p.key == c.key);
+                if c.wanted && !has {
+                    let prm = match cmd.edit {
+                        Some(fid) => cmd_param_from(project, fid, c.label, c.key, f64::from(c.now.max(2)), 1.0, 512.0),
+                        None => qymcad_ui_state::CmdParam::new(c.label, c.key, f64::from(c.now.max(2)), 1.0, 512.0),
+                    };
+                    cmd.params.push(prm.whole());
+                } else if !c.wanted && has {
+                    cmd.params.retain(|p| p.key != c.key);
+                }
+            }
             let has2 = cmd.params.iter().any(|p| p.key == "step2");
             if arr.two && !has2 {
                 let prm = match cmd.edit {
@@ -309,6 +325,47 @@ pub fn sync_array_params(arr: qymcad_ui_state::ArrayParams, armed: &qymcad_ui_st
     }
 }
 
+/// THE COUNT OF A SECOND OR THIRD DIRECTION OF A PATTERN: whether its field is wanted, its key and caption, and the count
+/// the pattern holds now.
+struct MoreCount {
+    wanted: bool,
+    key: &'static str,
+    label: &'static str,
+    now: u32,
+}
+
+/// THE COUNTS OF THE COMMAND IN HAND TAKEN FROM ITS FIELDS: the copies of a pattern, the sides of a prism - read by its
+/// preview and its apply.
+pub fn take_counts(armed: &qymcad_ui_state::Armed, cmd: &qymcad_ui_state::FeatCommand, counts: Counts) {
+    match armed.cmd_kind() {
+        15 => {
+            if let Some(v) = count_of(cmd, "n", 3) {
+                counts.prim.n = v;
+            }
+        }
+        17 | 18 => take_array_counts(cmd, counts.arr),
+        _ => {}
+    }
+}
+
+/// THE COUNTS OF A PATTERN TAKEN FROM ITS FIELDS - of bodies or of parts alike.
+pub fn take_array_counts(cmd: &qymcad_ui_state::FeatCommand, arr: &mut qymcad_ui_state::ArrayParams) {
+    arr.count = count_of(cmd, "count", 1).unwrap_or(arr.count);
+    arr.count2 = count_of(cmd, "count2", 1).unwrap_or(arr.count2);
+    arr.count3 = count_of(cmd, "count3", 1).unwrap_or(arr.count3);
+}
+
+/// The whole number field `key` of a command holds, `at_least` at the least; none where the command has no such field.
+fn count_of(cmd: &qymcad_ui_state::FeatCommand, key: &str, at_least: u32) -> Option<u32> {
+    cmd.params.iter().find(|p| p.key == key).map(|p| (p.val.round().max(f64::from(at_least))) as u32)
+}
+
+/// WHERE THE COUNTS OF A COMMAND ARE KEPT: the pattern's and the prism's own.
+pub struct Counts<'a> {
+    pub arr: &'a mut qymcad_ui_state::ArrayParams,
+    pub prim: &'a mut qymcad_ui_state::PrimParams,
+}
+
 /// Store the dimensions of a command on feature `body` through the one door of a feature's number
 /// (`Project::write_feat_formula`): an expression stays parametric, a plain number removes the expression (this matters
 /// while editing, when a formula gets replaced by a number). The first refusal stops the store and is handed back.
@@ -319,19 +376,6 @@ pub fn store_cmd_exprs(cmd: &qymcad_ui_state::FeatCommand, project: &mut Project
     Ok(())
 }
 
-/// A FORMULA THE DOCUMENT REFUSED AS A COMMAND WROTE IT, said on the status line; the command stays open. The command
-/// asks the same door before Enter ([`field_refused_by_document`]), so this is the backstop of the write.
-pub(crate) fn say_formula_refused(status: &mut qymcad_ui_state::Notice, e: &qymcad_core::errors::ExprError) -> Option<Id> {
-    *status = qymcad_ui_state::Notice::refusal(qymcad_i18n::error_words::expr_error_text(e));
-    None
-}
-
-/// The same where the command holds the operation: the operation is rolled back as well and leaves no trace.
-pub(crate) fn formula_refused(pc: &mut qymcad_ui_state::PartCtx, e: &qymcad_core::errors::ExprError) -> Option<Id> {
-    *pc.cmd_failed = true;
-    say_formula_refused(pc.status, e)
-}
-
 /// THE TUBE OF A TORUS STAYS THINNER THAN ITS RING: the tube field's upper limit follows the ring field, so a tube as
 /// thick as the ring or thicker is refused beside the field, in words, before Enter. Reported behaviour: a ring of 12
 /// took a tube of 120 and stood green as a body passing through itself.
@@ -340,7 +384,7 @@ pub fn sync_torus_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_sta
         return;
     }
     let vars = project.param_map();
-    let Some(ring) = cmd.params.iter().find(|p| p.key == "major").and_then(|p| field_value(p, &vars).ok()) else { return };
+    let Some(ring) = cmd.params.iter().find(|p| p.key == "major").and_then(|p| qymcad_ui_state::field_value(p, &vars).ok()) else { return };
     if let Some(tube) = cmd.params.iter_mut().find(|p| p.key == "minor") {
         tube.hi = (ring - 1e-3).max(tube.lo);
     }
@@ -378,7 +422,7 @@ pub fn sync_dir_cmd_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_s
 /// be applied silently. This gates Apply (both Enter and the buttons) and marks the field in the popup.
 pub fn cmd_exprs_valid(cmd: &qymcad_ui_state::FeatCommand, project: &Project) -> bool {
     let vars = project.param_map();
-    cmd.params.iter().all(|p| field_value(p, &vars).is_ok() && field_refused_by_document(p, project, cmd.edit).is_none())
+    cmd.params.iter().all(|p| qymcad_ui_state::field_value(p, &vars).is_ok() && field_refused_by_document(p, project, cmd.edit).is_none())
 }
 
 /// WHAT THE DOCUMENT WOULD REFUSE OF A FIELD OF A COMMAND OPENED ON NODE `edit`, in words - the question of the door the
@@ -389,39 +433,6 @@ pub fn cmd_exprs_valid(cmd: &qymcad_ui_state::FeatCommand, project: &Project) ->
 pub fn field_refused_by_document(p: &qymcad_ui_state::CmdParam, project: &Project, edit: Option<Id>) -> Option<String> {
     let at = qymcad_core::model::FeatNumber { node: edit?, key: &p.key };
     project.check_feat_text(&at, &p.txt).err().map(|e| qymcad_i18n::error_words::expr_error_text(&e))
-}
-
-/// WHAT THE DOCUMENT WOULD REFUSE OF THE COUNTS TYPED IN THE BAR of an array opened on node `edit`, in words, asked of
-/// the same door as the fields at the geometry: `n+1` typed for the count named `n`.
-pub fn bar_counts_refused(bar_exprs: &std::collections::HashMap<&'static str, String>, project: &Project, edit: Option<Id>) -> Option<String> {
-    let node = edit?;
-    BAR_COUNTS.iter().find_map(|c| {
-        let text = bar_exprs.get(c.bar).map(String::as_str).unwrap_or_default();
-        project.check_feat_text(&qymcad_core::model::FeatNumber { node, key: c.key }, text).err().map(|e| qymcad_i18n::error_words::expr_error_text(&e))
-    })
-}
-
-/// A COUNT OF AN ARRAY TYPED IN THE BAR: the field of the bar and the number of the node it is kept as.
-struct BarCount {
-    bar: &'static str,
-    key: &'static str,
-}
-
-/// The counts of an array in the bar, the first, the second and the third direction.
-const BAR_COUNTS: [BarCount; 3] = [BarCount { bar: "arr_count", key: "count" }, BarCount { bar: "arr_count2", key: "count2" }, BarCount { bar: "arr_count3", key: "count3" }];
-
-/// WHAT A FIELD OF A COMMAND HOLDS: its expression worked out, or in words why it cannot be taken - an expression that
-/// does not work out, or a value past the field's limits. A value past the limits used to be pressed to the nearest
-/// one and applied without a word: a fillet of 0 came in green with a radius of 0.05.
-pub fn field_value(p: &qymcad_ui_state::CmdParam, vars: &std::collections::HashMap<String, f64>) -> Result<f64, String> {
-    let v = qymcad_core::expr::eval(&p.txt, vars).map_err(|e| qymcad_i18n::error_words::expr_error_text(&e))?;
-    if p.nonzero && v.abs() < 1e-9 {
-        return Err(qymcad_i18n::tr("cmd-value-zero"));
-    }
-    if v < p.lo - 1e-9 || v > p.hi + 1e-9 {
-        return Err(qymcad_i18n::tr2("cmd-value-out-of-range", "lo", &qymcad_core::expr::fmt_num(p.lo), "hi", &qymcad_core::expr::fmt_num(p.hi)));
-    }
-    Ok(v)
 }
 
 /// The "what to pick" hint for the active command, while nothing has been picked yet.
@@ -470,6 +481,7 @@ pub fn cmd_hint(armed: &qymcad_ui_state::Armed, gsel: &qymcad_ui_state::GeomSele
         17 => qymcad_i18n::tr("hint-count-dir-step"),
         18 => qymcad_i18n::tr("hint-count-axis-angle"),
         20 => qymcad_i18n::tr("hint-plane-offset"),
+        21 => qymcad_i18n::tr("cmd-pick-vertex"),
         22 => qymcad_i18n::tr("hint-edge-or-manual"),
         _ => String::new(),
     }
@@ -501,33 +513,6 @@ pub(crate) fn turn_datum_plane(cmd: &qymcad_ui_state::FeatCommand, project: &mut
     if let Some(pl) = project.planes.iter_mut().find(|p| p.id == id) {
         pl.tilt = qymcad_core::feature::PlaneTilt { about_x: qymcad_ui_state::cmd_val(cmd, "tilt_x"), about_y: qymcad_ui_state::cmd_val(cmd, "tilt_y") };
         pl.rot_deg = qymcad_ui_state::cmd_val(cmd, "turn");
-    }
-}
-
-/// THE COUNTS OF AN ARRAY TYPED AS EXPRESSIONS IN THE BAR are dimensions of its node, as the fields at the geometry are:
-/// a count typed as `k` follows `k`. Reported behaviour (found by the contract): a circular array of `k` = 6 copies
-/// stayed at 6 when `k` became 12 - the bar gave its number once and kept the text to itself.
-///
-/// Written through the one door of a feature's number (`Project::write_feat_formula`); the first refusal is handed back.
-pub fn store_bar_counts(bar_exprs: &std::collections::HashMap<&'static str, String>, project: &mut Project, body: Id) -> Result<(), qymcad_core::errors::ExprError> {
-    for c in &BAR_COUNTS {
-        let text = bar_exprs.get(c.bar).map(String::as_str).unwrap_or_default();
-        project.write_feat_formula(&qymcad_core::model::FeatNumber { node: body, key: c.key }, text, qymcad_core::model::PlainNumber::ClearsFormula)?;
-    }
-    Ok(())
-}
-
-/// THE COUNTS BACK INTO THE BAR on reopening an array: the text of an expression, where one was typed.
-pub fn restore_bar_counts(bar_exprs: &mut std::collections::HashMap<&'static str, String>, project: &Project, fid: Id) {
-    for c in &BAR_COUNTS {
-        match project.feat_dim(fid, c.key).filter(|t| !t.trim().is_empty()) {
-            Some(t) => {
-                bar_exprs.insert(c.bar, t.to_string());
-            }
-            None => {
-                bar_exprs.remove(c.bar);
-            }
-        }
     }
 }
 

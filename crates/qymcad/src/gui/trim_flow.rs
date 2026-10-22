@@ -91,12 +91,12 @@ mod tests {
         let (mut app, sheet, _tool) = plate_sheet_tool();
         let before = app.project.timeline.len();
         app.start_feat_cmd(34);
-        app.apply_feat_cmd();
-        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-trim-pick-sheet")), "without a surface the reason must be said out loud");
+        let why = app.apply_feat_cmd();
+        assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-trim-pick-sheet"))), "without a surface the reason must be said out loud");
 
         app.side.trim.keep = Some((sheet, [0.0, 0.0, 0.0]));
-        app.apply_feat_cmd();
-        assert_eq!(app.status, qymcad_ui_state::Notice::info(crate::i18n::tr("msg-trim-pick-tool")), "without a tool it is a reason too, not silence");
+        let why = app.apply_feat_cmd();
+        assert_eq!(why, Some(qymcad_ui_state::NotApplied::Refused(crate::i18n::tr("msg-trim-pick-tool"))), "without a tool it is a reason too, not silence");
         assert_eq!(app.project.timeline.len(), before, "the feature must not be created without both inputs");
     }
 

@@ -36,7 +36,9 @@ fn texts(shapes: &[egui::epaint::ClippedShape]) -> Vec<String> {
 
 /// Set one of the command's fields, as typing into it does.
 fn typed(cmd: &mut qymcad_ui_state::FeatCommand, key: &str, v: f64) {
-    cmd.params.iter_mut().find(|p| p.key == key).unwrap_or_else(|| panic!("the command has no field {key}")).val = v;
+    // typed as a person types it: the words in the field, which its number is read from on every frame
+    let p = cmd.params.iter_mut().find(|p| p.key == key).unwrap_or_else(|| panic!("the command has no field {key}"));
+    (p.val, p.txt) = (v, qymcad_core::expr::fmt_num(v));
 }
 
 /// The thread command in hand, cut to a profile of one's own: Ø20 x 5, 40 degrees, 2.5 deep.
@@ -63,11 +65,16 @@ fn a_thread_of_ones_own() -> (Bench, qymcad_core::thread::ThreadSpec) {
 /// What the bar drew, as one string.
 fn what_the_bar_says(b: &mut Bench) -> String {
     let ctx = egui::Context::default();
-    let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(2000.0, 400.0));
-    let full = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-        qymcad_part::feat_command_bar(&mut b.part_ctx(), ui);
-    });
-    texts(&full.shapes).join(" | ")
+    let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(2000.0, 800.0));
+    // the bar, and its sentences on their plate in the corner of the view, as the window draws them; a plate over the view
+    // is laid out unseen the first frame it shows, so the second frame is read
+    let mut frame = || {
+        ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+            qymcad_part::feat_command_bar(&mut b.part_ctx(), ui);
+        })
+    };
+    frame();
+    texts(&frame().shapes).join(" | ")
 }
 
 /// THE HOLE THE BAR NAMES IS THE HOLE THE NUT NEEDS.

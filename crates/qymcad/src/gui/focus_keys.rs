@@ -111,13 +111,19 @@ mod tests {
     ///
     /// Esc in a field used to take down the whole command along with the picked geometry: a person
     /// meant to erase a half-typed number and lost the selection.
+    ///
+    /// Walked through the whole window: the field is the extrude's own, taking the keyboard as the command opens.
     #[test]
     fn escape_leaves_the_field_first_and_cancels_second() {
         let mut app = extruding();
-        press(&mut app, Key::Escape, Modifiers::NONE, true);
-        assert!(app.tools.armed.commanding(), "the first Esc from a field cancelled the whole command");
-        press(&mut app, Key::Escape, Modifiers::NONE, false);
-        assert!(!app.tools.armed.commanding(), "the second Esc, already without focus, did not cancel the command");
+        let mut hand = super::super::hand::Hand::as_it_stands(&mut app);
+        hand.frame(Vec::new());
+        assert!(hand.typing(), "setup: the field of the extrude does not hold the keyboard as the command opens");
+        hand.key(Key::Escape);
+        assert!(hand.app.tools.armed.commanding(), "the first Esc from a field cancelled the whole command");
+        assert!(!hand.typing(), "the first Esc did not leave the field");
+        hand.key(Key::Escape);
+        assert!(!hand.app.tools.armed.commanding(), "the second Esc, already without focus, did not cancel the command");
     }
 
     /// THE HINT CHANGES ALONG WITH THE RULE.

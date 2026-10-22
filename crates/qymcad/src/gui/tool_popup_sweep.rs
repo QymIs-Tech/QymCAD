@@ -12,7 +12,7 @@
 //! Otherwise there is nowhere to show the field — that is exactly how the thickness of the thicken
 //! tool went missing, and exactly how both splits stayed silent.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::super::{App, Sel};
     use egui::{Pos2, Rect};
 
@@ -31,6 +31,16 @@ mod tests {
 
     fn viewport() -> Rect {
         Rect::from_min_size(Pos2::new(0.0, 0.0), egui::vec2(900.0, 700.0))
+    }
+
+    /// WHERE THE BOX OF THE COMMAND IN HAND STANDS by the rule of every box, at the size a box is first laid by: none
+    /// when the command has nothing to stand by.
+    pub(crate) fn box_by_the_rule(app: &mut App, rect: Rect) -> Option<Rect> {
+        let place = crate::gui::commands::cmd_place(&mut app.part_ctx())?;
+        let basis = app.viewing.cam.basis();
+        let screen = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis };
+        let spot = qymcad_ui_state::spot_of(place.by, &app.project, &screen, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
+        Some(qymcad_ui_state::laid_by_the_rule(spot, egui::vec2(240.0, 140.0), rect))
     }
 
     /// The screen box of the body — what the popup has no right to cover.
@@ -84,7 +94,6 @@ mod tests {
     /// the thickness of the thicken tool went missing.
     #[test]
     fn every_tool_with_a_number_has_a_place_to_show_it() {
-        let rect = viewport();
         let mut missing: Vec<String> = Vec::new();
         for kind in AIMED_AT_THE_BODY {
             let mut app = App::default();
@@ -98,7 +107,7 @@ mod tests {
             if app.tools.cmd.params.is_empty() {
                 continue; // there is no number, so there is nothing to show
             }
-            if crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).is_none() {
+            if crate::gui::commands::cmd_place(&mut app.part_ctx()).is_none() {
                 missing.push(format!("{kind} ({} fields)", app.tools.cmd.params.len()));
             }
         }
@@ -119,12 +128,15 @@ mod tests {
             app.viewing.cam.target = [10.0, 10.0, 5.0];
             app.start_feat_cmd(kind);
             arm(&mut app, kind, mi, body);
-            let Some(anchor) = crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect) else { continue };
+            let Some(the_box) = box_by_the_rule(&mut app, rect) else { continue };
             let bb = body_box(&app, mi, rect);
-            if bb.contains(anchor) {
-                over.push(format!("{kind} (anchor {:.0},{:.0} inside {:.0},{:.0}..{:.0},{:.0})", anchor.x, anchor.y, bb.min.x, bb.min.y, bb.max.x, bb.max.y));
+            if the_box.intersects(bb) {
+                over.push(format!(
+                    "{kind} (the box {:.0},{:.0}..{:.0},{:.0} over {:.0},{:.0}..{:.0},{:.0})",
+                    the_box.min.x, the_box.min.y, the_box.max.x, the_box.max.y, bb.min.x, bb.min.y, bb.max.x, bb.max.y
+                ));
             }
-            assert!(rect.contains(anchor), "command {kind}: the anchor went outside the viewport — the popup cannot be seen");
+            assert!(rect.contains_rect(the_box), "command {kind}: the box went outside the viewport — it cannot be seen: {the_box:?}");
         }
         assert!(over.is_empty(), "the popup lay on the part — and that is what is aimed at next: {}", over.join("; "));
     }
@@ -220,7 +232,7 @@ mod tests {
             app.project.parameters.push(qymcad_core::model::Param { name: "vysota_korpusa".into(), expr: "25".into(), value: 25.0 });
             app.start_feat_cmd(kind);
             arm(&mut app, kind, mi, body);
-            if app.tools.cmd.params.is_empty() || crate::gui::commands::cmd_anchor_screen(&mut app.part_ctx(), rect).is_none() {
+            if app.tools.cmd.params.is_empty() || crate::gui::commands::cmd_place(&mut app.part_ctx()).is_none() {
                 continue; // there is no number, or nowhere to show it — the neighbouring checks catch that
             }
 

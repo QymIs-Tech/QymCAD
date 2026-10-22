@@ -1051,6 +1051,8 @@ mod tool_steps;
 pub use tool_steps::*;
 mod voice;
 pub use voice::*;
+mod tool_frame;
+pub use tool_frame::*;
 mod faults;
 pub use faults::*;
 pub mod catalogue;

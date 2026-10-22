@@ -177,10 +177,15 @@ pub struct CmdParam {
     pub hi: f64,
     /// ZERO IS NO VALUE for this field, though both signs are: a face pushed by 0 is the body unchanged.
     pub nonzero: bool,
+    /// WHAT KIND OF NUMBER IT TAKES: any, or a whole one - a count of copies, a number of sides.
+    pub number: Number,
     /// WHERE THIS FIELD LIVES IN SPACE. `None` means the command's shared popup; a point means a small window of
     /// its own at that place (a radius at a vertex is shown AT THE VERTEX, otherwise six identical fields in a
     /// column cannot be told apart).
     pub at: Option<[f64; 3]>,
+    /// WHOSE VALUE IT IS, where the caption alone does not tell: the anchor A or B an offset belongs to, the degree a
+    /// limit bounds. A catalogue key, said before the caption.
+    pub of: Option<LabelKey>,
 }
 
 impl CmdParam {
@@ -196,7 +201,16 @@ impl CmdParam {
     }
 
     pub fn new(label: &'static str, key: &str, val: f64, lo: f64, hi: f64) -> Self {
-        Self { label: LabelKey(label), key: key.to_string(), val, txt: format!("{val:.2}"), lo, hi, at: None, nonzero: false }
+        Self { label: LabelKey(label), key: key.to_string(), val, txt: format!("{val:.2}"), lo, hi, at: None, nonzero: false, number: Number::Real, of: None }
+    }
+
+    /// A field of a whole number: a count of copies, a number of sides - written without a fraction.
+    pub fn whole(mut self) -> Self {
+        self.number = Number::Whole;
+        if self.txt.trim().parse::<f64>().is_ok() {
+            self.txt = qymcad_core::expr::fmt_num(self.val.round()); // a formula stays a formula
+        }
+        self
     }
 
     /// A field AT THE GEOMETRY: the same thing, but with a place of its own in space.
@@ -205,11 +219,30 @@ impl CmdParam {
         self
     }
 
+    /// The same field told apart by whose value it is: the key of the anchor, the degree.
+    pub fn of(mut self, whose: &'static str) -> Self {
+        self.of = Some(LabelKey(whose));
+        self
+    }
+
+    /// The key of whose value it is, where the field has one.
+    pub fn of_key(&self) -> Option<&'static str> {
+        self.of.map(|k| k.0)
+    }
+
     /// A field for which zero is no value.
     pub fn nonzero(mut self) -> Self {
         self.nonzero = true;
         self
     }
+}
+
+/// THE KIND OF NUMBER A FIELD OF A COMMAND TAKES.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Number {
+    #[default]
+    Real,
+    Whole,
 }
 
 /// A READY PIECE OF THE SCENE BUFFER FOR ONE BODY.

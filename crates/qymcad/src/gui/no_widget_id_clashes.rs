@@ -68,7 +68,8 @@ mod tests {
         }
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), first);
         qymcad_assembly::relation_pick_click(&mut app.joint_ctx(), second);
-        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx());
+        // the screen is looked at with the relation tool as it stands; whether the relation is made is not what is asked
+        qymcad_assembly::relation_pick_confirm(&mut app.joint_ctx()).ok();
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         first
     }

@@ -89,11 +89,18 @@ probe! {
     /// THE LIMITS ARE SET AND THE ANIMATION RUNS the degree over its range; stopping puts everything back.
     fn the_limits_are_set_and_the_animation_runs_and_stops() {
         let mut s = a_hinge();
+        // the limits of the angle, in their section of the box - folded as it opens: each switched on by its tick, then
+        // typed in the field after it; a value of the box is taken as it is typed, and Enter would finish the edit of
+        // the joint, as it applies any tool
+        // the title of the limits in the box, by its foot - the panel of the joint names its limits as well
+        let (limits, foot) = (s.word("box-limits"), s.word("j-as-built"));
+        let near = s.find(&foot, qymcad::pos2(0.0, 0.0)).map_or(qymcad::pos2(0.0, 0.0), |r| r.center());
+        s.press_word_near(&limits, near);
         let (min, max) = (s.word("j-min"), s.word("j-max"));
         s.toggle(&min);
         s.fill(&min, "-30");
         s.toggle(&max);
-        s.fill(&max, "30").key(Key::Enter);
+        s.fill(&max, "30");
         // what the animation must give back is what stood when it was started - the limits set before it solve the
         // assembly too
         let before = second(&mut s);

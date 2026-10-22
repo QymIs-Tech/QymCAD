@@ -131,17 +131,20 @@ mod tests {
     }
 
     /// Esc first clears what was clicked and only then leaves — measuring is usually done several
-    /// times over.
+    /// times over. The key is pressed in whole frames of the window, where the bar of the measure reads it.
     #[test]
     fn escape_clears_the_picks_before_leaving_the_tool() {
         let mut app = App::default();
-        app.toggle_measure_3d();
-        app.side.m3.picks = vec![super::super::measure3d::MeasurePick { item: MeasureItem::Point([0.0; 3]), what: "vertex".into(), at: [0.0; 3] }];
-        app.on_escape();
-        assert!(app.side.m3.on, "the first Esc must clear what was clicked rather than throw one out of the tool");
-        assert!(app.side.m3.picks.is_empty(), "what was clicked is cleared");
-        app.on_escape();
-        assert!(!app.side.m3.on, "the second Esc leaves the tool");
+        // the window up first: its first frames settle the program as it starts, the tool taken after
+        let mut hand = super::super::hand::Hand::as_it_stands(&mut app);
+        hand.frame(Vec::new());
+        hand.app.toggle_measure_3d();
+        hand.app.side.m3.picks = vec![super::super::measure3d::MeasurePick { item: MeasureItem::Point([0.0; 3]), what: "vertex".into(), at: [0.0; 3] }];
+        hand.key(egui::Key::Escape);
+        assert!(hand.app.side.m3.on, "the first Esc must clear what was clicked rather than throw one out of the tool");
+        assert!(hand.app.side.m3.picks.is_empty(), "what was clicked is cleared");
+        hand.key(egui::Key::Escape);
+        assert!(!hand.app.side.m3.on, "the second Esc leaves the tool");
     }
 
     /// The result is VISIBLE at the geometry rather than only in the status line.

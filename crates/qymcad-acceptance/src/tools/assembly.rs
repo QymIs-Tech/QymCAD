@@ -522,8 +522,8 @@ pub static RELATION: Tool = Tool {
     help: "assembly/07-relations",
     not_applicable: &[
         (2, "the kinds of relation in the bar are not described yet: this contract holds the gear the tool starts with"),
-        (5, "the ratio in the bar is a number dragged, not a field typed at the geometry, and it moves no part at rest"),
-        (6, "the ratio in the bar is a number dragged, not a field typed at the geometry"),
+        (5, "the ratio is a number of the bar - a relation has no place in the view to type it at - and it moves no part at rest"),
+        (6, "the ratio is a number of the bar, not a field of a box at the geometry"),
         (13, "a relation is edited from the list of mates, not by a row of a timeline"),
         (14, "nothing of a timeline stands above a mate"),
         (15, "a relation stands on its two mates; deleting one is the mates' matter"),

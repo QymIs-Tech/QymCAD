@@ -475,6 +475,22 @@ const CTX_DECL: &str = concat!(
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/tool_steps.rs"),
     file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/bar.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/doors.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/fields.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/layout.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/opts.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/place.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/words.rs"),
+    file_break!(),
+    include_str!("../../../qymcad-ui-state/src/tool_frame/mod.rs"),
+    file_break!(),
     include_str!("../../../qymcad-ui-state/src/tree.rs"),
     file_break!(),
     include_str!("../../../qymcad-ui-state/src/lib.rs")
@@ -761,8 +777,10 @@ mod tests {
     fn the_context_fields_held_by_value_are_the_reviewed_ones() {
         let seen: Vec<String> = fields_held_by_value().into_iter().map(|(c, f)| format!("{c}::{f}")).collect();
         let reviewed = [
+            "JointCtx::canvas",          // read: where the view stands, the words of the tool in hand laid in its corner
             "JointCtx::mode_3d",         // read: the glyphs are drawn only in 3D
             "JointCtx::workbench",       // read: which workbench is current
+            "PartCtx::canvas",           // read: where the view stands, the words of the tool in hand laid in its corner
             "PartCtx::workbench",        // read
             "PropsCtx::workbench",       // read
             "StatusCtx::cursor",         // read: where the pointer is, printed as two numbers and changed by nobody

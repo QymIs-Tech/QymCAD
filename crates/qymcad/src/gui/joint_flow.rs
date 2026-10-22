@@ -288,8 +288,8 @@ pub(in crate::gui) mod tests {
             "\n",
             include_str!("../../../qymcad-assembly/src/lib.rs")
         );
-        let a = src.find("joint_bar_kind").expect("the kind combo of the creation bar is in place");
-        let b = src[a..].find("});").map(|i| a + i).unwrap_or(src.len());
+        let a = src.find("const JOINT_KINDS").expect("the kinds the bars of a joint offer are in place");
+        let b = src[a..].find("];").map(|i| a + i).unwrap_or(src.len());
         for k in kinds {
             assert!(src[a..b].contains(&format!("JointKind::{k:?}")), "{k:?} is not offered in the creation bar — and there are no per-kind buttons any more, so the kind is unreachable");
         }

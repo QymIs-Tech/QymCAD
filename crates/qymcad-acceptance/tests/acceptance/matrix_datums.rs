@@ -3,7 +3,7 @@
 //! cylinder, a hole, a boss, a rounding; a point at corners and at coordinates. Each is read back from the document
 //! and must stand where the geometry puts it: a plane through the right point square to the right normal, an axis
 //! through the right point along the right way, a point at the right place.
-use qymcad::{Datum, Key, Session};
+use qymcad::{Datum, InRow, Key, Session};
 use qymcad_acceptance::bodies::{BLOCK, BOSSED, CHAMFERED, CYLINDER, EMPTY, HOLED, ROUNDED};
 use qymcad_acceptance::matrix::{show, spot, Body, Spot};
 use qymcad_acceptance::probe;
@@ -138,8 +138,9 @@ fn axis_by_hand(s: &mut Session, o: [f64; 3], d: [f64; 3]) {
     take(s, "g-datum-axis-hint");
     let word = s.word("cmd-manual");
     s.press_word_near(&word, qymcad::pos2(640.0, 24.0));
-    for (caption, v) in ["O.x", "O.y", "O.z", "Dir.x", "Dir.y", "Dir.z"].into_iter().zip(o.into_iter().chain(d)) {
-        s.fill(caption, &format!("{v}"));
+    let (origin, way) = (s.word("box-origin"), s.word("cmd-direction"));
+    for (row, (tag, v)) in [&origin, &origin, &origin, &way, &way, &way].into_iter().zip(["X", "Y", "Z", "X", "Y", "Z"].into_iter().zip(o.into_iter().chain(d))) {
+        s.fill_in_row(&InRow { row, tag }, &format!("{v}"));
     }
     s.key(Key::Enter);
 }

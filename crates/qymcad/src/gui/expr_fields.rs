@@ -139,7 +139,7 @@ mod tests {
 
     /// Where the box of fields of the command in hand stands: the one beside the arrow or the one of the rest.
     fn the_box(hand: &super::super::hand::Hand) -> egui::Rect {
-        let at_arrow = (0..4).find_map(|i| hand.area_rect(egui::Id::new(("feat_cmd_at", i))));
+        let at_arrow = (0..4).find_map(|i| hand.area_rect(egui::Id::new("feat_cmd_popup").with(("at", i))));
         at_arrow.or_else(|| hand.area_rect(egui::Id::new("feat_cmd_popup"))).expect("the box of fields of the extrusion is drawn")
     }
 

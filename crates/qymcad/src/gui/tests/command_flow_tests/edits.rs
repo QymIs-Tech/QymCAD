@@ -139,7 +139,7 @@ fn thread_command_is_standard_driven_and_auger_switches_fields() {
     app.params.thread.src = Some(cube);
     app.params.thread.edge = 1;
     app.params.thread.radius = 5.0;
-    let body = crate::gui::commands::apply_thread_cmd(&app.tools.cmd, &mut app.project, &mut app.status, app.params.thread).expect("the auger's node was created");
+    let body = crate::gui::commands::apply_thread_cmd(&app.tools.cmd, &mut app.project, app.params.thread).expect("the auger's node was created");
     match app.project.timeline.iter().find(|n| n.id == body).map(|n| &n.kind) {
         Some(FeatureKind::Auger { spec, length, .. }) => {
             assert!(spec.outer_d > spec.shaft_d, "the ribbon is wider than the shaft: {:.1} against a shaft of {:.1}", spec.outer_d, spec.shaft_d);
@@ -164,7 +164,7 @@ fn thread_feature_carries_standard_and_derives_geometry() {
     if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "nominal") {
         p.val = 10.0;
     }
-    let body = crate::gui::commands::apply_thread_cmd(&app.tools.cmd, &mut app.project, &mut app.status, app.params.thread).expect("the thread's node was created");
+    let body = crate::gui::commands::apply_thread_cmd(&app.tools.cmd, &mut app.project, app.params.thread).expect("the thread's node was created");
     match app.project.timeline.iter().find(|n| n.id == body).map(|n| &n.kind) {
         Some(FeatureKind::Thread { spec, .. }) => {
             assert_eq!(spec.standard, qymcad_core::thread::ThreadStandard::MetricIso);

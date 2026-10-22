@@ -8,14 +8,16 @@ pub(crate) use qymcad_ui_state::{comp_array_kind};
 #[allow(unused_imports)] // the checks reach it through this module, which is the address they know
 pub(crate) use qymcad_ui_state::try_modify;
 pub(crate) use qymcad_part::*;
+#[cfg(test)]
+use qymcad_ui_state::NotApplied;
 use qymcad_ui_state::Notice;
 use super::*;
 
 impl App {
     /// A test facade: the checks apply a command the way the frame does, but they have no context to hand.
     #[cfg(test)]
-    pub(crate) fn apply_feat_cmd(&mut self) {
-        apply_feat_cmd(&mut self.part_ctx());
+    pub(crate) fn apply_feat_cmd(&mut self) -> Option<NotApplied> {
+        apply_feat_cmd(&mut self.part_ctx()).err()
     }
 
     /// A test facade: the axis candidates, refreshed the way the command bar refreshes them.
@@ -269,12 +271,7 @@ impl App {
             return;
         }
         self.cancel_all_tools(); // exclusivity: the array drops the previous tool
-        self.side.carr = CompArrayCmd { mode, src, dir: 0, axis: 2, edit: 0 };
-        self.params.arr.count = if mode == 2 { 6 } else { 3 };
-        (self.params.arr.full, self.params.arr.two, self.params.arr.three, self.params.arr.axis) = (true, false, false, 0); // a full turn, one direction, the assembly's axis
-        self.viewing.mode_3d = true;
-        self.tools.cmd.params = if mode == 2 { vec![] } else { vec![CmdParam::new("f-pitch", "cstep", 30.0, 0.01, 100000.0)] };
-        self.status = Notice::info(if mode == 2 { crate::i18n::tr("msg-comp-circ-array") } else { crate::i18n::tr("msg-comp-lin-array") });
+        qymcad_part::begin_comp_array(&mut self.part_ctx(), mode, src);
     }
 
     /// Reopen an EXISTING component array for editing (a double click in the tree).

@@ -472,22 +472,42 @@ pub struct BoolCommand {
     pub b: Option<Id>,
     /// an existing boolean node is being edited (its index in the timeline)
     pub edit: Option<usize>,
+    /// the kind the node being edited had when it was reopened: cancelling the edit puts it back
+    pub was: u8,
 }
 
 /// What a bar takes up once every other tool is put down.
 #[derive(Clone, Copy, Debug)]
 pub enum Then {
     Nothing,
-    /// The body boolean, with body A when one was selected before the button.
-    Boolean(Option<Id>),
+    /// The body boolean, with the bodies selected before the button: body A, and body B held with it by Shift.
+    Boolean(BoolBodies),
+}
+
+/// THE BODIES OF A BOOLEAN SELECTED BEFORE ITS BUTTON: A, and B held with it.
+#[derive(Clone, Copy, Debug)]
+pub struct BoolBodies {
+    pub a: Option<Id>,
+    pub b: Option<Id>,
 }
 
 impl Then {
-    pub fn take(self, boolean: &mut BoolCommand, status: &mut Notice) {
-        if let Then::Boolean(a) = self {
+    pub fn take(self, boolean: &mut BoolCommand, before: &mut PickedBefore, status: &mut Notice) {
+        if let Then::Boolean(BoolBodies { a, b }) = self {
+            match (a, b) {
+                // both bodies are the selection: no click of it is left for the tool
+                (Some(_), Some(_)) => before.places.clear(),
+                (Some(_), None) => before.spend_object(), // body A is the selection, not a click of the tool
+                _ => {}
+            }
             boolean.pick = a.map(|a| (a, 0));
-            boolean.b = None;
-            *status = Notice::info(qymcad_i18n::tr(if a.is_some() { "tb-bool-pick-b" } else { "tb-pick-body-a-first" }));
+            boolean.b = b.filter(|_| a.is_some());
+            let words = match (a, b) {
+                (None, _) => "tb-pick-body-a-first",
+                (Some(_), None) => "tb-bool-pick-b",
+                (Some(_), Some(_)) => "tb-bool-ready",
+            };
+            *status = Notice::info(qymcad_i18n::tr(words));
         }
     }
 }
@@ -784,8 +804,8 @@ pub struct DimTool {
 pub struct JointCommand {
     /// parameters of the joint being created
     pub new_kind: qymcad_core::feature::JointKind,
-    pub new_offset: f64,
-    pub new_angle: f64,
+    /// The fields of the box of the joint being edited, as they are typed.
+    pub fields: crate::JointFields,
     /// KEEP IT WHERE IT STANDS RIGHT AT CREATION (an "as-built" joint).
     ///
     /// A "keep it where it stands" button in the joint's properties comes TOO LATE: the joint has
@@ -804,6 +824,8 @@ pub struct JointCommand {
     /// the joint in `edit` is the one just made by the second pick, still inside its open operation: Apply or Enter
     /// keeps it as one step, Esc, Cancel or another tool takes it away as if it had never been
     pub creating: bool,
+    /// the document as it stood when the joint in `edit` was opened for editing: Cancel and Esc put it back
+    pub edit_from: Option<EditFrom>,
     pub edit_repick: Option<(Id, bool)>,
     /// THE SURFACES BEING POINTED AT FOR A TANGENT CONDITION.
     ///
@@ -843,6 +865,13 @@ pub struct JointCommand {
     pub giz_handle: Option<(u8, bool)>,
 }
 
+/// THE DOCUMENT AS IT STOOD WHEN JOINT `joint` WAS OPENED FOR EDITING.
+#[derive(Clone)]
+pub struct EditFrom {
+    pub joint: Id,
+    pub before: Snapshot,
+}
+
 impl JointCommand {
     /// Take the rigid mate and wait for the two faces.
     pub fn start_rigid_pick(&mut self) {
@@ -855,8 +884,7 @@ impl Default for JointCommand {
     fn default() -> Self {
         Self {
             new_kind: qymcad_core::feature::JointKind::Rigid,
-            new_offset: 0.0,
-            new_angle: 0.0,
+            fields: crate::JointFields::default(),
             new_as_built: false,
             pick_faces: false,
             ground_pick: false,
@@ -864,6 +892,7 @@ impl Default for JointCommand {
             pick_first: None,
             edit: None,
             creating: false,
+            edit_from: None,
             edit_repick: None,
             axis_pick: None,
             conn_pick: false,
@@ -890,6 +919,8 @@ pub struct SectionTool {
     /// the gizmo arrow is being dragged; the drag anchor
     pub drag: bool,
     pub drag_anchor: Option<(f64, Pos2)>,
+    /// The offset and the tilts as they are typed at the plane - formulas - each value written into `offset` and `rot`.
+    pub fields: Vec<CmdParam>,
 }
 
 impl SectionTool {

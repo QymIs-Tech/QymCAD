@@ -300,5 +300,8 @@ pub(crate) fn look(s: &mut Session) -> qymcad::Picture {
 /// Where the fields for typing stand: a click elsewhere takes the keyboard from them and redraws them, which is not
 /// something drawn on the canvas.
 pub(crate) fn fields_at(s: &mut Session) -> Vec<qymcad::Rect> {
-    s.widgets().into_iter().filter(|w| matches!(w.kind, qymcad::Kind::TextField | qymcad::Kind::Number)).map(|w| w.rect).collect()
+    let mut at: Vec<qymcad::Rect> = s.widgets().into_iter().filter(|w| matches!(w.kind, qymcad::Kind::TextField | qymcad::Kind::Number)).map(|w| w.rect).collect();
+    // the words the bar of the tool lays over the view change with what it is told, as a field changes with what is typed
+    at.extend(s.bar_words_over_the_view());
+    at
 }

@@ -267,7 +267,7 @@ mod live_session {
                 p.val = 999.0;
                 p.txt = "999".into();
             }
-            app.apply_feat_cmd();
+            let refused = app.apply_feat_cmd();
             // THE REJECTION IS ASKED OF THE COMMAND rather than of words in the status line: a check
             // written against a phrase of one language goes blind in another.
             //
@@ -278,7 +278,7 @@ mod live_session {
             // was silent for the same reason. Whether an unbuildable node should stay in the timeline is a
             // question about behaviour, not about a test, and it is left to be decided rather than papered
             // over here.
-            if app.cmd_failed {
+            if refused.is_some() {
                 assert_eq!(app.disk.edits.undo.len(), steps, "a rejected operation leaves no step: {}", app.status);
                 assert_eq!(app.project.timeline.len(), nodes, "and leaves no node in the timeline");
                 assert!((vol(&app) - v).abs() < 1e-6, "and does not touch the geometry");

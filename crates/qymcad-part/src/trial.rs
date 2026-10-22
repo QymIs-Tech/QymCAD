@@ -32,12 +32,12 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
     // the values as typed now: a field takes its text into its value only as it is drawn, after this is asked
     let vars = pc.project.param_map();
     for p in pc.cmd.params.iter_mut() {
-        if let Ok(v) = super::field_value(p, &vars) {
+        if let Ok(v) = qymcad_ui_state::field_value(p, &vars) {
             p.val = v;
         }
     }
     let kind = pc.armed.cmd_kind();
-    if kind == 24 && !pc.thread.auger && super::cmd_exprs_valid(pc.cmd, pc.project) {
+    if kind == 24 && !pc.thread.auger && qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
         let t = *pc.thread;
         let length = qymcad_ui_state::cmd_val(pc.cmd, "length");
         let Some(refused) = t.src.and_then(|src| pc.project.thread_refusal(src, (t.axis.0, t.axis.1, t.radius), super::thread_spec(pc.cmd, t), length)) else { return Trial::Clear };
@@ -50,7 +50,7 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
         return Trial::Refused(key.to_string(), qymcad_i18n::error_words::error_text(&refused));
     }
     let id = qymcad_ui_state::trial_slot_id();
-    if !TRIED.contains(&kind) || pc.live.shapes.is_empty() || !super::cmd_ready(pc) || !super::cmd_exprs_valid(pc.cmd, pc.project) {
+    if !TRIED.contains(&kind) || pc.live.shapes.is_empty() || !super::cmd_ready(pc) || !qymcad_ui_state::fields_valid(&pc.cmd.params, pc.project) {
         // the last answer goes with the pick it was about: its faces drawn on after the face was let go of
         ctx.data_mut(|d| d.remove::<qymcad_ui_state::TrialSlot>(id));
         return Trial::Clear;
@@ -247,7 +247,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     let saved = bodies.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
     live.shapes.extend(qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)));
     // a rebuild outside a running window happens at once, here, rather than being handed to a thread of its own
-    let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), Notice::default(), false);
+    let (mut regen, mut edits, mut status) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), Notice::default());
     let (mut recognise, mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default(), Default::default());
     let scheme = qymcad_ui_state::SchemeUi::default();
     let edited = cmd.edit;
@@ -283,7 +283,6 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         boolean: &mut boolean,
         bar_exprs: &mut bar_exprs,
         rev: &mut rev,
-        cmd_failed: &mut cmd_failed,
         carr: &mut carr,
         view: &mut view,
         view_restore: &mut view_restore,
@@ -300,10 +299,11 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         cache: &mut cache,
         sketch_ses: &mut sketch_ses,
         win: &mut win,
+        tree: &qymcad_ui_state::TreeSelection::default(),
+        canvas: egui::Rect::NOTHING,
     };
-    super::apply_feat_cmd(&mut trial);
-    if cmd_failed {
-        return (Some(status.words), Vec::new());
+    if let Err(why) = super::apply_feat_cmd(&mut trial) {
+        return (Some(why.words().to_string()), Vec::new());
     }
     let laid: Vec<Id> = project.timeline.iter().map(|n| n.id).filter(|id| !before.contains(id) || Some(*id) == edited).collect();
     // a command that laid nothing refused by itself, and its status says why (a split plane that cuts nothing)

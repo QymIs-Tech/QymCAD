@@ -253,7 +253,7 @@ fn widget(node: &egui::accesskit::Node) -> Option<Widget> {
 }
 
 /// The words of a shape and the rectangles they stand in.
-fn words(s: &egui::epaint::Shape, out: &mut Vec<(String, egui::Rect)>) {
+pub(crate) fn words(s: &egui::epaint::Shape, out: &mut Vec<(String, egui::Rect)>) {
     match s {
         egui::epaint::Shape::Text(t) => {
             // the icons of the interface are letters of a private range of the icon font, not words

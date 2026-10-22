@@ -33,6 +33,9 @@ impl App {
             set: &self.set,
             workbench: self.workbench,
             mode_3d: self.viewing.mode_3d,
+            canvas: self.viewing.view_rect,
+            bar_exprs: &mut self.bar_exprs,
+            held: &self.chosen.tree_sel.multi,
         }
     }
 

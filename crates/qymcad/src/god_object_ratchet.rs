@@ -49,7 +49,7 @@ mod tests {
     /// It also cannot be gamed the other way. Splitting a method in two adds a line and no more; the only
     /// way this number falls is code leaving `impl App`. That is the thing that has to reach zero before the
     /// interface can live in a crate of its own, since a method belongs to the crate declaring the type.
-    const APP_SIZE_CEILING: usize = 172_962;
+    const APP_SIZE_CEILING: usize = 170_511;
 
     /// Methods that exist ONLY so a check can reach inside - `*_for_test` and `*_pub`.
     ///
@@ -68,7 +68,7 @@ mod tests {
     /// The target is the few that are genuinely OWNED state. Anything computable from the document is a
     /// query with a memory, not a field - a stored answer nobody remembers to invalidate is where the bags
     /// of `bool` come from.
-    const APP_FIELDS_CEILING: usize = 41;
+    const APP_FIELDS_CEILING: usize = 40;
 
     /// Every `.rs` of the workspace, build output and the git store aside.
     fn sources() -> Vec<(String, String)> {

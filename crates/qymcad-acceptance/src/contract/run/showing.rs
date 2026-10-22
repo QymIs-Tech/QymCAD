@@ -151,8 +151,10 @@ pub(crate) fn cancel(tool: &Tool) {
                     }
                 }
             }
+            // the bar ends with Cancel, or - a tool with nothing to apply - with Close
             "Cancel" => {
-                let word = s.word("cmd-cancel-esc");
+                let cancel = s.word("cmd-cancel-esc");
+                let word = if s.shows(&cancel) { cancel } else { s.word("cmd-close-esc") };
                 s.press_word_near(&word, TOP);
             }
             _ => enter(&mut s, &tool.other.0),
@@ -217,6 +219,8 @@ pub(crate) fn undo(tool: &Tool) {
             for p in tool.picks {
                 click(&mut s, p);
             }
+            // the values a person gives it: Enter with one the geometry refuses makes nothing and says why
+            fill_ordinary(&mut s, tool);
         }
         Flow::Drawing(clicks, _) => {
             for (x, y) in clicks.iter().take(clicks.len().saturating_sub(1)) {

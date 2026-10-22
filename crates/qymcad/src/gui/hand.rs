@@ -9,7 +9,11 @@
 //! Enter or Esc. It has nothing else — and that is its main property.
 
 #[cfg(test)]
+mod presses;
+#[cfg(test)]
 mod sketch_text;
+#[cfg(test)]
+pub(super) use presses::escape;
 
 /// A CARRY ON THE SCREEN: where the button goes down and where the hand holds it, the button still down.
 #[cfg(test)]
@@ -494,16 +498,7 @@ impl<'a> Hand<'a> {
     /// PRESS WHERE `word` IS WRITTEN - the one nearest to `near` when the frame wrote it in several places.
     /// Answers whether the word was on screen.
     pub fn press_word(&mut self, word: &str, near: egui::Pos2) -> bool {
-        self.frame(Vec::new());
-        let Some(at) = self.win.drawn.iter().filter(|(t, _)| t == word).map(|(_, r)| r.center()).min_by(|a, b| a.distance(near).total_cmp(&b.distance(near))) else {
-            return false;
-        };
-        self.win.clock += 1.0;
-        self.frame(vec![egui::Event::PointerMoved(at)]);
-        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-        self.frame(vec![button(true)]);
-        self.frame(vec![button(false)]);
-        true
+        self.press_word_holding(word, near, egui::Modifiers::NONE)
     }
 
     /// WHAT THE TRIAL BUILD SAYS of the command as it stands, waited for the way a person waits for the preview: the

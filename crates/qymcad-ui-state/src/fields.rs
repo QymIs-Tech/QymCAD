@@ -656,9 +656,15 @@ pub fn bar_apply_press(ctx: &egui::Context) {
 }
 
 pub(crate) fn bar_enter_take_inner(ctx: &egui::Context) -> bool {
+    bar_enter_marked(ctx) && bar_fields_valid(ctx)
+}
+
+/// WAS ENTER PRESSED IN A FIELD OF THE BAR just now, the mark taken whatever the fields hold: the frame of a tool judges
+/// the values itself and says why Enter made nothing (`tool_frame`).
+pub(crate) fn bar_enter_marked(ctx: &egui::Context) -> bool {
     let now = ctx.cumulative_pass_nr();
     let at: Option<u64> = ctx.data_mut(|d| d.remove_temp(egui::Id::new(BAR_ENTER)));
-    at.is_some_and(|f| f + 1 >= now) && bar_fields_valid(ctx)
+    at.is_some_and(|f| f + 1 >= now)
 }
 
 /// DOES THE BAR FIELD `key` HOLD A VALUE THAT CANNOT BE TAKEN, as it was last drawn?

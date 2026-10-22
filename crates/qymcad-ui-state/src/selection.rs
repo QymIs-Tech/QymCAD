@@ -203,6 +203,98 @@ pub struct TreeSelection {
     pub box_start: Option<Pos2>,
 }
 
+/// THE PLACES OF THE MODEL CLICKED WITH NOTHING IN HAND, in order - kept to be handed to the tool taken next, as what
+/// was selected before it. A click with Shift adds a place, one without starts them anew, a click on nothing or Esc
+/// lets them go. The tool takes them as clicks of its own, each by its own rule - an edge of a fillet, a face of a
+/// shell, the parts of a joint; a tool that takes the selection as its object (a pattern of the body picked, the
+/// mirrored copy of the part picked, body A of a boolean) spends the first place on it.
+#[derive(Clone, Default)]
+pub struct PickedBefore {
+    pub places: Vec<[f64; 3]>,
+}
+
+impl PickedBefore {
+    /// A click with nothing in hand: on `place`, or on nothing.
+    pub fn note(&mut self, place: Option<[f64; 3]>, adding: Adding) {
+        match (place, adding) {
+            (Some(p), Adding::Yes) => self.places.push(p),
+            (Some(p), Adding::No) => self.places = vec![p],
+            (None, _) => self.places.clear(),
+        }
+    }
+
+    /// The places for the tool now in hand, taken once; nothing while no tool is.
+    pub fn hand_over(&mut self, held: InHand) -> Vec<[f64; 3]> {
+        match held {
+            InHand::Nothing => Vec::new(),
+            InHand::Tool => std::mem::take(&mut self.places),
+        }
+    }
+
+    /// The tool took the selection as its object: the place that selected it is spent.
+    pub fn spend_object(&mut self) {
+        if !self.places.is_empty() {
+            self.places.remove(0);
+        }
+    }
+}
+
+/// SHIFT HOLDS THE BODIES CLICKED WITH NOTHING IN HAND: the body of the selection before the click (`was`) and the
+/// body under the pointer (`under`) are both held, as rows picked of the tree, the way a boolean takes its two bodies; a
+/// click without Shift lets the bodies held go. The body under the pointer rather than the one of what the click picked:
+/// a click near the seam of two pieces picks the edge of the other one. Reported behaviour: Shift with nothing in hand
+/// kept only the body clicked last, and a boolean of two bodies could not be taken over a selection.
+pub fn hold_bodies(project: &Project, was: Sel, under: Option<Id>, chosen: &mut Chosen, adding: Adding) {
+    let body = |s: Sel| match s {
+        Sel::Mesh(mi) | Sel::Face(mi, _) => project.mesh_id(mi),
+        Sel::Edge(b, _) | Sel::Vertex(b, _, _) => Some(b),
+        _ => None,
+    };
+    let multi = &mut chosen.tree_sel.multi;
+    match (adding, body(was), under) {
+        (Adding::Yes, Some(a), Some(b)) if a != b => {
+            if !multi.contains(&a) {
+                *multi = vec![a];
+            }
+            if !multi.contains(&b) {
+                multi.push(b);
+            }
+        }
+        (Adding::Yes, _, _) => {}
+        (Adding::No, _, _) => multi.retain(|id| project.mesh_index(*id).is_none()),
+    }
+}
+
+/// A JOINT OF THE LIST PICKED WITH NOTHING IN HAND: with Shift or Ctrl it is held with the joint selected before - a
+/// relation is made of two - and a second pick of one held lets it go; without, it is the selection alone. Reported
+/// behaviour: the list held one joint at a time, and a relation could not be taken over a selection.
+pub fn hold_joint(project: &Project, sel: &mut Sel, held: &mut Vec<Id>, joint: Id, adding: Adding) {
+    let is_joint = |id: &Id| project.joints.iter().any(|j| j.id == *id);
+    held.retain(is_joint);
+    match (adding, *sel) {
+        (Adding::Yes, Sel::Joint(was)) if was != joint => {
+            if held.is_empty() {
+                held.push(was);
+            }
+            match held.iter().position(|id| *id == joint) {
+                Some(at) => {
+                    held.remove(at);
+                }
+                None => held.push(joint),
+            }
+        }
+        _ => held.clear(),
+    }
+    *sel = Sel::Joint(joint);
+}
+
+/// WHETHER A CLICK ADDS TO WHAT IS PICKED - Shift held - or starts it anew.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Adding {
+    Yes,
+    No,
+}
+
 /// THE GEOMETRY SELECTED FOR COMMANDS: profiles, faces, edges. "Faces of which body" used to live apart
 /// from the faces themselves, and the set could outlive a change of body.
 #[derive(Clone, Default)]
@@ -223,6 +315,8 @@ pub struct GeomSelection {
     /// edges of the face except this one" is not something we can express yet, and a description must
     /// not lie.
     pub described: Option<qymcad_core::refs::Query>,
+    /// What was picked on the model before the tool in hand was taken.
+    pub before: PickedBefore,
     /// THE LAST FACE CLICKED, together with its body.
     ///
     /// The "expand selection" menu needs it. In a fillet, clicking a face puts its EDGES into the set
