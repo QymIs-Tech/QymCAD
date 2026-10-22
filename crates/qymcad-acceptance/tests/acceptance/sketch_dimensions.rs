@@ -378,3 +378,37 @@ probe! {
         );
     }
 }
+
+probe! {
+    /// ENTER PUTS DOWN A DIMENSION TOOL THAT MEASURED NOTHING, as Esc does: the radius taken and nothing clicked, Enter
+    /// leaves nothing in hand waiting for a click with no bar saying so, and lays nothing.
+    fn enter_puts_down_the_radius_that_measured_nothing() {
+        let mut s = Fixture::CircleInSketch.start();
+        s.key(Key::Escape).key(Key::Escape);
+        let (before, bar) = (s.document().sketches[0].constraint_kinds.clone(), s.in_hand());
+        let hint = s.word("tb-dim-radius-hint");
+        s.press_hint(&hint);
+        assert_ne!(s.in_hand(), bar, "setup: the radius is not in hand");
+        s.key(Key::Enter);
+        assert_eq!(s.in_hand(), bar, "Enter left the radius in hand: the bar says {:?}", s.in_hand());
+        assert_eq!(s.document().sketches[0].constraint_kinds, before, "Enter on the radius that measured nothing laid something");
+    }
+}
+
+probe! {
+    /// ENTER PUTS A DIMENSION BEGUN WHERE THE POINTER IS: the side of a rectangle picked by the linear dimension, the pointer
+    /// moved below it, and Enter lays the dimension there, as the click that places it does.
+    fn enter_puts_a_dimension_begun_where_the_pointer_is() {
+        let mut s = Fixture::RectangleInSketch.start();
+        s.key(Key::Escape).key(Key::Escape);
+        let before = s.document().sketches[0].constraint_kinds.len();
+        let hint = s.word("tb-dim-hint");
+        s.press_hint(&hint);
+        s.click_on_sketch(20.0, 0.0);
+        let below = s.on_sketch(20.0, -10.0);
+        s.move_to(below);
+        s.key(Key::Enter);
+        let after = s.document().sketches[0].constraint_kinds.len();
+        assert_eq!(after, before + 1, "Enter after the side was picked laid {} constraints, not the one dimension; the status line says {:?}", after - before, s.status());
+    }
+}

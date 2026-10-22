@@ -323,6 +323,8 @@ impl FramedTool for InSketch<'_, '_> {
                 let bar = tool_opts(sk);
                 let name = tool_name(sk.armed);
                 let pattern = sk.armed.pattern().is_some();
+                // A DIMENSION TOOL THAT MEASURED NOTHING is put down by Enter as by Esc; one begun is put where the pointer is
+                let measured_nothing = sk.armed.dimension().is_some() && sk.dim.first.is_none() && sk.dim.pick.is_empty();
                 // A CIRCULAR PATTERN TURNS ABOUT A CENTRE CLICKED: Enter before it is refused in words, and nothing is made
                 let no_centre = sk.armed.pattern() == Some(qymcad_ui_state::PatternKind::Circular) && sk.pat.center.is_none();
                 let placing_text = sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Text) && sk.inline.text().is_none();
@@ -350,7 +352,7 @@ impl FramedTool for InSketch<'_, '_> {
                 };
                 // THE TURN AND THE PATTERN DO ONE THING: made, the selection is in hand; a shape, a dimension, the corner and
                 // the offset stay for the next
-                let after = if self.boxed == Boxed::Turn || (self.boxed == Boxed::Nothing && (pattern || by_click)) { AfterApply::Select } else { AfterApply::Stays };
+                let after = if self.boxed == Boxed::Turn || (self.boxed == Boxed::Nothing && (pattern || by_click || measured_nothing)) { AfterApply::Select } else { AfterApply::Stays };
                 let mut bar = bar;
                 // the radius of the next circle touching two curves is no size of the circle in the box: its own field is
                 if self.boxed == Boxed::Shape {
