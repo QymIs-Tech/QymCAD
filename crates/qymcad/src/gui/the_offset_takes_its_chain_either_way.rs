@@ -46,7 +46,11 @@ mod tests {
         // by the start of the chain, to its right, the copy follows the pointer there (the hand reads strokes by their
         // points, and a copy of lines has its points at its corners and ends); a click on nothing fixes it
         let right = (-27.0, -3.0);
-        if hand.strokes_near2d(right, following) == 0 {
+        // the pointer rests by the start of the chain, as a person's does before reading what follows it: the box of the
+        // distance in the corner of the view comes up in the frame the tool is taken, and the preview a frame after it
+        hand.hover2d(right.0, right.1);
+        let n = hand.strokes_near2d(right, following);
+        if n == 0 {
             failures.push("the pointer by the start of the chain, to its right: no preview of the copy follows it".to_string());
         }
         hand.click2d(right.0, right.1);

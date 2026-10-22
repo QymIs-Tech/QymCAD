@@ -850,6 +850,8 @@ pub struct DimTool {
     pub name: Option<String>,
     /// what was asked of the dimension the box of the size of a circle or an arc lays on Enter
     pub asks: DimAsks,
+    /// the text last tried on the dimension in its box, so a value is tried once, not in every frame
+    pub tried: Option<String>,
     pub focus: bool,
     /// THE FIELD OF THE SIZE OF A CIRCLE OR AN ARC WAS TYPED IN since it opened: only a value typed is laid as a
     /// dimension, as the width and the height of a rectangle are (`Placing::typed`)
@@ -870,6 +872,7 @@ impl DimTool {
         self.field.clear();
         self.name = None;
         self.asks = DimAsks::default();
+        self.tried = None;
         self.focus = false;
         self.typed = false;
     }

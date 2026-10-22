@@ -103,7 +103,10 @@ fn the_angle_between_lines_is_an_opening() {
     assert!(qymcad_sketch::set_dim_value(&mut p, si, ci, 30.0).is_ok(), "30 deg between two lines was refused");
 }
 
-/// THE RADIUS FIELD DOES NOT REBUILD THE CIRCLE ON EVERY LETTER.
+/// THE DIAMETER BEING ERASED REACHES THE DOCUMENT ONLY WITH Enter. Reported behaviour: "while you are erasing, 100
+/// becomes 1 - and at that moment the geometry gets thrown about": every letter was laid into the document and rebuilt.
+/// The circle now shows a good value at once - 10 and 1 on the way, a field left empty moving nothing - while the
+/// document and undo take only what Enter keeps, and the box closed by Esc leaves the circle as it was.
 ///
 /// Driven through the editor in real frames, because the whole complaint is about what happens BETWEEN
 /// keystrokes: a check that set the value and asked for the result would never see the states the report is
@@ -114,7 +117,7 @@ fn the_angle_between_lines_is_an_opening() {
 /// empty room. The tick button beside the field is the other door a person has, it needs no focus, and it
 /// is clicked here for real. What is typed is put into the field's own buffer, which is what typing does.
 #[test]
-fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
+fn erasing_the_diameter_reaches_the_document_only_with_enter() {
     let mut b = qymcad_ui_state::Bench::default();
     b.project.new_document();
     let si = b.project.new_sketch("S");
@@ -170,11 +173,16 @@ fn erasing_the_diameter_does_not_resize_the_circle_until_it_is_finished() {
         seen.push((typed(&b), radius(&b)));
     }
     assert_eq!(seen.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), vec!["10", "1", ""], "GUARD: the erasing must really go through 10 and 1: {seen:?}");
-    let moved: Vec<String> = seen.iter().filter(|(_, r)| (r - 50.0).abs() > 1e-9).map(|(t, r)| format!("with \"{t}\" in the field the circle was already rebuilt to r = {r}")).collect();
-    assert!(moved.is_empty(), "the circle is rebuilt while the number is still being erased:\n{}", moved.join("\n"));
+    let shown: Vec<f64> = seen.iter().map(|(_, r)| *r).collect();
+    assert!(
+        (shown[0] - 5.0).abs() < 1e-9 && (shown[1] - 0.5).abs() < 1e-9 && (shown[2] - 0.5).abs() < 1e-9,
+        "the circle does not show 10 and 1 as they are typed, and keep 1 over an empty field: r = {shown:?}"
+    );
+    assert!(b.edits.undo.is_empty(), "the erasing left {} steps of undo before Enter", b.edits.undo.len());
 
     // AND WHAT IS FINISHED DOES GO IN.
     frame(&mut b, vec![egui::Event::Text("30".into())]);
     frame(&mut b, vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
     assert!((radius(&b) - 15.0).abs() < 1e-9, "Enter must apply what is in the field: the radius is {} and 30 as a diameter is 15", radius(&b));
+    assert_eq!(b.edits.undo.len(), 1, "the diameter kept by Enter is not one step of undo");
 }

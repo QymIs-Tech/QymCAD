@@ -12,6 +12,10 @@ pub fn in_hand<'a>(sk: &'a mut qymcad_ui_state::SketchCtx<'_>) -> Option<Box<dyn
     if !sk.place.stands_with(sk.armed) {
         sk.place.clear();
     }
+    // A BOX GONE WITHOUT Enter OR Esc - another tool taken, the sketch left - takes what it tried back with it
+    if trying(sk) && sk.inline.dim().is_none() && !sk.place.active() {
+        trial_dropped(sk);
+    }
     // AN EDITOR OPEN AT THE GEOMETRY is the tool in hand: a dimension, a circle, the corners of a set, an offset
     if let Some(e) = editor_open(sk) {
         return Some(editor_tool(sk, e));
@@ -189,8 +193,16 @@ impl FramedTool for InSketch<'_, '_> {
         let sk = &mut *self.sk;
         let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return Ok(()) };
         match self.boxed {
+            // ENTER IN THE BOX OF A SHAPE: its sizes laid - once more over the document as the box found it, for a shape
+            // laid anew - and kept as one step with what was tried on it; the box goes, the tool stays
             Boxed::Shape => {
-                shape_apply(sk, si);
+                if follows(&sk.place.shape) == Follows::LaidAnew {
+                    try_on(sk, From::Snapshot, |sk| shape_lay(sk, si));
+                } else {
+                    shape_lay(sk, si);
+                }
+                trial_kept(sk, Kept::OwnStep);
+                sk.place.clear();
                 return Ok(());
             }
             Boxed::Turn => {
@@ -275,6 +287,7 @@ impl FramedTool for InSketch<'_, '_> {
     /// tool that drew the shape stays for the next, and the next Esc puts the tool down.
     fn back(&mut self) -> Stepped {
         if self.boxed == Boxed::Shape {
+            trial_dropped(self.sk);
             self.sk.place.clear();
             return Stepped::Back;
         }
@@ -288,7 +301,9 @@ impl FramedTool for InSketch<'_, '_> {
     fn field_did(&mut self, did: qymcad_ui_state::FieldDid) {
         match did {
             qymcad_ui_state::FieldDid::Typed if self.boxed == Boxed::Shape => self.sk.place.typed = true,
-            qymcad_ui_state::FieldDid::LeftByEsc if self.boxed == Boxed::Shape => self.sk.place.clear(),
+            qymcad_ui_state::FieldDid::LeftByEsc if self.boxed == Boxed::Shape => {
+                self.back();
+            }
             _ => {}
         }
     }
@@ -298,10 +313,15 @@ impl FramedTool for InSketch<'_, '_> {
     fn after(&mut self) {
         let sk = &mut *self.sk;
         match self.boxed {
+            // A GOOD VALUE TYPED IS TRIED ON THE SHAPE at once: a shape drawn follows its fields step by step, one whose
+            // sizes are dimensions has them laid anew over the document as the box found it (`try_on`)
             Boxed::Shape => {
                 let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return };
                 if sk.place.fields.iter().map(|p| p.val).ne(self.seen.iter().copied()) {
-                    follow_typed(sk, si);
+                    match follows(&sk.place.shape) {
+                        Follows::StepByStep => try_on(sk, From::AsItStands, |sk| follow_typed(sk, si)),
+                        Follows::LaidAnew => try_on(sk, From::Snapshot, |sk| shape_lay(sk, si)),
+                    };
                 }
             }
             Boxed::Turn => sk.rot.angle = sk.rot.field.first().map_or(0.0, |p| p.val),

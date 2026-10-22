@@ -154,3 +154,98 @@ fn esc_leaves_the_rectangle_without_its_dimensions() {
     assert_eq!(dims, 0, "Esc laid {dims} dimensions on the rectangle");
     assert!(!b.place.active(), "the box stays after Esc");
 }
+
+/// What a value typed into a box leaves behind, frame by frame: the size it reads on the geometry and the steps of undo.
+struct Seen {
+    size: f64,
+    steps: usize,
+}
+
+/// Typing `text` into the box that holds the keyboard - its value selected, so the text takes its place.
+fn type_in(ctx: &egui::Context, b: &mut qymcad_ui_state::Bench, text: &str) {
+    frame(ctx, b, vec![egui::Event::Text(text.to_string())]);
+    frame(ctx, b, Vec::new());
+}
+
+/// THE GEOMETRY GOES WITH THE VALUE TYPED, AND THE DOCUMENT ONLY WITH Enter: 40 typed is 40 on the geometry before Enter
+/// with no step of undo; Esc puts it back as it was with no step; typed again and kept by Enter it is exactly one step.
+fn goes_with_the_value(open: fn() -> Drawn, size: fn(&qymcad_ui_state::Bench, usize) -> f64, what: &str) {
+    for keep in [egui::Key::Escape, egui::Key::Enter] {
+        let Drawn { mut b, si } = open();
+        let ctx = egui::Context::default();
+        settled(&ctx, &mut b);
+        let at_first = Seen { size: size(&b, si), steps: b.edits.undo.len() };
+        type_in(&ctx, &mut b, "40");
+        let typed = Seen { size: size(&b, si), steps: b.edits.undo.len() };
+        assert!((typed.size - 40.0).abs() < 1e-6, "{what}: 40 typed is {} on the geometry before Enter", typed.size);
+        assert_eq!(typed.steps, at_first.steps, "{what}: a value typed made a step of undo before Enter");
+        key(&ctx, &mut b, keep);
+        let after = Seen { size: size(&b, si), steps: b.edits.undo.len() };
+        if keep == egui::Key::Escape {
+            assert!((after.size - at_first.size).abs() < 1e-6, "{what}: Esc left the geometry at {}, not {}", after.size, at_first.size);
+            assert_eq!(after.steps, at_first.steps, "{what}: Esc left a step of undo");
+        } else {
+            assert!((after.size - 40.0).abs() < 1e-6, "{what}: Enter left the geometry at {}, not 40", after.size);
+            assert_eq!(after.steps, at_first.steps + 1, "{what}: Enter made {} steps of undo, not one", after.steps - at_first.steps);
+        }
+        assert!(b.edits.open.is_none(), "{what}: an edit stays open after {keep:?}");
+    }
+}
+
+/// The width of the rectangle of the sketch, its first side.
+fn width(b: &qymcad_ui_state::Bench, si: usize) -> f64 {
+    let side = b.project.sketches[si].entities[0].id;
+    b.project.rect_corners(si, side).map_or(f64::NAN, |[c0, c1, ..]| c0.dist(c1))
+}
+
+/// The diameter of the circle of the sketch.
+fn diameter(b: &qymcad_ui_state::Bench, si: usize) -> f64 {
+    b.project.sketches[si].entities[0].kind.as_circle().map_or(f64::NAN, |c| 2.0 * c.r)
+}
+
+/// A rectangle 40 x 30 opened again by a double click on its side, no dimension laid on it.
+fn a_rectangle_reopened() -> Drawn {
+    let Drawn { mut b, si } = a_sketch();
+    b.project.add_rect_entity(si, 0.0, 0.0, 25.0, 30.0, qymcad_core::feature::Purpose::Real);
+    b.project.regen_sketch(si);
+    let side = b.project.sketches[si].entities[0].id;
+    b.place.reopen(qymcad_ui_state::PlacingShape::RectSide(side));
+    b.place.focus = true;
+    Drawn { b, si }
+}
+
+/// A line 25 long with its length dimension open for editing.
+fn a_length_in_its_box() -> Drawn {
+    let Drawn { mut b, si } = a_sketch();
+    b.project.add_line_entity(si, 0.0, 0.0, 25.0, 0.0, qymcad_core::feature::Purpose::Real);
+    b.project.regen_sketch(si);
+    let line = b.project.sketches[si].entities[0].kind.as_line().expect("the line");
+    b.project.sketches[si].constraints.push(Constraint::Distance { a: line.a, b: line.b, d: 25.0, off: 5.0, expr: String::new(), driven: false, axis: 0, at: None });
+    b.project.solve_sketch(si);
+    b.inline = qymcad_ui_state::InlineEdit::Dim(b.project.sketches[si].constraints.len() - 1);
+    b.dim.focus = true;
+    Drawn { b, si }
+}
+
+/// The length of the line of the sketch.
+fn length(b: &qymcad_ui_state::Bench, si: usize) -> f64 {
+    let s = &b.project.sketches[si];
+    let l = s.entities[0].kind.as_line().expect("the line");
+    let at = |id| s.points.iter().find(|q| q.id == id).map(|q| qymcad_core::geom::Point2::new(q.x, q.y)).expect("a point");
+    at(l.a).dist(at(l.b))
+}
+
+#[test]
+fn a_rectangle_reopened_goes_with_its_width() {
+    goes_with_the_value(a_rectangle_reopened, width, "the width of a rectangle reopened");
+}
+
+#[test]
+fn a_circle_goes_with_its_diameter() {
+    goes_with_the_value(a_circle_in_its_box, diameter, "the diameter of a circle");
+}
+
+#[test]
+fn a_line_goes_with_its_length_dimension() {
+    goes_with_the_value(a_length_in_its_box, length, "the length dimension of a line");
+}

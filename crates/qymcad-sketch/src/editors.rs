@@ -61,6 +61,74 @@ fn head(icon: &'static str, name: &str) -> Head {
     Head { icon, name: qymcad_i18n::tr(name), ends: Ends::ApplyCancel, after: qymcad_ui_state::AfterApply::Stays }
 }
 
+/// WHERE A TRIAL OF VALUES STARTS FROM: the document as it was when the box opened - a value laid anew over what it
+/// stood at - or as it stands, for a shape that follows its fields step by step.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum From {
+    Snapshot,
+    AsItStands,
+}
+
+/// WHERE THE VALUES KEPT BY Enter GO: a step of their own, or the step that made the dimension they size - making a
+/// dimension and typing its value is one act, undone by one Ctrl+Z.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kept {
+    OwnStep,
+    IntoTheLast,
+}
+
+/// IS A TRIAL OF VALUES OPEN on the document.
+pub(crate) fn trying(sk: &qymcad_ui_state::SketchCtx) -> bool {
+    sk.edits.open.is_some() && sk.edits.open_kind == qymcad_ui_state::OpenEdit::Trying
+}
+
+/// THE VALUES OF A BOX TRIED ON THE DOCUMENT AS THEY ARE TYPED: the geometry takes a good value at once, so what is typed
+/// is seen where it goes - while the document and undo get it only by Enter (`trial_kept`), and Esc puts everything back
+/// with no step (`trial_dropped`). The trial is one open edit; every value is laid anew over the document as the box
+/// found it, so erasing "100" passes through 10 and 1 on the screen only, as nothing is kept until Enter. A value refused
+/// or half typed is not tried: the geometry stays as the last good value left it. None while another operation holds
+/// the document.
+pub(crate) fn try_on<T>(sk: &mut qymcad_ui_state::SketchCtx, from: From, lay: impl FnOnce(&mut qymcad_ui_state::SketchCtx) -> T) -> Option<T> {
+    if sk.edits.open.is_none() {
+        qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("sk-dim"));
+        sk.edits.open_kind = qymcad_ui_state::OpenEdit::Trying;
+    }
+    if !trying(sk) {
+        return None;
+    }
+    if from == From::Snapshot {
+        if let Some((_, before)) = &sk.edits.open {
+            *sk.project = before.project.clone();
+        }
+    }
+    let laid = lay(sk);
+    qymcad_ui_state::invalidate(&mut *sk.regen);
+    Some(laid)
+}
+
+/// THE VALUES TRIED KEPT, by Enter: one step of undo, or the step that made the dimension.
+pub(crate) fn trial_kept(sk: &mut qymcad_ui_state::SketchCtx, kept: Kept) {
+    if !trying(sk) {
+        return;
+    }
+    match kept {
+        Kept::OwnStep => qymcad_ui_state::commit_edit(&mut sk.rebuild()),
+        Kept::IntoTheLast => {
+            sk.edits.open = None;
+            sk.edits.depth = 0;
+            sk.edits.open_kind = qymcad_ui_state::OpenEdit::Working;
+            qymcad_ui_state::fold_into_last_step(&mut *sk.edits, &*sk.project);
+        }
+    }
+}
+
+/// THE VALUES TRIED TAKEN BACK, by Esc or by the box going: the document as the box found it, and no step.
+pub(crate) fn trial_dropped(sk: &mut qymcad_ui_state::SketchCtx) {
+    if trying(sk) {
+        qymcad_ui_state::abort_edit(&mut sk.rebuild());
+    }
+}
+
 /// THE BAR UNDER AN EDITOR AT THE GEOMETRY IS THE BAR OF THE TOOL IN HAND, its modes and its hint as they stand without
 /// the box: the ways of a fillet, the hint of the dimension tool. A number the box types itself - the radius of a fillet,
 /// the distance of an offset - is the box's field, and is not given twice.
@@ -298,29 +366,30 @@ impl FramedTool for DimEdit<'_, '_> {
         sk.dim.field = sk.project.sketches[si].constraints.get(ci).and_then(|c| kind_of(c).map(|k| vec![value_field(c, k)])).unwrap_or_default();
     }
 
-    /// The value typed goes in - refused with its words when the dimension cannot take it, the box staying open on what
-    /// was typed - and the box goes.
+    /// The value typed goes in - laid once more over the document as the box found it and kept as one step, or joined to
+    /// the step that made the dimension - refused with its words when the dimension cannot take it, the box staying open
+    /// on what was typed; and the box goes.
     fn apply(&mut self) -> Result<(), NotApplied> {
-        let sk = &mut *self.sk;
-        if let Some(c) = constraint_of(sk, self.dim).filter(|c| !c.is_driven()) {
-            let typed = sk.dim.field.first().filter(|p| p.txt.trim() != shown_text(&c).trim()).map(|p| Value { number: p.val, text: p.txt.trim().to_string() });
-            if let Some(value) = typed {
-                let target = target_of(sk, self.dim.si, &c);
-                if let Some(words) = value_gate(sk.project, &c, target.as_ref(), &sk.dim.field).answer() {
-                    return Err(NotApplied::Refused(words.words));
-                }
-                if let Err(key) = change_dimension(sk, self.dim, Asked { value: Some(value), ..Asked::default() }) {
-                    return Err(NotApplied::Refused(qymcad_i18n::tr1(key, "max", &qymcad_i18n::num(MAX_SKETCH_LENGTH, 0))));
-                }
-            }
+        if let Some(Err(key)) = self.try_typed(Tried::Again) {
+            return Err(NotApplied::Refused(qymcad_i18n::tr1(key, "max", &qymcad_i18n::num(MAX_SKETCH_LENGTH, 0))));
         }
-        self.cancel();
+        let fresh = self.sk.dim.fresh.is_some_and(|(fc, steps)| fc == self.dim.ci && steps == self.sk.edits.undo.len());
+        trial_kept(self.sk, if fresh { Kept::IntoTheLast } else { Kept::OwnStep });
+        put_away(self.sk);
+        self.sk.dim.fresh = None;
         Ok(())
     }
 
+    /// The box goes, and the value tried on the geometry with it.
     fn cancel(&mut self) {
+        trial_dropped(self.sk);
         put_away(self.sk);
         self.sk.dim.fresh = None;
+    }
+
+    /// A good value typed is tried on the geometry at once (`try_on`).
+    fn after(&mut self) {
+        let _ = self.try_typed(Tried::OnceAText);
     }
 
     fn back(&mut self) -> Stepped {
@@ -332,6 +401,43 @@ impl FramedTool for DimEdit<'_, '_> {
         if did == qymcad_ui_state::FieldDid::LeftByEsc {
             self.cancel();
         }
+    }
+}
+
+/// IS A VALUE TRIED AGAIN even when its text was tried already: once a text while it is typed, again on Enter, over the
+/// document as the box found it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tried {
+    OnceAText,
+    Again,
+}
+
+impl DimEdit<'_, '_> {
+    /// THE VALUE IN THE FIELD TRIED ON THE GEOMETRY, when it is a value the dimension takes and differs from what it
+    /// held: none when there is nothing to try - a reference, a value refused, the text the dimension held - or the
+    /// dimension's own refusal of the value. The text the dimension held, typed back, takes the geometry back.
+    fn try_typed(&mut self, tried: Tried) -> Option<Result<(), &'static str>> {
+        let dim = self.dim;
+        let sk = &mut *self.sk;
+        let before = sk.edits.open.as_ref().filter(|_| trying(sk)).and_then(|(_, b)| b.project.sketches.get(dim.si).and_then(|s| s.constraints.get(dim.ci)).cloned());
+        let c = before.or_else(|| constraint_of(sk, dim)).filter(|c| !c.is_driven())?;
+        let p = sk.dim.field.first()?.clone();
+        let text = p.txt.trim().to_string();
+        if text == shown_text(&c).trim() {
+            if sk.dim.tried.take().is_some() {
+                try_on(sk, From::Snapshot, |_| ());
+            }
+            return None;
+        }
+        let target = target_of(sk, dim.si, &c);
+        if qymcad_ui_state::field_value(&p, &sk.project.param_map()).is_err() || !value_gate(sk.project, &c, target.as_ref(), &sk.dim.field).open() {
+            return None;
+        }
+        if tried == Tried::OnceAText && sk.dim.tried.as_deref() == Some(text.as_str()) {
+            return None;
+        }
+        sk.dim.tried = Some(text.clone());
+        try_on(sk, From::Snapshot, |sk| change_dimension(sk, dim, Asked { value: Some(Value { number: p.val, text }), ..Asked::default() }))
     }
 }
 

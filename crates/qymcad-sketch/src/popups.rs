@@ -323,11 +323,11 @@ struct Laid {
     dim: Dim,
 }
 
-/// ENTER IN THE BOX OF A SHAPE LAYS ITS SIZES AS DIMENSIONS - a size typed by hand is a size meant - with what was asked
+/// THE SIZES OF A SHAPE LAID AS DIMENSIONS - a size typed by hand is a size meant - with what was asked
 /// of them in their rows: a reference, a name, the radius shown for a diameter, the formula typed. A rectangle lays its
 /// width and height once a size of it is typed or touched; a slot each size changed or touched; a circle or an arc its
-/// size, a polygon its radius, when typed or touched. A shape closed untouched is left free. Either way the box goes.
-pub(crate) fn shape_apply(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
+/// size, a polygon its radius, when typed or touched. A shape closed untouched is left free.
+pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
     use qymcad_core::model::SlotSize;
     use qymcad_ui_state::{PlacingShape, Shown};
     let typed = sk.place.typed;
@@ -397,7 +397,24 @@ pub(crate) fn shape_apply(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
         };
         ask_laid(sk, l.dim, &asks.of(l.key), value);
     }
-    sk.place.clear();
+}
+
+/// DOES A SHAPE FOLLOW ITS FIELDS STEP BY STEP as they are typed - rebuilt from the corner or the centre it was drawn from,
+/// its axes or its circle set - or is it laid anew over the document as the box found it: a rectangle opened again, a
+/// slot, a circle and an arc, whose sizes are dimensions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Follows {
+    StepByStep,
+    LaidAnew,
+}
+
+/// How shape `shape` follows its fields.
+pub(crate) fn follows(shape: &qymcad_ui_state::PlacingShape) -> Follows {
+    use qymcad_ui_state::PlacingShape;
+    match shape {
+        PlacingShape::Ellipse(..) | PlacingShape::Rect { .. } | PlacingShape::RectCenter { .. } | PlacingShape::Poly(_) => Follows::StepByStep,
+        _ => Follows::LaidAnew,
+    }
 }
 
 /// THE BOXES OF THE CORNER TOOL (a fillet radius or a chamfer leg) AND OF THE DISTANCE OF AN OFFSET whose side a click

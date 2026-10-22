@@ -372,6 +372,9 @@ pub enum OpenEdit {
     Asking,
     /// Ctrl+Z came while it waited: its window cancels it on its next frame.
     AskingDropped,
+    /// The values of a box at the geometry tried on the document as they are typed: Enter keeps them as one step, Esc
+    /// takes them back with no step.
+    Trying,
 }
 
 /// UNDO, REDO AND WHAT IS SAVED: the history of the document and how far it has been written to disk.
