@@ -136,6 +136,55 @@ fn the_buttons_of_a_workbench() {
     }
 }
 
+/// THE PART OF THE WINDOW A BOX OF A TOOL STANDS IN, with what it sizes beside it: the box come up in full first - it
+/// fades in over a few frames - then a frame round the words `title` of its first row.
+fn around(hand: &mut Hand, title: &str) -> Rect {
+    for _ in 0..30 {
+        hand.frame(Vec::new());
+    }
+    let screen = Rect::from_min_size(egui::pos2(0.0, 0.0), hand.screen());
+    let at = hand.written_at(title).map_or(screen.center(), |r| r.left_top());
+    Rect::from_min_size(at - egui::vec2(260.0, 180.0), egui::vec2(720.0, 420.0)).intersect(screen)
+}
+
+/// THE BOXES OF TOOLS, one of every workbench, as a person opens them: the extrusion of the plate opened again by a
+/// double click in the tree, the sizes of a rectangle just drawn in a sketch, a pattern of a part in the assembly.
+fn the_boxes_of_tools() {
+    // a part: the extrusion opened again from the tree
+    let mut app = scene();
+    let mut hand = into_the_part(&mut app);
+    let row = crate::i18n::tr1("feat-extrude", "h", "20");
+    if let Some(at) = hand.written_at(&row) {
+        hand.double_click_screen(at.center());
+    }
+    hand.frame(Vec::new());
+    let area = around(&mut hand, &word("f-length"));
+    save("tool-box-part.png", &hand.picture(area));
+    // a sketch: the sizes of a rectangle just drawn
+    let mut app = App::default();
+    app.set.gpu_viewport = false;
+    let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+    app.chosen.sel = super::super::super::Sel::Sketch(si);
+    let mut hand = Hand::new(&mut app);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 25.0);
+    hand.frame(Vec::new());
+    let area = around(&mut hand, &word("sk-width"));
+    save("tool-box-sketch.png", &hand.picture(area));
+    // an assembly: a pattern of a part, its directions
+    let mut app = scene();
+    let root = app.project.root;
+    app.set_context_to(root);
+    if let Some(ci) = app.project.components.iter().position(|c| c.parent.is_some()) {
+        app.chosen.sel = super::super::super::Sel::Component(ci);
+    }
+    let mut hand = Hand::new(&mut app);
+    hand.press_hint(&word("tb-comp-lin-array-hint"));
+    hand.frame(Vec::new());
+    let first = crate::i18n::tr1("box-direction-n", "n", "1");
+    let area = around(&mut hand, &first);
+    save("tool-box-assembly.png", &hand.picture(area));
+}
+
 /// Every picture of the layout, in the language the other pictures speak.
 pub(super) fn pictures() {
     crate::i18n::set_language("en");
@@ -145,6 +194,15 @@ pub(super) fn pictures() {
     a_panel_carried();
     the_bar_by_its_place();
     the_buttons_of_a_workbench();
+    the_boxes_of_tools();
+}
+
+/// The pictures of the boxes of tools alone.
+#[test]
+#[ignore = "draws the pictures of the boxes of tools into docs/help/img"]
+fn tool_box_pictures() {
+    crate::i18n::set_language("en");
+    the_boxes_of_tools();
 }
 
 /// The pictures of the layout alone, without redrawing the rest of the help.
