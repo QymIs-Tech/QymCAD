@@ -42,7 +42,7 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
             qymcad_ui_state::panel_number(
                 ui,
                 &*ed.project,
-                qymcad_ui_state::PanelNumber { id: ui.id().with("the offset of a contour"), value: &mut set.defaults.offset_2d, limits: qymcad_ui_state::Limits::between(0.1..=500.0) },
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the offset of a contour"), value: &mut set.defaults.offset_2d, formula: None, limits: qymcad_ui_state::Limits::between(0.1..=500.0) },
             );
         });
         ui.horizontal(|ui| {
@@ -77,7 +77,7 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
             ui.label(crate::i18n::tr("cp-array-n"));
             let mut n = f64::from(array.n);
             let whole = qymcad_ui_state::Limits { number: qymcad_ui_state::Number::Whole, ..qymcad_ui_state::Limits::between(2.0..=100.0) };
-            if qymcad_ui_state::panel_number(ui, &*ed.project, qymcad_ui_state::PanelNumber { id: ui.id().with("the count of a contour pattern"), value: &mut n, limits: whole }) {
+            if qymcad_ui_state::panel_number(ui, &*ed.project, qymcad_ui_state::PanelNumber { id: ui.id().with("the count of a contour pattern"), value: &mut n, formula: None, limits: whole }) {
                 array.n = n as u32;
             }
         });
@@ -86,12 +86,22 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
             qymcad_ui_state::panel_number(
                 ui,
                 &*ed.project,
-                qymcad_ui_state::PanelNumber { id: ui.id().with("the step x of a contour pattern"), value: &mut array.dx, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+                qymcad_ui_state::PanelNumber {
+                    id: ui.id().with("the step x of a contour pattern"),
+                    value: &mut array.dx,
+                    formula: None,
+                    limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0),
+                },
             );
             qymcad_ui_state::panel_number(
                 ui,
                 &*ed.project,
-                qymcad_ui_state::PanelNumber { id: ui.id().with("the step y of a contour pattern"), value: &mut array.dy, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+                qymcad_ui_state::PanelNumber {
+                    id: ui.id().with("the step y of a contour pattern"),
+                    value: &mut array.dy,
+                    formula: None,
+                    limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0),
+                },
             );
         });
         if ui.button(crate::i18n::tr("cp-make-array")).clicked() {
@@ -143,7 +153,7 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
             if qymcad_ui_state::panel_number(
                 ui,
                 &*ed.project,
-                qymcad_ui_state::PanelNumber { id: ui.id().with("the x of a contour"), value: &mut nx, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the x of a contour"), value: &mut nx, formula: None, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
             ) {
                 dx = nx - bb.min.x;
             }
@@ -152,7 +162,7 @@ pub(crate) fn contour_props(ed: qymcad_ui_state::Editing, array: &mut ArrayTool,
             if qymcad_ui_state::panel_number(
                 ui,
                 &*ed.project,
-                qymcad_ui_state::PanelNumber { id: ui.id().with("the y of a contour"), value: &mut ny, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+                qymcad_ui_state::PanelNumber { id: ui.id().with("the y of a contour"), value: &mut ny, formula: None, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
             ) {
                 dy = ny - bb.min.y;
             }
@@ -576,7 +586,7 @@ pub(crate) fn plane_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui,
             changed |= qymcad_ui_state::panel_number(
                 ui,
                 &*pr.project,
-                qymcad_ui_state::PanelNumber { id: ui.id().with(("the offset of a plane", i)), value: &mut dist, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+                qymcad_ui_state::PanelNumber { id: ui.id().with(("the offset of a plane", i)), value: &mut dist, formula: None, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
             );
         });
         pr.project.planes[i].def = PlaneDef::OffsetFace { body, face, dist };
@@ -608,7 +618,7 @@ pub(crate) fn plane_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui,
             changed |= qymcad_ui_state::panel_number(
                 ui,
                 &*pr.project,
-                qymcad_ui_state::PanelNumber { id: ui.id().with(("the offset of a plane", i)), value: &mut dist, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
+                qymcad_ui_state::PanelNumber { id: ui.id().with(("the offset of a plane", i)), value: &mut dist, formula: None, limits: qymcad_ui_state::Limits::between(-100000.0..=100000.0) },
             );
         });
         pr.project.planes[i].def = PlaneDef::OffsetBase { base, dist };
@@ -853,7 +863,8 @@ pub(crate) fn component_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui:
             for (k, axis) in [(3, "X"), (7, "Y"), (11, "Z")] {
                 ui.label(axis);
                 let mm = qymcad_ui_state::Limits { unit: Some("unit-mm-suffix"), ..qymcad_ui_state::Limits::between(-100000.0..=100000.0) };
-                moved |= qymcad_ui_state::panel_number(ui, &*pr.project, qymcad_ui_state::PanelNumber { id: ui.id().with(("the place of a component", k)), value: &mut t[k], limits: mm });
+                moved |=
+                    qymcad_ui_state::panel_number(ui, &*pr.project, qymcad_ui_state::PanelNumber { id: ui.id().with(("the place of a component", k)), value: &mut t[k], formula: None, limits: mm });
             }
         });
         // EACH PLACEMENT TYPED IS A STEP OF UNDO of its own
@@ -868,7 +879,7 @@ pub(crate) fn component_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui:
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("comp-rotation"));
             let deg = qymcad_ui_state::Limits { unit: Some("unit-deg-suffix"), ..qymcad_ui_state::Limits::between(-360.0..=360.0) };
-            qymcad_ui_state::panel_number(ui, &*pr.project, qymcad_ui_state::PanelNumber { id: ui.id().with("the turn of a component"), value: &mut rot, limits: deg });
+            qymcad_ui_state::panel_number(ui, &*pr.project, qymcad_ui_state::PanelNumber { id: ui.id().with("the turn of a component"), value: &mut rot, formula: None, limits: deg });
             if ui.button(format!("{}X", ph::ARROW_CLOCKWISE)).clicked() {
                 rot_axis = Some(0);
             }

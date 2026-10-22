@@ -145,10 +145,10 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
                                     sel_click = Some(ci);
                                 }
                                 let limits = qymcad_ui_state::Limits { unit: Some("unit-mm-suffix"), ..qymcad_ui_state::Limits::between(0.01..=100000.0) };
-                                changed |= qymcad_ui_state::panel_formula(
+                                changed |= qymcad_ui_state::panel_number(
                                     ui,
                                     &*pr.project,
-                                    qymcad_ui_state::PanelFormula { id: ui.id().with(("the value of a dimension", ci)), value: d, formula: expr, limits },
+                                    qymcad_ui_state::PanelNumber { id: ui.id().with(("the value of a dimension", ci)), value: d, formula: Some(expr), limits },
                                 );
                             }
                             Constraint::Angle { deg, expr, .. } => {
@@ -156,10 +156,10 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
                                     sel_click = Some(ci);
                                 }
                                 let limits = qymcad_ui_state::Limits { unit: Some("unit-deg-suffix"), ..qymcad_ui_state::Limits::between(0.1..=359.9) };
-                                changed |= qymcad_ui_state::panel_formula(
+                                changed |= qymcad_ui_state::panel_number(
                                     ui,
                                     &*pr.project,
-                                    qymcad_ui_state::PanelFormula { id: ui.id().with(("the value of an angle", ci)), value: deg, formula: expr, limits },
+                                    qymcad_ui_state::PanelNumber { id: ui.id().with(("the value of an angle", ci)), value: deg, formula: Some(expr), limits },
                                 );
                             }
                             other => {

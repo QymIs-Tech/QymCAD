@@ -211,7 +211,7 @@ pub fn one_connector_controls(joint: &mut qymcad_ui_state::JointCommand, project
                     changed = true;
                 }
                 let deg = qymcad_ui_state::Limits { unit: Some("unit-deg-suffix"), ..qymcad_ui_state::Limits::between(-360.0..=360.0) };
-                changed |= qymcad_ui_state::panel_number(ui, &*project, qymcad_ui_state::PanelNumber { id: ui.id().with(("the roll of an anchor", cid)), value: &mut rot, limits: deg });
+                changed |= qymcad_ui_state::panel_number(ui, &*project, qymcad_ui_state::PanelNumber { id: ui.id().with(("the roll of an anchor", cid)), value: &mut rot, formula: None, limits: deg });
             });
             // THE SECONDARY AXIS BY A PICK (the "second pick"). It is normally derived from the
             // geometry, but a square face has no long side at all and the answer is arbitrary - then an
@@ -234,7 +234,11 @@ pub fn one_connector_controls(joint: &mut qymcad_ui_state::JointCommand, project
                 for (k, name) in ["X", "Y", "Z"].iter().enumerate() {
                     ui.label(*name);
                     let mm = qymcad_ui_state::Limits { unit: Some("unit-mm-suffix"), ..qymcad_ui_state::Limits::between(-100000.0..=100000.0) };
-                    changed |= qymcad_ui_state::panel_number(ui, &*project, qymcad_ui_state::PanelNumber { id: ui.id().with(("the slide of an anchor", cid, k)), value: &mut off[k], limits: mm });
+                    changed |= qymcad_ui_state::panel_number(
+                        ui,
+                        &*project,
+                        qymcad_ui_state::PanelNumber { id: ui.id().with(("the slide of an anchor", cid, k)), value: &mut off[k], formula: None, limits: mm },
+                    );
                 }
             });
             if changed {

@@ -537,21 +537,26 @@ pub const LIST_MAX_ROWS: usize = 8;
 /// THE KEY UNDER WHICH A FIELD SAYS "MY LIST IS OPEN RIGHT NOW".
 pub const LIST_OPEN: &str = "qym_expr_list_open";
 
-/// A VALUE OF A PANEL THAT KEEPS ITS FORMULA - a dimension of a sketch in its list: the widget, the value, the formula it is
-/// written by (empty for a plain number) and what it takes.
-pub struct PanelFormula<'a> {
+/// A NUMBER OF A PANEL: the widget it is told apart by, the value it shows and takes, the formula it is written by when
+/// it keeps one - a dimension of a sketch in its list - and what it takes.
+pub struct PanelNumber<'a> {
     pub id: egui::Id,
     pub value: &'a mut f64,
-    pub formula: &'a mut String,
+    pub formula: Option<&'a mut String>,
     pub limits: Limits,
 }
 
-/// A VALUE OF A PANEL TYPED AS A FORMULA AND KEPT AS ONE: `w/2` is half of `w` now and the formula of the value, which
-/// follows `w`; a plain number clears the formula. Judged as a number of a panel is (`panel_number`): what the field cannot
-/// take keeps the value and says why beside it. Answers whether the value or its formula changed.
-pub fn panel_formula(ui: &mut egui::Ui, project: &Project, n: PanelFormula) -> bool {
-    let PanelFormula { id, value, formula, limits } = n;
-    let model = if formula.trim().is_empty() { qymcad_core::expr::fmt_num(*value) } else { formula.clone() };
+/// A NUMBER OF A PANEL TYPED AS A FORMULA, as every field of a box at the geometry is: `50`, `w/2`, `len+5`, the example
+/// in the empty field and how a value is typed in the hint over it; a value the field cannot take - a broken formula,
+/// zero where zero is no value, past the limits - keeps the value and says why beside it; a formula says what it comes
+/// to. A number that keeps its formula keeps `w/2` as its formula, which follows `w`, and a plain number clears it. The
+/// panels used to drag a number with no formula at all. Answers whether the value or its formula changed.
+pub fn panel_number(ui: &mut egui::Ui, project: &Project, n: PanelNumber) -> bool {
+    let PanelNumber { id, value, formula, limits } = n;
+    let model = match formula.as_deref() {
+        Some(f) if !f.trim().is_empty() => f.to_string(),
+        _ => qymcad_core::expr::fmt_num(*value),
+    };
     let o = expr_field(ui, project, id, &model, 74.0, &qymcad_i18n::tr("f-number-or-expr"));
     o.resp.clone().on_hover_text(qymcad_i18n::tr("sk-enter-apply-expr"));
     if let Some(unit) = limits.unit {
@@ -572,50 +577,17 @@ pub fn panel_formula(ui: &mut egui::Ui, project: &Project, n: PanelFormula) -> b
         }
         Ok(_) => {}
     }
-    match judged {
-        Ok(v) if o.committed && o.text.trim() != model.trim() => {
+    let Ok(v) = judged else { return false };
+    if !o.committed {
+        return false;
+    }
+    match formula {
+        Some(f) if o.text.trim() != model.trim() => {
             *value = v;
-            *formula = if plain { String::new() } else { o.text.trim().to_string() };
+            *f = if plain { String::new() } else { o.text.trim().to_string() };
             true
         }
-        _ => false,
-    }
-}
-
-/// A NUMBER OF A PANEL: the widget it is told apart by, the value it shows and takes, and what it takes.
-pub struct PanelNumber<'a> {
-    pub id: egui::Id,
-    pub value: &'a mut f64,
-    pub limits: Limits,
-}
-
-/// A NUMBER OF A PANEL TYPED AS A FORMULA, as every field of a box at the geometry is: `50`, `w/2`, `len+5`, the example
-/// in the empty field and how a value is typed in the hint over it; a value the field cannot take - a broken formula,
-/// zero where zero is no value, past the limits - keeps the value and says why beside it; a formula says what it comes
-/// to. The panels used to drag a number with no formula at all. Answers whether the value changed.
-pub fn panel_number(ui: &mut egui::Ui, project: &Project, n: PanelNumber) -> bool {
-    let PanelNumber { id, value, limits } = n;
-    let o = expr_field(ui, project, id, &qymcad_core::expr::fmt_num(*value), 74.0, &qymcad_i18n::tr("f-number-or-expr"));
-    o.resp.clone().on_hover_text(qymcad_i18n::tr("sk-enter-apply-expr"));
-    if let Some(unit) = limits.unit {
-        ui.label(egui::RichText::new(qymcad_i18n::tr(unit).trim().to_string()).weak());
-    }
-    let mut p = CmdParam::new("f-number-or-expr", "n", *value, *limits.range.start(), *limits.range.end());
-    p.number = limits.number;
-    p.nonzero = limits.zero == Zero::Refused;
-    p.txt = o.text.clone();
-    let judged = field_value(&p, &project.param_map());
-    match &judged {
-        Err(why) => {
-            tone_mark_in(ui, Tone::Refusal).on_hover_text(why);
-        }
-        Ok(v) if p.txt.trim().parse::<f64>().is_err() => {
-            ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(*v, 3))).weak().small());
-        }
-        Ok(_) => {}
-    }
-    match judged {
-        Ok(v) if o.committed && (v - *value).abs() > 1e-12 => {
+        None if (v - *value).abs() > 1e-12 => {
             *value = v;
             true
         }
