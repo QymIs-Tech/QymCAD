@@ -89,9 +89,10 @@ pub enum Opt {
     Press { key: OptKey, word: String, hint: Option<String> },
     /// Words shown as they are: what is taken, how many, what was found.
     Readout(String),
-    /// A number of the bar, an expression, for a tool with no place in the view to set it at - the ratio of a relation,
-    /// the sides of a polygon to draw.
-    Number { key: OptKey, caption: String, value: f64, limits: Limits },
+    /// A number of the tool - the ratio of a relation, the sides of a polygon to draw: its caption by its catalogue key.
+    /// The bar holds no field: the frame makes it a field of the box at the geometry (`numbers_into_the_box`), a formula
+    /// judged as any field of a box is.
+    Number { key: OptKey, label: &'static str, value: f64, limits: Limits },
     /// A line of text typed - the name a formula reads a value by, the words of a text drawn: the text as typed so far,
     /// kept by the tool, what the empty field shows, and why it will not do. A text that will not do keeps the keyboard
     /// on Enter, its words under the field.
@@ -188,8 +189,7 @@ pub enum Did {
 const ROW_OF_CHOICES: usize = 6;
 
 /// DRAW THE OPTIONS in a row of the bar or of a box, a separator between them, and answer what was done to them.
-/// `numbers` is where a number of the bar keeps its text; a box has none, and shows a number as a readout.
-pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &[Opt], mut numbers: Option<&mut ExprBarCtx>) -> Vec<Did> {
+pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &[Opt]) -> Vec<Did> {
     let mut did = Vec::new();
     for (i, o) in opts.iter().enumerate() {
         if i > 0 {
@@ -248,25 +248,8 @@ pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &
             Opt::Readout(words) => {
                 ui.label(egui::RichText::new(words.as_str()).weak());
             }
-            Opt::Number { key, caption, value, limits } => {
-                // a number in a row of a box has its caption in the row
-                if !caption.is_empty() {
-                    ui.label(caption.as_str());
-                }
-                match numbers.as_deref_mut() {
-                    Some(n) => {
-                        let unit = limits.unit.map(qymcad_i18n::tr).unwrap_or_default();
-                        let format = NumFormat { lo: *limits.range.start(), hi: *limits.range.end(), integer: limits.number == Number::Whole, suffix: &unit, nonzero: limits.zero == Zero::Refused };
-                        let v = num_or_expr(n, ui, key.name, *value, format);
-                        if (v - value).abs() > 1e-12 {
-                            did.push(Did::Typed { key: *key, value: v });
-                        }
-                    }
-                    None => {
-                        ui.label(qymcad_core::expr::fmt_num(*value));
-                    }
-                }
-            }
+            // a number is a field of the box, never drawn as an option (`numbers_into_the_box`)
+            Opt::Number { .. } => {}
             Opt::Text { key, text, placeholder, unfit, hint } => did.extend(text_opt(ui, pal, TextOpt { key: *key, text, placeholder, unfit: unfit.as_ref(), hint })),
         }
     }

@@ -171,18 +171,16 @@ pub(crate) struct Drawing<'a, 'b> {
 
 /// WHAT THE ROWS OF A BOX CAME TO: the fields typed, the options touched, and whether the first field shown has taken
 /// the keyboard it was given.
-pub(crate) struct Drawn<'n, 'p> {
+pub(crate) struct Drawn {
     pub typed: Typed,
     pub did: Vec<Did>,
     pub focus: Focus,
-    /// where a number of the tool keeps its formula: the numbers of the bar are typed in the box
-    pub numbers: Option<&'n mut ExprBarCtx<'p>>,
 }
 
 /// DRAW THE ROWS OF A BOX: the fields of their own rows and the sections, a grid of the caption and the value each, the
 /// title of a section a button that folds it.
-pub(crate) fn draw_rows<'n, 'p>(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], layout: &Layout, how: Rows<'n, 'p>) -> Drawn<'n, 'p> {
-    let mut drawn = Drawn { typed: Typed::default(), did: Vec::new(), focus: how.focus, numbers: how.numbers };
+pub(crate) fn draw_rows(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], layout: &Layout, focus: Focus) -> Drawn {
+    let mut drawn = Drawn { typed: Typed::default(), did: Vec::new(), focus };
     let placed = sections_of(fields, d.b, layout);
     let mut lead = Vec::new();
     for p in &placed {
@@ -210,20 +208,13 @@ pub(crate) fn draw_rows<'n, 'p>(ui: &mut egui::Ui, d: &Drawing, fields: &mut [Cm
     }
     if !layout.foot.is_empty() {
         ui.separator();
-        ui.horizontal_wrapped(|ui| drawn.did.extend(draw_opts(ui, d.look.pal, &layout.foot, None)));
+        ui.horizontal_wrapped(|ui| drawn.did.extend(draw_opts(ui, d.look.pal, &layout.foot)));
     }
     drawn
 }
 
-/// HOW THE ROWS OF A BOX ARE DRAWN: whether the first field takes the keyboard, and where the numbers of the tool keep
-/// their formulas.
-pub(crate) struct Rows<'n, 'p> {
-    pub focus: Focus,
-    pub numbers: Option<&'n mut ExprBarCtx<'p>>,
-}
-
 /// The rows given, as a grid of two columns: the caption, and the fields and options after it on one line.
-fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], id: egui::Id, drawn: &mut Drawn<'_, '_>) {
+fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], id: egui::Id, drawn: &mut Drawn) {
     let held = |fields: &[CmdParam], key: &str| fields.iter().any(|p| p.key == key && p.at.is_none() && !d.b.hidden.contains(&key));
     egui::Grid::new(id).num_columns(2).spacing(egui::vec2(10.0, 4.0)).show(ui, |ui| {
         for row in rows {
@@ -249,10 +240,7 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
                             drawn.focus = Focus::Waits;
                             drawn.typed.add(judge(ui, d.look.pal, p, said, d.trial));
                         }
-                        Cell::Opt(o) => {
-                            let did = draw_opts(ui, d.look.pal, std::slice::from_ref(o), drawn.numbers.as_deref_mut());
-                            drawn.did.extend(did);
-                        }
+                        Cell::Opt(o) => drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o))),
                     }
                     if Some(n) == last {
                         if let Some(unit) = &row.unit {
@@ -292,7 +280,7 @@ fn grid(ui: &mut egui::Ui, d: &Drawing, fields: &mut [CmdParam], rows: &[Row], i
                 ui.horizontal(|ui| {
                     for c in &named.cells {
                         if let Cell::Opt(o) = c {
-                            drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o), None));
+                            drawn.did.extend(draw_opts(ui, d.look.pal, std::slice::from_ref(o)));
                         }
                     }
                 });

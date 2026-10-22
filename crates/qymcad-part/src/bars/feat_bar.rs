@@ -438,7 +438,7 @@ fn thread_opts(pc: &qymcad_ui_state::PartCtx, says: &mut Vec<Notice>) -> Vec<Opt
         Opt::Modes { key: OptKey::of("thread_kind"), caption: Some(qymcad_i18n::tr("cmd-kind")), choices: kind, current: Some(usize::from(pc.thread.internal)) },
         // The number of starts is a dimension of the part as well, and it must be parametric: a two-start thread driven
         // by a global variable is an ordinary thing.
-        Opt::Number { key: OptKey::of("thread_starts"), caption: qymcad_i18n::tr("cmd-starts"), value: f64::from(pc.thread.starts.max(1)), limits: qymcad_ui_state::Limits::between(1.0..=12.0) },
+        Opt::Number { key: OptKey::of("thread_starts"), label: "cmd-starts", value: f64::from(pc.thread.starts.max(1)), limits: qymcad_ui_state::Limits::between(1.0..=12.0) },
         Opt::switch(OptKey::of("left"), format!("{} {}", ph::ARROWS_COUNTER_CLOCKWISE, qymcad_i18n::tr("cmd-left-thread")), pc.thread.left.lit()).hint(qymcad_i18n::tr("cmd-thread-left")),
         // THE MODE: a thread (a groove) or an AUGER (a helical ribbon outwards)
         Opt::Modes {

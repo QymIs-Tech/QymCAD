@@ -199,10 +199,10 @@ pub(crate) fn asm_tool_described(jc: &qymcad_ui_state::JointCtx, tool: &AsmTool)
             let words: Vec<&str> = RELATION_KINDS.iter().map(|k| k.label()).collect();
             // THE NUMBER MEANS DIFFERENT THINGS FOR DIFFERENT KINDS, and the caption must say so: for gears and linear
             // relations it is a ratio, for a rack and a screw it is the travel per turn in millimetres
-            let caption = qymcad_i18n::tr(if pick.kind.value_is_per_turn() { "j-relation-per-turn" } else { "j-relation-ratio" });
+            let label = if pick.kind.value_is_per_turn() { "j-relation-per-turn" } else { "j-relation-ratio" };
             let bar = vec![
                 Opt::modes(OptKey::of("relation_kind"), Some("j-kind"), &words, RELATION_KINDS.iter().position(|k| *k == pick.kind).unwrap_or(0)),
-                Opt::Number { key: OptKey::of("relation_ratio"), caption, value: pick.value, limits: qymcad_ui_state::Limits::between(-10000.0..=10000.0) },
+                Opt::Number { key: OptKey::of("relation_ratio"), label, value: pick.value, limits: qymcad_ui_state::Limits::between(-10000.0..=10000.0) },
                 Opt::switch(OptKey::of("relation_reverse"), qymcad_i18n::tr("j-relation-reverse"), pick.reversed.lit()),
             ];
             let head = head(ph::GEAR_SIX, "j-relation-btn", Ends::ApplyCancel);

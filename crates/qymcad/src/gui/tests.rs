@@ -176,6 +176,9 @@ mod the_box_of_a_rectangle_goes_with_its_tool;
 mod a_feature_value_is_named_in_its_box;
 
 #[cfg(test)]
+mod a_number_of_the_bar_is_a_field_of_the_box;
+
+#[cfg(test)]
 mod the_tool_in_hand_after_its_work;
 
 #[cfg(test)]

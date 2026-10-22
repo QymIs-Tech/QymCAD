@@ -233,7 +233,7 @@ pub(crate) fn shape_took(sk: &mut qymcad_ui_state::SketchCtx, si: usize, did: &q
             if let Some(p) = sk.place.fields.iter_mut().find(|p| p.key == *field) {
                 p.set_label(round_label(shown));
                 // a number is written anew as the other size; a formula stays as it was typed
-                if p.txt.trim().parse::<f64>().is_ok() {
+                if !is_formula(&p.txt) {
                     p.val = if shown == Shown::Radius { p.val * 0.5 } else { p.val * 2.0 };
                     p.txt = qymcad_core::expr::fmt_num(p.val);
                 }

@@ -67,8 +67,8 @@ fn count(range: std::ops::RangeInclusive<f64>) -> Limits {
 }
 
 /// A number of the bar under its caption key, kept under `key`.
-fn number(key: &'static str, caption: &str, value: f64, limits: Limits) -> Opt {
-    Opt::Number { key: OptKey::of(key), caption: qymcad_i18n::tr(caption), value, limits }
+fn number(key: OptKey, label: &'static str, value: f64, limits: Limits) -> Opt {
+    Opt::Number { key, label, value, limits }
 }
 
 /// Words of the bar, said as they are.
@@ -169,14 +169,14 @@ fn corner_opts(sk: &qymcad_ui_state::SketchCtx, corner: Corner, hi: f64) -> Vec<
     let prefs = &*sk.tool_prefs;
     let mut opts = vec![corner_ways(sk, corner)];
     if corner == Corner::Chamfer {
-        opts.push(number("sk_fillet", qymcad_ui_state::chamfer_d1_label(prefs.chamfer_mode), prefs.fillet, mm(0.01..=hi)));
+        opts.push(number(OptKey::of("sk_fillet"), qymcad_ui_state::chamfer_d1_label(prefs.chamfer_mode), prefs.fillet, mm(0.01..=hi)));
         if prefs.chamfer_mode != ChamferMode::Symmetric {
             let angle = prefs.chamfer_mode == ChamferMode::DistAngle;
             let limits = Limits { range: 0.01..=if angle { 179.99 } else { 10000.0 }, number: Number::Real, zero: Zero::Takes, unit: Some(if angle { "unit-deg-suffix" } else { "unit-mm-suffix" }) };
-            opts.push(number("sk_chamfer2", qymcad_ui_state::chamfer_d2_label(prefs.chamfer_mode), prefs.chamfer_second, limits));
+            opts.push(number(OptKey::of("sk_chamfer2"), qymcad_ui_state::chamfer_d2_label(prefs.chamfer_mode), prefs.chamfer_second, limits));
         }
     } else {
-        opts.push(number("sk_fillet", qymcad_ui_state::fillet_label(prefs.fillet_by), prefs.fillet, mm(0.01..=hi)));
+        opts.push(number(OptKey::of("sk_fillet"), qymcad_ui_state::fillet_label(prefs.fillet_by), prefs.fillet, mm(0.01..=hi)));
     }
     opts
 }
@@ -184,16 +184,16 @@ fn corner_opts(sk: &qymcad_ui_state::SketchCtx, corner: Corner, hi: f64) -> Vec<
 /// The fields of a linear pattern: the count and the step.
 fn linear_steps(pat: &qymcad_ui_state::SketchPattern) -> Vec<Opt> {
     vec![
-        number("skpat_count", "opt-count", f64::from(pat.count), count(2.0..=200.0)),
-        number("skpat_dx", "opt-step-x", pat.dx, mm(-100000.0..=100000.0)),
-        number("skpat_dy", "opt-step-y", pat.dy, mm(-100000.0..=100000.0)),
+        number(OptKey::of("skpat_count"), "opt-count", f64::from(pat.count), count(2.0..=200.0)),
+        number(OptKey::of("skpat_dx"), "opt-step-x", pat.dx, mm(-100000.0..=100000.0)),
+        number(OptKey::of("skpat_dy"), "opt-step-y", pat.dy, mm(-100000.0..=100000.0)),
     ]
 }
 
 /// The fields of a circular pattern: the count and the angle it spans.
 fn circular_steps(pat: &qymcad_ui_state::SketchPattern) -> Vec<Opt> {
     let angle = Limits { range: -360.0..=360.0, number: Number::Real, zero: Zero::Takes, unit: Some("unit-deg-suffix") };
-    vec![number("skpat_count", "opt-count", f64::from(pat.count), count(2.0..=200.0)), number("skpat_angle", "cmd-angle", pat.angle, angle)]
+    vec![number(OptKey::of("skpat_count"), "opt-count", f64::from(pat.count), count(2.0..=200.0)), number(OptKey::of("skpat_angle"), "cmd-angle", pat.angle, angle)]
 }
 
 /// THE OPTIONS OF THE DRAWING TOOL IN HAND: construction, no ties, and what the shape takes - the text and its font, the
@@ -208,14 +208,14 @@ fn drawing_opts(sk: &qymcad_ui_state::SketchCtx, shape: SketchShape) -> Vec<Opt>
         SketchShape::Text => {
             opts.push(said("tool-text"));
             opts.push(Opt::Text { key: OptKey::of("text"), text: prefs.text.clone(), placeholder: String::new(), unfit: None, hint: None });
-            opts.push(number("text_h", "opt-height-short", prefs.text_h, mm(0.1..=1000.0)));
+            opts.push(number(OptKey::of("text_h"), "opt-height-short", prefs.text_h, mm(0.1..=1000.0)));
             // WHICH FONT IT WILL BE WRITTEN IN, named on the button itself. "Font..." alone said nothing: a person pressed it
             // to find out what they were about to write with.
             opts.push(Opt::press(OptKey::of("font"), qymcad_ui_state::font_label(&prefs.font, "opt-font")).hint(qymcad_i18n::tr("opt-pick-font")));
             opts.push(Opt::switch(OptKey::of("note"), qymcad_i18n::tr("opt-note"), prefs.text_note.lit()).hint(qymcad_i18n::tr("opt-text-as-note")));
         }
         SketchShape::Polygon => {
-            opts.push(number("poly_n", "opt-sides", f64::from(prefs.poly_n), count(3.0..=64.0)));
+            opts.push(number(OptKey::of("poly_n"), "opt-sides", f64::from(prefs.poly_n), count(3.0..=64.0)));
             opts.push(ways("poly_mode", None, &POLYGON_WAYS, usize::from(prefs.poly_mode)));
         }
         SketchShape::Rect => opts.push(ways("rect_mode", Some("opt-rect-mode"), &RECT_WAYS, usize::from(prefs.rect_mode))),
@@ -223,7 +223,7 @@ fn drawing_opts(sk: &qymcad_ui_state::SketchCtx, shape: SketchShape) -> Vec<Opt>
             // centre and radius, two points, touching two curves, three points: the modes of one tool, as the arc's
             opts.push(ways("circ_mode", Some("opt-circle-mode"), &CIRCLE_WAYS, usize::from(prefs.circ_mode)));
             if prefs.circ_mode == 2 {
-                opts.push(number("sk_circle_touching_r", "opt-radius", prefs.circ_r, Limits { zero: Zero::Refused, ..mm(0.01..=10000.0) }));
+                opts.push(number(OptKey::of("sk_circle_touching_r"), "opt-radius", prefs.circ_r, Limits { zero: Zero::Refused, ..mm(0.01..=10000.0) }));
             }
         }
         SketchShape::Arc => opts.push(ways("arc_mode", Some("opt-arc-mode"), &ARC_WAYS, usize::from(prefs.arc_mode))),
@@ -244,10 +244,10 @@ pub(crate) fn tool_opts(sk: &qymcad_ui_state::SketchCtx) -> Vec<Opt> {
         // the pattern: the parameters and a hint - the preview is live, Enter applies
         let mut opts = if kind == PatternKind::Linear {
             let mut v = linear_steps(sk.sk_pat);
-            v.push(number("skpat_count2", "opt-rows", f64::from(sk.sk_pat.count2), count(1.0..=200.0)));
+            v.push(number(OptKey::of("skpat_count2"), "opt-rows", f64::from(sk.sk_pat.count2), count(1.0..=200.0)));
             if sk.sk_pat.count2 > 1 {
-                v.push(number("skpat_dx2", "opt-row-step-x", sk.sk_pat.dx2, mm(-100000.0..=100000.0)));
-                v.push(number("skpat_dy2", "opt-row-step-y", sk.sk_pat.dy2, mm(-100000.0..=100000.0)));
+                v.push(number(OptKey::of("skpat_dx2"), "opt-row-step-x", sk.sk_pat.dx2, mm(-100000.0..=100000.0)));
+                v.push(number(OptKey::of("skpat_dy2"), "opt-row-step-y", sk.sk_pat.dy2, mm(-100000.0..=100000.0)));
             }
             v
         } else {
@@ -261,7 +261,7 @@ pub(crate) fn tool_opts(sk: &qymcad_ui_state::SketchCtx) -> Vec<Opt> {
         match sk.armed.modify() {
             Some(EditTool::Fillet) => corner_opts(sk, Corner::Fillet, 10000.0),
             Some(EditTool::Chamfer) => corner_opts(sk, Corner::Chamfer, 10000.0),
-            Some(EditTool::Offset) => vec![number("sk_offset", "opt-distance", sk.tool_prefs.offset, Limits { zero: Zero::Refused, ..mm(-10000.0..=10000.0) })],
+            Some(EditTool::Offset) => vec![number(OptKey::of("sk_offset"), "opt-distance", sk.tool_prefs.offset, Limits { zero: Zero::Refused, ..mm(-10000.0..=10000.0) })],
             Some(EditTool::LinearPattern) => linear_steps(sk.sk_pat),
             Some(EditTool::CircularPattern) => circular_steps(sk.sk_pat),
             Some(EditTool::Mirror) => vec![said("opt-mirror-axis-hint")],

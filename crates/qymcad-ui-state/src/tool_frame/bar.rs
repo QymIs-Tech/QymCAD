@@ -44,8 +44,7 @@ pub fn tool_bar(ui: &mut egui::Ui, look: &mut BarLook, tool: &Described) -> Answ
     ui.horizontal_wrapped(|ui| {
         ui.label(egui::RichText::new(format!("{} {}", tool.head.icon, tool.head.name)).strong());
         ui.separator();
-        let mut numbers = look.bar_exprs.as_deref_mut().map(|bar_exprs| ExprBarCtx { bar_exprs, project: look.project, scheme: look.scheme });
-        did = draw_opts(ui, pal, &tool.bar, numbers.as_mut());
+        did = draw_opts(ui, pal, &tool.bar);
         let can = if tool.gate.open() && bar_fields_valid(ui.ctx()) { Can::Yes } else { Can::No };
         pressed = end_of_bar(ui, |ui| the_ends(pal, ui, tool.head.ends, can)).inner;
     });

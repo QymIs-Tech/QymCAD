@@ -437,7 +437,13 @@ pub(crate) fn ask_laid(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, ask: &qymc
 /// as it is.
 pub(crate) fn formula_of(p: &qymcad_ui_state::CmdParam) -> Option<Value> {
     let text = p.txt.trim();
-    text.parse::<f64>().is_err().then(|| Value { number: p.val, text: text.to_string() })
+    is_formula(text).then(|| Value { number: p.val, text: text.to_string() })
+}
+
+/// IS `text` A FORMULA rather than a plain number - THE ONE BARE PARSE OF THE SKETCHER, asked wherever a value is typed:
+/// a formula is kept beside the value it comes to, a number is the value.
+pub(crate) fn is_formula(text: &str) -> bool {
+    text.trim().parse::<f64>().is_err()
 }
 
 /// IS SOMETHING ASKED of a dimension.
@@ -507,12 +513,10 @@ fn change_dimension(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, asked: Asked)
     // between the sketch rebuilt itself to a different size. A LENGTH THAT CANNOT EXIST IS REFUSED rather than handed over
     // (`set_dim_value`); a formula is judged by what it evaluates to now.
     if let Some(v) = asked.value {
-        // THE ONE BARE PARSE OF THE SKETCHER, asked once: is this a number or a formula? The answer decides whether the
-        // formula is kept beside the value.
-        let as_number = v.text.parse::<f64>().ok();
+        let formula = is_formula(&v.text);
         match set_dim_value(&mut *sk.project, si, ci, v.number) {
             Ok(()) => {
-                if as_number.is_none() {
+                if formula {
                     if let Some(e) = sk.project.sketches[si].constraints.get_mut(ci).and_then(Constraint::expr_mut) {
                         *e = v.text;
                     }

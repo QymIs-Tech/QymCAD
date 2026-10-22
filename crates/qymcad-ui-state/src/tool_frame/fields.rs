@@ -151,7 +151,7 @@ impl Typed {
 /// Enter in a field applies through the gate; a field refusing its value marks itself with why and shuts the gate, and
 /// a refused Enter is said with the words of the tool. `b.gate` is the tool's own - the picks and the trial build; the
 /// fields are judged here, as they are typed. The box stands in the view `rect` of what `draw` draws.
-pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &FieldsBox, fields: &mut [CmdParam], numbers: Option<&mut ExprBarCtx>) -> Answer {
+pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &FieldsBox, fields: &mut [CmdParam]) -> Answer {
     let basis = draw.cam.basis();
     let here = current_ctx_id(draw.active_path, draw.project);
     let look = &BoxLook { project: draw.project, pal: &draw.scheme.pal, screen: Screen { cam: draw.cam, set: draw.set, rect, basis: &basis }, here };
@@ -190,9 +190,9 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
         at_geometry_ui(ui);
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             let drawing = Drawing { b, look, trial: trial.as_ref() };
-            let drawn = draw_rows(ui, &drawing, fields, layout, Rows { focus: b.focus, numbers });
+            let drawn = draw_rows(ui, &drawing, fields, layout, b.focus);
             // HOW A VALUE IS TYPED, said in every box that has a value to type: Enter applies, a formula is taken
-            if !shown_keys(ui.ctx(), fields, b, layout).is_empty() || layout.sections.iter().flat_map(|s| &s.rows).flat_map(|r| &r.cells).any(|c| matches!(c, Cell::Opt(Opt::Number { .. }))) {
+            if !shown_keys(ui.ctx(), fields, b, layout).is_empty() {
                 ui.label(egui::RichText::new(qymcad_i18n::tr("sk-enter-apply-expr")).weak().small());
             }
             seen.add(drawn.typed);

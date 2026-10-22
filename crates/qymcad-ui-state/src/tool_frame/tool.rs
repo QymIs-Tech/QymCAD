@@ -66,9 +66,11 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
     let ctx = ui.ctx().clone();
     let canvas = view_or_window(&ctx, canvas);
     let mut described = tool.describe(&ctx);
-    numbers_into_the_box(&mut described);
     let mut fields = std::mem::take(tool.fields());
     let mut texts = tool.bar_texts().map(std::mem::take);
+    let moved = numbers_into_the_box(&mut described, texts.as_ref());
+    let own = fields.len();
+    fields.extend(moved.iter().map(|m| m.field.clone()));
     let look = tool.look();
     // A VALUE THE BOX CANNOT TAKE SHUTS THE BAR TOO: Apply of the bar stood lit over an angle of "abc" refused in the box
     // - only the fields the box shows: a field hidden now takes no part, as the second leg of a fillet takes none
@@ -93,9 +95,10 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
         };
         let frame = ctx.cumulative_frame_nr(); // asked before the data is locked: the context takes the same lock
         ctx.data_mut(|d| d.insert_temp(drawn_box_id(), DrawnBox { frame, id }));
-        let mut numbers = texts.as_mut().map(|bar_exprs| ExprBarCtx { bar_exprs, project: look.project, scheme: look.scheme });
-        tool_box(&ctx, &look, canvas, &the_box, &mut fields, numbers.as_mut())
+        tool_box(&ctx, &look, canvas, &the_box, &mut fields)
     });
+    // THE NUMBERS OF THE BAR GO BACK where the bar kept them: the text as typed, a value taken given to the tool
+    let typed = numbers_back(fields.split_off(own), &moved, texts.as_mut(), look.project);
     *tool.fields() = fields;
     if let Some(texts) = texts {
         if let Some(kept) = tool.bar_texts() {
@@ -103,7 +106,7 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
         }
     }
     let mut verdict = bar.verdict;
-    for d in bar.did {
+    for d in bar.did.into_iter().chain(typed) {
         tool.took(d);
     }
     let mut fields_did = Vec::new();
@@ -126,25 +129,59 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
     go_through(&ctx, &described.gate, verdict, &mut Through { tool: &mut *tool, after: described.head.after });
 }
 
+/// A NUMBER OF THE BAR MOVED INTO THE BOX: the option it was, the value the tool holds, and the field it is typed in.
+struct Moved {
+    key: OptKey,
+    was: f64,
+    field: CmdParam,
+}
+
 /// THE BAR HOLDS WHAT IS SWITCHED AND PRESSED, THE BOX WHAT IS TYPED: a number a tool describes for its bar - the sides of
-/// a polygon, the count and the steps of a pattern, the radius of a fillet - is a row of its box at the geometry, with
-/// the formula it takes; a tool with no box now gets one in the corner of the view for its numbers. One place for every
-/// tool of every workbench: no tool lays a field in its bar.
-fn numbers_into_the_box(described: &mut Described) {
-    let numbers: Vec<Opt> = described.bar.iter().filter(|o| matches!(o, Opt::Number { .. })).cloned().collect();
-    if numbers.is_empty() {
-        return;
+/// a polygon, the count and the steps of a pattern, the height of a text - is a field of its box at the geometry, the
+/// same as the field of a length: a formula with its limits and unit, what it comes to or why it is refused said under
+/// it, the gate of the box shut by it. A tool with no box now gets one in the corner of the view for its numbers. The
+/// text typed is kept where the bar kept it (`bar_texts`); a value taken goes to the tool as the bar gave it
+/// (`Did::Typed`). One place for every tool of every workbench: no tool lays a field in its bar.
+fn numbers_into_the_box(described: &mut Described, texts: Option<&std::collections::HashMap<&'static str, String>>) -> Vec<Moved> {
+    let mut moved = Vec::new();
+    let mut rows = Vec::new();
+    for o in &described.bar {
+        let Opt::Number { key, label, value, limits } = o else { continue };
+        let mut p = CmdParam::new(label, key.name, *value, *limits.range.start(), *limits.range.end());
+        p.number = limits.number;
+        p.nonzero = limits.zero == Zero::Refused;
+        p.txt = texts.and_then(|t| t.get(key.name).cloned()).unwrap_or_else(|| qymcad_core::expr::fmt_num(*value));
+        let row = Row::new(qymcad_i18n::tr(label)).field(key.name).said_under();
+        rows.push(match limits.unit {
+            Some(unit) => row.unit(unit),
+            None => row,
+        });
+        moved.push(Moved { key: *key, was: *value, field: p });
+    }
+    if moved.is_empty() {
+        return moved;
     }
     described.bar.retain(|o| !matches!(o, Opt::Number { .. }));
-    let rows = numbers
-        .into_iter()
-        .map(|o| match o {
-            Opt::Number { key, caption, value, limits } => Row::new(caption).opt(Opt::Number { key, caption: String::new(), value, limits }),
-            o => Row::new(String::new()).opt(o),
-        })
-        .collect();
     let spec = described.boxed.get_or_insert_with(|| BoxSpec::by(Place::close_by(By::ViewCorner)));
     spec.layout.sections.push(Section::plain(rows));
+    moved
+}
+
+/// The fields the numbers of the bar were typed in, given back: each text kept where the bar keeps it, each value taken
+/// that differs from what the tool holds told to it.
+fn numbers_back(fields: Vec<CmdParam>, moved: &[Moved], mut texts: Option<&mut std::collections::HashMap<&'static str, String>>, project: &Project) -> Vec<Did> {
+    let vars = project.param_map();
+    let mut did = Vec::new();
+    for m in moved {
+        let Some(p) = fields.iter().find(|p| p.key == m.key.name) else { continue };
+        if let Some(t) = texts.as_deref_mut() {
+            t.insert(m.key.name, p.txt.clone());
+        }
+        if let Some(v) = field_value(p, &vars).ok().filter(|v| (v - m.was).abs() > 1e-12) {
+            did.push(Did::Typed { key: m.key, value: v });
+        }
+    }
+    did
 }
 
 /// THE BOX OF THE TOOL IN HAND DRAWN LAST: the frame it was drawn in, and its id.
