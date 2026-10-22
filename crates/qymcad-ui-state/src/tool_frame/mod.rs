@@ -260,9 +260,9 @@ fn first_answer(ctx: &egui::Context) -> bool {
 ///
 /// THE COLOUR GOES ON THE TEXT AND THE OUTLINE, not on the fill: text on the panel background is exactly the pair the
 /// scheme's legibility check already measures.
-pub fn confirm_button(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, can: Can, label: String) -> bool {
+pub fn confirm_button(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, can: Can, label: String) -> egui::Response {
     let text = egui::RichText::new(label).color(pal.confirm()).strong();
-    ui.add_enabled(can == Can::Yes, egui::Button::new(text).stroke(egui::Stroke::new(1.0, pal.confirm()))).clicked()
+    ui.add_enabled(can == Can::Yes, egui::Button::new(text).stroke(egui::Stroke::new(1.0, pal.confirm())))
 }
 
 /// MAY A BUTTON OR A CHOICE BE PRESSED NOW.
@@ -278,20 +278,29 @@ pub fn refuse_button(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, label: Str
     ui.add(egui::Button::new(text).stroke(egui::Stroke::new(1.0, pal.refuse()))).clicked()
 }
 
-/// The buttons the bar of a tool ends with, laid from the right: Apply, enabled by `can`, outermost and Cancel beside
+/// The buttons the bar of a tool ends with, laid from the right: Apply, open by `gate`, outermost and Cancel beside
 /// it - or the one button that puts the tool down.
-fn the_ends(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, ends: Ends, can: Can) -> Pressed {
+fn the_ends(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, ends: Ends, gate: &Gate) -> Pressed {
     match ends {
-        Ends::ApplyCancel => the_two_buttons(pal, ui, can),
+        Ends::ApplyCancel => the_two_buttons(pal, ui, gate),
         Ends::Close if ui.button(format!("{} {}", ph::X, qymcad_i18n::tr("cmd-close-esc"))).clicked() => Pressed::Cancel,
         Ends::Close | Ends::Nothing => Pressed::Nothing,
     }
 }
 
-/// The two buttons a command ends with: Apply, enabled by `can`, and Cancel. Laid from the right, Apply outermost.
-fn the_two_buttons(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, can: Can) -> Pressed {
+/// The two buttons a command ends with: Apply, open by `gate`, and Cancel. Laid from the right, Apply outermost.
+///
+/// A SHUT APPLY SAYS WHY under the pointer, in the words Enter would be answered with - a trial still running among them.
+/// Reported behaviour: Apply stood grey for minutes while the trial ran, and nothing said what it waited for.
+fn the_two_buttons(pal: &qymcad_scheme::Palette, ui: &mut egui::Ui, gate: &Gate) -> Pressed {
     let mut pressed = Pressed::Nothing;
-    if confirm_button(pal, ui, can, format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter"))) {
+    let can = if gate.open() { Can::Yes } else { Can::No };
+    let apply = confirm_button(pal, ui, can, format!("{} {}", ph::CHECK, qymcad_i18n::tr("cmd-apply-enter")));
+    let apply = match gate.answer() {
+        Some(why) => apply.on_disabled_hover_text(why.words),
+        None => apply,
+    };
+    if apply.clicked() {
         pressed = Pressed::Apply;
     }
     // THE BUTTON DOES WHAT THE KEY DOES. Reported behaviour: pressing it changes nothing - the popup stays, the command

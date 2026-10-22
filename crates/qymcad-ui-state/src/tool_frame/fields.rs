@@ -210,12 +210,12 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
             if let Some(r) = names_refusal(ui.ctx(), look.project, b.id, b.names) {
                 seen.refused.get_or_insert(r);
             }
-            let can = if shut_by(gate, &seen).open() { Can::Yes } else { Can::No };
+            let shut = shut_by(gate, &seen);
             if seen.refused.is_some() {
                 let frame = ui.ctx().cumulative_frame_nr();
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(BOX_REFUSES), frame));
             }
-            pressed = box_ends(ui, b, look.pal, can);
+            pressed = box_ends(ui, b, look.pal, &shut);
         });
     });
     moved_by_hand(ctx, b.id, &shown.response);
@@ -229,7 +229,7 @@ pub fn tool_box(ctx: &egui::Context, draw: &DrawCtx, rect: egui::Rect, b: &Field
 /// THE ENDS OF A BOX, under a line of their own and centred across it. Reported behaviour: Apply and Cancel stood
 /// left, 6.6 px under the buttons of the foot of a joint's box, and read as two more of them. The width of the two is
 /// the one they took the frame before: a row is laid from the left, and how wide it comes out is known once it is laid.
-fn box_ends(ui: &mut egui::Ui, b: &FieldsBox, pal: &qymcad_scheme::Palette, can: Can) -> Pressed {
+fn box_ends(ui: &mut egui::Ui, b: &FieldsBox, pal: &qymcad_scheme::Palette, gate: &Gate) -> Pressed {
     ui.add_space(4.0);
     ui.separator();
     ui.add_space(4.0);
@@ -239,7 +239,7 @@ fn box_ends(ui: &mut egui::Ui, b: &FieldsBox, pal: &qymcad_scheme::Palette, can:
     let mut pressed = Pressed::Nothing;
     ui.horizontal(|ui| {
         ui.add_space(((across - was.unwrap_or(across)) / 2.0).max(0.0));
-        let laid = ui.horizontal(|ui| pressed = the_ends(pal, ui, b.ends, can)).response.rect.width();
+        let laid = ui.horizontal(|ui| pressed = the_ends(pal, ui, b.ends, gate)).response.rect.width();
         // THE WIDEST THE ENDS WERE LAID IS KEPT: by a box pulled against the edge of the view the offset that centres them
         // narrows the row it measures, and a width kept as last measured swung 203.7 <-> 201.7 every frame, asking for a
         // frame each time - the window never came to rest
