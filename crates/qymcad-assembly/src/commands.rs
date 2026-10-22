@@ -137,7 +137,7 @@ pub fn press(launch: Launch, bc: &mut BarCtx) {
             bc.ask.push(BarAsk::EnterComponent(id));
         }
         Launch::InsertComponent => bc.ask.push(BarAsk::Import(Want::Part)),
-        Launch::CompArray(n) => bc.ask.push(take_or_drop(bc.carr.mode == Some(n), BarAsk::CompArray(n))),
+        Launch::CompArray(n) => bc.ask.push(BarAsk::CompArray(n)),
         Launch::MirrorPart => {
             // both a PART and a SUBASSEMBLY are accepted (the whole subtree is mirrored); with the tool in hand the
             // press goes to the door as it is, which puts it down
@@ -152,7 +152,7 @@ pub fn press(launch: Launch, bc: &mut BarCtx) {
         }
         // ONE DOOR for the section: a copy of it here could not release the other tools
         Launch::Section => bc.ask.push(BarAsk::ToggleSection),
-        Launch::Joint => bc.ask.push(take_or_drop(bc.joint.pick_faces, BarAsk::JointPick)),
+        Launch::Joint => bc.ask.push(BarAsk::JointPick),
         // a click on a part fixes or releases it
         Launch::Ground => bc.ask.push(BarAsk::GroundPick),
         // a set of parts fastened to one another without pairwise joints

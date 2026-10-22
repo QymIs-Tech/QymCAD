@@ -111,7 +111,7 @@ mod tests {
             "\n",
             include_str!("../../../qymcad-part/src/lib.rs")
         );
-        assert!(crate::gui::render_source::has(bar, "qymcad_ui_state::set_measure(&mut qymcad_ui_state::tools_in!(bc), on)"), "the ruler no longer goes through the door");
+        assert!(crate::gui::render_source::has(bar, "qymcad_ui_state::set_measure(&mut qymcad_ui_state::tools_in!(bc), true)"), "the ruler no longer goes through the door");
         assert!(!crate::gui::render_source::has(bar, "bc.measure.on = on"), "the toolbar sets the flag itself again, and a deferred request will put it out");
     }
 

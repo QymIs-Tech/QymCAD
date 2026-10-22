@@ -388,35 +388,30 @@ const ROWS: &[Command] = &[
     },
 ];
 
-/// PRESS A COMMAND OF THE PART: what its button did, through the doors its button used. A tool in
-/// hand pressed again is put down, as every tool button does.
+/// PRESS A COMMAND OF THE PART: what its button did, through the doors its button used. A tool in hand pressed again
+/// never reaches here: it is put down by the one door every press goes through (`catalogue::again`).
 pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
-    use qymcad_ui_state::{take_or_drop, BarAsk};
+    use qymcad_ui_state::BarAsk;
     match launch {
         Launch::SketchPick => bc.ask.push(BarAsk::ToggleSketchPick),
         Launch::Feat(n) => {
             if n == qymcad_ui_state::PartTool::Extrude {
                 bc.feat.op = 0; // the button of the extrusion adds; the cut is the same command with its own key
             }
-            bc.ask.push(take_or_drop(tool_is_taken(bc, n), BarAsk::FeatCmd(n)));
+            bc.ask.push(BarAsk::FeatCmd(n));
         }
-        Launch::Prim(n) => bc.ask.push(take_or_drop(bc.armed.part_tool() == Some(n), BarAsk::PrimCmd(n))),
+        Launch::Prim(n) => bc.ask.push(BarAsk::PrimCmd(n)),
         Launch::Section => bc.ask.push(BarAsk::ToggleSection),
         Launch::Measure3d => bc.ask.push(BarAsk::ToggleMeasure3d),
         Launch::Boolean => {
-            if bc.boolean.pick.is_some() {
-                // pressed again with the tool in hand: put down, as every tool button does
-                bc.ask.push(BarAsk::CancelAllTools(qymcad_ui_state::Then::Nothing));
-            } else {
-                // taking the boolean puts down the tool in hand first, or both bars stood at once; two bodies held by
-                // Shift are its A and B, one body selected is its A
-                let held: Vec<Id> = bc.held.iter().copied().filter(|id| bc.project.mesh_index(*id).is_some()).collect();
-                let bodies = match held.as_slice() {
-                    [a, b, ..] => qymcad_ui_state::BoolBodies { a: Some(*a), b: Some(*b) },
-                    _ => qymcad_ui_state::BoolBodies { a: qymcad_ui_state::selected_body(&*bc.project, &*bc.sel), b: None },
-                };
-                bc.ask.push(BarAsk::CancelAllTools(qymcad_ui_state::Then::Boolean(bodies)));
-            }
+            // taking the boolean puts down the tool in hand first, or both bars stood at once; two bodies held by Shift
+            // are its A and B, one body selected is its A
+            let held: Vec<Id> = bc.held.iter().copied().filter(|id| bc.project.mesh_index(*id).is_some()).collect();
+            let bodies = match held.as_slice() {
+                [a, b, ..] => qymcad_ui_state::BoolBodies { a: Some(*a), b: Some(*b) },
+                _ => qymcad_ui_state::BoolBodies { a: qymcad_ui_state::selected_body(&*bc.project, &*bc.sel), b: None },
+            };
+            bc.ask.push(BarAsk::CancelAllTools(qymcad_ui_state::Then::Boolean(bodies)));
         }
         // the commands of the sketch and of the assembly, and the one with no button, are pressed elsewhere
         _ => {}

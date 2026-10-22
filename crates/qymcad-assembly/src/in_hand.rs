@@ -171,41 +171,35 @@ impl FramedTool for AsmTools<'_, '_> {
     /// The tool is put down; a tangent already made of two picks is taken away with it.
     fn cancel(&mut self) {
         let jc = &mut *self.jc;
+        if self.tool == AsmTool::Tangent && jc.joint.tangent_pick.as_ref().is_some_and(|s| s.len() >= 2) {
+            tangent_finish(jc, false);
+            return;
+        }
+        self.put_down();
         let off = match self.tool {
-            AsmTool::Tangent if jc.joint.tangent_pick.as_ref().is_some_and(|s| s.len() >= 2) => {
-                tangent_finish(jc, false);
-                return;
-            }
-            AsmTool::Tangent => {
-                jc.joint.tangent_pick = None;
-                "j-tangent-off"
-            }
-            AsmTool::Width => {
-                jc.joint.width_pick = None;
-                "j-width-off"
-            }
-            AsmTool::Group => {
-                jc.joint.group_pick = None;
-                "j-group-off"
-            }
-            AsmTool::Ground => {
-                jc.joint.ground_pick = false;
-                "j-ground-off"
-            }
-            AsmTool::Anchor => {
-                jc.joint.conn_pick = false;
-                "j-conn-off"
-            }
-            AsmTool::Relation => {
-                jc.joint.relation_pick = None;
-                "j-relation-off"
-            }
-            AsmTool::Joint => {
-                jc.joint.pick_faces = false;
-                jc.joint.pick_first = None;
-                "j-cancelled"
-            }
+            AsmTool::Tangent => "j-tangent-off",
+            AsmTool::Width => "j-width-off",
+            AsmTool::Group => "j-group-off",
+            AsmTool::Ground => "j-ground-off",
+            AsmTool::Anchor => "j-conn-off",
+            AsmTool::Relation => "j-relation-off",
+            AsmTool::Joint => "j-cancelled",
         };
-        *jc.status = Notice::info(qymcad_i18n::tr(off));
+        *self.jc.status = Notice::info(qymcad_i18n::tr(off));
+    }
+
+    /// What the tool picked is let go: grounding, an anchor and a joint take their clicks as they come, and the tangent,
+    /// the width, the group and the relation have already let go of what they made of their picks.
+    fn put_down(&mut self) {
+        let j = &mut *self.jc.joint;
+        match self.tool {
+            AsmTool::Tangent => j.tangent_pick = None,
+            AsmTool::Width => j.width_pick = None,
+            AsmTool::Group => j.group_pick = None,
+            AsmTool::Ground => j.ground_pick = false,
+            AsmTool::Anchor => j.conn_pick = false,
+            AsmTool::Relation => j.relation_pick = None,
+            AsmTool::Joint => (j.pick_faces, j.pick_first) = (false, None),
+        }
     }
 }

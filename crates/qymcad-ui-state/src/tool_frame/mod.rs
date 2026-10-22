@@ -34,11 +34,29 @@ pub use tool::*;
 mod words;
 pub use words::*;
 
-/// WHAT THE BAR CALLS THE TOOL IN HAND - a glyph of the icon font and the tool's name - and how the bar ends.
+/// WHAT THE BAR CALLS THE TOOL IN HAND - a glyph of the icon font and the tool's name - how the bar ends, and what is in
+/// hand once the tool is applied.
 pub struct Head {
     pub icon: &'static str,
     pub name: String,
     pub ends: Ends,
+    pub after: AfterApply,
+}
+
+/// WHAT IS IN HAND ONCE THE TOOL IS APPLIED: the selection, or the same tool again. The frame reads it after an Apply
+/// that went through and puts the tool down by the tool's own door ([`FramedTool::put_down`]); no tool puts itself down
+/// in its Apply, and no list of tools in the frame says which does.
+///
+/// Before it each tool chose in its own Apply: a joint kept left the joint tool in hand for the next pair, grounding and
+/// an anchor stayed after Enter, while a boolean, a turn and a pattern of a sketch left the arrow.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AfterApply {
+    /// A command that does one thing: once it is done the hand holds the selection - an operation of a part, a tool of
+    /// an assembly, the turn and the pattern of a sketch.
+    Select,
+    /// A tool that draws or sizes one thing after another stays in hand for the next: a shape of a sketch, a dimension,
+    /// the corner, the offset. Esc puts it down.
+    Stays,
 }
 
 /// HOW THE BAR OF A TOOL ENDS.

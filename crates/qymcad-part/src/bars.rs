@@ -1,6 +1,6 @@
 //! THE BARS OF THE PART: the tool bar, the options of a command, the bars of a section and of a pattern of components.
 
-use qymcad_ui_state::{Described, Did, Ends, Gate, Head, Notice, Opt, OptKey};
+use qymcad_ui_state::{AfterApply, Described, Did, Ends, Gate, Head, Notice, Opt, OptKey};
 use super::*;
 
 /// The kinds of a body boolean, as a group of the bar, `op` in force.
@@ -18,7 +18,7 @@ pub(crate) fn bool_kind_at(index: usize) -> u8 {
 /// kind it had.
 pub(crate) fn bool_described(pc: &qymcad_ui_state::PartCtx) -> Described {
     use qymcad_core::feature::FeatureKind;
-    let head = Head { icon: ph::INTERSECT, name: qymcad_i18n::tr("bool-bodies-btn"), ends: Ends::ApplyCancel };
+    let head = Head { icon: ph::INTERSECT, name: qymcad_i18n::tr("bool-bodies-btn"), ends: Ends::ApplyCancel, after: AfterApply::Select };
     // CREATING: body A is picked, the click on B and the choice of kind are awaited
     if let Some((a, op)) = pc.boolean.pick {
         let a_name = pc.project.mesh_index(a).map(|mi| qymcad_i18n::name(&pc.project.mesh_name(mi))).unwrap_or_else(|| "?".into());
@@ -121,13 +121,13 @@ impl PlaneBarCtx<'_> {
 /// THE TOOL OF THE PLACE OF THE SECTION AS ITS BAR DESCRIBES IT. Each of them waited with only the status line saying
 /// so, and the bar stood empty over a tool held.
 pub(crate) fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Described {
-    let head = |icon, name: &str, ends| Head { icon, name: qymcad_i18n::tr(name), ends };
+    let head = |icon, name: &str, ends, after| Head { icon, name: qymcad_i18n::tr(name), ends, after };
     // what is pointed at, not typed: Enter before it has nothing to do
     let waiting = |head: Head, ask: String| Described { head, bar: vec![Opt::Readout(ask.clone())], gate: Gate::Waiting(ask), says: vec![], boxed: None };
     match tool {
         // the measure: its name, what is taken, the answer, the way out; the answer comes with the second element
         PlaneTool::Measure => {
-            let head = head(ph::RULER, "hotkey-part-i", Ends::Close);
+            let head = head(ph::RULER, "hotkey-part-i", Ends::Close, AfterApply::Stays);
             if pb.m3.picks.len() < 2 {
                 let mut d = waiting(head, qymcad_i18n::tr("m3-hint-short"));
                 d.bar.extend(pb.m3.picks.iter().map(|p| Opt::Readout(p.what.clone())));
@@ -143,12 +143,12 @@ pub(crate) fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Descri
                 qymcad_ui_state::PartTool::Loft => "cmd-loft",
                 _ => "cmd-extrude",
             };
-            waiting(head(ph::CUBE, name, Ends::ApplyCancel), qymcad_i18n::tr("g-pick-sketch-for"))
+            waiting(head(ph::CUBE, name, Ends::ApplyCancel, AfterApply::Stays), qymcad_i18n::tr("g-pick-sketch-for"))
         }
-        PlaneTool::Pencil => waiting(head(ph::PENCIL_SIMPLE, "status-new-sketch", Ends::ApplyCancel), qymcad_i18n::tr("g-sketch-pick-plane")),
+        PlaneTool::Pencil => waiting(head(ph::PENCIL_SIMPLE, "status-new-sketch", Ends::ApplyCancel, AfterApply::Stays), qymcad_i18n::tr("g-sketch-pick-plane")),
         // the mirrored copy of a part waits for the part, then for a plane
         PlaneTool::MirrorPart => {
-            let head = head(ph::FLIP_HORIZONTAL, "mp-title", Ends::ApplyCancel);
+            let head = head(ph::FLIP_HORIZONTAL, "mp-title", Ends::ApplyCancel, AfterApply::Select);
             let name = pb.mirror.part.and_then(|src| pb.project.components.iter().find(|c| c.id == src)).map(|c| qymcad_i18n::name(&c.name));
             match (name, pb.mirror.at.is_some()) {
                 (Some(name), true) => Described { head, bar: vec![Opt::Readout(qymcad_i18n::tr1("mp-plane-taken-of", "name", &name))], gate: Gate::Open, says: vec![], boxed: None },
@@ -161,7 +161,7 @@ pub(crate) fn plane_tool_described(pb: &PlaneBarCtx, tool: &PlaneTool) -> Descri
         // offset and the tilts are typed at the plane.
         PlaneTool::Section => {
             let ends = if pb.section.pick { Ends::ApplyCancel } else { Ends::Close };
-            let head = head(ph::SQUARE_HALF, "sec-btn", ends);
+            let head = head(ph::SQUARE_HALF, "sec-btn", ends, AfterApply::Select);
             if pb.section.plane.is_none() {
                 return waiting(head, qymcad_i18n::tr("tb-section-pick"));
             }
@@ -267,7 +267,7 @@ pub(crate) fn comp_array_described(pc: &qymcad_ui_state::PartCtx) -> Described {
         // parts ran one way only.
         ("cmd-comp-lin-array", linear_array_opts(&*pc.arr, pc.carr.dir, source, &mut says))
     };
-    let head = Head { icon: ph::STACK, name: qymcad_i18n::tr(title), ends: Ends::ApplyCancel };
+    let head = Head { icon: ph::STACK, name: qymcad_i18n::tr(title), ends: Ends::ApplyCancel, after: AfterApply::Select };
     Described { head, bar, gate: comp_array_gate(pc), says, boxed: None }
 }
 
@@ -375,16 +375,6 @@ pub fn sync_comp_array_params(arr: qymcad_ui_state::ArrayParams, mode: Option<qy
             cmd.params.push(w);
         }
     }
-}
-
-/// IS THIS TOOL IN HAND - open, OR waiting for the sketch it needs?
-///
-/// Reported behaviour: "press the tool and it stays highlighted, with the status asking for a sketch." It
-/// did not: the wait lives in `Picking`, and the button lit from `armed` alone, so a tool that WAS waiting
-/// looked untouched. A tool that acts and does not look taken is the same trouble as one that looks taken
-/// and does not act.
-pub(crate) fn tool_is_taken(bc: &qymcad_ui_state::BarCtx, kind: qymcad_ui_state::PartTool) -> bool {
-    bc.armed.part_tool() == Some(kind) || bc.picking.sketch_for() == Some(kind)
 }
 
 mod feat_bar;

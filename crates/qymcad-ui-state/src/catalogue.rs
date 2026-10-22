@@ -153,6 +153,33 @@ pub fn pressed(launch: Launch, bc: &crate::BarCtx) -> bool {
     }
 }
 
+/// THE SAME COMMAND TAKEN AGAIN WHILE IT IS IN HAND PUTS IT DOWN: what that asks for - the arrow of a sketch for a tool
+/// of a sketch, every tool put down for the rest - or nothing when the command is not in hand. Its button, its row of
+/// "More", the search and its key all come here (`command_catalog::press`, `command_catalog::key_again`), so no tool
+/// answers a second press by itself.
+///
+/// Before it four keys of a sketch put their tool down - the dimension, the corner, the trim and the mirror, each by a
+/// comparison of its own - while a drawing tool pressed again was taken anew, its points dropped, and the commands of
+/// the part and the assembly were opened again over themselves.
+///
+/// A switch is no tool in hand and answers by itself: the arrow of a sketch, construction geometry, the section of the
+/// view - one applied stays on under any tool and is turned off only by its own button. The mirror of a sketch pressed
+/// again with geometry chosen is the way on to its axis, not the way out (`modify_button`).
+pub fn again(launch: Launch, bc: &crate::BarCtx) -> Option<crate::BarAsk> {
+    if matches!(launch, Launch::SketchSelect | Launch::Construction | Launch::Section) || !pressed(launch, bc) {
+        return None;
+    }
+    if launch == Launch::Modify(crate::EditTool::Mirror) && matches!(*bc.sel, crate::Sel::Sketch(si) if !crate::shapes_chosen(&*bc.project, si, &*bc.sel_sk).is_empty()) {
+        return None;
+    }
+    Some(match launch {
+        Launch::SkTool(_) | Launch::Dim(_) | Launch::ClickOp(_) | Launch::Modify(_) | Launch::SkPattern(_) | Launch::SkMove(_) | Launch::FilletAll | Launch::Measure2d | Launch::Constraint(_) => {
+            crate::BarAsk::SketchSelectMode
+        }
+        _ => crate::BarAsk::CancelAllTools(crate::Then::Nothing),
+    })
+}
+
 /// THE HINT OF A COMMAND'S BUTTON. The joint names the kind it will make, which is chosen on its bar: one button
 /// instead of one a kind.
 pub fn hint(cmd: &Command, bc: &crate::BarCtx) -> String {

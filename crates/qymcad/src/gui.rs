@@ -1455,18 +1455,13 @@ impl App {
         self.status = Notice::info(crate::i18n::tr("io-rebuilding-all"));
     }
 
-    /// Turn the plane pick for a new sketch on or off (the Sketch button and the K shortcut). It cancels
-    /// an active datum or command (`cancel_all_tools` clears the sketch-plane pick, so the target state is
-    /// remembered BEFORE the reset), so that two tools are never held at once.
+    /// Take the plane pick for a new sketch, every other tool put down first; taken again, `catalogue::again` puts it down.
     fn toggle_sketch_pick(&mut self) {
-        let turning_on = !self.tools.picking.is_sketch_plane();
         self.cancel_all_tools();
-        self.tools.picking = if turning_on { Picking::SketchPlane(None) } else { Picking::None }; // pressed again, the pencil is put down
-        if self.tools.picking.is_sketch_plane() {
-            self.viewing.mode_3d = true; // planes and faces are picked in 3D
-            self.chosen.sel = Sel::None;
-            self.status = Notice::info(crate::i18n::tr("g-sketch-pick-plane"));
-        }
+        self.tools.picking = Picking::SketchPlane(None);
+        self.viewing.mode_3d = true; // planes and faces are picked in 3D
+        self.chosen.sel = Sel::None;
+        self.status = Notice::info(crate::i18n::tr("g-sketch-pick-plane"));
     }
 
     /// Which gizmo axis is under the cursor (0 = X, 1 = Y, 2 = Z), if it is close enough (within 8 px).

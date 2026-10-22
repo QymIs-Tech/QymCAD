@@ -855,21 +855,6 @@ mod picking {
 }
 
 #[cfg(test)]
-mod tool_buttons {
-    use super::{take_or_drop, BarAsk};
-
-    /// A TOOL BUTTON TAKES ITS TOOL WHEN THE HAND IS FREE OF IT AND PUTS IT DOWN WHEN IT IS HELD: a sketch tool back to
-    /// the arrow, a command cancelled.
-    #[test]
-    fn a_tool_button_takes_or_puts_down() {
-        assert!(matches!(take_or_drop(false, BarAsk::FeatCmd(crate::PartTool::Fillet)), BarAsk::FeatCmd(crate::PartTool::Fillet)), "a free hand takes the command");
-        assert!(matches!(take_or_drop(true, BarAsk::FeatCmd(crate::PartTool::Fillet)), BarAsk::CancelAllTools(crate::Then::Nothing)), "a held command is put down");
-        assert!(matches!(take_or_drop(true, BarAsk::SketchTool(crate::SketchShape::Circle)), BarAsk::SketchSelectMode), "a held sketch tool gives the arrow back");
-        assert!(matches!(take_or_drop(false, BarAsk::SketchTool(crate::SketchShape::Circle)), BarAsk::SketchTool(crate::SketchShape::Circle)), "a free hand takes the sketch tool");
-    }
-}
-
-#[cfg(test)]
 mod blend_outline {
     use super::{edge_blend_outline, Blend};
     use qymcad_core::geom::{Mesh, Point3};

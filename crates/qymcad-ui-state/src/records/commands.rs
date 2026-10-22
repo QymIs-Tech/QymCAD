@@ -344,13 +344,10 @@ pub struct SketchTool {
 
 impl SketchTool {
     /// Choose a tool: whatever was clicked with the previous one MUST disappear - it has nothing to do
-    /// with the new one - and WHAT IS IN HAND changes with it. Clicking the tool already in hand puts it
-    /// down, which is why the old value is read before the new one is written.
+    /// with the new one - and WHAT IS IN HAND changes with it. The tool already in hand taken again is put
+    /// down before it gets here (`catalogue::again`).
     pub fn select(&mut self, armed: &mut Armed, kind: Option<SketchShape>) {
-        *armed = match kind {
-            Some(k) if armed.drawing() != Some(k) => Armed::Draw(k),
-            _ => Armed::None,
-        };
+        *armed = kind.map_or(Armed::None, Armed::Draw);
         self.pts.clear();
     }
 }

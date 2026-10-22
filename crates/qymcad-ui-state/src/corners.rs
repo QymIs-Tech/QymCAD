@@ -166,14 +166,9 @@ pub fn expr_field_autofocus(ui: &mut egui::Ui, project: &Project, id: egui::Id, 
 
 /// The editing button: with a ready selection it applies at once, otherwise it waits for one (Esc cancels).
 pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool_prefs: &SketchToolPrefs, op: EditTool) {
-    // PRESSED AGAIN WITH THE TOOL IN HAND it is put down, as every tool button does - except the mirror with
-    // geometry selected, where the press is the way on to the axis (see below)
-    let held = t.sel_sk.modify == Some(op);
-    let mirror_forward = op == EditTool::Mirror && matches!(*ed.sel, Sel::Sketch(si) if !shapes_chosen(&*ed.project, si, t.sel_sk).is_empty());
+    // pressed again with the tool in hand it is put down before it gets here (`catalogue::again`) - except the mirror
+    // with geometry selected, where the press is the way on to the axis (see below)
     exit_draw_tools(&mut t.reborrow());
-    if held && !mirror_forward {
-        return;
-    }
     let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk, tool: _ } = t;
     sel_sk.constraint = None;
     **armed = Armed::Modify(op);
@@ -939,9 +934,6 @@ pub struct CornerChoice {
 /// TAKE THE ROUNDING OR THE CHAMFER OF A CORNER INTO HAND and hold it to what is already chosen.
 pub fn start_corner_tool(bc: &mut BarCtx, op: ClickTool) {
     set_click_op(&mut tools_in!(bc), &mut *bc.mode_3d, op);
-    if bc.armed.click_tool() != Some(op) {
-        return; // pressed again: the tool goes back down, and what was chosen stays chosen
-    }
     let chamfer = op == ClickTool::CornerChamfer;
     *bc.status = Notice::info(qymcad_i18n::tr(if chamfer { "tb-chamfer-sketch-hint" } else { "tb-fillet-sketch-hint" }));
     bc.corner.track_px = corner_reach(&*bc.set);
@@ -974,38 +966,28 @@ pub fn start_corner_tool(bc: &mut BarCtx, op: ClickTool) {
     }
 }
 
-/// Turn a click-driven editing operation on or off.
+/// Take a click-driven editing operation into hand. Taken again while in hand, it is put down by the one door every press
+/// goes through (`catalogue::again`), not here.
 pub fn set_click_op(t: &mut Tools, mode_3d: &mut bool, op: ClickTool) {
-    let cur = t.armed.click_tool();
     exit_draw_tools(&mut t.reborrow());
     let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk, tool } = t;
-    **armed = Armed::None;
     sel_sk.constraint = None;
     sel_sk.modify = None;
-    **armed = if cur == Some(op) { Armed::None } else { Armed::ClickOp(op) };
+    **armed = Armed::ClickOp(op);
     // EXTEND TAKES THE CURVE SELECTED BEFORE IT, as every tool takes its selection; nothing selected, it waits for a pick
     tool.extend = if armed.click_tool() == Some(ClickTool::Extend) {
         sel_sk.items.iter().find(|it| it.kind == crate::ItemKind::Curve).map(|crate::SketchItem { id, .. }| *id)
     } else {
         None
     };
-    if armed.click_tool().is_some() {
-        *mode_3d = false;
-    }
+    *mode_3d = false;
 }
 
-/// Turn the dimension tool of kind `k` on, or off when it is in hand.
+/// Take the dimension tool of kind `k` into hand. Taken again while in hand, it is put down by the one door every press
+/// goes through (`catalogue::again`), not here.
 pub fn set_dim_tool(t: &mut Tools, mode_3d: &mut bool, project: &Project, sel: Sel, sketch_ses: SketchSession, status: &mut Notice, k: crate::DimKind) {
-    let cur = t.armed.dimension();
     exit_draw_tools(&mut t.reborrow()); // entering a tool means leaving all the others, in one move
-    let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk: _, tool: _ } = t;
-    **armed = if cur == Some(k) { Armed::None } else { Armed::Dimension(k) };
-    if armed.dimension().is_some() {
-        *mode_3d = false;
-        if edit_si(project, &sketch_ses).is_none() && !matches!(sel, Sel::Sketch(_)) {
-            *status = Notice::info(qymcad_i18n::tr("g-open-sketch-dim"));
-        } else {
-            *status = Notice::info(qymcad_i18n::tr("g-dim-hint"));
-        }
-    }
+    *t.armed = Armed::Dimension(k);
+    *mode_3d = false;
+    *status = Notice::info(qymcad_i18n::tr(if edit_si(project, &sketch_ses).is_none() && !matches!(sel, Sel::Sketch(_)) { "g-open-sketch-dim" } else { "g-dim-hint" }));
 }

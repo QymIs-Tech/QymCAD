@@ -136,4 +136,34 @@ mod tests {
         }
         assert!(qymcad_assembly::joint_pick_active_for_test(&mut app.joint_ctx()), "the command did not start");
     }
+
+    /// A JOINT KEPT BY ENTER LEAVES THE SELECTION IN HAND, as every command applied does: the joint tool is not taken
+    /// again for another pair. Reported behaviour: Enter on a joint just made put the joint tool back in hand.
+    #[test]
+    fn a_joint_kept_by_enter_leaves_the_selection() {
+        let (mut app, _) = two_parts();
+        let mut hand = super::super::hand::Hand::new(&mut app);
+        hand.key(egui::Key::J);
+        assert!(hand.app.side.joint.pick_faces, "setup: J did not take the joint");
+        qymcad_assembly::set_joint_anchor_mode_for_test(&mut hand.app.joint_ctx(), 3); // "by origins"
+        let bodies: Vec<_> = (0..hand.app.project.bodies.len()).filter_map(|mi| hand.app.project.mesh_id(mi)).collect();
+        qymcad_assembly::joint_pick_origin_click_for_test(&mut hand.app.joint_ctx(), bodies[0]);
+        qymcad_assembly::joint_pick_origin_click_for_test(&mut hand.app.joint_ctx(), bodies[1]);
+        assert_eq!(hand.app.project.joints.len(), 1, "setup: the joint was not made");
+        hand.key(egui::Key::Enter);
+        assert_eq!(hand.app.project.joints.len(), 1, "Enter did not keep the joint");
+        assert!(hand.app.side.joint.edit.is_none(), "Enter left the joint open for editing");
+        assert!(!hand.app.side.joint.pick_faces, "Enter on a joint just made took the joint tool again for another pair");
+    }
+
+    /// THE KEY OF THE JOINT PRESSED AGAIN PUTS IT DOWN, as its button pressed again does.
+    #[test]
+    fn the_key_of_the_joint_pressed_again_puts_it_down() {
+        let (mut app, _) = two_parts();
+        let mut hand = super::super::hand::Hand::new(&mut app);
+        hand.key(egui::Key::J);
+        assert!(hand.app.side.joint.pick_faces, "setup: J did not take the joint");
+        hand.key(egui::Key::J);
+        assert!(!hand.app.side.joint.pick_faces, "J pressed again left the joint tool in hand");
+    }
 }

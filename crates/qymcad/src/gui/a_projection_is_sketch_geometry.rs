@@ -34,7 +34,7 @@ mod tests {
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
         crate::gui::sketching::project_clicked_edge(&mut app.sketch_ctx(), si, rect, egui::pos2(450.0, 350.0));
         assert_eq!(app.project.sketches[si].projected_entities().len(), 4, "GUARD: the outline of the top face projected");
-        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, qymcad_ui_state::ClickTool::Project); // the tool put down
+        crate::gui::sketching::sketch_select_mode(&mut app.sketch_ctx()); // the tool put down
         si
     }
 

@@ -155,7 +155,6 @@ pub fn mirror_part_apply(
     let cwt = project.world_transform(qymcad_ui_state::current_ctx_id(active_path, project));
     let (wo, wn) = (qymcad_core::feature::apply12(&cwt, o), qymcad_core::feature::apply12_dir(&cwt, n));
     let cnt = project.add_mirror_component(src, wo, wn).len();
-    mirror.drop_part();
     regen.pending = true; // the scheduler builds the copy once the operation is closed
     *status = Notice::info(qymcad_i18n::tr1("vp-mirror-created", "n", &cnt.to_string()));
     qymcad_ui_state::close_edit(edits, project);

@@ -145,7 +145,13 @@ pub(crate) fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, k
         }
     };
     let gate = command_gate(pc, ctx).with_fields(&pc.cmd.params, pc.project);
-    qymcad_ui_state::Described { head: qymcad_ui_state::Head { icon: ph::CUBE, name: command_title(kind), ends: qymcad_ui_state::Ends::ApplyCancel }, bar, gate, says, boxed: None }
+    qymcad_ui_state::Described {
+        head: qymcad_ui_state::Head { icon: ph::CUBE, name: command_title(kind), ends: qymcad_ui_state::Ends::ApplyCancel, after: qymcad_ui_state::AfterApply::Select },
+        bar,
+        gate,
+        says,
+        boxed: None,
+    }
 }
 
 /// The sides a shell's wall goes to, in the order its bar shows them.

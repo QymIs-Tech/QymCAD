@@ -34,6 +34,13 @@ struct CommandTool<'a, 'b> {
     kind: qymcad_ui_state::PartTool,
 }
 
+impl CommandTool<'_, '_> {
+    /// Does Enter take an extrusion or a revolution from the flat choice of its contours, the contours picked, into 3D.
+    fn takes_into_3d(&self) -> bool {
+        self.kind.picks_profiles() && !*self.pc.mode_3d && !self.pc.gsel.profiles.is_empty()
+    }
+}
+
 impl FramedTool for CommandTool<'_, '_> {
     fn describe(&mut self, ctx: &egui::Context) -> Described {
         command_step(self.pc, ctx);
@@ -42,6 +49,10 @@ impl FramedTool for CommandTool<'_, '_> {
         // a name that will not do keeps Enter from laying the feature unnamed
         if let Some(spec) = d.boxed.as_ref().filter(|_| d.gate.open()) {
             d.gate = qymcad_ui_state::names_gate(&spec.names);
+        }
+        // Enter in the flat choice of the contours takes the command into 3D, not out of the hand
+        if self.takes_into_3d() {
+            d.head.after = qymcad_ui_state::AfterApply::Stays;
         }
         d
     }
@@ -73,17 +84,22 @@ impl FramedTool for CommandTool<'_, '_> {
     /// Enter of an extrusion or a revolution in the flat choice of its contours, the contours picked, takes the command
     /// into 3D to set its size there - the gizmo or the field; the next Enter applies it.
     fn apply(&mut self) -> Result<(), NotApplied> {
-        let pc = &mut *self.pc;
-        if self.kind.picks_profiles() && !*pc.mode_3d && !pc.gsel.profiles.is_empty() {
-            *pc.mode_3d = true;
-            *pc.status = Notice::info(qymcad_i18n::tr("in-drag-or-type"));
+        if self.takes_into_3d() {
+            *self.pc.mode_3d = true;
+            *self.pc.status = Notice::info(qymcad_i18n::tr("in-drag-or-type"));
             return Ok(());
         }
-        apply_feat_cmd(pc)
+        apply_feat_cmd(self.pc)
     }
 
     fn cancel(&mut self) {
         qymcad_ui_state::cancel_feat_cmd(self.pc);
+    }
+
+    /// The command is closed as a whole. `apply_feat_cmd` closes it too as it finishes the operation cleanly, for the
+    /// checks and the trial build that apply it with no frame; closing a closed command changes nothing.
+    fn put_down(&mut self) {
+        self.pc.cmd.close(self.pc.armed);
     }
 
     /// The choice of a contour of a sweep or a loft is let go first, returning to 3D; then a reference being picked -
@@ -192,7 +208,6 @@ impl FramedTool for BoolTool<'_, '_> {
         if self.pc.boolean.pick.is_some() {
             return apply_boolean(self.pc);
         }
-        self.pc.boolean.edit = None;
         *self.pc.status = Notice::info(qymcad_i18n::tr("in-bool-done"));
         Ok(())
     }
@@ -200,12 +215,17 @@ impl FramedTool for BoolTool<'_, '_> {
     /// Made, it is let go; reopened, the node is left with the kind it had.
     fn cancel(&mut self) {
         if self.pc.boolean.pick.is_some() {
-            self.pc.boolean.pick = None;
-            self.pc.boolean.b = None;
+            self.put_down();
             *self.pc.status = Notice::info(qymcad_i18n::tr("in-bool-cancelled"));
         } else {
             bool_edit_cancel(self.pc);
         }
+    }
+
+    /// The bodies taken and the node reopened are let go.
+    fn put_down(&mut self) {
+        let b = &mut *self.pc.boolean;
+        (b.pick, b.b, b.edit) = (None, None, None);
     }
 }
 
@@ -248,9 +268,14 @@ impl FramedTool for CompArrayTool<'_, '_> {
     }
 
     fn cancel(&mut self) {
+        self.put_down();
+        *self.pc.status = Notice::info(qymcad_i18n::tr("msg-comp-array-cancelled"));
+    }
+
+    /// The command is closed as a whole. `apply_comp_array` closes it too, for the checks that apply it with no frame.
+    fn put_down(&mut self) {
         *self.pc.carr = qymcad_ui_state::CompArrayCmd::default();
         self.pc.cmd.params.clear();
-        *self.pc.status = Notice::info(qymcad_i18n::tr("msg-comp-array-cancelled"));
     }
 
     /// An axis being picked is let go first.
@@ -297,11 +322,9 @@ impl FramedTool for GizmoTool<'_, '_> {
             field.txt = String::new();
             pc.body_giz.num_field = vec![field];
         }
-        let head = if self.step.rot {
-            qymcad_ui_state::Head { icon: ph::ARROWS_CLOCKWISE, name: qymcad_i18n::tr("tool-rotate"), ends: qymcad_ui_state::Ends::ApplyCancel }
-        } else {
-            qymcad_ui_state::Head { icon: ph::ARROWS_OUT_CARDINAL, name: qymcad_i18n::tr("tool-move"), ends: qymcad_ui_state::Ends::ApplyCancel }
-        };
+        let icon = if self.step.rot { ph::ARROWS_CLOCKWISE } else { ph::ARROWS_OUT_CARDINAL };
+        let name = qymcad_i18n::tr(if self.step.rot { "tool-rotate" } else { "tool-move" });
+        let head = qymcad_ui_state::Head { icon, name, ends: qymcad_ui_state::Ends::ApplyCancel, after: qymcad_ui_state::AfterApply::Select };
         // its gizmo is kept clear of as every one (`keep_in_sight`)
         let mut spec = qymcad_ui_state::BoxSpec::by(qymcad_ui_state::Place::by(qymcad_ui_state::By::Point(o)));
         spec.focus = qymcad_ui_state::Focus::take(&mut pc.body_giz.num_focus);
@@ -319,11 +342,15 @@ impl FramedTool for GizmoTool<'_, '_> {
     fn apply(&mut self) -> Result<(), NotApplied> {
         let by = self.pc.body_giz.num_field.first().map_or(0.0, |p| p.val);
         gizmo_move(self.pc, self.on, GizmoStep { by, ..self.step });
-        self.cancel();
         Ok(())
     }
 
+    /// The move typed is let go: nothing was made on the way.
     fn cancel(&mut self) {
+        self.put_down();
+    }
+
+    fn put_down(&mut self) {
         self.pc.body_giz.num = None;
         self.pc.body_giz.num_field.clear();
     }
@@ -371,12 +398,20 @@ impl FramedTool for PlaneTools<'_, '_> {
         match self.tool {
             PlaneTool::MirrorPart => mirror_part_apply(pb.mirror, pb.project, pb.edits, pb.regen, pb.active_path, pb.status),
             PlaneTool::Section => {
-                pb.section.pick = false;
                 *pb.status = Notice::info(qymcad_i18n::tr("vp-section-on"));
                 Ok(())
             }
             // what is pointed at, not applied
             PlaneTool::Measure | PlaneTool::SketchFor(_) | PlaneTool::Pencil => Ok(()),
+        }
+    }
+
+    /// The mirrored copy made lets go of its part and plane; the section placed stays on, no longer in hand.
+    fn put_down(&mut self) {
+        match self.tool {
+            PlaneTool::MirrorPart => self.pb.mirror.drop_part(),
+            PlaneTool::Section => self.pb.section.pick = false,
+            PlaneTool::Measure | PlaneTool::SketchFor(_) | PlaneTool::Pencil => {}
         }
     }
 

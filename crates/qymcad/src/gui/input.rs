@@ -155,6 +155,10 @@ impl App {
         }
         // which press a tool key answers to (bare, Alt from a field, Ctrl always) is decided by `pressed_chord`
         let Some(key) = qymcad_ui_state::pressed_chord(ctx) else { return };
+        let mut asks = Vec::new();
+        if crate::command_catalog::key_again(&mut self.bar_ctx(&mut asks), key) {
+            return self.do_bar_asks(asks, ctx);
+        }
         if qymcad_ui_state::edit_si(&self.project, &self.sketch_ses).is_some() {
             self.sketch_hotkey(key);
         } else {

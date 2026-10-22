@@ -415,10 +415,10 @@ const ROWS: &[Command] = &[
     },
 ];
 
-/// PRESS A COMMAND OF THE SKETCH: what its button did, through the doors its button used. A tool in hand pressed
-/// again is put down, as every tool button does.
+/// PRESS A COMMAND OF THE SKETCH: what its button did, through the doors its button used. A tool in hand pressed again
+/// never reaches here: it is put down by the one door every press goes through (`catalogue::again`).
 pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
-    use qymcad_ui_state::{take_or_drop, BarAsk};
+    use qymcad_ui_state::BarAsk;
     // A TOOL OF A SKETCH WITH NO SKETCH OPEN IS REFUSED IN WORDS: the search offers every command, and taken in a part
     // a dimension turned the view flat with no bar, swallowed every click and left the view flat after Esc
     if qymcad_ui_state::edit_si(&*bc.project, &*bc.sketch_ses).is_none() {
@@ -427,7 +427,7 @@ pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
     }
     match launch {
         Launch::SketchSelect => bc.ask.push(BarAsk::SketchSelectMode),
-        Launch::SkTool(n) => bc.ask.push(take_or_drop(bc.armed.drawing() == Some(n), BarAsk::SketchTool(n))),
+        Launch::SkTool(n) => bc.ask.push(BarAsk::SketchTool(n)),
         // WHAT IS SELECTED IS TURNED, as the construction switch of the professional systems does; with nothing
         // selected the switch says what is drawn next
         Launch::Construction => qymcad_ui_state::construction_toggle(qymcad_ui_state::editing_in!(bc), &*bc.sel_sk, &*bc.sketch_ses, &mut bc.tool.construction),
@@ -441,27 +441,19 @@ pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
             }
         }
         // "FILLET ALL" IS A TOOL IN HAND like its neighbours: pressed, it puts down what is held and takes what is
-        // selected or waits for a shape; pressed again, it is put down
+        // selected or waits for a shape
         Launch::FilletAll => {
-            let held = qymcad_ui_state::catalogue::pressed(launch, bc);
             qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(bc));
-            if !held {
-                qymcad_ui_state::fillet_all_corners(&*bc.project, &mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status);
-            }
+            qymcad_ui_state::fillet_all_corners(&*bc.project, &mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status);
         }
         Launch::SkMove(n) => start_move_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, n),
         Launch::Dim(n) => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sel, *bc.sketch_ses, &mut *bc.status, n),
         Launch::Measure2d => {
-            let on = !bc.armed.measuring();
             // THROUGH THE DOOR, in the order every other tool uses. Setting the flag here and asking for "back to
             // selection" afterwards turned the tool on and then straight off again.
-            qymcad_ui_state::set_measure(&mut qymcad_ui_state::tools_in!(bc), on);
-            if on {
-                *bc.mode_3d = false;
-                *bc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("in-measure-hint"));
-            } else {
-                *bc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("in-measure-off"));
-            }
+            qymcad_ui_state::set_measure(&mut qymcad_ui_state::tools_in!(bc), true);
+            *bc.mode_3d = false;
+            *bc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("in-measure-hint"));
         }
         Launch::Constraint(n) => bc.ask.push(BarAsk::Constraint(n)),
         // the commands of the part and of the assembly are pressed by their own workbenches
@@ -472,35 +464,25 @@ pub fn press(launch: Launch, bc: &mut qymcad_ui_state::BarCtx) {
 /// Turn on interactive moving, copying or rotating: pick, then the base point or centre, then the target (for a
 /// rotation, the angle in the popup).
 pub fn start_move_tool(t: &mut qymcad_ui_state::Tools, status: &mut qymcad_ui_state::Notice, op: qymcad_ui_state::MoveKind) {
-    let cur = t.armed.moving();
     qymcad_ui_state::exit_draw_tools(&mut t.reborrow());
     let qymcad_ui_state::Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk, tool } = t;
     sel_sk.modify = None;
-    **armed = if cur == Some(op) { qymcad_ui_state::Armed::None } else { qymcad_ui_state::Armed::Move(op) };
+    **armed = qymcad_ui_state::Armed::Move(op);
     tool.move_base = None;
     let has_sel = sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Curve);
     let what = if op == qymcad_ui_state::MoveKind::Rotate { qymcad_i18n::tr("f-rotation-centre") } else { qymcad_i18n::tr("f-base-point") };
-    *status = if armed.moving().is_none() {
-        Notice::info(qymcad_i18n::tr("msg-cancelled"))
-    } else {
-        Notice::info(if has_sel { qymcad_i18n::tr1("cmd-click-what", "what", &what) } else { qymcad_i18n::tr1("cmd-select-then-click", "what", &what) })
-    };
+    *status = Notice::info(if has_sel { qymcad_i18n::tr1("cmd-click-what", "what", &what) } else { qymcad_i18n::tr1("cmd-select-then-click", "what", &what) });
 }
 
 /// Turn on the array feature, linear or circular: pick, then parameters, then Enter, with a preview.
 pub fn start_pattern(t: &mut qymcad_ui_state::Tools, status: &mut qymcad_ui_state::Notice, op: qymcad_ui_state::PatternKind) {
-    let cur = t.armed.pattern();
     qymcad_ui_state::exit_draw_tools(&mut t.reborrow()); // drops the other modes (move, click-op) and `pat.op`
     let qymcad_ui_state::Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat, pending_import: _, picking: _, place: _, sel_sk, tool: _ } = t;
     sel_sk.modify = None;
-    **armed = if cur == Some(op) { qymcad_ui_state::Armed::None } else { qymcad_ui_state::Armed::Pattern(op) };
+    **armed = qymcad_ui_state::Armed::Pattern(op);
     pat.edit = None;
     pat.center = None;
-    *status = if armed.pattern().is_none() {
-        Notice::info(qymcad_i18n::tr("msg-cancelled"))
-    } else {
-        Notice::info(if armed.pattern() == Some(qymcad_ui_state::PatternKind::Circular) { qymcad_i18n::tr("msg-circ-array-sketch") } else { qymcad_i18n::tr("msg-lin-array-sketch") })
-    };
+    *status = Notice::info(qymcad_i18n::tr(if op == qymcad_ui_state::PatternKind::Circular { "msg-circ-array-sketch" } else { "msg-lin-array-sketch" }));
 }
 
 /// THE SWITCHES OF A SKETCH on the bar of the path: while a shape is drawn point by point, closing, finishing or

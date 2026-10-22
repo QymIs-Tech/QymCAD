@@ -488,7 +488,6 @@ pub fn apply_boolean(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotApplied
     }
     qymcad_ui_state::begin_edit(&mut *pc.edits, &*pc.project, qymcad_i18n::tr("f-operation"));
     let res = pc.project.add_body_boolean(a, b, op);
-    (pc.boolean.pick, pc.boolean.b) = (None, None);
     qymcad_ui_state::mark_dirty_for_rebuild(&mut pc.rebuild()); // the document is marked; the scheduler does the computing
     let (project, sel, view) = (&mut *pc.project, &mut *pc.sel, &mut *pc.view);
     qymcad_ui_state::select_body(project, sel, view, res);

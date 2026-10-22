@@ -56,9 +56,9 @@ fn put_away(sk: &mut qymcad_ui_state::SketchCtx) {
     sk.dim.put_away();
 }
 
-/// The head of an editor: its name by its catalogue key, Apply and Cancel.
+/// The head of an editor: its name by its catalogue key, Apply and Cancel; applied, the tool under it stays in hand.
 fn head(icon: &'static str, name: &str) -> Head {
-    Head { icon, name: qymcad_i18n::tr(name), ends: Ends::ApplyCancel }
+    Head { icon, name: qymcad_i18n::tr(name), ends: Ends::ApplyCancel, after: qymcad_ui_state::AfterApply::Stays }
 }
 
 /// THE BAR UNDER AN EDITOR AT THE GEOMETRY IS THE BAR OF THE TOOL IN HAND, its modes and its hint as they stand without
@@ -774,14 +774,14 @@ impl FramedTool for CornerEdit<'_, '_> {
         sk.corner.clear();
     }
 
+    /// The set goes and the corner tool stays for the next corner; the next Esc puts it down.
     fn back(&mut self) -> Stepped {
         self.cancel();
-        escape_step(self.sk);
         Stepped::Back
     }
 
-    /// ONE Esc PUTS THE TOOL DOWN, its field holding the keyboard or not: the set goes and the tool steps back, as Esc
-    /// does with the field let go.
+    /// ONE Esc ENDS THE BOX, its field holding the keyboard or not: the set goes and the corner tool stays, as Esc does
+    /// with the field let go.
     fn field_did(&mut self, did: qymcad_ui_state::FieldDid) {
         if did == qymcad_ui_state::FieldDid::LeftByEsc {
             self.back();
@@ -920,14 +920,13 @@ impl FramedTool for OffsetEdit<'_, '_> {
         *self.sk.status = Notice::info(qymcad_i18n::tr("sk-offset-side"));
     }
 
+    /// The side is freed and the offset stays in hand; the next Esc puts it down.
     fn back(&mut self) -> Stepped {
         self.cancel();
-        escape_step(self.sk);
         Stepped::Back
     }
 
-    /// ONE Esc PUTS THE TOOL DOWN, its field holding the keyboard or not: the set goes and the tool steps back, as Esc
-    /// does with the field let go.
+    /// ONE Esc FREES THE SIDE, its field holding the keyboard or not, as Esc does with the field let go.
     fn field_did(&mut self, did: qymcad_ui_state::FieldDid) {
         if did == qymcad_ui_state::FieldDid::LeftByEsc {
             self.back();

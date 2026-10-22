@@ -37,16 +37,6 @@ pub fn enter_not_ready(ctx: &egui::Context, status: &mut Notice, ask: &str) {
     }
 }
 
-/// WHAT A TOOL BUTTON ASKS FOR: its tool when the hand is free of it, the hand put down when that tool is already in
-/// it - a sketch tool back to the arrow, a command cancelled - as the button of every tool of a professional CAD does.
-pub fn take_or_drop(held: bool, ask: BarAsk) -> BarAsk {
-    match (held, ask) {
-        (false, ask) => ask,
-        (true, BarAsk::SketchTool(_)) => BarAsk::SketchSelectMode,
-        (true, _) => BarAsk::CancelAllTools(Then::Nothing),
-    }
-}
-
 pub fn icon_tool(ui: &mut egui::Ui, icon: IconId, tip: &str, active: bool) -> bool {
     let img = icon_image(ui, icon, 22.0);
     let btn = egui::Button::image(img).selected(active);

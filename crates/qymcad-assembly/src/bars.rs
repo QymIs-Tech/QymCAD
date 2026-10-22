@@ -1,7 +1,7 @@
 //! THE BARS OF A JOINT: editing it, making it, the tool bar - each described as data and drawn by the frame.
 
 use qymcad_core::feature::{JointKind, RelationKind};
-use qymcad_ui_state::{AsLit, Described, Did, Ends, Gate, Head, Notice, Opt, OptKey};
+use qymcad_ui_state::{AfterApply, AsLit, Described, Did, Ends, Gate, Head, Notice, Opt, OptKey};
 use super::*;
 
 /// Every kind of joint, in the order the bars offer them. THERE IS ONE SET OF KINDS: a joint states the degrees of
@@ -28,7 +28,7 @@ fn anchor_inferred() -> Opt {
 /// The name the bar of JOINT EDIT MODE gives joint `j`; the frame tells the fields of its box apart by it.
 pub(crate) fn joint_edit_head(j: &qymcad_core::feature::Joint) -> Head {
     // a joint being made or reopened is a command, as every tool is: Apply keeps what was done, Cancel and Esc take it away
-    Head { icon: ph::LINK, name: qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name)), ends: Ends::ApplyCancel }
+    Head { icon: ph::LINK, name: qymcad_i18n::tr1("jt-editing", "name", &qymcad_i18n::name(&j.name)), ends: Ends::ApplyCancel, after: AfterApply::Select }
 }
 
 /// The top bar of JOINT EDIT MODE (a double click on the glyph): the joint's name, its kind, the anchors A and B - each
@@ -75,9 +75,8 @@ pub fn joint_create_finish(jc: &mut qymcad_ui_state::JointCtx, keep: bool) {
         qymcad_ui_state::abort_edit(&mut jc.rebuild());
     }
     qymcad_ui_state::exit_joint_edit(jc.joint, jc.status);
-    // A JOINT KEPT LEAVES THE TOOL IN HAND for the next pair, as a mate dialog does; one taken away puts it down
+    // a joint kept leaves the selection in hand, as every command applied does (`AfterApply::Select`)
     if keep {
-        (jc.joint.pick_faces, jc.joint.pick_first) = (true, None);
         *jc.status = Notice::info(qymcad_i18n::tr("j-created"));
     }
 }
@@ -105,7 +104,7 @@ pub fn joint_edit_leave(jc: &mut qymcad_ui_state::JointCtx) {
 }
 
 /// THE ASSEMBLY TOOL IN HAND as its bar describes it, and how it is put down.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AsmTool {
     Tangent,
     Width,
@@ -141,7 +140,7 @@ impl AsmTool {
 
 /// THE ASSEMBLY TOOL AS ITS BAR DESCRIBES IT: what it asks for, what it has taken, its options.
 pub(crate) fn asm_tool_described(jc: &qymcad_ui_state::JointCtx, tool: &AsmTool) -> Described {
-    let head = |icon, name: &str, ends| Head { icon, name: qymcad_i18n::tr(name), ends };
+    let head = |icon, name: &str, ends| Head { icon, name: qymcad_i18n::tr(name), ends, after: AfterApply::Select };
     // what is pointed at, not typed: Enter before it has nothing to make
     let asking = |head: Head, mut bar: Vec<Opt>, ask: String| {
         bar.push(Opt::Readout(ask.clone()));

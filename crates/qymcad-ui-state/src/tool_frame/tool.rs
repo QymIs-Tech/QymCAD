@@ -23,6 +23,9 @@ pub trait FramedTool {
     fn apply(&mut self) -> Result<(), NotApplied>;
     /// Put the tool down, what it made on the way taken away.
     fn cancel(&mut self) {}
+    /// Put the tool down, what it made kept: asked by the frame after an Apply that went through, when the head says the
+    /// selection comes after it ([`AfterApply::Select`]). A tool that stays in hand is never asked.
+    fn put_down(&mut self) {}
     /// Esc with no field holding the keyboard: let go of one thing, or say there is nothing left to let go of - a tool
     /// that picks nothing along the way has nothing, and Esc puts it down.
     fn back(&mut self) -> Stepped {
@@ -120,7 +123,7 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
     for d in fields_did.into_iter().filter(|d| *d == FieldDid::LeftByEsc) {
         tool.field_did(d);
     }
-    go_through(&ctx, &described.gate, verdict, &mut Through { tool: &mut *tool });
+    go_through(&ctx, &described.gate, verdict, &mut Through { tool: &mut *tool, after: described.head.after });
 }
 
 /// THE BAR HOLDS WHAT IS SWITCHED AND PRESSED, THE BOX WHAT IS TYPED: a number a tool describes for its bar - the sides of
@@ -177,11 +180,17 @@ pub fn tool_field_id(head: &Head, key: &str) -> egui::Id {
 /// THE DOORS OF A FRAMED TOOL, as the frame goes through them.
 struct Through<'a, 'b> {
     tool: &'a mut (dyn FramedTool + 'b),
+    after: AfterApply,
 }
 
 impl Doors for Through<'_, '_> {
+    /// THE ONE PLACE A TOOL IS PUT DOWN AFTER ITS APPLY: applied, and its head saying the selection comes after it.
     fn apply(&mut self) -> Result<(), NotApplied> {
-        self.tool.apply()
+        self.tool.apply()?;
+        if self.after == AfterApply::Select {
+            self.tool.put_down();
+        }
+        Ok(())
     }
 
     fn cancel(&mut self) {

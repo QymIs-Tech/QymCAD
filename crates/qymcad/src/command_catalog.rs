@@ -46,11 +46,48 @@ pub fn part_tool_of(code: &str) -> Option<qymcad_ui_state::PartTool> {
 }
 
 /// PRESS A COMMAND, through the workbench that gave its row: its button, its row of "More" and the search come here
-/// alike.
+/// alike. The command in hand pressed again is put down (`catalogue::again`).
 pub fn press(cmd: &Command, bc: &mut qymcad_ui_state::BarCtx) {
+    if let Some(down) = qymcad_ui_state::catalogue::again(cmd.launch, bc) {
+        bc.ask.push(down);
+        return;
+    }
     if let Some(bench) = BENCHES.into_iter().find(|b| b.rows.iter().any(|r| r.code == cmd.code)) {
         (bench.press)(cmd.launch, bc);
     }
+}
+
+/// THE KEY OF THE COMMAND IN HAND PRESSED AGAIN puts it down, as its button pressed again does: what is asked for is in
+/// `bc.ask`, and the key is spent. Any other key is left to the keys of its workbench. A letter typed into a field never
+/// reaches here (`pressed_chord`).
+pub fn key_again(bc: &mut qymcad_ui_state::BarCtx, key: qymcad_ui_state::Chord) -> bool {
+    let area = if qymcad_ui_state::edit_si(&*bc.project, &*bc.sketch_ses).is_some() {
+        "sketch"
+    } else {
+        match *bc.workbench {
+            qymcad_ui_state::Workbench::Part => "part",
+            qymcad_ui_state::Workbench::Assembly => "assembly",
+            _ => return false,
+        }
+    };
+    let Some(cmd) = qymcad_ui_state::hotkey_action(&*bc.set, area, key).and_then(command_of_key) else { return false };
+    let Some(down) = qymcad_ui_state::catalogue::again(cmd.launch, bc) else { return false };
+    bc.ask.push(down);
+    true
+}
+
+/// THE ROW OF THE CATALOGUE A KEY TAKES: the row under the code of its action, or for the keys whose action is named
+/// apart from the row they take, that row. A cut is no command of its own - it is the extrusion with the operation of a
+/// cut - and has none.
+fn command_of_key(action: &str) -> Option<&'static Command> {
+    let code = match action {
+        "sketch.corner-fillet" => "sketch.corner",
+        "part.sketch-pick" => "part.sketch",
+        "assembly.rigid-joint" => "assembly.joint",
+        "assembly.datum-plane" => DATUM_PLANE,
+        other => other,
+    };
+    by_code(code)
 }
 
 /// WHAT A PERSON CALLS A COMMAND, and where its help is.

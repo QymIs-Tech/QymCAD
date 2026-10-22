@@ -2,7 +2,7 @@
 //! is always one - with nothing in hand it is the selection. Its bar, the box of the sizes of a shape and of the angle of
 //! a turn, its Enter and its Esc are the frame's; what is the sketch's own is here.
 
-use qymcad_ui_state::{Described, Did, Ends, FramedTool, Gate, Head, NotApplied, Notice, Opt, Stepped};
+use qymcad_ui_state::{AfterApply, Described, Did, Ends, FramedTool, Gate, Head, NotApplied, Notice, Opt, Stepped};
 use super::*;
 
 /// THE TOOL OF THE SKETCH OPEN FOR EDITING; none while no sketch is open.
@@ -114,7 +114,7 @@ impl FramedTool for InSketch<'_, '_> {
         self.boxed = Boxed::Nothing;
         self.gate = Gate::Open;
         let sk = &mut *self.sk;
-        let head = |name: String, ends| Head { icon: ph::PENCIL_SIMPLE, name, ends };
+        let head = |name: String, ends| Head { icon: ph::PENCIL_SIMPLE, name, ends, after: AfterApply::Stays };
         match now(sk) {
             // FILLET ALL holds the hand: its name, what to do, the way out; the radius is typed in the field at the shape
             Now::FilletAll => {
@@ -150,7 +150,10 @@ impl FramedTool for InSketch<'_, '_> {
                     Boxed::Nothing if empty => Ends::Nothing,
                     Boxed::Nothing => Ends::Close,
                 };
-                Described { head: head(name, ends), bar, gate: self.gate.clone(), says: Vec::new(), boxed }
+                // THE TURN AND THE PATTERN DO ONE THING: made, the selection is in hand; a shape, a dimension, the corner and
+                // the offset stay for the next
+                let after = if self.boxed == Boxed::Turn || (self.boxed == Boxed::Nothing && pattern) { AfterApply::Select } else { AfterApply::Stays };
+                Described { head: Head { after, ..head(name, ends) }, bar, gate: self.gate.clone(), says: Vec::new(), boxed }
             }
         }
     }
@@ -198,15 +201,13 @@ impl FramedTool for InSketch<'_, '_> {
                         turn_by(sk, &turn, v);
                     }
                 }
-                *sk.armed = qymcad_ui_state::Armed::None;
-                sk.tool.move_base = None;
                 return Ok(());
             }
             Boxed::Nothing => {}
         }
         let pointer = self.ctx.as_ref().and_then(|c| c.input(|i| i.pointer.hover_pos())).filter(|p| sk.canvas.contains(*p));
         if sk.armed.pattern().is_some() {
-            confirm_pattern(sk, si);
+            return confirm_pattern(sk, si);
         } else if sk.armed.click_tool() == Some(qymcad_ui_state::ClickTool::Extend) {
             // the extension Extend previews, made as a click makes it
             let Some(held) = sk.tool.extend else { return Ok(()) };
@@ -249,16 +250,11 @@ impl FramedTool for InSketch<'_, '_> {
                 Boxed::Shape => {
                     self.back();
                 }
-                Boxed::Turn => {
-                    *sk.armed = qymcad_ui_state::Armed::None;
-                    sk.tool.move_base = None;
-                }
+                Boxed::Turn => self.put_down(),
                 Boxed::Nothing => {
                     if sk.armed.pattern().is_some() {
-                        *sk.armed = qymcad_ui_state::Armed::None;
-                        sk.pat.edit = None;
-                        sk.pat.center = None;
-                        *sk.status = Notice::info(qymcad_i18n::tr("in-array-cancelled"));
+                        self.put_down();
+                        *self.sk.status = Notice::info(qymcad_i18n::tr("in-array-cancelled"));
                     } else {
                         let mut said = tools_said(sk);
                         if let Some(msg) = qymcad_ui_state::release_armed_sketch_tool(&mut said.tools) {
@@ -270,8 +266,13 @@ impl FramedTool for InSketch<'_, '_> {
         }
     }
 
-    /// ONE STEP OF THE Esc OF A SKETCH (`escape_step`). Esc in the box of the sizes of a shape is a step of its own: the
-    /// shape stays without the sizes typed, and the drawing tool stays in hand - the next Esc puts it down.
+    /// The turn made, the pattern made: every tool of the sketch put down, the arrow in hand.
+    fn put_down(&mut self) {
+        qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(self.sk));
+    }
+
+    /// ONE STEP OF THE Esc OF A SKETCH (`escape_step`). The box of the sizes of a shape is a step of its own: it goes, the
+    /// tool that drew the shape stays for the next, and the next Esc puts the tool down.
     fn back(&mut self) -> Stepped {
         if self.boxed == Boxed::Shape {
             self.sk.place.clear();
@@ -282,13 +283,12 @@ impl FramedTool for InSketch<'_, '_> {
     }
 
     /// ONE Esc ENDS THE BOX OF A SHAPE, its field holding the keyboard or not: the shape stays as it stands, the sizes
-    /// typed are not laid, the tool stays in hand. A value typed into the box of a shape is a size meant: Enter lays it.
+    /// typed are not laid, and the tool that drew it stays in hand. A value typed into the box of a shape is a size
+    /// meant: Enter lays it.
     fn field_did(&mut self, did: qymcad_ui_state::FieldDid) {
         match did {
             qymcad_ui_state::FieldDid::Typed if self.boxed == Boxed::Shape => self.sk.place.typed = true,
-            qymcad_ui_state::FieldDid::LeftByEsc if self.boxed == Boxed::Shape => {
-                self.back();
-            }
+            qymcad_ui_state::FieldDid::LeftByEsc if self.boxed == Boxed::Shape => self.sk.place.clear(),
             _ => {}
         }
     }
@@ -310,8 +310,9 @@ impl FramedTool for InSketch<'_, '_> {
     }
 }
 
-/// APPLY OR UPDATE THE PATTERN of the sketch: one step of undo, the tool put down after it.
-fn confirm_pattern(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
+/// APPLY OR UPDATE THE PATTERN of the sketch: one step of undo; nothing chosen to repeat, it is refused in words and the
+/// tool stays in hand.
+fn confirm_pattern(sk: &mut qymcad_ui_state::SketchCtx, si: usize) -> Result<(), NotApplied> {
     qymcad_ui_state::begin_edit(&mut *sk.edits, &*sk.project, qymcad_i18n::tr("g-sketch-array")); // THE OPERATION BOUNDARY
     if let Some(pi) = sk.pat.edit {
         let src = sk.project.sketches.get(si).and_then(|s| s.patterns.get(pi)).map(|p| p.source.clone()).unwrap_or_default();
@@ -321,18 +322,16 @@ fn confirm_pattern(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
     } else {
         let eids = qymcad_ui_state::shapes_chosen(&*sk.project, si, &*sk.sel_sk);
         if eids.is_empty() {
-            *sk.status = Notice::info(qymcad_i18n::tr("g-select-for-array"));
-            return;
+            qymcad_ui_state::abort_edit(&mut sk.rebuild());
+            return Err(NotApplied::Refused(qymcad_i18n::tr("g-select-for-array")));
         }
         let kind = qymcad_ui_state::current_pattern_kind(&*sk.armed, *sk.pat, &*sk.project, *sk.sk_pat, si, &eids);
         sk.project.add_pattern(si, &eids, kind);
         *sk.status = Notice::info(qymcad_i18n::tr("g-array-created"));
     }
-    *sk.armed = qymcad_ui_state::Armed::None;
-    sk.pat.edit = None;
-    sk.pat.center = None;
     qymcad_ui_state::invalidate(&mut *sk.regen);
     qymcad_ui_state::commit_edit(&mut sk.rebuild());
+    Ok(())
 }
 
 /// THE TOOLS OF A SKETCH AND ITS STATUS LINE, borrowed apart: what Esc puts down, and where it says so.
