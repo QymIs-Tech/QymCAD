@@ -433,7 +433,16 @@ impl FramedTool for InSketch<'_, '_> {
                     }
                 };
                 if follows(&sk.place.shape) == Follows::LaidAnew {
-                    try_on(sk, From::Snapshot, named);
+                    // the part the figures were tried on taken back alone, or the document as the box found it
+                    match sk.dim.trial.as_ref().filter(|_| trying(sk)) {
+                        Some(t) => {
+                            sk.project.trial_restore(t);
+                            named(sk);
+                        }
+                        None => {
+                            try_on(sk, From::Snapshot, named);
+                        }
+                    }
                 } else {
                     named(sk);
                 }
@@ -607,9 +616,11 @@ impl FramedTool for InSketch<'_, '_> {
                 let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return };
                 if sk.place.fields.iter().map(|p| p.val).ne(self.seen.iter().copied()) {
                     match follows(&sk.place.shape) {
-                        Follows::StepByStep => try_on(sk, From::AsItStands, |sk| follow_typed(sk, si)),
-                        Follows::LaidAnew => try_on(sk, From::Snapshot, |sk| shape_lay(sk, si, &self.asks)),
-                    };
+                        Follows::StepByStep => {
+                            try_on(sk, From::AsItStands, |sk| follow_typed(sk, si));
+                        }
+                        Follows::LaidAnew => try_shape(sk, si, &self.asks),
+                    }
                 }
                 // THE SIDES TYPED FOLLOWED BY THE POLYGON IN THE BOX: a number of the bar, they went to the next one drawn
                 if let qymcad_ui_state::PlacingShape::Poly(c) = sk.place.shape {
@@ -624,6 +635,32 @@ impl FramedTool for InSketch<'_, '_> {
             Boxed::Turn => sk.rot.angle = sk.rot.field.first().map_or(0.0, |p| p.val),
             Boxed::Label | Boxed::Note | Boxed::Nothing => {}
         }
+    }
+}
+
+/// A VALUE TYPED INTO THE BOX OF A SHAPE WHOSE SIZES ARE DIMENSIONS, TRIED: the first figure lays the dimensions over the
+/// document as the box found it, and the part of the sketch they hold is found then (`Project::value_trial`), as it
+/// stood when the box was found; every figure after it takes back that part alone and solves it alone.
+fn try_shape(sk: &mut qymcad_ui_state::SketchCtx, si: usize, asks: &[qymcad_ui_state::FieldAsk]) {
+    if !trying(sk) {
+        sk.dim.trial = None;
+    }
+    if sk.dim.trial.is_some() {
+        try_on(sk, From::AsItStands, |sk| {
+            if let Some(t) = sk.dim.trial.as_ref() {
+                sk.project.trial_restore(t);
+            }
+            shape_lay(sk, si, asks)
+        });
+        return;
+    }
+    let laid = try_on(sk, From::Snapshot, |sk| shape_lay(sk, si, asks));
+    if let Some(ci) = laid.flatten() {
+        let mut t = sk.project.value_trial(qymcad_core::model::DimOf { si, ci });
+        if let (Some(t), Some((_, before))) = (t.as_mut(), sk.edits.open.as_ref()) {
+            t.began_in(&before.project);
+        }
+        sk.dim.trial = t;
     }
 }
 

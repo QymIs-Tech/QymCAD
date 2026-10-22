@@ -320,8 +320,9 @@ struct Laid {
 /// THE SIZES OF A SHAPE LAID AS DIMENSIONS - a size typed by hand is a size meant - with what was asked
 /// of them in their rows: a reference, a name, the radius shown for a diameter, the formula typed. A rectangle lays its
 /// width and height once a size of it is typed or touched; a slot each size changed or touched; a circle or an arc its
-/// size, a polygon its radius, when typed or touched. A shape closed untouched is left free.
-pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rows: &[qymcad_ui_state::FieldAsk]) {
+/// size, a polygon its radius, when typed or touched. A shape closed untouched is left free. Answers a dimension laid,
+/// by its place among the constraints of the sketch.
+pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rows: &[qymcad_ui_state::FieldAsk]) -> Option<usize> {
     use qymcad_core::model::SlotSize;
     use qymcad_ui_state::{PlacingShape, Shown};
     let typed = sk.place.typed;
@@ -394,6 +395,7 @@ pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rows: &[
         };
         ask_laid(sk, l.dim, AskOf { shown: asks.of(l.key).shown, row: row(l.key) }, value);
     }
+    laid.first().map(|l| l.dim.ci)
 }
 
 /// DOES A SHAPE FOLLOW ITS FIELDS STEP BY STEP as they are typed - rebuilt from the corner or the centre it was drawn from,

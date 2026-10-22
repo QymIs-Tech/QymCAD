@@ -890,6 +890,9 @@ pub struct DimTool {
     pub field: Vec<CmdParam>,
     /// the text last tried on the dimension in its box, so a value is tried once, not in every frame
     pub tried: Option<String>,
+    /// THE PART OF THE SKETCH THE VALUE TRIED HOLDS, found with the first figure: each figure takes back that part alone
+    /// and solves it alone (`Project::value_trial`)
+    pub trial: Option<qymcad_core::model::ValueTrial>,
     pub focus: bool,
     /// THE FIELD OF THE SIZE OF A CIRCLE OR AN ARC WAS TYPED IN since it opened: only a value typed is laid as a
     /// dimension, as the width and the height of a rectangle are (`Placing::typed`)

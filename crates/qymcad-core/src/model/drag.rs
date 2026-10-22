@@ -180,7 +180,7 @@ pub struct DragSession {
 /// of the points of every entity and constraint, it was 20 ms of a frame on 70 000 rectangles. Where the points stand
 /// is told by `still_stamp`; a constraint moved onto other points with no number changing is not told - nothing does
 /// that in the middle of a drag, and the release rebuilds the sketch whole.
-fn structure_stamp(s: &Sketch) -> u64 {
+pub(crate) fn structure_stamp(s: &Sketch) -> u64 {
     let mut h: u64 = 0;
     let mut mix = |x: u64| h = (h.rotate_left(5) ^ x).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
     for n in [s.points.len(), s.entities.len(), s.constraints.len(), s.figures.len(), s.texts.len()] {
@@ -345,7 +345,7 @@ impl Project {
     }
 
     /// The session of a drag of point `d` in sketch `si` (see the module), `None` where the sketch takes none.
-    fn drag_session(&self, si: usize, d: Id, stamp: u64) -> Option<DragSession> {
+    pub(crate) fn drag_session(&self, si: usize, d: Id, stamp: u64) -> Option<DragSession> {
         let s = self.sketches.get(si)?;
         let origin_drawn = s.origin != 0 && s.entities.iter().any(|e| entity_points(e).contains(&s.origin));
         let frame_missing = (s.origin != 0 || s.axis_pts.iter().any(|g| *g != 0)) && s.frame == 0;
@@ -470,7 +470,7 @@ impl Project {
 
     /// THE LOOPS OF A FRAME through the session: the regions and the open chains round what moved made again
     /// (`round`), the regions that held it before or met where it swept giving way to them.
-    fn frame_loops(&mut self, si: usize, sess: &mut DragSession, moved: &HashSet<Id>) {
+    pub(crate) fn frame_loops(&mut self, si: usize, sess: &mut DragSession, moved: &HashSet<Id>) {
         let s = &self.sketches[si];
         let pos = |id: Id| sess.place.get(&id).map(|&i| (s.points[i].x, s.points[i].y));
         // the curves that moved, by place among the drawn, and their boxes where they stood and where they stand

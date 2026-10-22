@@ -422,8 +422,11 @@ impl DimEdit<'_, '_> {
         let p = sk.dim.field.first()?.clone();
         let text = p.txt.trim().to_string();
         if text == shown_text(&c).trim() {
-            if sk.dim.tried.take().is_some() {
-                try_on(sk, From::Snapshot, |_| ());
+            if sk.dim.tried.take().is_some() && trying(sk) {
+                if let Some(mut t) = sk.dim.trial.take() {
+                    sk.project.trial_back(&mut t);
+                    sk.dim.trial = Some(t);
+                }
             }
             return None;
         }
@@ -435,7 +438,25 @@ impl DimEdit<'_, '_> {
             return None;
         }
         sk.dim.tried = Some(text.clone());
-        try_on(sk, From::Snapshot, |sk| change_dimension(sk, dim, Asked { value: Some(Value { number: p.val, text }), ..Asked::default() }))
+        // THE PART THE DIMENSION HOLDS IS TAKEN BACK, not the document: found with the first figure, as it stood
+        if !trying(sk) {
+            sk.dim.trial = None;
+        }
+        let asked = Asked { value: Some(Value { number: p.val, text }), ..Asked::default() };
+        if sk.dim.trial.is_none() {
+            sk.dim.trial = sk.project.value_trial(qymcad_core::model::DimOf { si: dim.si, ci: dim.ci });
+        }
+        if sk.dim.trial.is_some() {
+            try_on(sk, From::AsItStands, |sk| {
+                if let Some(t) = sk.dim.trial.as_ref() {
+                    sk.project.trial_restore(t);
+                }
+                change_dimension(sk, dim, asked)
+            })
+        } else {
+            // a dimension naming no point of the sketch has no part of its own: the document as the box found it
+            try_on(sk, From::Snapshot, |sk| change_dimension(sk, dim, asked))
+        }
     }
 }
 
@@ -656,6 +677,18 @@ fn change_dimension(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, asked: Asked)
 /// to about 1e-6; the threshold (`SKETCH_FITS`) is above the noise and below any real conflict.
 fn solve_or_roll_back(sk: &mut qymcad_ui_state::SketchCtx, dim: Dim, old_con: Option<Constraint>) {
     let Dim { si, ci } = dim;
+    // A VALUE TRIED SOLVES THE PART IT HOLDS ALONE, and is taken back there when the part does not solve with it
+    if trying(sk) {
+        if let Some(mut t) = sk.dim.trial.take() {
+            let resid = sk.project.solve_trial(&mut t);
+            if resid > qymcad_core::model::SKETCH_FITS {
+                sk.project.trial_back(&mut t);
+                *sk.status = Notice::refusal(qymcad_i18n::tr1("sk-dim-incompatible", "r", &qymcad_i18n::num(resid, 2)));
+            }
+            sk.dim.trial = Some(t);
+            return;
+        }
+    }
     let old_pts: Vec<Point2> = sk.project.sketches[si].points.iter().map(|p| Point2::new(p.x, p.y)).collect();
     let resid = sk.project.solve_sketch(si);
     if resid > qymcad_core::model::SKETCH_FITS {
