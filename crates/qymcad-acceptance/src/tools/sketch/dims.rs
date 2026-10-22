@@ -57,6 +57,7 @@ pub static DIM_LINEAR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/11-dimensions",
     not_applicable: &[
@@ -126,6 +127,7 @@ pub static DIM_RADIUS: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/11-dimensions",
     not_applicable: &[
@@ -168,6 +170,7 @@ pub static DIM_ANGLE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/11-dimensions",
     not_applicable: &[

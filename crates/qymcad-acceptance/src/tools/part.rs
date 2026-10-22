@@ -4,7 +4,7 @@ use std::f64::consts::PI;
 use qymcad::{Key, Modifiers};
 
 use crate::contract::fixtures::Fixture;
-use crate::contract::{When, Class, Context, Entry, Field, Flow, Mode, Node, Outcome, Pick, Tool, Upstream, Words};
+use crate::contract::{When, Class, Context, Entry, Field, Flow, Mode, Node, Outcome, Pick, Together, Tool, Upstream, Words};
 
 mod solids;
 pub use solids::*;

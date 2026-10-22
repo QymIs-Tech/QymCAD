@@ -407,6 +407,8 @@ fn every_core_error_has_words_in_every_language() {
         E::NoIsolatedPointsForHoles,
         E::NoPointsForHoles,
         E::RecessNotWider { recess: 12.0, hole: 14.0 },
+        E::PathEdgesLost { asked: 3, lost: 1 },
+        E::PathEdgesApart,
         E::ThreadRimNotFound,
         E::AugerRimNotFound,
         E::AugerBadPitchOrLength,

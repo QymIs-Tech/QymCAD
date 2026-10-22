@@ -621,6 +621,9 @@ impl Project {
                 let ax = RevolveAxis { axis: *axis, datum: *axis_datum, line: *axis_line };
                 (*body, self.prep_revolve(p, prof, ax, *angle, *reach, BodyOp { src: *src, op: *op, body: *body }))
             }
+            FeatureKind::Sweep { sketch, profiles, along: Some(along), src, op, body, .. } => {
+                (*body, self.prep_sweep_along(p, Profile { sketch: *sketch, profiles }, along, BodyOp { src: *src, op: *op, body: *body }))
+            }
             FeatureKind::Sweep { sketch, profiles, path_sketch, path, src, op, body, .. } => {
                 (*body, self.prep_sweep(p, Profile { sketch: *sketch, profiles }, *path_sketch, *path, BodyOp { src: *src, op: *op, body: *body }))
             }

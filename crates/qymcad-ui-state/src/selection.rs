@@ -308,7 +308,17 @@ impl PickedBefore {
 /// click without Shift lets the bodies held go. The body under the pointer rather than the one of what the click picked:
 /// a click near the seam of two pieces picks the edge of the other one. Reported behaviour: Shift with nothing in hand
 /// kept only the body clicked last, and a boolean of two bodies could not be taken over a selection.
+///
+/// A SKETCH SELECTED BEFORE AN EDGE PICKED WITH SHIFT is held as its row: a sweep takes the profile and the edge of its
+/// path picked together before it. Only then - a sketch selected and a face or a body picked with Shift holds nothing,
+/// so what a group of rows deletes or a boolean of the tree takes stays as it was.
 pub fn hold_bodies(project: &Project, was: Sel, under: Option<Id>, chosen: &mut Chosen, adding: Adding) {
+    if let (Adding::Yes, Sel::Sketch(si), Some(_), Sel::Edge(..)) = (adding, was, under, chosen.sel) {
+        if let Some(id) = project.sketches.get(si).map(|s| s.id).filter(|id| !chosen.tree_sel.multi.contains(id)) {
+            chosen.tree_sel.multi.push(id);
+        }
+        return;
+    }
     let body = |s: Sel| match s {
         Sel::Mesh(mi) | Sel::Face(mi, _) => project.mesh_id(mi),
         Sel::Edge(b, _) | Sel::Vertex(b, _, _) => Some(b),

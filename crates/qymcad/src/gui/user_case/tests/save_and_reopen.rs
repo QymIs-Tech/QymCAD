@@ -22,3 +22,12 @@ pub(super) fn save_and_reopen(app: &mut App, step: &str, problems: &mut Vec<Stri
         }
     }
 }
+
+/// THE FINAL DOCUMENT TO LOOK AT: saved in target, where it stays.
+pub(super) fn keep_the_final_document(app: &mut App) {
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
+    crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, out.clone());
+    app.save_project();
+    app.drain_bg_for_test();
+    eprintln!("the scenario document: {out}");
+}

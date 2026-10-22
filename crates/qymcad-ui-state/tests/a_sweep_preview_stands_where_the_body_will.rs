@@ -45,7 +45,7 @@ fn a_sweep_preview_stands_where_the_body_will() {
         p.add_line_entity(path, line.from.0, line.from.1, line.to.0, line.to.1, Purpose::Real);
         p.regen_sketch(path);
         let sweep = qymcad_ui_state::SweepParams { prof_sid: p.sketches[prof].id, path_sid: p.sketches[path].id, ..Default::default() };
-        let Some(preview) = qymcad_ui_state::sweep_preview(&p, sweep) else {
+        let Some(preview) = qymcad_ui_state::sweep_preview(&p, sweep, None) else {
             fails.push(format!("{:?} -> {:?}: no preview", line.from, line.to));
             continue;
         };

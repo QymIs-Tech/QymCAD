@@ -193,6 +193,41 @@ pub fn shifted(place: [f64; 12], by: f64) -> [f64; 12] {
     pl
 }
 
+impl crate::kernel::OcctKernel {
+    /// EVERY PROFILE SWEPT by `swept` - along a sketch or along edges of a body, which it is handed the bodies to find -
+    /// the pieces merged and the one boolean against body `src` applied, within one node.
+    pub(crate) fn sweep_op(
+        &self,
+        bo: qymcad_core::model::BodyOp,
+        profiles: &[Vec<f64>],
+        sides: qymcad_core::feature::Sides<'_>,
+        swept: impl Fn(&crate::door::Bodies, &[f64], [u32; 2]) -> Result<crate::Shape, qymcad_core::errors::CoreError>,
+    ) -> Result<qymcad_core::geom::Built, qymcad_core::errors::CoreError> {
+        let qymcad_core::model::BodyOp { src, op, body } = bo;
+        let named = crate::ops::profile::name_sides(profiles, sides, qymcad_core::names::Role::Swept);
+        let (profiles, caps) = (&named.profiles, &named.caps);
+        if profiles.is_empty() {
+            return Err(qymcad_core::errors::CoreError::NoContours);
+        }
+        self.plain_named(qymcad_core::errors::Op::Sweep, body, named.roles.clone(), |b| {
+            let mut tool: Option<crate::Shape> = None;
+            for (i, prof) in profiles.iter().enumerate() {
+                let cap = [caps.get(i * 3 + 1).copied().unwrap_or(0), caps.get(i * 3 + 2).copied().unwrap_or(0)];
+                let s = swept(b, prof, cap)?;
+                tool = Some(match tool {
+                    None => s,
+                    Some(t) => t.boolean(&s, 1).ok_or_else(|| crate::kernel::refused(qymcad_core::errors::Op::FuseProfiles))?,
+                });
+            }
+            let tool = tool.ok_or(qymcad_core::errors::CoreError::NoContours)?;
+            if src == 0 {
+                return Ok(tool);
+            }
+            b.get(src)?.boolean(&tool, op).ok_or_else(|| crate::kernel::refused(qymcad_core::errors::Op::Boolean))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

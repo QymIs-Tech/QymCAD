@@ -128,6 +128,7 @@ pub static CORNER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/16-corner",
     not_applicable: &[
@@ -249,6 +250,7 @@ pub static CORNER_CHAMFER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/16-corner",
     not_applicable: &[
@@ -344,6 +346,7 @@ pub static FILLET_ALL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/16-corner",
     not_applicable: &[

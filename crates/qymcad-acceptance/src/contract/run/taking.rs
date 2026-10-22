@@ -289,6 +289,8 @@ pub(crate) const MORE: &[(&str, Pick)] = &[
     ("part.thread", Pick::Face([20.0, 15.0, 10.0])),
     ("part.thread-own-pitch", Pick::Face([20.0, 15.0, 10.0])),
     ("part.replace-face", Pick::Face([40.0, 15.0, 5.0])),
+    // the top back edge, apart from the top front one the path runs along: refused in words as a path of edges apart
+    ("part.sweep-edge", Pick::Edge([20.0, 30.0, 10.0])),
     ("part.trim-surface", Pick::Face([35.0, 25.0, 10.0])),
     ("part.measure-3d", Pick::Vertex([40.0, 30.0, 10.0])),
 ];

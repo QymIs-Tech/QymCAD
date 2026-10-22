@@ -156,6 +156,45 @@ impl Project {
         }
     }
 
+    /// Sweep along edges of a body: the picked edges resolved to the edges of that body live now - through the renames of
+    /// its rebuild, as the edges of a fillet are - and joined by the kernel into the path. A path that lost an edge is
+    /// refused: the rest would join into another path, or none.
+    pub(crate) fn prep_sweep_along(&mut self, p: &mut Pass, prof: Profile, along: &crate::feature::EdgePath, bo: BodyOp) -> crate::feature::KernelJob {
+        let (Profile { sketch, profiles }, BodyOp { src, op, body }) = (prof, bo);
+        let prof_pl = self.sketch_place(sketch);
+        let path_body = along.body;
+        // AN EDGE NAMED TWICE IS ONE EDGE OF THE PATH - a click on it and on a face that has it - and not one lost
+        let mut live = self.live_fillet_edges(p.node, path_body, &along.edges, p.emap, p.kernel);
+        live.sort_unstable();
+        live.dedup();
+        let asked = if along.edges.query.is_pick_list() {
+            let mut named = along.edges.query.picked_descs();
+            named.sort_unstable();
+            named.dedup();
+            named.len()
+        } else {
+            0
+        };
+        if live.is_empty() {
+            return crate::feature::KernelJob::refused(super::edges_lost(&along.edges, asked));
+        }
+        if live.len() < asked {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PathEdgesLost { asked, lost: asked - live.len() });
+        }
+        let feature = p.node;
+        match self.encode_profiles_sourced(sketch, profiles, &[]) {
+            None => crate::feature::KernelJob::refused(crate::errors::CoreError::SweepProfileMissing),
+            Some(sourced) => {
+                let mut inputs: Vec<Id> = [src, path_body].into_iter().filter(|id| *id != 0).collect();
+                inputs.dedup();
+                crate::feature::KernelJob::new(inputs, move |k| {
+                    let sides = crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions };
+                    k.sweep_along(BodyOp { src, op, body }, &sourced.profiles, prof_pl, crate::feature::Along { body: path_body, edges: &live }, sides)
+                })
+            }
+        }
+    }
+
     /// Combine: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
     pub(crate) fn prep_combine(&mut self, p: &mut Pass, prof: Profile, span: CombineSpan, t: BodyOp) -> crate::feature::KernelJob {

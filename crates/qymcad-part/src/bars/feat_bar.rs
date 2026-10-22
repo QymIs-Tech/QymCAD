@@ -64,12 +64,21 @@ pub(crate) fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Contex
         }
         // WHAT WAS FOUND, before Enter: the regions by kind, and those that fit no surface
         Some(qymcad_ui_state::PartTool::Recognise) => recognise_preview(pc, ctx),
-        // the path is taken from the tree selection while the pick is active (as for a hole driven by a sketch)
-        Some(qymcad_ui_state::PartTool::Sweep) if pc.sweep.pick_path => {
-            if let qymcad_ui_state::Sel::Sketch(si) = *pc.sel {
-                if let Some(id) = pc.project.sketches.get(si).map(|s| s.id).filter(|id| *id != pc.sweep.prof_sid) {
-                    (pc.sweep.path_sid, pc.sweep.path_cid, pc.sweep.pick_path) = (id, 0, false);
-                }
+        // THE PATH OF A SWEEP is the last one picked: edges of a body clicked in the view let go of a path sketch, and a
+        // sketch is taken from the tree selection while the pick is active (as for a hole driven by a sketch)
+        Some(qymcad_ui_state::PartTool::Sweep) => {
+            if !pc.gsel.edges.is_empty() {
+                (pc.sweep.path_sid, pc.sweep.path_cid) = (0, 0);
+            }
+            let taken = match *pc.sel {
+                qymcad_ui_state::Sel::Sketch(si) if pc.sweep.pick_path => pc.project.sketches.get(si).map(|s| s.id).filter(|id| *id != pc.sweep.prof_sid),
+                _ => None,
+            };
+            if let Some(id) = taken {
+                (pc.sweep.path_sid, pc.sweep.path_cid, pc.sweep.pick_path) = (id, 0, false);
+                // a sketch taken for the path lets go of edges picked for it: the last pick is the path
+                pc.gsel.edges.clear();
+                pc.gsel.described = None;
             }
         }
         // A new section is taken on the EDGE of a change in the tree selection (while the pick is active). Only when the
@@ -344,10 +353,17 @@ fn sweep_opts(pc: &qymcad_ui_state::PartCtx, says: &mut Vec<Notice>) -> Vec<Opt>
     let mut v = vec![operation(pc.feat.op), Opt::Readout(qymcad_i18n::tr1("cmd-profile-is", "name", &prof_name))];
     let prof = ContourChoice { cands: pc.project.sweep_profile_contours(pc.sweep.prof_sid), picked: pc.sweep.prof_cid, words: "cmd-pick-contour-n", hint: "cmd-open-sketch-flat" };
     v.extend(contour_pick(pc, OptKey::of("profile_contour"), qymcad_ui_state::ContourSlot::SweepProfile, prof));
-    let path = pc.project.sketches.iter().find(|s| s.id == pc.sweep.path_sid).filter(|_| pc.sweep.path_sid != 0).map(|s| qymcad_i18n::name(&s.name));
+    // THE PATH: edges of a body picked in the view, or the sketch picked in the tree
+    let path = if pc.gsel.edges.is_empty() {
+        pc.project.sketches.iter().find(|s| s.id == pc.sweep.path_sid).filter(|_| pc.sweep.path_sid != 0).map(|s| qymcad_i18n::name(&s.name))
+    } else {
+        Some(qymcad_i18n::tr1("cmd-path-edges-n", "n", &pc.gsel.edges.len().to_string()))
+    };
     v.push(Opt::pick(OptKey::of("path"), qymcad_i18n::tr("cmd-pick-path-sketch"), path, pc.sweep.pick_path.lit()).hint(qymcad_i18n::tr("cmd-sweep-pick-path")));
     let path = ContourChoice { cands: pc.project.sweep_path_contours(pc.sweep.path_sid), picked: pc.sweep.path_cid, words: "cmd-pick-contour-n", hint: "cmd-open-path-flat" };
-    v.extend(contour_pick(pc, OptKey::of("path_contour"), qymcad_ui_state::ContourSlot::SweepPath, path));
+    if pc.gsel.edges.is_empty() {
+        v.extend(contour_pick(pc, OptKey::of("path_contour"), qymcad_ui_state::ContourSlot::SweepPath, path));
+    }
     says.push(Notice::info(qymcad_i18n::tr("cmd-sweep-auto-hint")));
     v
 }

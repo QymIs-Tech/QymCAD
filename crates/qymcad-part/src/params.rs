@@ -532,8 +532,9 @@ pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
         Some(qymcad_ui_state::PartTool::Extrude) | Some(qymcad_ui_state::PartTool::Revolve) => {
             !pc.gsel.profiles.is_empty() || pc.cmd.sketch.map(|si| qymcad_ui_state::sketch_closed_contours(pc.project, si).len() == 1).unwrap_or(false)
         }
-        Some(qymcad_ui_state::PartTool::Sweep) => pc.sweep.prof_sid != 0 && pc.sweep.path_sid != 0, // sweep: a profile and a path
-        Some(qymcad_ui_state::PartTool::Loft) => pc.loft.sids.len() >= 2,                           // loft: at least two sections
+        // sweep: a profile and a path - a sketch, or edges of a body
+        Some(qymcad_ui_state::PartTool::Sweep) => pc.sweep.prof_sid != 0 && (pc.sweep.path_sid != 0 || !pc.gsel.edges.is_empty()),
+        Some(qymcad_ui_state::PartTool::Loft) => pc.loft.sids.len() >= 2, // loft: at least two sections
         // a fillet and a chamfer round the edges PICKED: Enter with none picked used to round every edge of the body
         // without a word
         Some(qymcad_ui_state::PartTool::Fillet) | Some(qymcad_ui_state::PartTool::Chamfer) => !pc.gsel.edges.is_empty(),

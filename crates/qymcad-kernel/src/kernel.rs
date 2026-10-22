@@ -497,28 +497,17 @@ impl qymcad_core::feature::Kernel for OcctKernel {
         path_place: [f64; 12],
         sides: qymcad_core::feature::Sides<'_>,
     ) -> Result<Built, qymcad_core::errors::CoreError> {
-        let qymcad_core::model::BodyOp { src, op, body } = bo;
-        let named = crate::ops::profile::name_sides(profiles, sides, qymcad_core::names::Role::Swept);
-        let (profiles, caps) = (&named.profiles, &named.caps);
-        if profiles.is_empty() {
-            return Err(qymcad_core::errors::CoreError::NoContours);
-        }
-        self.plain_named(qymcad_core::errors::Op::Sweep, body, named.roles.clone(), |b| {
-            let mut tool: Option<crate::Shape> = None;
-            for (i, prof) in profiles.iter().enumerate() {
-                let cap = [caps.get(i * 3 + 1).copied().unwrap_or(0), caps.get(i * 3 + 2).copied().unwrap_or(0)];
-                let s = crate::Shape::sweep_profile_named(prof, &profile_place, path, &path_place, cap).ok_or_else(|| refused(qymcad_core::errors::Op::Sweep))?;
-                tool = Some(match tool {
-                    None => s,
-                    Some(t) => t.boolean(&s, 1).ok_or_else(|| refused(qymcad_core::errors::Op::FuseProfiles))?,
-                });
-            }
-            let tool = tool.ok_or(qymcad_core::errors::CoreError::NoContours)?;
-            if src == 0 {
-                return Ok(tool);
-            }
-            b.get(src)?.boolean(&tool, op).ok_or_else(|| refused(qymcad_core::errors::Op::Boolean))
-        })
+        self.sweep_op(bo, profiles, sides, |_, prof, cap| crate::Shape::sweep_profile_named(prof, &profile_place, path, &path_place, cap).ok_or_else(|| refused(qymcad_core::errors::Op::Sweep)))
+    }
+    fn sweep_along(
+        &self,
+        bo: qymcad_core::model::BodyOp,
+        profiles: &[Vec<f64>],
+        profile_place: [f64; 12],
+        along: qymcad_core::feature::Along<'_>,
+        sides: qymcad_core::feature::Sides<'_>,
+    ) -> Result<Built, qymcad_core::errors::CoreError> {
+        self.sweep_op(bo, profiles, sides, |b, prof, cap| b.get(along.body)?.sweep_along_edges(prof, &profile_place, along.edges, cap))
     }
     fn loft(
         &self,

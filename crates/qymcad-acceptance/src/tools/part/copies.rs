@@ -37,6 +37,7 @@ pub static MIRROR: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/16-mirror",
     not_applicable: &[
@@ -94,6 +95,7 @@ pub static LINEAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/17-linear-array",
     not_applicable: &[
@@ -131,6 +133,7 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/18-circular-array",
     not_applicable: &[

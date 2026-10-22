@@ -29,6 +29,10 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
             args.set("after", fmt0(*after));
         }
         E::EdgesNotFound { asked } => args.set("asked", *asked as i64),
+        E::PathEdgesLost { asked, lost } => {
+            args.set("asked", *asked as i64);
+            args.set("lost", *lost as i64);
+        }
         E::ThreadPitchTooSmall { pitch } => args.set("pitch", fmt2(*pitch)),
         E::ThreadTooManyTurns { turns } => args.set("turns", fmt0(*turns)),
         E::PatternTooLarge { asked, limit } => {

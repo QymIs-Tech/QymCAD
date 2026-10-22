@@ -165,3 +165,80 @@ pub(super) fn one_gesture_in_every_workbench(app: &mut App, problems: &mut Vec<S
     }
     check_all(app, &format!("{step}: an assembly, a pattern of a part"), problems);
 }
+
+/// The volume and the height of the body of `part`, as its mesh holds them.
+struct Held {
+    volume: f64,
+    top: f64,
+}
+
+fn held(app: &App, part: u64) -> Option<Held> {
+    let b = app.project.bodies.iter().rfind(|b| app.project.body_owner(b.id) == Some(part) && !app.project.consumed_bodies().contains(&b.id))?;
+    Some(Held { volume: b.mesh.volume(), top: b.mesh.bounds()?.max.z })
+}
+
+/// A RAIL SWEPT ALONG AN EDGE OF A BODY, by hand: out to the assembly, a new part, a block of 40 x 30 extruded 10, a
+/// square of 4 drawn on the side plane over its top front edge, the sweep taken with the square selected and the edge
+/// clicked in the view - the block holds the rail of 4 x 4 along that edge; the block made 12 tall, the path rises with
+/// the edge and the rail stays its length.
+pub(super) fn a_rail_swept_along_an_edge(app: &mut App, problems: &mut Vec<String>) {
+    let step = "a sweep along an edge";
+    let (tr, corner) = (crate::i18n::tr, egui::pos2(0.0, 0.0));
+    let mut hand = Hand::new(app);
+    hand.key(egui::Key::Escape);
+    // out of the sketch and the part the scenario stands in, by the button that finishes each, to the assembly
+    for _ in 0..3 {
+        if !hand.press_word(&tr("wb-finish"), corner) {
+            break;
+        }
+    }
+    let made = hand.press_hint(&tr("tb-new-part-hint"));
+    // the block: a rectangle from the origin on the table, 40 by 30, extruded 10
+    let drawn = hand.press_word(&tr("plane-xy-table"), corner);
+    hand.sk_tool(SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 30.0);
+    hand.type_after_word(&tr("sk-width"), "40");
+    hand.key(egui::Key::Tab).type_text("30").key(egui::Key::Enter);
+    hand.close_window();
+    hand.press_word(&tr("wb-finish"), corner);
+    hand.press_hint(&tr("tb-extrude-hint"));
+    hand.type_after_word(&tr("f-length"), "10");
+    hand.key(egui::Key::Enter);
+    hand.close_window();
+    let part = app.project.components.iter().rev().find(|c| app.project.component_is_part(c.id)).map(|c| c.id).unwrap_or(0);
+    if !made || !drawn {
+        problems.push(format!("[{step}] a new part from the button of the assembly ({made}), a sketch on the table in it ({drawn})"));
+    }
+    check_all(app, &format!("{step}: the block"), problems);
+    // the profile: a square of 4 on the side plane x = 0, over the top front edge, y 0..4, z 10..14
+    let mut hand = Hand::new(app);
+    hand.key(egui::Key::Escape);
+    hand.press_word(&tr("plane-yz-side"), corner);
+    hand.sk_tool(SketchShape::Rect).click2d(0.0, 10.0).click2d(4.0, 14.0);
+    hand.type_after_word(&tr("sk-width"), "4");
+    hand.key(egui::Key::Tab).type_text("4").key(egui::Key::Enter);
+    hand.close_window();
+    hand.press_word(&tr("wb-finish"), corner);
+    hand.close_window();
+    check_all(app, &format!("{step}: the square over the edge"), problems);
+    // the sweep: the square left selected by its finish, the edge clicked in the view, Enter
+    let mut hand = Hand::new(app);
+    hand.look_at([20.0, 15.0, 5.0], 8.0).tool(PartTool::Sweep).click([20.0, 0.0, 10.0]).enter();
+    hand.close_window();
+    match held(app, part) {
+        Some(Held { volume, top }) if (volume - 12640.0).abs() < 1.0 && (top - 14.0).abs() < 1e-3 => {}
+        other => problems.push(format!("[{step}] the block with a rail of 4 x 4 along its top front edge holds 12640 up to z 14: the body holds {:?}", other.map(|h| [h.volume, h.top]))),
+    }
+    check_all(app, &format!("{step}: the rail"), problems);
+    // the block made 12 tall from its row in the tree: the edge rises, the rail stays its length
+    let row = crate::i18n::tr1("feat-extrude", "h", "10");
+    let mut hand = Hand::new(app);
+    hand.double_click_word(&row);
+    hand.type_after_word(&crate::i18n::tr("f-length"), "12");
+    hand.key(egui::Key::Enter);
+    hand.close_window();
+    match held(app, part) {
+        Some(Held { volume, .. }) if (volume - 14720.0).abs() < 1.0 => {}
+        other => problems.push(format!("[{step}] the block made 12 tall with the rail 2 above it holds 14720: the body holds {:?}", other.map(|h| [h.volume, h.top]))),
+    }
+    check_all(app, &format!("{step}: the block made taller under the rail"), problems);
+}

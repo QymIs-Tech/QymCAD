@@ -184,6 +184,9 @@ pub enum FeatureKind {
         path_sketch: Id,
         #[serde(default)]
         path: Id,
+        /// The path run along edges of a body instead of a sketch (`path_sketch` is 0 then).
+        #[serde(default)]
+        along: Option<EdgePath>,
         /// Target body of the boolean (0 makes a new body).
         #[serde(default)]
         src: Id,
@@ -917,8 +920,12 @@ impl FeatureKind {
             // cuts from, and deleting that body would leave the feature cutting from nothing.
             FeatureKind::Revolve { sketch, src, .. } if src != 0 => vec![src, sketch],
             FeatureKind::Revolve { sketch, .. } => vec![sketch],
-            FeatureKind::Sweep { sketch, path_sketch, src, .. } if src != 0 => vec![src, sketch, path_sketch],
-            FeatureKind::Sweep { sketch, path_sketch, .. } => vec![sketch, path_sketch],
+            // the body whose edges the path runs along, followed as it is rebuilt; named once when it is also the body the
+            // sweep is added to, cut from or met with
+            FeatureKind::Sweep { sketch, path_sketch, src, ref along, .. } => {
+                let edges_of = along.as_ref().map_or(0, |a| a.body);
+                [src, sketch, path_sketch, if edges_of == src { 0 } else { edges_of }].into_iter().filter(|id| *id != 0).collect()
+            }
             FeatureKind::BodyBoolean { a, b, .. } => vec![a, b],
             FeatureKind::Combine { src, sketch, .. } => vec![src, sketch],
             FeatureKind::Fillet { src, .. }
@@ -1095,9 +1102,12 @@ impl FeatureKind {
                 m(src);
                 m(body);
             }
-            FeatureKind::Sweep { sketch, path_sketch, src, body, .. } => {
+            FeatureKind::Sweep { sketch, path_sketch, src, body, along, .. } => {
                 m(sketch);
                 m(path_sketch);
+                if let Some(a) = along {
+                    m(&mut a.body);
+                }
                 m(src);
                 m(body);
             }

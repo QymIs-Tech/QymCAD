@@ -712,3 +712,269 @@ fn brightness(p: &qymcad::Picture, area: qymcad::Rect) -> f64 {
     let sum: f64 = down.flat_map(|y| across.clone().map(move |x| (y * p.width + x) * 4)).map(|i| p.rgba[i..i + 3].iter().map(|c| f64::from(*c)).sum::<f64>() / 3.0).sum();
     sum / count.max(1) as f64
 }
+
+/// The block with a square of 4 drawn on the side plane over its top front edge, y 0..4, z 10..14, the sketch left
+/// selected: the profile of a rail swept along that edge.
+fn a_block_with_a_square_over_its_edge() -> Session {
+    let mut s = Session::start();
+    build::block(&mut s);
+    on_plane(&mut s, "plane-yz-side");
+    build::draw(&mut s, "tb-rect-hint", &[(0.0, 10.0), (4.0, 14.0)]);
+    finish(&mut s);
+    s
+}
+
+/// A picture of the window before something and after it.
+struct Before<'a> {
+    was: &'a qymcad::Picture,
+    now: &'a qymcad::Picture,
+}
+
+/// How many pixels of `area` are drawn otherwise now, past the tolerance a channel is told apart by: a thin line of a
+/// preview crosses a few, under the share a whole picture is judged by.
+fn pixels_changed(pictures: Before<'_>, area: qymcad::Rect) -> usize {
+    let Before { was, now } = pictures;
+    let across = area.min.x as usize..(area.max.x as usize).min(was.width);
+    let down = area.min.y as usize..(area.max.y as usize).min(was.height);
+    let tolerance = qymcad_acceptance::golden::CHANNEL_TOLERANCE;
+    down.flat_map(|y| across.clone().map(move |x| (y * was.width + x) * 4)).filter(|&i| was.rgba[i..i + 4].iter().zip(&now.rgba[i..i + 4]).any(|(p, q)| p.abs_diff(*q) > tolerance)).count()
+}
+
+probe! {
+    /// THE SWEEP ALONG AN EDGE IS PREVIEWED BEFORE ENTER, where its body will stand: the edge clicked, the rail of 4 x 4
+    /// is drawn along it - the top of its far end, 4 above the edge lit, is drawn where nothing was with the edge not
+    /// yet picked - and the document holds no sweep yet.
+    fn a_sweep_along_an_edge_is_previewed_before_enter() {
+        let mut s = a_block_with_a_square_over_its_edge();
+        let sweep = s.word("tb-sweep-hint");
+        s.press_hint(&sweep);
+        // the top of the far end of the rail, 4 above the edge lit; the square of the profile stands at the near end
+        let end = s.in_space([40.0, 2.0, 14.0]);
+        let canvas = s.canvas();
+        let away = qymcad::pos2(canvas.min.x + 20.0, canvas.max.y - 20.0);
+        s.move_to(away);
+        let bare = s.snapshot();
+        let edge = s.edge_at([20.0, 0.0, 10.0]);
+        s.click(edge);
+        s.move_to(away);
+        let shown = s.snapshot();
+        let mut fails = Vec::new();
+        let drawn = pixels_changed(Before { was: &bare, now: &shown }, qymcad::Rect::from_center_size(end, qymcad::vec2(8.0, 8.0)));
+        if drawn < 4 {
+            fails.push(format!("the edge picked, the far end of the rail is not drawn before Enter: {drawn} pixels changed at its top"));
+        }
+        if s.document().features.iter().any(|f| f.kind == "Sweep") {
+            fails.push("the document holds the sweep before Enter".to_string());
+        }
+        s.key(Key::Escape);
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+/// The block with a square of 4 drawn on the side plane across its top front edge, y 0..4, z 8..12, half of it in the
+/// block, the sketch left selected; with `path`, a line along that edge on the front plane as well, the square then
+/// picked in the tree.
+fn a_block_with_a_square_across_its_edge(path: PathOf) -> Session {
+    let mut s = Session::start();
+    build::block(&mut s);
+    on_plane(&mut s, "plane-yz-side");
+    build::draw(&mut s, "tb-rect-hint", &[(0.0, 8.0), (4.0, 12.0)]);
+    finish(&mut s);
+    if path == PathOf::Sketch {
+        on_plane(&mut s, "plane-xz-front");
+        build::line(&mut s, (0.0, 10.0), (40.0, 10.0));
+        finish(&mut s);
+        s.key(Key::Escape);
+        let square = s.document().sketches[1].name.clone();
+        tree_row(&mut s, &square);
+    }
+    s
+}
+
+/// What the path of a sweep is laid along first.
+#[derive(Clone, Copy, PartialEq)]
+enum PathOf {
+    Edge,
+    Sketch,
+}
+
+/// An operation of the bar of a sweep and the body of the block with the rail across its top front edge it gives: the
+/// rail adds 320 out of the block, cuts 320 from it, or is 320 in common with it.
+struct Made {
+    op: &'static str,
+    volume: f64,
+}
+
+/// A body a way of laying a sweep gave.
+struct Got {
+    how: &'static str,
+    volume: f64,
+}
+
+/// THE SWEEP LAID along `path` with the operation `op`: the tool, the operation in its bar, the path - the edge clicked
+/// or the line's row in the tree - and Enter.
+fn swept(s: &mut Session, path: PathOf, op: &str) {
+    let sweep = s.word("tb-sweep-hint");
+    s.press_hint(&sweep);
+    match path {
+        PathOf::Edge => {
+            let edge = s.edge_at([20.0, 0.0, 10.0]);
+            s.click(edge);
+        }
+        PathOf::Sketch => {
+            let line = s.document().sketches[2].name.clone();
+            tree_row(s, &line);
+        }
+    }
+    bar_word(s, op);
+    s.key(Key::Enter);
+}
+
+probe! {
+    /// A SWEEP LAID AND A SWEEP EDITED GIVE ONE BODY, for each operation: laid along the edge with the operation; laid
+    /// with Add and given the operation when opened again; laid along a line on the edge and given the edge when opened
+    /// again. Reported behaviour: the operation chosen while a sweep was edited went nowhere, and a path turned from a
+    /// sketch to edges kept the body it was laid with.
+    fn a_sweep_laid_and_a_sweep_edited_give_one_body() {
+        let mut fails = Vec::new();
+        let made = [Made { op: "cmd-add", volume: 12320.0 }, Made { op: "cmd-cut", volume: 11680.0 }, Made { op: "cmd-intersect", volume: 320.0 }];
+        for Made { op, volume } in made {
+            let mut got = Vec::new();
+            let mut s = a_block_with_a_square_across_its_edge(PathOf::Edge);
+            swept(&mut s, PathOf::Edge, op);
+            got.push(Got { how: "laid along the edge", volume: body(&mut s).volume });
+            let mut s = a_block_with_a_square_across_its_edge(PathOf::Edge);
+            swept(&mut s, PathOf::Edge, "cmd-add");
+            build::reopen(&mut s, "feat-sweep");
+            bar_word(&mut s, op);
+            s.key(Key::Enter);
+            got.push(Got { how: "laid with Add, the operation given when opened again", volume: body(&mut s).volume });
+            if op != "cmd-add" {
+                let mut s = a_block_with_a_square_across_its_edge(PathOf::Sketch);
+                swept(&mut s, PathOf::Sketch, op);
+                build::reopen(&mut s, "feat-sweep");
+                let edge = s.edge_at([20.0, 0.0, 10.0]);
+                s.click(edge);
+                s.key(Key::Enter);
+                got.push(Got { how: "laid along the line, the edge given when opened again", volume: body(&mut s).volume });
+            }
+            for Got { how, volume: v } in got {
+                if (v - volume).abs() > 1.0 {
+                    fails.push(format!("{op}, {how}: the body holds {v:.1}, not {volume}"));
+                }
+            }
+        }
+        // laid with Add along the line, its union joins it to the block after it: a cut asked when it is opened again is
+        // refused in words, and the body stays the block with the rail on it
+        let mut s = a_block_with_a_square_across_its_edge(PathOf::Sketch);
+        swept(&mut s, PathOf::Sketch, "cmd-add");
+        build::reopen(&mut s, "feat-sweep");
+        bar_word(&mut s, "cmd-cut");
+        s.key(Key::Enter);
+        let refused = s.word("msg-sweep-laid-as-addition");
+        let v = body(&mut s).volume;
+        let said: Vec<String> = s.tool_says().into_iter().map(|n| n.words).chain(std::iter::once(s.status())).collect();
+        if !said.iter().any(|w| w.contains(&refused)) || (v - 12320.0).abs() > 1.0 {
+            fails.push(format!("a sweep laid with Add along a line, given Cut when opened again: says {said:?}, not {refused:?}; the body holds {v:.1}, not 12320"));
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+probe! {
+    /// AN EDGE OF ANOTHER PART IS NOT A PATH: in an assembly of two blocks, a square drawn in the first part and the sweep
+    /// taken there, the second block shown beside it in context and its top face clicked - its edges are not taken as
+    /// the path, and Enter lays nothing that would stand red with an input of another part.
+    fn an_edge_of_another_part_is_not_a_path() {
+        let mut s = qymcad_acceptance::contract::fixtures::Fixture::TwoBlocksInAssembly.start();
+        let first = s.document().parts.iter().find(|p| !p.assembly).map(|p| p.name.clone()).expect("the first part");
+        let row = s.find(&first, qymcad::pos2(0.0, 300.0)).unwrap_or_else(|| panic!("{first:?} is not in the tree"));
+        s.double_click(row.center());
+        on_plane(&mut s, "plane-yz-side");
+        build::draw(&mut s, "tb-rect-hint", &[(0.0, 10.0), (4.0, 14.0)]);
+        finish(&mut s);
+        let sweep = s.word("tb-sweep-hint");
+        s.press_hint(&sweep);
+        // the neighbouring part shown in the context of this one, as a person shows it to work beside it
+        let beside = s.word("wb-in-context");
+        s.press_word(&beside);
+        let foreign = s.face_at([80.0, 15.0, 10.0]);
+        s.click(foreign);
+        let edges = s.word_with("cmd-path-edges-n", qymcad::Arg { name: "n", value: "4" });
+        let before = s.document().features.len();
+        s.key(Key::Enter);
+        let laid: Vec<String> = s.document().features.iter().skip(before).map(|f| format!("{} {:?}", f.kind, f.error)).collect();
+        assert!(laid.is_empty() && !s.in_hand().contains(&edges), "the top face of the other part clicked for the path, Enter: the bar {:?}, laid {laid:?}", s.in_hand());
+    }
+}
+
+probe! {
+    /// A SWEEP RUNS ALONG AN EDGE OF THE BODY clicked in the view, as along a path sketch: the square over the top front
+    /// edge of the block, swept along that edge, adds a rail of 4 x 4 along it; the block made 12 tall, the edge rises
+    /// with it and the rail still runs its length; opened again, the sweep lights the edge and says its path is one edge.
+    fn a_sweep_runs_along_an_edge_clicked_in_the_view() {
+        let mut s = a_block_with_a_square_over_its_edge();
+        let sweep = s.word("tb-sweep-hint");
+        s.press_hint(&sweep);
+        let edge = s.edge_at([20.0, 0.0, 10.0]);
+        s.click(edge);
+        let one = s.word_with("cmd-path-edges-n", qymcad::Arg { name: "n", value: "1" });
+        let mut fails = Vec::new();
+        if !s.in_hand().contains(&one) {
+            fails.push(format!("the edge clicked for the path is not said in the bar as {one:?}: {:?}", s.in_hand()));
+        }
+        s.key(Key::Enter);
+        let now = body(&mut s);
+        if (now.volume - 12640.0).abs() > 1.0 || (now.max[2] - 14.0).abs() > 1e-3 {
+            fails.push(format!("the block with a rail of 4 x 4 along its top front edge holds 12640 up to z 14, and the body holds {} from {:?} to {:?}", now.volume, now.min, now.max));
+        }
+        build::reopen(&mut s, "feat-extrude");
+        let length = s.word("f-length");
+        s.fill(&length, "12").key(Key::Enter);
+        let now = body(&mut s);
+        let red: Vec<_> = s.document().features.into_iter().filter(|f| f.error.is_some()).map(|f| (f.name, f.error)).collect();
+        if !red.is_empty() || (now.volume - 14720.0).abs() > 1.0 {
+            fails.push(format!("the block made 12 tall with the rail standing 2 above it holds 14720, and the body holds {}; red: {red:?}", now.volume));
+        }
+        build::reopen(&mut s, "feat-sweep");
+        if !s.in_hand().contains(&one) {
+            fails.push(format!("the sweep opened again does not say its path is one edge: {:?}", s.in_hand()));
+        }
+        s.key(Key::Escape);
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
+probe! {
+    /// THE FIRST SWEEP OF A PART, OPENED AGAIN AND APPLIED, IS THE SAME BODY: a square of 10 swept up a line of 40 in an
+    /// empty part, 4000, opened by a double click on its row and applied with Enter - still 4000, the node green; given Cut
+    /// when opened again, it is refused in words, there being no body before it to cut. Reported behaviour: the edit took
+    /// the active body of the part - the sweep's own - for the body it works on, and made a boolean of it with itself.
+    fn the_first_sweep_of_a_part_opened_again_is_the_same_body() {
+        let mut s = qymcad_acceptance::contract::fixtures::Fixture::SweepStraight.start();
+        let sweep = s.word("tb-sweep-hint");
+        s.press_hint(&sweep);
+        let path = s.document().sketches[1].name.clone();
+        tree_row(&mut s, &path);
+        s.key(Key::Enter);
+        let mut fails = Vec::new();
+        let laid = body(&mut s).volume;
+        build::reopen(&mut s, "feat-sweep");
+        s.key(Key::Enter);
+        let red: Vec<String> = s.document().features.iter().filter(|f| f.error.is_some()).map(|f| format!("{} {:?}", f.kind, f.error)).collect();
+        let v = body(&mut s).volume;
+        if (laid - 4000.0).abs() > 1.0 || (v - 4000.0).abs() > 1.0 || !red.is_empty() {
+            fails.push(format!("the square of 10 swept up 40 holds {laid:.1}, opened again and applied {v:.1}, not 4000; red: {red:?}"));
+        }
+        build::reopen(&mut s, "feat-sweep");
+        bar_word(&mut s, "cmd-cut");
+        s.key(Key::Enter);
+        let refused = s.word("cmd-cut-needs-body");
+        let said: Vec<String> = s.tool_says().into_iter().map(|n| n.words).chain(std::iter::once(s.status())).collect();
+        let v = body(&mut s).volume;
+        if !said.iter().any(|w| w.contains(&refused)) || (v - 4000.0).abs() > 1.0 {
+            fails.push(format!("the first sweep of a part given Cut when opened again: says {said:?}, not {refused:?}; the body holds {v:.1}, not 4000"));
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}

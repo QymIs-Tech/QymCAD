@@ -269,8 +269,9 @@ pub mod build {
         s.key(Key::Escape);
         let line = s.word(row);
         let lead = line.split('{').next().unwrap_or_default().trim().to_string();
-        let left = s.canvas().min.x;
-        let rows: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(w, r)| r.max.x < left && w.contains(&lead)).map(|(_, r)| r).collect();
+        // the tree, left of the canvas and above the status line, which may say the same word
+        let canvas = s.canvas();
+        let rows: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(w, r)| r.max.x < canvas.min.x && r.max.y < canvas.max.y && w.contains(&lead)).map(|(_, r)| r).collect();
         let [at] = rows.as_slice() else { panic!("the row of the node, beginning {lead:?}, is not one row of the tree: {rows:?}") };
         s.double_click(at.center());
     }

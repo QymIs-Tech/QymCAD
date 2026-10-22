@@ -359,6 +359,9 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
     let edit_src = pc.cmd.edit.and_then(|fid| {
         pc.project.timeline.iter().find(|n| n.id == fid).and_then(|n| match n.kind {
             qymcad_core::feature::FeatureKind::Fillet { src, .. } | qymcad_core::feature::FeatureKind::Chamfer { src, .. } | qymcad_core::feature::FeatureKind::Patch { src, .. } => Some(src),
+            // a sweep runs along edges of the body it was laid on, not of the one it made: its path's, or the body it cuts
+            qymcad_core::feature::FeatureKind::Sweep { along: Some(ref a), .. } => Some(a.body),
+            qymcad_core::feature::FeatureKind::Sweep { src, .. } if src != 0 => Some(src),
             _ => None,
         })
     });

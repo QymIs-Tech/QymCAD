@@ -2954,12 +2954,8 @@ mod tests {
         the_view::framed_wheeled_to_a_hole_and_turned(&mut app, &mut problems);
         sketch_steps::every_kind_of_curve_cut_extended_and_copied(&mut app, &mut problems);
         frame_steps::one_gesture_in_every_workbench(&mut app, &mut problems);
-        // ── THE FINAL DOCUMENT TO LOOK AT: it stays in target ───────────────────────────
-        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
-        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, out.clone());
-        app.save_project();
-        app.drain_bg_for_test();
-        eprintln!("the scenario document: {out}");
+        frame_steps::a_rail_swept_along_an_edge(&mut app, &mut problems);
+        save_and_reopen::keep_the_final_document(&mut app);
 
         the_faults::no_red_node_is_left(&mut app);
         assert!(problems.is_empty(), "THE USER SCENARIO FOUND {} problems:\n  {}", problems.len(), problems.join("\n  "));

@@ -925,7 +925,7 @@ pub fn draw_feat_cmd_preview(pn: &Painting, painter: &egui::Painter, rect: Rect)
 
 /// Draw the live sweep preview (the path + the carried profile sections + the longitudinal edges).
 pub fn draw_sweep_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
-    let Some(qymcad_ui_state::SweepPreview { path, sections }) = qymcad_ui_state::sweep_preview(pn.project, pn.sweep) else { return };
+    let Some(qymcad_ui_state::SweepPreview { path, sections }) = qymcad_ui_state::painted_sweep_preview(pn) else { return };
     let basis = pn.cam.basis();
     let sp = |p: [f64; 3]| qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis }.at(p).0;
     // the path is a bright line

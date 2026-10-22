@@ -37,6 +37,7 @@ pub static PUSH_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: Some(-10.0),
+    refused_together: None,
     budget: (30, 2000),
     help: "part/11-push-face",
     not_applicable: &[(2, "the bar of push face holds no modes: it takes a flat face and an offset, plus or minus")],
@@ -76,6 +77,7 @@ pub static THICKEN: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/15-thicken",
     not_applicable: &[
@@ -121,6 +123,7 @@ pub static SPLIT_BODY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/13-split-body",
     not_applicable: &[
@@ -163,6 +166,7 @@ pub static SPLIT_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/14-split-face",
     not_applicable: &[
@@ -217,6 +221,7 @@ pub static DRAFT: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/09-draft",
     not_applicable: &[(17, "a face tilted by an angle the field accepts always builds: what the kernel could not make of it is a matter of the faces beside it, not of the value typed")],

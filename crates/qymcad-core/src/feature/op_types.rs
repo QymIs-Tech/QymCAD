@@ -505,3 +505,18 @@ pub struct FacePlace {
     pub at: [f64; 3],
     pub normal: [f64; 3],
 }
+
+/// THE PATH OF A SWEEP RUN ALONG EDGES OF A BODY instead of a sketch: the body and its edges, picked by hand and kept by
+/// the names the kernel gives them, so the path follows the edges when the body is rebuilt.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EdgePath {
+    pub body: Id,
+    pub edges: crate::refs::Ref,
+}
+
+/// THE CHAIN OF EDGES A SWEEP RUNS ALONG, as the kernel is handed it: the body and the edges of it that are live now.
+#[derive(Clone, Copy, Debug)]
+pub struct Along<'a> {
+    pub body: Id,
+    pub edges: &'a [u32],
+}

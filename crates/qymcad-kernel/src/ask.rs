@@ -98,15 +98,35 @@ pub fn clashes(bodies: &[PlacedBody<'_>], wait: Wait) -> Option<Vec<Clash>> {
     Some(out)
 }
 
+/// WHETHER THE EDGES NAMED `edges` OF `body` JOIN END TO END INTO ONE CHAIN, the path a sweep along them runs: asked
+/// before the sweep is laid, so edges that stand apart or branch are refused in words and lay no node that would stand
+/// red with the same words. Edges not on the body are left to the rebuild, which says which were lost.
+pub fn path_edges_join(body: &Shape, edges: &[u32]) -> Result<(), qymcad_core::errors::CoreError> {
+    let _gate = crate::kernel::kernel_gate();
+    match body.edge_chain_refusal(edges) {
+        crate::shape::CHAIN_APART => Err(qymcad_core::errors::CoreError::PathEdgesApart),
+        _ => Ok(()),
+    }
+}
+
 /// THE PATH A SWEEP IS ASKED TO RUN ALONG.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum SweepPath<'a> {
     /// A path sketch: its path as the sweep takes it (`[1.0, loop_block]`) and the placement of its sketch.
     Sketch { path: &'a [f64], place: [f64; 12] },
+    /// Edges of a body, by their persistent names: the chain they join into.
+    Edges(BodyEdges<'a>),
+}
+
+/// EDGES OF A BODY, by their persistent names.
+#[derive(Clone, Copy)]
+pub struct BodyEdges<'a> {
+    pub body: &'a Shape,
+    pub edges: &'a [u32],
 }
 
 /// A SWEEP ASKED ABOUT BEFORE IT IS BUILT: the placement of the profile's sketch and the path.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct SweepAsked<'a> {
     pub profile_place: [f64; 12],
     pub path: SweepPath<'a>,
@@ -130,6 +150,7 @@ pub fn sweep_run(asked: &SweepAsked<'_>, wait: Wait) -> Option<SweepRun> {
     };
     match asked.path {
         SweepPath::Sketch { path, place } => crate::shape::sweep_run_along_sketch(&asked.profile_place, path, &place),
+        SweepPath::Edges(BodyEdges { body, edges }) => crate::shape::sweep_run_along_edges(&asked.profile_place, body, edges),
     }
 }
 

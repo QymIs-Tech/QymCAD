@@ -436,30 +436,46 @@ pub fn mark_changed_params_dirty(params_seen: &std::collections::HashMap<String,
 
 /// The live wireframe preview of the active command (the prism of the profile along its extent) plus the
 /// arrow gizmo of the length.
+/// THE SWEEP PREVIEW OF THE TOOL IN HAND ([`sweep_preview`]): its path the edges picked in the view, by their names on
+/// the live body they lie on, or else its path sketch.
+pub fn painted_sweep_preview(pn: &Painting) -> Option<SweepPreview> {
+    let mut picked: Vec<u32> = pn.gsel.edges.iter().copied().collect();
+    picked.sort_unstable();
+    let edges = pn.edges.body.and_then(|b| pn.live.shapes.get(&b)).filter(|_| !picked.is_empty()).map(|body| qymcad_kernel::ask::BodyEdges { body, edges: &picked });
+    sweep_preview(pn.project, pn.sweep, edges)
+}
+
 /// The geometry of the LIVE SWEEP PREVIEW: the contour of the profile carried along the path with a
-/// parallel-transported frame (the minimal rotation between tangents, with no false twist). Where the profile stands and
-/// the path from the end the body starts at are the kernel's answer (`qymcad_kernel::ask::sweep_run`), the rule the
-/// sweep is built by: a copy of it here drew the profile carried to the start of the path by its sketch's origin while
-/// the body was built where the profile is drawn. The kernel is asked only when no rebuild holds it, so a frame drawn
-/// beside a rebuild has no preview and the next one has. Returns the polyline of the path in world coordinates and the
-/// section loops at the stations along it; the start agrees with the body, the middle is a stable approximation.
-pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPreview> {
-    let (prof_sid, path_sid) = (sweep.prof_sid, sweep.path_sid);
-    if prof_sid == 0 || path_sid == 0 {
+/// parallel-transported frame (the minimal rotation between tangents, with no false twist). The path is the edges of a
+/// body picked in the view (`edges`), or else the path sketch. Where the profile stands and the path from the end the
+/// body starts at are the kernel's answer (`qymcad_kernel::ask::sweep_run`), the rule the sweep is built by: a copy of it
+/// here drew the profile carried to the start of the path by its sketch's origin while the body was built where the
+/// profile is drawn, and the chain the edges join into is the kernel's to make. The kernel is asked only when no rebuild
+/// holds it, so a frame drawn beside a rebuild has no preview and the next one has. Returns the polyline of the path in
+/// world coordinates and the section loops at the stations along it; the start agrees with the body, the middle is a
+/// stable approximation.
+pub fn sweep_preview(project: &Project, sweep: SweepParams, edges: Option<qymcad_kernel::ask::BodyEdges<'_>>) -> Option<SweepPreview> {
+    let prof_sid = sweep.prof_sid;
+    if prof_sid == 0 {
         return None;
     }
     let prof_cid = if sweep.prof_cid != 0 { sweep.prof_cid } else { *project.sweep_profile_contours(prof_sid).first()? };
-    let path_cid = if sweep.path_cid != 0 { sweep.path_cid } else { *project.sweep_path_contours(path_sid).first()? };
     let pxy = project.contour_profile_xy(prof_cid)?; // the flat contour of the profile, closed
     let np = pxy.len() / 2;
     if np < 3 {
         return None;
     }
-    let encoded = project.sweep_path_encoded(path_sid, path_cid)?;
-    let asked = qymcad_kernel::ask::SweepAsked {
-        profile_place: project.sketch_frame_by_id(prof_sid)?.matrix12(),
-        path: qymcad_kernel::ask::SweepPath::Sketch { path: &encoded, place: project.sketch_frame_by_id(path_sid)?.matrix12() },
+    let encoded;
+    let path = match edges {
+        Some(edges) => qymcad_kernel::ask::SweepPath::Edges(edges),
+        None if sweep.path_sid == 0 => return None,
+        None => {
+            let path_cid = if sweep.path_cid != 0 { sweep.path_cid } else { *project.sweep_path_contours(sweep.path_sid).first()? };
+            encoded = project.sweep_path_encoded(sweep.path_sid, path_cid)?;
+            qymcad_kernel::ask::SweepPath::Sketch { path: &encoded, place: project.sketch_frame_by_id(sweep.path_sid)?.matrix12() }
+        }
     };
+    let asked = qymcad_kernel::ask::SweepAsked { profile_place: project.sketch_frame_by_id(prof_sid)?.matrix12(), path };
     let qymcad_kernel::ask::SweepRun { place, path } = qymcad_kernel::ask::sweep_run(&asked, qymcad_kernel::ask::Wait::IfFree)?;
     let n = path.len();
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

@@ -241,6 +241,14 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     let (t_outer, t_thickness, t_edge_r) = (qymcad_ui_state::cmd_val(pc.cmd, "outer"), qymcad_ui_state::cmd_val(pc.cmd, "thickness"), qymcad_ui_state::cmd_val(pc.cmd, "edge_r")); // the auger
     let (t_lead_in, t_lead_out) = (qymcad_ui_state::cmd_val(pc.cmd, "lead_in"), qymcad_ui_state::cmd_val(pc.cmd, "lead_out"));
     let (sw_prof, sw_path, sw_pcid, sw_hcid) = (pc.sweep.prof_sid, pc.sweep.path_sid, pc.sweep.prof_cid, pc.sweep.path_cid); // captured before the mutable borrow
+    let sw_along = sweep_along(pc);
+    let sweeps = pc.project.timeline.iter().any(|n| n.id == fid && matches!(n.kind, FeatureKind::Sweep { .. }));
+    let sw_target = if sweeps {
+        sweep_path_joins(pc)?;
+        Some(sweep_edit_target(pc.feat.op, pc.project, fid, *pc.sweep, sw_along.as_ref())?)
+    } else {
+        None
+    };
     let (lf_sids, lf_cids, lf_ruled) = (pc.loft.sids.clone(), pc.loft.cids.clone(), pc.loft.ruled); // the loft, captured before the mutable borrow
                                                                                                     // the kind of loft result maps to (src, op). For a boolean the target is the active body of the
                                                                                                     // context. When EDITING a loft that is already a boolean, the previous target is kept (`active_body`
@@ -273,13 +281,18 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
                 *src = lf_src; // 0 means a separate body; otherwise a boolean with the active or previous body
                 *op = lf_op;
             }
-            FeatureKind::Sweep { sketch, profiles, path_sketch, path, .. } => {
-                // update the profile, the path and the picked contours; either sketch may be changed
+            FeatureKind::Sweep { sketch, profiles, path_sketch, path, along, src, op, .. } => {
+                // update the profile, the path and the picked contours; either sketch may be changed, and the path may
+                // turn from a sketch to edges of a body or back
                 if sw_prof != 0 {
                     *sketch = sw_prof;
                 }
-                if sw_path != 0 {
+                if let Some(a) = sw_along.clone() {
+                    *along = Some(a);
+                    *path_sketch = 0;
+                } else if sw_path != 0 {
                     *path_sketch = sw_path;
+                    *along = None;
                 }
                 *profiles = if !edit_contours.is_empty() {
                     edit_contours.clone()
@@ -289,6 +302,10 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
                     Vec::new()
                 };
                 *path = sw_hcid;
+                if let Some(SweepTarget { src: s, op: o }) = sw_target {
+                    *src = s;
+                    *op = o;
+                }
             }
             FeatureKind::Extrude { profiles: prs, height, reach: rch, down: dn, fill: fl_field, .. } => {
                 // ALL the picked contours go into the node (a multi-contour feature is edited whole)

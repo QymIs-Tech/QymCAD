@@ -113,6 +113,7 @@ contract!(menu_theme_dark, qymcad_acceptance::tools::menus::THEME_DARK);
 contract!(menu_theme_dracula, qymcad_acceptance::tools::menus::THEME_DRACULA);
 contract!(con_symmetry, qymcad_acceptance::tools::sketch::CON_SYMMETRY);
 contract!(sweep, qymcad_acceptance::tools::part::SWEEP);
+contract!(sweep_edge, qymcad_acceptance::tools::part::SWEEP_EDGE);
 contract!(loft, qymcad_acceptance::tools::part::LOFT);
 contract!(insert_component, qymcad_acceptance::tools::assembly::INSERT_COMPONENT);
 contract!(construction, qymcad_acceptance::tools::sketch::CONSTRUCTION);

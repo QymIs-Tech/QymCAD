@@ -69,6 +69,9 @@ pub enum Fixture {
     /// A square of 10 on the table and a straight line of 40 up the front plane, in two sketches of the first part, the
     /// square's sketch picked in the tree: a profile and a path to sweep it along.
     SweepStraight,
+    /// The block with a square of 4 drawn on the side plane over its top front edge, y 0..4, z 10..14, the sketch left
+    /// selected: the profile of a rail to sweep along that edge.
+    SquareOverEdge,
     /// A square of 10 on the table and one of 20 on a datum plane 30 above, centred over it, in two sketches, the
     /// first picked in the tree: two sections to loft between.
     LoftSquares,
@@ -108,12 +111,13 @@ pub enum Fixture {
 }
 
 /// THE FIXTURES THAT LEAVE SOMETHING SELECTED, the last click of each picking it.
-const SELECTING: [Fixture; 6] = [
+const SELECTING: [Fixture; 7] = [
     Fixture::BlockInAssemblyPicked,
     Fixture::OverlappingPiecesUpperPicked,
     Fixture::RectangleSidePicked,
     Fixture::LineAndAxisPicked,
     Fixture::SweepStraight,
+    Fixture::SquareOverEdge,
     Fixture::LoftSquares,
 ];
 
@@ -140,6 +144,15 @@ impl Fixture {
                 Fixture::RectangleSketch.build_here(s);
                 let extrude = s.word("tb-extrude-hint");
                 s.press_hint(&extrude).key(qymcad::Key::Enter);
+            }
+            Fixture::SquareOverEdge => {
+                Fixture::Block.build_here(s);
+                s.key(qymcad::Key::Escape);
+                let side = s.word("plane-yz-side");
+                s.press_word(&side);
+                draw(s, "tb-rect-hint", &[(0.0, 10.0), (4.0, 14.0)]);
+                let finish = s.word("wb-finish");
+                s.press_word(&finish);
             }
             Fixture::BlockAndTwoSheets => {
                 Fixture::Block.build_here(s);

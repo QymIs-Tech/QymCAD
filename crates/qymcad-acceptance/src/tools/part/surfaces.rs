@@ -32,6 +32,7 @@ pub static FACE_COPY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/20-face-copy",
     not_applicable: &[
@@ -76,6 +77,7 @@ pub static OFFSET_SURFACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/27-offset-surface",
     not_applicable: &[
@@ -118,6 +120,7 @@ pub static REMOVE_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/12-remove-face",
     not_applicable: &[
@@ -158,6 +161,7 @@ pub static BOOLEAN: Tool = Tool {
     dependency: Some(Node { kind: "SplitBody", row: Some("feat-name-split-body") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/25-boolean",
     not_applicable: &[
@@ -199,6 +203,7 @@ pub static PATCH: Tool = Tool {
     dependency: Some(Node { kind: "Hole", row: Some("feat-name-hole") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/22-patch",
     not_applicable: &[
@@ -233,6 +238,7 @@ pub static SKETCH_ON_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "general/04-datums",
     not_applicable: &[
@@ -291,6 +297,7 @@ pub static STITCH: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/23-stitch",
     not_applicable: &[
@@ -326,6 +333,7 @@ pub static REPLACE_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/21-surface-replace",
     not_applicable: &[
@@ -365,6 +373,7 @@ pub static TRIM_SURFACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/24-trim",
     not_applicable: &[

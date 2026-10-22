@@ -86,6 +86,12 @@ pub trait Kernel {
         let first = profiles.first().ok_or(crate::errors::CoreError::NoContours)?;
         self.sweep(body, first, profile_place, path, path_place, [0, 0])
     }
+    /// Sweep several profiles along a chain of edges of a body (`along`), merge them and apply a single boolean against
+    /// body `src`, as [`Kernel::sweep_multi`] does along a sketch. The edges live only in the kernel, so the default is a
+    /// refusal.
+    fn sweep_along(&self, _bo: crate::model::BodyOp, _profiles: &[Vec<f64>], _profile_place: [f64; 12], _along: Along<'_>, _sides: Sides<'_>) -> Result<Built, crate::errors::CoreError> {
+        Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Sweep))
+    }
     /// Sweep: the exact profile `profile` (`encode_profile`), placed by `profile_place`, is swept along the
     /// path `path` (`[1.0, loop_block]`, one open or closed contour) placed by `path_place`, giving a body
     /// with exact faces. The default implementation is a fallback, since there is no sweep without OCCT.

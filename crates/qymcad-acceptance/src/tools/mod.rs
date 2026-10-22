@@ -33,6 +33,7 @@ pub static ALL: &[&Tool] = &[
     &part::PATCH,
     &part::SKETCH_ON_FACE,
     &part::SWEEP,
+    &part::SWEEP_EDGE,
     &part::LOFT,
     &part::THREAD,
     &part::THREAD_OWN_PITCH,

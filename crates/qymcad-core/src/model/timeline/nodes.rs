@@ -244,7 +244,29 @@ impl Project {
         self.push_timeline(FeatureNode {
             id: body,
             name: "feat-name-sweep".into(),
-            kind: FeatureKind::Sweep { sketch, profiles, path_sketch, path, src, op, body, pieces: Vec::new() },
+            kind: FeatureKind::Sweep { sketch, profiles, path_sketch, path, along: None, src, op, body, pieces: Vec::new() },
+            parent,
+            dirty: true,
+            suppressed: false,
+        });
+        body
+    }
+
+    /// Sweep the profile contours along edges of a body - `along`, picked by hand - instead of a sketch, with the boolean
+    /// against body `src` as in [`Project::add_sweep_multi_op`]. The picked edges are recorded by name, so the path
+    /// follows them when that body is rebuilt.
+    pub fn add_sweep_along(&mut self, sketch: Id, profiles: Vec<Id>, along: crate::feature::EdgePath, src: Id, op: u8) -> Id {
+        use crate::feature::{FeatureKind, FeatureNode};
+        let body = self.alloc_id();
+        let parent = Some(self.body_parent());
+        let picked = along.edges.query.picked_descs();
+        if !picked.is_empty() {
+            self.capture_edge_refs(body, along.body, &picked);
+        }
+        self.push_timeline(FeatureNode {
+            id: body,
+            name: "feat-name-sweep".into(),
+            kind: FeatureKind::Sweep { sketch, profiles, path_sketch: 0, path: 0, along: Some(along), src, op, body, pieces: Vec::new() },
             parent,
             dirty: true,
             suppressed: false,

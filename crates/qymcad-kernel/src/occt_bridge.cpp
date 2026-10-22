@@ -3344,6 +3344,33 @@ extern "C" size_t qym_sweep_run(const double* prof_tf, const double* path, size_
     return 0;
 }
 
+// THE PROFILE PLACED AND RUN ALONG THE PATH: the face `f`, its edges bound to the names of the faces they will sweep out
+// (`esrc`), put into the world by `place` and swept along `spine_s` from its first point.
+static QymShape* sweep_placed(const TopoDS_Face& f, const TopTools_DataMapOfShapeInteger& esrc, const TopoDS_Wire& spine_s, const gp_Trsf& place, unsigned cap0, unsigned cap1) {
+    // THE ORIGINS TRAVEL WITH THE MOVE: the profile is placed into the world and its edges are RECREATED in the
+    // process - without carrying the binding there would be nothing to look a face's name up by.
+    BRepBuilderAPI_Transform tr(f, place, Standard_True);
+    TopoDS_Shape prof_s = tr.Shape();
+    if (prof_s.IsNull() || prof_s.ShapeType() != TopAbs_FACE) return why("sweep/profile", "the profile stopped being a face when placed on the path"), nullptr;
+    TopTools_DataMapOfShapeInteger esrc_s;
+    for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const TopoDS_Shape& e = ex.Current();
+        if (!esrc.IsBound(e)) continue;
+        const TopTools_ListOfShape& mod = tr.Modified(e);
+        if (mod.IsEmpty()) {
+            if (!esrc_s.IsBound(e)) esrc_s.Bind(e, esrc.Find(e));
+        } else {
+            for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next())
+                if (!esrc_s.IsBound(it.Value())) esrc_s.Bind(it.Value(), esrc.Find(e));
+        }
+    }
+    BRepOffsetAPI_MakePipe mk(spine_s, prof_s);
+    mk.Build();
+    if (!mk.IsDone()) return why("sweep/pipe", "the kernel could not run the profile along the path"), nullptr;
+    if (mk.Shape().IsNull()) return why("sweep/pipe", "the kernel reported success and returned nothing"), nullptr;
+    return seeded_sweep(mk, TopoDS::Face(prof_s), &esrc_s, cap0, cap1);
+}
+
 // A SWEEP. The profile (exact, from `build_exact_face`, holes included) is swept along the path - ONE wire (exact,
 // from `build_exact_wire` with L=1). `prof_tf` and `path_tf` are the 3x4 placements of the two sketches into world
 // space (nullptr is the identity). A profile that is a FACE makes `MakePipe` give a SOLID body, and the holes survive
@@ -3361,30 +3388,100 @@ extern "C" QymShape* qym_shape_sweep(const double* prof, size_t np, const double
         gp_Trsf place;
         bool from_end = false;
         if (!sweep_start(prof_tf, spine_s, place, from_end)) return nullptr;
-        // THE ORIGINS TRAVEL WITH THE MOVE: the profile is placed into the world and its edges are RECREATED in the
-        // process - without carrying the binding there would be nothing to look a face's name up by.
-        BRepBuilderAPI_Transform tr(f, place, Standard_True);
-        TopoDS_Shape prof_s = tr.Shape();
-        if (prof_s.IsNull() || prof_s.ShapeType() != TopAbs_FACE) return why("sweep/profile", "the profile stopped being a face when placed on the path"), nullptr;
-        TopTools_DataMapOfShapeInteger esrc_s;
-        for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next()) {
-            const TopoDS_Shape& e = ex.Current();
-            if (!esrc.IsBound(e)) continue;
-            const TopTools_ListOfShape& mod = tr.Modified(e);
-            if (mod.IsEmpty()) {
-                if (!esrc_s.IsBound(e)) esrc_s.Bind(e, esrc.Find(e));
-            } else {
-                for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next())
-                    if (!esrc_s.IsBound(it.Value())) esrc_s.Bind(it.Value(), esrc.Find(e));
-            }
-        }
-        BRepOffsetAPI_MakePipe mk(spine_s, prof_s);
-        mk.Build();
-        if (!mk.IsDone()) return why("sweep/pipe", "the kernel could not run the profile along the path"), nullptr;
-        if (mk.Shape().IsNull()) return why("sweep/pipe", "the kernel reported success and returned nothing"), nullptr;
-        return seeded_sweep(mk, TopoDS::Face(prof_s), &esrc_s, cap0, cap1);
+        return sweep_placed(f, esrc, spine_s, place, cap0, cap1);
     } QYM_WHY_CATCH("sweep")
     return nullptr;
+}
+// WHY THE EDGES NAMED AS THE PATH OF A SWEEP MAKE NO CHAIN, as `edge_chain` answers it to the Rust side.
+enum ChainRefusal : int { CHAIN_TAKEN = 0, CHAIN_NOT_ON_BODY = 1, CHAIN_APART = 2 };
+
+// THE PATH OF A SWEEP ALONG EDGES OF A BODY: the chain the edges of `s` named `idx` (their persistent names, each taken
+// once however often it is named) join into, end to end, in the body's own place. The body is only read: the chain is
+// joined from a copy of the edges taken, which keeps their shared ends shared. A null wire when they make no chain, the
+// reason in `refused`: a name not on the body, or edges that stand apart or branch - the kernel would sweep a part of
+// them.
+static TopoDS_Wire edge_chain(const QymShape* s, const uint32_t* idx, size_t n, int& refused) {
+    refused = CHAIN_NOT_ON_BODY;
+    const std::set<uint32_t> named(idx, idx + n);
+    if (named.empty()) return why("sweep/edges", "not one edge was named as the path"), TopoDS_Wire();
+    // THE TRAVERSAL YIELDS AN EDGE ONCE PER FACE IT BELONGS TO: each is taken once
+    TopTools_MapOfShape seen;
+    TopoDS_Compound taken;
+    BRep_Builder bb;
+    bb.MakeCompound(taken);
+    size_t found = 0;
+    for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+        if (!seen.Add(ex.Current()) || !s->eids.IsBound(ex.Current())) continue;
+        if (named.count(static_cast<uint32_t>(s->eids.Find(ex.Current())))) {
+            bb.Add(taken, ex.Current());
+            ++found;
+        }
+    }
+    if (found != named.size()) return why("sweep/edges", "an edge named as the path is not on the body"), TopoDS_Wire();
+    refused = CHAIN_APART;
+    BRepBuilderAPI_Copy copied(taken);
+    TopTools_ListOfShape edges;
+    for (TopExp_Explorer ex(copied.Shape(), TopAbs_EDGE); ex.More(); ex.Next()) edges.Append(ex.Current());
+    BRepBuilderAPI_MakeWire mw;
+    mw.Add(edges);
+    if (!mw.IsDone()) return why("sweep/edges", "the edges of the path do not join end to end"), TopoDS_Wire();
+    TopoDS_Wire chain = mw.Wire();
+    size_t joined = 0;
+    for (TopExp_Explorer ex(chain, TopAbs_EDGE); ex.More(); ex.Next()) ++joined;
+    if (joined != found) return why("sweep/edges", "the edges of the path branch or stand apart: they do not join into one chain"), TopoDS_Wire();
+    refused = CHAIN_TAKEN;
+    return chain;
+}
+
+// A SWEEP ALONG EDGES OF A BODY: the profile run along the chain the edges of `s` named `idx` join into
+// (`edge_chain`), standing as `sweep_start` puts it, from whichever end of the chain meets its plane. Edges that make no
+// chain are refused with the reason in `out_refused` (a `ChainRefusal`).
+extern "C" QymShape* qym_shape_sweep_edges(const double* prof, size_t np, const double* prof_tf, const QymShape* s, const uint32_t* idx, size_t n,
+                                unsigned cap0, unsigned cap1, int* out_refused) {
+    *out_refused = CHAIN_TAKEN;
+    if (!s) return why("sweep/edges", "there is no body to take the path from"), nullptr;
+    try {
+        QYM_SIGNALS;
+        QYM_AS_HANDED(s, "it only reads the edges of the body and joins copies of them");
+        TopoDS_Wire spine_s = edge_chain(s, idx, n, *out_refused);
+        if (spine_s.IsNull()) return nullptr;
+        TopTools_DataMapOfShapeInteger esrc; // a profile edge gives the name of the face it will sweep out
+        TopoDS_Face f = build_exact_face_src(prof, np, &esrc);
+        if (f.IsNull()) return why("sweep/profile", "the profile did not close into a face"), nullptr;
+        gp_Trsf place;
+        bool from_end = false;
+        if (!sweep_start(prof_tf, spine_s, place, from_end)) return nullptr;
+        return sweep_placed(f, esrc, spine_s, place, cap0, cap1);
+    } QYM_WHY_CATCH("sweep/edges")
+    return nullptr;
+}
+
+// WHETHER THE EDGES OF `s` NAMED `idx` JOIN INTO THE CHAIN OF A SWEEP'S PATH (`edge_chain`), asked before the sweep is
+// laid: a `ChainRefusal`.
+extern "C" int qym_edge_chain_refusal(const QymShape* s, const uint32_t* idx, size_t n) {
+    if (!s) return CHAIN_NOT_ON_BODY;
+    try {
+        QYM_SIGNALS;
+        QYM_AS_HANDED(s, "it only reads the edges of the body and joins copies of them");
+        int refused = CHAIN_TAKEN;
+        edge_chain(s, idx, n, refused);
+        return refused;
+    } QYM_WHY_CATCH("sweep/chain")
+    return CHAIN_APART;
+}
+
+// The run of a sweep along the chain the edges of `s` named `idx` join into (`edge_chain`), as `sweep_run` gives it.
+extern "C" size_t qym_sweep_run_edges(const double* prof_tf, const QymShape* s, const uint32_t* idx, size_t n, double* out_place, double* out_pts, size_t cap) {
+    if (!s) return 0;
+    try {
+        QYM_SIGNALS;
+        QYM_AS_HANDED(s, "it only reads the edges of the body and joins copies of them");
+        int refused = CHAIN_TAKEN;
+        TopoDS_Wire spine_s = edge_chain(s, idx, n, refused);
+        if (spine_s.IsNull()) return 0;
+        return sweep_run(prof_tf, spine_s, out_place, out_pts, cap);
+    } QYM_WHY_CATCH("sweep/run")
+    return 0;
 }
 // A LOFT through sections. `data` is the concatenation of the sections' loop blocks (each read by
 // `build_exact_wire`), `offsets[nsec+1]` holds where each section starts within `data`, and
