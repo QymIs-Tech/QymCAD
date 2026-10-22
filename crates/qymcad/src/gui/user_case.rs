@@ -13,6 +13,7 @@ mod tests {
     use super::super::{hand::Hand, App};
     mod check_all;
     mod drawing;
+    mod frame_steps;
     mod orders;
     mod save_and_reopen;
     mod sketch_steps;
@@ -3014,6 +3015,7 @@ mod tests {
 
         the_view::framed_wheeled_to_a_hole_and_turned(&mut app, &mut problems);
         sketch_steps::every_kind_of_curve_cut_extended_and_copied(&mut app, &mut problems);
+        frame_steps::one_gesture_in_every_workbench(&mut app, &mut problems);
         // ── THE FINAL DOCUMENT TO LOOK AT: it stays in target ───────────────────────────
         let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
         crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, out.clone());
@@ -3021,10 +3023,7 @@ mod tests {
         app.drain_bg_for_test();
         eprintln!("the scenario document: {out}");
 
-        the_faults::named_refusals_removed(&mut app);
-
-        let red = the_faults::red_nodes_named(&app);
-        assert!(red.is_empty(), "no red nodes may be left in the finished project:\n  {}", red.join("\n  "));
+        the_faults::no_red_node_is_left(&mut app);
         assert!(problems.is_empty(), "THE USER SCENARIO FOUND {} problems:\n  {}", problems.len(), problems.join("\n  "));
     }
 }

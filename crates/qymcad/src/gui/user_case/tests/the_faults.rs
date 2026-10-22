@@ -70,7 +70,7 @@ pub(super) fn a_broken_node_is_counted_and_led_to(app: &mut App, problems: &mut 
 /// and the next operation smoothed every edge away - so on the rebuild the fillet had nothing left to round. That is why
 /// the cleanup stands at the end, after every edit, rather than at the moment of the step: any earlier there was simply
 /// nothing to catch. Nameless refusals stay - they are findings.
-pub(super) fn named_refusals_removed(app: &mut App) {
+fn named_refusals_removed(app: &mut App) {
     // PASSES WITH A REBUILD. A node's error is recorded BY THE REBUILD, not at the moment of
     // the step: gathering the list before it means gathering nothing. And once some nodes are
     // removed, others that stood on them can turn red.
@@ -90,7 +90,7 @@ pub(super) fn named_refusals_removed(app: &mut App) {
 
 /// A RED NODE NAMES THE PART AND THE OPERATION: "node 75 failed" says nothing, while "the shell
 /// failed in part Order B" leads straight to the place.
-pub(super) fn red_nodes_named(app: &App) -> Vec<String> {
+fn red_nodes_named(app: &App) -> Vec<String> {
     app.project
         .regen_errors
         .iter()
@@ -106,4 +106,12 @@ pub(super) fn red_nodes_named(app: &App) -> Vec<String> {
             format!("[{part}] {what} (node {id}): {e:?}")
         })
         .collect()
+}
+
+/// NO RED NODE IS LEFT IN THE FINISHED PROJECT once the named refusals are removed (`named_refusals_removed`), every one
+/// left said by its part and its operation.
+pub(super) fn no_red_node_is_left(app: &mut App) {
+    named_refusals_removed(app);
+    let red = red_nodes_named(app);
+    assert!(red.is_empty(), "no red nodes may be left in the finished project:\n  {}", red.join("\n  "));
 }
