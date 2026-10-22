@@ -3021,48 +3021,9 @@ mod tests {
         app.drain_bg_for_test();
         eprintln!("the scenario document: {out}");
 
-        // ── REMOVE THE NAMED REFUSALS AFTER ALL THE WORK ────────────────────────────────
-        //
-        // A node can turn red LATER than it was created: a fillet landed well, and the next operation
-        // smoothed every edge away - so on the rebuild the fillet had nothing left to round. That is
-        // why the cleanup stands here, after every edit, rather than at the moment of the step: any
-        // earlier there was simply nothing to catch. Nameless refusals stay - they are findings.
-        {
-            // PASSES WITH A REBUILD. A node's error is recorded BY THE REBUILD, not at the moment of
-            // the step: gathering the list before it means gathering nothing. And once some nodes are
-            // removed, others that stood on them can turn red.
-            for _ in 0..3 {
-                qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
-                let named: Vec<u64> =
-                    app.project.timeline.iter().filter(|n| app.project.regen_errors.get(&n.id).is_some_and(|e| !matches!(e, qymcad_core::errors::CoreError::OpFailed(_)))).map(|n| n.id).collect();
-                if named.is_empty() {
-                    break;
-                }
-                for id in named {
-                    app.project.delete_feature_op(id);
-                }
-            }
-            qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
-        }
+        the_faults::named_refusals_removed(&mut app);
 
-        // A RED NODE NAMES THE PART AND THE OPERATION: "node 75 failed" says nothing, while "the shell
-        // failed in part Order B" leads straight to the place.
-        let red: Vec<String> = app
-            .project
-            .regen_errors
-            .iter()
-            .map(|(id, e)| {
-                let node = app.project.timeline.iter().find(|n| n.id == *id);
-                let part = node.and_then(|n| n.parent).and_then(|c| app.project.components.iter().find(|x| x.id == c)).map(|c| crate::i18n::name(&c.name)).unwrap_or_else(|| {
-                    // THE NODE REFERENCES A PART THAT DOES NOT EXIST. This is not "outside a part"
-                    // but a dangling reference: the component is deleted and the build stayed. Such
-                    // a node cannot be shown in the tree - there is nowhere to draw it.
-                    format!("a dangling reference to part {:?}", node.and_then(|n| n.parent))
-                });
-                let what = node.map(|n| crate::i18n::name(&crate::gui::feat_default_name(&n.kind))).unwrap_or_default();
-                format!("[{part}] {what} (node {id}): {e:?}")
-            })
-            .collect();
+        let red = the_faults::red_nodes_named(&app);
         assert!(red.is_empty(), "no red nodes may be left in the finished project:\n  {}", red.join("\n  "));
         assert!(problems.is_empty(), "THE USER SCENARIO FOUND {} problems:\n  {}", problems.len(), problems.join("\n  "));
     }
