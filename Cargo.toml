@@ -57,7 +57,7 @@ edition = "2021"
 # push, so the number moves when there is something worth calling a new version - and it is what names
 # the packages (`qymcad-<version>-win64.zip`, `qymcad-<version>-x86_64.AppImage`) and what a problem
 # report carries.
-version = "0.1.0"
+version = "0.1.1"
 # THE FLOOR, MEASURED RATHER THAN GUESSED. It said 1.85 for months while the dependency graph moved on;
 # nobody noticed, because everyone here builds with a newer compiler. A packaging image pinned to the
 # declared floor then spent forty-four minutes building OCCT and refused at the two-second version check:
