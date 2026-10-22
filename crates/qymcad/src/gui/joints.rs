@@ -39,66 +39,54 @@ impl App {
         }
     }
 
-    /// TOGGLE THE GROUNDING TOOL. Through one door, like joint picking: it now has two ways in - the panel
-    /// button and the command search.
+    /// TAKE THE GROUNDING TOOL. Through one door, like joint picking: it has two ways in - the panel button and the
+    /// command search. Taken again, it is put down by the one door of a second press (`catalogue::again`).
     pub(crate) fn start_ground_pick(&mut self) {
-        // THE FLAG IS READ BEFORE THE CLEARING: `cancel_all_tools` wipes the very field it asks about.
-        let on = !self.side.joint.ground_pick;
         self.cancel_all_tools(); // mutually exclusive with the create tools and the other joint tools
-        start_ground_pick_armed(&mut self.joint_ctx(), on);
+        start_ground_pick_armed(&mut self.joint_ctx(), true);
     }
 
-    /// TOGGLE THE GROUP TOOL.
+    /// TAKE THE GROUP TOOL; a second press puts it down (`catalogue::again`).
     ///
     /// A group fastens a set of parts TO ONE ANOTHER where they stand. It picks no anchors, so it is not
     /// gathered the way a joint is: click as many parts as needed and confirm.
     pub(crate) fn start_group_pick(&mut self) {
-        // THE FLAG IS READ BEFORE THE CLEARING: `cancel_all_tools` wipes the very field it asks about.
-        let on = self.side.joint.group_pick.is_none();
         self.cancel_all_tools(); // mutually exclusive with the other tools
-        start_group_pick_armed(&mut self.joint_ctx(), on);
+        start_group_pick_armed(&mut self.joint_ctx(), true);
     }
 
-    /// TOGGLE THE TANGENCY TOOL.
+    /// TAKE THE TANGENCY TOOL; a second press puts it down (`catalogue::again`).
     ///
     /// Tangency needs no connectors - two surfaces are enough, so there is nothing to confirm: the second
     /// pick sets the condition straight away.
     pub(crate) fn start_tangent_pick(&mut self) {
-        // THE FLAG IS READ BEFORE THE CLEARING: `cancel_all_tools` wipes the very field it asks about.
-        let on = self.side.joint.tangent_pick.is_none();
         self.cancel_all_tools(); // mutually exclusive with the other tools
-        start_tangent_pick_armed(&mut self.joint_ctx(), on);
+        start_tangent_pick_armed(&mut self.joint_ctx(), true);
     }
 
-    /// TOGGLE THE WIDTH TOOL.
+    /// TAKE THE WIDTH TOOL; a second press puts it down (`catalogue::again`).
     ///
     /// Width puts a part MIDWAY between two walls. Three faces have to be shown: the two walls and the
     /// piece between them; the order matters.
     pub(crate) fn start_width_pick(&mut self) {
-        // THE FLAG IS READ BEFORE THE CLEARING: `cancel_all_tools` wipes the very field it asks about.
-        let on = self.side.joint.width_pick.is_none();
         self.cancel_all_tools(); // mutually exclusive with the other tools
-        start_width_pick_armed(&mut self.joint_ctx(), on);
+        start_width_pick_armed(&mut self.joint_ctx(), true);
     }
 
-    /// TOGGLE THE ANCHOR TOOL - creating a standalone connector.
+    /// TAKE THE ANCHOR TOOL - creating a standalone connector; a second press puts it down (`catalogue::again`).
     pub(crate) fn start_conn_pick(&mut self) {
-        // THE FLAG IS READ BEFORE THE CLEARING: `cancel_all_tools` wipes the very field it asks about.
-        let on = !self.side.joint.conn_pick;
         self.cancel_all_tools(); // mutually exclusive with the other tools
-        start_conn_pick_armed(&mut self.joint_ctx(), on);
+        start_conn_pick_armed(&mut self.joint_ctx(), true);
     }
 
-    /// TOGGLE THE RELATION TOOL.
+    /// TAKE THE RELATION TOOL; a second press puts it down (`catalogue::again`).
     ///
     /// A relation ties together the degrees of freedom of joints that already exist, so what is picked in
     /// it is THE JOINTS THEMSELVES, by clicking a row in the list of joints. There is no geometry to choose
     /// here: neither a face nor an edge concerns a relation.
     pub(crate) fn start_relation_pick(&mut self) {
-        // THE FLAG IS READ BEFORE THE CLEARING: `cancel_all_tools` wipes the very field it asks about.
-        let on = self.side.joint.relation_pick.is_none();
         self.cancel_all_tools(); // mutually exclusive with the other tools
-        start_relation_pick_armed(&mut self.joint_ctx(), on);
+        start_relation_pick_armed(&mut self.joint_ctx(), true);
     }
 
     /// LAUNCH A COMMAND BY ITS CATALOGUE CODE.

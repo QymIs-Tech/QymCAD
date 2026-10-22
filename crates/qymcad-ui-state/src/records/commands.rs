@@ -340,6 +340,16 @@ pub struct SketchTool {
     /// letters of the string were taken out because the font cannot write them: a click on the empty string names
     /// the font rather than blaming the string
     pub text_refused: bool,
+    /// the tool finished its work by a click - a text placed, a move made: the frame puts it down as after an Apply
+    pub finished: Finished,
+}
+
+/// HAS THE TOOL IN HAND FINISHED ITS WORK BY A CLICK in the view, since the frame last asked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Finished {
+    #[default]
+    Not,
+    ByClick,
 }
 
 impl SketchTool {

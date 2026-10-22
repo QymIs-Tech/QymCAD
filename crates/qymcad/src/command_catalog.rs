@@ -78,9 +78,10 @@ pub fn key_again(bc: &mut qymcad_ui_state::BarCtx, key: qymcad_ui_state::Chord) 
 
 /// THE ROW OF THE CATALOGUE A KEY TAKES: the row under the code of its action, or for the keys whose action is named
 /// apart from the row they take, that row. A cut is no command of its own - it is the extrusion with the operation of a
-/// cut - and has none.
+/// cut - and takes the row of the extrusion: Q pressed again puts the cut in hand down.
 fn command_of_key(action: &str) -> Option<&'static Command> {
     let code = match action {
+        "part.cut" => "part.extrude",
         "sketch.corner-fillet" => "sketch.corner",
         "part.sketch-pick" => "part.sketch",
         "assembly.rigid-joint" => "assembly.joint",

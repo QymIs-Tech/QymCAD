@@ -143,6 +143,8 @@ impl FramedTool for InSketch<'_, '_> {
                 let bar = tool_opts(sk);
                 let name = tool_name(sk.armed);
                 let pattern = sk.armed.pattern().is_some();
+                // a text, a move and a copy do one thing too, finished by a click (`finished_by_click`)
+                let by_click = sk.armed.drawing() == Some(qymcad_ui_state::SketchShape::Text) || sk.armed.moving().is_some();
                 let empty = matches!(*sk.armed, qymcad_ui_state::Armed::None);
                 let boxed = self.box_now();
                 let ends = match self.boxed {
@@ -156,7 +158,7 @@ impl FramedTool for InSketch<'_, '_> {
                 };
                 // THE TURN AND THE PATTERN DO ONE THING: made, the selection is in hand; a shape, a dimension, the corner and
                 // the offset stay for the next
-                let after = if self.boxed == Boxed::Turn || (self.boxed == Boxed::Nothing && pattern) { AfterApply::Select } else { AfterApply::Stays };
+                let after = if self.boxed == Boxed::Turn || (self.boxed == Boxed::Nothing && (pattern || by_click)) { AfterApply::Select } else { AfterApply::Stays };
                 Described { head: Head { after, ..head(name, ends) }, bar, gate: self.gate.clone(), says: Vec::new(), boxed }
             }
         }
@@ -279,8 +281,17 @@ impl FramedTool for InSketch<'_, '_> {
     }
 
     /// The turn made, the pattern made: every tool of the sketch put down, the arrow in hand.
+    /// The tools of the sketch put down, the arrow in hand - what the tool said of its work kept on the status line: the
+    /// arrow taken says how much is selected, and over "Rotated by 90 deg" or a letter refused that told nothing.
     fn put_down(&mut self) {
+        let said = self.sk.status.clone();
         qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(self.sk));
+        *self.sk.status = said;
+    }
+
+    /// A text placed, a move or a copy made by its target click: said once, and the frame puts the tool down.
+    fn finished_by_click(&mut self) -> bool {
+        std::mem::take(&mut self.sk.tool.finished) == qymcad_ui_state::Finished::ByClick
     }
 
     /// ONE STEP OF THE Esc OF A SKETCH (`escape_step`). The box of the sizes of a shape is a step of its own: it goes, the

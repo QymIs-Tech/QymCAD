@@ -21,16 +21,13 @@ impl App {
         measure_text(&self.painting())
     }
 
-    /// SWITCH the 3D measuring tool ON or OFF.
+    /// TAKE the 3D measuring tool; a second press puts it down (`catalogue::again`).
     pub(super) fn toggle_measure_3d(&mut self) {
-        let on = !self.side.m3.on;
         self.cancel_all_tools(); // exclusivity: the measuring tool puts down the previous one
         self.side.m3.clear();
-        self.side.m3.on = on;
-        if on {
-            self.viewing.mode_3d = true;
-            self.status = Notice::info(crate::i18n::tr("m3-hint"));
-        }
+        self.side.m3.on = true;
+        self.viewing.mode_3d = true;
+        self.status = Notice::info(crate::i18n::tr("m3-hint"));
     }
 
     /// A click of the measuring tool: resolve the hit and update the result.

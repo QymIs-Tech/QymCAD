@@ -508,7 +508,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
             if !sk.tool_prefs.text.trim().is_empty() {
                 sk.project.add_note(si, w.x, w.y, sk.tool_prefs.text.clone());
                 *sk.status = Notice::info(qymcad_i18n::tr("sk-note-added"));
-                *sk.armed = qymcad_ui_state::Armed::None; // placed once, as a label is
+                sk.tool.finished = qymcad_ui_state::Finished::ByClick; // placed once, as a label is: the frame puts the tool down
                 sk.tool_prefs.text.clear();
             }
         }
@@ -556,8 +556,8 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 // A LABEL IS PLACED ONCE: the tool is put down, as in the CAD programs people know. Kept in hand it laid
                 // a copy of the label on every stray click until Esc (found checking issue #32). Its string goes too: the
                 // tool taken again offered it, and a click placed the same label once more; the height and the font
-                // stay as they were set.
-                *sk.armed = qymcad_ui_state::Armed::None;
+                // stay as they were set. The frame puts the tool down, by the door every finished tool goes through.
+                sk.tool.finished = qymcad_ui_state::Finished::ByClick;
                 sk.tool_prefs.text.clear();
             } else if !qymcad_ui_state::any_font_at_all(&mut *sk.font_cache) {
                 *sk.status = Notice::refusal(qymcad_i18n::tr("sk-font-not-found"));
@@ -1010,7 +1010,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         // that the drawing did not move at all
                         *sk.status = if asked > 1e-9 && went < (asked * 0.1).max(1e-2) { Notice::warning(qymcad_i18n::tr("sk-move-held")) } else { Notice::info(qymcad_i18n::tr("sk-moved")) };
                     }
-                    *sk.armed = qymcad_ui_state::Armed::None;
+                    sk.tool.finished = qymcad_ui_state::Finished::ByClick; // the move made: the frame puts the tool down
                     qymcad_ui_state::invalidate(&mut *sk.regen);
                     qymcad_ui_state::commit_edit(&mut sk.rebuild());
                 }

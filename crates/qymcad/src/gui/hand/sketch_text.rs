@@ -2,12 +2,6 @@
 
 use super::*;
 
-/// A FIELD OF THE TOP BAR OF THE TEXT TOOL: where its caption stands, and what is typed into the field beside it.
-struct Field {
-    caption: egui::Rect,
-    words: String,
-}
-
 impl Hand<'_> {
     /// CHOOSE A FONT FROM A FILE: the list of fonts is opened by the button of the top bar that names the font of
     /// the text tool, the file chooser behind "From a file..." answers with `path`, and the list is closed with
@@ -84,8 +78,8 @@ impl Hand<'_> {
         false
     }
 
-    /// TYPE THE TEXT AND ITS HEIGHT into the top bar, with the text tool taken by its button first - unless it
-    /// is in hand already, where its button would put it down. The click that follows places the text.
+    /// TYPE THE TEXT into the top bar and ITS HEIGHT into the box of the tool, with the text tool taken by its button
+    /// first - unless it is in hand already, where its button would put it down. The click that follows places the text.
     ///
     /// Each field is clicked just right of the word that names it, its text is selected with Ctrl+A and typed
     /// over. Tab leaves the height, so the next click on the canvas is not a click out of a field.
@@ -97,12 +91,11 @@ impl Hand<'_> {
         let word =
             |hand: &Self, w: &str, near: egui::Pos2| hand.win.drawn.iter().filter(|(t, _)| t == w).map(|(_, r)| *r).min_by(|a, b| a.center().distance(near).total_cmp(&b.center().distance(near)));
         let named = word(self, &qymcad_i18n::tr("tool-text"), egui::Pos2::new(700.0, 0.0)).expect("the top bar of the text tool names no string field");
-        let height_at = word(self, &qymcad_i18n::tr("opt-height-short"), named.center()).expect("the top bar of the text tool names no height");
-        for field in [Field { caption: named, words: text.to_string() }, Field { caption: height_at, words: format!("{height}") }] {
-            self.press_screen(egui::pos2(field.caption.right() + 24.0, field.caption.center().y));
-            self.chord(egui::Modifiers::COMMAND, egui::Key::A);
-            self.type_text(&field.words);
-        }
+        self.press_screen(egui::pos2(named.right() + 24.0, named.center().y));
+        self.chord(egui::Modifiers::COMMAND, egui::Key::A);
+        self.type_text(text);
+        // the height is a field of the box of the tool, found right of its caption there
+        assert!(self.type_after_word(&qymcad_i18n::tr("opt-height-short"), &format!("{height}")), "the box of the text tool names no height");
         self.key(egui::Key::Tab);
         self.close_window()
     }

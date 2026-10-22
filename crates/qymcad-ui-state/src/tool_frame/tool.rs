@@ -26,6 +26,12 @@ pub trait FramedTool {
     /// Put the tool down, what it made kept: asked by the frame after an Apply that went through, when the head says the
     /// selection comes after it ([`AfterApply::Select`]). A tool that stays in hand is never asked.
     fn put_down(&mut self) {}
+    /// HAS THE TOOL FINISHED ITS WORK BY A CLICK in the view since the frame last asked - a text placed, a move made by
+    /// its target. Asked once a frame and answered once: the frame then puts it down by the same door as after an Apply,
+    /// when its head says the selection comes after it.
+    fn finished_by_click(&mut self) -> bool {
+        false
+    }
     /// Esc with no field holding the keyboard: let go of one thing, or say there is nothing left to let go of - a tool
     /// that picks nothing along the way has nothing, and Esc puts it down.
     fn back(&mut self) -> Stepped {
@@ -66,9 +72,14 @@ pub fn tool_in_hand(ui: &mut egui::Ui, canvas: egui::Rect, tool: Option<Box<dyn 
     let ctx = ui.ctx().clone();
     let canvas = view_or_window(&ctx, canvas);
     let mut described = tool.describe(&ctx);
+    // THE WORK FINISHED BY A CLICK goes through the door Apply goes through: the tool put down where its head says so
+    if tool.finished_by_click() && described.head.after == AfterApply::Select {
+        tool.put_down();
+        return;
+    }
     let mut fields = std::mem::take(tool.fields());
     let mut texts = tool.bar_texts().map(std::mem::take);
-    let moved = numbers_into_the_box(&mut described, texts.as_ref());
+    let moved = numbers_into_the_box(&ctx, &mut described, texts.as_ref());
     let own = fields.len();
     fields.extend(moved.iter().map(|m| m.field.clone()));
     let look = tool.look();
@@ -142,7 +153,12 @@ struct Moved {
 /// it, the gate of the box shut by it. A tool with no box now gets one in the corner of the view for its numbers. The
 /// text typed is kept where the bar kept it (`bar_texts`); a value taken goes to the tool as the bar gave it
 /// (`Did::Typed`). One place for every tool of every workbench: no tool lays a field in its bar.
-fn numbers_into_the_box(described: &mut Described, texts: Option<&std::collections::HashMap<&'static str, String>>) -> Vec<Moved> {
+///
+/// A VALUE SET FROM ELSEWHERE REACHES A FIELD NOBODY IS TYPING IN: the text kept is the field's only while it holds the
+/// keyboard. Kept for a field at rest, a height of 10 typed for one text stood over the 20 of a label opened for editing,
+/// and went back to the tool as typed.
+fn numbers_into_the_box(ctx: &egui::Context, described: &mut Described, texts: Option<&std::collections::HashMap<&'static str, String>>) -> Vec<Moved> {
+    let tool = box_id(&described.head).value();
     let mut moved = Vec::new();
     let mut rows = Vec::new();
     for o in &described.bar {
@@ -150,7 +166,8 @@ fn numbers_into_the_box(described: &mut Described, texts: Option<&std::collectio
         let mut p = CmdParam::new(label, key.name, *value, *limits.range.start(), *limits.range.end());
         p.number = limits.number;
         p.nonzero = limits.zero == Zero::Refused;
-        p.txt = texts.and_then(|t| t.get(key.name).cloned()).unwrap_or_else(|| qymcad_core::expr::fmt_num(*value));
+        let typing = ctx.memory(|m| m.has_focus(field_id(tool, key.name)));
+        p.txt = texts.filter(|_| typing).and_then(|t| t.get(key.name).cloned()).unwrap_or_else(|| qymcad_core::expr::fmt_num(*value));
         let row = Row::new(qymcad_i18n::tr(label)).field(key.name).said_under();
         rows.push(match limits.unit {
             Some(unit) => row.unit(unit),

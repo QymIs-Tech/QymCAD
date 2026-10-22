@@ -37,7 +37,7 @@ struct CommandTool<'a, 'b> {
 impl CommandTool<'_, '_> {
     /// Does Enter take an extrusion or a revolution from the flat choice of its contours, the contours picked, into 3D.
     fn takes_into_3d(&self) -> bool {
-        self.kind.picks_profiles() && !*self.pc.mode_3d && !self.pc.gsel.profiles.is_empty()
+        takes_into_3d(self.pc)
     }
 }
 
@@ -85,21 +85,21 @@ impl FramedTool for CommandTool<'_, '_> {
     /// into 3D to set its size there - the gizmo or the field; the next Enter applies it.
     fn apply(&mut self) -> Result<(), NotApplied> {
         if self.takes_into_3d() {
-            *self.pc.mode_3d = true;
-            *self.pc.status = Notice::info(qymcad_i18n::tr("in-drag-or-type"));
+            let pc = &mut *self.pc;
+            *pc.mode_3d = true;
+            *pc.status = Notice::info(qymcad_i18n::tr("in-drag-or-type"));
             return Ok(());
         }
-        apply_feat_cmd(self.pc)
+        apply_feat_cmd_kept(self.pc)
     }
 
     fn cancel(&mut self) {
         qymcad_ui_state::cancel_feat_cmd(self.pc);
     }
 
-    /// The command is closed as a whole. `apply_feat_cmd` closes it too as it finishes the operation cleanly, for the
-    /// checks and the trial build that apply it with no frame; closing a closed command changes nothing.
+    /// The command made its feature: put down, the picks let go, the view given back (`put_down_command`).
     fn put_down(&mut self) {
-        self.pc.cmd.close(self.pc.armed);
+        put_down_command(self.pc);
     }
 
     /// The choice of a contour of a sweep or a loft is let go first, returning to 3D; then a reference being picked -
@@ -264,7 +264,7 @@ impl FramedTool for CompArrayTool<'_, '_> {
     }
 
     fn apply(&mut self) -> Result<(), NotApplied> {
-        apply_comp_array(self.pc)
+        apply_comp_array_kept(self.pc)
     }
 
     fn cancel(&mut self) {
@@ -272,10 +272,9 @@ impl FramedTool for CompArrayTool<'_, '_> {
         *self.pc.status = Notice::info(qymcad_i18n::tr("msg-comp-array-cancelled"));
     }
 
-    /// The command is closed as a whole. `apply_comp_array` closes it too, for the checks that apply it with no frame.
+    /// The pattern made, or cancelled: put down (`put_down_comp_array`).
     fn put_down(&mut self) {
-        *self.pc.carr = qymcad_ui_state::CompArrayCmd::default();
-        self.pc.cmd.params.clear();
+        put_down_comp_array(self.pc);
     }
 
     /// An axis being picked is let go first.

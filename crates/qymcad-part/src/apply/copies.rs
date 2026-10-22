@@ -174,7 +174,22 @@ pub fn apply_comp_giz(pc: &mut qymcad_ui_state::PartCtx) {
 }
 
 /// Apply the component array (Enter): create a new one or update the one being edited.
+/// APPLY THE PATTERN OF PARTS AND PUT IT DOWN, as Enter and the door of the frame after it do - for a check that applies
+/// it with no frame.
 pub fn apply_comp_array(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotApplied> {
+    apply_comp_array_kept(pc)?;
+    put_down_comp_array(pc);
+    Ok(())
+}
+
+/// THE PATTERN OF PARTS PUT DOWN - the door of the frame after Apply, and Cancel.
+pub fn put_down_comp_array(pc: &mut qymcad_ui_state::PartCtx) {
+    *pc.carr = qymcad_ui_state::CompArrayCmd::default();
+    pc.cmd.params.clear();
+}
+
+/// APPLY THE PATTERN OF PARTS IN HAND, the command left in hand for the door of the frame to put down.
+pub fn apply_comp_array_kept(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotApplied> {
     // A COUNT, A STEP OR AN ANGLE ITS FIELD REFUSED is not applied with the value the field held before: a row of 0
     // came out as a row of 3
     if let Some((label, msg)) = pc.cmd.params.iter().find_map(|p| qymcad_ui_state::field_value(p, &pc.project.param_map()).err().map(|m| (qymcad_i18n::tr(p.label_key()), m))) {
@@ -197,8 +212,6 @@ pub fn apply_comp_array(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotAppl
         return Err(refused("msg-array-no-body"));
     }
     *pc.status = Notice::info(qymcad_i18n::tr1("cmd-comp-array-done", "n", &pc.arr.count.max(1).to_string()));
-    *pc.carr = qymcad_ui_state::CompArrayCmd::default();
-    pc.cmd.params.clear();
     qymcad_ui_state::mark_dirty_for_rebuild(&mut pc.rebuild());
     qymcad_ui_state::commit_edit(&mut pc.rebuild());
     Ok(())

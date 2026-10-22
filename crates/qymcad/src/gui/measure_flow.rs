@@ -37,7 +37,8 @@ mod tests {
         app.toggle_measure_3d();
         assert!(app.side.m3.on, "the measuring tool must switch on");
         assert!(app.viewing.mode_3d, "measuring happens in 3D");
-        app.toggle_measure_3d();
+        // the second press goes through the one door every second press goes through (`catalogue::again`)
+        app.run_command("part.measure", &egui::Context::default());
         assert!(!app.side.m3.on, "a second press switches it off");
     }
 

@@ -40,7 +40,7 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), Not
                                                      // profile selection is non-empty) would apply 10 mm straight away during a Ctrl multi-pick, with no
                                                      // gizmo and no popup, and would breed a chain of nodes. A single contour already moves to 3D at the
                                                      // start.
-    if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && pc.cmd.edit.is_none() && !*pc.mode_3d && !pc.gsel.profiles.is_empty() {
+    if takes_into_3d(pc) {
         qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore); // the view is borrowed for the command and returned on exit
         *pc.mode_3d = true;
         *pc.status = Notice::info(qymcad_i18n::tr("msg-profile-picked"));
@@ -96,25 +96,44 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), Not
     }
     // WHAT WAS MADE IS NAMED: the node the command left, not a bare "Done" (reported on the block after Enter)
     let made = pc.project.timeline.iter().find(|n| n.kind.body() == Some(body)).map(|n| qymcad_i18n::name(&n.name));
-    // A CLEAN finish: the command is dropped and the selection is cleared, so neither the gizmo arrows
-    // nor the right-hand panel remain
-    pc.cmd.close(pc.armed);
-
-    qymcad_ui_state::clear_feat_picks(qymcad_ui_state::feat_picks_in!(pc));
-    // back from the flat half-sketcher into 3D: RETURN the view that was borrowed rather than refitting
-    // it. Refitting threw away everything that had been set up by hand, and finishing a command looked
-    // as if the viewport had flown off.
-    qymcad_ui_state::return_view(pc);
     *pc.status = Notice::info(made.map_or_else(|| qymcad_i18n::tr("f-done"), |what| qymcad_i18n::tr1("f-done-what", "what", &what)));
     // AFTER the status: if the regen fails, `qymcad_ui_state::regenerate_all` writes its own rebuild message - do NOT
     // overwrite it with "done" (otherwise the feature silently fails to build while the screen says
     // "done", which reads as nothing happening at all).
     qymcad_ui_state::mark_dirty_for_rebuild(&mut pc.rebuild()); // the document is marked; the planner does the counting
-    *pc.sel = qymcad_ui_state::Sel::None;
     Ok(())
 }
 
+/// DOES Enter TAKE THE COMMAND INTO 3D rather than apply it: an extrusion or a revolution in the flat choice of its
+/// contours, the contours picked, goes into 3D to set its size there - the gizmo or the field.
+pub fn takes_into_3d(pc: &qymcad_ui_state::PartCtx) -> bool {
+    pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && pc.cmd.edit.is_none() && !*pc.mode_3d && !pc.gsel.profiles.is_empty()
+}
+
+/// THE COMMAND PUT DOWN ONCE IT MADE ITS FEATURE - the door of the frame after Apply (`AfterApply::Select`): a clean
+/// finish, the command dropped and the selection cleared, so neither the gizmo arrows nor the right-hand panel remain;
+/// back from the flat half-sketcher into 3D the view borrowed is RETURNED rather than refitted - refitting threw away
+/// everything set up by hand, and finishing a command looked as if the viewport had flown off.
+pub fn put_down_command(pc: &mut qymcad_ui_state::PartCtx) {
+    pc.cmd.close(pc.armed);
+    qymcad_ui_state::clear_feat_picks(qymcad_ui_state::feat_picks_in!(pc));
+    qymcad_ui_state::return_view(pc);
+    *pc.sel = qymcad_ui_state::Sel::None;
+}
+
+/// APPLY THE COMMAND AND PUT IT DOWN, as Enter and the door of the frame after it do - for a check or a build that
+/// applies a command with no frame. Taken into 3D, the command stays in hand.
 pub fn apply_feat_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotApplied> {
+    let into_3d = takes_into_3d(pc);
+    apply_feat_cmd_kept(pc)?;
+    if !into_3d {
+        put_down_command(pc);
+    }
+    Ok(())
+}
+
+/// APPLY THE COMMAND IN HAND, the command left in hand for the door of the frame to put down.
+pub fn apply_feat_cmd_kept(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), NotApplied> {
     // NOTHING TO APPLY YET: Enter is refused in words, the command's own ask repeated, and the document untouched -
     // unless the command names what is missing itself (the axis, the faces, the patch's edges, the trimmed sheet)
     // A FIELD THAT CANNOT BE TAKEN refuses Enter as it closes the Apply button: Enter comes from the keyboard, past it
