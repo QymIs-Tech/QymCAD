@@ -421,13 +421,17 @@ impl Session {
     }
 
     /// FILL THE FIELD THAT SHOWS `placeholder` in grey - a field of a dimension holds a number and still shows what it
-    /// would take - with `text`, over what it holds.
+    /// would take - with `text`, over what it holds. A box at the geometry stands on the view: shown there and in a panel
+    /// beside it - the value of a dimension in its box and in the list of the sketch - the field on the view is the one.
     ///
     /// # Panics
-    /// When no field shows it, or more than one does.
+    /// When no field shows it, or more than one does on the view or, with none there, beside it.
     pub fn fill_hinted(&mut self, placeholder: &str, text: &str) -> &mut Self {
         self.settle();
-        let fields: Vec<Widget> = self.win.widgets.iter().filter(|w| w.kind == Kind::TextField && w.placeholder == placeholder).cloned().collect();
+        let all: Vec<Widget> = self.win.widgets.iter().filter(|w| w.kind == Kind::TextField && w.placeholder == placeholder).cloned().collect();
+        let canvas = self.canvas();
+        let on_view: Vec<Widget> = all.iter().filter(|w| canvas.contains(w.rect.center())).cloned().collect();
+        let fields = if on_view.is_empty() { all } else { on_view };
         match fields.as_slice() {
             [one] => self.click(one.rect.center()).chord(Modifiers::COMMAND, Key::A).type_over(text),
             [] => panic!("no field shows {placeholder:?}"),

@@ -537,6 +537,51 @@ pub const LIST_MAX_ROWS: usize = 8;
 /// THE KEY UNDER WHICH A FIELD SAYS "MY LIST IS OPEN RIGHT NOW".
 pub const LIST_OPEN: &str = "qym_expr_list_open";
 
+/// A VALUE OF A PANEL THAT KEEPS ITS FORMULA - a dimension of a sketch in its list: the widget, the value, the formula it is
+/// written by (empty for a plain number) and what it takes.
+pub struct PanelFormula<'a> {
+    pub id: egui::Id,
+    pub value: &'a mut f64,
+    pub formula: &'a mut String,
+    pub limits: Limits,
+}
+
+/// A VALUE OF A PANEL TYPED AS A FORMULA AND KEPT AS ONE: `w/2` is half of `w` now and the formula of the value, which
+/// follows `w`; a plain number clears the formula. Judged as a number of a panel is (`panel_number`): what the field cannot
+/// take keeps the value and says why beside it. Answers whether the value or its formula changed.
+pub fn panel_formula(ui: &mut egui::Ui, project: &Project, n: PanelFormula) -> bool {
+    let PanelFormula { id, value, formula, limits } = n;
+    let model = if formula.trim().is_empty() { qymcad_core::expr::fmt_num(*value) } else { formula.clone() };
+    let o = expr_field(ui, project, id, &model, 74.0, &qymcad_i18n::tr("f-number-or-expr"));
+    o.resp.clone().on_hover_text(qymcad_i18n::tr("sk-enter-apply-expr"));
+    if let Some(unit) = limits.unit {
+        ui.label(egui::RichText::new(qymcad_i18n::tr(unit).trim().to_string()).weak());
+    }
+    let mut p = CmdParam::new("f-number-or-expr", "n", *value, *limits.range.start(), *limits.range.end());
+    p.number = limits.number;
+    p.nonzero = limits.zero == Zero::Refused;
+    p.txt = o.text.clone();
+    let judged = field_value(&p, &project.param_map());
+    let plain = p.txt.trim().parse::<f64>().is_ok();
+    match &judged {
+        Err(why) => {
+            tone_mark_in(ui, Tone::Refusal).on_hover_text(why);
+        }
+        Ok(v) if !plain => {
+            ui.label(egui::RichText::new(format!("= {}", qymcad_i18n::num(*v, 3))).weak().small());
+        }
+        Ok(_) => {}
+    }
+    match judged {
+        Ok(v) if o.committed && o.text.trim() != model.trim() => {
+            *value = v;
+            *formula = if plain { String::new() } else { o.text.trim().to_string() };
+            true
+        }
+        _ => false,
+    }
+}
+
 /// A NUMBER OF A PANEL: the widget it is told apart by, the value it shows and takes, and what it takes.
 pub struct PanelNumber<'a> {
     pub id: egui::Id,
