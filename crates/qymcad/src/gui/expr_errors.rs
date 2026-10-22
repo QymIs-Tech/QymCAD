@@ -114,7 +114,7 @@ mod tests {
         assert!(texts.iter().any(|t| t.contains(&want)), "the feature dimension field says nothing about the error \"{want}\": {texts:?}");
     }
 
-    /// AND WHERE THE COMMAND SPEAKS — WITH THE NAME OF THE FIELD.
+    /// AND WHERE THE COMMAND SPEAKS - WITH THE NAME OF THE FIELD.
     ///
     /// A command can have four fields; "the expression was not evaluated" without the name of the field
     /// forces one to check them one by one. The field marks itself, and the words of the tool say which and why.

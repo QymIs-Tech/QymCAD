@@ -184,7 +184,7 @@ mod tests {
     /// now.
     ///
     /// It used to be: pressing Enter a second time does not apply the command until the tick button is
-    /// pressed. The key handler of the frame began with a refusal if a field held the keyboard — Enter never
+    /// pressed. The key handler of the frame began with a refusal if a field held the keyboard - Enter never
     /// reached the command at all, and one had to aim at the tick with the mouse.
     ///
     /// Now ONE Enter is enough: the field of the command takes it, gives the keyboard up, and the frame of the

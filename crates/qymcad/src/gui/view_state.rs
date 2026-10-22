@@ -28,7 +28,7 @@ mod tests {
         app.viewing.view.initialized = true;
         let want = (app.viewing.mode_3d, app.viewing.cam.yaw, app.viewing.cam.pitch, app.viewing.cam.scale, app.viewing.cam.target, app.viewing.view.initialized);
 
-        // the sweep in hand leads into the flat half-sketcher to pick its profile — that is fine, it needs a flat view
+        // the sweep in hand leads into the flat half-sketcher to pick its profile - that is fine, it needs a flat view
         app.chosen.sel = super::super::Sel::Sketch(si);
         app.start_feat_cmd(qymcad_ui_state::PartTool::Sweep);
         assert!(app.tools.armed.commanding(), "setup: the sweep is in hand");

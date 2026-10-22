@@ -1,13 +1,9 @@
 //! Guard on THE FRAME OF A TOOL: outside the frame (`qymcad_ui_state::tool_frame`), the crates of the workbenches lay no
 //! area or window of their own for the fields of a tool and read no Enter or Esc of their own.
 //!
-//! Measured on 2026-10-17 before the frame, in the working halves of the files: the part laid 4 areas of its own and
-//! read Enter or Esc in 8 places, the assembly laid 1 and read the keys in 10, the sketch laid 9 and read them in 19 -
-//! each its own Enter, its own Esc, its own place for its words. A tool of the frame says what it needs and the frame draws it and answers the keys, so a
-//! tool that lays a box of its own is where the tools drift apart again.
-//!
-//! The drawing tools of the sketch keep boxes of their own until the sketch comes onto the frame; each is named below
-//! with the reason, and the list may only shrink.
+//! A tool of the frame says what it needs, and the frame draws it and answers the keys. A tool that lays a box of its
+//! own, or reads Enter or Esc itself, is where the tools of the workbenches drift apart - each its own Enter, its own
+//! Esc, its own place for its words. An exception is named with its reason (`ALLOWED`); there is none.
 
 #[cfg(test)]
 mod tests {

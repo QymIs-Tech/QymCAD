@@ -7,7 +7,7 @@
 //! found.
 //!
 //! Here the list is complete, and it is checked BY FACT: every tool is taken up by its own door, Esc
-//! is pressed in whole frames of the window — and not one state of the selection has the right to remain. A tool that will not be
+//! is pressed in whole frames of the window - and not one state of the selection has the right to remain. A tool that will not be
 //! released is worse than one that will not start: a person is certain they left it, and the next
 //! click goes somewhere else.
 #[cfg(test)]
