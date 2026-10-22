@@ -16,8 +16,12 @@ use qymcad_core::feature::DroppedEdges;
 use qymcad_core::geom::Built;
 use qymcad_core::model::Id;
 
-/// How many outcomes are kept: the blends of a document of some hundreds of nodes, and the trials of the last minutes.
-const HELD: usize = 64;
+/// HOW MUCH IS KEPT, in the bytes of the bodies as the kernel writes them: a copy of a body held is some 2.5 times its
+/// bytes in memory (measured on a propeller: 64 bodies of 0.1-0.5 MB, 74 MB more in the process). 8 MB of bytes is
+/// some 20 MB of memory, and holds the blends of the propeller (seven a rebuild, 2.5 MB together) three rebuilds over. A
+/// body heavier than the whole budget is not kept. Refusals weigh nothing; `HELD` bounds their number.
+const HELD_BYTES: usize = 8 << 20;
+const HELD: usize = 256;
 
 /// WHAT A BLEND CAME TO.
 struct Outcome {
@@ -51,10 +55,24 @@ pub(crate) fn taken() -> usize {
     TAKEN.with(|t| t.get())
 }
 
-/// AN OUTCOME KEPT under the key of what was asked.
+/// AN OUTCOME KEPT under the key of what was asked, and what it weighs: the bytes of its body, none for a refusal.
 struct Kept {
     key: u64,
     outcome: Outcome,
+    bytes: usize,
+}
+
+/// KEEP `new` AMONG `kept`, the newest last, within `budget` bytes of bodies and `HELD` outcomes: the oldest go first. An
+/// outcome heavier than the whole budget is not kept.
+fn keep(kept: &mut Vec<Kept>, new: Kept, budget: usize) {
+    kept.retain(|k| k.key != new.key);
+    if new.bytes > budget {
+        return;
+    }
+    kept.push(new);
+    while kept.len() > HELD || kept.iter().map(|k| k.bytes).sum::<usize>() > budget {
+        kept.remove(0);
+    }
 }
 
 /// The outcomes kept, the newest last.
@@ -125,12 +143,14 @@ impl crate::kernel::OcctKernel {
         };
         if let (Some(made), false) = (made, stopped) {
             let short = if self.stepped_back.borrow().contains(&body) { Short::SteppedBack } else { Short::AsAsked };
+            // the weight by the bytes the kernel writes the body as: 1-9 ms a body on the propeller
+            let bytes = match &made {
+                Made::Body(s) => s.to_brep_bytes().map_or(usize::MAX, |b| b.len()),
+                Made::Refused(_) => 0,
+            };
             let o = Outcome { made, dropped: self.dropped.borrow().get(&body).copied(), short, roles: self.roles.borrow().get(&body).cloned().unwrap_or_default() };
             if let Ok(mut kept) = KEPT.lock() {
-                kept.retain(|k| k.key != key);
-                kept.push(Kept { key, outcome: o });
-                let over = kept.len().saturating_sub(HELD);
-                kept.drain(..over);
+                keep(&mut kept, Kept { key, outcome: o, bytes }, HELD_BYTES);
             }
         }
         out
@@ -174,6 +194,33 @@ mod tests {
         let shapes = k.shapes.borrow();
         let e = shapes[&1].edges_info().into_iter().find(|e| e.circle.is_none() && e.poly.iter().all(|p| p[1].abs() < 1e-6 && (f64::from(p[2]) - high).abs() < 1e-5));
         e.expect("setup: the block has no top front edge").id
+    }
+
+    /// An outcome of `bytes` under `key`: a refusal, which weighs nothing by itself, given a weight for the store.
+    fn weighing(key: u64, bytes: usize) -> super::Kept {
+        let outcome = super::Outcome {
+            made: super::Made::Refused(qymcad_core::errors::CoreError::OpFailed(qymcad_core::errors::Op::Fillet)),
+            dropped: None,
+            short: super::Short::AsAsked,
+            roles: Default::default(),
+        };
+        super::Kept { key, outcome, bytes }
+    }
+
+    /// THE STORE IS BOUNDED BY THE BYTES OF ITS BODIES, not by their number: the oldest go first once the budget is
+    /// passed, and a body heavier than the whole budget is not kept. Measured with the store bounded by number alone: 64
+    /// bodies of a propeller, 74 MB more in the process after ten edits.
+    #[test]
+    fn the_store_holds_bodies_within_its_bytes() {
+        let mut kept = Vec::new();
+        for (key, bytes) in [(1, 10), (2, 10), (3, 10)] {
+            super::keep(&mut kept, weighing(key, bytes), 25);
+        }
+        assert_eq!(kept.iter().map(|k| k.key).collect::<Vec<_>>(), [2, 3], "the oldest body is not let go of over the budget");
+        super::keep(&mut kept, weighing(4, 30), 25);
+        assert_eq!(kept.iter().map(|k| k.key).collect::<Vec<_>>(), [2, 3], "a body heavier than the budget is kept, or threw the others out");
+        super::keep(&mut kept, weighing(2, 10), 25);
+        assert_eq!(kept.iter().map(|k| k.key).collect::<Vec<_>>(), [3, 2], "an outcome kept again does not stand twice");
     }
 
     /// A FILLET ASKED AGAIN OF A BODY IN THE SAME STATE IS THE ONE IT CAME TO: no work of the kernel, the same body.
