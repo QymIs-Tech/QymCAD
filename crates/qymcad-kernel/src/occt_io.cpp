@@ -386,13 +386,20 @@ QymShape qym_own_copy(const QymShape& s) {
 }
 
 
+// A BODY HANDED OUT WHOLE, as it stands: a piece the door made, or a copy of a body with every name carried. The one
+// place besides the doors that puts a `QymShape` together (`a_result_is_made_by_the_door`): nothing here is named or
+// numbered - what is handed out is complete already.
+static QymShape* handed_out(const QymShape& whole) {
+    return new QymShape(whole);
+}
+
 // A BODY OF ITS OWN, handed out: what is kept for later shares no part with the body it was taken from.
 extern "C" QymShape* qym_shape_own_copy(const QymShape* s) {
     QYM_AS_HANDED(s, "it only reads the body it copies");
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
-        QymShape* out = new QymShape(qym_own_copy(*s));
+        QymShape* out = handed_out(qym_own_copy(*s));
         out->volume_memo = s->volume_memo;
         out->rough_memo = s->rough_memo;
         out->valid_memo = s->valid_memo;
@@ -411,22 +418,22 @@ extern "C" QymShape* qym_shape_own_copy(const QymShape* s) {
 extern "C" uint64_t qym_shape_state(const QymShape* s) {
     QYM_AS_HANDED(s, "it only reads the body");
     uint64_t h = 1469598103934665603ULL;
-    auto mix = [&h](uint64_t v) {
-        for (int i = 0; i < 8; ++i) {
-            h ^= (v >> (8 * i)) & 0xff;
-            h *= 1099511628211ULL;
-        }
-    };
-    auto num = [&mix](double v) {
-        uint64_t bits;
-        v = v == 0.0 ? 0.0 : v; // -0 and 0 are one place
-        std::memcpy(&bits, &v, sizeof bits);
-        mix(bits);
-    };
-    auto pnt = [&num](const gp_Pnt& p) { num(p.X()); num(p.Y()); num(p.Z()); };
-    if (!s || s->shape.IsNull()) return 0;
     try {
         QYM_SIGNALS;
+        if (!s || s->shape.IsNull()) return 0;
+        auto mix = [&h](uint64_t v) {
+            for (int i = 0; i < 8; ++i) {
+                h ^= (v >> (8 * i)) & 0xff;
+                h *= 1099511628211ULL;
+            }
+        };
+        auto num = [&mix](double v) {
+            uint64_t bits;
+            v = v == 0.0 ? 0.0 : v; // -0 and 0 are one place
+            std::memcpy(&bits, &v, sizeof bits);
+            mix(bits);
+        };
+        auto pnt = [&num](const gp_Pnt& p) { num(p.X()); num(p.Y()); num(p.Z()); };
         TopTools_IndexedMapOfShape faces, edges, verts;
         TopExp::MapShapes(s->shape, TopAbs_FACE, faces);
         TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
@@ -2643,9 +2650,8 @@ extern "C" QymShape* qym_shapelist_get(const QymShapeList* l, size_t i) {
         QYM_SIGNALS;
         if (!l->named.empty()) {
             if (i >= l->named.size()) return nullptr;
-            const QymShape* src = l->named[i];
             // the whole of a piece the door made, handed out as it is: its merges and the faces beside its edges too
-            return new QymShape(*src);
+            return handed_out(*l->named[i]);
         }
         if (i >= l->shapes.size()) return nullptr;
         return qym_born(l->shapes[i]); // imported solids get face ids too
