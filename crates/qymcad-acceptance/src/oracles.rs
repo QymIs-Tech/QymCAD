@@ -80,7 +80,9 @@ fn round_trips(s: &mut Session, doc: &Document) -> Vec<String> {
         if only.is_empty() || only == "save" {
             problems.extend(save_copy_open(s, &path).err());
         }
-        if only.is_empty() || only == "rebuild" {
+        // the rebuild is asked through the menu, and a click on the menu takes the keys from the field: the Y of a place
+        // typed after a click into its field went nowhere, and the part stood at Y = 0
+        if (only.is_empty() || only == "rebuild") && !s.typing() {
             problems.extend(rebuild_everything(s).err());
         }
     });
