@@ -121,3 +121,50 @@ fn reopened_at(s: &mut Session, r: f64) {
     let side = s.on_sketch(0.75 * r, 0.433 * r);
     s.double_click(side);
 }
+
+/// THE DIAGONAL OF A REGULAR PENTAGON of side 1: the golden ratio.
+const PENTAGON_DIAGONAL: f64 = 1.618_033_988_749_895;
+
+/// Whether two places of the sketch stand `d` apart.
+fn two_stand_apart(s: &mut Session, d: f64) -> bool {
+    let places = s.document().sketches[0].places.clone();
+    places.iter().enumerate().any(|(i, a)| places.iter().skip(i + 1).any(|b| ((a[0] - b[0]).hypot(a[1] - b[1]) - d).abs() < 1e-6))
+}
+
+probe! {
+    /// A POLYGON DRAWN BY ITS EDGE IS SIZED BY ITS EDGE: a pentagon drawn with the polygon tool by edge, from (0, 0) to
+    /// (10, 0), given 20 in its box, has sides of 20 - its diagonals 20 x 1.618 - and reopened, its box holds the side 20
+    /// and 30 typed there makes the sides 30. Reported behaviour: by edge too the number went to the radius, as the
+    /// polygon was drawn and as it was edited.
+    fn a_polygon_drawn_by_its_edge_is_sized_by_its_edge() {
+        let mut s = empty_sketch();
+        let hint = s.word("tb-polygon-hint");
+        s.press_hint(&hint);
+        let sides = s.word("opt-sides");
+        s.fill(&sides, "5").key(Key::Enter);
+        let by_edge = s.word("opt-by-edge");
+        s.press_word(&by_edge);
+        for (x, y) in [(0.0, 0.0), (10.0, 0.0)] {
+            let at = s.on_sketch(x, y);
+            s.click(at);
+        }
+        let side = field_reading(&mut s, "10");
+        type_over(&mut s, &side, "20");
+        s.key(Key::Enter);
+        s.key(Key::Escape).key(Key::Escape);
+        let mut fails = Vec::new();
+        if !two_stand_apart(&mut s, 20.0 * PENTAGON_DIAGONAL) {
+            fails.push(format!("drawn by edge and given 20: no two corners stand {:.4} apart, the corners are {:?}", 20.0 * PENTAGON_DIAGONAL, s.document().sketches[0].places));
+        }
+        let middle = s.on_sketch(10.0, 0.0);
+        s.double_click(middle);
+        let side = field_reading(&mut s, "20");
+        type_over(&mut s, &side, "30");
+        s.key(Key::Enter);
+        s.key(Key::Escape).key(Key::Escape);
+        if !two_stand_apart(&mut s, 30.0 * PENTAGON_DIAGONAL) {
+            fails.push(format!("reopened and given 30: no two corners stand {:.4} apart, the corners are {:?}", 30.0 * PENTAGON_DIAGONAL, s.document().sketches[0].places));
+        }
+        assert!(fails.is_empty(), "{}", fails.join("\n"));
+    }
+}

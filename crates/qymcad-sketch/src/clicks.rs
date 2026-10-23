@@ -454,6 +454,9 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.tool.pts.clear();
                 qymcad_ui_state::invalidate(&mut *sk.regen);
                 sk.place.set(qymcad_ui_state::PlacingShape::Poly(center)); // typing the radius and angle through the centre handle
+                if sk.tool_prefs.poly_mode == 2 {
+                    sk.place.poly_size = qymcad_ui_state::PolySize::Edge; // drawn by its edge, sized by it
+                }
                 sk.place.focus = true;
             }
         }

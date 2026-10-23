@@ -113,6 +113,17 @@ pub struct Placing {
     pub typed: bool,
     /// what was asked of the dimensions the box lays on Enter: a reference, a driver name
     pub asks: DimAsks,
+    /// what the box of a polygon sizes it by: the circle its corners stand on, or its edge, as it was drawn
+    pub poly_size: PolySize,
+}
+
+/// WHAT THE BOX OF A POLYGON SIZES IT BY: the radius of the circle its corners stand on, or the length of its edge - a
+/// polygon drawn by its edge, or holding a dimension on its edge.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PolySize {
+    #[default]
+    Circle,
+    Edge,
 }
 
 impl Placing {
@@ -177,6 +188,7 @@ impl Placing {
         self.fields.clear(); // the box of the shape before is not this one's
         self.asks = DimAsks::default();
         self.opened = Opened::ByDrawing;
+        self.poly_size = PolySize::Circle;
     }
 
     /// The box of a shape opened again, by a double click on the shape: the select tool in hand, no tool of its own.

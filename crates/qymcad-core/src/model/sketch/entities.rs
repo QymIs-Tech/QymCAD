@@ -190,6 +190,43 @@ impl Project {
         }
         found
     }
+    /// THE DIMENSION ON THE EDGE OF A POLYGON - the length between its first two corners - by its place among the
+    /// constraints of the sketch; `None` when the polygon is held by the circle of its corners or by nothing.
+    pub fn polygon_side_dim(&self, si: usize, center: Id) -> Option<usize> {
+        let [a, b] = self.polygon_vertices(si, center).get(..2)?.try_into().ok()?;
+        self.sketches.get(si)?.constraints.iter().position(|c| matches!(c, Constraint::Distance { a: x, b: y, .. } if (*x == a && *y == b) || (*x == b && *y == a)))
+    }
+    /// THE DIMENSION ON THE EDGE OF A POLYGON, laid when it has none, at the length the edge has: a polygon sized by
+    /// its edge is held by it, and a dimension of the circle of its corners, which would hold the same size twice, goes.
+    /// Answers its place among the constraints of the sketch.
+    pub fn ensure_polygon_side(&mut self, si: usize, center: Id) -> Option<usize> {
+        let s = self.sketches.get_mut(si)?;
+        s.constraints.retain(|c| !matches!(c, Constraint::Diameter { c: cc, .. } if *cc == center));
+        if let Some(i) = self.polygon_side_dim(si, center) {
+            return Some(i);
+        }
+        let [a, b] = self.polygon_vertices(si, center).get(..2)?.try_into().ok()?;
+        let s = self.sketches.get_mut(si)?;
+        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+        let ((ax, ay), (bx, by)) = (at(a)?, at(b)?);
+        let d = (bx - ax).hypot(by - ay);
+        s.constraints.push(Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
+        Some(s.constraints.len() - 1)
+    }
+    /// Set the length of the edge of a polygon: through the dimension on its edge when it holds one, otherwise through
+    /// the radius of the circle of its corners that gives that edge. Returns `false` when the entity is not a polygon.
+    pub fn set_polygon_side(&mut self, si: usize, center: Id, len: f64) -> bool {
+        let len = len.max(0.01);
+        if let Some(i) = self.polygon_side_dim(si, center) {
+            if let Some(Constraint::Distance { d, .. }) = self.sketches[si].constraints.get_mut(i) {
+                *d = len;
+            }
+            self.solve_sketch(si);
+            return true;
+        }
+        let n = self.polygon_vertices(si, center).len().max(3) as f64;
+        self.set_polygon_radius(si, center, len / (2.0 * (std::f64::consts::PI / n).sin()))
+    }
     /// Centre x, centre y and radius of the circumscribed circle of a polygon, by the id of its centre.
     pub fn polygon_circle(&self, si: usize, center: Id) -> Option<(f64, f64, f64)> {
         let s = self.sketches.get(si)?;

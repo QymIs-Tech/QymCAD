@@ -135,8 +135,16 @@ pub(crate) fn shape_now(project: &Project, place: &qymcad_ui_state::Placing, si:
             // THE SIDES OF THIS POLYGON, in its box drawn or reopened: the bar's sides go to the next one drawn
             let n = project.kept_number(*cid, "sides").unwrap_or(6.0);
             let sides = qymcad_ui_state::CmdParam::new("opt-sides", "poly_n", n, 3.0, 64.0).whole();
-            let fields = vec![as_dimension(qymcad_ui_state::CmdParam::new(round_label(shown), "r", round_value(r, shown), 0.01, MAX_SKETCH_LENGTH)), turn, sides];
-            let sizes = vec![dimension("r", Kind::Round(shown)), Size { key: "a", kind: Kind::Angle, held: Held::Free }, Size { key: "poly_n", kind: Kind::Count, held: Held::Free }];
+            // SIZED BY ITS EDGE when drawn by it or held by a dimension on it, by the circle of its corners otherwise
+            let by_edge = place.poly_size == qymcad_ui_state::PolySize::Edge || project.polygon_side_dim(si, *cid).is_some();
+            let (size, held) = if by_edge {
+                let edge = 2.0 * r * (std::f64::consts::PI / n.max(3.0)).sin();
+                (as_dimension(qymcad_ui_state::CmdParam::new("sk-length", "side", edge, 0.01, MAX_SKETCH_LENGTH)), dimension("side", Kind::Length))
+            } else {
+                (as_dimension(qymcad_ui_state::CmdParam::new(round_label(shown), "r", round_value(r, shown), 0.01, MAX_SKETCH_LENGTH)), dimension("r", Kind::Round(shown)))
+            };
+            let fields = vec![size, turn, sides];
+            let sizes = vec![held, Size { key: "a", kind: Kind::Angle, held: Held::Free }, Size { key: "poly_n", kind: Kind::Count, held: Held::Free }];
             Some(ShapeNow { fields, sizes, at: Point2::new(cx + r, cy), around: square(Point2::new(cx, cy), r) })
         }
         PlacingShape::RectSide(side) => {
@@ -298,6 +306,9 @@ pub(crate) fn follow_typed(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
             if let Some(r) = radius_of(sk.place, "r", qymcad_ui_state::Shown::Radius) {
                 sk.project.set_polygon_radius(si, cid, r);
             }
+            if let Some(edge) = field(sk.place, "side") {
+                sk.project.set_polygon_side(si, cid, edge);
+            }
             if let Some(a) = field(sk.place, "a") {
                 sk.project.set_polygon_angle(si, cid, a.to_radians());
             }
@@ -371,6 +382,11 @@ pub(crate) fn shape_lay(sk: &mut qymcad_ui_state::SketchCtx, si: usize, rows: &[
                 if let Some(ci) = sk.project.slot_size_dim(si, curve, size) {
                     laid.push(Laid { key, dim: Dim { si, ci } });
                 }
+            }
+        }
+        PlacingShape::Poly(cid) if fields.iter().any(|p| p.key == "side") && wanted("side") => {
+            if let Some(ci) = sk.project.ensure_polygon_side(si, cid) {
+                laid.push(Laid { key: "side", dim: Dim { si, ci } });
             }
         }
         PlacingShape::Poly(cid) if wanted("r") => {
