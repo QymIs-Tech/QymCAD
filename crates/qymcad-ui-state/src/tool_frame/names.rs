@@ -144,6 +144,11 @@ pub fn keep_item_values(project: &mut Project, asks: &[FieldAsk], values: &[Item
             changed |= give_name(project, target, &a.name);
         }
     }
+    // WHAT READS THE NAMES IS WORKED OUT AGAIN: the solve works the parameters out before it runs, and the values kept
+    // here come after it - the turn of a polygon named `pa` made 15 in its box left `w = pa+1` at 1, a step behind
+    if changed {
+        let _ = project.eval_parameters();
+    }
     changed
 }
 
