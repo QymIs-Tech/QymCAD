@@ -104,10 +104,15 @@ impl FramedTool for CommandTool<'_, '_> {
             return Ok(());
         }
         // THE NAMES TYPED UNDER THE FIELDS go on the numbers of the node the command made or edits, as the command
-        // wrote them
+        // wrote them - inside the one step of the command: laid after its step closed, the name was not in what redo
+        // brings back, and a parameter reading it read 0
         let before: Vec<Id> = self.pc.project.timeline.iter().map(|n| n.id).collect();
         let edited = self.pc.cmd.edit;
-        apply_feat_cmd_kept(self.pc)?;
+        qymcad_ui_state::begin_edit(&mut *self.pc.edits, &*self.pc.project, feat_cmd_name(&*self.pc.armed, *self.pc.feat));
+        if let Err(refused) = apply_feat_cmd_kept(self.pc) {
+            qymcad_ui_state::abort_edit(&mut self.pc.rebuild());
+            return Err(refused);
+        }
         // the node of the feature: a sketch the command put into the timeline first is not it
         let new = |n: &&qymcad_core::feature::FeatureNode| !before.contains(&n.id) && !matches!(n.kind, qymcad_core::feature::FeatureKind::Sketch { .. });
         let node = edited.or_else(|| self.pc.project.timeline.iter().find(new).map(|n| n.id));
@@ -123,6 +128,7 @@ impl FramedTool for CommandTool<'_, '_> {
                 }
             }
         }
+        qymcad_ui_state::commit_edit(&mut self.pc.rebuild());
         Ok(())
     }
 
