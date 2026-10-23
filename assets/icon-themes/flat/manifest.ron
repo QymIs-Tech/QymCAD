@@ -1,0 +1,23 @@
+(
+    package_type: IconTheme,
+    id: "flat",
+    name: "Flat",
+    version: "1.2.0",
+    author: "QymCAD Team",
+    license: "AGPL-3.0-or-later",
+    description: "A flat monochrome QymCAD icon set.",
+    translations: {
+        "kk": (
+            name: "Flat",
+            description: "QymCAD-тың жалпақ біртүсті таңбашалар жиынтығы.",
+        ),
+        "ru": (
+            name: "Flat",
+            description: "Плоский монохромный набор иконок QymCAD.",
+        ),
+        "uk": (
+            name: "Flat",
+            description: "Плаский монохромний набір іконок QymCAD.",
+        ),
+    },
+)

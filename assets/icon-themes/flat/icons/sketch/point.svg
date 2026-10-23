@@ -1,0 +1,5 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;" fill="var(--icon-neutral, black)" data-qymcad-simplified="0.01:b962d27241a1e57caf50b69d7963239fe5669f4af0a71ab6b5442a8570338c00">
+    <g transform="matrix(1,0,0,1,108,108)">
+        <g><path d="M32.3744 32.3744Q37.5 27.2487 37.5 20Q37.5 12.7513 32.3744 7.62563Q27.2487 2.5 20 2.5Q12.7513 2.5 7.62563 7.62563Q2.5 12.7513 2.5 20Q2.5 27.2487 7.62563 32.3744Q12.7513 37.5 20 37.5Q27.2487 37.5 32.3744 32.3744Z" fill="var(--icon-neutral, white)" fill-opacity="1" fill-rule="evenodd"/></g>
+    </g>
+</svg>
