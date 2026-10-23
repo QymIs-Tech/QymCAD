@@ -384,8 +384,10 @@ pub(crate) fn apply_param_edit(wc: &mut qymcad_ui_state::WinCtx) {
     // against the values the last rebuild saw). Every sketch with a formula used to be marked here, whatever changed:
     // "Add a parameter" on the filter of the examples - an empty row, no value changed - rebuilt two sketches, the cuts
     // on them and a rounding of 36 edges for 7.8 s.
+    // A VALUE OF AN ITEM READ BY A NAME counts as a formula of a dimension does: the turn of a polygon made 30 in the
+    // table turned its corners as the values were imposed, and its sides were drawn where they stood, unsolved
     for si in 0..wc.project.sketches.len() {
-        if wc.project.sketches[si].constraints.iter().any(|c| c.expr().is_some()) {
+        if wc.project.sketch_reads_names(si) {
             wc.project.solve_sketch(si);
         }
     }

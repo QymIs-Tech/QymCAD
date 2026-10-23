@@ -168,3 +168,43 @@ probe! {
         assert!(fails.is_empty(), "{}", fails.join("\n"));
     }
 }
+
+/// HOW MANY PIXELS NEAR (x, y) OF THE SHEET ARE DRAWN BRIGHT - a curve, not the dark sheet and its faint grid - in the
+/// 7 x 7 pixels about it.
+fn bright_near(s: &mut Session, (x, y): (f64, f64)) -> usize {
+    let at = s.on_sketch(x, y);
+    let p = s.snapshot();
+    let (cx, cy) = (at.x.round() as i64, at.y.round() as i64);
+    let mut n = 0;
+    for dy in -3..=3 {
+        for dx in -3..=3 {
+            let (px, py) = (cx + dx, cy + dy);
+            if px < 0 || py < 0 || px as usize >= p.width || py as usize >= p.height {
+                continue;
+            }
+            let i = (py as usize * p.width + px as usize) * 4;
+            if p.rgba[i..i + 3].iter().any(|c| *c > 150) {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+probe! {
+    /// THE SIDES OF A POLYGON TURN WITH IT FROM THE TABLE: a hexagon of radius 10, its turn named `pa` in its box and
+    /// made 30 in the table of parameters, is drawn turned - no side stands any more through the middle of the side it
+    /// had from (10, 0) to (5, 8.66). Reported behaviour: the points turned, and the sides were drawn where they stood;
+    /// a double click on the polygon and the same turn in its box turned them.
+    fn the_sides_of_a_polygon_turn_with_it_from_the_table() {
+        let mut s = a_hexagon();
+        reopened(&mut s);
+        let turn = name_beside(&mut s, "0");
+        s.click(turn.rect.center()).type_text("pa").key(Key::Enter);
+        s.key(Key::Escape).key(Key::Escape);
+        assert!(bright_near(&mut s, (7.5, 4.33)) > 0, "setup: no side is drawn through (7.5, 4.33)");
+        qymcad_acceptance::build::set_parameter(&mut s, "pa", "30");
+        let left = bright_near(&mut s, (7.5, 4.33));
+        assert!(left == 0, "the turn made 30 in the table: a side is still drawn through (7.5, 4.33), {left} pixels; the corners stand at {:?}", s.document().sketches[0].places);
+    }
+}

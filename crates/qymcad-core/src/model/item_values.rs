@@ -132,6 +132,12 @@ impl Project {
         s.patterns.iter().map(|p| p.id).chain(s.texts.iter().map(|t| t.id)).chain(s.points.iter().map(|q| q.id)).filter(|id| self.feat_dims.contains_key(id)).collect()
     }
 
+    /// DOES SKETCH `si` READ A NAME: a dimension written as a formula, or a value of an item of it - the turn or the
+    /// sides of a polygon, the count of a pattern - kept with one. Such a sketch is solved anew when a name changes.
+    pub fn sketch_reads_names(&self, si: usize) -> bool {
+        self.sketches.get(si).is_some_and(|s| s.constraints.iter().any(|c| c.expr().is_some())) || !self.sketch_item_ids(si).is_empty()
+    }
+
     /// THE FORMULAS OF THE ITEMS IMPOSED: each value with a formula takes what it comes to; a value already standing at it
     /// is left alone, so a pattern is laid anew and a polygon rebuilt only when its count changed. The words of a formula
     /// that cannot be worked out go into `errs`.
