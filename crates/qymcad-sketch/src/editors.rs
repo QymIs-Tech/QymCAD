@@ -207,6 +207,8 @@ pub(crate) enum Kind {
     Round(Shown),
     /// A tangent gap to a circle, to its near or its far edge.
     Edge,
+    /// A count: the sides of a polygon.
+    Count,
 }
 
 /// A DIMENSION AS ITS BOX SHOWS IT: its constraint and its kind.
@@ -249,6 +251,7 @@ fn caption_of(kind: Kind) -> &'static str {
     match kind {
         Kind::Angle => "sk-angle",
         Kind::Edge => "sk-tangent-short",
+        Kind::Count => "opt-sides",
         Kind::Length | Kind::Round(_) => "sk-dim",
     }
 }

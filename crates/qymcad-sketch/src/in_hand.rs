@@ -426,10 +426,6 @@ impl FramedTool for InSketch<'_, '_> {
                 let named = |sk: &mut qymcad_ui_state::SketchCtx| {
                     shape_lay(sk, si, &self.asks);
                     if let Some(c) = item {
-                        // THE SIDES TYPED ARE THE SIDES OF THIS POLYGON: they went to the next one drawn
-                        if kept.iter().any(|k| k.key == "sides") {
-                            sk.project.set_polygon_sides(si, c, sk.tool_prefs.poly_n);
-                        }
                         qymcad_ui_state::keep_item_values(sk.project, &self.asks, &item_values(kept, c));
                     }
                 };
@@ -621,15 +617,6 @@ impl FramedTool for InSketch<'_, '_> {
                             try_on(sk, From::AsItStands, |sk| follow_typed(sk, si));
                         }
                         Follows::LaidAnew => try_shape(sk, si, &self.asks),
-                    }
-                }
-                // THE SIDES TYPED FOLLOWED BY THE POLYGON IN THE BOX: a number of the bar, they went to the next one drawn
-                if let qymcad_ui_state::PlacingShape::Poly(c) = sk.place.shape {
-                    let n = sk.tool_prefs.poly_n;
-                    if sk.project.kept_number(c, "sides").is_some_and(|now| now.round() as u32 != n.max(3)) {
-                        try_on(sk, From::AsItStands, |sk| {
-                            sk.project.set_polygon_sides(si, c, n);
-                        });
                     }
                 }
             }

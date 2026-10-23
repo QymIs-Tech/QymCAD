@@ -132,8 +132,11 @@ pub(crate) fn shape_now(project: &Project, place: &qymcad_ui_state::Placing, si:
             let mut turn = qymcad_ui_state::CmdParam::new("sk-angle", "a", ang.to_degrees(), -360.0, 360.0).unit("unit-deg-suffix");
             // written to a hundredth of a degree: "-28.1701" read as noise; the value itself stays as the shape holds it
             turn.txt = qymcad_core::expr::fmt_num((ang.to_degrees() * 100.0).round() / 100.0);
-            let fields = vec![as_dimension(qymcad_ui_state::CmdParam::new(round_label(shown), "r", round_value(r, shown), 0.01, MAX_SKETCH_LENGTH)), turn];
-            let sizes = vec![dimension("r", Kind::Round(shown)), Size { key: "a", kind: Kind::Angle, held: Held::Free }];
+            // THE SIDES OF THIS POLYGON, in its box drawn or reopened: the bar's sides go to the next one drawn
+            let n = project.kept_number(*cid, "sides").unwrap_or(6.0);
+            let sides = qymcad_ui_state::CmdParam::new("opt-sides", "poly_n", n, 3.0, 64.0).whole();
+            let fields = vec![as_dimension(qymcad_ui_state::CmdParam::new(round_label(shown), "r", round_value(r, shown), 0.01, MAX_SKETCH_LENGTH)), turn, sides];
+            let sizes = vec![dimension("r", Kind::Round(shown)), Size { key: "a", kind: Kind::Angle, held: Held::Free }, Size { key: "poly_n", kind: Kind::Count, held: Held::Free }];
             Some(ShapeNow { fields, sizes, at: Point2::new(cx + r, cy), around: square(Point2::new(cx, cy), r) })
         }
         PlacingShape::RectSide(side) => {
@@ -297,6 +300,11 @@ pub(crate) fn follow_typed(sk: &mut qymcad_ui_state::SketchCtx, si: usize) {
             }
             if let Some(a) = field(sk.place, "a") {
                 sk.project.set_polygon_angle(si, cid, a.to_radians());
+            }
+            if let Some(n) = field(sk.place, "poly_n").map(|n| n.round() as u32) {
+                if sk.project.kept_number(cid, "sides").is_some_and(|now| now.round() as u32 != n.max(3)) {
+                    sk.project.set_polygon_sides(si, cid, n);
+                }
             }
         }
         PlacingShape::Slot(_) | PlacingShape::Round(_) | PlacingShape::RectSide(_) | PlacingShape::None => return,

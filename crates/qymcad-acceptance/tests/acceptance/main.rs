@@ -67,6 +67,7 @@ mod sketch_constraints;
 mod sketch_construction_ties;
 mod sketch_corner_at_a_crossing;
 mod sketch_dimensions;
+mod sketch_polygon;
 mod sketch_editing;
 mod sketch_offset_open_chain;
 mod sketch_shapes_side_by_side;
