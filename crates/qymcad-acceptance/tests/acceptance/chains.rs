@@ -238,3 +238,22 @@ probe! {
         ]);
     }
 }
+
+probe! {
+    /// THE CHAIN FOUND BY THE SEED 12 PAST ITS STEP 93, shrunk to the steps that matter: rounding every corner of two
+    /// splines took a frame of 15 s.
+    fn the_chain_of_the_seed_12_rounding_two_splines() {
+        use qymcad_acceptance::chains::{replay, Scene, Step};
+        replay(Scene::Sketch, &[
+            Step::Take { tool: "sketch.spline", entry: 0 },
+            Step::Click { tool: "sketch.spline", at: 0 },
+            Step::Finish { tool: "sketch.spline" },
+            Step::Click { tool: "sketch.spline", at: 2 },
+            Step::Click { tool: "sketch.spline", at: 1 },
+            Step::Click { tool: "sketch.spline", at: 2 },
+            Step::Escape,
+            Step::Take { tool: "sketch.fillet-all", entry: 1 },
+            Step::Click { tool: "sketch.fillet-all", at: 0 },
+        ]);
+    }
+}
