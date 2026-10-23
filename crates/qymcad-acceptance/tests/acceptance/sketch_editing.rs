@@ -1124,3 +1124,48 @@ probe! {
         assert!(after + 40 < drawn, "the corners of the set are still drawn after Esc: {drawn} pixels of violet before, {after} after");
     }
 }
+
+/// TWO LINES DRAWN APART, the end of one tied to the end of the other by a coincidence: answers where the corner they
+/// make stands.
+fn two_lines_tied_at_their_ends(s: &mut Session) -> qymcad::Pos2 {
+    line(s, (30.0, 0.0), (0.0, 0.0));
+    line(s, (0.0, 4.0), (0.0, 30.0));
+    pick(s, 0.0, 0.0, false);
+    pick(s, 0.0, 4.0, true);
+    let hint = s.word("con-coincident-hint");
+    s.press_hint(&hint);
+    s.key(Key::Escape);
+    let places = s.document().sketches[0].places.clone();
+    let corner = places.iter().find(|q| q[0].abs() < 1e-6 && q[1] > -1e-6 && q[1] < 4.0 + 1e-6).unwrap_or_else(|| panic!("the two ends did not come together: {places:?}"));
+    s.on_sketch(corner[0], corner[1])
+}
+
+probe! {
+    /// A FILLET IN THE CORNER OF TWO ENDS TIED BY A COINCIDENCE rounds it as a corner both lines end at. Reported
+    /// behaviour: the corner was not taken.
+    fn a_fillet_takes_the_corner_of_two_ends_tied_together() {
+        let mut s = empty_sketch();
+        let corner = two_lines_tied_at_their_ends(&mut s);
+        take(&mut s, "tb-fillet-sketch-hint");
+        s.click(corner);
+        let field = field_near(&mut s, corner);
+        fill_widget(&mut s, &field, "3");
+        s.key(Key::Enter);
+        assert!(counts(&mut s).1 == 1, "the corner of the two tied ends did not become an arc: {:?}; the program says {:?}", counts(&mut s), s.status());
+    }
+}
+
+probe! {
+    /// A CHAMFER IN THE CORNER OF TWO ENDS TIED BY A COINCIDENCE cuts it as a corner both lines end at. Reported
+    /// behaviour: the corner was not taken.
+    fn a_chamfer_takes_the_corner_of_two_ends_tied_together() {
+        let mut s = empty_sketch();
+        let corner = two_lines_tied_at_their_ends(&mut s);
+        take(&mut s, "tb-chamfer-sketch-hint");
+        s.click(corner);
+        let field = field_near(&mut s, corner);
+        fill_widget(&mut s, &field, "3");
+        s.key(Key::Enter);
+        assert!(counts(&mut s).0 == 3, "the corner of the two tied ends did not become a line across: {:?}; the program says {:?}", counts(&mut s), s.status());
+    }
+}

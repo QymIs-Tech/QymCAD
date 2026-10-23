@@ -315,4 +315,37 @@ impl Project {
         }
         merged
     }
+
+    /// TWO ENDS OF CURVES MADE ONE POINT - `tied.gone` given up for `tied.kept` - when a coincidence ties them: the
+    /// corner they make is a corner as a point both curves end at is, and a fillet, a chamfer and a contour take it so.
+    /// Two ends tied by a coincidence are one point, as a professional CAD merges them. Answers whether they were
+    /// joined: not two ends of curves, both ends of one curve, or a point that cannot move - of the frame of the sketch
+    /// or of a projection, which holds what is tied to it through the parameters - and they are left as they stood.
+    ///
+    /// Reported behaviour: two lines, their ends tied by a coincidence, could not be rounded or chamfered in the corner
+    /// they made - the corner was two points, and no curve ended at either with another.
+    pub fn join_ends(&mut self, si: usize, tied: TiedEnds) -> bool {
+        let TiedEnds { kept, gone } = tied;
+        let Some(s) = self.sketches.get_mut(si) else { return false };
+        let ends_of = |p: Id| s.entities.iter().filter(|e| crate::model::entity_ends(e).is_some_and(|[x, y]| x == p || y == p)).map(|e| e.id).collect::<Vec<Id>>();
+        let at_kept = ends_of(kept);
+        let at_gone = ends_of(gone);
+        let fixed = s.immovable_points();
+        if kept == gone || at_kept.is_empty() || at_gone.is_empty() || at_kept.iter().any(|e| at_gone.contains(e)) || fixed.contains(&kept) || fixed.contains(&gone) {
+            return false;
+        }
+        remap_point_id(s, gone, kept);
+        s.points.retain(|p| p.id != gone);
+        // the coincidence that tied them now ties a point to itself
+        s.constraints.retain(|c| !matches!(c, Constraint::Coincident { a: x, b: y } if x == y));
+        self.regen_sketch(si);
+        true
+    }
+}
+
+/// TWO ENDS OF CURVES A COINCIDENCE TIES, to be one point: the one kept, and the one given up for it.
+#[derive(Clone, Copy, Debug)]
+pub struct TiedEnds {
+    pub kept: Id,
+    pub gone: Id,
 }

@@ -68,7 +68,8 @@ fn apart(a: (f64, f64), b: (f64, f64)) -> f64 {
 }
 
 probe! {
-    /// COINCIDENT: the end of one line and the end of another come to stand in one place.
+    /// COINCIDENT: the end of one line and the end of another come to stand in one place, and two ends of curves tied so
+    /// are one point from then on - the corner of the two lines is a corner as any other.
     fn coincident_puts_two_ends_in_one_place() {
         let mut s = empty_sketch();
         line(&mut s, (0.0, 0.0), (20.0, 0.0));
@@ -78,9 +79,10 @@ probe! {
         pick(&mut s, 20.0, 0.0, false);
         pick(&mut s, 30.0, 10.0, true);
         let said = constrain(&mut s, "con-coincident-hint");
-        added(&mut s, &said, "Coincident", sk.dof, 2);
-        let places = s.document().sketches[0].places.clone();
-        assert!(nearest_pair(&places) < 1e-9, "no two ends stand in one place: the ends of the lines are at {places:?}");
+        assert!(said == s.word("sk-constraint-added"), "the constraint did not solve: the status line says {said:?}");
+        let now = s.document().sketches[0].clone();
+        assert!(now.dof == sk.dof - 2, "a meeting of two ends had to take 2 degrees of freedom of {}, and {} are left", sk.dof, now.dof);
+        assert!(now.places.len() + 1 == sk.places.len(), "the two ends did not become one point: the ends of the lines were {:?}, they are {:?}", sk.places, now.places);
     }
 }
 

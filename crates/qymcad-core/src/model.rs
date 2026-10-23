@@ -635,7 +635,7 @@ pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleT
 mod tess;
 mod timeline;
 mod sketch;
-pub use sketch::{Crossing, LayAs, LoftEncoded, LoftSectionsEncoded, DimOf, ValueTrial};
+pub use sketch::{Crossing, LayAs, LoftEncoded, LoftSectionsEncoded, DimOf, TiedEnds, ValueTrial};
 mod drag;
 mod round;
 pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, CurveExtension, ExtendAsk, ExtendSides, EndKept, FilletBy, FilletSize, LinesCrossing, TextSpec, Touching};

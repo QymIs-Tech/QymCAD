@@ -202,6 +202,8 @@ pub fn try_constraint_inner(
         }
     }
     let sizes_before = shape_sizes(project, si);
+    let tied: Vec<qymcad_core::model::TiedEnds> =
+        new.iter().filter_map(|c| if let Constraint::Coincident { a, b } = c { Some(qymcad_core::model::TiedEnds { kept: *a, gone: *b }) } else { None }).collect();
     project.sketches[si].constraints.extend(new);
     let resid = project.solve_sketch(si);
     // A CONSTRAINT MET BY SHRINKING A SHAPE TO NOTHING IS NOT MET. Horizontal over Vertical on one line is satisfied
@@ -230,6 +232,10 @@ pub fn try_constraint_inner(
         return true;
     }
     let lifted = project.drop_implied_relations(si, had, &among);
+    // TWO ENDS OF CURVES TIED ARE ONE POINT from now on, the corner they make a corner as any other (`join_ends`)
+    for ends in tied {
+        project.join_ends(si, ends);
+    }
     *status = if resid >= 1e-3 {
         Notice::info(qymcad_i18n::tr1("sk-constraint-added-resid", "r", &qymcad_i18n::num(resid, 2)))
     } else {

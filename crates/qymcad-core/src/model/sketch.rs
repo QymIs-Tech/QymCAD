@@ -986,6 +986,7 @@ mod touch;
 mod copies;
 mod trial;
 pub use trial::{DimOf, ValueTrial};
+pub use contours::TiedEnds;
 pub(crate) use copies::{copied_constraint, CopyMaps, Whole};
 pub(crate) use blends::{blend_of_arms, EdgeAt};
 pub use crossings::Crossing;
