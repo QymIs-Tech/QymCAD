@@ -1,6 +1,6 @@
 //! THE TIMELINE OF A PART: rolling back to a step, suppressing one, changing the order of two (where it may be
 //! changed and where it may not), deleting a step others lean on, copying one, and opening one again.
-use qymcad::{Key, Modifiers, PointerButton, Rect, Session};
+use qymcad::{Key, Modifiers, Rect, Session};
 use qymcad_acceptance::{build, probe};
 
 /// THE BLOCK WITH TWO HOLES, one in its top and one in its front: three steps, of which the two holes lean on the
@@ -43,24 +43,6 @@ fn rows_of(s: &mut Session, key: &str) -> Vec<Rect> {
     found
 }
 
-/// Open the right-button menu on `row` and answer what stands in it under `key`, and whether it may be pressed.
-fn menu_item(s: &mut Session, row: Rect, key: &str) -> qymcad::Widget {
-    s.click_with(row.center(), PointerButton::Secondary, Modifiers::default());
-    let word = s.word(key);
-    s.widgets()
-        .into_iter()
-        .filter(|w| w.label.contains(&word))
-        .min_by(|a, b| a.rect.center().distance(row.center()).total_cmp(&b.rect.center().distance(row.center())))
-        .unwrap_or_else(|| panic!("the menu of the row offers no {word:?}; on screen: {:?}", s.words()))
-}
-
-/// Press what stands under `key` in the right-button menu of `row`.
-fn press_in_the_menu(s: &mut Session, row: Rect, key: &str) {
-    let item = menu_item(s, row, key);
-    assert!(item.enabled, "{:?} of the menu cannot be pressed", item.label);
-    s.click(item.rect.center());
-}
-
 probe! {
     /// A ROLLBACK BUILDS THE TIMELINE ONLY UP TO THAT STEP - the steps below it are left out, and clearing the
     /// rollback brings them back. Nothing is thrown away either way.
@@ -69,12 +51,12 @@ probe! {
         let drilled = held(&mut s);
         assert!(drilled < 12000.0, "two holes were drilled in a block of 12000 and it holds {drilled}");
         let first = rows_of(&mut s, "feat-hole")[0];
-        press_in_the_menu(&mut s, first, "act-rollback-here");
+        build::press_in_the_menu(&mut s, first, "act-rollback-here");
         let one_hole = held(&mut s);
         assert!(one_hole > drilled && one_hole < 12000.0, "the timeline was built up to the first hole and the block holds {one_hole}: with both holes it held {drilled}, with none 12000");
         assert!(steps(&mut s).len() == 4, "the rollback threw the steps away: the timeline holds {:?}", steps(&mut s));
         let first = rows_of(&mut s, "feat-hole")[0];
-        press_in_the_menu(&mut s, first, "act-clear-rollback");
+        build::press_in_the_menu(&mut s, first, "act-clear-rollback");
         assert!((held(&mut s) - drilled).abs() < 1.0, "the rollback was cleared and the block holds {} instead of {drilled}", held(&mut s));
     }
 }
@@ -85,12 +67,12 @@ probe! {
         let mut s = a_block_with_two_holes();
         let drilled = held(&mut s);
         let second = rows_of(&mut s, "feat-hole")[1];
-        press_in_the_menu(&mut s, second, "act-suppress");
+        build::press_in_the_menu(&mut s, second, "act-suppress");
         let one_hole = held(&mut s);
         assert!(one_hole > drilled && one_hole < 12000.0, "the second hole was suppressed and the block holds {one_hole}: it held {drilled} with both and 12000 with none");
         assert!(s.document().features.iter().filter(|f| f.suppressed).count() == 1, "one step was suppressed and the document marks {:?}", s.document().features.iter().map(|f| (f.name.clone(), f.suppressed)).collect::<Vec<_>>());
         let second = rows_of(&mut s, "feat-hole")[1];
-        press_in_the_menu(&mut s, second, "act-unsuppress");
+        build::press_in_the_menu(&mut s, second, "act-unsuppress");
         assert!((held(&mut s) - drilled).abs() < 1.0, "the step was enabled again and the block holds {} instead of {drilled}", held(&mut s));
     }
 }
@@ -103,7 +85,7 @@ probe! {
         let order = |s: &mut Session| s.document().features.iter().map(|f| (f.name.clone(), f.key)).collect::<Vec<_>>();
         let (drilled, before) = (held(&mut s), order(&mut s));
         let first = rows_of(&mut s, "feat-hole")[0];
-        press_in_the_menu(&mut s, first, "act-move-down");
+        build::press_in_the_menu(&mut s, first, "act-move-down");
         let after = order(&mut s);
         assert!(after != before, "the first hole was moved down and the timeline is in the same order: {before:?}");
         assert!(after.len() == before.len(), "moving a step changed how many there are: {before:?} became {after:?}");
@@ -116,7 +98,7 @@ probe! {
     fn a_step_that_cannot_change_places_is_greyed_out() {
         let mut s = a_block_with_two_holes();
         let first = rows_of(&mut s, "feat-hole")[0];
-        let up = menu_item(&mut s, first, "act-move-up");
+        let up = build::menu_item(&mut s, first, "act-move-up");
         assert!(!up.enabled, "the first hole leans on the block above it and the menu offers to move it up all the same");
     }
 }
@@ -128,7 +110,7 @@ probe! {
         let mut s = a_block_with_two_holes();
         let delete = |s: &mut qymcad::Session, with_dependents: bool| {
             let block = rows_of(s, "feat-extrude")[0];
-            press_in_the_menu(s, block, "act-delete-feature");
+            build::press_in_the_menu(s, block, "act-delete-feature");
             let yes = s.word("confirm-yes");
             assert!(s.shows(&yes), "a step two holes lean on was deleted and nothing asked first; on screen: {:?}", s.words());
             if with_dependents {

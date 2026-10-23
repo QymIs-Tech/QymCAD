@@ -60,7 +60,7 @@ pub fn says_redundant(s: &mut qymcad::Session) -> bool {
 
 /// WHAT A PERSON BUILDS FIRST, built the way a person builds it: every step a gesture in the window.
 pub mod build {
-    use qymcad::{pos2, Key, Modifiers, PointerButton, Session};
+    use qymcad::{pos2, Key, Modifiers, PointerButton, Rect, Session};
 
     /// THE PART OF A FIRST START, OPEN FOR BUILDING: the start screen put away with Esc, the part entered with a
     /// double click on its row in the tree.
@@ -215,6 +215,24 @@ pub mod build {
         s.press_hint(&delete);
         let title = s.word("win-params");
         s.close_window(&title);
+    }
+
+    /// Open the right-button menu on `row` and answer what stands in it under `key`, and whether it may be pressed.
+    pub fn menu_item(s: &mut Session, row: Rect, key: &str) -> qymcad::Widget {
+        s.click_with(row.center(), PointerButton::Secondary, Modifiers::default());
+        let word = s.word(key);
+        s.widgets()
+            .into_iter()
+            .filter(|w| w.label.contains(&word))
+            .min_by(|a, b| a.rect.center().distance(row.center()).total_cmp(&b.rect.center().distance(row.center())))
+            .unwrap_or_else(|| panic!("the menu of the row offers no {word:?}; on screen: {:?}", s.words()))
+    }
+
+    /// Press what stands under `key` in the right-button menu of `row`.
+    pub fn press_in_the_menu(s: &mut Session, row: Rect, key: &str) {
+        let item = menu_item(s, row, key);
+        assert!(item.enabled, "{:?} of the menu cannot be pressed", item.label);
+        s.click(item.rect.center());
     }
 
     /// OPEN THE PROJECT AT `path` as a person does: File, Open project, past the question about unsaved work if it
