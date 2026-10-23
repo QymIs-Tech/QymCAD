@@ -248,7 +248,19 @@ impl Project {
             // `dirty` is the scheduler's mark, not the author's
             let crate::feature::FeatureNode { id, name, kind, parent, suppressed, dirty: _ } = n;
             (id, name, parent, suppressed, kind.body()).hash(&mut h);
-            feed(kind, &mut h);
+            // THE SHIFT OF A HOLE IS THE REBUILD'S: it is worked out from the point and the formulas of `off_u`, `off_v`
+            // and kept on the node for a name to read. Counted, a rebuild after a parameter changed left the step of undo
+            // as it was before the hole moved, and redo put the hole back where it had been
+            match kind {
+                crate::feature::FeatureKind::Hole { shift, .. } if *shift != [0.0; 2] => {
+                    let mut k = kind.clone();
+                    if let crate::feature::FeatureKind::Hole { shift, .. } = &mut k {
+                        *shift = [0.0; 2];
+                    }
+                    feed(&k, &mut h);
+                }
+                _ => feed(kind, &mut h),
+            }
         }
         let mut dims: Vec<(&Id, &std::collections::HashMap<String, String>)> = self.feat_dims.iter().collect();
         dims.sort_by_key(|(k, _)| **k);

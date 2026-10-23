@@ -364,6 +364,8 @@ fn what_the_program_writes_does_not_change_the_key() {
     let (pa, pb) = (p.sketches[0].points[0].id, p.sketches[0].points[1].id);
     let axis = p.add_axis_two_points(pa, pb);
     p.sketches[0].texts.push(qymcad_core::model::SketchText { id: 900, x: 0.0, y: 0.0, height: 5.0, angle: 0.0, text: "A".into(), construction: false, glyphs: Vec::new(), font: Default::default() });
+    let top = FaceKey { index: 1, centroid: [5.0, 5.0, 5.0], normal: [0.0, 0.0, 1.0], id: 7 };
+    let hole = p.add_hole_at(body, top, top.centroid, qymcad_core::model::HoleTool { kind: 0, diameter: 3.0, depth: 4.0, dia2: 0.0, depth2: 0.0 });
     let (saved, built) = (p.state_key(), p.rebuild_key());
     // what opening a document runs on it, and what solving and rebuilding a sketch does
     p.settle_loaded();
@@ -387,6 +389,11 @@ fn what_the_program_writes_does_not_change_the_key() {
     // the sketch rebound to its face under the face's new persistent id, as `rebind_lost_face_refs` does
     if let SketchPlane::Face(_, key) = &mut p.sketches[0].plane {
         key.id = 8;
+    }
+    // the rebuild keeps on a hole the shift its formulas came to (`off_u`, `off_v`); reported behaviour: the key counted
+    // it, a rebuild after a parameter changed left the step of undo before the hole moved, and redo put it back
+    if let Some(qymcad_core::feature::FeatureKind::Hole { shift, .. }) = p.timeline.iter_mut().find(|n| n.id == hole).map(|n| &mut n.kind) {
+        *shift = [1.0, 0.0];
     }
     assert_eq!(p.state_key(), saved, "what the rebuild and the solver write is not an edit");
     assert_eq!(p.rebuild_key(), built, "what the rebuild and the solver write is not an edit");
