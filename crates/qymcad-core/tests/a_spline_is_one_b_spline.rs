@@ -93,3 +93,15 @@ fn a_spline_is_one_b_spline() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// A PIECE OF A LOOP FROM ITS VERY END ROUND ITS START is the run past the start, with nothing before it: the share of
+/// the joint is 0. Reported behaviour: the knot of the joint stood seven times at 0, taking it away subtracted past zero,
+/// and a point clicked on a closed spline closed the program.
+#[test]
+fn a_piece_of_a_loop_from_its_end_round_its_start_stands() {
+    let nodes: Vec<Point2> = CASES[1].nodes.iter().map(|p| Point2::new(p[0], p[1])).collect();
+    let c = Curve::spline(nodes, &[], Ends::Closed);
+    let piece = c.piece([1.0, 1.25]);
+    let off = (0..=200).map(|k| k as f64 / 200.0).map(|t| piece.at(t).dist(c.at(t * 0.25))).fold(0.0, f64::max);
+    assert!(off < 1e-6, "the piece from 1 to 1.25 stands {off:.2e} off the quarter after the start");
+}

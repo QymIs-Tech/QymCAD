@@ -414,7 +414,11 @@ impl Curve {
                 let reach = if self.closed() { from + 1.0 } else { 1.0 };
                 // a piece of no length is the place it stands at, a hair long
                 let to = to.clamp(from, reach).max(from + 1e-12);
-                let piece = if to > 1.0 {
+                // a piece from the very end of a loop is the run past its start alone: joined to nothing before it, its
+                // joint stood at a share of 0
+                let piece = if to > 1.0 && from >= 1.0 - 1e-12 {
+                    b.piece([0.0, (to - 1.0).max(1e-12)])
+                } else if to > 1.0 {
                     let (before, after) = (b.piece([from.min(1.0 - 1e-12), 1.0]), b.piece([0.0, (to - 1.0).max(1e-12)]));
                     before.joined(&after, (1.0 - from) / (to - from))
                 } else {

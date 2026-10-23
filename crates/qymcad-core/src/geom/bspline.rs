@@ -367,6 +367,10 @@ impl BSpline {
         let p = DEGREE;
         let s = self.multiplicity(u);
         let r = self.knots.iter().rposition(|k| *k == u).expect("the knot");
+        // a knot standing more than the degree times is an end of the curve, not a joint to smooth away
+        if s > p || r < p + 1 {
+            return false;
+        }
         let (first, last) = (r - p, r - s);
         let ord = p + 1;
         let off = first - 1;

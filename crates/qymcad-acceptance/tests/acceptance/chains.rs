@@ -220,3 +220,21 @@ probe! {
         ]);
     }
 }
+
+probe! {
+    /// THE CHAIN FOUND BY THE SEED 12, shrunk to the steps that matter.
+    fn the_chain_of_the_seed_12() {
+        use qymcad_acceptance::chains::{replay, Scene, Step};
+        replay(Scene::Sketch, &[
+            Step::Take { tool: "sketch.spline", entry: 0 },
+            Step::Click { tool: "sketch.spline", at: 2 },
+            Step::Click { tool: "sketch.spline", at: 0 },
+            Step::Click { tool: "sketch.spline", at: 2 },
+            Step::Click { tool: "sketch.spline", at: 0 },
+            Step::Click { tool: "sketch.spline", at: 1 },
+            Step::Miss,
+            Step::Click { tool: "sketch.spline", at: 0 },
+            Step::Click { tool: "sketch.spline", at: 2 },
+        ]);
+    }
+}
