@@ -5,52 +5,35 @@
 
 **Added**
 
-* **Mesh to solid.** The **Recognise** tool turns an imported mesh into a body: exact surfaces (planes,
-  cylinders, cones, spheres, tori, thread and spring faces, smooth free-form walls) or the mesh as it is,
-  a polyhedron.
-* **Simplify a mesh.** A heavy mesh is made lighter within a set deviation before it becomes a body; the tool
-  warns when a mesh is heavy and suggests the value.
-* **New file formats.** IGES, OBJ, PLY, glTF, 3MF and AMF, read and written. One **Import…** command for all of
-  them, one **Export** submenu.
-* **Imports keep their structure.** STEP, IGES, glTF, 3MF, AMF and STL come in as an assembly tree with part
-  names, positions and the author's colours, down to single faces; repeated parts come in as one part used
-  several times.
-* **Units and scale on import**, changeable later from the imported file's node.
-* **Export keeps the structure** too: STEP, glTF and 3MF are written as an assembly tree with names, positions
-  and colours.
-* **Assembly:** a clone of a part (the same part again, not a copy), a component pattern (linear in up to
-  three directions, circular about a picked axis), a mirrored copy of a part.
-* **Part:** the pieces a cut leaves are bodies of one part, and **Make Part** moves one into a part of its own;
-  **Offset Surface**; a face replaced by a sheet stretches its neighbours to it.
-* **Sketch:** text in any installed font, with a font window (search and preview); dimension text placement
-  and style in **Settings**.
-* **View:** mouse layouts that follow the programs they are named after (3D and sketch), a layout for a pen,
-  box selection in 3D, highlight under the cursor, "look at point".
-* **Faster rebuilds:** a rebuild computes independent nodes on several cores (how many is a setting); the scene
-  draws large models with less memory.
-* **First start** opens a sample; afterwards the last project opens.
-* **macOS as a disk image, for Intel too:** `macos-arm64.dmg` for Apple Silicon and `macos-x86_64.dmg` for Intel.
-  The build is signed, so the first launch is allowed once with **Open Anyway** in System Settings -> Privacy &
-  Security, without a terminal.
+* **One way every tool works.** Sketch, Part and Assembly tools share one bar and one box at the geometry: what was
+  selected before the tool is taken, values are fields with formulas and drivers, Enter applies, Esc cancels.
+* **Sketch:** splines, ellipses and arcs of an ellipse as real curves - trim, extend, offset, constraints and
+  dimensions over any curve; fillets and chamfers at any corner, also where two lines cross, by radius, chord, arc
+  length, two legs or a leg and an angle; a rectangle as one shape with its turn and centre.
+* **Sweep along edges of a body**, followed through rebuilds; a sweep starts where its profile is drawn.
+* **Profiles taken by a box** for an extrusion and a revolution; the line of an inner contour is taken by a click
+  next to it, on the sheet and in 3D.
+* **Undo inside a sketch** walks the sketch's own steps; a finished sketch is one step.
+* **The status line counts the faults of the document** and leads to each one; every warning and error is said in
+  words, in its colour.
+* **Kazakh and Ukrainian** - the whole interface.
+* **Two icon sets, Default and Flat**, switched in **Settings -> Icon Themes**; a set of one's own is added there too.
+* **The panels are laid out by hand:** dragged to any edge or onto another panel, hidden and shown, in **Settings ->
+  Layout**.
+* **Graphics:** the program picks a card that draws, starts in a safe mode after a failed start and says so.
+* **Help -> Support the author.**
 
 **Fixed**
 
-* More than 150 faults found by working through the program by hand: every tool takes what was selected
-  before it, lets a pick go on a second click, and says in words why a value is refused instead of clamping it.
-* Previews for revolve, fillet, chamfer, hole and draft show what Enter will build.
-* One action is one undo step, named after the tool.
-* A node that fails keeps its reason, also after saving and opening again.
-* **Cancel** stops a long rebuild at once and takes back the change it was computing.
-* A chamfer on a body made from a mesh no longer closes the program.
-* Opening STEP and IGES at the same time no longer closes the program; a large IGES opens in about a minute.
+* Fillets and chamfers on heavy parts: the check of a value answers in about a second, edits rebuild several times
+  faster.
+* "Finish" goes up the tree one level after jumps by links.
+* A loft takes its sections clicked in 3D; a hole keeps its recess and its shifts when edited.
+* Every body of a part goes into STEP, glTF and 3MF.
+* The Windows build; the macOS disk image carries a note in every language.
+* About 280 more faults found by working through the program by hand.
 
 **Changed**
 
-* All settings and data are kept in one folder.
-* **File -> New Project** starts an empty assembly.
-
-## Known limits
-
-The document format changes with no backward compatibility; `convert_qcad.py` brings older files forward.
-Recognising a mesh: smooth rounded walls come out in several faces with visible seams between them.
-The CNC (CAM) module is groundwork and does not work yet.
+* The document format changed again, with no backward compatibility: a project saved by an earlier build opens, but
+  a rebuild may lay some fillets, chamfers and planes differently.
