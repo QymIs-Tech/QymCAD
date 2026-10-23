@@ -32,6 +32,9 @@ mod sketch_conflict_ui_tests;
 mod brep_warmup_tests;
 
 #[cfg(test)]
+mod an_import_with_losses_says_so;
+
+#[cfg(test)]
 mod sketch_plane_pick_frames_tests;
 
 #[cfg(test)]

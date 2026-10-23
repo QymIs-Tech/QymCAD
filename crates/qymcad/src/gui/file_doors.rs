@@ -229,7 +229,9 @@ pub(crate) fn open_exact(regen: &mut Rebuilding, path: String, format: qymcad_ke
     qymcad_kernel::worker(move || {
         // ONE READING for both the bodies shown and the live solids: reading the file twice cost the whole wait twice
         let res = match qymcad_kernel::read_exact_tree(format, &p, 0.5) {
-            Ok(qymcad_kernel::ExactTree { bodies, shapes, nodes }) if !bodies.is_empty() => JobResult::ExactImported { path: p, format, bodies, shapes, nodes },
+            Ok(qymcad_kernel::ExactTree { bodies, shapes, nodes }) if !bodies.is_empty() => {
+                JobResult::ExactImported { landed: qymcad_ui_state::ExactImport { path: p, format, bodies, shapes, nodes, embedded: None, note: String::new() } }
+            }
             // A FILE THAT IS NOT THERE IS SAID SO, before an IGES is tried as a drawing: the drawing reader would speak
             // of the same absence in words of its own
             Err(e) if e.starts_with("cad-file-not-found#") => JobResult::Failed(crate::i18n::trn("io-exact-load-error", &[("format", name), ("error", &crate::i18n::name(&e))])),
@@ -246,6 +248,80 @@ pub(crate) fn open_exact(regen: &mut Rebuilding, path: String, format: qymcad_ke
         let _ = tx.send(res);
     });
     regen.busy = Some(Busy { started: std::time::Instant::now(), label: crate::i18n::tr1("io-exact-importing", "format", name), rx, kind: BgKind::ImportShapes, pulse: None, quiet: false });
+}
+
+/// THE ARCHIVE AT `path` CONVERTED AND READ: the exact tree of the STEP the converter produced, with the
+/// conversion's own bytes for the document to embed and what the converter warned of. The temporary file is
+/// taken down whichever way the reading ends. Reported behaviour: a converter left its STEP behind, and the
+/// next import of the same file read the stale one; the name is unique per reading, and the file does not
+/// outlive it.
+struct Converted {
+    tree: qymcad_kernel::ExactTree,
+    bytes: Vec<u8>,
+    note: String,
+}
+
+/// WHAT A CONVERSION'S WARNINGS SAY IN THE STATUS: the losses joined in one line, in the words of the i18n
+/// catalogue. Nothing warned of says nothing.
+fn losses_note(warnings: &[String]) -> String {
+    if warnings.is_empty() {
+        return String::new();
+    }
+    crate::i18n::tr1("import-f3d-losses", "what", &warnings.join("; "))
+}
+
+/// THE ARCHIVE READ THROUGH THE CONVERTER, as [`open_f3d`] lands it.
+fn read_f3d(path: &str) -> Result<Converted, String> {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = std::env::temp_dir().join(format!("qym_f3d_{}_{n}.step", std::process::id()));
+    let files = qymcad_io::InOut { input: path.to_string(), output: tmp.to_string_lossy().into_owned() };
+    let warnings = qymcad_io::convert_to_step(&files);
+    let read = warnings.clone().and_then(|w| qymcad_kernel::read_exact_tree(qymcad_kernel::ExactFormat::Step, &files.output, 0.5).map(|tree| (tree, w)));
+    let bytes = std::fs::read(&tmp);
+    let _ = std::fs::remove_file(&tmp);
+    let (tree, warnings) = read?;
+    let bytes = bytes.map_err(|e| format!("io-f3d-converted-unreadable#{e}"))?;
+    Ok(Converted { tree, bytes, note: losses_note(&warnings) })
+}
+
+/// AN F3D COMES IN THROUGH THE CONVERTER, on a worker thread like every exact file: the converter turns the
+/// archive into STEP in a temporary file, the document's own exact reader opens it, and the conversion's bytes
+/// are embedded as the document's source under the file's name - so the document opens again with no converter
+/// asked for. The door has already said it when the converter is not installed; a conversion that fails here
+/// says so with the converter's own words.
+pub(crate) fn open_f3d(regen: &mut Rebuilding, path: String) {
+    let channel = std::sync::mpsc::channel();
+    let p = path.clone();
+    qymcad_kernel::worker(move || {
+        let res = match read_f3d(&p) {
+            Ok(Converted { tree: qymcad_kernel::ExactTree { bodies, shapes, nodes }, bytes, note }) if !bodies.is_empty() => {
+                let name = format!("{}.step", super::io_jobs::stem_of(&p));
+                JobResult::ExactImported {
+                    landed: qymcad_ui_state::ExactImport {
+                        path: p,
+                        format: qymcad_kernel::ExactFormat::Step,
+                        bodies,
+                        shapes,
+                        nodes,
+                        embedded: Some(qymcad_ui_state::EmbeddedSource { name, data: bytes }),
+                        note,
+                    },
+                }
+            }
+            Ok(_) => JobResult::Failed(crate::i18n::tr1("io-exact-no-solids", "format", qymcad_io::Format::F3d.name())),
+            Err(e) => JobResult::Failed(crate::i18n::tr2("io-exact-load-error", "format", qymcad_io::Format::F3d.name(), "error", &crate::i18n::name(&e))),
+        };
+        let _ = channel.0.send(res);
+    });
+    regen.busy = Some(Busy {
+        started: std::time::Instant::now(),
+        label: crate::i18n::tr1("io-exact-importing", "format", qymcad_io::Format::F3d.name()),
+        rx: channel.1,
+        kind: BgKind::ImportShapes,
+        pulse: None,
+        quiet: false,
+    });
 }
 
 /// AN SVG IS READ ON A WORKER THREAD, as the meshes and the exact formats are: the window does not wait on a large

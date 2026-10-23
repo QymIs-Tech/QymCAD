@@ -21,6 +21,7 @@ pub enum Lands {
 pub enum Format {
     Step,
     Iges,
+    F3d,
     Stl,
     Obj,
     Ply,
@@ -33,13 +34,14 @@ pub enum Format {
 
 impl Format {
     /// Every format the one door opens, in the order the chooser lists them.
-    pub const ALL: [Format; 10] = [Format::Step, Format::Iges, Format::Stl, Format::Obj, Format::Ply, Format::Gltf, Format::ThreeMf, Format::Amf, Format::Dxf, Format::Svg];
+    pub const ALL: [Format; 11] = [Format::Step, Format::Iges, Format::F3d, Format::Stl, Format::Obj, Format::Ply, Format::Gltf, Format::ThreeMf, Format::Amf, Format::Dxf, Format::Svg];
 
     /// The name a person knows the format by. It is a name in no language, so it is not in the catalogue.
     pub fn name(self) -> &'static str {
         match self {
             Format::Step => "STEP",
             Format::Iges => "IGES",
+            Format::F3d => "F3D",
             Format::Stl => "STL",
             Format::Obj => "OBJ",
             Format::Ply => "PLY",
@@ -57,6 +59,7 @@ impl Format {
         match self {
             Format::Step => &["step", "stp"],
             Format::Iges => &["igs", "iges"],
+            Format::F3d => &["f3d"],
             Format::Stl => &["stl"],
             Format::Obj => &["obj"],
             Format::Ply => &["ply"],
@@ -71,7 +74,7 @@ impl Format {
 
     pub fn lands(self) -> Lands {
         match self {
-            Format::Step | Format::Iges => Lands::Solid,
+            Format::Step | Format::Iges | Format::F3d => Lands::Solid,
             Format::Stl | Format::Obj | Format::Ply | Format::Gltf | Format::ThreeMf | Format::Amf => Lands::Mesh,
             Format::Dxf | Format::Svg => Lands::Drawing,
         }
