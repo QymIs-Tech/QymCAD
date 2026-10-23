@@ -2,10 +2,32 @@
 
 use super::*;
 
+/// WHAT IS KNOWN OF A BODY, for a check of the marks.
+#[cfg(test)]
+pub(crate) struct Marks {
+    pub(crate) checked_sound: bool,
+    pub(crate) made_faces_known: bool,
+}
+
 impl Shape {
     /// The volume of the body, in mm³, through `GProp`, for tests and geometric checks.
     pub fn volume(&self) -> f64 {
         unsafe { qym_shape_volume(self.ptr) }
+    }
+    /// A BODY OF ITS OWN, with the names of its faces and edges: what is kept for later shares nothing with this one.
+    pub(crate) fn own_copy(&self) -> Option<Shape> {
+        Shape::wrap(unsafe { qym_shape_own_copy(self.ptr) })
+    }
+    /// THE STATE OF THE BODY AS A NUMBER: the same for a body built again or carried through its bytes, another for one
+    /// whose geometry or names changed. Zero when it cannot be read.
+    pub(crate) fn state(&self) -> u64 {
+        unsafe { qym_shape_state(self.ptr) }
+    }
+    /// THE VOLUME TO A PERCENT, for the checks that a result holds any and fits the box it came from, and for what a cut
+    /// took: to a percent always, so that two bodies compared are read to one precision. What a person reads
+    /// (properties, mass) is `volume`.
+    pub(crate) fn rough_volume(&self) -> f64 {
+        unsafe { qym_shape_volume_rough(self.ptr) }
     }
     /// B-rep validity, through `BRepCheck_Analyzer`: true for a correct body, false for one broken, doubled
     /// or self-intersecting.
@@ -163,7 +185,25 @@ impl Shape {
         let mut out = [0.0f64; 6];
         (unsafe { qym_shape_bbox_exact(self.ptr, out.as_mut_ptr()) } == 1).then_some(out)
     }
-
+    /// THE BOX OF THE POLES of the curves and surfaces, the triangulation left aside: a body meshed and one not yet are
+    /// boxed alike.
+    pub(crate) fn bbox_poles(&self) -> Option<[f64; 6]> {
+        let mut out = [0.0f64; 6];
+        (unsafe { qym_shape_bbox_poles(self.ptr, out.as_mut_ptr()) } == 1).then_some(out)
+    }
+    /// THE EXACT BOX OF THE FACES THE OPERATION MADE OR TRIMMED - not those it kept, which stand where they stood; every
+    /// face where that is not known. `None` with no such face.
+    pub(crate) fn bbox_exact_of_new_faces(&self) -> Option<[f64; 6]> {
+        let mut out = [0.0f64; 6];
+        (unsafe { qym_shape_bbox_exact_fresh(self.ptr, out.as_mut_ptr()) } == 1).then_some(out)
+    }
+    /// WHAT IS KNOWN OF THE BODY, for a check: marked checked sound or not, the faces it made known or not.
+    #[cfg(test)]
+    pub(crate) fn marks(&self) -> Marks {
+        let mut out = [0i32; 2];
+        let _ = unsafe { qym_shape_marks(self.ptr, out.as_mut_ptr()) };
+        Marks { checked_sound: out[0] == 1, made_faces_known: out[1] == 1 }
+    }
     /// A BLEND OF EDGES STAYS IN ITS BODY. A fillet or a chamfer takes material off a convex edge and puts it into a
     /// concave corner: either way the result stands inside the box of the body it was made from - give or take `reach`,
     /// the size of the blend - and its volume stays above zero and
@@ -171,20 +211,22 @@ impl Shape {
     /// a rounding of R1.99999996 on the arc of an R10 rounding ending in the corners of two chamfers that ate their
     /// faces came back 3.6e6 mm^3 reaching 590 mm out of a block of 48,916 mm^3. Such a body is refused, in words.
     ///
-    /// The two boxes are read off the poles first, which stand round the geometry by millimetres: a result whose poles
-    /// stand within a twentieth of the size of the body past its poles is taken, and the boxes of the geometry itself are
-    /// sought only past that - a search over every surface, which took most of a rounding of a side swept from a spline.
-    /// The bodies refused stand hundreds of millimetres past.
+    /// The two boxes are read off the poles first, which stand round the geometry by millimetres, both the same way -
+    /// the box of a meshed body is read off its triangulation otherwise, and the box of the poles of every sound fillet of
+    /// a propeller stood past it: a result whose poles stand within a twentieth of the size of the body past its poles is
+    /// taken. Past that, the box of the geometry itself: of the source whole, kept with it once counted (0.6 s on a body
+    /// of 80 spline faces), and of the faces the blend made or trimmed - the faces it kept stand where they stood. The
+    /// bodies refused stand hundreds of millimetres past (a stair of 3.6e6 mm^3 standing 590 mm out).
     pub(crate) fn blended(&self, got: Option<Shape>, reach: f64) -> Option<Shape> {
         let got = got?;
         let past = |a: [f64; 6], b: [f64; 6]| (0..3).map(|i| (a[i] - b[i]).max(b[i + 3] - a[i + 3])).fold(0.0f64, f64::max);
         let limit = |a: [f64; 6]| reach.abs() + 1e-3 * ((a[3] - a[0]).powi(2) + (a[4] - a[1]).powi(2) + (a[5] - a[2]).powi(2)).sqrt().max(1.0);
         // the poles of a rounding stand out round it by millimetres; a body the kernel botched, by hundreds
         let roomy = |a: [f64; 6]| limit(a) + 0.05 * ((a[3] - a[0]).powi(2) + (a[4] - a[1]).powi(2) + (a[5] - a[2]).powi(2)).sqrt();
-        let within = self.bbox().is_some_and(|a| got.bbox().is_some_and(|b| past(a, b) <= roomy(a)));
+        let within = self.bbox_poles().is_some_and(|a| got.bbox_poles().is_some_and(|b| past(a, b) <= roomy(a)));
         if !within {
             if let Some(a) = self.bbox_exact() {
-                let beyond = got.bbox_exact().map_or(0.0, |b| past(a, b));
+                let beyond = got.bbox_exact_of_new_faces().map_or(0.0, |b| past(a, b));
                 if beyond > limit(a) {
                     return refuse("blend/check", &format!("the kernel gave a body standing {beyond:.1} mm past the body it blends"));
                 }
@@ -197,7 +239,7 @@ impl Shape {
     /// volume to keep.
     fn volume_kept(&self, got: Shape) -> Option<Shape> {
         let Some(a) = self.bbox() else { return Some(got) };
-        let (before, after) = (self.volume(), got.volume());
+        let (before, after) = (self.rough_volume(), got.rough_volume());
         let room = (a[3] - a[0]) * (a[4] - a[1]) * (a[5] - a[2]);
         if before > 0.0 && (after <= 0.0 || after > room) {
             return refuse("blend/check", &format!("the kernel gave a body of {after:.1} mm^3 from one of {before:.1} mm^3"));

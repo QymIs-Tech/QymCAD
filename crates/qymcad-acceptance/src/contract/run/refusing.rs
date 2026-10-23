@@ -41,6 +41,22 @@ pub(crate) fn wrong_picks(tool: &Tool) {
             problems.push(format!("Enter with nothing picked: no words say what is missing - the status line still says {status:?}, the tool {:?}", s.tool_says()));
         }
     }
+    // PICKS RIGHT ONE BY ONE AND WRONG TOGETHER: clicked in order, then Enter - nothing is laid, and the words say why
+    if let Some(super::super::Together { picks, says }) = &tool.refused_together {
+        let mut s = tool.fixture.start();
+        take(&mut s, tool);
+        for p in picks.iter() {
+            click(&mut s, p);
+        }
+        let before = s.document().features.len();
+        enter_key(&mut s);
+        let laid: Vec<String> = s.document().features.iter().skip(before).map(|f| format!("{} {:?}", f.kind, f.error)).collect();
+        let why = s.word(says);
+        let said: Vec<String> = s.tool_says().into_iter().map(|n| n.words).chain(std::iter::once(s.status())).collect();
+        if !laid.is_empty() || !said.iter().any(|w| w.contains(&why)) {
+            problems.push(format!("{picks:?} together, then Enter: laid {laid:?}, said {said:?}, not {why:?}"));
+        }
+    }
     // MORE PICKED THAN THE TOOL NEEDS: the ordinary picks, then one more of their kind, and Enter.
     // The tool takes it, trades it for one it held, or refuses it in words; it builds nothing red, and the document
     // holds together.

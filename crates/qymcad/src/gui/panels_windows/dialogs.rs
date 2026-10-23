@@ -133,6 +133,67 @@ pub(crate) fn updates_dialog(win: &mut super::Windows, scheme: &super::SchemeUi,
     }
 }
 
+/// THE WINDOWS OF THE HELP MENU about the program itself: About, and the ways to support its author it leads to.
+pub(crate) fn help_windows(win: &mut super::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) {
+    about_dialog(win, scheme, ctx);
+    support_dialog(win, ctx);
+}
+
+/// THE SIDE OF A QR CODE in the window, in points: every picture is one version of the code (33 modules and a quiet zone
+/// of 4, 328 px), shown at half its size - 4 points a module, read by a phone camera from a screen at arm's length.
+const QR_SIDE: f32 = 164.0;
+
+/// THE WINDOW OF SUPPORT: a word of thanks, then each way of the resource (`crate::support`) in a column of its own - its
+/// QR code over its link. The code keeps its white ground in every scheme: a phone reads dark modules on light.
+pub(crate) fn support_dialog(win: &mut super::Windows, ctx: &egui::Context) {
+    if !win.is(WinKind::Support) {
+        return;
+    }
+    let mut open = true;
+    egui::Window::new(format!("{} {}", ph::HEART, crate::i18n::tr("win-support")))
+        .id(egui::Id::new("win_support"))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.add_space(4.0);
+            ui.set_max_width(3.0 * (QR_SIDE + 24.0));
+            ui.label(crate::i18n::tr("support-intro"));
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(crate::i18n::tr("support-scan")).weak().small());
+            ui.add_space(10.0);
+            ui.horizontal_top(|ui| {
+                for way in crate::support::ways() {
+                    ui.allocate_ui_with_layout(egui::vec2(QR_SIDE + 16.0, QR_SIDE + 40.0), egui::Layout::top_down(egui::Align::Center), |ui| {
+                        let texture =
+                            crate::support::picture(&way.qr).and_then(|bytes| crate::gui::help_window::picture_texture(ui.ctx(), &format!("support:{}", way.qr), bytes, egui::TextureOptions::NEAREST));
+                        // half the size of the picture, a whole number of points a module, and its corner on a whole
+                        // pixel: scaled by any other factor, or laid between two pixels (measured: at y 152.7 under
+                        // the two lines of words), the nearest pixels make modules of two widths and a ragged edge
+                        if let Some(t) = texture {
+                            let size = t.size_vec2() * 0.5;
+                            let (slot, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                            let at = egui::Rect::from_min_size(egui::emath::GuiRounding::round_to_pixels(slot.min, ui.ctx().pixels_per_point()), size);
+                            egui::Image::new((t.id(), size)).paint_at(ui, at);
+                        }
+                        ui.add_space(4.0);
+                        ui.hyperlink_to(&way.label, &way.url).on_hover_text(&way.url);
+                    });
+                }
+            });
+            ui.add_space(8.0);
+            ui.vertical_centered(|ui| {
+                if ui.button(crate::i18n::tr("close")).clicked() {
+                    win.close(WinKind::Support);
+                }
+            });
+        });
+    if !open {
+        win.close(WinKind::Support);
+    }
+}
+
 pub(crate) fn about_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) {
     if !win.is(WinKind::About) {
         return;
@@ -180,6 +241,9 @@ pub(crate) fn about_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, c
             ui.horizontal(|ui| {
                 ui.label(crate::i18n::tr("about-author"));
                 ui.label(egui::RichText::new(crate::i18n::tr("about-author-name")).strong());
+                if ui.button(format!("{} {}", ph::HEART, crate::i18n::tr("about-support"))).clicked() {
+                    win.open(WinKind::Support);
+                }
             });
             // THE PERSON MUST SEE ON WHAT TERMS THEY GOT THE PROGRAM. A copyleft licence is worth nothing
             // to whoever does not know they hold it: the rights to study, change and pass the program on

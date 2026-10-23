@@ -110,6 +110,8 @@ pub(in crate::gui) mod tests {
         for k in 0..n {
             crate::gui::joint_flow::tests::add_part_at(&mut app, 100.0 * k as f64);
         }
+        // back at the root, as "make active" in the tree puts one there: the parts stand in the tree as its rows
+        app.set_context_to(app.project.root);
         crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         app
     }

@@ -36,9 +36,45 @@ pub static SWEEP: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/03-sweep",
     not_applicable: FROM_SKETCHES,
+};
+
+/// SWEEP ALONG AN EDGE: the square of 4 over the top front edge of the block swept along that edge, clicked in the
+/// view, and added to the block - a rail of 4 x 4 x 40 on it, 12640 in all. The path is not a sketch here: its edge is
+/// of the body.
+pub static SWEEP_EDGE: Tool = Tool {
+    id: "part.sweep-edge",
+    flow: Flow::Command,
+    title: "cmd-sweep",
+    entries: &[Entry::Button("tb-sweep-hint"), Entry::SearchByArticle],
+    // the other tool and the budget are the sweep's along a sketch: the same tool, the same work
+    other: SWEEP.other,
+    fixture: Fixture::SquareOverEdge,
+    picks: &[Pick::Edge([20.0, 0.0, 10.0])],
+    pick_trial: &[Pick::Edge([20.0, 0.0, 10.0])],
+    wrong_picks: &[],
+    words: &[],
+    fields: &[],
+    modes: &[],
+    result: Outcome::Body { volume: 12640.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 14.0] },
+    node: "Sweep",
+    undo: "cmd-sweep",
+    undo_steps: 1,
+    stays: false,
+    upstream: None,
+    dependency: None,
+    contexts: &[],
+    refusal: None,
+    // the top front edge and the top back one, apart: no chain to run the profile along
+    refused_together: Some(Together { picks: &[Pick::Edge([20.0, 0.0, 10.0]), Pick::Edge([20.0, 30.0, 10.0])], says: "error-path-edges-apart" }),
+    budget: SWEEP.budget,
+    help: "part/03-sweep",
+    // what a sweep from sketches leaves out but its first point: the path is clicked in the view, and a wrong click is
+    // refused as any pick of the view is
+    not_applicable: FROM_SKETCHES.split_at(1).1,
 };
 
 /// LOFT: from the square of 10 on the table to the square of 20 thirty above - a frustum of 30 / 3 * (100 + 400 +
@@ -65,6 +101,7 @@ pub static LOFT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/04-loft",
     not_applicable: FROM_SKETCHES,
@@ -115,6 +152,7 @@ pub static THREAD: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (60, 2000),
     help: "part/10-thread",
     not_applicable: &[
@@ -167,6 +205,7 @@ pub static THREAD_OWN_PITCH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (60, 2000),
     help: "part/10-thread",
     not_applicable: &[

@@ -44,6 +44,12 @@ pub const POINTS: [(u8, &str); 27] = [
     (27, "every_field"),
 ];
 
+/// PICKS REFUSED TOGETHER: what is clicked, in order, and the key of the words that say why Enter builds nothing.
+pub struct Together {
+    pub picks: &'static [Pick],
+    pub says: &'static str,
+}
+
 /// A tool described.
 pub struct Tool {
     /// A name of its own, for the report.
@@ -90,6 +96,9 @@ pub struct Tool {
     pub contexts: &'static [Context],
     /// A value of the right form the kernel cannot build, typed into the first field.
     pub refusal: Option<f64>,
+    /// Picks each taken on its own that the tool cannot build from together - two edges of a path that do not meet:
+    /// Enter lays nothing and says why in these words.
+    pub refused_together: Option<Together>,
     /// How long applying may take, in seconds, and the longest frame, in milliseconds.
     pub budget: (u64, u64),
     /// Its article of help, by its path under `docs/help/<language>/` without `.md`.

@@ -3,33 +3,129 @@
 use qymcad_ui_state::{NotApplied, Notice};
 use super::*;
 
-/// Apply the SWEEP: the profile (`sweep_prof_sid`) along the path (`sweep_path_sid`). Both sketches are
-/// entered into the timeline if they are not there yet, then the Sweep node follows. The contours come
-/// from the selection in the bar (`sweep_prof_cid` and `sweep_path_cid`; 0 means the first suitable one
-/// is taken automatically).
-pub fn apply_sweep_cmd(feat: qymcad_ui_state::FeatTarget, project: &mut Project, sweep: qymcad_ui_state::SweepParams) -> Result<Id, NotApplied> {
-    if sweep.prof_sid == 0 || sweep.path_sid == 0 {
+/// Apply the SWEEP: the profile (`sweep_prof_sid`) along the path - a path sketch (`sweep_path_sid`) or edges of a body
+/// picked in the view (`along`). The sketches are entered into the timeline if they are not there yet, then the Sweep
+/// node follows, its operation by [`sweep_target`]. The contours come from the selection in the bar (`sweep_prof_cid`
+/// and `sweep_path_cid`; 0 means the first suitable one is taken automatically).
+pub fn apply_sweep_cmd(feat: qymcad_ui_state::FeatTarget, project: &mut Project, sweep: qymcad_ui_state::SweepParams, along: Option<qymcad_core::feature::EdgePath>) -> Result<Id, NotApplied> {
+    // a profile that is gone - its sketch taken away by an undo while the tool was in hand - is a profile missing, not a
+    // node laid red without one
+    if sweep.prof_sid == 0 || project.sweep_profile_contours(sweep.prof_sid).is_empty() || (along.is_none() && sweep.path_sid == 0) {
         return Err(refused("msg-need-profile-path"));
     }
-    if sweep.prof_sid == sweep.path_sid {
+    if along.is_none() && sweep.prof_sid == sweep.path_sid {
         return Err(refused("msg-profile-path-differ"));
     }
     let prof_name = project.sketches.iter().find(|s| s.id == sweep.prof_sid).map(|s| qymcad_i18n::name(&s.name)).unwrap_or_default();
-    let path_name = project.sketches.iter().find(|s| s.id == sweep.path_sid).map(|s| qymcad_i18n::name(&s.name)).unwrap_or_default();
     project.add_sketch_node(sweep.prof_sid, prof_name);
-    project.add_sketch_node(sweep.path_sid, path_name);
     // the profile contours and the boolean go IN ONE node (see the revolve: the reason is the same).
     let profiles: Vec<Id> = if sweep.prof_cid != 0 { vec![sweep.prof_cid] } else { Vec::new() };
-    // a sweep carries AN OPERATION: add (0) becomes a pad, plus cut (2) and intersect (3)
-    let occt = match feat.op {
+    let (body, SweepTarget { src, .. }) = match along {
+        Some(along) => {
+            let target = sweep_target(feat.op, along.body, PathKind::Edges);
+            (project.add_sweep_along(sweep.prof_sid, profiles, along, target.src, target.op), target)
+        }
+        None => {
+            let path_name = project.sketches.iter().find(|s| s.id == sweep.path_sid).map(|s| qymcad_i18n::name(&s.name)).unwrap_or_default();
+            project.add_sketch_node(sweep.path_sid, path_name);
+            let target = sweep_target(feat.op, part_body(project, sweep.prof_sid), PathKind::Sketch);
+            (project.add_sweep_multi_op(sweep.prof_sid, profiles, sweep.path_sid, sweep.path_cid, target.src, target.op), target)
+        }
+    };
+    (body != 0).then(|| if src == 0 { project.finish_base_body(body, 1) } else { body }).ok_or_else(op_failed)
+}
+
+/// THE PATH OF A SWEEP ALONG EDGES OF A BODY, when edges are picked in the view: the body their cache stands on, and the
+/// edges as the selection records them - by name, or by the face they were taken with.
+pub fn sweep_along(pc: &qymcad_ui_state::PartCtx) -> Option<qymcad_core::feature::EdgePath> {
+    let body = pc.edges.body.filter(|_| !pc.gsel.edges.is_empty() && pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Sweep))?;
+    let picks: Vec<u32> = pc.gsel.edges.iter().copied().collect();
+    Some(qymcad_core::feature::EdgePath { body, edges: pc.gsel.recorded(&picks) })
+}
+
+/// THE EDGES PICKED AS THE PATH OF A SWEEP JOIN END TO END INTO ONE CHAIN, asked of the kernel by the rule the sweep is
+/// built by before its node is laid or edited: edges that stand apart or branch are refused in words, and no node is
+/// laid to stand red with the same words.
+pub fn sweep_path_joins(pc: &qymcad_ui_state::PartCtx) -> Result<(), NotApplied> {
+    let Some(shape) = sweep_along(pc).and_then(|a| pc.live.shapes.get(&a.body)) else { return Ok(()) };
+    let mut picked: Vec<u32> = pc.gsel.edges.iter().copied().collect();
+    picked.sort_unstable();
+    qymcad_kernel::ask::path_edges_join(shape, &picked).map_err(|e| NotApplied::Refused(qymcad_i18n::error_words::error_text(&e)))
+}
+
+/// THE KERNEL'S CODE OF A BOOLEAN (0 cut, 1 union, 2 intersection) for the operation of the bar (0 add, 1 a boss, 2 a
+/// cut, 3 an intersection): the one translation of every command of a part that adds, cuts or meets.
+fn boolean_code(op: u8) -> u8 {
+    match op {
         2 => 0,
         3 => 2,
         _ => 1,
+    }
+}
+
+/// THE BODY A SWEEP IS ADDED TO, CUT FROM OR MET WITH, and the kernel's code for it; a zero `src` is a body of its own.
+#[derive(Clone, Copy)]
+pub(crate) struct SweepTarget {
+    pub(crate) src: Id,
+    pub(crate) op: u8,
+}
+
+/// WHAT A SWEEP RUNS ALONG.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PathKind {
+    Sketch,
+    Edges,
+}
+
+/// The active body of the part the sketch `sid` is drawn in; 0 when the part has none.
+fn part_body(project: &Project, sid: Id) -> Id {
+    project.sketch_owner(sid).and_then(|o| project.active_body(o)).unwrap_or(0)
+}
+
+/// THE OPERATION OF A SWEEP, one rule for laying it and for editing it. `body` is what it works on: the body the edges of
+/// its path lie on, or else the active body of the part its profile is drawn in (0 when the part has none). A cut or an
+/// intersection is made with that body within the node, and so is an addition along edges: a rail laid along an edge
+/// belongs to the body of that edge. An addition along a sketch is a body of its own, which the union laid after it
+/// joins to the part (`finish_base_body`): a sweep standing apart from the body stays one body of the part with it.
+fn sweep_target(op: u8, body: Id, path: PathKind) -> SweepTarget {
+    if body != 0 && (path == PathKind::Edges || matches!(op, 1..=3)) {
+        SweepTarget { src: body, op: boolean_code(op) }
+    } else {
+        SweepTarget { src: 0, op: 1 }
+    }
+}
+
+/// THE OPERATION OF A SWEEP BEING EDITED, by the rule it is laid by ([`sweep_target`]) for the operation and the path the
+/// bar holds now, in the shape it was laid in - three shapes:
+/// - laid within its node (`src` not 0): it works on the body it was laid on, or on the body of the edges given now; an
+///   addition along a sketch adds within the node, there being no union after it;
+/// - laid as an addition along a sketch, a body of its own followed by the union that joins it to the part: an addition
+///   keeps that shape, with the same body as a sweep laid anew; a cut or an intersection would leave the union joining
+///   what the sweep cut, and is refused in words, the node left as it was;
+/// - laid as the first body of its part (`src` 0, no union after): there is no body before it - an addition stays a
+///   body of its own, and a cut or an intersection, having nothing to cut or meet, is refused in words. Taken for the
+///   active body of the part, that body is the sweep's own result, and the sweep was made a boolean with itself.
+///
+/// With the body and the boolean kept as laid, the operation chosen while editing went nowhere, and a path turned from a
+/// sketch to edges kept the body of the sketch's part.
+pub(crate) fn sweep_edit_target(op: u8, project: &Project, fid: Id, sweep: qymcad_ui_state::SweepParams, along: Option<&qymcad_core::feature::EdgePath>) -> Result<SweepTarget, NotApplied> {
+    let Some((src, was_along)) = project.timeline.iter().find(|n| n.id == fid).and_then(|n| match &n.kind {
+        qymcad_core::feature::FeatureKind::Sweep { src, along, .. } => Some((*src, along.clone())),
+        _ => None,
+    }) else {
+        return Err(op_failed());
     };
-    let part = project.sketch_owner(sweep.prof_sid).and_then(|o| project.active_body(o)).unwrap_or(0);
-    let (src, op) = if part != 0 && matches!(feat.op, 1..=3) { (part, occt) } else { (0, 1) };
-    let body = project.add_sweep_multi_op(sweep.prof_sid, profiles, sweep.path_sid, sweep.path_cid, src, op);
-    (body != 0).then(|| if src == 0 { project.finish_base_body(body, 1) } else { body }).ok_or_else(op_failed)
+    let edges = along.cloned().or(was_along.filter(|_| sweep.path_sid == 0));
+    let joined_after = project.feature_op_span(fid).len() > 1;
+    let adds = !matches!(op, 2 | 3);
+    match (&edges, joined_after) {
+        (_, true) if adds => Ok(SweepTarget { src: 0, op: 1 }),
+        (_, true) => Err(refused("msg-sweep-laid-as-addition")),
+        (Some(a), false) => Ok(sweep_target(op, a.body, PathKind::Edges)),
+        (None, false) if src != 0 => Ok(if adds { SweepTarget { src, op: 1 } } else { sweep_target(op, src, PathKind::Sketch) }),
+        (None, false) if adds => Ok(SweepTarget { src: 0, op: 1 }),
+        (None, false) => Err(refused("cmd-cut-needs-body")),
+    }
 }
 
 /// A hole: a cylinder cut at the centre of the picked face, perpendicular to it.
@@ -397,11 +493,7 @@ pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: qymcad_ui_state:
         } else {
             // with a body present: add (0) becomes a pad (1); pad (1) stays 1; cut (2) becomes a cut (0);
             // intersect (3) becomes an intersection (2)
-            let occt = match pc.feat.op {
-                2 => 0,
-                3 => 2,
-                _ => 1,
-            };
+            let occt = boolean_code(pc.feat.op);
             pc.project.add_combine_multi_op(part, sid, targets.clone(), qymcad_core::model::CombineSpan { height: h, down, extent: qymcad_core::feature::Extent { through, reach }, fill: &fill }, occt)
         };
         if last != 0 {
@@ -419,11 +511,7 @@ pub fn apply_sketch_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: qymcad_ui_state:
         // read as the revolve falling apart into two features that add instead of cutting; editing opened
         // only one contour, and deleting either of them took the whole chain below with it.
         let part = owner_body.unwrap_or(0);
-        let occt = match pc.feat.op {
-            2 => 0,
-            3 => 2,
-            _ => 1,
-        };
+        let occt = boolean_code(pc.feat.op);
         // A pad in AN EMPTY part is simply a new body: there is nothing to boolean against.
         let (rev_src, rev_op) = if part != 0 && matches!(pc.feat.op, 1..=3) { (part, occt) } else { (0, 1) };
         let body = pc.project.add_revolve_multi_op(

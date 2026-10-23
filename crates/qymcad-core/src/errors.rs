@@ -322,6 +322,12 @@ pub enum CoreError {
     /// the description finds nothing: what it is phrased through is gone. The numbers inside a description name
     /// faces, not edges, so this is not counted as named edges lost.
     DescribedEdgesNotFound,
+    /// A sweep run along edges of a body lost some of them: the body was rebuilt and `lost` of the `asked` edges of the
+    /// path are not in it any more. The rest would join into another path, or none, so nothing is swept.
+    PathEdgesLost { asked: usize, lost: usize },
+    /// The edges named as the path of a sweep do not join end to end into one chain: they stand apart or branch, and
+    /// the kernel would sweep a part of them.
+    PathEdgesApart,
     /// The mirror plane was deleted. Silently falling back to a world plane is not acceptable: a measurement
     /// showed the part moving as a result — x from 10 to 90 about a datum at x = 50 became −30 to 30 about the
     /// world YZ plane — and all of it without a single word.
@@ -360,6 +366,9 @@ pub enum CoreError {
     NoIsolatedPointsForHoles,
     /// There are no points for the holes.
     NoPointsForHoles,
+    /// A counterbore or a countersink whose recess is not wider than the hole: there is no step to cut, and the
+    /// kernel would drill a plain hole under the name of a recessed one.
+    RecessNotWider { recess: f64, hole: f64 },
     /// Thread: the rim of the cylinder or hole, a circular edge, was not found.
     ThreadRimNotFound,
     /// Auger: the rim of the shaft, a circular edge, was not found.
@@ -490,6 +499,8 @@ impl CoreError {
             DraftFailed { .. } => "error-draft-failed".into(),
             EdgesNotFound { .. } => "error-edges-not-found".into(),
             DescribedEdgesNotFound => "error-described-edges-not-found".into(),
+            PathEdgesLost { .. } => "error-path-edges-lost".into(),
+            PathEdgesApart => "error-path-edges-apart".into(),
             CutPlaneDeleted => "error-cut-plane-deleted".into(),
             SketchFaceGone => "error-sketch-face-gone".into(),
             SketchPlaneGone => "error-sketch-plane-gone".into(),
@@ -507,6 +518,7 @@ impl CoreError {
             SweepPathMissing => "error-sweep-path-missing".into(),
             NoIsolatedPointsForHoles => "error-no-isolated-points-for-holes".into(),
             NoPointsForHoles => "error-no-points-for-holes".into(),
+            RecessNotWider { .. } => "error-recess-not-wider".into(),
             ThreadRimNotFound => "error-thread-rim-not-found".into(),
             AugerRimNotFound => "error-auger-rim-not-found".into(),
             AugerBadPitchOrLength => "error-auger-bad-pitch-or-length".into(),
@@ -577,6 +589,9 @@ impl std::fmt::Display for CoreError {
             KernelRequired(op) => write!(f, "real OCCT kernel required: {:?}", op),
             SplitPieceCount { got, want } => write!(f, "split produced {got} pieces, expected {want}"),
             AugerOuterNotBigger { outer, shaft } => write!(f, "auger outer {outer:.1} not bigger than shaft {shaft:.1}"),
+            RecessNotWider { recess, hole } => write!(f, "recess {recess:.1} not wider than hole {hole:.1}"),
+            PathEdgesLost { asked, lost } => write!(f, "path lost {lost} of {asked} edges"),
+            PathEdgesApart => write!(f, "the edges of the path do not join into one chain"),
             ThreadRemovedNothing { before, after } => write!(f, "thread removed nothing ({before:.0} -> {after:.0})"),
             AugerAddedNothing { before, after } => write!(f, "auger added nothing ({before:.0} -> {after:.0})"),
             JointUnsatisfied { residual } => write!(f, "joint unsatisfied, residual {residual:.3}"),

@@ -27,6 +27,7 @@ pub static GROUND: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/01-components",
     not_applicable: &[
@@ -74,6 +75,7 @@ pub static JOINT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/02-joints",
     not_applicable: &[
@@ -128,6 +130,7 @@ pub static NEW_PART: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/01-components",
     not_applicable: MAKES,
@@ -156,6 +159,7 @@ pub static NEW_SUBASSEMBLY: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/01-components",
     not_applicable: MAKES,
@@ -215,6 +219,7 @@ pub static COMP_LINEAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/04-arrays",
     not_applicable: &[COPIES[0], COPIES[1], COPIES[2], COPIES[3], COPIES[4], COPIES[5], COPIES[6]],
@@ -243,6 +248,7 @@ pub static COMP_CIRCULAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/04-arrays",
     not_applicable: &[
@@ -283,6 +289,7 @@ pub static MIRROR_PART: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/04-arrays",
     not_applicable: &[
@@ -321,6 +328,7 @@ pub static INSERT_COMPONENT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/01-components",
     not_applicable: &[
@@ -366,6 +374,7 @@ pub static GROUP: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/02-joints",
     not_applicable: &[
@@ -405,6 +414,7 @@ pub static SECTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "general/09-viewport",
     not_applicable: &[
@@ -444,6 +454,7 @@ pub static TANGENT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/02-joints",
     not_applicable: &[
@@ -482,6 +493,7 @@ pub static WIDTH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/02-joints",
     not_applicable: &[
@@ -520,6 +532,7 @@ pub static RELATION: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/07-relations",
     not_applicable: &[
@@ -558,6 +571,7 @@ pub static INTERFERENCE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/05-interference",
     not_applicable: &[
@@ -619,6 +633,7 @@ pub static DRIVE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/03-limits-drives",
     not_applicable: &[
@@ -661,6 +676,7 @@ pub static BREAK_REF: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "assembly/06-external-refs",
     not_applicable: &[
@@ -712,6 +728,7 @@ pub static SEARCH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "general/02-tree",
     not_applicable: &[

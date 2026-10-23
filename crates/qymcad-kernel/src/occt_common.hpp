@@ -316,7 +316,41 @@ struct QymShape {
     // has edges with one face only, and an edge is named after the pair of its faces: the face that stood across its
     // source edge is the second of the pair. Filled where a sheet is cut out of a body, read when its edges are named.
     TopTools_DataMapOfShapeInteger ebeside;
+    // THE EXACT VOLUME ONCE COUNTED, below zero until then. Integrated over spline faces it is seconds: on a propeller of
+    // 80 faces, 51 of them splines, 1.3-1.6 s a time, and the body a fillet reads was counted again for every node built
+    // on it. Only `heal_pinched_faces` and `drop_slivers` change a shape in place, and they forget it.
+    mutable double volume_memo = -1.0;
+    // THE VOLUME TO A PERCENT ONCE COUNTED, below zero until then: asked of a body by every blend of it and of every
+    // result twice - by the check of the blend and by the door - 20-50 ms a time on a body of 80 faces.
+    mutable double rough_memo = -1.0;
+    // WHETHER THE BODY PASSED THE CHECK OF A SOUND SOLID (`BRepCheck_Analyzer` with its geometric checks), once asked
+    // or once an operation checked its own result: 1 sound, 0 broken, -1 not asked yet. The check took 100 ms on a
+    // body of 80 faces and ran three times on every result of a blend - in the operation, in the wrap of its result
+    // and in the door. The two steps that change a shape in place forget it with the volume.
+    mutable int valid_memo = -1;
+    // THE FACES THE OPERATION MADE OR TRIMMED: every face that is not a face of a body it worked on, as it was. A face
+    // trimmed on a plane keeps its surface and not its bounds - a boundary that ran off is where a botched body stands
+    // past its source - so it counts with the faces made. Known once a result passed `qym_result`; a step that reshapes
+    // the body afterwards forgets them (`forget_marks`), and every face counts.
+    TopTools_MapOfShape fresh;
+    bool fresh_known = false;
+    // THE EXACT BOX OF THE GEOMETRY ONCE COUNTED (`BRepBndLib::AddOptimal`): a search over every surface, 0.6 s on a
+    // body of 80 faces, 51 of them splines, asked of the body by every blend made on it.
+    mutable double bbox_memo[6] = {0, 0, 0, 0, 0, 0};
+    mutable bool bbox_known = false;
 };
+
+// EVERYTHING KNOWN OF A BODY FORGOTTEN, when its shape is reshaped after the marks were set: the glue after a seam was
+// moved, a pinched face resolved, a crack dropped. The check of a sound solid, the volumes, the box and the faces made
+// are asked of the body as it stands now.
+inline void forget_marks(QymShape& s) {
+    s.volume_memo = -1.0;
+    s.rough_memo = -1.0;
+    s.valid_memo = -1;
+    s.fresh.Clear();
+    s.fresh_known = false;
+    s.bbox_known = false;
+}
 
 /// Note, for every edge of `taken` (a face cut out of the body `s` as `source`, the same edges in the same order), the
 /// name of the face across its source edge in `s`, into `ebeside`. Nothing is noted where the order does not hold.

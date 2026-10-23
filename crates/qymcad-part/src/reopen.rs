@@ -88,7 +88,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             };
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-angle", "angle", angle, 1.0, 360.0)];
         }
-        FeatureKind::Sweep { sketch, ref profiles, path_sketch, path, op, .. } => {
+        FeatureKind::Sweep { sketch, ref profiles, path_sketch, path, op, ref along, .. } => {
             // reopen the sweep: restore the profile, the path and the picked contours, with no picking
             pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::Sweep, was_3d);
             pc.cmd.sketch = pc.project.sketch_index(sketch);
@@ -106,6 +106,13 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.sweep.path_cid = path;
             pc.sweep.pick_path = false;
             pc.cmd.params.clear();
+            // a path along edges of a body: the body they lie on taken, as a fillet takes its own, and its edges brought up
+            // and lit as they were picked - the edges of the body the sweep made are other edges
+            if let Some(a) = along.clone() {
+                qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, a.body);
+                refresh_edges(pc);
+                restore_edge_picks(pc, a.body, &a.edges);
+            }
         }
         FeatureKind::Loft { sketches, contours, ruled, src, op, .. } => {
             // reopen the loft: restore the set of sections and the picked contours, with no picking

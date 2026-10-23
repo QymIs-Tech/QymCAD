@@ -1042,7 +1042,7 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                     sk.picking.clear();
                     *sk.mode_3d = true;
                     sk.view.initialized = false;
-                    *sk.status = Notice::info(qymcad_i18n::tr("sk-contour-picked"));
+                    *sk.status = qymcad_ui_state::contour_picked_words(sk.cmd);
                 } else {
                     *sk.status = Notice::refusal(qymcad_i18n::tr("msg-miss-contour"));
                 }

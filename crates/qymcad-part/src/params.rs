@@ -214,9 +214,12 @@ pub fn sync_hole_params(armed: &qymcad_ui_state::Armed, cmd: &mut qymcad_ui_stat
     let want = hole.kind != 0;
     let has = cmd.params.iter().any(|p| p.key == "dia2");
     if want && !has {
+        // twice the hole, as a professional CAD offers it (a hole of 5 gets a recess of 10): a fixed 12 left every hole
+        // of 12 and more with a recess no wider than itself
+        let recess = 2.0 * qymcad_ui_state::cmd_val(cmd, "diameter");
         let (d2, dp2) = match cmd.edit {
-            Some(fid) => (cmd_param_from(project, fid, "f-recess-d", "dia2", 12.0, 0.1, 10000.0), cmd_param_from(project, fid, "f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
-            None => (qymcad_ui_state::CmdParam::new("f-recess-d", "dia2", 12.0, 0.1, 10000.0), qymcad_ui_state::CmdParam::new("f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
+            Some(fid) => (cmd_param_from(project, fid, "f-recess-d", "dia2", recess, 0.1, 10000.0), cmd_param_from(project, fid, "f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
+            None => (qymcad_ui_state::CmdParam::new("f-recess-d", "dia2", recess, 0.1, 10000.0), qymcad_ui_state::CmdParam::new("f-recess-depth", "depth2", 4.0, 0.1, 10000.0)),
         };
         cmd.params.push(d2);
         cmd.params.push(dp2);
@@ -529,8 +532,9 @@ pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
         Some(qymcad_ui_state::PartTool::Extrude) | Some(qymcad_ui_state::PartTool::Revolve) => {
             !pc.gsel.profiles.is_empty() || pc.cmd.sketch.map(|si| qymcad_ui_state::sketch_closed_contours(pc.project, si).len() == 1).unwrap_or(false)
         }
-        Some(qymcad_ui_state::PartTool::Sweep) => pc.sweep.prof_sid != 0 && pc.sweep.path_sid != 0, // sweep: a profile and a path
-        Some(qymcad_ui_state::PartTool::Loft) => pc.loft.sids.len() >= 2,                           // loft: at least two sections
+        // sweep: a profile and a path - a sketch, or edges of a body
+        Some(qymcad_ui_state::PartTool::Sweep) => pc.sweep.prof_sid != 0 && (pc.sweep.path_sid != 0 || !pc.gsel.edges.is_empty()),
+        Some(qymcad_ui_state::PartTool::Loft) => pc.loft.sids.len() >= 2, // loft: at least two sections
         // a fillet and a chamfer round the edges PICKED: Enter with none picked used to round every edge of the body
         // without a word
         Some(qymcad_ui_state::PartTool::Fillet) | Some(qymcad_ui_state::PartTool::Chamfer) => !pc.gsel.edges.is_empty(),

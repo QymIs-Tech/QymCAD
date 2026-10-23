@@ -92,6 +92,72 @@ probe! {
     }
 }
 
+/// Is the refusal `key` names written on screen? Its words after the last number it carries: the numbers are the
+/// command's own, and the caption of a field may share the words before them.
+fn says(s: &mut Session, key: &str) -> bool {
+    let line = s.word(key);
+    let tail = line.rsplit('}').next().unwrap_or_default().trim().to_string();
+    !tail.is_empty() && s.words().iter().any(|w| w.ends_with(&tail))
+}
+
+probe! {
+    /// A RECESS NO WIDER THAN ITS HOLE IS REFUSED IN WORDS BEFORE ENTER, and no plain hole is bored under its name; the
+    /// recess offered is twice the hole. Reported behaviour: a counterbore of dia 14 with the recess left at the fixed
+    /// dia 12 it was offered came out a plain dia 14 hole, the status line saying it was done.
+    fn a_recess_no_wider_than_its_hole_is_refused_in_words() {
+        use std::f64::consts::PI;
+        let mut fails = Vec::new();
+        for kind in ["cmd-counterbore", "cmd-countersink"] {
+            // dia 6 first, the kind after: a recess of 12 is offered; then the hole widened to 14 under it
+            let mut s = a_block();
+            take(&mut s, "tb-hole-hint");
+            let top = s.face_at([20.0, 15.0, 10.0]);
+            s.click(top);
+            let word = s.word(kind);
+            s.press_word_near(&word, qymcad::pos2(640.0, 24.0));
+            let caption = s.word("f-recess-d");
+            let offered = s.field(&caption).value;
+            if offered.parse::<f64>().ok() != Some(12.0) {
+                fails.push(format!("{kind}: over a hole of 6 the recess offered is {offered:?}, not twice the hole"));
+            }
+            field(&mut s, "f-diameter", "14");
+            if !says(&mut s, "error-recess-not-wider") {
+                fails.push(format!("{kind}: a recess of 12 over a hole of 14 is not refused before Enter; on screen: {:?}", s.words()));
+            }
+            // the refusal names the field it is about: the recess, not the hole
+            let refusals: Vec<String> = s.tool_says().into_iter().filter(|n| n.tone == qymcad::Tone::Refusal).map(|n| n.words).collect();
+            if !refusals.iter().any(|r| r.starts_with(&caption)) {
+                fails.push(format!("{kind}: the refusal is not said at the field {caption:?}: {refusals:?}"));
+            }
+            s.key(Key::Enter);
+            let doc = s.document();
+            if let Some(hole) = doc.features.iter().find(|f| f.kind == "Hole" && f.error.is_none()) {
+                fails.push(format!("{kind}: a recess of 12 over a hole of 14 was laid green: {hole:?}"));
+            }
+            // dia 14 first, the kind after: the recess offered is 28, and the recess is bored
+            let mut s = a_block();
+            take(&mut s, "tb-hole-hint");
+            let top = s.face_at([20.0, 15.0, 10.0]);
+            s.click(top);
+            field(&mut s, "f-diameter", "14");
+            s.press_word_near(&word, qymcad::pos2(640.0, 24.0));
+            let offered = s.field(&caption).value;
+            if offered.parse::<f64>().ok() != Some(28.0) {
+                fails.push(format!("{kind}: over a hole of 14 the recess offered is {offered:?}, not twice the hole"));
+            }
+            s.key(Key::Enter);
+            // the hole of 14 right through the 10 of the block, and the recess of 28 over its top 4
+            let recess = if kind == "cmd-counterbore" { PI * (196.0 - 49.0) * 4.0 } else { PI * 4.0 / 3.0 * (196.0 + 98.0 + 49.0) - PI * 49.0 * 4.0 };
+            let want = 12000.0 - PI * 49.0 * 10.0 - recess;
+            let got = body(&mut s).volume;
+            if (got - want).abs() > 2.0 {
+                fails.push(format!("{kind}: a hole of 14 with its recess of 28 leaves {want:.1}, and the body holds {got:.1}"));
+            }
+        }
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
+    }
+}
+
 probe! {
     /// PUSH FACE: the face moves by the offset and takes the body with it.
     fn a_pushed_face_carries_the_body_with_it() {
@@ -522,5 +588,57 @@ probe! {
         let doc = s.document();
         let solids: Vec<_> = doc.bodies.iter().filter(|b| !b.sheet && !b.consumed && b.visible).collect();
         assert!(solids.len() == 1 && (solids[0].volume - 18000.0).abs() < 1.0, "the block with its top replaced is {:?}, 40 x 30 x 15 = 18000 was expected; the status line says {:?}", solids.iter().map(|b| (b.volume, b.min, b.max)).collect::<Vec<_>>(), s.status());
+    }
+}
+
+/// Where the wall of the hole stands across the block, as (x, y): the middle of the one cylinder face of the body.
+fn hole_at(s: &mut Session) -> Option<(f64, f64)> {
+    let now = body(s);
+    let kinds = s.document().bodies.iter().rposition(|b| !b.consumed && !b.sheet).and_then(|i| s.inspect(i)).map(|k| k.kinds.cylinder);
+    // the wall of a hole through a block is the only face whose middle lies inside the block's top and bottom
+    let walls: Vec<[f64; 3]> = now.face_centres.iter().copied().filter(|c| c[2] > now.min[2] + 1.0 && c[2] < now.max[2] - 1.0 && c[0] > 1.0 && c[0] < 39.0 && c[1] > 1.0 && c[1] < 29.0).collect();
+    (kinds == Some(1) && walls.len() == 1).then(|| (walls[0][0], walls[0][1]))
+}
+
+probe! {
+    /// THE SHIFTS OF A HOLE ARE EDITED BY OPENING IT AGAIN, and hold through a rebuild: a hole through the middle of the
+    /// top shifted 5 along it, opened again from the tree, shows 5; shifted 10 and applied it stands 10 off the middle;
+    /// the block made 12 tall under it, the hole is still 10 off and shows 10. Reported behaviour: the shifts typed when
+    /// the hole was opened again went back to the first ones.
+    fn the_shifts_of_a_hole_are_edited_by_opening_it_again() {
+        let mut s = a_block();
+        take(&mut s, "tb-hole-hint");
+        let top = s.face_at([20.0, 15.0, 10.0]);
+        s.click(top);
+        field(&mut s, "f-hole-u", "5");
+        s.key(Key::Enter);
+        let mut fails = Vec::new();
+        let caption = s.word("f-hole-u");
+        build::reopen(&mut s, "feat-hole");
+        let shown = s.field(&caption).value;
+        if shown.parse::<f64>().ok() != Some(5.0) {
+            fails.push(format!("the hole shifted 5, opened again, shows the shift {shown:?}"));
+        }
+        s.fill(&caption, "10").key(Key::Enter);
+        let at = hole_at(&mut s);
+        if at.is_none_or(|(x, y)| (x - 30.0).abs() > 0.1 || (y - 15.0).abs() > 0.1) {
+            fails.push(format!("the hole shifted 10 from the middle (20, 15) of the top stands at {at:?}"));
+        }
+        // the block rebuilt under the hole: 12 tall instead of 10
+        build::reopen(&mut s, "feat-extrude");
+        let length = s.word("f-length");
+        s.fill(&length, "12").key(Key::Enter);
+        let now = body(&mut s);
+        let at = hole_at(&mut s);
+        if (now.max[2] - 12.0).abs() > 1e-3 || at.is_none_or(|(x, y)| (x - 30.0).abs() > 0.1 || (y - 15.0).abs() > 0.1) {
+            fails.push(format!("the block made 12 tall reaches {} and the hole stands at {at:?}, not at (30, 15)", now.max[2]));
+        }
+        build::reopen(&mut s, "feat-hole");
+        let shown = s.field(&caption).value;
+        if shown.parse::<f64>().ok() != Some(10.0) {
+            fails.push(format!("the hole shifted 10, rebuilt and opened again, shows the shift {shown:?}"));
+        }
+        s.key(Key::Escape);
+        assert!(fails.is_empty(), "\n{}", fails.join("\n"));
     }
 }

@@ -497,28 +497,17 @@ impl qymcad_core::feature::Kernel for OcctKernel {
         path_place: [f64; 12],
         sides: qymcad_core::feature::Sides<'_>,
     ) -> Result<Built, qymcad_core::errors::CoreError> {
-        let qymcad_core::model::BodyOp { src, op, body } = bo;
-        let named = crate::ops::profile::name_sides(profiles, sides, qymcad_core::names::Role::Swept);
-        let (profiles, caps) = (&named.profiles, &named.caps);
-        if profiles.is_empty() {
-            return Err(qymcad_core::errors::CoreError::NoContours);
-        }
-        self.plain_named(qymcad_core::errors::Op::Sweep, body, named.roles.clone(), |b| {
-            let mut tool: Option<crate::Shape> = None;
-            for (i, prof) in profiles.iter().enumerate() {
-                let cap = [caps.get(i * 3 + 1).copied().unwrap_or(0), caps.get(i * 3 + 2).copied().unwrap_or(0)];
-                let s = crate::Shape::sweep_profile_named(prof, &profile_place, path, &path_place, cap).ok_or_else(|| refused(qymcad_core::errors::Op::Sweep))?;
-                tool = Some(match tool {
-                    None => s,
-                    Some(t) => t.boolean(&s, 1).ok_or_else(|| refused(qymcad_core::errors::Op::FuseProfiles))?,
-                });
-            }
-            let tool = tool.ok_or(qymcad_core::errors::CoreError::NoContours)?;
-            if src == 0 {
-                return Ok(tool);
-            }
-            b.get(src)?.boolean(&tool, op).ok_or_else(|| refused(qymcad_core::errors::Op::Boolean))
-        })
+        self.sweep_op(bo, profiles, sides, |_, prof, cap| crate::Shape::sweep_profile_named(prof, &profile_place, path, &path_place, cap).ok_or_else(|| refused(qymcad_core::errors::Op::Sweep)))
+    }
+    fn sweep_along(
+        &self,
+        bo: qymcad_core::model::BodyOp,
+        profiles: &[Vec<f64>],
+        profile_place: [f64; 12],
+        along: qymcad_core::feature::Along<'_>,
+        sides: qymcad_core::feature::Sides<'_>,
+    ) -> Result<Built, qymcad_core::errors::CoreError> {
+        self.sweep_op(bo, profiles, sides, |b, prof, cap| b.get(along.body)?.sweep_along_edges(prof, &profile_place, along.edges, cap))
     }
     fn loft(
         &self,
@@ -639,15 +628,20 @@ impl qymcad_core::feature::Kernel for OcctKernel {
             // A cut that only touches the body is nothing either: a square on the top cut 5 up, away from the block,
             // took 0.1 mm^3 of a tool of 500 along the face it stood on and cut the top into 11 faces. Less than a
             // thousandth of the tool is a touch, not a cut.
-            let removed = src_shape.volume() - out.volume();
-            if op == 0 && src_shape.volume() > 1e-9 && removed <= (tool.volume().abs() * 1e-3).max(1e-6) {
-                return Err(qymcad_core::errors::CoreError::CutRemovedNothing);
+            // told from the volumes to a percent where they leave no doubt, from the exact ones near a touch
+            let volumes = crate::ops::profile::CutVolumes { before: src_shape.rough_volume(), after: out.rough_volume(), tool: tool.rough_volume() };
+            if op == 0 && crate::ops::profile::cut_told(volumes) == crate::ops::profile::CutTold::NearATouch {
+                let removed = src_shape.volume() - out.volume();
+                if src_shape.volume() > 1e-9 && removed <= (tool.volume().abs() * 1e-3).max(1e-6) {
+                    return Err(qymcad_core::errors::CoreError::CutRemovedNothing);
+                }
             }
             Ok(out)
         })
     }
     fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], roles: qymcad_core::feature::BlendRoles) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.fillet_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles })
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::Fillet, body, src, sizes: &[radius], edges, roles: &roles, more: String::new() };
+        self.blend_kept(asked, || self.fillet_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles: roles.clone() }))
     }
     fn fillet_at_vertices(
         &self,
@@ -658,13 +652,17 @@ impl qymcad_core::feature::Kernel for OcctKernel {
         verts: &[qymcad_core::feature::RadiusAt],
         roles: qymcad_core::feature::BlendRoles,
     ) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.fillet_at_vertices_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles }, verts)
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::FilletVar, body, src, sizes: &[radius], edges, roles: &roles, more: format!("{verts:?}") };
+        self.blend_kept(asked, || self.fillet_at_vertices_op(crate::ops::blend::BlendAsk { body, src, size: radius, edges, roles: roles.clone() }, verts))
     }
     fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], roles: qymcad_core::feature::BlendRoles) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.chamfer_op(crate::ops::blend::BlendAsk { body, src, size: dist, edges, roles })
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::Chamfer, body, src, sizes: &[dist], edges, roles: &roles, more: String::new() };
+        self.blend_kept(asked, || self.chamfer_op(crate::ops::blend::BlendAsk { body, src, size: dist, edges, roles: roles.clone() }))
     }
     fn chamfer_ex(&self, body: Id, src: Id, d1: f64, shape: qymcad_core::model::ChamferShape, edges: &[u32], roles: qymcad_core::feature::BlendRoles) -> Result<Built, qymcad_core::errors::CoreError> {
-        self.chamfer_asym_op(crate::ops::blend::BlendAsk { body, src, size: d1, edges, roles }, shape)
+        let more = format!("{:?} {:?} {:?} {}", shape.mode, shape.d2, shape.flip, shape.ref_face);
+        let asked = crate::ops::kept::Asked { kind: qymcad_core::errors::Op::ChamferAsym, body, src, sizes: &[d1], edges, roles: &roles, more };
+        self.blend_kept(asked, || self.chamfer_asym_op(crate::ops::blend::BlendAsk { body, src, size: d1, edges, roles: roles.clone() }, shape))
     }
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]

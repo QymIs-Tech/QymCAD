@@ -358,6 +358,13 @@ static QymShape* off_seams_first(const QymShape* s, const uint32_t* idx, size_t 
 static QymShape* off_seams(const QymShape* s, const uint32_t* idx, size_t n, const std::function<QymShape*(const QymShape*)>& op);
 static std::vector<uint32_t> every_edge(const QymShape* s);
 
+// A RESULT ITS OPERATION CHECKED SOUND (`BRepCheck_Analyzer` on the shape it hands over), marked so: the check is not
+// run on it again by the wrap of the result or by the door.
+static QymShape* checked(QymShape* q) {
+    if (q) q->valid_memo = 1;
+    return q;
+}
+
 // The body of its own, said in `occt_common.hpp`.
 QymShape qym_own_copy(const QymShape& s) {
     BRepBuilderAPI_Copy copier(s.shape);
@@ -378,6 +385,88 @@ QymShape qym_own_copy(const QymShape& s) {
     return out;
 }
 
+
+// A BODY HANDED OUT WHOLE, as it stands: a piece the door made, or a copy of a body with every name carried. The one
+// place besides the doors that puts a `QymShape` together (`a_result_is_made_by_the_door`): nothing here is named or
+// numbered - what is handed out is complete already.
+static QymShape* handed_out(const QymShape& whole) {
+    return new QymShape(whole);
+}
+
+// A BODY OF ITS OWN, handed out: what is kept for later shares no part with the body it was taken from.
+extern "C" QymShape* qym_shape_own_copy(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body it copies");
+    if (!s) return nullptr;
+    try {
+        QYM_SIGNALS;
+        QymShape* out = handed_out(qym_own_copy(*s));
+        out->volume_memo = s->volume_memo;
+        out->rough_memo = s->rough_memo;
+        out->valid_memo = s->valid_memo;
+        out->bbox_known = s->bbox_known;
+        for (int i = 0; i < 6; ++i) out->bbox_memo[i] = s->bbox_memo[i];
+        return out;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+// THE STATE OF A BODY AS A NUMBER: its faces and edges by their names and by points laid on them, its vertices by where
+// they stand. Two bodies with one number are one body to every operation that reads it - a fillet asked of either gives
+// the same; a body that moved by a hair, or whose names changed, has another. It reads the geometry, not the identity of
+// the shape: the same body built again, or carried to a worker through its bytes, keeps its number.
+extern "C" uint64_t qym_shape_state(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
+    uint64_t h = 1469598103934665603ULL;
+    try {
+        QYM_SIGNALS;
+        if (!s || s->shape.IsNull()) return 0;
+        auto mix = [&h](uint64_t v) {
+            for (int i = 0; i < 8; ++i) {
+                h ^= (v >> (8 * i)) & 0xff;
+                h *= 1099511628211ULL;
+            }
+        };
+        auto num = [&mix](double v) {
+            uint64_t bits;
+            v = v == 0.0 ? 0.0 : v; // -0 and 0 are one place
+            std::memcpy(&bits, &v, sizeof bits);
+            mix(bits);
+        };
+        auto pnt = [&num](const gp_Pnt& p) { num(p.X()); num(p.Y()); num(p.Z()); };
+        TopTools_IndexedMapOfShape faces, edges, verts;
+        TopExp::MapShapes(s->shape, TopAbs_FACE, faces);
+        TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
+        TopExp::MapShapes(s->shape, TopAbs_VERTEX, verts);
+        mix(faces.Extent());
+        mix(edges.Extent());
+        mix(verts.Extent());
+        // five by five points over the bounds of every face, five along every edge: a surface or a curve changed between
+        // its ends changes them
+        for (int i = 1; i <= faces.Extent(); ++i) {
+            const TopoDS_Face& f = TopoDS::Face(faces(i));
+            mix(s->fids.IsBound(f) ? (uint64_t)s->fids.Find(f) : 0);
+            mix(f.Orientation());
+            Standard_Real u0, u1, v0, v1;
+            BRepTools::UVBounds(f, u0, u1, v0, v1);
+            BRepAdaptor_Surface surf(f, Standard_False);
+            mix(surf.GetType());
+            for (int a = 0; a < 5; ++a)
+                for (int b = 0; b < 5; ++b) pnt(surf.Value(u0 + (u1 - u0) * a / 4.0, v0 + (v1 - v0) * b / 4.0));
+        }
+        for (int i = 1; i <= edges.Extent(); ++i) {
+            const TopoDS_Edge& e = TopoDS::Edge(edges(i));
+            mix(s->eids.IsBound(e) ? (uint64_t)s->eids.Find(e) : 0);
+            if (BRep_Tool::Degenerated(e)) continue;
+            BRepAdaptor_Curve curve(e);
+            for (int a = 0; a < 5; ++a) pnt(curve.Value(curve.FirstParameter() + (curve.LastParameter() - curve.FirstParameter()) * a / 4.0));
+        }
+        for (int i = 1; i <= verts.Extent(); ++i) pnt(BRep_Tool::Pnt(TopoDS::Vertex(verts(i))));
+        return h;
+    } catch (...) {
+        return 0;
+    }
+}
 
 extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
     if (!s) return why("fillet/asked", "there is no body to round"), nullptr;
@@ -403,7 +492,7 @@ extern "C" QymShape* qym_shape_fillet_all(const QymShape* s, double r) {
         // through the door of the result: the names of the body carried, a face cut in pieces recorded as its pieces,
         // what the fillets made numbered for the rule of the bridge
         QymBuilderHistory history(mk);
-        return qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}});
+        return checked(qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}}));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -431,7 +520,7 @@ extern "C" QymShape* qym_shape_chamfer_all(const QymShape* s, double d) {
             return why("chamfer/build", "the kernel could not bevel every edge of the body at this setback"), nullptr;
         }
         QymBuilderHistory history(mk);
-        return qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}});
+        return checked(qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}}));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1564,8 +1653,12 @@ static QymShape* off_seams(const QymShape* s, const uint32_t* idx, size_t n, con
     ++again;
     QymShape* q = op(&moved);
     --again;
-    // the lines the moving left are glued away: the part keeps the faces it had, with the blend on it
-    if (q) q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed);
+    // the lines the moving left are glued away: the part keeps the faces it had, with the blend on it - and what the
+    // blend knew of its body before the glue (checked sound, the faces it made) is of that body, not of this one
+    if (q) {
+        q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed);
+        forget_marks(*q);
+    }
     return q;
 }
 
@@ -1603,7 +1696,7 @@ extern "C" QymShape* qym_shape_fillet_edges(const QymShape* s, double r, const u
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1670,7 +1763,7 @@ extern "C" QymShape* qym_shape_fillet_at_vertices(const QymShape* s, double r_de
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1699,7 +1792,7 @@ extern "C" QymShape* qym_shape_fillet_var(const QymShape* s, double r1, double r
             return why("fillet/build", "the kernel could not round these edges with a radius running between the two ends"), nullptr;
         }
         QymBuilderHistory history(mk);
-        return qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}});
+        return checked(qym_result(history, mk.Shape(), QymResultSpec{{QymOperand{s, QymCarry::Everything, "blend"}}}));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1728,7 +1821,7 @@ extern "C" QymShape* qym_shape_chamfer_edges(const QymShape* s, double d, const 
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -1802,7 +1895,7 @@ extern "C" QymShape* qym_shape_chamfer_edges_asym(const QymShape* s, double a, d
             name_blend_faces(mk, s, &q, idx, n, names, corners, next.faces, all_names, n_all);
             classify_unnamed(mk, s->shape, &q, "fillet/chamfer", &s->fids);
         };
-        return qym_result(history, mk.Shape(), spec);
+        return checked(qym_result(history, mk.Shape(), spec));
     } QYM_WHY_CATCH("edge operation")
     return nullptr;
 }
@@ -2557,9 +2650,8 @@ extern "C" QymShape* qym_shapelist_get(const QymShapeList* l, size_t i) {
         QYM_SIGNALS;
         if (!l->named.empty()) {
             if (i >= l->named.size()) return nullptr;
-            const QymShape* src = l->named[i];
             // the whole of a piece the door made, handed out as it is: its merges and the faces beside its edges too
-            return new QymShape(*src);
+            return handed_out(*l->named[i]);
         }
         if (i >= l->shapes.size()) return nullptr;
         return qym_born(l->shapes[i]); // imported solids get face ids too

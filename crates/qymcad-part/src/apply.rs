@@ -59,7 +59,11 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) -> Result<(), Not
     } else {
         match pc.armed.part_tool() {
             Some(t @ (qymcad_ui_state::PartTool::Extrude | qymcad_ui_state::PartTool::Revolve)) => apply_sketch_cmd(pc, t),
-            Some(qymcad_ui_state::PartTool::Sweep) => apply_sweep_cmd(*pc.feat, pc.project, *pc.sweep),
+            Some(qymcad_ui_state::PartTool::Sweep) => {
+                sweep_path_joins(pc)?;
+                let along = sweep_along(pc);
+                apply_sweep_cmd(*pc.feat, pc.project, *pc.sweep, along)
+            }
             Some(qymcad_ui_state::PartTool::Loft) => apply_loft_cmd(pc),
             Some(t @ (qymcad_ui_state::PartTool::Fillet | qymcad_ui_state::PartTool::Chamfer)) => apply_edge_cmd(pc, t),
             Some(qymcad_ui_state::PartTool::Shell) => apply_shell_cmd(pc),

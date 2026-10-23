@@ -40,7 +40,12 @@ impl App {
         // grabbing the extrude arrow's gizmo handle (before the camera orbit)
         // A FRAME FROM EMPTY SPACE; else what was grabbed (command arrow -> section -> gizmo -> orbit) and its drag
         let framed = crate::gui::frame_select::frame(&self.painting(), ctx, resp, painter, rect);
-        if crate::gui::frame_select::none_or_take(framed, &mut self.chosen, &self.project, self.workbench) {
+        if crate::gui::frame_select::none_or_take(
+            framed,
+            crate::gui::frame_select::TakenInto { chosen: &mut self.chosen, gsel: &mut self.tools.gsel, status: &mut self.status },
+            &self.project,
+            self.workbench,
+        ) {
             self.viewport_3d_drag_start(resp, rect, &basis3);
             self.viewport_3d_drag_update(ctx, resp, rect, &basis3);
         }
@@ -455,8 +460,8 @@ impl App {
                     let hit = crate::gui::pick::pick_body_at(&self.painting(), rect, pos).and_then(|mi| self.project.mesh_id(mi));
                     qymcad_part::take_boolean_pick(&mut self.part_ctx(), hit);
                 }
-                // an extrusion or a revolution in hand: the click picks a contour - see `profile_click_3d`
-                else if self.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles) && self.tools.cmd.sketch.is_some() {
+                // an extrusion, a revolution or a loft in hand: the click picks a contour - see `profile_click_3d`
+                else if aim == Some(qymcad_part::Aim::Contour) {
                     qymcad_part::profile_click_3d(&mut self.part_ctx(), rect, pos);
                 }
                 // A WAITING TOOL: the click names the sketch. High in the chain - see `name_the_sketch`.

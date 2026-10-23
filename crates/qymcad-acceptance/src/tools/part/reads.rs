@@ -26,6 +26,7 @@ pub static SECTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "general/09-viewport",
     not_applicable: &[
@@ -80,6 +81,7 @@ pub static MEASURE_3D: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "general/11-measure",
     not_applicable: READS,
@@ -113,6 +115,7 @@ pub static RECOGNISE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (60, 2000),
     help: "part/26-recognise",
     not_applicable: &[
@@ -164,6 +167,7 @@ pub static PIECE_TO_PART: Tool = Tool {
     dependency: Some(Node { kind: "SplitBody", row: Some("feat-name-split-body") }),
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/13-split-body",
     not_applicable: &[

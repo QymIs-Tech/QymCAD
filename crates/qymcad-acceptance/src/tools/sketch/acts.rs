@@ -40,6 +40,7 @@ pub static DELETE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/18-delete",
     not_applicable: ACTS,
@@ -100,6 +101,7 @@ pub static MIRROR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/19-mirror",
     not_applicable: &[
@@ -153,6 +155,7 @@ pub static MOVE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
@@ -205,6 +208,7 @@ pub static COPY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
@@ -283,6 +287,7 @@ pub static ROTATE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
@@ -347,6 +352,7 @@ pub static LINEAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/22-array",
     not_applicable: &[
@@ -400,6 +406,7 @@ pub static CIRCULAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/22-array",
     not_applicable: &[

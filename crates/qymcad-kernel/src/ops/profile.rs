@@ -193,6 +193,41 @@ pub fn shifted(place: [f64; 12], by: f64) -> [f64; 12] {
     pl
 }
 
+impl crate::kernel::OcctKernel {
+    /// EVERY PROFILE SWEPT by `swept` - along a sketch or along edges of a body, which it is handed the bodies to find -
+    /// the pieces merged and the one boolean against body `src` applied, within one node.
+    pub(crate) fn sweep_op(
+        &self,
+        bo: qymcad_core::model::BodyOp,
+        profiles: &[Vec<f64>],
+        sides: qymcad_core::feature::Sides<'_>,
+        swept: impl Fn(&crate::door::Bodies, &[f64], [u32; 2]) -> Result<crate::Shape, qymcad_core::errors::CoreError>,
+    ) -> Result<qymcad_core::geom::Built, qymcad_core::errors::CoreError> {
+        let qymcad_core::model::BodyOp { src, op, body } = bo;
+        let named = crate::ops::profile::name_sides(profiles, sides, qymcad_core::names::Role::Swept);
+        let (profiles, caps) = (&named.profiles, &named.caps);
+        if profiles.is_empty() {
+            return Err(qymcad_core::errors::CoreError::NoContours);
+        }
+        self.plain_named(qymcad_core::errors::Op::Sweep, body, named.roles.clone(), |b| {
+            let mut tool: Option<crate::Shape> = None;
+            for (i, prof) in profiles.iter().enumerate() {
+                let cap = [caps.get(i * 3 + 1).copied().unwrap_or(0), caps.get(i * 3 + 2).copied().unwrap_or(0)];
+                let s = swept(b, prof, cap)?;
+                tool = Some(match tool {
+                    None => s,
+                    Some(t) => t.boolean(&s, 1).ok_or_else(|| crate::kernel::refused(qymcad_core::errors::Op::FuseProfiles))?,
+                });
+            }
+            let tool = tool.ok_or(qymcad_core::errors::CoreError::NoContours)?;
+            if src == 0 {
+                return Ok(tool);
+            }
+            b.get(src)?.boolean(&tool, op).ok_or_else(|| crate::kernel::refused(qymcad_core::errors::Op::Boolean))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,5 +276,55 @@ mod tests {
         let cap_of = |wall: u32| two.caps.chunks(3).find(|c| c[0] == wall).map(|c| c[1]).and_then(named);
         assert_eq!(cap_of(second[0]), Some(RoleRecipe::Spare(GeoName::new(5, Role::CapStart, 30))), "the cap of a wall is not named after its profile");
         assert_eq!(cap_of(first[0]), cap_of(first[1]), "two walls of one profile offer different caps");
+    }
+}
+
+/// WHAT THE VOLUMES TO A PERCENT SAY OF A CUT: it took material, or it may be a touch and the exact volumes decide.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CutTold {
+    Taken,
+    NearATouch,
+}
+
+/// THE VOLUMES OF A CUT TO A PERCENT: of the body before and after it, and of the tool.
+pub(crate) struct CutVolumes {
+    pub before: f64,
+    pub after: f64,
+    pub tool: f64,
+}
+
+/// WHAT THE VOLUMES TO A PERCENT SAY OF A CUT: each is read to a percent of itself (`rough_volume`), so what the cut took
+/// is known to a percent of the body before and after together. A cut that took a fifth of its tool or more beyond that
+/// error took material, and no exact volume is needed to say so; one that may have taken less may be a touch (less than
+/// a thousandth of the tool), and that is told from the exact volumes. A small tool on a large body is always told
+/// exactly: the error of the body outweighs the tool. A body of no volume - a sheet - has nothing to refuse. The exact
+/// volumes of the result and the tool took 2.35 s of the 3.0 s a cut of a propeller of 80 faces, 51 of them splines,
+/// took; to a percent they are 50 ms.
+pub(crate) fn cut_told(v: CutVolumes) -> CutTold {
+    let error = 0.01 * (v.before.abs() + v.after.abs());
+    if v.before <= 1e-9 || v.before - v.after - error > 0.2 * v.tool.abs() {
+        CutTold::Taken
+    } else {
+        CutTold::NearATouch
+    }
+}
+
+#[cfg(test)]
+mod told {
+    use super::{cut_told, CutTold, CutVolumes};
+
+    /// A CUT TOLD BY THE VOLUMES TO A PERCENT: one that took a fifth of its tool beyond the error of the volumes needs no
+    /// exact volume; one that took a sixth of it, or next to nothing, is near a touch and is told exactly; a small tool
+    /// on a large body is told exactly whatever the volumes say, the error of the body outweighing it; a sheet has
+    /// nothing to refuse.
+    #[test]
+    fn a_cut_is_told_to_a_percent_where_a_percent_leaves_no_doubt() {
+        let told = |before, after, tool| cut_told(CutVolumes { before, after, tool });
+        assert_eq!(told(1000.0, 900.0, 300.0), CutTold::Taken, "a cut of 100 by a tool of 300 is told exactly");
+        assert_eq!(told(1000.0, 950.0, 300.0), CutTold::NearATouch, "a cut of 50 by a tool of 300 is taken on the volumes to a percent");
+        assert_eq!(told(1000.0, 999.9, 300.0), CutTold::NearATouch, "a touch is taken for a cut");
+        // a body of four million read to a percent twice over: 3 mm^3 less may be nothing taken at all
+        assert_eq!(told(4.0e6, 4.0e6 - 3.0, 8.0), CutTold::NearATouch, "a tool of 8 on a body of four million is taken on the volumes to a percent");
+        assert_eq!(told(0.0, 0.0, 300.0), CutTold::Taken, "a sheet is told exactly, with nothing to refuse");
     }
 }

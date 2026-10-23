@@ -219,7 +219,58 @@ pub(crate) fn picks(tool: &Tool) {
             problems.push(format!("{p:?} clicked again: the canvas did not go back to how it was; the status line says {status:?}"));
         }
     }
+    if let Some(boxed) = BOXED.iter().find(|b| b.id == tool.id) {
+        boxes_take(&mut problems, tool, boxed);
+    }
     assert!(problems.is_empty(), "{}: picks:\n{}", tool.id, problems.join("\n"));
+}
+
+/// A TOOL THAT TAKES CONTOURS AS PROFILES TAKES THEM BY A BOX TOO, as a sketch takes its curves: the corners of the contour
+/// its fixture draws, in space.
+pub(crate) struct Boxed {
+    pub id: &'static str,
+    pub low: [f64; 3],
+    pub high: [f64; 3],
+}
+
+/// The tools taking profiles, with the contour of their fixture.
+pub(crate) const BOXED: &[Boxed] = &[Boxed { id: "part.extrude", low: [0.0, 0.0, 0.0], high: [40.0, 30.0, 0.0] }, Boxed { id: "part.revolve", low: [0.0, 0.0, 0.0], high: [40.0, 30.0, 0.0] }];
+
+/// 3, BY A BOX: a crossing drawn right to left over empty space lets every contour go, a window drawn left to right round
+/// the contour takes it - the bar says what a click on it says - and the empty crossing lets it go again.
+fn boxes_take(problems: &mut Vec<String>, tool: &Tool, boxed: &Boxed) {
+    let mut s = tool.fixture.start();
+    take(&mut s, tool);
+    // the four corners of the contour as the view lays them out, not two: a turned view puts the others outermost
+    let l = boxed.low;
+    let h = boxed.high;
+    let mut round = qymcad::Rect::NOTHING;
+    for corner in [[l[0], l[1], l[2]], [h[0], l[1], l[2]], [h[0], h[1], h[2]], [l[0], h[1], h[2]]] {
+        round.extend_with(s.in_space(corner));
+    }
+    let round = round.expand(30.0);
+    let plain = Modifiers::default();
+    let button = qymcad::PointerButton::Primary;
+    // empty space right of the contour, drawn right to left
+    let empty_from = round.right_top() + qymcad::vec2(60.0, 0.0);
+    let empty_to = round.right_top() + qymcad::vec2(30.0, 20.0);
+    s.drag(empty_from, empty_to, button, plain);
+    let none = s.in_hand();
+    s.drag(round.left_top(), round.right_bottom(), button, plain);
+    let boxed_bar = s.in_hand();
+    if boxed_bar == none {
+        problems.push(format!("a window round the contour: the bar does not name what was taken: {boxed_bar:?}; the status line says {:?}", s.status()));
+    }
+    s.drag(empty_from, empty_to, button, plain);
+    if s.in_hand() != none {
+        problems.push(format!("a crossing over empty space after the window: the bar says {:?}, it said {none:?} with nothing taken", s.in_hand()));
+    }
+    if let Some(p) = tool.pick_trial.first() {
+        click(&mut s, p);
+        if s.in_hand() != boxed_bar {
+            problems.push(format!("{p:?} clicked: the bar says {:?}, the window round the contour made it {boxed_bar:?}", s.in_hand()));
+        }
+    }
 }
 
 /// ONE MORE PICK THAN THE ORDINARY ONES, for the tools whose documents are not the plain block: a face of the part
@@ -238,6 +289,8 @@ pub(crate) const MORE: &[(&str, Pick)] = &[
     ("part.thread", Pick::Face([20.0, 15.0, 10.0])),
     ("part.thread-own-pitch", Pick::Face([20.0, 15.0, 10.0])),
     ("part.replace-face", Pick::Face([40.0, 15.0, 5.0])),
+    // the top back edge, apart from the top front one the path runs along: refused in words as a path of edges apart
+    ("part.sweep-edge", Pick::Edge([20.0, 30.0, 10.0])),
     ("part.trim-surface", Pick::Face([35.0, 25.0, 10.0])),
     ("part.measure-3d", Pick::Vertex([40.0, 30.0, 10.0])),
 ];

@@ -33,11 +33,45 @@ pub struct TrialAnswer {
     pub faces: TrialFaces,
 }
 
-/// A trial in flight or done, for the command's state key: the worker writes its answer when it has one.
+/// A trial waiting, in flight or done, for the command's state key: the worker writes its answer when it has one.
 #[derive(Clone)]
 pub struct TrialSlot {
     pub key: u64,
     pub answer: std::sync::Arc<std::sync::Mutex<Option<TrialAnswer>>>,
+    /// Raised when the trial is of no use any more - a new value, a new pick, the tool put down: a trial waiting for the
+    /// lock of the kernel leaves without building, one building stops between its steps.
+    pub stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// When the command came to this state, and whether its trial was started.
+    pub since: std::time::Instant,
+    pub run: TrialRun,
+}
+
+/// HAS THE TRIAL OF A STATE BEEN STARTED: a state lasting less than a moment - a digit of a number being typed, one of
+/// several edges clicked in a row - is never tried.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrialRun {
+    Waiting,
+    Started,
+}
+
+impl TrialSlot {
+    /// A slot for the state `key`, not started.
+    pub fn waiting(key: u64) -> Self {
+        Self { key, answer: Default::default(), stop: Default::default(), since: std::time::Instant::now(), run: TrialRun::Waiting }
+    }
+
+    /// Tell the trial of this slot it is of no use any more.
+    pub fn give_up(&self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// LET GO OF THE TRIAL OF THE COMMAND IN HAND: stopped where it is and forgotten.
+pub fn drop_trial(ctx: &egui::Context) {
+    if let Some(slot) = ctx.data(|d| d.get_temp::<TrialSlot>(trial_slot_id())) {
+        slot.give_up();
+        ctx.data_mut(|d| d.remove::<TrialSlot>(trial_slot_id()));
+    }
 }
 
 /// Where the trial of the command in hand is kept in the frame's memory.

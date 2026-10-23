@@ -872,28 +872,22 @@ pub fn shown_bodies(pn: &Painting) -> Vec<(usize, Id)> {
     list
 }
 
-/// THE PATH OF CONTEXTS AFTER STEPPING INTO `cid` FROM `path`: one level deeper - or, for a clone, the way from the
-/// root to its original. A clone has no timeline of its own; stepping into it is editing the part it repeats, and
-/// that part may stand in another subassembly.
-pub fn path_into(path: &[Id], project: &Project, cid: Id) -> Vec<Id> {
-    let origin = project.instance_origin(cid);
-    if origin == cid {
-        let mut deeper = path.to_vec();
-        deeper.push(cid);
-        return deeper;
+/// STEP INTO COMPONENT `cid` from wherever the person stands: the path becomes the place of `cid` in the tree, the root
+/// and its ancestors, whatever led there - a double click in the tree, a link of a fault or of a driver. A clone has no
+/// timeline of its own; stepping into it is editing the part it repeats, and that part may stand in another
+/// subassembly. The view is kept one entry per level: a step into a direct child keeps the view to come back to, a
+/// jump across levels keeps none, as "make active" does - the levels it passed were never seen.
+///
+/// Reported behaviour: after some twenty jumps by links "Finish" walked back along the jumps, about thirty presses to
+/// the root, because each jump was appended to the path it started from.
+pub fn step_into(viewing: &mut Viewing, active_path: &mut Vec<Id>, project: &Project, cid: Id) {
+    let path = context_path_to(project, project.instance_origin(cid));
+    if path.len() == active_path.len() + 1 && path.starts_with(active_path) {
+        viewing.nav_stash.push((viewing.cam, viewing.view, viewing.mode_3d));
+    } else {
+        viewing.nav_stash.clear();
     }
-    let mut chain = vec![origin];
-    let mut cur = origin;
-    // the parents up to the root; the bound guards a loop in a damaged document, no tree is that deep
-    while let Some(parent) = project.components.iter().find(|c| c.id == cur).and_then(|c| c.parent) {
-        if chain.len() > 256 {
-            break;
-        }
-        chain.push(parent);
-        cur = parent;
-    }
-    chain.reverse();
-    chain
+    *active_path = path;
 }
 
 pub fn visible_mesh_items<'a>(pn: &'a Painting) -> Vec<SceneMesh<'a>> {

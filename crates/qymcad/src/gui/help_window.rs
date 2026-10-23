@@ -24,15 +24,20 @@ pub(super) const FRAME_SECS: f64 = 0.5;
 /// dies with it. Without a cache every redraw of the window would decode the PNG again — and an
 /// animation redraws twice a second.
 fn help_texture(ctx: &egui::Context, path: &str) -> Option<egui::TextureHandle> {
-    let id = egui::Id::new(("help.img", path));
+    picture_texture(ctx, &format!("help:{path}"), crate::help::image(path)?, egui::TextureOptions::LINEAR)
+}
+
+/// THE TEXTURE OF A PICTURE GIVEN AS PNG BYTES, kept in the context under `key`: decoded once, not on every frame. The
+/// help draws its pictures through it, and the window of support its QR codes.
+pub(crate) fn picture_texture(ctx: &egui::Context, key: &str, bytes: &[u8], options: egui::TextureOptions) -> Option<egui::TextureHandle> {
+    let id = egui::Id::new(("picture", key));
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return Some(t);
     }
-    let bytes = crate::help::image(path)?;
     let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (w, h) = rgba.dimensions();
     let color = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
-    let tex = ctx.load_texture(format!("help:{path}"), color, egui::TextureOptions::LINEAR);
+    let tex = ctx.load_texture(key, color, options);
     ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
     Some(tex)
 }

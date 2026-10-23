@@ -285,6 +285,21 @@ pub fn loft_circles(s: &mut Session) {
     sketch_row(s, 0);
 }
 
+/// Two square rings, one a section of a loft to the other: on the table a square of 40 (0..40) about a square of 20
+/// (10..30), and 30 above it the same square of 40 about a square of 10 (15..25).
+pub fn loft_rings(s: &mut Session) {
+    build::into_the_first_part(s);
+    on_world_plane(s, "plane-xy-table", |s| {
+        build::draw(s, "tb-rect-hint", &[(0.0, 0.0), (40.0, 40.0)]);
+        build::draw(s, "tb-rect-hint", &[(10.0, 10.0), (30.0, 30.0)]);
+    });
+    above(s, 30.0, |s| {
+        build::draw(s, "tb-rect-hint", &[(0.0, 0.0), (40.0, 40.0)]);
+        build::draw(s, "tb-rect-hint", &[(15.0, 15.0), (25.0, 25.0)]);
+    });
+    sketch_row(s, 0);
+}
+
 pub fn loft_same(s: &mut Session) {
     build::into_the_first_part(s);
     on_world_plane(s, "plane-xy-table", |s| build::draw(s, "tb-rect-hint", &[(0.0, 0.0), (10.0, 10.0)]));

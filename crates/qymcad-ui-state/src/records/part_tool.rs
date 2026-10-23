@@ -150,14 +150,16 @@ impl PartTool {
         matches!(self, PartTool::Fillet | PartTool::Chamfer)
     }
 
-    /// IT TAKES EDGES CLICKED IN THE VIEW: the blends, and the patch, whose edges close the hole it fills.
+    /// IT TAKES EDGES CLICKED IN THE VIEW: the blends, the patch, whose edges close the hole it fills, and the sweep,
+    /// whose path may run along edges of a body instead of a sketch.
     pub fn picks_edges(self) -> bool {
-        self.blends_edges() || self == PartTool::Patch
+        self.blends_edges() || matches!(self, PartTool::Patch | PartTool::Sweep)
     }
 
-    /// IT READS THE LIVE B-REP while it is in hand: the blends take its edges, the thread the axis of a face.
+    /// IT READS THE LIVE B-REP while it is in hand: the blends and the sweep take its edges, the thread the axis of a
+    /// face.
     pub fn reads_the_live_brep(self) -> bool {
-        self.blends_edges() || self == PartTool::Thread
+        self.blends_edges() || matches!(self, PartTool::Thread | PartTool::Sweep)
     }
 
     /// A PATTERN OF A BODY: linear or circular.

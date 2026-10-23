@@ -189,3 +189,12 @@ mod the_tool_in_hand_after_its_work;
 
 #[cfg(test)]
 mod the_key_of_the_tool_in_hand_puts_it_down;
+
+#[cfg(test)]
+mod finish_climbs_the_tree;
+
+#[cfg(test)]
+mod profiles_are_taken_by_a_box;
+
+#[cfg(test)]
+mod the_author_is_supported;

@@ -436,36 +436,47 @@ pub fn mark_changed_params_dirty(params_seen: &std::collections::HashMap<String,
 
 /// The live wireframe preview of the active command (the prism of the profile along its extent) plus the
 /// arrow gizmo of the length.
+/// THE SWEEP PREVIEW OF THE TOOL IN HAND ([`sweep_preview`]): its path the edges picked in the view, by their names on
+/// the live body they lie on, or else its path sketch.
+pub fn painted_sweep_preview(pn: &Painting) -> Option<SweepPreview> {
+    let mut picked: Vec<u32> = pn.gsel.edges.iter().copied().collect();
+    picked.sort_unstable();
+    let edges = pn.edges.body.and_then(|b| pn.live.shapes.get(&b)).filter(|_| !picked.is_empty()).map(|body| qymcad_kernel::ask::BodyEdges { body, edges: &picked });
+    sweep_preview(pn.project, pn.sweep, edges)
+}
+
 /// The geometry of the LIVE SWEEP PREVIEW: the contour of the profile carried along the path with a
-/// parallel-transported frame (the same idea as the corrected Frenet frame in the core: the minimal
-/// rotation between tangents, with no false twist). Returns the polyline of the path in world
-/// coordinates and the section loops at the stations along it. It agrees with the core at the start and
-/// the finish (the same frame perpendicular to the tangent); the middle is a stable approximation.
-pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPreview> {
-    let (prof_sid, path_sid) = (sweep.prof_sid, sweep.path_sid);
-    if prof_sid == 0 || path_sid == 0 {
+/// parallel-transported frame (the minimal rotation between tangents, with no false twist). The path is the edges of a
+/// body picked in the view (`edges`), or else the path sketch. Where the profile stands and the path from the end the
+/// body starts at are the kernel's answer (`qymcad_kernel::ask::sweep_run`), the rule the sweep is built by: a copy of it
+/// here drew the profile carried to the start of the path by its sketch's origin while the body was built where the
+/// profile is drawn, and the chain the edges join into is the kernel's to make. The kernel is asked only when no rebuild
+/// holds it, so a frame drawn beside a rebuild has no preview and the next one has. Returns the polyline of the path in
+/// world coordinates and the section loops at the stations along it; the start agrees with the body, the middle is a
+/// stable approximation.
+pub fn sweep_preview(project: &Project, sweep: SweepParams, edges: Option<qymcad_kernel::ask::BodyEdges<'_>>) -> Option<SweepPreview> {
+    let prof_sid = sweep.prof_sid;
+    if prof_sid == 0 {
         return None;
     }
     let prof_cid = if sweep.prof_cid != 0 { sweep.prof_cid } else { *project.sweep_profile_contours(prof_sid).first()? };
-    let path_cid = if sweep.path_cid != 0 { sweep.path_cid } else { *project.sweep_path_contours(path_sid).first()? };
     let pxy = project.contour_profile_xy(prof_cid)?; // the flat contour of the profile, closed
     let np = pxy.len() / 2;
     if np < 3 {
         return None;
     }
-    let pf = project.sketch_frame_by_id(path_sid)?;
-    let pidx = project.contour_index(path_cid)?;
-    let pts2 = &project.contours[pidx].points;
-    if pts2.len() < 2 {
-        return None;
-    }
-    let path: Vec<[f64; 3]> = pts2
-        .iter()
-        .map(|p| {
-            let w = pf.lift(*p);
-            [w.x, w.y, w.z]
-        })
-        .collect();
+    let encoded;
+    let path = match edges {
+        Some(edges) => qymcad_kernel::ask::SweepPath::Edges(edges),
+        None if sweep.path_sid == 0 => return None,
+        None => {
+            let path_cid = if sweep.path_cid != 0 { sweep.path_cid } else { *project.sweep_path_contours(sweep.path_sid).first()? };
+            encoded = project.sweep_path_encoded(sweep.path_sid, path_cid)?;
+            qymcad_kernel::ask::SweepPath::Sketch { path: &encoded, place: project.sketch_frame_by_id(sweep.path_sid)?.matrix12() }
+        }
+    };
+    let asked = qymcad_kernel::ask::SweepAsked { profile_place: project.sketch_frame_by_id(prof_sid)?.matrix12(), path };
+    let qymcad_kernel::ask::SweepRun { place, path } = qymcad_kernel::ask::sweep_run(&asked, qymcad_kernel::ask::Wait::IfFree)?;
     let n = path.len();
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     let add = |a: [f64; 3], b: [f64; 3]| [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -488,12 +499,11 @@ pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPrevi
             norm(add(norm(sub(path[i], path[i - 1])), norm(sub(path[i + 1], path[i]))))
         }
     };
-    // the starting frame (as in the C++ core): refX perpendicular to Z, Y = Z x refX, X = Y x Z
-    let z0 = tangent(0);
-    let refx = if dot(z0, [1.0, 0.0, 0.0]).abs() > 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
-    let mut y = norm(cross(z0, refx));
-    let mut x = norm(cross(y, z0));
-    let mut zprev = z0;
+    // the profile where the sweep puts it, as offsets from the start of the path: carried along by a frame that starts
+    // as the world's own axes and turns with the tangent
+    let drawn: Vec<[f64; 3]> = (0..np).map(|k| sub(qymcad_core::feature::apply12(&place, [pxy[2 * k], pxy[2 * k + 1], 0.0]), path[0])).collect();
+    let mut frame = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    let mut zprev = tangent(0);
     // rotating vector v about the unit axis a by an angle given as (sin, cos) - Rodrigues
     let rot = |v: [f64; 3], a: [f64; 3], s: f64, c: f64| {
         let av = cross(a, v);
@@ -509,15 +519,9 @@ pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPrevi
         if sn > 1e-9 {
             let a = [axc[0] / sn, axc[1] / sn, axc[2] / sn];
             let cs = dot(zprev, zi).clamp(-1.0, 1.0);
-            x = norm(rot(x, a, sn, cs));
-            y = norm(rot(y, a, sn, cs));
+            frame = frame.map(|e| rot(e, a, sn, cs));
         }
-        let sec: Vec<[f64; 3]> = (0..np)
-            .map(|k| {
-                let (px, py) = (pxy[2 * k], pxy[2 * k + 1]);
-                [org[0] + px * x[0] + py * y[0], org[1] + px * x[1] + py * y[1], org[2] + px * x[2] + py * y[2]]
-            })
-            .collect();
+        let sec: Vec<[f64; 3]> = drawn.iter().map(|d| [0, 1, 2].map(|c| org[c] + d[0] * frame[0][c] + d[1] * frame[1][c] + d[2] * frame[2][c])).collect();
         sections.push(sec);
         zprev = zi;
     }

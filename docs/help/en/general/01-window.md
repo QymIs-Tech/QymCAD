@@ -4,7 +4,9 @@
 
 ## At the top — the menu, the path and the bar of the command
 
-* **The menu**: File, Edit, View, Windows, Help.
+* **The menu**: File, Edit, View, Windows, Help. **Help -> Support the author** (also a button in **Help -> About**)
+  opens the ways to support the program, each a link with its QR code: press a link to open it in the browser, or,
+  if the browser does not open, point a phone camera at its code.
 * Below it — **the path through the document**: `Assembly › Part › Sketch`. It shows where you are, and a click on a
   link takes you back up. Beside it — **Finish** (leave the sketch or the part), **ƒx Parameters**, **Snap** with the
   grid and rotation steps, **In context**.

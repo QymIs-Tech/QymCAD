@@ -20,11 +20,19 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
             args.set("outer", fmt1(*outer));
             args.set("shaft", fmt1(*shaft));
         }
+        E::RecessNotWider { recess, hole } => {
+            args.set("recess", fmt1(*recess));
+            args.set("hole", fmt1(*hole));
+        }
         E::ThreadRemovedNothing { before, after } | E::AugerAddedNothing { before, after } => {
             args.set("before", fmt0(*before));
             args.set("after", fmt0(*after));
         }
         E::EdgesNotFound { asked } => args.set("asked", *asked as i64),
+        E::PathEdgesLost { asked, lost } => {
+            args.set("asked", *asked as i64);
+            args.set("lost", *lost as i64);
+        }
         E::ThreadPitchTooSmall { pitch } => args.set("pitch", fmt2(*pitch)),
         E::ThreadTooManyTurns { turns } => args.set("turns", fmt0(*turns)),
         E::PatternTooLarge { asked, limit } => {

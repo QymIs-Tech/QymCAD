@@ -39,6 +39,7 @@ pub static LINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/01-line",
     not_applicable: &[
@@ -133,6 +134,7 @@ pub static RECT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/02-rect",
     not_applicable: &[
@@ -210,6 +212,7 @@ pub static CIRCLE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/03-circle",
     not_applicable: &[
@@ -261,6 +264,7 @@ pub static POINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/05-point",
     not_applicable: &[
@@ -339,6 +343,7 @@ pub static ARC: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/04-arc",
     not_applicable: &[
@@ -438,6 +443,7 @@ pub static POLYGON: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/06-polygon",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],
@@ -480,6 +486,7 @@ pub static SLOT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/07-slot",
     not_applicable: &[
@@ -532,6 +539,7 @@ pub static ELLIPSE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/08-ellipse",
     not_applicable: &[
@@ -584,6 +592,7 @@ pub static SPLINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/09-spline",
     not_applicable: &[
@@ -664,6 +673,7 @@ pub static TEXT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/10-text",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],

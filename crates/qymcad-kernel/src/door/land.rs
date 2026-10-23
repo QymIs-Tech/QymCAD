@@ -86,7 +86,7 @@ impl crate::kernel::OcctKernel {
         if shape.is_empty_shape() {
             return Err(qymcad_core::errors::CoreError::EmptyResult);
         }
-        if !shape.is_sheet() && shape.volume() <= 1e-9 {
+        if !shape.is_sheet() && shape.rough_volume() <= 1e-9 {
             return Err(qymcad_core::errors::CoreError::EmptyResult);
         }
         if let Some(e) = stopped() {

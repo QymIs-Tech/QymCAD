@@ -473,7 +473,9 @@ pub fn start_sweep_cmd(pc: &mut qymcad_ui_state::PartCtx) {
     let first = picked.first().filter(|_| picked.len() >= 2).and_then(|sid| pc.project.sketches.iter().position(|s| s.id == *sid));
     let si = match (first, *pc.sel) {
         (Some(si), _) | (None, qymcad_ui_state::Sel::Sketch(si)) => Some(si),
-        _ => pc.cmd.sketch,
+        // a sketch held in the tree while an edge of a body was added with Shift: the sketch is the profile, the edge
+        // the path, taken as a click of the tool
+        _ => picked.first().and_then(|sid| pc.project.sketches.iter().position(|s| s.id == *sid)).or(pc.cmd.sketch),
     };
     let Some(si) = si.filter(|&si| si < pc.project.sketches.len()) else {
         *pc.picking = qymcad_ui_state::Picking::SketchFor(qymcad_ui_state::PartTool::Sweep); // waits like the rest

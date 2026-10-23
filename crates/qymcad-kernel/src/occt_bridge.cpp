@@ -503,7 +503,19 @@ QymShape* qym_result(QymHistory& history, const TopoDS_Shape& res, const QymResu
     keep_standing(q->shape, TopAbs_EDGE, q->eids);
     keep_standing(q->shape, TopAbs_FACE, q->fsplit_of);
     keep_standing(q->shape, TopAbs_FACE, q->fsplit_idx);
-    if (spec.unify) q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed); // THE MONOLITH: merge the boolean's seam
+    // the faces the operation made or trimmed: every face that is not one of its operands' as it was
+    {
+        TopTools_MapOfShape old;
+        for (const QymOperand& o : spec.operands)
+            for (TopExp_Explorer ex(o.body->shape, TopAbs_FACE); ex.More(); ex.Next()) old.Add(ex.Current());
+        for (TopExp_Explorer ex(q->shape, TopAbs_FACE); ex.More(); ex.Next())
+            if (!old.Contains(ex.Current())) q->fresh.Add(ex.Current());
+        q->fresh_known = true;
+    }
+    if (spec.unify) {
+        q->shape = unify_monolithic(q->shape, q->fids, q->eids, &q->absorbed); // THE MONOLITH: merge the boolean's seam
+        forget_marks(*q);
+    }
     return q.release();
 }
 
@@ -3232,69 +3244,256 @@ static TopoDS_Shape apply_place(const TopoDS_Shape& s, const double* m) {
     return BRepBuilderAPI_Transform(s, t, Standard_True).Shape();
 }
 
-// A SWEEP. The profile (exact, from `build_exact_face`, holes included) is swept along the path — ONE wire
-// (exact, from `build_exact_wire` with L=1). `path_tf` is the 3x4 placement of the path's sketch into world
-// space (nullptr is the identity). `prof_tf` is NOT used for the orientation: the profile is MOVED
-// AUTOMATICALLY to the start of the path and turned perpendicular to the tangent — the usual professional
-// behaviour, where the profile may be drawn anywhere and the kernel puts it on the path, with the profile
-// sketch's origin travelling along it. A profile that is a FACE makes `MakePipe` give a SOLID body, and the
-// holes survive as cavities.
-// Fresh persistent ids, because this is a new base body.
+// The same wire run from its other end: its edges in the opposite order, each turned round.
+static TopoDS_Wire reversed_wire(const TopoDS_Wire& w) {
+    std::vector<TopoDS_Edge> edges;
+    for (BRepTools_WireExplorer ex(w); ex.More(); ex.Next()) edges.push_back(ex.Current());
+    BRepBuilderAPI_MakeWire mk;
+    for (auto it = edges.rbegin(); it != edges.rend(); ++it) mk.Add(TopoDS::Edge(it->Reversed()));
+    return mk.IsDone() ? mk.Wire() : TopoDS_Wire();
+}
+
+// WHERE THE PROFILE OF A SWEEP STANDS AND WHICH END THE PATH RUNS FROM: `place` puts the profile, drawn in its sketch,
+// into the world, and `spine_s` - the path already in the world - comes back run from the end the body starts at.
+//
+// THE PROFILE STAYS WHERE IT IS DRAWN when an end of the path lies on its plane and leaves the plane across it: the body
+// starts at the profile and follows the path from that end. Reported behaviour: a triangle drawn on a face at the start
+// of an arc was carried by its sketch's origin to the start of the path, 32 mm off, and turned about the tangent by a
+// basis taken from the world axes - the body stood elsewhere and turned over.
+// A profile drawn away from the path - its plane meets neither end, or holds the tangent there - is carried to the start
+// of the path, its sketch's origin onto it, by the smallest turn from its normal to the tangent, so it keeps the way it
+// was drawn about the path. The sweep and the preview of it ask this one rule (`qym_sweep_run`).
+static bool sweep_start(const double* prof_tf, TopoDS_Wire& spine_s, gp_Trsf& place, bool& from_end) {
+    // the plane of the profile: its sketch's origin and normal, the last two columns of the placement
+    gp_Trsf drawn;
+    if (prof_tf) drawn.SetValues(prof_tf[0], prof_tf[1], prof_tf[2], prof_tf[3], prof_tf[4], prof_tf[5], prof_tf[6], prof_tf[7], prof_tf[8], prof_tf[9], prof_tf[10], prof_tf[11]);
+    const gp_Pnt O = gp::Origin().Transformed(drawn);
+    const gp_Dir N = gp::DZ().Transformed(drawn);
+    // the two ends of the path, each with the tangent leaving it along the path
+    BRepAdaptor_CompCurve cc(spine_s);
+    gp_Pnt P0, P1;
+    gp_Vec T0, T1;
+    cc.D1(cc.FirstParameter(), P0, T0);
+    cc.D1(cc.LastParameter(), P1, T1);
+    if (T0.Magnitude() < 1e-9) return why("sweep/path", "the path has no direction at its start: the first segment is of zero length"), false;
+    // An end on the plane within 1e-4 mm, the tangent at least 1 deg off it: a tangent lying in the plane would run
+    // the profile along itself into a body of no thickness.
+    auto meets = [&](const gp_Pnt& P, const gp_Vec& T) {
+        return std::abs(gp_Vec(O, P).Dot(gp_Vec(N))) <= 1e-4 && T.Magnitude() > 1e-9 && std::abs(gp_Dir(T).Dot(N)) > std::sin(M_PI / 180.0);
+    };
+    place = drawn;
+    from_end = false;
+    if (meets(P0, T0)) {
+        // in place, the path from its start
+    } else if (meets(P1, T1)) {
+        spine_s = reversed_wire(spine_s);
+        if (spine_s.IsNull()) return why("sweep/path", "the path could not be run from its other end"), false;
+        from_end = true;
+    } else {
+        const gp_Dir Z(T0);
+        gp_Trsf turn;
+        const gp_Vec about = gp_Vec(N).Crossed(gp_Vec(Z));
+        if (about.Magnitude() > 1e-9) {
+            turn.SetRotation(gp_Ax1(O, gp_Dir(about)), gp_Vec(N).Angle(gp_Vec(Z)));
+        } else if (N.Dot(Z) < 0.0) {
+            // the normal against the tangent: half a turn about the profile's own X keeps it drawn the same way
+            turn.SetRotation(gp_Ax1(O, gp::DX().Transformed(drawn)), M_PI);
+        }
+        gp_Trsf shift;
+        shift.SetTranslation(O, P0);
+        place = shift * turn * drawn;
+    }
+    return true;
+}
+
+// The path of a sweep in the world: the exact wire of `path` (`build_exact_wire` with L=1) placed by `path_tf`.
+static TopoDS_Wire sweep_path(const double* path, size_t npath, const double* path_tf) {
+    if (npath < 2) return why("sweep/path", "the path is shorter than two numbers"), TopoDS_Wire();
+    const double* pp = path;
+    size_t L = (size_t)(*pp++);
+    if (L < 1) return why("sweep/path", "the path holds no loop at all"), TopoDS_Wire();
+    TopoDS_Wire spine = build_exact_wire(pp);
+    if (spine.IsNull()) return why("sweep/path", "the path did not join into a wire"), TopoDS_Wire();
+    TopoDS_Wire spine_s = TopoDS::Wire(apply_place(spine, path_tf));
+    if (spine_s.IsNull()) why("sweep/path", "the path was lost when placed into the world");
+    return spine_s;
+}
+
+// THE RUN OF A SWEEP AS ITS PREVIEW DRAWS IT: where `sweep_start` puts the profile (`out_place`, 3x4 row-major) and the
+// path `spine_s` laid as points no piece of which strays from it by more than 0.05 mm, from the end the body starts at
+// (`out_pts`, x y z each, at most `cap` points). The number of the points; 0 when there is no run, a number over `cap`
+// when the points did not fit and are asked again with room for them.
+static size_t sweep_run(const double* prof_tf, TopoDS_Wire spine_s, double* out_place, double* out_pts, size_t cap) {
+    gp_Trsf place;
+    bool from_end = false;
+    if (!sweep_start(prof_tf, spine_s, place, from_end)) return 0;
+    for (int r = 1; r <= 3; ++r)
+        for (int c = 1; c <= 4; ++c) out_place[(r - 1) * 4 + (c - 1)] = place.Value(r, c);
+    std::vector<gp_Pnt> run, piece;
+    for (BRepTools_WireExplorer ex(spine_s); ex.More(); ex.Next()) {
+        if (!polyline_of(ex.Current(), 0.05, piece)) return why("sweep/path", "an edge of the path could not be laid out as points"), 0;
+        // an edge run against its curve gives its points from the curve's end; the joint is the last point already laid
+        if (ex.Current().Orientation() == TopAbs_REVERSED) std::reverse(piece.begin(), piece.end());
+        run.insert(run.end(), piece.begin() + (run.empty() ? 0 : 1), piece.end());
+    }
+    if (run.size() < 2) return why("sweep/path", "the path laid out as fewer than two points"), 0;
+    for (size_t k = 0; k < run.size() && k < cap; ++k) {
+        out_pts[3 * k] = run[k].X();
+        out_pts[3 * k + 1] = run[k].Y();
+        out_pts[3 * k + 2] = run[k].Z();
+    }
+    return run.size();
+}
+
+// The run of a sweep along the path sketch `path` placed by `path_tf`, as `sweep_run` gives it.
+extern "C" size_t qym_sweep_run(const double* prof_tf, const double* path, size_t npath, const double* path_tf, double* out_place, double* out_pts, size_t cap) {
+    try {
+        QYM_SIGNALS;
+        TopoDS_Wire spine_s = sweep_path(path, npath, path_tf);
+        if (spine_s.IsNull()) return 0;
+        return sweep_run(prof_tf, spine_s, out_place, out_pts, cap);
+    } QYM_WHY_CATCH("sweep/run")
+    return 0;
+}
+
+// THE PROFILE PLACED AND RUN ALONG THE PATH: the face `f`, its edges bound to the names of the faces they will sweep out
+// (`esrc`), put into the world by `place` and swept along `spine_s` from its first point.
+static QymShape* sweep_placed(const TopoDS_Face& f, const TopTools_DataMapOfShapeInteger& esrc, const TopoDS_Wire& spine_s, const gp_Trsf& place, unsigned cap0, unsigned cap1) {
+    // THE ORIGINS TRAVEL WITH THE MOVE: the profile is placed into the world and its edges are RECREATED in the
+    // process - without carrying the binding there would be nothing to look a face's name up by.
+    BRepBuilderAPI_Transform tr(f, place, Standard_True);
+    TopoDS_Shape prof_s = tr.Shape();
+    if (prof_s.IsNull() || prof_s.ShapeType() != TopAbs_FACE) return why("sweep/profile", "the profile stopped being a face when placed on the path"), nullptr;
+    TopTools_DataMapOfShapeInteger esrc_s;
+    for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const TopoDS_Shape& e = ex.Current();
+        if (!esrc.IsBound(e)) continue;
+        const TopTools_ListOfShape& mod = tr.Modified(e);
+        if (mod.IsEmpty()) {
+            if (!esrc_s.IsBound(e)) esrc_s.Bind(e, esrc.Find(e));
+        } else {
+            for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next())
+                if (!esrc_s.IsBound(it.Value())) esrc_s.Bind(it.Value(), esrc.Find(e));
+        }
+    }
+    BRepOffsetAPI_MakePipe mk(spine_s, prof_s);
+    mk.Build();
+    if (!mk.IsDone()) return why("sweep/pipe", "the kernel could not run the profile along the path"), nullptr;
+    if (mk.Shape().IsNull()) return why("sweep/pipe", "the kernel reported success and returned nothing"), nullptr;
+    return seeded_sweep(mk, TopoDS::Face(prof_s), &esrc_s, cap0, cap1);
+}
+
+// A SWEEP. The profile (exact, from `build_exact_face`, holes included) is swept along the path - ONE wire (exact,
+// from `build_exact_wire` with L=1). `prof_tf` and `path_tf` are the 3x4 placements of the two sketches into world
+// space (nullptr is the identity). A profile that is a FACE makes `MakePipe` give a SOLID body, and the holes survive
+// as cavities. Fresh persistent ids, because this is a new base body. Where the profile stands: `sweep_start`.
 extern "C" QymShape* qym_shape_sweep(const double* prof, size_t np, const double* prof_tf,
                           const double* path, size_t npath, const double* path_tf,
                           unsigned cap0, unsigned cap1) {
-    (void)prof_tf; // the profile's orientation is computed from the path (it turns automatically)
     try {
         QYM_SIGNALS;
         TopTools_DataMapOfShapeInteger esrc; // a profile edge gives the name of the face it will sweep out
         TopoDS_Face f = build_exact_face_src(prof, np, &esrc);
         if (f.IsNull()) return why("sweep/profile", "the profile did not close into a face"), nullptr;
-        if (npath < 2) return why("sweep/path", "the path is shorter than two numbers"), nullptr;
-        const double* pp = path;
-        size_t L = (size_t)(*pp++);
-        if (L < 1) return why("sweep/path", "the path holds no loop at all"), nullptr;
-        TopoDS_Wire spine = build_exact_wire(pp);
-        if (spine.IsNull()) return why("sweep/path", "the path did not join into a wire"), nullptr;
-        TopoDS_Wire spine_s = TopoDS::Wire(apply_place(spine, path_tf));
-        if (spine_s.IsNull()) return why("sweep/path", "the path was lost when placed into the world"), nullptr;
-        // the start of the path: the point P0 and the tangent T0, taken from the placed wire
-        BRepAdaptor_CompCurve cc(spine_s);
-        gp_Pnt P0; gp_Vec T;
-        cc.D1(cc.FirstParameter(), P0, T);
-        if (T.Magnitude() < 1e-9) return why("sweep/path", "the path has no direction at its start: the first segment is of zero length"), nullptr;
-        gp_Dir Z(T);
-        // a stable basis in the profile's plane: X perpendicular to Z (the world X if it is not parallel, otherwise Y)
-        gp_Dir refX = (Abs(Z.Dot(gp_Dir(1, 0, 0))) > 0.9) ? gp_Dir(0, 1, 0) : gp_Dir(1, 0, 0);
-        gp_Dir Y = Z.Crossed(refX);
-        gp_Dir X = Y.Crossed(Z);
-        // moving the profile (built in the world XY plane, normal +Z, sketch origin at 0) into the frame (P0, X, Y, Z)
+        TopoDS_Wire spine_s = sweep_path(path, npath, path_tf);
+        if (spine_s.IsNull()) return nullptr;
         gp_Trsf place;
-        place.SetDisplacement(gp_Ax3(gp::Origin(), gp::DZ(), gp::DX()), gp_Ax3(P0, Z, X));
-        // THE ORIGINS TRAVEL WITH THE MOVE: the profile is repositioned at the start of the path and its
-        // edges are RECREATED in the process — without carrying the binding there would be nothing to look
-        // a face's name up by.
-        BRepBuilderAPI_Transform tr(f, place, Standard_True);
-        TopoDS_Shape prof_s = tr.Shape();
-        if (prof_s.IsNull() || prof_s.ShapeType() != TopAbs_FACE) return why("sweep/profile", "the profile stopped being a face when moved to the start of the path"), nullptr;
-        TopTools_DataMapOfShapeInteger esrc_s;
-        for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next()) {
-            const TopoDS_Shape& e = ex.Current();
-            if (!esrc.IsBound(e)) continue;
-            const TopTools_ListOfShape& mod = tr.Modified(e);
-            if (mod.IsEmpty()) {
-                if (!esrc_s.IsBound(e)) esrc_s.Bind(e, esrc.Find(e));
-            } else {
-                for (TopTools_ListIteratorOfListOfShape it(mod); it.More(); it.Next())
-                    if (!esrc_s.IsBound(it.Value())) esrc_s.Bind(it.Value(), esrc.Find(e));
-            }
-        }
-        BRepOffsetAPI_MakePipe mk(spine_s, prof_s);
-        mk.Build();
-        if (!mk.IsDone()) return why("sweep/pipe", "the kernel could not run the profile along the path"), nullptr;
-        if (mk.Shape().IsNull()) return why("sweep/pipe", "the kernel reported success and returned nothing"), nullptr;
-        return seeded_sweep(mk, TopoDS::Face(prof_s), &esrc_s, cap0, cap1);
+        bool from_end = false;
+        if (!sweep_start(prof_tf, spine_s, place, from_end)) return nullptr;
+        return sweep_placed(f, esrc, spine_s, place, cap0, cap1);
     } QYM_WHY_CATCH("sweep")
     return nullptr;
+}
+// WHY THE EDGES NAMED AS THE PATH OF A SWEEP MAKE NO CHAIN, as `edge_chain` answers it to the Rust side.
+enum ChainRefusal : int { CHAIN_TAKEN = 0, CHAIN_NOT_ON_BODY = 1, CHAIN_APART = 2 };
+
+// THE PATH OF A SWEEP ALONG EDGES OF A BODY: the chain the edges of `s` named `idx` (their persistent names, each taken
+// once however often it is named) join into, end to end, in the body's own place. The body is only read: the chain is
+// joined from a copy of the edges taken, which keeps their shared ends shared. A null wire when they make no chain, the
+// reason in `refused`: a name not on the body, or edges that stand apart or branch - the kernel would sweep a part of
+// them.
+static TopoDS_Wire edge_chain(const QymShape* s, const uint32_t* idx, size_t n, int& refused) {
+    refused = CHAIN_NOT_ON_BODY;
+    const std::set<uint32_t> named(idx, idx + n);
+    if (named.empty()) return why("sweep/edges", "not one edge was named as the path"), TopoDS_Wire();
+    // THE TRAVERSAL YIELDS AN EDGE ONCE PER FACE IT BELONGS TO: each is taken once
+    TopTools_MapOfShape seen;
+    TopoDS_Compound taken;
+    BRep_Builder bb;
+    bb.MakeCompound(taken);
+    size_t found = 0;
+    for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+        if (!seen.Add(ex.Current()) || !s->eids.IsBound(ex.Current())) continue;
+        if (named.count(static_cast<uint32_t>(s->eids.Find(ex.Current())))) {
+            bb.Add(taken, ex.Current());
+            ++found;
+        }
+    }
+    if (found != named.size()) return why("sweep/edges", "an edge named as the path is not on the body"), TopoDS_Wire();
+    refused = CHAIN_APART;
+    BRepBuilderAPI_Copy copied(taken);
+    TopTools_ListOfShape edges;
+    for (TopExp_Explorer ex(copied.Shape(), TopAbs_EDGE); ex.More(); ex.Next()) edges.Append(ex.Current());
+    BRepBuilderAPI_MakeWire mw;
+    mw.Add(edges);
+    if (!mw.IsDone()) return why("sweep/edges", "the edges of the path do not join end to end"), TopoDS_Wire();
+    TopoDS_Wire chain = mw.Wire();
+    size_t joined = 0;
+    for (TopExp_Explorer ex(chain, TopAbs_EDGE); ex.More(); ex.Next()) ++joined;
+    if (joined != found) return why("sweep/edges", "the edges of the path branch or stand apart: they do not join into one chain"), TopoDS_Wire();
+    refused = CHAIN_TAKEN;
+    return chain;
+}
+
+// A SWEEP ALONG EDGES OF A BODY: the profile run along the chain the edges of `s` named `idx` join into
+// (`edge_chain`), standing as `sweep_start` puts it, from whichever end of the chain meets its plane. Edges that make no
+// chain are refused with the reason in `out_refused` (a `ChainRefusal`).
+extern "C" QymShape* qym_shape_sweep_edges(const double* prof, size_t np, const double* prof_tf, const QymShape* s, const uint32_t* idx, size_t n,
+                                unsigned cap0, unsigned cap1, int* out_refused) {
+    *out_refused = CHAIN_TAKEN;
+    if (!s) return why("sweep/edges", "there is no body to take the path from"), nullptr;
+    try {
+        QYM_SIGNALS;
+        QYM_AS_HANDED(s, "it only reads the edges of the body and joins copies of them");
+        TopoDS_Wire spine_s = edge_chain(s, idx, n, *out_refused);
+        if (spine_s.IsNull()) return nullptr;
+        TopTools_DataMapOfShapeInteger esrc; // a profile edge gives the name of the face it will sweep out
+        TopoDS_Face f = build_exact_face_src(prof, np, &esrc);
+        if (f.IsNull()) return why("sweep/profile", "the profile did not close into a face"), nullptr;
+        gp_Trsf place;
+        bool from_end = false;
+        if (!sweep_start(prof_tf, spine_s, place, from_end)) return nullptr;
+        return sweep_placed(f, esrc, spine_s, place, cap0, cap1);
+    } QYM_WHY_CATCH("sweep/edges")
+    return nullptr;
+}
+
+// WHETHER THE EDGES OF `s` NAMED `idx` JOIN INTO THE CHAIN OF A SWEEP'S PATH (`edge_chain`), asked before the sweep is
+// laid: a `ChainRefusal`.
+extern "C" int qym_edge_chain_refusal(const QymShape* s, const uint32_t* idx, size_t n) {
+    if (!s) return CHAIN_NOT_ON_BODY;
+    try {
+        QYM_SIGNALS;
+        QYM_AS_HANDED(s, "it only reads the edges of the body and joins copies of them");
+        int refused = CHAIN_TAKEN;
+        edge_chain(s, idx, n, refused);
+        return refused;
+    } QYM_WHY_CATCH("sweep/chain")
+    return CHAIN_APART;
+}
+
+// The run of a sweep along the chain the edges of `s` named `idx` join into (`edge_chain`), as `sweep_run` gives it.
+extern "C" size_t qym_sweep_run_edges(const double* prof_tf, const QymShape* s, const uint32_t* idx, size_t n, double* out_place, double* out_pts, size_t cap) {
+    if (!s) return 0;
+    try {
+        QYM_SIGNALS;
+        QYM_AS_HANDED(s, "it only reads the edges of the body and joins copies of them");
+        int refused = CHAIN_TAKEN;
+        TopoDS_Wire spine_s = edge_chain(s, idx, n, refused);
+        if (spine_s.IsNull()) return 0;
+        return sweep_run(prof_tf, spine_s, out_place, out_pts, cap);
+    } QYM_WHY_CATCH("sweep/run")
+    return 0;
 }
 // A LOFT through sections. `data` is the concatenation of the sections' loop blocks (each read by
 // `build_exact_wire`), `offsets[nsec+1]` holds where each section starts within `data`, and

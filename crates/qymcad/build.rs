@@ -18,6 +18,8 @@ fn main() {
     // help.rs). The reason is the same as for the languages: without this line an edit to an article
     // never reaches the binary, and its author sees the old text without understanding why.
     println!("cargo:rerun-if-changed=../../docs/help");
+    // THE WAYS TO SUPPORT THE AUTHOR: their list and QR pictures (`include_dir!` in support.rs), for the same reason.
+    println!("cargo:rerun-if-changed=../../assets/support");
 
     #[cfg(windows)]
     {

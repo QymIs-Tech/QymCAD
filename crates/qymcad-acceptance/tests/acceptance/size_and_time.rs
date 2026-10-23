@@ -173,3 +173,86 @@ probe! {
         assert!(frame <= scaled(qymcad_acceptance::oracles::STEP_FRAME_BUDGET), "a frame after the grip came in took {frame:?}");
     }
 }
+
+/// HOW LONG A CLICK ON AN EDGE MAY TAKE TO BE ANSWERED BY THE TRIAL BUILD, and how long Enter may take to rebuild the
+/// propeller below the fillet edited, on the first edit of a document just opened: the trial of the fillet is kept
+/// and taken by Enter, the nodes below it are built afresh. Measured in a release build through the window, the machine
+/// under a load of 4-10, two runs each: a click 0.98-1.24 s of work, Enter 12.0-12.1 s. A click's trial is OCCT's own
+/// fillet of 8 edges against the spline blades, 0.3-0.5 s, and the frames of the window round it; Enter is the fillet
+/// of 66 edges below, whose edges will not take together and are tried edge by edge (44 attempts of the kernel on a
+/// body of 51 spline faces, 0.1-0.2 s each), the cut through the body and three blends on it. A trial queued behind
+/// the trials of every state before, or one rebuilding the whole timeline, is read over the budget of a click (35-37 s
+/// a step measured); the checks of a blend run three times over and the volumes of a cut counted exactly, over the
+/// budget of Enter (17.5-20.2 s measured).
+const TRIAL: Duration = Duration::from_millis(1_300);
+const BLEND_ENTER: Duration = Duration::from_secs(14);
+
+/// Is Apply of the tool in hand open?
+fn apply_open(s: &mut Session) -> bool {
+    let apply = s.word("cmd-apply-enter");
+    s.widgets().into_iter().any(|w| w.label.contains(&apply) && w.enabled)
+}
+
+probe! {
+    budget = 1800;
+    /// THE PROPELLER SAMPLE, ITS FILLET EDITED AS A PERSON EDITS IT: the part entered, the fillet R10 at the top of its 11
+    /// nodes reopened from the tree, two edges of the blades added by clicks, Enter. The trial of each step answers in time
+    /// with Apply open and no Enter pressed, and Enter rebuilds in time. Reported behaviour: each step 35-37 s of work for
+    /// its trial, and Enter 40 s more behind them. That a trial running is said at once is checked where the words are
+    /// laid (`a_trial_running_is_said_before_enter`): here every step is followed by the checks of every step, which wait
+    /// for the program to come to rest.
+    fn the_propeller_sample_takes_a_fillet_in_time() {
+        let Some(path) = qymcad_acceptance::private_sample("blend-speed/propeller_test_speed.qcad") else { return };
+        let mut s = Session::start();
+        s.budget(Duration::from_secs(600));
+        build::open_project(&mut s, &path);
+        let part = s.find("Part 1", qymcad::pos2(0.0, 300.0)).expect("the part is not in the tree");
+        std::thread::sleep(Duration::from_millis(700));
+        s.double_click(part.center());
+        let row = s.words().into_iter().find(|w| w.contains("R10")).expect("the fillet R10 is not in the tree");
+        let at = s.find(&row, qymcad::pos2(0.0, 300.0)).expect("the row of the fillet R10 is not on screen");
+        std::thread::sleep(Duration::from_millis(700));
+        let mut problems = Vec::new();
+        let m = meter();
+        s.double_click(at.center());
+        s.settle();
+        let took = spent("the fillet R10 reopened", &m);
+        if !holds(took, TRIAL) {
+            problems.push(over("the trial of the fillet reopened", took, scaled(TRIAL)));
+        }
+        // the long top edges of two blades, as the bodies of the sample stand
+        for edge in [[21.2, 50.7, 14.0], [-50.7, 21.2, 14.0]] {
+            let to = s.edge_at(edge);
+            let m = meter();
+            s.click(to);
+            s.settle();
+            let took = spent("an edge of a blade added", &m);
+            if !holds(took, TRIAL) {
+                problems.push(over("the trial of an edge added", took, scaled(TRIAL)));
+            }
+            assert!(apply_open(&mut s), "the trial answered and Apply stays shut; the corner says {:?}", s.tool_says());
+        }
+        let m = meter();
+        s.key(qymcad::Key::Enter);
+        s.settle();
+        let took = spent("Enter on the fillet", &m);
+        if !holds(took, BLEND_ENTER) {
+            problems.push(over("rebuilding the propeller after Enter", took, scaled(BLEND_ENTER)));
+        }
+        // THE DOCUMENT AFTER ENTER, as the tree shows it: the fillet R10 of 8 edges with two left sharp (the two clicked
+        // are among its eight), every node below it built - the fillet of 66 edges with the edges it could not take said
+        // in yellow, not red - and the body
+        let doc = s.document();
+        let red: Vec<&str> = doc.features.iter().filter(|f| f.error.is_some()).map(|f| f.name.as_str()).collect();
+        assert!(red.is_empty(), "nodes did not build after Enter: {red:?}");
+        let fillets: Vec<&qymcad::Feature> = doc.features.iter().filter(|f| f.kind == "Fillet").collect();
+        let chamfers = doc.features.iter().filter(|f| f.kind == "Chamfer").count();
+        assert!(fillets.len() == 5 && chamfers == 1, "the tree holds {} fillets and {chamfers} chamfers after Enter, expecting 5 and 1", fillets.len());
+        let r10 = fillets[0];
+        assert!(r10.warning.as_deref().is_some_and(|w| w.contains('2') && w.contains('8')), "the fillet R10 does not say two of its 8 edges are left sharp: {:?}", r10.warning);
+        assert!(fillets[2].warning.is_some(), "the fillet of 66 edges says nothing of the edges it could not take: {:?}", fillets[2].warning);
+        assert!(s.words().iter().any(|w| w.contains("R10") && w.contains('8')), "the tree does not show the fillet R10 of 8 edges");
+        assert!(doc.bodies.iter().any(|b| !b.consumed && b.faces > 50), "the propeller has no body of its faces after Enter: {:?}", doc.bodies.iter().map(|b| b.faces).collect::<Vec<_>>());
+        assert!(problems.is_empty(), "{}", problems.join("; "));
+    }
+}

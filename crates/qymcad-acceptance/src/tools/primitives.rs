@@ -51,6 +51,7 @@ pub static BOX: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/19-primitives",
     not_applicable: &[
@@ -111,6 +112,7 @@ pub static CYLINDER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/19-primitives",
     not_applicable: &[
@@ -154,6 +156,7 @@ pub static SPHERE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/19-primitives",
     not_applicable: &[
@@ -212,6 +215,7 @@ pub static CONE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/19-primitives",
     not_applicable: &[
@@ -266,6 +270,7 @@ pub static TORUS: Tool = Tool {
     contexts: &[Context::SecondPart],
     // a ring of 3 about the tube of 4 is of the right form and passes through itself
     refusal: Some(3.0),
+    refused_together: None,
     budget: (30, 2000),
     help: "part/19-primitives",
     not_applicable: NOT_APPLICABLE,
@@ -328,6 +333,7 @@ pub static PRISM: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/19-primitives",
     not_applicable: &[

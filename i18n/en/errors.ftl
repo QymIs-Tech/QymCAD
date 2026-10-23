@@ -129,6 +129,7 @@ error-sweep-profile-missing = The sweep profile was not found
 error-sweep-path-missing = The sweep path was not found
 error-no-isolated-points-for-holes = The sketch has no isolated points to place holes at
 error-no-points-for-holes = No points to place holes at
+error-recess-not-wider = Recess Ø{ $recess } is not wider than the hole Ø{ $hole }: set the recess wider than the hole
 
 ## Reference planes
 
@@ -334,6 +335,8 @@ io-svg-write-failed = SVG: writing failed: { $v }
 io-dxf-empty-sketch = DXF: the sketch is empty
 io-dxf-write-failed = DXF: writing failed: { $v }
 error-edges-not-found = Not one of the { $asked } named edges is left in the body. Their names came from an operation higher in the timeline and it has changed — pick the edges again.
+error-path-edges-lost = The path lost { $lost } of its { $asked } edges: the body they were on was rebuilt without them — pick the edges of the path again
+error-path-edges-apart = The edges of the path do not join end to end into one chain — pick edges that follow one another
 error-described-edges-not-found = The edges were picked through a face or an edge that is no longer in the body: an operation higher in the timeline has changed it — pick the edges again.
 error-op-failed-patch = A surface will not span these edges
 error-shell-thickness-over-round = A { $t } mm wall is thicker than the smallest round on the body ({ $r } mm): the offset consumes it entirely and the shell cannot be built. Use a wall thinner than { $r } mm or enlarge the round

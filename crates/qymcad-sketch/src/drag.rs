@@ -167,7 +167,9 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
         if no_other && primary {
             let on_empty = matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(si) if qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses) == Some(si))
                 && pp.is_some_and(|p| if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel { sketch_hit(&sk.pick(), rect, p, si).is_none() } else { false });
-            if ctrl || on_empty {
+            // a tool taking profiles takes them by a box too, wherever the drag starts: no contour is dragged
+            let profiles = qymcad_ui_state::profile_sketch(&*sk.armed, &*sk.cmd).is_some();
+            if ctrl || on_empty || profiles {
                 sk.tree_sel.box_start = resp.interact_pointer_pos();
             } else if let (Some(hw), Some(pp)) = (handle, resp.interact_pointer_pos()) {
                 if sh.at(hw).distance(pp) <= qymcad_ui_state::grab::grab(sk.set, Grab::Point) {
@@ -548,7 +550,11 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
         }
     } else if sk.tree_sel.box_start.is_some() {
         if resp.drag_stopped() {
-            if let (Some(a), Some(b)) = (sk.tree_sel.box_start, resp.interact_pointer_pos()) {
+            if let (Some(a), Some(b), Some(si)) = (sk.tree_sel.box_start, resp.interact_pointer_pos(), qymcad_ui_state::profile_sketch(&*sk.armed, &*sk.cmd)) {
+                let took = qymcad_ui_state::contours_in_box_2d(&*sk.project, &*sk.view, rect, qymcad_ui_state::ScreenBox { from: a, to: b }, si);
+                let adding = if ctx.input(|i| i.modifiers.shift) { qymcad_ui_state::Adding::Yes } else { qymcad_ui_state::Adding::No };
+                qymcad_ui_state::take_profiles(&mut *sk.gsel, &mut *sk.status, took, adding);
+            } else if let (Some(a), Some(b)) = (sk.tree_sel.box_start, resp.interact_pointer_pos()) {
                 // without Shift the box REPLACES the selection; with Shift it adds to it. A TOOL WAITING FOR ITS CURVES is
                 // given them by the box as by its clicks - added, the tool left in hand. Cleared with the selection, the
                 // tool's mode went and its name stayed on the bar: Enter did nothing. Reported behaviour: "the tool is put

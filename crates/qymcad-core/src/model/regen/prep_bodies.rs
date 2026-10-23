@@ -296,7 +296,9 @@ impl Project {
         // silently, because the numbers are of the right type either way.
         let tool =
             HoleTool { kind: tool.kind, diameter: p.dim("diameter", tool.diameter), depth: p.dim("depth", tool.depth).abs(), dia2: p.dim("dia2", tool.dia2), depth2: p.dim("depth2", tool.depth2) };
-        let job = if sketch != 0 {
+        let job = if let Some(refused) = tool.refusal() {
+            crate::feature::KernelJob::refused(refused)
+        } else if sketch != 0 {
             // At the isolated points of a sketch: one frame per point, with every cut applied by a
             // single boolean.
             let pls = self.sketch_hole_points(sketch, flip);
@@ -618,6 +620,9 @@ impl Project {
                 let prof = Profile { sketch: *sketch, profiles };
                 let ax = RevolveAxis { axis: *axis, datum: *axis_datum, line: *axis_line };
                 (*body, self.prep_revolve(p, prof, ax, *angle, *reach, BodyOp { src: *src, op: *op, body: *body }))
+            }
+            FeatureKind::Sweep { sketch, profiles, along: Some(along), src, op, body, .. } => {
+                (*body, self.prep_sweep_along(p, Profile { sketch: *sketch, profiles }, along, BodyOp { src: *src, op: *op, body: *body }))
             }
             FeatureKind::Sweep { sketch, profiles, path_sketch, path, src, op, body, .. } => {
                 (*body, self.prep_sweep(p, Profile { sketch: *sketch, profiles }, *path_sketch, *path, BodyOp { src: *src, op: *op, body: *body }))

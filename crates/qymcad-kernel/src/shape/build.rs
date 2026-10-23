@@ -141,6 +141,29 @@ impl Shape {
         unsafe { Self::wrap(qym_shape_sweep(prof.as_ptr(), prof.len(), prof_tf.as_ptr(), path.as_ptr(), path.len(), path_tf.as_ptr(), caps[0], caps[1])) }
     }
 
+    /// A sweep along edges of this body: the exact profile `prof`, placed by `prof_tf`, run along the chain the edges
+    /// named `edges` join into. `caps` as in [`Shape::sweep_profile_named`]. Edges that do not join end to end into one
+    /// chain are refused as `PathEdgesApart`; any other failure as the sweep refused.
+    pub(crate) fn sweep_along_edges(&self, prof: &[f64], prof_tf: &[f64; 12], edges: &[u32], caps: [u32; 2]) -> Result<Shape, qymcad_core::errors::CoreError> {
+        let refused = || crate::kernel::refused(qymcad_core::errors::Op::Sweep);
+        if prof.is_empty() {
+            return refuse("sweep/asked", "there is no profile to sweep").ok_or_else(refused);
+        }
+        let mut chain = 0;
+        let made = unsafe { Self::wrap(qym_shape_sweep_edges(prof.as_ptr(), prof.len(), prof_tf.as_ptr(), self.ptr, edges.as_ptr(), edges.len(), caps[0], caps[1], &mut chain)) };
+        match made {
+            Some(shape) => Ok(shape),
+            None if chain == CHAIN_APART => Err(qymcad_core::errors::CoreError::PathEdgesApart),
+            None => Err(refused()),
+        }
+    }
+
+    /// Why the edges named `edges` of this body make no chain for the path of a sweep, as the sweep along them would
+    /// refuse them (`ChainRefusal` of the bridge); 0 when they make one.
+    pub(crate) fn edge_chain_refusal(&self, edges: &[u32]) -> i32 {
+        unsafe { qym_edge_chain_refusal(self.ptr, edges.as_ptr(), edges.len()) }
+    }
+
     /// A loft through sections. `data` is the concatenation of the `loop_block`s of the sections, `offsets`,
     /// of length nsec+1, gives where each section starts in `data`, and `places`, of nsec×12, gives the 3×4
     /// placements of the section planes. `ruled` asks for ruled faces rather than a smooth surface, and
@@ -291,4 +314,33 @@ impl Shape {
             ))
         }
     }
+}
+
+/// WHERE A SWEEP'S PROFILE STANDS AND THE PATH IT RUNS, as the bridge answers it into room for points: asked with room
+/// for 256 points, and again with room for all of them when they did not fit. `None` when there is no run.
+fn sweep_run_answered(ask: impl Fn(*mut f64, *mut f64, usize) -> usize) -> Option<crate::ask::SweepRun> {
+    let mut place = [0.0; 12];
+    let mut pts = vec![0.0; 3 * 256];
+    let mut n = ask(place.as_mut_ptr(), pts.as_mut_ptr(), 256);
+    if n > 256 {
+        pts = vec![0.0; 3 * n];
+        n = ask(place.as_mut_ptr(), pts.as_mut_ptr(), n);
+    }
+    (n >= 2 && 3 * n <= pts.len()).then(|| crate::ask::SweepRun { place, path: pts[..3 * n].chunks(3).map(|p| [p[0], p[1], p[2]]).collect() })
+}
+
+/// What `qym_shape_sweep_edges` answers in its `out_refused` for edges that stand apart or branch (`ChainRefusal` of the
+/// bridge).
+pub(crate) const CHAIN_APART: i32 = 2;
+
+/// The run of a sweep of a profile placed by `profile_place` along the chain the edges named `edges` of `body` join
+/// into, by the rule the sweep is built by.
+pub(crate) fn sweep_run_along_edges(profile_place: &[f64; 12], body: &Shape, edges: &[u32]) -> Option<crate::ask::SweepRun> {
+    sweep_run_answered(|place, pts, cap| unsafe { qym_sweep_run_edges(profile_place.as_ptr(), body.ptr, edges.as_ptr(), edges.len(), place, pts, cap) })
+}
+
+/// The run of a sweep of a profile placed by `profile_place` along the path sketch `path` (`[1.0, loop_block]`) placed
+/// by `path_place`, by the rule the sweep is built by.
+pub(crate) fn sweep_run_along_sketch(profile_place: &[f64; 12], path: &[f64], path_place: &[f64; 12]) -> Option<crate::ask::SweepRun> {
+    sweep_run_answered(|place, pts, cap| unsafe { qym_sweep_run(profile_place.as_ptr(), path.as_ptr(), path.len(), path_place.as_ptr(), place, pts, cap) })
 }
