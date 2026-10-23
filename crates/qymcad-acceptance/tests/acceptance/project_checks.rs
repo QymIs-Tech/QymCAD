@@ -14,8 +14,11 @@ use qymcad_acceptance::{build, probe};
 
 /// The rows of the tree that begin with the word `key` gives, before its first value.
 fn rows(s: &mut Session, key: &str) -> Vec<(String, Rect)> {
-    let line = s.word(key);
-    let head = line.split('{').next().unwrap_or(&line).to_string();
+    // the arguments filled with a mark, so the words before the first of them are the head of every such row
+    const MARK: &str = "\u{1}";
+    let args = ["r", "size", "which"].map(|name| qymcad::Arg { name, value: MARK });
+    let line = s.word_filled(key, &args);
+    let head = line.split(MARK).next().unwrap_or(&line).to_string();
     let left = s.canvas().min.x;
     let mut found: Vec<(String, Rect)> = s.words_at().into_iter().filter(|(w, r)| w.starts_with(&head) && r.max.x < left).collect();
     found.sort_by(|a, b| a.1.min.y.total_cmp(&b.1.min.y));

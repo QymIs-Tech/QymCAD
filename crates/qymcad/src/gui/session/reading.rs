@@ -415,8 +415,13 @@ impl Session {
 
     /// The words for the catalogue entry `key` with its one argument filled, as the program writes them.
     pub fn word_with(&self, key: &str, arg: Arg) -> String {
+        self.word_filled(key, &[arg])
+    }
+
+    /// The words for the catalogue entry `key` with every argument it reads filled, as the program writes them.
+    pub fn word_filled(&self, key: &str, args: &[Arg]) -> String {
         self.speak();
-        crate::i18n::tr1(key, arg.name, arg.value)
+        crate::i18n::trn(key, &args.iter().map(|a| (a.name, a.value)).collect::<Vec<_>>())
     }
 
     /// THE CODE OF THE LANGUAGE the program speaks (`en`, `ru`).
