@@ -25,7 +25,17 @@ fn into_an_assembly_the_door_offers_what_can_become_a_part() {
     let names: Vec<String> = import_filters(Want::Part).into_iter().skip(1).map(|(n, _)| n).collect();
     assert_eq!(
         names,
-        vec!["STEP".to_string(), "IGES".to_string(), "STL".to_string(), "OBJ".to_string(), "PLY".to_string(), "glTF".to_string(), "3MF".to_string(), "AMF".to_string()],
+        vec![
+            "STEP".to_string(),
+            "IGES".to_string(),
+            "F3D".to_string(),
+            "STL".to_string(),
+            "OBJ".to_string(),
+            "PLY".to_string(),
+            "glTF".to_string(),
+            "3MF".to_string(),
+            "AMF".to_string()
+        ],
         "the assembly's door offers {names:?}"
     );
 }

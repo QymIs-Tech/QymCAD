@@ -887,9 +887,9 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
 /// running the whole time - a cache emptied while somebody types a file name is a cache the viewport
 /// then draws from.
 /// What the status says once an exact file has come in: a part or a subassembly of how many, and the triangles.
-pub(super) fn exact_imported(format: qymcad_kernel::ExactFormat, bodies: usize, tris: usize) -> String {
+pub(super) fn exact_imported(format: &str, bodies: usize, tris: usize) -> String {
     let what = if bodies == 1 { crate::i18n::tr("io-part") } else { crate::i18n::tr1("io-subassembly-of", "n", &bodies.to_string()) };
-    crate::i18n::trn("io-exact-imported", &[("format", crate::gui::exact_entry(format).name()), ("what", &what), ("tris", &tris.to_string())])
+    crate::i18n::trn("io-exact-imported", &[("format", format), ("what", &what), ("tris", &tris.to_string())])
 }
 
 /// THE CARD OF A BACKGROUND JOB THAT IS NOT A REBUILD. An import says how long it has gone and can be left: the

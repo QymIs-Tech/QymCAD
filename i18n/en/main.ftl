@@ -41,6 +41,7 @@ import-not-read = Not read: { $list }
 import-redrawn = Drawn through fit points, control data invalid: { $list }
 import-invalid = Not read, invalid data: { $list }
 import-not-a-part = { $format } is a flat drawing and cannot become a part. Open it with File -> Import…: it becomes a sketch
+import-f3d-no-converter = An F3D file comes in through the open cadmpeg converter, which is not installed. Install it, for example with "brew install cadmpeg/tap/cadmpeg" or "cargo install cadmpeg", and bring the file in again
 file-quit = Quit
 
 ## Help menu

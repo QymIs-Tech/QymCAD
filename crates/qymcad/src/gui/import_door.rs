@@ -15,7 +15,7 @@ use qymcad_kernel::ExactFormat;
 
 use qymcad_ui_state::MeshFormat;
 
-use super::{open_exact, open_mesh, open_svg, App, Rebuilding};
+use super::{open_exact, open_f3d, open_mesh, open_svg, App, Rebuilding};
 
 /// Whether a file that becomes `lands` may come in at a place that wants `want`.
 fn takes(want: Want, lands: Lands) -> bool {
@@ -79,6 +79,16 @@ pub(crate) fn land_import(regen: &mut Rebuilding, path: &str, want: Want) -> Lan
         Format::Iges => {
             open_exact(regen, path.to_string(), ExactFormat::Iges);
             Landing::Started
+        }
+        Format::F3d => {
+            // THE CONVERTER IS ASKED ABOUT BEFORE THE FILE IS READ: an archive that cannot be opened for the
+            // want of an installation is a refusal with the way back, not a spinner that ends in an error.
+            if qymcad_io::find_converter().is_none() {
+                Landing::Refused(crate::i18n::tr("import-f3d-no-converter"))
+            } else {
+                open_f3d(regen, path.to_string());
+                Landing::Started
+            }
         }
         Format::Stl => {
             open_mesh(regen, path.to_string(), MeshFormat::Stl);

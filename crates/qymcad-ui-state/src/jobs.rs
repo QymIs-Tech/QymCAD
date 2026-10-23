@@ -183,11 +183,33 @@ impl Drop for Busy {
     }
 }
 
+/// THE BYTES A DOCUMENT KEEPS AS THE SOURCE OF AN IMPORT when they are not the file that was opened: an F3D
+/// comes in as the STEP its converter produced, under the file's own name, so the document opens again with
+/// no converter asked for. The original stays where it stood; the document holds what its bodies were read
+/// from.
+pub struct EmbeddedSource {
+    /// The name of the source in the document, extension included: the extension is what tells a reopening
+    /// how the bytes are read.
+    pub name: String,
+    pub data: Vec<u8>,
+}
+
+/// AN EXACT FILE THAT CAME IN: its path and format, the bodies (mesh plus B-rep faces), the solids' live
+/// shapes, the tree the file stands in, and the bytes the document keeps as its source when they are not the
+/// file at `path` itself (see [`EmbeddedSource`]).
+pub struct ExactImport {
+    pub path: String,
+    pub format: qymcad_kernel::ExactFormat,
+    pub bodies: Vec<qymcad_core::geom::Built>,
+    pub shapes: Vec<qymcad_kernel::Shape>,
+    pub nodes: Vec<qymcad_kernel::ImportNode>,
+    pub embedded: Option<EmbeddedSource>,
+}
+
 /// The result of a background (worker thread) import or export, arriving at the interface over a channel.
 pub enum JobResult {
-    /// An exact file (STEP, IGES) was imported: the bodies (mesh plus B-rep faces) + the solids' live shapes +
-    /// the file's path and format.
-    ExactImported { path: String, format: qymcad_kernel::ExactFormat, bodies: Vec<qymcad_core::geom::Built>, shapes: Vec<qymcad_kernel::Shape>, nodes: Vec<qymcad_kernel::ImportNode> },
+    /// An exact file (STEP, IGES, F3D) was imported; see [`ExactImport`].
+    ExactImported { landed: ExactImport },
     /// An IGES with no surfaces, read as a drawing: the curves go into a sketch the way DXF does, and `note` is
     /// what the status adds (a library's cells are shown, entities were not drawn).
     DrawingRead { path: String, curves: Vec<qymcad_core::geom::ProfEdge>, note: String },

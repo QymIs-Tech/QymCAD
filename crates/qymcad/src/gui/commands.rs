@@ -76,7 +76,7 @@ impl App {
                     self.active_path = path;
                 }
             }
-            JobResult::ExactImported { path, format, bodies, shapes, nodes } => crate::gui::import_scale::land_exact(&mut self.win_ctx(&mut Vec::new()), path, format, bodies, shapes, nodes),
+            JobResult::ExactImported { landed } => crate::gui::import_scale::land_exact(&mut self.win_ctx(&mut Vec::new()), landed),
             JobResult::DrawingRead { path, curves, note } => {
                 self.arm_sketch_import(curves, &path);
                 if !note.is_empty() {

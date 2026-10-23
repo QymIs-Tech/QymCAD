@@ -370,3 +370,35 @@ probe! {
         assert!((across - 80.0).abs() < 0.1, "a block of 40 taken at twice its size is 80 across, and it is {across}");
     }
 }
+
+/// THE CONVERTER OF AN F3D ON THE PATH, as a file: the probe below runs only where the program is installed. A file
+/// on the path is the same look the door takes before it starts a reading; whether the file runs is what the reading
+/// itself then says.
+fn converter_on_path() -> bool {
+    std::env::var_os("PATH").map(|search| std::env::split_paths(&search).any(|dir| dir.join("cadmpeg").is_file() || dir.join("cadmpeg.exe").is_file())).unwrap_or(false)
+}
+
+probe! {
+    /// AN F3D COMES IN THROUGH ITS CONVERTER: the archive is turned into STEP outside and read the way every
+    /// exact file is. Both the private sample and the cadmpeg program on the path are needed; either missing,
+    /// the check says so and passes over. What came in is measured, not named: the sample is a real drawing of
+    /// its own.
+    fn an_f3d_comes_in_through_its_converter() {
+        let Some(path) = qymcad_acceptance::private_sample("through-laser.f3d") else { return };
+        if !converter_on_path() {
+            eprintln!("PASSED OVER: the cadmpeg program is not on the path - the check on it runs where the converter is installed");
+            return;
+        }
+        let (mut s, bodies) = bring_it_in(&path);
+        assert!(!bodies.is_empty(), "the F3D came in as no bodies: the program says {:?}", s.status());
+        let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+        for b in &bodies {
+            for k in 0..3 {
+                lo[k] = lo[k].min(b.min[k]);
+                hi[k] = hi[k].max(b.max[k]);
+            }
+        }
+        let span: [f64; 3] = std::array::from_fn(|k| hi[k] - lo[k]);
+        assert!(span.iter().copied().fold(0.0, f64::max) > 0.1, "the F3D came in smaller than any real part: {span:?}");
+    }
+}
