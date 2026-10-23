@@ -604,6 +604,7 @@ crates/qymcad/src/gui/an_automatic_parallel_stays_in_its_shape.rs 1 1 0
 crates/qymcad/src/gui/an_edge_anchor_survives_reopening.rs 0 1 0
 crates/qymcad/src/gui/an_iges_import_survives_reopening.rs 0 1 0
 crates/qymcad/src/gui/an_import_keeps_its_names_on_opening.rs 0 1 0
+crates/qymcad/src/gui/tests/an_import_with_losses_says_so.rs 0 1 0
 crates/qymcad/src/gui/an_imported_assembly_is_worked_by_hand.rs 0 5 0
 crates/qymcad/src/gui/angle_dim_drag.rs 2 2 2
 crates/qymcad/src/gui/array_axis.rs 1 0 0

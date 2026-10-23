@@ -40,6 +40,7 @@ import-unknown = «{ $file }» ашылмайды: бағдарлама бұл �
 import-not-read = Оқылмады: { $list }
 import-not-a-part = { $format } — жазық сызба, ол бөлшек бола алмайды. Оны «Файл -> Импорттау…» арқылы ашыңыз: ол эскизге түседі
 import-f3d-no-converter = F3D файлы ашық cadmpeg түрлендіргіші арқылы ашылады, бірақ ол орнатылмаған. Оны орнатыңыз, мысалы «brew install cadmpeg/tap/cadmpeg» немесе «cargo install cadmpeg» командасымен, сонан кейін файлды қайта импорттаңыз
+import-f3d-losses = Түрлендіргіш файлды шығынмен әкелді: { $what }
 file-quit = Шығу
 
 ## Help menu

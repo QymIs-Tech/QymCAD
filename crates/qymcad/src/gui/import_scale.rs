@@ -122,7 +122,7 @@ impl Entry {
 /// keep them as they are. `landed.embedded` carries the source bytes when the document keeps another file than the
 /// one at `path`: an F3D is read from the STEP its converter produced, and that STEP is what the document embeds.
 pub(crate) fn land_exact(wc: &mut WinCtx, landed: qymcad_ui_state::ExactImport) {
-    let qymcad_ui_state::ExactImport { path, bodies, shapes, nodes, embedded, .. } = landed;
+    let qymcad_ui_state::ExactImport { path, bodies, shapes, nodes, embedded, note, .. } = landed;
     keep_pending(wc);
     *wc.dxf_path = Some(path.clone()); // the next file chooser opens where this file was
     let nbodies = bodies.len();
@@ -173,6 +173,11 @@ pub(crate) fn land_exact(wc: &mut WinCtx, landed: qymcad_ui_state::ExactImport) 
     wc.view.initialized = false;
     wc.cam.init = false;
     *wc.status = Notice::info(super::io_jobs::exact_imported(named, nbodies, tris));
+    // WHAT THE READING SAID IT LOST goes on top, and the tone turns to a warning: the file came in, and the
+    // person reads at once that it did not come over whole (as a drawing's unread entities are said).
+    if !note.is_empty() {
+        *wc.status = Notice::warning(format!("{} {note}", *wc.status));
+    }
     // the size as it stands in the world: a body alone is in its part's coordinates
     let span = world_span(wc.project, &ids);
     let ask = ImportScale { file: super::file_name(&path), format: named.to_string(), unitless: false, factor: 1.0, applied: 1.0, span, meshes: Vec::new(), solids: read, places, again: None };

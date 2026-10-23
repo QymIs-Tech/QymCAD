@@ -238,6 +238,9 @@ pub struct ExactImport {
     pub shapes: Vec<qymcad_kernel::Shape>,
     pub nodes: Vec<qymcad_kernel::ImportNode>,
     pub embedded: Option<EmbeddedSource>,
+    /// What the reading said was lost on the way (an F3D's converter reports its losses): said once when the
+    /// import lands, with the tone of a warning. Empty says everything came over.
+    pub note: String,
 }
 
 /// The result of a background (worker thread) import or export, arriving at the interface over a channel.
