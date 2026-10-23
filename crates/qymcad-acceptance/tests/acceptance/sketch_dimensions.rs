@@ -451,3 +451,25 @@ probe! {
         assert!((across - 50.0).abs() < 0.01, "a dimension of 40 clicked from the far side of one circle to the near side of the other: the sketch stands {across} across, not 50");
     }
 }
+
+probe! {
+    /// A DIMENSION ON THE POINTS OF TWO CIRCLES ADDS NO BADGES: the points it stands on are its own, held on their
+    /// circles level with the centres, and show no constraint of their own. Reported behaviour: the centre lines carried
+    /// badges of a level line and the ends of the dimension the badge of a point on a circle.
+    fn a_dimension_on_the_points_of_two_circles_adds_no_badges() {
+        let mut s = Fixture::TwoCirclesInSketch.start();
+        diameter_laid(&mut s, (5.0, 0.0), "10");
+        diameter_laid(&mut s, (35.0, 0.0), "10");
+        let before = s.badges().len();
+        let hint = s.word("tb-dim-hint");
+        s.press_hint(&hint);
+        for (x, y) in [(-5.0, 0.0), (35.0, 0.0), (15.0, 12.0)] {
+            let at = s.on_sketch(x, y);
+            s.click(at);
+        }
+        s.key(Key::Enter);
+        s.key(Key::Escape).key(Key::Escape);
+        let badges = s.badges();
+        assert!(badges.len() == before, "the dimension on the far sides of two circles added badges: {badges:?}, there were {before}");
+    }
+}

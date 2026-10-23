@@ -197,11 +197,39 @@ impl Sketch {
     /// centre) and of a polygon or a slot (`SketchFigure::own`). One rule for every figure: none is listed nor badged.
     pub fn held_by_shapes(&self) -> std::collections::HashSet<usize> {
         let mut out = self.corner_holders();
+        out.extend(self.anchor_holders());
         if !self.figures.is_empty() {
             let held = |c: &Constraint| self.figures.iter().any(|f| f.holds(c));
             out.extend(self.constraints.iter().enumerate().filter(|(_, c)| held(c)).map(|(ci, _)| ci));
         }
         out
+    }
+    /// THE CONSTRAINTS THE POINT A DIMENSION STANDS ON A CIRCLE BY HOLDS ITSELF BY, by their index: a point no geometry
+    /// ends at, on a circle or an arc (`PointOnCircle`) and level with its centre or upright of it - where its centre line
+    /// crosses it. They are the dimension's own: shown, a dimension between two circles carried a badge of a level line on
+    /// each centre line and of a point on a circle at each end.
+    pub fn anchor_holders(&self) -> std::collections::HashSet<usize> {
+        if !self.constraints.iter().any(|c| matches!(c, Constraint::PointOnCircle { .. })) {
+            return Default::default();
+        }
+        let drawn: std::collections::HashSet<Id> = self.entities.iter().flat_map(entity_points).collect();
+        let on: Vec<OnCircle> = self
+            .constraints
+            .iter()
+            .filter_map(|c| if let Constraint::PointOnCircle { p, c } = *c { Some(OnCircle { point: p, centre: c }) } else { None })
+            .filter(|o| !drawn.contains(&o.point))
+            .collect();
+        let anchors: std::collections::HashSet<Id> = on.iter().filter(|o| self.constraints.iter().any(|k| o.levelled_by(k))).map(|o| o.point).collect();
+        self.constraints
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| match **c {
+                Constraint::PointOnCircle { p, .. } => anchors.contains(&p),
+                Constraint::Horizontal { .. } | Constraint::Vertical { .. } => on.iter().any(|o| anchors.contains(&o.point) && o.levelled_by(c)),
+                _ => false,
+            })
+            .map(|(ci, _)| ci)
+            .collect()
     }
     /// THE CONSTRAINTS A CUT CORNER HOLDS ITSELF BY, by their index: the virtual sharp standing on the extension of each
     /// side (`PointOnLine` of a point no geometry ends at), the legs of a symmetric chamfer kept equal on it (`Equal` from
@@ -1091,5 +1119,21 @@ impl Constraint {
                 | Constraint::EdgeDistance { driven: true, .. }
                 | Constraint::CurveDistance { driven: true, .. }
         )
+    }
+}
+
+/// A POINT HELD ON A CIRCLE, and the centre of that circle.
+struct OnCircle {
+    point: Id,
+    centre: Id,
+}
+
+impl OnCircle {
+    /// Is constraint `c` the one setting this point level with the centre of its circle or upright of it.
+    fn levelled_by(&self, c: &Constraint) -> bool {
+        match *c {
+            Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } => (a == self.centre && b == self.point) || (a == self.point && b == self.centre),
+            _ => false,
+        }
     }
 }
