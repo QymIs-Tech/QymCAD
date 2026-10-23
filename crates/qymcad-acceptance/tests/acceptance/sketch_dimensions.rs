@@ -412,3 +412,42 @@ probe! {
         assert_eq!(after, before + 1, "Enter after the side was picked laid {} constraints, not the one dimension; the status line says {:?}", after - before, s.status());
     }
 }
+
+/// A LINEAR DIMENSION CLICKED ON THE POINTS OF TWO CIRCLES their centre lines cross them at, `ends`, placed above them and
+/// given `value`: answers how wide the sketch stands then.
+fn across_after_a_dimension_at(ends: [(f64, f64); 2], value: &str) -> f64 {
+    let mut s = Fixture::TwoCirclesInSketch.start();
+    diameter_laid(&mut s, (5.0, 0.0), "10");
+    diameter_laid(&mut s, (35.0, 0.0), "10");
+    let hint = s.word("tb-dim-hint");
+    s.press_hint(&hint);
+    for (x, y) in ends {
+        let at = s.on_sketch(x, y);
+        s.click(at);
+    }
+    let above = s.on_sketch(15.0, 12.0);
+    s.click(above);
+    s.type_text(value).key(Key::Enter);
+    let sk = s.document().sketches[0].clone();
+    sk.max[0] - sk.min[0]
+}
+
+probe! {
+    /// A DIMENSION STANDS ON THE POINTS CLICKED: clicked on the far sides of two circles, where their centre lines cross
+    /// them, it measures from far side to far side - two circles of diameter 10 given 50 so stand 50 across. Reported
+    /// behaviour: the dimension went to the near sides, and the circles stood 60 across.
+    fn a_dimension_between_the_far_sides_of_two_circles_stands_on_them() {
+        let across = across_after_a_dimension_at([(-5.0, 0.0), (35.0, 0.0)], "50");
+        assert!((across - 50.0).abs() < 0.01, "a dimension of 50 clicked on the far sides of two circles of diameter 10: the sketch stands {across} across, not 50");
+    }
+}
+
+probe! {
+    /// A DIMENSION FROM THE FAR SIDE OF ONE CIRCLE TO THE NEAR SIDE OF THE OTHER stands on the two points clicked: given
+    /// 40, the circles of diameter 10 stand 50 across - 40 from the far side of the first to the near side of the second,
+    /// and the second whole beyond it.
+    fn a_dimension_from_a_far_side_to_a_near_side_stands_on_them() {
+        let across = across_after_a_dimension_at([(-5.0, 0.0), (25.0, 0.0)], "40");
+        assert!((across - 50.0).abs() < 0.01, "a dimension of 40 clicked from the far side of one circle to the near side of the other: the sketch stands {across} across, not 50");
+    }
+}

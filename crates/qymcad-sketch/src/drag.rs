@@ -315,6 +315,12 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     if let Some(id) = qymcad_pick::nearest_sketch_point(&sk.pick(), rect, pos, si) {
         return Some(qymcad_ui_state::DimRef::Point(id));
     }
+    // 1b) THE POINT A CENTRE LINE CROSSES A CIRCLE OR AN ARC AT, the pointer pulled to it as a drawing is: the dimension
+    // stands on that point, far side or near, top or bottom. Taken as the curve, it was the least distance - clicked on
+    // the far sides of two circles, it measured between the near ones
+    if let Some(id) = quadrant_under(sk, rect, pos, si) {
+        return Some(qymcad_ui_state::DimRef::Point(id));
+    }
     // 2) the curve under the cursor, of whatever kind: a line by its ends; a circle, an arc, an ellipse, a spline is the
     // curve itself - a distance to it is the least one, to its rim, as the person sees it measured
     if let Some(r) = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si).map(|eid| curve_ref(sk, si, eid)) {
@@ -335,6 +341,33 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
         return Some(qymcad_ui_state::DimRef::Point(qymcad_ui_state::materialize_ref(&mut *sk.project, si, r)));
     }
     None
+}
+
+/// THE POINT OF A CIRCLE OR AN ARC UNDER THE POINTER where its centre line crosses it - one of its quadrants - laid as a
+/// point of the sketch held there: on the curve, level with the centre or upright of it. `None` when no such point is in
+/// reach of the pointer.
+fn quadrant_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> Option<Id> {
+    use qymcad_core::model::{Constraint, SketchPoint};
+    let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
+    let reach = qymcad_ui_state::grab::grab(sk.set, Grab::Point);
+    let s = sk.project.sketches.get(si)?;
+    let (entity, centre, at) = s
+        .entities
+        .iter()
+        .filter_map(|e| Some((e, e.kind.round_centre()?, qymcad_core::model::curve::Curve::of(s, e)?)))
+        .flat_map(|(e, c, curve)| curve.quadrants().into_iter().map(move |q| (e.clone(), c, q)))
+        .map(|t| (sh.at(t.2).distance(pos), t))
+        .filter(|(d, _)| *d <= reach)
+        .min_by(|a, b| a.0.total_cmp(&b.0))?
+        .1;
+    let c = qymcad_ui_state::sketch_pt(&*sk.project, si, centre)?;
+    let id = sk.project.alloc_id();
+    let level = if (at.y - c.y).abs() < (at.x - c.x).abs() { Constraint::Horizontal { a: centre, b: id } } else { Constraint::Vertical { a: centre, b: id } };
+    let s = &mut sk.project.sketches[si];
+    s.points.push(SketchPoint { id, x: at.x, y: at.y });
+    s.constraints.push(qymcad_core::model::point_on(&entity, id));
+    s.constraints.push(level);
+    Some(id)
 }
 
 pub fn power_trim_path_test(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, a: Pos2, b: Pos2) -> usize {
