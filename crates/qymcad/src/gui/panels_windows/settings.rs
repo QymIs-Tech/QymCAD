@@ -268,7 +268,10 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                     ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::PutsDown, crate::i18n::tr("settings-again-puts-down"));
                     ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::Cycles, crate::i18n::tr("settings-again-cycles"));
                 });
-                ui.label(egui::RichText::new(crate::i18n::tr("settings-again-hint")).weak().small());
+                // the key of the circle bound now, as the table under the hint writes it: rebound there, the factory C
+                // would name a key that no longer takes the circle
+                let circle = qymcad_ui_state::key_label(&qymcad_ui_state::hotkey_key(wc.set, "sketch.circle"));
+                ui.label(egui::RichText::new(crate::i18n::tr1("settings-again-hint", "key", &circle)).weak().small());
                 ui.add_space(8.0);
             }
             if show("settings-hotkeys") {

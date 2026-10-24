@@ -1065,6 +1065,28 @@ mod in_the_settings {
         assert!(left.is_none(), "the search hid the table and its question was left: {left:?}");
     }
 
+    /// THE HINT OVER THE TABLE NAMES THE KEY OF THE CIRCLE BOUND NOW: the circle rebound to J in the table, the hint says
+    /// "J pressed again", not the factory C, which no longer takes the circle.
+    #[test]
+    fn the_hint_of_the_key_pressed_again_names_the_key_bound_now() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        // the rows of the sketch stand below the fold of the section: the filter brings the circle up
+        let opened = open_the_keys(&mut hand) && hand.press_word(&tr("hotkeys-filter-hint"), egui::Pos2::ZERO);
+        hand.type_text("circle").frame(Vec::new());
+        let circle = crate::gui::hotkeys::hotkey_what(qymcad_ui_state::HOTKEYS.iter().find(|r| r.action == "sketch.circle").expect("the circle row"));
+        let row = hand.written_at(&circle);
+        let waits = row.is_some_and(|r| hand.press_word("C", r.center())) && hand.shows(&tr("hotkeys-press"));
+        hand.key(Key::J).frame(Vec::new());
+        let bound = qymcad_ui_state::hotkey_key(&hand.app.set, "sketch.circle");
+        let (named, factory) = (hand.words_drawn().iter().any(|(w, _)| w.contains("J pressed again")), hand.words_drawn().iter().any(|(w, _)| w.contains("C pressed again")));
+        qymcad_i18n::set_language(&prev);
+        assert!(opened && waits && bound == "J", "setup: the circle was not rebound to J in the table (opened: {opened}, waits: {waits}, bound: {bound:?})");
+        assert!(named && !factory, "the hint does not name the key of the circle bound now (J named: {named}, C named: {factory})");
+    }
+
     /// THE KEYBOARD SECTION CLICKED WHILE IT IS SHOWN KEEPS THE TABLE WAITING: the table stays on screen, so the key
     /// it waits for is still the person's to press. Before, any click on a section dropped the waiting.
     #[test]
