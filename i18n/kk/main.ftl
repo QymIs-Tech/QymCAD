@@ -794,6 +794,7 @@ tool-rotate = Бұру
 opt-rect-rotated = Бұрылған: 2 нүкте қабырғаны береді, үшіншісі биіктікті
 opt-text-as-note = Ескертпе ретінде қою (геометрия емес)
 opt-rect-mode = Тіктөрт.:
+opt-polygon-mode = Көпбұрыш:
 tool-rect = Тіктөртбұрыш
 opt-radius = Радиус
 opt-fillet-chord = Хорда

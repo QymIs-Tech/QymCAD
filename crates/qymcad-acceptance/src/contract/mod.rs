@@ -141,6 +141,9 @@ pub enum Entry {
     Button(Word),
     /// A key, with these modifiers held.
     Key(qymcad::Modifiers, Key),
+    /// THE KEY PRESSED TWICE with Settings -> Keyboard set to take the next way: the tool in hand by the way of its bar
+    /// written with this word, the way after its first, which the work then makes.
+    KeyAgain(Key, Word),
     /// The command search, by the command's name.
     Search(Word),
     /// The command search, by the name it shows for a command that has no name of its own: the title of the article

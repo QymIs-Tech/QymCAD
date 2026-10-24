@@ -337,6 +337,7 @@ impl App {
                 BarAsk::ToggleLibrary => toggle_parts_library(&mut self.parts, &mut self.win),
                 BarAsk::ToggleSketchPick => self.toggle_sketch_pick(),
                 BarAsk::SketchSelectMode => crate::gui::sketching::sketch_select_mode(&mut self.sketch_ctx()),
+                BarAsk::NextWay(t) => qymcad_sketch::take_next_way(&mut self.sketch_ctx(), t),
                 BarAsk::Constraint(code) => crate::gui::sketching::constraint_button(&mut self.sketch_ctx(), code),
                 BarAsk::JointPick => self.start_joint_pick(),
                 BarAsk::GroundPick => self.start_ground_pick(),
@@ -876,9 +877,7 @@ impl App {
         if edit_si(&self.project, &self.sketch_ses).is_none() {
             self.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         }
-        qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), Some(t));
-        self.viewing.mode_3d = false;
-        self.status = qymcad_sketch::drawing_hint(self.tools.armed.drawing());
+        qymcad_sketch::take_drawing_tool(&mut self.sketch_ctx(), t);
     }
 
     /// Create a sketch on a given plane (World, Datum or Face) and enter its editing.

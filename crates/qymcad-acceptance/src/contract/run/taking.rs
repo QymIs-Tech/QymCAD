@@ -56,6 +56,30 @@ pub(crate) fn entry(tool: &Tool) {
         if !in_hand(&mut s, tool) {
             problems.push(format!("{} took the tool, but the bar does not name it: {:?}", describe(e), s.in_hand()));
         }
+        // THE WAY THE KEY PRESSED AGAIN REACHED is the one the work makes
+        if let Entry::KeyAgain(_, way) = e {
+            match tool.modes.iter().flat_map(|g| g.iter()).find(|m| m.word == *way) {
+                Some(mode) => {
+                    work(&mut s, tool, mode.clicks);
+                    for f in tool.fields.iter().filter(|f| f.when == When::After) {
+                        if field_if_there(&mut s, f).is_some() {
+                            type_into_field(&mut s, f, &fmt(f.typical));
+                            enter_key(&mut s);
+                        }
+                    }
+                    match &mode.outcome {
+                        Some(want) => {
+                            if let Err(e2) = matches(&mut s, want) {
+                                problems.push(format!("{} did not make the way {way}: {e2}", describe(e)));
+                            }
+                        }
+                        None => problems.push(format!("{}: the way {way} makes nothing to judge it by", describe(e))),
+                    }
+                }
+                None => problems.push(format!("{}: the bar has no way {way}", describe(e))),
+            }
+            continue;
+        }
         if let (Entry::Button(hint), false) = (e, at_rest || PRESS_MOVES_ON.contains(&tool.id)) {
             // a button that stays pressed may speak of itself another way while its tool is in hand ("click a part
             // ... Esc leaves"): it is pressed again where it stands, as a person presses it
@@ -99,6 +123,7 @@ pub(crate) fn describe(e: &Entry) -> String {
     match e {
         Entry::Button(h) => format!("the button {h}"),
         Entry::Key(m, k) => format!("the key {m:?} {k:?}"),
+        Entry::KeyAgain(k, way) => format!("the key {k:?} pressed twice to take the next way, {way}"),
         Entry::Search(n) => format!("the command search for {n}"),
         Entry::SearchByArticle => "the command search by the title of its article".to_string(),
         Entry::Menu(p) => format!("the menu {p:?}"),

@@ -792,6 +792,7 @@ tool-rotate = Поворот
 opt-rect-rotated = Повернутий: 2 точки — сторона, 3-я — висота
 opt-text-as-note = Поставити як текст-нотатку (не геометрія)
 opt-rect-mode = Прямокут.:
+opt-polygon-mode = Багатокут.:
 tool-rect = Прямокутник
 opt-radius = Радіус
 opt-fillet-chord = Хорда

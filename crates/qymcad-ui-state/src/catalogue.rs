@@ -154,7 +154,9 @@ pub fn pressed(launch: Launch, bc: &crate::BarCtx) -> bool {
 }
 
 /// THE SAME COMMAND TAKEN AGAIN WHILE IT IS IN HAND PUTS IT DOWN: what that asks for - the arrow of a sketch for a tool
-/// of a sketch, every tool put down for the rest - or nothing when the command is not in hand. Its button, its row of
+/// of a sketch, every tool put down for the rest - or nothing when the command is not in hand. With Settings -> Keyboard set to
+/// `Again::Cycles` a drawing tool of a sketch asks for its next way instead; the sketch puts down a shape with one way
+/// (`BarAsk::NextWay`), so a tool without ways answers the same under either choice. Its button, its row of
 /// "More", the search and its key all come here (`command_catalog::press`, `command_catalog::key_again`), so no tool
 /// answers a second press by itself.
 ///
@@ -173,6 +175,7 @@ pub fn again(launch: Launch, bc: &crate::BarCtx) -> Option<crate::BarAsk> {
         return None;
     }
     Some(match launch {
+        Launch::SkTool(shape) if bc.set.again == crate::Again::Cycles => crate::BarAsk::NextWay(shape),
         Launch::SkTool(_) | Launch::Dim(_) | Launch::ClickOp(_) | Launch::Modify(_) | Launch::SkPattern(_) | Launch::SkMove(_) | Launch::FilletAll | Launch::Measure2d | Launch::Constraint(_) => {
             crate::BarAsk::SketchSelectMode
         }

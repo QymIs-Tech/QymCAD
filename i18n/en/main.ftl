@@ -794,6 +794,7 @@ tool-rotate = Rotate
 opt-rect-rotated = Rotated: 2 points give a side, the third gives the height
 opt-text-as-note = Place it as a note (not geometry)
 opt-rect-mode = Rect:
+opt-polygon-mode = Polygon:
 tool-rect = Rectangle
 opt-radius = Radius
 opt-fillet-chord = Chord

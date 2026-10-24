@@ -94,6 +94,31 @@ fn ways(key: &'static str, caption: Option<&str>, words: &[ModeWord], now: usize
     Opt::Modes { key: OptKey::of(key), caption: caption.map(qymcad_i18n::tr), choices, current: Some(now) }
 }
 
+/// THE KEY OF THE GROUP OF WAYS ON THE BAR OF `shape`, the name a click on one of its words comes back under; none for a
+/// shape with one way.
+pub(crate) fn ways_key(shape: SketchShape) -> Option<&'static str> {
+    match shape {
+        SketchShape::Circle => Some("circ_mode"),
+        SketchShape::Rect => Some("rect_mode"),
+        SketchShape::Arc => Some("arc_mode"),
+        SketchShape::Polygon => Some("poly_mode"),
+        SketchShape::Line | SketchShape::Point | SketchShape::Slot | SketchShape::Ellipse | SketchShape::Spline | SketchShape::Text => None,
+    }
+}
+
+/// THE WAY OF `shape` IN FORCE IN WORDS, for the status line: the caption of its bar and the word of the way, "Circle: by 2
+/// points"; none for a shape with one way.
+pub(crate) fn way_said(prefs: &qymcad_ui_state::SketchToolPrefs, shape: SketchShape) -> Option<String> {
+    let (caption, word) = match shape {
+        SketchShape::Circle => ("opt-circle-mode", &CIRCLE_WAYS[prefs.circ_mode.index()]),
+        SketchShape::Rect => ("opt-rect-mode", &RECT_WAYS[prefs.rect_mode.index()]),
+        SketchShape::Arc => ("opt-arc-mode", &ARC_WAYS[prefs.arc_mode.index()]),
+        SketchShape::Polygon => ("opt-polygon-mode", &POLYGON_WAYS[prefs.poly_mode.index()]),
+        SketchShape::Line | SketchShape::Point | SketchShape::Slot | SketchShape::Ellipse | SketchShape::Spline | SketchShape::Text => return None,
+    };
+    Some(format!("{} {}", qymcad_i18n::tr(caption), qymcad_i18n::tr(word.word)))
+}
+
 /// THE WAYS OF A RECTANGLE: two corners, from the centre, three points of a turned one.
 const RECT_WAYS: [ModeWord; RectWay::ALL.len()] = [
     ModeWord { word: "opt-rect-2corners", hint: None },
