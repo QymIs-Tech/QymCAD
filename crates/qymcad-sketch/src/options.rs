@@ -1,7 +1,7 @@
 //! THE OPTIONS OF THE SKETCH TOOL IN HAND, as data for the bar of the frame: its name, its switches, its ways and its
 //! numbers. What is touched comes back here (`opt_took`); the frame draws them, as it does for every tool.
 
-use qymcad_ui_state::{AsLit, Armed, ClickTool, Did, EditTool, Limits, Mode, MoveKind, Number, Opt, OptKey, PatternKind, SketchShape, Zero};
+use qymcad_ui_state::{ArcWay, AsLit, Armed, CircleWay, ClickTool, Did, EditTool, Limits, Mode, MoveKind, Number, Opt, OptKey, PatternKind, PolygonWay, RectWay, SketchShape, Way, Zero};
 
 /// The name the bar gives the tool in hand.
 pub(crate) fn tool_name(armed: &Armed) -> String {
@@ -95,14 +95,14 @@ fn ways(key: &'static str, caption: Option<&str>, words: &[ModeWord], now: usize
 }
 
 /// THE WAYS OF A RECTANGLE: two corners, from the centre, three points of a turned one.
-const RECT_WAYS: [ModeWord; 3] = [
+const RECT_WAYS: [ModeWord; RectWay::ALL.len()] = [
     ModeWord { word: "opt-rect-2corners", hint: None },
     ModeWord { word: "opt-rect-centre", hint: None },
     ModeWord { word: "opt-rect-3pt", hint: Some("opt-rect-rotated") },
 ];
 
 /// THE WAYS OF A CIRCLE: a centre and a radius, the two ends of a diameter, touching two curves, three points.
-const CIRCLE_WAYS: [ModeWord; 4] = [
+const CIRCLE_WAYS: [ModeWord; CircleWay::ALL.len()] = [
     ModeWord { word: "opt-circle-centre-radius", hint: None },
     ModeWord { word: "opt-circle-2pt", hint: Some("opt-circle-diameter-ends") },
     ModeWord { word: "opt-tangent-m", hint: Some("opt-tangent-hint") },
@@ -110,14 +110,15 @@ const CIRCLE_WAYS: [ModeWord; 4] = [
 ];
 
 /// THE WAYS OF AN ARC: a centre, a start and an end; three points; touching the curve it starts from.
-const ARC_WAYS: [ModeWord; 3] = [
+const ARC_WAYS: [ModeWord; ArcWay::ALL.len()] = [
     ModeWord { word: "opt-arc-cse", hint: None },
     ModeWord { word: "opt-rect-3pt", hint: Some("opt-arc-3pt") },
     ModeWord { word: "opt-tangent", hint: Some("opt-arc-smooth-hint") },
 ];
 
 /// THE WAYS OF A POLYGON: inscribed in its circle, about it, by the length of an edge.
-const POLYGON_WAYS: [ModeWord; 3] = [ModeWord { word: "opt-polygon-inscribed", hint: None }, ModeWord { word: "opt-polygon-circumscribed", hint: None }, ModeWord { word: "opt-by-edge", hint: None }];
+const POLYGON_WAYS: [ModeWord; PolygonWay::ALL.len()] =
+    [ModeWord { word: "opt-polygon-inscribed", hint: None }, ModeWord { word: "opt-polygon-circumscribed", hint: None }, ModeWord { word: "opt-by-edge", hint: None }];
 
 /// WHAT A PROJECTION TAKES: one edge under the cursor, or the whole outline of the face the sketch lies on.
 const PROJECT_WAYS: [ModeWord; 2] = [ModeWord { word: "opt-edge", hint: Some("opt-project-edge-hint") }, ModeWord { word: "opt-face-outline", hint: Some("opt-face-outline-hint") }];
@@ -212,17 +213,17 @@ fn drawing_opts(sk: &qymcad_ui_state::SketchCtx, shape: SketchShape) -> Vec<Opt>
         }
         SketchShape::Polygon => {
             opts.push(number(OptKey::of("poly_n"), "opt-sides", f64::from(prefs.poly_n), count(3.0..=64.0)));
-            opts.push(ways("poly_mode", None, &POLYGON_WAYS, usize::from(prefs.poly_mode)));
+            opts.push(ways("poly_mode", None, &POLYGON_WAYS, prefs.poly_mode.index()));
         }
-        SketchShape::Rect => opts.push(ways("rect_mode", Some("opt-rect-mode"), &RECT_WAYS, usize::from(prefs.rect_mode))),
+        SketchShape::Rect => opts.push(ways("rect_mode", Some("opt-rect-mode"), &RECT_WAYS, prefs.rect_mode.index())),
         SketchShape::Circle => {
             // centre and radius, two points, touching two curves, three points: the modes of one tool, as the arc's
-            opts.push(ways("circ_mode", Some("opt-circle-mode"), &CIRCLE_WAYS, usize::from(prefs.circ_mode)));
-            if prefs.circ_mode == 2 {
+            opts.push(ways("circ_mode", Some("opt-circle-mode"), &CIRCLE_WAYS, prefs.circ_mode.index()));
+            if prefs.circ_mode == CircleWay::Tangent {
                 opts.push(number(OptKey::of("sk_circle_touching_r"), "opt-radius", prefs.circ_r, Limits { zero: Zero::Refused, ..mm(0.01..=10000.0) }));
             }
         }
-        SketchShape::Arc => opts.push(ways("arc_mode", Some("opt-arc-mode"), &ARC_WAYS, usize::from(prefs.arc_mode))),
+        SketchShape::Arc => opts.push(ways("arc_mode", Some("opt-arc-mode"), &ARC_WAYS, prefs.arc_mode.index())),
         _ => {}
     }
     opts
@@ -295,7 +296,6 @@ fn click_opts(sk: &qymcad_ui_state::SketchCtx, click: ClickTool) -> Vec<Opt> {
 
 /// WHAT WAS DONE TO AN OPTION OF THE SKETCH TOOL IN HAND, done to the tool.
 pub(crate) fn opt_took(sk: &mut qymcad_ui_state::SketchCtx, did: Did) {
-    let to_u8 = |n: usize| u8::try_from(n).unwrap_or(0);
     match did {
         Did::Switched { key } => match key.name {
             "construction" => sk.tool.construction = !sk.tool.construction,
@@ -307,17 +307,17 @@ pub(crate) fn opt_took(sk: &mut qymcad_ui_state::SketchCtx, did: Did) {
             _ => {}
         },
         Did::Chose { key, index } => match key.name {
-            "poly_mode" => sk.tool_prefs.poly_mode = to_u8(index),
+            "poly_mode" => sk.tool_prefs.poly_mode = PolygonWay::at(index),
             "rect_mode" | "arc_mode" => {
                 if key.name == "rect_mode" {
-                    sk.tool_prefs.rect_mode = to_u8(index);
+                    sk.tool_prefs.rect_mode = RectWay::at(index);
                 } else {
-                    sk.tool_prefs.arc_mode = to_u8(index);
+                    sk.tool_prefs.arc_mode = ArcWay::at(index);
                 }
                 sk.tool.pts.clear();
             }
             "circ_mode" => {
-                sk.tool_prefs.circ_mode = to_u8(index);
+                sk.tool_prefs.circ_mode = CircleWay::at(index);
                 sk.tool.pts.clear();
                 sk.tool.circ_tan.clear();
             }

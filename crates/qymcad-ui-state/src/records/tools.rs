@@ -72,6 +72,71 @@ impl SketchShape {
     ];
 }
 
+/// A WAY OF A DRAWING TOOL: one of the ways of building its shape the options bar offers, in the order of the bar.
+pub trait Way: Copy + PartialEq + 'static {
+    /// Every way of the tool, in the order of the bar.
+    const WAYS: &'static [Self];
+
+    /// Its place on the bar.
+    fn index(self) -> usize;
+
+    /// The way at a place on the bar; past the end, the last.
+    fn at(index: usize) -> Self {
+        Self::WAYS[index.min(Self::WAYS.len() - 1)]
+    }
+}
+
+/// THE WAYS OF ONE TOOL FROM ONE LIST: the enum, its `ALL` in the order of the bar and its place on the bar are all made
+/// of the same names in the same order, the first the default. A way added to the enum is on the bar and in `ALL` by
+/// that alone; written as an enum and a list apart, a way left out of the list compiled and was taken for the first.
+macro_rules! ways {
+    ($(#[$doc:meta])* $name:ident { $first:ident $(, $rest:ident)* $(,)? }) => {
+        $(#[$doc])*
+        #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+        pub enum $name {
+            #[default]
+            $first,
+            $($rest,)*
+        }
+
+        impl $name {
+            /// Every way, in the order of the bar.
+            pub const ALL: [$name; 1 $(+ ways!(@one $rest))*] = [$name::$first $(, $name::$rest)*];
+        }
+
+        impl Way for $name {
+            const WAYS: &'static [Self] = &Self::ALL;
+
+            fn index(self) -> usize {
+                self as usize
+            }
+        }
+    };
+    (@one $way:ident) => {
+        1
+    };
+}
+
+ways! {
+    /// THE WAYS OF A CIRCLE: a centre and a radius, the two ends of a diameter, touching two curves, three points.
+    CircleWay { CentreRadius, TwoPoints, Tangent, ThreePoints }
+}
+
+ways! {
+    /// THE WAYS OF A RECTANGLE: two corners, a centre and a corner, three points of a turned one.
+    RectWay { TwoCorners, Centre, ThreePoints }
+}
+
+ways! {
+    /// THE WAYS OF AN ARC: a centre, a start and an end; three points; touching the curve it starts from.
+    ArcWay { CentreStartEnd, ThreePoints, Tangent }
+}
+
+ways! {
+    /// THE WAYS OF A POLYGON: inscribed in its circle, about it, by the length of an edge.
+    PolygonWay { Inscribed, Circumscribed, ByEdge }
+}
+
 /// A TOOL OF A SKETCH THAT ACTS ON A CLICK.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum ClickTool {
@@ -705,4 +770,35 @@ pub struct FeatPicks<'a> {
     pub sweep: &'a mut SweepParams,
     pub thread: &'a mut ThreadParams,
     pub trim: &'a mut TrimTool,
+}
+
+#[cfg(test)]
+mod ways_tests {
+    use super::*;
+
+    /// Every way of a list stands at its own place on the bar, and the place of a way leads back to it.
+    fn in_order<W: Way + std::fmt::Debug>(wrong: &mut Vec<String>) {
+        for (place, way) in W::WAYS.iter().enumerate() {
+            if way.index() != place || W::at(place) != *way {
+                wrong.push(format!("{way:?} stands at {place} and says {}", way.index()));
+            }
+        }
+    }
+
+    /// THE WAYS OF EVERY TOOL ARE THE ONES OF ITS BAR, in its order: the four of the circle, the three of the rectangle,
+    /// the arc and the polygon, each at its own place, and a place past the end gives the last.
+    #[test]
+    fn the_ways_of_every_tool_stand_in_the_order_of_its_bar() {
+        let mut wrong = Vec::new();
+        in_order::<CircleWay>(&mut wrong);
+        in_order::<RectWay>(&mut wrong);
+        in_order::<ArcWay>(&mut wrong);
+        in_order::<PolygonWay>(&mut wrong);
+        assert!(wrong.is_empty(), "{wrong:#?}");
+        assert_eq!(CircleWay::ALL, [CircleWay::CentreRadius, CircleWay::TwoPoints, CircleWay::Tangent, CircleWay::ThreePoints]);
+        assert_eq!(RectWay::ALL, [RectWay::TwoCorners, RectWay::Centre, RectWay::ThreePoints]);
+        assert_eq!(ArcWay::ALL, [ArcWay::CentreStartEnd, ArcWay::ThreePoints, ArcWay::Tangent]);
+        assert_eq!(PolygonWay::ALL, [PolygonWay::Inscribed, PolygonWay::Circumscribed, PolygonWay::ByEdge]);
+        assert_eq!(CircleWay::at(9), CircleWay::ThreePoints, "a place past the end must give the last way");
+    }
 }
