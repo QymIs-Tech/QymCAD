@@ -7,7 +7,7 @@ The settings window is split into sections; above them is a search that finds a 
 - **General** — language of the program and of the help, how to open the help, the start screen and
   the last project, units on import, autosave, undo depth, how many processors to give to computing, update checks, recent
   files, the settings profile.
-- **Keyboard** — the keys of the commands and their reassigning.
+- **Keyboard** — the keys of the commands and their reassigning, what the key of a tool in hand does pressed again.
 - **Appearance** — colour scheme, interface scale.
 - **Viewport** — engine, projection, shading, view cube, mouse navigation, wheel zoom, pointing
   precision, ghost transparency, field of view, antialiasing.

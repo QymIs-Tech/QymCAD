@@ -393,6 +393,19 @@ fn layout_or_standard<'de, D: serde::Deserializer<'de>>(d: D) -> Result<std::col
     })
 }
 
+/// WHAT THE KEY, BUTTON OR SEARCH ROW OF THE TOOL IN HAND DOES PRESSED AGAIN (Settings -> Keyboard).
+///
+/// A tool with one way answers a second press by being put down whatever is chosen here: the choice reaches only the
+/// tools that offer ways on their bar - the circle, the rectangle, the arc and the polygon.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Again {
+    /// The tool is put down; the way left on its bar is kept for the next time.
+    #[default]
+    PutsDown,
+    /// The next way of the tool is taken, after the last the first; a tool taken anew starts at its first way.
+    Cycles,
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -455,6 +468,8 @@ pub struct Settings {
     /// who had ever touched the keys - their action simply would not be in the record. The differences, by
     /// contrast, survive any growth of the table.
     pub hotkeys: std::collections::BTreeMap<String, String>,
+    /// WHAT THE KEY OF THE TOOL IN HAND DOES PRESSED AGAIN: puts the tool down, or takes its next way.
+    pub again: Again,
     /// THE HELP'S LANGUAGE, SEPARATE FROM THE INTERFACE'S. Empty means whatever the interface uses.
     ///
     /// Not a whim: CAD terminology is English, and someone working in a translated interface may well want to read

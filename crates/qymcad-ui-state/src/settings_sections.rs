@@ -82,7 +82,7 @@ impl SettingsSection {
                 "settings-recent-limit",
                 "settings-profile",
             ],
-            Keyboard => &["settings-hotkeys"],
+            Keyboard => &["settings-again", "settings-hotkeys"],
             Appearance => &["settings-scheme", "settings-ui-scale", "settings-icon-themes"],
             Viewport => &[
                 "settings-engine",
@@ -164,7 +164,7 @@ impl SettingsSection {
                 // "forget what I did"; the File menu has a separate item for the latter.
             }
             // The keys themselves are put back by the reset buttons of the table, one row or all of them.
-            Keyboard => {}
+            Keyboard => s.again = d.again,
             Appearance => {
                 s.scheme = d.scheme;
                 s.ui_scale = d.ui_scale;

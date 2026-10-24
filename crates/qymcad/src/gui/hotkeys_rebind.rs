@@ -41,6 +41,19 @@ mod tests {
         assert_eq!(qymcad_ui_state::hotkey_action(&restarted.set, "sketch", egui::Key::Z), Some("sketch.circle"), "after a restart the key went back to the factory one — the edit is lost");
     }
 
+    /// WHAT A KEY PRESSED AGAIN DOES LIVES IN THE SETTINGS, and so survives a restart.
+    #[test]
+    fn the_key_pressed_again_survives_a_restart() {
+        let mut app = App::default();
+        assert_eq!(app.set.again, qymcad_ui_state::Again::PutsDown, "a key pressed again must put its tool down until the person chooses otherwise");
+        super::super::hotkeys::open_keyboard_settings(&mut app);
+        let chosen = crate::gui::hand::Hand::new(&mut app).press_word(&crate::i18n::tr("settings-again-cycles"), egui::Pos2::ZERO);
+        assert!(chosen, "setup: no choice \"takes the next way\" in Settings -> Keyboard");
+        let ron = ron::ser::to_string(&app.set).expect("the settings serialise");
+        let back: super::super::Settings = ron::from_str(&ron).expect("and read back");
+        assert_eq!(back.again, qymcad_ui_state::Again::Cycles, "after a restart the key pressed again puts its tool down again - the choice is lost");
+    }
+
     /// ONLY THE DIFFERENCES ARE STORED. A full layout in the record would mean that a new tool of the
     /// program never appears for anyone who has ever touched the keys: its action is simply not in the
     /// record.

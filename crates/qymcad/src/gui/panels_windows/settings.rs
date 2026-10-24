@@ -261,6 +261,15 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             }
         }
         Sec::Keyboard => {
+            if show("settings-again") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-again"));
+                    ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::PutsDown, crate::i18n::tr("settings-again-puts-down"));
+                    ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::Cycles, crate::i18n::tr("settings-again-cycles"));
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-again-hint")).weak().small());
+                ui.add_space(8.0);
+            }
             if show("settings-hotkeys") {
                 ui.label(egui::RichText::new(crate::i18n::tr("settings-hotkeys")).strong());
                 crate::gui::hotkeys::hotkeys_table(wc, ui);

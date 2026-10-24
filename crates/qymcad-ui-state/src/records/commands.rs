@@ -645,6 +645,7 @@ impl Default for Settings {
             kernel_threads: 0,   // all the cores but one
             persp_fov_deg: 35.5, // equals the former PERSP_FOV_HALF_TAN of 0.32: 2*atan(0.32)
             hotkeys: Default::default(),
+            again: Again::PutsDown,
             help_lang: String::new(),
             help_external: false,
             gpu_viewport: true,

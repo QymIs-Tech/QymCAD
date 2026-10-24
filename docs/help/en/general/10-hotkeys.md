@@ -53,6 +53,18 @@ There is no need to click away to free the keyboard.
 `Ctrl+K` opens the command search **always**, including from a field. Space does the same, but only
 while the cursor is outside a field — inside one it types a space.
 
+## A key pressed again
+
+The key of the tool in hand pressed again puts the tool down. Settings -> Keyboard, “The key of a tool in hand,
+pressed again”, can make it take the next way of the tool instead: `C` draws a circle by its centre and radius,
+`C` again by two points, then touching two curves, then by three points, and the next `C` is back at the centre
+and radius. The circle, the rectangle, the arc and the polygon have ways; any other tool is put down either way.
+
+A tool taken anew starts at its first way. A way chosen in the options bar holds, and the next press goes on from
+it. The way changes as it changes when it is picked in the options bar: points already clicked for a rectangle,
+a circle or an arc are dropped, and a polygon keeps its centre. To put a tool with ways down, press
+`Esc`.
+
 ## Reassigning
 
 In the table click the key of an action, then press the one you want. If it is already

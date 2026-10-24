@@ -38,6 +38,7 @@ mod tests {
             scheme: "custom-light".into(),
             viewcube_size: 2,
             hotkeys: [("part.extrude".to_string(), "W".to_string())].into_iter().collect(),
+            again: qymcad_ui_state::Again::Cycles,
             help_lang: "en".into(),
             help_external: !d.help_external,
             open_last: !d.open_last,

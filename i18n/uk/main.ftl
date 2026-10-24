@@ -303,6 +303,10 @@ scheme-color-icon_datum_primary = бази: основний акцент
 scheme-color-icon_datum_secondary = бази: додатковий акцент
 # --- ГАРЯЧІ КЛАВІШІ ---
 settings-hotkeys = Гарячі клавіші
+settings-again = Клавіша інструмента в руці, натиснута ще раз
+settings-again-puts-down = Кладе інструмент
+settings-again-cycles = Бере наступний спосіб
+settings-again-hint = Для кола, прямокутника, дуги й багатокутника: C ще раз — коло за двома точками, далі дотичне до двох кривих, далі за трьома точками й знову спочатку. Інструмент з одним способом кладеться в будь-якому разі.
 help-title = Довідка
 help-search = Пошук у довідці
 help-back = Назад

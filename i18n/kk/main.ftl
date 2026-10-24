@@ -304,6 +304,10 @@ scheme-color-icon_datum_secondary = База (қосымша)
 
 # --- KEYBOARD SHORTCUTS ---
 settings-hotkeys = Пернелер тіркесімі
+settings-again = Қолдағы құралдың пернесін қайта басу
+settings-again-puts-down = Құралды қояды
+settings-again-cycles = Келесі тәсілді алады
+settings-again-hint = Шеңбер, тіктөртбұрыш, доға және көпбұрыш үшін: C қайта басылса — шеңбер екі нүкте бойынша, содан кейін екі қисыққа жанама, содан кейін үш нүкте бойынша, және қайтадан басынан. Бір тәсілі бар құрал кез келген жағдайда қойылады.
 help-title = Анықтама
 help-search = Анықтамадан іздеу
 help-back = Артқа

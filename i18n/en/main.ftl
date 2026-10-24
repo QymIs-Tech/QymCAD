@@ -304,6 +304,10 @@ scheme-color-icon_datum_secondary = datum secondary accent
 
 # --- KEYBOARD SHORTCUTS ---
 settings-hotkeys = Keyboard shortcuts
+settings-again = The key of a tool in hand, pressed again
+settings-again-puts-down = Puts the tool down
+settings-again-cycles = Takes the next way
+settings-again-hint = For the circle, the rectangle, the arc and the polygon: C pressed again draws the circle by two points, then touching two curves, then by three points, and back. A tool with one way is put down either way.
 help-title = Help
 help-search = Search the help
 help-back = Back
