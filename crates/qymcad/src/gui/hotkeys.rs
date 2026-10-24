@@ -88,10 +88,36 @@ fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Contex
     });
     ui.separator();
     let q = crate::i18n::search::query(&wc.hotkeys.filter);
+    // THE ROWS THE FILTER KEEPS ARE LAID UNDER AN ID OF THE FILTER, inside one that never changes. A letter typed
+    // moves the rows kept into the places of the rows dropped: under one parent, a place whose every id changed and
+    // whose old widget is gone is a widget that took another id to egui, framed red - typing "ci" framed the key
+    // button of the first row. Under a parent of its own for each filter, every row changes parent with it, which
+    // egui reads as one shift; the scope outside keeps the place of the whole under one id.
+    let shown = qymcad_shell::keyed(ui, "the rows of the table of keys", |ui| qymcad_shell::keyed(ui, ("the rows the filter keeps", q.clone()), |ui| areas(wc, ui, &q)));
+    if shown == 0 {
+        ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr1("hotkeys-nothing", "q", wc.hotkeys.filter.trim())).weak()).wrap());
+    }
+    ui.separator();
+    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
+    // THE FOCUS RULE GOES HERE AND NOT ONLY IN THE HELP. A caret in a field extinguishes
+    // bare letters (otherwise `w` in an expression would launch a command), and Alt is the
+    // only way to reach a tool from there. Not saying so in the hotkey reference means
+    // hiding half the rule: U is pressed in the length field, nothing happens, and the
+    // conclusion drawn is about the program.
+    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
+    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(drawn_in(), frame));
+    esc_in_the_table(wc);
+    capture_hotkey(wc, ctx);
+}
+
+/// THE AREAS OF THE TABLE AND THEIR ROWS answering the filter `q`; how many rows were shown.
+fn areas(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, q: &str) -> usize {
     let mut shown = 0;
     let cols = columns(wc.set, ui, ui.available_width());
     for area in AREAS {
-        let rows: Vec<&HotkeyRow> = HOTKEYS.iter().filter(|r| r.area == area && row_matches(wc.set, r, &q)).collect();
+        let rows: Vec<&HotkeyRow> = HOTKEYS.iter().filter(|r| r.area == area && row_matches(wc.set, r, q)).collect();
         if rows.is_empty() {
             continue;
         }
@@ -119,22 +145,7 @@ fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Contex
         });
         ui.add_space(10.0);
     }
-    if shown == 0 {
-        ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr1("hotkeys-nothing", "q", wc.hotkeys.filter.trim())).weak()).wrap());
-    }
-    ui.separator();
-    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
-    // THE FOCUS RULE GOES HERE AND NOT ONLY IN THE HELP. A caret in a field extinguishes
-    // bare letters (otherwise `w` in an expression would launch a command), and Alt is the
-    // only way to reach a tool from there. Not saying so in the hotkey reference means
-    // hiding half the rule: U is pressed in the length field, nothing happens, and the
-    // conclusion drawn is about the program.
-    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
-    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
-    let frame = ctx.cumulative_frame_nr();
-    ctx.data_mut(|d| d.insert_temp(drawn_in(), frame));
-    esc_in_the_table(wc);
-    capture_hotkey(wc, ctx);
+    shown
 }
 
 /// THE TABLE IS LEFT: the settings closed, or another section chosen. Whatever it was in the middle of is dropped,

@@ -1082,6 +1082,25 @@ mod in_the_settings {
         assert_eq!(held.as_deref(), Some("part.extrude"), "the Keyboard section clicked while shown dropped the waiting of the table");
     }
 
+    /// THE FILTER OF THE TABLE TYPED LETTER BY LETTER MARKS NO WIDGET RED: "c", then "i", each letter a frame, as a person
+    /// types. The rows the filter keeps move up into the places of the rows it drops, and a key button keyed by its
+    /// place took the id of the row before it - egui framed it red (`Hand` refuses such a frame).
+    #[test]
+    fn the_filter_typed_letter_by_letter_marks_no_widget_red() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened = open_the_keys(&mut hand) && hand.press_word(&tr("hotkeys-filter-hint"), egui::Pos2::ZERO);
+        for letter in ["c", "i", "r"] {
+            hand.type_text(letter).frame(Vec::new());
+        }
+        let filter = hand.app.hotkeys.filter.clone();
+        qymcad_i18n::set_language(&prev);
+        assert!(opened, "setup: the filter of Settings -> Keyboard was not reached");
+        assert_eq!(filter, "cir", "setup: the letters did not reach the filter");
+    }
+
     /// ESC WITH THE TABLE ON SCREEN CLOSES THE SETTINGS and goes no further: the line in hand behind them stays in hand.
     /// Before, Esc walked past the settings and put down the tool behind them.
     #[test]
