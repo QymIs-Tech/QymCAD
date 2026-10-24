@@ -1,5 +1,5 @@
 //! Tests of the sketch constraint solver.
-use qymcad_core::model::{Constraint, Project};
+use qymcad_core::model::{Constraint, Project, SketchAxis};
 use qymcad_core::geom::Point2;
 
 #[test]
@@ -333,13 +333,13 @@ fn point_on_axis_via_ensure_axis() {
     // a point off to the side of the X axis
     let q = p.alloc_id();
     p.sketches[si].points.push(SketchPoint { id: q, x: 5.0, y: 7.0 });
-    let (o, d) = p.ensure_axis(si, 0); // the X axis: (0,0)-(1,0)
+    let (o, d) = p.ensure_axis(si, SketchAxis::X); // the X axis: (0,0)-(1,0)
     p.sketches[si].constraints.push(Constraint::PointOnLine { p: q, a: o, b: d });
     p.solve_sketch(si);
     let qp = p.sketches[si].points.iter().find(|x| x.id == q).unwrap();
     assert!(qp.y.abs() < 1e-2, "the point lands on the X axis, y ≈ 0: y={}", qp.y);
     // calling `ensure_axis` again returns the same points
-    let (o2, d2) = p.ensure_axis(si, 0);
+    let (o2, d2) = p.ensure_axis(si, SketchAxis::X);
     assert_eq!((o, d), (o2, d2), "the axis is reused");
 }
 

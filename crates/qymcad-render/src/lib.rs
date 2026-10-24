@@ -8,7 +8,7 @@
 use egui::{Color32, Pos2, Rect, Stroke};
 use egui_phosphor::regular as ph;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Id, Project};
+use qymcad_core::model::{Id, Project, SketchAxis};
 use qymcad_ui_state::*;
 
 /// A tool button with a drawn glyph (instead of raw unicode that renders as tofu).

@@ -39,10 +39,10 @@ pub fn try_constraint_inner(
     let mut lines = qymcad_ui_state::sel_line_pts(project, sel_sk, si);
     // the lines drawn, before the axes join them: Vertical and Horizontal go on these, an axis already stands so
     let drawn = lines.clone();
-    // coordinate axes picked as lines (kind 3): their straight lines are materialised and used as lines
-    let axes: Vec<u64> = sel_sk.items.iter().filter(|it| it.kind == qymcad_ui_state::ItemKind::Axis).map(|qymcad_ui_state::SketchItem { id, .. }| *id).collect();
-    for w in axes {
-        let (o, d) = project.ensure_axis(si, w as usize);
+    // coordinate axes picked as lines: their straight lines are materialised and used as lines
+    let axes: Vec<SketchAxis> = sel_sk.items.iter().filter_map(|it| it.sketch_axis()).collect();
+    for axis in axes {
+        let (o, d) = project.ensure_axis(si, axis);
         lines.push((o, d));
     }
     // THE CURVES PICKED, read as what a constraint ties: the centres of the round ones and of the ellipses, the frames of

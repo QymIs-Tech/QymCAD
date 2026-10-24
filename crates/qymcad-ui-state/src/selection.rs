@@ -80,7 +80,7 @@ pub fn sel_text_indices(project: &Project, sel_sk: &SketchSelection, si: usize) 
     sel_sk.items.iter().filter(|crate::SketchItem { kind: k, id: _ }| *k == crate::ItemKind::Text).filter_map(|crate::SketchItem { id, .. }| s.texts.iter().position(|t| t.id == *id)).collect()
 }
 
-/// WHAT IS PICKED IN A SKETCH: a point, a curve, a contour or an axis of the sketch, by its id.
+/// WHAT IS PICKED IN A SKETCH: a point, a curve, a contour or a text by its id, or an axis of the sketch by its slot.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SketchItem {
     pub kind: ItemKind,
@@ -119,9 +119,10 @@ impl SketchItem {
         SketchItem { kind: ItemKind::Contour, id }
     }
 
-    /// An axis of the sketch by its id.
-    pub fn axis(id: Id) -> Self {
-        SketchItem { kind: ItemKind::Axis, id }
+    /// An axis of the sketch, kept by its slot (`SketchAxis::slot`), not by a point id: an axis is drawn in every
+    /// sketch, and its guide point is created only when a constraint or a dimension needs it (`Project::ensure_axis`).
+    pub fn axis(axis: SketchAxis) -> Self {
+        SketchItem { kind: ItemKind::Axis, id: axis.slot() as Id }
     }
 
     /// A text by its id.
@@ -132,6 +133,15 @@ impl SketchItem {
     /// The id of the curve, when a curve is what is picked.
     pub fn curve_id(self) -> Option<Id> {
         (self.kind == ItemKind::Curve).then_some(self.id)
+    }
+
+    /// The axis, when an axis is what is picked; none for an item of another kind - a point or a curve whose id
+    /// happens to be 0 or 1 is not an axis.
+    pub fn sketch_axis(self) -> Option<SketchAxis> {
+        match self.kind {
+            ItemKind::Axis => SketchAxis::from_slot(self.id as usize),
+            _ => None,
+        }
     }
 }
 

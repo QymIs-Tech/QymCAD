@@ -73,7 +73,7 @@ use qymcad_core::measure::MeasureItem;
 use qymcad_core::part::PartManifest;
 use qymcad_core::refs::Query;
 use qymcad_core::geom::{Contour, MeshFace, Point2};
-use qymcad_core::model::{Id, Project};
+use qymcad_core::model::{Id, Project, SketchAxis};
 
 /// The four, taken from the application, where they live in two records.
 #[macro_export]

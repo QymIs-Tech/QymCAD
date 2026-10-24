@@ -73,16 +73,15 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             hit = Some(qymcad_ui_state::SketchItem::curve(eid));
         }
     }
-    // a click on the X or Y axis (when no other geometry is near) picks the axis as a line (kind 3, id 0
-    // or 1)
+    // a click on the X or Y axis (when no other geometry is near) picks the axis as a line
     if hit.is_none() {
         let o = sh.at(Point2::new(0.0, 0.0));
         let near_x = (pos.y - o.y).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide); // the horizontal X axis (y = 0)
         let near_y = (pos.x - o.x).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide); // the vertical Y axis (x = 0)
         if near_x && (!near_y || (pos.y - o.y).abs() <= (pos.x - o.x).abs()) {
-            hit = Some(qymcad_ui_state::SketchItem::axis(0));
+            hit = Some(qymcad_ui_state::SketchItem::axis(SketchAxis::X));
         } else if near_y {
-            hit = Some(qymcad_ui_state::SketchItem::axis(1));
+            hit = Some(qymcad_ui_state::SketchItem::axis(SketchAxis::Y));
         }
     }
     // THE MIRROR'S SECOND STEP: a plain click NAMES WHAT IT REFLECTS ABOUT - a line, a point or an axis - and Shift adds
@@ -107,7 +106,11 @@ pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos:
             return;
         }
         match hit {
-            Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Axis, id: w }) => qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, w as usize),
+            Some(item @ qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Axis, .. }) => {
+                if let Some(axis) = item.sketch_axis() {
+                    qymcad_ui_state::mirror_about_axis(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, axis);
+                }
+            }
             Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Point, id: p }) => qymcad_ui_state::mirror_about_point(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, p),
             Some(qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, id: eid }) => match sk.project.sketches.get(si).and_then(|s| s.entity(eid)).and_then(|e| e.kind.as_line()) {
                 // CONSTRUCTION GEOMETRY SERVES AS WELL: what matters is that two points make a line, and a
