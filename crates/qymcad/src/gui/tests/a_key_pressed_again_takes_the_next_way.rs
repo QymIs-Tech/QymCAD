@@ -185,23 +185,75 @@ fn the_preview_after_the_key_pressed_again_is_the_circle_by_two_points() {
     assert!(found, "no preview of radius {radius:.1} px about {centre:?}; the circles drawn: {:?}", rings.iter().map(|c| (c.center, c.radius)).collect::<Vec<_>>());
 }
 
-/// THE KEY PRESSED AGAIN DOES WHAT THE NEXT WORD OF THE BAR DOES: the centre of a polygon clicked, G takes the next way
-/// and the centre stays, as it stays when "circum." is picked on the bar - both ways of the centre read the same click.
+/// A drawing tool with ways: its key, and the words of its ways in the order of its bar.
+struct WithWays {
+    key: egui::Key,
+    words: &'static [&'static str],
+}
+
+/// The four tools with ways: the rectangle, the circle, the arc and the polygon.
+const WITH_WAYS: [WithWays; 4] = [
+    WithWays { key: egui::Key::R, words: &["opt-rect-2corners", "opt-rect-centre", "opt-rect-3pt"] },
+    WithWays { key: egui::Key::C, words: &["opt-circle-centre-radius", "opt-circle-2pt", "opt-tangent-m", "opt-rect-3pt"] },
+    WithWays { key: egui::Key::A, words: &["opt-arc-cse", "opt-rect-3pt", "opt-tangent"] },
+    WithWays { key: egui::Key::G, words: &["opt-polygon-inscribed", "opt-polygon-circumscribed", "opt-by-edge"] },
+];
+
+/// What a change of the way leaves of the tool in hand: the ways of the four tools, the tool, the points clicked and the
+/// curves a tangent circle picked.
+#[derive(Debug, PartialEq)]
+struct Left {
+    ways: String,
+    armed: String,
+    pts: usize,
+    tangents: usize,
+}
+
+/// What takes the next way: the key of the tool pressed again, or the next word of its bar.
+#[derive(Clone, Copy)]
+enum Next {
+    Key,
+    Bar,
+}
+
+/// THE TOOL OF `tool` AT WAY `from` WITH A POINT CLICKED, then the next way taken `by` the key or the bar: what is left
+/// of the tool.
+fn next_way_from(tool: &WithWays, from: usize, by: Next) -> Left {
+    let mut app = App::default();
+    let mut hand = Hand::canvas(&mut app);
+    sketch(&mut hand, Again::Cycles);
+    for _ in 0..=from {
+        hand.key(tool.key);
+    }
+    hand.click2d(0.0, 0.0);
+    match by {
+        Next::Key => {
+            hand.key(tool.key);
+        }
+        Next::Bar => {
+            let word = tr(tool.words[(from + 1) % tool.words.len()]);
+            assert!(hand.press_word(&word, egui::pos2(400.0, 0.0)), "{:?} from way {from}: no word {word:?} on the bar", tool.key);
+        }
+    }
+    let p = &hand.app.tool_prefs;
+    let ways = format!("{:?} {:?} {:?} {:?}", p.rect_mode, p.circ_mode, p.arc_mode, p.poly_mode);
+    Left { ways, armed: format!("{:?}", hand.app.tools.armed), pts: hand.app.tools.tool.pts.len(), tangents: hand.app.tools.tool.circ_tan.len() }
+}
+
+/// THE KEY PRESSED AGAIN DOES WHAT THE NEXT WORD OF THE BAR DOES, for every tool with ways and from every way of it,
+/// the last one included: a point clicked, the way changed by the key and by the bar leave the same ways, the same tool
+/// in hand, the same points and the same picked curves. The polygon keeps its point both ways; the rectangle, the
+/// circle and the arc drop it both ways.
 #[test]
 fn the_key_pressed_again_does_what_the_bar_does() {
-    let mut kept = Vec::new();
-    for by_bar in [true, false] {
-        let mut app = App::default();
-        let mut hand = Hand::canvas(&mut app);
-        sketch(&mut hand, Again::Cycles);
-        hand.key(egui::Key::G).click2d(0.0, 0.0);
-        if by_bar {
-            assert!(hand.press_word(&tr("opt-polygon-circumscribed"), egui::pos2(400.0, 0.0)), "no way \"circum.\" on the bar of the polygon");
-        } else {
-            hand.key(egui::Key::G);
+    let mut wrong = Vec::new();
+    for tool in &WITH_WAYS {
+        for from in 0..tool.words.len() {
+            let (by_key, by_bar) = (next_way_from(tool, from, Next::Key), next_way_from(tool, from, Next::Bar));
+            if by_key != by_bar {
+                wrong.push(format!("{:?} from way {from}: by the key {by_key:?}, by the bar {by_bar:?}", tool.key));
+            }
         }
-        assert_eq!(hand.app.tool_prefs.poly_mode, qymcad_ui_state::PolygonWay::Circumscribed, "by bar {by_bar}: setup: the way did not change");
-        kept.push(hand.app.tools.tool.pts.len());
     }
-    assert_eq!(kept[1], kept[0], "the centre clicked: kept {} by the bar and {} by the key pressed again", kept[0], kept[1]);
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
