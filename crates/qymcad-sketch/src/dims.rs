@@ -328,10 +328,10 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                 .or_else(|| {
                     let o = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(Point2::new(0.0, 0.0));
                     if (pos.y - o.y).abs() <= qymcad_ui_state::grab::grab(&*sk.set, Grab::Guide) {
-                        let (a, b) = sk.project.ensure_axis(si, 0);
+                        let (a, b) = sk.project.ensure_axis(si, SketchAxis::X);
                         Some(qymcad_ui_state::DimRef::Line(a, b))
                     } else if (pos.x - o.x).abs() <= qymcad_ui_state::grab::grab(&*sk.set, Grab::Guide) {
-                        let (a, b) = sk.project.ensure_axis(si, 1);
+                        let (a, b) = sk.project.ensure_axis(si, SketchAxis::Y);
                         Some(qymcad_ui_state::DimRef::Line(a, b))
                     } else {
                         None

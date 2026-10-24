@@ -214,13 +214,12 @@ pub fn modify_button(mut ed: Editing, t: &mut Tools, sk_pat: SketchPattern, tool
     }
 }
 
-/// MIRROR WHAT THE TOOL HOLDS ABOUT ONE OF THE SKETCH AXES (0 = X, 1 = Y).
+/// MIRROR WHAT THE TOOL HOLDS ABOUT ONE OF THE SKETCH AXES.
 ///
 /// The axes are drawn in every sketch and were, until now, the only drawn thing a person could not point
 /// at: mirroring about Y happened silently when no line was selected, and X could not be asked for at all.
-pub fn mirror_about_axis(ed: Editing, sel_sk: &mut SketchSelection, which: usize) {
-    let along = if which == 0 { Point2::new(1.0, 0.0) } else { Point2::new(0.0, 1.0) };
-    mirror_about(ed, sel_sk, MirrorAbout::Line(Point2::new(0.0, 0.0), along));
+pub fn mirror_about_axis(ed: Editing, sel_sk: &mut SketchSelection, axis: SketchAxis) {
+    mirror_about(ed, sel_sk, MirrorAbout::Line(Point2::new(0.0, 0.0), axis.guide()));
 }
 
 /// MIRROR WHAT THE TOOL HOLDS ABOUT A LINE OF THE SKETCH, given by its two points.

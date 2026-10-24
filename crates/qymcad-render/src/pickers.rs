@@ -60,8 +60,8 @@ pub fn draw_axes(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         return;
     }
     // the axes as reference geometry: X red, Y green; the selected one orange and thicker
-    let xsel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(0));
-    let ysel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(1));
+    let xsel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(SketchAxis::X));
+    let ysel = pn.sel_sk.items.contains(&qymcad_ui_state::SketchItem::axis(SketchAxis::Y));
     let xst = if xsel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_x()) };
     let yst = if ysel { Stroke::new(2.2, pn.scheme.pal.selected()) } else { Stroke::new(1.2, pn.scheme.pal.sketch_axis_y()) };
     painter.line_segment([Pos2::new(rect.left(), o.y), Pos2::new(rect.right(), o.y)], xst);

@@ -7,7 +7,7 @@
 //!
 //! The repair that used to cover this, `detach_geometry_from_origin`, only fires once the origin has
 //! already wandered off zero; `pin_frame` now keeps it at zero, so it never fires.
-use qymcad_core::model::Project;
+use qymcad_core::model::{SketchAxis, Project};
 
 fn new_sketch() -> (Project, usize) {
     let mut p = Project::default();
@@ -36,8 +36,8 @@ fn geometry_drawn_at_the_origin_can_still_be_moved() {
     // The frame of reference exists, as it does in any sketch a person has touched: a dimension or a
     // constraint against an axis creates it.
     let origin = p.ensure_origin(si);
-    let _ = p.ensure_axis(si, 0);
-    let _ = p.ensure_axis(si, 1);
+    let _ = p.ensure_axis(si, SketchAxis::X);
+    let _ = p.ensure_axis(si, SketchAxis::Y);
 
     // A CIRCLE IS ALREADY SAFE: `merge_close_points` refuses to glue the centre of a radius curve, so it
     // keeps a point of its own - and a line started from that centre inherits the protection. A line drawn
@@ -68,8 +68,8 @@ fn geometry_drawn_at_the_origin_can_still_be_moved() {
 fn a_saved_sketch_whose_line_ends_on_the_origin_is_repaired_on_rebuild() {
     let (mut p, si) = new_sketch();
     let origin = p.ensure_origin(si);
-    let _ = p.ensure_axis(si, 0);
-    let _ = p.ensure_axis(si, 1);
+    let _ = p.ensure_axis(si, SketchAxis::X);
+    let _ = p.ensure_axis(si, SketchAxis::Y);
 
     // The state such a file is in: the far end is the line's own point, the near end IS the origin.
     let far = p.alloc_id();
@@ -107,8 +107,8 @@ fn no_tool_started_at_zero_welds_its_drawing_to_the_frame() {
     for name in ["line", "rectangle", "circle", "arc"] {
         let (mut p, si) = new_sketch();
         let origin = p.ensure_origin(si);
-        let _ = p.ensure_axis(si, 0);
-        let _ = p.ensure_axis(si, 1);
+        let _ = p.ensure_axis(si, SketchAxis::X);
+        let _ = p.ensure_axis(si, SketchAxis::Y);
         match name {
             "line" => {
                 p.add_line_entity(si, 0.0, 0.0, 30.0, 0.0, qymcad_core::feature::Purpose::Real);
