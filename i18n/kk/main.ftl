@@ -795,6 +795,7 @@ opt-rect-rotated = Бұрылған: 2 нүкте қабырғаны беред�
 opt-text-as-note = Ескертпе ретінде қою (геометрия емес)
 opt-rect-mode = Тіктөрт.:
 opt-polygon-mode = Көпбұрыш:
+opt-way-in-force = { $tool } { $way }
 tool-rect = Тіктөртбұрыш
 opt-radius = Радиус
 opt-fillet-chord = Хорда

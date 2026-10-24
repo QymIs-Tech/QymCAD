@@ -33,7 +33,7 @@ fn sketch(hand: &mut Hand, again: Again) {
     choose(hand, again);
 }
 
-/// What the status line says the way of the circle in force is: the caption of its bar and the word of the way.
+/// What the status line says the way of the circle in force is: the name of the tool and the word of the way.
 fn said_of(way: CircleWay) -> String {
     let word = match way {
         CircleWay::CentreRadius => "opt-circle-centre-radius",
@@ -41,7 +41,7 @@ fn said_of(way: CircleWay) -> String {
         CircleWay::Tangent => "opt-tangent-m",
         CircleWay::ThreePoints => "opt-rect-3pt",
     };
-    format!("{} {}", tr("opt-circle-mode"), tr(word))
+    crate::i18n::tr2("opt-way-in-force", "tool", &tr("opt-circle-mode"), "way", &tr(word))
 }
 
 /// C, C, C, C, C: the circle by its centre and radius, by two points, touching two curves, by three points, and by its

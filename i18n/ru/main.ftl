@@ -795,6 +795,7 @@ opt-rect-rotated = Повёрнутый: 2 точки — сторона, 3-я �
 opt-text-as-note = Поставить как текст-заметку (не геометрия)
 opt-rect-mode = Прямоуг.:
 opt-polygon-mode = Многоуг.:
+opt-way-in-force = { $tool } { $way }
 tool-rect = Прямоугольник
 opt-radius = Радиус
 opt-fillet-chord = Хорда
