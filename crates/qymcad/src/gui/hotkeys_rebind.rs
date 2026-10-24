@@ -1087,6 +1087,25 @@ mod in_the_settings {
         assert!(named && !factory, "the hint does not name the key of the circle bound now (J named: {named}, C named: {factory})");
     }
 
+    /// THE SETTINGS FOLDED BY THE ARROW OF THEIR TITLE WHILE THE TABLE WAITS FOR A KEY let the keyboard go: the table is
+    /// no longer on screen, the waiting is dropped, and E pressed then is not taken as the name of a binding.
+    #[test]
+    fn the_settings_folded_let_the_keyboard_go() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
+        let title = hand.fold_titled(&tr("win-settings"));
+        // folded, the window keeps its title bar alone
+        let folded = hand.window_titled(&tr("win-settings")).is_some_and(|w| w.height() < 60.0);
+        hand.frame(Vec::new());
+        let held = hand.app.hotkeys.action.clone();
+        qymcad_i18n::set_language(&prev);
+        assert!(waits && folded, "setup: the table did not wait, or the arrow of the title did not fold the settings (waits: {waits}, folded: {folded}, arrow found: {title})");
+        assert!(held.is_none(), "the settings folded left the table waiting for a key for {held:?}");
+    }
+
     /// THE KEYBOARD SECTION CLICKED WHILE IT IS SHOWN KEEPS THE TABLE WAITING: the table stays on screen, so the key
     /// it waits for is still the person's to press. Before, any click on a section dropped the waiting.
     #[test]

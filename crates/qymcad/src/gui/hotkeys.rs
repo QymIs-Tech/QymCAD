@@ -106,8 +106,6 @@ fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Contex
     // conclusion drawn is about the program.
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
-    let frame = ctx.cumulative_frame_nr();
-    ctx.data_mut(|d| d.insert_temp(drawn_in(), frame));
     esc_in_the_table(wc);
     capture_hotkey(wc, ctx);
 }
@@ -154,31 +152,19 @@ pub(crate) fn hotkeys_left(hk: &mut qymcad_ui_state::HotkeyCapture) {
     settle(hk);
 }
 
-/// Where the table writes the frame it was last drawn in.
-fn drawn_in() -> egui::Id {
-    egui::Id::new("the frame the table of keys was drawn in")
-}
-
-/// WAS THE TABLE ON SCREEN IN THE FRAME BEFORE this one. Asked before anything is drawn, so the frame before is the
-/// last word on it.
-fn on_screen(ctx: &egui::Context) -> bool {
-    let now = ctx.cumulative_frame_nr();
-    ctx.data(|d| d.get_temp::<u64>(drawn_in())).is_some_and(|frame| frame + 1 >= now)
-}
-
 /// WHETHER THE KEYBOARD IS THE TABLE'S this frame - asked before the cancel ladder, which runs before anything is
 /// drawn.
 ///
-/// A TABLE NOT ON SCREEN takes nothing, and what it was in the middle of is dropped: the settings closed by the
-/// Windows menu, or a search that hid the table, never passed through the doors that settle it, and the table went on
-/// waiting for a key - every key of the program taken as the name of a binding - or held a question nobody could see.
+/// A TABLE NOT ON SCREEN takes nothing. The settings closed by the Windows menu are not drawn, so what the table was in
+/// the middle of is dropped here; a table the settings did not draw - folded, another section, a search that hid it -
+/// was dropped by the settings at the end of that frame (`settings_window`).
 ///
 /// While the table waits for a key, every press is the name of a binding. Otherwise Esc, with no field holding the
 /// keyboard, is the table's and is taken here, before the sketch or the cancel ladder hear it: an open clash question is
 /// answered "keep as it was", and with none open the settings are to close, as the window of the keys closed itself -
 /// which the table does as it is drawn (`esc_in_the_table`), where the windows are in reach.
 pub(crate) fn hotkeys_take_keyboard(win: &qymcad_ui_state::Windows, hk: &mut qymcad_ui_state::HotkeyCapture, ctx: &egui::Context) -> bool {
-    if !on_screen(ctx) || !win.is(WinKind::Settings) {
+    if !win.is(WinKind::Settings) {
         if hk.action.is_some() || hk.clash.is_some() {
             settle(hk);
         }
