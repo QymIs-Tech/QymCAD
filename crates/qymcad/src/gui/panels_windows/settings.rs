@@ -71,7 +71,8 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
             let cur = wc.scheme.section;
             egui::Panel::left("settings_sections").resizable(false).exact_size(168.0).show(ui, |ui| {
                 for sec in &visible {
-                    if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() {
+                    // only another section leaves the table: the one shown clicked again keeps it waiting
+                    if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() && cur != *sec {
                         wc.scheme.section = *sec;
                         wc.scheme.note.words.clear();
                         crate::gui::hotkeys::hotkeys_left(wc.hotkeys);

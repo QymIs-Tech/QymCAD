@@ -1065,6 +1065,23 @@ mod in_the_settings {
         assert!(left.is_none(), "the search hid the table and its question was left: {left:?}");
     }
 
+    /// THE KEYBOARD SECTION CLICKED WHILE IT IS SHOWN KEEPS THE TABLE WAITING: the table stays on screen, so the key
+    /// it waits for is still the person's to press. Before, any click on a section dropped the waiting.
+    #[test]
+    fn the_section_shown_clicked_again_keeps_the_table_waiting() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
+        let clicked = hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO);
+        hand.frame(Vec::new());
+        let held = hand.app.hotkeys.action.clone();
+        qymcad_i18n::set_language(&prev);
+        assert!(waits && clicked, "setup: the table did not wait, or the Keyboard section was not clicked (waits: {waits}, clicked: {clicked})");
+        assert_eq!(held.as_deref(), Some("part.extrude"), "the Keyboard section clicked while shown dropped the waiting of the table");
+    }
+
     /// ESC WITH THE TABLE ON SCREEN CLOSES THE SETTINGS and goes no further: the line in hand behind them stays in hand.
     /// Before, Esc walked past the settings and put down the tool behind them.
     #[test]
