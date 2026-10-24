@@ -18,6 +18,19 @@ pub struct HotkeyCapture {
     pub clash: Option<HotkeyClash>,
     /// The filter typed above the table: a word of the description or a key.
     pub filter: String,
+    /// ESC TAKEN FOR THE TABLE before anything is drawn, so the cancel ladder and the tool in hand never hear it; the
+    /// table answers it as it is drawn.
+    pub esc: EscTaken,
+}
+
+/// WHAT AN ESC TAKEN FOR THE TABLE OF KEYS ASKS of it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EscTaken {
+    /// No Esc waits for the table.
+    #[default]
+    None,
+    /// Close the settings: no question was open for the Esc to answer.
+    CloseTheSettings,
 }
 
 /// A key asked for by one action while another already holds it in the same area.

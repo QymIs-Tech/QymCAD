@@ -45,7 +45,6 @@ file-quit = Вихід
 
 ## Меню «Довідка»
 
-help-hotkeys = Гарячі клавіші…
 help-about = Про програму…
 help-support = Підтримати автора…
 
@@ -303,7 +302,7 @@ scheme-color-icon_assembly_secondary = складання: додатковий 
 scheme-color-icon_datum_primary = бази: основний акцент
 scheme-color-icon_datum_secondary = бази: додатковий акцент
 # --- ГАРЯЧІ КЛАВІШІ ---
-hotkeys-title = Гарячі клавіші
+settings-hotkeys = Гарячі клавіші
 help-title = Довідка
 help-search = Пошук у довідці
 help-back = Назад
@@ -2402,6 +2401,7 @@ face-center = Центр: [{ $v }]
 settings-search = Пошук за налаштуваннями
 settings-search-empty = Нічого не знайдено — спробуйте інше слово
 settings-sec-general = Загальне
+settings-sec-keyboard = Клавіатура
 settings-sec-appearance = Зовнішній вигляд
 settings-sec-viewport = В'юпорт
 settings-sec-sketch = Ескіз

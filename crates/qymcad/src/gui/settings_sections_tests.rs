@@ -145,6 +145,7 @@ mod tests {
                 // a field that ONLY `other` changes must stay changed in ours
                 match other {
                     Sec::General => assert_eq!(s.language, c.language, "{sec:?}: the reset touched the language"),
+                    Sec::Keyboard => assert_eq!(s.hotkeys, c.hotkeys, "{sec:?}: the reset touched the keys"),
                     Sec::Appearance => assert_eq!(s.scheme, c.scheme, "{sec:?}: the reset touched the scheme"),
                     Sec::Viewport => assert_eq!(s.viewcube_size, c.viewcube_size, "{sec:?}: the reset touched the viewport"),
                     Sec::Sketch => assert_eq!(s.snap.grid, c.snap.grid, "{sec:?}: the reset touched the sketch"),
@@ -199,8 +200,8 @@ mod tests {
             sec.reset(&mut s);
         }
         // NOT SETTINGS BUT HISTORY AND A LAYOUT: the reset deliberately does not touch the list of
-        // recent files (it is not a value but a memory of work done), and the keys are reassigned in a
-        // window of their own with a button of their own.
+        // recent files (it is not a value but a memory of work done), and the keys are reassigned in the
+        // table of Settings -> Keyboard with buttons of their own.
         let d = Settings::default();
         s.recent = d.recent.clone();
         s.hotkeys = d.hotkeys.clone();

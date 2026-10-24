@@ -34,7 +34,7 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
         return;
     }
     let mut open = wc.win.is(WinKind::Settings);
-    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(620.0).default_height(460.0).show(ctx, |ui| {
+    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(760.0).default_height(560.0).show(ctx, |ui| {
         let mut q = std::mem::take(&mut wc.scheme.search);
         // the field's width does NOT come from the window's width - otherwise the window swells as text is typed (see the tree)
         ui.horizontal(|ui| {
@@ -74,6 +74,7 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                     if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() {
                         wc.scheme.section = *sec;
                         wc.scheme.note.words.clear();
+                        crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
                     }
                 }
                 ui.separator();
@@ -115,6 +116,11 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
             });
         }
     });
+    // closed by its cross, or from inside: Esc in the table of keys closes the settings as it is drawn
+    let open = open && wc.win.is(WinKind::Settings);
+    if !open {
+        crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
+    }
     wc.win.set(WinKind::Settings, open);
 }
 
@@ -252,6 +258,12 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                         wc.set.recent.truncate(n);
                     }
                 });
+            }
+        }
+        Sec::Keyboard => {
+            if show("settings-hotkeys") {
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-hotkeys")).strong());
+                crate::gui::hotkeys::hotkeys_table(wc, ui);
             }
         }
         Sec::Appearance => {

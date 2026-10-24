@@ -45,7 +45,6 @@ file-quit = Шығу
 
 ## Help menu
 
-help-hotkeys = Пернелер тіркесімі…
 help-about = Бағдарлама туралы…
 help-support = Авторды қолдау…
 
@@ -304,7 +303,7 @@ scheme-color-icon_datum_primary = База (негізгі)
 scheme-color-icon_datum_secondary = База (қосымша)
 
 # --- KEYBOARD SHORTCUTS ---
-hotkeys-title = Пернелер тіркесімі
+settings-hotkeys = Пернелер тіркесімі
 help-title = Анықтама
 help-search = Анықтамадан іздеу
 help-back = Артқа
@@ -2405,6 +2404,7 @@ face-center = Центрі: [{ $v }]
 settings-search = Баптаулардан іздеу
 settings-search-empty = Ештеңе табылмады — басқа сөзді байқап көріңіз
 settings-sec-general = Жалпы
+settings-sec-keyboard = Пернетақта
 settings-sec-appearance = Сыртқы көрініс
 settings-sec-viewport = Көрініс терезесі
 settings-sec-sketch = Эскиз

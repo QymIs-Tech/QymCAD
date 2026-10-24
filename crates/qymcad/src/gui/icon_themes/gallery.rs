@@ -58,7 +58,10 @@ pub(crate) fn draw_pack_icon_role(ui: &mut egui::Ui, pack: &IconPack, palette: &
         let resolved = if let Some(bytes) = custom_bytes { qymcad_ui_state::icons::resolve_icon_tokens(bytes.as_ref(), palette) } else { pack.get_pack_icon_svg_resolved(palette) };
         ui.ctx().include_bytes(uri.clone(), resolved);
     }
-    ui.add(egui::Image::new(uri).fit_to_exact_size(egui::vec2(size, size)));
+    // IN A BOX OF ITS SIZE, as the sign drawn while the picture of a theme on the disk is still read: the picture and the
+    // sign then hold one id at one place. Drawn bare, the picture took another id where the sign stood, and egui framed
+    // it red under a pointer resting there (the settings button that opened the manager stands at its first card).
+    ui.add_sized([size, size], egui::Image::new(uri).fit_to_exact_size(egui::vec2(size, size)));
 }
 
 pub(crate) type ManagerIconPreview = Result<Option<egui::load::Bytes>, String>;
