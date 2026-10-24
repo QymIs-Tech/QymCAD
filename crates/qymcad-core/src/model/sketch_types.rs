@@ -399,7 +399,11 @@ impl Sketch {
     }
 
     fn put_point_at(&mut self, id: Id, at: Point2) -> bool {
-        let Some(p) = self.points.iter_mut().find(|p| id != 0 && p.id == id) else { return false };
+        if id == 0 {
+            return false;
+        }
+
+        let Some(p) = self.points.iter_mut().find(|p| p.id == id) else { return false };
 
         if p.x == at.x && p.y == at.y {
             return false;
