@@ -80,9 +80,10 @@ pub trait Way: Copy + PartialEq + 'static {
     /// Its place on the bar.
     fn index(self) -> usize;
 
-    /// The way at a place on the bar; past the end, the last.
+    /// The way at a place on the bar; past the end, the first, the default - a place the bar does not hold never lands
+    /// the tool in a way of more clicks or of curves to pick.
     fn at(index: usize) -> Self {
-        Self::WAYS[index.min(Self::WAYS.len() - 1)]
+        Self::WAYS.get(index).copied().unwrap_or(Self::WAYS[0])
     }
 }
 
@@ -776,17 +777,22 @@ pub struct FeatPicks<'a> {
 mod ways_tests {
     use super::*;
 
-    /// Every way of a list stands at its own place on the bar, and the place of a way leads back to it.
+    /// Every way of a list stands at its own place on the bar, the place of a way leads back to it, and a place past the
+    /// end gives the first way, the default.
     fn in_order<W: Way + std::fmt::Debug>(wrong: &mut Vec<String>) {
         for (place, way) in W::WAYS.iter().enumerate() {
             if way.index() != place || W::at(place) != *way {
                 wrong.push(format!("{way:?} stands at {place} and says {}", way.index()));
             }
         }
+        let past = W::at(W::WAYS.len());
+        if past != W::WAYS[0] {
+            wrong.push(format!("a place past the end gives {past:?}, not the first way {:?}", W::WAYS[0]));
+        }
     }
 
     /// THE WAYS OF EVERY TOOL ARE THE ONES OF ITS BAR, in its order: the four of the circle, the three of the rectangle,
-    /// the arc and the polygon, each at its own place, and a place past the end gives the last.
+    /// the arc and the polygon, each at its own place, and a place past the end gives the first.
     #[test]
     fn the_ways_of_every_tool_stand_in_the_order_of_its_bar() {
         let mut wrong = Vec::new();
@@ -799,6 +805,5 @@ mod ways_tests {
         assert_eq!(RectWay::ALL, [RectWay::TwoCorners, RectWay::Centre, RectWay::ThreePoints]);
         assert_eq!(ArcWay::ALL, [ArcWay::CentreStartEnd, ArcWay::ThreePoints, ArcWay::Tangent]);
         assert_eq!(PolygonWay::ALL, [PolygonWay::Inscribed, PolygonWay::Circumscribed, PolygonWay::ByEdge]);
-        assert_eq!(CircleWay::at(9), CircleWay::ThreePoints, "a place past the end must give the last way");
     }
 }
