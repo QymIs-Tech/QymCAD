@@ -33,6 +33,8 @@ import os
 import subprocess
 import sys
 
+#МОЙ КОД
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIST = os.path.join(ROOT, "tools", "breakages.json")
 RESULTS = os.path.join(ROOT, "target", "breakages.jsonl")
