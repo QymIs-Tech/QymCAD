@@ -119,22 +119,20 @@ impl Entry {
 }
 
 /// Lay in the solids read from `path` as the file's tree of subassemblies and parts, then ask about their scale or
-/// keep them as they are.
-pub(crate) fn land_exact(
-    wc: &mut WinCtx,
-    path: String,
-    format: qymcad_kernel::ExactFormat,
-    bodies: Vec<qymcad_core::geom::Built>,
-    shapes: Vec<qymcad_kernel::Shape>,
-    nodes: Vec<qymcad_kernel::ImportNode>,
-) {
+/// keep them as they are. `landed.embedded` carries the source bytes when the document keeps another file than the
+/// one at `path`: an F3D is read from the STEP its converter produced, and that STEP is what the document embeds.
+pub(crate) fn land_exact(wc: &mut WinCtx, landed: qymcad_ui_state::ExactImport) {
+    let qymcad_ui_state::ExactImport { path, bodies, shapes, nodes, embedded, note, .. } = landed;
     keep_pending(wc);
     *wc.dxf_path = Some(path.clone()); // the next file chooser opens where this file was
     let nbodies = bodies.len();
     let tris: usize = bodies.iter().map(|Built { mesh: m, .. }| m.tris.len()).sum();
     let named = qymcad_io::Format::of_path(&path).map(|f| f.name()).unwrap_or_default();
     qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr1("io-import-mesh", "format", named));
-    let source = super::embed_source(wc.project, &path).unwrap_or(0);
+    let source = match embedded {
+        Some(e) => wc.project.add_source(e.name, e.data),
+        None => super::embed_source(wc.project, &path).unwrap_or(0),
+    };
     let stem = super::io_jobs::stem_of(&path);
 
     // add the mesh, the faces and the shape of every solid, in the coordinates of its own part
@@ -174,7 +172,12 @@ pub(crate) fn land_exact(
     qymcad_ui_state::invalidate(wc.regen);
     wc.view.initialized = false;
     wc.cam.init = false;
-    *wc.status = Notice::info(super::io_jobs::exact_imported(format, nbodies, tris));
+    *wc.status = Notice::info(super::io_jobs::exact_imported(named, nbodies, tris));
+    // WHAT THE READING SAID IT LOST goes on top, and the tone turns to a warning: the file came in, and the
+    // person reads at once that it did not come over whole (as a drawing's unread entities are said).
+    if !note.is_empty() {
+        *wc.status = Notice::warning(format!("{} {note}", *wc.status));
+    }
     // the size as it stands in the world: a body alone is in its part's coordinates
     let span = world_span(wc.project, &ids);
     let ask = ImportScale { file: super::file_name(&path), format: named.to_string(), unitless: false, factor: 1.0, applied: 1.0, span, meshes: Vec::new(), solids: read, places, again: None };

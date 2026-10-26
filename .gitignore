@@ -63,3 +63,6 @@ CLAUDE.local.md
 
 # Samples that cannot be distributed: a link to them in a working copy, checks pass them over when absent
 /samples
+
+# The places of OCCT on this machine (.cargo/config.toml names its own paths per machine)
+/.cargo/

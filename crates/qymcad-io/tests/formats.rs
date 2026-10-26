@@ -48,19 +48,20 @@ fn every_format_stands_in_the_list_the_door_reads() {
         match f {
             Format::Step => 0,
             Format::Iges => 1,
-            Format::Stl => 2,
-            Format::Obj => 3,
-            Format::Ply => 4,
-            Format::Gltf => 5,
-            Format::ThreeMf => 6,
-            Format::Amf => 7,
-            Format::Dxf => 8,
-            Format::Svg => 9,
+            Format::F3d => 2,
+            Format::Stl => 3,
+            Format::Obj => 4,
+            Format::Ply => 5,
+            Format::Gltf => 6,
+            Format::ThreeMf => 7,
+            Format::Amf => 8,
+            Format::Dxf => 9,
+            Format::Svg => 10,
         }
     }
     let mut places: Vec<usize> = Format::ALL.iter().map(|f| place(*f)).collect();
     places.sort();
-    assert_eq!(places, (0..10).collect::<Vec<_>>(), "the list the door reads is missing a format or holds one twice");
+    assert_eq!(places, (0..11).collect::<Vec<_>>(), "the list the door reads is missing a format or holds one twice");
 }
 
 /// WHAT A FILE BECOMES follows from its format: exact geometry is a solid, triangles a mesh, curves a sketch.
@@ -68,6 +69,7 @@ fn every_format_stands_in_the_list_the_door_reads() {
 fn what_a_file_becomes_follows_from_its_format() {
     assert_eq!(Format::Step.lands(), Lands::Solid);
     assert_eq!(Format::Iges.lands(), Lands::Solid);
+    assert_eq!(Format::F3d.lands(), Lands::Solid);
     assert_eq!(Format::Stl.lands(), Lands::Mesh);
     assert_eq!(Format::Obj.lands(), Lands::Mesh);
     assert_eq!(Format::Ply.lands(), Lands::Mesh);
@@ -76,5 +78,5 @@ fn what_a_file_becomes_follows_from_its_format() {
     assert_eq!(Format::Amf.lands(), Lands::Mesh);
     assert_eq!(Format::Dxf.lands(), Lands::Drawing);
     assert_eq!(Format::Svg.lands(), Lands::Drawing);
-    assert_eq!(Format::names_of(&Format::ALL), "STEP, IGES, STL, OBJ, PLY, glTF, 3MF, AMF, DXF, SVG");
+    assert_eq!(Format::names_of(&Format::ALL), "STEP, IGES, F3D, STL, OBJ, PLY, glTF, 3MF, AMF, DXF, SVG");
 }

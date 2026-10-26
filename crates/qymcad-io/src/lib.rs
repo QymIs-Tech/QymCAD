@@ -3,6 +3,7 @@
 mod amf;
 mod dxf_export;
 mod dxf_import;
+mod f3d;
 mod formats;
 mod gltf;
 mod iges_drawing;
@@ -22,6 +23,7 @@ pub mod xml;
 pub use amf::{export_amf, import_amf};
 pub use dxf_export::export_dxf;
 pub use dxf_import::import_dxf;
+pub use f3d::{convert_to_step, convert_with, find_converter, find_in, InOut, CONVERTER};
 pub use formats::{Format, Lands};
 pub use gltf::{export_glb, export_glb_tree, import_gltf};
 pub use iges_drawing::{read_iges_drawing, IgesCount, IgesDrawing};
