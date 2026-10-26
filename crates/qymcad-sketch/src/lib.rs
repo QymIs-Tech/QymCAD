@@ -668,7 +668,7 @@ pub use corners::*;
 mod popups;
 pub use popups::*;
 mod in_hand;
-pub use in_hand::in_hand;
+pub use in_hand::{in_hand, put_the_trial_down};
 use in_hand::*;
 mod editors;
 

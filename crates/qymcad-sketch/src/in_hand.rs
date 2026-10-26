@@ -23,6 +23,15 @@ pub fn in_hand<'a>(sk: &'a mut qymcad_ui_state::SketchCtx<'_>) -> Option<Box<dyn
     Some(Box::new(InSketch { sk, boxed: Boxed::Nothing, seen: Vec::new(), ctx: None, gate: Gate::Open, asks: Vec::new(), keeping: Keeping::NONE }))
 }
 
+/// THE VALUES A CTRL+Z DISMISSES PUT DOWN, as Esc puts them: the press is meant for the history, and a
+/// trial left open over the document would swallow it and every press after it - the field is gone, and
+/// nothing was kept by Enter, so the document comes back as the box found it and no step is laid.
+pub fn put_the_trial_down(sk: &mut qymcad_ui_state::SketchCtx<'_>) {
+    if trying(sk) {
+        trial_dropped(sk);
+    }
+}
+
 /// WHAT HOLDS THE HAND OF A SKETCH beyond its tool: FILLET ALL, waiting for the shape to round; a copy, a cut or an insert,
 /// waiting for its point; or the tool itself.
 enum Now {
