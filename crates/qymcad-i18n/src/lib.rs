@@ -314,6 +314,19 @@ pub fn tr_prefix(key: &str, name: &str) -> String {
 /// ITS parts, not of the interface. And what is newly created gets a name in the language being worked
 /// in.
 pub fn name(stored: &str) -> String {
+    name_within(stored, NAME_DEPTH)
+}
+
+/// HOW DEEP A NAME IS UNWRAPPED. A substitution that is itself a key is unwrapped one level down - a mirror of a mirror
+/// adds one - and each level is a call: a name stored `name-mirror-of#` 20,000 times over ran a 2 MiB thread out of
+/// stack (debug build) and ended the program, on the interface thread, where names are drawn. Real names stop at a few
+/// levels; past this many the rest is shown as it is stored, which is ugly but whole. A name at the limit is read on a
+/// 256 KiB thread in a debug build - a quarter of the 1 MiB main thread Windows gives, the rest left to the drawing.
+pub const NAME_DEPTH: usize = 64;
+
+/// `name` with `left` levels still to unwrap.
+fn name_within(stored: &str, left: usize) -> String {
+    let Some(below) = left.checked_sub(1) else { return stored.to_string() };
     let (key, arg) = match stored.split_once('#') {
         Some((k, v)) => (k, Some(v)),
         None => (stored, None),
@@ -329,21 +342,21 @@ pub fn name(stored: &str) -> String {
         //
         // The words that ARE in the catalogue get translated and the rest are left alone: somebody's own
         // word stays their word, and a service name is never shown to anybody.
-        return stored.split(' ').map(|w| if w == stored { w.to_string() } else { name(w) }).collect::<Vec<_>>().join(" ");
+        return stored.split(' ').map(|w| if w == stored { w.to_string() } else { name_within(w, below) }).collect::<Vec<_>>().join(" ");
     }
     match arg {
         // SEVERAL SUBSTITUTIONS follow the `#` apart by U+001F, the unit separator, which no name holds; they go into
         // `$v`, `$w`, `$x` and `$y` in that order. A refusal from a file names a place and what stood there: "PLY: a
         // coordinate of vertex 12 (byte 684) is not a finite number (NaN)". A name with a `#` in it reads as before.
         Some(v) if v.contains('\u{1f}') => {
-            let values: Vec<String> = v.split('\u{1f}').map(name).collect();
+            let values: Vec<String> = v.split('\u{1f}').map(|w| name_within(w, below)).collect();
             let args: Vec<(&str, &str)> = ["v", "w", "x", "y"].into_iter().zip(values.iter().map(String::as_str)).collect();
             trn(key, &args)
         }
         // A SUBSTITUTION MAY ITSELF BE A KEY. A mirrored part is called `name-mirror-of#<the name of the
         // source>`, and the name of the source is a key too (`name-part-n#1`). Without unwrapping it, what
         // was seen was "name-part-n#1 (mirror)": half the name translated, half a raw catalogue key.
-        Some(v) => tr1(key, "v", &name(v)),
+        Some(v) => tr1(key, "v", &name_within(v, below)),
         None => tr(key),
     }
 }
