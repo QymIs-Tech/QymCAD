@@ -319,8 +319,12 @@ pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> 
     // A QUESTION WAITING FOR ITS ANSWER IS ONE STEP NOT YET TAKEN: Ctrl+Z takes it back - its window cancels it on the
     // next frame, as its Cancel does - and nothing under it. Reported behaviour: with an STL asking about its scale, Ctrl+Z
     // undid the step before the import, took the person to the part of that step, and left the window open.
+    // ONLY A QUESTION IS MARKED AS DROPPED (`Asking`): its window reads the mark. A TRIAL OF VALUES (`Trying`) must
+    // keep its kind, or the frame's sweep - which puts a boxless trial down by its kind - would never see it, and the
+    // open edit would swallow every press of Ctrl+Z after the field was gone. Reported behaviour: the value of a
+    // dimension being typed, Ctrl+Z, and the undo of the sketch was dead for the rest of the session.
     if rc.edits.open.is_some() && rc.edits.open_kind != OpenEdit::Working {
-        if !redo {
+        if !redo && rc.edits.open_kind == OpenEdit::Asking {
             rc.edits.open_kind = OpenEdit::AskingDropped;
         }
         return None;
