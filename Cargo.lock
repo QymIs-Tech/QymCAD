@@ -3681,6 +3681,7 @@ dependencies = [
  "qymcad-i18n",
  "qymcad-io",
  "qymcad-kernel",
+ "qymcad-mcp",
  "qymcad-meshfit",
  "qymcad-part",
  "qymcad-paths",
@@ -3775,6 +3776,18 @@ dependencies = [
  "cc",
  "qymcad-core",
  "qymcad-meshfit",
+]
+
+[[package]]
+name = "qymcad-mcp"
+version = "0.1.1"
+dependencies = [
+ "qymcad-core",
+ "qymcad-i18n",
+ "qymcad-io",
+ "qymcad-kernel",
+ "qymcad-paths",
+ "serde_json",
 ]
 
 [[package]]

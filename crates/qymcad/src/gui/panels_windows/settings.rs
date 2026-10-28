@@ -179,6 +179,14 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             if show("settings-show-start") {
                 ui.checkbox(&mut wc.set.show_start_screen, crate::i18n::tr("settings-show-start")).on_hover_text(crate::i18n::tr("settings-show-start-hint"));
             }
+            // AN AI ASSISTANT IN THE WINDOW: a tick for the person, a word in the record - a switch is kept as what it
+            // means, and the window opens or shuts its port on the next frame by it
+            if show("settings-assistant") {
+                let mut welcome = wc.set.assistant == qymcad_ui_state::AssistantAccess::Welcome;
+                if ui.checkbox(&mut welcome, crate::i18n::tr("settings-assistant")).on_hover_text(crate::i18n::tr("settings-assistant-hint")).changed() {
+                    wc.set.assistant = if welcome { qymcad_ui_state::AssistantAccess::Welcome } else { qymcad_ui_state::AssistantAccess::Off };
+                }
+            }
             if show("settings-import-ask") {
                 ui.checkbox(&mut wc.set.import_ask_always, crate::i18n::tr("settings-import-ask")).on_hover_text(crate::i18n::tr("settings-import-ask-hint"));
             }

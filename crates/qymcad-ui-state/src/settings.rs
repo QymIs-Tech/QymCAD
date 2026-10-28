@@ -533,6 +533,11 @@ pub struct Settings {
     /// stays reachable from the menu.
     #[serde(default = "default_true")]
     pub show_start_screen: bool,
+    /// WHETHER AN AI ASSISTANT MAY WORK IN THIS WINDOW, through the Model Context Protocol server `qymcad-mcp`: while it
+    /// may, the window listens on the loopback for the server's calls and makes each one as a step of its own, drawn
+    /// and undoable. Off at the factory: a program that listens is a choice the person makes, not one made for them.
+    #[serde(default)]
+    pub assistant: AssistantAccess,
     /// WHICH BUTTON MOVES THE VIEW. See `MouseNav`.
     #[serde(default = "default_mouse_nav")]
     pub mouse_nav: MouseNav,

@@ -86,6 +86,7 @@ mod tests {
             help_external: true,
             open_last: true,
             show_start_screen: false,
+            assistant: qymcad_ui_state::AssistantAccess::Welcome,
             mouse_nav: qymcad_ui_state::MouseNav::Blender,
             zoom_at: qymcad_ui_state::ZoomAt::ViewCentre,
             update_check: qymcad_ui_state::UpdateCheck::Weekly,

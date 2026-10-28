@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// The AI assistant, served in the frame of the status place.
+mod assistant;
+
 /// WHERE THE PANELS GO. The sizes and the framing that used to be written inside each panel are said here
 /// instead - they describe the container, not what is drawn in it.
 ///
@@ -156,21 +159,26 @@ impl qymcad_shell::Fills for App {
             "part_tool" | "gizmo_number" => part_tool(self, ui),
             "sk_tool_opts" => sketch_tool(self, ui),
             "assembly_tool" => assembly_tool(self, ui),
-            "status" => crate::gui::panels_bars::status_bar(
-                &mut qymcad_ui_state::StatusCtx {
-                    cache: &self.cache,
-                    cursor: self.cursor,
-                    project: &self.project,
-                    scheme: &self.scheme,
-                    set: &mut self.set,
-                    sketch_ses: &self.sketch_ses,
-                    line: qymcad_ui_state::StatusLine { said: &mut self.status, rebuild: &mut self.regen.line },
-                    win: &mut self.win,
-                    par_search: &mut self.par_search,
-                    ask: &mut win_asks,
-                },
-                ui,
-            ),
+            "status" => {
+                // THE ASSISTANT'S STEP OF THIS FRAME, before the line that says what it did: the status place is in
+                // every layout and never hidden, so a call is never left waiting for a panel the person closed
+                assistant::serve(&mut self.part_ctx(), &ui.ctx().clone());
+                crate::gui::panels_bars::status_bar(
+                    &mut qymcad_ui_state::StatusCtx {
+                        cache: &self.cache,
+                        cursor: self.cursor,
+                        project: &self.project,
+                        scheme: &self.scheme,
+                        set: &mut self.set,
+                        sketch_ses: &self.sketch_ses,
+                        line: qymcad_ui_state::StatusLine { said: &mut self.status, rebuild: &mut self.regen.line },
+                        win: &mut self.win,
+                        par_search: &mut self.par_search,
+                        ask: &mut win_asks,
+                    },
+                    ui,
+                )
+            }
             "wbtools" => crate::gui::panels_bars::wb_toolbar(&mut self.bar_ctx(&mut bar_asks), ui, edge),
             "tree" => self.tree_panel(ui),
             "props" => self.properties_panel(ui),
