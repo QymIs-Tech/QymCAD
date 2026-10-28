@@ -47,6 +47,7 @@ serde = { workspace = true } # the view settings kept between sessions (ViewPref
 time.workspace = true # the calendar for the document stamp
 chrono = { version = "0.4", default-features = false, features = ["clock"] } # the local zone for the autosave clock
 qymcad-paths = { path = "../qymcad-paths" }
+qymcad-mcp = { path = "../qymcad-mcp" } # the tools an AI assistant works the window with, and the line it calls in on
 qymcad-update = { path = "../qymcad-update" } # asking the site whether a newer version exists
 directories = "6" # UserDirs: the person's home, for shortening paths in reports
 include_dir = "0.7" # the parts library (library/parts) is compiled into the binary

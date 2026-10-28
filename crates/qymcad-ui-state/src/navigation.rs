@@ -107,6 +107,17 @@ impl UpdateCheck {
     }
 }
 
+/// WHETHER AN AI ASSISTANT MAY WORK IN THE WINDOW. A program that listens for calls is the person's choice, as a
+/// program that goes to the network is: `Off` is the factory value, and the window opens no port until it is changed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum AssistantAccess {
+    /// The window takes no calls.
+    #[default]
+    Off,
+    /// The window listens on the loopback for the calls of `qymcad-mcp` and makes each as a step of its own.
+    Welcome,
+}
+
 /// IS IT TIME TO ASK, given when it was last asked. Both times are seconds since the epoch.
 ///
 /// A CLOCK THAT WENT BACKWARDS ASKS AGAIN. The last time is written by the program itself, and a machine

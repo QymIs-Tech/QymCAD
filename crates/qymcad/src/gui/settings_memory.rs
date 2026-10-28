@@ -42,6 +42,7 @@ mod tests {
             help_external: !d.help_external,
             open_last: !d.open_last,
             show_start_screen: !d.show_start_screen,
+            assistant: qymcad_ui_state::AssistantAccess::Welcome, // the factory value is Off
             mouse_nav: qymcad_ui_state::MouseNav::Blender,
             zoom_at: qymcad_ui_state::ZoomAt::ViewCentre,             // the factory value is Cursor
             update_check: qymcad_ui_state::UpdateCheck::Weekly,       // the factory value is Daily
@@ -112,6 +113,7 @@ mod tests {
         assert_eq!(a.defaults.offset_2d, b.defaults.offset_2d, "the 2D offset");
         assert_eq!(a.open_last, b.open_last, "reopening the previous project");
         assert_eq!(a.show_start_screen, b.show_start_screen, "letting the start screen come up");
+        assert_eq!(a.assistant, b.assistant, "letting an AI assistant work in the window");
         assert_eq!(a.mouse_nav, b.mouse_nav, "which button moves the view");
         assert_eq!(a.zoom_at, b.zoom_at, "where the view zooms from");
         assert_eq!(a.zoom_editing, b.zoom_editing, "where the view zooms from while a command is open");

@@ -667,6 +667,7 @@ impl Default for Settings {
             pick_precision: default_pick_precision(),
             open_last: true,
             show_start_screen: true,
+            assistant: AssistantAccess::Off,
             mouse_nav: default_mouse_nav(),
             zoom_at: default_zoom_at(),
             update_check: default_update_check(),

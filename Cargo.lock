@@ -3681,6 +3681,7 @@ dependencies = [
  "qymcad-i18n",
  "qymcad-io",
  "qymcad-kernel",
+ "qymcad-mcp",
  "qymcad-meshfit",
  "qymcad-part",
  "qymcad-paths",
