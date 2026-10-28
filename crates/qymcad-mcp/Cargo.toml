@@ -1,0 +1,25 @@
+[package]
+name = "qymcad-mcp"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Model Context Protocol server: builds, edits, measures and exports QymCAD documents headless"
+
+[[bin]]
+name = "qymcad-mcp"
+path = "src/main.rs"
+
+[dependencies]
+qymcad-core.workspace = true
+qymcad-kernel.workspace = true
+qymcad-io.workspace = true
+qymcad-i18n = { path = "../qymcad-i18n" } # the names of the tree, read as the window reads them
+qymcad-paths = { path = "../qymcad-paths" } # the program's own folder, where a window leaves its door
+# the protocol is JSON-RPC; the same version qymcad-io and qymcad-update already use, so nothing new enters the tree
+serde_json = "1.0.151"
+
+[lints]
+workspace = true
