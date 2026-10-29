@@ -48,6 +48,15 @@ fn rebuild_says_it_ended(regen: &mut qymcad_ui_state::Rebuilding, status: &mut q
         }
         None => {}
     }
+    // a note for the end of the rebuild (`Rebuilding::after_note`), held while a restore of the B-rep is still to come -
+    // its own line would be written over it
+    if !regen.bg.iter().any(|b| b.kind == BgKind::ImportShapes) {
+        if let Some(note) = regen.after_note.take() {
+            // said beside what the line holds, in the graver of the two tones: a failed rebuild stays red
+            let tone = if status.tone == qymcad_ui_state::Tone::Info { note.tone } else { status.tone };
+            *status = if status.is_empty() { note } else { Notice { tone, words: format!("{status} · {note}") } };
+        }
+    }
     qymcad_ui_state::invalidate(regen); // the geometry moved: what is drawn from it is drawn again
 }
 
@@ -167,24 +176,7 @@ impl App {
         self.viewing.view.initialized = false;
         self.viewing.cam.init = false;
         self.disk.edits.saved_key = qymcad_ui_state::edit_key(&self.draw_ctx()); // straight off the disk - there are no edits
-                                                                                 // an autosave newer than the file means the previous session broke off after edits - offer to recover
-        if let Some(p) = self.disk.project_path.clone() {
-            // ONE RULE FOR THE NAME, not a copy of it. This place used to build the autosave name itself, and
-            // the moment `autosave_path` started taking the stem instead of the whole name the two would have
-            // parted: the recovery check would look for a file the autosave never writes.
-            let auto = qymcad_ui_state::autosave_path(&self.disk.project_path);
-            let p = &p;
-            let newer = (|| -> Option<bool> {
-                let ma = std::fs::metadata(&auto).ok()?.modified().ok()?;
-                let mf = std::fs::metadata(p).ok()?.modified().ok()?;
-                Some(ma > mf)
-            })()
-            .unwrap_or(false);
-            if newer {
-                self.status = Notice::warning(crate::i18n::tr1("io-autosave-found", "path", &auto));
-            }
-        }
-        self.status = Notice::info(crate::i18n::tr("io-project-loaded"));
+        self.status = loaded_status(&self.disk.project_path, &mut self.project, &mut self.regen, &mut self.disk.edits);
     }
 
     /// Save (Ctrl+S): if the project has been saved before, write there silently; otherwise Save As.
@@ -639,6 +631,63 @@ pub(crate) fn finish_regen_failed(rc: &mut qymcad_ui_state::RebuildCtx, stamp: u
 /// placement is carried across by [`Project::take_placement_from`].
 pub(crate) fn regen_doc_stamp(project: &qymcad_core::model::Project) -> u64 {
     project.rebuild_key()
+}
+
+/// WHAT THE STATUS LINE SAYS WHEN A PROJECT HAS OPENED: that it is loaded, and that an autosave newer than the file was
+/// found (the previous session broke off after edits - the person is offered to recover it). A free function: it needs
+/// the document, not the window.
+///
+/// And THE FORMULAS WHOSE VALUE THE READING OF A SIGN BEFORE A POWER CHANGED - `-w^2` was `(-w)^2` and is now `-(w^2)`
+/// (issue #220). Their values are applied at once - the parameters evaluated again, the timeline marked for rebuilding -
+/// so the document shows the change rather than taking it on some later edit; the undo history starts after them, and
+/// the document counts as changed from the file. Each is named, with its formula and its value before and now, when
+/// the rebuild that applies them has ended (`Rebuilding::after_note`).
+pub(crate) fn loaded_status(project_path: &Option<String>, project: &mut Project, regen: &mut Rebuilding, edits: &mut qymcad_ui_state::Edits) -> Notice {
+    let mut status = Notice::info(crate::i18n::tr("io-project-loaded"));
+    // ONE RULE FOR THE NAME, not a copy of it. This place used to build the autosave name itself, and the moment
+    // `autosave_path` started taking the stem instead of the whole name the two would have parted: the recovery check
+    // would look for a file the autosave never writes.
+    if let Some(p) = project_path {
+        let auto = qymcad_ui_state::autosave_path(project_path);
+        let newer = (|| -> Option<bool> {
+            let ma = std::fs::metadata(&auto).ok()?.modified().ok()?;
+            let mf = std::fs::metadata(p).ok()?.modified().ok()?;
+            Some(ma > mf)
+        })()
+        .unwrap_or(false);
+        // said beside the loading, no longer written over by it
+        if newer {
+            status = Notice::warning(format!("{status} · {}", crate::i18n::tr1("io-autosave-found", "path", &auto)));
+        }
+    }
+    let changed = project.formulas_changed_by_sign_rule();
+    if changed.is_empty() {
+        return status;
+    }
+    let _ = project.eval_parameters();
+    project.mark_all_dirty();
+    // the history starts from the document as it is now read; the saved key stays the file's, so it counts as changed
+    edits.baseline = super::snapshot(project);
+    edits.committed_key = qymcad_ui_state::doc_key(project);
+    edits.ready = true;
+    let num = |v: Option<f64>| v.map_or_else(|| crate::i18n::tr("io-sign-rule-no-value"), qymcad_core::expr::fmt_num);
+    // a few named, the rest counted: the status line is one line
+    const NAMED: usize = 5;
+    // the four values by their names in the catalogue
+    let item = |c: &qymcad_core::model::SignRuleChange| {
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("place", c.place.clone());
+        args.set("formula", c.formula.clone());
+        args.set("was", num(c.was));
+        args.set("now", num(c.now));
+        crate::i18n::tr_args("io-sign-rule-item", Some(&args))
+    };
+    let mut list: Vec<String> = changed.iter().take(NAMED).map(item).collect();
+    if changed.len() > NAMED {
+        list.push(crate::i18n::tr1("io-sign-rule-more", "n", &(changed.len() - NAMED).to_string()));
+    }
+    regen.after_note = Some(Notice::warning(crate::i18n::tr1("io-sign-rule-changed", "list", &list.join("; "))));
+    status
 }
 
 /// Open a project asynchronously: the heavy part (RON parsing of the timeline plus reparsing the

@@ -512,12 +512,19 @@ fn in_english_a_core_error_has_no_cyrillic() {
 /// Literal keys only: the ones assembled by format! are checked by their own areas. `trn` WAS NOT on the
 /// list, and `face-normal` went through that gap: the properties of a face showed the service name instead
 /// of words. The neighbouring keys of the family were all in place — the one lost was exactly the one
-/// called through another function.
+/// called through another function. `tr_args` is on it for the same reason: a key whose values are set
+/// by name in a `FluentArgs` is asked through it.
 fn keys_asked_in(text: &str) -> Vec<String> {
     // a `#[cfg(test)] mod` beside the code is scaffolding as much as a `_tests.rs` file is
     let text = qymcad_i18n::ratchet::working_part(text);
     let mut keys: Vec<String> = Vec::new();
-    for m in text.match_indices("i18n::tr(\"").chain(text.match_indices("i18n::tr1(\"")).chain(text.match_indices("i18n::tr2(\"")).chain(text.match_indices("i18n::trn(\"")) {
+    for m in text
+        .match_indices("i18n::tr(\"")
+        .chain(text.match_indices("i18n::tr1(\""))
+        .chain(text.match_indices("i18n::tr2(\""))
+        .chain(text.match_indices("i18n::trn(\""))
+        .chain(text.match_indices("i18n::tr_args(\""))
+    {
         let rest = &text[m.0 + m.1.len()..];
         if let Some(end) = rest.find('"') {
             let k = rest[..end].to_string();

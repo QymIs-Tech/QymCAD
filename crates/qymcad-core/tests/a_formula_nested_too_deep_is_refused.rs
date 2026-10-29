@@ -30,10 +30,13 @@ fn a_formula_at_the_limit_is_read_and_one_past_it_is_refused() {
     assert_eq!(eval_small_stack(nested("(", "1", ")", MAX_FORMULA_DEPTH + 1)), Err(ExprError::TooDeep { limit: MAX_FORMULA_DEPTH }));
 }
 
-/// The depth is a depth, not a length: a long formula that does not nest is read as before.
+/// The depth is a depth, not a length: a long formula that does not nest is read as before - and so is one whose parts
+/// each go a level in, side by side: a bracket, a sign, a power with a signed exponent. The parse comes back up after
+/// each part, so a thousand of them are two or three levels deep, not a thousand.
 #[test]
 fn a_long_flat_formula_is_not_counted_as_deep() {
     assert_eq!(eval_small_stack(format!("{}1", "1+".repeat(100_000))), Ok(100_001.0));
+    assert_eq!(eval_small_stack(format!("{}1", "(1)+-1^-1+".repeat(1_000))), Ok(1.0));
 }
 
 /// A way a formula nests, and a formula nested that way.

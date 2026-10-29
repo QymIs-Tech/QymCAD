@@ -3,6 +3,71 @@
 use super::*;
 
 impl Project {
+    /// THE FORMULAS OF THE DOCUMENT WHOSE VALUE THE READING OF A SIGN BEFORE A POWER CHANGED: `-w^2` used to be read as
+    /// `(-w)^2` and is now `-(w^2)` (issue #220). Named on opening, so an old document's changed number is not a silent
+    /// one. Each reading is followed through the whole document - every name worked out under it in the order the
+    /// formulas read each other, as `eval_parameters` does - so a name that changes only because one it reads changed is
+    /// named too. A formula
+    /// that evaluates under one reading and not the other is a change as well.
+    pub fn formulas_changed_by_sign_rule(&self) -> Vec<SignRuleChange> {
+        use crate::expr::{eval_by, SignRule};
+        let (was_vars, now_vars) = (self.work_out_names_by(SignRule::WithTheBase).values, self.work_out_names_by(SignRule::Mathematics).values);
+        let change = |place: String, src: &str| -> Option<SignRuleChange> {
+            let was = eval_by(src, &was_vars, SignRule::WithTheBase).ok();
+            let now = eval_by(src, &now_vars, SignRule::Mathematics).ok();
+            let differ = match (was, now) {
+                (Some(a), Some(b)) => (a - b).abs() > 1e-12 * a.abs().max(b.abs()).max(1.0),
+                (None, None) => false,
+                _ => true,
+            };
+            differ.then(|| SignRuleChange { place, formula: src.trim().to_string(), was, now })
+        };
+        let mut out = Vec::new();
+        for p in self.parameters.iter().filter(|p| !p.name.is_empty() && !p.expr.trim().is_empty()) {
+            out.extend(change(p.name.clone(), &p.expr));
+        }
+        let mut dims: Vec<_> = self.feat_dims.iter().collect();
+        dims.sort_by_key(|(id, _)| **id);
+        for (id, fields) in dims {
+            let owner =
+                self.timeline.iter().find(|n| n.id == *id).map(|n| n.name.clone()).or_else(|| self.joints.iter().find(|j| j.id == *id).map(|j| j.name.clone())).unwrap_or_else(|| id.to_string());
+            let mut fields: Vec<_> = fields.iter().filter(|(_, e)| !e.trim().is_empty()).collect();
+            fields.sort();
+            for (field, src) in fields {
+                out.extend(change(format!("{owner}: {field}"), src));
+            }
+        }
+        // the dimensions `eval_parameters` applies a formula to; an edge distance's formula is never evaluated
+        for s in &self.sketches {
+            for c in &s.constraints {
+                let (src, sided) = match c {
+                    Constraint::Distance { expr, .. }
+                    | Constraint::Angle { expr, .. }
+                    | Constraint::Diameter { expr, .. }
+                    | Constraint::AngleLines { expr, .. }
+                    | Constraint::ArcLength { expr, .. }
+                    | Constraint::CurveDistance { expr, .. } => (expr, false),
+                    // a distance from a line keeps its side and takes the formula's size only (`eval_parameters`)
+                    Constraint::DistancePL { expr, .. } => (expr, true),
+                    _ => continue,
+                };
+                if src.trim().is_empty() {
+                    continue;
+                }
+                if let Some(mut c) = change(s.name.clone(), src) {
+                    if sided {
+                        (c.was, c.now) = (c.was.map(f64::abs), c.now.map(f64::abs));
+                        if c.was.zip(c.now).is_some_and(|(a, b)| (a - b).abs() <= 1e-12 * a.max(b).max(1.0)) {
+                            continue;
+                        }
+                    }
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+
     /// Solve the sketch constraints (moving the points) and re-tessellate the contour.
     /// Map of global parameter names to values, used to evaluate feature and command dimension expressions
     /// through [`crate::expr::eval`], the same way sketch dimensions are evaluated. A name is a key as written: `H`

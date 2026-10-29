@@ -1569,6 +1569,10 @@ io-rebuild-failed = Қайта құру сәтсіз аяқталды ({ $why })
 io-rebuild-failed-undone = Қайта құру сәтсіз аяқталды ({ $why }), «{ $what }» кері алынды — «Қайтару» оны қайтарады
 io-export-failed = { $format }: экспорт сәтсіз аяқталды ({ $why }) — модель бұрынғыдай қалды
 io-project-loaded = Жоба жүктелді.
+io-sign-rule-changed = Дәреже алдындағы минус енді математикадағыдай оқылады (-w^2 дегеніміз -(w^2)); мына формулалардың мәні өзгерді: { $list }
+io-sign-rule-item = { $place } = { $formula }: бұрын { $was }, қазір { $now }
+io-sign-rule-no-value = мәні жоқ
+io-sign-rule-more = және тағы { $n }
 io-saving = Сақталуда…
 io-existing = Барлары:
 io-tags = Тегтер

@@ -198,3 +198,6 @@ mod profiles_are_taken_by_a_box;
 
 #[cfg(test)]
 mod the_author_is_supported;
+
+#[cfg(test)]
+mod an_old_formula_is_named_on_opening;

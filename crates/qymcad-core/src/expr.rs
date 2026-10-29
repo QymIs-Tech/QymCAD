@@ -14,8 +14,27 @@ use crate::errors::ExprError;
 /// are not, `SIN(30)` and `PI` read as `sin(30)` and `pi`; a parameter named `E` or `Pi` is still found under its own
 /// name, since the constant gives way to it in any case but its own.
 pub fn eval(src: &str, vars: &HashMap<String, f64>) -> Result<f64, ExprError> {
+    eval_by(src, vars, SignRule::Mathematics)
+}
+
+/// HOW A SIGN BEFORE A POWER IS READ. Reported behaviour (issue #220): `-w^2` with `w` = 3 gave 9 and `-2^2` gave 4 -
+/// the sign was taken with the base before the power, the way a spreadsheet reads it - while mathematics, and the
+/// languages engineers write formulas in, give -9 and -4: the power first, then the sign. A formula that meant the
+/// one silently got the other's sign, with no error. Formulas are now read the mathematical way; the old way is kept
+/// only to tell which stored formulas change their value (`Project::formulas_changed_by_sign_rule`), and can go once
+/// documents written before the change are no longer about.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) enum SignRule {
+    /// `-w^2` is `-(w^2)`
+    #[default]
+    Mathematics,
+    /// `-w^2` is `(-w)^2`, as before
+    WithTheBase,
+}
+
+pub(crate) fn eval_by(src: &str, vars: &HashMap<String, f64>, rule: SignRule) -> Result<f64, ExprError> {
     let toks = tokenize(src)?;
-    let mut p = Parser { toks: &toks, pos: 0, vars, depth: 0 };
+    let mut p = Parser { toks: &toks, pos: 0, vars, depth: 0, rule };
     let v = p.expr()?;
     if p.pos != p.toks.len() {
         return Err(ExprError::TrailingInput(p.peek_str()));
@@ -121,6 +140,7 @@ struct Parser<'a> {
     vars: &'a HashMap<String, f64>,
     /// how many levels the parse is inside, see `MAX_FORMULA_DEPTH`
     depth: usize,
+    rule: SignRule,
 }
 
 impl<'a> Parser<'a> {
@@ -174,18 +194,18 @@ impl<'a> Parser<'a> {
         Ok(v)
     }
 
-    // term := power (('*'|'/') power)*
+    // term := factor (('*'|'/') factor)*
     fn term(&mut self) -> Result<f64, ExprError> {
-        let mut v = self.power()?;
+        let mut v = self.factor()?;
         while let Some(t) = self.peek() {
             match t {
                 Tok::Star => {
                     self.bump();
-                    v *= self.power()?;
+                    v *= self.factor()?;
                 }
                 Tok::Slash => {
                     self.bump();
-                    v /= self.power()?;
+                    v /= self.factor()?;
                 }
                 _ => break,
             }
@@ -193,18 +213,33 @@ impl<'a> Parser<'a> {
         Ok(v)
     }
 
-    // power := unary ('^' power)?   right-associative
+    // factor := unary (mathematics) | power (with the base) - see `SignRule`
+    fn factor(&mut self) -> Result<f64, ExprError> {
+        match self.rule {
+            SignRule::Mathematics => self.unary(),
+            SignRule::WithTheBase => self.power(),
+        }
+    }
+
+    // power := base ('^' exponent)?   right-associative; with the mathematical rule the base is an atom and the
+    // exponent may carry a sign (`2^-1`), with the old one both are signed
     fn power(&mut self) -> Result<f64, ExprError> {
-        let b = self.unary()?;
+        let b = match self.rule {
+            SignRule::Mathematics => self.atom()?,
+            SignRule::WithTheBase => self.unary()?,
+        };
         if matches!(self.peek(), Some(Tok::Caret)) {
             self.bump();
-            let e = self.nest(|p| p.power())?;
+            let e = match self.rule {
+                SignRule::Mathematics => self.nest(|p| p.unary())?,
+                SignRule::WithTheBase => self.nest(|p| p.power())?,
+            };
             return Ok(b.powf(e));
         }
         Ok(b)
     }
 
-    // unary := ('-'|'+')? atom
+    // unary := ('-'|'+') unary | power (mathematics: the sign over the power) or atom (with the base)
     fn unary(&mut self) -> Result<f64, ExprError> {
         match self.peek() {
             Some(Tok::Minus) => {
@@ -215,7 +250,10 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.nest(|p| p.unary())
             }
-            _ => self.atom(),
+            _ => match self.rule {
+                SignRule::Mathematics => self.power(),
+                SignRule::WithTheBase => self.atom(),
+            },
         }
     }
 

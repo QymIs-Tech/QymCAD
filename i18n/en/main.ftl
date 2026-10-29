@@ -1569,6 +1569,10 @@ io-rebuild-failed = The rebuild failed ({ $why }) — the model is shown as it w
 io-rebuild-failed-undone = The rebuild failed ({ $why }), "{ $what }" taken back - Redo brings it back
 io-export-failed = { $format }: the export failed ({ $why }) — the model is as it was
 io-project-loaded = The project is loaded.
+io-sign-rule-changed = A minus before a power is now read as in mathematics (-w^2 is -(w^2)); these formulas changed their value: { $list }
+io-sign-rule-item = { $place } = { $formula }: was { $was }, now { $now }
+io-sign-rule-no-value = no value
+io-sign-rule-more = and { $n } more
 io-saving = Saving…
 io-existing = Existing:
 io-tags = Tags

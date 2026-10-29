@@ -1569,6 +1569,10 @@ io-rebuild-failed = Пересборка не удалась ({ $why }) — мо
 io-rebuild-failed-undone = Пересборка не удалась ({ $why }), «{ $what }» убрано — вернуть можно через «Повторить»
 io-export-failed = { $format }: экспорт не удался ({ $why }) — модель осталась прежней
 io-project-loaded = Проект загружен.
+io-sign-rule-changed = Минус перед степенью теперь читается как в математике (-w^2 — это -(w^2)); эти формулы изменили значение: { $list }
+io-sign-rule-item = { $place } = { $formula }: было { $was }, стало { $now }
+io-sign-rule-no-value = нет значения
+io-sign-rule-more = и ещё { $n }
 io-saving = Сохранение…
 io-existing = Существующие:
 io-tags = Теги
