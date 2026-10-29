@@ -96,9 +96,6 @@ mod tests {
         id: &'static str,
     }
 
-    /// A WINDOW OPENED OVER THE BOX OF FIELDS AT THE GEOMETRY COVERS IT: the settings (the keys among them), the library of
-    /// parts and the help, each opened from the menu, one over another, and dragged by its title over the box of the
-    /// extrusion in hand, stand on top there. Reported behaviour: the box of a radius over the settings.
     #[test]
     fn a_window_over_the_box_at_the_geometry_covers_it() {
         let tr = crate::i18n::tr;

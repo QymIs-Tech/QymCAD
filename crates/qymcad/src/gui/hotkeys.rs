@@ -1,11 +1,3 @@
-//! THE HOTKEY REFERENCE — the single source for the table in Settings -> Keyboard.
-//!
-//! There are more than sixty keys in the application, and they lived ONLY in the tooltips of the
-//! buttons: the only way to learn them was to hover the mouse over every one. A list typed apart from
-//! the handlers would diverge from them at the very first edit — so a test stands next to it that checks
-//! the table against THE SOURCE of the handlers: a key appears in
-//! `part_hotkey`/`sketch_hotkey`/`assembly_hotkey` and is not in the table (or the other way round) and
-//! the test is red.
 pub(crate) use qymcad_ui_state::{HotkeyRow, HOTKEYS};
 use egui_phosphor::regular as ph;
 use crate::gui::WinKind;
@@ -33,20 +25,7 @@ pub(crate) fn rebindable(area: &str) -> bool {
     area != "general"
 }
 
-/// THE TABLE OF KEYS, the body of Settings -> Keyboard. A reference that can be edited: every key of a workbench is
-/// a button, pressing it puts the table into waiting, and the next press - a key or a Ctrl/Shift chord - is recorded.
-///
-/// Laid out for the question people bring to it, "what is the key for X": a filter on top, the areas below, and in
-/// every row the key and what it does. Everything that is not the factory layout is marked, and each mark has its
-/// own way back. No scroll of its own: the settings section around it scrolls, and a scroll inside a scroll takes
-/// the wheel from the outer one.
 pub(crate) fn hotkeys_table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui) {
-    // THE ROOM OF THE SCROLL BAR is left free: the settings scroll floats its bar over the right edge of what it
-    // holds and takes the clicks there, and the clear icon of the filter and the reset icons of the rows stand at
-    // that edge. Measured: the bar took x 751..761 of a section ending at 761, and a click on the clear icon at
-    // 751.5 went to the bar.
-    // A child of its own, since a ui is never narrowed below what it already holds and the hint above the table
-    // spans the whole section.
     let bar = ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_outer_margin;
     let width = ui.available_width() - bar;
     ui.vertical(|ui| {
@@ -56,17 +35,9 @@ pub(crate) fn hotkeys_table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui)
     });
 }
 
-/// The filter, the areas and the notes, in the width `hotkeys_table` leaves them.
 fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context) {
-    // laid out from the right: the reset button takes what it needs, the filter the rest - no guessed width.
-    // Inside a one-row `horizontal`: a right-to-left layout of its own would take the whole remaining height
-    // and centre the row in it.
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // THE BUTTON OF THE RESET COMES AND GOES UNDER AN ID OF ITS OWN, shown once a key is changed: the glass after
-            // it took another id each time, and egui marked it with a red frame. The cross of the filter needs none: it
-            // is painted over the field and takes no place, while a scope of its own did take one in this row and the
-            // table in Settings -> Keyboard went 24 pt wider the frame a key was cleared
             qymcad_shell::keyed(ui, "the reset of all the keys", |ui| {
                 if !wc.set.hotkeys.is_empty() && ui.button(crate::i18n::tr("hotkeys-reset-all")).clicked() {
                     wc.set.hotkeys.clear();
@@ -74,12 +45,8 @@ fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Contex
                 }
             });
             let glass = ui.fonts_mut(|f| f.layout_no_wrap(ph::MAGNIFYING_GLASS.to_string(), egui::TextStyle::Body.resolve(ui.style()), egui::Color32::WHITE).size().x);
-            // THE WHOLE FIELD, margins included: `desired_width` is the width of the text alone, and the field's
-            // own margins on top of it pushed the row past the section
             let field = (ui.available_width() - glass - ui.spacing().item_spacing.x).max(60.0);
             let side = ui.spacing().interact_size.y;
-            // the right margin keeps the text clear of the clear icon drawn over the field's right end, and is
-            // kept while the field is empty too, so the text does not move when the icon appears
             let edit = egui::TextEdit::singleline(&mut wc.hotkeys.filter).hint_text(crate::i18n::tr("hotkeys-filter-hint")).margin(egui::Margin { left: 4, right: 4 + side as i8, top: 2, bottom: 2 });
             let resp = ui.add_sized([field, side], edit);
             filter_clear(ui, &resp, &mut wc.hotkeys.filter);
@@ -88,29 +55,18 @@ fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Contex
     });
     ui.separator();
     let q = crate::i18n::search::query(&wc.hotkeys.filter);
-    // THE ROWS THE FILTER KEEPS ARE LAID UNDER AN ID OF THE FILTER, inside one that never changes. A letter typed
-    // moves the rows kept into the places of the rows dropped: under one parent, a place whose every id changed and
-    // whose old widget is gone is a widget that took another id to egui, framed red - typing "ci" framed the key
-    // button of the first row. Under a parent of its own for each filter, every row changes parent with it, which
-    // egui reads as one shift; the scope outside keeps the place of the whole under one id.
     let shown = qymcad_shell::keyed(ui, "the rows of the table of keys", |ui| qymcad_shell::keyed(ui, ("the rows the filter keeps", q.clone()), |ui| areas(wc, ui, &q)));
     if shown == 0 {
         ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr1("hotkeys-nothing", "q", wc.hotkeys.filter.trim())).weak()).wrap());
     }
     ui.separator();
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
-    // THE FOCUS RULE GOES HERE AND NOT ONLY IN THE HELP. A caret in a field extinguishes
-    // bare letters (otherwise `w` in an expression would launch a command), and Alt is the
-    // only way to reach a tool from there. Not saying so in the hotkey reference means
-    // hiding half the rule: U is pressed in the length field, nothing happens, and the
-    // conclusion drawn is about the program.
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
     esc_in_the_table(wc);
     capture_hotkey(wc, ctx);
 }
 
-/// THE AREAS OF THE TABLE AND THEIR ROWS answering the filter `q`; how many rows were shown.
 fn areas(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, q: &str) -> usize {
     let mut shown = 0;
     let cols = columns(wc.set, ui, ui.available_width());
@@ -124,14 +80,6 @@ fn areas(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, q: &str) -> usize 
         egui::Grid::new(format!("hk_{area}")).num_columns(3).min_col_width(0.0).spacing([GRID_GAP, 4.0]).striped(true).show(ui, |ui| {
             for r in rows {
                 key_cell(wc, ui, r, cols.key);
-                // A GRID CELL LAYS ITS CONTENT OUT LEFT TO RIGHT (the grid lives in a `horizontal`), so the
-                // lines under the description are stacked by an explicit `vertical`. Inside the row's own
-                // cell rather than a grid row of their own: an extra row shifted every row below it, and
-                // the grid sized each row from the height the previous frame had at that index.
-                // The `vertical` is the cell itself, not wrapped in a `scope`: a scope takes the whole cell
-                // at the previous frame's row height in the grid's centred layout, and a row that had just
-                // lost its waiting line stood 24 pt tall for one frame instead of 18, every row below 6 pt
-                // low.
                 ui.vertical(|ui| {
                     ui.set_width(cols.what);
                     ui.add(egui::Label::new(hotkey_what(r)).wrap());
@@ -146,23 +94,10 @@ fn areas(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, q: &str) -> usize 
     shown
 }
 
-/// THE TABLE IS LEFT: the settings closed, or another section chosen. Whatever it was in the middle of is dropped,
-/// so a later press does not land in a table no longer on screen.
 pub(crate) fn hotkeys_left(hk: &mut qymcad_ui_state::HotkeyCapture) {
     settle(hk);
 }
 
-/// WHETHER THE KEYBOARD IS THE TABLE'S this frame - asked before the cancel ladder, which runs before anything is
-/// drawn.
-///
-/// A TABLE NOT ON SCREEN takes nothing. The settings closed by the Windows menu are not drawn, so what the table was in
-/// the middle of is dropped here; a table the settings did not draw - folded, another section, a search that hid it -
-/// was dropped by the settings at the end of that frame (`settings_window`).
-///
-/// While the table waits for a key, every press is the name of a binding. Otherwise Esc, with no field holding the
-/// keyboard, is the table's and is taken here, before the sketch or the cancel ladder hear it: an open clash question is
-/// answered "keep as it was", and with none open the settings are to close, as the window of the keys closed itself -
-/// which the table does as it is drawn (`esc_in_the_table`), where the windows are in reach.
 pub(crate) fn hotkeys_take_keyboard(win: &qymcad_ui_state::Windows, hk: &mut qymcad_ui_state::HotkeyCapture, ctx: &egui::Context) -> bool {
     if !win.is(WinKind::Settings) {
         if hk.action.is_some() || hk.clash.is_some() {
@@ -182,7 +117,6 @@ pub(crate) fn hotkeys_take_keyboard(win: &qymcad_ui_state::Windows, hk: &mut qym
     true
 }
 
-/// THE ESC TAKEN FOR THE TABLE, answered as the table is drawn: the settings closed.
 fn esc_in_the_table(wc: &mut qymcad_ui_state::WinCtx) {
     if wc.hotkeys.esc == qymcad_ui_state::EscTaken::CloseTheSettings {
         wc.win.set(WinKind::Settings, false);
@@ -674,7 +608,6 @@ mod tests {
         assert!(cyr.is_empty(), "a phrase has appeared in the reference instead of a key again:\n{}", cyr.join("\n"));
     }
 
-    /// The table is drawn in Settings -> Keyboard — otherwise the reference exists only in the code.
     #[test]
     fn the_table_is_drawn_in_the_keyboard_settings() {
         let panels = crate::gui::panels_source::PANELS;
@@ -684,8 +617,6 @@ mod tests {
     }
 }
 
-/// THE SETTINGS OPENED AT THE KEYBOARD SECTION through whole frames of the program, as a person opens them: the start
-/// screen closed, Windows -> Settings, the Keyboard section - for the checks that then draw the table frame by frame.
 #[cfg(test)]
 pub(crate) fn open_keyboard_settings(app: &mut super::App) {
     let mut hand = crate::gui::hand::Hand::new(app);
@@ -696,7 +627,6 @@ pub(crate) fn open_keyboard_settings(app: &mut super::App) {
     assert!(opened, "setup: Settings -> Keyboard could not be opened through the Windows menu");
 }
 
-/// One frame of the settings window, which holds the table of keys while the keyboard section is chosen.
 #[cfg(test)]
 pub(crate) fn draw_settings(app: &mut super::App, ctx: &egui::Context) {
     let mut asks = Vec::new();

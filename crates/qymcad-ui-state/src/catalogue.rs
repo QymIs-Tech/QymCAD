@@ -153,20 +153,6 @@ pub fn pressed(launch: Launch, bc: &crate::BarCtx) -> bool {
     }
 }
 
-/// THE SAME COMMAND TAKEN AGAIN WHILE IT IS IN HAND PUTS IT DOWN: what that asks for - the arrow of a sketch for a tool
-/// of a sketch, every tool put down for the rest - or nothing when the command is not in hand. With Settings -> Keyboard set to
-/// `Again::Cycles` a drawing tool of a sketch asks for its next way instead; the sketch puts down a shape with one way
-/// (`BarAsk::NextWay`), so a tool without ways answers the same under either choice. Its button, its row of
-/// "More", the search and its key all come here (`command_catalog::press`, `command_catalog::key_again`), so no tool
-/// answers a second press by itself.
-///
-/// Before it four keys of a sketch put their tool down - the dimension, the corner, the trim and the mirror, each by a
-/// comparison of its own - while a drawing tool pressed again was taken anew, its points dropped, and the commands of
-/// the part and the assembly were opened again over themselves.
-///
-/// A switch is no tool in hand and answers by itself: the arrow of a sketch, construction geometry, the section of the
-/// view - one applied stays on under any tool and is turned off only by its own button. The mirror of a sketch pressed
-/// again with geometry chosen is the way on to its axis, not the way out (`modify_button`).
 pub fn again(launch: Launch, bc: &crate::BarCtx) -> Option<crate::BarAsk> {
     if matches!(launch, Launch::SketchSelect | Launch::Construction | Launch::Section) || !pressed(launch, bc) {
         return None;

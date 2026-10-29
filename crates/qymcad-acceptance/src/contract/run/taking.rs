@@ -56,7 +56,6 @@ pub(crate) fn entry(tool: &Tool) {
         if !in_hand(&mut s, tool) {
             problems.push(format!("{} took the tool, but the bar does not name it: {:?}", describe(e), s.in_hand()));
         }
-        // THE WAY THE KEY PRESSED AGAIN REACHED is the one the work makes
         if let Entry::KeyAgain(_, way) = e {
             match tool.modes.iter().flat_map(|g| g.iter()).find(|m| m.word == *way) {
                 Some(mode) => {

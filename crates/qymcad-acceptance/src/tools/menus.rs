@@ -60,7 +60,6 @@ macro_rules! shows {
 }
 
 shows!(SETTINGS, "menu.settings", &["menu-windows", "menu-settings"], "win-settings", "general/07-settings");
-// The table of keys is a section of the settings window, so the keys are reached by the same item.
 shows!(KEYBOARD, "settings.keyboard", &["menu-windows", "menu-settings"], "win-settings", "general/10-hotkeys");
 shows!(PARTS_LIBRARY, "menu.parts-library", &["menu-windows", "menu-parts-library"], "pl-title", "general/12-library");
 shows!(START_SCREEN, "menu.start-screen", &["menu-windows", "win-start"], "start-title", "general/01-window");

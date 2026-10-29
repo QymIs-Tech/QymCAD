@@ -27,8 +27,6 @@ pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&mut e
     let (w, h) = (size[0] * SS, size[1] * SS);
     let ctx = egui::Context::default();
     super::install_fonts(&ctx);
-    // THE KEYS ARE WRITTEN THE PORTABLE WAY, "Ctrl+Z", whatever system draws the pictures: the fonts of a Mac, installed
-    // just above, switch them to the Command sign, and the help of every system showed the keys of one
     qymcad_ui_state::set_key_style(qymcad_ui_state::KeyStyle::Plain);
     // SUPERSAMPLING THROUGH PIXEL DENSITY RATHER THAN CANVAS SIZE. The first edition simply took a
     // canvas twice as large — and the dimension captions and constraint glyphs came out half the size:

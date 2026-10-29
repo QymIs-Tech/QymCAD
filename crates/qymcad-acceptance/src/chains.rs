@@ -604,8 +604,6 @@ fn scratch() -> String {
 fn perform(s: &mut Session, step: &Step) {
     match step {
         Step::Take { tool: id, entry } => match &tool(id).entries[*entry] {
-            // A CHAIN KEEPS THE SETTINGS IT STARTED WITH: the way in that sets the key pressed again to take the next way is
-            // taken as its key alone, so the clicks counted for the tool are the clicks of its first way
             crate::contract::Entry::KeyAgain(key, _) => run::enter(s, &crate::contract::Entry::Key(qymcad::Modifiers::NONE, *key)),
             e => run::enter_for(s, tool(id), e),
         },

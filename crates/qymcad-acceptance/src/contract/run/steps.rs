@@ -64,7 +64,6 @@ pub(crate) fn enter(s: &mut Session, entry: &Entry) {
     }
 }
 
-/// SETTINGS -> KEYBOARD SET TO TAKE THE NEXT WAY on the key of the tool in hand pressed again, through the window.
 fn next_way_on_key_again(s: &mut Session) {
     let (windows, settings) = (s.word("menu-windows"), s.word("menu-settings"));
     s.menu(&[&windows, &settings]);

@@ -94,22 +94,14 @@ fn ways(key: &'static str, caption: Option<&str>, words: &[ModeWord], now: usize
     Opt::Modes { key: OptKey::of(key), caption: caption.map(qymcad_i18n::tr), choices, current: Some(now) }
 }
 
-/// THE WAYS OF A DRAWING TOOL ON ITS BAR, the way in force among them.
 pub(crate) struct BarWays {
-    /// The name a click on one of its words comes back under (`opt_took`).
     pub key: &'static str,
-    /// The caption over its words on the bar; the polygon's words stand after its number of sides with none.
     pub caption: Option<&'static str>,
-    /// The name of the tool before the way in force in the status line.
     pub named: &'static str,
-    /// Its words, in the order of the bar.
     pub words: &'static [ModeWord],
-    /// The place of the way in force among them.
     pub now: usize,
 }
 
-/// THE WAYS OF `shape` ON ITS BAR: the only place that ties a shape to the field of `SketchToolPrefs` holding its way.
-/// The bar, the key pressed again and the status line all read them here; none for a shape with one way.
 pub(crate) fn bar_ways(prefs: &qymcad_ui_state::SketchToolPrefs, shape: SketchShape) -> Option<BarWays> {
     let ways = match shape {
         SketchShape::Circle => BarWays { key: "circ_mode", caption: Some("opt-circle-mode"), named: "opt-circle-mode", words: &CIRCLE_WAYS, now: prefs.circ_mode.index() },
@@ -121,14 +113,10 @@ pub(crate) fn bar_ways(prefs: &qymcad_ui_state::SketchToolPrefs, shape: SketchSh
     Some(ways)
 }
 
-/// The ways of `shape` as the bar draws them; none for a shape with one way.
 fn bar_ways_opt(prefs: &qymcad_ui_state::SketchToolPrefs, shape: SketchShape) -> Option<Opt> {
     bar_ways(prefs, shape).map(|w| ways(w.key, w.caption, w.words, w.now))
 }
 
-/// THE WAY OF `shape` IN FORCE IN WORDS, for the status line: the name of the tool and the word of the way, "Circle: by 2
-/// points", joined by the catalogue, which keeps the order and the stops of each language; none for a shape with one
-/// way.
 pub(crate) fn way_said(prefs: &qymcad_ui_state::SketchToolPrefs, shape: SketchShape) -> Option<String> {
     let w = bar_ways(prefs, shape)?;
     Some(qymcad_i18n::tr2("opt-way-in-force", "tool", &qymcad_i18n::tr(w.named), "way", &qymcad_i18n::tr(w.words[w.now].word)))

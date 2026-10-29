@@ -37,7 +37,6 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
     let shown =
         egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(760.0).default_height(560.0).show(ctx, |ui| {
             let mut q = std::mem::take(&mut wc.scheme.search);
-            // the field's width does NOT come from the window's width - otherwise the window swells as text is typed (see the tree)
             ui.horizontal(|ui| {
                 ui.label(ph::MAGNIFYING_GLASS);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -52,15 +51,13 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
             let visible = settings_sections_visible(&*wc.scheme);
             if visible.is_empty() {
                 ui.label(egui::RichText::new(crate::i18n::tr("settings-search-empty")).weak());
-                return; // closing the window is handled by `open` OUTSIDE the closure
+                return;
             }
             if !visible.contains(&wc.scheme.section) {
                 wc.scheme.section = visible[0];
             }
 
             if searching {
-                // THE SEARCH RUNS ACROSS THE SECTIONS: a person searches for a setting, not for a section, and is
-                // under no obligation to know where it was put.
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for sec in visible {
                         ui.label(egui::RichText::new(crate::i18n::tr(sec.key())).strong());
@@ -72,7 +69,6 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                 let cur = wc.scheme.section;
                 egui::Panel::left("settings_sections").resizable(false).exact_size(168.0).show(ui, |ui| {
                     for sec in &visible {
-                        // only another section leaves the table: the one shown clicked again keeps it waiting
                         if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() && cur != *sec {
                             wc.scheme.section = *sec;
                             wc.scheme.note.words.clear();
@@ -80,11 +76,8 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                         }
                     }
                     ui.separator();
-                    // WHERE THE CONFIG LIVES - otherwise support turns into guesswork
                     if let Some(dir) = crate::gui::settings_dir() {
                         ui.label(egui::RichText::new(crate::i18n::tr1("settings-config-path", "path", &dir.display().to_string())).small().weak());
-                        // OPEN THE FOLDER in the system file manager. No separate crate is added for one button:
-                        // this is a single OS command, and it reads plainly as one.
                         if ui.small_button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-open-folder"))).clicked() {
                             let (bin, args) = crate::gui::reveal_command(ui.ctx().os(), &dir);
                             if let Err(e) = crate::system::start(bin, &args) {
@@ -93,9 +86,6 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                         }
                     }
                 });
-                // THE SECTION GOES INTO A PANEL OF ITS OWN, as in the parts library. A panel inside a window leaves
-                // the cursor exactly on its divider, and a bare scroll after it pressed the text against the line
-                // (issue #16); the central panel brings the margin that the side panel keeps on its own side.
                 egui::CentralPanel::default().show(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.label(egui::RichText::new(crate::i18n::tr(cur.key())).strong());
@@ -104,8 +94,6 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                         ui.separator();
                         if ui.button(format!("{}  {}", ph::ARROW_COUNTER_CLOCKWISE, crate::i18n::tr("settings-reset-section"))).clicked() {
                             cur.reset(&mut *wc.set);
-                            // the language and the scheme are not merely values: they have to be APPLIED, otherwise a
-                            // reset shows only after a restart
                             crate::gui::apply_language(&*wc.set);
                             crate::gui::apply_theme(&mut *wc.scheme, &*wc.set, ctx);
                             wc.scheme.note = Notice::info(crate::i18n::tr1("settings-reset-done", "name", &crate::i18n::tr(cur.key())));
@@ -118,11 +106,7 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                 });
             }
         });
-    // closed by its cross, or from inside: Esc in the table of keys closes the settings as it is drawn
     let open = open && wc.win.is(WinKind::Settings);
-    // A TABLE NOT DRAWN THIS FRAME IS LEFT: the settings closed or folded, another section chosen, or a search the table
-    // does not answer. What it was in the middle of is dropped here, where the frame says whether it was drawn, so a
-    // key pressed next is not taken as the name of a binding by a table nobody sees.
     let unfolded = shown.is_some_and(|r| r.inner.is_some());
     if !(open && unfolded && keys_table_shown(wc.scheme)) {
         crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
@@ -130,8 +114,6 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
     wc.win.set(WinKind::Settings, open);
 }
 
-/// WHETHER THE SECTION SHOWN HOLDS THE TABLE OF KEYS: the Keyboard section chosen, or a search its row answers - the
-/// same question `settings_section_body` asks drawing it.
 fn keys_table_shown(scheme: &super::SchemeUi) -> bool {
     use super::settings_sections::SettingsSection as Sec;
     if scheme.search.trim().is_empty() {
@@ -284,8 +266,6 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                     ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::PutsDown, crate::i18n::tr("settings-again-puts-down"));
                     ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::Cycles, crate::i18n::tr("settings-again-cycles"));
                 });
-                // the key of the circle bound now, as the table under the hint writes it: rebound there, the factory C
-                // would name a key that no longer takes the circle
                 let circle = qymcad_ui_state::key_label(&qymcad_ui_state::hotkey_key(wc.set, "sketch.circle"));
                 ui.label(egui::RichText::new(crate::i18n::tr1("settings-again-hint", "key", &circle)).weak().small());
                 ui.add_space(8.0);

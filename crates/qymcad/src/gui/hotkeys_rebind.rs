@@ -41,7 +41,6 @@ mod tests {
         assert_eq!(qymcad_ui_state::hotkey_action(&restarted.set, "sketch", egui::Key::Z), Some("sketch.circle"), "after a restart the key went back to the factory one — the edit is lost");
     }
 
-    /// WHAT A KEY PRESSED AGAIN DOES LIVES IN THE SETTINGS, and so survives a restart.
     #[test]
     fn the_key_pressed_again_survives_a_restart() {
         let mut app = App::default();
@@ -949,7 +948,6 @@ mod tests {
     }
 }
 
-/// THE TABLE OF KEYS LIVES IN SETTINGS -> KEYBOARD, reached and left through whole frames of the program.
 #[cfg(test)]
 mod in_the_settings {
     use egui::Key;
@@ -957,7 +955,6 @@ mod in_the_settings {
     use crate::gui::App;
     use crate::i18n::tr;
 
-    /// Every word written in the window, the next frame drawn - for a word that must stand nowhere, in no spelling.
     fn words(hand: &mut Hand) -> Vec<String> {
         hand.frame(Vec::new());
         hand.words_drawn().iter().map(|(t, _)| t.clone()).collect()
@@ -967,15 +964,13 @@ mod in_the_settings {
         crate::gui::hotkeys::hotkey_what(qymcad_ui_state::HOTKEYS.iter().find(|r| r.action == "part.extrude").expect("the extrude row"))
     }
 
-    /// The start screen's "Keyboard shortcuts" opens the settings at the keyboard section, the table in it; the Help
-    /// menu no longer has an item of its own for it.
     #[test]
     fn the_start_screen_opens_the_keys_in_the_settings() {
         let prev = qymcad_i18n::language();
         qymcad_i18n::set_language("en");
         let mut plain = App::default();
         let mut hand = Hand::new(&mut plain);
-        hand.press_word(&tr("start-close"), egui::Pos2::ZERO); // the start screen greets a blank document, and it has a button of its own
+        hand.press_word(&tr("start-close"), egui::Pos2::ZERO);
         let keys = tr("settings-hotkeys");
         let before = words(&mut hand).iter().any(|w| w.contains(&keys));
         let help = hand.press_word(&tr("menu-help"), egui::Pos2::ZERO);
@@ -990,7 +985,6 @@ mod in_the_settings {
         assert!(table && row, "the start screen's button did not show the table in the settings (caption: {table}, extrude row: {row})");
     }
 
-    /// ESC ANSWERS A CLASH "KEEP AS IT WAS" and leaves the settings open: the key stays, the question goes.
     #[test]
     fn esc_answers_a_clash_and_keeps_the_settings() {
         let prev = qymcad_i18n::language();
@@ -1001,7 +995,7 @@ mod in_the_settings {
             hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO) && hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO);
         let row = hand.written_at(&extrude_row());
         let waits = row.is_some_and(|r| hand.press_word("E", r.center()));
-        hand.key(Key::F); // F is the fillet's
+        hand.key(Key::F);
         let asked = hand.shows(&tr("hotkeys-swap"));
         hand.key(Key::Escape);
         let (still_asked, open) = (hand.shows(&tr("hotkeys-swap")), hand.shows(&tr("settings-hotkeys")));
@@ -1013,20 +1007,15 @@ mod in_the_settings {
         assert!(open, "Esc answered the clash and closed the settings too");
     }
 
-    /// Windows -> Settings -> Keyboard, through the menu. Whether every word was found.
     fn open_the_keys(hand: &mut Hand) -> bool {
         hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO) && hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO)
     }
 
-    /// The key of the extrusion clicked in the table, which then waits for a press. Whether it waits.
     fn wait_on_the_extrusion(hand: &mut Hand) -> bool {
         let row = hand.written_at(&extrude_row());
         row.is_some_and(|r| hand.press_word("E", r.center())) && hand.shows(&tr("hotkeys-press"))
     }
 
-    /// THE SETTINGS CLOSED FROM THE WINDOWS MENU WHILE THE TABLE WAITS FOR A KEY let the keyboard go: the waiting is
-    /// dropped, and the table opened again waits for nothing. Before, the settings closed by the menu never said so to the
-    /// table, and every key of the program went on being taken as the name of a binding.
     #[test]
     fn the_settings_closed_from_the_menu_let_the_keyboard_go() {
         let prev = qymcad_i18n::language();
@@ -1044,8 +1033,6 @@ mod in_the_settings {
         assert!(held.is_none() && !still_waits, "the settings closed by the menu left the table waiting for a key for {held:?} (waits when opened again: {still_waits})");
     }
 
-    /// A SEARCH THAT HIDES THE TABLE DROPS ITS QUESTION: a clash asked, "grid" typed into the search of the settings - the
-    /// table is no longer on screen, and a question nobody sees is not left for Esc to answer.
     #[test]
     fn a_search_that_hides_the_table_drops_its_question() {
         let prev = qymcad_i18n::language();
@@ -1053,7 +1040,7 @@ mod in_the_settings {
         let mut app = App::default();
         let mut hand = Hand::new(&mut app);
         let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
-        hand.key(Key::F); // F is the fillet's
+        hand.key(Key::F);
         let asked = hand.shows(&tr("hotkeys-swap"));
         let typed = hand.press_word(&tr("settings-search"), egui::Pos2::ZERO);
         hand.type_text("grid").frame(Vec::new());
@@ -1065,15 +1052,12 @@ mod in_the_settings {
         assert!(left.is_none(), "the search hid the table and its question was left: {left:?}");
     }
 
-    /// THE HINT OVER THE TABLE NAMES THE KEY OF THE CIRCLE BOUND NOW: the circle rebound to J in the table, the hint says
-    /// "J pressed again", not the factory C, which no longer takes the circle.
     #[test]
     fn the_hint_of_the_key_pressed_again_names_the_key_bound_now() {
         let prev = qymcad_i18n::language();
         qymcad_i18n::set_language("en");
         let mut app = App::default();
         let mut hand = Hand::new(&mut app);
-        // the rows of the sketch stand below the fold of the section: the filter brings the circle up
         let opened = open_the_keys(&mut hand) && hand.press_word(&tr("hotkeys-filter-hint"), egui::Pos2::ZERO);
         hand.type_text("circle").frame(Vec::new());
         let circle = crate::gui::hotkeys::hotkey_what(qymcad_ui_state::HOTKEYS.iter().find(|r| r.action == "sketch.circle").expect("the circle row"));
@@ -1087,8 +1071,6 @@ mod in_the_settings {
         assert!(named && !factory, "the hint does not name the key of the circle bound now (J named: {named}, C named: {factory})");
     }
 
-    /// THE SETTINGS FOLDED BY THE ARROW OF THEIR TITLE WHILE THE TABLE WAITS FOR A KEY let the keyboard go: the table is
-    /// no longer on screen, the waiting is dropped, and E pressed then is not taken as the name of a binding.
     #[test]
     fn the_settings_folded_let_the_keyboard_go() {
         let prev = qymcad_i18n::language();
@@ -1097,7 +1079,6 @@ mod in_the_settings {
         let mut hand = Hand::new(&mut app);
         let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
         let title = hand.fold_titled(&tr("win-settings"));
-        // folded, the window keeps its title bar alone
         let folded = hand.window_titled(&tr("win-settings")).is_some_and(|w| w.height() < 60.0);
         hand.frame(Vec::new());
         let held = hand.app.hotkeys.action.clone();
@@ -1106,8 +1087,6 @@ mod in_the_settings {
         assert!(held.is_none(), "the settings folded left the table waiting for a key for {held:?}");
     }
 
-    /// THE KEYBOARD SECTION CLICKED WHILE IT IS SHOWN KEEPS THE TABLE WAITING: the table stays on screen, so the key
-    /// it waits for is still the person's to press. Before, any click on a section dropped the waiting.
     #[test]
     fn the_section_shown_clicked_again_keeps_the_table_waiting() {
         let prev = qymcad_i18n::language();
@@ -1123,9 +1102,6 @@ mod in_the_settings {
         assert_eq!(held.as_deref(), Some("part.extrude"), "the Keyboard section clicked while shown dropped the waiting of the table");
     }
 
-    /// THE FILTER OF THE TABLE TYPED LETTER BY LETTER MARKS NO WIDGET RED: "c", then "i", each letter a frame, as a person
-    /// types. The rows the filter keeps move up into the places of the rows it drops, and a key button keyed by its
-    /// place took the id of the row before it - egui framed it red (`Hand` refuses such a frame).
     #[test]
     fn the_filter_typed_letter_by_letter_marks_no_widget_red() {
         let prev = qymcad_i18n::language();
@@ -1142,8 +1118,6 @@ mod in_the_settings {
         assert_eq!(filter, "cir", "setup: the letters did not reach the filter");
     }
 
-    /// ESC WITH THE TABLE ON SCREEN CLOSES THE SETTINGS and goes no further: the line in hand behind them stays in hand.
-    /// Before, Esc walked past the settings and put down the tool behind them.
     #[test]
     fn esc_with_the_table_on_screen_closes_the_settings_and_nothing_behind() {
         let prev = qymcad_i18n::language();
@@ -1163,8 +1137,6 @@ mod in_the_settings {
         assert_eq!(held, Some(qymcad_ui_state::SketchShape::Line), "Esc with the table on screen reached the line in hand behind the settings");
     }
 
-    /// THE START SCREEN'S "KEYBOARD SHORTCUTS" SHOWS THE TABLE even when a search was left in the settings: "scale"
-    /// typed and the settings closed, the button still opens the Keyboard section with the table in it.
     #[test]
     fn the_start_screen_shows_the_table_over_a_search_left_behind() {
         let prev = qymcad_i18n::language();

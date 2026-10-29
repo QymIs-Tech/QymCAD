@@ -1,14 +1,8 @@
-//! A KEY PRESSED AGAIN TAKES THE NEXT WAY OF ITS TOOL, when Settings -> Keyboard says so: C, C, C, C, C walks the circle
-//! through its four ways and back to the first. A tool taken anew starts at its first way, a way picked on the bar holds
-//! and the next press goes on from it, the points clicked for one way are dropped when the way changes, and a tool with
-//! one way is put down whatever is chosen. With the choice left at "puts the tool down" nothing changes.
-
 use super::super::hand::Hand;
 use super::super::App;
 use crate::i18n::tr;
 use qymcad_ui_state::{Again, CircleWay, RectWay, SketchShape};
 
-/// SETTINGS -> KEYBOARD SET TO `again` through the window, opened and closed from the Windows menu, as a person sets it.
 fn choose(hand: &mut Hand, again: Again) {
     let choice = match again {
         Again::PutsDown => "settings-again-puts-down",
@@ -25,15 +19,12 @@ fn choose(hand: &mut Hand, again: Again) {
     assert_eq!(hand.app.set.again, again, "setup: the window was gone through and the choice is not {again:?}");
 }
 
-/// A NEW SKETCH OPEN FOR DRAWING, the key pressed again answering as `again` says: the start screen closed, the sketch
-/// begun on the XY plane by its word, the choice made in Settings -> Keyboard.
 fn sketch(hand: &mut Hand, again: Again) {
     hand.press_word(&tr("start-close"), egui::Pos2::ZERO);
     assert!(hand.press_word(&tr("plane-xy-table"), egui::Pos2::ZERO), "setup: no XY plane to begin a sketch on");
     choose(hand, again);
 }
 
-/// What the status line says the way of the circle in force is: the name of the tool and the word of the way.
 fn said_of(way: CircleWay) -> String {
     let word = match way {
         CircleWay::CentreRadius => "opt-circle-centre-radius",
@@ -44,8 +35,6 @@ fn said_of(way: CircleWay) -> String {
     crate::i18n::tr2("opt-way-in-force", "tool", &tr("opt-circle-mode"), "way", &tr(word))
 }
 
-/// C, C, C, C, C: the circle by its centre and radius, by two points, touching two curves, by three points, and by its
-/// centre and radius again - the circle in hand all along, the status line naming each way.
 #[test]
 fn the_key_of_the_circle_walks_its_ways_and_comes_back() {
     let mut app = App::default();
@@ -59,7 +48,6 @@ fn the_key_of_the_circle_walks_its_ways_and_comes_back() {
             wrong.push(format!("in hand {held:?} by {way:?}, want the circle by {want:?}"));
         }
     }
-    // one more press: the status line names the way it took
     hand.key(egui::Key::C).frame(Vec::new());
     let said = said_of(CircleWay::TwoPoints);
     if !hand.words_drawn().iter().any(|(w, _)| w.contains(&said)) {
@@ -68,7 +56,6 @@ fn the_key_of_the_circle_walks_its_ways_and_comes_back() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
-/// C, C, Esc, C: the circle taken anew starts by its centre and radius, not by the two points it was left at.
 #[test]
 fn a_tool_taken_anew_starts_at_its_first_way() {
     let mut app = App::default();
@@ -82,7 +69,6 @@ fn a_tool_taken_anew_starts_at_its_first_way() {
     assert_eq!(hand.app.tool_prefs.circ_mode, CircleWay::CentreRadius, "the circle taken anew kept the way it was put down in");
 }
 
-/// C, "tangent" picked on the bar, C: the next press goes on from the way picked, to three points.
 #[test]
 fn the_next_press_goes_on_from_the_way_picked_on_the_bar() {
     let mut app = App::default();
@@ -96,7 +82,6 @@ fn the_next_press_goes_on_from_the_way_picked_on_the_bar() {
     assert_eq!(hand.app.tools.armed.drawing(), Some(SketchShape::Circle), "C after a way picked on the bar put the circle down");
 }
 
-/// L, L puts the line down under either choice: a tool with one way answers a second press as it always did.
 #[test]
 fn a_tool_with_one_way_is_put_down_under_either_choice() {
     for again in [Again::PutsDown, Again::Cycles] {
@@ -110,7 +95,6 @@ fn a_tool_with_one_way_is_put_down_under_either_choice() {
     }
 }
 
-/// E, E puts the extrusion of a part down under either choice: no command of a part has ways.
 #[test]
 fn a_command_of_a_part_is_put_down_under_either_choice() {
     for again in [Again::PutsDown, Again::Cycles] {
@@ -127,7 +111,6 @@ fn a_command_of_a_part_is_put_down_under_either_choice() {
     }
 }
 
-/// Under "puts the tool down" C, C puts the circle down, and the way left on the bar comes back with the next C.
 #[test]
 fn puts_down_keeps_the_way_left_on_the_bar() {
     let mut app = App::default();
@@ -141,8 +124,6 @@ fn puts_down_keeps_the_way_left_on_the_bar() {
     assert_eq!(hand.app.tool_prefs.circ_mode, CircleWay::TwoPoints, "the circle taken again lost the way left on its bar");
 }
 
-/// Two points of a turned rectangle clicked, R: the next way is taken, no rectangle is drawn and no point is left for
-/// the way taken - the clicks of one way mean nothing to another.
 #[test]
 fn the_points_of_one_way_are_dropped_when_the_way_changes() {
     let mut app = App::default();
@@ -160,8 +141,6 @@ fn the_points_of_one_way_are_dropped_when_the_way_changes() {
     assert_eq!(drawn, 0, "the change of the way drew a shape");
 }
 
-/// THE PREVIEW AFTER C, C IS THE CIRCLE BY TWO POINTS: a click at (0, 0) and the pointer at (20, 0) draw the circle of
-/// the diameter between them, about (10, 0) - not the circle about the click through the pointer.
 #[test]
 fn the_preview_after_the_key_pressed_again_is_the_circle_by_two_points() {
     let mut app = App::default();
@@ -185,13 +164,11 @@ fn the_preview_after_the_key_pressed_again_is_the_circle_by_two_points() {
     assert!(found, "no preview of radius {radius:.1} px about {centre:?}; the circles drawn: {:?}", rings.iter().map(|c| (c.center, c.radius)).collect::<Vec<_>>());
 }
 
-/// A drawing tool with ways: its key, and the words of its ways in the order of its bar.
 struct WithWays {
     key: egui::Key,
     words: &'static [&'static str],
 }
 
-/// The four tools with ways: the rectangle, the circle, the arc and the polygon.
 const WITH_WAYS: [WithWays; 4] = [
     WithWays { key: egui::Key::R, words: &["opt-rect-2corners", "opt-rect-centre", "opt-rect-3pt"] },
     WithWays { key: egui::Key::C, words: &["opt-circle-centre-radius", "opt-circle-2pt", "opt-tangent-m", "opt-rect-3pt"] },
@@ -199,8 +176,6 @@ const WITH_WAYS: [WithWays; 4] = [
     WithWays { key: egui::Key::G, words: &["opt-polygon-inscribed", "opt-polygon-circumscribed", "opt-by-edge"] },
 ];
 
-/// What a change of the way leaves of the tool in hand: the ways of the four tools, the tool, the points clicked and the
-/// curves a tangent circle picked.
 #[derive(Debug, PartialEq)]
 struct Left {
     ways: String,
@@ -209,15 +184,12 @@ struct Left {
     tangents: usize,
 }
 
-/// What takes the next way: the key of the tool pressed again, or the next word of its bar.
 #[derive(Clone, Copy)]
 enum Next {
     Key,
     Bar,
 }
 
-/// THE TOOL OF `tool` AT WAY `from` WITH A POINT CLICKED, then the next way taken `by` the key or the bar: what is left
-/// of the tool.
 fn next_way_from(tool: &WithWays, from: usize, by: Next) -> Left {
     let mut app = App::default();
     let mut hand = Hand::canvas(&mut app);
@@ -240,10 +212,6 @@ fn next_way_from(tool: &WithWays, from: usize, by: Next) -> Left {
     Left { ways, armed: format!("{:?}", hand.app.tools.armed), pts: hand.app.tools.tool.pts.len(), tangents: hand.app.tools.tool.circ_tan.len() }
 }
 
-/// THE KEY PRESSED AGAIN DOES WHAT THE NEXT WORD OF THE BAR DOES, for every tool with ways and from every way of it,
-/// the last one included: a point clicked, the way changed by the key and by the bar leave the same ways, the same tool
-/// in hand, the same points and the same picked curves. The polygon keeps its point both ways; the rectangle, the
-/// circle and the arc drop it both ways.
 #[test]
 fn the_key_pressed_again_does_what_the_bar_does() {
     let mut wrong = Vec::new();

@@ -72,24 +72,16 @@ impl SketchShape {
     ];
 }
 
-/// A WAY OF A DRAWING TOOL: one of the ways of building its shape the options bar offers, in the order of the bar.
 pub trait Way: Copy + PartialEq + 'static {
-    /// Every way of the tool, in the order of the bar.
     const WAYS: &'static [Self];
 
-    /// Its place on the bar.
     fn index(self) -> usize;
 
-    /// The way at a place on the bar; past the end, the first, the default - a place the bar does not hold never lands
-    /// the tool in a way of more clicks or of curves to pick.
     fn at(index: usize) -> Self {
         Self::WAYS.get(index).copied().unwrap_or(Self::WAYS[0])
     }
 }
 
-/// THE WAYS OF ONE TOOL FROM ONE LIST: the enum, its `ALL` in the order of the bar and its place on the bar are all made
-/// of the same names in the same order, the first the default. A way added to the enum is on the bar and in `ALL` by
-/// that alone; written as an enum and a list apart, a way left out of the list compiled and was taken for the first.
 macro_rules! ways {
     ($(#[$doc:meta])* $name:ident { $first:ident $(, $rest:ident)* $(,)? }) => {
         $(#[$doc])*
@@ -101,7 +93,6 @@ macro_rules! ways {
         }
 
         impl $name {
-            /// Every way, in the order of the bar.
             pub const ALL: [$name; 1 $(+ ways!(@one $rest))*] = [$name::$first $(, $name::$rest)*];
         }
 
@@ -119,22 +110,18 @@ macro_rules! ways {
 }
 
 ways! {
-    /// THE WAYS OF A CIRCLE: a centre and a radius, the two ends of a diameter, touching two curves, three points.
     CircleWay { CentreRadius, TwoPoints, Tangent, ThreePoints }
 }
 
 ways! {
-    /// THE WAYS OF A RECTANGLE: two corners, a centre and a corner, three points of a turned one.
     RectWay { TwoCorners, Centre, ThreePoints }
 }
 
 ways! {
-    /// THE WAYS OF AN ARC: a centre, a start and an end; three points; touching the curve it starts from.
     ArcWay { CentreStartEnd, ThreePoints, Tangent }
 }
 
 ways! {
-    /// THE WAYS OF A POLYGON: inscribed in its circle, about it, by the length of an edge.
     PolygonWay { Inscribed, Circumscribed, ByEdge }
 }
 
@@ -777,8 +764,6 @@ pub struct FeatPicks<'a> {
 mod ways_tests {
     use super::*;
 
-    /// Every way of a list stands at its own place on the bar, the place of a way leads back to it, and a place past the
-    /// end gives the first way, the default.
     fn in_order<W: Way + std::fmt::Debug>(wrong: &mut Vec<String>) {
         for (place, way) in W::WAYS.iter().enumerate() {
             if way.index() != place || W::at(place) != *way {
@@ -791,8 +776,6 @@ mod ways_tests {
         }
     }
 
-    /// THE WAYS OF EVERY TOOL ARE THE ONES OF ITS BAR, in its order: the four of the circle, the three of the rectangle,
-    /// the arc and the polygon, each at its own place, and a place past the end gives the first.
     #[test]
     fn the_ways_of_every_tool_stand_in_the_order_of_its_bar() {
         let mut wrong = Vec::new();

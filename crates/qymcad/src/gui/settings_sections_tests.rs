@@ -202,9 +202,6 @@ mod tests {
         for sec in Sec::all() {
             sec.reset(&mut s);
         }
-        // NOT SETTINGS BUT HISTORY AND A LAYOUT: the reset deliberately does not touch the list of
-        // recent files (it is not a value but a memory of work done), and the keys are reassigned in the
-        // table of Settings -> Keyboard with buttons of their own.
         let d = Settings::default();
         s.recent = d.recent.clone();
         s.hotkeys = d.hotkeys.clone();

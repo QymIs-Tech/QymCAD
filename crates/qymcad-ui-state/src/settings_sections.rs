@@ -19,7 +19,6 @@ use crate::Settings;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SettingsSection {
     General,
-    /// THE KEYS BOUND TO COMMANDS and what a key does when its tool is already in hand.
     Keyboard,
     Appearance,
     Viewport,
@@ -163,7 +162,6 @@ impl SettingsSection {
                 // history of work. "Reset the section" means "restore the factory values", not
                 // "forget what I did"; the File menu has a separate item for the latter.
             }
-            // The keys themselves are put back by the reset buttons of the table, one row or all of them.
             Keyboard => s.again = d.again,
             Appearance => {
                 s.scheme = d.scheme;

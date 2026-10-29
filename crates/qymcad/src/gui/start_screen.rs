@@ -128,7 +128,6 @@ pub(crate) fn start_screen(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context
                     if ui.button(format!("{}  {}", ph::KEYBOARD, crate::i18n::tr("start-hotkeys"))).clicked() {
                         wc.win.open(WinKind::Settings);
                         wc.scheme.section = qymcad_ui_state::settings_sections::SettingsSection::Keyboard;
-                        // a search left in the settings would show its findings, or another section, instead of the table
                         wc.scheme.search.clear();
                         close = true;
                     }

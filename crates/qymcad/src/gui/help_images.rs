@@ -1132,7 +1132,6 @@ mod tests {
         // THE HOTKEYS - the whole reference, the same one assembled from a single source.
         {
             let mut app = App::default();
-            // THE TABLE ALONE, as in Settings -> Keyboard: the rest of that window shows the path of the settings file, a user's name in it
             let img = shot_panel(&mut app, 600, 640, |a, ui| crate::gui::hotkeys::hotkeys_table(&mut a.win_ctx(&mut Vec::new()), ui));
             save("hotkeys.png", &img);
         }

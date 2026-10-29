@@ -32,7 +32,6 @@ fn close_the_program(s: Session) -> qymcad::Kept {
     }
 }
 
-/// The table of the keys, in Settings -> Keyboard.
 fn open_the_keys(s: &mut Session) {
     open_at(s, "settings-sec-keyboard");
 }
