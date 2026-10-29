@@ -1250,14 +1250,12 @@ impl App {
             return;
         }
         // THE ANSWER FROM AN OPEN FILE CHOOSER, picked up at the top of the frame so the file is acted on in
-        // the same frame it was chosen in. While one is open the frames are asked for by hand: the answer
-        // comes from a thread, and egui, which sleeps between input events, hears nothing of it.
+        // the same frame it was chosen in.
         let choosing = self.poll_file_ask();
         if choosing {
-            ctx.request_repaint();
             crate::gui::file_ask::inert_while_choosing(ui); // the system chooser is modal: nothing here answers until it does
         }
-        let capturing = hotkeys::hotkeys_take_keyboard(&self.win, &mut self.hotkeys, ctx);
+        let capturing = hotkeys::hotkeys_take_keyboard(&mut self.win, &self.scheme, &mut self.hotkeys, ctx);
         // Ctrl+S saves (silently into the current file, or a dialogue for a new one); Ctrl+Shift+S is "save as".
         if !choosing && !capturing && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             if ctx.input(|i| i.modifiers.shift) {

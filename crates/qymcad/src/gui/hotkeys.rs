@@ -63,7 +63,6 @@ fn table(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Contex
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-note")).weak().small()).wrap());
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-alt-note")).weak().small()).wrap());
     ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr("hotkeys-rebind-note")).weak().small()).wrap());
-    esc_in_the_table(wc);
     capture_hotkey(wc, ctx);
 }
 
@@ -98,8 +97,8 @@ pub(crate) fn hotkeys_left(hk: &mut qymcad_ui_state::HotkeyCapture) {
     settle(hk);
 }
 
-pub(crate) fn hotkeys_take_keyboard(win: &qymcad_ui_state::Windows, hk: &mut qymcad_ui_state::HotkeyCapture, ctx: &egui::Context) -> bool {
-    if !win.is(WinKind::Settings) {
+pub(crate) fn hotkeys_take_keyboard(win: &mut qymcad_ui_state::Windows, scheme: &super::SchemeUi, hk: &mut qymcad_ui_state::HotkeyCapture, ctx: &egui::Context) -> bool {
+    if !super::panels_windows::keys_table_on_screen(win, scheme, ctx) {
         if hk.action.is_some() || hk.clash.is_some() {
             settle(hk);
         }
@@ -112,16 +111,10 @@ pub(crate) fn hotkeys_take_keyboard(win: &qymcad_ui_state::Windows, hk: &mut qym
         return false;
     }
     if hk.clash.take().is_none() {
-        hk.esc = qymcad_ui_state::EscTaken::CloseTheSettings;
+        win.set(WinKind::Settings, false);
+        settle(hk);
     }
     true
-}
-
-fn esc_in_the_table(wc: &mut qymcad_ui_state::WinCtx) {
-    if wc.hotkeys.esc == qymcad_ui_state::EscTaken::CloseTheSettings {
-        wc.win.set(WinKind::Settings, false);
-        settle(wc.hotkeys);
-    }
 }
 
 /// WHETHER A ROW ANSWERS THE FILTER: by its description or by its key.
@@ -319,7 +312,6 @@ fn settle(hk: &mut qymcad_ui_state::HotkeyCapture) {
     hk.action = None;
     hk.clash = None;
     hk.note.clear();
-    hk.esc = qymcad_ui_state::EscTaken::None;
 }
 
 /// THE CLEAR ICON INSIDE THE FILTER FIELD, at its right end, while there is something to clear. Placed over the field

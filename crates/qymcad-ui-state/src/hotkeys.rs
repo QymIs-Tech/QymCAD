@@ -18,14 +18,6 @@ pub struct HotkeyCapture {
     pub clash: Option<HotkeyClash>,
     /// The filter typed above the table: a word of the description or a key.
     pub filter: String,
-    pub esc: EscTaken,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum EscTaken {
-    #[default]
-    None,
-    CloseTheSettings,
 }
 
 /// A key asked for by one action while another already holds it in the same area.

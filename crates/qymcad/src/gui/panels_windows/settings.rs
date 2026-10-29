@@ -34,84 +34,91 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
         return;
     }
     let mut open = wc.win.is(WinKind::Settings);
-    let shown =
-        egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(760.0).default_height(560.0).show(ctx, |ui| {
-            let mut q = std::mem::take(&mut wc.scheme.search);
-            ui.horizontal(|ui| {
-                ui.label(ph::MAGNIFYING_GLASS);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut q).id(egui::Id::new("settings_search_field")).hint_text(crate::i18n::tr("settings-search")).desired_width(f32::INFINITY));
+    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(settings_id()).open(&mut open).default_width(760.0).default_height(560.0).show(ctx, |ui| {
+        let mut q = std::mem::take(&mut wc.scheme.search);
+        ui.horizontal(|ui| {
+            ui.label(ph::MAGNIFYING_GLASS);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add(egui::TextEdit::singleline(&mut q).id(egui::Id::new("settings_search_field")).hint_text(crate::i18n::tr("settings-search")).desired_width(f32::INFINITY));
+            });
+        });
+        wc.scheme.search = q;
+        let query = wc.scheme.search.clone();
+        let searching = !query.trim().is_empty();
+        ui.separator();
+
+        let visible = settings_sections_visible(&*wc.scheme);
+        if visible.is_empty() {
+            ui.label(egui::RichText::new(crate::i18n::tr("settings-search-empty")).weak());
+            return;
+        }
+        if !visible.contains(&wc.scheme.section) {
+            wc.scheme.section = visible[0];
+        }
+
+        if searching {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for sec in visible {
+                    ui.label(egui::RichText::new(crate::i18n::tr(sec.key())).strong());
+                    settings_section_body(wc, ui, ctx, sec, &query);
+                    ui.separator();
+                }
+            });
+        } else {
+            let cur = wc.scheme.section;
+            egui::Panel::left("settings_sections").resizable(false).exact_size(168.0).show(ui, |ui| {
+                for sec in &visible {
+                    if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() && cur != *sec {
+                        wc.scheme.section = *sec;
+                        wc.scheme.note.words.clear();
+                        crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
+                    }
+                }
+                ui.separator();
+                if let Some(dir) = crate::gui::settings_dir() {
+                    ui.label(egui::RichText::new(crate::i18n::tr1("settings-config-path", "path", &dir.display().to_string())).small().weak());
+                    if ui.small_button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-open-folder"))).clicked() {
+                        let (bin, args) = crate::gui::reveal_command(ui.ctx().os(), &dir);
+                        if let Err(e) = crate::system::start(bin, &args) {
+                            wc.scheme.note = Notice::error(crate::i18n::tr1("settings-open-folder-failed", "error", &e.to_string()));
+                        }
+                    }
+                }
+            });
+            egui::CentralPanel::default().show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.label(egui::RichText::new(crate::i18n::tr(cur.key())).strong());
+                    ui.separator();
+                    settings_section_body(wc, ui, ctx, cur, "");
+                    ui.separator();
+                    if ui.button(format!("{}  {}", ph::ARROW_COUNTER_CLOCKWISE, crate::i18n::tr("settings-reset-section"))).clicked() {
+                        cur.reset(&mut *wc.set);
+                        crate::gui::apply_language(&*wc.set);
+                        crate::gui::apply_theme(&mut *wc.scheme, &*wc.set, ctx);
+                        wc.scheme.note = Notice::info(crate::i18n::tr1("settings-reset-done", "name", &crate::i18n::tr(cur.key())));
+                    }
+                    if !wc.scheme.note.is_empty() {
+                        let note = qymcad_ui_state::notice_text(&wc.scheme.pal, &wc.scheme.note, qymcad_ui_state::NoticeSize::Small);
+                        ui.label(if wc.scheme.note.tone == qymcad_ui_state::Tone::Info { note.color(wc.scheme.pal.hint()) } else { note });
+                    }
                 });
             });
-            wc.scheme.search = q;
-            let query = wc.scheme.search.clone();
-            let searching = !query.trim().is_empty();
-            ui.separator();
-
-            let visible = settings_sections_visible(&*wc.scheme);
-            if visible.is_empty() {
-                ui.label(egui::RichText::new(crate::i18n::tr("settings-search-empty")).weak());
-                return;
-            }
-            if !visible.contains(&wc.scheme.section) {
-                wc.scheme.section = visible[0];
-            }
-
-            if searching {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    for sec in visible {
-                        ui.label(egui::RichText::new(crate::i18n::tr(sec.key())).strong());
-                        settings_section_body(wc, ui, ctx, sec, &query);
-                        ui.separator();
-                    }
-                });
-            } else {
-                let cur = wc.scheme.section;
-                egui::Panel::left("settings_sections").resizable(false).exact_size(168.0).show(ui, |ui| {
-                    for sec in &visible {
-                        if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() && cur != *sec {
-                            wc.scheme.section = *sec;
-                            wc.scheme.note.words.clear();
-                            crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
-                        }
-                    }
-                    ui.separator();
-                    if let Some(dir) = crate::gui::settings_dir() {
-                        ui.label(egui::RichText::new(crate::i18n::tr1("settings-config-path", "path", &dir.display().to_string())).small().weak());
-                        if ui.small_button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-open-folder"))).clicked() {
-                            let (bin, args) = crate::gui::reveal_command(ui.ctx().os(), &dir);
-                            if let Err(e) = crate::system::start(bin, &args) {
-                                wc.scheme.note = Notice::error(crate::i18n::tr1("settings-open-folder-failed", "error", &e.to_string()));
-                            }
-                        }
-                    }
-                });
-                egui::CentralPanel::default().show(ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.label(egui::RichText::new(crate::i18n::tr(cur.key())).strong());
-                        ui.separator();
-                        settings_section_body(wc, ui, ctx, cur, "");
-                        ui.separator();
-                        if ui.button(format!("{}  {}", ph::ARROW_COUNTER_CLOCKWISE, crate::i18n::tr("settings-reset-section"))).clicked() {
-                            cur.reset(&mut *wc.set);
-                            crate::gui::apply_language(&*wc.set);
-                            crate::gui::apply_theme(&mut *wc.scheme, &*wc.set, ctx);
-                            wc.scheme.note = Notice::info(crate::i18n::tr1("settings-reset-done", "name", &crate::i18n::tr(cur.key())));
-                        }
-                        if !wc.scheme.note.is_empty() {
-                            let note = qymcad_ui_state::notice_text(&wc.scheme.pal, &wc.scheme.note, qymcad_ui_state::NoticeSize::Small);
-                            ui.label(if wc.scheme.note.tone == qymcad_ui_state::Tone::Info { note.color(wc.scheme.pal.hint()) } else { note });
-                        }
-                    });
-                });
-            }
-        });
+        }
+    });
     let open = open && wc.win.is(WinKind::Settings);
-    let unfolded = shown.is_some_and(|r| r.inner.is_some());
-    if !(open && unfolded && keys_table_shown(wc.scheme)) {
+    wc.win.set(WinKind::Settings, open);
+    if !keys_table_on_screen(wc.win, wc.scheme, ctx) {
         crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
     }
-    wc.win.set(WinKind::Settings, open);
+}
+
+fn settings_id() -> egui::Id {
+    egui::Id::new("win_settings")
+}
+
+pub(crate) fn keys_table_on_screen(win: &qymcad_ui_state::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) -> bool {
+    let unfolded = egui::collapsing_header::CollapsingState::load(ctx, settings_id().with("collapsing")).is_none_or(|c| c.is_open());
+    win.is(WinKind::Settings) && unfolded && keys_table_shown(scheme)
 }
 
 fn keys_table_shown(scheme: &super::SchemeUi) -> bool {

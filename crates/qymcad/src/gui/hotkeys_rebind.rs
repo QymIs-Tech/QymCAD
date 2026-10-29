@@ -1153,4 +1153,43 @@ mod in_the_settings {
         assert!(opened && typed && closed && pressed, "setup: (opened: {opened}, typed: {typed}, closed: {closed}, start button: {pressed})");
         assert!(row, "the start screen's button opened the settings over the search left behind, without the table");
     }
+
+    fn line_in_hand(hand: &mut Hand) -> bool {
+        hand.press_word(&tr("start-close"), egui::Pos2::ZERO);
+        let sketch = hand.press_word(&tr("plane-xy-table"), egui::Pos2::ZERO);
+        hand.key(Key::L);
+        sketch && hand.app.tools.armed.drawing() == Some(qymcad_ui_state::SketchShape::Line)
+    }
+
+    #[test]
+    fn esc_over_another_section_reaches_the_tool_in_hand() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let line = line_in_hand(&mut hand);
+        let general = open_the_keys(&mut hand) && hand.press_word(&tr("settings-sec-general"), egui::Pos2::ZERO) && !hand.shows(&extrude_row());
+        hand.key(Key::Escape);
+        let held = hand.app.tools.armed.drawing();
+        qymcad_i18n::set_language(&prev);
+        assert!(line && general, "setup: no line in hand, or the General section not shown (line: {line}, general: {general})");
+        assert_ne!(held, Some(qymcad_ui_state::SketchShape::Line), "Esc over the General section did not reach the line in hand");
+    }
+
+    #[test]
+    fn esc_over_the_settings_folded_reaches_the_tool_in_hand() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let line = line_in_hand(&mut hand);
+        let opened = open_the_keys(&mut hand);
+        hand.fold_titled(&tr("win-settings"));
+        let folded = hand.window_titled(&tr("win-settings")).is_some_and(|w| w.height() < 60.0);
+        hand.key(Key::Escape);
+        let held = hand.app.tools.armed.drawing();
+        qymcad_i18n::set_language(&prev);
+        assert!(line && opened && folded, "setup: (line: {line}, opened: {opened}, folded: {folded})");
+        assert_ne!(held, Some(qymcad_ui_state::SketchShape::Line), "Esc over the settings folded did not reach the line in hand");
+    }
 }
