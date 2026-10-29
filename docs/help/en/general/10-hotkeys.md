@@ -56,9 +56,9 @@ while the cursor is outside a field — inside one it types a space.
 ## A key pressed again
 
 The key of the tool in hand pressed again puts the tool down. Settings -> Keyboard, “The key of a tool in hand,
-pressed again”, can make it take the next way of the tool instead: `C` draws a circle by its centre and radius,
-`C` again by two points, then touching two curves, then by three points, and the next `C` is back at the centre
-and radius. The circle, the rectangle, the arc and the polygon have ways; any other tool is put down either way.
+pressed again”, set to “Cycles through its modes”, makes it switch the tool to its next mode instead: `C` draws a
+circle by its centre and radius, `C` again by two points, then touching two curves, then by three points, and the
+next `C` is back at the centre and radius. The circle, the rectangle, the arc and the polygon have ways; any other tool is put down either way.
 
 A tool taken anew starts at its first way. A way chosen in the options bar holds, and the next press goes on from
 it. The way changes as it changes when it is picked in the options bar: points already clicked for a rectangle,
