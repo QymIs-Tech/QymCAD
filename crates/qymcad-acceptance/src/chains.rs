@@ -603,7 +603,10 @@ fn scratch() -> String {
 /// MAKE ONE STEP in `s`, as a person makes it.
 fn perform(s: &mut Session, step: &Step) {
     match step {
-        Step::Take { tool: id, entry } => run::enter_for(s, tool(id), &tool(id).entries[*entry]),
+        Step::Take { tool: id, entry } => match &tool(id).entries[*entry] {
+            crate::contract::Entry::KeyAgain(key, _) => run::enter(s, &crate::contract::Entry::Key(qymcad::Modifiers::NONE, *key)),
+            e => run::enter_for(s, tool(id), e),
+        },
         Step::Click { tool: id, at } => {
             let t = tool(id);
             match t.flow {

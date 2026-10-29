@@ -393,6 +393,13 @@ fn layout_or_standard<'de, D: serde::Deserializer<'de>>(d: D) -> Result<std::col
     })
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Again {
+    #[default]
+    PutsDown,
+    Cycles,
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -455,6 +462,7 @@ pub struct Settings {
     /// who had ever touched the keys - their action simply would not be in the record. The differences, by
     /// contrast, survive any growth of the table.
     pub hotkeys: std::collections::BTreeMap<String, String>,
+    pub again: Again,
     /// THE HELP'S LANGUAGE, SEPARATE FROM THE INTERFACE'S. Empty means whatever the interface uses.
     ///
     /// Not a whim: CAD terminology is English, and someone working in a translated interface may well want to read

@@ -34,9 +34,8 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
         return;
     }
     let mut open = wc.win.is(WinKind::Settings);
-    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(620.0).default_height(460.0).show(ctx, |ui| {
+    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(settings_id()).open(&mut open).default_width(760.0).default_height(560.0).show(ctx, |ui| {
         let mut q = std::mem::take(&mut wc.scheme.search);
-        // the field's width does NOT come from the window's width - otherwise the window swells as text is typed (see the tree)
         ui.horizontal(|ui| {
             ui.label(ph::MAGNIFYING_GLASS);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -51,15 +50,13 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
         let visible = settings_sections_visible(&*wc.scheme);
         if visible.is_empty() {
             ui.label(egui::RichText::new(crate::i18n::tr("settings-search-empty")).weak());
-            return; // closing the window is handled by `open` OUTSIDE the closure
+            return;
         }
         if !visible.contains(&wc.scheme.section) {
             wc.scheme.section = visible[0];
         }
 
         if searching {
-            // THE SEARCH RUNS ACROSS THE SECTIONS: a person searches for a setting, not for a section, and is
-            // under no obligation to know where it was put.
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for sec in visible {
                     ui.label(egui::RichText::new(crate::i18n::tr(sec.key())).strong());
@@ -71,17 +68,15 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
             let cur = wc.scheme.section;
             egui::Panel::left("settings_sections").resizable(false).exact_size(168.0).show(ui, |ui| {
                 for sec in &visible {
-                    if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() {
+                    if ui.selectable_label(cur == *sec, crate::i18n::tr(sec.key())).clicked() && cur != *sec {
                         wc.scheme.section = *sec;
                         wc.scheme.note.words.clear();
+                        crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
                     }
                 }
                 ui.separator();
-                // WHERE THE CONFIG LIVES - otherwise support turns into guesswork
                 if let Some(dir) = crate::gui::settings_dir() {
                     ui.label(egui::RichText::new(crate::i18n::tr1("settings-config-path", "path", &dir.display().to_string())).small().weak());
-                    // OPEN THE FOLDER in the system file manager. No separate crate is added for one button:
-                    // this is a single OS command, and it reads plainly as one.
                     if ui.small_button(format!("{}  {}", ph::FOLDER_OPEN, crate::i18n::tr("settings-open-folder"))).clicked() {
                         let (bin, args) = crate::gui::reveal_command(ui.ctx().os(), &dir);
                         if let Err(e) = crate::system::start(bin, &args) {
@@ -90,9 +85,6 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                     }
                 }
             });
-            // THE SECTION GOES INTO A PANEL OF ITS OWN, as in the parts library. A panel inside a window leaves
-            // the cursor exactly on its divider, and a bare scroll after it pressed the text against the line
-            // (issue #16); the central panel brings the margin that the side panel keeps on its own side.
             egui::CentralPanel::default().show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(egui::RichText::new(crate::i18n::tr(cur.key())).strong());
@@ -101,8 +93,6 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
                     ui.separator();
                     if ui.button(format!("{}  {}", ph::ARROW_COUNTER_CLOCKWISE, crate::i18n::tr("settings-reset-section"))).clicked() {
                         cur.reset(&mut *wc.set);
-                        // the language and the scheme are not merely values: they have to be APPLIED, otherwise a
-                        // reset shows only after a restart
                         crate::gui::apply_language(&*wc.set);
                         crate::gui::apply_theme(&mut *wc.scheme, &*wc.set, ctx);
                         wc.scheme.note = Notice::info(crate::i18n::tr1("settings-reset-done", "name", &crate::i18n::tr(cur.key())));
@@ -115,7 +105,29 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
             });
         }
     });
+    let open = open && wc.win.is(WinKind::Settings);
     wc.win.set(WinKind::Settings, open);
+    if !keys_table_on_screen(wc.win, wc.scheme, ctx) {
+        crate::gui::hotkeys::hotkeys_left(wc.hotkeys);
+    }
+}
+
+fn settings_id() -> egui::Id {
+    egui::Id::new("win_settings")
+}
+
+pub(crate) fn keys_table_on_screen(win: &qymcad_ui_state::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) -> bool {
+    let unfolded = egui::collapsing_header::CollapsingState::load(ctx, settings_id().with("collapsing")).is_none_or(|c| c.is_open());
+    win.is(WinKind::Settings) && unfolded && keys_table_shown(scheme)
+}
+
+fn keys_table_shown(scheme: &super::SchemeUi) -> bool {
+    use super::settings_sections::SettingsSection as Sec;
+    if scheme.search.trim().is_empty() {
+        scheme.section == Sec::Keyboard
+    } else {
+        Sec::row_matches("settings-hotkeys", &scheme.search, &|s: &str| crate::i18n::tr(s))
+    }
 }
 
 /// A SECTION'S CONTENTS. An empty `query` shows everything; otherwise only the matching rows.
@@ -252,6 +264,22 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                         wc.set.recent.truncate(n);
                     }
                 });
+            }
+        }
+        Sec::Keyboard => {
+            if show("settings-again") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-again"));
+                    ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::PutsDown, crate::i18n::tr("settings-again-puts-down"));
+                    ui.selectable_value(&mut wc.set.again, qymcad_ui_state::Again::Cycles, crate::i18n::tr("settings-again-cycles"));
+                });
+                let circle = qymcad_ui_state::key_label(&qymcad_ui_state::hotkey_key(wc.set, "sketch.circle"));
+                ui.label(egui::RichText::new(crate::i18n::tr1("settings-again-hint", "key", &circle)).weak().small());
+                ui.add_space(8.0);
+            }
+            if show("settings-hotkeys") {
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-hotkeys")).strong());
+                crate::gui::hotkeys::hotkeys_table(wc, ui);
             }
         }
         Sec::Appearance => {

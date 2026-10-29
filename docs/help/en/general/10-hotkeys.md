@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-The full list is “Help -> Keyboard shortcuts”. Keys are reassigned there too.
+The full list is in “Settings -> Keyboard”. Keys are reassigned there too.
 
 ![The shortcut reference: the key on the left, what it does on the right.](img/hotkeys.png)
 
@@ -53,9 +53,21 @@ There is no need to click away to free the keyboard.
 `Ctrl+K` opens the command search **always**, including from a field. Space does the same, but only
 while the cursor is outside a field — inside one it types a space.
 
+## A key pressed again
+
+The key of the tool in hand pressed again puts the tool down. Settings -> Keyboard, “The key of a tool in hand,
+pressed again”, set to “Cycles through its modes”, makes it switch the tool to its next mode instead: `C` draws a
+circle by its centre and radius, `C` again by two points, then touching two curves, then by three points, and the
+next `C` is back at the centre and radius. The circle, the rectangle, the arc and the polygon have ways; any other tool is put down either way.
+
+A tool taken anew starts at its first way. A way chosen in the options bar holds, and the next press goes on from
+it. The way changes as it changes when it is picked in the options bar: points already clicked for a rectangle,
+a circle or an arc are dropped, and a polygon keeps its centre. To put a tool with ways down, press
+`Esc`.
+
 ## Reassigning
 
-In the reference window click the key of an action, then press the one you want. If it is already
+In the table click the key of an action, then press the one you want. If it is already
 taken in the same workbench, the program says which command has it and asks what to do — see below.
 
 Reassignments are kept in the settings and travel with the profile. **reset** next to a key
@@ -64,9 +76,9 @@ returns its default; **Reset every key to the default** returns them all.
 Instead of a single key you can press a combination with `Ctrl` or `Shift`: a letter, a digit or `F3`–`F12` —
 `W`, `Shift+W`, `Ctrl+Shift+F5`. `Alt` cannot be part of a key: it is what reaches the keys from a text field.
 A `Ctrl` combination types nothing, so it works from a text field as it is. On a Mac `Ctrl` here means `Cmd`,
-`Alt` means `Option`, and the window writes the keys the Mac way, with the symbols of these keys. A Mac also
+`Alt` means `Option`, and the table writes the keys the Mac way, with the symbols of these keys. A Mac also
 takes combinations with its own `Control` key, `Control+J` or `Control+Cmd+J`; they work only on a Mac, and on
-another system the window shows such a key crossed out. `Esc` while the window waits leaves the key as it was,
+another system the table shows such a key crossed out. `Esc` while the table waits leaves the key as it was,
 `Backspace` leaves the action without a key.
 
 Some combinations cannot be taken. `Ctrl` with `A`, `C`, `K`, `S`, `V`, `X`, `Y` or `Z` — with or without
@@ -78,7 +90,7 @@ macOS takes `Shift+Cmd+Q`, `Control+Cmd+Q`, `Shift+Cmd+3`, `Shift+Cmd+4`, `Shift
 `Control+A`, `Control+E`, `Control+B`, `Control+F`, `Control+P`, `Control+N` move the cursor. Hover over a
 crossed-out key to see why.
 
-When the key is taken, the window offers **Swap** (that command gets the key you are replacing), **Take
+When the key is taken, the table offers **Swap** (that command gets the key you are replacing), **Take
 it** (that command is left without a key) or **Keep as it was**. The filter above the table finds a command
 by a word of its description or by its key. In an interface in another language it also finds a command by
 its English name: `mirror` finds Mirror. The command search (Ctrl+K) finds the same way.

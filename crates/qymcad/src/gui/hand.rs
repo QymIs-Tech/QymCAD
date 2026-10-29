@@ -13,6 +13,8 @@ mod presses;
 #[cfg(test)]
 mod sketch_text;
 #[cfg(test)]
+mod windows;
+#[cfg(test)]
 pub(super) use presses::escape;
 
 /// A CARRY ON THE SCREEN: where the button goes down and where the hand holds it, the button still down.

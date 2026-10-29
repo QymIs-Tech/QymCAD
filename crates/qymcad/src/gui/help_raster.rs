@@ -27,6 +27,7 @@ pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&mut e
     let (w, h) = (size[0] * SS, size[1] * SS);
     let ctx = egui::Context::default();
     super::install_fonts(&ctx);
+    qymcad_ui_state::set_key_style(qymcad_ui_state::KeyStyle::Plain);
     // SUPERSAMPLING THROUGH PIXEL DENSITY RATHER THAN CANVAS SIZE. The first edition simply took a
     // canvas twice as large — and the dimension captions and constraint glyphs came out half the size:
     // they are given in POINTS and do not react to a larger canvas. `egui` can do exactly what is

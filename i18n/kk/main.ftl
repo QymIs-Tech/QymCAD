@@ -45,7 +45,6 @@ file-quit = Шығу
 
 ## Help menu
 
-help-hotkeys = Пернелер тіркесімі…
 help-about = Бағдарлама туралы…
 help-support = Авторды қолдау…
 
@@ -304,7 +303,11 @@ scheme-color-icon_datum_primary = База (негізгі)
 scheme-color-icon_datum_secondary = База (қосымша)
 
 # --- KEYBOARD SHORTCUTS ---
-hotkeys-title = Пернелер тіркесімі
+settings-hotkeys = Пернелер тіркесімі
+settings-again = Қолдағы құралдың пернесін қайта басу
+settings-again-puts-down = Құралды қояды
+settings-again-cycles = Тәсілдерді кезекпен ауыстырады
+settings-again-hint = Шеңбер, тіктөртбұрыш, доға және көпбұрыш үшін: { $key } қайта басылса — шеңбер екі нүкте бойынша, содан кейін екі қисыққа жанама, содан кейін үш нүкте бойынша, және қайтадан басынан. Бір тәсілі бар құрал кез келген жағдайда қойылады.
 help-title = Анықтама
 help-search = Анықтамадан іздеу
 help-back = Артқа
@@ -791,6 +794,8 @@ tool-rotate = Бұру
 opt-rect-rotated = Бұрылған: 2 нүкте қабырғаны береді, үшіншісі биіктікті
 opt-text-as-note = Ескертпе ретінде қою (геометрия емес)
 opt-rect-mode = Тіктөрт.:
+opt-polygon-mode = Көпбұрыш:
+opt-way-in-force = { $tool } { $way }
 tool-rect = Тіктөртбұрыш
 opt-radius = Радиус
 opt-fillet-chord = Хорда
@@ -2405,6 +2410,7 @@ face-center = Центрі: [{ $v }]
 settings-search = Баптаулардан іздеу
 settings-search-empty = Ештеңе табылмады — басқа сөзді байқап көріңіз
 settings-sec-general = Жалпы
+settings-sec-keyboard = Пернетақта
 settings-sec-appearance = Сыртқы көрініс
 settings-sec-viewport = Көрініс терезесі
 settings-sec-sketch = Эскиз

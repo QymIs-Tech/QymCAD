@@ -45,7 +45,6 @@ file-quit = Вихід
 
 ## Меню «Довідка»
 
-help-hotkeys = Гарячі клавіші…
 help-about = Про програму…
 help-support = Підтримати автора…
 
@@ -303,7 +302,11 @@ scheme-color-icon_assembly_secondary = складання: додатковий 
 scheme-color-icon_datum_primary = бази: основний акцент
 scheme-color-icon_datum_secondary = бази: додатковий акцент
 # --- ГАРЯЧІ КЛАВІШІ ---
-hotkeys-title = Гарячі клавіші
+settings-hotkeys = Гарячі клавіші
+settings-again = Клавіша інструмента в руці, натиснута ще раз
+settings-again-puts-down = Кладе інструмент
+settings-again-cycles = Перебирає способи по колу
+settings-again-hint = Для кола, прямокутника, дуги й багатокутника: { $key } ще раз — коло за двома точками, далі дотичне до двох кривих, далі за трьома точками й знову спочатку. Інструмент з одним способом кладеться в будь-якому разі.
 help-title = Довідка
 help-search = Пошук у довідці
 help-back = Назад
@@ -789,6 +792,8 @@ tool-rotate = Поворот
 opt-rect-rotated = Повернутий: 2 точки — сторона, 3-я — висота
 opt-text-as-note = Поставити як текст-нотатку (не геометрія)
 opt-rect-mode = Прямокут.:
+opt-polygon-mode = Багатокут.:
+opt-way-in-force = { $tool } { $way }
 tool-rect = Прямокутник
 opt-radius = Радіус
 opt-fillet-chord = Хорда
@@ -2402,6 +2407,7 @@ face-center = Центр: [{ $v }]
 settings-search = Пошук за налаштуваннями
 settings-search-empty = Нічого не знайдено — спробуйте інше слово
 settings-sec-general = Загальне
+settings-sec-keyboard = Клавіатура
 settings-sec-appearance = Зовнішній вигляд
 settings-sec-viewport = В'юпорт
 settings-sec-sketch = Ескіз

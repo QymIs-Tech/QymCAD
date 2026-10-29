@@ -141,6 +141,7 @@ pub enum Entry {
     Button(Word),
     /// A key, with these modifiers held.
     Key(qymcad::Modifiers, Key),
+    KeyAgain(Key, Word),
     /// The command search, by the command's name.
     Search(Word),
     /// The command search, by the name it shows for a command that has no name of its own: the title of the article

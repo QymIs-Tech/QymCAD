@@ -19,6 +19,7 @@ use crate::Settings;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SettingsSection {
     General,
+    Keyboard,
     Appearance,
     Viewport,
     Sketch,
@@ -33,7 +34,7 @@ impl SettingsSection {
     /// All the sections in display order.
     pub fn all() -> &'static [Self] {
         use SettingsSection::*;
-        &[General, Appearance, Viewport, Sketch, Part, Assembly, Layout]
+        &[General, Keyboard, Appearance, Viewport, Sketch, Part, Assembly, Layout]
     }
 
     /// The catalogue key holding the section name.
@@ -41,6 +42,7 @@ impl SettingsSection {
         use SettingsSection::*;
         match self {
             General => "settings-sec-general",
+            Keyboard => "settings-sec-keyboard",
             Appearance => "settings-sec-appearance",
             Viewport => "settings-sec-viewport",
             Sketch => "settings-sec-sketch",
@@ -57,7 +59,7 @@ impl SettingsSection {
             Sketch => Some("sketch"),
             Part => Some("part"),
             Assembly => Some("assembly"),
-            General | Appearance | Viewport | Layout => None,
+            General | Keyboard | Appearance | Viewport | Layout => None,
         }
     }
 
@@ -79,6 +81,7 @@ impl SettingsSection {
                 "settings-recent-limit",
                 "settings-profile",
             ],
+            Keyboard => &["settings-again", "settings-hotkeys"],
             Appearance => &["settings-scheme", "settings-ui-scale", "settings-icon-themes"],
             Viewport => &[
                 "settings-engine",
@@ -159,6 +162,7 @@ impl SettingsSection {
                 // history of work. "Reset the section" means "restore the factory values", not
                 // "forget what I did"; the File menu has a separate item for the latter.
             }
+            Keyboard => s.again = d.again,
             Appearance => {
                 s.scheme = d.scheme;
                 s.ui_scale = d.ui_scale;

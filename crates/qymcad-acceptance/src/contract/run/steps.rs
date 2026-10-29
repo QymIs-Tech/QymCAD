@@ -43,6 +43,10 @@ pub(crate) fn enter(s: &mut Session, entry: &Entry) {
         Entry::Key(modifiers, key) => {
             s.chord(*modifiers, *key);
         }
+        Entry::KeyAgain(key, _) => {
+            next_way_on_key_again(s);
+            s.chord(Modifiers::NONE, *key).chord(Modifiers::NONE, *key);
+        }
         Entry::Search(name) => {
             let name = s.word(name);
             s.chord(Modifiers::COMMAND, Key::K).type_text(&name).key(Key::Enter);
@@ -58,6 +62,15 @@ pub(crate) fn enter(s: &mut Session, entry: &Entry) {
         // the name comes from the article of the tool, which this way in does not carry - `enter_for` knows it
         Entry::SearchByArticle => panic!("the way in by the article's name needs the tool: take it with `enter_for`"),
     }
+}
+
+fn next_way_on_key_again(s: &mut Session) {
+    let (windows, settings) = (s.word("menu-windows"), s.word("menu-settings"));
+    s.menu(&[&windows, &settings]);
+    let (keyboard, cycles, title) = (s.word("settings-sec-keyboard"), s.word("settings-again-cycles"), s.word("win-settings"));
+    s.press_word(&keyboard);
+    s.press_word(&cycles);
+    s.close_window(&title);
 }
 
 /// Does the bar name the tool in hand by its own word? This is the naming, checked by the way in (point 1).

@@ -80,7 +80,7 @@ contract!(menu_settings, qymcad_acceptance::tools::menus::SETTINGS);
 contract!(menu_command_search, qymcad_acceptance::tools::menus::COMMAND_SEARCH);
 contract!(menu_parts_library, qymcad_acceptance::tools::menus::PARTS_LIBRARY);
 contract!(menu_start_screen, qymcad_acceptance::tools::menus::START_SCREEN);
-contract!(menu_hotkeys, qymcad_acceptance::tools::menus::HOTKEYS);
+contract!(settings_keyboard, qymcad_acceptance::tools::menus::KEYBOARD);
 contract!(menu_report, qymcad_acceptance::tools::menus::REPORT);
 contract!(menu_undo, qymcad_acceptance::tools::menus::UNDO);
 contract!(menu_redo, qymcad_acceptance::tools::menus::REDO);

@@ -937,8 +937,8 @@ mod blend_outline {
                 .collect()
         };
         let on = |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).abs() < 1e-9 && (p[1] - q[1]).abs() < 1e-9;
-        assert!(vertices(super::polygon_from_clicks(a, b, 6, 0)).iter().any(|v| on(*v, [15.0, 0.0])), "inscribed: a vertex at the click");
-        let vs = vertices(super::polygon_from_clicks(a, b, 6, 1));
+        assert!(vertices(super::polygon_from_clicks(a, b, 6, super::PolygonWay::Inscribed)).iter().any(|v| on(*v, [15.0, 0.0])), "inscribed: a vertex at the click");
+        let vs = vertices(super::polygon_from_clicks(a, b, 6, super::PolygonWay::Circumscribed));
         assert!(
             (0..6).any(|k| {
                 let (p, q) = (vs[k], vs[(k + 1) % 6]);
@@ -946,7 +946,7 @@ mod blend_outline {
             }),
             "circumscribed: the middle of an edge at the click: {vs:?}"
         );
-        let vs = vertices(super::polygon_from_clicks(a, b, 6, 2));
+        let vs = vertices(super::polygon_from_clicks(a, b, 6, super::PolygonWay::ByEdge));
         assert!(vs.iter().any(|v| on(*v, [0.0, 0.0])) && vs.iter().any(|v| on(*v, [15.0, 0.0])), "by edge: both clicks are vertices: {vs:?}");
     }
 

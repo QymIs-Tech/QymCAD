@@ -236,12 +236,12 @@ pub enum Opened {
 pub struct SketchToolPrefs {
     /// the polygon: the number of sides and how its two clicks are read (see `polygon_from_clicks`)
     pub poly_n: u32,
-    pub poly_mode: u8,
+    pub poly_mode: PolygonWay,
     /// the construction modes: an arc (by three points or by a centre), a rectangle (corners or centre), a circle (a
     /// centre and a radius, two points, touching two curves, three points)
-    pub arc_mode: u8,
-    pub rect_mode: u8,
-    pub circ_mode: u8,
+    pub arc_mode: ArcWay,
+    pub rect_mode: RectWay,
+    pub circ_mode: CircleWay,
     /// THE RADIUS OF A CIRCLE TOUCHING TWO CURVES, laid at the pointer once both are picked
     pub circ_r: f64,
     /// EXTEND TAKES BOTH ENDS of its line, each to the nearest geometry on its side ("Both sides" in its bar)
@@ -272,10 +272,10 @@ impl Default for SketchToolPrefs {
     fn default() -> Self {
         Self {
             poly_n: 6,
-            poly_mode: 0,
-            arc_mode: 0,
-            rect_mode: 0,
-            circ_mode: 0,
+            poly_mode: PolygonWay::Inscribed,
+            arc_mode: ArcWay::CentreStartEnd,
+            rect_mode: RectWay::TwoCorners,
+            circ_mode: CircleWay::CentreRadius,
             circ_r: 5.0,
             extend_both: false,
             fillet: 3.0,
@@ -645,6 +645,7 @@ impl Default for Settings {
             kernel_threads: 0,   // all the cores but one
             persp_fov_deg: 35.5, // equals the former PERSP_FOV_HALF_TAN of 0.32: 2*atan(0.32)
             hotkeys: Default::default(),
+            again: Again::PutsDown,
             help_lang: String::new(),
             help_external: false,
             gpu_viewport: true,

@@ -1,6 +1,6 @@
 //! A CLICK IN A SKETCH: picking, drawing with the tool in hand, the click as the canvas reads it.
 
-use qymcad_ui_state::Notice;
+use qymcad_ui_state::{ArcWay, CircleWay, Notice, PolygonWay, RectWay};
 use super::*;
 
 pub fn sketch_select_click(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, additive: bool) {
@@ -277,12 +277,12 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
         }
         Some(qymcad_ui_state::SketchShape::Rect) => {
             sk.tool.pts.push(w);
-            let need = if sk.tool_prefs.rect_mode == 2 { 3 } else { 2 };
+            let need = if sk.tool_prefs.rect_mode == RectWay::ThreePoints { 3 } else { 2 };
             if sk.tool.pts.len() == need {
                 // Centre plus a corner keeps the centre while the width and height are typed; two
                 // corners keep the first corner. A rotated rectangle (three points) offers no typing.
                 match sk.tool_prefs.rect_mode {
-                    1 => {
+                    RectWay::Centre => {
                         // centre plus a corner: the opposite corner is its mirror through the centre, and the rectangle keeps the centre
                         let (c, cr) = (sk.tool.pts[0], sk.tool.pts[1]);
                         tie_the_rect_to_what_is_under(sk, rect, si, &[c, cr], RectPut::Before);
@@ -293,14 +293,14 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                         sk.place.set(qymcad_ui_state::PlacingShape::RectCenter { center: c, corner: cr, ids }); // typing the width and height about the centre
                         sk.place.focus = true;
                     }
-                    2 => {
+                    RectWay::ThreePoints => {
                         // three points give a rotated rectangle
                         let (p1, p2, p3) = (sk.tool.pts[0], sk.tool.pts[1], sk.tool.pts[2]);
                         sk.project.add_rect3_entity(si, Point2::new(p1.x, p1.y), Point2::new(p2.x, p2.y), Point2::new(p3.x, p3.y), qymcad_core::feature::Purpose::of(con));
                         sk.tool.pts.clear();
                         qymcad_ui_state::invalidate(&mut *sk.regen);
                     }
-                    _ => {
+                    RectWay::TwoCorners => {
                         let (a, b) = (sk.tool.pts[0], sk.tool.pts[1]);
                         tie_the_rect_to_what_is_under(sk, rect, si, &[a, b], RectPut::Before);
                         let ids = sk.project.add_rect_entity(si, a.x, a.y, b.x, b.y, qymcad_core::feature::Purpose::of(con));
@@ -313,7 +313,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 };
             }
         }
-        Some(qymcad_ui_state::SketchShape::Circle) if sk.tool_prefs.circ_mode == 2 => {
+        Some(qymcad_ui_state::SketchShape::Circle) if sk.tool_prefs.circ_mode == CircleWay::Tangent => {
             // A CIRCLE TOUCHING TWO CURVES: the first two clicks pick the curves, of any kind; the circle of the radius of
             // the bar then follows the pointer between them, and the third click lays it held touching both, its size
             // open to be typed
@@ -337,7 +337,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 }
             }
         }
-        Some(qymcad_ui_state::SketchShape::Circle) if sk.tool_prefs.circ_mode == 3 => {
+        Some(qymcad_ui_state::SketchShape::Circle) if sk.tool_prefs.circ_mode == CircleWay::ThreePoints => {
             // a circle through three points
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 3 {
@@ -355,7 +355,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 2 {
                 let (p0, p1) = (sk.tool.pts[0], sk.tool.pts[1]);
-                let (cx, cy, r) = if sk.tool_prefs.circ_mode == 1 {
+                let (cx, cy, r) = if sk.tool_prefs.circ_mode == CircleWay::TwoPoints {
                     // by two points: the ends of a diameter
                     let d = ((p1.x - p0.x).powi(2) + (p1.y - p0.y).powi(2)).sqrt();
                     (0.5 * (p0.x + p1.x), 0.5 * (p0.y + p1.y), 0.5 * d)
@@ -364,7 +364,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                     (p0.x, p0.y, ((p1.x - p0.x).powi(2) + (p1.y - p0.y).powi(2)).sqrt())
                 };
                 // the centre clicked on an edge of the body under the sketch takes the edge in, and is tied to it
-                let centre_clicked = sk.tool_prefs.circ_mode != 1 && tied(sk);
+                let centre_clicked = sk.tool_prefs.circ_mode != CircleWay::TwoPoints && tied(sk);
                 if centre_clicked {
                     auto_project_under(sk, rect, si, p0);
                 }
@@ -378,7 +378,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 open_the_size_of_the_new_shape(sk, eid, qymcad_core::feature::Purpose::of(con));
             }
         }
-        Some(qymcad_ui_state::SketchShape::Arc) if sk.tool_prefs.arc_mode == 2 => {
+        Some(qymcad_ui_state::SketchShape::Arc) if sk.tool_prefs.arc_mode == ArcWay::Tangent => {
             // A TANGENT arc: the start (the end of a line or an arc) plus the end; a smooth continuation
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 2 {
@@ -408,7 +408,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
             sk.tool.pts.push(w);
             if sk.tool.pts.len() == 3 {
                 let (p0, p1, p2) = (sk.tool.pts[0], sk.tool.pts[1], sk.tool.pts[2]);
-                if sk.tool_prefs.arc_mode == 1 {
+                if sk.tool_prefs.arc_mode == ArcWay::ThreePoints {
                     // by three points: the start, the end and a point on the arc give the circumscribed circle
                     let (s, e, m) = (p0, p1, p2);
                     if let Some((cx, cy, _r)) = qymcad_ui_state::circumcircle(s, e, m) {
@@ -454,7 +454,7 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 sk.tool.pts.clear();
                 qymcad_ui_state::invalidate(&mut *sk.regen);
                 sk.place.set(qymcad_ui_state::PlacingShape::Poly(center)); // typing the radius and angle through the centre handle
-                if sk.tool_prefs.poly_mode == 2 {
+                if sk.tool_prefs.poly_mode == PolygonWay::ByEdge {
                     sk.place.poly_size = qymcad_ui_state::PolySize::Edge; // drawn by its edge, sized by it
                 }
                 sk.place.focus = true;

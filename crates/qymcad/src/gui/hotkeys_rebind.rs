@@ -41,6 +41,18 @@ mod tests {
         assert_eq!(qymcad_ui_state::hotkey_action(&restarted.set, "sketch", egui::Key::Z), Some("sketch.circle"), "after a restart the key went back to the factory one — the edit is lost");
     }
 
+    #[test]
+    fn the_key_pressed_again_survives_a_restart() {
+        let mut app = App::default();
+        assert_eq!(app.set.again, qymcad_ui_state::Again::PutsDown, "a key pressed again must put its tool down until the person chooses otherwise");
+        super::super::hotkeys::open_keyboard_settings(&mut app);
+        let chosen = crate::gui::hand::Hand::new(&mut app).press_word(&crate::i18n::tr("settings-again-cycles"), egui::Pos2::ZERO);
+        assert!(chosen, "setup: no choice \"takes the next way\" in Settings -> Keyboard");
+        let ron = ron::ser::to_string(&app.set).expect("the settings serialise");
+        let back: super::super::Settings = ron::from_str(&ron).expect("and read back");
+        assert_eq!(back.again, qymcad_ui_state::Again::Cycles, "after a restart the key pressed again puts its tool down again - the choice is lost");
+    }
+
     /// ONLY THE DIFFERENCES ARE STORED. A full layout in the record would mean that a new tool of the
     /// program never appears for anyone who has ever touched the keys: its action is simply not in the
     /// record.
@@ -509,7 +521,7 @@ mod tests {
         let prev = qymcad_i18n::language();
         qymcad_i18n::set_language("en");
         let mut app = App::default();
-        app.win.open(crate::gui::WinKind::Hotkeys);
+        super::super::hotkeys::open_keyboard_settings(&mut app);
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
@@ -517,7 +529,7 @@ mod tests {
         let mut frame = |app: &mut App, events: Vec<egui::Event>| {
             time += 1.0 / 60.0;
             let input = egui::RawInput { screen_rect: Some(screen), time: Some(time), events, ..Default::default() };
-            let out = ctx.run_ui(input, |ui| app.hotkeys_window(ui.ctx()));
+            let out = ctx.run_ui(input, |ui| super::super::hotkeys::draw_settings(app, ui.ctx()));
             let mut shapes = Vec::new();
             out.shapes.into_iter().for_each(|c| flat(c.shape, &mut shapes));
             shapes
@@ -621,7 +633,7 @@ mod tests {
             let lang = qymcad_i18n::language();
             qymcad_i18n::set_language(code);
             let mut app = App::default();
-            app.win.open(crate::gui::WinKind::Hotkeys);
+            super::super::hotkeys::open_keyboard_settings(&mut app);
             let ctx = egui::Context::default();
             super::super::install_fonts(&ctx);
             let mut w = Frames { app, ctx, time: 0.0, lang };
@@ -636,7 +648,7 @@ mod tests {
             let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1400.0, 900.0));
             let input = egui::RawInput { screen_rect: Some(screen), time: Some(self.time), events, ..Default::default() };
             let app = &mut self.app;
-            let out = self.ctx.run_ui(input, |ui| app.hotkeys_window(ui.ctx()));
+            let out = self.ctx.run_ui(input, |ui| super::super::hotkeys::draw_settings(app, ui.ctx()));
             let mut shapes = Vec::new();
             out.shapes.into_iter().for_each(|c| flat_shape(c.shape, &mut shapes));
             shapes
@@ -933,5 +945,251 @@ mod tests {
             }
         }
         assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+}
+
+#[cfg(test)]
+mod in_the_settings {
+    use egui::Key;
+    use crate::gui::hand::Hand;
+    use crate::gui::App;
+    use crate::i18n::tr;
+
+    fn words(hand: &mut Hand) -> Vec<String> {
+        hand.frame(Vec::new());
+        hand.words_drawn().iter().map(|(t, _)| t.clone()).collect()
+    }
+
+    fn extrude_row() -> String {
+        crate::gui::hotkeys::hotkey_what(qymcad_ui_state::HOTKEYS.iter().find(|r| r.action == "part.extrude").expect("the extrude row"))
+    }
+
+    #[test]
+    fn the_start_screen_opens_the_keys_in_the_settings() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut plain = App::default();
+        let mut hand = Hand::new(&mut plain);
+        hand.press_word(&tr("start-close"), egui::Pos2::ZERO);
+        let keys = tr("settings-hotkeys");
+        let before = words(&mut hand).iter().any(|w| w.contains(&keys));
+        let help = hand.press_word(&tr("menu-help"), egui::Pos2::ZERO);
+        let in_help: Vec<String> = words(&mut hand).into_iter().filter(|w| w.contains(&keys)).collect();
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let pressed = hand.press_word(&tr("start-hotkeys"), egui::Pos2::ZERO);
+        let (table, row) = (hand.shows(&tr("settings-sec-keyboard")) && hand.shows(&keys), hand.shows(&extrude_row()));
+        qymcad_i18n::set_language(&prev);
+        assert!(!before && help && in_help.is_empty(), "the Help menu still offers the keys: {in_help:?} (opened: {help}, shown before: {before})");
+        assert!(pressed, "the start screen has no keyboard shortcuts button");
+        assert!(table && row, "the start screen's button did not show the table in the settings (caption: {table}, extrude row: {row})");
+    }
+
+    #[test]
+    fn esc_answers_a_clash_and_keeps_the_settings() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened =
+            hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO) && hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO);
+        let row = hand.written_at(&extrude_row());
+        let waits = row.is_some_and(|r| hand.press_word("E", r.center()));
+        hand.key(Key::F);
+        let asked = hand.shows(&tr("hotkeys-swap"));
+        hand.key(Key::Escape);
+        let (still_asked, open) = (hand.shows(&tr("hotkeys-swap")), hand.shows(&tr("settings-hotkeys")));
+        let key = qymcad_ui_state::hotkey_key(&hand.app.set, "part.extrude");
+        qymcad_i18n::set_language(&prev);
+        assert!(opened && waits, "the extrude key was not reached in Settings -> Keyboard (opened: {opened}, row: {row:?})");
+        assert!(asked, "F is the fillet's and the table asked nothing");
+        assert!(!still_asked && key == "E", "Esc did not answer the clash with the old key (question left: {still_asked}, key now {key:?})");
+        assert!(open, "Esc answered the clash and closed the settings too");
+    }
+
+    fn open_the_keys(hand: &mut Hand) -> bool {
+        hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO) && hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO)
+    }
+
+    fn wait_on_the_extrusion(hand: &mut Hand) -> bool {
+        let row = hand.written_at(&extrude_row());
+        row.is_some_and(|r| hand.press_word("E", r.center())) && hand.shows(&tr("hotkeys-press"))
+    }
+
+    #[test]
+    fn the_settings_closed_from_the_menu_let_the_keyboard_go() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
+        let closed = hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO) && !hand.shows(&extrude_row());
+        hand.frame(Vec::new());
+        let held = hand.app.hotkeys.action.clone();
+        let reopened = open_the_keys(&mut hand);
+        let still_waits = hand.shows(&tr("hotkeys-press"));
+        qymcad_i18n::set_language(&prev);
+        assert!(waits && closed && reopened, "setup: the table did not wait, or the menu did not close and open the settings (waits: {waits}, closed: {closed}, reopened: {reopened})");
+        assert!(held.is_none() && !still_waits, "the settings closed by the menu left the table waiting for a key for {held:?} (waits when opened again: {still_waits})");
+    }
+
+    #[test]
+    fn a_search_that_hides_the_table_drops_its_question() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
+        hand.key(Key::F);
+        let asked = hand.shows(&tr("hotkeys-swap"));
+        let typed = hand.press_word(&tr("settings-search"), egui::Pos2::ZERO);
+        hand.type_text("grid").frame(Vec::new());
+        let hidden = !hand.shows(&extrude_row());
+        hand.frame(Vec::new());
+        let left = hand.app.hotkeys.clash.clone();
+        qymcad_i18n::set_language(&prev);
+        assert!(waits && asked && typed && hidden, "setup: no clash asked, or the search did not hide the table (waits: {waits}, asked: {asked}, typed: {typed}, hidden: {hidden})");
+        assert!(left.is_none(), "the search hid the table and its question was left: {left:?}");
+    }
+
+    #[test]
+    fn the_hint_of_the_key_pressed_again_names_the_key_bound_now() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened = open_the_keys(&mut hand) && hand.press_word(&tr("hotkeys-filter-hint"), egui::Pos2::ZERO);
+        hand.type_text("circle").frame(Vec::new());
+        let circle = crate::gui::hotkeys::hotkey_what(qymcad_ui_state::HOTKEYS.iter().find(|r| r.action == "sketch.circle").expect("the circle row"));
+        let row = hand.written_at(&circle);
+        let waits = row.is_some_and(|r| hand.press_word("C", r.center())) && hand.shows(&tr("hotkeys-press"));
+        hand.key(Key::J).frame(Vec::new());
+        let bound = qymcad_ui_state::hotkey_key(&hand.app.set, "sketch.circle");
+        let (named, factory) = (hand.words_drawn().iter().any(|(w, _)| w.contains("J pressed again")), hand.words_drawn().iter().any(|(w, _)| w.contains("C pressed again")));
+        qymcad_i18n::set_language(&prev);
+        assert!(opened && waits && bound == "J", "setup: the circle was not rebound to J in the table (opened: {opened}, waits: {waits}, bound: {bound:?})");
+        assert!(named && !factory, "the hint does not name the key of the circle bound now (J named: {named}, C named: {factory})");
+    }
+
+    #[test]
+    fn the_settings_folded_let_the_keyboard_go() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
+        let title = hand.fold_titled(&tr("win-settings"));
+        let folded = hand.window_titled(&tr("win-settings")).is_some_and(|w| w.height() < 60.0);
+        hand.frame(Vec::new());
+        let held = hand.app.hotkeys.action.clone();
+        qymcad_i18n::set_language(&prev);
+        assert!(waits && folded, "setup: the table did not wait, or the arrow of the title did not fold the settings (waits: {waits}, folded: {folded}, arrow found: {title})");
+        assert!(held.is_none(), "the settings folded left the table waiting for a key for {held:?}");
+    }
+
+    #[test]
+    fn the_section_shown_clicked_again_keeps_the_table_waiting() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let waits = open_the_keys(&mut hand) && wait_on_the_extrusion(&mut hand);
+        let clicked = hand.press_word(&tr("settings-sec-keyboard"), egui::Pos2::ZERO);
+        hand.frame(Vec::new());
+        let held = hand.app.hotkeys.action.clone();
+        qymcad_i18n::set_language(&prev);
+        assert!(waits && clicked, "setup: the table did not wait, or the Keyboard section was not clicked (waits: {waits}, clicked: {clicked})");
+        assert_eq!(held.as_deref(), Some("part.extrude"), "the Keyboard section clicked while shown dropped the waiting of the table");
+    }
+
+    #[test]
+    fn the_filter_typed_letter_by_letter_marks_no_widget_red() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened = open_the_keys(&mut hand) && hand.press_word(&tr("hotkeys-filter-hint"), egui::Pos2::ZERO);
+        for letter in ["c", "i", "r"] {
+            hand.type_text(letter).frame(Vec::new());
+        }
+        let filter = hand.app.hotkeys.filter.clone();
+        qymcad_i18n::set_language(&prev);
+        assert!(opened, "setup: the filter of Settings -> Keyboard was not reached");
+        assert_eq!(filter, "cir", "setup: the letters did not reach the filter");
+    }
+
+    #[test]
+    fn esc_with_the_table_on_screen_closes_the_settings_and_nothing_behind() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        hand.press_word(&tr("start-close"), egui::Pos2::ZERO);
+        let sketch = hand.press_word(&tr("plane-xy-table"), egui::Pos2::ZERO);
+        hand.key(Key::L);
+        let line = hand.app.tools.armed.drawing() == Some(qymcad_ui_state::SketchShape::Line);
+        let opened = open_the_keys(&mut hand) && hand.shows(&extrude_row());
+        hand.key(Key::Escape);
+        let (open, held) = (hand.shows(&extrude_row()), hand.app.tools.armed.drawing());
+        qymcad_i18n::set_language(&prev);
+        assert!(sketch && line && opened, "setup: no sketch, no line in hand or no table (sketch: {sketch}, line: {line}, table: {opened})");
+        assert!(!open, "Esc with the table on screen left the settings open");
+        assert_eq!(held, Some(qymcad_ui_state::SketchShape::Line), "Esc with the table on screen reached the line in hand behind the settings");
+    }
+
+    #[test]
+    fn the_start_screen_shows_the_table_over_a_search_left_behind() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened = hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO);
+        let typed = hand.press_word(&tr("settings-search"), egui::Pos2::ZERO);
+        hand.type_text("scale");
+        let closed = hand.press_word(&tr("menu-windows"), egui::Pos2::ZERO) && hand.press_word(&tr("menu-settings"), egui::Pos2::ZERO);
+        let pressed = hand.press_word(&tr("start-hotkeys"), egui::Pos2::ZERO);
+        let row = hand.shows(&extrude_row());
+        qymcad_i18n::set_language(&prev);
+        assert!(opened && typed && closed && pressed, "setup: (opened: {opened}, typed: {typed}, closed: {closed}, start button: {pressed})");
+        assert!(row, "the start screen's button opened the settings over the search left behind, without the table");
+    }
+
+    fn line_in_hand(hand: &mut Hand) -> bool {
+        hand.press_word(&tr("start-close"), egui::Pos2::ZERO);
+        let sketch = hand.press_word(&tr("plane-xy-table"), egui::Pos2::ZERO);
+        hand.key(Key::L);
+        sketch && hand.app.tools.armed.drawing() == Some(qymcad_ui_state::SketchShape::Line)
+    }
+
+    #[test]
+    fn esc_over_another_section_reaches_the_tool_in_hand() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let line = line_in_hand(&mut hand);
+        let general = open_the_keys(&mut hand) && hand.press_word(&tr("settings-sec-general"), egui::Pos2::ZERO) && !hand.shows(&extrude_row());
+        hand.key(Key::Escape);
+        let held = hand.app.tools.armed.drawing();
+        qymcad_i18n::set_language(&prev);
+        assert!(line && general, "setup: no line in hand, or the General section not shown (line: {line}, general: {general})");
+        assert_ne!(held, Some(qymcad_ui_state::SketchShape::Line), "Esc over the General section did not reach the line in hand");
+    }
+
+    #[test]
+    fn esc_over_the_settings_folded_reaches_the_tool_in_hand() {
+        let prev = qymcad_i18n::language();
+        qymcad_i18n::set_language("en");
+        let mut app = App::default();
+        let mut hand = Hand::new(&mut app);
+        let line = line_in_hand(&mut hand);
+        let opened = open_the_keys(&mut hand);
+        hand.fold_titled(&tr("win-settings"));
+        let folded = hand.window_titled(&tr("win-settings")).is_some_and(|w| w.height() < 60.0);
+        hand.key(Key::Escape);
+        let held = hand.app.tools.armed.drawing();
+        qymcad_i18n::set_language(&prev);
+        assert!(line && opened && folded, "setup: (line: {line}, opened: {opened}, folded: {folded})");
+        assert_ne!(held, Some(qymcad_ui_state::SketchShape::Line), "Esc over the settings folded did not reach the line in hand");
     }
 }

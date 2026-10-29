@@ -45,7 +45,6 @@ file-quit = Выход
 
 ## Меню «Справка»
 
-help-hotkeys = Горячие клавиши…
 help-about = О программе…
 help-support = Поддержать автора…
 
@@ -304,7 +303,11 @@ scheme-color-icon_datum_primary = базы: основной акцент
 scheme-color-icon_datum_secondary = базы: дополнительный акцент
 
 # --- ГОРЯЧИЕ КЛАВИШИ ---
-hotkeys-title = Горячие клавиши
+settings-hotkeys = Горячие клавиши
+settings-again = Клавиша инструмента в руке, нажатая ещё раз
+settings-again-puts-down = Кладёт инструмент
+settings-again-cycles = Перебирает способы по кругу
+settings-again-hint = Для окружности, прямоугольника, дуги и многоугольника: { $key } ещё раз — окружность по двум точкам, затем касательная к двум кривым, затем по трём точкам и снова сначала. Инструмент с одним способом кладётся в любом случае.
 help-title = Справка
 help-search = Поиск по справке
 help-back = Назад
@@ -791,6 +794,8 @@ tool-rotate = Поворот
 opt-rect-rotated = Повёрнутый: 2 точки — сторона, 3-я — высота
 opt-text-as-note = Поставить как текст-заметку (не геометрия)
 opt-rect-mode = Прямоуг.:
+opt-polygon-mode = Многоуг.:
+opt-way-in-force = { $tool } { $way }
 tool-rect = Прямоугольник
 opt-radius = Радиус
 opt-fillet-chord = Хорда
@@ -2409,6 +2414,7 @@ face-center = Центр: [{ $v }]
 settings-search = Поиск по настройкам
 settings-search-empty = Ничего не нашлось — попробуйте другое слово
 settings-sec-general = Общее
+settings-sec-keyboard = Клавиатура
 settings-sec-appearance = Внешний вид
 settings-sec-viewport = Вьюпорт
 settings-sec-sketch = Эскиз

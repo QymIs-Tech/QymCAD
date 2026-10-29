@@ -114,7 +114,7 @@ pub fn described(s: &Session, tools: &[&Tool]) -> (Vec<String>, Vec<Vec<String>>
                 Entry::Menu(path) => menus.push(path.iter().map(|k| s.word(k)).collect()),
                 Entry::Search(k) => commands.push(s.word(k)),
                 Entry::SearchByArticle => commands.push(article_title(&s.language(), t.help)),
-                Entry::Key(..) | Entry::Label(_) => {}
+                Entry::Key(..) | Entry::KeyAgain(..) | Entry::Label(_) => {}
             }
         }
         // a tool the help does not write about names no article: that absence is a finding, not a description
