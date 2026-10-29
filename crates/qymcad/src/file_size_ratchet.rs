@@ -28,8 +28,8 @@ mod tests {
 
     const KNOWN: &[Known] = &[
         Known { path: "crates/qymcad/src/gui/user_case.rs", lines: 2963 },
-        Known { path: "crates/qymcad/src/gui.rs", lines: 2333 },
-        Known { path: "crates/qymcad/src/gui/help_images.rs", lines: 1713 },
+        Known { path: "crates/qymcad/src/gui.rs", lines: 2332 },
+        Known { path: "crates/qymcad/src/gui/help_images.rs", lines: 1712 },
     ];
 
     /// A file over the limit: where it is and how many lines it has.
