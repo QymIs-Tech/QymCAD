@@ -4,7 +4,7 @@
 //! of millimetres the relative step falls below machine precision: the difference loses significant digits and
 //! the solution stalls with a residual around 1e-5. On a real part that showed up as a 130 mm dimension with the
 //! geometry at −129.99900, and a cut leaving a film of a micron instead of an opening.
-use qymcad_core::model::{Constraint, Project};
+use qymcad_core::model::{Constraint, Project, SketchAxis};
 
 fn line(p: &mut Project, x0: f64, y0: f64, x1: f64, y1: f64) -> (usize, u64, u64) {
     let sid = p.add_sketch("t", vec![], None);
@@ -44,7 +44,7 @@ fn reference_line_lands_exactly_on_its_dimension() {
     let sid = p.add_sketch("t", vec![], None);
     p.add_sketch_node(sid, "Sketch");
     let si = p.sketch_index(sid).unwrap();
-    let (axis_o, axis_up) = p.ensure_axis(si, 1); // the Y axis of the sketch: origin and direction, both anchored
+    let (axis_o, axis_up) = p.ensure_axis(si, SketchAxis::Y); // the Y axis of the sketch: origin and direction, both anchored
     let aux = p.add_line_entity(si, -129.999, 25.0, -129.9993, -234.0, qymcad_core::feature::Purpose::Construction);
     p.add_rect_entity(si, -129.9991, -176.0, -124.999, -36.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(si);

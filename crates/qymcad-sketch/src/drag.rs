@@ -329,11 +329,11 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // 3) a coordinate axis
     let o = (qymcad_ui_state::Sheet { view: *sk.view, rect }).at(Point2::new(0.0, 0.0));
     if (pos.y - o.y).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide) {
-        let (a, b) = sk.project.ensure_axis(si, 0);
+        let (a, b) = sk.project.ensure_axis(si, SketchAxis::X);
         return Some(qymcad_ui_state::DimRef::Line(a, b));
     }
     if (pos.x - o.x).abs() <= qymcad_ui_state::grab::grab(sk.set, Grab::Guide) {
-        let (a, b) = sk.project.ensure_axis(si, 1);
+        let (a, b) = sk.project.ensure_axis(si, SketchAxis::Y);
         return Some(qymcad_ui_state::DimRef::Line(a, b));
     }
     // 4) the midpoint of a line or the origin (through the shared reference resolver)

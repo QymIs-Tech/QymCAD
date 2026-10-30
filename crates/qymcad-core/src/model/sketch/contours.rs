@@ -243,22 +243,21 @@ impl Project {
         id
     }
 
-    pub fn ensure_axis(&mut self, si: usize, which: usize) -> (Id, Id) {
+    pub fn ensure_axis(&mut self, si: usize, axis: SketchAxis) -> (Id, Id) {
         // THE ANCHOR, NOT THE ORIGIN. An axis is the infinite line through these two points, and the
         // origin is a point geometry gets glued to - so an axis hung on it tilts the moment that geometry
         // moves. See `Sketch::frame`.
         let o = self.ensure_frame(si);
-        let w = which.min(1);
-        let existing = self.sketches.get(si).map(|s| s.axis_pts[w]).unwrap_or(0);
+        let existing = self.sketches.get(si).map(|s| s.axis_guide(axis)).unwrap_or(0);
         if existing != 0 && self.sketches.get(si).is_some_and(|s| s.points.iter().any(|p| p.id == existing)) {
             return (o, existing);
         }
         let id = self.alloc_id();
-        let (x, y) = if w == 0 { (1.0, 0.0) } else { (0.0, 1.0) };
+        let guide = axis.guide();
         let s = &mut self.sketches[si];
-        s.points.push(SketchPoint { id, x, y });
+        s.points.push(SketchPoint { id, x: guide.x, y: guide.y });
         s.constraints.push(Constraint::Fixed { p: id });
-        s.axis_pts[w] = id;
+        s.axis_pts[axis.slot()] = id;
         (o, id)
     }
     /// Stitch nearby sketch points (closer than `tol`): duplicates are merged into one and every entity,

@@ -146,7 +146,7 @@ crates/qymcad-core/src/model/regen/refs.rs 2 4 1
 crates/qymcad-core/src/model/regen/run.rs 0 2 0
 crates/qymcad-core/src/model/round.rs 5 5 0
 crates/qymcad-core/src/model/sketch.rs 10 7 0
-crates/qymcad-core/src/model/sketch/contours.rs 1 8 0
+crates/qymcad-core/src/model/sketch/contours.rs 0 8 0
 crates/qymcad-core/src/model/sketch/corners.rs 7 17 0
 crates/qymcad-core/src/model/sketch/edit.rs 8 4 2
 crates/qymcad-core/src/model/sketch/entities.rs 25 8 3
@@ -155,7 +155,6 @@ crates/qymcad-core/src/model/sketch/profiles.rs 9 5 0
 crates/qymcad-core/src/model/sketch/solve.rs 1 5 1
 crates/qymcad-core/src/model/sketch/trim.rs 4 1 0
 crates/qymcad-core/src/model/sketch_ops.rs 7 4 0
-crates/qymcad-core/src/model/sketch_types.rs 0 2 0
 crates/qymcad-core/src/model/tess.rs 7 24 0
 crates/qymcad-core/src/model/timeline/add_ops.rs 13 2 4
 crates/qymcad-core/src/model/timeline/clone.rs 1 1 0
@@ -410,7 +409,7 @@ crates/qymcad-sketch/src/drag.rs 5 2 1
 crates/qymcad-sketch/src/lib.rs 2 13 2
 crates/qymcad-sketch/src/menu.rs 0 3 0
 crates/qymcad-sketch/src/snap.rs 0 4 0
-crates/qymcad-sketch/src/ties.rs 1 5 0
+crates/qymcad-sketch/src/ties.rs 1 4 0
 crates/qymcad-sketch/tests/a_dimension_is_not_applied_while_it_is_typed.rs 0 4 0
 crates/qymcad-sketch/tests/the_axes_take_part_in_snapping.rs 0 1 0
 crates/qymcad-sketch/tests/the_centre_drawn_rectangle_keeps_its_centre.rs 0 1 0

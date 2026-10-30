@@ -8,7 +8,7 @@ use qymcad_ui_state::Notice;
 use egui::{Color32, Pos2, Rect};
 use egui_phosphor::regular as ph;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Id, Project};
+use qymcad_core::model::{Id, Project, SketchAxis};
 use qymcad_ui_state::grab::Grab;
 use qymcad_ui_state::WinKind;
 

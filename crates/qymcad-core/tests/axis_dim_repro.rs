@@ -2,10 +2,10 @@
 //!
 //! The visual symptoms — stray anchor glyphs on system points and degenerate drawing — belong to the
 //! interface.
-use qymcad_core::model::{Constraint, Project};
+use qymcad_core::model::{Constraint, Project, SketchAxis};
 
-fn dpl_to_axis(p: &mut Project, si: usize, pid: u64, which: usize) -> usize {
-    let (o, ax) = p.ensure_axis(si, which);
+fn dpl_to_axis(p: &mut Project, si: usize, pid: u64, axis: SketchAxis) -> usize {
+    let (o, ax) = p.ensure_axis(si, axis);
     let (px, py) = {
         let q = p.sketches[si].points.iter().find(|q| q.id == pid).unwrap();
         (q.x, q.y)
@@ -36,8 +36,8 @@ fn axis_dims_are_consistent_not_conflicting() {
     p.add_line_entity(si, 5.0, 3.0, 15.0, 3.0, qymcad_core::feature::Purpose::Real);
     let corner = p.sketches[si].points.iter().find(|q| (q.x - 5.0).abs() < 1e-6 && (q.y - 3.0).abs() < 1e-6).unwrap().id;
 
-    dpl_to_axis(&mut p, si, corner, 0);
-    dpl_to_axis(&mut p, si, corner, 1);
+    dpl_to_axis(&mut p, si, corner, SketchAxis::X);
+    dpl_to_axis(&mut p, si, corner, SketchAxis::Y);
     p.solve_sketch(si);
 
     // the position of the corner is held by dimensions to the axes and the values agree, so this is no

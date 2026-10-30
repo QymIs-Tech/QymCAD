@@ -120,7 +120,11 @@ pub(crate) fn tie_what_landed(project: &mut Project, view: qymcad_ui_state::View
                 ties.push(Constraint::Vertical { a: k.center, b: point });
             }
         }
-        for (axis, off) in [(0, at.y), (1, at.x)] {
+        for axis in SketchAxis::ALL {
+            let off = match axis {
+                SketchAxis::X => at.y,
+                SketchAxis::Y => at.x,
+            };
             if off.abs() <= reach {
                 let (o, guide) = project.ensure_axis(si, axis);
                 ties.push(Constraint::PointOnLine { p: point, a: o, b: guide });

@@ -1,7 +1,7 @@
 //! An audit of the sketcher: reproduction tests that pin down the defects found in it.
 //!
 //! Every test states the expected, correct behaviour, so a failure here means the defect is real.
-use qymcad_core::model::{constraint_point_ids, Constraint, Project};
+use qymcad_core::model::{constraint_point_ids, Constraint, Project, SketchAxis};
 
 fn new_sketch() -> (Project, usize) {
     let mut p = Project::default();
@@ -87,7 +87,7 @@ fn build_dimensioned_rect(p: &mut Project, si: usize) -> (Vec<u64>, u64, u64) {
     p.sketches[si].constraints.push(Constraint::Distance { a: c00, b: c10, d: 10.0, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None });
     // the anchor and the dimension to the X axis must not be copied
     p.sketches[si].constraints.push(Constraint::Fixed { p: c00 });
-    let (o, xax) = p.ensure_axis(si, 0);
+    let (o, xax) = p.ensure_axis(si, SketchAxis::X);
     p.sketches[si].constraints.push(Constraint::DistancePL { p: c00, a: o, b: xax, d: 0.0, off: 0.0, expr: String::new(), driven: false, at: None });
     (eids, c00, c10)
 }
@@ -182,8 +182,8 @@ fn trim_circle_to_arc_keeps_center_point() {
 #[test]
 fn merge_close_points_preserves_axis_points() {
     let (mut p, si) = new_sketch();
-    let _ = p.ensure_axis(si, 0);
-    let _ = p.ensure_axis(si, 1);
+    let _ = p.ensure_axis(si, SketchAxis::X);
+    let _ = p.ensure_axis(si, SketchAxis::Y);
     let sys = p.sketches[si].system_ids();
     eprintln!("system_ids: {sys:?}");
     p.merge_close_points(si, 2.0); // as the line tool does it, with the tolerance clamped to 2.0

@@ -12,6 +12,7 @@
 mod tests {
     use super::super::{App, Sel};
     use qymcad_core::feature::{Purpose, SketchPlane};
+    use qymcad_core::model::SketchAxis;
 
     #[test]
     fn a_point_picked_at_zero_is_geometry_and_not_the_frame() {
@@ -19,8 +20,8 @@ mod tests {
         let si = app.create_sketch_on(SketchPlane::default());
         // the frame of reference as it exists in any sketch that has been dimensioned or constrained
         let origin = app.project.ensure_origin(si);
-        let _ = app.project.ensure_axis(si, 0);
-        let _ = app.project.ensure_axis(si, 1);
+        let _ = app.project.ensure_axis(si, SketchAxis::X);
+        let _ = app.project.ensure_axis(si, SketchAxis::Y);
         let frame = app.project.ensure_frame(si);
         // and the person's own line, drawn from zero
         app.project.add_line_entity(si, 0.0, 0.0, 20.0, 0.0, Purpose::Real);
