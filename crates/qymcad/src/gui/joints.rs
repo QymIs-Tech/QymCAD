@@ -147,9 +147,8 @@ impl App {
         if self.side.joint.giz_drag.is_some() {
             return false; // a handle is already being held
         }
-        // THE PICK NEEDS THE WHOLE APPLICATION and happens once, at the top: it is handed in rather than
-        // reached for, and everything after it is the assembly's own work.
-        let Some((body, _)) = self.pick_part_face_at(rect, from) else { return false };
-        joint_grab_part(&mut self.joint_ctx(), body, rect, towards, basis)
+        // The pick needs the whole application and happens once, here; the rest is the assembly's own work.
+        let Some((body, face)) = self.pick_part_face_at(rect, from) else { return false };
+        joint_grab_part(&mut self.joint_ctx(), body, &face, rect, towards, basis)
     }
 }
