@@ -134,7 +134,7 @@ pub fn apply_joint_giz(jc: &mut qymcad_ui_state::JointCtx) {
 
 /// GRAB A PART AND PULL IT: everything after the pick. What is under the cursor is decided by the
 /// application - picking reads the whole scene - and the assembly is handed the body it caught.
-pub fn joint_grab_part(jc: &mut qymcad_ui_state::JointCtx, body: Id, rect: Rect, towards: egui::Vec2, basis: &([f64; 3], [f64; 3], [f64; 3])) -> bool {
+pub fn joint_grab_part(jc: &mut qymcad_ui_state::JointCtx, body: Id, face: &qymcad_core::feature::FaceKey, rect: Rect, towards: egui::Vec2, basis: &([f64; 3], [f64; 3], [f64; 3])) -> bool {
     let Some(owner) = jc.project.body_owner(body) else { return false };
     let ctx = qymcad_ui_state::current_ctx_id(jc.active_path, jc.project);
     // WHAT THE HAND DRIVES IS THE CORE'S BUSINESS (`drive_joint_in_context`): the question is not
@@ -149,12 +149,15 @@ pub fn joint_grab_part(jc: &mut qymcad_ui_state::JointCtx, body: Id, rect: Rect,
     // driven by hand", and the drag must fall through to the view - hence `return false` here rather
     // than a silent swallow.
     //
-    // THE GRAB POINT IS THE ORIGIN OF THE DRIVEN COMPONENT, and it needs no change of coordinates: the
-    // part is rigid, and wherever the origin goes, everything else goes with it.
+    // THE GRAB POINT IS THE CENTRE OF THE FACE UNDER THE CURSOR, in the frame of the driven component. The origin
+    // of a part is no place to hold it by: a crank or a wheel is modelled with its origin on the axis it turns about,
+    // that point cannot move at all, and a part held there stood still under the hand. The part is rigid, so any
+    // point of it leads it; the one the person pointed at is the one that follows the cursor.
     if let Some(comp) = jc.project.pull_target_component(owner, ctx) {
-        let p0 = qymcad_core::feature::apply12(&jc.project.relative_transform(comp, ctx), [0.0, 0.0, 0.0]);
+        let grab = qymcad_core::feature::apply12(&jc.project.relative_transform(owner, comp), face.centroid);
+        let p0 = qymcad_core::feature::apply12(&jc.project.relative_transform(comp, ctx), grab);
         qymcad_ui_state::begin_edit(jc.edits, jc.project, qymcad_i18n::tr("status-edit-joint"));
-        *jc.part_pull = Some((comp, [0.0, 0.0, 0.0], p0));
+        *jc.part_pull = Some((comp, grab, p0));
         return true;
     }
     // A PART NO MATE HOLDS is moved as it is, following the pointer

@@ -64,6 +64,16 @@ mod tests {
     /// TWO PARTS, A SLIDER BETWEEN THEM, LOOKED AT FROM THE ROOT. Returns (body of the driven part,
     /// its component).
     fn a_slider_pair(app: &mut App) -> (Id, Id) {
+        let driven = a_joined_pair(app, JointKind::Slider, AnchorRef::BasePlane(BasePlane::YZ));
+        (driven.body, driven.comp)
+    }
+
+    struct Driven {
+        body: Id,
+        comp: Id,
+    }
+
+    fn a_joined_pair(app: &mut App, kind: JointKind, anchor: AnchorRef) -> Driven {
         let before: Vec<Id> = app.project.bodies.iter().map(|b| b.id).collect();
         super::super::joint_flow::tests::add_part_at(app, 0.0);
         super::super::joint_flow::tests::add_part_at(app, 60.0);
@@ -77,9 +87,9 @@ mod tests {
         assert_eq!(mine.len(), 2, "setup: there should be two bodies of our own");
         let comps: Vec<Id> = mine.iter().map(|b| app.project.body_owner(*b).expect("the owner")).collect();
         app.project.set_grounded(comps[0], true);
-        let ca = app.project.add_connector(comps[0], AnchorRef::BasePlane(BasePlane::YZ)); // normal X
-        let cb = app.project.add_connector(comps[1], AnchorRef::BasePlane(BasePlane::YZ));
-        app.project.add_joint(ca, cb, JointKind::Slider);
+        let ca = app.project.add_connector(comps[0], anchor.clone());
+        let cb = app.project.add_connector(comps[1], anchor);
+        app.project.add_joint(ca, cb, kind);
         app.project.solve_joints();
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         crate::gui::commands::refresh_edges(&mut app.part_ctx());
@@ -89,7 +99,7 @@ mod tests {
         app.viewing.cam.scale = 6.0;
         app.viewing.cam.target = [30.0, 10.0, 5.0];
         app.workbench = super::super::Workbench::Assembly;
-        (mine[1], comps[1])
+        Driven { body: mine[1], comp: comps[1] }
     }
 
     /// SHIFT AND THE LEFT BUTTON WERE HELD ON THE PART AND LED — AND THE PART MOVED.
@@ -301,5 +311,31 @@ mod tests {
             }
         }
         assert!(problems.is_empty(), "{}", problems.join("\n"));
+    }
+
+    #[test]
+    fn a_part_hinged_at_its_origin_is_turned_by_the_hand() {
+        let mut app = App::default();
+        let Driven { body, comp } = a_joined_pair(&mut app, JointKind::Revolute, AnchorRef::Origin);
+        let ctx = egui::Context::default();
+        super::super::install_fonts(&ctx);
+        let _ = ctx.run_ui(frame(Vec::new()), |c| app.viewport(c));
+        let basis = app.viewing.cam.basis();
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: viewport(), basis: &basis }.at(aim(&app, body)).0;
+        let turn_of = |app: &App| {
+            let (o, x) = (origin_of(app, comp), qymcad_core::feature::apply12(&app.project.world_transform(comp), [1.0, 0.0, 0.0]));
+            (x[1] - o[1]).atan2(x[0] - o[0]).to_degrees()
+        };
+        let (pivot, was) = (origin_of(&app, comp), turn_of(&app));
+
+        lead(&mut app, &ctx, at, egui::PointerButton::Primary, true, 6);
+
+        let turned = (turn_of(&app) - was).abs();
+        assert!(turned > 3.0, "the hand led a part hinged at its origin across the screen and it turned by {turned:.3} deg");
+        let now = origin_of(&app, comp);
+        let drift = ((now[0] - pivot[0]).powi(2) + (now[1] - pivot[1]).powi(2) + (now[2] - pivot[2]).powi(2)).sqrt();
+        assert!(drift < 1e-6, "the hinge came apart under the hand: the pivot moved {drift:.3e} mm");
+        assert!(!app.project.mates_conflict, "the drag left the hinge in conflict");
+        assert!(!qymcad_assembly::joint_drag_active(&app.side.joint, &app.dragged.part_pull), "the button was released - the hand must let go");
     }
 }

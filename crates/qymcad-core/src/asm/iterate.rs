@@ -498,6 +498,9 @@ pub fn solve(problem: &Problem) -> (Vec<Isometry3<f64>>, Report) {
     (poses, report)
 }
 
+const PULL_TURN_CAP: f64 = 0.5;
+const PULL_SHIFT_CAP: f64 = 4.0;
+
 /// Move a body towards the cursor, but only where the constraints are indifferent.
 ///
 /// The mirror of minimal displacement. `pull_back_free_directions` moves a body through the null space
@@ -510,11 +513,11 @@ pub fn solve(problem: &Problem) -> (Vec<Isometry3<f64>>, Report) {
 ///   part of the document at once, not one degree of one mate;
 /// * a limit stays a limit: there is no freedom left there, so the step becomes zero by itself.
 ///
-/// What the drag asks for is a pure translation by "target minus point". The body is rigid, so that
-/// translation brings the grabbed point exactly onto the target; whatever the constraints disallow is
-/// cut away by the projection. No rotation has to be invented: a rotational degree has a null-space
-/// vector that itself contains a translation, and the projection yields a non-zero rotation exactly
-/// where one is required.
+/// What the drag asks for is the motion of the grabbed point by "target minus point": a translation of
+/// the body plus the turn that carries the point's lever arm along. Whatever the constraints disallow is
+/// cut away by the projection, and the projection yields a non-zero rotation exactly where one is
+/// required. The lever arm matters for a body that turns about a line through its own origin: grabbed at
+/// the origin it cannot be led at all, grabbed anywhere else it turns.
 ///
 /// The step is verified by fact, like the pull-back: the problem is non-linear and freedom holds only
 /// locally. Move, re-solve the constraints, and accept only if the constraints are intact and the body
@@ -537,9 +540,12 @@ fn pull_towards_cursor(problem: &Problem, layout: &Layout, poses: Vec<Isometry3<
         // minus everything the constraints hold, that is, the row space of their Jacobian.
         let col = layout.column_of(a.body).expect("column checked above");
         let d = to - a.world_origin(&poses[a.body]);
+        let lever = poses[a.body].rotation * a.local.translation.vector;
+        let turn = lever.cross(&d);
         let mut want = DVector::zeros(layout.unknowns);
         for k in 0..3 {
             want[col + k] = d[k];
+            want[col + 3 + k] = turn[k];
         }
         let j = jacobian(&staged, layout, &poses);
         if !j.iter().all(|v| v.is_finite()) {
@@ -549,11 +555,23 @@ fn pull_towards_cursor(problem: &Problem, layout: &Layout, poses: Vec<Isometry3<
         if free.norm() < 1e-12 {
             return poses; // The constraints hold everything: nowhere to move, which is a limit, not a fault.
         }
+        let reach = Vector3::new(free[col], free[col + 1], free[col + 2]) + Vector3::new(free[col + 3], free[col + 4], free[col + 5]).cross(&lever);
+        if reach.norm_squared() < 1e-18 {
+            return poses;
+        }
+        let step = &free * (d.dot(&reach) / reach.norm_squared());
+        let (mut widest_turn, mut widest_shift) = (0.0_f64, 0.0_f64);
+        for body_col in (0..layout.unknowns).step_by(6) {
+            widest_shift = widest_shift.max(Vector3::new(step[body_col], step[body_col + 1], step[body_col + 2]).norm());
+            widest_turn = widest_turn.max(Vector3::new(step[body_col + 3], step[body_col + 4], step[body_col + 5]).norm());
+        }
+        let cap = (PULL_TURN_CAP / widest_turn).min(PULL_SHIFT_CAP * d.norm() / widest_shift).min(1.0);
+        let step = step * cap;
         let r_before = residuals(&staged, &poses).norm();
         let mut scale = 1.0;
         let mut accepted = false;
         loop {
-            let moved = poses_at(&staged, layout, &(&free * scale));
+            let moved = poses_at(&staged, layout, &(&step * scale));
             let (settled, r_settled, _) = run_lm(problem, layout, &moved);
             if r_settled.norm() <= TOL.max(r_before) && miss(&settled) < before * 0.999 {
                 poses = settled;
