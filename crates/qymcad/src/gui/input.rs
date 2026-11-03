@@ -7,6 +7,22 @@
 
 use super::*;
 
+/// THE UNDO AND REDO THE KEYS ASK FOR, with the values a Ctrl+Z dismisses put down first: the field goes
+/// with the undo, and a trial of values left open over the document would swallow this press and every
+/// one after it - said by the report of the rectangles whose Ctrl+Z died after a dimension was valued.
+fn undo_and_redo_keys(app: &mut App, ctx: &egui::Context) {
+    let (do_undo, do_redo) = qymcad_ui_state::undo_keys(ctx, &mut app.tools.place, &mut app.tools.inline, app.sketch_ses.editing.is_some());
+    if do_undo {
+        qymcad_sketch::put_the_trial_down(&mut app.sketch_ctx());
+        app.undo();
+    } else if do_redo {
+        app.redo();
+    }
+}
+
+/// Several rectangles drawn one after another are taken back by Ctrl+Z, one press per rectangle.
+mod several_rectangles_undo_by_ctrl_z;
+
 impl App {
     /// THE KEYBOARD COMMANDS OF A FRAME: Enter, U, Ctrl+Enter, Esc, Delete, Ctrl+A.
     ///
@@ -133,12 +149,7 @@ impl App {
         if std::mem::take(&mut self.side.clip.os_ping) {
             ctx.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText("qymcad-tree-clip".to_string())));
         }
-        let (do_undo, do_redo) = qymcad_ui_state::undo_keys(ctx, &mut self.tools.place, &mut self.tools.inline, self.sketch_ses.editing.is_some());
-        if do_undo {
-            self.undo();
-        } else if do_redo {
-            self.redo();
-        }
+        undo_and_redo_keys(self, ctx);
     }
 
     /// THE ESC LADDER of the window, with no tool of a frame in hand: one step of it (`qymcad_sketch::escape_step`).
