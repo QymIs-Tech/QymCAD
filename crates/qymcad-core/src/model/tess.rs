@@ -862,13 +862,14 @@ pub(super) fn without_spikes(c: &mut Contour, prov: &mut Vec<Id>) {
     if kept.len() == n || kept.len() < 2 {
         return;
     }
+    // the curves a segment was shared with live in the provenance alone, so the pieces that go are dropped by their sources
+    let gone: std::collections::HashSet<Id> = (0..n).filter(|k| !kept.contains(k)).filter_map(|k| c.edge_src.get(k).copied()).collect();
     c.edges = kept.iter().map(|&k| c.edges[k].clone()).collect();
     if c.edge_src.len() == n {
         c.edge_src = kept.iter().map(|&k| c.edge_src[k]).collect();
     }
     c.points = c.points_from_edges();
-    let kept_src: std::collections::BTreeSet<Id> = c.edge_src.iter().copied().collect();
-    *prov = kept_src.into_iter().collect();
+    *prov = c.edge_src.iter().chain(prov.iter()).copied().filter(|id| !gone.contains(id)).collect();
 }
 
 /// THE FACES OF AN ARRANGEMENT AND THE WALKS AROUND ITS PIECES: the regions of `arrangement_regions_prov`, and the walks
@@ -1006,7 +1007,8 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
         ci: usize,
     }
     let mut edges: Vec<DE> = Vec::new();
-    let mut seen_line: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new(); // B28
+    // a segment laid again by another curve: the faces it bounds name every curve that gave it (see the provenance of a face)
+    let mut shared_segment: std::collections::HashMap<(usize, usize), Vec<usize>> = std::collections::HashMap::new();
     for (ci, cu) in curves.iter().enumerate() {
         match *cu {
             ArrCurve::Line { a, b } => {
@@ -1025,12 +1027,13 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
                 for w in ts.windows(2) {
                     let (p0, p1) = (w[0].at, w[1].at);
                     let (n0, n1) = (weld(&mut nodes, p0), weld(&mut nodes, p1));
-                    // Collinearly overlapping pieces of two lines collapse into one and the same segment
-                    // between the same nodes, and a duplicate breaks the twin pairing of the traversal. Only
-                    // one is kept.
-                    if n0 != n1 && seen_line.insert((n0.min(n1), n0.max(n1))) {
-                        edges.push(DE { from: n0, to: n1, line: true, cx: 0.0, cy: 0.0, r: 0.0, ccw: true, ci });
-                        edges.push(DE { from: n1, to: n0, line: true, cx: 0.0, cy: 0.0, r: 0.0, ccw: true, ci });
+                    if n0 != n1 {
+                        let laid = shared_segment.entry((n0.min(n1), n0.max(n1))).or_default();
+                        if laid.is_empty() {
+                            edges.push(DE { from: n0, to: n1, line: true, cx: 0.0, cy: 0.0, r: 0.0, ccw: true, ci });
+                            edges.push(DE { from: n1, to: n0, line: true, cx: 0.0, cy: 0.0, r: 0.0, ccw: true, ci });
+                        }
+                        laid.push(ci); // the first curve names itself too: the face names it by its edge already, and the set dedups
                     }
                 }
             }
@@ -1280,11 +1283,12 @@ pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity
         cont.edges = cedges;
         cont.edge_src = csrc;
         if cont.signed_area() > 1e-3 {
-            // the walk as it is, its segments and its spikes: a region is laid as curves as it goes to the sketch
-            // (`LaidCurves::finish`)
-            // provenance of a face: the set of entities whose pieces form its boundary, sorted and without
-            // repeats
-            let prov: std::collections::BTreeSet<Id> = face.iter().map(|&ei| curve_eid[edges[ei].ci]).collect();
+            // the walk as it is, its segments and its spikes: a region is laid as curves as it goes to the sketch (`LaidCurves::finish`)
+            // provenance of a face: the entities whose pieces form its boundary - the curve an edge was laid from, and those its segment was shared with
+            let mut prov: std::collections::BTreeSet<Id> = face.iter().map(|&ei| curve_eid[edges[ei].ci]).collect();
+            for &ei in &face {
+                prov.extend(shared_segment.get(&(edges[ei].from.min(edges[ei].to), edges[ei].from.max(edges[ei].to))).into_iter().flatten().map(|&k| curve_eid[k]));
+            }
             out.push((cont, prov.into_iter().collect())); // an interior face, counter-clockwise; the outer one and degenerate results were dropped
         } else {
             outer.push(cont);
@@ -1374,10 +1378,15 @@ mod tests {
                 })
                 .collect()
         };
-        let rounded = vec![10, 11, 12, 13, 55, 59];
+        // the right sides of the two rectangles lie one over the other, so each names the other among its edges
+        let rounded = vec![10, 11, 12, 13, 23, 55, 59];
         assert!(faces(&before).contains(&rounded), "GUARD: the rounded rectangle is a face before the line: {:?}", faces(&before));
         let after = faces(&all);
-        assert!(after.contains(&rounded) && after.contains(&vec![23, 55, 138]), "the line along the top, touching the fillet at its end, lost the faces: {after:?}");
+        assert!(after.contains(&rounded), "the line along the top, touching the fillet at its end, lost the rounded rectangle: {after:?}");
+        assert!(
+            after.iter().any(|ids| ids.starts_with(&[23, 55, 138]) || (ids.contains(&23) && ids.contains(&55) && ids.contains(&138))),
+            "the line along the top, touching the fillet at its end, lost the chip: {after:?}"
+        );
     }
 
     /// A LINE THAT ENDS INSIDE A REGION IS NO PART OF ITS EDGE. The walk round a face went out along a line hanging into
