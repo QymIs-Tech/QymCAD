@@ -483,55 +483,10 @@ pub fn section_tri_hidden(section: &SectionTool, a: [f64; 3], b: [f64; 3], c: [f
 /// isolation — inside a Part ONLY its own bodies are visible (each part is its own space and frame);
 /// in the root assembly all of them are.
 pub fn body_shown(bv: BodyView, mi: usize) -> bool {
-    // THE BODY OF A RED NODE IS NOT SHOWN. A node that failed to build still has a body: it is created
-    // together with the node and, until the first successful build, carries the source's mesh. Showing
-    // it means drawing the part's ghost right next to it — two bodies on screen although the operation
-    // failed. Caught by the fuzzer: a fillet applied to a surface goes red, and the part ends up with
-    // two visible bodies.
-    //
-    // An empty body is hidden for the same reason: there is nothing to draw in it, yet it counts in
-    // the lists of "what we show".
-    // THE SOURCE OF A RED NODE, which stays on screen in place of the result that failed to build
-    let mut red_source = false;
-    if let Some(b) = bv.project.bodies.get(mi) {
-        if b.mesh.tris.is_empty() {
-            return false;
-        }
-        // THE BODY OF A RED NODE IS A GHOST. Only that body ITSELF is hidden: the source must stay on
-        // screen, otherwise a failed operation wipes out the whole part (its body having been consumed
-        // by the node that failed to build). That is the rule in full: on failure we show what was
-        // there BEFORE, not emptiness and not two bodies at once.
-        // NOTHING IS RED IN THE ORDINARY CASE, and then there is nothing to look for. The scan walks the whole
-        // timeline for every body; on a document of 1296 bodies that is 1.7 million comparisons per pass, and
-        // the pass happens on every frame.
-        let red = |id: Id| !bv.project.regen_errors.is_empty() && bv.project.timeline.iter().any(|n| n.kind.owns_body(id) && bv.project.regen_errors.contains_key(&n.id));
-        if red(b.id) {
-            return false;
-        }
-        // The consuming node is red, so the source stays visible - AS THE PART'S BODY, under every rule below: its
-        // own tick, its component's, the context. Reported behaviour: a part with a broken feature was seen as a
-        // ghost from every other component, with In context off and with its tick off in the tree, because this
-        // answered "shown" before any of them was asked.
-        red_source = body_is_consumed(bv.cache, bv.project, bv.regen, b.id) && bv.project.timeline.iter().any(|n| n.kind.consumed().contains(&b.id) && bv.project.regen_errors.contains_key(&n.id));
-    }
-    let ctx = current_ctx_id(bv.active_path, bv.project);
-    // A CONSUMED BODY IS NOT A BODY BUT A STEP OF HISTORY. A part is one body, and every operation
-    // carries it along: an extrude, a cut, a fillet produce a NEW body and consume the previous one.
-    // The previous ones stayed "visible": they were only out of sight because the resulting body
-    // covers them. They were still drawn and still walked through while picking — and the cost grew
-    // with the length of the timeline rather than with the number of parts. Hence the freeze while
-    // picking an edge anchor: on a part with twenty operations, twenty copies of the same shape were
-    // walked through.
-    //
-    // THERE IS ONE EXCEPTION — THE SOURCE OF THE FEATURE BEING EDITED. While editing a modifier, one
-    // looks at the state BEFORE it: the feature's result and its descendant chain are hidden, and the
-    // consumed source is shown — otherwise there is nothing to click on and nothing to edit. The
-    // exception used to stand LOWER, in the list of visible bodies, and was dead code: control
-    // reached this point first and threw the source away as consumed. It showed up as pressing Edit
-    // on a fillet and the part disappearing entirely.
-    if !red_source && bv.project.mesh_id(mi).is_some_and(|b| body_is_consumed(bv.cache, bv.project, bv.regen, b) && Some(b) != edit_src_body(bv.cmd, bv.project)) {
+    if !body_stands(bv, mi) {
         return false;
     }
+    let ctx = current_ctx_id(bv.active_path, bv.project);
     let owner = bv.project.mesh_id(mi).and_then(|b| bv.project.body_owner(b));
     // Hiding an INDIVIDUAL body by hand (the body's tick in the tree) always applies, whatever the context.
     if !bv.project.bodies.get(mi).is_none_or(|b| b.visible) {
@@ -566,6 +521,60 @@ pub fn body_shown(bv: BodyView, mi: usize) -> bool {
         }
     }
     false
+}
+
+/// THE BODY IS THE PART AS IT STANDS, whoever looks at it: not empty, not the ghost of a red node, not a step of history.
+/// The ticks and the context are the business of `body_shown`; a part drawn whole for the library asks only this.
+pub fn body_stands(bv: BodyView, mi: usize) -> bool {
+    // THE BODY OF A RED NODE IS NOT SHOWN. A node that failed to build still has a body: it is created
+    // together with the node and, until the first successful build, carries the source's mesh. Showing
+    // it means drawing the part's ghost right next to it — two bodies on screen although the operation
+    // failed. Caught by the fuzzer: a fillet applied to a surface goes red, and the part ends up with
+    // two visible bodies.
+    //
+    // An empty body is hidden for the same reason: there is nothing to draw in it, yet it counts in
+    // the lists of "what we show".
+    // THE SOURCE OF A RED NODE, which stays on screen in place of the result that failed to build
+    let mut red_source = false;
+    if let Some(b) = bv.project.bodies.get(mi) {
+        if b.mesh.tris.is_empty() {
+            return false;
+        }
+        // THE BODY OF A RED NODE IS A GHOST. Only that body ITSELF is hidden: the source must stay on
+        // screen, otherwise a failed operation wipes out the whole part (its body having been consumed
+        // by the node that failed to build). That is the rule in full: on failure we show what was
+        // there BEFORE, not emptiness and not two bodies at once.
+        // NOTHING IS RED IN THE ORDINARY CASE, and then there is nothing to look for. The scan walks the whole
+        // timeline for every body; on a document of 1296 bodies that is 1.7 million comparisons per pass, and
+        // the pass happens on every frame.
+        let red = |id: Id| !bv.project.regen_errors.is_empty() && bv.project.timeline.iter().any(|n| n.kind.owns_body(id) && bv.project.regen_errors.contains_key(&n.id));
+        if red(b.id) {
+            return false;
+        }
+        // The consuming node is red, so the source stays visible - AS THE PART'S BODY, under every rule below: its
+        // own tick, its component's, the context. Reported behaviour: a part with a broken feature was seen as a
+        // ghost from every other component, with In context off and with its tick off in the tree, because this
+        // answered "shown" before any of them was asked.
+        red_source = body_is_consumed(bv.cache, bv.project, bv.regen, b.id) && bv.project.timeline.iter().any(|n| n.kind.consumed().contains(&b.id) && bv.project.regen_errors.contains_key(&n.id));
+    }
+    // A CONSUMED BODY IS NOT A BODY BUT A STEP OF HISTORY. A part is one body, and every operation
+    // carries it along: an extrude, a cut, a fillet produce a NEW body and consume the previous one.
+    // The previous ones stayed "visible": they were only out of sight because the resulting body
+    // covers them. They were still drawn and still walked through while picking — and the cost grew
+    // with the length of the timeline rather than with the number of parts. Hence the freeze while
+    // picking an edge anchor: on a part with twenty operations, twenty copies of the same shape were
+    // walked through.
+    //
+    // THERE IS ONE EXCEPTION — THE SOURCE OF THE FEATURE BEING EDITED. While editing a modifier, one
+    // looks at the state BEFORE it: the feature's result and its descendant chain are hidden, and the
+    // consumed source is shown — otherwise there is nothing to click on and nothing to edit. The
+    // exception used to stand LOWER, in the list of visible bodies, and was dead code: control
+    // reached this point first and threw the source away as consumed. It showed up as pressing Edit
+    // on a fillet and the part disappearing entirely.
+    if !red_source && bv.project.mesh_id(mi).is_some_and(|b| body_is_consumed(bv.cache, bv.project, bv.regen, b) && Some(b) != edit_src_body(bv.cmd, bv.project)) {
+        return false;
+    }
+    true
 }
 
 /// Reported behaviour: the base planes XY/XZ/YZ are impossible to hit — they flash for a moment and

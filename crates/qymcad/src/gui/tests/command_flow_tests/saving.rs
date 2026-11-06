@@ -460,6 +460,25 @@ fn a_corner_cut_by_hand(hand: &mut Hand) {
     hand.enter().close_window();
 }
 
+/// A boss 30 x 30 reaching past a corner of the plate, by hand: its node.
+fn a_boss_past_the_plate_by_hand(hand: &mut Hand) -> qymcad_core::model::Id {
+    assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a second sketch is started on XY");
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(30.0, 30.0).click2d(60.0, 60.0);
+    assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the second sketch is finished");
+    hand.close_window();
+    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
+    hand.set("height", 10.0).enter().close_window();
+    hand.app.project.timeline.iter().rev().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the boss")
+}
+
+/// The preview of the part of the first body, as the library gets it, decoded.
+fn part_preview_of(app: &App) -> image::RgbaImage {
+    let part = app.project.bodies.first().and_then(|b| app.project.body_owner(b.id)).expect("the part of the plate");
+    let img = crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), part).expect("the part has a preview");
+    let png = crate::gui::color_image_to_png(&img).expect("the preview encodes");
+    image::load_from_memory(&png).expect("the preview is a PNG that decodes").to_rgba8()
+}
+
 /// The preview of the file at `path`, decoded.
 fn preview_of(path: &str) -> Option<image::RgbaImage> {
     qymcad_io::load_project_thumb(path).map(|png| image::load_from_memory(&png).expect("the preview is a PNG that decodes").to_rgba8())
@@ -674,13 +693,7 @@ fn preview_thumbnail_leaves_out_the_body_of_a_failed_operation() {
     let mut app = App::default();
     let mut hand = Hand::new(&mut app);
     a_plate_by_hand(&mut hand);
-    assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a second sketch is started on XY");
-    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(30.0, 30.0).click2d(60.0, 60.0);
-    assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the second sketch is finished");
-    hand.close_window();
-    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
-    hand.set("height", 10.0).enter().close_window();
-    let boss = app.project.timeline.iter().rev().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the boss");
+    let boss = a_boss_past_the_plate_by_hand(&mut hand);
     let whole = crate::gui::render_scene::project_file_preview(&app.project).expect("the plate with its boss has a preview");
     assert_ne!(whole, block, "setup: the boss shows in the preview");
     app.project.regen_errors.insert(boss, qymcad_core::errors::CoreError::SourceBodyNotBuilt);
@@ -757,6 +770,40 @@ fn component_thumbnail_renders_even_when_component_is_hidden() {
     Hand::new(&mut app).close_window();
     assert!(crate::gui::render_scene::project_file_preview(&app.project).is_none(), "the file preview draws hidden components");
     assert!(crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), app.project.root).is_some(), "the part preview leaves a hidden part out");
+}
+
+/// THE PART PREVIEW DRAWS THE PART AS IT STANDS. Every operation leaves the body before it in the document, so a plate
+/// drawn with what came before its cut fills the cut back in, and the library shows a part without its hole.
+#[test]
+fn part_preview_draws_the_result_of_a_cut_and_not_the_body_before_it() {
+    let mut plain = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut plain));
+    let block = part_preview_of(&plain);
+
+    let mut app = App::default();
+    let mut hand = Hand::new(&mut app);
+    a_plate_by_hand(&mut hand);
+    a_corner_cut_by_hand(&mut hand);
+    assert!(!qymcad_ui_state::consumed_bodies(&app.project).is_empty(), "setup: the cut consumed the plate: {}", app.status);
+    let cut = part_preview_of(&app);
+    let apart = pixels_apart(Previews { before: &block, after: &cut });
+    assert!(apart > 100, "the part preview of the cut plate is the plain plate but for {apart} pixels: the consumed plate is drawn");
+}
+
+/// THE PART PREVIEW LEAVES OUT THE BODY OF A FAILED OPERATION, and keeps what it stood on, though it is consumed.
+#[test]
+fn part_preview_keeps_the_source_of_a_failed_operation_and_not_its_body() {
+    let mut plain = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut plain));
+    let block = part_preview_of(&plain);
+
+    let mut app = App::default();
+    let mut hand = Hand::new(&mut app);
+    a_plate_by_hand(&mut hand);
+    let boss = a_boss_past_the_plate_by_hand(&mut hand);
+    app.project.regen_errors.insert(boss, qymcad_core::errors::CoreError::SourceBodyNotBuilt);
+    let failed = part_preview_of(&app);
+    assert_eq!(pixels_apart(Previews { before: &block, after: &failed }), 0, "the part preview of a failed boss is not the plate it stood on");
 }
 
 /// THE WARNING ABOUT A NEWER AUTOSAVE REACHES THE STATUS LINE. Reported behaviour: a project was opened while an

@@ -13,7 +13,8 @@ impl App {}
 /// WHICH BODIES OF THE SUBTREE A RASTER DRAWS.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Bodies {
-    /// Every body of the subtree that has triangles, ticked or not: a part saved to the library is drawn whole.
+    /// The part as it stands, ticked or not (`body_stands`): a part saved to the library is drawn whole, and the bodies
+    /// its operations consumed stay out, since drawn they fill its cuts back in.
     Whole,
     /// What the root assembly shows with nothing in hand, by the very rule of the viewport (`body_shown`): a body
     /// consumed by a cut or a boolean, a body or component whose tick is off and the body of a red node stay out.
@@ -123,7 +124,11 @@ fn raster_items(project: &qymcad_core::model::Project, cid: qymcad_core::model::
         if !in_subtree || project.bodies[mi].mesh.tris.is_empty() {
             continue;
         }
-        if bodies == Bodies::OnScreen && !qymcad_ui_state::body_shown(view, mi) {
+        let drawn = match bodies {
+            Bodies::Whole => qymcad_ui_state::body_stands(view, mi),
+            Bodies::OnScreen => qymcad_ui_state::body_shown(view, mi),
+        };
+        if !drawn {
             continue;
         }
         items.push(RasterBody { index: mi, place: project.body_display_transform(b, cid) });
