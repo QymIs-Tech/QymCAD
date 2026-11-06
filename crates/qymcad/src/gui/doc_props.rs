@@ -76,13 +76,13 @@ mod tests {
         let path = dir.join("props.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
 
-        app.save_for_test(path.clone());
+        crate::gui::hand::Hand::new(&mut app).write(crate::gui::io_jobs::SaveTask::file(path.clone()));
         let first = app.project.meta.created.clone();
         assert!(!first.is_empty(), "the first save must stamp the date");
 
         // saved again, and the date is the same
         app.project.meta.created = first.clone();
-        app.save_for_test(path.clone());
+        crate::gui::hand::Hand::new(&mut app).write(crate::gui::io_jobs::SaveTask::file(path.clone()));
         assert_eq!(app.project.meta.created, first, "a repeated save must leave the creation date as it was");
         let _ = std::fs::remove_file(&path);
     }
@@ -96,7 +96,7 @@ mod tests {
         let path = dir.join("auto.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
 
-        app.autosave_for_test(path.clone());
+        crate::gui::hand::Hand::new(&mut app).write(crate::gui::io_jobs::SaveTask::autosave(path.clone()));
         assert!(app.project.meta.created.is_empty(), "an autosave does not create the document — the date must stay empty");
         let _ = std::fs::remove_file(&path);
     }

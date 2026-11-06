@@ -120,13 +120,13 @@ impl App {
                     }
                 }
                 // another write may have been asked for while this one ran - start the deferred request
-                if let Some((p, auto)) = self.disk.io.save_request.take() {
-                    if auto {
+                if let Some(task) = self.disk.io.save_request.take() {
+                    if task.kind == crate::gui::io_jobs::SaveKind::Autosave {
                         self.disk.io.autosave_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
                     } else {
                         self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
                     }
-                    crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, p, auto);
+                    crate::gui::io_jobs::spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, task);
                 }
             }
             JobResult::ImportShapes { shapes, regen } => {
@@ -137,9 +137,9 @@ impl App {
                 }
                 if regen {
                     qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the planner does the counting - a file with no geometry now has something to rebuild from
-                    self.status = Notice::info(crate::i18n::tr1("io-loaded-brep-rebuilt", "n", &n.to_string()));
+                    crate::gui::io_jobs::say_restored(&mut self.status, "io-loaded-brep-rebuilt", n);
                 } else if n > 0 {
-                    self.status = Notice::info(crate::i18n::tr1("io-brep-restored-n", "n", &n.to_string()));
+                    crate::gui::io_jobs::say_restored(&mut self.status, "io-brep-restored-n", n);
                     // none raised: nothing to tell
                 }
                 qymcad_ui_state::invalidate(&mut self.regen);

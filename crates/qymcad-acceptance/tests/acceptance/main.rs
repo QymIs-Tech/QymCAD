@@ -44,6 +44,7 @@ mod matrix_primitives;
 mod matrix_refs;
 mod matrix_replication;
 mod matrix_sketch;
+mod file_preview;
 mod matrix_split;
 mod matrix_surfaces;
 mod reported;

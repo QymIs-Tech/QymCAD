@@ -1,9 +1,17 @@
-//! The hand pressing with keys held - Shift or Ctrl adding to what is picked - in the scene and in the panels, and
-//! the program taken in hand as it stands.
+//! The hand pressing with keys held - Shift or Ctrl adding to what is picked - in the scene and in the panels, the
+//! program taken in hand as it stands, and a save written and waited for.
 
 use super::*;
 
 impl<'a> Hand<'a> {
+    /// WRITE AS File -> Save writes, and wait for the write: a check must take the same path as Save does.
+    pub fn write(&mut self, task: crate::gui::io_jobs::SaveTask) -> &mut Self {
+        let app = &mut *self.app;
+        crate::gui::io_jobs::spawn_save(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, task);
+        app.wait_bg();
+        self
+    }
+
     /// ENTER APPLIES THE COMMAND, as `enter` does; answers why it did not apply, if it did not.
     pub fn enter_answered(&mut self) -> Option<qymcad_ui_state::NotApplied> {
         let why = self.app.apply_feat_cmd();

@@ -1,6 +1,7 @@
 //! Opening, saving, the live shapes behind them, undo and autosave.
 
 use super::*;
+use crate::gui::hand::Hand;
 
 /// Reported behaviour: every opening ran "Preparing B-rep", and afterwards the program asked to save although
 /// nothing had been changed. Two faults at once: (1) `refresh_edges` is called EVERY FRAME in 3D and pulled
@@ -43,6 +44,33 @@ fn opening_and_preparing_brep_keeps_project_clean() {
     app2.apply_feat_cmd();
     assert!(qymcad_ui_state::is_dirty(&mut app2.rebuild_ctx()), "after a real edit the project is dirty");
     let _ = std::fs::remove_file(&path);
+}
+
+/// A document holding one imported solid, and the body the import node owns.
+struct Imported {
+    app: App,
+    body: u64,
+}
+
+/// A real embedded source: a block, then STEP at `step`, then the bytes into the project plus an import node on them.
+fn an_imported_block(step: &std::path::Path) -> Imported {
+    use qymcad_core::feature::FeatureKind;
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("the block");
+    qymcad_kernel::write_step(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], step.to_string_lossy().as_ref()).expect("the step was written");
+    let bytes = std::fs::read(step).expect("the step's bytes");
+    let mut app = App::default();
+    let src_id = app.project.alloc_id();
+    app.project.sources.push(qymcad_core::model::SourceFile { id: src_id, name: "src.step".into(), ext: "step".into(), data: bytes });
+    let body = app.project.add_mesh(qymcad_core::geom::Mesh::default());
+    app.project.timeline.push(qymcad_core::feature::FeatureNode {
+        id: body,
+        name: "Import".into(),
+        kind: FeatureKind::Import { body, source: src_id, solid: 0, scale: 1.0 },
+        parent: Some(app.project.root),
+        dirty: false,
+        suppressed: false,
+    });
+    Imported { app, body }
 }
 
 /// `wait_bg` used to wait on `recv()` WITHOUT a timeout. Closing the window during long background work
@@ -104,29 +132,13 @@ fn undo_snapshot_does_not_carry_embedded_source_bytes() {
 /// longer in a run of the whole crate under a load of 45 on 20 threads: red there, green alone.
 #[test]
 fn save_during_import_restore_does_not_lose_shapes() {
-    use qymcad_core::feature::FeatureKind;
     let dir = std::env::temp_dir().join("qym_bg_jobs_test");
     std::fs::create_dir_all(&dir).unwrap();
     let step = dir.join("src.step");
     let proj_path = dir.join("proj.qcad").to_string_lossy().into_owned();
     let _ = std::fs::remove_file(&proj_path);
 
-    // a real embedded source: a block, then STEP, then the bytes into the project plus an import node on them
-    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("the block");
-    qymcad_kernel::write_step(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], step.to_string_lossy().as_ref()).expect("the step was written");
-    let bytes = std::fs::read(&step).expect("the step's bytes");
-    let mut app = App::default();
-    let src_id = app.project.alloc_id();
-    app.project.sources.push(qymcad_core::model::SourceFile { id: src_id, name: "src.step".into(), ext: "step".into(), data: bytes });
-    let body = app.project.add_mesh(qymcad_core::geom::Mesh::default());
-    app.project.timeline.push(qymcad_core::feature::FeatureNode {
-        id: body,
-        name: "Import".into(),
-        kind: FeatureKind::Import { body, source: src_id, solid: 0, scale: 1.0 },
-        parent: Some(app.project.root),
-        dirty: false,
-        suppressed: false,
-    });
+    let Imported { mut app, body } = an_imported_block(&step);
     app.disk.project_path = Some(proj_path.clone());
 
     // BOTH tasks at once: topping up the import's B-rep and writing the project
@@ -400,4 +412,521 @@ fn the_clock_is_read_in_the_zone_asked() {
     assert_eq!(super::super::hh_mm_in(at_11_27, &hour(-5)), "06:27");
     assert_eq!(super::super::hh_mm_in(at_23_30, &hour(3)), "02:30");
     assert_eq!(super::super::hh_mm_in(at_11_27, &hour(-12)), "23:27");
+}
+
+/// A scratch folder of one check, emptied first: a file left from an earlier run would answer for this one.
+fn scratch_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("qym_saving_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the scratch folder is made");
+    dir
+}
+
+/// Ctrl+S into `path` through a whole frame of the window, as a person saves, and the write waited for.
+fn press_save(app: &mut App, path: &str) {
+    // THE PATH IS REMEMBERED as Save As remembers it: without one Ctrl+S opens a file dialogue a check does not have
+    crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.to_string());
+    Hand::new(app).ctrl(egui::Key::S);
+    app.wait_bg();
+}
+
+/// The autosave timer ran out: the period of the settings has passed since the last write.
+fn autosave_period_passes(app: &mut App) {
+    app.disk.edits.last_autosave = std::time::Instant::now() - std::time::Duration::from_secs(app.set.autosave_secs + 1);
+    app.maybe_autosave(false);
+    app.wait_bg();
+}
+
+/// A plate 40 x 40 x 20 drawn and extruded by hand, symmetric about XY.
+fn a_plate_by_hand(hand: &mut Hand) {
+    assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a sketch is started on XY");
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(0.0, 0.0).click2d(40.0, 40.0);
+    assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the sketch is finished");
+    hand.close_window();
+    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
+    assert!(hand.press_word(&qymcad_i18n::tr("cmd-symmetric"), egui::pos2(0.0, 0.0)), "setup: the bar offers symmetric");
+    hand.set("height", 20.0).enter().close_window();
+}
+
+/// A column 10 x 10 at a corner of the plate cut through all, both ways.
+fn a_corner_cut_by_hand(hand: &mut Hand) {
+    assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a second sketch is started on XY");
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(30.0, 30.0).click2d(45.0, 45.0);
+    assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the second sketch is finished");
+    hand.close_window();
+    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
+    assert!(hand.press_word(&qymcad_i18n::tr("cmd-cut"), egui::pos2(0.0, 0.0)), "setup: the bar offers the cut");
+    assert!(hand.press_word(&qymcad_i18n::tr("cmd-through-both"), egui::pos2(0.0, 0.0)), "setup: the bar offers through all both ways");
+    hand.enter().close_window();
+}
+
+/// A boss 30 x 30 reaching past a corner of the plate, by hand: its node.
+fn a_boss_past_the_plate_by_hand(hand: &mut Hand) -> qymcad_core::model::Id {
+    assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a second sketch is started on XY");
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(30.0, 30.0).click2d(60.0, 60.0);
+    assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the second sketch is finished");
+    hand.close_window();
+    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
+    hand.set("height", 10.0).enter().close_window();
+    hand.app.project.timeline.iter().rev().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the boss")
+}
+
+/// The preview of the part of the first body, as the library gets it, decoded.
+fn part_preview_of(app: &App) -> image::RgbaImage {
+    let part = app.project.bodies.first().and_then(|b| app.project.body_owner(b.id)).expect("the part of the plate");
+    let img = crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), part).expect("the part has a preview");
+    let png = crate::gui::color_image_to_png(&img).expect("the preview encodes");
+    image::load_from_memory(&png).expect("the preview is a PNG that decodes").to_rgba8()
+}
+
+/// The preview of the file at `path`, decoded.
+fn preview_of(path: &str) -> Option<image::RgbaImage> {
+    qymcad_io::load_project_thumb(path).map(|png| image::load_from_memory(&png).expect("the preview is a PNG that decodes").to_rgba8())
+}
+
+/// Two previews of one size to tell apart: the one taken first and the one after a change.
+struct Previews<'a> {
+    before: &'a image::RgbaImage,
+    after: &'a image::RgbaImage,
+}
+
+/// How many pixels of the two previews differ.
+fn pixels_apart(two: Previews) -> usize {
+    two.before.pixels().zip(two.after.pixels()).filter(|(p, q)| p != q).count()
+}
+
+/// CTRL+S PUTS THE PREVIEW INTO THE FILE, THE AUTOSAVE DOES NOT, AND A FILE WITH NOTHING TO DRAW HAS NONE.
+///
+/// The preview is what a file manager shows for the project: the model on a transparent ground, with the badge
+/// of the program in the lower right corner (64x64, 8 px from the edges).
+#[test]
+fn save_project_embeds_preview_thumbnail() {
+    let dir = scratch_dir("embeds");
+    let path = dir.join("model.qcad").to_string_lossy().into_owned();
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    press_save(&mut app, &path);
+
+    let img = preview_of(&path).unwrap_or_else(|| panic!("the saved project holds no preview: {}", app.status));
+    assert_eq!(img.dimensions(), (256, 256), "the preview is 256x256");
+    assert_eq!(img.get_pixel(0, 0)[3], 0, "the ground of the preview is transparent");
+    assert_eq!(img.get_pixel(128, 128)[3], 255, "the cube in the middle of the frame is opaque");
+    assert_eq!(img.get_pixel(216, 216)[3], 255, "the badge stands in the lower right corner");
+
+    // the autosave, by its own trigger: an edit and the timer
+    let _second = sketch_rect(&mut app, 40.0, 0.0, 50.0, 10.0);
+    autosave_period_passes(&mut app);
+    let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    assert!(std::path::Path::new(&auto).exists(), "the autosave was written: {}", app.status);
+    assert!(qymcad_io::load_project_thumb(&auto).is_none(), "the autosave carries a preview");
+
+    // a document with no body: the file is shown with the icon of its type
+    let empty = dir.join("empty.qcad").to_string_lossy().into_owned();
+    let mut blank = App::default();
+    let _sketch = sketch_rect(&mut blank, 0.0, 0.0, 20.0, 20.0);
+    press_save(&mut blank, &empty);
+    assert!(std::path::Path::new(&empty).exists(), "the sketch was saved: {}", blank.status);
+    assert!(qymcad_io::load_project_thumb(&empty).is_none(), "a document of one sketch carries a preview");
+
+    // THE PREVIEW OF THE PREVIOUS VERSION IS NOT CARRIED OVER: the cube undone, the file holds a sketch alone
+    let mut back = App::default();
+    let _cube = build_cube(&mut back);
+    press_save(&mut back, &empty);
+    assert!(qymcad_io::load_project_thumb(&empty).is_some(), "setup: the cube saved over the sketch holds a preview");
+    Hand::new(&mut back).undo();
+    press_save(&mut back, &empty);
+    assert!(qymcad_io::load_project_thumb(&empty).is_none(), "the cube was undone and the file still shows its preview");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// THE PREVIEW SHOWS WHAT THE WINDOW SHOWS: a component or a body whose tick is off is not drawn, and neither is a
+/// body a cut consumed.
+#[test]
+fn preview_thumbnail_filters_consumed_and_hidden_bodies() {
+    let dir = scratch_dir("filters");
+    let path = dir.join("shown.qcad").to_string_lossy().into_owned();
+
+    // the plain plate, the picture to tell a cut from
+    let mut plain = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut plain));
+    press_save(&mut plain, &path);
+    let block = preview_of(&path).expect("the plate has a preview");
+
+    // A CORNER COLUMN CUT RIGHT THROUGH: the plate before the cut stays in the document as a consumed body, and
+    // drawn it fills the corner back in - the picture of the plain plate again.
+    let mut app = App::default();
+    let mut hand = Hand::new(&mut app);
+    a_plate_by_hand(&mut hand);
+    a_corner_cut_by_hand(&mut hand);
+    assert!(!qymcad_ui_state::consumed_bodies(&app.project).is_empty(), "setup: the cut consumed the plate: {}", app.status);
+    press_save(&mut app, &path);
+    let cut = preview_of(&path).expect("the cut plate has a preview");
+    let apart = pixels_apart(Previews { before: &block, after: &cut });
+    assert!(apart > 200, "the preview of the cut plate is the plain plate but for {apart} pixels: the consumed plate is drawn");
+
+    // THE TICK OF THE BODY in the tree, which lists the bodies of a part once the part is entered
+    let mi = app.project.bodies.iter().position(|b| !b.mesh.tris.is_empty() && !qymcad_ui_state::consumed_bodies(&app.project).contains(&b.id)).expect("the body of the cut");
+    let name = crate::i18n::name(&app.project.mesh_name(mi));
+    let part = app.project.body_owner(app.project.bodies[mi].id).and_then(|c| app.project.components.iter().find(|x| x.id == c)).map(|c| crate::i18n::name(&c.name)).expect("the part of the body");
+    assert!(Hand::new(&mut app).double_click_word(&part), "the tree shows no part {part:?}");
+    assert!(Hand::new(&mut app).press_tick_before(&name, egui::pos2(0.0, 300.0)), "the tree shows no tick before the body {name:?}");
+    Hand::new(&mut app).close_window();
+    assert!(!app.project.bodies[mi].visible, "setup: the tick before {name:?} did not hide the body");
+    press_save(&mut app, &path);
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "the only body is hidden and the file still has a preview");
+    assert!(Hand::new(&mut app).press_tick_before(&name, egui::pos2(0.0, 300.0)), "the tree shows no tick before the body {name:?}");
+    Hand::new(&mut app).close_window();
+
+    press_save(&mut app, &path);
+    let shown = preview_of(&path).expect("the body shown again brings the preview back");
+    assert_eq!(pixels_apart(Previews { before: &cut, after: &shown }), 0, "the body hidden and shown again, the preview is not the one it was");
+
+    // THE TICK OF THE COMPONENTS heading of the assembly hides every part; the heading stands in the tree of the root
+    assert!(Hand::new(&mut plain).press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "the plate is left for the root assembly");
+    let heading = qymcad_i18n::tr("tree-components");
+    assert!(Hand::new(&mut plain).press_tick_before(&heading, egui::pos2(0.0, 300.0)), "the heading of the components has no tick");
+    Hand::new(&mut plain).close_window();
+    press_save(&mut plain, &path);
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "every component is hidden and the file still has a preview");
+    assert!(Hand::new(&mut plain).press_tick_before(&heading, egui::pos2(0.0, 300.0)), "the heading of the components has no tick");
+    Hand::new(&mut plain).close_window();
+    press_save(&mut plain, &path);
+    let again = preview_of(&path).expect("the components shown again bring the preview back");
+    assert_eq!(pixels_apart(Previews { before: &block, after: &again }), 0, "the components hidden and shown again, the preview is not the one it was");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ONE FILE, ONE PREVIEW, WHATEVER THE SCHEME OF WHOEVER SAVES IT. Reported behaviour: the same cube saved from the
+/// light scheme and from the dark one gave two different pictures, since the light scheme lifts the brightness
+/// of a body.
+#[test]
+fn preview_thumbnail_does_not_follow_the_colour_scheme() {
+    let dir = scratch_dir("scheme");
+    let dark_path = dir.join("dark.qcad").to_string_lossy().into_owned();
+    let mut dark = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut dark));
+    press_save(&mut dark, &dark_path);
+
+    let light_path = dir.join("light.qcad").to_string_lossy().into_owned();
+    let mut light = App::default();
+    let mut hand = Hand::new(&mut light);
+    assert!(hand.press_word(&qymcad_i18n::tr("menu-view"), egui::pos2(0.0, 0.0)), "the menu bar has no View");
+    assert!(hand.press_word(&qymcad_i18n::tr("scheme-light"), egui::pos2(0.0, 0.0)), "the View menu offers no light scheme");
+    a_plate_by_hand(&mut hand);
+    assert!(light.scheme.pal.light, "setup: the light scheme was taken");
+    press_save(&mut light, &light_path);
+
+    let before = preview_of(&dark_path).expect("the plate has a preview");
+    let after = preview_of(&light_path).expect("the plate has a preview");
+    let apart = pixels_apart(Previews { before: &before, after: &after });
+    assert_eq!(apart, 0, "the plate saved from the dark and from the light scheme differs in {apart} pixels");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A PIXEL KEEPS ITS COLOUR IN THE PNG AT ANY OPACITY. `Color32` holds premultiplied alpha and a PNG straight alpha:
+/// written as held, a pixel at half opacity came back at half its brightness - the rim of the badge on the
+/// transparent preview was a dark fringe.
+#[test]
+fn a_translucent_pixel_keeps_its_colour_in_the_png() {
+    let held = qymcad_scheme::dark().warning().gamma_multiply(0.5);
+    let want = held.to_srgba_unmultiplied();
+    let img = egui::ColorImage { size: [1, 1], source_size: egui::Vec2::new(1.0, 1.0), pixels: vec![held] };
+    let png = crate::gui::color_image_to_png(&img).expect("encodes");
+    let back = image::load_from_memory(&png).expect("decodes").to_rgba8();
+    let p = back.get_pixel(0, 0);
+    assert_eq!(p.0, want, "the half-opaque warning colour came out of the PNG changed");
+}
+
+/// A PREVIEW THAT FAILS COSTS THE PREVIEW AND NOT THE SAVE: the picture is an extra of the file, the document is the file.
+#[test]
+fn a_preview_that_panics_leaves_the_document_written() {
+    let dir = scratch_dir("preview_panics");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    app.project.meta.comment = crate::gui::render_scene::PREVIEW_PANICS_FOR_TEST.into();
+    press_save(&mut app, &path);
+    let back = qymcad_io::load_project(&path).unwrap_or_else(|e| panic!("the document was not written: {e}; the line says {}", app.status));
+    assert_eq!(back.bodies.len(), app.project.bodies.len(), "the file does not hold the document");
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "the preview that failed left a picture in the file");
+    assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "the document was written and still counts as unsaved");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A FACE THE FILE COLOURED APART IS DRAWN IN ITS COLOUR, as on screen: an imported body in many colours is not a body of one.
+#[test]
+fn preview_thumbnail_draws_the_colours_of_the_faces() {
+    let mut app = App::default();
+    let cube = build_cube(&mut app);
+    let plain = crate::gui::render_scene::project_file_preview(&app.project).expect("the cube has a preview");
+    let mi = app.project.mesh_index(cube).expect("the mesh of the cube");
+    let root = app.project.lineage_root(cube);
+    let tris = app.project.bodies[mi].mesh.tris.len();
+    app.project.tri_colors.insert(root, (vec![[230, 20, 20]], vec![0; tris]));
+    let coloured = crate::gui::render_scene::project_file_preview(&app.project).expect("the cube has a preview");
+    let img = image::load_from_memory(&coloured).expect("decodes").to_rgba8();
+    let [r, g, _, a] = img.get_pixel(128, 128).0;
+    assert!(a == 255 && r > 2 * g, "the middle of a cube coloured red is {:?}", img.get_pixel(128, 128));
+    assert_ne!(plain, coloured, "the colour of the faces changed nothing in the preview");
+}
+
+/// A BODY WITH NO OWNER IS ON SCREEN IN THE ROOT ASSEMBLY, so it is in the preview.
+#[test]
+fn preview_thumbnail_draws_a_body_with_no_owner() {
+    let mut source = App::default();
+    let cube = build_cube(&mut source);
+    let mesh = source.project.mesh_index(cube).map(|mi| source.project.bodies[mi].mesh.clone()).expect("the mesh of the cube");
+    let mut app = App::default();
+    let body = app.project.add_mesh(mesh);
+    assert!(app.project.body_owner(body).is_none(), "setup: the body has no owner");
+    assert!(crate::gui::render_scene::project_file_preview(&app.project).is_some(), "the body stands in the root assembly and the file has no preview");
+}
+
+/// THE BODY OF A FAILED OPERATION IS NOT DRAWN, and what it stood on is. A boss reaching past the plate: its result shows
+/// outside the plate, where a result that a source covers would prove nothing.
+#[test]
+fn preview_thumbnail_leaves_out_the_body_of_a_failed_operation() {
+    let mut plain = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut plain));
+    let block = crate::gui::render_scene::project_file_preview(&plain.project).expect("the plate has a preview");
+
+    let mut app = App::default();
+    let mut hand = Hand::new(&mut app);
+    a_plate_by_hand(&mut hand);
+    let boss = a_boss_past_the_plate_by_hand(&mut hand);
+    let whole = crate::gui::render_scene::project_file_preview(&app.project).expect("the plate with its boss has a preview");
+    assert_ne!(whole, block, "setup: the boss shows in the preview");
+    app.project.regen_errors.insert(boss, qymcad_core::errors::CoreError::SourceBodyNotBuilt);
+    let failed = crate::gui::render_scene::project_file_preview(&app.project).expect("the plate stays on screen");
+    assert_eq!(failed, block, "the preview of a failed boss is not the plate it stood on");
+}
+
+/// THE RIM OF THE BADGE KEEPS THE COLOUR OF THE ICON: where nothing is drawn under it, the preview holds the icon as it is.
+#[test]
+fn the_badge_of_the_preview_is_the_icon_as_drawn() {
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    let png = crate::gui::render_scene::project_file_preview(&app.project).expect("the cube has a preview");
+    let img = image::load_from_memory(&png).expect("decodes").to_rgba8();
+    let icon = image::load_from_memory(include_bytes!("../../../../../../assets/icons/linux/64x64.png")).expect("the icon").to_rgba8();
+    let at = 256 - 64 - 8;
+    let (mut compared, mut rim) = (0, 0);
+    for (x, y, want) in icon.enumerate_pixels() {
+        let got = img.get_pixel(at + x, at + y);
+        // the alpha of the pixel tells it stands on the empty ground; below 64 the premultiplied channels carry too few bits
+        if want[3] < 64 || got[3] != want[3] {
+            continue;
+        }
+        compared += 1;
+        rim += usize::from(want[3] < 255);
+        let apart = (0..3).map(|c| got[c].abs_diff(want[c])).max().unwrap_or(0);
+        assert!(apart <= 4, "the badge at ({x}, {y}) is {got:?}, the icon {want:?}");
+    }
+    assert!(compared > 500 && rim > 20, "setup: only {compared} pixels of the badge were compared, {rim} of them on its rim");
+}
+
+/// A SAVE QUEUED BEHIND AN AUTOSAVE IS STILL A SAVE: the file gets its preview, though the write before it drew none.
+#[test]
+fn a_save_queued_behind_an_autosave_carries_the_preview() {
+    let dir = scratch_dir("queued");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let auto = dir.join("work.autosave.qcad").to_string_lossy().into_owned();
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    let write = crate::gui::io_jobs::spawn_save;
+    write(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, crate::gui::io_jobs::SaveTask::autosave(auto.clone()));
+    write(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, crate::gui::io_jobs::SaveTask::file(path.clone()));
+    assert!(app.disk.io.save_request.is_some(), "setup: the save waits behind the autosave");
+    app.wait_bg();
+    assert!(qymcad_io::load_project_thumb(&path).is_some(), "the save queued behind an autosave has no preview");
+    assert!(qymcad_io::load_project_thumb(&auto).is_none(), "the autosave holds a preview");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// NOTHING DRAWN, NO PICTURE: a body whose mesh holds points but no triangle gives neither a file preview nor a
+/// part preview - an empty frame with a badge or a bare background would stand for a model that is not there.
+#[test]
+fn preview_thumbnail_omitted_when_mesh_has_no_triangles() {
+    let mut app = App::default();
+    let body = build_cube(&mut app);
+    let mi = app.project.mesh_index(body).expect("the block's mesh");
+    for b in app.project.bodies.iter_mut() {
+        b.mesh.tris.clear();
+    }
+    assert!(!app.project.bodies[mi].mesh.verts.is_empty(), "setup: the mesh keeps its points");
+    assert!(crate::gui::render_scene::project_file_preview(&app.project).is_none(), "a mesh of points alone gives a file preview");
+    let part = app.project.body_owner(body).expect("the block's part");
+    assert!(crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), part).is_none(), "a mesh of points alone gives a part preview");
+}
+
+/// THE PART PREVIEW (Save as part, the library) DRAWS THE PART WHOLE, its tick in the tree off or on: a part put
+/// into the library hidden is still the part.
+#[test]
+fn component_thumbnail_renders_even_when_component_is_hidden() {
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    let heading = qymcad_i18n::tr("tree-components");
+    assert!(Hand::new(&mut app).press_tick_before(&heading, egui::pos2(0.0, 300.0)), "the heading of the components has no tick");
+    Hand::new(&mut app).close_window();
+    assert!(crate::gui::render_scene::project_file_preview(&app.project).is_none(), "the file preview draws hidden components");
+    assert!(crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), app.project.root).is_some(), "the part preview leaves a hidden part out");
+}
+
+/// THE PART PREVIEW DRAWS THE PART AS IT STANDS. Every operation leaves the body before it in the document, so a plate
+/// drawn with what came before its cut fills the cut back in, and the library shows a part without its hole.
+#[test]
+fn part_preview_draws_the_result_of_a_cut_and_not_the_body_before_it() {
+    let mut plain = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut plain));
+    let block = part_preview_of(&plain);
+
+    let mut app = App::default();
+    let mut hand = Hand::new(&mut app);
+    a_plate_by_hand(&mut hand);
+    a_corner_cut_by_hand(&mut hand);
+    assert!(!qymcad_ui_state::consumed_bodies(&app.project).is_empty(), "setup: the cut consumed the plate: {}", app.status);
+    let cut = part_preview_of(&app);
+    let apart = pixels_apart(Previews { before: &block, after: &cut });
+    assert!(apart > 100, "the part preview of the cut plate is the plain plate but for {apart} pixels: the consumed plate is drawn");
+}
+
+/// THE PART PREVIEW LEAVES OUT THE BODY OF A FAILED OPERATION, and keeps what it stood on, though it is consumed.
+#[test]
+fn part_preview_keeps_the_source_of_a_failed_operation_and_not_its_body() {
+    let mut plain = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut plain));
+    let block = part_preview_of(&plain);
+
+    let mut app = App::default();
+    let mut hand = Hand::new(&mut app);
+    a_plate_by_hand(&mut hand);
+    let boss = a_boss_past_the_plate_by_hand(&mut hand);
+    app.project.regen_errors.insert(boss, qymcad_core::errors::CoreError::SourceBodyNotBuilt);
+    let failed = part_preview_of(&app);
+    assert_eq!(pixels_apart(Previews { before: &block, after: &failed }), 0, "the part preview of a failed boss is not the plate it stood on");
+}
+
+/// THE WARNING ABOUT A NEWER AUTOSAVE REACHES THE STATUS LINE. Reported behaviour: a project was opened while an
+/// autosave newer than it lay beside it, and the line said "The project is loaded." - the warning was set and
+/// painted over in the same call, so the work kept in the autosave went unmentioned.
+#[test]
+fn opening_says_an_autosave_is_newer() {
+    let dir = scratch_dir("recover");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    press_save(&mut app, &path);
+    assert_opening_warns_of_the_autosave(&mut app, &path);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The unsaved-work question put by asking for a new document, answered "Don't save" with a click on its button.
+fn answer_dont_save(app: &mut App) {
+    app.request_nav_for_test(qymcad_ui_state::Nav::New);
+    let mut hand = Hand::new(app);
+    hand.settle();
+    assert!(hand.press_word(&crate::i18n::tr("nav-dont-save"), egui::pos2(0.0, 0.0)), "the question has no \"Don't save\"");
+}
+
+/// A cube saved at `path`, an edit after the save, and the autosave of that edit on the timer.
+fn saved_and_autosaved(path: &str) -> App {
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    press_save(&mut app, path);
+    let _edit = sketch_rect(&mut app, 40.0, 0.0, 50.0, 10.0);
+    autosave_period_passes(&mut app);
+    assert!(std::path::Path::new(&qymcad_ui_state::autosave_path(&app.disk.project_path)).exists(), "setup: the autosave was written: {}", app.status);
+    app
+}
+
+/// WORK GIVEN UP IS NOT OFFERED BACK. Reported behaviour: edits answered with "Don't save" left their autosave beside
+/// the file, and every later opening said the session had broken off.
+#[test]
+fn dont_save_takes_the_autosave_of_the_session_with_it() {
+    let dir = scratch_dir("dont_save");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = saved_and_autosaved(&path);
+    let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    answer_dont_save(&mut app);
+    assert!(!std::path::Path::new(&auto).exists(), "the work was given up and its autosave still lies beside the file");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// AN AUTOSAVE OF A SESSION THAT BROKE OFF OUTLIVES "DON'T SAVE": that answer is about this session's edits, and the
+/// work in the autosave is what the warning on opening offers back.
+#[test]
+fn dont_save_leaves_the_autosave_of_an_earlier_session() {
+    let dir = scratch_dir("dont_save_earlier");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let broken_off = saved_and_autosaved(&path);
+    let auto = qymcad_ui_state::autosave_path(&broken_off.disk.project_path);
+
+    let mut app = App::default();
+    app.open_for_test(path.clone());
+    let _edit = sketch_rect(&mut app, 60.0, 0.0, 70.0, 10.0);
+    answer_dont_save(&mut app);
+    assert!(std::path::Path::new(&auto).exists(), "\"Don't save\" removed the autosave of the session that broke off");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// SAVE AS CARRIES THE WORK OF THE AUTOSAVE AWAY, and the old name is left without one. Reported behaviour: the autosave
+/// stayed under the old name, newer than the old file, and that file warned of a broken session from then on. The name
+/// is given as the chooser gives it: a check cannot answer a system window.
+#[test]
+fn save_as_takes_the_autosave_of_the_old_name_with_it() {
+    let dir = scratch_dir("save_as_autosave");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = saved_and_autosaved(&path);
+    let old_auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    let task = crate::gui::io_jobs::save_under_a_new_name(&mut app.disk.project_path, &mut app.set, dir.join("renamed.qcad"));
+    Hand::new(&mut app).write(task);
+    assert!(std::path::Path::new(&dir.join("renamed.qcad")).exists(), "the file was not written: {}", app.status);
+    assert!(!std::path::Path::new(&old_auto).exists(), "the autosave stays under the old name");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A SAVE AS THAT FAILED KEEPS THE AUTOSAVE: the work is nowhere else.
+#[test]
+fn a_failed_save_as_keeps_the_autosave_of_the_old_name() {
+    let dir = scratch_dir("save_as_failed");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = saved_and_autosaved(&path);
+    let old_auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    let task = crate::gui::io_jobs::save_under_a_new_name(&mut app.disk.project_path, &mut app.set, dir.join("no_such_folder").join("renamed.qcad"));
+    Hand::new(&mut app).write(task);
+    assert!(std::path::Path::new(&old_auto).exists(), "a write that failed took the autosave with it");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// THE QUIET RESTORE OF AN IMPORT DOES NOT TALK OVER THE WARNING. Reported behaviour: the file of an imported solid had an
+/// autosave newer than it, and a moment after opening the status line said only how many bodies came back.
+#[test]
+fn opening_an_import_says_an_autosave_is_newer() {
+    let dir = scratch_dir("recover_import");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let Imported { mut app, .. } = an_imported_block(&dir.join("src.step"));
+    press_save(&mut app, &path);
+    let opened = assert_opening_warns_of_the_autosave(&mut app, &path);
+    assert!(!opened.live.shapes.is_empty(), "setup: the restore of the import landed before the status line was read");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The session of `app` broke off after an edit: the autosave is newer than the file at `path`. The file opened in a
+/// window of its own must say so in the tone of a warning, whatever else landed on the line.
+fn assert_opening_warns_of_the_autosave(app: &mut App, path: &str) -> App {
+    let _edit = sketch_rect(app, 40.0, 0.0, 50.0, 10.0);
+    autosave_period_passes(app);
+    let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    assert!(std::path::Path::new(&auto).exists(), "setup: the autosave was written: {}", app.status);
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    std::fs::File::options().write(true).open(path).and_then(|f| f.set_modified(hour_ago)).expect("the file is dated an hour back");
+
+    let mut opened = App::default();
+    opened.open_for_test(path.to_string());
+    let warning = crate::i18n::tr1("io-autosave-found", "path", &auto);
+    let first_words: String = warning.chars().take(30).collect();
+    let pal = opened.scheme.pal.clone();
+    let said = Hand::new(&mut opened).status_painted().into_iter().find(|w| w.text.contains(&first_words));
+    assert!(said.as_ref().is_some_and(|w| w.colour == pal.warning()), "the status line does not say in yellow that a newer autosave lies beside the file: {:?}", said.map(|w| (w.text, w.colour)));
+    opened
 }

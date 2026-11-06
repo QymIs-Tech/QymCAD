@@ -58,7 +58,8 @@ pub fn save_part(project: &Project, manifest: &PartManifest, faces: &[Vec<MeshFa
     }
 
     if let Some(png) = thumb_png {
-        zip.start_file("thumb.png", opts).map_err(|e| e.to_string())?;
+        let thumb_opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("thumb.png", thumb_opts).map_err(|e| e.to_string())?;
         zip.write_all(png).map_err(|e| e.to_string())?;
     }
 
@@ -112,7 +113,7 @@ pub fn load_part_bytes(bytes: &[u8]) -> Result<LoadedPart, String> {
         faces.push(f);
     }
 
-    let thumb_png = read_bytes(&mut zip, "thumb.png").ok();
+    let thumb_png = crate::project_file::read_thumb_bytes(&mut zip);
 
     Ok(LoadedPart { project, manifest, faces, thumb_png })
 }
@@ -135,26 +136,16 @@ pub fn load_part_manifest_bytes(bytes: &[u8]) -> Result<PartManifest, String> {
     ron::from_str(&man_s).map_err(|e| format!("part.ron: {e}"))
 }
 
-/// Read the preview alone from a `.qpart` on disk, without unpacking the document or the meshes, for the
-/// thumbnail grid of the library. `None` means there is no preview, or an error occurred.
+/// Read the preview alone from a `.qpart` on disk, for the thumbnail grid of the library: only the entry is read, so the
+/// cost does not follow the size of the part. A part is a bundle of the shape of a project, and the entry is the same.
+/// `None` means there is no preview, or an error occurred.
 pub fn load_part_thumb(path: &str) -> Option<Vec<u8>> {
-    load_part_thumb_bytes(&std::fs::read(path).ok()?)
+    crate::project_file::load_project_thumb(path)
 }
 
 /// The same from bytes in memory, for the built-in catalogue.
 pub fn load_part_thumb_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
-    if !bytes.starts_with(b"PK") {
-        return None;
-    }
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).ok()?;
-    read_bytes(&mut zip, "thumb.png").ok()
-}
-
-fn read_bytes<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<Vec<u8>, String> {
-    let mut f = zip.by_name(name).map_err(|e| format!("{name}: {e}"))?;
-    let mut v = Vec::new();
-    f.read_to_end(&mut v).map_err(|e| e.to_string())?;
-    Ok(v)
+    crate::project_file::load_project_thumb_bytes(bytes)
 }
 
 fn read_entry<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<String, String> {
@@ -228,6 +219,36 @@ mod tests {
 
         assert_eq!(load_part_thumb(&ps).as_deref(), Some(png), "the preview reads back exactly as written");
         assert_eq!(load_part(&ps).unwrap().thumb_png.as_deref(), Some(png), "and through a full load as well");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// THE PREVIEW OF A PART IS STORED, as that of a project is: a PNG is deflated already.
+    #[test]
+    fn qpart_thumb_is_stored_uncompressed() {
+        let (src, part) = source_with_part();
+        let sub = src.subproject_of(part).unwrap();
+        let path = std::env::temp_dir().join(format!("qym_test_thumb_stored_{}.qpart", std::process::id()));
+        let ps = path.to_string_lossy().to_string();
+        save_part(&sub, &PartManifest::new("Stored"), &[], Some(b"\x89PNG\r\n\x1a\n-preview"), &ps).unwrap();
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+        assert_eq!(zip.by_name("thumb.png").unwrap().compression(), zip::CompressionMethod::Stored, "the preview of a part is deflated again");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A PART IS BOUND BY THE SAME CHECK AS A PROJECT: the grid of the library reads whatever lies in its folder.
+    #[test]
+    fn qpart_thumb_over_the_bound_or_without_the_signature_is_refused() {
+        let (src, part) = source_with_part();
+        let sub = src.subproject_of(part).unwrap();
+        let path = std::env::temp_dir().join(format!("qym_test_thumb_refused_{}.qpart", std::process::id()));
+        let ps = path.to_string_lossy().to_string();
+        let mut oversized = b"\x89PNG\r\n\x1a\n".to_vec();
+        oversized.resize(crate::project_file::MAX_THUMB_SIZE as usize + 1, 0);
+        for bad in [oversized.as_slice(), b"not a png at all"] {
+            save_part(&sub, &PartManifest::new("Refused"), &[], Some(bad), &ps).unwrap();
+            assert!(load_part_thumb(&ps).is_none(), "the grid took a preview of {} bytes", bad.len());
+            assert!(load_part(&ps).unwrap().thumb_png.is_none(), "a full load took a preview of {} bytes", bad.len());
+        }
         let _ = std::fs::remove_file(&path);
     }
 }

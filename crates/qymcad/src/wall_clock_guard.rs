@@ -36,8 +36,8 @@ mod tests {
         Allowed { path: "qymcad/src/gui/tuned_constants.rs", reads: 2, why: "the clock given to the program as data: the last autosave put a minute and a half back" },
         Allowed {
             path: "qymcad/src/gui/tests/command_flow_tests/saving.rs",
-            reads: 2,
-            why: "the clock as data for a job made by hand, and a quit that must give up within seconds - the load only lengthens its sleep",
+            reads: 3,
+            why: "the clock as data for a job made by hand and for the last autosave put a period back, and a quit that must give up within seconds - the load only lengthens its sleep",
         },
         Allowed {
             path: "qymcad/src/gui/tests/a_quick_rebuild_does_not_blink.rs",
