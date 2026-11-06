@@ -336,6 +336,11 @@ impl Session {
         qymcad_io::save_project_guarded_bundle(&self.app.project, path, &breps, thumb.as_deref()).map_err(|e| e.to_string())
     }
 
+    /// THE PREVIEW A FILE MANAGER READS out of the file at `path`, the bytes of its PNG.
+    pub fn file_preview(&self, path: &str) -> Option<Vec<u8>> {
+        qymcad_io::load_project_thumb(path)
+    }
+
     /// A DOCUMENT OF AN OLD VERSION made of the file at `path`: written to a scratch file of this process with its
     /// meshes holding no normals of the surface, as the window saved a document before it kept them. A check of what
     /// the program does with an old document makes its own, and the file it is made of stays free to be saved by any
