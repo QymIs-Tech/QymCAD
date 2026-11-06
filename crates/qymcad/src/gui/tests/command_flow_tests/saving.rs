@@ -496,8 +496,7 @@ fn save_project_embeds_preview_thumbnail() {
 
     // the autosave, by its own trigger: an edit and the timer
     let _second = sketch_rect(&mut app, 40.0, 0.0, 50.0, 10.0);
-    app.maybe_autosave(true);
-    app.wait_bg();
+    autosave_period_passes(&mut app);
     let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
     assert!(std::path::Path::new(&auto).exists(), "the autosave was written: {}", app.status);
     assert!(qymcad_io::load_project_thumb(&auto).is_none(), "the autosave carries a preview");
@@ -632,6 +631,102 @@ fn a_preview_that_panics_leaves_the_document_written() {
     assert_eq!(back.bodies.len(), app.project.bodies.len(), "the file does not hold the document");
     assert!(qymcad_io::load_project_thumb(&path).is_none(), "the preview that failed left a picture in the file");
     assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "the document was written and still counts as unsaved");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A FACE THE FILE COLOURED APART IS DRAWN IN ITS COLOUR, as on screen: an imported body in many colours is not a body of one.
+#[test]
+fn preview_thumbnail_draws_the_colours_of_the_faces() {
+    let mut app = App::default();
+    let cube = build_cube(&mut app);
+    let plain = crate::gui::render_scene::project_file_preview(&app.project).expect("the cube has a preview");
+    let mi = app.project.mesh_index(cube).expect("the mesh of the cube");
+    let root = app.project.lineage_root(cube);
+    let tris = app.project.bodies[mi].mesh.tris.len();
+    app.project.tri_colors.insert(root, (vec![[230, 20, 20]], vec![0; tris]));
+    let coloured = crate::gui::render_scene::project_file_preview(&app.project).expect("the cube has a preview");
+    let img = image::load_from_memory(&coloured).expect("decodes").to_rgba8();
+    let [r, g, _, a] = img.get_pixel(128, 128).0;
+    assert!(a == 255 && r > 2 * g, "the middle of a cube coloured red is {:?}", img.get_pixel(128, 128));
+    assert_ne!(plain, coloured, "the colour of the faces changed nothing in the preview");
+}
+
+/// A BODY WITH NO OWNER IS ON SCREEN IN THE ROOT ASSEMBLY, so it is in the preview.
+#[test]
+fn preview_thumbnail_draws_a_body_with_no_owner() {
+    let mut source = App::default();
+    let cube = build_cube(&mut source);
+    let mesh = source.project.mesh_index(cube).map(|mi| source.project.bodies[mi].mesh.clone()).expect("the mesh of the cube");
+    let mut app = App::default();
+    let body = app.project.add_mesh(mesh);
+    assert!(app.project.body_owner(body).is_none(), "setup: the body has no owner");
+    assert!(crate::gui::render_scene::project_file_preview(&app.project).is_some(), "the body stands in the root assembly and the file has no preview");
+}
+
+/// THE BODY OF A FAILED OPERATION IS NOT DRAWN, and what it stood on is. A boss reaching past the plate: its result shows
+/// outside the plate, where a result that a source covers would prove nothing.
+#[test]
+fn preview_thumbnail_leaves_out_the_body_of_a_failed_operation() {
+    let mut plain = App::default();
+    a_plate_by_hand(&mut Hand::new(&mut plain));
+    let block = crate::gui::render_scene::project_file_preview(&plain.project).expect("the plate has a preview");
+
+    let mut app = App::default();
+    let mut hand = Hand::new(&mut app);
+    a_plate_by_hand(&mut hand);
+    assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a second sketch is started on XY");
+    hand.sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(30.0, 30.0).click2d(60.0, 60.0);
+    assert!(hand.press_word(&qymcad_i18n::tr("wb-finish"), egui::pos2(0.0, 0.0)), "setup: the second sketch is finished");
+    hand.close_window();
+    hand.look_at([20.0, 20.0, 0.0], 8.0).tool(qymcad_ui_state::PartTool::Extrude);
+    hand.set("height", 10.0).enter().close_window();
+    let boss = app.project.timeline.iter().rev().find(|n| n.kind.body().is_some()).map(|n| n.id).expect("the boss");
+    let whole = crate::gui::render_scene::project_file_preview(&app.project).expect("the plate with its boss has a preview");
+    assert_ne!(whole, block, "setup: the boss shows in the preview");
+    app.project.regen_errors.insert(boss, qymcad_core::errors::CoreError::SourceBodyNotBuilt);
+    let failed = crate::gui::render_scene::project_file_preview(&app.project).expect("the plate stays on screen");
+    assert_eq!(failed, block, "the preview of a failed boss is not the plate it stood on");
+}
+
+/// THE RIM OF THE BADGE KEEPS THE COLOUR OF THE ICON: where nothing is drawn under it, the preview holds the icon as it is.
+#[test]
+fn the_badge_of_the_preview_is_the_icon_as_drawn() {
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    let png = crate::gui::render_scene::project_file_preview(&app.project).expect("the cube has a preview");
+    let img = image::load_from_memory(&png).expect("decodes").to_rgba8();
+    let icon = image::load_from_memory(include_bytes!("../../../../../../assets/icons/linux/64x64.png")).expect("the icon").to_rgba8();
+    let at = 256 - 64 - 8;
+    let (mut compared, mut rim) = (0, 0);
+    for (x, y, want) in icon.enumerate_pixels() {
+        let got = img.get_pixel(at + x, at + y);
+        // the alpha of the pixel tells it stands on the empty ground; below 64 the premultiplied channels carry too few bits
+        if want[3] < 64 || got[3] != want[3] {
+            continue;
+        }
+        compared += 1;
+        rim += usize::from(want[3] < 255);
+        let apart = (0..3).map(|c| got[c].abs_diff(want[c])).max().unwrap_or(0);
+        assert!(apart <= 4, "the badge at ({x}, {y}) is {got:?}, the icon {want:?}");
+    }
+    assert!(compared > 500 && rim > 20, "setup: only {compared} pixels of the badge were compared, {rim} of them on its rim");
+}
+
+/// A SAVE QUEUED BEHIND AN AUTOSAVE IS STILL A SAVE: the file gets its preview, though the write before it drew none.
+#[test]
+fn a_save_queued_behind_an_autosave_carries_the_preview() {
+    let dir = scratch_dir("queued");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let auto = dir.join("work.autosave.qcad").to_string_lossy().into_owned();
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    let write = crate::gui::io_jobs::spawn_save;
+    write(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, crate::gui::io_jobs::SaveTask::autosave(auto.clone()));
+    write(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, crate::gui::io_jobs::SaveTask::file(path.clone()));
+    assert!(app.disk.io.save_request.is_some(), "setup: the save waits behind the autosave");
+    app.wait_bg();
+    assert!(qymcad_io::load_project_thumb(&path).is_some(), "the save queued behind an autosave has no preview");
+    assert!(qymcad_io::load_project_thumb(&auto).is_none(), "the autosave holds a preview");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

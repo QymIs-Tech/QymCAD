@@ -724,7 +724,7 @@ crates/qymcad/src/gui/regen_cancel.rs 1 0 0
 crates/qymcad/src/gui/regen_live_view.rs 0 1 0
 crates/qymcad/src/gui/renaming_starts_with_f2.rs 0 1 0
 crates/qymcad/src/gui/render.rs 0 1 0
-crates/qymcad/src/gui/render_scene.rs 0 4 0
+crates/qymcad/src/gui/render_scene.rs 0 3 0
 crates/qymcad/src/gui/render_source.rs 1 0 0
 crates/qymcad/src/gui/reveal_folder.rs 0 1 0
 crates/qymcad/src/gui/saving_is_not_silent.rs 0 4 0

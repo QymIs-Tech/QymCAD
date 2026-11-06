@@ -52,11 +52,8 @@ fn rebuild_says_it_ended(regen: &mut qymcad_ui_state::Rebuilding, status: &mut q
 }
 
 /// An autosave newer than the file means the previous session broke off after edits - offer to recover.
-/// THE WARNING OUTRANKS "LOADED": set before it, "loaded" painted over the warning in the same call, and the
-/// person never heard that the autosave held newer work.
-/// ONE RULE FOR THE NAME, not a copy of it. This place used to build the autosave name itself, and
-/// the moment `autosave_path` started taking the stem instead of the whole name the two would have
-/// parted: the recovery check would look for a file the autosave never writes.
+/// THE WARNING OUTRANKS "LOADED": what the autosave holds is what the person must hear of on opening.
+/// ONE RULE FOR THE NAME: `autosave_path`, the one the autosave writes by, so the check looks for the file written.
 fn check_autosave_recovery(disk: &mut OnDisk) -> Option<Notice> {
     disk.edits.autosave_key = 0; // whatever lies beside the opened file, this session has not written it
     let project_path = &disk.project_path;

@@ -1,6 +1,6 @@
 //! A PNG OUT OF A PICTURE the program drew: the thumbnail kept in a `.qpart`, the pictures the checks look at.
 
-/// A PNG out of a `ColorImage` (RGBA8) — for the `thumb.png` inside a `.qpart` and a `.qcad`. Uses `image` with its png feature.
+/// A PNG out of a `ColorImage` (RGBA8) - for the `thumb.png` inside a `.qpart` and a `.qcad`. Uses `image` with its png feature.
 ///
 /// A PNG holds STRAIGHT alpha while a `Color32` holds premultiplied: the channels are unmultiplied on the way out,
 /// or a pixel at half opacity reads back at half its brightness and the antialiased rim of the badge on a
