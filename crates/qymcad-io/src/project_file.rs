@@ -257,8 +257,7 @@ pub(crate) fn read_thumb_bytes<R: Read + std::io::Seek>(zip: &mut zip::ZipArchiv
 
 /// WHAT CAME OUT OF A BUNDLE: the document, and the live bodies where the file carries them.
 ///
-/// It used to be `(Project, Vec<(Id, Vec<u8>)>)`, and at the call site the second half read as a nameless
-/// pile of bytes. The bodies are optional by design - see the note on `load_project_with_brep`.
+/// The bodies are optional by design - see the note on `load_project_with_brep`.
 pub struct LoadedProject {
     /// The document itself.
     pub project: Project,
