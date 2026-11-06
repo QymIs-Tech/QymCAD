@@ -137,9 +137,9 @@ impl App {
                 }
                 if regen {
                     qymcad_ui_state::mark_dirty_for_rebuild(&mut self.rebuild_ctx()); // the document is marked; the planner does the counting - a file with no geometry now has something to rebuild from
-                    self.status = Notice::info(crate::i18n::tr1("io-loaded-brep-rebuilt", "n", &n.to_string()));
+                    crate::gui::io_jobs::say_restored(&mut self.status, "io-loaded-brep-rebuilt", n);
                 } else if n > 0 {
-                    self.status = Notice::info(crate::i18n::tr1("io-brep-restored-n", "n", &n.to_string()));
+                    crate::gui::io_jobs::say_restored(&mut self.status, "io-brep-restored-n", n);
                     // none raised: nothing to tell
                 }
                 qymcad_ui_state::invalidate(&mut self.regen);

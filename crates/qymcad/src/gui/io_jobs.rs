@@ -65,6 +65,14 @@ fn check_autosave_recovery(project_path: &Option<String>) -> Option<Notice> {
     (ma > mf).then(|| Notice::warning(crate::i18n::tr1("io-autosave-found", "path", &auto)))
 }
 
+/// THE RESTORE OF AN IMPORT REPORTS ON THE STATUS LINE ONLY OVER ANOTHER REPORT. It lands some time after opening, and
+/// a warning already on the line - an autosave newer than the file - is what the person must still read.
+pub(crate) fn say_restored(status: &mut Notice, key: &str, bodies: usize) {
+    if status.tone == qymcad_ui_state::Tone::Info {
+        *status = Notice::info(crate::i18n::tr1(key, "n", &bodies.to_string()));
+    }
+}
+
 impl App {
     /// WAIT for background work (writing the project, fetching B-rep) and apply its result.
     /// Needed where there will be no "later": leaving the program with a save still in flight. In tests it

@@ -46,6 +46,33 @@ fn opening_and_preparing_brep_keeps_project_clean() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// A document holding one imported solid, and the body the import node owns.
+struct Imported {
+    app: App,
+    body: u64,
+}
+
+/// A real embedded source: a block, then STEP at `step`, then the bytes into the project plus an import node on them.
+fn an_imported_block(step: &std::path::Path) -> Imported {
+    use qymcad_core::feature::FeatureKind;
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("the block");
+    qymcad_kernel::write_step(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], step.to_string_lossy().as_ref()).expect("the step was written");
+    let bytes = std::fs::read(step).expect("the step's bytes");
+    let mut app = App::default();
+    let src_id = app.project.alloc_id();
+    app.project.sources.push(qymcad_core::model::SourceFile { id: src_id, name: "src.step".into(), ext: "step".into(), data: bytes });
+    let body = app.project.add_mesh(qymcad_core::geom::Mesh::default());
+    app.project.timeline.push(qymcad_core::feature::FeatureNode {
+        id: body,
+        name: "Import".into(),
+        kind: FeatureKind::Import { body, source: src_id, solid: 0, scale: 1.0 },
+        parent: Some(app.project.root),
+        dirty: false,
+        suppressed: false,
+    });
+    Imported { app, body }
+}
+
 /// `wait_bg` used to wait on `recv()` WITHOUT a timeout. Closing the window during long background work
 /// (restoring a B-rep from an 80 MB STEP takes 36 seconds) gave a dead-frozen window again, this time without
 /// even a spinner. The wait now has a ceiling: a B-rep top-up is waited for only briefly (it can be repeated).
@@ -105,29 +132,13 @@ fn undo_snapshot_does_not_carry_embedded_source_bytes() {
 /// longer in a run of the whole crate under a load of 45 on 20 threads: red there, green alone.
 #[test]
 fn save_during_import_restore_does_not_lose_shapes() {
-    use qymcad_core::feature::FeatureKind;
     let dir = std::env::temp_dir().join("qym_bg_jobs_test");
     std::fs::create_dir_all(&dir).unwrap();
     let step = dir.join("src.step");
     let proj_path = dir.join("proj.qcad").to_string_lossy().into_owned();
     let _ = std::fs::remove_file(&proj_path);
 
-    // a real embedded source: a block, then STEP, then the bytes into the project plus an import node on them
-    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("the block");
-    qymcad_kernel::write_step(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], step.to_string_lossy().as_ref()).expect("the step was written");
-    let bytes = std::fs::read(&step).expect("the step's bytes");
-    let mut app = App::default();
-    let src_id = app.project.alloc_id();
-    app.project.sources.push(qymcad_core::model::SourceFile { id: src_id, name: "src.step".into(), ext: "step".into(), data: bytes });
-    let body = app.project.add_mesh(qymcad_core::geom::Mesh::default());
-    app.project.timeline.push(qymcad_core::feature::FeatureNode {
-        id: body,
-        name: "Import".into(),
-        kind: FeatureKind::Import { body, source: src_id, solid: 0, scale: 1.0 },
-        parent: Some(app.project.root),
-        dirty: false,
-        suppressed: false,
-    });
+    let Imported { mut app, body } = an_imported_block(&step);
     app.disk.project_path = Some(proj_path.clone());
 
     // BOTH tasks at once: topping up the import's B-rep and writing the project
@@ -640,21 +651,40 @@ fn opening_says_an_autosave_is_newer() {
     let mut app = App::default();
     let _cube = build_cube(&mut app);
     press_save(&mut app, &path);
-    // the session broke off after an edit: the autosave is newer than the file
-    let _edit = sketch_rect(&mut app, 40.0, 0.0, 50.0, 10.0);
+    assert_opening_warns_of_the_autosave(&mut app, &path);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// THE QUIET RESTORE OF AN IMPORT DOES NOT TALK OVER THE WARNING. Reported behaviour: the file of an imported solid had an
+/// autosave newer than it, and a moment after opening the status line said only how many bodies came back.
+#[test]
+fn opening_an_import_says_an_autosave_is_newer() {
+    let dir = scratch_dir("recover_import");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let Imported { mut app, .. } = an_imported_block(&dir.join("src.step"));
+    press_save(&mut app, &path);
+    let opened = assert_opening_warns_of_the_autosave(&mut app, &path);
+    assert!(!opened.live.shapes.is_empty(), "setup: the restore of the import landed before the status line was read");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The session of `app` broke off after an edit: the autosave is newer than the file at `path`. The file opened in a
+/// window of its own must say so in the tone of a warning, whatever else landed on the line.
+fn assert_opening_warns_of_the_autosave(app: &mut App, path: &str) -> App {
+    let _edit = sketch_rect(app, 40.0, 0.0, 50.0, 10.0);
     app.maybe_autosave(true);
     app.wait_bg();
     let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
     assert!(std::path::Path::new(&auto).exists(), "setup: the autosave was written: {}", app.status);
     let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
-    std::fs::File::options().write(true).open(&path).and_then(|f| f.set_modified(hour_ago)).expect("the file is dated an hour back");
+    std::fs::File::options().write(true).open(path).and_then(|f| f.set_modified(hour_ago)).expect("the file is dated an hour back");
 
     let mut opened = App::default();
-    opened.open_for_test(path.clone());
+    opened.open_for_test(path.to_string());
     let warning = crate::i18n::tr1("io-autosave-found", "path", &auto);
     let first_words: String = warning.chars().take(30).collect();
     let pal = opened.scheme.pal.clone();
     let said = Hand::new(&mut opened).status_painted().into_iter().find(|w| w.text.contains(&first_words));
     assert!(said.as_ref().is_some_and(|w| w.colour == pal.warning()), "the status line does not say in yellow that a newer autosave lies beside the file: {:?}", said.map(|w| (w.text, w.colour)));
-    let _ = std::fs::remove_dir_all(&dir);
+    opened
 }
