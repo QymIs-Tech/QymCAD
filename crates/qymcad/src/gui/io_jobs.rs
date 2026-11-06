@@ -1153,7 +1153,7 @@ pub(crate) fn spawn_save(disk: &mut OnDisk, live: &mut LiveGeom, project: &mut P
     std::thread::spawn(move || {
         // THE PREVIEW IS DRAWN HERE, in the thread of the write, from the copy of the document: the window does not
         // wait for the raster and the PNG.
-        let thumb = if autosave { None } else { crate::gui::render_scene::render_project_file_preview_png(&proj) };
+        let thumb = if autosave { None } else { crate::gui::render_scene::project_file_preview(&proj) };
         // THROUGH THE GUARDED WRITE: an empty document over a non-empty file is a refusal, not a loss.
         let res = qymcad_io::save_project_guarded_bundle(&proj, &p, &breps, thumb.as_deref());
         let _ = tx.send(JobResult::Saved { path: p, autosave, error: res.err() });

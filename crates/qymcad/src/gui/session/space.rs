@@ -332,7 +332,7 @@ impl Session {
         let live = &self.app.live;
         let breps: Vec<qymcad_io::BrepEntry> =
             live.shapes.iter().filter_map(|(id, sh)| live.blobs.get(id).cloned().or_else(|| sh.to_brep_bytes()).map(|b| qymcad_io::BrepEntry { id: *id, bytes: b })).collect();
-        let thumb = crate::gui::render_scene::render_project_file_preview_png(&self.app.project);
+        let thumb = crate::gui::render_scene::project_file_preview(&self.app.project);
         qymcad_io::save_project_guarded_bundle(&self.app.project, path, &breps, thumb.as_deref()).map_err(|e| e.to_string())
     }
 

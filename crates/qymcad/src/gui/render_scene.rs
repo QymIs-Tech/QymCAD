@@ -43,6 +43,14 @@ pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qym
     render_project_mesh_raster(dc.project, &dc.scheme.pal, dc.set.ghost_alpha, cid, ThumbnailOptions { bg: dc.scheme.pal.thumbnail_bg(), framing: Framing::Extent3D(0.42), bodies: Bodies::Whole })
 }
 
+/// THE PREVIEW OF A FILE ABOUT TO BE WRITTEN, a panic of the raster meaning no preview: the picture is drawn before the
+/// write in the same thread, and uncaught it ended the thread with the document unwritten.
+///
+/// Unwind-safe as asserted: the raster only reads the document and owns what it writes to.
+pub(crate) fn project_file_preview(project: &qymcad_core::model::Project) -> Option<Vec<u8>> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render_project_file_preview_png(project))).ok().flatten()
+}
+
 /// THE PREVIEW KEPT IN A PROJECT FILE (`thumb.png` of a `.qcad`), encoded as PNG: what the root assembly shows,
 /// on a transparent background, fitted to 95% of the frame, with the application badge in the lower right
 /// corner. `None` when nothing is drawn - the file then carries no preview at all.
@@ -50,7 +58,11 @@ pub(crate) fn render_component_thumbnail(dc: &qymcad_ui_state::DrawCtx, cid: qym
 /// THE COLOURS ARE THE DEFAULT SCHEME'S, not the scheme of whoever saves: the picture belongs to the file, and
 /// one file saved from a light and from a dark scheme gave two different previews - the light scheme raises
 /// the brightness of a body (`body_lighten`, `body_saturate`) and lowers the floor of its shading.
-pub(crate) fn render_project_file_preview_png(project: &qymcad_core::model::Project) -> Option<Vec<u8>> {
+fn render_project_file_preview_png(project: &qymcad_core::model::Project) -> Option<Vec<u8>> {
+    #[cfg(test)]
+    if project.meta.comment == PREVIEW_PANICS_FOR_TEST {
+        panic!("a preview made to fail by a test");
+    }
     // no body of the preview is a ghost (`shade_tri` gets `ghost: false`), so the opacity of a ghost is never read
     let ghost_alpha = u8::MAX;
     let mut img = render_project_mesh_raster(
@@ -63,6 +75,10 @@ pub(crate) fn render_project_file_preview_png(project: &qymcad_core::model::Proj
     overlay_watermark(&mut img);
     color_image_to_png(&img)
 }
+
+/// The comment of a document whose preview a check makes panic.
+#[cfg(test)]
+pub(crate) const PREVIEW_PANICS_FOR_TEST: &str = "the preview of this document panics";
 
 /// The bodies of a raster with their transform relative to `cid` (the part at its own origin).
 fn raster_items(project: &qymcad_core::model::Project, cid: qymcad_core::model::Id, bodies: Bodies) -> Vec<(usize, [f64; 12])> {

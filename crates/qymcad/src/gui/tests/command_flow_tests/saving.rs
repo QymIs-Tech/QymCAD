@@ -612,6 +612,22 @@ fn a_translucent_pixel_keeps_its_colour_in_the_png() {
     assert_eq!(p.0, want, "the half-opaque warning colour came out of the PNG changed");
 }
 
+/// A PREVIEW THAT FAILS COSTS THE PREVIEW AND NOT THE SAVE: the picture is an extra of the file, the document is the file.
+#[test]
+fn a_preview_that_panics_leaves_the_document_written() {
+    let dir = scratch_dir("preview_panics");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    app.project.meta.comment = crate::gui::render_scene::PREVIEW_PANICS_FOR_TEST.into();
+    press_save(&mut app, &path);
+    let back = qymcad_io::load_project(&path).unwrap_or_else(|e| panic!("the document was not written: {e}; the line says {}", app.status));
+    assert_eq!(back.bodies.len(), app.project.bodies.len(), "the file does not hold the document");
+    assert!(qymcad_io::load_project_thumb(&path).is_none(), "the preview that failed left a picture in the file");
+    assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "the document was written and still counts as unsaved");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// NOTHING DRAWN, NO PICTURE: a body whose mesh holds points but no triangle gives neither a file preview nor a
 /// part preview - an empty frame with a badge or a bare background would stand for a model that is not there.
 #[test]
@@ -623,7 +639,7 @@ fn preview_thumbnail_omitted_when_mesh_has_no_triangles() {
         b.mesh.tris.clear();
     }
     assert!(!app.project.bodies[mi].mesh.verts.is_empty(), "setup: the mesh keeps its points");
-    assert!(crate::gui::render_scene::render_project_file_preview_png(&app.project).is_none(), "a mesh of points alone gives a file preview");
+    assert!(crate::gui::render_scene::project_file_preview(&app.project).is_none(), "a mesh of points alone gives a file preview");
     let part = app.project.body_owner(body).expect("the block's part");
     assert!(crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), part).is_none(), "a mesh of points alone gives a part preview");
 }
@@ -637,7 +653,7 @@ fn component_thumbnail_renders_even_when_component_is_hidden() {
     let heading = qymcad_i18n::tr("tree-components");
     assert!(Hand::new(&mut app).press_tick_before(&heading, egui::pos2(0.0, 300.0)), "the heading of the components has no tick");
     Hand::new(&mut app).close_window();
-    assert!(crate::gui::render_scene::render_project_file_preview_png(&app.project).is_none(), "the file preview draws hidden components");
+    assert!(crate::gui::render_scene::project_file_preview(&app.project).is_none(), "the file preview draws hidden components");
     assert!(crate::gui::render_scene::render_component_thumbnail(&app.draw_ctx(), app.project.root).is_some(), "the part preview leaves a hidden part out");
 }
 
