@@ -283,23 +283,51 @@ fn thumbnail_saved_in_bundle_and_extracted() {
 /// or decompression bombs. A thumbnail entry exceeding MAX_THUMB_SIZE is rejected with None.
 #[test]
 fn thumbnail_larger_than_cap_is_refused() {
-    use std::io::Write;
     let path = std::env::temp_dir().join(format!("qym_thumb_oversized_{}.qcad", std::process::id()));
     let path_s = path.to_str().unwrap();
-
-    let file = std::fs::File::create(&path).unwrap();
-    let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    zip.start_file("thumb.png", options).unwrap();
-    let oversized = vec![0u8; (qymcad_io::MAX_THUMB_SIZE + 1) as usize];
-    zip.write_all(&oversized).unwrap();
-    zip.finish().unwrap();
+    // the signature is in place: what refuses this entry is its size and nothing else
+    std::fs::write(&path, archive_of_a_preview(&a_preview_of((qymcad_io::MAX_THUMB_SIZE + 1) as usize), zip::CompressionMethod::Stored)).unwrap();
 
     assert!(qymcad_io::load_project_thumb(path_s).is_none(), "oversized thumbnail file must return None");
     let bytes = std::fs::read(&path).unwrap();
     assert!(qymcad_io::load_project_thumb_bytes(&bytes).is_none(), "oversized thumbnail bytes must return None");
 
     let _ = std::fs::remove_file(&path);
+}
+
+/// THE BOUND IS THE LARGEST SIZE READ, not the first one refused.
+#[test]
+fn thumbnail_at_the_cap_is_read() {
+    let png = a_preview_of(qymcad_io::MAX_THUMB_SIZE as usize);
+    let bytes = archive_of_a_preview(&png, zip::CompressionMethod::Stored);
+    assert_eq!(qymcad_io::load_project_thumb_bytes(&bytes).map(|t| t.len()), Some(png.len()), "an entry of exactly the bound is read whole");
+}
+
+/// AN ENTRY LYING ABOUT ITS SIZE IS CUT AT THE BOUND. The directory of a zip states the size and a deflate stream does
+/// not obey it: an entry declared at 100 bytes inflates to whatever it holds, so the declared size alone bounds nothing.
+#[test]
+fn thumbnail_declaring_less_than_it_holds_is_refused() {
+    let mut bytes = archive_of_a_preview(&a_preview_of(2 * qymcad_io::MAX_THUMB_SIZE as usize), zip::CompressionMethod::Deflated);
+    // the uncompressed size of the only entry, 24 bytes into its record of the central directory
+    let record = bytes.windows(4).rposition(|w| w == b"PK\x01\x02").expect("the central directory");
+    bytes[record + 24..record + 28].copy_from_slice(&100u32.to_le_bytes());
+    assert!(qymcad_io::load_project_thumb_bytes(&bytes).is_none(), "an entry declaring 100 bytes and holding 4 MiB was read");
+}
+
+/// An entry `thumb.png` as the only content of an archive.
+fn archive_of_a_preview(png: &[u8], method: zip::CompressionMethod) -> Vec<u8> {
+    use std::io::Write;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zip.start_file("thumb.png", zip::write::SimpleFileOptions::default().compression_method(method)).unwrap();
+    zip.write_all(png).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+/// `len` bytes that start as a PNG does.
+fn a_preview_of(len: usize) -> Vec<u8> {
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.resize(len, 0);
+    png
 }
 
 /// AN EMBEDDED PREVIEW WITH INVALID MAGIC BYTES IS REFUSED.
