@@ -200,7 +200,7 @@ mod tests {
         src.project.regen_sketch(si);
         src.finish_sketch_edit();
         crate::gui::set_project_path(&mut src.disk.project_path, &mut src.set, path.clone());
-        crate::gui::io_jobs::save_for_test(&mut src, crate::gui::io_jobs::SaveTask { path: path.clone(), kind: crate::gui::io_jobs::SaveKind::File });
+        crate::gui::hand::Hand::new(&mut src).write(crate::gui::io_jobs::SaveTask::file(path.clone()));
 
         // ...and a launch of the program WITH IT, the way `launch` does it
         let mut app = App::default();

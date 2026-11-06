@@ -57,7 +57,9 @@ fn rebuild_says_it_ended(regen: &mut qymcad_ui_state::Rebuilding, status: &mut q
 /// ONE RULE FOR THE NAME, not a copy of it. This place used to build the autosave name itself, and
 /// the moment `autosave_path` started taking the stem instead of the whole name the two would have
 /// parted: the recovery check would look for a file the autosave never writes.
-fn check_autosave_recovery(project_path: &Option<String>) -> Option<Notice> {
+fn check_autosave_recovery(disk: &mut OnDisk) -> Option<Notice> {
+    disk.edits.autosave_key = 0; // whatever lies beside the opened file, this session has not written it
+    let project_path = &disk.project_path;
     let p = project_path.as_deref()?;
     let auto = qymcad_ui_state::autosave_path(project_path);
     let ma = std::fs::metadata(&auto).ok()?.modified().ok()?;
@@ -189,7 +191,7 @@ impl App {
         self.viewing.view.initialized = false;
         self.viewing.cam.init = false;
         self.disk.edits.saved_key = qymcad_ui_state::edit_key(&self.draw_ctx()); // straight off the disk - there are no edits
-        self.status = check_autosave_recovery(&self.disk.project_path).unwrap_or_else(|| Notice::info(crate::i18n::tr("io-project-loaded")));
+        self.status = check_autosave_recovery(&mut self.disk).unwrap_or_else(|| Notice::info(crate::i18n::tr("io-project-loaded")));
     }
 
     /// Save (Ctrl+S): if the project has been saved before, write there silently; otherwise Save As.
@@ -200,7 +202,7 @@ impl App {
                 // write leave the project dirty. But it is APPLIED only after a successful write, otherwise a
                 // failed save silently marked the project clean and leaving never asked about unsaved work.
                 self.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&self.draw_ctx()));
-                spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, SaveTask { path, kind: SaveKind::File });
+                spawn_save(&mut self.disk, &mut self.live, &mut self.project, &mut self.regen, &mut self.status, SaveTask::file(path));
             }
             None => self.save_project_as(),
         }
@@ -209,10 +211,9 @@ impl App {
     /// Save As (Ctrl+Shift+S): always ask for the path and the name.
     pub(super) fn save_project_as(&mut self) {
         self.ask_save_file(save_as_dialog(self.disk.project_path.as_deref()), |app, path| {
-            let path = path.to_string_lossy().into_owned();
-            crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
+            let task = save_under_a_new_name(&mut app.disk.project_path, &mut app.set, path);
             app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx())); // confirmed once the write actually succeeds
-            spawn_save(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, SaveTask { path, kind: SaveKind::File });
+            spawn_save(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, task);
         });
     }
 
@@ -1094,13 +1095,6 @@ pub(crate) fn export_base_name(project: &Project, project_path: &Option<String>,
     }
 }
 
-/// SAVE AS File -> Save writes, and wait for the write: a test must take the same path as Save does.
-#[cfg(test)]
-pub(crate) fn save_for_test(app: &mut App, task: SaveTask) {
-    spawn_save(&mut app.disk, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, task);
-    app.wait_bg();
-}
-
 /// WHAT KIND OF WRITE: the file the person saves, or the autosave snapshot beside it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SaveKind {
@@ -1116,6 +1110,37 @@ pub(crate) enum SaveKind {
 pub(crate) struct SaveTask {
     pub path: String,
     pub kind: SaveKind,
+    /// The autosave this write makes needless, removed once the write went through: Save As leaves the old name.
+    pub replaces_autosave: Option<String>,
+}
+
+impl SaveTask {
+    pub(crate) fn file(path: String) -> Self {
+        Self { path, kind: SaveKind::File, replaces_autosave: None }
+    }
+
+    pub(crate) fn autosave(path: String) -> Self {
+        Self { path, kind: SaveKind::Autosave, replaces_autosave: None }
+    }
+}
+
+/// THE WRITE OF SAVE AS: the document takes the new name, and the autosave under the old name is the work this write
+/// carries over, so it goes with the write. Left behind, it stays newer than the old file, which warns of it for good.
+pub(crate) fn save_under_a_new_name(project_path: &mut Option<String>, set: &mut Settings, path: std::path::PathBuf) -> SaveTask {
+    let replaces_autosave = Some(qymcad_ui_state::autosave_path(project_path));
+    let path = path.to_string_lossy().into_owned();
+    crate::gui::set_project_path(project_path, set, path.clone());
+    SaveTask { replaces_autosave, ..SaveTask::file(path) }
+}
+
+/// "DON'T SAVE" TAKES THE AUTOSAVE OF THIS SESSION WITH IT: the person gave that work up, and left beside the file it
+/// reads as a session that broke off. An autosave this session did not write (key 0) stays: it holds the work of a
+/// session that did break off, and this answer was not about it.
+pub(crate) fn forget_given_up_autosave(edits: &mut qymcad_ui_state::Edits, project_path: &Option<String>) {
+    if edits.autosave_key != 0 {
+        let _ = std::fs::remove_file(qymcad_ui_state::autosave_path(project_path));
+        edits.autosave_key = 0;
+    }
 }
 
 pub(crate) fn spawn_save(disk: &mut OnDisk, live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut qymcad_ui_state::Notice, task: SaveTask) {
@@ -1126,7 +1151,7 @@ pub(crate) fn spawn_save(disk: &mut OnDisk, live: &mut LiveGeom, project: &mut P
         io.save_request = Some(task);
         return;
     }
-    let SaveTask { path, kind } = task;
+    let SaveTask { path, kind, replaces_autosave } = task;
     let autosave = kind == SaveKind::Autosave;
     // "WHEN IT WAS STARTED" IS A FACT, NOT A PROPERTY OF THE LAST WRITE: set once, on the first save,
     // and never touched again. An autosave does not start a document - it is a snapshot.
@@ -1156,6 +1181,9 @@ pub(crate) fn spawn_save(disk: &mut OnDisk, live: &mut LiveGeom, project: &mut P
         let thumb = if autosave { None } else { crate::gui::render_scene::project_file_preview(&proj) };
         // THROUGH THE GUARDED WRITE: an empty document over a non-empty file is a refusal, not a loss.
         let res = qymcad_io::save_project_guarded_bundle(&proj, &p, &breps, thumb.as_deref());
+        if let (Ok(()), Some(old)) = (&res, &replaces_autosave) {
+            let _ = std::fs::remove_file(old);
+        }
         let _ = tx.send(JobResult::Saved { path: p, autosave, error: res.err() });
     });
     regen.bg.push(Busy {

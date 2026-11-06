@@ -430,6 +430,13 @@ fn press_save(app: &mut App, path: &str) {
     app.wait_bg();
 }
 
+/// The autosave timer ran out: the period of the settings has passed since the last write.
+fn autosave_period_passes(app: &mut App) {
+    app.disk.edits.last_autosave = std::time::Instant::now() - std::time::Duration::from_secs(app.set.autosave_secs + 1);
+    app.maybe_autosave(false);
+    app.wait_bg();
+}
+
 /// A plate 40 x 40 x 20 drawn and extruded by hand, symmetric about XY.
 fn a_plate_by_hand(hand: &mut Hand) {
     assert!(hand.press_word(&qymcad_i18n::tr("plane-xy-table"), egui::pos2(0.0, 0.0)), "setup: a sketch is started on XY");
@@ -671,6 +678,84 @@ fn opening_says_an_autosave_is_newer() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The unsaved-work question put by asking for a new document, answered "Don't save" with a click on its button.
+fn answer_dont_save(app: &mut App) {
+    app.request_nav_for_test(qymcad_ui_state::Nav::New);
+    let mut hand = Hand::new(app);
+    hand.settle();
+    assert!(hand.press_word(&crate::i18n::tr("nav-dont-save"), egui::pos2(0.0, 0.0)), "the question has no \"Don't save\"");
+}
+
+/// A cube saved at `path`, an edit after the save, and the autosave of that edit on the timer.
+fn saved_and_autosaved(path: &str) -> App {
+    let mut app = App::default();
+    let _cube = build_cube(&mut app);
+    press_save(&mut app, path);
+    let _edit = sketch_rect(&mut app, 40.0, 0.0, 50.0, 10.0);
+    autosave_period_passes(&mut app);
+    assert!(std::path::Path::new(&qymcad_ui_state::autosave_path(&app.disk.project_path)).exists(), "setup: the autosave was written: {}", app.status);
+    app
+}
+
+/// WORK GIVEN UP IS NOT OFFERED BACK. Reported behaviour: edits answered with "Don't save" left their autosave beside
+/// the file, and every later opening said the session had broken off.
+#[test]
+fn dont_save_takes_the_autosave_of_the_session_with_it() {
+    let dir = scratch_dir("dont_save");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = saved_and_autosaved(&path);
+    let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    answer_dont_save(&mut app);
+    assert!(!std::path::Path::new(&auto).exists(), "the work was given up and its autosave still lies beside the file");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// AN AUTOSAVE OF A SESSION THAT BROKE OFF OUTLIVES "DON'T SAVE": that answer is about this session's edits, and the
+/// work in the autosave is what the warning on opening offers back.
+#[test]
+fn dont_save_leaves_the_autosave_of_an_earlier_session() {
+    let dir = scratch_dir("dont_save_earlier");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let broken_off = saved_and_autosaved(&path);
+    let auto = qymcad_ui_state::autosave_path(&broken_off.disk.project_path);
+
+    let mut app = App::default();
+    app.open_for_test(path.clone());
+    let _edit = sketch_rect(&mut app, 60.0, 0.0, 70.0, 10.0);
+    answer_dont_save(&mut app);
+    assert!(std::path::Path::new(&auto).exists(), "\"Don't save\" removed the autosave of the session that broke off");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// SAVE AS CARRIES THE WORK OF THE AUTOSAVE AWAY, and the old name is left without one. Reported behaviour: the autosave
+/// stayed under the old name, newer than the old file, and that file warned of a broken session from then on. The name
+/// is given as the chooser gives it: a check cannot answer a system window.
+#[test]
+fn save_as_takes_the_autosave_of_the_old_name_with_it() {
+    let dir = scratch_dir("save_as_autosave");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = saved_and_autosaved(&path);
+    let old_auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    let task = crate::gui::io_jobs::save_under_a_new_name(&mut app.disk.project_path, &mut app.set, dir.join("renamed.qcad"));
+    Hand::new(&mut app).write(task);
+    assert!(std::path::Path::new(&dir.join("renamed.qcad")).exists(), "the file was not written: {}", app.status);
+    assert!(!std::path::Path::new(&old_auto).exists(), "the autosave stays under the old name");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A SAVE AS THAT FAILED KEEPS THE AUTOSAVE: the work is nowhere else.
+#[test]
+fn a_failed_save_as_keeps_the_autosave_of_the_old_name() {
+    let dir = scratch_dir("save_as_failed");
+    let path = dir.join("work.qcad").to_string_lossy().into_owned();
+    let mut app = saved_and_autosaved(&path);
+    let old_auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
+    let task = crate::gui::io_jobs::save_under_a_new_name(&mut app.disk.project_path, &mut app.set, dir.join("no_such_folder").join("renamed.qcad"));
+    Hand::new(&mut app).write(task);
+    assert!(std::path::Path::new(&old_auto).exists(), "a write that failed took the autosave with it");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// THE QUIET RESTORE OF AN IMPORT DOES NOT TALK OVER THE WARNING. Reported behaviour: the file of an imported solid had an
 /// autosave newer than it, and a moment after opening the status line said only how many bodies came back.
 #[test]
@@ -688,8 +773,7 @@ fn opening_an_import_says_an_autosave_is_newer() {
 /// window of its own must say so in the tone of a warning, whatever else landed on the line.
 fn assert_opening_warns_of_the_autosave(app: &mut App, path: &str) -> App {
     let _edit = sketch_rect(app, 40.0, 0.0, 50.0, 10.0);
-    app.maybe_autosave(true);
-    app.wait_bg();
+    autosave_period_passes(app);
     let auto = qymcad_ui_state::autosave_path(&app.disk.project_path);
     assert!(std::path::Path::new(&auto).exists(), "setup: the autosave was written: {}", app.status);
     let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);

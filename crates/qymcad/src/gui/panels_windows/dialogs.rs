@@ -482,6 +482,7 @@ pub(crate) fn nav_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) 
             }
         }
         Some(1) => {
+            crate::gui::io_jobs::forget_given_up_autosave(wc.edits, wc.project_path);
             if let Some(nav) = wc.deferred.nav.take() {
                 wc.ask.push(qymcad_ui_state::WinAsk::Nav(nav));
             }

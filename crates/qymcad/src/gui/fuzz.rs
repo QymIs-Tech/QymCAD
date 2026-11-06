@@ -135,7 +135,7 @@ mod random_session {
                     9 => {
                         // SAVE AND OPEN: the document must survive a round trip through a file
                         let path = std::env::temp_dir().join(format!("qym_fuzz_{seed}.qcad")).to_string_lossy().to_string();
-                        crate::gui::io_jobs::save_for_test(&mut app, crate::gui::io_jobs::SaveTask { path: path.clone(), kind: crate::gui::io_jobs::SaveKind::File });
+                        crate::gui::hand::Hand::new(&mut app).write(crate::gui::io_jobs::SaveTask::file(path.clone()));
                         if let Ok(proj) = qymcad_io::load_project(&path) {
                             let before = app.project.bodies.len();
                             let mut back = App::default();
