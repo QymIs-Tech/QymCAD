@@ -17,7 +17,7 @@ QymCAD project files (`.qcad`) are standard ZIP bundles that optionally embed a 
 ## 2. Presence Rules
 
 * **Saved projects with visible bodies**: `thumb.png` is generated and saved upon manual Save (`Ctrl+S`) or Save As (`Ctrl+Shift+S`).
-* **Nothing to draw**: When no body is shown (an empty document, sketches only, every body hidden), `thumb.png` is **omitted**. When absent, the host operating system should display the standard QymCAD file type icon.
+* **Nothing to draw**: When no body is shown (an empty document, sketches only, every body hidden, a sheet turned wholly away from the fixed view), `thumb.png` is **omitted**. When absent, the host operating system should display the standard QymCAD file type icon.
 * **Not carried over**: A save writes the preview of the document being saved or none; the preview of the previous version of the file is never kept. If the bodies are deleted and sketches remain, the next save removes `thumb.png`.
 * **Refused save**: A document with no content at all is not written over a file that has content (the save is refused). The file, and its preview, stay as they were.
 * **Autosave**: Periodic autosave (`.autosave.qcad`) skips the preview: it is not the file a person opens from a file manager.
@@ -55,7 +55,7 @@ def get_qcad_thumbnail(path: str) -> bytes | None:
                 return None
             with z.open("thumb.png") as f:
                 data = f.read(MAX_THUMB_SIZE + 1)
-    except (KeyError, zipfile.BadZipFile, OSError):
+    except Exception:  # a damaged archive raises more than zipfile's own errors: zlib.error, RuntimeError, NotImplementedError
         return None
     if len(data) > MAX_THUMB_SIZE or not data.startswith(PNG_MAGIC):
         return None
@@ -84,7 +84,12 @@ A thumbnailer is run on any file the file manager comes across, so it bounds the
 ```sh
 #!/bin/sh
 # qymcad-thumbnailer INPUT OUTPUT: thumb.png of a .qcad, at most 2 MiB and a PNG, or no output at all
-unzip -p "$1" thumb.png | head -c 2097153 > "$2"
+# unzip reads its archive argument as a pattern, so it is given a name of ours and not the name of the file
+dir=$(mktemp -d) || exit 1
+ln -s "$(realpath "$1")" "$dir/input.qcad"
+unzip -p "$dir/input.qcad" thumb.png 2>/dev/null | head -c 2097153 > "$2"
+rm -f "$dir/input.qcad"
+rmdir "$dir"
 n=$(wc -c < "$2")
 magic=$(head -c 8 "$2" | od -An -tx1 | tr -d ' \n')
 [ "$n" -gt 0 ] && [ "$n" -le 2097152 ] && [ "$magic" = 89504e470d0a1a0a ] && exit 0
@@ -147,7 +152,7 @@ macOS Finder and QuickLook query thumbnail app extensions bundled inside the app
 1. Add a **Quick Look Thumbnail Extension** (`QLThumbnailProvider`) to `QymCAD.app/Contents/PlugIns/`.
 2. In `provideThumbnail(for:request:)`:
    * Unzip `thumb.png` from the file at `request.fileURL`, reading at most 2 MiB + 1 byte, and give no thumbnail when it is longer or does not start with the PNG signature. The size an archive declares is not enough: a deflated entry can hold more.
-   * If found, draw the `CGImage` into `handler.provideThumbnail(forImage: ...)` or use `QLThumbnailReply(contextSize: ...)`:
+   * If found, answer with a `QLThumbnailReply` that draws the image:
 
 ```swift
 class ThumbnailProvider: QLThumbnailProvider {
@@ -169,4 +174,4 @@ class ThumbnailProvider: QLThumbnailProvider {
     }
 }
 ```
-3. Register the document UTType in `Info.plist` with `public.filename-extension: ["qcad"]`.
+3. Register the document UTType in `Info.plist` with `public.filename-extension: ["qcad"]`, and list it under `QLSupportedContentTypes` in the `Info.plist` of the extension.
