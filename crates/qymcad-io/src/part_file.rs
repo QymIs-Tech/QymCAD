@@ -136,19 +136,16 @@ pub fn load_part_manifest_bytes(bytes: &[u8]) -> Result<PartManifest, String> {
     ron::from_str(&man_s).map_err(|e| format!("part.ron: {e}"))
 }
 
-/// Read the preview alone from a `.qpart` on disk, without unpacking the document or the meshes, for the
-/// thumbnail grid of the library. `None` means there is no preview, or an error occurred.
+/// Read the preview alone from a `.qpart` on disk, for the thumbnail grid of the library: only the entry is read, so the
+/// cost does not follow the size of the part. A part is a bundle of the shape of a project, and the entry is the same.
+/// `None` means there is no preview, or an error occurred.
 pub fn load_part_thumb(path: &str) -> Option<Vec<u8>> {
-    load_part_thumb_bytes(&std::fs::read(path).ok()?)
+    crate::project_file::load_project_thumb(path)
 }
 
 /// The same from bytes in memory, for the built-in catalogue.
 pub fn load_part_thumb_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
-    if !bytes.starts_with(b"PK") {
-        return None;
-    }
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
-    crate::project_file::read_thumb_bytes(&mut zip)
+    crate::project_file::load_project_thumb_bytes(bytes)
 }
 
 fn read_entry<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, name: &str) -> Result<String, String> {
