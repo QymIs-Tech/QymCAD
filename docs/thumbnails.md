@@ -6,7 +6,7 @@ QymCAD project files (`.qcad`) are standard ZIP bundles that optionally embed a 
 
 * **Archive path**: `thumb.png` (directly at the ZIP archive root).
 * **Image format**: Standard PNG (Portable Network Graphics), RGBA8.
-* **Dimensions**: 256 x 256 pixels.
+* **Dimensions**: 256 x 256 pixels. A viewer that shows it larger scales this image up, and the picture gets softer.
 * **Background**: Fully transparent (alpha = 0) so the preview renders cleanly against any file manager backdrop (light mode, dark mode, or desktop wallpaper).
 * **Geometry**: Orthographic projection from a fixed isometric view (`Cam3::default()`), scaled to fit 95% of the frame (`FitScreen2D(0.95)`), centered at the projected center of the 3D meshes.
 * **Colours**: The default (dark) colour scheme, whatever scheme the person saving uses, so that one file has one preview.
@@ -21,12 +21,14 @@ QymCAD project files (`.qcad`) are standard ZIP bundles that optionally embed a 
 * **Not carried over**: A save writes the preview of the document being saved or none; the preview of the previous version of the file is never kept. If the bodies are deleted and sketches remain, the next save removes `thumb.png`.
 * **Refused save**: A document with no content at all is not written over a file that has content (the save is refused). The file, and its preview, stay as they were.
 * **Autosave**: Periodic autosave (`.autosave.qcad`) skips the preview: it is not the file a person opens from a file manager.
+* **Templates**: A template saved from a project has no preview.
+* **Failed preview**: If drawing the preview fails, the file is written without it.
 
 ## 3. Reading the Thumbnail
 
 ### In Rust (`qymcad-io`)
 
-`qymcad-io` provides two dedicated helper functions that read the preview without parsing `document.ron` or loading mesh geometry. Both refuse an entry larger than `MAX_THUMB_SIZE` (2 MiB) or one that does not start with the PNG signature, so they are safe to call on arbitrary files:
+`qymcad-io` provides two dedicated helper functions that read the preview without parsing `document.ron` or loading mesh geometry. Both refuse an entry larger than `MAX_THUMB_SIZE` (2 MiB) or one that does not start with the PNG signature, so they are safe to call on arbitrary files. This holds for these two functions only: `load_project` and `load_part` do not limit the other entries of an archive.
 
 ```rust
 // From a file path:
@@ -61,6 +63,8 @@ def get_qcad_thumbnail(path: str) -> bytes | None:
 ```
 
 ### In Shell / Command Line
+
+For a file you trust; a program that runs on arbitrary files bounds the entry as the Linux thumbnailer below does:
 
 ```bash
 # Extract thumbnail directly to stdout or file
@@ -123,6 +127,7 @@ Windows Explorer displays thumbnails via an in-process COM server implementing `
 1. **COM Implementation**:
    * Implement `IThumbnailProvider::GetThumbnail(UINT cx, HBITMAP *phbmp, WTS_ALPHATYPE *pdwAlpha)`.
    * Open the stream as a ZIP archive, locate `thumb.png`.
+   * Read at most 2 MiB + 1 byte of it, and give no thumbnail when it is longer or does not start with the PNG signature. The size an archive declares is not enough: a deflated entry can hold more.
    * Decode the PNG stream into an `HBITMAP` (32-bit PARGB32) using Windows Imaging Component (`IWICImagingFactory`).
    * Set `*pdwAlpha = WTSAT_ARGB` so Windows Explorer honors the alpha channel.
 2. **Registry Registration**:
@@ -141,17 +146,20 @@ macOS Finder and QuickLook query thumbnail app extensions bundled inside the app
 
 1. Add a **Quick Look Thumbnail Extension** (`QLThumbnailProvider`) to `QymCAD.app/Contents/PlugIns/`.
 2. In `provideThumbnail(for:request:)`:
-   * Unzip `thumb.png` from the file at `request.fileURL`.
+   * Unzip `thumb.png` from the file at `request.fileURL`, reading at most 2 MiB + 1 byte, and give no thumbnail when it is longer or does not start with the PNG signature. The size an archive declares is not enough: a deflated entry can hold more.
    * If found, draw the `CGImage` into `handler.provideThumbnail(forImage: ...)` or use `QLThumbnailReply(contextSize: ...)`:
 
 ```swift
 class ThumbnailProvider: QLThumbnailProvider {
     override func provideThumbnail(for request: QLFileThumbnailRequest, _ handler: @escaping (QLThumbnailReply?, Error?) -> Void) {
-        // Read thumb.png from request.fileURL ZIP archive
+        // Read thumb.png from request.fileURL ZIP archive, under the bound above
         if let pngData = extractThumbPng(from: request.fileURL),
            let image = NSImage(data: pngData) {
-            let reply = QLThumbnailReply(contextSize: request.maximumSize) { () -> Bool in
-                image.draw(in: CGRect(origin: .zero, size: request.maximumSize))
+            // the preview is square, and the largest size asked for need not be
+            let side = min(request.maximumSize.width, request.maximumSize.height)
+            let size = CGSize(width: side, height: side)
+            let reply = QLThumbnailReply(contextSize: size) { () -> Bool in
+                image.draw(in: CGRect(origin: .zero, size: size))
                 return true
             }
             handler(reply, nil)
