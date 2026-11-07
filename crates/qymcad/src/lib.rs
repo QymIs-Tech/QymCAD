@@ -68,6 +68,9 @@ mod packaging_flatpak;
 // The release run itself: every package built is handed over, and the publishing job waits for them all.
 #[cfg(test)]
 mod packaging_release;
+// The package for Windows 7: what its loader would refuse is refused here first.
+#[cfg(test)]
+mod packaging_win7;
 // Every build of the kernel keeps the checks OCCT compiles out of a Release by default.
 #[cfg(test)]
 mod packaging_occt;
