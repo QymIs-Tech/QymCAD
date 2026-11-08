@@ -12,6 +12,8 @@ pub use gui::session::{
 
 /// START THE PROGRAM: open the window and run it until it closes; a start that fails is told to the person.
 pub fn run() -> ExitCode {
+    // before anything can ask for OpenGL: a start on the processor loads Mesa first (`software_gl`)
+    software_gl::load_if_asked();
     let launched = gui::launch();
     // the program ends only after the threads it left working in OCCT (`qymcad_kernel::worker`)
     qymcad_kernel::wait_for_workers();
@@ -19,9 +21,22 @@ pub fn run() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("failed to start QymCAD: {e}");
+            let mut failure = crate::diagnostics::start_failure();
+            // NO ADAPTER, AND THE PACKAGE CARRIES ONE ON THE PROCESSOR: one more start, which opens the window. When it
+            // cannot be started, why is said along with the missing adapter, and the report this start left unwritten
+            // for the handover is written now.
+            if let Some(f) = failure.as_mut().filter(|f| f.no_adapter && software_gl::starts_again()) {
+                match software_gl::start_again_on_the_processor() {
+                    Ok(()) => return ExitCode::SUCCESS,
+                    Err(why) => {
+                        f.reason = format!("{}\n{why}", f.reason);
+                        f.report = crate::crash::note_failed_start(&f.reason);
+                    }
+                }
+            }
             // A WINDOWED BUILD HAS NOWHERE TO PRINT: on Windows there is no console behind the program, so
             // the line above reached nobody. What a person saw was a window that blinked and closed.
-            match crate::diagnostics::start_failure() {
+            match failure {
                 Some(f) => crate::start_notice::tell_the_person(&f),
                 // the failure happened somewhere that did not record itself - say the little that is known
                 None => crate::start_notice::tell_the_person(&crate::diagnostics::StartFailure { reason: e.to_string(), report: None, no_adapter: false }),
@@ -68,6 +83,9 @@ mod packaging_flatpak;
 // The release run itself: every package built is handed over, and the publishing job waits for them all.
 #[cfg(test)]
 mod packaging_release;
+// The package for Windows 7: what its loader would refuse is refused here first.
+#[cfg(test)]
+mod packaging_win7;
 // Every build of the kernel keeps the checks OCCT compiles out of a Release by default.
 #[cfg(test)]
 mod packaging_occt;
@@ -91,6 +109,7 @@ mod gui;
 mod parts_library;
 mod support;
 mod viewport_gpu;
+mod software_gl;
 mod start_notice;
 mod system;
 mod wide_signature_ratchet;

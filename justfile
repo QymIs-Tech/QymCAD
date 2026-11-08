@@ -40,6 +40,15 @@ pkg-linux: pkg-linux-image
 #   $env:OCCT_INCLUDE_DIR = "C:\occt\include\opencascade"; $env:OCCT_ROOT = "C:\occt"
 #   cargo build --release --bin qymcad; pwsh -File packaging/win/bundle.ps1
 
+# --- Windows 7 portable zip ---
+# Built in CI by the `windows7` job; by hand it takes the same inputs, see packaging/README.md.
+pkg-win7:
+    python3 packaging/win/bundle-win7.py
+
+# would this unpacked package load on Windows 7? (seconds, no Windows needed)
+check-win7 folder:
+    python3 packaging/win/check-win7.py {{folder}}
+
 # clear out what packaging produced
 clean-dist:
     rm -rf dist

@@ -1,5 +1,5 @@
-# Building the release packages in CI: the Windows portable zip and MSI, the Linux AppImage and the macOS
-# disk image for Apple Silicon and for Intel.
+# Building the release packages in CI: the Windows portable zip and MSI, the portable zip for Windows 7, the Linux
+# AppImage and the macOS disk image for Apple Silicon and for Intel.
 #
 # ONE TRIGGER: the button (Actions -> Run workflow). Nothing builds by itself - not on a push, not on a
 # tag. Commits may arrive daily; a package is made when it is asked for, and asking is a person pressing
@@ -202,6 +202,98 @@ jobs:
           path: dist/*.msi
           archive: false
 
+  # WINDOWS 7 SP1 AND LATER, x64: a job of its own, because it needs another compiler.
+  #
+  # `windows-latest` carries the runtime 14.51, whose msvcp140.dll imports CopyFile2, CreateFile2 and
+  # GetSystemTimePreciseAsFileTime from kernel32.dll. Windows 7 has none of them, so the loader stops every program
+  # beside it. Measured against the exports of Windows 7: 14.36 to 14.44 import none of them, 14.51 all three. The
+  # runtime cannot simply be swapped in the archive: code built by a newer compiler is not supported on an older
+  # runtime. So this package is built whole, kernel included, by Visual Studio 2022, and the image is named rather than
+  # `-latest`.
+  #
+  # THE KERNEL HAS ITS OWN CACHE KEY for the same reason: under the key of the job above it would come back built by
+  # the newer compiler, and nothing would say so.
+  #
+  # The Rust side is separate from the compiler: the target `x86_64-win7-windows-msvc` keeps the standard library off
+  # WaitOnAddress and ProcessPrng, and it is a tier 3 target, so std is built from source (`-Zbuild-std`, which stable
+  # takes under RUSTC_BOOTSTRAP). `bundle-win7.py` refuses a package `check-win7.py` would not load.
+  windows7:
+    needs: agree
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore the kernel build
+        id: occt
+        uses: actions/cache/restore@v6
+        with:
+          path: C:\occt
+          key: occt-7.9.3-msvc143-x64-v1
+
+      - name: Build OCCT 7.9.3 (only when the cache missed)
+        if: steps.occt.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o occt.tar.gz https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V7_9_3.tar.gz
+          tar xf occt.tar.gz
+          # THE NAME OF THE UNPACKED DIRECTORY IS NOT OURS TO ASSUME. GitHub strips the leading `V` from a
+          # tag when it names the folder inside an archive, so `V7_9_3` arrives as `OCCT-7_9_3`. The Linux
+          # build always matched it by pattern; this one spelled it out and failed on the first run.
+          $src = (Get-ChildItem -Directory -Filter 'OCCT-*' | Select-Object -First 1).FullName
+          if (-not $src) { throw "the archive unpacked into nothing that looks like OCCT-*" }
+          Write-Host ">>> sources at $src"
+          # Parts of OCCT's own tree declare compatibility with CMake older than 3.5, and current CMake has dropped
+          # support for saying that at all - the runner here carries the one shipped with Visual Studio
+          # 2026. This is the escape hatch CMake itself names in the refusal. On Linux the question never
+          # comes up: the builder image is Ubuntu 22.04, whose CMake is old enough to accept it as written.
+          # EVERY ARGUMENT IS QUOTED. PowerShell tore `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` in half - CMake
+          # received `3` and complained about a stray path `.5` - while the neighbouring flags survived
+          # only because none of them contains a dot. Quoting settles it whatever the parser was thinking.
+          cmake -S $src -B occt-build -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+            "-DBUILD_LIBRARY_TYPE=Shared" `
+            "-DINSTALL_DIR=C:/occt" `
+            "-DINSTALL_DIR_LAYOUT=Unix" `
+            "-DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF" `
+            "-DBUILD_MODULE_Draw=OFF" `
+            "-DBUILD_MODULE_Visualization=OFF" `
+            "-DBUILD_DOC_Overview=OFF" `
+            "-DUSE_FREETYPE=OFF" "-DUSE_TK=OFF" "-DUSE_FREEIMAGE=OFF" `
+            "-DUSE_RAPIDJSON=OFF" "-DUSE_DRACO=OFF" "-DUSE_OPENGL=OFF" "-DUSE_GLES2=OFF"
+          if ($LASTEXITCODE -ne 0) { throw "the kernel would not configure" }
+          cmake --build occt-build --config Release --target install -- /m
+          Get-ChildItem C:\occt
+
+      - name: Save the kernel build
+        if: steps.occt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: C:\occt
+          key: occt-7.9.3-msvc143-x64-v1
+
+      - name: Add the sources of the standard library
+        run: rustup component add rust-src
+
+      - name: Build (release)
+        env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          OCCT_INCLUDE_DIR: C:\occt\include\opencascade
+          OCCT_LIB_DIR: C:\occt\lib
+          RUSTC_BOOTSTRAP: 1
+        run: cargo build --release --locked --bin qymcad --target x86_64-win7-windows-msvc "-Zbuild-std=std,panic_abort"
+
+      - name: Bundle the portable zip and check it loads on Windows 7
+        env:
+          QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          OCCT_ROOT: C:\occt
+        run: python packaging/win/bundle-win7.py
+
+      - name: Upload the portable zip (for workflow_dispatch)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*-win7-x64.zip
+          archive: false
+
   linux:
     needs: agree
     runs-on: ubuntu-latest
@@ -394,7 +486,7 @@ jobs:
   # Now every run downloads the packages and checks them; only the page is made on a tag. A branch run
   # costs a minute of downloading and proves the whole path.
   publish:
-    needs: [windows, linux, macos]
+    needs: [windows, windows7, linux, macos]
     runs-on: ubuntu-latest
     steps:
       # THE SOURCES ARE NEEDED HERE TOO, for one file: the text that goes onto the release page. This job
@@ -413,12 +505,12 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
-      # FIVE FILES, AND ALL FIVE ACTUALLY FILES. The packages are uploaded unzipped, and the release
+      # SIX FILES, AND ALL SIX ACTUALLY FILES. The packages are uploaded unzipped, and the release
       # step below attaches `dist/*` - a directory among them would be attached as nothing at all, and
       # the Release page would go up with a download missing. Fifteen seconds against that.
       #
-      # Five, not three: Windows produces two (the portable zip and the MSI installer), and macOS two - a disk
-      # image for each processor, from the one upload step the matrix runs twice. The number is written out
+      # Six, not three: Windows produces three (the portable zip, the MSI installer and the zip for Windows 7), and
+      # macOS two - a disk image for each processor, from the one upload step the matrix runs twice. The number is written out
       # rather than counted from the jobs on purpose - a package that silently stopped being built is exactly
       # what this step exists to catch.
       - name: What was built
@@ -428,7 +520,7 @@ jobs:
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
           n=$(ls dist | wc -l)
-          [ "$n" -eq 5 ] || { echo "!!! five packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq 6 ] || { echo "!!! six packages were expected, $n arrived"; exit 1; }
 
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #
