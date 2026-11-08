@@ -95,9 +95,9 @@ pub(crate) fn starts_again() -> bool {
 
 /// THE START ON THE PROCESSOR, with the arguments of this one, or why it could not be started.
 ///
-/// Measured on Windows 7: started from Explorer, the program started again; started from a console, with or without
-/// its streams sent to `nul`, it did not, and the person was told only of the missing adapter. Why it failed is now
-/// said with that message. The new start gets no handle of this one: it prints nowhere.
+/// THE NEW START GETS NO HANDLE OF THIS ONE. Measured on Windows 7: with the streams inherited, a program started from a
+/// console did not start again, and the person was told only of the missing adapter; started from Explorer it did.
+/// With the streams of the new start closed both start again and draw. A failure that remains is said with the message.
 pub(crate) fn start_again_on_the_processor() -> Result<(), String> {
     let program = std::env::current_exe().map_err(|e| format!("the program does not know its own file: {e}"))?;
     std::process::Command::new(&program)
