@@ -7,6 +7,10 @@
     license: "AGPL-3.0-or-later",
     description: "Default QymCAD icon set designed from scratch, inspired by modern mobile CAD ergonomics.",
     translations: {
+        "es": (
+            name: "Predeterminado",
+            description: "Conjunto de iconos predeterminado de QymCAD, diseñado desde cero e inspirado en la ergonomía de los CAD móviles modernos.",
+        ),
         "kk": (
             name: "Әдепкі",
             description: "Заманауи мобильдік CAD эргономикасынан шабыттанып, нөлден жасалған QymCAD әдепкі таңбашалар жиынтығы.",
