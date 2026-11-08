@@ -41,10 +41,10 @@ Versión en desarrollo. El programa funciona y es apto para piezas reales, pero 
 - **El módulo CNC (CAM) no funciona.** En la configuración existe la casilla «Pestaña Mecanizado (CAM)»,
   pero lo que hay detrás es trabajo preliminar: parte del código proviene de una versión anterior y no
   se mantiene activamente. El módulo volverá en la versión alfa estable.
-- **La compilación para macOS no incluye firma de Apple.** macOS marca la aplicación descargada como
-  en cuarentena y rechaza abrirla diciendo que está dañada, lo cual no es cierto. La marca se retira una
-  sola vez, con un comando, descrito paso a paso en las notas incluidas en el archivo comprimido. Solo
-  para Apple Silicon; no hay compilación para Intel.
+- **La compilación para macOS no está firmada por Apple.** Está firmada e íntegra, pero con un certificado
+  que no emitió Apple, por lo que en el primer inicio macOS indica que no puede verificar la aplicación y
+  se niega a abrirla. Se permite una sola vez, con el botón «Abrir igualmente» en Ajustes del Sistema ->
+  Privacidad y seguridad; los pasos están en las notas junto a la aplicación.
 
 ## Características
 
@@ -52,7 +52,7 @@ Versión en desarrollo. El programa funciona y es apto para piezas reales, pero 
 y cotas se resuelven de forma conjunta; las cotas son paramétricas (`w/2`, `sin(a)`). Dispone de geometría auxiliar
 y de proyección de aristas de cuerpos sobre el boceto.
 
-**Piezas.** Extrusión, revolución, barrido, soelevación, redondeo (incluido radio variable en vértices),
+**Piezas.** Extrusión, revolución, barrido, solevación, redondeo (incluido radio variable en vértices),
 chaflán, vaciado, desmoldeo, agujeros (simples, con cajeado, con avellanado), engrosado, parche, cosido,
 recorte, división de caras y de cuerpo, copia y empuje de caras, patrones lineales y circulares, simetría,
 operaciones booleanas y primitivas: caja, cilindro, esfera, cono, toroide y prisma. Las roscas se generan
@@ -82,9 +82,10 @@ chmod +x qymcad-*.AppImage
 ./qymcad-*.AppImage
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Descomprima y consulte el archivo `README.txt`
-adjunto a la aplicación: la compilación no incluye firma de Apple, por lo que es necesario retirar la marca
-de cuarentena una sola vez antes del primer inicio. Requiere un solo comando y está explicado paso a paso.
+**macOS 12+** — para Apple Silicon (M1 y posteriores) `qymcad-*-macos-arm64.dmg`, para Intel
+`qymcad-*-macos-x86_64.dmg`. Abra la imagen de disco y arrastre QymCAD a Aplicaciones. El primer inicio se rechaza
+una vez, porque la compilación no está firmada por Apple: pulse «Abrir igualmente» en Ajustes del Sistema ->
+Privacidad y seguridad. `LÉAME.txt` en la carpeta `README` junto a la aplicación lo explica paso a paso.
 
 ## Ayuda
 
@@ -106,6 +107,13 @@ El script actualiza cualquier documento de una versión anterior en una sola pas
 Linux — `just pkg-linux`, requiere Docker. Windows — MSVC con el núcleo compilado desde las fuentes.
 macOS — el núcleo también compilado desde las fuentes, luego `packaging/macos/bundle.sh`. Los detalles
 están en [`packaging/README.md`](packaging/README.md).
+
+El núcleo es OCCT 7.9.3, compilado desde las fuentes con la línea de `cmake` indicada en
+[`packaging/README.md`](packaging/README.md#the-kernel). Un paquete de OCCT del sistema puede diferir en tres aspectos
+importantes: otra versión (el programa está escrito y probado con 7.9.3; con otra se muestra un aviso al compilar);
+`BUILD_RELEASE_DISABLE_EXCEPTIONS` en `ON` (las comprobaciones propias de OCCT quedan fuera de la compilación y una
+entrada degenerada ya no se rechaza); señales sin convertir (`OCC_CONVERT_SIGNALS`; un fallo dentro de OCCT cierra
+entonces el programa en lugar de rechazarse).
 
 ## Contribuir
 
