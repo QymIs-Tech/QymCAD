@@ -20,6 +20,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../../docs/help");
     // THE WAYS TO SUPPORT THE AUTHOR: their list and QR pictures (`include_dir!` in support.rs), for the same reason.
     println!("cargo:rerun-if-changed=../../assets/support");
+    delay_opengl_on_windows_7();
 
     #[cfg(windows)]
     {
@@ -32,6 +33,17 @@ fn main() {
             // do not fail the build over an icon, only warn (the exe builds without it)
             println!("cargo:warning=could not stitch the icon into the .exe: {e}");
         }
+    }
+}
+
+/// THE WINDOWS 7 BUILD OPENS `opengl32.dll` AT ITS FIRST CALL, NOT AT ITS START (`software_gl.rs`).
+///
+/// Imported the usual way, the system's library is loaded before the first line of the program runs, and Mesa from
+/// `software-gl` can no longer take its name. Delayed, the first call finds whichever of the two was loaded first.
+fn delay_opengl_on_windows_7() {
+    if std::env::var("TARGET").as_deref() == Ok("x86_64-win7-windows-msvc") {
+        println!("cargo:rustc-link-arg-bins=/DELAYLOAD:opengl32.dll");
+        println!("cargo:rustc-link-arg-bins=delayimp.lib");
     }
 }
 

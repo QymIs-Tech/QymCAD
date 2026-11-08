@@ -170,18 +170,24 @@ def lacks(libraries, library, wanted, depth=0):
     return lacks(libraries, target, int(name[1:]) if by_ordinal else name, depth + 1)
 
 
-def check(folder):
-    """Every reason the folder would not load, as lines of text, and how many of its files a loader would open."""
-    files = {f.lower(): os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith((".dll", ".exe"))}
-    if "qymcad.exe" not in files:
-        return [f"{folder} holds no qymcad.exe"], 0
+# THE START ON THE PROCESSOR (software_gl.rs): Mesa's opengl32.dll from this folder takes the name of the system's,
+# so the package is checked a second time with it in place, starting at it as well: the program loads it by path.
+RENDERER = "software-gl"
+
+
+def listing(folder):
+    return {f.lower(): os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith((".dll", ".exe"))}
+
+
+def closure(files, roots):
+    """Every reason the files would not load from `roots`, and the names a loader would open."""
     libraries = read_reference()
     opened = {}
     for name, path in files.items():
         pe = Pe(path)
         opened[name] = pe
         libraries[name] = Exports(*pe.exports())
-    pending = ["qymcad.exe"] + [f for f in files if f.startswith("tk")]
+    pending = list(roots)
     seen = set()
     faults = set()
     while pending:
@@ -200,6 +206,24 @@ def check(folder):
                     reason = lacks(libraries, library, one)
                     if reason:
                         faults.add(f"{name}: {reason}")
+    return faults, seen
+
+
+def check(folder):
+    """Every reason the folder would not load, as lines of text, and how many of its files a loader would open."""
+    files = listing(folder)
+    if "qymcad.exe" not in files:
+        return [f"{folder} holds no qymcad.exe"], 0
+    roots = ["qymcad.exe"] + [f for f in files if f.startswith("tk")]
+    faults, seen = closure(files, roots)
+    renderer = os.path.join(folder, RENDERER)
+    if os.path.isdir(renderer):
+        carried = listing(renderer)
+        if "opengl32.dll" not in carried:
+            faults.add(f"{RENDERER} holds no opengl32.dll")
+        more, also = closure({**files, **carried}, roots + ["opengl32.dll"])
+        faults |= {f"{RENDERER}/{fault}" for fault in more - faults}
+        seen |= {f"{RENDERER}/{name}" for name in also if name in carried}
     return sorted(faults), len(seen)
 
 

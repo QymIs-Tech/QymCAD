@@ -119,6 +119,21 @@ fn check_program(case: &str, imports: &[Import], system: Asks) -> Verdict {
     Verdict { loads: out.status.success(), said }
 }
 
+/// What the check says of a package whose `software-gl` holds one `opengl32.dll` of the given imports.
+fn check_renderer(case: &str, imports: &[Import]) -> Verdict {
+    let folder = std::env::temp_dir().join(format!("qymcad-win7-{}-{case}", std::process::id()));
+    let renderer = folder.join("software-gl");
+    std::fs::create_dir_all(&renderer).expect("the folders are made");
+    let program = [Import { library: "KERNEL32.dll", names: &["CreateFileW"] }];
+    std::fs::write(folder.join("qymcad.exe"), pe_file(&program, Asks::Vista)).expect("the program is written");
+    std::fs::write(renderer.join("opengl32.dll"), pe_file(imports, Asks::Vista)).expect("the renderer is written");
+    let out = Command::new("python3").arg(repo("packaging/win/check-win7.py")).arg(&folder).output().expect("python3 runs");
+    std::fs::remove_dir_all(&folder).expect("the folder is removed");
+    let said = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(matches!(out.status.code(), Some(0 | 1)), "the check itself failed:\n{said}");
+    Verdict { loads: out.status.success(), said }
+}
+
 #[test]
 fn a_program_of_functions_windows_7_has_passes() {
     let imports = [Import { library: "KERNEL32.dll", names: &["CreateFileW", "GetTickCount"] }, Import { library: "ole32.dll", names: &["CoTaskMemFree"] }];
@@ -210,4 +225,36 @@ fn the_bundle_checks_and_takes_no_other_binary() {
     assert!(checked < packed, "the check must run before the archive is made");
     assert!(script.contains(r#""x86_64-win7-windows-msvc", "release", "qymcad.exe""#), "the binary of the Windows 7 target goes in");
     assert_eq!(script.matches("qymcad.exe\"").count(), 1, "one binary path, no fallback");
+}
+
+/// A MACHINE WITH NO GRAPHICS DRIVER DRAWS ON THE PROCESSOR, AS ON WINDOWS 10.
+///
+/// Windows 10 offers WARP through DX12; Windows 7 has no DX12, and its own `opengl32.dll` is OpenGL 1.1, below the
+/// 3.3 the GL path of wgpu needs. Reported behaviour: with no driver the program stops at "no graphics adapter".
+/// The zip carries Mesa (llvmpipe), one fixed build, checked by its hash, and only the two files the loader opens.
+#[test]
+fn the_bundle_carries_a_processor_renderer_of_one_checked_build() {
+    let script = read("packaging/win/bundle-win7.py");
+    for file in ["opengl32.dll", "libgallium_wgl.dll"] {
+        assert!(script.contains(&format!(r#""{file}""#)), "the bundle must carry {file}");
+    }
+    let hash = script.lines().find_map(|l| l.trim().strip_prefix("MESA_SHA256 = \"")).expect("the archive is checked by its hash");
+    assert!(hash.len() == 65 && hash[..64].chars().all(|c| c.is_ascii_hexdigit()), "a SHA-256 of 64 digits: {hash}");
+    let copied = script.rfind("copy_processor_renderer()").expect("the renderer is copied");
+    let checked = script.find(r#""check-win7.py""#).expect("the bundle must run the check");
+    assert!(copied < checked, "the renderer must be in the folder the check reads");
+    let notices = read("THIRD-PARTY-NOTICES.md");
+    assert!(notices.contains("## Mesa"), "a library that ships is named in the notices");
+}
+
+/// THE RENDERER IN `software-gl` IS CHECKED TOO, though nothing imports it: the program loads it by path.
+///
+/// Mesa 26.0.8, 26.1.1, 26.1.8 and 26.2.6 import GetSystemTimePreciseAsFileTime through the runtime of their compiler;
+/// 25.1.9 and 25.3.6 do not.
+#[test]
+fn a_renderer_windows_7_cannot_load_is_refused() {
+    let verdict = check_renderer("newer", &[Import { library: "KERNEL32.dll", names: &["GetSystemTimePreciseAsFileTime"] }]);
+    assert!(!verdict.loads && verdict.said.contains("software-gl/opengl32.dll"), "{}", verdict.said);
+    let verdict = check_renderer("older", &[Import { library: "KERNEL32.dll", names: &["GetSystemTimeAsFileTime"] }]);
+    assert!(verdict.loads, "{}", verdict.said);
 }

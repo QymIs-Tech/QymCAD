@@ -100,7 +100,7 @@ pwsh -File packaging/win/bundle.ps1
 `qymcad-*-win7-x64.zip`, built by the `windows7` job of the `release` workflow. Windows 7 also needs update KB2999226
 (Universal C Runtime); the zip does not carry it.
 
-It differs from the zip above in four places, and each has a reason:
+It differs from the zip above in five places, and each has a reason:
 
 - **The compiler is Visual Studio 2022.** The runtime 14.51 of newer images imports functions of `kernel32.dll` that
   Windows 7 does not have. The kernel is built by the same compiler, so it has a cache key of its own.
@@ -108,6 +108,12 @@ It differs from the zip above in four places, and each has a reason:
   `WaitOnAddress` and `ProcessPrng`.
 - **`combase.dll` is carried.** `windows-core` imports it and Windows 7 does not have it; `combase_forwarder.c` forwards
   to `ole32.dll`.
+- **Mesa (llvmpipe) is carried in `software-gl\`**, for a machine with no graphics driver. Windows 10 offers an
+  adapter on the processor itself (WARP, through DX12); Windows 7 has neither DX12 nor an OpenGL above 1.1. The
+  program starts on what the system has first, and only a start that found no adapter starts again with Mesa
+  (`crates/qymcad/src/software_gl.rs`), so a card with an OpenGL driver keeps drawing. Mesa 25.3.6 is the newest the
+  loader of Windows 7 takes; `bundle-win7.py` downloads it, checks its hash and takes two files of it.
+  `QYMCAD_MESA_ARCHIVE` names an archive already at hand. `7z` is needed.
 - **OCCT is built without TBB**, as everywhere here. A prebuilt OCCT with TBB imports `GetCurrentThreadStackLimits`
   and the check refuses it.
 
@@ -126,7 +132,7 @@ python packaging/win/bundle-win7.py
 Windows 7 lacks, whatever version it is told to report. `--refresh <System32>` rewrites the list from a real Windows 7.
 
 The check does not see what is asked for at run time. A run on Windows 7 answers that: in a virtual machine with no
-graphics driver the program is expected to reach its message about the missing adapter; drawing needs a real card.
+graphics driver the program is expected to open its window on the processor and say so in the status line.
 
 - Windows: the Rust toolchain (1.88 or newer is needed), and whether the list of DLLs from
   `ldd` is complete.

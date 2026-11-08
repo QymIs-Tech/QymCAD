@@ -12,6 +12,8 @@ pub use gui::session::{
 
 /// START THE PROGRAM: open the window and run it until it closes; a start that fails is told to the person.
 pub fn run() -> ExitCode {
+    // before anything can ask for OpenGL: a start on the processor loads Mesa first (`software_gl`)
+    software_gl::load_if_asked();
     let launched = gui::launch();
     // the program ends only after the threads it left working in OCCT (`qymcad_kernel::worker`)
     qymcad_kernel::wait_for_workers();
@@ -19,6 +21,10 @@ pub fn run() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("failed to start QymCAD: {e}");
+            // NO ADAPTER, AND THE PACKAGE CARRIES ONE ON THE PROCESSOR: one more start, which opens the window
+            if crate::diagnostics::start_failure().is_some_and(|f| f.no_adapter) && software_gl::start_again_on_the_processor() {
+                return ExitCode::SUCCESS;
+            }
             // A WINDOWED BUILD HAS NOWHERE TO PRINT: on Windows there is no console behind the program, so
             // the line above reached nobody. What a person saw was a window that blinked and closed.
             match crate::diagnostics::start_failure() {
@@ -94,6 +100,7 @@ mod gui;
 mod parts_library;
 mod support;
 mod viewport_gpu;
+mod software_gl;
 mod start_notice;
 mod system;
 mod wide_signature_ratchet;

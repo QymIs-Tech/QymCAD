@@ -36,6 +36,16 @@ The interface icons, through the `egui-phosphor` crate.
 - Licence: **MIT**
 - Sources: <https://github.com/phosphor-icons/core>
 
+## Mesa
+
+Drawing on the processor in the Windows 7 zip, on a machine with no graphics driver: `opengl32.dll` and
+`libgallium_wgl.dll` in its `software-gl` folder. The other packages do not carry it.
+
+- Version 25.3.6, the MinGW build of <https://github.com/pal1000/mesa-dist-win>
+- Licence: **MIT** (the Mesa core), <https://docs.mesa3d.org/license.html>; `libgallium_wgl.dll` holds LLVM
+  inside it, under **Apache-2.0 with LLVM exceptions**, <https://llvm.org/LICENSE.txt>
+- Sources: <https://gitlab.freedesktop.org/mesa/mesa>
+
 ## The Rust crates
 
 The rest of the dependencies — egui and eframe for the interface, wgpu for the viewport, serde and

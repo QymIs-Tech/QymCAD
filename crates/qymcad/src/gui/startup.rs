@@ -232,7 +232,10 @@ pub fn launch() -> eframe::Result<()> {
     // error - which a windowed build on Windows has nowhere to print to. What a person saw was a window
     // that blinked and closed, and the crash folder was empty.
     if let Err(e) = &started {
-        let path = crate::crash::note_failed_start(&e.to_string());
+        // A START THAT IS FOLLOWED BY ONE ON THE PROCESSOR LEAVES NO REPORT: the next start would show it to a person
+        // whose window did open
+        let again = crate::diagnostics::start_failure().is_some_and(|f| f.no_adapter) && crate::software_gl::starts_again();
+        let path = if again { None } else { crate::crash::note_failed_start(&e.to_string()) };
         crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
     }
     qymcad_ui_state::icons::stop_all_watcher_threads();
