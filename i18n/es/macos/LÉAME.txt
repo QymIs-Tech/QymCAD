@@ -1,0 +1,26 @@
+QymCAD - compilación para macOS ({ $machine }).
+
+INSTALACIÓN. Abra la imagen de disco (.dmg) y arrastre QymCAD a la carpeta Aplicaciones (Applications)
+que está a su lado.
+
+PRIMER INICIO. La compilación está firmada, pero no con un certificado emitido por Apple, así que la primera
+vez macOS se niega a abrirla e indica que Apple no pudo verificar que esté libre de malware. Se permite una
+sola vez, en Ajustes del Sistema. Entre paréntesis, los nombres de los botones de macOS en inglés.
+
+  1. Abra QymCAD con un doble clic. Cuando aparezca el mensaje, pulse «OK» ("Done").
+
+  2. Abra el menú Apple -> Ajustes del Sistema -> Privacidad y seguridad
+     (System Settings -> Privacy & Security).
+
+  3. Desplácese hacia abajo hasta «Seguridad» ("Security"). Allí se indica que «QymCAD» se ha
+     bloqueado para proteger el Mac. Pulse «Abrir igualmente» ("Open Anyway") a su lado
+     e introduzca su contraseña (o use Touch ID).
+
+  4. El mensaje aparece una vez más, ahora con el botón «Abrir igualmente» ("Open Anyway").
+     Púlselo.
+
+A partir de entonces QymCAD se abre con un doble clic normal. Si el botón «Abrir igualmente» no aparece,
+repita primero el paso 1: se muestra durante una hora aproximadamente después de un inicio rechazado. Una
+versión nueva descargada más tarde se permite de la misma manera, una vez.
+
+Requiere macOS 12 o posterior y un Mac con procesador { $machine }.

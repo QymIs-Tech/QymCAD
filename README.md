@@ -10,7 +10,7 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 
 [cad.qymis.tech](https://cad.qymis.tech)
 
-**English** | [Русский](README.ru.md) | [Українська](README.uk.md) | [Қазақша](README.kk.md)
+**English** | [Español](README.es.md) | [Русский](README.ru.md) | [Українська](README.uk.md) | [Қазақша](README.kk.md)
 
 <img src="docs/screenshots/01-assembly.png" width="900" alt="A CNC machine assembled in QymCAD: components, joints and their degrees of freedom">
 
@@ -30,7 +30,7 @@ The geometry is exact and solid (B-rep), computed by the [OpenCASCADE](https://d
 kernel — the same one FreeCAD runs on. Hence precise surfaces instead of meshes, correct fillets and
 exchange through STEP with other CAD systems.
 
-The interface is available in English, Kazakh, Ukrainian and Russian.
+The interface is available in English, Spanish, Kazakh, Ukrainian and Russian.
 
 ## Status
 

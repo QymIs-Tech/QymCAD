@@ -567,3 +567,26 @@ fn test_is_cleaner_temp_file_pattern_matching() {
     assert!(!super::super::is_cleaner_temp_file("line.svg.qymcad-999-0-1.tmp"));
     assert!(!super::super::is_cleaner_temp_file("line.svg.qymcad--.tmp"));
 }
+
+/// EVERY LANGUAGE OF THE PROGRAM NAMES AND DESCRIBES EVERY BUILT-IN PACK. The list of icon themes is read in the
+/// language of the interface; a language the catalogue offers and a pack does not translate shows that pack in
+/// English among words of its own. The languages are the ones the catalogue carries, so a new one is checked
+/// without an edit here. Failures accumulate and are reported together.
+#[test]
+fn every_language_of_the_program_names_and_describes_every_built_in_pack() {
+    let mut faults = Vec::new();
+    for pack in load_builtin_packs() {
+        for (code, _) in qymcad_i18n::available().into_iter().filter(|(code, _)| code != "en") {
+            let id = &pack.manifest.id;
+            if !pack.manifest.translations.contains_key(&code) {
+                faults.push(format!("{id}: manifest.ron has no \"{code}\" in translations"));
+            } else if pack.manifest.description_for_locale(&code) == pack.manifest.description {
+                faults.push(format!("{id}: the \"{code}\" description is the English one"));
+            }
+            if pack.get_readme_for_locale(&code) == pack.get_readme() {
+                faults.push(format!("{id}: there is no README.{code}.md"));
+            }
+        }
+    }
+    assert!(faults.is_empty(), "built-in icon packs not translated:\n{}", faults.join("\n"));
+}

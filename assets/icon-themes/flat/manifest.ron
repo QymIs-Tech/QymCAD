@@ -7,6 +7,10 @@
     license: "AGPL-3.0-or-later",
     description: "A flat monochrome QymCAD icon set.",
     translations: {
+        "es": (
+            name: "Flat",
+            description: "Un conjunto de iconos de QymCAD plano y monocromo.",
+        ),
         "kk": (
             name: "Flat",
             description: "QymCAD-тың жалпақ біртүсті таңбашалар жиынтығы.",
