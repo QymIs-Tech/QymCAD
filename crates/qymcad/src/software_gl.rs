@@ -68,14 +68,24 @@ fn this_start() -> ThisStart {
     }
 }
 
+/// What loading Mesa came to, kept for the journal of the run, which is not open yet when Mesa is loaded.
+static LOADED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 /// FIRST THING IN A START ON THE PROCESSOR: Mesa is loaded before anything asks for OpenGL.
 pub(crate) fn load_if_asked() {
     if this_start() == ThisStart::OnTheSystem {
         return;
     }
-    if let Some(folder) = folder() {
-        load(&folder.join("opengl32.dll"));
-    }
+    let said = match folder() {
+        Some(folder) => load(&folder.join("opengl32.dll")),
+        None => "the folder of the program is unknown".to_string(),
+    };
+    let _ = LOADED.set(said);
+}
+
+/// The line for the journal of a start on the processor: what loading Mesa came to.
+pub(crate) fn journal_line() -> Option<String> {
+    LOADED.get().map(|said| format!("{FOLDER}: {said}"))
 }
 
 /// Whether a start that found no adapter is followed by one more start, rather than by the message.
@@ -90,21 +100,48 @@ pub(crate) fn start_again_on_the_processor() -> bool {
     starts_again() && std::process::Command::new(program).args(std::env::args_os().skip(1)).env(ASKED, "1").spawn().is_ok()
 }
 
+/// MESA AND ITS LIBRARY FROM ONE FOLDER, AND NO WINDOW OF THE SYSTEM ON A FAILURE.
+///
+/// A plain LoadLibraryW looks for the libraries a library imports beside the program, not beside that library.
+/// Measured on Windows 7: Mesa's opengl32.dll from software-gl\ failed for its libgallium_wgl.dll, and the system put up
+/// "libgallium_wgl.dll is missing" in the middle of the start. LOAD_WITH_ALTERED_SEARCH_PATH starts the search in the
+/// folder of the library; SEM_FAILCRITICALERRORS turns the window into an error code for the journal.
 #[cfg(windows)]
-fn load(library: &Path) {
+fn load(library: &Path) -> String {
     use std::os::windows::ffi::OsStrExt;
+    const LOAD_WITH_ALTERED_SEARCH_PATH: u32 = 0x8;
+    const SEM_FAILCRITICALERRORS: u32 = 0x1;
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        fn LoadLibraryW(name: *const u16) -> *mut std::ffi::c_void;
+        fn LoadLibraryExW(name: *const u16, file: *mut std::ffi::c_void, flags: u32) -> *mut std::ffi::c_void;
+        fn SetThreadErrorMode(mode: u32, old: *mut u32) -> i32;
     }
     let wide: Vec<u16> = library.as_os_str().encode_wide().chain([0]).collect();
-    // SAFETY: a NUL-terminated wide path. The library stays loaded for the life of the process, which is the point.
-    // A failure leaves the system's OpenGL, and the start ends with the message about the missing adapter.
-    unsafe { LoadLibraryW(wide.as_ptr()) };
+    let mut before = 0u32;
+    // SAFETY: a NUL-terminated wide path and a valid place for the old mode. The library stays loaded for the life of
+    // the process, which is the point; the error mode of the thread is put back as it was.
+    let loaded = unsafe {
+        SetThreadErrorMode(SEM_FAILCRITICALERRORS, &mut before);
+        let module = LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), LOAD_WITH_ALTERED_SEARCH_PATH);
+        let code = std::io::Error::last_os_error();
+        SetThreadErrorMode(before, std::ptr::null_mut());
+        if module.is_null() {
+            Err(code)
+        } else {
+            Ok(())
+        }
+    };
+    match loaded {
+        Ok(()) => format!("loaded {}", library.display()),
+        // a failure leaves the system's OpenGL, and the start ends with the message about the missing adapter
+        Err(e) => format!("could not load {}: {e}", library.display()),
+    }
 }
 
 #[cfg(not(windows))]
-fn load(_library: &Path) {}
+fn load(library: &Path) -> String {
+    format!("not loaded {}: there is no such library off Windows", library.display())
+}
 
 #[cfg(test)]
 mod tests {

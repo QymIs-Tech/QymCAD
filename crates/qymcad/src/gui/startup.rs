@@ -171,6 +171,10 @@ pub fn launch() -> eframe::Result<()> {
     let previous = crate::crash::begin_journal();
     // A START AFTER A START THAT DIED DRAWING TAKES A STEP DOWN (`safe_graphics`)
     let step = crate::safe_graphics::take(previous.journal.as_deref());
+    // a start on the processor says whether Mesa loaded: without it "Offered 0" reads the same either way
+    if let Some(line) = crate::software_gl::journal_line() {
+        crate::crash::journal(&line);
+    }
 
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
