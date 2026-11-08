@@ -527,15 +527,25 @@ fn the_readme_folder_holds_a_note_per_language() {
 #[test]
 fn a_language_added_to_i18n_brings_its_note() {
     let dir = sandbox("new_language", Deps::Rpath, Seal::Holds);
-    let note = "QymCAD - macOS ({ $machine }).\n\nAbra la imagen de disco (.dmg).\n";
-    fs::create_dir_all(dir.join("i18n/es/macos")).expect("the sandbox is writable");
-    fs::write(dir.join("i18n/es/macos/LÉAME.txt"), note).expect("the note is written");
+    let code = no_language_yet();
+    let note = "QymCAD - macOS ({ $machine }).\n\nOtwórz obraz dysku (.dmg).\n";
+    fs::create_dir_all(dir.join(format!("i18n/{code}/macos"))).expect("the sandbox is writable");
+    fs::write(dir.join(format!("i18n/{code}/macos/CZYTAJ.txt")), note).expect("the note is written");
     let out = bundle(&dir, Signer::AdHoc);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
 
-    assert!(image(&dir).lines().any(|l| l == "f README/LÉAME.txt"), "the new language's note is not in the image:\n{}", image(&dir));
-    let text = fs::read_to_string(dir.join("dist/README/LÉAME.txt")).expect("the new note is written");
-    assert_eq!(text, "QymCAD - macOS (Apple Silicon).\n\nAbra la imagen de disco (.dmg).\n", "the note did not come over as written, with the processor in");
+    assert!(image(&dir).lines().any(|l| l == "f README/CZYTAJ.txt"), "the new language's note is not in the image:\n{}", image(&dir));
+    let text = fs::read_to_string(dir.join("dist/README/CZYTAJ.txt")).expect("the new note is written");
+    assert_eq!(text, "QymCAD - macOS (Apple Silicon).\n\nOtwórz obraz dysku (.dmg).\n", "the note did not come over as written, with the processor in");
+}
+
+/// The code of a language the repository does not hold yet, for the checks that add one to the sandbox. The
+/// sandbox carries every language of `i18n/` with its note, so a code taken from there is no new language: a
+/// folder made for it already holds a note, and a check meant to see a language without one is refused.
+fn no_language_yet() -> &'static str {
+    let code = "pl";
+    assert!(!languages(&repo_i18n()).iter().any(|l| l.code == code), "i18n/{code}/ exists now: the checks of a new language need a code no folder of i18n/ holds");
+    code
 }
 
 /// A LANGUAGE WITHOUT ITS NOTE STOPS THE BUILD, in words. A release with a language whose reader finds nothing
@@ -543,10 +553,11 @@ fn a_language_added_to_i18n_brings_its_note() {
 #[test]
 fn a_language_without_one_note_is_refused() {
     let dir = sandbox("no_note", Deps::Rpath, Seal::Holds);
-    fs::create_dir_all(dir.join("i18n/es")).expect("the sandbox is writable");
+    let code = no_language_yet();
+    fs::create_dir_all(dir.join(format!("i18n/{code}"))).expect("the sandbox is writable");
     let out = bundle(&dir, Signer::AdHoc);
     assert!(!out.status.success(), "a language without a note was packed:\n{}", said(&out));
-    assert!(String::from_utf8_lossy(&out.stdout).contains("i18n/es/"), "the refusal did not name the language:\n{}", said(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains(&format!("i18n/{code}/")), "the refusal did not name the language:\n{}", said(&out));
     assert!(!disk_image(&dir).exists(), "a disk image was made with a language left unexplained");
 }
 
