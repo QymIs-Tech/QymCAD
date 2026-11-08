@@ -21,13 +21,22 @@ pub fn run() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("failed to start QymCAD: {e}");
-            // NO ADAPTER, AND THE PACKAGE CARRIES ONE ON THE PROCESSOR: one more start, which opens the window
-            if crate::diagnostics::start_failure().is_some_and(|f| f.no_adapter) && software_gl::start_again_on_the_processor() {
-                return ExitCode::SUCCESS;
+            let mut failure = crate::diagnostics::start_failure();
+            // NO ADAPTER, AND THE PACKAGE CARRIES ONE ON THE PROCESSOR: one more start, which opens the window. When it
+            // cannot be started, why is said along with the missing adapter, and the report this start left unwritten
+            // for the handover is written now.
+            if let Some(f) = failure.as_mut().filter(|f| f.no_adapter && software_gl::starts_again()) {
+                match software_gl::start_again_on_the_processor() {
+                    Ok(()) => return ExitCode::SUCCESS,
+                    Err(why) => {
+                        f.reason = format!("{}\n{why}", f.reason);
+                        f.report = crate::crash::note_failed_start(&f.reason);
+                    }
+                }
             }
             // A WINDOWED BUILD HAS NOWHERE TO PRINT: on Windows there is no console behind the program, so
             // the line above reached nobody. What a person saw was a window that blinked and closed.
-            match crate::diagnostics::start_failure() {
+            match failure {
                 Some(f) => crate::start_notice::tell_the_person(&f),
                 // the failure happened somewhere that did not record itself - say the little that is known
                 None => crate::start_notice::tell_the_person(&crate::diagnostics::StartFailure { reason: e.to_string(), report: None, no_adapter: false }),
