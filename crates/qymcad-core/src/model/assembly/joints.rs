@@ -181,6 +181,16 @@ impl Project {
         if j.kind == kind {
             return false;
         }
+        // The automatic name follows the kind. A joint is created as a rigid one and the kind is chosen
+        // afterwards, so a name taken once at creation names every later kind "Rigid N": the editing bar
+        // and the list of mates then call a revolute mate a rigid one. The name is rebuilt for the new
+        // kind only while it still is the automatic key of the old one (`name-<kind>-n#N`); a name
+        // written by hand is not a pattern and keeps its meaning. The number stays with the mate: a
+        // change of kind does not renumber anything.
+        let automatic = format!("name-{}-n#", j.kind.label());
+        if let Some(n) = j.name.strip_prefix(&automatic).filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) {
+            j.name = format!("name-{}-n#{n}", kind.label());
+        }
         j.kind = kind;
         j.flip_decided = false;
         let was_as_built = j.as_built.is_some();
