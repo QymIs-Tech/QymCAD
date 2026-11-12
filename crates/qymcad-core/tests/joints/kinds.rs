@@ -363,3 +363,26 @@ fn every_connector_gets_its_own_name() {
     uniq.dedup();
     assert_eq!(uniq.len(), names.len(), "connector names repeat: {names:?}");
 }
+
+/// A joint's automatic name follows its kind.
+///
+/// Reported behaviour: J always creates a rigid mate first, and the name taken at creation never
+/// changed again, so a mate switched to revolute stayed "Rigid 1" in the editing bar and in the list
+/// of mates. The name is a catalogue key built from the kind, so it is rebuilt for the new kind while
+/// it still is the automatic key of the old one. A name of the author's own is words rather than a
+/// pattern, and it keeps its meaning.
+#[test]
+fn the_automatic_name_follows_the_kind() {
+    let mut p = Project::default();
+    let c = parts(&mut p, 2);
+    let ca = p.add_connector(c[0], AnchorRef::Origin);
+    let cb = p.add_connector(c[1], AnchorRef::Origin);
+    let j = p.add_joint(ca, cb, JointKind::Rigid);
+    let name = |p: &Project| p.joints.iter().find(|x| x.id == j).unwrap().name.clone();
+    assert_eq!(name(&p), "name-joint-kind-rigid-n#1");
+    assert!(p.set_joint_kind(j, JointKind::Revolute));
+    assert_eq!(name(&p), "name-joint-kind-revolute-n#1", "the kind changed, so the automatic name must name the new kind");
+    p.joints.iter_mut().find(|x| x.id == j).unwrap().name = "name-hinge-of-the-door".into();
+    assert!(p.set_joint_kind(j, JointKind::Slider));
+    assert_eq!(name(&p), "name-hinge-of-the-door", "a name that is not the automatic key any more is the author's and must stay");
+}

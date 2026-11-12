@@ -134,6 +134,24 @@ probe! {
 }
 
 probe! {
+    /// THE NAME OF A MATE FOLLOWS THE KIND IT IS CHANGED TO. A mate starts as a rigid one - the key that starts
+    /// the tool lands there - and its kind is chosen afterwards in the bar of the edit. The name taken at
+    /// creation used to stay "Rigid N" whatever the kind became, so the bar and the list of mates called a
+    /// revolute mate a rigid one.
+    fn the_name_of_a_mate_follows_the_kind_it_is_changed_to() {
+        let (mut s, made) = a_mate_of("joint-kind-rigid");
+        let rigid = s.word("joint-kind-rigid");
+        assert!(made.name.contains(&rigid), "the mate was made rigid, and its name is not the rigid one already: {made:?}");
+        // the mate is still in hand and its bar names the kind; choosing another kind changes the mate at once
+        choose_the_kind(&mut s, "joint-kind-revolute");
+        let revolute = s.word("joint-kind-revolute");
+        let now = s.document().joints.last().cloned().expect("the mate");
+        assert!(now.name.contains(&revolute), "the kind was changed to revolute, and the name does not name it: {now:?}");
+        assert!(!now.name.contains(&rigid), "the kind was changed to revolute, and the name still names the rigid kind: {now:?}");
+    }
+}
+
+probe! {
     /// A MATE ANCHORED TO AN EDGE holds, and the parts meet along it.
     fn a_mate_is_anchored_to_an_edge() {
         let mut s = two_blocks_apart();
