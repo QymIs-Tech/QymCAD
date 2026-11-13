@@ -82,6 +82,7 @@ mod tests {
             scheme: "light".into(),
             viewcube_size: 2,
             hotkeys: [("part.extrude".to_string(), "W".to_string())].into_iter().collect(),
+            again: qymcad_ui_state::Again::Cycles,
             help_lang: "en".into(),
             help_external: true,
             open_last: true,
@@ -145,6 +146,7 @@ mod tests {
                 // a field that ONLY `other` changes must stay changed in ours
                 match other {
                     Sec::General => assert_eq!(s.language, c.language, "{sec:?}: the reset touched the language"),
+                    Sec::Keyboard => assert_eq!(s.again, c.again, "{sec:?}: the reset touched the key pressed again"),
                     Sec::Appearance => assert_eq!(s.scheme, c.scheme, "{sec:?}: the reset touched the scheme"),
                     Sec::Viewport => assert_eq!(s.viewcube_size, c.viewcube_size, "{sec:?}: the reset touched the viewport"),
                     Sec::Sketch => assert_eq!(s.snap.grid, c.snap.grid, "{sec:?}: the reset touched the sketch"),
@@ -163,6 +165,8 @@ mod tests {
         };
         assert_eq!(after(Sec::Layout).layout, d.layout, "the layout section must restore the registered places");
         assert_eq!(after(Sec::General).language, d.language);
+        assert_eq!(after(Sec::Keyboard).again, d.again);
+        assert_eq!(after(Sec::Keyboard).hotkeys, changed().hotkeys, "the keys are put back by the table, not by the reset of the section");
         assert_eq!(after(Sec::Appearance).scheme, d.scheme);
         let v = after(Sec::Viewport);
         assert_eq!((v.viewcube_size, v.gpu_viewport, v.projection, v.shading), (d.viewcube_size, d.gpu_viewport, d.projection, d.shading));
@@ -198,9 +202,6 @@ mod tests {
         for sec in Sec::all() {
             sec.reset(&mut s);
         }
-        // NOT SETTINGS BUT HISTORY AND A LAYOUT: the reset deliberately does not touch the list of
-        // recent files (it is not a value but a memory of work done), and the keys are reassigned in a
-        // window of their own with a button of their own.
         let d = Settings::default();
         s.recent = d.recent.clone();
         s.hotkeys = d.hotkeys.clone();
@@ -330,5 +331,25 @@ mod applicability_tests {
             assert!(p >= prev, "the row \"{k}\" stands in the wrong place — the order of the section is broken");
             prev = p;
         }
+    }
+
+    /// THE SETTINGS LEAVE THE MENUS TO BE OPENED. Reported behaviour: with the settings open, a click on the middle of
+    /// "File" opened nothing - the window stood at (16, 16) over the menu bar, and the grab of its corner took the
+    /// click.
+    #[test]
+    fn the_settings_leave_the_menus_to_be_opened() {
+        use crate::gui::hand::Hand;
+        let prev = crate::i18n::language();
+        crate::i18n::set_language("en");
+        let mut app = crate::gui::App::default();
+        let mut hand = Hand::new(&mut app);
+        let opened = hand.press_word(&crate::i18n::tr("menu-windows"), egui::Pos2::ZERO)
+            && hand.press_word(&crate::i18n::tr("menu-settings"), egui::Pos2::ZERO)
+            && hand.shows(&crate::i18n::tr("settings-sec-keyboard"));
+        let file = hand.written_at(&crate::i18n::tr("menu-file"));
+        let menu = file.is_some_and(|r| hand.click_screen(r.center()).shows(&crate::i18n::tr("file-new")));
+        crate::i18n::set_language(&prev);
+        assert!(opened, "setup: the settings did not open from Windows -> Settings");
+        assert!(menu, "a click on the middle of \"File\" with the settings open did not open the menu");
     }
 }

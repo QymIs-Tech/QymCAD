@@ -72,6 +72,59 @@ impl SketchShape {
     ];
 }
 
+pub trait Way: Copy + PartialEq + 'static {
+    const WAYS: &'static [Self];
+
+    fn index(self) -> usize;
+
+    fn at(index: usize) -> Self {
+        Self::WAYS.get(index).copied().unwrap_or(Self::WAYS[0])
+    }
+}
+
+macro_rules! ways {
+    ($(#[$doc:meta])* $name:ident { $first:ident $(, $rest:ident)* $(,)? }) => {
+        $(#[$doc])*
+        #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+        pub enum $name {
+            #[default]
+            $first,
+            $($rest,)*
+        }
+
+        impl $name {
+            pub const ALL: [$name; 1 $(+ ways!(@one $rest))*] = [$name::$first $(, $name::$rest)*];
+        }
+
+        impl Way for $name {
+            const WAYS: &'static [Self] = &Self::ALL;
+
+            fn index(self) -> usize {
+                self as usize
+            }
+        }
+    };
+    (@one $way:ident) => {
+        1
+    };
+}
+
+ways! {
+    CircleWay { CentreRadius, TwoPoints, Tangent, ThreePoints }
+}
+
+ways! {
+    RectWay { TwoCorners, Centre, ThreePoints }
+}
+
+ways! {
+    ArcWay { CentreStartEnd, ThreePoints, Tangent }
+}
+
+ways! {
+    PolygonWay { Inscribed, Circumscribed, ByEdge }
+}
+
 /// A TOOL OF A SKETCH THAT ACTS ON A CLICK.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum ClickTool {
@@ -705,4 +758,35 @@ pub struct FeatPicks<'a> {
     pub sweep: &'a mut SweepParams,
     pub thread: &'a mut ThreadParams,
     pub trim: &'a mut TrimTool,
+}
+
+#[cfg(test)]
+mod ways_tests {
+    use super::*;
+
+    fn in_order<W: Way + std::fmt::Debug>(wrong: &mut Vec<String>) {
+        for (place, way) in W::WAYS.iter().enumerate() {
+            if way.index() != place || W::at(place) != *way {
+                wrong.push(format!("{way:?} stands at {place} and says {}", way.index()));
+            }
+        }
+        let past = W::at(W::WAYS.len());
+        if past != W::WAYS[0] {
+            wrong.push(format!("a place past the end gives {past:?}, not the first way {:?}", W::WAYS[0]));
+        }
+    }
+
+    #[test]
+    fn the_ways_of_every_tool_stand_in_the_order_of_its_bar() {
+        let mut wrong = Vec::new();
+        in_order::<CircleWay>(&mut wrong);
+        in_order::<RectWay>(&mut wrong);
+        in_order::<ArcWay>(&mut wrong);
+        in_order::<PolygonWay>(&mut wrong);
+        assert!(wrong.is_empty(), "{wrong:#?}");
+        assert_eq!(CircleWay::ALL, [CircleWay::CentreRadius, CircleWay::TwoPoints, CircleWay::Tangent, CircleWay::ThreePoints]);
+        assert_eq!(RectWay::ALL, [RectWay::TwoCorners, RectWay::Centre, RectWay::ThreePoints]);
+        assert_eq!(ArcWay::ALL, [ArcWay::CentreStartEnd, ArcWay::ThreePoints, ArcWay::Tangent]);
+        assert_eq!(PolygonWay::ALL, [PolygonWay::Inscribed, PolygonWay::Circumscribed, PolygonWay::ByEdge]);
+    }
 }

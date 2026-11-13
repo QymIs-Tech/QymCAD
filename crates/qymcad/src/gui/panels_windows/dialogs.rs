@@ -277,7 +277,7 @@ pub(crate) fn save_template_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui:
         return;
     }
     let mut done = false;
-    let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let mut cancel = crate::gui::input::take_escape(ctx);
     egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("file-save-as-template")))
         .id(egui::Id::new("win_save_as_template"))
         .collapsible(false)
@@ -456,7 +456,7 @@ pub(crate) fn nav_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) 
                 }
             });
         });
-    if choice.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if choice.is_none() && crate::gui::input::take_escape(ctx) {
         choice = Some(2); // Esc answers as Cancel does
     }
     match choice {
@@ -548,7 +548,7 @@ pub(crate) fn confirm_delete_popup(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui:
     };
     let cascade = crate::gui::delete_cascade_names(&*wc.project, sel);
     let mut do_del = ctx.input(|i| i.key_pressed(egui::Key::Enter)); // Yes is the default
-    let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let mut cancel = crate::gui::input::take_escape(ctx);
     egui::Window::new(format!("{} {}", ph::TRASH, crate::i18n::tr("win-delete-q")))
         .id(egui::Id::new("win_delete_question"))
         .collapsible(false)

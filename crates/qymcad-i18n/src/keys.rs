@@ -30,11 +30,33 @@ pub fn set_key_style(style: KeyStyle) {
 }
 
 pub fn key_style() -> KeyStyle {
+    if let Some(style) = THREAD_KEY_STYLE.get() {
+        return style;
+    }
     match KEY_STYLE.load(std::sync::atomic::Ordering::Relaxed) {
         1 => KeyStyle::MacSymbols,
         2 => KeyStyle::MacWords,
         _ => KeyStyle::Plain,
     }
+}
+
+thread_local! {
+    static THREAD_KEY_STYLE: std::cell::Cell<Option<KeyStyle>> = const { std::cell::Cell::new(None) };
+}
+
+/// THE KEYS WRITTEN IN `style` WHILE `draw` RUNS ON THIS THREAD, the style of the process left as it is. A picture
+/// drawn the same on every system takes the stored spelling; written into the style of the process it stayed there
+/// for every other thread drawing at the same time.
+pub fn with_key_style<R>(style: KeyStyle, draw: impl FnOnce() -> R) -> R {
+    /// Puts the style the thread had back, a panic in `draw` included.
+    struct Back(Option<KeyStyle>);
+    impl Drop for Back {
+        fn drop(&mut self) {
+            THREAD_KEY_STYLE.set(self.0);
+        }
+    }
+    let _back = Back(THREAD_KEY_STYLE.replace(Some(style)));
+    draw()
 }
 
 /// THE LABEL OF A STORED KEY in the style of this system. Every place that SHOWS a key goes through here; the
@@ -156,5 +178,21 @@ mod tests {
     #[test]
     fn off_a_mac_a_sentence_is_left_as_written() {
         assert_eq!(keys_in_text_in("Copy (Ctrl+C)", KeyStyle::Plain), "Copy (Ctrl+C)");
+    }
+
+    /// THE STYLE OF ONE THREAD STAYS ON THAT THREAD, and goes when its drawing ends, a drawing that panicked included.
+    #[test]
+    fn a_style_for_one_drawing_stays_on_its_thread() {
+        let other = with_key_style(KeyStyle::MacWords, || {
+            let inside = key_style();
+            let other = std::thread::spawn(|| THREAD_KEY_STYLE.get()).join().expect("the other thread");
+            assert_eq!(inside, KeyStyle::MacWords);
+            other
+        });
+        assert_eq!(other, None, "another thread took the style of this one");
+        assert_eq!(THREAD_KEY_STYLE.get(), None, "the style outlived the drawing");
+        let panicked = std::panic::catch_unwind(|| with_key_style(KeyStyle::MacSymbols, || panic!("the drawing fails")));
+        assert!(panicked.is_err());
+        assert_eq!(THREAD_KEY_STYLE.get(), None, "the style outlived a drawing that panicked");
     }
 }

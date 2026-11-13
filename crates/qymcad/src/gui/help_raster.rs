@@ -46,19 +46,23 @@ pub(super) fn shot_ui(size: [usize; 2], bg: Color32, mut draw: impl FnMut(&mut e
     // of the viewport (the software raster gives it as a separate texture) is loaded on some frame in
     // the middle, and the moment two frames became eight it disappeared from the assembly: the body
     // was drawn SOLID WHITE — without a texture the sampling honestly returns white.
-    let mut texes: std::collections::HashMap<egui::TextureId, Tex> = std::collections::HashMap::new();
-    let mut out = ctx.run_ui(input.clone(), &mut draw);
-    for (id, delta) in &out.textures_delta.set {
-        apply_delta(&mut texes, *id, delta);
-    }
-    for i in 1..8 {
-        let mut inp = input.clone();
-        inp.time = Some(i as f64 * 0.25);
-        out = ctx.run_ui(inp, &mut draw);
+    // the keys of a picture are written as stored, on every system alike
+    let (out, texes) = qymcad_ui_state::with_key_style(qymcad_ui_state::KeyStyle::Plain, || {
+        let mut texes: std::collections::HashMap<egui::TextureId, Tex> = std::collections::HashMap::new();
+        let mut out = ctx.run_ui(input.clone(), &mut draw);
         for (id, delta) in &out.textures_delta.set {
             apply_delta(&mut texes, *id, delta);
         }
-    }
+        for i in 1..8 {
+            let mut inp = input.clone();
+            inp.time = Some(i as f64 * 0.25);
+            out = ctx.run_ui(inp, &mut draw);
+            for (id, delta) in &out.textures_delta.set {
+                apply_delta(&mut texes, *id, delta);
+            }
+        }
+        (out, texes)
+    });
 
     // THE TEXTURES OF THE FRAME RATHER THAN ONE FONT ATLAS. The first edition slipped the atlas to
     // every triangle — and the picture of the viewport (the software rasteriser gives it as a SEPARATE
@@ -262,4 +266,23 @@ fn downscale(img: &ColorImage, k: usize) -> ColorImage {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    /// A PICTURE LEAVES THE KEYS OF THE PROCESS AS THEY WERE. Reported behaviour: `shot_ui` wrote the plain style into
+    /// the style every test reads and never put it back; on a Mac a test drawing a key after it saw `Ctrl+W` where
+    /// the window writes the key in Mac style, by the order the tests happened to run in.
+    #[test]
+    fn a_picture_leaves_the_keys_of_the_process_as_they_were() {
+        super::super::install_fonts(&egui::Context::default());
+        let before = qymcad_ui_state::key_style();
+        let mut drawn = Vec::new();
+        super::shot_ui([40, 20], egui::Color32::BLACK, |ui| {
+            drawn.push(qymcad_ui_state::key_style());
+            ui.label("x");
+        });
+        assert!(drawn.iter().all(|s| *s == qymcad_ui_state::KeyStyle::Plain), "the picture is drawn with keys in {drawn:?}, not as stored");
+        assert_eq!(qymcad_ui_state::key_style(), before, "the picture left the keys of the process written another way");
+    }
 }

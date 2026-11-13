@@ -72,26 +72,21 @@ pub fn draft_outline(mesh: &qymcad_core::geom::Mesh, face: &qymcad_core::geom::M
     out
 }
 
-/// A REGULAR POLYGON FROM ITS TWO CLICKS: (centre, a vertex), by the mode of the bar. The second click lies on the
-/// polygon in every mode, as it does in the professional systems:
-/// - 0 inscribed - the centre and a vertex;
-/// - 1 circumscribed - the centre and the middle of an edge: the vertices stand r / cos(pi/n) out, turned by pi/n;
-/// - 2 by edge - the two ends of an edge, the polygon to the left of the first -> second.
-pub fn polygon_from_clicks(a: Point2, b: Point2, n: u32, mode: u8) -> (Point2, Point2) {
+pub fn polygon_from_clicks(a: Point2, b: Point2, n: u32, mode: crate::PolygonWay) -> (Point2, Point2) {
     let half = std::f64::consts::PI / n.max(3) as f64;
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let len = (dx * dx + dy * dy).sqrt().max(1e-6);
     match mode {
-        1 => {
+        crate::PolygonWay::Circumscribed => {
             let (r, ang) = (len / half.cos(), dy.atan2(dx) + half);
             (a, Point2::new(a.x + r * ang.cos(), a.y + r * ang.sin()))
         }
-        2 => {
+        crate::PolygonWay::ByEdge => {
             let apothem = len / (2.0 * half.tan());
             let c = Point2::new((a.x + b.x) / 2.0 - dy / len * apothem, (a.y + b.y) / 2.0 + dx / len * apothem);
             (c, b)
         }
-        _ => (a, b),
+        crate::PolygonWay::Inscribed => (a, b),
     }
 }
 

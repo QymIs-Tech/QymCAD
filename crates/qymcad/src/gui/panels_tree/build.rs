@@ -630,7 +630,7 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
     }
     // ESCAPE CANCELS THE DRAG, as in any tree. Without it a grabbed row has nowhere to go but to be dropped
     // somewhere.
-    if tc.tree.drag.is_some() && ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+    if tc.tree.drag.is_some() && crate::gui::input::take_escape(ui.ctx()) {
         tc.tree.drag = None;
         *tc.status = Notice::info(crate::i18n::tr("tree-drag-cancelled"));
     }

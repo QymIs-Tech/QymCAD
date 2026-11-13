@@ -7,6 +7,34 @@
 
 use super::*;
 
+/// ESC TAKEN BY WHAT STANDS IN FRONT: a question, the command search, a drag, a name being typed.
+/// The press, or the Esc held for the settings (`hold_escape`), is taken in one step, so the settings drawn behind
+/// them find nothing left and stay open. Taken with the modifiers held, as `key_pressed` read it: Shift+Esc answers a
+/// question as Esc does.
+pub(crate) fn take_escape(ctx: &egui::Context) -> bool {
+    ctx.input_mut(|i| i.consume_key(i.modifiers, egui::Key::Escape)) || ctx.data_mut(|d| d.remove_temp::<()>(held_escape()).is_some())
+}
+
+/// ESC OVER THE TABLE OF KEYS, taken off the frame's keys at its top and held for the settings: the tool bar and the
+/// tool in hand behind the settings never see it, and a question in front still takes it by `take_escape`.
+pub(crate) fn hold_escape(ctx: &egui::Context) -> bool {
+    let held = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    if held {
+        ctx.data_mut(|d| d.insert_temp(held_escape(), ()));
+    }
+    held
+}
+
+/// An Esc held a frame before and taken by nobody - the settings closed by a question before they were drawn - is
+/// dropped, so it never answers anything in a later frame.
+pub(crate) fn drop_held_escape(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.remove_temp::<()>(held_escape()));
+}
+
+fn held_escape() -> egui::Id {
+    egui::Id::new("escape_held_for_the_settings")
+}
+
 impl App {
     /// THE KEYBOARD COMMANDS OF A FRAME: Enter, U, Ctrl+Enter, Esc, Delete, Ctrl+A.
     ///

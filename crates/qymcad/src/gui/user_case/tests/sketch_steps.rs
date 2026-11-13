@@ -3,10 +3,41 @@
 //! the sketch then opened again and its own steps taken back and brought again.
 use super::*;
 
-/// THE SIZES OF THE SKETCH OF EVERY TOOL: a size laid only when typed, then a rectangle with its centre fixed.
 pub(super) fn sizes(app: &mut App, si: usize, problems: &mut Vec<String>) {
     a_size_only_when_typed(app, si, problems);
     a_rectangle_with_its_centre_fixed(app, si, problems);
+    a_circle_by_two_points_on_the_key_pressed_again(app, si, problems);
+}
+
+fn key_again_set_to(hand: &mut Hand, choice: &str) -> bool {
+    let (windows, settings) = (crate::i18n::tr("menu-windows"), crate::i18n::tr("menu-settings"));
+    let opened = hand.press_word(&windows, egui::Pos2::ZERO) && hand.press_word(&settings, egui::Pos2::ZERO);
+    let chosen = opened && hand.press_word(&crate::i18n::tr("settings-sec-keyboard"), egui::Pos2::ZERO) && hand.press_word(&crate::i18n::tr(choice), egui::Pos2::ZERO);
+    chosen && hand.press_word(&windows, egui::Pos2::ZERO) && hand.press_word(&settings, egui::Pos2::ZERO)
+}
+
+fn a_circle_by_two_points_on_the_key_pressed_again(app: &mut App, si: usize, problems: &mut Vec<String>) {
+    let circles = |a: &App| {
+        let sk = &a.project.sketches[si];
+        sk.entities.iter().filter_map(|e| e.kind.as_circle()).filter_map(|c| Some((sk.points.iter().find(|q| q.id == c.center)?, c.r))).map(|(q, r)| (q.x, q.y, r)).collect::<Vec<_>>()
+    };
+    let before = circles(app).len();
+    let mut hand = Hand::canvas(app);
+    let cycles = key_again_set_to(&mut hand, "settings-again-cycles");
+    hand.key(egui::Key::C).key(egui::Key::C);
+    hand.click2d(140.0, 10.0).click2d(150.0, 10.0);
+    hand.key(egui::Key::Escape).key(egui::Key::Escape);
+    hand.key(egui::Key::C).key(egui::Key::Escape).key(egui::Key::Escape);
+    let first = hand.app.tool_prefs.circ_mode == qymcad_ui_state::CircleWay::CentreRadius;
+    let back = key_again_set_to(&mut hand, "settings-again-puts-down");
+    let now = circles(app);
+    let laid = now.len() == before + 1 && now.last().is_some_and(|&(x, y, r)| (x - 145.0).abs() < 0.6 && (y - 10.0).abs() < 0.6 && (r - 5.0).abs() < 0.6);
+    if !cycles || !back || !laid || !first {
+        problems.push(format!(
+            "sketch: C, C under \"takes the next way\" and two clicks did not lay the circle by two points (set: {cycles}, put back: {back}, taken anew at the first way: {first}); the circles: {now:?}"
+        ));
+    }
+    check_all(app, "sketch: a circle by two points reached by its key pressed again", problems);
 }
 
 /// A SIZE ONLY WHEN TYPED: the circles and the arc above were drawn without a value typed and carry no size of

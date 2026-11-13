@@ -96,9 +96,6 @@ mod tests {
         id: &'static str,
     }
 
-    /// A WINDOW OPENED OVER THE BOX OF FIELDS AT THE GEOMETRY COVERS IT: the settings, the library of parts, the help and
-    /// the keys, each opened from the menu, one over another, and dragged by its title over the box of the extrusion in
-    /// hand, stand on top there. Reported behaviour: the box of a radius over the settings.
     #[test]
     fn a_window_over_the_box_at_the_geometry_covers_it() {
         let tr = crate::i18n::tr;
@@ -109,7 +106,6 @@ mod tests {
             Opened { menu: "menu-windows", item: "win-settings", id: "win_settings" },
             Opened { menu: "menu-windows", item: "win-parts-library", id: "win_parts_library" },
             Opened { menu: "menu-help", item: "help-title", id: "win_help" },
-            Opened { menu: "menu-help", item: "help-hotkeys", id: "win_hotkeys" },
         ];
         let mut under = Vec::new();
         for Opened { menu, item, id } in windows {

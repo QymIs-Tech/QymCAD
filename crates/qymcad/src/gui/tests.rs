@@ -191,6 +191,9 @@ mod the_tool_in_hand_after_its_work;
 mod the_key_of_the_tool_in_hand_puts_it_down;
 
 #[cfg(test)]
+mod a_key_pressed_again_takes_the_next_way;
+
+#[cfg(test)]
 mod finish_climbs_the_tree;
 
 #[cfg(test)]
