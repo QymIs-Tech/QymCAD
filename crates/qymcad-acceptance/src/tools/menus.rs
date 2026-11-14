@@ -23,9 +23,10 @@ const SHOWS: &[(u8, &str)] = &[
     (19, "a menu item is not held, so F1 has no tool in hand to open an article of"),
 ];
 
-/// An item of the menus that opens the window of this title, and lays no step of undo.
+/// An item of the menus that opens the window of this title - or shows what `$result` says of it - and lays no step
+/// of undo.
 macro_rules! shows {
-    (@by $name:ident, $id:literal, $entries:expr, $title:literal, $help:literal) => {
+    (@by $name:ident, $id:literal, $entries:expr, $title:literal, $result:expr, $help:literal) => {
         pub static $name: Tool = Tool {
             id: $id,
             flow: Flow::Action,
@@ -39,7 +40,7 @@ macro_rules! shows {
             words: &[],
             fields: &[],
             modes: &[],
-            result: Outcome::Window { title: $title },
+            result: $result,
             node: "",
             undo: $title,
             undo_steps: 0,
@@ -55,18 +56,20 @@ macro_rules! shows {
         };
     };
     ($name:ident, $id:literal, $path:expr, $title:literal, $help:literal) => {
-        shows!(@by $name, $id, &[Entry::Menu($path)], $title, $help);
+        shows!(@by $name, $id, &[Entry::Menu($path)], $title, Outcome::Window { title: $title }, $help);
     };
 }
 
 shows!(SETTINGS, "menu.settings", &["menu-windows", "menu-settings"], "win-settings", "general/07-settings");
+// Windows -> Settings, then the section Keyboard: the table is told by the search field at its head, the rows and the
+// notes under them running below the bottom of the window
+shows!(@by KEYBOARD, "settings.keyboard", &[Entry::Section { menu: &["menu-windows", "menu-settings"], section: "settings-sec-keyboard" }], "win-settings", Outcome::OnScreen { word: "hotkeys-filter-hint" }, "general/10-hotkeys");
 shows!(PARTS_LIBRARY, "menu.parts-library", &["menu-windows", "menu-parts-library"], "pl-title", "general/12-library");
 shows!(START_SCREEN, "menu.start-screen", &["menu-windows", "win-start"], "start-title", "general/01-window");
-shows!(HOTKEYS, "menu.hotkeys", &["menu-help", "help-hotkeys"], "hotkeys-title", "general/10-hotkeys");
 shows!(REPORT, "menu.report", &["menu-help", "help-report"], "report-title", "general/13-report");
 
 // the search of the commands, opened by Ctrl+K: the way into any tool the article of how any tool works starts with
-shows!(@by COMMAND_SEARCH, "menu.command-search", &[Entry::Key(qymcad::Modifiers::COMMAND, qymcad::Key::K)], "cs-title", "general/16-tools");
+shows!(@by COMMAND_SEARCH, "menu.command-search", &[Entry::Key(qymcad::Modifiers::COMMAND, qymcad::Key::K)], "cs-title", Outcome::Window { title: "cs-title" }, "general/16-tools");
 
 /// What the items of history leave out: they act on the document as it stands, and take nothing.
 const HISTORY: &[(u8, &str)] = &[

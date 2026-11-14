@@ -1037,6 +1037,7 @@ pub enum BarAsk {
     ToggleSketchPick,
     /// Put the sketch tools down and go back to picking with the arrow.
     SketchSelectMode,
+    NextWay(SketchShape),
     /// Apply a sketch constraint by its code.
     Constraint(crate::ConstraintKind),
     /// The assembly picks.

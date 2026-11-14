@@ -321,7 +321,7 @@ pub(crate) fn import_scale_window(wc: &mut WinCtx, ctx: &egui::Context) {
     let Some(mut ask) = wc.win.import_scale.take() else { return };
     let mut keep = ctx.input(|i| i.key_pressed(egui::Key::Enter));
     // Esc, or Ctrl+Z asked while the window waited (`step_through_history`)
-    let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape)) || wc.edits.open_kind == qymcad_ui_state::OpenEdit::AskingDropped;
+    let mut cancel = crate::gui::input::take_escape(ctx) || wc.edits.open_kind == qymcad_ui_state::OpenEdit::AskingDropped;
     egui::Window::new(format!("{} {}", ph::RULER, crate::i18n::tr("import-scale-title"))).id(egui::Id::new("win_import_scale"))
         .collapsible(false)
         .resizable(false)

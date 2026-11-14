@@ -46,14 +46,14 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             }
         }
         Some(qymcad_ui_state::SketchShape::Rect) => match pn.tool_prefs.rect_mode {
-            1 => {
+            qymcad_ui_state::RectWay::Centre => {
                 // centre plus corner: the extent is mirrored through the centre
                 if let Some(&c) = pn.tool.pts.first() {
                     let opp = sh.at(Point2::new(2.0 * c.x - cur.x, 2.0 * c.y - cur.y));
                     painter.rect_stroke(Rect::from_two_pos(opp, sc), 0.0, stroke, egui::StrokeKind::Middle);
                 }
             }
-            2 => {
+            qymcad_ui_state::RectWay::ThreePoints => {
                 // rotated, by three points: the first point to the cursor is one side; after the second, the frame follows the height
                 if pn.tool.pts.len() == 1 {
                     painter.line_segment([sh.at(pn.tool.pts[0]), sc], stroke);
@@ -69,14 +69,14 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                     painter.add(egui::Shape::line(poly, stroke));
                 }
             }
-            _ => {
+            qymcad_ui_state::RectWay::TwoCorners => {
                 if let Some(&a) = pn.tool.pts.first() {
                     painter.rect_stroke(Rect::from_two_pos(sh.at(a), sc), 0.0, stroke, egui::StrokeKind::Middle);
                 }
             }
         },
         Some(qymcad_ui_state::SketchShape::Circle) => {
-            if pn.tool_prefs.circ_mode == 2 {
+            if pn.tool_prefs.circ_mode == qymcad_ui_state::CircleWay::Tangent {
                 // a circle touching the two curves picked: the one of the radius of the bar whose centre is nearest the
                 // pointer
                 if let (&[a, b], Some(si)) = (pn.tool.circ_tan.as_slice(), qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses)) {
@@ -87,7 +87,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                         painter.circle_stroke(scn, rp, stroke);
                     }
                 }
-            } else if pn.tool_prefs.circ_mode == 3 {
+            } else if pn.tool_prefs.circ_mode == qymcad_ui_state::CircleWay::ThreePoints {
                 if let &[a, b] = pn.tool.pts.as_slice() {
                     if let Some((cx, cy, r)) = qymcad_ui_state::circumcircle(a, b, cur) {
                         let scn = sh.at(Point2::new(cx, cy));
@@ -96,7 +96,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                     }
                 }
             } else if let Some(&c) = pn.tool.pts.first() {
-                if pn.tool_prefs.circ_mode == 1 {
+                if pn.tool_prefs.circ_mode == qymcad_ui_state::CircleWay::TwoPoints {
                     // by two points: the diameter runs from c to the cursor
                     let mid = sh.at(Point2::new((c.x + cur.x) / 2.0, (c.y + cur.y) / 2.0));
                     painter.circle_stroke(mid, mid.distance(sh.at(c)), stroke);
@@ -106,7 +106,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
-        Some(qymcad_ui_state::SketchShape::Arc) if pn.tool_prefs.arc_mode == 2 => {
+        Some(qymcad_ui_state::SketchShape::Arc) if pn.tool_prefs.arc_mode == qymcad_ui_state::ArcWay::Tangent => {
             // a tangent arc: once started (at the end of a curve), an arc from s to the cursor, smooth into the base
             if pn.tool.pts.len() == 1 {
                 let s = pn.tool.pts[0];
@@ -135,7 +135,7 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             }
         }
         Some(qymcad_ui_state::SketchShape::Arc) => {
-            if pn.tool_prefs.arc_mode == 1 {
+            if pn.tool_prefs.arc_mode == qymcad_ui_state::ArcWay::ThreePoints {
                 // by three points: the start, the end, and the cursor as a point on the arc
                 if pn.tool.pts.len() == 1 {
                     painter.line_segment([sh.at(pn.tool.pts[0]), sc], Stroke::new(0.6, col));

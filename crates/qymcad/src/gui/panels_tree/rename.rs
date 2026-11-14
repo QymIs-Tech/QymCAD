@@ -10,7 +10,7 @@ pub(crate) fn rename_node_active(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egu
         return false;
     }
     let resp = qymcad_ui_state::rename_field(ui, &mut tc.rename.buf, 160.0, std::mem::take(&mut tc.rename.focus));
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if crate::gui::input::take_escape(ui.ctx()) {
         tc.rename.node = None; // cancelled
     } else if resp.lost_focus() {
         let nm = tc.rename.buf.trim().to_string(); // Enter or a click elsewhere commits
@@ -50,7 +50,7 @@ pub(crate) fn rename_row_active(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui
         return false;
     }
     let resp = qymcad_ui_state::rename_field(ui, &mut tc.rename.buf, 170.0, std::mem::take(&mut tc.rename.focus));
-    let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    let esc = crate::gui::input::take_escape(ui.ctx());
     if esc {
         tc.rename.target = None; // cancelled without saving
     } else if resp.lost_focus() {

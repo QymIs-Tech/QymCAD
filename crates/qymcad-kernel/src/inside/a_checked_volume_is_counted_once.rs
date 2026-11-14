@@ -34,5 +34,5 @@ fn the_volume_checked_is_counted_once() {
     let first = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || rounded.rough_volume());
     let second = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || rounded.rough_volume());
     assert_eq!(first.out, second.out, "the volume checked again is another: {} then {}", first.out, second.out);
-    assert!(second.cost.work * 10 <= first.cost.work, "the volume checked was counted again: {:?} the first time, {:?} the second", first.cost.work, second.cost.work);
+    assert!(second.cost.cpu * 10 <= first.cost.cpu, "the volume checked was counted again: {:?} the first time, {:?} the second", first.cost.cpu, second.cost.cpu);
 }

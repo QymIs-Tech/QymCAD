@@ -289,8 +289,8 @@ mod tests {
         whole(&mut app, "17-command-bad-expr");
 
         let mut app = part();
-        app.win.open(WinKind::Hotkeys);
-        let img = shot(&mut app, 820, 760, |a, ui| a.hotkeys_window(ui.ctx()));
+        crate::gui::hotkeys::open_keyboard_settings(&mut app);
+        let img = shot(&mut app, 820, 760, |a, ui| crate::gui::hotkeys::draw_settings(a, ui.ctx()));
         save("13-hotkeys", &img);
 
         let mut app = part();

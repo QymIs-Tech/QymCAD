@@ -694,4 +694,6 @@ pub use snap::*;
 mod commands;
 pub use commands::*;
 mod options;
+mod ways;
+pub use ways::*;
 use options::*;

@@ -123,8 +123,10 @@ impl App {
 /// A system chooser is a modal window and owns the interaction until it is answered, so for as long as
 /// it is up everything here is greyed and deaf: the widgets of the frame are disabled, the panes drawn
 /// straight onto the context are covered by a barrier that eats clicks, and whatever was taking typing
-/// has its focus taken away.
+/// has its focus taken away. The frames are asked for by hand meanwhile: the answer comes from a thread, and egui,
+/// which sleeps between input events, hears nothing of it.
 pub(crate) fn inert_while_choosing(ui: &mut egui::Ui) {
+    ui.ctx().request_repaint();
     ui.disable();
     ui.ctx().memory_mut(|m| m.stop_text_input());
     let screen = ui.ctx().viewport_rect();

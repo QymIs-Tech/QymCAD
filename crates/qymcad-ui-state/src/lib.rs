@@ -376,7 +376,7 @@ impl Tools<'_> {
 
 // HOW A KEY IS WRITTEN ON SCREEN lives in the dictionary crate, which writes every caption: a key typed into a
 // sentence ("Copy (Ctrl+C)") has to follow the system just like a key in the table.
-pub use qymcad_i18n::keys::{key_label, key_label_in, key_style, set_key_style, KeyStyle};
+pub use qymcad_i18n::keys::{key_label, key_label_in, key_style, set_key_style, with_key_style, KeyStyle};
 
 /// WHERE THE BREADCRUMB GOES. Opening an edit records what a person just did, so that a report about a
 /// crash carries the last few steps. The record crate must not know what a crash report is, nor where it
@@ -937,8 +937,8 @@ mod blend_outline {
                 .collect()
         };
         let on = |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).abs() < 1e-9 && (p[1] - q[1]).abs() < 1e-9;
-        assert!(vertices(super::polygon_from_clicks(a, b, 6, 0)).iter().any(|v| on(*v, [15.0, 0.0])), "inscribed: a vertex at the click");
-        let vs = vertices(super::polygon_from_clicks(a, b, 6, 1));
+        assert!(vertices(super::polygon_from_clicks(a, b, 6, super::PolygonWay::Inscribed)).iter().any(|v| on(*v, [15.0, 0.0])), "inscribed: a vertex at the click");
+        let vs = vertices(super::polygon_from_clicks(a, b, 6, super::PolygonWay::Circumscribed));
         assert!(
             (0..6).any(|k| {
                 let (p, q) = (vs[k], vs[(k + 1) % 6]);
@@ -946,7 +946,7 @@ mod blend_outline {
             }),
             "circumscribed: the middle of an edge at the click: {vs:?}"
         );
-        let vs = vertices(super::polygon_from_clicks(a, b, 6, 2));
+        let vs = vertices(super::polygon_from_clicks(a, b, 6, super::PolygonWay::ByEdge));
         assert!(vs.iter().any(|v| on(*v, [0.0, 0.0])) && vs.iter().any(|v| on(*v, [15.0, 0.0])), "by edge: both clicks are vertices: {vs:?}");
     }
 

@@ -413,7 +413,7 @@ pub(crate) fn tree_sketch_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::
         // INLINE renaming of a sketch (as for features): a field instead of the label
         if tc.rename.sketch == Some(sid) {
             let r = qymcad_ui_state::rename_field(ui, &mut tc.rename.buf, 160.0, std::mem::take(&mut tc.rename.focus));
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if crate::gui::input::take_escape(ui.ctx()) {
                 tc.rename.sketch = None; // cancelled
             } else if r.lost_focus() {
                 let nm = tc.rename.buf.trim().to_string(); // Enter or a click elsewhere commits
