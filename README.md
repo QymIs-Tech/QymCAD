@@ -82,6 +82,15 @@ chmod +x qymcad-*.AppImage
 ./qymcad-*.AppImage
 ```
 
+**Nix (community-supported)** — run QymCAD directly from the repository:
+
+```bash
+nix run github:QymIs-Tech/QymCAD
+```
+
+Install it into the current profile with `nix profile install github:QymIs-Tech/QymCAD`. The `packages.qymcad`
+output can also be added to a NixOS or Home Manager flake configuration.
+
 **macOS 12+** — for Apple Silicon (M1 and later) `qymcad-*-macos-arm64.dmg`, for Intel
 `qymcad-*-macos-x86_64.dmg`. Open the disk image and drag QymCAD onto Applications. The first launch is refused
 once, because the build is not signed by Apple: press "Open Anyway" in System Settings -> Privacy & Security.
@@ -103,6 +112,8 @@ python3 convert_qcad.py part.qcad    # converts in place, keeping part.qcad.bak 
 The script brings a document forward from any earlier version in one pass and is idempotent.
 
 ## Building from source
+
+With Nix, `nix develop` provides Rust, OpenCASCADE and the tools used to check the Nix code.
 
 Linux — `just pkg-linux`, Docker required. Windows — MSVC with the kernel built from source. macOS — the
 kernel from source as well, then `packaging/macos/bundle.sh`. The details are in

@@ -2,6 +2,9 @@
 /target
 **/target
 
+# Nix build result
+/result
+
 # What packaging produces (AppImage, zip): binaries are not committed
 /dist
 *.AppImage
